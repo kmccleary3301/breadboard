@@ -891,12 +891,13 @@ test("trusted local manager retains and cleans >32 immediate inert ended session
 
 test("trusted local manager refuses to kill reused PGID when identity cannot be validated", async () => {
   const killedPgids: Array<number | null | undefined> = []
+  let groupAlive = true
   const manager = new LocalTerminalSessionManager({
-    isGroupAlive: (pgid) => pgid === 9999, // Unrelated process group exists with PGID 9999
+    isGroupAlive: (pgid) => (pgid === 9999 ? groupAlive : false),
     killProcessTree: (_child, pgid) => {
       killedPgids.push(pgid)
     },
-    validateGroupOwnership: (identity, pgid) => {
+    validateGroupOwnership: (_identity, _pgid) => {
       // Refuse ownership because PGID 9999 belongs to an unrelated new process
       return false
     },
@@ -911,16 +912,32 @@ test("trusted local manager refuses to kill reused PGID when identity cannot be 
     command: ["node", "-e", "process.exit(0)"],
   })
 
-  // Cleanup targeting the session
-  const cleanRes = await manager.cleanupSessions({
-    cleanupId: "clean-reused-pgid",
+  // Cleanup targeting the session (Call 1)
+  const cleanRes1 = await manager.cleanupSessions({
+    cleanupId: "clean-reused-pgid-1",
     scope: "single",
     sessionIds: ["term-reused-pgid"],
   })
-
-  // Crucial: killProcessTree must NEVER have been called for the unvalidated PGID
   assert.equal(killedPgids.length, 0, "unrelated process group 9999 was protected from false kill signal")
-  assert.deepEqual(cleanRes.failed_session_ids, ["term-reused-pgid"], "reported failed/unconfirmed to protect reused group")
+  assert.deepEqual(cleanRes1.failed_session_ids, ["term-reused-pgid"], "call 1 reported failed/unconfirmed to protect reused group")
+
+  // Two-call regression: Call 2 MUST still report failed while the unconfirmed group is alive (never falsely downgraded to cleaned)
+  const cleanRes2 = await manager.cleanupSessions({
+    cleanupId: "clean-reused-pgid-2",
+    scope: "single",
+    sessionIds: ["term-reused-pgid"],
+  })
+  assert.equal(killedPgids.length, 0, "unrelated process group 9999 was still protected")
+  assert.deepEqual(cleanRes2.failed_session_ids, ["term-reused-pgid"], "call 2 still reported failed/unconfirmed")
+
+  // Call 3: Once the group is positively inert on the system, cleanup safely reports cleaned
+  groupAlive = false
+  const cleanRes3 = await manager.cleanupSessions({
+    cleanupId: "clean-reused-pgid-3",
+    scope: "single",
+    sessionIds: ["term-reused-pgid"],
+  })
+  assert.deepEqual(cleanRes3.cleaned_session_ids, ["term-reused-pgid"], "call 3 reported cleaned once positively inert")
 })
 
 test("trusted local manager same-ID successful restart removes ID from ended_session_ids in registry snapshot", async () => {
@@ -978,14 +995,22 @@ test("shared default local manager detects PID reuse and protects unrelated proc
       command: ["node", "-e", "process.exit(0)"],
     })
 
-    // Cleanup session on default manager
-    const cleanRes = await defaultManager.cleanupSessions({
-      cleanupId: "clean-default-reuse",
+    // Cleanup session on default manager (Call 1)
+    const cleanRes1 = await defaultManager.cleanupSessions({
+      cleanupId: "clean-default-reuse-1",
       scope: "single",
       sessionIds: ["term-default-reuse-check"],
     })
+    assert.deepEqual(cleanRes1.failed_session_ids, ["term-default-reuse-check"], "call 1 unconfirmed cleanup reported failed")
 
-    assert.deepEqual(cleanRes.failed_session_ids, ["term-default-reuse-check"], "unconfirmed cleanup reported failed")
+    // Two-call regression: Call 2 MUST still report failed while unrelated process is alive
+    const cleanRes2 = await defaultManager.cleanupSessions({
+      cleanupId: "clean-default-reuse-2",
+      scope: "single",
+      sessionIds: ["term-default-reuse-check"],
+    })
+    assert.deepEqual(cleanRes2.failed_session_ids, ["term-default-reuse-check"], "call 2 still reported failed")
+
     // The unrelated process MUST still be alive and running (was NOT killed by the default manager)
     let isAlive = false
     try {

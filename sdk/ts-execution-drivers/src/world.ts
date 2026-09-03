@@ -252,6 +252,12 @@ function selectWorldDriver(
   const orderedDrivers = orderDrivers(drivers, input.driverIdHint)
   if (input.terminal) {
     const eligibleDrivers = orderedDrivers.filter((d) => {
+      const hasAnyTerminalMethod =
+        typeof d.startTerminalSession === "function" ||
+        typeof d.interactTerminalSession === "function" ||
+        typeof d.snapshotTerminalRegistry === "function" ||
+        typeof d.cleanupTerminalSessions === "function"
+      if (!hasAnyTerminalMethod) return false
       if (input.terminalOperation === "start" && typeof d.startTerminalSession !== "function") return false
       if (input.terminalOperation === "interact" && typeof d.interactTerminalSession !== "function") return false
       if (input.terminalOperation === "snapshot" && typeof d.snapshotTerminalRegistry !== "function") return false
@@ -324,10 +330,30 @@ async function settleWithin(promise: Promise<unknown>, timeoutMs: number): Promi
   try {
     return await Promise.race([promise.then(() => true, () => false), timeout])
   } finally {
-    clearTimeout(timer)
+    if (timer !== undefined) clearTimeout(timer)
   }
 }
 
+async function settleValueWithin<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+): Promise<{ settled: true; value: T } | { settled: false; value: null }> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<{ settled: false; value: null }>((resolve) => {
+    timer = setTimeout(() => resolve({ settled: false, value: null }), Math.max(0, timeoutMs))
+  })
+  try {
+    return await Promise.race([
+      promise.then(
+        (value) => ({ settled: true as const, value }),
+        () => ({ settled: false as const, value: null }),
+      ),
+      timeout,
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
 function buildTerminalUnsupportedCase(
   capability: ExecutionCapabilityV1,
   placement: ExecutionPlacementV1,
@@ -871,7 +897,9 @@ export function createExecutionWorld(input: {
       }
     } catch (error) {
       sessions.delete(operation.input.terminalSessionId)
-      endedSessionOwners.delete(operation.input.terminalSessionId)
+      rememberEndedSessionOwner(operation.input.terminalSessionId, driver)
+
+      let cleanedConfirmed = false
       if (typeof driver.cleanupTerminalSessions === "function") {
         try {
           const cleanupPromise = Promise.resolve().then(() =>
@@ -881,10 +909,36 @@ export function createExecutionWorld(input: {
               sessionIds: [operation.input.terminalSessionId],
             }),
           )
-          await settleWithin(cleanupPromise, defaultTerminationGraceMs)
+          const cleanupOutcome = await settleValueWithin(cleanupPromise, defaultTerminationGraceMs)
+          if (
+            cleanupOutcome.settled &&
+            cleanupOutcome.value &&
+            typeof cleanupOutcome.value === "object" &&
+            !Array.isArray(cleanupOutcome.value) &&
+            (cleanupOutcome.value as any).cleaned_session_ids !== undefined &&
+            Array.isArray((cleanupOutcome.value as any).cleaned_session_ids) &&
+            (cleanupOutcome.value as any).cleaned_session_ids.every((x: unknown) => typeof x === "string") &&
+            ((cleanupOutcome.value as any).failed_session_ids === undefined ||
+              (Array.isArray((cleanupOutcome.value as any).failed_session_ids) &&
+                (cleanupOutcome.value as any).failed_session_ids.every((x: unknown) => typeof x === "string")))
+          ) {
+            const valid = assertValid<TerminalCleanupResultV1>(
+              "terminalCleanupResult",
+              cleanupOutcome.value,
+            )
+            const cleanedSet = new Set(valid.cleaned_session_ids)
+            const failedSet = new Set(valid.failed_session_ids)
+            const hasOverlap = [...cleanedSet].some((id) => failedSet.has(id))
+            if (!hasOverlap && cleanedSet.has(operation.input.terminalSessionId) && !failedSet.has(operation.input.terminalSessionId)) {
+              cleanedConfirmed = true
+            }
+          }
         } catch {
           // Bounded cleanup best effort
         }
+      }
+      if (cleanedConfirmed) {
+        endedSessionOwners.delete(operation.input.terminalSessionId)
       }
       return {
         kind: "terminal_start",
@@ -1011,7 +1065,10 @@ export function createExecutionWorld(input: {
         throw new Error("Terminal snapshot driver returned null or invalid result")
       }
       const result = assertValid<TerminalRegistrySnapshotV1>("terminalRegistrySnapshot", rawResult)
-      const mergedEnded = Array.from(new Set([...(result.ended_session_ids ?? []), ...endedSessionOwners.keys()]))
+      const activeIds = new Set(result.active_sessions.map((s) => s.terminal_session_id))
+      const mergedEnded = Array.from(
+        new Set([...(result.ended_session_ids ?? []), ...endedSessionOwners.keys()]),
+      ).filter((id) => !activeIds.has(id))
       const mergedResult: TerminalRegistrySnapshotV1 = {
         ...result,
         ended_session_ids: mergedEnded,

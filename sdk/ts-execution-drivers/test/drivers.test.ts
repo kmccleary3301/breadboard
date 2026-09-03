@@ -3238,9 +3238,18 @@ test("execution world terminal_start validation failure bounds never-settling cl
       },
       outputDeltas: [],
     }),
-    cleanupTerminalSessions: async () => {
+    cleanupTerminalSessions: async (input) => {
       cleanupCalled = true
-      // Never settles
+      if (input.cleanupId === "clean-all-retry") {
+        return {
+          schema_version: "bb.terminal_cleanup_result.v1",
+          cleanup_id: input.cleanupId,
+          scope: input.scope,
+          cleaned_session_ids: input.sessionIds ? [...input.sessionIds] : ["term-req-1"],
+          failed_session_ids: [],
+        }
+      }
+      // Never settles during initial validation failure cleanup
       return new Promise(() => {})
     },
   }
@@ -3265,8 +3274,20 @@ test("execution world terminal_start validation failure bounds never-settling cl
   assert.ok(result.unsupportedCase !== null)
   assert.equal(result.unsupportedCase?.reason_code, "terminal_start_failed")
   assert.equal(cleanupCalled, true)
-})
 
+  // Subsequent cleanup with scope all MUST retry cleaning the unconfirmed started session
+  const retryClean = await world.execute({
+    kind: "terminal_cleanup",
+    capability: cap,
+    placement: place,
+    input: {
+      cleanupId: "clean-all-retry",
+      scope: "all",
+    },
+  })
+  assert.equal(retryClean.kind, "terminal_cleanup")
+  assert.deepEqual(retryClean.result?.cleaned_session_ids, ["term-req-1"])
+})
 test("execution world rejects start for already active terminal session without second adapter launch", async () => {
   const cap: ExecutionCapabilityV1 = {
     schema_version: "bb.execution_capability.v1",
@@ -4285,4 +4306,318 @@ test("execution world rejects start reuse for session ID with uncleaned prior en
   assert.equal(restartSuccess.kind, "terminal_start")
   assert.ok(restartSuccess.result)
   assert.equal(restartSuccess.result?.descriptor.terminal_session_id, "term-reuse-ended-1")
+})
+
+test("execution world malformed-start cleanup contradictory result retains owner route for subsequent all cleanup", async () => {
+  const cap: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-contradictory-1",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const place: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-contradictory-1",
+    placement_class: "local_process",
+    runtime_id: "local",
+    capability_id: cap.capability_id,
+  }
+
+  let cleanupCalls = 0
+  const driver: TerminalSessionDriverV1 = {
+    driverId: "contradictory-driver",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    supportsTerminalSessions: () => true,
+    startTerminalSession: async (input) => ({
+      descriptor: {
+        schema_version: "bb.terminal_session_descriptor.v1",
+        // Mismatched session ID triggers validation failure
+        terminal_session_id: "wrong-session-id",
+        command: input.command,
+        startup_call_id: null,
+        owner_task_id: null,
+        public_handles: [],
+        capability_id: cap.capability_id,
+        placement_id: place.placement_id,
+        persistence_scope: "thread",
+        continuation_scope: "both",
+        stream_mode: "pipes",
+        stream_split: "stdout_stderr",
+        created_at_utc: new Date().toISOString(),
+      },
+      outputDeltas: [],
+    }),
+    cleanupTerminalSessions: async (input) => {
+      cleanupCalls++
+      if (cleanupCalls === 1) {
+        // Contradictory result: appears in both cleaned and failed
+        return {
+          schema_version: "bb.terminal_cleanup_result.v1",
+          cleanup_id: input.cleanupId,
+          scope: input.scope,
+          cleaned_session_ids: ["term-contradictory-1"],
+          failed_session_ids: ["term-contradictory-1"],
+        }
+      }
+      // Call 2: valid cleanup
+      return {
+        schema_version: "bb.terminal_cleanup_result.v1",
+        cleanup_id: input.cleanupId,
+        scope: input.scope,
+        cleaned_session_ids: ["term-contradictory-1"],
+        failed_session_ids: [],
+      }
+    },
+  }
+
+  const world = createExecutionWorld({
+    drivers: [driver],
+    terminationGraceMs: 50,
+  })
+
+  // Start fails validation, cleanup returns contradictory result (retains owner route)
+  const startRes = await world.execute({
+    kind: "terminal_start",
+    capability: cap,
+    placement: place,
+    input: {
+      terminalSessionId: "term-contradictory-1",
+      command: ["bash"],
+    },
+  })
+  assert.equal(startRes.kind, "terminal_start")
+  assert.equal(startRes.result, null)
+  assert.equal(cleanupCalls, 1)
+
+  // Subsequent scope all cleanup retries contradictory-driver
+  const cleanRes = await world.execute({
+    kind: "terminal_cleanup",
+    capability: cap,
+    placement: place,
+    input: {
+      cleanupId: "clean-all-retry-contradictory",
+      scope: "all",
+    },
+  })
+  assert.equal(cleanRes.kind, "terminal_cleanup")
+  assert.deepEqual(cleanRes.result?.cleaned_session_ids, ["term-contradictory-1"])
+  assert.equal(cleanupCalls, 2)
+})
+
+test("execution world malformed-start cleanup string cleaned_session_ids does not coerce to array and retains owner route", async () => {
+  const cap: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-str-coerced-1",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const place: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-str-coerced-1",
+    placement_class: "local_process",
+    runtime_id: "local",
+    capability_id: cap.capability_id,
+  }
+
+  let cleanupCalls = 0
+  const driver: TerminalSessionDriverV1 = {
+    driverId: "str-coerced-driver",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    supportsTerminalSessions: () => true,
+    startTerminalSession: async (input) => ({
+      descriptor: {
+        schema_version: "bb.terminal_session_descriptor.v1",
+        // Mismatched session ID triggers validation failure
+        terminal_session_id: "wrong-session-id",
+        command: input.command,
+        startup_call_id: null,
+        owner_task_id: null,
+        public_handles: [],
+        capability_id: cap.capability_id,
+        placement_id: place.placement_id,
+        persistence_scope: "thread",
+        continuation_scope: "both",
+        stream_mode: "pipes",
+        stream_split: "stdout_stderr",
+        created_at_utc: new Date().toISOString(),
+      },
+      outputDeltas: [],
+    }),
+    cleanupTerminalSessions: async (input) => {
+      cleanupCalls++
+      if (cleanupCalls === 1) {
+        // String field instead of array of strings
+        return {
+          schema_version: "bb.terminal_cleanup_result.v1",
+          cleanup_id: input.cleanupId,
+          scope: input.scope,
+          cleaned_session_ids: "term-str-coerced-1" as unknown as string[],
+          failed_session_ids: [],
+        }
+      }
+      return {
+        schema_version: "bb.terminal_cleanup_result.v1",
+        cleanup_id: input.cleanupId,
+        scope: input.scope,
+        cleaned_session_ids: ["term-str-coerced-1"],
+        failed_session_ids: [],
+      }
+    },
+  }
+
+  const world = createExecutionWorld({
+    drivers: [driver],
+    terminationGraceMs: 50,
+  })
+
+  // Start fails validation, cleanup returns string field (retains owner route)
+  const startRes = await world.execute({
+    kind: "terminal_start",
+    capability: cap,
+    placement: place,
+    input: {
+      terminalSessionId: "term-str-coerced-1",
+      command: ["bash"],
+    },
+  })
+  assert.equal(startRes.kind, "terminal_start")
+  assert.equal(startRes.result, null)
+  assert.equal(cleanupCalls, 1)
+
+  // Subsequent scope all cleanup retries str-coerced-driver
+  const cleanRes = await world.execute({
+    kind: "terminal_cleanup",
+    capability: cap,
+    placement: place,
+    input: {
+      cleanupId: "clean-all-retry-str-coerced",
+      scope: "all",
+    },
+  })
+  assert.equal(cleanRes.kind, "terminal_cleanup")
+  assert.deepEqual(cleanRes.result?.cleaned_session_ids, ["term-str-coerced-1"])
+  assert.equal(cleanupCalls, 2)
+})
+
+test("execution world snapshot sanitizes merged ended session IDs against active sessions when backend snapshot overlaps", async () => {
+  const cap: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-snap-overlap-1",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const place: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-snap-overlap-1",
+    placement_class: "local_process",
+    runtime_id: "local",
+    capability_id: cap.capability_id,
+  }
+  const driver: TerminalSessionDriverV1 = {
+    driverId: "snap-overlap-driver",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    supportsTerminalSessions: () => true,
+    snapshotTerminalRegistry: async () => ({
+      schema_version: "bb.terminal_registry_snapshot.v1",
+      snapshot_id: "snap-overlap-1",
+      active_sessions: [
+        {
+          schema_version: "bb.terminal_session_descriptor.v1",
+          terminal_session_id: "term-overlap-active",
+          command: ["bash"],
+          startup_call_id: null,
+          owner_task_id: null,
+          public_handles: [],
+          capability_id: cap.capability_id,
+          placement_id: place.placement_id,
+          persistence_scope: "thread",
+          continuation_scope: "both",
+          stream_mode: "pipes",
+          stream_split: "stdout_stderr",
+        },
+      ],
+      // Driver snapshot includes overlapping ID in ended_session_ids
+      ended_session_ids: ["term-overlap-active", "term-truly-ended"],
+    }),
+  }
+
+  const world = createExecutionWorld({ drivers: [driver] })
+
+  const snapRes = await world.execute({
+    kind: "terminal_snapshot",
+    capability: cap,
+    placement: place,
+  })
+  assert.equal(snapRes.kind, "terminal_snapshot")
+  assert.ok(snapRes.result)
+  assert.equal(snapRes.result?.active_sessions.length, 1)
+  assert.equal(snapRes.result?.active_sessions[0]?.terminal_session_id, "term-overlap-active")
+  // ended_session_ids must be sanitized to exclude term-overlap-active
+  assert.deepEqual(snapRes.result?.ended_session_ids, ["term-truly-ended"])
+})
+
+test("execution world unpinned terminal select does not choose sandbox-only driver when supportsTerminalSessions returns true but no terminal operations are implemented", async () => {
+  const cap: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-no-methods-1",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const place: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-no-methods-1",
+    placement_class: "local_process",
+    runtime_id: "local",
+    capability_id: cap.capability_id,
+  }
+
+  // Driver claims to support terminals, but implements no terminal methods
+  const sandboxOnlyDriver: TerminalSessionDriverV1 = {
+    driverId: "sandbox-only-driver",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    supportsTerminalSessions: () => true,
+    execute: async (req) => ({
+      schema_version: "bb.sandbox_result.v1",
+      request_id: req.request_id,
+      status: "completed",
+      exit_code: 0,
+      duration_ms: 5,
+      stdout_text: "done\n",
+      stdout_truncated: false,
+      stderr_text: "",
+      stderr_truncated: false,
+      output_files: [],
+      evidence_refs: [],
+      error: null,
+    }),
+  }
+
+  const world = createExecutionWorld({ drivers: [sandboxOnlyDriver] })
+
+  const startRes = await world.execute({
+    kind: "terminal_start",
+    capability: cap,
+    placement: place,
+    input: {
+      terminalSessionId: "term-no-methods-1",
+      command: ["bash"],
+    },
+  })
+
+  assert.equal(startRes.kind, "terminal_start")
+  assert.equal(startRes.result, null)
+  assert.ok(startRes.unsupportedCase !== null)
+  assert.equal(startRes.unsupportedCase?.reason_code, "unsupported_terminal_driver")
 })

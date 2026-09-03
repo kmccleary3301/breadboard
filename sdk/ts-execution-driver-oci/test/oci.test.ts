@@ -12,6 +12,7 @@ import {
   makeOciExecutionDriver,
   makeOciTerminalSessionDriver,
   ociExecutionDriver,
+  OciTerminalSessionManager,
   type OciCommandExecutor,
   type OciTerminalSessionAdapter,
 } from "../src/index.js"
@@ -254,6 +255,12 @@ test("oci terminal support follows runtime selection semantics", async () => {
     },
     async interactSession() {
       return { outputDeltas: [] }
+    },
+    async cleanupSessions(request) {
+      return {
+        cleaned_session_ids: [...request.sessionIds],
+        failed_session_ids: [],
+      }
     },
   })
   assert.equal(
@@ -789,6 +796,10 @@ test("OCI terminal session manager rejects wrong-ID end during interact without 
         end: undefined,
       }
     },
+    cleanupSessions: async ({ sessionIds }) => ({
+      cleaned_session_ids: sessionIds ? [...sessionIds] : [],
+      failed_session_ids: [],
+    }),
   }
 
   const driver = makeOciTerminalSessionDriver(customAdapter)
@@ -1131,6 +1142,10 @@ test("OCI terminals cleanup without adapter cleanupSessions reports active sessi
   const adapterWithoutCleanup: OciTerminalSessionAdapter = {
     startSession: async () => ({ outputDeltas: [] }),
     interactSession: async () => ({ outputDeltas: [] }),
+    cleanupSessions: async ({ sessionIds }) => ({
+      cleaned_session_ids: [],
+      failed_session_ids: sessionIds ? [...sessionIds] : [],
+    }),
   }
 
   const driver = makeOciExecutionDriver(adapterWithoutCleanup)
@@ -1402,10 +1417,277 @@ test("OCI manager same-ID successful restart removes ID from ended_session_ids i
     placement: place,
   })
   assert.ok(restartRes?.descriptor)
-
-  // 3. Registry must show exactly 1 active and 0 ended for that ID
   snap = await driver.snapshotTerminalRegistry?.()
   assert.equal(snap?.active_sessions.length, 1)
   assert.equal(snap?.active_sessions[0]?.terminal_session_id, "term-oci-restart-id")
   assert.equal(Boolean(snap?.ended_session_ids?.includes("term-oci-restart-id")), false)
+})
+
+test("OCI terminal driver rejects startSession without adapter cleanup capability without launching backend", async () => {
+  let startCalled = false
+  const adapterWithoutCleanup: OciTerminalSessionAdapter = {
+    startSession: async () => {
+      startCalled = true
+      return { outputDeltas: [] }
+    },
+    interactSession: async () => ({ outputDeltas: [] }),
+  }
+  const driver = makeOciExecutionDriver(adapterWithoutCleanup)
+  const cap: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-no-cleanup",
+    security_tier: "single_tenant",
+    isolation_class: "oci",
+    secret_mode: "ref_only",
+    evidence_mode: "replay_strict",
+  }
+  const place: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-no-cleanup",
+    placement_class: "local_oci",
+    runtime_id: "remote_worker",
+    capability_id: cap.capability_id,
+  }
+  assert.equal(
+    driver.supportsTerminalSessions?.(cap, place.placement_class),
+    false,
+    "driver reports false for supportsTerminalSessions when adapter lacks cleanupSessions",
+  )
+  await assert.rejects(
+    async () => {
+      await driver.startTerminalSession?.({
+        terminalSessionId: "term-no-clean-launch",
+        command: ["bash"],
+        capability: cap,
+        placement: place,
+      })
+    },
+    /OCI terminal adapter must support cleanupSessions before launching terminal sessions/,
+  )
+  assert.equal(startCalled, false, "backend startSession was never invoked")
+})
+
+test("OCI terminal session manager malformed-start contradictory cleanup retains ended session handle for subsequent cleanup", async () => {
+  let cleanupCalls = 0
+  const adapter: OciTerminalSessionAdapter = {
+    startSession: async () => ({
+      outputDeltas: [
+        {
+          schema_version: "bb.terminal_output_delta.v1",
+          // Mismatched delta ID triggers validation error
+          terminal_session_id: "wrong-delta-id",
+          stream: "stdout",
+          chunk_seq: 1,
+          chunk_b64: "YWxpdmU=",
+          occurred_at_utc: new Date().toISOString(),
+        },
+      ],
+    }),
+    interactSession: async () => ({ outputDeltas: [] }),
+    cleanupSessions: async ({ sessionIds }) => {
+      cleanupCalls++
+      if (cleanupCalls === 1) {
+        // Contradictory cleanup result: appears in both cleaned and failed
+        return {
+          cleaned_session_ids: sessionIds ? [...sessionIds] : [],
+          failed_session_ids: sessionIds ? [...sessionIds] : [],
+        }
+      }
+      return {
+        cleaned_session_ids: sessionIds ? [...sessionIds] : [],
+        failed_session_ids: [],
+      }
+    },
+  }
+  const driver = makeOciExecutionDriver(adapter)
+  const cap: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-oci-contra",
+    security_tier: "single_tenant",
+    isolation_class: "oci",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const place: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-oci-contra",
+    placement_class: "local_oci",
+    runtime_id: "oci",
+    capability_id: cap.capability_id,
+  }
+
+  await assert.rejects(
+    async () => {
+      await driver.startTerminalSession?.({
+        terminalSessionId: "term-oci-contra-target",
+        command: ["bash"],
+        capability: cap,
+        placement: place,
+      })
+    },
+    /Terminal output delta session ID/,
+  )
+  assert.equal(cleanupCalls, 1)
+
+  // Verify ended handle was retained in snapshot
+  let snap = await driver.snapshotTerminalRegistry?.()
+  assert.deepEqual(snap?.ended_session_ids, ["term-oci-contra-target"])
+
+  // Subsequent cleanup cleans the retained handle
+  const cleanRes = await driver.cleanupTerminalSessions?.({
+    cleanupId: "clean-contra-retry",
+    scope: "all",
+  })
+  assert.deepEqual(cleanRes?.cleaned_session_ids, ["term-oci-contra-target"])
+  assert.equal(cleanupCalls, 2)
+})
+
+test("OCI terminal session manager malformed-start string cleaned_session_ids does not coerce to array and retains ended handle", async () => {
+  let cleanupCalls = 0
+  const adapter: OciTerminalSessionAdapter = {
+    startSession: async () => ({
+      outputDeltas: [
+        {
+          schema_version: "bb.terminal_output_delta.v1",
+          // Mismatched delta ID triggers validation error
+          terminal_session_id: "wrong-delta-id",
+          stream: "stdout",
+          chunk_seq: 1,
+          chunk_b64: "YWxpdmU=",
+          occurred_at_utc: new Date().toISOString(),
+        },
+      ],
+    }),
+    interactSession: async () => ({ outputDeltas: [] }),
+    cleanupSessions: async ({ sessionIds }) => {
+      cleanupCalls++
+      if (cleanupCalls === 1) {
+        // String field instead of array of strings
+        return {
+          cleaned_session_ids: "term-oci-str-target",
+          failed_session_ids: [],
+        } as unknown as string[]
+      }
+      return {
+        cleaned_session_ids: sessionIds ? [...sessionIds] : [],
+        failed_session_ids: [],
+      }
+    },
+  }
+  const driver = makeOciExecutionDriver(adapter)
+  const cap: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-oci-str",
+    security_tier: "single_tenant",
+    isolation_class: "oci",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const place: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-oci-str",
+    placement_class: "local_oci",
+    runtime_id: "oci",
+    capability_id: cap.capability_id,
+  }
+
+  await assert.rejects(
+    async () => {
+      await driver.startTerminalSession?.({
+        terminalSessionId: "term-oci-str-target",
+        command: ["bash"],
+        capability: cap,
+        placement: place,
+      })
+    },
+    /Terminal output delta session ID/,
+  )
+  assert.equal(cleanupCalls, 1)
+
+  // Verify ended handle was retained in snapshot (never coerced to single-char array or falsely marked cleaned)
+  let snap = await driver.snapshotTerminalRegistry?.()
+  assert.deepEqual(snap?.ended_session_ids, ["term-oci-str-target"])
+
+  // Subsequent cleanup cleans the retained handle
+  const cleanRes = await driver.cleanupTerminalSessions?.({
+    cleanupId: "clean-str-retry",
+    scope: "all",
+  })
+  assert.deepEqual(cleanRes?.cleaned_session_ids, ["term-oci-str-target"])
+  assert.equal(cleanupCalls, 2)
+})
+
+test("OCI terminal session manager malformed-start hung cleanup bounds wait, retains ended handle, and later cleanup recovers", async () => {
+  let cleanupCalls = 0
+  const adapter: OciTerminalSessionAdapter = {
+    startSession: async () => ({
+      outputDeltas: [
+        {
+          schema_version: "bb.terminal_output_delta.v1",
+          // Mismatched delta ID triggers validation error
+          terminal_session_id: "wrong-delta-id",
+          stream: "stdout",
+          chunk_seq: 1,
+          chunk_b64: "YWxpdmU=",
+          occurred_at_utc: new Date().toISOString(),
+        },
+      ],
+    }),
+    interactSession: async () => ({ outputDeltas: [] }),
+    cleanupSessions: async ({ sessionIds }) => {
+      cleanupCalls++
+      if (cleanupCalls === 1) {
+        // Hung cleanup on call 1
+        return new Promise(() => {})
+      }
+      return {
+        cleaned_session_ids: sessionIds ? [...sessionIds] : [],
+        failed_session_ids: [],
+      }
+    },
+  }
+  const manager = new OciTerminalSessionManager(adapter, 30)
+  const cap: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-oci-hung",
+    security_tier: "single_tenant",
+    isolation_class: "oci",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const place: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-oci-hung",
+    placement_class: "local_oci",
+    runtime_id: "oci",
+    capability_id: cap.capability_id,
+  }
+
+  const start = Date.now()
+  await assert.rejects(
+    async () => {
+      await manager.startSession({
+        terminalSessionId: "term-oci-hung-target",
+        command: ["bash"],
+        capability: cap,
+        placement: place,
+      })
+    },
+    /Terminal output delta session ID/,
+  )
+  const elapsed = Date.now() - start
+  assert.ok(elapsed < 1000, `malformed-start bounded wait took ${elapsed}ms, expected < 1000ms`)
+  assert.equal(cleanupCalls, 1)
+
+  // Verify ended handle was retained in snapshot
+  let snap = await manager.snapshotRegistry()
+  assert.deepEqual(snap?.ended_session_ids, ["term-oci-hung-target"])
+
+  // Subsequent cleanup cleans the retained handle
+  const cleanRes = await manager.cleanupSessions({
+    cleanupId: "clean-hung-retry",
+    scope: "all",
+  })
+  assert.deepEqual(cleanRes?.cleaned_session_ids, ["term-oci-hung-target"])
+  assert.equal(cleanupCalls, 2)
 })

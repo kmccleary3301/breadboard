@@ -284,17 +284,19 @@ export class LocalTerminalSessionManager {
       options?.validateGroupOwnership ??
       ((identity, _pgid) => {
         if ((process.platform as string) === "win32") return false
-        // 1. If leader PID is absent, original orphan descendant group still owns PGID
+        const isLeaderAlive = this.probeProcessAlive(identity.leaderPid)
+        if (isLeaderAlive) {
+          // If leader PID exists on the system, require captured start token match
+          const currentToken = this.probeStartToken(identity.leaderPid)
+          return (
+            identity.startToken != null &&
+            currentToken != null &&
+            currentToken === identity.startToken
+          )
+        }
+        // If leader PID is absent, original orphan descendant group still owns PGID
         const currentToken = this.probeStartToken(identity.leaderPid)
-        if (currentToken === null && !this.probeProcessAlive(identity.leaderPid)) {
-          return true
-        }
-        // 2. If leader PID exists on the system, require captured start token match
-        if (identity.startToken != null && currentToken != null) {
-          return currentToken === identity.startToken
-        }
-        // Different token or uncapturable start token on dead leader means reused PID
-        return false
+        return currentToken === null && !this.probeProcessAlive(identity.leaderPid)
       })
   }
   private rememberEndedSession(
@@ -492,23 +494,13 @@ export class LocalTerminalSessionManager {
 
       if (record) {
         const isLeaderAlive = this.probeProcessAlive(record.identity.leaderPid)
-        let isOwned = false
-        if (isLeaderAlive) {
-          const currentToken = this.probeStartToken(record.identity.leaderPid)
-          isOwned =
-            record.identity.startToken != null && currentToken != null
-              ? currentToken === record.identity.startToken
-              : record.identity.startToken == null
-        } else {
-          isOwned = this.validateGroupOwnership(record.identity, pgid ?? record.identity.leaderPid)
-        }
-
+        const isOwned = this.validateGroupOwnership(record.identity, pgid ?? record.identity.leaderPid)
         if (pgid != null && this.probeGroupAlive(pgid)) {
           if (!isOwned) {
             // Refuse to signal unvalidated group!
+            // Transition active session to ended session tracking while retaining PGID and identity for retry
             this.sessions.delete(sessionId)
-            this.endedSessionPgids.delete(sessionId)
-            this.endedSessionIdentities.delete(sessionId)
+            this.rememberEndedSession(sessionId, pgid, record.identity)
             failed.push(sessionId)
             continue
           }
@@ -535,6 +527,10 @@ export class LocalTerminalSessionManager {
             this.rememberEndedSession(sessionId, null)
             cleaned.push(sessionId)
           } else {
+            // Termination was not confirmed (timed out or resisted exit)
+            // Transition active session to ended session tracking with PGID and identity for retry
+            this.sessions.delete(sessionId)
+            this.rememberEndedSession(sessionId, pgid, record.identity)
             failed.push(sessionId)
           }
         } else {
@@ -581,13 +577,14 @@ export class LocalTerminalSessionManager {
                 this.endedSessionIdentities.delete(sessionId)
                 cleaned.push(sessionId)
               } else {
+                // Termination unconfirmed: retain PGID and identity for retry
                 failed.push(sessionId)
               }
             } else {
               // Original leader gone and identity cannot be proven.
               // Refuse to signal unverified group; report failed/unconfirmed to protect system.
-              this.endedSessionPgids.delete(sessionId)
-              this.endedSessionIdentities.delete(sessionId)
+              // Preserve endedSessionPgids & endedSessionIdentities so subsequent cleanup calls
+              // never falsely downgrade to cleaned while the live descendant remains.
               failed.push(sessionId)
             }
           }

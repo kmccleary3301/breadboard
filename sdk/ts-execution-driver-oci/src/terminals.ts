@@ -103,9 +103,14 @@ export class OciTerminalSessionManager {
     this.endedSessionIds.push(sessionId)
   }
 
-  constructor(private readonly adapter: OciTerminalSessionAdapter) {}
-
+  constructor(
+    private readonly adapter: OciTerminalSessionAdapter,
+    private readonly terminationGraceMs: number = 2000,
+  ) {}
   async startSession(input: TerminalSessionStartInputV1): Promise<TerminalSessionStartResultV1> {
+    if (typeof this.adapter.cleanupSessions !== "function") {
+      throw new Error("OCI terminal adapter must support cleanupSessions before launching terminal sessions")
+    }
     if (this.sessions.has(input.terminalSessionId)) {
       throw new Error(`OCI terminal session already active: ${input.terminalSessionId}`)
     }
@@ -129,13 +134,88 @@ export class OciTerminalSessionManager {
         }
       }
     } catch (validationError) {
-      if (this.adapter.cleanupSessions) {
+      let cleanupSucceeded = false
+      if (typeof this.adapter.cleanupSessions === "function") {
         try {
-          await this.adapter.cleanupSessions({
-            sessionIds: [descriptor.terminal_session_id],
-            signal: "SIGKILL",
+          const cleanupPromise = Promise.resolve().then(() =>
+            this.adapter.cleanupSessions!({
+              sessionIds: [descriptor.terminal_session_id],
+              signal: "SIGKILL",
+            }),
+          )
+          let timer: ReturnType<typeof setTimeout> | undefined
+          const timeoutPromise = new Promise<{ settled: false; value: null }>((resolve) => {
+            timer = setTimeout(() => resolve({ settled: false, value: null }), Math.max(1, this.terminationGraceMs))
           })
+          let cleanupOutcome: { settled: boolean; value: unknown }
+          try {
+            cleanupOutcome = await Promise.race([
+              cleanupPromise.then(
+                (value) => ({ settled: true as const, value }),
+                () => ({ settled: false as const, value: null }),
+              ),
+              timeoutPromise,
+            ])
+          } finally {
+            if (timer !== undefined) clearTimeout(timer)
+          }
+
+          if (cleanupOutcome.settled && cleanupOutcome.value) {
+            const rawClean = cleanupOutcome.value
+            let cleanRes: TerminalCleanupResultV1 | undefined
+            if (Array.isArray(rawClean) && rawClean.every((x) => typeof x === "string")) {
+              cleanRes = {
+                schema_version: "bb.terminal_cleanup_result.v1",
+                cleanup_id: `cleanup-${Date.now()}`,
+                scope: "filtered",
+                cleaned_session_ids: [...rawClean],
+                failed_session_ids: [],
+              }
+            } else if (rawClean && typeof rawClean === "object" && !Array.isArray(rawClean)) {
+              const cleanObj = rawClean as {
+                readonly cleanup_id?: string
+                readonly scope?: "single" | "filtered" | "all"
+                readonly cleaned_session_ids?: unknown
+                readonly failed_session_ids?: unknown
+              }
+              if (
+                (cleanObj.cleaned_session_ids === undefined ||
+                  (Array.isArray(cleanObj.cleaned_session_ids) &&
+                    cleanObj.cleaned_session_ids.every((x: unknown) => typeof x === "string"))) &&
+                (cleanObj.failed_session_ids === undefined ||
+                  (Array.isArray(cleanObj.failed_session_ids) &&
+                    cleanObj.failed_session_ids.every((x: unknown) => typeof x === "string")))
+              ) {
+                cleanRes = assertValid<TerminalCleanupResultV1>("terminalCleanupResult", {
+                  schema_version: "bb.terminal_cleanup_result.v1",
+                  cleanup_id: cleanObj.cleanup_id ?? `cleanup-${Date.now()}`,
+                  scope: cleanObj.scope ?? "filtered",
+                  cleaned_session_ids: Array.isArray(cleanObj.cleaned_session_ids)
+                    ? [...cleanObj.cleaned_session_ids]
+                    : [],
+                  failed_session_ids: Array.isArray(cleanObj.failed_session_ids)
+                    ? [...cleanObj.failed_session_ids]
+                    : [],
+                })
+              }
+            }
+            if (cleanRes) {
+              const cleanedSet = new Set(cleanRes.cleaned_session_ids)
+              const failedSet = new Set(cleanRes.failed_session_ids)
+              const hasOverlap = [...cleanedSet].some((id) => failedSet.has(id))
+              if (
+                !hasOverlap &&
+                cleanedSet.has(descriptor.terminal_session_id) &&
+                !failedSet.has(descriptor.terminal_session_id)
+              ) {
+                cleanupSucceeded = true
+              }
+            }
+          }
         } catch {}
+      }
+      if (!cleanupSucceeded) {
+        this.rememberEndedSession(descriptor.terminal_session_id)
       }
       throw validationError
     }
@@ -282,17 +362,19 @@ export class OciTerminalSessionManager {
 
 export function makeOciTerminalSessionDriver(
   adapter: OciTerminalSessionAdapter,
+  terminationGraceMs?: number,
 ): Pick<
   TerminalSessionDriverV1,
   "supportsTerminalSessions" | "startTerminalSession" | "interactTerminalSession" | "snapshotTerminalRegistry" | "cleanupTerminalSessions"
 > {
-  const manager = new OciTerminalSessionManager(adapter)
+  const manager = new OciTerminalSessionManager(adapter, terminationGraceMs)
   return {
     supportsTerminalSessions(
       capability: ExecutionCapabilityV1,
       placementClass: ExecutionPlacementV1["placement_class"],
     ): boolean {
       return (
+        typeof adapter.cleanupSessions === "function" &&
         ["local_oci", "local_oci_gvisor", "local_oci_kata"].includes(placementClass) &&
         ["oci", "gvisor", "kata"].includes(capability.isolation_class)
       )

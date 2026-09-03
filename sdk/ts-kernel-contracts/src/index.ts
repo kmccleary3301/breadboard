@@ -76,6 +76,7 @@ const MODULE_DIR = dirname(fileURLToPath(import.meta.url))
 
 function loadManifestSchema(): AnySchema {
   const candidates = [
+    join(MODULE_DIR, "../contracts/kernel/manifests/bb.engine_conformance_manifest.v1.schema.json"),
     join(MODULE_DIR, "../../../contracts/kernel/manifests/bb.engine_conformance_manifest.v1.schema.json"),
     join(MODULE_DIR, "../../../../contracts/kernel/manifests/bb.engine_conformance_manifest.v1.schema.json"),
   ]
