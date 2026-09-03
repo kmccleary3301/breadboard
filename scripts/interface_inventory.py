@@ -613,8 +613,8 @@ def _event_discriminator_end(tokens: Sequence[tuple[str, str]], index: int) -> i
     return None
 def _event_discriminator_aliases(
     tokens: Sequence[tuple[str, str]],
-) -> set[str]:
-    aliases: set[str] = set()
+) -> dict[str, int]:
+    aliases: dict[str, int] = {}
     for index in range(len(tokens) - 3):
         if (
             tokens[index] not in {("identifier", "const"), ("identifier", "let")}
@@ -634,7 +634,7 @@ def _event_discriminator_aliases(
             continue
         if wrapped and not _token_is(tokens, source_end, "punctuation", ")"):
             continue
-        aliases.add(tokens[index + 1][1])
+        aliases.setdefault(tokens[index + 1][1], index)
     return aliases
 
 
@@ -655,7 +655,7 @@ def _switch_case_event_matches(text: str, event_tokens: set[str]) -> set[str]:
         discriminator_end = (
             index + 3
             if _token_kind(tokens, index + 2, "identifier")
-            and tokens[index + 2][1] in aliases
+            and aliases.get(tokens[index + 2][1], index) < index
             else _event_discriminator_end(tokens, index + 2)
         )
         if discriminator_end is None or not _token_is(
