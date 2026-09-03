@@ -621,6 +621,7 @@ def test_role_switch_rolls_back_when_registry_persistence_fails(failure) -> None
     )
     runner._prepared_runtime_config = {"providers": {"default_model": "mock/pre-lock"}}
     runner.install_model_role_lock(lock)
+    replacements: list[dict] = []
 
     class ActiveAgent:
         def __init__(self, config: dict) -> None:
@@ -632,6 +633,11 @@ def test_role_switch_rolls_back_when_registry_persistence_fails(failure) -> None
             ]
             self.config["active_model_role"] = overrides["active_model_role"]
             self.config["model_role_lock"] = overrides["model_role_lock"]
+            return True
+
+        def replace_runtime_config(self, config: dict) -> bool:
+            replacements.append(copy.deepcopy(config))
+            self.config = copy.deepcopy(config)
             return True
 
     async def fail_persistence(_session_id: str, *, metadata: dict) -> None:
@@ -660,6 +666,7 @@ def test_role_switch_rolls_back_when_registry_persistence_fails(failure) -> None
     )
     assert runner._agent.config["providers"]["default_model"] == "mock/primary"
     assert durable_roles == ["slow", "default"]
+    assert replacements == [runner.current_runtime_config()]
 
 
 def test_conductor_refreshes_cached_lock_and_role_on_runtime_override() -> None:

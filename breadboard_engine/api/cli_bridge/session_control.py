@@ -179,6 +179,7 @@ class SessionControlController:
             ),
             "request_overrides": copy.deepcopy(runner.request.overrides or {}),
             "model_override": runner._model_override,
+            "active_model_role": runner._active_model_role,
             "mode": runner._mode,
             "generation": (
                 runner.session.product_session.pinned_generation_id
@@ -255,6 +256,7 @@ class SessionControlController:
             current_agent_config.update(copy.deepcopy(agent_config))
         runner.request.overrides = copy.deepcopy(snapshot["request_overrides"])
         runner._model_override = snapshot["model_override"]
+        runner._active_model_role = snapshot["active_model_role"]
         runner._mode = snapshot["mode"]
         runner._prepared_runtime_config = copy.deepcopy(
             snapshot["prepared_runtime_config"]
@@ -271,11 +273,13 @@ class SessionControlController:
         with runner._product_session_lock:
             self._restore_runtime_state(runner, snapshot)
             product_session = getattr(runner.session, "product_session", None)
-            if (
-                durable_reconfigure is not None
-                and product_session is not None
-                and snapshot["generation"] is not None
-                and product_session.pinned_generation_id != snapshot["generation"]
+            if durable_reconfigure is not None and (
+                product_session is None
+                or (
+                    snapshot["generation"] is not None
+                    and product_session.pinned_generation_id
+                    != snapshot["generation"]
+                )
             ):
                 durable_reconfigure(snapshot["runtime_config"])
 
@@ -292,9 +296,21 @@ class SessionControlController:
                 metadata=copy.deepcopy(metadata),
             )
         except BaseException:
-            self._rollback_runtime_mutation(
-                runner, snapshot, durable_reconfigure
-            )
+            try:
+                self._rollback_runtime_mutation(
+                    runner, snapshot, durable_reconfigure
+                )
+            except BaseException:
+                logger.exception("Failed to roll back runtime mutation")
+                try:
+                    runner._fail_control_transition(
+                        "runtime_reconfigure_failed",
+                        "failed to restore prior runtime generation",
+                    )
+                except BaseException:
+                    logger.exception(
+                        "Failed to terminalize unrecoverable runtime mutation"
+                    )
             raise
 
     async def handle_command(
@@ -703,50 +719,53 @@ class SessionControlController:
                     target = runner._locked_target(role)
                     route = runner._target_route(target)
                     with runner._product_session_lock:
-                        previous_config = runner.current_runtime_config()
-                        previous_role = runner._active_model_role
-                        previous_model = runner._model_override
-                        previous_metadata = dict(runner.session.metadata)
-                        prepared = dict(previous_config)
+                        snapshot = self._snapshot_runtime_state(runner)
+                        prepared = copy.deepcopy(snapshot["runtime_config"])
                         prepared["active_model_role"] = role
                         prepared["model_role_lock"] = dict(runner._model_role_lock)
                         prepared["providers"] = dict(prepared.get("providers") or {})
                         prepared["providers"]["default_model"] = route
+                        metadata = copy.deepcopy(snapshot["metadata"])
+                        metadata.update(
+                            {"active_model_role": role, "model": route}
+                        )
                         runner._active_model_role = role
                         runner._model_override = route
                         try:
                             if not runner._apply_model_override():
-                                raise RuntimeError("failed to apply locked model role")
-                            runner.session.metadata.update(
-                                {"active_model_role": role, "model": route}
-                            )
+                                raise RuntimeError(
+                                    "failed to apply locked model role"
+                                )
+                            runner.session.metadata.clear()
+                            runner.session.metadata.update(metadata)
                             runner._prepared_runtime_config = prepared
                             if durable_reconfigure is not None:
                                 durable_reconfigure(prepared)
-                        except Exception:
-                            runner._active_model_role = previous_role
-                            runner._model_override = previous_model
-                            runner.session.metadata.clear()
-                            runner.session.metadata.update(previous_metadata)
-                            runner._prepared_runtime_config = previous_config
-                            runner._apply_model_override()
+                        except BaseException:
+                            try:
+                                self._rollback_runtime_mutation(
+                                    runner, snapshot, durable_reconfigure
+                                )
+                            except BaseException:
+                                logger.exception(
+                                    "Failed to roll back model-role mutation"
+                                )
+                                try:
+                                    runner._fail_control_transition(
+                                        "runtime_reconfigure_failed",
+                                        "failed to restore prior model role",
+                                    )
+                                except BaseException:
+                                    logger.exception(
+                                        "Failed to terminalize unrecoverable model-role mutation"
+                                    )
                             raise
-                    try:
-                        await runner.registry.update_metadata(
-                            runner.session.session_id,
-                            metadata=dict(runner.session.metadata or {}),
-                        )
-                    except BaseException:
-                        with runner._product_session_lock:
-                            runner._active_model_role = previous_role
-                            runner._model_override = previous_model
-                            runner.session.metadata.clear()
-                            runner.session.metadata.update(previous_metadata)
-                            runner._prepared_runtime_config = previous_config
-                            runner._apply_model_override()
-                            if durable_reconfigure is not None:
-                                durable_reconfigure(previous_config)
-                        raise
+                    await self._persist_runtime_mutation(
+                        runner,
+                        snapshot,
+                        metadata,
+                        durable_reconfigure,
+                    )
                     return {
                         "status": "ok",
                         "role": role,
