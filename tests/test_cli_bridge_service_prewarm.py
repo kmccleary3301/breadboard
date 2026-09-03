@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from breadboard.product.harness import default_profile as harness_operations
 from breadboard.product.harness.lock import EffectiveHarnessLock
-from breadboard.product.runtime import events as runtime_ports; from breadboard.product.runtime.artifacts import ArtifactStore
+from breadboard.product.runtime import events as runtime_ports; from breadboard.product.runtime.artifacts import ArtifactRef, ArtifactStore
 from breadboard.product.runtime import session_store
 from breadboard_engine.api.cli_bridge.app import create_app
 from breadboard_engine.api.cli_bridge.models import SessionCommandRequest, SessionCreateRequest, SessionInputRequest, SessionStatus
@@ -13,6 +13,8 @@ from breadboard_engine.api.cli_bridge.session_runner import MAX_ATTACHMENT_BYTES
 from breadboard_engine.api.cli_bridge.runtime_emission import _tool_names
 from breadboard_engine.auth.enforcer import apply_dotted_overrides; from breadboard_engine.compilation.v2_loader import load_agent_config
 from breadboard_engine.agent_llm_openai import OpenAIConductor
+from breadboard_engine.api.cli_bridge import session_artifacts
+from breadboard_engine.api.cli_bridge.session_artifacts import SessionArtifactStore
 from breadboard.product.harness.default_profile import DefaultProfileInvalidError, DefaultProfileUnavailableError
 CONFIG = "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml"
 RUNNER = "breadboard_engine.api.cli_bridge.session_runner.SessionRunner."
@@ -1639,6 +1641,91 @@ async def test_managed_retained_workspace_restores_attachments_without_binding(
     assert set(recovered.runner.artifacts.artifact_refs()) == {attachment_id}
     assert "proof.txt" in recovered.runner._format_attachment_helper([attachment_id])
     await _stop(recovered)
+
+
+def test_retained_manifest_history_rejects_excess_count_before_reads(
+    monkeypatch, tmp_path
+) -> None:
+    owner = SessionArtifactStore(session_id="bounded-history", metadata={})
+    names = [
+        f"bounded-history.{index:064x}.json"
+        for index in range(257)
+    ]
+    reads: list[ArtifactRef] = []
+    monkeypatch.setattr(owner, "_manifest_names", lambda _workspace: names)
+    monkeypatch.setattr(
+        owner,
+        "_read_manifest",
+        lambda _workspace, ref: reads.append(ref),
+    )
+
+    with pytest.raises(ValueError, match="too many retained attachment manifests"):
+        owner.restore_manifest(tmp_path)
+
+    assert reads == []
+
+
+def test_retained_manifest_history_rejects_oversized_entry_before_read(
+    monkeypatch, tmp_path
+) -> None:
+    digest = "0" * 64
+    owner = SessionArtifactStore(session_id="bounded-history", metadata={})
+    reads: list[ArtifactRef] = []
+    monkeypatch.setattr(
+        owner,
+        "_manifest_names",
+        lambda _workspace: [f"bounded-history.{digest}.json"],
+    )
+    monkeypatch.setattr(
+        session_artifacts,
+        "workspace_artifact_ref",
+        lambda _workspace, value, *, media_type: ArtifactRef(
+            digest=value,
+            size_bytes=1024 * 1024 + 1,
+            media_type=media_type,
+        ),
+    )
+    monkeypatch.setattr(
+        owner,
+        "_read_manifest",
+        lambda _workspace, ref: reads.append(ref),
+    )
+
+    with pytest.raises(ValueError, match="retained attachment manifest is oversized"):
+        owner.restore_manifest(tmp_path)
+
+    assert reads == []
+
+
+def test_retained_manifest_history_rejects_aggregate_size_before_reads(
+    monkeypatch, tmp_path
+) -> None:
+    owner = SessionArtifactStore(session_id="bounded-history", metadata={})
+    names = [
+        f"bounded-history.{index:064x}.json"
+        for index in range(65)
+    ]
+    reads: list[ArtifactRef] = []
+    monkeypatch.setattr(owner, "_manifest_names", lambda _workspace: names)
+    monkeypatch.setattr(
+        session_artifacts,
+        "workspace_artifact_ref",
+        lambda _workspace, digest, *, media_type: ArtifactRef(
+            digest=digest,
+            size_bytes=1024 * 1024,
+            media_type=media_type,
+        ),
+    )
+    monkeypatch.setattr(
+        owner,
+        "_read_manifest",
+        lambda _workspace, ref: reads.append(ref),
+    )
+
+    with pytest.raises(ValueError, match="retained attachment manifests are oversized"):
+        owner.restore_manifest(tmp_path)
+
+    assert reads == []
 
 
 @pytest.mark.asyncio

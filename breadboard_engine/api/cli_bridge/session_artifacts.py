@@ -20,6 +20,9 @@ from breadboard.product.runtime.artifacts import (
     workspace_artifact_ref,
 )
 from breadboard.product.runtime.session_store import (
+    _MAX_ARTIFACT_MANIFEST_AGGREGATE_BYTES,
+    _MAX_ARTIFACT_MANIFEST_BYTES,
+    _MAX_ARTIFACT_MANIFESTS,
     authorize_session_artifact_manifest,
 )
 
@@ -282,12 +285,16 @@ class SessionArtifactStore:
             ):
                 raise ValueError("invalid retained attachment manifest reference")
             retained_digest = digest.removeprefix("sha256:")
-        candidates: list[
-            tuple[int, str, ArtifactRef, Dict[str, ArtifactRef]]
-        ] = []
-        for name in self._manifest_names(workspace):
-            if not name.startswith(prefix) or not name.endswith(".json"):
-                continue
+        manifest_names = [
+            name
+            for name in self._manifest_names(workspace)
+            if name.startswith(prefix) and name.endswith(".json")
+        ]
+        if len(manifest_names) > _MAX_ARTIFACT_MANIFESTS:
+            raise ValueError("too many retained attachment manifests")
+        manifest_refs: list[tuple[str, ArtifactRef]] = []
+        aggregate_size = 0
+        for name in manifest_names:
             digest = name[len(prefix) : -len(".json")]
             if len(digest) != 64 or any(
                 character not in "0123456789abcdef" for character in digest
@@ -298,6 +305,16 @@ class SessionArtifactStore:
                 f"sha256:{digest}",
                 media_type="application/json",
             )
+            if manifest_ref.size_bytes > _MAX_ARTIFACT_MANIFEST_BYTES:
+                raise ValueError("retained attachment manifest is oversized")
+            aggregate_size += manifest_ref.size_bytes
+            if aggregate_size > _MAX_ARTIFACT_MANIFEST_AGGREGATE_BYTES:
+                raise ValueError("retained attachment manifests are oversized")
+            manifest_refs.append((digest, manifest_ref))
+        candidates: list[
+            tuple[int, str, ArtifactRef, Dict[str, ArtifactRef]]
+        ] = []
+        for digest, manifest_ref in manifest_refs:
             restored = self._read_manifest(workspace, manifest_ref)
             candidates.append((len(restored), digest, manifest_ref, restored))
         if not candidates:
