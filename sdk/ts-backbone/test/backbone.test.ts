@@ -2,7 +2,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import { createBackbone } from "../src/index.js"
-import { createExecutionWorld } from "@breadboard/execution-drivers"
+import { createExecutionWorld, type TerminalSessionDriverV1 } from "@breadboard/execution-drivers"
 import { buildWorkspaceCapabilitySet, createWorkspace } from "@breadboard/workspace"
 import type { KernelEventV1, ProviderExchangeV1, RunRequestV1, SandboxRequestV1 } from "@breadboard/kernel-contracts"
 
@@ -622,6 +622,39 @@ test("BackboneSession terminal classification and start on default remote world 
   assert.equal(started.descriptor, null)
   assert.ok(started.unsupportedCase != null)
   assert.equal(started.unsupportedCase?.reason_code, "unsupported_terminal_driver")
+})
+
+test("Backbone terminal classification does not advertise a partial driver as complete support", () => {
+  const partialDriver: TerminalSessionDriverV1 = {
+    driverId: "partial-terminal-driver",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    cleanupTerminalSessions: async (input) => ({
+      schema_version: "bb.terminal_cleanup_result.v1",
+      cleanup_id: input.cleanupId,
+      scope: input.scope,
+      cleaned_session_ids: [],
+      failed_session_ids: [],
+    }),
+  }
+  const workspace = createWorkspace({
+    workspaceId: "ws-partial-terminal",
+    rootDir: "/tmp",
+    capabilitySet: buildWorkspaceCapabilitySet(),
+  })
+  const backbone = createBackbone({
+    workspace,
+    executionWorld: createExecutionWorld({ drivers: [partialDriver] }),
+  })
+  const claim = backbone
+    .openSession({ sessionId: "s-partial-terminal", workspaceRoot: "/tmp" })
+    .terminals.classify({})
+  assert.equal(claim.level, "unsupported")
+  assert.equal(claim.terminalSupport?.canStart, false)
+  assert.equal(claim.terminalSupport?.canInteract, false)
+  assert.equal(claim.terminalSupport?.canPoll, false)
+  assert.equal(claim.terminalSupport?.canList, false)
+  assert.equal(claim.terminalSupport?.canCleanup, false)
 })
 
 test("BackboneSession interact and cleanup pass exact terminalSessionId to resolveTerminalDriver, satisfying capability-id-gated driver", async () => {

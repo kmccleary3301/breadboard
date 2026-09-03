@@ -149,6 +149,31 @@ test("oci driver can execute through an injected runtime adapter", async () => {
   assert.ok(result.side_effect_digest?.startsWith("sha256:"))
 })
 
+test("OCI direct execution classifies an ordinary abort as cancelled", async () => {
+  const request = buildOciSandboxRequest({
+    requestId: "oci-cancelled-1",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-oci-cancelled-1",
+      security_tier: "single_tenant",
+      isolation_class: "oci",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["sleep", "60"],
+    workspaceRef: "/tmp/workspace",
+    imageRef: "ghcr.io/example/runtime:latest",
+  })
+  const controller = new AbortController()
+  controller.abort()
+  const result = await executeOciSandboxRequest(request, {
+    signal: controller.signal,
+    commandExecutor: async () => ({ exitCode: 143, stdout: "", stderr: "" }),
+  })
+  assert.equal(result.status, "cancelled")
+  assert.equal(result.error?.reason, "execution_cancelled")
+})
+
 test("oci driver can manage terminal sessions through an injected adapter", async () => {
   const driver = makeOciExecutionDriver({
     async startSession({ descriptor }) {

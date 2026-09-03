@@ -109,6 +109,30 @@ test("trusted local driver can execute a local-process sandbox request", async (
   assert.ok(result.side_effect_digest?.startsWith("sha256:"))
 })
 
+test("trusted local direct execution classifies an ordinary abort as cancelled", async () => {
+  const request = buildLocalProcessSandboxRequest({
+    requestId: "sandbox-cancelled-1",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-cancelled-1",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["sleep", "60"],
+    workspaceRef: "/tmp",
+  })
+  const controller = new AbortController()
+  controller.abort()
+  const result = await executeLocalProcessSandboxRequest(request, {
+    signal: controller.signal,
+    commandExecutor: async () => ({ exitCode: 143, stdout: "", stderr: "" }),
+  })
+  assert.equal(result.status, "cancelled")
+  assert.equal(result.error?.reason, "execution_cancelled")
+})
+
 test("trusted local driver can manage a persistent terminal session lifecycle", async () => {
   const start = await trustedLocalExecutionDriver.startTerminalSession?.({
     terminalSessionId: "term-local-1",

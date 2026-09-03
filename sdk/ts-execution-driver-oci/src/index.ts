@@ -209,14 +209,11 @@ export async function executeOciSandboxRequest(
   await writeFile(stdoutPath, result.stdout, "utf8")
   await writeFile(stderrPath, result.stderr, "utf8")
   const isAborted = options.signal?.aborted === true
-  const isCancelled =
-    options.signal?.reason === "cancelled" ||
-    (typeof options.signal?.reason?.message === "string" &&
-      options.signal.reason.message.toLowerCase().includes("cancel"))
+  const isDeadline = isAborted && options.signal?.reason === "deadline"
   const status: SandboxResultV1["status"] = isAborted
-    ? isCancelled
-      ? "cancelled"
-      : "timed_out"
+    ? isDeadline
+      ? "timed_out"
+      : "cancelled"
     : result.exitCode === 0
       ? "completed"
       : "failed"
@@ -233,8 +230,8 @@ export async function executeOciSandboxRequest(
     evidence_refs: [],
     error: isAborted
       ? {
-          message: isCancelled ? "Execution was cancelled" : "OCI runtime exceeded its deadline",
-          reason: isCancelled ? "execution_cancelled" : "deadline_exceeded",
+          message: isDeadline ? "OCI runtime exceeded its deadline" : "Execution was cancelled",
+          reason: isDeadline ? "deadline_exceeded" : "execution_cancelled",
           exit_code: result.exitCode,
         }
       : result.exitCode === 0
@@ -342,9 +339,7 @@ function createOciExecutionDriver(options: {
       const active = activeExecutions.get(request.request_id)
       if (!active) return
       const executor = options.commandExecutor ?? defaultOciCommandExecutor
-      active.controller.abort(
-        context.signal.reason ?? new Error(`OCI runtime ${context.reason} termination requested`),
-      )
+      active.controller.abort(context.reason)
 
       // Step 1: Attempt graceful stop with fresh bounded signal
       const stopResult = await runBoundedCleanupCommand(
