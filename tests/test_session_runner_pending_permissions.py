@@ -3,6 +3,7 @@ import asyncio, json, multiprocessing, os, pickle, queue, stat, tempfile, thread
 from breadboard_engine.api.cli_bridge.events import EventType; from breadboard_engine.permissions import load_permission_rules, upsert_permission_rule; from breadboard_engine.permissions import rules_store; from breadboard_engine.permissions.broker import PermissionBroker; from breadboard_engine.permissions.rules_store import RULES_REL_PATH, _locked_rules
 from breadboard_engine.api.cli_bridge.models import SessionCreateRequest, SessionStatus; from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry, TurnRecord; from breadboard_engine.api.cli_bridge.session_control import _PauseAwareControlQueue, _canonical_permission_resolution; from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
 from breadboard_engine.api.cli_bridge.service import SessionService
+from breadboard_engine.api.cli_bridge.runtime_event_projector import RuntimeProtocolError
 from breadboard_engine.security import redaction
 from breadboard_engine.state.session_state import SessionState
 def _runner(session_id: str = "session") -> SessionRunner:
@@ -461,6 +462,76 @@ async def test_replay_stream_accumulates_every_accepted_text_field(tmp_path) -> 
         event.payload["metadata"]["has_content"] is True
         for event in assistant_events
     )
+
+
+@pytest.mark.asyncio
+async def test_anonymous_stream_identity_cannot_collide_with_provider_id(
+    tmp_path,
+) -> None:
+    fixture = tmp_path / "assistant-stream-identity-namespace.jsonl"
+    fixture.write_text(
+        "\n".join(
+            (
+                '{"type":"assistant.message.start","payload":{}}',
+                '{"type":"assistant.message.end","payload":{"text":"anonymous"}}',
+                '{"type":"assistant.message.start","payload":{"message_id":"anonymous:1"}}',
+                '{"type":"assistant.message.end","payload":{"message_id":"anonymous:1","text":"provider"}}',
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runner, session = _product_runner("replay-stream-identity-namespace")
+    await runner.registry.create(runner.session)
+    turn = runner.session.turns_by_id[runner.session.active_turn_id]
+
+    await runner._execute_replay_task(
+        f"replay:{fixture}",
+        input_id=turn.input_id,
+        turn_id=turn.turn_id,
+    )
+
+    message_ids = [
+        event.payload["message_id"]
+        for event in session.events
+        if event.kind == "assistant_message"
+    ]
+    assert len(message_ids) == 2
+    assert message_ids[0] != "anonymous:1"
+    assert message_ids[1] == "anonymous:1"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "rows",
+    [
+        (
+            '{"type":"assistant.message.start","payload":{"message_id":"duplicate"}}',
+            '{"type":"assistant.message.end","payload":{"message_id":"duplicate","text":"first"}}',
+            '{"type":"assistant.message.start","payload":{"message_id":"duplicate"}}',
+            '{"type":"assistant.message.end","payload":{"message_id":"duplicate","text":"second"}}',
+        ),
+        (
+            '{"type":"assistant_message","payload":{"text":"first","message":{"id":"duplicate"}}}',
+            '{"type":"assistant_message","payload":{"text":"second","message":{"id":"duplicate"}}}',
+        ),
+    ],
+)
+async def test_replay_rejects_reused_canonical_message_identity(
+    tmp_path, rows
+) -> None:
+    fixture = tmp_path / "duplicate-assistant-identity.jsonl"
+    fixture.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    runner, _session = _product_runner("replay-duplicate-assistant-identity")
+    await runner.registry.create(runner.session)
+    turn = runner.session.turns_by_id[runner.session.active_turn_id]
+
+    with pytest.raises(RuntimeProtocolError, match="runtime_protocol_error"):
+        await runner._execute_replay_task(
+            f"replay:{fixture}",
+            input_id=turn.input_id,
+            turn_id=turn.turn_id,
+        )
 
 
 def test_product_observations_pair_canonical_and_message_tool_results() -> None:
