@@ -6334,8 +6334,8 @@
     "reconfiguration": [
       {
         "line_numbers": [
-          1886,
-          1899
+          2959,
+          2972
         ],
         "occurrence_count": 2,
         "path": "engine_root/breadboard_engine/api/cli_bridge/service.py"
@@ -6360,8 +6360,8 @@
       },
       {
         "line_numbers": [
-          639,
-          642
+          853,
+          856
         ],
         "occurrence_count": 2,
         "path": "engine_root/breadboard_engine/api/cli_bridge/session_runner.py"
@@ -8833,7 +8833,7 @@
   "generated_by": "scripts/interface_inventory.py",
   "inputs": {
     "engine_root": {
-      "content_digest": "sha256:60016a1284ec6705b813517e24e66bd04baebc048d0b59149448beda516b00f5",
+      "content_digest": "sha256:8053df1ca21ceb8e8b55349a3defa9706e3b6944d84bca2e561164ff362f25c7",
       "file_count": 4732
     },
     "tui_root": {
@@ -9466,6 +9466,10 @@
         {
           "kind": "class",
           "name": "ProcessLock"
+        },
+        {
+          "kind": "class",
+          "name": "ReplayError"
         },
         {
           "kind": "class",
