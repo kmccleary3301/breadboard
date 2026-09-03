@@ -287,6 +287,9 @@ class TaskExecutionOwner:
         published_events = 0
         replay_assistant_content: dict[str, list[str]] = {}
         registered_assistant_ids: set[str] = set()
+        active_replay_stream: str | None = None
+        anonymous_stream_count = 0
+        anonymous_stream_ids: set[str] = set()
         for (
             event_type,
             raw_payload,
@@ -328,44 +331,65 @@ class TaskExecutionOwner:
                     )
                 )
             else:
-                message_id = payload.get("message_id")
+                raw_message_id = payload.get("message_id") or payload.get("item_id")
+                message_id = (
+                    raw_message_id
+                    if isinstance(raw_message_id, str) and raw_message_id
+                    else None
+                )
                 if event_type is EventType.ASSISTANT_MESSAGE_START:
-                    if isinstance(message_id, str) and message_id:
-                        replay_assistant_content.setdefault(message_id, [])
+                    if message_id is None:
+                        anonymous_stream_count += 1
+                        message_id = f"anonymous:{anonymous_stream_count}"
+                        anonymous_stream_ids.add(message_id)
+                    active_replay_stream = message_id
+                    replay_assistant_content.setdefault(message_id, [])
                 elif event_type is EventType.ASSISTANT_MESSAGE_DELTA:
-                    if isinstance(message_id, str) and message_id:
+                    stream_id = message_id or active_replay_stream
+                    if stream_id is not None:
                         fragment = payload.get("delta")
                         if isinstance(fragment, str):
-                            replay_assistant_content.setdefault(message_id, []).append(
+                            replay_assistant_content.setdefault(stream_id, []).append(
                                 fragment
                             )
                 elif event_type is EventType.ASSISTANT_MESSAGE_END:
-                    if (
-                        isinstance(message_id, str)
-                        and message_id
-                        and message_id not in registered_assistant_ids
-                    ):
-                        observed_payload = {
+                    stream_id = message_id or active_replay_stream
+                    if stream_id is not None:
+                        observed_payload: dict[str, Any] = {
                             "text": "".join(
-                                replay_assistant_content.get(message_id, ())
-                            ),
-                            "message_id": message_id,
+                                replay_assistant_content.get(stream_id, ())
+                            )
                         }
+                        if stream_id not in anonymous_stream_ids:
+                            observed_payload["message_id"] = stream_id
+                        observed_payload["trajectory_id"] = str(correlation["turn_id"])
+                        if stream_id not in registered_assistant_ids:
+                            runner._record_product_observation(
+                                "message.assistant",
+                                observed_payload,
+                                trajectory_id=str(correlation["turn_id"]),
+                            )
+                            registered_assistant_ids.add(
+                                str(observed_payload["message_id"])
+                            )
+                        payload["message_id"] = observed_payload["message_id"]
+                        payload["trajectory_id"] = observed_payload["trajectory_id"]
+                        active_replay_stream = None
+                elif event_type is EventType.ASSISTANT_MESSAGE:
+                    message = payload.get("message")
+                    observed_message_id = message_id or (
+                        message.get("id") if isinstance(message, dict) else None
+                    )
+                    if (
+                        not isinstance(observed_message_id, str)
+                        or observed_message_id not in registered_assistant_ids
+                    ):
                         runner._record_product_observation(
                             "message.assistant",
-                            observed_payload,
+                            payload,
                             trajectory_id=str(correlation["turn_id"]),
                         )
-                        registered_assistant_ids.add(message_id)
-                elif event_type is EventType.ASSISTANT_MESSAGE:
-                    runner._record_product_observation(
-                        "message.assistant",
-                        payload,
-                        trajectory_id=str(correlation["turn_id"]),
-                    )
-                    observed_message_id = payload.get("message_id")
-                    if isinstance(observed_message_id, str):
-                        registered_assistant_ids.add(observed_message_id)
+                        registered_assistant_ids.add(str(payload["message_id"]))
                 await runner.publish_event_async(
                     event_type,
                     payload,
