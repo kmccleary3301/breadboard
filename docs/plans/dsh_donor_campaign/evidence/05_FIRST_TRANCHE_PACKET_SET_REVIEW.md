@@ -69,3 +69,11 @@ Final exact review date: 2026-09-03. Exact packet SHA-256 `4b79244897f67df7498a8
 The independent exact read verified all four publication-blocking corrections. FT-02 now invokes only `SessionService.execute_command` with concrete supported `set_mode` and `set_model` requests and forbids the nonexistent general reconfigure command or direct use of its nested closure. FT-03 now supplies the canonical function wrapper, independently normalizes it to the public request oracle, converts it to a Responses `type:"function"` tool, and pins `model:"gpt-5.4-mini"` plus the closed model-role, provider-tool, extra-option, and provider-metadata runtime context. Package validation now requires `DONOR_ITEMS.yaml` and requires G-A's latest exact binding to name its current digest.
 
 Final exact verdict: `APPROVED`, confidence 0.99. P0/P1/P2/P3 = 0/0/0/0. Gate G-F passes on the exact packet and fixture digests above.
+
+## Post-contract escalation review — runnable startup and repair-success closure
+
+Final exact review date: 2026-09-03. Exact packet SHA-256 `8fa3d6705a63f636feed6762bea933ab4e70988809bb035b1ba898342c375677`; pinned heads unchanged. Exact FT-03 fixture SHA-256 remains `a817d3b243f0f9c0e67d51dddf8dfe04ae3b04dffc13afc03f484dc8299c4af8`.
+
+The independent exact read verified that FT-02 removes only the copied helper's `schedule_start` and `authorize_start` no-op patches, asserts the unpatched product owners, and requires the runner plus barrier-wrapped `MockRuntime.invoke` to become active before interpreting a case. It also verified that the specification admits `RT-REPLAY` after a divergence only when `RT-REPAIR` explicitly succeeds and proves the divergence absent; exhausted, unknown, killed, or red repair outcomes keep every dependent node closed.
+
+Final exact verdict: `APPROVED`, confidence 0.99. P0/P1/P2/P3 = 0/0/0/0. Gate G-F passes on the exact packet digest above.
