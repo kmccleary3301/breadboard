@@ -794,9 +794,14 @@ class TaskExecutionOwner:
             if not translated:
                 return
             evt_type, evt_payload, evt_turn, evt_contract = translated
+            completed_stream: dict[str, Any] | None = None
             try:
                 event_family = evt_contract.get("family")
-                if event_family == "message.assistant.stream":
+                if event_family == "message.assistant.stream" and evt_type in {
+                    EventType.ASSISTANT_MESSAGE_START,
+                    EventType.ASSISTANT_MESSAGE_DELTA,
+                    EventType.ASSISTANT_MESSAGE_END,
+                }:
                     completed_stream = finish_live_assistant_stream(
                         evt_type,
                         evt_payload,
@@ -840,13 +845,14 @@ class TaskExecutionOwner:
             if evt_type in {EventType.COMPLETION, EventType.RUN_FINISHED}:
                 claim_terminal(evt_type, evt_payload, evt_turn, evt_contract)
                 return
-            if evt_type in {
-                EventType.ASSISTANT_MESSAGE,
-                EventType.ASSISTANT_MESSAGE_START,
-                EventType.ASSISTANT_MESSAGE_DELTA,
-                EventType.ASSISTANT_MESSAGE_END,
-                EventType.ASSISTANT_DELTA,
-            }:
+            if (
+                evt_type
+                in {
+                    EventType.ASSISTANT_MESSAGE,
+                    EventType.ASSISTANT_DELTA,
+                }
+                or completed_stream is not None
+            ):
                 emitted_flags["assistant"] = True
             event_correlation = (
                 {} if _runtime_event_is_session_scoped(event_type) else correlation

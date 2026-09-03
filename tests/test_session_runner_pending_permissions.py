@@ -267,6 +267,59 @@ def test_live_assistant_stream_registers_delta_identity_and_content() -> None:
     assert public_end.payload["message_id"] == "live-message-1"
 
 
+def test_legacy_assistant_delta_remains_forwarded() -> None:
+    runner, _session = _product_runner("legacy-assistant-delta")
+
+    def run_task(*_args, **kwargs):  # type: ignore[no-untyped-def]
+        kwargs["event_emitter"]("assistant_delta", {"text": "hello"})
+        return {"completion_summary": {"completed": True}}
+
+    runner._agent = type(
+        "Agent",
+        (),
+        {"_local_mode": True, "config": {}, "run_task": run_task},
+    )()
+
+    _execute_task(runner)
+
+    public_delta = next(
+        event
+        for event in runner.session.event_queue._queue
+        if event is not None and event.type is EventType.ASSISTANT_DELTA
+    )
+    assert public_delta.payload["text"] == "hello"
+
+
+
+
+def test_aborted_live_stream_allows_result_message_fallback_target() -> None:
+    runner, session = _product_runner("aborted-live-assistant-stream")
+
+    def run_task(*_args, **kwargs):  # type: ignore[no-untyped-def]
+        emit = kwargs["event_emitter"]
+        emit("assistant.message.start", {})
+        emit("assistant.message.delta", {"delta": "partial"})
+        return {
+            "messages": [{"role": "assistant", "content": "complete fallback"}],
+            "completion_summary": {"completed": True},
+        }
+
+    runner._agent = type(
+        "Agent",
+        (),
+        {"_local_mode": True, "config": {}, "run_task": run_task},
+    )()
+
+    _execute_task(runner)
+
+    product_event = next(
+        event for event in session.events if event.kind == "assistant_message"
+    )
+    assert product_event.payload["metadata"]["has_content"] is True
+    assert any(
+        event is not None and event.type is EventType.ASSISTANT_MESSAGE
+        for event in runner.session.event_queue._queue
+    )
 
 
 @pytest.mark.asyncio
