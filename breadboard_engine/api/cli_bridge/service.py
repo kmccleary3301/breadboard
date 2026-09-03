@@ -1273,6 +1273,19 @@ class SessionService:
             session_directory_identity(workspace),
         )
 
+    @staticmethod
+    def _restore_retained_workspace_attachments(
+        record: SessionRecord,
+        runner: SessionRunner,
+    ) -> None:
+        if record.metadata.get(_SESSION_DURABLE_PRODUCT_WORKSPACE_METADATA_KEY):
+            return
+        workspace_value = record.metadata.get("workspace")
+        if not isinstance(workspace_value, str) or not workspace_value.strip():
+            return
+        runner.artifacts.restore_manifest(
+            Path(workspace_value).expanduser().resolve()
+        )
 
     async def _resume_retained_session(self, record: SessionRecord) -> None:
         if record.status in {
@@ -1337,6 +1350,7 @@ class SessionService:
                 record,
                 terminal_runner,
             )
+            self._restore_retained_workspace_attachments(record, terminal_runner)
             terminal_outcome = {
                 SessionStatus.COMPLETED: "completed",
                 SessionStatus.FAILED: "failed",
@@ -1404,6 +1418,7 @@ class SessionService:
             record,
             runner,
         )
+        self._restore_retained_workspace_attachments(record, runner)
         for turn in record.turns_by_id.values():
             if turn.terminal_outcome is not None:
                 continue

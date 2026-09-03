@@ -265,6 +265,23 @@ class SessionArtifactStore:
 
     def restore_manifest(self, workspace: Path) -> None:
         prefix = f"{self.session_id}."
+        retained_ref = self.metadata.get("artifact_manifest_ref")
+        retained_digest: str | None = None
+        if retained_ref is not None:
+            if not isinstance(retained_ref, Mapping):
+                raise ValueError("invalid retained attachment manifest reference")
+            digest = retained_ref.get("digest")
+            if (
+                not isinstance(digest, str)
+                or not digest.startswith("sha256:")
+                or len(digest) != len("sha256:") + 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in digest.removeprefix("sha256:")
+                )
+            ):
+                raise ValueError("invalid retained attachment manifest reference")
+            retained_digest = digest.removeprefix("sha256:")
         candidates: list[
             tuple[int, str, ArtifactRef, Dict[str, ArtifactRef]]
         ] = []
@@ -284,13 +301,28 @@ class SessionArtifactStore:
             restored = self._read_manifest(workspace, manifest_ref)
             candidates.append((len(restored), digest, manifest_ref, restored))
         if not candidates:
+            if retained_digest is not None:
+                raise ValueError("retained attachment manifest is missing")
             return
-        _, _, selected_ref, selected = max(candidates)
+        history_head = max(candidates)
         if any(
-            any(selected.get(name) != ref for name, ref in candidate.items())
+            any(history_head[3].get(name) != ref for name, ref in candidate.items())
             for *_, candidate in candidates
         ):
             raise ValueError("retained attachment manifests do not form one history")
+        if retained_digest is None:
+            _, _, selected_ref, selected = history_head
+        else:
+            selected_ref, selected = next(
+                (
+                    (manifest_ref, candidate)
+                    for _, digest, manifest_ref, candidate in candidates
+                    if digest == retained_digest
+                ),
+                (None, None),
+            )
+            if selected_ref is None or selected is None:
+                raise ValueError("retained attachment manifest is missing")
         workspace_root = workspace.resolve()
         attachment_root = workspace_root / ".breadboard" / "attachments"
         attachment_entries: Dict[str, Dict[str, Any]] = {}

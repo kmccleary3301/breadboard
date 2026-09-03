@@ -1566,3 +1566,86 @@ async def test_completed_dispatch_replay_is_ordered_and_finite(monkeypatch, tmp_
     replay = service.event_stream(response.session_id, replay=True); replayed = [event async for event in replay]; assert replayed == list(record.event_log); assert [event.type for event in replayed] == [EventType.WARNING, EventType.WARNING, EventType.TURN_COMPLETED]
     nonreplay = service.event_stream(response.session_id); snapshot = await asyncio.wait_for(anext(nonreplay), 0.1); assert snapshot.type is EventType.TOOL_RESULT and "todo" in snapshot.payload
     outcomes = await asyncio.wait_for(asyncio.gather(anext(replay), anext(nonreplay), return_exceptions=True), 0.1); assert len(outcomes) == 2 and all(isinstance(item, StopAsyncIteration) for item in outcomes)
+
+@pytest.mark.asyncio
+async def test_managed_retained_workspace_restores_attachments_without_binding(
+    monkeypatch, tmp_path
+) -> None:
+    managed_root = tmp_path / "managed"
+    managed_root.mkdir(mode=0o700)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    monkeypatch.setenv("BREADBOARD_ENGINE_LAUNCH_ID", "managed-attachment-test")
+    monkeypatch.setenv("BREADBOARD_ENGINE_STATE_ROOT", str(managed_root))
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    service = SessionService()
+    response = await service.create_session(
+        SessionCreateRequest(
+            config_path=CONFIG,
+            task="restore managed workspace attachment",
+            workspace=str(workspace),
+        ),
+        session_id="managed-retained-attachment",
+        event_root=workspace / ".breadboard" / "sessions",
+    )
+    record = await service.ensure_session(response.session_id)
+    uploaded = await service.upload_attachments(response.session_id, [_Upload()])
+    record.metadata.pop("durable_product_workspace", None)
+    await service.registry.persist(record)
+    await _stop(record)
+
+    recovered = await SessionService().ensure_session(response.session_id)
+    attachment_id = uploaded.attachments[0].id
+
+    assert set(recovered.runner.artifacts.artifact_refs()) == {attachment_id}
+    assert "proof.txt" in recovered.runner._format_attachment_helper([attachment_id])
+    await _stop(recovered)
+
+
+@pytest.mark.asyncio
+async def test_retained_manifest_ref_wins_over_uncommitted_newer_manifest(
+    monkeypatch, tmp_path
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    state_root = tmp_path / "state"
+    event_root = workspace / ".breadboard" / "sessions"
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    initial_service = SessionService(state_root=state_root)
+    response = await initial_service.create_session(
+        SessionCreateRequest(
+            config_path=CONFIG,
+            task="ignore an uncommitted newer manifest",
+            workspace=str(workspace),
+        ),
+        session_id="stale-newer-manifest",
+        event_root=event_root,
+    )
+    initial = await initial_service.ensure_session(response.session_id)
+    first = await initial_service.upload_attachments(response.session_id, [_Upload()])
+    retained_ref = dict(initial.metadata["artifact_manifest_ref"])
+    second = _Upload()
+    second.filename = "uncommitted.txt"
+    await initial.runner.artifacts.upload([second], workspace_dir=workspace)
+    initial.metadata["artifact_manifest_ref"] = retained_ref
+    await initial_service.registry.persist(initial)
+    await _stop(initial)
+
+    recovered = await SessionService(state_root=state_root).ensure_session(
+        response.session_id
+    )
+    first_id = first.attachments[0].id
+    second_id = next(
+        attachment_id
+        for attachment_id in (
+            set(path.name for path in (workspace / ".breadboard" / "attachments").iterdir())
+            - {first_id}
+        )
+    )
+
+    assert set(recovered.runner.artifacts.artifact_refs()) == {first_id}
+    with pytest.raises(ValueError, match=f"unknown attachment IDs: {second_id}"):
+        recovered.runner.artifacts.selected_artifacts([second_id])
+    await _stop(recovered)
