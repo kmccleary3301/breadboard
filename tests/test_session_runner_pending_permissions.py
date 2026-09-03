@@ -233,6 +233,40 @@ def test_fallback_assistant_registers_canonical_message_target() -> None:
     assert product_payload["trajectory_id"] == "turn-test"
 
 
+def test_live_assistant_stream_registers_delta_identity_and_content() -> None:
+    runner, session = _product_runner("live-assistant-stream")
+
+    def run_task(*_args, **kwargs):  # type: ignore[no-untyped-def]
+        emit = kwargs["event_emitter"]
+        emit("assistant.message.start", {})
+        emit(
+            "assistant.message.delta",
+            {"message_id": "live-message-1", "delta": "hello"},
+        )
+        emit("assistant.message.end", {})
+        return {"completion_summary": {"completed": True}}
+
+    runner._agent = type(
+        "Agent",
+        (),
+        {"_local_mode": True, "config": {}, "run_task": run_task},
+    )()
+
+    _execute_task(runner)
+
+    product_event = next(
+        event for event in session.events if event.kind == "assistant_message"
+    )
+    public_end = next(
+        event
+        for event in runner.session.event_queue._queue
+        if event is not None and event.type is EventType.ASSISTANT_MESSAGE_END
+    )
+    assert product_event.payload["message_id"] == "live-message-1"
+    assert product_event.payload["metadata"]["has_content"] is True
+    assert public_end.payload["message_id"] == "live-message-1"
+
+
 
 
 @pytest.mark.asyncio
@@ -401,6 +435,39 @@ async def test_replay_stream_end_promotes_identity_without_losing_deltas(
         if event is not None and event.type is EventType.ASSISTANT_MESSAGE
     )
     assert canonical_event.payload["trajectory_id"] == "captured-stream"
+
+
+@pytest.mark.asyncio
+async def test_replay_stream_delta_promotes_identity_without_losing_content(
+    tmp_path,
+) -> None:
+    fixture = tmp_path / "delta-identified-assistant-replay.jsonl"
+    fixture.write_text(
+        "\n".join(
+            (
+                '{"type":"assistant.message.start","payload":{}}',
+                '{"type":"assistant.message.delta","payload":{"message_id":"delta-id","delta":"hello"}}',
+                '{"type":"assistant.message.end","payload":{}}',
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runner, session = _product_runner("replay-delta-identified-stream")
+    await runner.registry.create(runner.session)
+    turn = runner.session.turns_by_id[runner.session.active_turn_id]
+
+    await runner._execute_replay_task(
+        f"replay:{fixture}",
+        input_id=turn.input_id,
+        turn_id=turn.turn_id,
+    )
+
+    product_event = next(
+        event for event in session.events if event.kind == "assistant_message"
+    )
+    assert product_event.payload["message_id"] == "delta-id"
+    assert product_event.payload["metadata"]["has_content"] is True
 
 
 @pytest.mark.asyncio
