@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from scripts.interface_inventory import canonical_bytes, inventory
+from scripts.interface_inventory import EXCLUDED_PARTS, canonical_bytes, inventory
 
 
 SAMPLE = {
@@ -106,6 +106,16 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
     _json(keep_schema, {"$id": "bb.keep.v1", "type": "object", "properties": {"value": {"type": "string"}}})
     remove_schema = engine / "contracts" / "kernel" / "schemas" / "bb.remove.v1.schema.json"
     _json(remove_schema, {"$id": "bb.remove.v1", "type": "object", "properties": {"value": {"type": "string"}}})
+    _json(
+        engine / "contracts" / "public" / "frozen_public_surface.v1.json",
+        {
+            "operation_count": 2,
+            "canonical_operations": {
+                "session": ["session.start"],
+                "artifact": ["artifact.list"],
+            },
+        },
+    )
     (engine / "breadboard_engine" / "api" / "cli_bridge").mkdir(parents=True)
     (engine / "breadboard_engine" / "api" / "cli_bridge" / "events.py").write_text("class EventType:\n    TOOL_RESULT = 'tool_result'\n", encoding="utf-8")
     (engine / "breadboard_sdk").mkdir(parents=True)
@@ -149,6 +159,22 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
         "child.once('error', () => {});\n",
         encoding="utf-8",
     )
+    (tui_source.parent / "sdk-tools.ts").write_text(
+        "import { ApiError } from '@breadboard/sdk-tools'\nvoid ApiError;\n",
+        encoding="utf-8",
+    )
+    alias_switch = tui_source.parent / "alias-switch.ts"
+    alias_switch.write_text(
+        "function render(event: { type: string }) {\n"
+        "  const eventType = String(event.type);\n"
+        "  switch (eventType) {\n"
+        "    case 'error': return event.type;\n"
+        "    case 'warning': return event.type;\n"
+        "    default: return 'ok';\n"
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
     generated_source = tui_source.parent / "generated" / "generated.ts"
     generated_source.parent.mkdir(parents=True)
     generated_source.write_text(
@@ -178,7 +204,7 @@ def test_inventory_interface_is_deterministic_and_recalls_sample(tmp_path: Path)
     found = {(row["registry_id"], row["entry_id"]) for row in first["authoritative_registry_entries"]}
     assert SAMPLE <= found
     assert str(engine) not in canonical_bytes(first).decode()
-    assert first["tui_consumers"]["consumer_count"] == 2
+    assert first["tui_consumers"]["consumer_count"] == 3
     consumer_rows = first["tui_consumers"]["files"]
     consumer = next(row for row in consumer_rows if row["path"].endswith("consumer.ts"))
     assert {"ApiError", "tool_result", "error", "warning"} <= set(consumer["matched_tokens"])
@@ -186,8 +212,18 @@ def test_inventory_interface_is_deterministic_and_recalls_sample(tmp_path: Path)
     assert len(consumer_text.split("case 'error':", 1)[0]) > 320
     unrelated = next(row for row in consumer_rows if row["path"].endswith("unrelated-switch.ts"))
     assert unrelated["matched_tokens"] == ["tool_result"]
+    alias = next(row for row in consumer_rows if row["path"].endswith("alias-switch.ts"))
+    assert alias["matched_tokens"] == ["error", "warning"]
+    assert not any(row["path"].endswith("sdk-tools.ts") for row in consumer_rows)
     assert not any("generated/" in row["path"] for row in consumer_rows)
     assert not any(row["path"].startswith("engine_root/tests/") for row in first["compatibility_surfaces"]["reconfiguration"])
+    frozen = next(
+        row
+        for row in first["compatibility_surfaces"]["public_catalogs"]
+        if row["path"].endswith("frozen_public_surface.v1.json")
+    )
+    assert frozen["operation_ids"] == ["artifact.list", "session.start"]
+    assert first["method"]["excluded_path_parts"] == sorted(EXCLUDED_PARTS)
     deletion_ids = {
         row.get("schema_id") or row.get("entry_id")
         for row in first["compatibility_surfaces"]["deletion_candidates"]

@@ -119,10 +119,20 @@ def reference_map(scripts: list[str]) -> dict[str, set[str]]:
                 haystacks.append((rel, fp.read_text(encoding="utf-8", errors="ignore")))
             except Exception:
                 continue
-    for p, (_, full) in names.items():
+    for p, (name, full) in names.items():
         pat = _reference_pattern(full)
+        relative = full.removeprefix("scripts/")
+        module = relative.removesuffix(".py").replace("/", ".")
+        candidate_terms = [full, f"scripts.{module}"]
+        if name in GENERIC_BASENAMES:
+            package = relative.removesuffix("/__init__.py")
+            candidate_terms.append(
+                "scripts" if package == relative else f"scripts.{package.replace('/', '.')}"
+            )
+        else:
+            candidate_terms.extend((name, Path(name).stem))
         for rel, text in haystacks:
-            if rel == full:
+            if rel == full or not any(term in text for term in candidate_terms):
                 continue
             if pat.search(text):
                 refs[p].add(rel)

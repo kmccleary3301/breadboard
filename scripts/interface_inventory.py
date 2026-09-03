@@ -508,7 +508,7 @@ def _consumer_roots(engine_root: Path, tui_root: Path) -> list[tuple[str, Path, 
 
 
 AMBIGUOUS_EVENT_IDS = frozenset({"error", "warning"})
-SDK_MODULE_RE = re.compile(r"^(?:@breadboard/sdk|@breadboard/sdk/)")
+SDK_MODULE_RE = re.compile(r"^@breadboard/sdk(?:/|$)")
 
 
 def _event_pattern(token: str) -> re.Pattern[str]:
@@ -611,6 +611,33 @@ def _event_discriminator_end(tokens: Sequence[tuple[str, str]], index: int) -> i
     ):
         return index + 4
     return None
+def _event_discriminator_aliases(
+    tokens: Sequence[tuple[str, str]],
+) -> set[str]:
+    aliases: set[str] = set()
+    for index in range(len(tokens) - 3):
+        if (
+            tokens[index] not in {("identifier", "const"), ("identifier", "let")}
+            or not _token_kind(tokens, index + 1, "identifier")
+            or not _token_is(tokens, index + 2, "punctuation", "=")
+        ):
+            continue
+        source_index = index + 3
+        wrapped = (
+            _token_is(tokens, source_index, "identifier", "String")
+            and _token_is(tokens, source_index + 1, "punctuation", "(")
+        )
+        if wrapped:
+            source_index += 2
+        source_end = _event_discriminator_end(tokens, source_index)
+        if source_end is None:
+            continue
+        if wrapped and not _token_is(tokens, source_end, "punctuation", ")"):
+            continue
+        aliases.add(tokens[index + 1][1])
+    return aliases
+
+
 
 
 def _switch_case_event_matches(text: str, event_tokens: set[str]) -> set[str]:
@@ -618,13 +645,19 @@ def _switch_case_event_matches(text: str, event_tokens: set[str]) -> set[str]:
     if not wanted:
         return set()
     tokens = _lexical_tokens(text)
+    aliases = _event_discriminator_aliases(tokens)
     matches: set[str] = set()
     for index, (kind, value) in enumerate(tokens):
         if kind != "identifier" or value != "switch":
             continue
         if not _token_is(tokens, index + 1, "punctuation", "("):
             continue
-        discriminator_end = _event_discriminator_end(tokens, index + 2)
+        discriminator_end = (
+            index + 3
+            if _token_kind(tokens, index + 2, "identifier")
+            and tokens[index + 2][1] in aliases
+            else _event_discriminator_end(tokens, index + 2)
+        )
         if discriminator_end is None or not _token_is(
             tokens, discriminator_end, "punctuation", ")"
         ):
@@ -767,18 +800,37 @@ def _public_catalogs(engine_root: Path) -> list[dict[str, Any]]:
         if path.name in {"frozen_public_surface.v1.json"} or path.name.startswith("operations"):
             document = _load_json(path)
             operations = document.get("operations")
+            if isinstance(operations, list):
+                operation_ids = sorted(
+                    str(row["operation_id"])
+                    for row in operations
+                    if isinstance(row, dict) and isinstance(row.get("operation_id"), str)
+                )
+            else:
+                canonical = document.get("canonical_operations")
+                operation_ids = (
+                    sorted(
+                        str(operation_id)
+                        for group in canonical.values()
+                        if isinstance(group, list)
+                        for operation_id in group
+                        if isinstance(operation_id, str)
+                    )
+                    if isinstance(canonical, dict)
+                    else []
+                )
             rows.append(
                 {
                     "path": _relative(path, engine_root, "engine_root"),
                     "contract_id": document.get("contract_id"),
                     "version": document.get("version"),
                     "status": document.get("status"),
-                    "operation_count": len(operations) if isinstance(operations, list) else document.get("operation_count"),
-                    "operation_ids": sorted(
-                        str(row.get("operation_id"))
-                        for row in operations
-                        if isinstance(row, dict) and isinstance(row.get("operation_id"), str)
-                    ) if isinstance(operations, list) else [],
+                    "operation_count": (
+                        len(operation_ids)
+                        if operation_ids
+                        else document.get("operation_count")
+                    ),
+                    "operation_ids": operation_ids,
                 }
             )
     return sorted(rows, key=lambda item: str(item["path"]))
@@ -957,6 +1009,7 @@ def inventory(engine_root: str | Path, tui_root: str | Path) -> dict[str, Any]:
             "owner_sources": "registry consumer references plus static top-level declarations",
             "schema_sources": "kernel and public schema JSON files with schema_lifecycle and contract_tiers references",
             "tui_consumer_sources": "exact token references in named TUI source roots",
+            "excluded_path_parts": sorted(EXCLUDED_PARTS),
         },
         "owners": owners,
         "projections": projections,

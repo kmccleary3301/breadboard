@@ -6190,7 +6190,53 @@
       {
         "contract_id": "bb.north_star.public_surface.v1",
         "operation_count": 45,
-        "operation_ids": [],
+        "operation_ids": [
+          "artifact.get",
+          "artifact.list",
+          "artifact.verify",
+          "claim.evidence",
+          "claim.get",
+          "claim.list",
+          "claim.reverify",
+          "harness.create",
+          "harness.explain",
+          "harness.get",
+          "harness.list",
+          "harness.lock",
+          "harness.update",
+          "harness.validate",
+          "harness_lock.get",
+          "integration.get",
+          "integration.list",
+          "integration.probe",
+          "lane.capture",
+          "lane.claim",
+          "lane.compare",
+          "lane.create",
+          "lane.get",
+          "lane.list",
+          "lane.lock",
+          "lane.normalize",
+          "lane.replay",
+          "lane.run",
+          "lane.stage_report",
+          "lane.validate",
+          "lane_execution.cancel",
+          "lane_execution.get",
+          "lane_lock.get",
+          "session.approve",
+          "session.artifacts",
+          "session.cancel",
+          "session.events",
+          "session.get",
+          "session.list",
+          "session.resume",
+          "session.send_input",
+          "session.start",
+          "system.describe",
+          "system.health",
+          "system.schemas"
+        ],
         "path": "engine_root/contracts/public/frozen_public_surface.v1.json",
         "status": null,
         "version": 1
@@ -7737,6 +7783,223 @@
     },
     "source_signals": [
       {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/attr/_compat.py",
+        "signals": [
+          "compat"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/charset_normalizer/legacy.py",
+        "signals": [
+          "compat",
+          "deprecated",
+          "legacy"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/click/_compat.py",
+        "signals": [
+          "compat"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/fastapi/_compat/__init__.py",
+        "signals": [
+          "compat"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/fastapi/_compat/shared.py",
+        "signals": [
+          "compat"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/fastapi/_compat/v2.py",
+        "signals": [
+          "compat",
+          "deprecated"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/idna/compat.py",
+        "signals": [
+          "compat",
+          "legacy"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/jsonschema/_legacy_keywords.py",
+        "signals": [
+          "legacy"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/openai/_compat.py",
+        "signals": [
+          "compat",
+          "deprecated"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/openai/_legacy_response.py",
+        "signals": [
+          "deprecated",
+          "legacy"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/openai/_utils/_compat.py",
+        "signals": [
+          "compat"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/pydantic/deprecated/__init__.py",
+        "signals": [
+          "deprecated"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/pydantic/deprecated/class_validators.py",
+        "signals": [
+          "deprecated"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/pydantic/deprecated/config.py",
+        "signals": [
+          "compat",
+          "deprecated"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/pydantic/deprecated/copy_internals.py",
+        "signals": [
+          "deprecated"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/pydantic/deprecated/decorator.py",
+        "signals": [
+          "deprecated"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/pydantic/deprecated/json.py",
+        "signals": [
+          "deprecated"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/pydantic/deprecated/parse.py",
+        "signals": [
+          "deprecated"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/pydantic/deprecated/tools.py",
+        "signals": [
+          "deprecated"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/_common/pydantic_compat.py",
+        "signals": [
+          "compat"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/_private/async_compat.py",
+        "signals": [
+          "compat"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/_private/compat.py",
+        "signals": [
+          "compat"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/_private/protobuf_compat.py",
+        "signals": [
+          "compat",
+          "deprecated"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/_private/runtime_env/agent/thirdparty_files/attr/_compat.py",
+        "signals": [
+          "compat"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/_private/runtime_env/agent/thirdparty_files/idna/compat.py",
+        "signals": [
+          "compat",
+          "legacy"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/_private/runtime_env/agent/thirdparty_files/multidict/_compat.py",
+        "signals": [
+          "compat"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/_private/thirdparty/pathspec/compat.py",
+        "signals": [
+          "compat"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/autoscaler/_private/legacy_info_string.py",
+        "signals": [
+          "compat",
+          "legacy"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/cloudpickle/compat.py",
+        "signals": [
+          "compat"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/data/_internal/datasource/_lerobot_compat.py",
+        "signals": [
+          "compat"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/rllib/env/wrappers/multi_agent_env_compatibility.py",
+        "signals": [
+          "compat"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/ray/rllib/utils/metrics/legacy_stats.py",
+        "signals": [
+          "compat",
+          "deprecated",
+          "legacy"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/requests/compat.py",
+        "signals": [
+          "compat",
+          "legacy"
+        ]
+      },
+      {
+        "path": "engine_root/.venv/lib/python3.13/site-packages/uvicorn/_compat.py",
+        "signals": [
+          "compat"
+        ]
+      },
+      {
         "path": "engine_root/breadboard/lsp_manager_basic_legacy.py",
         "signals": [
           "legacy"
@@ -8786,6 +9049,22 @@
   ],
   "generated_by": "scripts/interface_inventory.py",
   "method": {
+    "excluded_path_parts": [
+      ".git",
+      ".hg",
+      ".mypy_cache",
+      ".next",
+      ".pytest_cache",
+      ".ruff_cache",
+      ".svn",
+      "__pycache__",
+      "build",
+      "dist",
+      "generated",
+      "node_modules",
+      "target",
+      "vendor"
+    ],
     "owner_sources": "registry consumer references plus static top-level declarations",
     "schema_sources": "kernel and public schema JSON files with schema_lifecycle and contract_tiers references",
     "tui_consumer_sources": "exact token references in named TUI source roots"
@@ -20403,6 +20682,7 @@
           "conversation.compaction.start",
           "ctree_node",
           "ctree_snapshot",
+          "error",
           "log_link",
           "permission_request",
           "permission_response",
@@ -20420,7 +20700,8 @@
           "tool_call",
           "tool_result",
           "turn_start",
-          "user_message"
+          "user_message",
+          "warning"
         ],
         "path": "engine_root/tui_skeleton/src/commands/repl/controllerEventMethods.ts",
         "root_id": "engine-tui-skeleton",
