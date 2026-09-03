@@ -7,7 +7,7 @@ import json
 
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from breadboard.product.runtime.events import CompactionSnapshot
+from breadboard.product.runtime.events import CompactionSnapshot, validate_raw_fact_ids
 from breadboard_engine.provider.contracts import strip_public_completion_sentinel_lines
 from breadboard_engine.state.session_state import (
     AUDIT_ONLY_RUNTIME_EVENT_TYPES,
@@ -582,6 +582,10 @@ class RuntimeEventProjector:
             or any(not isinstance(value, str) or not value for value in raw_fact_ids)
         ):
             raise RuntimeProtocolError("runtime_protocol_error")
+        try:
+            validate_raw_fact_ids(raw_fact_ids)
+        except ValueError:
+            raise RuntimeProtocolError("runtime_protocol_error") from None
         try:
             effective_context = base64.b64decode(encoded, validate=True)
             snapshot = CompactionSnapshot(

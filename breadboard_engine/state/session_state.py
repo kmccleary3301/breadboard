@@ -125,6 +125,7 @@ class SessionState:
         config: Optional[Dict[str, Any]] = None,
         *,
         event_emitter: Optional[Callable[[str, Dict[str, Any], Optional[int]], None]] = None,
+        product_compaction_owner: bool = False,
         kernel_emitter: Optional[Any] = None,
         clock: Optional[Callable[[], str]] = None,
         episode_provider_profile: Optional[Any] = None,
@@ -175,6 +176,7 @@ class SessionState:
         self.lifecycle_events: List[Dict[str, Any]] = []
         self._event_seq = 0
         self._event_emitter = event_emitter
+        self._product_compaction_owner = product_compaction_owner is True
         self._kernel_emitter = kernel_emitter
         self._clock = clock or _utc_now
         self._emitted_tool_declared_call_ids: set[str] = set()
@@ -190,6 +192,7 @@ class SessionState:
         self.todo_manager = None
         self.tool_usage_summary.setdefault("todo_calls", 0)
         self.ctree_store = CTreeStore()
+        self._retained_raw_fact_ids: tuple[str, ...] = ()
 
     def set_event_emitter(
         self,
@@ -198,7 +201,7 @@ class SessionState:
         self._event_emitter = emitter
 
     def can_persist_compaction(self) -> bool:
-        return self._event_emitter is not None
+        return self._product_compaction_owner and self._event_emitter is not None
 
     def set_turn_context(
         self,
@@ -551,17 +554,18 @@ class SessionState:
                 ensure_ascii=False,
                 allow_nan=False,
             ).encode("utf-8")
+            current_ids = tuple(node["id"] for node in self.ctree_store.nodes)
             return CompactionSnapshot(
                 effective_context=effective_context,
-                raw_fact_ids=tuple(node["id"] for node in self.ctree_store.nodes),
+                raw_fact_ids=(*self._retained_raw_fact_ids, *current_ids),
             )
 
     def emit_compaction_snapshot(self, snapshot: CompactionSnapshot) -> None:
         """Send one strict persistence-boundary snapshot to the Product Session owner."""
         if not isinstance(snapshot, CompactionSnapshot):
             raise TypeError("snapshot must be a CompactionSnapshot")
-        if self._event_emitter is None:
-            raise RuntimeError("compaction persistence emitter unavailable")
+        if not self.can_persist_compaction():
+            raise RuntimeError("compaction persistence owner unavailable")
         self._event_emitter(
             "conversation.compaction.end",
             {
@@ -573,6 +577,17 @@ class SessionState:
             },
             turn=self._active_turn_index,
         )
+
+    def restore_raw_fact_ids(self, raw_fact_ids: Any) -> None:
+        """Reserve identities retained by the Product Session owner."""
+        if not isinstance(raw_fact_ids, (list, tuple)):
+            raise ValueError("raw_fact_ids must be an array")
+        retained = tuple(raw_fact_ids)
+        self.ctree_store = CTreeStore()
+        self.ctree_store.reserve_node_ids(retained)
+        self._retained_raw_fact_ids = retained
+        self._last_ctree_node_id = None
+        self._last_ctree_snapshot = None
 
     def restore_ctree_events(self, events: Any) -> None:
         """Restore retained C-Tree identities before admitting new facts."""

@@ -1,6 +1,6 @@
 """Immutable events and the deterministic Session read model."""
 from __future__ import annotations
-import base64, hashlib, json, os
+import base64, hashlib, json, os, re
 from collections.abc import Callable, Iterable, Mapping; from dataclasses import dataclass; from datetime import datetime, timezone; from pathlib import Path; from threading import RLock; from types import MappingProxyType; from typing import Any, Protocol; from uuid import uuid4
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from .artifacts import ArtifactRef
@@ -125,6 +125,20 @@ def _validate_annotation_payload(payload: Mapping[str, Any]) -> None:
         raise ValueError("annotation payload must contain only stable annotation fields")
     for name in required:
         _string(payload.get(name), name)
+_RAW_FACT_ID = re.compile(r"ctn_[0-9]{6,}")
+def validate_raw_fact_ids(values: Any, name: str = "raw_fact_ids") -> tuple[str, ...]:
+    if not isinstance(values, (list, tuple)):
+        raise ValueError(f"{name} must be an array")
+    facts = tuple(values)
+    if any(
+        type(value) is not str or _RAW_FACT_ID.fullmatch(value) is None
+        for value in facts
+    ):
+        raise ValueError(f"{name} must contain canonical C-Tree identities")
+    if len(set(facts)) != len(facts):
+        raise ValueError(f"{name} must not contain duplicates")
+    return facts
+
 def _decode_compaction_context(payload: Mapping[str, Any]) -> bytes:
     if payload.get("context_encoding") != "base64":
         raise ValueError("compaction context_encoding must be base64")
@@ -157,24 +171,11 @@ def _validate_compaction_payload(payload: Mapping[str, Any]) -> None:
             raise ValueError(f"{name} must be a positive integer")
     if payload["source_sequence_start"] > payload["source_sequence_end"]:
         raise ValueError("compaction source range must be ordered")
-    raw_fact_ids = payload.get("raw_fact_ids")
-    if not isinstance(raw_fact_ids, (list, tuple)):
-        raise ValueError("raw_fact_ids must be an array")
-    if any(type(value) is not str or not value for value in raw_fact_ids):
-        raise ValueError("raw_fact_ids must contain non-empty strings")
-    if len(set(raw_fact_ids)) != len(raw_fact_ids):
-        raise ValueError("raw_fact_ids must not contain duplicates")
-    shadowed_raw_fact_ids = payload.get("shadowed_raw_fact_ids")
-    if not isinstance(shadowed_raw_fact_ids, (list, tuple)):
-        raise ValueError("shadowed_raw_fact_ids must be an array")
-    if any(
-        type(value) is not str or not value for value in shadowed_raw_fact_ids
-    ):
-        raise ValueError(
-            "shadowed_raw_fact_ids must contain non-empty strings"
-        )
-    if len(set(shadowed_raw_fact_ids)) != len(shadowed_raw_fact_ids):
-        raise ValueError("shadowed_raw_fact_ids must not contain duplicates")
+    raw_fact_ids = validate_raw_fact_ids(payload.get("raw_fact_ids"))
+    shadowed_raw_fact_ids = validate_raw_fact_ids(
+        payload.get("shadowed_raw_fact_ids"),
+        "shadowed_raw_fact_ids",
+    )
     if not set(shadowed_raw_fact_ids).issubset(raw_fact_ids):
         raise ValueError("shadowed_raw_fact_ids must cite retained raw facts")
     _sha256(payload.get("context_sha256"), "context_sha256")
@@ -239,11 +240,7 @@ class CompactionSnapshot:
     def __post_init__(self) -> None:
         if type(self.effective_context) is not bytes:
             raise TypeError("effective_context must be bytes")
-        facts = tuple(self.raw_fact_ids)
-        if any(type(value) is not str or not value for value in facts):
-            raise ValueError("raw_fact_ids must contain non-empty strings")
-        if len(set(facts)) != len(facts):
-            raise ValueError("raw_fact_ids must not contain duplicates")
+        facts = validate_raw_fact_ids(self.raw_fact_ids)
         object.__setattr__(self, "raw_fact_ids", facts)
 @dataclass(frozen=True, slots=True)
 class AnnotationRecord:

@@ -382,6 +382,34 @@ def test_session_snapshot_restores_ctree_identity_before_new_facts() -> None:
 
 
 
+def test_product_owned_fact_ids_continue_after_conductor_restart() -> None:
+    original = SessionState("ws", "image", {})
+    original.add_message({"role": "user", "content": "before restart"})
+    retained = original.create_snapshot("mock")
+    product = Session.start(
+        EffectiveHarnessLock._from_record(
+            {"graph_hash": "sha256:" + "a" * 64}
+        ),
+        "long horizon",
+    )
+    product.compact(original.compaction_snapshot())
+
+    restarted = SessionState("ws", "image", {})
+    restarted.restore_ctree_events(retained["ctree_events"])
+    assert restarted.build_task_record({})["ctree_node_id"] == "ctn_000001"
+    restarted.restore_raw_fact_ids(product.raw_fact_ids)
+    assert restarted.build_task_record({}) == {}
+    assert (
+        restarted.ctree_store.record("message", {"role": "assistant"})
+        == "ctn_000002"
+    )
+
+    assert restarted.compaction_snapshot().raw_fact_ids == (
+        "ctn_000001",
+        "ctn_000002",
+    )
+
+
 def test_product_turns_retain_ctree_identity_sequence() -> None:
     conductor_type = OpenAIConductor.__ray_metadata__.modified_class
     conductor = object.__new__(conductor_type)
@@ -410,7 +438,13 @@ def test_product_turns_retain_ctree_identity_sequence() -> None:
 
 def test_context_threshold_emits_exact_effective_provider_context() -> None:
     collector = EventCollector()
-    state = SessionState("ws", "image", {}, event_emitter=collector)
+    state = SessionState(
+        "ws",
+        "image",
+        {},
+        event_emitter=collector,
+        product_compaction_owner=True,
+    )
     state.add_message({"role": "user", "content": "historical"})
     effective_messages = [
         {"role": "user", "content": "historical"},
@@ -430,7 +464,8 @@ def test_context_threshold_emits_exact_effective_provider_context() -> None:
     assert json.loads(base64.b64decode(encoded)) != state.provider_messages
 
 def test_context_threshold_without_durable_owner_remains_warning_only() -> None:
-    state = SessionState("ws", "image", {})
+    collector = EventCollector()
+    state = SessionState("ws", "image", {}, event_emitter=collector)
 
     payload = ContextWindowGuard(max_tokens=1, warn_ratio=1.0).maybe_compact(
         state,
@@ -439,6 +474,7 @@ def test_context_threshold_without_durable_owner_remains_warning_only() -> None:
 
     assert payload is not None
     assert state.can_persist_compaction() is False
+    assert collector.of_type("conversation.compaction.end") == []
 
 
 def test_runtime_projector_commits_internal_compaction_without_leaking_context() -> None:
@@ -471,6 +507,34 @@ def test_runtime_projector_commits_internal_compaction_without_leaking_context()
     assert product.effective_context == effective_context
     assert product.raw_fact_ids == ("ctn_000001",)
     assert "effective_context" not in translated[1]
+
+def test_runtime_projector_rejects_invalid_ctree_identity_before_commit() -> None:
+    product = Session.start(
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64}),
+        "reject invalid compaction",
+        session_id="reject-invalid-compaction",
+    )
+    projector = RuntimeEventProjector(
+        SimpleNamespace(product_session=product),
+        lambda: None,
+        observation_tool_name=lambda _payload: None,
+        product_session_lock=threading.RLock(),
+        product_tool_completions={},
+    )
+    events_before = product.events
+
+    with pytest.raises(RuntimeProtocolError, match="runtime_protocol_error"):
+        projector.translate(
+            "conversation.compaction.end",
+            {
+                "context_encoding": "base64",
+                "effective_context": base64.b64encode(b"[]").decode("ascii"),
+                "raw_fact_ids": ["fact-1"],
+            },
+            None,
+        )
+
+    assert product.events == events_before
 
 
 def test_session_snapshot_rejects_non_exact_ctree_event_reconstruction() -> None:
@@ -3248,6 +3312,8 @@ def test_remote_nonstreaming_compaction_reaches_product_session(
 
         def run_task(self, _task_text: str, **kwargs: Any) -> Dict[str, Any]:
             assert kwargs["event_emitter"] is None
+            assert kwargs["context"]["retained_raw_fact_ids"] == ["ctn_000001"]
+            assert kwargs["context"]["_product_compaction_owner"] is True
             kwargs["event_queue"].put(
                 (
                     "assistant_message",
@@ -3263,7 +3329,7 @@ def test_remote_nonstreaming_compaction_reaches_product_session(
                         "effective_context": base64.b64encode(
                             effective_context
                         ).decode("ascii"),
-                        "raw_fact_ids": ["ctn_000001"],
+                        "raw_fact_ids": ["ctn_000001", "ctn_000002"],
                     },
                     1,
                 )
@@ -3280,6 +3346,9 @@ def test_remote_nonstreaming_compaction_reaches_product_session(
         "task",
         session_id="remote-compaction",
     )
+    retained_state = SessionState("ws", "image", {})
+    retained_state.ctree_store.record("message", {"role": "user"})
+    product_session.compact(retained_state.compaction_snapshot())
     record = SessionRecord(
         session_id="remote-compaction",
         status=SessionStatus.RUNNING,
@@ -3312,7 +3381,7 @@ def test_remote_nonstreaming_compaction_reaches_product_session(
     runner._execute_task("task", input_id=turn.input_id, turn_id=turn.turn_id)
 
     assert product_session.effective_context == effective_context
-    assert product_session.raw_fact_ids == ("ctn_000001",)
+    assert product_session.raw_fact_ids == ("ctn_000001", "ctn_000002")
     assert all(event.kind != "message.assistant" for event in product_session.events)
     assert runner._published_events == 1
 

@@ -5680,11 +5680,21 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             raise ProviderContractError(
                 "run context input_media accepts only media blocks"
             )
+        retained_raw_fact_ids = context.get("retained_raw_fact_ids")
+        if retained_raw_fact_ids is not None and not isinstance(
+            retained_raw_fact_ids, (list, tuple)
+        ):
+            raise ProviderContractError(
+                "run context retained_raw_fact_ids must be an array"
+            )
         session_state = SessionState(
             self.workspace,
             self.image,
             self.config,
             event_emitter=emitter,
+            product_compaction_owner=(
+                context.get("_product_compaction_owner") is True
+            ),
             kernel_emitter=kernel_emitter,
             episode_provider_profile=provider_profile,
         )
@@ -6334,7 +6344,10 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             if ctree_events is not None:
                 session_state.restore_ctree_events(ctree_events)
             session_state.set_provider_metadata("resume_snapshot_applied", True)
-        self._restore_retained_ctree(session_state, provider_session_id)
+        if retained_raw_fact_ids is not None:
+            session_state.restore_raw_fact_ids(retained_raw_fact_ids)
+        else:
+            self._restore_retained_ctree(session_state, provider_session_id)
         # Resume snapshots are subordinate to the owning product session.
         session_state.set_provider_metadata("session_id", provider_session_id)
         # Resume metadata is session-scoped, but these fields are turn-scoped.

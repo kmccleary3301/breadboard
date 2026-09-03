@@ -378,6 +378,7 @@ def test_compaction_replay_rejects_incorrect_shadow_chain() -> None:
         {"effective_context": "not base64"},
         {"context_sha256": "sha256:" + "0" * 64},
         {"raw_fact_ids": ["ctn_000001", "ctn_000001"]},
+        {"raw_fact_ids": ["fact-1"]},
     ],
 )
 def test_compaction_event_rejects_corrupt_context_and_fact_identity(
@@ -390,6 +391,13 @@ def test_compaction_event_rejects_corrupt_context_and_fact_identity(
 
     with pytest.raises(ValueError):
         KernelEvent(**record)
+
+def test_compaction_snapshot_rejects_noncanonical_raw_fact_identity() -> None:
+    session = Session.start(_lock(), "task")
+
+    with pytest.raises(ValueError, match="canonical C-Tree identities"):
+        session.compact(CompactionSnapshot(b"exact", ("fact-1",)))
+
 def test_annotation_event_uses_registered_target_and_preserves_message_owner_bytes() -> None:
 
     session = Session.start(_lock(), "task")

@@ -1156,6 +1156,18 @@ class TaskExecutionOwner:
             task_context["input_media"] = [
                 dict(block) for block in runner._active_input_media
             ]
+            product_session = runner.session.product_session
+            task_context["_product_compaction_owner"] = bool(
+                product_session is not None
+                and product_session.read_model.status == "running"
+            )
+            if (
+                product_session is not None
+                and product_session.raw_fact_ids
+            ):
+                task_context["retained_raw_fact_ids"] = list(
+                    product_session.raw_fact_ids
+                )
             kernel_emitter_run_dir = None
             kernel_emitter_mode = None
             try:

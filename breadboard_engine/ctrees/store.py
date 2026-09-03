@@ -5,6 +5,7 @@ import json
 import re
 from collections import Counter
 from typing import Any, Dict, Iterable, List, Optional
+from breadboard.product.runtime.events import validate_raw_fact_ids
 
 from .events import CTREE_NODE_RECORDED
 from .persistence import append_event, load_events, load_snapshot, resolve_ctree_paths, write_snapshot
@@ -197,6 +198,22 @@ class CTreeStore:
             return int(value.split("_")[-1])
         except Exception:
             return 0
+
+    @staticmethod
+    def validate_node_ids(node_ids: Iterable[str]) -> tuple[str, ...]:
+        return validate_raw_fact_ids(node_ids)
+
+    def reserve_node_ids(self, node_ids: Iterable[str]) -> None:
+        """Reserve durable identities without fabricating prior C-Tree nodes."""
+        retained = self.validate_node_ids(node_ids)
+        existing = set(self._node_by_id)
+        if existing.intersection(retained):
+            raise ValueError("retained C-Tree node identity collides with live state")
+        for node_id in retained:
+            self._next_node_num = max(
+                self._next_node_num,
+                self._parse_numeric_suffix(node_id) + 1,
+            )
 
     def record(self, kind: str, payload: Any, *, turn: Optional[int] = None) -> str:
         payload_dict = payload if isinstance(payload, dict) else {}
