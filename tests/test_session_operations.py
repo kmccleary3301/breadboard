@@ -25,7 +25,7 @@ from breadboard.product.operations.session import (
     StartSessionRequest,
 )
 from breadboard.product.runtime import session_store
-from breadboard.product.runtime.events import Session
+from breadboard.product.runtime.events import AnnotationRecord, Session
 
 
 _HASH = "sha256:" + "a" * 64
@@ -146,6 +146,46 @@ async def test_runtime_reads_durable_sessions_without_mutating_storage(
     )
 
 
+@pytest.mark.asyncio
+async def test_runtime_event_listing_filters_internal_annotations(
+    tmp_path: Path,
+) -> None:
+    session = _session("annotated")
+    session.assistant_message(
+        "candidate",
+        message_id="message-a",
+        trajectory_id="trajectory-a",
+    )
+    session.annotate(
+        AnnotationRecord(
+            annotation_id="annotation-1",
+            message_id="message-a",
+            trajectory_id="trajectory-a",
+            label="preferred",
+            author="reviewer-1",
+            generation="generation-a",
+        )
+    )
+    session.input("visible after annotation")
+    session_store.create_session(tmp_path, session)
+
+    listed = await SessionRuntime(
+        OperationContext(workspace=tmp_path)
+    ).list_session_events(ListSessionEventsRequest("annotated"))
+    limited = await SessionRuntime(
+        OperationContext(workspace=tmp_path)
+    ).list_session_events(
+        ListSessionEventsRequest("annotated", after_sequence=2, limit=1)
+    )
+
+    assert listed.ok and limited.ok
+    assert [event["seq"] for event in listed.data["events"]] == [1, 2, 4]
+    assert [event["kind"] for event in listed.data["events"]] == [
+        "session.started",
+        "assistant_message",
+        "input.accepted",
+    ]
+    assert [event["seq"] for event in limited.data["events"]] == [4]
 @pytest.mark.asyncio
 async def test_runtime_reads_live_sessions_through_explicit_read_port(
     tmp_path: Path,

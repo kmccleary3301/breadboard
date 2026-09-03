@@ -91,7 +91,15 @@ _REPLAY_EVENT_PAYLOAD_FIELDS = {
         {"message_id", "item_id", "index", "delta", "text", "content"}
     ),
     EventType.ASSISTANT_MESSAGE_END: frozenset(
-        {"message_id", "item_id", "index", "text", "content", "finish_reason"}
+        {
+            "message_id",
+            "item_id",
+            "index",
+            "text",
+            "content",
+            "finish_reason",
+            "trajectory_id",
+        }
     ),
     EventType.ASSISTANT_REASONING_DELTA: frozenset(
         {"message_id", "item_id", "index", "delta", "text", "provider_field"}
@@ -129,7 +137,9 @@ _REPLAY_EVENT_PAYLOAD_FIELDS = {
     EventType.TOOL_EXEC_STDOUT_DELTA: frozenset({"call_id", "exec_id", "delta"}),
     EventType.TOOL_EXEC_STDERR_DELTA: frozenset({"call_id", "exec_id", "delta"}),
     EventType.TOOL_EXEC_END: frozenset({"call_id", "exec_id", "exit_code"}),
-    EventType.ASSISTANT_MESSAGE: frozenset({"text", "message", "source"}),
+    EventType.ASSISTANT_MESSAGE: frozenset(
+        {"text", "message", "source", "message_id", "item_id", "trajectory_id"}
+    ),
     EventType.ASSISTANT_DELTA: frozenset({"text", "message_id"}),
     EventType.TOOL_CALL: frozenset(
         {
@@ -247,7 +257,16 @@ def _validate_replay_event_payload(
         count = normalized.get("eventCount")
         if not isinstance(count, int) or isinstance(count, bool) or count < 0:
             raise RuntimeProtocolError("runtime_protocol_error")
-    for field in ("message_id", "item_id", "call_id", "exec_id", "name"):
+    for field in ("message_id", "item_id", "trajectory_id"):
+        if field in normalized and (
+            not isinstance(normalized[field], str) or not normalized[field]
+        ):
+            raise RuntimeProtocolError("runtime_protocol_error")
+    if "source" in normalized and (
+        not isinstance(normalized["source"], str) or not normalized["source"]
+    ):
+        raise RuntimeProtocolError("runtime_protocol_error")
+    for field in ("call_id", "exec_id", "name"):
         if field in normalized and not isinstance(normalized[field], str):
             raise RuntimeProtocolError("runtime_protocol_error")
     index = normalized.get("index")
@@ -460,6 +479,7 @@ class RuntimeEventProjector:
         payload: Dict[str, Any],
         *,
         message_projection: bool = False,
+        trajectory_id: str | None = None,
     ) -> None:
         if family not in {"message.assistant", "tool.called", "tool.completed"}:
             return
@@ -472,7 +492,43 @@ class RuntimeEventProjector:
                 return
             if family == "message.assistant":
                 text = payload.get("text")
-                product_session.assistant_message(text if isinstance(text, str) else "")
+                message = payload.get("message")
+                supplied_message_ids: list[str] = []
+                for value in (
+                    payload.get("message_id"),
+                    payload.get("item_id"),
+                    message.get("message_id") if isinstance(message, dict) else None,
+                    message.get("id") if isinstance(message, dict) else None,
+                ):
+                    if value is None:
+                        continue
+                    if not isinstance(value, str) or not value:
+                        raise RuntimeProtocolError("runtime_protocol_error")
+                    supplied_message_ids.append(value)
+                if len(set(supplied_message_ids)) > 1:
+                    raise RuntimeProtocolError("runtime_protocol_error")
+                message_id = (
+                    supplied_message_ids[0] if supplied_message_ids else None
+                )
+                if not isinstance(trajectory_id, str) or not trajectory_id:
+                    raise RuntimeProtocolError("runtime_protocol_error")
+                if message_id is None:
+                    message_id = identity_digest(
+                        "\0".join(
+                            (
+                                str(product_session.read_model.session_id),
+                                trajectory_id,
+                                str(product_session.read_model.event_count + 1),
+                            )
+                        )
+                    )
+                payload["message_id"] = message_id
+                payload["trajectory_id"] = trajectory_id
+                product_session.assistant_message(
+                    text if isinstance(text, str) else "",
+                    message_id=message_id,
+                    trajectory_id=trajectory_id,
+                )
             elif family == "tool.called":
                 tool = self._observation_tool_name(payload)
                 if tool is None:
@@ -765,10 +821,13 @@ class RuntimeEventProjector:
         elif evt is EventType.ASSISTANT_MESSAGE:
             message = _strip_completion_sentinels(normalized_payload.get("message"))
             candidate_text = normalized_payload.get("text")
-            if not isinstance(candidate_text, str) and isinstance(message, dict):
+            if (not isinstance(candidate_text, str) or not candidate_text) and isinstance(message, dict):
                 candidate_text = message.get("content")
             text = _assistant_visible_text(candidate_text)
             normalized_payload = {"text": text, "message": message}
+            for field in ("message_id", "item_id", "trajectory_id", "source"):
+                if field in payload:
+                    normalized_payload[field] = payload[field]
         elif evt is EventType.ASSISTANT_DELTA:
             candidate_text = normalized_payload.get(
                 "text", normalized_payload.get("delta")

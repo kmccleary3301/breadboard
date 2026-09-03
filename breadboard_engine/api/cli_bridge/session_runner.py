@@ -757,9 +757,13 @@ class SessionRunner:
         payload: Dict[str, Any],
         *,
         message_projection: bool = False,
+        trajectory_id: str | None = None,
     ) -> None:
         return self._runtime_event_projector._record_product_observation(
-            family, payload, message_projection=message_projection
+            family,
+            payload,
+            message_projection=message_projection,
+            trajectory_id=trajectory_id,
         )
 
     def prepare_input_content(self, content: str) -> str:

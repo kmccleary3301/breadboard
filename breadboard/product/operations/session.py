@@ -17,7 +17,7 @@ from breadboard.product.operations.model import (
 )
 
 from breadboard.product.runtime.events import KernelEvent, Session, SessionView
-from breadboard.product.runtime.public_event_projection import public_session_event
+from breadboard.product.runtime.public_event_projection import public_session_events
 from breadboard.product.runtime.session_store import (
     load_session,
     session_artifact_rows,
@@ -460,15 +460,24 @@ class SessionRuntime:
         self,
         request: ListSessionEventsRequest,
     ) -> OperationResult:
-        batch = await self.read_session_event_batch(request)
+        batch = await self.read_session_event_batch(
+            ListSessionEventsRequest(
+                session_id=request.session_id,
+                after_sequence=request.after_sequence,
+                limit=None,
+            )
+        )
         if batch.error is not None:
             return batch.error
         refs = [batch.record_ref] if batch.record_ref is not None else []
+        events = list(public_session_events(batch.events))
+        if request.limit is not None:
+            events = events[: request.limit]
         return OperationResult.success(
             ["session", "events"],
             {
                 "session_id": request.session_id,
-                "events": [public_session_event(event) for event in batch.events],
+                "events": events,
             },
             refs,
             stage="session.events",
