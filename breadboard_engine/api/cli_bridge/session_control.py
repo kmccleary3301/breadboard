@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
+import copy
 import json
 import logging
 import os
@@ -157,6 +157,131 @@ class SessionControlController:
             decision=decision,
             scope=scope,
         )
+    @staticmethod
+    def _runtime_override_delta(value: Any) -> Dict[str, Any]:
+        raw = value if isinstance(value, dict) else {}
+        retained: Dict[str, Any] = {}
+        for key in (
+            "providers.default_model",
+            "mode",
+            "skills.allowlist",
+            "skills.blocklist",
+        ):
+            candidate = raw.get(key)
+            if key in {"providers.default_model", "mode"}:
+                if isinstance(candidate, str) and candidate.strip():
+                    retained[key] = candidate.strip()
+            elif isinstance(candidate, list):
+                retained[key] = [
+                    item.strip()
+                    for item in candidate
+                    if isinstance(item, str) and item.strip()
+                ]
+        return retained
+
+    @staticmethod
+    def _snapshot_runtime_state(runner: SessionControlHost) -> Dict[str, Any]:
+        agent_config = getattr(runner._agent, "config", None)
+        return {
+            "runtime_config": copy.deepcopy(runner.current_runtime_config()),
+            "agent_config": (
+                copy.deepcopy(agent_config)
+                if isinstance(agent_config, Mapping)
+                else None
+            ),
+            "metadata": copy.deepcopy(dict(runner.session.metadata or {})),
+            "prepared_runtime_config": copy.deepcopy(
+                runner._prepared_runtime_config
+            ),
+            "request_overrides": copy.deepcopy(runner.request.overrides or {}),
+            "model_override": runner._model_override,
+            "mode": runner._mode,
+            "generation": (
+                runner.session.product_session.pinned_generation_id
+                if getattr(runner.session, "product_session", None) is not None
+                else None
+            ),
+        }
+
+    @staticmethod
+    def _restore_runtime_state(
+        runner: SessionControlHost, snapshot: Dict[str, Any]
+    ) -> None:
+        agent_config = snapshot.get("agent_config")
+        current_agent_config = getattr(runner._agent, "config", None)
+        if isinstance(agent_config, Mapping) and isinstance(
+            current_agent_config, dict
+        ):
+            apply_runtime_overrides = getattr(
+                runner._agent, "apply_runtime_overrides", None
+            )
+            if callable(apply_runtime_overrides):
+                previous_config = snapshot["runtime_config"]
+                previous_skills = previous_config.get("skills")
+                try:
+                    runner._rollback_runtime_overrides(
+                        {
+                            "mode": previous_config.get("mode"),
+                            "skills.allowlist": (
+                                (previous_skills or {}).get("allowlist") or []
+                            ),
+                            "skills.blocklist": (
+                                (previous_skills or {}).get("blocklist") or []
+                            ),
+                        },
+                        (
+                            "skills",
+                            isinstance(previous_skills, dict),
+                            previous_skills,
+                        ),
+                    )
+                except Exception:
+                    logger.exception("Failed to restore live runtime configuration")
+            current_agent_config.clear()
+            current_agent_config.update(copy.deepcopy(agent_config))
+        runner.request.overrides = copy.deepcopy(snapshot["request_overrides"])
+        runner._model_override = snapshot["model_override"]
+        runner._mode = snapshot["mode"]
+        runner._prepared_runtime_config = copy.deepcopy(
+            snapshot["prepared_runtime_config"]
+        )
+        runner.session.metadata.clear()
+        runner.session.metadata.update(copy.deepcopy(snapshot["metadata"]))
+
+    def _rollback_runtime_mutation(
+        self,
+        runner: SessionControlHost,
+        snapshot: Dict[str, Any],
+        durable_reconfigure: Optional[Callable[[Dict[str, Any]], None]],
+    ) -> None:
+        with runner._product_session_lock:
+            self._restore_runtime_state(runner, snapshot)
+            product_session = getattr(runner.session, "product_session", None)
+            if (
+                durable_reconfigure is not None
+                and product_session is not None
+                and snapshot["generation"] is not None
+                and product_session.pinned_generation_id != snapshot["generation"]
+            ):
+                durable_reconfigure(snapshot["runtime_config"])
+
+    async def _persist_runtime_mutation(
+        self,
+        runner: SessionControlHost,
+        snapshot: Dict[str, Any],
+        metadata: Dict[str, Any],
+        durable_reconfigure: Optional[Callable[[Dict[str, Any]], None]],
+    ) -> None:
+        try:
+            await runner.registry.update_metadata(
+                runner.session.session_id,
+                metadata=copy.deepcopy(metadata),
+            )
+        except Exception:
+            self._rollback_runtime_mutation(
+                runner, snapshot, durable_reconfigure
+            )
+            raise
 
     async def handle_command(
         self,
@@ -395,30 +520,28 @@ class SessionControlController:
                     and "allowlist" not in selection_payload
                 ):
                     selection_payload["allowlist"] = selection_payload.get("selected")
+                snapshot: Dict[str, Any]
+                metadata: Dict[str, Any]
                 with runner._product_session_lock:
-                    config = (
-                        dict(getattr(runner._agent, "config", {}) or {})
-                        if runner._agent
-                        else {}
-                    )
+                    snapshot = self._snapshot_runtime_state(runner)
+                    config = copy.deepcopy(snapshot["runtime_config"])
                     selection = normalize_skill_selection(config, selection_payload)
                     overrides = {
                         "skills.allowlist": selection.get("allowlist") or [],
                         "skills.blocklist": selection.get("blocklist") or [],
                     }
-                    previous = runner.current_runtime_config()
-                    had_skills = "skills" in config
-                    previous_skills = (
-                        json.loads(json.dumps(config.get("skills")))
-                        if had_skills
-                        else None
+                    prepared = apply_dotted_overrides(
+                        snapshot["runtime_config"], overrides
                     )
-                    rollback = {
-                        "skills.allowlist": (previous_skills or {}).get("allowlist")
-                        or [],
-                        "skills.blocklist": (previous_skills or {}).get("blocklist")
-                        or [],
-                    }
+                    metadata = copy.deepcopy(snapshot["metadata"])
+                    metadata["skills_selection"] = copy.deepcopy(selection)
+                    runtime_overrides = self._runtime_override_delta(
+                        metadata.get("runtime_overrides")
+                    )
+                    runtime_overrides.update(copy.deepcopy(overrides))
+                    metadata["runtime_overrides"] = runtime_overrides
+                    request_overrides = copy.deepcopy(snapshot["request_overrides"])
+                    request_overrides.update(copy.deepcopy(overrides))
                     try:
                         if (
                             runner._agent
@@ -426,13 +549,24 @@ class SessionControlController:
                             is False
                         ):
                             raise RuntimeError("failed to apply skills configuration")
-                        prepared = apply_dotted_overrides(previous, overrides)
+                        runner.request.overrides = request_overrides
+                        runner.session.metadata.clear()
+                        runner.session.metadata.update(metadata)
+                        runner._prepared_runtime_config = prepared
                         if durable_reconfigure is not None:
                             durable_reconfigure(prepared)
                     except Exception as error:
-                        rolled_back = runner._rollback_runtime_overrides(
-                            rollback, ("skills", had_skills, previous_skills)
-                        )
+                        try:
+                            self._rollback_runtime_mutation(
+                                runner, snapshot, durable_reconfigure
+                            )
+                        except Exception:
+                            logger.exception(
+                                "Failed to roll back skills configuration"
+                            )
+                            rolled_back = False
+                        else:
+                            rolled_back = True
                         if not isinstance(error, OSError) or not rolled_back:
                             runner.transition_product_session(
                                 "fail",
@@ -440,9 +574,10 @@ class SessionControlController:
                                 "failed to apply skills configuration",
                             )
                         raise
-                    runner.session.metadata["skills_selection"] = selection
-                    runner._prepared_runtime_config = prepared
-                    runner._persist_metadata_snapshot_threadsafe()
+                await self._persist_runtime_mutation(
+                    runner, snapshot, metadata, durable_reconfigure
+                )
+                with runner._product_session_lock:
                     runner._skills_catalog_cache = None
                     catalog_payload = runner.get_skill_catalog()
                 await runner.publish_event_async(
@@ -624,49 +759,45 @@ class SessionControlController:
                     policy.model_allowlist is not None or policy.model_denylist
                 ) and not policy.is_model_allowed(model_value):
                     raise ValueError(f"set_model denied by policy: {model_value}")
+                snapshot: Dict[str, Any]
+                metadata: Dict[str, Any]
                 with runner._product_session_lock:
-                    previous, previous_model = (
-                        runner.current_runtime_config(),
-                        runner._model_override,
-                    )
-                    agent_config = (
-                        getattr(runner._agent, "config", {}) if runner._agent else {}
-                    )
-                    agent_providers = (
-                        agent_config.get("providers")
-                        if isinstance(agent_config, dict)
-                        and isinstance(agent_config.get("providers"), dict)
-                        else {}
-                    )
-                    rollback_model = (
-                        "default_model" in agent_providers,
-                        agent_providers.get("default_model"),
-                    )
+                    snapshot = self._snapshot_runtime_state(runner)
+                    overrides = {"providers.default_model": model_value}
                     prepared = apply_dotted_overrides(
-                        previous, {"providers.default_model": model_value}
+                        snapshot["runtime_config"], overrides
                     )
+                    metadata = copy.deepcopy(snapshot["metadata"])
+                    metadata["model"] = model_value
+                    runtime_overrides = self._runtime_override_delta(
+                        metadata.get("runtime_overrides")
+                    )
+                    runtime_overrides.update(overrides)
+                    metadata["runtime_overrides"] = runtime_overrides
+                    request_overrides = copy.deepcopy(snapshot["request_overrides"])
+                    request_overrides.update(overrides)
                     try:
                         runner._model_override = model_value
                         if not runner._apply_model_override():
                             raise RuntimeError("failed to apply model configuration")
+                        runner.request.overrides = request_overrides
+                        runner.session.metadata.clear()
+                        runner.session.metadata.update(metadata)
+                        runner._prepared_runtime_config = prepared
                         if durable_reconfigure is not None:
                             durable_reconfigure(prepared)
                     except Exception as error:
-                        runner._model_override = previous_model
-                        rolled_back = True
                         try:
-                            providers = (
-                                runner._agent.config.setdefault("providers", {})
-                                if runner._agent
-                                else {}
+                            self._rollback_runtime_mutation(
+                                runner, snapshot, durable_reconfigure
                             )
-                            if rollback_model[0]:
-                                providers["default_model"] = rollback_model[1]
-                            else:
-                                providers.pop("default_model", None)
                         except Exception:
+                            logger.exception(
+                                "Failed to roll back model configuration"
+                            )
                             rolled_back = False
-                            logger.exception("Failed to roll back model configuration")
+                        else:
+                            rolled_back = True
                         if not isinstance(error, OSError) or not rolled_back:
                             runner.transition_product_session(
                                 "fail",
@@ -674,29 +805,32 @@ class SessionControlController:
                                 "failed to apply model configuration",
                             )
                         raise
-                    runner.session.metadata["model"] = model_value
-                    runner._prepared_runtime_config = prepared
+                await self._persist_runtime_mutation(
+                    runner, snapshot, metadata, durable_reconfigure
+                )
                 return {"status": "ok", "model": model_value}
             case "set_mode":
                 mode_value = payload.get("mode")
                 if not isinstance(mode_value, str) or not mode_value.strip():
                     raise ValueError("set_mode requires non-empty 'mode'")
                 mode_value = mode_value.strip()
+                snapshot: Dict[str, Any]
+                metadata: Dict[str, Any]
                 with runner._product_session_lock:
+                    snapshot = self._snapshot_runtime_state(runner)
                     overrides = {"mode": mode_value}
-                    previous, previous_mode = (
-                        runner.current_runtime_config(),
-                        runner._mode,
+                    prepared = apply_dotted_overrides(
+                        snapshot["runtime_config"], overrides
                     )
-                    agent_config = (
-                        getattr(runner._agent, "config", {}) if runner._agent else {}
+                    metadata = copy.deepcopy(snapshot["metadata"])
+                    metadata["mode"] = mode_value
+                    runtime_overrides = self._runtime_override_delta(
+                        metadata.get("runtime_overrides")
                     )
-                    mode_restore = (
-                        "mode",
-                        "mode" in agent_config,
-                        agent_config.get("mode"),
-                    )
-                    prepared = apply_dotted_overrides(previous, overrides)
+                    runtime_overrides.update(overrides)
+                    metadata["runtime_overrides"] = runtime_overrides
+                    request_overrides = copy.deepcopy(snapshot["request_overrides"])
+                    request_overrides.update(overrides)
                     try:
                         if (
                             runner._agent
@@ -704,13 +838,25 @@ class SessionControlController:
                             is False
                         ):
                             raise RuntimeError("failed to apply mode configuration")
+                        runner._mode = mode_value
+                        runner.request.overrides = request_overrides
+                        runner.session.metadata.clear()
+                        runner.session.metadata.update(metadata)
+                        runner._prepared_runtime_config = prepared
                         if durable_reconfigure is not None:
                             durable_reconfigure(prepared)
                     except Exception as error:
-                        rolled_back = runner._rollback_runtime_overrides(
-                            {"mode": previous.get("mode")}, mode_restore
-                        )
-                        runner._mode = previous_mode
+                        try:
+                            self._rollback_runtime_mutation(
+                                runner, snapshot, durable_reconfigure
+                            )
+                        except Exception:
+                            logger.exception(
+                                "Failed to roll back mode configuration"
+                            )
+                            rolled_back = False
+                        else:
+                            rolled_back = True
                         if not isinstance(error, OSError) or not rolled_back:
                             runner.transition_product_session(
                                 "fail",
@@ -718,9 +864,9 @@ class SessionControlController:
                                 "failed to apply mode configuration",
                             )
                         raise
-                    runner._mode = mode_value
-                    runner.session.metadata["mode"] = mode_value
-                    runner._prepared_runtime_config = prepared
+                await self._persist_runtime_mutation(
+                    runner, snapshot, metadata, durable_reconfigure
+                )
                 return {"status": "ok", "mode": mode_value}
             case "session_child_next" | "session_child_previous" | "session_parent":
                 child_session_id = payload.get("child_session_id") or payload.get(

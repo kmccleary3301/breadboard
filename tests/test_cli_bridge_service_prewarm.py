@@ -1068,3 +1068,101 @@ async def test_completed_dispatch_replay_is_ordered_and_finite(monkeypatch, tmp_
     replay = service.event_stream(response.session_id, replay=True); replayed = [event async for event in replay]; assert replayed == list(record.event_log); assert [event.type for event in replayed] == [EventType.WARNING, EventType.WARNING, EventType.TURN_COMPLETED]
     nonreplay = service.event_stream(response.session_id); snapshot = await asyncio.wait_for(anext(nonreplay), 0.1); assert snapshot.type is EventType.TOOL_RESULT and "todo" in snapshot.payload
     outcomes = await asyncio.wait_for(asyncio.gather(anext(replay), anext(nonreplay), return_exceptions=True), 0.1); assert len(outcomes) == 2 and all(isinstance(item, StopAsyncIteration) for item in outcomes)
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("command", "payload", "path", "expected"),
+    [
+        (
+            "set_model",
+            {"model": "openrouter/openai/gpt-5-nano"},
+            ("providers", "default_model"),
+            "openrouter/openai/gpt-5-nano",
+        ),
+        ("set_mode", {"mode": "plan"}, ("mode",), "plan"),
+        (
+            "set_skills",
+            {"allowlist": ["test-skill"]},
+            ("skills", "allowlist"),
+            ["test-skill"],
+        ),
+    ],
+)
+async def test_runtime_reconfigure_survives_fresh_retained_resume(
+    monkeypatch, tmp_path, command, payload, path, expected
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    state_root = tmp_path / "state"
+    service = SessionService(state_root=state_root)
+    response = await service.create_session(
+        SessionCreateRequest(config_path=CONFIG, task=""),
+        event_root=tmp_path / "events",
+        runtime_root=tmp_path / "records",
+    )
+    record = await service.ensure_session(response.session_id)
+    await service.execute_command(
+        response.session_id,
+        SessionCommandRequest(command=command, payload=payload),
+    )
+    pinned_generation = record.product_session.pinned_generation_id
+    await _stop(record)
+
+    fresh = SessionService(state_root=state_root)
+    restored = await fresh.ensure_session(response.session_id)
+    config = restored.runner.current_runtime_config()
+    selected = config
+    for key in path:
+        selected = selected[key]
+    assert selected == expected
+    rebuilt_lock = fresh._runtime_lock(
+        response.session_id, config, restored.runner.request.config_path
+    )
+    assert rebuilt_lock["graph_hash"] == pinned_generation
+    await _stop(restored)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("command", "payload"),
+    [
+        ("set_model", {"model": "openrouter/openai/gpt-5-nano"}),
+        ("set_mode", {"mode": "plan"}),
+        ("set_skills", {"allowlist": ["test-skill"]}),
+    ],
+)
+async def test_runtime_reconfigure_metadata_failure_restores_authority(
+    monkeypatch, tmp_path, command, payload
+) -> None:
+    service, response, record = await _create(
+        monkeypatch,
+        tmp_path,
+        task="",
+        service=SessionService(state_root=tmp_path / "state"),
+    )
+    runner = record.runner
+    before = (
+        runner.current_runtime_config(),
+        json.loads(json.dumps(record.metadata)),
+        runner._prepared_runtime_config,
+        record.product_session.pinned_generation_id,
+    )
+
+    async def fail_update_metadata(*_args, **_kwargs):
+        raise OSError("metadata persistence unavailable")
+
+    monkeypatch.setattr(service.registry, "update_metadata", fail_update_metadata)
+    with pytest.raises(OSError, match="metadata persistence unavailable"):
+        await service.execute_command(
+            response.session_id,
+            SessionCommandRequest(command=command, payload=payload),
+        )
+    assert runner.current_runtime_config() == before[0]
+    assert {
+        key: value for key, value in record.metadata.items() if key != "session_contract"
+    } == {
+        key: value for key, value in before[1].items() if key != "session_contract"
+    }
+    assert record.metadata["session_contract"] == record.product_session.read_model.as_dict()
+    assert runner._prepared_runtime_config == before[2]
+    assert record.product_session.pinned_generation_id == before[3]
+    await _stop(record)

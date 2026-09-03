@@ -1243,6 +1243,12 @@ class SessionService:
         if permission_mode not in {"prompt", "ask", "interactive", "configured"}:
             permission_mode = "configured"
         metadata["permission_mode"] = permission_mode
+        runtime_overrides = metadata.get("runtime_overrides")
+        if not isinstance(runtime_overrides, dict):
+            runtime_overrides = None
+        request_overrides = (
+            dict(runtime_overrides) if runtime_overrides is not None else None
+        )
         record.metadata = metadata
         runner = SessionRunner(
             session=record,
@@ -1250,6 +1256,7 @@ class SessionService:
             request=SessionCreateRequest(
                 config_path=config_path,
                 task="",
+                overrides=request_overrides,
                 metadata=metadata,
                 workspace=workspace,
                 permission_mode=permission_mode,

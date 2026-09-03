@@ -51,6 +51,61 @@ _PROVIDER_USAGE_FIELDS = {
     "reasoningTokens",
     "extensions",
 }
+_RUNTIME_OVERRIDE_KEYS = frozenset(
+    {
+        "providers.default_model",
+        "mode",
+        "skills.allowlist",
+        "skills.blocklist",
+    }
+)
+
+
+def _retained_runtime_overrides(value: Any) -> Dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    retained: Dict[str, Any] = {}
+    for key in _RUNTIME_OVERRIDE_KEYS:
+        candidate = value.get(key)
+        if key in {"providers.default_model", "mode"}:
+            if isinstance(candidate, str) and candidate.strip():
+                retained[key] = candidate.strip()
+        elif isinstance(candidate, list):
+            retained[key] = [
+                item.strip()
+                for item in candidate
+                if isinstance(item, str) and item.strip()
+            ]
+    return retained
+
+
+def _retained_skills_selection(value: Any) -> Dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    mode = value.get("mode")
+    allowlist = value.get("allowlist")
+    blocklist = value.get("blocklist")
+    profile = value.get("profile")
+    if mode not in {"allowlist", "blocklist"}:
+        return None
+    if not isinstance(allowlist, list) or not all(
+        isinstance(item, str) and item.strip() for item in allowlist
+    ):
+        return None
+    if not isinstance(blocklist, list) or not all(
+        isinstance(item, str) and item.strip() for item in blocklist
+    ):
+        return None
+    if profile is not None and (
+        not isinstance(profile, str) or not profile.strip()
+    ):
+        return None
+    return {
+        "mode": mode,
+        "allowlist": [item.strip() for item in allowlist],
+        "blocklist": [item.strip() for item in blocklist],
+        "profile": profile.strip() if isinstance(profile, str) else None,
+    }
 
 
 def _retained_turn_completed_payload(value: Any) -> Dict[str, Any]:
@@ -451,6 +506,12 @@ class PersistenceMixin:
                     in {"prompt", "ask", "interactive", "configured"}
                     else None
                 ),
+                "runtime_overrides": _retained_runtime_overrides(
+                    metadata.get("runtime_overrides")
+                ),
+                "skills_selection": _retained_skills_selection(
+                    metadata.get("skills_selection")
+                ),
             },
             "turns": turns,
             "submissions": submissions,
@@ -598,6 +659,16 @@ class PersistenceMixin:
         permission_mode = str(session.get("permission_mode") or "").strip().lower()
         if permission_mode in {"prompt", "ask", "interactive", "configured"}:
             metadata["permission_mode"] = permission_mode
+        runtime_overrides = _retained_runtime_overrides(
+            session.get("runtime_overrides")
+        )
+        if runtime_overrides:
+            metadata["runtime_overrides"] = runtime_overrides
+        skills_selection = _retained_skills_selection(
+            session.get("skills_selection")
+        )
+        if skills_selection is not None:
+            metadata["skills_selection"] = skills_selection
         role_lock = session.get("model_role_lock")
         if role_lock is not None:
             if not isinstance(role_lock, dict):
