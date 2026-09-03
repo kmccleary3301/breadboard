@@ -124,7 +124,7 @@ graph TD
   RQP --> RQA[RQ-ABLATION]
   RQR --> RQA
 
-  G -->|current-owner generation gap| GI[GEN-INTERNAL]
+  G -->|generation outcome: repair or NOT-TAKEN| GI[GEN-INTERNAL]
   F2 --> DG[DIT-GENERATION]
   F6 --> DG
   DG --> GA[GEN-ACTIVATION]
@@ -168,13 +168,13 @@ graph TD
   EP --> SC
   SC --> SA[SEVEN-PIECE-AUDIT]
   AI --> SA
-  HP --> SA
+  WI --> SA
   CI --> SA
   GI --> SA
   GA --> SA
 ```
 
-The machine graph contains the same dependencies plus bounded research leaves. `RQ-ABLATION` is an `ANY` join: either an exact FT-03 pass or a later repaired reconstruction may feed it. No other join is disjunctive. The final audit therefore requires both the current-owner generation result and the terminal generation-activation decision; `GEN-ACTIVATION` may finish as an approved implementation or an evidence-backed not-taken decision.
+The machine graph contains the same dependencies plus bounded research leaves. `RQ-ABLATION` is an `ANY` join: either an exact FT-03 pass or a later repaired reconstruction may feed it. No other join is disjunctive. `GEN-INTERNAL` is a required terminal outcome after FT-02 evidence: repair a current-owner gap or record evidence-backed `NOT-TAKEN`. `DIT-GENERATION` is also terminal: compare three activation designs when coordination is needed or record `NOT-TAKEN`; `GEN-ACTIVATION` then terminates as approved implementation or evidence-backed `NOT-TAKEN`. Annotation characterization always reaches owner selection—the existing Session is a valid choice, not a skipped DIT. The final audit requires both generation outcomes, approved annotation implementation, and `WF-IMPLEMENT`, not merely the child pilot.
 
 ## First tranche execution windows
 
@@ -184,7 +184,7 @@ The approved packet contracts in `05_FIRST_TRANCHE_PACKET_SET.md` are incorporat
 | --- | --- | --- | --- | --- | --- |
 | W1a | FT-01 | `SessionService.send_input`; `Session.restore`; `/v1 session.events` | high; ≤6 min; 3 typed attempts | exclusive installed-product slot | Journal divergence→RT-REPAIR; permission divergence→PROC-DEFECT; exact behavior→retain only L1/L2 records that pass six holds. |
 | W1b | FT-04 | `breadboard_sdk.client._validate_event_payload`; TS `validateEventPayload`; `decodeLoggedSessionEvent`; separate-TUI engine port | low; ≤2 min; 3 attempts | may run isolated while FT-01 owns installed slot | Any silent accept→PROC-DEFECT; 4/4 typed stops→compatibility clear for required-event evolution. |
-| W2a | FT-02 | `SessionService.durable_reconfigure`; `SessionRunner.transition_product_session`; `Session.reconfigure`; `EffectiveHarnessLock` | medium; ≤4 min; 3/case | isolated ENGINE lane; parallel with W2b/c | Current-owner gap→GEN-INTERNAL; cross-owner coordination need→DIT-GENERATION; public fact need→PROC-AMEND. |
+| W2a | FT-02 | `SessionService.durable_reconfigure`; `SessionRunner.transition_product_session`; `Session.reconfigure`; `EffectiveHarnessLock` | medium; ≤4 min; 3/case | isolated ENGINE lane; parallel with W2b/c | Current-owner gap→GEN-INTERNAL repair; no gap→GEN-INTERNAL `NOT-TAKEN`. Cross-owner coordination need→DIT-GENERATION designs; no activation need→DIT-GENERATION and GEN-ACTIVATION `NOT-TAKEN`. Public fact need→PROC-AMEND. |
 | W2b | FT-03 | `ProviderRequest`; `ProviderExchangeV2`; `ProviderInvoker`; `SystemPromptCompiler`; `EffectiveHarnessLock` | medium; ≤2 min; 3 attempts | isolated ENGINE lane | Exact→RQ-PASS/L3 six-holds audit; missing internal fact→RQ-INTERNAL; public fact/nondeterminism/secret→stop. |
 | W2c | FT-05 | `compile_harness_definition`; harness model/validate; v1/compatible-v2 schemas | low; ≤2 min; 3 attempts | isolated ENGINE lane | Per-capability EXPRESSIBLE/PARTIAL/INEXPRESSIBLE routes ANN/CH/research; schema change is never implicit. |
 | W3 | FT-06 | generated registries; schema lifecycle; SDK export roots; TUI consumer roots | medium; ≤3 min; one stale rerun | after all focused reports | Exact owner/adapter/deletion report sizes every downstream packet; count drift invokes PROC-STALE. |
@@ -198,7 +198,7 @@ Review budget: one exact-artifact review per admitted packet; one renewal only a
 | --- | --- | --- | --- |
 | Runtime truth (`RT-*`, `PROJ-*`) | FT-01 reproduced divergence→existing-owner repair→replay conformance; named as-of/lineage consumer→projection characterization. | Each small; repair/projection high; installed checks exclusive. | Product red→PROC-DEFECT. Kill on retained-state authority or production instrumentation. Roll back packet commit. Projection seam requires DIT-PROJECTION and Kyle. |
 | Request (`RQ-*`) | FT-03 exact or first missing internal fact→existing-owner repair→exact reconstruction; ablation is a separate pre-registered experiment. | Each small; medium circular-oracle risk; fake adapter isolated. | Kill on captured-request input, secret, nondeterminism, or public-field need. Delete fixture/report; public need→PROC-AMEND. |
-| Generation (`GEN-*`) | FT-02 current-owner gap→internal fix; real coordination need plus three current adapters→DIT-GENERATION. | Small characterization/repair; medium seam risk; local isolated lanes. | Kill generic capability runtime or implementation reload. Roll back packet commit. Activation seam requires Kyle; public indicator requires PROC-AMEND. |
+| Generation (`GEN-*`) | FT-02 terminal current-owner result: internal fix or `NOT-TAKEN`; FT-02 + FT-06 terminal activation result: DIT and implementation if needed, otherwise evidence-backed `NOT-TAKEN`. | Small characterization/repair; medium seam risk; local isolated lanes. | Kill generic capability runtime or implementation reload. Roll back packet commit. Activation seam requires Kyle; public indicator requires PROC-AMEND. |
 | Compaction (`CP-*`) | Long-horizon event/artifact/context fixture→exact replay before/after→existing-seam implementation. | Medium, high data-loss risk; exclusive fixture root. | Any raw-fact loss kills branch. Roll back representation change and retain characterization only. New owner returns to DIT/approval. |
 | Execution worlds (`EW-*`) | Same Definition/Lock runs local/container; event diff equals declared mask→DIT-WORLD→internal pilot; Slurm only after pilot. | Medium then high; worlds isolated; scheduler work exclusive within standing Slurm envelope. | Hidden authority or undeclared semantic diff kills. Authenticated cleanup required. New seam requires Kyle; public world facts require PROC-AMEND. |
 | Annotations (`ANN-*`) | Preference-label scenario names message/trajectory identity, author, generation, immutable payload→DIT-ANNOTATION→internal sidecar. | Small/medium; integrity risk; may parallel after RT-REPLAY. | Message mutation or missing immutable identity kills. Delete sidecar/pilot. New seam requires Kyle; SDK/TUI exposure uses public chain. |
@@ -229,7 +229,7 @@ No new seam or primitive is currently promoted, so G8's unconditional denominato
 | Gate | Three alternatives to compare | Current conservative preference |
 | --- | --- | --- |
 | DIT-PROJECTION | methods on existing Session; pure feature-local projector functions; shared projection registry | Feature-local projector until a common caller and deletion payoff are measured. |
-| DIT-GENERATION | keep direct domain-owner transitions; one Session activation method; standalone generation coordinator | Existing domain owners unless FT-02 proves cross-owner atomicity cannot be expressed there. |
+| DIT-GENERATION | keep direct domain-owner transitions; one Session activation method; standalone generation coordinator | Existing domain owners unless FT-02 proves cross-owner atomicity cannot be expressed there; record the no-activation outcome as terminal `NOT-TAKEN`. |
 | DIT-WORLD | explicit capability bundle argument; small protocol adapter; execution-world service | Explicit bundle/protocol; no service without durable lifecycle ownership. |
 | DIT-ANNOTATION | immutable Session event; artifact sidecar owned by Session; annotation store/service | Existing artifact sidecar if identity/replay laws fit; never mutate messages. |
 | DIT-CHILD | compose current agent/job owners; Session child factory; durable child supervisor | Composition first; supervisor only if process-death evidence proves shared lifecycle. |
@@ -261,7 +261,7 @@ The target research substrate is: (1) experiment definition, (2) execution world
 | --- | --- | --- |
 | Experiment definition / Lock | existing compiler + `EffectiveHarnessLock`; FT-05 | owned for bounded definition inputs; runtime capability verdict pending |
 | Execution world | `DevSandboxV2`/`DockerSandboxV2`; EW-CHAR→DIT-WORLD→EW-PILOT | `FOG`, not admitted |
-| Immutable generation | current config/provider/plugin adapters; FT-02→GEN-INTERNAL or DIT-GENERATION | characterization promoted; common activation owner `FOG` |
+| Immutable generation | current config/provider/plugin adapters; terminal FT-02→GEN-INTERNAL result plus terminal DIT-GENERATION→GEN-ACTIVATION result | characterization promoted; common activation owner `FOG` |
 | Event/log projection | Session logical event sink; FT-01/04→RT-REPLAY→PROJ-CHAR | truth characterization promoted; general query seam `FOG` |
 | Exact reconstruction / ablation | existing provider/prompt/Lock owners; FT-03→RQ-ABLATION | reconstruction evidence promoted; ablation separate |
 | Annotation | ANN-CHAR→DIT-ANNOTATION→ANN-INTERNAL | `FOG`, not admitted |

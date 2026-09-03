@@ -389,11 +389,11 @@ First-tranche completion reaches one evidence gate. Only observed predicates ope
 - Reproduced FT-01 journal divergence opens `RT-REPAIR`; `RT-REPAIR + FT-04 → RT-REPLAY`.
 - `RT-REPLAY + FT-06 → PROJ-CHAR → DIT-PROJECTION`; only approved DIT may open `PROJ-IMPLEMENT`.
 - FT-03 exact branch (`RQ-PASS`) or repaired branch (`RQ-INTERNAL → RQ-RECONSTRUCTED`) may feed the `ANY` join `RQ-ABLATION`.
-- `FT-02 + FT-06 → DIT-GENERATION`; a current-owner law gap may separately open `GEN-INTERNAL`; approved DIT may open `GEN-ACTIVATION`.
+- `FT-02 + FT-06 → DIT-GENERATION`. After FT-02 evidence, `GEN-INTERNAL` must terminate as a current-owner repair or evidence-backed `NOT-TAKEN`. DIT-GENERATION must compare three designs when activation is needed or terminate `NOT-TAKEN`; it always drives `GEN-ACTIVATION` to approved implementation or evidence-backed `NOT-TAKEN`.
 - `RT-REPLAY → CP-CHAR`; `RT-REPLAY + FT-06 → EW-CHAR`; `RT-REPLAY + FT-05 → ANN-CHAR` and `CH-CHAR`.
-- Characterization precedes its DIT and internal pilot. `CH-PILOT → WF-CHAR → DIT-WORKFLOW`. Distributed-teams research additionally requires both `CH-PILOT` and `WF-CHAR`.
+- Characterization precedes its DIT and internal pilot. `CH-PILOT → WF-CHAR → DIT-WORKFLOW → WF-IMPLEMENT`. Distributed-teams research additionally requires both `CH-PILOT` and `WF-CHAR`.
 - Any public feature follows `PUBLIC-AMEND → CONTRACT-SCHEMA → GENERATE-BINDINGS → SDK-PY/SDK-TS → TUI-SKELETON/TUI-BB → INSTALLED-COMPOSITION → E4-CONFORMANCE`.
-- `RQ-ABLATION + PROJ-IMPLEMENT + EW-PILOT → SUBSTRATE-COMMAND`; the seven-piece audit additionally requires `ANN-INTERNAL + CH-PILOT + CP-IMPLEMENT + GEN-INTERNAL` and a terminal `GEN-ACTIVATION` decision (implemented or evidence-backed not taken).
+- `RQ-ABLATION + PROJ-IMPLEMENT + EW-PILOT → SUBSTRATE-COMMAND`; the seven-piece audit additionally requires `ANN-INTERNAL + WF-IMPLEMENT + CP-IMPLEMENT` and terminal `GEN-INTERNAL` and `GEN-ACTIVATION` outcomes.
 
 Every DIT gate requires a common caller, at least two real adapters/foundations, deletion payoff, three interface designs, and Kyle's seam approval. Current alternatives favor feature-local/existing-owner composition; standalone services are last, not default.
 
