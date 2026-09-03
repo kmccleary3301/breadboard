@@ -1,0 +1,23 @@
+Fresh-context no-policy dry read — Workstream H
+
+Candidate: docs_tmp/bb_direction_assessment/dsh_donor_campaign/07_CAMPAIGN_SPEC_PROTOTYPE.md
+Final reviewed SHA-256: 5c8b389bc9f6c6286dfdac8592d1f4125545116deaae7bd7dfdf8334f7f84050
+
+Initial verdict: CHANGES_REQUIRED, P0/P1/P2/P3 = 0/6/1/0.
+Initial blockers: unpinned FT-01 inputs/cells; unnamed independent comparator; imprecise writes/six-holds; incomplete result branches; missing process/retry authority; H/product-run scope conflict; incomplete invalidation.
+
+Renewal corrections added a self-contained FT-01 runbook: exact inputs and audit-only sources; fixed fixture bytes and IDs; exact output paths and packet-local record types; per-step deadlines; public-reader versus persistence-owner comparator; receipt/admission/permission rules; all six lock holds; authenticated process/root lifecycle; append-only provenance and final cleanup; exhaustive precedence/branch table; invalidation; and H/I authorization boundary. Incremental renewal findings corrected canonical versus lifecycle error classes, cleanup command ordering, nullable receipt input IDs, installed/fixture content identities, asymmetric event/durable maps, all-null authority branches, packet-kill records, and preflight-abort records.
+
+Final dry read at reviewed SHA: PASS
+P0/P1/P2/P3: 0/0/0/0
+Unresolved policy questions: none
+
+Extracted handoff:
+- First packet: FT-01, only after H/I and G-I/G-Score close.
+- Inputs: current specification, pinned ENGINE/TUI heads, content-bound installed bb/fixture, four named current test/harness files.
+- Writes: one report, five append-only raw records, one disposable harness, conditional L1/L2 only after six holds.
+- Proof: two provider-free cells; public logical events versus independent persistence-owner enumeration; exact permission event/turn/result/receipt invariants.
+- Risk/budget: high, 360 seconds, at most three attempts per typed defect/cell after a real transition; executor owns only authenticated PIDs/root.
+- Stop: exhaustive typed stale/infrastructure/evidence/contract/kill/unknown/product branches.
+- Next: independent FT-04/02/03/05; FT-06 only after all five focused reports; RT-REPAIR only on exact journal divergence.
+- Invalidation: every named head/build/artifact/law/owner/fixture/oracle/process/output/retry/freeze/review input.

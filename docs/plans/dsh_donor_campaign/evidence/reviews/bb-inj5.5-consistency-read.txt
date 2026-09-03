@@ -1,0 +1,56 @@
+# Workstream E fresh-context consistency read
+
+Candidate: `docs_tmp/bb_direction_assessment/dsh_donor_campaign/04_NORMATIVE_SEMANTIC_LAWS.md`
+Pinned ENGINE head: `b3cacc7356244253305f8a6f84308a993485bfe2`
+Pinned TUI head: `73d6e6f55a238fc9ff0486bbcc9ecffe85705715`
+Authorities read: raw Q1/Q2/Q3 decisions; B ledger substrate, primitive, and law evidence; C fault classification; D evidence contract; ENGINE Direction Charter, FREEZE_POLICY, and `contract_tiers.v1.json`; execution-plan sections 5–7. Method: fresh-context, candidate-first consistency application; no implementation, test, build, lint, or independent review.
+
+## Exact coverage and counts
+
+- E1–E5 required law rows: **54/54**, all unique; no missing or duplicate IDs.
+- Verdict counts: **NORMATIVE 38; NARROWED 11; HYPOTHESIS 2; REJECTED 1; ALREADY GOVERNED ELSEWHERE 2**. Every row has exactly one allowed verdict.
+- Seven nouns: **7/7**, each exactly once — Definition, Entity, Event, Projection, Capability, Operation, Resource.
+- Four protocols: **4/4**, each exactly once — Scope and binding, Policy and authority, Lease and lifecycle, Message and delivery.
+- All 38 NORMATIVE rows name a non-empty existing owner/interface and seam; none is ownerless or marked proposed. No law promotes a new module or seam.
+- Q1 makes the logical Session event stream sole runtime truth and explicitly holds C’s recovered-journal omission as a baseline product defect. Q2 makes generation adoption explicit, quiescent-boundary-only, durable, Lock-compatible, and a new trajectory segment. Q3 keeps ordinary `session.send_input` normative and leaves `followup`/`steer`/`inject`/positive batching as hypotheses. No authority conflict remains.
+- E4, projections, caches, and retained state are subordinate throughout. Entity/Resource reject behavior-owning generalizations; Operation is narrowed to vocabulary/shared terminal-outcome law. Lock authority is retained and generation is subordinate. Cross-client/version text and first-tranche consequences imply no public schema/API, client migration, or new seam.
+
+## Eight mechanical scenario outcomes
+
+### 1. Recovered journal omission
+Classification: **KNOWN DIVERGENCE / held baseline product defect** under Q1, not a silent acceptance or campaign patch. Required action: run the evidence-first differential characterization comparing the selected logical journal with durable owned turns; retain the defect and do not promote a replacement authority, schema, API, or seam.
+
+### 2. Mid-turn generation change
+Classification: **Q2 normative boundary**. A Session remains on its exact pinned Lock-compatible generation during the active turn; adoption cannot occur mid-turn. Required action: characterize existing reconfigure behavior; only a quiescent-boundary adoption may emit old/new identities, reason, effective sequence, and open a new trajectory segment.
+
+### 3. Caller asking for `steer`
+Classification: **HYPOTHESIS**, not a current delivery mode. Required action: keep the ordinary `session.send_input` contract and reject/defer mode adoption rather than adding hidden timing or a dispatch layer; a future proposal needs a named consumer, module test, design-it-twice where applicable, and freeze-route approval for public change.
+
+### 4. Unknown required client event
+Classification: **required-event fail-closed** under E3.5. Required action: replay/SDK/TUI consumers must fail rather than silently drop the event, unless a governing registry explicitly declares that kind ignorable; S7 may characterize this behavior, with no migration or new event schema in this tranche.
+
+### 5. Projection-registry proposal
+Classification: **HYPOTHESIS**, because specialized projectors exist but no common owner/caller contract or deletion payoff is proven. Required action: do not create the registry; bind pure-fold/cache/as-of laws to existing projectors and require the module test, two adapters, and replay consumer before any later promotion.
+
+### 6. Annotation needing a public event
+Classification: **normative annotation intent, first-tranche public-surface block**. Required action: use the existing Session event seam only if S8 proves expressibility; any genuinely new public event/schema requires the later freeze/SPEC_AMENDMENTS route and Kyle authority. No first-tranche public event, API, schema, or new annotation seam is implied.
+
+### 7. Universal Operation proposal
+Classification: **rejected as a behavior-owning module**; Operation remains vocabulary plus the shared terminal-outcome law. Required action: preserve provider, tool, public-operation, and Work Item owners and do not add a universal pipeline, authority, lifecycle, retention, or rendering owner.
+
+### 8. Exact reconstruction with missing default provenance
+Classification: **incomplete/unknown provenance; E5.1/E5.2 cannot be claimed satisfied**. Required action: keep requested, effective, default, and adapter sources distinct; record missing provenance as unknown, characterize the existing request chain, and never fabricate a default or assert byte-exact reconstruction when unknown defaults affect the bytes. No parallel request schema or public change.
+
+## P0/P1 findings
+
+**None.** The known recovered-journal divergence is explicitly classified and held by Q1; the other incomplete cases fail closed or remain hypotheses rather than creating authority conflicts or unapproved surface changes.
+
+## Verdict
+
+**PASS** — exact coverage/counts hold, all eight scenarios have one classification and concrete action, and no P0/P1 consistency defect is present.
+
+## Final exact-artifact review binding
+
+Reviewed candidate SHA-256: `30649f891edc155c6ac700daa65b95368c507f2a37d735fba3bc9f640fa64441`.
+
+Independent verdict: **PASS**. Gate G-E passes. P0/P1/P2/P3 = 0/0/0/0. Confidence: 0.99.

@@ -1,0 +1,33 @@
+schema_version: bb.harness_definition.v1
+version: 1
+workspace:
+  root: .
+providers:
+  default_model: cli_mock/reference
+  models:
+    - id: cli_mock/reference
+      adapter: cli_mock_chat
+tools:
+  mark_task_complete: true
+modes:
+  - name: coding
+    tools_enabled:
+      - read_file
+      - list_dir
+      - apply_unified_patch
+      - create_file_from_block
+      - run_shell
+      - TodoWrite
+      - mark_task_complete
+permissions:
+  options:
+    mode: prompt
+  shell:
+    default: ask
+loop:
+  sequence:
+    - mode: coding
+completion:
+  natural_finish:
+    idle_turn_limit: 2
+    no_tool_turns_threshold: 2
