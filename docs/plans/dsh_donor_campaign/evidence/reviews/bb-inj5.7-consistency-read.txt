@@ -1,0 +1,65 @@
+Fresh-context consistency read — Workstream G
+
+Artifact: docs/plans/dsh_donor_campaign/evidence/06_PROMOTED_WORKSTREAM_DAG.md
+Reviewed SHA-256: bcf5b18ff22ee3471ce0ac918caed01ecdb374bb9848140bd68909b655329a7e
+Scope: P0/P1 consistency only; G1-G10, approved FT-01..06 contracts, current raw row routing/DAG, and guarded-conditional owner policy.
+
+Initial read: CHANGES_REQUIRED, P0=0, P1=1.
+- RESEARCH-DISTRIBUTED-TEAMS stated durable local children plus WorkItem coordination, but depended only on CH-PILOT. Corrected to depend on CH-PILOT and WF-CHAR.
+
+Permitted renewal corrections:
+- Every DIT predicate now explicitly requires a common caller, at least two real adapters/foundations, deletion payoff, and three interface designs; every conditional new-seam implementation still requires Kyle approval.
+- FT-04 and FT-05 raw risk metadata now says low, matching the approved F packet contracts and G execution table.
+- The validator now enforces the complete DIT predicate and exact first-tranche risk classes.
+- Validator rerun: PASS.
+
+Final renewal verdict: PASS
+P0: 0
+P1: 0
+
+Evidence checked:
+- 50/50 nodes topologically ordered; dependencies acyclic.
+- 623/623 unique ledger rows routed; promoted rows exactly S1, S2, S4, S7, S8; phases 0-12 all represented.
+- FT-01 through FT-06 remain evidence/inventory packets with no new seam or public/freeze change; exact risk classes align.
+- Cross-repo/generated/client/installed/E4 order, branch/rollback/stale/freeze/approval metadata, and DIT gates are explicit.
+- Seven-piece substrate remains honestly FOG/NOT RUNNABLE; no public command implementation is claimed.
+- owner-decision.txt records Guarded conditional.
+
+Post-contract escalation read — 2026-09-03
+
+This is not a second renewal. Later automated PR review identified a terminal-route contradiction after G-G closed. D §114 requires split or escalation after the permitted renewal. Kyle's later DSH donor implementation mandate authorizes correction of substantive PR findings and requires exact independent review before merge; this section records that bounded P0/P1-only escalation.
+
+Reviewed DAG SHA-256: 958cb86c7cb13a5c3d0d7fe9f5bb19528d0a202b85434998f33c9d26a0e06cab
+Reviewed raw DAG SHA-256: b475dba4b961f6eba610554f1f4a8312f9227448941b596a1cf2e3be81a50867
+Reviewed validator SHA-256: f9735440c53b197d1f421148d6cd0d05c5595377a695c40b8cf949c7c69ada89
+
+Independent result: PASS; P0=0, P1=0.
+- `RT-REPAIR` opens only for FT-01 `KNOWN_DIVERGENCE`.
+- FT-01 `COHERENT` joins FT-04 directly at `RT-REPLAY`.
+- `PRODUCT_RED` and every other terminal defect open neither RT node.
+- The validator enforces both exact predicates and dependencies.
+- Validator rerun: PASS; 50/50 nodes acyclic, 623/623 routes unique, phases 0–12, six first-tranche packets, zero unconditionally promoted new seams.
+
+## Final exact-artifact review binding
+
+Reviewed candidate SHA-256: `958cb86c7cb13a5c3d0d7fe9f5bb19528d0a202b85434998f33c9d26a0e06cab`.
+
+Independent verdict: **PASS**. Gate G-G passes. P0/P1/P2/P3 = 0/0/0/0. Confidence: 0.99.
+
+## Final exact-artifact review binding — repair-success predicate
+
+Reviewed candidate SHA-256: `2ec09f94b1a79954e963d7beee4af66b38892ae38724a7aa141060b8d02d2532`.
+Reviewed raw DAG SHA-256: `1b71d68d4eb533f5dc62e1256489a28759ce7be115caa5df2b43ba64166a2f0d`.
+Reviewed validator SHA-256: `04f471da5821d1dac8e576dd997f68571464d8ef4e1d53425acc04c66981f41d`.
+Reviewed routing SHA-256: `b43ded4b1b69dc4c77857af00c951697f550b7d3005f64c7319dab1607df5fb1`.
+Reviewed join fixtures SHA-256: `07edfd730a92990520f00ea58c5f33464093a3431006e949eb0eba54b5c08d5e`; join test SHA-256: `b16aeb364a0d1bb533889c80fd7a6d9577ff10d47c394c935a4e495770b62c1e`.
+
+Independent result: PASS; `RT-REPAIR` terminates evidence-backed `NOT-TAKEN` for coherent FT-01 evidence and performs repair only for `KNOWN_DIVERGENCE`; therefore its required predecessor state is terminal on both replay-eligible routes. `RT-REPLAY` requires either coherent FT-01 evidence or an explicitly successful repair proving the divergence absent. Unknown, killed, exhausted, product-red, and every other typed-red repair outcome closes replay and all dependent nodes. Validator rerun: PASS; 50/50 nodes acyclic, 623/623 routes unique, phases 0–12, zero unconditionally promoted new seams, with explicit join fixture coverage.
+
+## Final exact-artifact review binding — committed validator path
+
+Reviewed candidate SHA-256: `33c1f89ebf6e44dbf3ba5226236026c6d49a7b084f69eb90360d5127b464231d`.
+
+Independent result: PASS; the deterministic command resolves to the committed validator, and the candidate/raw DAG/validator/routing/join-fixture digests remain exact. `RQ-ABLATION` unlocks from either one terminal predecessor, while `RT-REPLAY` and ordinary joins require all predecessors. P0/P1/P2/P3 = 0/0/0/0. Confidence: 0.99.
+
+Independent verdict: **PASS**. Gate G-G passes. P0/P1/P2/P3 = 0/0/0/0. Confidence: 0.99.
