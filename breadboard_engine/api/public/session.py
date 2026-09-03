@@ -579,7 +579,7 @@ async def events(
             session_operations.ListSessionEventsRequest(
                 session_id=session_id,
                 after_sequence=start_after,
-                limit=limit,
+                limit=None if not follow else limit,
             )
         )
     except Exception as error:
@@ -616,12 +616,17 @@ async def events(
                 continue
             for item in batch.events:
                 event = item.as_dict()
+                # Advance the durable cursor over internal events without exposing
+                # their unamended payload or consuming the public event limit.
+                cursor = int(event["sequence"])
+                projected_event = public_session_event(event)
+                if projected_event is None:
+                    continue
                 terminal = event["kind"] in {
                     "session.completed",
                     "session.failed",
                     "session.canceled",
                 }
-                projected_event = public_session_event(event)
                 public_payload = _scrub_event_payload(
                     event["kind"],
                     projected_event["payload"],
@@ -637,7 +642,6 @@ async def events(
                             "redaction_state": "redacted",
                         },
                     }
-                cursor = int(event["sequence"])
                 yield (
                     f"id: {cursor}\n"
                     f"event: {event['kind']}\n"
@@ -648,7 +652,9 @@ async def events(
                 emitted += 1
                 if terminal or emitted >= limit:
                     return
-            if not follow:
+            if emitted >= limit:
+                return
+            if not follow and batch.source != "durable":
                 return
             batch = await runtime.read_session_event_batch(
                 session_operations.ListSessionEventsRequest(
@@ -659,7 +665,6 @@ async def events(
             )
             if batch.error is not None:
                 return
-
     return StreamingResponse(
         bounded_stream(),
         media_type="text/event-stream",

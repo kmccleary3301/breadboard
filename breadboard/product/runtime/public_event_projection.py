@@ -1,7 +1,6 @@
 """Public session-event projection owned by the product runtime."""
 
-from __future__ import annotations
-
+from collections.abc import Iterable
 from types import MappingProxyType
 from typing import Any, Final, Mapping
 
@@ -33,16 +32,27 @@ _PUBLIC_PAYLOAD_SCHEMAS: Final[Mapping[str, str]] = MappingProxyType(
 
 # Public name used by deterministic code generation and equivalence checks.
 PUBLIC_PAYLOAD_SCHEMAS: Final[Mapping[str, str]] = _PUBLIC_PAYLOAD_SCHEMAS
+_INTERNAL_EVENT_KINDS = frozenset({"annotation"})
+_IDENTITY_ONLY_ASSISTANT_FIELDS = frozenset({"message_id", "trajectory_id"})
 
 
 def public_session_event(
     event: KernelEvent | Mapping[str, Any],
-) -> dict[str, Any]:
-    """Project a product-runtime event into the public SSE envelope."""
+) -> dict[str, Any] | None:
+    """Project one durable event, omitting internal kinds until publicly amended."""
     source = event.as_dict() if isinstance(event, KernelEvent) else event
+    kind = str(source["kind"])
+    if kind in _INTERNAL_EVENT_KINDS:
+        return None
+    payload = source["payload"]
+    if kind == "assistant_message":
+        payload = {
+            key: value
+            for key, value in payload.items()
+            if key not in _IDENTITY_ONLY_ASSISTANT_FIELDS
+        }
     session_id = str(source["session_id"])
     sequence = int(source["sequence"])
-    kind = str(source["kind"])
     return {
         "schema_version": PUBLIC_SESSION_EVENT_SCHEMA_VERSION,
         "event_id": f"session:{session_id}:{sequence}",
@@ -60,13 +70,26 @@ def public_session_event(
             "redaction_state": "none",
         },
         "kind": kind,
-        "payload": source["payload"],
+        "payload": payload,
         "payload_schema_version": _PUBLIC_PAYLOAD_SCHEMAS[kind],
     }
+
+
+def public_session_events(
+    events: Iterable[KernelEvent | Mapping[str, Any]],
+) -> tuple[dict[str, Any], ...]:
+    """Project durable events while dropping internal events without changing cursors."""
+    projected: list[dict[str, Any]] = []
+    for event in events:
+        item = public_session_event(event)
+        if item is not None:
+            projected.append(item)
+    return tuple(projected)
 
 
 __all__ = [
     "PUBLIC_PAYLOAD_SCHEMAS",
     "PUBLIC_SESSION_EVENT_SCHEMA_VERSION",
     "public_session_event",
+    "public_session_events",
 ]

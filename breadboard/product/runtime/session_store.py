@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from breadboard.product.runtime.artifacts import AnchoredStorage, is_portable_basename
-from breadboard.product.runtime.events import KernelEvent, ProcessLock, Session
+from breadboard.product.runtime.events import AnnotationRecord, KernelEvent, ProcessLock, Session
 
 
 def session_directory(workspace: Path) -> Path:
@@ -1605,13 +1605,20 @@ def mutate_session(
     workspace: str | Path,
     session_id: str,
     mutation: Callable[[Session], _T],
+    *,
+    expected_session_directory_identity: SessionDirectoryIdentity | None = None,
 ) -> tuple[_T, Path]:
     """Run one domain mutation while holding the durable session guard."""
     with _session_guard(workspace, session_id, create=False) as root:
         _recover_pending_intents(root, session_id)
         session, event_path = _load_anchored(root, session_id)
         result = mutation(session)
-        _persist_session_locked(root, session, event_path)
+        _persist_session_locked(
+            root,
+            session,
+            event_path,
+            expected_session_directory_identity=expected_session_directory_identity,
+        )
         return result, event_path
 
 
@@ -1650,6 +1657,23 @@ def create_session(
             event_path,
             expected_session_directory_identity=expected_session_directory_identity,
         )
+
+        def commit_annotation(
+            record: AnnotationRecord,
+        ) -> tuple[KernelEvent, ...]:
+            def annotate(persisted: Session) -> tuple[KernelEvent, ...]:
+                persisted.annotate(record)
+                return persisted.events
+
+            events, _ = mutate_session(
+                root,
+                session_id,
+                annotate,
+                expected_session_directory_identity=expected_session_directory_identity,
+            )
+            return events
+
+        session._bind_terminal_annotation_commit(commit_annotation)
         return session, published_path
 
 
