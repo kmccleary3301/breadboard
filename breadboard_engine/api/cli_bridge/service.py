@@ -358,6 +358,7 @@ class _RetainedEventSink:
         self._session_id = session_id
         self._expected_identity = expected_identity
         self._lock = self._locks[hash(expected_identity) % len(self._locks)]
+        self._expected_size: int | None = None
 
     def _verify_identity(
         self,
@@ -509,6 +510,13 @@ class _RetainedEventSink:
             transaction_name = ".session_events.jsonl.txn"
             temporary_name = f"{transaction_name}.tmp"
             original_offset = os.lseek(event_descriptor, 0, os.SEEK_END)
+            if (
+                self._expected_size is not None
+                and original_offset != self._expected_size
+            ):
+                raise RuntimeError(
+                    "retained event journal advanced since session recovery"
+                )
             if original_offset + len(payload) > _MAX_RETAINED_EVENT_JOURNAL_BYTES:
                 raise RuntimeError("retained event journal exceeds byte limit")
             transaction_descriptor = os.open(
@@ -570,6 +578,7 @@ class _RetainedEventSink:
                     )
                 self._unlink_regular_at(session_descriptor, temporary_name)
                 os.fsync(session_descriptor)
+            self._expected_size = original_offset + len(payload)
         finally:
             if event_descriptor is not None:
                 os.close(event_descriptor)
@@ -626,6 +635,7 @@ class _RetainedEventSink:
                     )
                 self._delegate = delegate
                 self.path = delegate.path
+                self._expected_size = len(retained[0])
                 return retained[0]
             finally:
                 for handle in reversed(handles):
@@ -700,6 +710,7 @@ class _RetainedEventSink:
                     stream,
                     event_stat.st_size,
                 )
+            self._expected_size = event_stat.st_size
             return retained_payload
         finally:
             if event_descriptor is not None:

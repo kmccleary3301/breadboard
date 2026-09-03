@@ -2219,6 +2219,40 @@ async def test_restored_event_sink_revalidates_identity_before_every_append(
 
 
 @pytest.mark.asyncio
+async def test_restored_event_sink_rejects_stale_writer_head_advance(
+    monkeypatch, tmp_path
+) -> None:
+    from breadboard_engine.api.cli_bridge import service as service_module
+
+    service, response, record = await _create(monkeypatch, tmp_path)
+    await _stop(record)
+    event_root = Path(record.metadata["session_event_root"])
+    journal = event_root / response.session_id / "session_events.jsonl"
+    restored = service_module._restore_product_session(
+        response.session_id,
+        event_root=event_root,
+    )
+
+    record.product_session.pause("stale writer advanced the journal head")
+    with pytest.raises(
+        RuntimeError,
+        match="event journal advanced since session recovery",
+    ):
+        restored.pause("stale restored writer")
+
+    replayed = service_module._restore_product_session(
+        response.session_id,
+        event_root=event_root,
+    )
+    assert [event.sequence for event in replayed.events] == [1, 2]
+    assert [event.kind for event in replayed.events] == [
+        "session.started",
+        "session.paused",
+    ]
+    assert journal.read_bytes().count(b"\n") == 2
+
+
+@pytest.mark.asyncio
 async def test_restored_event_sink_anchors_open_file_across_path_swap(
     monkeypatch, tmp_path
 ) -> None:
