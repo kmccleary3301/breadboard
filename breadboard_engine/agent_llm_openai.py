@@ -6052,6 +6052,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
 
         prompt_compile_key: Optional[str] = None
         prompt_compiler_version: Optional[str] = None
+        session_state.set_provider_metadata("compiled_model_surface", None)
         try:
             if int(self.config.get("version", 0)) == 2 and self.config.get("prompts"):
                 mode_name = self._resolve_active_mode()
