@@ -865,6 +865,154 @@ async def test_restore_accepts_identity_stable_event_transaction_recovery(
     assert journal.read_bytes() == original
 
 
+@pytest.mark.asyncio
+async def test_restore_recovery_never_mutates_a_swapped_outside_journal(
+    monkeypatch, tmp_path
+) -> None:
+    if os.name == "nt":
+        pytest.skip("POSIX no-follow descriptor regression")
+    import breadboard_engine.api.cli_bridge.service as service_module
+    from breadboard.product.runtime import ReplayError
+
+    service, response, record = await _create(monkeypatch, tmp_path)
+    await _stop(record)
+    event_root = Path(record.metadata["session_event_root"])
+    session_dir = event_root / response.session_id
+    journal = session_dir / "session_events.jsonl"
+    original = journal.read_bytes()
+
+    outside = tmp_path / "outside-session"
+    outside.mkdir()
+    outside_journal = outside / "session_events.jsonl"
+    outside_payload = original + b'{"outside-partial":'
+    outside_journal.write_bytes(outside_payload)
+    outside_transaction = outside / ".session_events.jsonl.txn"
+    outside_transaction.write_text(str(len(original)), encoding="ascii")
+
+    retained = event_root / f"{response.session_id}-retained"
+    real_read = service_module._read_retained_event_journal
+    reads = 0
+
+    def swap_after_initial_read(*args, **kwargs):  # type: ignore[no-untyped-def]
+        nonlocal reads
+        result = real_read(*args, **kwargs)
+        reads += 1
+        if reads == 1:
+            session_dir.rename(retained)
+            session_dir.symlink_to(outside, target_is_directory=True)
+        return result
+
+    monkeypatch.setattr(
+        service_module,
+        "_read_retained_event_journal",
+        swap_after_initial_read,
+    )
+
+    with pytest.raises(ReplayError, match="unsafe logical event journal"):
+        service_module._restore_product_session(
+            response.session_id,
+            event_root=event_root,
+        )
+
+    assert outside_journal.read_bytes() == outside_payload
+    assert outside_transaction.is_file()
+
+
+@pytest.mark.asyncio
+async def test_restore_reads_under_the_existing_process_lock(
+    monkeypatch, tmp_path
+) -> None:
+    if os.name == "nt":
+        pytest.skip("POSIX advisory-lock regression")
+    import fcntl
+    from breadboard_engine.api.cli_bridge.service import _restore_product_session
+
+    service, response, record = await _create(monkeypatch, tmp_path)
+    await _stop(record)
+    event_root = Path(record.metadata["session_event_root"])
+    lock_path = (
+        event_root
+        / response.session_id
+        / ".session_events.jsonl.lock"
+    )
+    lock_acquired = threading.Event()
+    release_lock = threading.Event()
+
+    def hold_process_lock() -> None:
+        descriptor = os.open(lock_path, os.O_RDWR)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            lock_acquired.set()
+            release_lock.wait()
+        finally:
+            os.close(descriptor)
+
+    holder = threading.Thread(target=hold_process_lock)
+    holder.start()
+    assert lock_acquired.wait(timeout=2)
+    restore_task = asyncio.create_task(
+        asyncio.to_thread(
+            _restore_product_session,
+            response.session_id,
+            event_root=event_root,
+        )
+    )
+    await asyncio.sleep(0.05)
+    assert not restore_task.done()
+    release_lock.set()
+    restored = await restore_task
+    holder.join(timeout=2)
+    assert restored.read_model.session_id == response.session_id
+
+
+@pytest.mark.asyncio
+async def test_retained_append_preserves_wal_when_rollback_fsync_fails(
+    monkeypatch, tmp_path
+) -> None:
+    from breadboard_engine.api.cli_bridge.service import _RetainedEventSink
+    from breadboard_engine.api.cli_bridge.service import _restore_product_session
+
+    service, response, record = await _create(monkeypatch, tmp_path)
+    await _stop(record)
+    event_root = Path(record.metadata["session_event_root"])
+    journal = event_root / response.session_id / "session_events.jsonl"
+    restored = _restore_product_session(response.session_id, event_root=event_root)
+
+    real_write_all = _RetainedEventSink._write_all
+    writes = 0
+
+    def fail_event_write(descriptor, payload):  # type: ignore[no-untyped-def]
+        nonlocal writes
+        writes += 1
+        if writes == 2:
+            raise OSError("event write failed")
+        real_write_all(descriptor, payload)
+
+    real_ftruncate = os.ftruncate
+    rollback_started = False
+
+    def mark_rollback(descriptor, length):  # type: ignore[no-untyped-def]
+        nonlocal rollback_started
+        rollback_started = True
+        return real_ftruncate(descriptor, length)
+
+    real_fsync = os.fsync
+
+    def fail_rollback_sync(descriptor):  # type: ignore[no-untyped-def]
+        if rollback_started:
+            raise OSError("rollback sync failed")
+        return real_fsync(descriptor)
+
+    monkeypatch.setattr(_RetainedEventSink, "_write_all", staticmethod(fail_event_write))
+    monkeypatch.setattr(os, "ftruncate", mark_rollback)
+    monkeypatch.setattr(os, "fsync", fail_rollback_sync)
+
+    with pytest.raises(RuntimeError, match="event journal identity changed"):
+        restored.complete()
+
+    assert journal.with_name(".session_events.jsonl.txn").is_file()
+
+
 def test_restore_does_not_misclassify_event_sink_infrastructure_failure(
     monkeypatch, tmp_path
 ) -> None:
@@ -1373,6 +1521,55 @@ async def test_attachment_manifest_survives_delete_and_unknown_ids_are_rejected(
     assert raced_upload.attachments and await service.registry.get(response.session_id) is None and manifest_path.is_file() and record.dispatcher_task.done()
     with pytest.raises(HTTPException) as missing: await service.ensure_session(response.session_id)
     assert missing.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_shared_workspace_uploads_serialize_before_persistence(
+    monkeypatch, tmp_path
+) -> None:
+    workspace = tmp_path / "shared-workspace"
+    service, first_response, first_record = await _create(
+        monkeypatch,
+        tmp_path / "first",
+        workspace=str(workspace),
+    )
+    _, second_response, second_record = await _create(
+        monkeypatch,
+        tmp_path / "second",
+        service=service,
+        workspace=str(workspace),
+    )
+    first_entered = asyncio.Event()
+    release_first = asyncio.Event()
+    second_entered = asyncio.Event()
+
+    async def first_upload(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        first_entered.set()
+        await release_first.wait()
+        return SimpleNamespace(attachments=[])
+
+    async def second_upload(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        second_entered.set()
+        return SimpleNamespace(attachments=[])
+
+    monkeypatch.setattr(first_record.runner.artifacts, "upload", first_upload)
+    monkeypatch.setattr(second_record.runner.artifacts, "upload", second_upload)
+
+    first_task = asyncio.create_task(
+        service.upload_attachments(first_response.session_id, [_Upload()])
+    )
+    await first_entered.wait()
+    second_task = asyncio.create_task(
+        service.upload_attachments(second_response.session_id, [_Upload()])
+    )
+    await asyncio.sleep(0)
+    assert not second_entered.is_set()
+
+    release_first.set()
+    await asyncio.gather(first_task, second_task)
+    assert second_entered.is_set()
+    await service.delete_session(first_response.session_id)
+    await service.delete_session(second_response.session_id)
 
 
 @pytest.mark.asyncio

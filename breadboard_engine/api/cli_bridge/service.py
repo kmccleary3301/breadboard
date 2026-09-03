@@ -331,12 +331,16 @@ class _RetainedEventSink:
 
     def __init__(
         self,
-        delegate: JsonlEventSink,
+        delegate: JsonlEventSink | None,
         event_root: Path,
         session_id: str,
         expected_identity: tuple[tuple[int, int], tuple[int, int]],
     ) -> None:
-        self.path = delegate.path
+        self.path = (
+            delegate.path
+            if delegate is not None
+            else (event_root / session_id / "session_events.jsonl").absolute()
+        )
         self._delegate = delegate
         self._event_root = event_root
         self._session_id = session_id
@@ -378,6 +382,40 @@ class _RetainedEventSink:
             raise OSError(f"unsafe retained event transaction entry: {name}")
         os.unlink(name, dir_fd=directory_descriptor)
 
+    def _recover_transaction_posix(
+        self,
+        session_descriptor: int,
+        event_descriptor: int,
+    ) -> None:
+        transaction_name = ".session_events.jsonl.txn"
+        temporary_name = f"{transaction_name}.tmp"
+        self._unlink_regular_at(session_descriptor, temporary_name)
+        try:
+            transaction_descriptor = os.open(
+                transaction_name,
+                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=session_descriptor,
+            )
+        except FileNotFoundError:
+            return
+        try:
+            transaction_stat = os.fstat(transaction_descriptor)
+            if not stat.S_ISREG(transaction_stat.st_mode):
+                raise OSError("unsafe retained event transaction")
+            raw_offset = os.read(transaction_descriptor, 64)
+            if os.read(transaction_descriptor, 1):
+                raise OSError("oversized retained event transaction")
+            recovered_offset = int(raw_offset.decode("ascii"))
+        finally:
+            os.close(transaction_descriptor)
+        current_size = os.fstat(event_descriptor).st_size
+        if recovered_offset < 0 or recovered_offset > current_size:
+            raise OSError("invalid retained event transaction offset")
+        os.ftruncate(event_descriptor, recovered_offset)
+        os.fsync(event_descriptor)
+        self._unlink_regular_at(session_descriptor, transaction_name)
+        os.fsync(session_descriptor)
+
     def _append_posix(self, event: object) -> None:
         payload = (
             json.dumps(
@@ -415,36 +453,12 @@ class _RetainedEventSink:
             import fcntl
 
             fcntl.flock(event_descriptor, fcntl.LOCK_EX)
+            self._recover_transaction_posix(
+                session_descriptor,
+                event_descriptor,
+            )
             transaction_name = ".session_events.jsonl.txn"
             temporary_name = f"{transaction_name}.tmp"
-            self._unlink_regular_at(session_descriptor, temporary_name)
-            try:
-                transaction_descriptor = os.open(
-                    transaction_name,
-                    os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
-                    dir_fd=session_descriptor,
-                )
-            except FileNotFoundError:
-                transaction_descriptor = None
-            if transaction_descriptor is not None:
-                try:
-                    transaction_stat = os.fstat(transaction_descriptor)
-                    if not stat.S_ISREG(transaction_stat.st_mode):
-                        raise OSError("unsafe retained event transaction")
-                    raw_offset = os.read(transaction_descriptor, 64)
-                    if os.read(transaction_descriptor, 1):
-                        raise OSError("oversized retained event transaction")
-                    recovered_offset = int(raw_offset.decode("ascii"))
-                finally:
-                    os.close(transaction_descriptor)
-                current_size = os.fstat(event_descriptor).st_size
-                if recovered_offset < 0 or recovered_offset > current_size:
-                    raise OSError("invalid retained event transaction offset")
-                os.ftruncate(event_descriptor, recovered_offset)
-                os.fsync(event_descriptor)
-                self._unlink_regular_at(session_descriptor, transaction_name)
-                os.fsync(session_descriptor)
-
             original_offset = os.lseek(event_descriptor, 0, os.SEEK_END)
             transaction_descriptor = os.open(
                 temporary_name,
@@ -470,6 +484,7 @@ class _RetainedEventSink:
                 dst_dir_fd=session_descriptor,
             )
             os.fsync(session_descriptor)
+            remove_transaction = False
             try:
                 self._write_all(event_descriptor, payload)
                 os.fsync(event_descriptor)
@@ -485,17 +500,149 @@ class _RetainedEventSink:
                 expected_file = self._expected_identity[1]
                 if (path_stat.st_dev, path_stat.st_ino) != expected_file:
                     raise RuntimeError("retained event journal identity changed")
+                remove_transaction = True
             except BaseException:
                 os.ftruncate(event_descriptor, original_offset)
                 os.fsync(event_descriptor)
+                remove_transaction = True
                 raise
             finally:
-                self._unlink_regular_at(session_descriptor, transaction_name)
+                if remove_transaction:
+                    self._unlink_regular_at(
+                        session_descriptor,
+                        transaction_name,
+                    )
                 self._unlink_regular_at(session_descriptor, temporary_name)
                 os.fsync(session_descriptor)
         finally:
             if event_descriptor is not None:
                 os.close(event_descriptor)
+            if session_descriptor is not None:
+                os.close(session_descriptor)
+            os.close(root_descriptor)
+
+    def recover(self) -> bytes | None:
+        event_path = (
+            self._event_root / self._session_id / "session_events.jsonl"
+        )
+        if os.name == "nt":
+            handles: list[int] = []
+            try:
+                handles.append(
+                    AnchoredStorage.windows_handle(
+                        self._event_root,
+                        directory=True,
+                        create=False,
+                    )
+                )
+                handles.append(
+                    AnchoredStorage.windows_handle(
+                        event_path.parent,
+                        directory=True,
+                        create=False,
+                    )
+                )
+                handles.append(
+                    AnchoredStorage.windows_handle(
+                        event_path,
+                        directory=False,
+                        create=False,
+                    )
+                )
+                self._verify_identity(
+                    event_path.parent.stat(follow_symlinks=False),
+                    event_path.stat(follow_symlinks=False),
+                )
+                delegate = JsonlEventSink(event_path)
+                with ProcessLock(event_path):
+                    retained = _read_retained_event_journal(
+                        self._event_root,
+                        self._session_id,
+                    )
+                    self._verify_identity(
+                        event_path.parent.stat(follow_symlinks=False),
+                        event_path.stat(follow_symlinks=False),
+                    )
+                self._delegate = delegate
+                self.path = delegate.path
+                return retained[0]
+            finally:
+                for handle in reversed(handles):
+                    AnchoredStorage.close_windows_handle(handle)
+            raise RuntimeError("unreachable retained event recovery state")
+
+        root_descriptor = os.open(
+            self._event_root,
+            os.O_RDONLY
+            | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        session_descriptor: int | None = None
+        event_descriptor: int | None = None
+        process_lock_descriptor: int | None = None
+        try:
+            session_descriptor = AnchoredStorage.open_directory(
+                root_descriptor,
+                self._session_id,
+                create=False,
+            )
+            process_lock_descriptor = os.open(
+                ".session_events.jsonl.lock",
+                os.O_RDWR
+                | os.O_CREAT
+                | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+                dir_fd=session_descriptor,
+            )
+            process_lock_stat = os.fstat(process_lock_descriptor)
+            if not stat.S_ISREG(process_lock_stat.st_mode):
+                raise OSError("unsafe retained event process lock")
+            import fcntl
+
+            fcntl.flock(process_lock_descriptor, fcntl.LOCK_EX)
+            event_descriptor = os.open(
+                "session_events.jsonl",
+                os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=session_descriptor,
+            )
+            self._verify_identity(
+                os.fstat(session_descriptor),
+                os.fstat(event_descriptor),
+            )
+            fcntl.flock(event_descriptor, fcntl.LOCK_EX)
+            self._recover_transaction_posix(
+                session_descriptor,
+                event_descriptor,
+            )
+            self._verify_identity(
+                os.fstat(session_descriptor),
+                os.fstat(event_descriptor),
+            )
+            path_stat = os.stat(
+                "session_events.jsonl",
+                dir_fd=session_descriptor,
+                follow_symlinks=False,
+            )
+            if (path_stat.st_dev, path_stat.st_ino) != self._expected_identity[1]:
+                raise RuntimeError("retained event journal identity changed")
+            current_identity = _retained_event_journal_identity(
+                self._event_root,
+                self._session_id,
+            )
+            if current_identity != self._expected_identity:
+                raise RuntimeError("retained event journal identity changed")
+            event_stat = os.fstat(event_descriptor)
+            with os.fdopen(os.dup(event_descriptor), "rb") as stream:
+                retained_payload = _read_bounded_event_journal(
+                    stream,
+                    event_stat.st_size,
+                )
+            return retained_payload
+        finally:
+            if event_descriptor is not None:
+                os.close(event_descriptor)
+            if process_lock_descriptor is not None:
+                os.close(process_lock_descriptor)
             if session_descriptor is not None:
                 os.close(session_descriptor)
             os.close(root_descriptor)
@@ -531,6 +678,8 @@ class _RetainedEventSink:
                 event_path.parent.stat(follow_symlinks=False),
                 event_path.stat(follow_symlinks=False),
             )
+            if self._delegate is None:
+                raise RuntimeError("retained event sink was not recovered")
             self._delegate.append(event)
         finally:
             for handle in reversed(handles):
@@ -581,39 +730,42 @@ def _restore_product_session(
     except OSError as exc:
         raise _unsafe_retained_journal(session_id, exc)
     try:
-        sink = JsonlEventSink(event_path)
-        with ProcessLock(event_path):
-            try:
+        if initial_journal is None:
+            JsonlEventSink(event_path)
+            raise FileNotFoundError(event_path)
+        protected_sink = _RetainedEventSink(
+            None,
+            selected_event_root,
+            session_id,
+            initial_journal[1:],
+        )
+        try:
+            recovered_payload = protected_sink.recover()
+            if recovered_payload is None:
                 retained_journal = _read_retained_event_journal(
                     selected_event_root,
                     session_id,
                 )
-            except FileNotFoundError:
-                raise
-            except OSError as exc:
-                raise _unsafe_retained_journal(session_id, exc)
-            retained_payload = retained_journal[0]
-            if (
-                sink.path != event_path.absolute()
-                or (
-                    initial_journal is not None
-                    and retained_journal[1:] != initial_journal[1:]
-                )
-            ):
-                raise _unsafe_retained_journal(session_id)
-            events = [
-                event_from_record(record)
-                for line in retained_payload.decode("utf-8").splitlines()
-                if line.strip()
-                for record in (json.loads(line),)
-            ]
-            protected_sink = _RetainedEventSink(
-                sink,
-                selected_event_root,
-                session_id,
-                retained_journal[1:],
-            )
-            restored = ProductSession.restore(events, sink=protected_sink)
+                retained_payload = retained_journal[0]
+                if retained_journal[1:] != initial_journal[1:]:
+                    raise _unsafe_retained_journal(session_id)
+            else:
+                retained_payload = recovered_payload
+        except OSError as exc:
+            raise _unsafe_retained_journal(session_id, exc)
+        except RuntimeError as exc:
+            if "identity changed" in str(exc):
+                raise _unsafe_retained_journal(session_id) from exc
+            raise
+        events = [
+            event_from_record(record)
+            for line in retained_payload.decode("utf-8").splitlines()
+            if line.strip()
+            for record in (json.loads(line),)
+        ]
+        restored = ProductSession.restore(events, sink=protected_sink)
+    except ReplayError:
+        raise
     except FileNotFoundError as exc:
         raise ReplayError(
             "missing_event_stream",
@@ -826,10 +978,17 @@ class SessionService:
         self._session_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
             weakref.WeakValueDictionary()
         )
+        self._workspace_upload_locks: weakref.WeakValueDictionary[
+            str, asyncio.Lock
+        ] = weakref.WeakValueDictionary()
         _cleanup_incomplete_starts(state_paths=self._managed_state_paths)
 
     def _session_lock(self, session_id: str) -> asyncio.Lock:
         return self._session_locks.setdefault(session_id.casefold(), asyncio.Lock())
+
+    def _workspace_upload_lock(self, workspace_dir: Path) -> asyncio.Lock:
+        key = os.path.normcase(str(workspace_dir.resolve()))
+        return self._workspace_upload_locks.setdefault(key, asyncio.Lock())
 
     @staticmethod
     def _runtime_lock(
@@ -2627,12 +2786,13 @@ class SessionService:
             async def persist_upload() -> None:
                 await self.registry.persist(record)
 
-            return await runner.artifacts.upload(
-                files,
-                workspace_dir=workspace_dir,
-                metadata=metadata,
-                persist=persist_upload,
-            )
+            async with self._workspace_upload_lock(workspace_dir):
+                return await runner.artifacts.upload(
+                    files,
+                    workspace_dir=workspace_dir,
+                    metadata=metadata,
+                    persist=persist_upload,
+                )
 
 
     @staticmethod
