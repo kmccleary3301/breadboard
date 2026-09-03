@@ -13,6 +13,8 @@ from typing import (
     Optional,
 )
 
+from breadboard.product.runtime.artifacts import ArtifactRef
+
 from ..events import EventType, SessionEvent
 from ..models import (
     SessionStatus,
@@ -51,6 +53,22 @@ _PROVIDER_USAGE_FIELDS = {
     "reasoningTokens",
     "extensions",
 }
+
+
+def _retained_artifact_manifest_ref(value: Any) -> Dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) != {
+        "digest",
+        "size_bytes",
+        "media_type",
+    }:
+        raise ValueError("retained artifact manifest reference is invalid")
+    return ArtifactRef(
+        digest=value["digest"],
+        size_bytes=value["size_bytes"],
+        media_type=value["media_type"],
+    ).as_dict()
 
 
 def _retained_turn_completed_payload(value: Any) -> Dict[str, Any]:
@@ -402,8 +420,9 @@ class PersistenceMixin:
                     self._serialize_cancellation(key_digest, cancellation)
                 )
 
-        turns = [
-            {
+        turns = []
+        for turn in record.turns_by_id.values():
+            serialized_turn = {
                 "input_id": turn.input_id,
                 "turn_id": turn.turn_id,
                 "original_disposition": turn.original_disposition,
@@ -416,8 +435,37 @@ class PersistenceMixin:
                 "body_digest": turn.body_digest
                 or submission_body_digest(turn.content, turn.attachments),
             }
-            for turn in record.turns_by_id.values()
-        ]
+            if turn.logical_event_count_before_admission is not None:
+                content_hash = turn.logical_input_content_hash
+                if (
+                    not isinstance(content_hash, str)
+                    or len(content_hash) != 71
+                    or not content_hash.startswith("sha256:")
+                    or any(character not in "0123456789abcdef" for character in content_hash[7:])
+                ):
+                    raise ValueError("retained turn content hash is invalid")
+                serialized_turn["content_hash"] = content_hash
+                serialized_turn["attachments"] = list(turn.attachments)
+                serialized_turn["logical_event_count_before_admission"] = (
+                    turn.logical_event_count_before_admission
+                )
+                session_status = (
+                    turn.logical_input_session_status_before_admission
+                )
+                if session_status is not None:
+                    if session_status not in {
+                        "running",
+                        "awaiting_approval",
+                        "paused",
+                        "completed",
+                        "failed",
+                        "canceled",
+                    }:
+                        raise ValueError("retained turn session status is invalid")
+                    serialized_turn[
+                        "logical_input_session_status_before_admission"
+                    ] = session_status
+            turns.append(serialized_turn)
         metadata = record.metadata if isinstance(record.metadata, dict) else {}
         role_lock = metadata.get("model_role_lock")
         if not isinstance(role_lock, dict):
@@ -443,6 +491,13 @@ class PersistenceMixin:
                 ),
                 "config_path": str(metadata.get("config_path") or ""),
                 "workspace": str(metadata.get("workspace") or ""),
+                "session_event_root": str(metadata.get("session_event_root") or ""),
+                "durable_product_workspace": str(
+                    metadata.get("durable_product_workspace") or ""
+                ),
+                "artifact_manifest_ref": _retained_artifact_manifest_ref(
+                    metadata.get("artifact_manifest_ref")
+                ),
                 "model_role_lock": role_lock,
                 "active_model_role": str(active_role) if active_role else None,
                 "permission_mode": (
@@ -595,6 +650,24 @@ class PersistenceMixin:
             metadata["config_path"] = str(session["config_path"])
         if session.get("workspace"):
             metadata["workspace"] = str(session["workspace"])
+        event_root = session.get("session_event_root")
+        if event_root:
+            if not isinstance(event_root, str) or not Path(event_root).is_absolute():
+                raise ValueError("retained session event root is invalid")
+            metadata["session_event_root"] = event_root
+        durable_product_workspace = session.get("durable_product_workspace")
+        if durable_product_workspace:
+            if (
+                not isinstance(durable_product_workspace, str)
+                or not Path(durable_product_workspace).is_absolute()
+            ):
+                raise ValueError("retained durable product workspace is invalid")
+            metadata["durable_product_workspace"] = durable_product_workspace
+        artifact_manifest_ref = _retained_artifact_manifest_ref(
+            session.get("artifact_manifest_ref")
+        )
+        if artifact_manifest_ref is not None:
+            metadata["artifact_manifest_ref"] = artifact_manifest_ref
         permission_mode = str(session.get("permission_mode") or "").strip().lower()
         if permission_mode in {"prompt", "ask", "interactive", "configured"}:
             metadata["permission_mode"] = permission_mode
@@ -633,12 +706,57 @@ class PersistenceMixin:
             loaded_from_retained_state=True,
         )
         for item in payload.get("turns") or []:
+            marker = item.get("logical_event_count_before_admission")
+            if marker is not None and (
+                type(marker) is not int or marker < 1
+            ):
+                raise ValueError("retained turn journal position is invalid")
+            session_status = item.get(
+                "logical_input_session_status_before_admission"
+            )
+            if session_status is not None and (
+                not isinstance(session_status, str)
+                or session_status
+                not in {
+                    "running",
+                    "awaiting_approval",
+                    "paused",
+                    "completed",
+                    "failed",
+                    "canceled",
+                }
+            ):
+                raise ValueError("retained turn session status is invalid")
+            if marker is not None and (
+                "content_hash" not in item or "attachments" not in item
+            ):
+                raise ValueError("retained turn admission payload is incomplete")
+            content_hash = item.get("content_hash")
+            if marker is not None and (
+                not isinstance(content_hash, str)
+                or len(content_hash) != 71
+                or not content_hash.startswith("sha256:")
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in content_hash[7:]
+                )
+            ):
+                raise ValueError("retained turn content hash is invalid")
+            content = ""
+            attachments = item.get("attachments", [])
+            if marker is None:
+                content_hash = None
+            if not isinstance(attachments, list) or any(
+                not isinstance(attachment, str) or not attachment.strip()
+                for attachment in attachments
+            ):
+                raise ValueError("retained turn attachments are invalid")
             turn = TurnRecord(
                 input_id=str(item["input_id"]),
                 turn_id=str(item["turn_id"]),
                 client_message_id="",
-                content="",
-                attachments=(),
+                content=content,
+                attachments=tuple(attachments),
                 original_disposition=str(item["original_disposition"]),
                 state=str(item["state"]),
                 cancellation_requested=bool(item.get("cancellation_requested")),
@@ -649,6 +767,9 @@ class PersistenceMixin:
                     item.get("terminal_resolution_committed")
                 ),
                 body_digest=str(item["body_digest"]),
+                logical_event_count_before_admission=marker,
+                logical_input_content_hash=content_hash,
+                logical_input_session_status_before_admission=session_status,
             )
             record.turns_by_id[turn.turn_id] = turn
         for item in payload.get("submissions") or []:

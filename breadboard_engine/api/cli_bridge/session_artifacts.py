@@ -5,16 +5,25 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import stat
 import uuid
+from itertools import islice
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Dict, Mapping, Optional, Sequence
+from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Sequence
 
 from fastapi import HTTPException, UploadFile, status
 
 from breadboard.product.runtime import AnchoredStorage, ArtifactStore
-from breadboard.product.runtime.artifacts import _validate_artifact_name
+from breadboard.product.runtime.artifacts import (
+    ArtifactRef,
+    _validate_artifact_name,
+    workspace_artifact_ref,
+)
 from breadboard.product.runtime.session_store import (
+    _MAX_ARTIFACT_MANIFEST_AGGREGATE_BYTES,
+    _MAX_ARTIFACT_MANIFEST_BYTES,
+    _MAX_ARTIFACT_MANIFESTS,
     authorize_session_artifact_manifest,
 )
 
@@ -171,6 +180,311 @@ class SessionArtifactStore:
         candidate = candidate.replace("\\", "/")
         return os.path.basename(candidate)
 
+    def _read_manifest(
+        self,
+        manifest_ref: ArtifactRef,
+        artifact_store: ArtifactStore,
+    ) -> Dict[str, ArtifactRef]:
+        document = json.loads(artifact_store.read(manifest_ref))
+        if (
+            not isinstance(document, dict)
+            or document.get("schema_version") != "bb.artifact_manifest.v1"
+            or document.get("session_id") != self.session_id
+            or not isinstance(document.get("artifacts"), list)
+        ):
+            raise ValueError("invalid retained attachment manifest")
+        restored: Dict[str, ArtifactRef] = {}
+        for row in document["artifacts"]:
+            if not isinstance(row, dict) or set(row) != {
+                "name",
+                "digest",
+                "size_bytes",
+                "media_type",
+            }:
+                raise ValueError("invalid retained attachment manifest row")
+            name = row["name"]
+            _validate_artifact_name(name)
+            if name in restored:
+                raise ValueError("duplicate retained attachment manifest row")
+            restored[name] = ArtifactRef(
+                digest=row["digest"],
+                size_bytes=row["size_bytes"],
+                media_type=row["media_type"],
+            )
+        return restored
+
+    def _manifest_names(
+        self, workspace: Path, *, maximum: int | None = None
+    ) -> list[str]:
+        prefix = f"{self.session_id}."
+        suffix = ".json"
+
+        maximum = _MAX_ARTIFACT_MANIFESTS if maximum is None else maximum
+        def matching_names(entries: Any) -> list[str]:
+            names: list[str] = []
+            for entry in entries:
+                name = entry.name
+                if not name.startswith(prefix) or not name.endswith(suffix):
+                    continue
+                names.append(name)
+                if len(names) > maximum:
+                    raise ValueError("too many retained attachment manifests")
+            return sorted(names)
+
+        anchor, _, descriptor, windows_handles = _open_workspace_breadboard(workspace)
+        artifact_fd = manifest_fd = None
+        try:
+            if descriptor is not None:
+                artifact_fd = AnchoredStorage.open_directory(
+                    descriptor,
+                    "artifacts",
+                    create=False,
+                )
+                manifest_fd = AnchoredStorage.open_directory(
+                    artifact_fd,
+                    "manifests",
+                    create=False,
+                )
+                with os.scandir(manifest_fd) as entries:
+                    return matching_names(entries)
+            manifest_root = anchor / "artifacts" / "manifests"
+            windows_handles.append(
+                AnchoredStorage.windows_handle(
+                    manifest_root,
+                    directory=True,
+                    create=False,
+                )
+            )
+            with os.scandir(manifest_root) as entries:
+                return matching_names(entries)
+        except FileNotFoundError:
+            return []
+        finally:
+            if manifest_fd is not None:
+                os.close(manifest_fd)
+            if artifact_fd is not None:
+                os.close(artifact_fd)
+            if descriptor is not None:
+                os.close(descriptor)
+            for handle in reversed(windows_handles):
+                AnchoredStorage.close_windows_handle(handle)
+    def _admit_manifest_upload(self, workspace: Path) -> None:
+        try:
+            retained_manifests = self._manifest_names(workspace)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="too many retained attachment manifests",
+            ) from exc
+        if len(retained_manifests) >= _MAX_ARTIFACT_MANIFESTS:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="too many retained attachment manifests",
+            )
+
+
+
+    def _discard_manifest_names(
+        self,
+        workspace: Path,
+        names: Sequence[str],
+    ) -> None:
+        if not names:
+            return
+        anchor, _, descriptor, windows_handles = _open_workspace_breadboard(workspace)
+        artifact_fd = manifest_fd = None
+        try:
+            if descriptor is not None:
+                artifact_fd = AnchoredStorage.open_directory(
+                    descriptor,
+                    "artifacts",
+                    create=False,
+                )
+                manifest_fd = AnchoredStorage.open_directory(
+                    artifact_fd,
+                    "manifests",
+                    create=False,
+                )
+                for name in names:
+                    try:
+                        os.unlink(name, dir_fd=manifest_fd)
+                    except FileNotFoundError:
+                        pass
+                os.fsync(manifest_fd)
+                return
+            manifest_root = anchor / "artifacts" / "manifests"
+            windows_handles.append(
+                AnchoredStorage.windows_handle(
+                    manifest_root,
+                    directory=True,
+                    create=False,
+                )
+            )
+            for name in names:
+                (manifest_root / name).unlink(missing_ok=True)
+            AnchoredStorage.sync_directory(manifest_root)
+        finally:
+            if manifest_fd is not None:
+                os.close(manifest_fd)
+            if artifact_fd is not None:
+                os.close(artifact_fd)
+            if descriptor is not None:
+                os.close(descriptor)
+            for handle in reversed(windows_handles):
+                AnchoredStorage.close_windows_handle(handle)
+
+    def restore_manifest(self, workspace: Path) -> None:
+        anchor, _, descriptor, windows_handles = _open_workspace_breadboard(
+            workspace
+        )
+        artifact_fd = None
+        try:
+            if descriptor is not None:
+                artifact_fd = AnchoredStorage.open_directory(
+                    descriptor,
+                    "artifacts",
+                )
+            artifact_root = anchor / "artifacts"
+            if os.name == "nt":
+                windows_handles.append(
+                    AnchoredStorage.windows_handle(
+                        artifact_root,
+                        directory=True,
+                    )
+                )
+            artifact_store = ArtifactStore(artifact_root, descriptor=artifact_fd)
+            with artifact_store.transaction():
+                self._restore_manifest_locked(workspace, artifact_store)
+        finally:
+            if artifact_fd is not None:
+                os.close(artifact_fd)
+            if descriptor is not None:
+                os.close(descriptor)
+            for handle in reversed(windows_handles):
+                AnchoredStorage.close_windows_handle(handle)
+
+    def _restore_manifest_locked(
+        self, workspace: Path, artifact_store: ArtifactStore
+    ) -> None:
+        prefix = f"{self.session_id}."
+        retained_ref = self.metadata.get("artifact_manifest_ref")
+        retained_digest: str | None = None
+        if retained_ref is not None:
+            if not isinstance(retained_ref, Mapping):
+                raise ValueError("invalid retained attachment manifest reference")
+            digest = retained_ref.get("digest")
+            if (
+                not isinstance(digest, str)
+                or not digest.startswith("sha256:")
+                or len(digest) != len("sha256:") + 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in digest.removeprefix("sha256:")
+                )
+            ):
+                raise ValueError("invalid retained attachment manifest reference")
+            retained_digest = digest.removeprefix("sha256:")
+        manifest_names = [
+            name
+            for name in self._manifest_names(workspace)
+            if name.startswith(prefix) and name.endswith(".json")
+        ]
+        if len(manifest_names) > _MAX_ARTIFACT_MANIFESTS:
+            raise ValueError("too many retained attachment manifests")
+        manifest_refs: list[tuple[str, ArtifactRef]] = []
+        aggregate_size = 0
+        for name in manifest_names:
+            digest = name[len(prefix) : -len(".json")]
+            if len(digest) != 64 or any(
+                character not in "0123456789abcdef" for character in digest
+            ):
+                raise ValueError("invalid retained attachment manifest name")
+            manifest_ref = workspace_artifact_ref(
+                workspace,
+                f"sha256:{digest}",
+                media_type="application/json",
+            )
+            if manifest_ref.size_bytes > _MAX_ARTIFACT_MANIFEST_BYTES:
+                raise ValueError("retained attachment manifest is oversized")
+            aggregate_size += manifest_ref.size_bytes
+            if aggregate_size > _MAX_ARTIFACT_MANIFEST_AGGREGATE_BYTES:
+                raise ValueError("retained attachment manifests are oversized")
+            manifest_refs.append((digest, manifest_ref))
+        candidates: list[
+            tuple[int, str, ArtifactRef, Dict[str, ArtifactRef]]
+        ] = []
+        for digest, manifest_ref in manifest_refs:
+            restored = self._read_manifest(manifest_ref, artifact_store)
+            candidates.append((len(restored), digest, manifest_ref, restored))
+        if not candidates:
+            if retained_digest is not None:
+                raise ValueError("retained attachment manifest is missing")
+            return
+        if retained_digest is None:
+            history_head = max(candidates)
+            if any(
+                any(
+                    history_head[3].get(name) != ref
+                    for name, ref in candidate.items()
+                )
+                for *_, candidate in candidates
+            ):
+                raise ValueError("retained attachment manifests do not form one history")
+            _, selected_digest, selected_ref, selected = history_head
+        else:
+            retained_candidate = next(
+                (
+                    candidate
+                    for candidate in candidates
+                    if candidate[1] == retained_digest
+                ),
+                None,
+            )
+            if retained_candidate is None:
+                raise ValueError("retained attachment manifest is missing")
+            _, selected_digest, selected_ref, selected = retained_candidate
+        workspace_root = workspace.resolve()
+        attachment_root = workspace_root / ".breadboard" / "attachments"
+        attachment_entries: Dict[str, Dict[str, Any]] = {}
+        for attachment_id in selected:
+            attachment_dir = attachment_root / attachment_id
+            try:
+                directory_stat = attachment_dir.stat(follow_symlinks=False)
+                children = tuple(islice(attachment_dir.iterdir(), 2))
+            except FileNotFoundError as exc:
+                raise ValueError("retained attachment materialization is missing") from exc
+            if not stat.S_ISDIR(directory_stat.st_mode) or len(children) != 1:
+                raise ValueError("invalid retained attachment materialization")
+            materialized = children[0]
+            try:
+                materialized_stat = materialized.stat(follow_symlinks=False)
+            except FileNotFoundError as exc:
+                raise ValueError("retained attachment materialization is missing") from exc
+            if not stat.S_ISREG(materialized_stat.st_mode):
+                raise ValueError("invalid retained attachment materialization")
+            attachment_entries[attachment_id] = {
+                "id": attachment_id,
+                "filename": materialized.name,
+                "absolute_path": str(materialized),
+                "relative_path": str(materialized.relative_to(workspace_root)),
+                "metadata": {},
+            }
+        self._attachment_entries = attachment_entries
+        self.metadata["artifact_manifest_ref"] = selected_ref.as_dict()
+        self._artifact_refs = selected
+        try:
+            self._discard_manifest_names(
+                workspace,
+                [
+                    f"{prefix}{digest}.json"
+                    for _, digest, _, _ in candidates
+                    if digest != selected_digest
+                ],
+            )
+        except OSError:
+            # History pruning is maintenance after successful recovery.
+            pass
+
     def authorize_manifest(
         self,
         workspace: Path,
@@ -196,11 +510,13 @@ class SessionArtifactStore:
         *,
         workspace_dir: Path,
         metadata: Optional[dict[str, Any]] = None,
+        persist: Callable[[], Awaitable[None]] | None = None,
     ) -> AttachmentUploadResponse:
         if not files:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="no files provided"
             )
+        self._admit_manifest_upload(workspace_dir)
         staged_uploads = []
         staged_bytes = 0
         for index, upload in enumerate(files, start=1):
@@ -243,6 +559,11 @@ class SessionArtifactStore:
         artifact_fd = attachment_fd = None
         artifact_root, attachment_root = anchor / "artifacts", anchor / "attachments"
         artifact_refs = dict(self._artifact_refs)
+        artifact_refs_before = dict(self._artifact_refs)
+        metadata_before = {
+            key: (key in self.metadata, self.metadata.get(key))
+            for key in ("artifact_manifest", "artifact_manifest_ref")
+        }
         manifest_path: Path | None = None
         manifest_fd = None
         manifest_name = None
@@ -264,6 +585,7 @@ class SessionArtifactStore:
             candidate_transaction = artifact_store.transaction()
             candidate_transaction.__enter__()
             transaction = candidate_transaction
+            self._admit_manifest_upload(workspace_root)
             if attachment_fd is None:
                 attachment_root.mkdir(parents=True, exist_ok=True)
             if os.name == "nt":
@@ -360,6 +682,27 @@ class SessionArtifactStore:
                         detail="workspace metadata path changed",
                     )
                 self.register_attachments(attachment_entries)
+                self._artifact_refs = artifact_refs
+                self.metadata["artifact_manifest"] = manifest
+                self.metadata["artifact_manifest_ref"] = manifest_ref.as_dict()
+                if persist is not None:
+                    await persist()
+                    try:
+                        manifest_names = self._manifest_names(
+                            workspace_root,
+                            maximum=_MAX_ARTIFACT_MANIFESTS + 1,
+                        )
+                        self._discard_manifest_names(
+                            workspace_root,
+                            [
+                                name
+                                for name in manifest_names
+                                if name != manifest_name
+                            ],
+                        )
+                    except Exception:
+                        # The committed upload remains authoritative.
+                        pass
             except BaseException:
                 if attachment_fd is not None:
                     for name in created_dirs:
@@ -426,6 +769,12 @@ class SessionArtifactStore:
                         ) if parent.is_dir() else None
                 for artifact_ref in created_refs:
                     artifact_store.discard(artifact_ref)
+                self._artifact_refs = artifact_refs_before
+                for key, (present, value) in metadata_before.items():
+                    if present:
+                        self.metadata[key] = value
+                    else:
+                        self.metadata.pop(key, None)
                 self._attachment_entries = registered_before
                 raise
         finally:
@@ -452,9 +801,4 @@ class SessionArtifactStore:
         except FileNotFoundError:
             # Live bridge sessions have no durable product projection yet.
             pass
-        self._artifact_refs = artifact_refs
-        (
-            self.metadata["artifact_manifest"],
-            self.metadata["artifact_manifest_ref"],
-        ) = manifest, manifest_ref.as_dict()
         return AttachmentUploadResponse(attachments=handles)

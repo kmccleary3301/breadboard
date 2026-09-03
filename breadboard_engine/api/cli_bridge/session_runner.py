@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Sequence, List
 from breadboard_engine.compilation.v2_loader import load_agent_config
 from breadboard.product.runtime import session_store
+from breadboard.product.runtime.events import ReplayError
 from breadboard_engine.model_roles import (
     ModelRoleProblem,
     ModelRoleResolutionError,
@@ -56,6 +57,18 @@ from .session_lifecycle import SessionLifecycleOwner
 
 from .session_artifacts import MAX_ATTACHMENT_BYTES, SessionArtifactStore
 
+_ADMISSION_BLOCKING_PRODUCT_EVENTS = frozenset(
+    {
+        "approval.requested",
+        "approval.resolved",
+        "session.paused",
+        "session.resumed",
+        "session.reconfigured",
+        "session.completed",
+        "session.failed",
+        "session.canceled",
+    }
+)
 logger = logging.getLogger(__name__)
 AgentFactory = Callable[[str, Optional[str], Optional[Dict[str, Any]]], Any]
 
@@ -161,6 +174,7 @@ class SessionRunner:
         session_directory_identity: session_store.SessionDirectoryIdentity,
     ) -> None:
         with self._product_session_lock:
+            self.artifacts.restore_manifest(workspace)
             self._durable_product_session = (
                 workspace.resolve(),
                 session_directory_identity,
@@ -176,6 +190,7 @@ class SessionRunner:
             workspace,
             product_session,
             expected_session_directory_identity=expected_session_directory_identity,
+            allow_existing=True,
         )
         self.artifacts.authorize_manifest(
             workspace,
@@ -390,6 +405,204 @@ class SessionRunner:
             await self.registry.update_status(self.session.session_id, final_status)
             self._closed = True
             await self._enqueue_termination()
+    @staticmethod
+    def canonicalize_input_attachments(
+        attachments: Optional[Sequence[str]],
+    ) -> list[str]:
+        canonical: list[str] = []
+        seen: set[str] = set()
+        for attachment in attachments or ():
+            if not isinstance(attachment, str) or not attachment.strip():
+                raise ValueError("attachment IDs must not be empty")
+            normalized = attachment.strip()
+            if normalized not in seen:
+                seen.add(normalized)
+                canonical.append(normalized)
+        return canonical
+
+    def validate_input_admission(
+        self,
+        content: str,
+        attachments: Sequence[str],
+        *,
+        input_id: Optional[str] = None,
+        turn_id: Optional[str] = None,
+    ) -> None:
+        if self._closed:
+            raise RuntimeError("session is closed")
+        if not content or not content.strip():
+            raise ValueError("input content must not be empty")
+        if (input_id is None) != (turn_id is None):
+            raise ValueError("input and turn IDs must be supplied together")
+        canonical_attachments = self.canonicalize_input_attachments(attachments)
+        if tuple(canonical_attachments) != tuple(attachments):
+            raise ValueError("attachments are not canonical")
+        if turn_id is not None:
+            admitted_turn = self.session.turns_by_id.get(turn_id)
+            if admitted_turn is None:
+                raise RuntimeError("turn_id was not admitted by the session registry")
+            if admitted_turn.input_id != input_id:
+                raise RuntimeError("input_id does not match the admitted turn")
+            if admitted_turn.terminal_outcome is not None:
+                raise RuntimeError("turn is already terminal")
+            admitted_active = (
+                admitted_turn.state == "active"
+                and self.session.active_turn_id == admitted_turn.turn_id
+            )
+            admitted_queued = (
+                admitted_turn.state == "queued"
+                and admitted_turn.turn_id in self.session.queued_turn_ids
+            )
+            if not (admitted_active or admitted_queued):
+                raise RuntimeError("turn is not active or queued for execution")
+            if admitted_turn.content != content:
+                raise RuntimeError("input content does not match the admitted turn")
+            if admitted_turn.attachments != tuple(canonical_attachments):
+                raise RuntimeError("attachments do not match the admitted turn")
+        with self._product_session_lock:
+            self.artifacts.selected_artifacts(canonical_attachments)
+            product_session = getattr(self.session, "product_session", None)
+            product_status = getattr(
+                getattr(product_session, "read_model", None), "status", None
+            )
+            if product_status is not None and product_status != "running":
+                raise RuntimeError("product session is not accepting input")
+
+    def reconcile_retained_input_admissions(self) -> None:
+        """Repair a registry-first admission that missed its journal append."""
+        with self._product_session_lock:
+            product_session = getattr(self.session, "product_session", None)
+            if product_session is None:
+                return
+            retained_turns = [
+                turn
+                for turn in self.session.turns_by_id.values()
+                if (
+                    turn.logical_event_count_before_admission is not None
+                    and turn.terminal_outcome is None
+                    and not turn.terminal_resolution_committed
+                )
+            ]
+            if not retained_turns:
+                return
+            events = product_session.events
+            markers = [
+                turn.logical_event_count_before_admission
+                for turn in retained_turns
+            ]
+            if any(
+                current is None
+                or current < 1
+                or next_marker is None
+                or next_marker <= current
+                for current, next_marker in zip(markers, markers[1:])
+            ):
+                raise ReplayError(
+                    "admission_journal_mismatch",
+                    "retained input admission positions are out of order",
+                )
+            for index, turn in enumerate(retained_turns):
+                before = turn.logical_event_count_before_admission
+                content_hash = turn.logical_input_content_hash
+                if (
+                    before is None
+                    or before < 1
+                    or not isinstance(content_hash, str)
+                ):
+                    raise ReplayError(
+                        "admission_journal_mismatch",
+                        "retained input admission payload is incomplete",
+                    )
+                try:
+                    selected_artifacts = self.artifacts.selected_artifacts(
+                        turn.attachments
+                    )
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise ReplayError(
+                        "admission_journal_mismatch",
+                        "retained input admission references unavailable attachments",
+                    ) from exc
+                expected_payload = {
+                    "content_hash": content_hash,
+                    "attachments": tuple(
+                        artifact.as_dict() for artifact in selected_artifacts
+                    ),
+                }
+                if before > len(events):
+                    raise ReplayError(
+                        "admission_journal_mismatch",
+                        "retained input admission journal position is missing",
+                    )
+                next_before = (
+                    markers[index + 1] if index + 1 < len(markers) else None
+                )
+                upper_bound = (
+                    min(next_before, len(events))
+                    if next_before is not None
+                    else len(events)
+                )
+                matches: list[int] = []
+                blocking_positions: list[int] = []
+                for position, event in enumerate(
+                    events[before:upper_bound], start=before
+                ):
+                    if event.kind in _ADMISSION_BLOCKING_PRODUCT_EVENTS:
+                        blocking_positions.append(position)
+                    actual_payload = (
+                        {
+                            "content_hash": event.payload.get("content_hash"),
+                            "attachments": tuple(
+                                event.payload.get("attachments") or ()
+                            ),
+                        }
+                        if isinstance(event.payload, Mapping)
+                        else None
+                    )
+                    if (
+                        event.kind == "input.accepted"
+                        and actual_payload == expected_payload
+                    ):
+                        matches.append(position)
+                if len(matches) > 1:
+                    raise ReplayError(
+                        "admission_journal_mismatch",
+                        "retained input admission has duplicate journal events",
+                    )
+                before_status = (
+                    turn.logical_input_session_status_before_admission
+                )
+                if matches:
+                    match_position = matches[0]
+                    if before_status not in {None, "running"} or any(
+                        position < match_position for position in blocking_positions
+                    ):
+                        turn.cancellation_requested = True
+                        turn.cancellation_reason = (
+                            turn.cancellation_reason
+                            or "product_transition_interrupted_admission"
+                        )
+                    continue
+                if before_status not in {None, "running"} or blocking_positions:
+                    turn.cancellation_requested = True
+                    turn.cancellation_reason = (
+                        turn.cancellation_reason
+                        or "product_transition_interrupted_admission"
+                    )
+                    continue
+                if next_before is not None:
+                    raise ReplayError(
+                        "admission_journal_mismatch",
+                        "retained input admission is ordered after a later admission",
+                    )
+                if product_session.read_model.status != "running":
+                    turn.cancellation_requested = True
+                    turn.cancellation_reason = (
+                        turn.cancellation_reason
+                        or "product_transition_interrupted_admission"
+                    )
+                    continue
+                product_session.input_digest(content_hash, selected_artifacts)
+                events = product_session.events
 
     async def enqueue_input(
         self,
@@ -426,20 +639,13 @@ class SessionRunner:
         if not (admitted_active or admitted_queued):
             raise RuntimeError("turn is not active or queued for execution")
 
-        attachment_ids = list(
-            dict.fromkeys(
-                item.strip()
-                for item in (attachments or [])
-                if isinstance(item, str) and item.strip()
-            )
-        )
+        attachment_ids = self.canonicalize_input_attachments(attachments)
         if admitted_turn.content != content:
             raise RuntimeError("input content does not match the admitted turn")
         if admitted_turn.attachments != tuple(attachment_ids):
             raise RuntimeError("attachments do not match the admitted turn")
         with self._product_session_lock:
             selected_artifacts = self.artifacts.selected_artifacts(attachment_ids)
-            content = self._sanitize_interactive_input_content(content)
             payload = {
                 "content": content,
                 "attachments": attachment_ids,
@@ -448,20 +654,17 @@ class SessionRunner:
             }
             product_session = getattr(self.session, "product_session", None)
 
-            def commit_input() -> None:
-                if product_session is not None:
-                    product_session.input(content, selected_artifacts)
-                    self.session.metadata["session_contract"] = (
-                        product_session.read_model.as_dict()
-                    )
+            if product_session is not None:
+                product_session.input(content, selected_artifacts)
+
+            def deliver_input() -> None:
                 self._input_queue.put_nowait(payload)
 
             if defer_execution is None:
-                commit_input()
+                deliver_input()
             else:
                 async def enqueue_after_response() -> None:
-                    with self._product_session_lock:
-                        commit_input()
+                    deliver_input()
 
                 defer_execution(enqueue_after_response)
         return content
@@ -484,9 +687,6 @@ class SessionRunner:
             getattr(product_session, transition)(*args)
             if transition in {"complete", "fail", "cancel"}:
                 self._commit_terminal_product_session_locked()
-            self.session.metadata["session_contract"] = (
-                product_session.read_model.as_dict()
-            )
 
     # Provider-supplied names are not public identities until they resolve into
     # the active, configured tool surface.
@@ -566,47 +766,61 @@ class SessionRunner:
             trajectory_id=trajectory_id,
         )
 
-    def _sanitize_interactive_input_content(self, content: str) -> str:
-        """Remove an exact prior-prompt prefix accidentally repeated by the TUI.
+    def prepare_input_content(self, content: str) -> str:
+        with self._product_session_lock:
+            normalized, _ = self._input_boundary_repair(content)
+            return normalized
 
-        Independent prompt POSTs must remain separate turns; only the nonempty suffix
-        of an exact prior accepted prompt is new input.
-        """
+    def record_input_boundary_repair(self, raw: str, normalized: str) -> None:
+        with self._product_session_lock:
+            self._record_input_boundary_repair(raw, normalized)
+
+    def _record_input_boundary_repair(self, raw: str, normalized: str) -> None:
+        repaired, prior = self._input_boundary_repair(raw)
+        if prior is None or repaired != normalized:
+            return
+        logger.warning(
+            "session(%s) stripped stale prompt prefix from interactive input old_len=%s new_len=%s",
+            self.session.session_id,
+            len(prior),
+            len(raw) - len(prior),
+        )
+        meta = (
+            self.session.metadata if isinstance(self.session.metadata, dict) else {}
+        )
+        repairs = (
+            list(meta.get("input_boundary_repairs") or [])
+            if isinstance(meta.get("input_boundary_repairs"), list)
+            else []
+        )
+        repairs.append(
+            {
+                "prior_len": len(prior),
+                "raw_len": len(raw),
+                "suffix_len": len(raw) - len(prior),
+            }
+        )
+        meta["input_boundary_repairs"] = repairs[-10:]
+        self.session.metadata = meta
+        self._persist_metadata_snapshot_threadsafe()
+
+    def _input_boundary_repair(self, content: str) -> tuple[str, str | None]:
         raw = str(content or "")
         if not raw:
-            return raw
+            return raw, None
         for prior in sorted(self._accepted_task_texts, key=len, reverse=True):
             if not prior or not raw.startswith(prior) or len(raw) <= len(prior):
                 continue
             suffix = raw[len(prior) :]
-            if not suffix.strip():
-                continue
-            logger.warning(
-                "session(%s) stripped stale prompt prefix from interactive input old_len=%s new_len=%s",
-                self.session.session_id,
-                len(prior),
-                len(suffix),
-            )
-            meta = (
-                self.session.metadata if isinstance(self.session.metadata, dict) else {}
-            )
-            repairs = (
-                list(meta.get("input_boundary_repairs") or [])
-                if isinstance(meta.get("input_boundary_repairs"), list)
-                else []
-            )
-            repairs.append(
-                {
-                    "prior_len": len(prior),
-                    "raw_len": len(raw),
-                    "suffix_len": len(suffix),
-                }
-            )
-            meta["input_boundary_repairs"] = repairs[-10:]
-            self.session.metadata = meta
-            self._persist_metadata_snapshot_threadsafe()
-            return suffix.lstrip()
-        return raw
+            if suffix.strip():
+                return suffix.lstrip(), prior
+        return raw, None
+
+    def _sanitize_interactive_input_content(self, content: str) -> str:
+        """Remove an exact prior-prompt prefix accidentally repeated by the TUI."""
+        normalized, _ = self._input_boundary_repair(content)
+        self._record_input_boundary_repair(str(content or ""), normalized)
+        return normalized
 
     def _upsert_permission_rule(
         self,
