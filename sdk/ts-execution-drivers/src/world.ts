@@ -412,6 +412,29 @@ export function createExecutionWorld(input: {
     }
     endedSessionOwners.set(sessionId, driver)
   }
+  function adoptTerminalSnapshot(
+    driver: TerminalSessionDriverV1,
+    snapshot: TerminalRegistrySnapshotV1,
+  ): Set<string> {
+    const activeIds = new Set(
+      snapshot.active_sessions.map((session) => session.terminal_session_id),
+    )
+    for (const session of snapshot.active_sessions) {
+      const sessionId = session.terminal_session_id
+      const knownOwner = sessions.get(sessionId) ?? endedSessionOwners.get(sessionId)
+      if (knownOwner && knownOwner.driverId !== driver.driverId) continue
+      sessions.set(sessionId, driver)
+      endedSessionOwners.delete(sessionId)
+    }
+    for (const sessionId of snapshot.ended_session_ids ?? []) {
+      if (activeIds.has(sessionId)) continue
+      const knownOwner = sessions.get(sessionId) ?? endedSessionOwners.get(sessionId)
+      if (knownOwner && knownOwner.driverId !== driver.driverId) continue
+      sessions.delete(sessionId)
+      rememberEndedSessionOwner(sessionId, driver)
+    }
+    return activeIds
+  }
   async function executeSandbox(operation: ExecutionWorldSandboxInputV1): Promise<ExecutionWorldSandboxResultV1> {
     const driver = selectWorldDriver(drivers, {
       capability: operation.capability,
@@ -1094,7 +1117,7 @@ export function createExecutionWorld(input: {
         throw new Error("Terminal snapshot driver returned null or invalid result")
       }
       const result = assertValid<TerminalRegistrySnapshotV1>("terminalRegistrySnapshot", rawResult)
-      const activeIds = new Set(result.active_sessions.map((s) => s.terminal_session_id))
+      const activeIds = adoptTerminalSnapshot(driver, result)
       const worldEndedIds = Array.from(endedSessionOwners.entries())
         .filter(([, owner]) => owner.driverId === driver.driverId)
         .map(([sessionId]) => sessionId)
@@ -1200,24 +1223,7 @@ export function createExecutionWorld(input: {
             "terminalRegistrySnapshot",
             await selectedCleanupDriver.snapshotTerminalRegistry(),
           )
-          const activeSnapshotIds = new Set(
-            snapshot.active_sessions.map((session) => session.terminal_session_id),
-          )
-          for (const session of snapshot.active_sessions) {
-            const sessionId = session.terminal_session_id
-            const knownOwner = sessions.get(sessionId) ?? endedSessionOwners.get(sessionId)
-            if (knownOwner && knownOwner.driverId !== selectedCleanupDriver.driverId) continue
-            sessions.set(sessionId, selectedCleanupDriver)
-            endedSessionOwners.delete(sessionId)
-          }
-          for (const sessionId of snapshot.ended_session_ids ?? []) {
-            if (activeSnapshotIds.has(sessionId)) continue
-            const knownOwner = sessions.get(sessionId) ?? endedSessionOwners.get(sessionId)
-            if (knownOwner && knownOwner.driverId !== selectedCleanupDriver.driverId) continue
-            if (!sessions.has(sessionId)) {
-              endedSessionOwners.set(sessionId, selectedCleanupDriver)
-            }
-          }
+          adoptTerminalSnapshot(selectedCleanupDriver, snapshot)
         } catch {
           // Registry discovery is best effort; retain locally owned targets.
         }

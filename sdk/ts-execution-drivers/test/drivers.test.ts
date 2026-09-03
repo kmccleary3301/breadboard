@@ -4344,11 +4344,12 @@ test("execution world snapshot sanitizes merged ended session IDs against active
     runtime_id: "local",
     capability_id: cap.capability_id,
   }
+  let dynamicSupport = true
   const driver: TerminalSessionDriverV1 = {
     driverId: "snap-overlap-driver",
     supportedPlacements: ["local_process"],
     supportsCapability: () => true,
-    supportsTerminalSessions: () => true,
+    supportsTerminalSessions: () => dynamicSupport,
     snapshotTerminalRegistry: async () => ({
       schema_version: "bb.terminal_registry_snapshot.v1",
       snapshot_id: "snap-overlap-1",
@@ -4371,6 +4372,18 @@ test("execution world snapshot sanitizes merged ended session IDs against active
       // Driver snapshot includes overlapping ID in ended_session_ids
       ended_session_ids: ["term-overlap-active", "term-truly-ended"],
     }),
+    interactTerminalSession: async (input) => ({
+      interaction: {
+        schema_version: "bb.terminal_interaction.v1",
+        terminal_session_id: input.terminalSessionId,
+        startup_call_id: null,
+        causing_call_id: null,
+        interaction_kind: input.interactionKind,
+        input_b64: null,
+        signal: null,
+      },
+      outputDeltas: [],
+    }),
   }
 
   const world = createExecutionWorld({ drivers: [driver] })
@@ -4386,6 +4399,19 @@ test("execution world snapshot sanitizes merged ended session IDs against active
   assert.equal(snapRes.result?.active_sessions[0]?.terminal_session_id, "term-overlap-active")
   // ended_session_ids must be sanitized to exclude term-overlap-active
   assert.deepEqual(snapRes.result?.ended_session_ids, ["term-truly-ended"])
+
+  dynamicSupport = false
+  const interactRes = await world.execute({
+    kind: "terminal_interact",
+    capability: cap,
+    placement: place,
+    input: {
+      terminalSessionId: "term-overlap-active",
+      interactionKind: "poll",
+    },
+  })
+  assert.equal(interactRes.kind, "terminal_interact")
+  assert.ok(interactRes.result)
 })
 
 test("execution world unpinned terminal select does not choose sandbox-only driver when supportsTerminalSessions returns true but no terminal operations are implemented", async () => {
