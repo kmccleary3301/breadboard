@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Callable, Iterator, Literal, Mapping, Protocol
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 from breadboard.rl.harness.materialization import _DirFd
 from breadboard.rl.phase5 import g4_source_deletion_helper as _deletion_helper
 from breadboard.rl.phase5.rollback_store import (

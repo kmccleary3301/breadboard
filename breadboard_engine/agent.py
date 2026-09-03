@@ -52,7 +52,7 @@ from .security import (
     ProcessIsolationUnavailable,
     WorkspaceFilesystem,
     WorkspacePathError,
-    build_child_environment,
+    ChildProcessPolicy,
     protected_credential_paths,
     redaction,
     sanitized_process_environment,
@@ -382,7 +382,9 @@ class AgenticCoder:
                 protected_paths=protected_paths,
             )
         else:
-            runtime_env = {"env_vars": build_child_environment()}
+            runtime_env = {
+                "env_vars": ChildProcessPolicy().environment_only().as_dict()
+            }
             self.agent = OpenAIConductor.options(runtime_env=runtime_env).remote(
                 workspace=self.workspace_dir,
                 config=self.config,

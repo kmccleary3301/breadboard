@@ -110,8 +110,8 @@ def test_default_store_path_uses_state_dir_as_the_state_directory(
     assert default_store_path() == state_dir / "credentials.sqlite3"
 
 
-def test_broker_nine_method_surface_and_plain_data(tmp_path):
-    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3"))
+def test_broker_nine_method_surface_and_plain_data():
+    broker = ProviderBroker(SQLiteCredentialStore(":memory:"))
     methods = (
         "listProviders",
         "listCredentials",
@@ -505,7 +505,7 @@ def test_provider_client_construction_uses_one_operation_broker_lease(
         }
     )
     monkeypatch.setattr(broker_module, "_default_broker", broker)
-    router = ProviderRouter()
+    router = ProviderRouter(broker)
     metadata = router.create_client_config("openai/gpt-5.4-mini")
     assert metadata["api_key"] is None
     assert secret not in json.dumps(metadata)
@@ -1183,7 +1183,7 @@ def test_rate_limit_accounting_survives_exact_secret_redaction(
         }
     )
     monkeypatch.setattr(broker_module, "_default_broker", broker)
-    router = ProviderRouter()
+    router = ProviderRouter(broker)
 
     with pytest.raises(ProviderRuntimeError) as captured:
         with router.execution_client_config(

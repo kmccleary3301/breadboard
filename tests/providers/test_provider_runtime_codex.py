@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 
 from breadboard_engine.provider import runtime_codex as runtime_codex_module
-from breadboard_engine.provider_routing import provider_router
-from breadboard_engine.provider_runtime import (
+from breadboard_engine.provider.routing import provider_router
+from breadboard_engine.provider.runtime import (
     ProviderRuntimeContext,
     ProviderRuntimeError,
     provider_registry,
@@ -336,12 +336,32 @@ def test_codex_app_server_uses_restricted_process_builder(
     builder_calls: list[tuple[object, dict]] = []
     popen_calls: list[tuple[object, dict]] = []
 
-    def _builder(command, **kwargs):
-        builder_calls.append((command, kwargs))
-        return (
-            ("/trusted/isolation-helper", "--", "codex", "app-server"),
-            {"PATH": "/trusted/bin", "HOME": str(tmp_path)},
-        )
+    class _Policy:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def command_and_environment(self, command, *, environment):
+            builder_calls.append(
+                (
+                    command,
+                    {
+                        **self.kwargs,
+                        "environment": dict(environment.environment),
+                    },
+                )
+            )
+            return types.SimpleNamespace(
+                argv=(
+                    "/trusted/isolation-helper",
+                    "--",
+                    "codex",
+                    "app-server",
+                ),
+                environment_dict=lambda: {
+                    "PATH": "/trusted/bin",
+                    "HOME": str(tmp_path),
+                },
+            )
 
     class _Process:
         stderr = io.StringIO("")
@@ -350,11 +370,7 @@ def test_codex_app_server_uses_restricted_process_builder(
         popen_calls.append((command, kwargs))
         return _Process()
 
-    monkeypatch.setattr(
-        runtime_codex_module,
-        "build_restricted_process_command",
-        _builder,
-    )
+    monkeypatch.setattr(runtime_codex_module, "ChildProcessPolicy", _Policy)
     monkeypatch.setattr(runtime_codex_module.subprocess, "Popen", _popen)
     client = runtime_codex_module._CodexJsonRpcClient(
         codex_bin="/trusted/bin/codex",
@@ -454,15 +470,19 @@ def test_codex_app_server_isolation_failure_is_secret_free_and_never_retries(
     canary = "codex-isolation-error-canary-e7"
     build_calls = 0
 
-    def _builder(*_args, **_kwargs):
-        nonlocal build_calls
-        build_calls += 1
-        raise runtime_codex_module.ProcessIsolationUnavailable(canary)
+    class _FailingPolicy:
+        def __init__(self, **_kwargs):
+            pass
+
+        def command_and_environment(self, *_args, **_kwargs):
+            nonlocal build_calls
+            build_calls += 1
+            raise runtime_codex_module.ProcessIsolationUnavailable(canary)
 
     monkeypatch.setattr(
         runtime_codex_module,
-        "build_restricted_process_command",
-        _builder,
+        "ChildProcessPolicy",
+        _FailingPolicy,
     )
     monkeypatch.setattr(
         runtime_codex_module.subprocess,

@@ -174,12 +174,12 @@ Do not modify the main DAG runtime, optimize ranking logic, RL export code, prov
 
 Preferred additive implementation layout:
 
-- `agentic_coder_prototype/artifact_tasks/__init__.py`
-- `agentic_coder_prototype/artifact_tasks/contracts.py`
-- `agentic_coder_prototype/artifact_tasks/materialize.py`
-- `agentic_coder_prototype/artifact_tasks/evaluators.py`
-- `agentic_coder_prototype/artifact_tasks/evidence.py`
-- `agentic_coder_prototype/artifact_tasks/runner.py`
+- `breadboard_engine/artifact_tasks/__init__.py`
+- `breadboard_engine/artifact_tasks/contracts.py`
+- `breadboard_engine/artifact_tasks/materialize.py`
+- `breadboard_engine/artifact_tasks/evaluators.py`
+- `breadboard_engine/artifact_tasks/evidence.py`
+- `breadboard_engine/artifact_tasks/runner.py`
 - `tests/test_artifact_tasks.py`
 
 Possible later operator entrypoints:
@@ -187,12 +187,12 @@ Possible later operator entrypoints:
 - `scripts/dev/artifact_task_smoke.py`
 - `scripts/dev/breadboard_doctor.py`
 - `scripts/dev/config_explain.py`
-- `agentic_coder_prototype/api/cli_bridge/artifact_tasks.py`
+- `breadboard_engine/api/cli_bridge/artifact_tasks.py`
 
 Higher-blast-radius files to avoid until later:
 
 - `main.py`
-- `agentic_coder_prototype/agent.py`
+- `breadboard_engine/agent.py`
 - provider runtime internals
 - DAG runtime internals
 - C-Trees runtime internals
@@ -1092,7 +1092,7 @@ Suggested initial validation commands:
 
 ```bash
 pytest tests/test_artifact_tasks.py
-python -m compileall agentic_coder_prototype/artifact_tasks
+python -m compileall breadboard_engine/artifact_tasks
 python scripts/dev/artifact_task_smoke.py --help
 ```
 

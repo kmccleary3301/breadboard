@@ -886,175 +886,175 @@
  "S3_validation": {
   "v2_loader_checks": [
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:148-157 (_validate_agent_config_surface)",
+    "location": "breadboard_engine/compilation/v2_loader.py:148-157 (_validate_agent_config_surface)",
     "check": "Runs Draft 2020-12 validation using the selected agent-config-surface schema, sorts violations deterministically by absolute path/message, and raises only the first violation.",
     "schema_covered": "yes",
     "cross_field": false,
     "error_quality": "Strong: `_format_config_schema_error` emits an escaped JSON Pointer and the jsonschema message; required-property failures point at the missing property. Only the first of potentially many errors is reported."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:129-146 (_json_pointer, _format_config_schema_error)",
+    "location": "breadboard_engine/compilation/v2_loader.py:129-146 (_json_pointer, _format_config_schema_error)",
     "check": "Formats schema failures and moves a `required` violation's pointer from the containing object to the missing key.",
     "schema_covered": "yes",
     "cross_field": false,
     "error_quality": "Strong and stable: `agent config schema error at <pointer>: <detail>`. Missing-key extraction parses quoted text from jsonschema's English message, which is somewhat brittle."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:342-347 (_validate_v2)",
+    "location": "breadboard_engine/compilation/v2_loader.py:342-347 (_validate_v2)",
     "check": "Requires top-level version, workspace, providers, modes, and loop.",
     "schema_covered": "yes",
     "cross_field": false,
     "error_quality": "Clear section-specific legacy message, but unreachable in normal v2 flow because schema validation runs first and reports a pointer-based error."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:349-350",
+    "location": "breadboard_engine/compilation/v2_loader.py:349-350",
     "check": "Requires version to coerce through `int(...)` to 2.",
     "schema_covered": "yes",
     "cross_field": false,
     "error_quality": "Clear but normally unreachable; schema has `const: 2`. Python coercion is broader than schema, and an unexpected conversion exception would not receive this message."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:352-354",
+    "location": "breadboard_engine/compilation/v2_loader.py:352-354",
     "check": "Requires providers.default_model to be truthy.",
     "schema_covered": "yes",
     "cross_field": false,
     "error_quality": "Clear dotted path, normally unreachable; schema requires a non-empty string."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:355-357",
+    "location": "breadboard_engine/compilation/v2_loader.py:355-357",
     "check": "Requires providers.models to be a non-empty list.",
     "schema_covered": "partial",
     "cross_field": false,
     "error_quality": "Clear dotted path, but normally schema validation handles wrong type. The schema requires `models` and array type but, from the inspected provider schema, does not visibly impose `minItems`; the Python non-empty rule may add a constraint."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:358-360",
+    "location": "breadboard_engine/compilation/v2_loader.py:358-360",
     "check": "Requires each provider model row to have truthy id and adapter.",
     "schema_covered": "yes",
     "cross_field": false,
     "error_quality": "Understandable but imprecise: no failing array index/JSON Pointer. Normally unreachable because schema requires both fields and their strings are non-empty."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:362-364",
+    "location": "breadboard_engine/compilation/v2_loader.py:362-364",
     "check": "Requires loop.sequence to be truthy/non-empty.",
     "schema_covered": "partial",
     "cross_field": false,
     "error_quality": "Clear dotted path. Schema requires sequence and array type, but the Python truthiness check additionally rejects an empty array if the schema has no `minItems`."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:366-380",
+    "location": "breadboard_engine/compilation/v2_loader.py:366-380",
     "check": "Requires features, features.rlm, and features.rlm.budget (when present) to be mappings; requires rlm.enabled to be boolean.",
     "schema_covered": "yes",
     "cross_field": false,
     "error_quality": "Clear dotted paths and expected types; redundant/unreachable after schema-first validation."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:381-390",
+    "location": "breadboard_engine/compilation/v2_loader.py:381-390",
     "check": "For rlm budget max_depth, max_subcalls, max_total_tokens, and max_wallclock_seconds, coerces with int and requires non-negative.",
     "schema_covered": "partial",
     "cross_field": false,
     "error_quality": "Excellent field-specific message, including non-negativity. Schema strictly requires integer >= 0; Python accepts coercible strings only in isolation, but schema rejects those first."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:391-398",
+    "location": "breadboard_engine/compilation/v2_loader.py:391-398",
     "check": "Coerces rlm budget max_total_cost_usd to float and requires >= 0.",
     "schema_covered": "partial",
     "cross_field": false,
     "error_quality": "Clear field and bound. Schema covers numeric type but has no minimum, so the non-negative rule must remain unless moved into schema."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:399-428",
+    "location": "breadboard_engine/compilation/v2_loader.py:399-428",
     "check": "Requires budget.per_branch to be a mapping; coerces max_subcalls/max_total_tokens to non-negative integers and max_total_cost_usd to a non-negative float.",
     "schema_covered": "partial",
     "cross_field": false,
     "error_quality": "Strong dotted-field messages. Object and integer checks are schema-covered; cost non-negativity is Python-only because schema lacks a minimum."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:429-444",
+    "location": "breadboard_engine/compilation/v2_loader.py:429-444",
     "check": "Requires blob_store mapping; max_total_bytes, max_blob_bytes, and mvi_excerpt_bytes must coerce to non-negative integers.",
     "schema_covered": "yes",
     "cross_field": false,
     "error_quality": "Strong field-specific diagnostics, but redundant after schema validation, which specifies integer minimum 0."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:445-476",
+    "location": "breadboard_engine/compilation/v2_loader.py:445-476",
     "check": "Requires subcall mapping; max_completion_tokens and retries are non-negative integers; timeout_seconds is numeric >= 0.",
     "schema_covered": "partial",
     "cross_field": false,
     "error_quality": "Strong dotted paths and bounds. Mapping/integer constraints are schema-covered; timeout numeric type is covered but its non-negative bound is not."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:477-541",
+    "location": "breadboard_engine/compilation/v2_loader.py:477-541",
     "check": "Requires scheduling and scheduling.batch mappings; mode enum sync/batch; batch enabled/fail_fast booleans; max_concurrency, max_concurrency_per_branch, retries non-negative integers; timeout_seconds numeric >= 0.",
     "schema_covered": "partial",
     "cross_field": false,
     "error_quality": "Strong field-specific messages. All except timeout non-negativity are fully schema-covered; schema declares timeout as number without minimum."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:542-558",
+    "location": "breadboard_engine/compilation/v2_loader.py:542-558",
     "check": "Requires routing mapping; default_lane enum; long_context_prompt_chars and long_context_blob_refs non-negative integers.",
     "schema_covered": "yes",
     "cross_field": false,
     "error_quality": "Strong and specific, but redundant after schema-first validation."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:560-576",
+    "location": "breadboard_engine/compilation/v2_loader.py:560-576",
     "check": "Requires long_running mapping; enabled boolean; policy_profile in conservative/balanced/aggressive after trim/lower; reset_policy in fresh/compact/continue.",
     "schema_covered": "partial",
     "cross_field": false,
     "error_quality": "Clear. Mapping/enabled/reset_policy are schema-covered. `policy_profile` is not present in the inspected v2 schema's closed long_running properties, so schema currently rejects the property rather than expressing this enum; Python check is effectively unreachable for v2 documents."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:577-596",
+    "location": "breadboard_engine/compilation/v2_loader.py:577-596",
     "check": "Requires long_running.budgets mapping; total_tokens (falling back to max_total_tokens) non-negative integer; total_cost_usd (falling back to max_total_cost_usd) numeric >= 0.",
     "schema_covered": "partial",
     "cross_field": true,
     "error_quality": "Good canonical-field messages, but aliases are collapsed in diagnostics. Integer type/minimum is covered. Cost numeric types are covered but non-negative bounds are absent. Fallback precedence across paired field names is a cross-field/alias-resolution behavior."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:597-608",
+    "location": "breadboard_engine/compilation/v2_loader.py:597-608",
     "check": "Requires episode mapping and max_steps_override to coerce to an integer > 0.",
     "schema_covered": "yes",
     "cross_field": false,
     "error_quality": "Strong dotted path and bound; redundant because schema requires integer/null minimum 1."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:609-645",
+    "location": "breadboard_engine/compilation/v2_loader.py:609-645",
     "check": "Requires recovery mapping; backoff base/max numeric >= 0; disable_jitter boolean; no_progress_signature_repeats non-negative integer.",
     "schema_covered": "partial",
     "cross_field": false,
     "error_quality": "Strong paths. Object, boolean, integer type/minimum and numeric types are covered; non-negative backoff bounds are Python-only because schema numbers lack minimum."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:646-672",
+    "location": "breadboard_engine/compilation/v2_loader.py:646-672",
     "check": "Requires observability/reviewer/resume mappings; validates their booleans, reviewer.mode == read_only, and resume.state_path string.",
     "schema_covered": "yes",
     "cross_field": false,
     "error_quality": "Strong dotted paths. Schema is at least as strict (state_path also has minLength 1), so Python checks are redundant after schema validation."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:673-703",
+    "location": "breadboard_engine/compilation/v2_loader.py:673-703",
     "check": "Requires verification mapping and tiers list; each tier mapping; commands non-empty list; timeout numeric > 0; hard_fail boolean.",
     "schema_covered": "partial",
     "cross_field": false,
     "error_quality": "Best legacy diagnostics include tier index, expected shape, and bound. Schema covers all types and required commands, but inspected schema does not show `minItems` for commands and does not bound timeout above zero, so those two Python constraints remain."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:177-219 (_resolve_extends)",
+    "location": "breadboard_engine/compilation/v2_loader.py:177-219 (_resolve_extends)",
     "check": "Resolves one or multiple extends paths recursively and merges bases before v2 validation.",
     "schema_covered": "no",
     "cross_field": true,
     "error_quality": "Resolution errors generally retain filesystem/YAML context, but there is no explicit cycle check in this resolver; the sibling config-graph traversal supplies a clear cycle-chain message."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:242-257 (_append_config_graph_layers)",
+    "location": "breadboard_engine/compilation/v2_loader.py:242-257 (_append_config_graph_layers)",
     "check": "Rejects cyclic extends chains by checking the resolved path against the ancestor tuple.",
     "schema_covered": "no",
     "cross_field": true,
     "error_quality": "Excellent: reports the complete `path -> path` cycle chain."
    },
    {
-    "location": "agentic_coder_prototype/compilation/v2_loader.py:309-322 (build_config_view dispatch)",
+    "location": "breadboard_engine/compilation/v2_loader.py:309-322 (build_config_view dispatch)",
     "check": "Rejects unsupported explicit schema_version; validates schema-less numeric version 2 against v1; leaves schema-less nonnumeric legacy configs on the raw path.",
     "schema_covered": "no",
     "cross_field": true,
@@ -1063,7 +1063,7 @@
   ],
   "helper_checks": [
    {
-    "location": "agentic_coder_prototype/compilation/helper_runtime_primitives.py:103-142 (_compile_error, _require_text, _optional_text, _require_bool, _require_int, _require_sequence, _require_mapping)",
+    "location": "breadboard_engine/compilation/helper_runtime_primitives.py:103-142 (_compile_error, _require_text, _optional_text, _require_bool, _require_int, _require_sequence, _require_mapping)",
     "check": "Reusable guards enforce non-empty text, optional string/null, strict boolean, strict integer with configurable minimum (explicitly excluding bool), non-string Sequence, and Mapping; all failures become one-error PrimitiveCompileError values with schema version, record id, and JSON Pointer.",
     "schema_covered": "no",
     "cross_field": false,
@@ -1329,7 +1329,7 @@
     "schema_id": "bb.agent_config_surface.v1",
     "proposed_tier": "superseded_active",
     "consumer_evidence": [
-     "agentic_coder_prototype/compilation/v2_loader.py (default/legacy surface validation and normalization; lifecycle registry explicitly supersedes it with v2)"
+     "breadboard_engine/compilation/v2_loader.py (default/legacy surface validation and normalization; lifecycle registry explicitly supersedes it with v2)"
     ],
     "confidence": "high"
    },
@@ -1337,7 +1337,7 @@
     "schema_id": "bb.agent_config_surface.v2",
     "proposed_tier": "config_algebra",
     "consumer_evidence": [
-     "agentic_coder_prototype/compilation/v2_loader.py (_validate_v2, is_v2_config, and load_agent_config)"
+     "breadboard_engine/compilation/v2_loader.py (_validate_v2, is_v2_config, and load_agent_config)"
     ],
     "confidence": "high"
    },
@@ -1345,7 +1345,7 @@
     "schema_id": "bb.blob_ref.v1",
     "proposed_tier": "host_protocol",
     "consumer_evidence": [
-     "agentic_coder_prototype/compilation/helper_runtime_primitives.py (compile_resource_records emits and validates blob/resource boundary records)"
+     "breadboard_engine/compilation/helper_runtime_primitives.py (compile_resource_records emits and validates blob/resource boundary records)"
     ],
     "confidence": "high"
    },
@@ -1353,7 +1353,7 @@
     "schema_id": "bb.checkpoint_metadata.v1",
     "proposed_tier": "host_protocol",
     "consumer_evidence": [
-     "agentic_coder_prototype/checkpointing/checkpoint_manager.py; agentic_coder_prototype/longrun/checkpoint.py"
+     "breadboard_engine/checkpointing/checkpoint_manager.py; breadboard_engine/longrun/checkpoint.py"
     ],
     "confidence": "high"
    },
@@ -1361,7 +1361,7 @@
     "schema_id": "bb.config_explanation.v1",
     "proposed_tier": "config_algebra",
     "consumer_evidence": [
-     "scripts/authoring/explain_agent_config.py (SCHEMA_VERSION and emitted explanation record); agentic_coder_prototype/compilation/primitive_records.py"
+     "scripts/authoring/explain_agent_config.py (SCHEMA_VERSION and emitted explanation record); breadboard_engine/compilation/primitive_records.py"
     ],
     "confidence": "high"
    },
@@ -1369,7 +1369,7 @@
     "schema_id": "bb.config_mutation_record.v1",
     "proposed_tier": "config_algebra",
     "consumer_evidence": [
-     "agentic_coder_prototype/compilation/primitive_records.py; scripts/e4_parity/seed_atomic_feature_ledger.py (config-migration/writeback mapping)"
+     "breadboard_engine/compilation/primitive_records.py; scripts/e4_parity/seed_atomic_feature_ledger.py (config-migration/writeback mapping)"
     ],
     "confidence": "high"
    },
@@ -1377,7 +1377,7 @@
     "schema_id": "bb.context_resource_pack.v1",
     "proposed_tier": "config_algebra",
     "consumer_evidence": [
-     "agentic_coder_prototype/compilation/helper_runtime_primitives.py (compile_context_resource_pack); scripts/e4_parity/adapters/oh_my_pi_p3_packet.py"
+     "breadboard_engine/compilation/helper_runtime_primitives.py (compile_context_resource_pack); scripts/e4_parity/adapters/oh_my_pi_p3_packet.py"
     ],
     "confidence": "high"
    },
@@ -1433,7 +1433,7 @@
     "schema_id": "bb.directive.v1",
     "proposed_tier": "host_protocol",
     "consumer_evidence": [
-     "agentic_coder_prototype/orchestration/coordination.py (constructs and validates directives); scripts/release/validate_kernel_contract_fixtures.py"
+     "breadboard_engine/orchestration/coordination.py (constructs and validates directives); scripts/release/validate_kernel_contract_fixtures.py"
     ],
     "confidence": "high"
    },
@@ -1449,7 +1449,7 @@
     "schema_id": "bb.environment_selector.v2",
     "proposed_tier": "config_algebra",
     "consumer_evidence": [
-     "agentic_coder_prototype/compilation/primitive_records.py (registered primitive validation); contracts/kernel/registries/schema_lifecycle.v1.json marks v2 active/default and v1 frozen"
+     "breadboard_engine/compilation/primitive_records.py (registered primitive validation); contracts/kernel/registries/schema_lifecycle.v1.json marks v2 active/default and v1 frozen"
     ],
     "confidence": "medium"
    },
@@ -1473,7 +1473,7 @@
     "schema_id": "bb.extension_hook_execution.v1",
     "proposed_tier": "host_protocol",
     "consumer_evidence": [
-     "agentic_coder_prototype/compilation/helper_runtime_primitives.py (compiler/validator); scripts/e4_parity/adapters/pi_p5_l2_capture.py"
+     "breadboard_engine/compilation/helper_runtime_primitives.py (compiler/validator); scripts/e4_parity/adapters/pi_p5_l2_capture.py"
     ],
     "confidence": "high"
    },
@@ -1481,7 +1481,7 @@
     "schema_id": "bb.external_protocol_session.v1",
     "proposed_tier": "host_protocol",
     "consumer_evidence": [
-     "agentic_coder_prototype/compilation/helper_runtime_primitives.py; scripts/e4_parity/oh_my_pi_p6_lane_projection.py"
+     "breadboard_engine/compilation/helper_runtime_primitives.py; scripts/e4_parity/oh_my_pi_p6_lane_projection.py"
     ],
     "confidence": "high"
    },
@@ -1489,7 +1489,7 @@
     "schema_id": "bb.kernel.common.v1",
     "proposed_tier": "config_algebra",
     "consumer_evidence": [
-     "agentic_coder_prototype/compilation/primitive_records.py (shared $ref schema registration); agentic_coder_prototype/conformance/c4_chain.py; scripts/e4_parity/lint_contract_conventions.py"
+     "breadboard_engine/compilation/primitive_records.py (shared $ref schema registration); breadboard_engine/conformance/c4_chain.py; scripts/e4_parity/lint_contract_conventions.py"
     ],
     "confidence": "medium"
    },
@@ -1497,7 +1497,7 @@
     "schema_id": "bb.memory_compaction_plan.v1",
     "proposed_tier": "host_protocol",
     "consumer_evidence": [
-     "agentic_coder_prototype/compilation/helper_runtime_primitives.py; scripts/e4_parity/adapters/oh_my_pi_l5_projection.py; scripts/e4_parity/adapters/pi_p5_l2_capture.py"
+     "breadboard_engine/compilation/helper_runtime_primitives.py; scripts/e4_parity/adapters/oh_my_pi_l5_projection.py; scripts/e4_parity/adapters/pi_p5_l2_capture.py"
     ],
     "confidence": "high"
    },
@@ -1513,7 +1513,7 @@
     "schema_id": "bb.projection_event.v1",
     "proposed_tier": "host_protocol",
     "consumer_evidence": [
-     "agentic_coder_prototype/compilation/helper_runtime_primitives.py; scripts/e4_parity/adapters/oh_my_pi_l6_projection.py"
+     "breadboard_engine/compilation/helper_runtime_primitives.py; scripts/e4_parity/adapters/oh_my_pi_l6_projection.py"
     ],
     "confidence": "high"
    },
@@ -1529,7 +1529,7 @@
     "schema_id": "bb.provider_route.v1",
     "proposed_tier": "host_protocol",
     "consumer_evidence": [
-     "agentic_coder_prototype/compilation/helper_runtime_primitives.py; scripts/e4_parity/adapters/oh_my_pi_p3_packet.py"
+     "breadboard_engine/compilation/helper_runtime_primitives.py; scripts/e4_parity/adapters/oh_my_pi_p3_packet.py"
     ],
     "confidence": "high"
    },
@@ -1537,7 +1537,7 @@
     "schema_id": "bb.registry.v1",
     "proposed_tier": "config_algebra",
     "consumer_evidence": [
-     "agentic_coder_prototype/compilation/primitive_records.py (registered generic registry envelope); contracts/kernel/packs.v1.json itself is a bb.registry.v1 instance"
+     "breadboard_engine/compilation/primitive_records.py (registered generic registry envelope); contracts/kernel/packs.v1.json itself is a bb.registry.v1 instance"
     ],
     "confidence": "medium"
    },
@@ -1553,7 +1553,7 @@
     "schema_id": "bb.resource_access.v1",
     "proposed_tier": "host_protocol",
     "consumer_evidence": [
-     "agentic_coder_prototype/compilation/helper_runtime_primitives.py (resource access compiler/validator); agentic_coder_prototype/compilation/visibility_adapters.py"
+     "breadboard_engine/compilation/helper_runtime_primitives.py (resource access compiler/validator); breadboard_engine/compilation/visibility_adapters.py"
     ],
     "confidence": "high"
    },
@@ -1561,7 +1561,7 @@
     "schema_id": "bb.resource_ref.v1",
     "proposed_tier": "host_protocol",
     "consumer_evidence": [
-     "agentic_coder_prototype/compilation/helper_runtime_primitives.py (resource reference compiler/validator); scripts/e4_parity/adapters/oh_my_pi_p3_packet.py"
+     "breadboard_engine/compilation/helper_runtime_primitives.py (resource reference compiler/validator); scripts/e4_parity/adapters/oh_my_pi_p3_packet.py"
     ],
     "confidence": "high"
    },
@@ -1569,7 +1569,7 @@
     "schema_id": "bb.review_verdict.v1",
     "proposed_tier": "host_protocol",
     "consumer_evidence": [
-     "agentic_coder_prototype/orchestration/coordination.py (constructs and validates review verdicts); scripts/build_python_reference_contract_fixtures.py"
+     "breadboard_engine/orchestration/coordination.py (constructs and validates review verdicts); scripts/build_python_reference_contract_fixtures.py"
     ],
     "confidence": "high"
    },
@@ -1617,7 +1617,7 @@
     "schema_id": "bb.side_effect_broker.v1",
     "proposed_tier": "host_protocol",
     "consumer_evidence": [
-     "agentic_coder_prototype/compilation/helper_runtime_primitives.py (compiler/validator); scripts/e4_parity/adapters/oh_my_pi_p3_packet.py"
+     "breadboard_engine/compilation/helper_runtime_primitives.py (compiler/validator); scripts/e4_parity/adapters/oh_my_pi_p3_packet.py"
     ],
     "confidence": "high"
    },
@@ -1625,7 +1625,7 @@
     "schema_id": "bb.signal.v1",
     "proposed_tier": "host_protocol",
     "consumer_evidence": [
-     "agentic_coder_prototype/orchestration/coordination.py (constructs signals); scripts/release/validate_kernel_contract_fixtures.py"
+     "breadboard_engine/orchestration/coordination.py (constructs signals); scripts/release/validate_kernel_contract_fixtures.py"
     ],
     "confidence": "high"
    },
@@ -1689,7 +1689,7 @@
     "schema_id": "bb.tool_binding.v1",
     "proposed_tier": "config_algebra",
     "consumer_evidence": [
-     "agentic_coder_prototype/compilation/primitive_records.py provides the schema-validation infrastructure, but no direct schema-id use was found in the requested source roots"
+     "breadboard_engine/compilation/primitive_records.py provides the schema-validation infrastructure, but no direct schema-id use was found in the requested source roots"
     ],
     "confidence": "medium"
    },
@@ -1697,7 +1697,7 @@
     "schema_id": "bb.tool_spec.v2",
     "proposed_tier": "config_algebra",
     "consumer_evidence": [
-     "agentic_coder_prototype/compilation/primitive_records.py (registered active v2 primitive); contracts/kernel/registries/schema_lifecycle.v1.json marks v2 active/default and v1 frozen"
+     "breadboard_engine/compilation/primitive_records.py (registered active v2 primitive); contracts/kernel/registries/schema_lifecycle.v1.json marks v2 active/default and v1 frozen"
     ],
     "confidence": "high"
    },
@@ -1713,7 +1713,7 @@
     "schema_id": "bb.wake_subscription.v1",
     "proposed_tier": "host_protocol",
     "consumer_evidence": [
-     "agentic_coder_prototype/orchestration/orchestrator.py (filters persisted subscriptions by schema version); scripts/build_python_reference_contract_fixtures.py"
+     "breadboard_engine/orchestration/orchestrator.py (filters persisted subscriptions by schema version); scripts/build_python_reference_contract_fixtures.py"
     ],
     "confidence": "high"
    }
@@ -1723,7 +1723,7 @@
    "No remaining kernel-pack entry is proposed as frozen_legacy. The only remaining superseded schema is bb.agent_config_surface.v1; bb.tool_spec.v1 and environment_selector.v1 are frozen but are in the separate legacy_frozen pack and therefore outside this assignment.",
    "Tier rule applied: authoring/config surfaces, reusable schema algebra, registries, selectors, and tool declarations are config_algebra; execution-environment, provider, permission, resource, orchestration, checkpoint, terminal, and other host-boundary records are host_protocol; reference slices, replay/campaign, verification, and lifecycle-governance records are evidence.",
    "The phrase 'consumer evidence' includes generators and boundary validators in the two requested source roots. Fixture-only validation is weaker evidence than a live runtime producer/consumer and is reflected by medium confidence for run_context, run_request, and task.",
-   "bb.tool_binding.v1 had no direct schema-id occurrence in agentic_coder_prototype/ or scripts/ in the broad search. Its config_algebra placement is based on its declared tool-binding role and proximity to the active tool-spec/config compilation family; confidence is therefore medium.",
+   "bb.tool_binding.v1 had no direct schema-id occurrence in breadboard_engine/ or scripts/ in the broad search. Its config_algebra placement is based on its declared tool-binding role and proximity to the active tool-spec/config compilation family; confidence is therefore medium.",
    "bb.kernel.common.v1 is a shared definitions schema rather than a record family. config_algebra is the closest available tier because primitive validators register it to resolve cross-schema definitions; this boundary judgment is medium confidence.",
    "packs.v1.json and contracts/kernel/schemas/README.md agree on kernel membership and describe the pack as active, but the lifecycle registry is more precise about per-version generation status (notably agent_config_surface.v1)."
   ]
@@ -1808,7 +1808,7 @@
     "exit_behavior": "0 after printing a deterministic JSON summary (and, unless dry-run, writing the scaffold); 1 for caught validation, safety, schema, or I/O exceptions, with a prefixed error on stderr. argparse errors exit 2."
    },
    {
-    "script": "agentic_coder_prototype/api/cli_bridge/server.py / agentic_coder_prototype.api.cli_bridge.app:create_app",
+    "script": "breadboard_engine/api/cli_bridge/server.py / agentic_coder_prototype.api.cli_bridge.app:create_app",
     "purpose": "Starts the FastAPI 'BreadBoard CLI Bridge'. server.py loads repo .env and .env.local without overriding existing environment, constructs the app with create_app(), and runs uvicorn. app.py also exports module-level app=create_app(), and create_app is usable as a uvicorn factory.",
     "key_flags": [
      "No argparse flags in server.py; configuration is environmental",

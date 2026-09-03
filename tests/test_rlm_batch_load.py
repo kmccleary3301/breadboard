@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any, Dict
 
 from breadboard_engine.agent_llm_openai import OpenAIConductor
-from breadboard_engine.provider_routing import ProviderDescriptor
-from breadboard_engine.provider_runtime import ProviderMessage, ProviderResult, ProviderRuntimeError
+from breadboard_engine.provider.routing import ProviderDescriptor
+from breadboard_engine.provider.runtime import ProviderMessage, ProviderResult, ProviderRuntimeError
 from breadboard_engine.provider.health import RouteHealthManager
 from breadboard_engine.provider.invoker import ProviderInvoker
 from breadboard_engine.provider.metrics import ProviderMetricsCollector

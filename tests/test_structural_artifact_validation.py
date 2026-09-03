@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from breadboard_engine.conductor_patching import validate_structural_artifacts
+from breadboard_engine.conductor.patching import validate_structural_artifacts
 
 
 class _StubSessionState:

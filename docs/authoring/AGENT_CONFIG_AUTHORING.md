@@ -82,7 +82,7 @@ Keep capture output under `docs_tmp/`. Promotion into `docs/conformance/` still 
 
 `bbh` is the authoring front door. These scripts remain available for maintenance and debugging:
 
-- `scripts/authoring/explain_agent_config.py` backs `bbh harness explain`.
+- `breadboard/product/harness/config_explanation.py` backs `bbh harness explain`.
 - `scripts/authoring/validate_lane.py` backs `bbh lane validate`.
 - `scripts/e4_parity/compile_lane_lock.py` backs `bbh lane lock`.
 - `scripts/e4_parity/run_lane.py` backs `bbh lane capture`.
@@ -107,7 +107,7 @@ Keep capture output under `docs_tmp/`. Promotion into `docs/conformance/` still 
 | `replay` | operational | breadboard_engine.conductor.bootstrap | 3 |
 | `schema_version` | operational | breadboard_engine.compilation.v2_loader | 0 |
 | `tools` | operational | breadboard_engine.compilation.tool_registry | 4 |
-| `turn_strategy` | operational | breadboard_engine.conductor.execution | 1 |
+| `turn_strategy` | operational | breadboard_engine.conductor.turn_runtime | 1 |
 | `version` | operational | breadboard_engine.compilation.v2_loader | 4 |
 | `workspace` | operational | breadboard_engine.agent | 4 |
 | `profile` | dossier_only | - | 4 |

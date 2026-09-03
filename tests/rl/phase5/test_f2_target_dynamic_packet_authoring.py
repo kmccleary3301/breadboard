@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 from breadboard.rl.harness.composition import InstalledV1
 from breadboard.rl.harness.sandbox import SandboxNetworkPolicy, SandboxSecurityPolicy
 from breadboard.rl.phase5.f2_authority_authoring import (

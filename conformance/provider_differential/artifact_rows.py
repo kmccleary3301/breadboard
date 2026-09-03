@@ -371,7 +371,6 @@ def _installed_server(bundle: ArtifactBundle, root: Path) -> Iterator[str]:
             "BREADBOARD_SESSION_EVENT_ROOT": str(server_root / "session-events"),
             "BREADBOARD_ENABLE_E4_API": "0",
             "RAY_SCE_LOCAL_MODE": "1",
-            "BREADBOARD_LEGACY_ROUTES": "1",
         }
     )
     log_path = server_root / "server.log"
@@ -437,8 +436,11 @@ def _roles_document() -> dict[str, Any]:
 
 def _write_sdk_probe(path: Path) -> None:
     path.write_text(
-        """import { createBreadboardClient } from '@breadboard/sdk';
-const client = createBreadboardClient({ baseUrl: process.env.F6_BASE_URL, requestTimeoutMs: 30000 });
+        """import { createBreadboardClient } from '@breadboard/sdk/engine';
+import { createCanonicalE4Client } from '@breadboard/sdk/session';
+const config = { baseUrl: process.env.F6_BASE_URL, requestTimeoutMs: 30000 };
+const client = createBreadboardClient(config);
+const sessions = createCanonicalE4Client(config);
 const roles = JSON.parse(process.env.F6_ROLES);
 const providers = await client.listProviders();
 const credentials = await client.listCredentials();
@@ -452,33 +454,35 @@ const output = {
   role_lock_hash: resolved.lock_hash ?? null,
 };
 if (process.env.F6_CONFIG_PATH) {
-  const started = await client.createSession({
-    config_path: process.env.F6_CONFIG_PATH,
+  const opened = await sessions.create({
+    configPath: process.env.F6_CONFIG_PATH,
     task: '',
     stream: true,
   });
-  const controller = new AbortController();
   const eventTypes = [];
   let exchangeRef = null;
   const eventsDone = (async () => {
-    for await (const event of client.eventsSession(started.session_id, { signal: controller.signal })) {
-      eventTypes.push(event.type);
-      if (event.type === 'turn_completed') {
-        exchangeRef = event.payload?.exchange_ref ?? null;
-        controller.abort();
+    for await (const event of opened.events()) {
+      eventTypes.push(event.kind);
+      if (event.kind === 'turn_completed') {
+        exchangeRef = event.payload.exchangeRef === null ? null : {
+          exchange_id: event.payload.exchangeRef.exchangeId,
+          schema_version: event.payload.exchangeRef.schemaVersion,
+        };
         break;
       }
     }
   })();
-  await client.postInput(started.session_id, { content: 'Emit <promise>COMPLETE</promise>.' });
+  await opened.submit('Emit <promise>COMPLETE</promise>.');
   await Promise.race([
     eventsDone,
     new Promise((_, reject) => setTimeout(() => reject(new Error('turn timeout')), 45000)),
   ]);
-  const summary = await client.getSession(started.session_id);
+  const summary = await opened.snapshot();
+  await opened.close();
   output.session = {
+    session_id: opened.sessionId,
     status: summary.status,
-    logging_dir: summary.logging_dir ?? null,
     event_types: eventTypes,
     exchange_ref: exchangeRef,
   };
@@ -654,10 +658,16 @@ def observe_artifact_rows(
         )
 
     session = sdk.get("session")
-    if not isinstance(session, Mapping) or not session.get("logging_dir"):
-        raise RuntimeError("packed SDK session did not expose a logging directory")
-    conversation = Path(str(session["logging_dir"])) / "meta" / "conversation_ir.json"
-    exchange = _installed_exchange_projection(bundle, conversation)
+    if not isinstance(session, Mapping):
+        raise RuntimeError("packed SDK session observation is missing")
+    conversations = sorted(
+        (runtime_root / "server" / "logging").glob("*/meta/conversation_ir.json")
+    )
+    if len(conversations) != 1:
+        raise RuntimeError(
+            f"installed session produced {len(conversations)} conversation traces"
+        )
+    exchange = _installed_exchange_projection(bundle, conversations[0])
     exchange_ref = session.get("exchange_ref")
     exchange_ref_matches = bool(
         isinstance(exchange_ref, Mapping)

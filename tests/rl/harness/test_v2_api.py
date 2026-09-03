@@ -31,7 +31,7 @@ from breadboard.rl.harness.service import (
     V2RunResult,
     V2SandboxPreflightIdentity,
 )
-from breadboard.rl.state.state_ref import ArtifactRef
+from breadboard.artifacts.references import ArtifactRef
 from tests.rl.harness.v2_service_fixtures import exact_wp4_case
 
 

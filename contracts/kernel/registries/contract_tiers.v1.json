@@ -78,7 +78,7 @@
    "consumers": [
     {
      "kind": "evidence_machinery",
-     "path": "scripts/authoring/explain_agent_config.py"
+     "path": "breadboard/product/harness/config_explanation.py"
     }
    ],
    "disposition": "keep",

@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 from scripts.rl_phase5.run_f8_grpo_evidence_gate import (
     F8CheckpointUpdate,
     F8CleanupEvidence,

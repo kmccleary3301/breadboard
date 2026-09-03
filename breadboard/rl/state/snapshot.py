@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from breadboard.rl.runtime.base import RuntimeSnapshot
-from breadboard.rl.state.state_ref import ArtifactRef, StateRef
+from breadboard.artifacts.references import ArtifactRef, StateRef
 
 
 def _stable_hash(payload: dict[str, Any]) -> str:

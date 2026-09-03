@@ -10,7 +10,7 @@ import math
 import re
 from typing import Any
 
-from agentic_coder_prototype.compilation.contracts import (
+from breadboard_engine.compilation.contracts import (
     bytes_sha256,
     canonical_sha256,
 )

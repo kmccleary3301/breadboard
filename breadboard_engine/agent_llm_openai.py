@@ -76,8 +76,7 @@ from .utils.local_ray import LocalActorProxy, identity_get
 from .security import (
     WorkspaceFilesystem,
     WorkspacePathError,
-    build_child_environment,
-    build_restricted_process_command,
+    ChildProcessPolicy,
     contains_provider_credential_value,
     provider_credential_values,
     protected_credential_paths,
@@ -89,7 +88,8 @@ from .security import (
 from .provider.health import RouteHealthManager
 from .provider import normalize_provider_result
 from .provider.metrics import ProviderMetricsCollector
-from .guardrail import GuardrailCoordinator, GuardrailOrchestrator
+from .guardrails import GuardrailCoordinator
+from .guardrails.orchestrator import GuardrailOrchestrator
 from .conductor.components import (
     apply_capability_tool_overrides,
     apply_streaming_policy_for_turn,
@@ -139,7 +139,7 @@ from .model_roles import (
     credential_origin_matches_binding,
     select_role_target,
 )
-from .permissions import PermissionBroker, PermissionDeniedError
+from .permissions import PermissionAuthority, PolicyPack
 from .conductor.loop_detection import LoopDetectionService
 from .conductor.context_window_guard import ContextWindowGuard
 from .conductor.streaming_policy import StreamingPolicy
@@ -147,6 +147,7 @@ from .provider import ProviderInvoker
 from .conductor.prompt_planner import ToolPromptPlanner
 from .turns import TurnContext, TurnRelayer
 from .orchestration import TeamConfig, MultiAgentOrchestrator
+from .runtime.context import get_current_session_state
 from .longrun import (
     LongRunController, build_work_queue, is_longrun_enabled, resolve_episode_max_steps,
 )
@@ -390,6 +391,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             zero_tool_abort_message=ZERO_TOOL_ABORT_MESSAGE,
             completion_guard_abort_threshold=COMPLETION_GUARD_ABORT_THRESHOLD,
         )
+        self.permission_authority: PermissionAuthority = self.permission_broker
         self._model_role_lock = (
             dict(self.config.get("model_role_lock"))
             if isinstance(self.config, dict) and isinstance(self.config.get("model_role_lock"), dict)
@@ -1198,6 +1200,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             pass
         session_state = getattr(self, "_active_session_state", None)
         if session_state is None:
+            session_state = get_current_session_state()
+        if session_state is None:
             return
         try:
             session_state.emit_task_event(payload)
@@ -1795,6 +1799,49 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             or _extract_session_id_from_expected(expected_output, expected_metadata)
             or str(uuid.uuid4())
         )
+        event_base = {
+            "task_id": session_id,
+            "sessionId": session_id,
+            "subagent_type": subagent_type,
+            "description": description,
+        }
+        if task_context:
+            event_base.update(task_context)
+        self._emit_task_event({**event_base, "kind": "started", "status": "running"})
+        streaming_cfg = task_cfg.get("streaming") or {}
+        forward_assistant = bool(
+            isinstance(streaming_cfg, dict)
+            and streaming_cfg.get("forward_assistant_messages")
+        )
+        for entry in entries if isinstance(entries, list) else ():
+            if not isinstance(entry, dict) or entry.get("role") != "assistant":
+                continue
+            for part in entry.get("parts") or ():
+                if not isinstance(part, dict):
+                    continue
+                if part.get("type") == "tool":
+                    state = (part.get("meta") or {}).get("state") or {}
+                    self._emit_task_event(
+                        {
+                            **event_base,
+                            "kind": "tool_call",
+                            "tool": part.get("tool"),
+                            "status": state.get("status"),
+                        }
+                    )
+                elif forward_assistant and part.get("type") == "text":
+                    text = part.get("text")
+                    if isinstance(text, str) and text:
+                        self._emit_task_event(
+                            {
+                                **event_base,
+                                "kind": "assistant_message",
+                                "content": text,
+                            }
+                        )
+        self._emit_task_event(
+            {**event_base, "kind": "completed", "status": "completed"}
+        )
         return {
             "title": description,
             "output": output_text,
@@ -2160,16 +2207,10 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             }
             args = dict(args)
             args.setdefault("context", context)
-        try:
-            broker = getattr(self, "permission_broker", None)
-            if broker is not None and hasattr(broker, "decide"):
-                decision = broker.decide({"function": str(tool_name), "arguments": args})
-                if decision and str(decision).lower() not in {"allow", "yes", "true", "1",
-                }:
-                    if not (str(decision).lower() == "ask" and getattr(broker, "auto_allow", lambda: False)()):
-                        return HookResult(action="deny", reason="hook_tool_permission_denied")
-        except Exception:
-            pass
+        if not self.permission_authority.allows(
+            {"function": str(tool_name), "arguments": args}
+        ):
+            return HookResult(action="deny", reason="hook_tool_permission_denied")
         result = self._handle_mcp_tool({"function": str(tool_name), "arguments": args})
         return self._parse_hook_tool_result(result, fallback_payload=payload)
 
@@ -2951,24 +2992,19 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             }
         with redaction.secret_value_scope(*ambient_secrets):
             try:
-                child_environment = build_child_environment()
-                isolated_command, child_environment = build_restricted_process_command(
-                        command,
-                        workspace=workspace,
-                        working_directory=workspace,
-                        shell=True,
-                        environment=child_environment,
-                        protected_paths=getattr(
-                            self,
-                            "_protected_credential_paths",
-                            (),
-                        ),
-                )
+                launch = ChildProcessPolicy(
+                    workspace=workspace,
+                    working_directory=workspace,
+                    shell=True,
+                    protected_paths=tuple(
+                        getattr(self, "_protected_credential_paths", ())
+                    ),
+                ).command_and_environment(command)
                 completed = subprocess.run(
-                    isolated_command,
+                    launch.argv,
                     shell=False,
                     cwd=workspace,
-                    env=child_environment,
+                    env=launch.environment_dict(),
                     text=True,
                     capture_output=True,
                     timeout=timeout,
@@ -5897,19 +5933,11 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             auto_grant = bool(plugins_cfg.get("auto_grant_permissions"))
             if plugin_permissions and auto_grant:
                 merged_permissions = self._merge_permission_rules(self.config.get("permissions"), plugin_permissions)
-                try:
-                    self.config["permissions"] = merged_permissions
-                except Exception:
-                    pass
-                try:
-                    from breadboard_engine.permissions.policy_pack import PolicyPack
-
-                    self.permission_broker = PermissionBroker(
-                        merged_permissions,
-                        policy_pack=PolicyPack.from_config(self.config),
-                    )
-                except Exception:
-                    pass
+                self.config["permissions"] = merged_permissions
+                self.permission_authority.configure(
+                    merged_permissions,
+                    policy_pack=PolicyPack.from_config(self.config),
+                )
             hook_manager = build_hook_manager(
                 self.config,
                 self.workspace,

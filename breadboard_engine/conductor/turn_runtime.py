@@ -9,10 +9,10 @@ import signal
 import subprocess
 import time
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable, Dict, List, Optional, Tuple
-
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 from ..core.core import ToolDefinition
 from .context import ConductorContext
 from ..messaging.markdown_logger import MarkdownLogger
@@ -32,6 +32,7 @@ from ..orchestration.coordination import (
     is_accepted_signal,
     validate_signal_proposal,
 )
+from ..permissions.policy_pack import PolicyPack
 from ..state.session_state import SessionState
 from ..turns import TurnContext
 from ..utils.assistant_progress import assistant_is_progress_update
@@ -39,13 +40,30 @@ from ..checkpointing.checkpoint_manager import CheckpointManager
 from ..hooks.model import HookResult
 from .components import latest_real_user_prompt, session_requires_workspace_tool_usage
 
+from .completion_guards import (
+    _ensure_tool_completion_final_message,
+    _force_failed_verification_final_answer,
+    _force_failed_write_final_answer,
+    _maybe_block_read_only_implementation_loop,
+    _maybe_force_post_write_auto_verification_closure,
+    _maybe_force_read_only_observation_closure,
+    _maybe_force_requested_shell_command_closure,
+    _reject_completion_without_implementation_write,
+)
 from .execution_records import build_tool_model_render_record
 from .implementation_receipts import (
     _implementation_task_anchor, _path_is_user_facing_write_target, _requested_write_matches,
     _requested_write_targets, _shell_command_write_targets, _successful_patch_result_paths,
     _tool_call_write_targets, _write_payload_looks_placeholder,
+    _implementation_receipt_missing,
 )
-from .tool_executor import resolve_replay_todo_placeholders
+from .tool_executor import (
+    _coordination_task_context,
+    _record_validated_signal,
+    ToolExecutor,
+    resolve_replay_todo_placeholders,
+)
+
 def build_turn_context(conductor: ConductorContext, session_state: SessionState, parsed_calls: List[Any]) -> TurnContext:
     current_mode = session_state.get_provider_metadata("current_mode")
     ctx = TurnContext.from_session(session_state, current_mode, list(parsed_calls))
@@ -313,6 +331,559 @@ def maybe_transition_plan_mode(conductor: ConductorContext, session_state: Sessi
         workspace_guard_handler=getattr(conductor, "workspace_guard_handler", None),
         todo_rate_guard_handler=getattr(conductor, "todo_rate_guard_handler", None),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class TurnPolicy:
+    """Immutable completion, tool-usage, and relay decisions for one turn."""
+
+    completion: Dict[str, Any]
+    turn_strategy: Dict[str, Any]
+    tool_policy: PolicyPack
+
+    @classmethod
+    def from_config(cls, config: Dict[str, Any] | None) -> "TurnPolicy":
+        source = dict(config or {})
+        completion = source.get("completion")
+        turn_strategy = source.get("turn_strategy")
+        return cls(
+            completion=dict(completion) if isinstance(completion, dict) else {},
+            turn_strategy=(
+                dict(turn_strategy) if isinstance(turn_strategy, dict) else {}
+            ),
+            tool_policy=PolicyPack.from_config(source),
+        )
+
+    def allows_zero_tool_completion(self) -> bool:
+        return bool(self.completion.get("allow_zero_tool_completion"))
+
+    def relay_flow(self) -> str:
+        return str(self.turn_strategy.get("flow") or "assistant_continuation").lower()
+
+    def relay_strategy(self) -> str:
+        return str(self.turn_strategy.get("relay") or "tool_role").lower()
+
+    def is_completion_action(self, tool_name: str, result: Any) -> bool:
+        if tool_name == "mark_task_complete":
+            return True
+        return isinstance(result, dict) and result.get("action") == "complete"
+
+    def completion_method(self, input_kind: str) -> str:
+        return "tool_mark_task_complete" if input_kind == "text" else "tool_completion_action"
+
+    def completion_reason(self, input_kind: str, tool_name: str) -> str:
+        return "mark_task_complete" if input_kind == "text" else tool_name
+
+    def tool_allowed(self, tool_name: str) -> bool:
+        return self.tool_policy.is_tool_allowed(tool_name)
+
+
+@dataclass(slots=True)
+class PreparedProviderExchange:
+    """Provider-neutral turn input after transport-specific preparation.
+
+    Provider adapters decide how a response becomes ``parsed_calls`` and how
+    its assistant message is represented.  The runtime owns everything after
+    that point.  ``dialect_selection`` is carried explicitly so a turn cannot
+    accidentally consult mutable conductor state while it is executing.
+    """
+
+    provider_message: ProviderMessage
+    parsed_calls: List[Any]
+    assistant_message: Dict[str, Any]
+    provider_assistant_message: Optional[Dict[str, Any]]
+    model: str
+    dialect_selection: Tuple[str, ...]
+    input_kind: Literal["text", "native"]
+    transcript_entry: Dict[str, Any]
+
+
+class AgentRuntime:
+    """Own one prepared turn from admission through relay.
+
+    This is deliberately an internal seam.  The conductor remains the
+    composition owner, while text parsing and provider-native calls provide
+    only typed input preparation and relay formatting.
+    """
+
+    def __init__(
+        self,
+        *,
+        conductor: ConductorContext,
+        policy: TurnPolicy,
+        tool_executor: ToolExecutor,
+        event_sink: Callable[[Dict[str, Any]], None],
+        log_sink: MarkdownLogger,
+    ) -> None:
+        self.conductor = conductor
+        self.policy = policy
+        self.tool_executor = tool_executor
+        self.event_sink = event_sink
+        self.log_sink = log_sink
+
+    def _result_entries(
+        self,
+        executed_results: List[Tuple[Any, Any]],
+    ) -> List[Dict[str, Any]]:
+        return self.tool_executor.shape_results(executed_results)
+
+    def _record_rewards(
+        self,
+        session_state: SessionState,
+        turn_index: Optional[int],
+        plan_metadata: Dict[str, Any],
+        executed_results: List[Tuple[Any, Any]],
+        failed_at_index: int,
+        test_success: Optional[float],
+        *,
+        failed: bool = False,
+    ) -> None:
+        if not isinstance(turn_index, int):
+            return
+        try:
+            session_state.add_reward_metric(turn_index, "SVS", 0.0 if failed else 1.0)
+            if plan_metadata.get("total_calls"):
+                executed_calls = plan_metadata.get("executed_calls", 0)
+                total_calls = plan_metadata.get("total_calls", 0)
+                session_state.add_reward_metric(
+                    turn_index,
+                    "CPS",
+                    0.0 if failed else (1.0 if executed_calls == total_calls else 0.0),
+                )
+            if executed_results:
+                session_state.add_reward_metric(
+                    turn_index,
+                    "ACS",
+                    0.0 if failed else (1.0 if failed_at_index == -1 else 0.0),
+                )
+            self.conductor._record_lsp_reward_metrics(session_state, turn_index)
+            self.conductor._record_test_reward_metric(
+                session_state,
+                turn_index,
+                0.0 if failed else test_success,
+            )
+        except Exception:
+            pass
+
+    def _relay_execution_error(
+        self,
+        exchange: PreparedProviderExchange,
+        executed_results: List[Tuple[Any, Any]],
+        execution_error: Dict[str, Any],
+        session_state: SessionState,
+        error_handler: Any,
+        stream_responses: bool,
+    ) -> None:
+        try:
+            use_responses_api = (
+                str(session_state.get_provider_metadata("api_variant") or "").lower()
+                == "responses"
+            )
+        except Exception:
+            use_responses_api = False
+        if use_responses_api and executed_results:
+            for parsed_call, parsed_out in executed_results:
+                entry = self.conductor.message_formatter.create_tool_result_entry(
+                    getattr(parsed_call, "function", ""),
+                    parsed_out,
+                    syntax_type="openai",
+                    call_id=getattr(parsed_call, "call_id", None),
+                )
+                session_state.add_message(entry, to_provider=True)
+        if execution_error.get("validation_failed"):
+            session_state.increment_guardrail_counter("validation_errors")
+            error_msg = error_handler.handle_validation_error(execution_error)
+        elif execution_error.get("constraint_violation"):
+            error_msg = error_handler.handle_constraint_violation(execution_error["error"])
+        else:
+            error_msg = f"<EXECUTION_ERROR>\n{execution_error['error']}\n</EXECUTION_ERROR>"
+        session_state.add_message({"role": "user", "content": error_msg}, to_provider=True)
+        try:
+            self.log_sink.log_user_message(error_msg)
+        except Exception:
+            pass
+        if stream_responses:
+            try:
+                print(f"[error] {execution_error.get('error', 'Unknown error')}")
+            except Exception:
+                pass
+
+    def _handle_completion_action(
+        self,
+        exchange: PreparedProviderExchange,
+        result_entry: Dict[str, Any],
+        session_state: SessionState,
+        markdown_logger: MarkdownLogger,
+        stream_responses: bool,
+        turn_index: Optional[int],
+        *,
+        executed_results: List[Tuple[Any, Any]],
+        results: List[Dict[str, Any]],
+        failed_at_index: int,
+        on_completion: Optional[Callable[..., None]],
+    ) -> Optional[bool]:
+        tool_name = str(result_entry.get("fn") or "")
+        tool_result = (
+            result_entry.get("out")
+            if isinstance(result_entry.get("out"), dict)
+            else {}
+        )
+        if not self.policy.is_completion_action(tool_name, tool_result):
+            return None
+        if _implementation_receipt_missing(self.conductor, session_state):
+            abort = _reject_completion_without_implementation_write(
+                self.conductor,
+                session_state,
+                markdown_logger,
+                stream_responses,
+            )
+            return True if abort else False
+        task_id, parent_task_id, mission_task_id = _coordination_task_context(session_state)
+        guard_ok, guard_reason = self.conductor._completion_guard_check(session_state)
+        rejection_reasons: List[str] = []
+        if not guard_ok and guard_reason:
+            rejection_reasons.append(f"completion_guard_failed:{guard_reason}")
+        signal = validate_signal_proposal(
+            build_tool_completion_signal_proposal(
+                task_id=task_id,
+                tool_name=tool_name,
+                tool_result=tool_result,
+                parent_task_id=parent_task_id,
+                mission_task_id=mission_task_id,
+            ),
+            mission_owner_role=str(
+                session_state.get_provider_metadata("completion_owner_role") or "assistant"
+            ),
+            extra_rejection_reasons=rejection_reasons,
+        )
+        recorded_signal = _record_validated_signal(
+            session_state,
+            signal,
+            turn=turn_index,
+        )
+        if not guard_ok and guard_reason:
+            abort = self.conductor._emit_completion_guard_feedback(
+                session_state,
+                markdown_logger,
+                guard_reason,
+                stream_responses,
+            )
+            if abort:
+                session_state.set_provider_metadata("completion_guard_abort", True)
+            result_entry["_completion_guard_blocked"] = True
+            return True if abort else False
+        if not is_accepted_signal(recorded_signal):
+            return False
+        final_message = (
+            _ensure_tool_completion_final_message(
+                self.conductor,
+                session_state,
+                reason="mark_task_complete_after_receipts",
+            )
+            if exchange.input_kind == "text"
+            else None
+        )
+        method = self.policy.completion_method(exchange.input_kind)
+        summary = {
+            "completed": True,
+            "method": method,
+            "reason": self.policy.completion_reason(exchange.input_kind, tool_name),
+            "confidence": 1.0,
+            "tool": tool_name,
+            "tool_result": tool_result,
+            "source": "tool_call",
+            "signal": recorded_signal,
+        }
+        if final_message:
+            summary["final_message"] = final_message
+        existing = dict(getattr(session_state, "completion_summary", None) or {})
+        existing.update({key: value for key, value in summary.items() if key not in existing})
+        session_state.completion_summary = existing
+        if on_completion is not None:
+            try:
+                on_completion(
+                    exchange=exchange,
+                    result_entry=result_entry,
+                    results=results,
+                    executed_results=executed_results,
+                    failed_at_index=failed_at_index,
+                    final_message=final_message,
+                    turn_index=turn_index,
+                )
+            except Exception:
+                pass
+        if stream_responses:
+            try:
+                print(
+                    f"[stop] reason=tool_based confidence=1.0 - "
+                    f"{tool_name}() completed"
+                )
+            except Exception:
+                pass
+        return True
+
+    def run(
+        self,
+        exchange: PreparedProviderExchange,
+        *,
+        session_state: SessionState,
+        error_handler: Any,
+        stream_responses: bool,
+        relay_results: Callable[..., None],
+        persist_results: Optional[Callable[..., None]] = None,
+        on_completion: Optional[Callable[..., None]] = None,
+        record_execution: Optional[Callable[..., None]] = None,
+        post_write_closure: bool = False,
+    ) -> bool:
+        calls = list(exchange.parsed_calls)
+        calls = self.conductor._expand_multi_file_patches(
+            calls,
+            session_state,
+            self.log_sink,
+        )
+        if _maybe_block_read_only_implementation_loop(
+            self.conductor,
+            session_state,
+            self.log_sink,
+            calls,
+            stream_responses,
+        ):
+            summary = getattr(session_state, "completion_summary", None) or {}
+            return bool(summary.get("completed"))
+        if _maybe_force_read_only_observation_closure(session_state, calls):
+            return True
+
+        turn_ctx = build_turn_context(self.conductor, session_state, calls)
+        calls = apply_turn_guards(self.conductor, turn_ctx, session_state)
+        turn_ctx.parsed_calls = list(calls)
+        session_state.add_message(exchange.assistant_message, to_provider=False)
+        self.event_sink(exchange.transcript_entry)
+        if exchange.provider_assistant_message is not None:
+            session_state.add_message(exchange.provider_assistant_message, to_provider=True)
+        handle_blocked_calls(self.conductor, turn_ctx, session_state, self.log_sink)
+        if not calls and exchange.input_kind == "text":
+            return False
+
+        turn_index = session_state.get_provider_metadata("current_turn_index")
+        turn_index_int = turn_index if isinstance(turn_index, int) else None
+        if calls:
+            batch = self.tool_executor.execute(
+                calls,
+                transcript_callback=self.event_sink,
+                policy_bypass=session_state.get_provider_metadata("replay_mode"),
+            )
+            executed_results = batch.executed_results
+            failed_at_index = batch.failed_at_index
+            execution_error = batch.execution_error
+            plan_metadata = batch.plan_metadata
+        else:
+            executed_results = []
+            failed_at_index = -1
+            execution_error = None
+            plan_metadata = {
+                "strategy": "no_calls",
+                "can_run_concurrent": False,
+                "max_workers": 0,
+                "group_counts": {},
+                "group_limits": {},
+                "total_calls": 0,
+                "executed_calls": 0,
+            }
+        turn_ctx.plan_metadata = plan_metadata
+        self.event_sink({"tool_execution_plan": plan_metadata})
+        if record_execution is not None:
+            record_execution(
+                exchange=exchange,
+                executed_results=executed_results,
+                plan_metadata=plan_metadata,
+                turn_index=turn_index_int,
+            )
+        if persist_results is not None:
+            persist_results(
+                exchange=exchange,
+                executed_results=executed_results,
+                plan_metadata=plan_metadata,
+                turn_index=turn_index_int,
+            )
+
+        try:
+            self.conductor.provider_metrics.add_concurrency_sample(
+                turn=turn_index_int,
+                plan=plan_metadata,
+            )
+        except Exception:
+            pass
+        recent_tools_summary, test_success = summarize_execution_results(
+            self.conductor,
+            turn_ctx,
+            executed_results,
+            session_state,
+            turn_index_int,
+        )
+        turn_ctx.recent_tools_summary = recent_tools_summary
+        turn_ctx.test_success = test_success
+        session_state.set_provider_metadata(
+            "recent_tool_activity",
+            {
+                "tools": recent_tools_summary,
+                "turn": session_state.get_provider_metadata("current_turn_index"),
+            },
+        )
+        if post_write_closure and _maybe_force_post_write_auto_verification_closure(
+            self.conductor,
+            session_state,
+            reason="post_write_auto_verified_before_continuation",
+        ):
+            finalize_turn_context_snapshot(
+                self.conductor,
+                session_state,
+                turn_ctx,
+                turn_index_int,
+            )
+            return True
+        if _maybe_force_requested_shell_command_closure(
+            session_state,
+            reason="requested_shell_command_observed_before_continuation",
+        ):
+            finalize_turn_context_snapshot(
+                self.conductor,
+                session_state,
+                turn_ctx,
+                turn_index_int,
+            )
+            return True
+        if _force_failed_verification_final_answer(
+            session_state,
+            reason="failed_verification_after_retries",
+        ):
+            finalize_turn_context_snapshot(
+                self.conductor,
+                session_state,
+                turn_ctx,
+                turn_index_int,
+            )
+            return True
+        if _force_failed_write_final_answer(
+            self.conductor,
+            session_state,
+            reason="failed_requested_write_after_retries",
+        ):
+            finalize_turn_context_snapshot(
+                self.conductor,
+                session_state,
+                turn_ctx,
+                turn_index_int,
+            )
+            return True
+
+        if execution_error:
+            self._record_rewards(
+                session_state,
+                turn_index_int,
+                plan_metadata,
+                executed_results,
+                failed_at_index,
+                test_success,
+                failed=True,
+            )
+            self._relay_execution_error(
+                exchange,
+                executed_results,
+                execution_error,
+                session_state,
+                error_handler,
+                stream_responses,
+            )
+            finalize_turn_context_snapshot(
+                self.conductor,
+                session_state,
+                turn_ctx,
+                turn_index_int,
+            )
+            return False
+
+        results = self._result_entries(executed_results)
+        self._record_rewards(
+            session_state,
+            turn_index_int,
+            plan_metadata,
+            executed_results,
+            failed_at_index,
+            test_success,
+        )
+        completion_result: Optional[bool] = None
+        for result_entry in reversed(results):
+            completion_result = self._handle_completion_action(
+                exchange,
+                result_entry,
+                session_state,
+                self.log_sink,
+                stream_responses,
+                turn_index_int,
+                executed_results=executed_results,
+                results=results,
+                failed_at_index=failed_at_index,
+                on_completion=on_completion,
+            )
+            if completion_result is not None:
+                if completion_result:
+                    finalize_turn_context_snapshot(
+                        self.conductor,
+                        session_state,
+                        turn_ctx,
+                        turn_index_int,
+                    )
+                    return True
+                if result_entry.get("_completion_guard_blocked"):
+                    try:
+                        results.remove(result_entry)
+                        summary = session_state.tool_usage_summary
+                        summary["total_calls"] = max(
+                            0,
+                            int(summary.get("total_calls", 0)) - 1,
+                        )
+                        turn_usage = session_state.turn_tool_usage.get(turn_index_int) or {}
+                        tools = turn_usage.get("tools") or []
+                        for index in range(len(tools) - 1, -1, -1):
+                            if tools[index].get("name") == result_entry.get("fn"):
+                                tools.pop(index)
+                                break
+                        recent_tools_summary = [
+                            entry
+                            for entry in recent_tools_summary
+                            if entry.get("name") != result_entry.get("fn")
+                        ]
+                        turn_ctx.recent_tools_summary = recent_tools_summary
+                    except Exception:
+                        pass
+                break
+        if turn_ctx.blocked_calls:
+            for blocked in turn_ctx.blocked_calls:
+                if blocked.get("source") != "todo":
+                    continue
+                entry = self.conductor._emit_todo_guard_violation(
+                    session_state,
+                    self.log_sink,
+                    blocked.get("reason") or "Plan guard violation",
+                    blocked_call=blocked.get("call"),
+                )
+                if entry:
+                    results.append(entry)
+        finalize_turn_context_snapshot(
+            self.conductor,
+            session_state,
+            turn_ctx,
+            turn_index_int,
+        )
+        relay_results(
+            exchange=exchange,
+            results=results,
+            executed_results=executed_results,
+            failed_at_index=failed_at_index,
+            turn_context=turn_ctx,
+        )
+        maybe_transition_plan_mode(self.conductor, session_state, self.log_sink)
+        return False
 
 
 __all__ = ['build_turn_context', 'summarize_execution_results', 'emit_turn_snapshot', 'hydrate_turn_context_signals', 'finalize_turn_context_snapshot', 'apply_turn_guards', 'handle_blocked_calls', 'maybe_transition_plan_mode']

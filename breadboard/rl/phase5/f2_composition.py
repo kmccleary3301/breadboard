@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Literal, Mapping
 from urllib.parse import urlsplit
 
-from agentic_coder_prototype.compilation.contracts import CompiledConfigManifest, ConfigBundleManifest
+from breadboard_engine.compilation.contracts import CompiledConfigManifest, ConfigBundleManifest
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from breadboard.rl.harness import contracts as c
@@ -46,7 +46,7 @@ from breadboard.rl.harness.composition import (
     load_production_composition,
 )
 from breadboard.rl.harness.evidence import EvidenceRoleBindingV2
-from breadboard.rl.state.cas import FilesystemCAS
+from breadboard.artifacts.cas import FilesystemCAS
 
 _DIGEST_PREFIX = "sha256:"
 _STORE_NAMES = ("cas", "locator", "materialization_cache", "workspace", "lease", "security_profile")

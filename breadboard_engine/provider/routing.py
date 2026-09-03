@@ -21,6 +21,7 @@ from .capabilities import (
     ProviderCapabilities,
     get_model_capability_override,
 )
+from ..provider_broker.authority import CredentialAuthority
 from ..provider_broker.catalog import (
     get_provider_catalog_entry,
     routable_provider_catalog,
@@ -60,6 +61,9 @@ class ProviderConfig:
         supports_streaming: bool = True,
         supports_reasoning_traces: bool = False,
         supports_cache_control: bool = False,
+        auth_owner: str = "broker",
+        credential_required: bool = True,
+        tool_adapter_kind: str = "openai",
     ):
         self.provider_id = provider_id
         self.supports_native_tools = supports_native_tools
@@ -72,6 +76,9 @@ class ProviderConfig:
         self.supports_streaming = supports_streaming
         self.supports_reasoning_traces = supports_reasoning_traces
         self.supports_cache_control = supports_cache_control
+        self.auth_owner = auth_owner
+        self.credential_required = credential_required
+        self.tool_adapter_kind = tool_adapter_kind
 
     def to_descriptor(
         self, supports_native_override: Optional[bool] = None
@@ -154,44 +161,13 @@ class ProviderRouteError(ValueError):
         self.provider_id = provider_id
 
 
-_PROVIDER_RUNTIME_OPTIONS: dict[str, dict[str, Any]] = {
-    "codex": {
-        "supports_native_tools": False,
-        "supports_reasoning_traces": True,
-    },
-    "openai": {
-        "supports_reasoning_traces": True,
-    },
-    "openrouter": {
-        "supports_reasoning_traces": True,
-    },
-    "anthropic": {
-        "supports_reasoning_traces": True,
-        "supports_cache_control": True,
-    },
-    "mock": {
-        "supports_native_tools": False,
-        "supports_streaming": False,
-    },
-    "cli_mock": {
-        "supports_native_tools": False,
-        "supports_streaming": False,
-    },
-    "smoke": {
-        "supports_native_tools": False,
-        "supports_streaming": False,
-    },
-    "replay": {
-        "supports_streaming": False,
-        "supports_reasoning_traces": True,
-    },
-}
 
 
 class ProviderRouter:
     """Routes model requests to appropriate providers with tool schema translation"""
 
-    def __init__(self):
+    def __init__(self, credential_authority: CredentialAuthority):
+        self.credential_authority = credential_authority
         self.providers: dict[str, ProviderConfig] = {}
         for entry in routable_provider_catalog():
             default_headers: dict[str, str] = {}
@@ -204,13 +180,19 @@ class ProviderRouter:
                 }
             self.providers[entry.provider_id] = ProviderConfig(
                 provider_id=entry.provider_id,
+                supports_native_tools=entry.supports_native_tools,
                 tool_schema_format=entry.compatible_protocol,
                 base_url=entry.base_url,
                 api_key_env=entry.api_key_env,
                 default_headers=default_headers,
                 runtime_id=entry.runtime_id,
                 default_api_variant=entry.default_api_variant,
-                **_PROVIDER_RUNTIME_OPTIONS[entry.provider_id],
+                supports_streaming=entry.supports_streaming,
+                supports_reasoning_traces=entry.supports_reasoning_traces,
+                supports_cache_control=entry.supports_cache_control,
+                auth_owner=entry.auth_owner,
+                credential_required=entry.credential_required,
+                tool_adapter_kind=entry.tool_adapter_kind,
             )
 
         self.translators = {
@@ -351,8 +333,10 @@ class ProviderRouter:
             result["base_url"] = config.base_url
         if headers:
             result["default_headers"] = headers
-        if config.provider_id in {"codex", "mock", "cli_mock", "smoke", "replay"}:
-            result["api_key"] = "codex" if config.provider_id == "codex" else "mock"
+        if config.auth_owner == "provider":
+            result["api_key"] = "codex"
+        elif config.auth_owner == "none":
+            result["api_key"] = "mock"
         return result
 
     def get_credential_origin(
@@ -365,13 +349,11 @@ class ProviderRouter:
     ) -> dict[str, str] | None:
         """Return secret-free provider credential provenance for one route."""
         config, _actual_model, _ = self.get_provider_config(model_id)
-        if config.provider_id == "codex":
+        if config.auth_owner == "provider":
             return {"kind": "fallback", "source": "provider_managed"}
-        if config.provider_id in {"mock", "cli_mock", "smoke", "replay"}:
+        if config.auth_owner == "none":
             return {"kind": "fallback", "source": "synthetic"}
-        from ..provider_broker import get_provider_broker
-
-        return get_provider_broker().get_credential_origin(
+        return self.credential_authority.get_credential_origin(
             config.provider_id,
             session_id=session_id,
             account_selector=account_selector,
@@ -395,7 +377,7 @@ class ProviderRouter:
         headers = {
             key: value for key, value in (config.default_headers or {}).items() if value
         }
-        if config.provider_id in {"mock", "cli_mock", "smoke", "replay"}:
+        if config.auth_owner == "none":
             material: dict[str, Any] = {
                 "api_key": "mock",
                 "credential_origin": {
@@ -404,10 +386,7 @@ class ProviderRouter:
                 },
             }
         else:
-            from ..provider_broker import get_provider_broker
-
-            broker = get_provider_broker()
-            with broker.execution_material(
+            with self.credential_authority.execution_material(
                 config.provider_id,
                 session_id=session_id,
                 endpoint_id=endpoint_id or str(model_id),
@@ -492,5 +471,7 @@ class ProviderRouter:
                 headers.clear()
 
 
-# Global instance
-provider_router = ProviderRouter()
+# Process composition owns the default broker and injects its narrow authority.
+from ..provider_broker import get_provider_broker
+
+provider_router = ProviderRouter(get_provider_broker())

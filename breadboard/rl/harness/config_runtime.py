@@ -11,7 +11,7 @@ from enum import Enum
 from types import MappingProxyType
 from typing import Any, Protocol, runtime_checkable
 
-from agentic_coder_prototype.compilation.contracts import (
+from breadboard_engine.compilation.contracts import (
     CANONICALIZER_ID,
     canonical_json_bytes,
     canonical_json_loads,

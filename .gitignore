@@ -45,6 +45,8 @@ local_engine_bundles/
 *.egg-info/
 **/artifacts/
 **/artifacts/visual_baselines/
+!breadboard/artifacts/
+!breadboard/artifacts/**
 **/.cache/
 implementations/tooling_sys_prompts_cached/
 **/.pytest_cache/

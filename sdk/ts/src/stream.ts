@@ -6,7 +6,11 @@ import {
   PUBLIC_BINDINGS_BY_OPERATION_ID,
   type PublicOperationBinding,
 } from "./generated/public-bindings.js"
-
+import {
+  PUBLIC_SESSION_EVENT_PAYLOAD_SCHEMAS,
+  type PublicSessionEventKind as EventKind,
+  type PublicSessionEventPayloadSchema as EventPayloadSchema,
+} from "./generated/session-event-bindings.js"
 export const bindGeneratedRoute = (
   binding: PublicOperationBinding,
   pathValues: Readonly<Record<string, string>> = {},
@@ -84,27 +88,6 @@ const SESSION_EVENT_VISIBILITY_FIELDS = new Set([
   "host_visible",
   "redaction_state",
 ])
-const LIFECYCLE_PAYLOAD_SCHEMA = "bb.payload.product_session.lifecycle.v1"
-const EVENT_PAYLOAD_SCHEMAS = {
-  "session.started": LIFECYCLE_PAYLOAD_SCHEMA,
-  "input.accepted": LIFECYCLE_PAYLOAD_SCHEMA,
-  "approval.requested": LIFECYCLE_PAYLOAD_SCHEMA,
-  "approval.resolved": LIFECYCLE_PAYLOAD_SCHEMA,
-  "session.reconfigured": LIFECYCLE_PAYLOAD_SCHEMA,
-  "session.paused": LIFECYCLE_PAYLOAD_SCHEMA,
-  "session.resumed": LIFECYCLE_PAYLOAD_SCHEMA,
-  "session.completed": LIFECYCLE_PAYLOAD_SCHEMA,
-  "session.failed": LIFECYCLE_PAYLOAD_SCHEMA,
-  "session.canceled": LIFECYCLE_PAYLOAD_SCHEMA,
-  assistant_message: "bb.payload.message.assistant.v1",
-  tool_call: "bb.payload.tool.called.v1",
-  tool_result: "bb.payload.tool.completed.v1",
-} as const satisfies Readonly<Record<string, string>>
-type EventKind = keyof typeof EVENT_PAYLOAD_SCHEMAS
-type EventPayloadSchema = (typeof EVENT_PAYLOAD_SCHEMAS)[EventKind]
-
-const eventKind = (value: string): value is EventKind =>
-  Object.hasOwn(EVENT_PAYLOAD_SCHEMAS, value)
 
 const LIFECYCLE_PAYLOAD_FIELDS: Readonly<Record<string, ReadonlySet<string>>> = {
   "session.started": new Set(["effective_lock_hash", "task_hash"]),
@@ -312,13 +295,16 @@ const validateLifecyclePayload = (
   if (!valid) throw new Error("Invalid session event lifecycle payload")
 }
 
+const publicSessionEventKind = (value: string): value is EventKind =>
+  Object.hasOwn(PUBLIC_SESSION_EVENT_PAYLOAD_SCHEMAS, value)
+
 const validateEventPayload = (
   kind: string,
   schemaVersion: string,
   payload: Record<string, unknown>,
 ): { kind: EventKind; schemaVersion: EventPayloadSchema } => {
-  if (!eventKind(kind)) throw new Error("Invalid session event kind")
-  const expectedSchema = EVENT_PAYLOAD_SCHEMAS[kind]
+  if (!publicSessionEventKind(kind)) throw new Error("Invalid session event kind")
+  const expectedSchema = PUBLIC_SESSION_EVENT_PAYLOAD_SCHEMAS[kind]
   if (schemaVersion !== expectedSchema) {
     throw new Error("Invalid session event payload_schema_version")
   }

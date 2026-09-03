@@ -9,34 +9,40 @@ from types import SimpleNamespace
 
 from breadboard_engine.compilation.v2_loader import load_agent_config
 from breadboard_engine.agent_llm_openai import OpenAIConductor
-from breadboard_engine.conductor_execution import (
-    execute_agent_calls,
+from breadboard_engine.conductor.completion_guards import (
     _force_failed_write_final_answer,
     _force_failed_verification_final_answer,
     _force_post_receipt_final_answer,
+)
+from breadboard_engine.conductor.implementation_receipts import (
     _implementation_verification_receipt_missing,
-    _is_completion_action_result,
     _latest_prompt_requires_implementation_write,
     _latest_prompt_requests_verification,
     _shell_command_write_targets,
-    summarize_execution_results,
 )
+from breadboard_engine.conductor.tool_executor import (
+    execute_agent_calls,
+    _is_completion_action_result,
+)
+from breadboard_engine.conductor.turn_runtime import summarize_execution_results
 from breadboard_engine.conductor.components import (
     latest_real_user_prompt,
     session_requires_workspace_tool_usage,
     should_require_workspace_tool_usage,
 )
-from breadboard_engine.conductor.execution import (
+from breadboard_engine.conductor.completion_guards import (
     _ensure_tool_completion_final_message,
+    _maybe_block_read_only_implementation_loop,
+    _maybe_force_read_only_observation_closure,
+    _maybe_force_post_write_auto_verification_closure,
+    _maybe_force_requested_shell_command_closure,
+)
+from breadboard_engine.conductor.implementation_receipts import (
     _implementation_receipts_satisfied,
     _latest_prompt_requests_read_only_answer_after_observation,
     _latest_prompt_requests_tool_stop_after_observation,
     _latest_implementation_prompt,
     _maybe_auto_verify_make_after_write_receipts,
-    _maybe_block_read_only_implementation_loop,
-    _maybe_force_read_only_observation_closure,
-    _maybe_force_post_write_auto_verification_closure,
-    _maybe_force_requested_shell_command_closure,
     _requested_write_targets,
     _run_subprocess_capture_with_group_timeout,
 )

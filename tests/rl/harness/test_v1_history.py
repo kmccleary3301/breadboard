@@ -10,7 +10,7 @@ from breadboard.rl.harness.history import (
     HistoricalEpisodeNotFound,
     HistoricalV1EpisodeReader,
 )
-from breadboard.rl.state.state_ref import ArtifactRef
+from breadboard.artifacts.references import ArtifactRef
 
 
 class FrozenStore:

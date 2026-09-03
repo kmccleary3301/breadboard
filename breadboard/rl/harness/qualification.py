@@ -178,7 +178,7 @@ def _capability_projection(
 
 
 def _options(*, runtime_abi: str) -> Any:
-    from agentic_coder_prototype.compilation.contracts import (
+    from breadboard_engine.compilation.contracts import (
         CompileOptions,
         CompileTarget,
         TaskContract,
@@ -232,12 +232,12 @@ def _inputs(
     edges: tuple[Any, ...],
     root: str,
 ) -> tuple[Any, Any, Any]:
-    from agentic_coder_prototype.compilation.bundle import (
+    from breadboard_engine.compilation.bundle import (
         ManifestReader,
         build_dependency_closure,
         ingest_member_map,
     )
-    from breadboard.rl.state import InMemoryCAS
+    from breadboard.artifacts import InMemoryCAS
 
     cas = InMemoryCAS()
     bundle = ingest_member_map(
@@ -960,11 +960,11 @@ def materialize_production_composition_fixture(
     import socket
     from datetime import UTC, datetime, timedelta
 
-    from agentic_coder_prototype.compilation.contracts import (
+    from breadboard_engine.compilation.contracts import (
         DependencyEdge,
         canonical_json_bytes,
     )
-    from agentic_coder_prototype.compilation.server_compiler import compile_config
+    from breadboard_engine.compilation.server_compiler import compile_config
     from breadboard.rl.harness import contracts as c
     from breadboard.rl.harness.composition import (
         ArtifactFileRefV1,
@@ -1016,7 +1016,7 @@ def materialize_production_composition_fixture(
         CONDUCTOR_IMPLEMENTATION_DIGEST,
         CONDUCTOR_RUNTIME_ABI,
     )
-    from breadboard.rl.state.cas import FilesystemCAS
+    from breadboard.artifacts.cas import FilesystemCAS
 
     root = (tmp_path / "production-composition").resolve()
     installed_paths = install_runtime_paths(root / "installed")

@@ -18,7 +18,7 @@ from typing import Literal
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from scripts.rl_phase5.finalize_f8_target_input import F8FinalizerTemplate
@@ -53,9 +53,9 @@ _APPROVED_SOURCES: dict[str, tuple[str, str]] = {
     ),
 }
 _SUPPORT_SOURCES = (
-    "agentic_coder_prototype/compilation/contracts.py",
-    "agentic_coder_prototype/__init__.py",
-    "agentic_coder_prototype/compilation/__init__.py",
+    "breadboard_engine/compilation/contracts.py",
+    "breadboard_engine/__init__.py",
+    "breadboard_engine/compilation/__init__.py",
 )
 _DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}")
 _ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,255}")

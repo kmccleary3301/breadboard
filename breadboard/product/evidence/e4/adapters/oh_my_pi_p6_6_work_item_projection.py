@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any, Mapping
 
-from agentic_coder_prototype.compilation.primitive_records import get_spec, validate_record
+from breadboard_engine.compilation.primitive_records import get_spec, validate_record
 from breadboard.product.coordination.work_items import WorkItemEvent, WorkItemSnapshot, rebuild_work_item
 
 PROJECTION_ID = "p6_6_task_job_subagent_v2"

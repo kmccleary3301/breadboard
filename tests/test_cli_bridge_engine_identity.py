@@ -39,7 +39,7 @@ from breadboard_engine.api.cli_bridge.models import EngineIdentityReadinessRespo
 from breadboard_engine.api.cli_bridge.service import SessionService
 @pytest.fixture(autouse=True)
 def _use_canonical_lifecycle_api(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
+    monkeypatch.delenv("BREADBOARD_LEGACY_ROUTES", raising=False)
 
 
 
@@ -143,6 +143,50 @@ async def test_identity_is_stable_and_exact_within_one_process(tmp_path: Path) -
     )
     assert payload["session_readiness"] == {"ready": True, "reason": "ready"}
     EngineIdentityReadinessResponse.model_validate(payload)
+
+
+@pytest.mark.asyncio
+async def test_default_server_exposes_public_and_internal_session_contracts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("BREADBOARD_LEGACY_ROUTES", raising=False)
+    app = create_app(SessionService(state_root=tmp_path))
+
+    response = await _get_identity(app)
+
+    assert response.status_code == 200
+    assert response.json()["session_readiness"] == {
+        "ready": True,
+        "reason": "ready",
+    }
+    routes = {
+        (method, route.path)
+        for route in app.routes
+        if isinstance(route, APIRoute)
+        for method in route.methods
+    }
+    assert ("POST", "/v1/sessions") in routes
+    assert ("POST", "/v1/internal/sessions") in routes
+    openapi_paths = app.openapi()["paths"]
+    assert "/v1/sessions" in openapi_paths
+    assert not any(path.startswith("/v1/internal") for path in openapi_paths)
+
+    transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 45123))
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://127.0.0.1",
+    ) as client:
+        created = await client.post(
+            "/v1/internal/sessions",
+            json={"task": "", "workspace": str(tmp_path), "stream": True},
+        )
+        assert created.status_code == 200
+        session_id = created.json()["session_id"]
+        public = await client.get(f"/v1/sessions/{session_id}")
+
+    assert public.status_code == 200
+    assert public.json()["data"]["session"]["session_id"] == session_id
 
 
 def test_module_reload_preserves_process_identity() -> None:
@@ -309,7 +353,7 @@ async def test_missing_required_session_route_is_not_ready(tmp_path: Path) -> No
         for route in app.router.routes
         if not (
             isinstance(route, APIRoute)
-            and route.path == "/v1/sessions/{session_id}/events"
+            and route.path == "/v1/internal/sessions/{session_id}/events"
             and "GET" in route.methods
         )
     ]
@@ -362,15 +406,15 @@ def test_fixed_digest_is_exact_and_excludes_lifecycle_operations(tmp_path: Path)
         (operation["method"], operation["path"])
         for operation in contract["http"]["operations"]
     ] == [
-        ("POST", "/v1/sessions"),
-        ("GET", "/v1/sessions/{session_id}"),
-        ("POST", "/v1/sessions/{session_id}/input"),
-        ("POST", "/v1/sessions/{session_id}/turns/{turn_id}/cancel"),
-        ("GET", "/v1/sessions/{session_id}/events"),
-        ("DELETE", "/v1/sessions/{session_id}"),
+        ("POST", "/v1/internal/sessions"),
+        ("GET", "/v1/internal/sessions/{session_id}"),
+        ("POST", "/v1/internal/sessions/{session_id}/input"),
+        ("POST", "/v1/internal/sessions/{session_id}/turns/{turn_id}/cancel"),
+        ("GET", "/v1/internal/sessions/{session_id}/events"),
+        ("DELETE", "/v1/internal/sessions/{session_id}"),
     ]
     assert p30_session_schema_sha256(contract) == (
-        "sha256:385c19de8557a958b10d4a78afc64014a200558b8f089295882a1d9eb4b5d55a"
+        "sha256:979bff06137b659c0110c0f9324703b955e22da85a7aac93bee7f639290475a9"
     )
     assert p30_session_schema_sha256(contract) == P30_SESSION_SCHEMA_SHA256
     assert contract["event_stream"]["envelope_schema"]["properties"]["payload"] == {
@@ -419,18 +463,18 @@ async def test_same_routes_with_contract_drift_are_not_ready(
     service = SessionService(state_root=tmp_path)
     app = create_app(service)
     if drift == "request_model":
-        route = _session_route(app, "POST", "/v1/sessions/{session_id}/input")
+        route = _session_route(app, "POST", "/v1/internal/sessions/{session_id}/input")
         body_parameter = route.dependant.body_params[0]
         body_parameter._type_adapter = TypeAdapter(dict[str, str])
         body_parameter.field_info.annotation = dict[str, str]
     elif drift == "response_model":
-        route = _session_route(app, "POST", "/v1/sessions/{session_id}/input")
+        route = _session_route(app, "POST", "/v1/internal/sessions/{session_id}/input")
         route.response_model = dict[str, str]
         route.response_field = None
     elif drift == "success_status":
-        _session_route(app, "POST", "/v1/sessions/{session_id}/input").status_code = 200
+        _session_route(app, "POST", "/v1/internal/sessions/{session_id}/input").status_code = 200
     elif drift == "query_schema":
-        route = _session_route(app, "GET", "/v1/sessions/{session_id}/events")
+        route = _session_route(app, "GET", "/v1/internal/sessions/{session_id}/events")
         route.dependant.query_params = route.dependant.query_params[1:]
     elif drift == "sse_schema":
         changed = deepcopy(engine_identity_config.P30_SESSION_EVENT_STREAM_CONTRACT)

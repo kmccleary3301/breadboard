@@ -21,12 +21,12 @@ The hot path adds:
 
 ## Current path
 
-1. The session service accepts `POST /sessions`.
+1. The internal session service accepts `POST /v1/internal/sessions`.
 2. If `BREADBOARD_EMIT_PRIMITIVES=1`, it compiles the loaded agent config and request metadata through the primitive boundary, then passes the session runtime record directory into the runner.
 3. The runner defaults enabled primitive emission to strict mode unless `BREADBOARD_PRIMITIVES_MODE` is set to `strict`, `quarantine`, or `off`.
 4. `SessionState` dual-emits kernel events without changing the legacy in-memory event flow.
 5. Tool declaration, execution, terminal outcome, and model-render records are written with a shared `call_id`.
-6. `/v1/e4/records?source=runtime&schema_version=<schema>` and `/v1/sessions/{session_id}/records` read runtime record streams.
+6. `/v1/e4/records?source=runtime&schema_version=<schema>` and `/v1/internal/sessions/{session_id}/records` read runtime record streams.
 7. `BREADBOARD_CONFIG_PLANE_DIALECT` selects only the session-start config-plane coordination records: `v2` writes `bb.coordination_slice.v2`, `v3` writes `bb.coordination_pack.v3`, and `both` writes both. It defaults to `v2` and does not select hot-path kernel, tool, terminal, model-render, or transcript record versions.
 
 The flag-off path writes no runtime records and keeps existing session behavior unchanged. Production remains flag-off by default. Dev/CI profiles that enable runtime emission use strict mode by default.

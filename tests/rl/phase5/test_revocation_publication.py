@@ -44,7 +44,7 @@ from breadboard.rl.phase5.revocation_publication import (
     RevocationSnapshotPublishRequest,
     MonotonicRevocationWitness,
 )
-from breadboard.rl.state.cas import ArtifactIntegrityError, FilesystemCAS
+from breadboard.artifacts.cas import ArtifactIntegrityError, FilesystemCAS
 from tests.rl.harness.test_config_admission import (
     PrivilegedEffectProbe,
     _admission_fixture,

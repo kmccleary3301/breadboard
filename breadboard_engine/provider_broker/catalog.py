@@ -13,6 +13,15 @@ from typing import Any, Literal
 
 
 @dataclass(frozen=True)
+class ProviderCapabilities:
+    tool_calls: str  # e.g., "parallel", "sequential"
+    streaming: str  # e.g., "text_deltas", "event_deltas", "none"
+    json_mode: str  # e.g., "strict", "best_effort", "none"
+    reasoning: str  # e.g., "encrypted", "summary", "none"
+    caching: str  # e.g., "explicit", "implicit", "none"
+
+
+@dataclass(frozen=True)
 class OAuthFlowSpec:
     flow_id: str
     auth_url: str
@@ -71,6 +80,13 @@ class ProviderCatalogEntry:
     api_key_env: str | None = None
     default_api_variant: str = "chat"
     model_discovery: Literal["configured_only"] = "configured_only"
+    supports_native_tools: bool = True
+    supports_streaming: bool = True
+    supports_reasoning_traces: bool = False
+    supports_cache_control: bool = False
+    capabilities: ProviderCapabilities | None = None
+    tool_adapter_kind: str = "openai"
+    credential_required: bool = False
 
     def as_view(
         self,
@@ -171,8 +187,8 @@ GOOGLE_ANTIGRAVITY_OAUTH = OAuthFlowSpec(
 )
 
 
-_PROVIDER_CATALOG: dict[str, ProviderCatalogEntry] = {
-    "codex": ProviderCatalogEntry(
+_PROVIDER_DEFINITIONS: tuple[ProviderCatalogEntry, ...] = (
+    ProviderCatalogEntry(
         provider_id="codex",
         aliases=("openai-codex",),
         display_name="Codex",
@@ -183,8 +199,19 @@ _PROVIDER_CATALOG: dict[str, ProviderCatalogEntry] = {
         support_tier="core",
         auth_owner="provider",
         default_api_variant="app_server",
+        supports_native_tools=False,
+        supports_reasoning_traces=True,
+        capabilities=ProviderCapabilities(
+            tool_calls="parallel",
+            streaming="event_deltas",
+            json_mode="best_effort",
+            reasoning="summary",
+            caching="implicit",
+        ),
+        tool_adapter_kind="openai",
+        credential_required=False,
     ),
-    "openai": ProviderCatalogEntry(
+    ProviderCatalogEntry(
         provider_id="openai",
         display_name="OpenAI",
         runtime_id="openai_chat",
@@ -193,8 +220,18 @@ _PROVIDER_CATALOG: dict[str, ProviderCatalogEntry] = {
         support_tier="core",
         auth_owner="broker",
         api_key_env="OPENAI_API_KEY",
+        supports_reasoning_traces=True,
+        capabilities=ProviderCapabilities(
+            tool_calls="parallel",
+            streaming="text_deltas",
+            json_mode="strict",
+            reasoning="encrypted",
+            caching="implicit",
+        ),
+        tool_adapter_kind="openai",
+        credential_required=True,
     ),
-    "anthropic": ProviderCatalogEntry(
+    ProviderCatalogEntry(
         provider_id="anthropic",
         display_name="Anthropic",
         runtime_id="anthropic_messages",
@@ -206,8 +243,19 @@ _PROVIDER_CATALOG: dict[str, ProviderCatalogEntry] = {
         auth_owner="broker",
         api_key_env="ANTHROPIC_API_KEY",
         default_api_variant="messages",
+        supports_reasoning_traces=True,
+        supports_cache_control=True,
+        capabilities=ProviderCapabilities(
+            tool_calls="parallel",
+            streaming="event_deltas",
+            json_mode="best_effort",
+            reasoning="summary",
+            caching="explicit",
+        ),
+        tool_adapter_kind="anthropic",
+        credential_required=True,
     ),
-    "openrouter": ProviderCatalogEntry(
+    ProviderCatalogEntry(
         provider_id="openrouter",
         display_name="OpenRouter",
         runtime_id="openrouter_chat",
@@ -217,8 +265,18 @@ _PROVIDER_CATALOG: dict[str, ProviderCatalogEntry] = {
         support_tier="core",
         auth_owner="broker",
         api_key_env="OPENROUTER_API_KEY",
+        supports_reasoning_traces=True,
+        capabilities=ProviderCapabilities(
+            tool_calls="parallel",
+            streaming="event_deltas",
+            json_mode="best_effort",
+            reasoning="summary",
+            caching="none",
+        ),
+        tool_adapter_kind="openrouter",
+        credential_required=True,
     ),
-    "google-gemini-cli": ProviderCatalogEntry(
+    ProviderCatalogEntry(
         provider_id="google-gemini-cli",
         display_name="Google Cloud Code Assist (Gemini CLI)",
         runtime_id="openai_chat",
@@ -226,8 +284,17 @@ _PROVIDER_CATALOG: dict[str, ProviderCatalogEntry] = {
         oauth_flows=(GOOGLE_GEMINI_CLI_OAUTH,),
         support_tier="deferred",
         auth_owner="broker",
+        capabilities=ProviderCapabilities(
+            tool_calls="parallel",
+            streaming="text_deltas",
+            json_mode="strict",
+            reasoning="encrypted",
+            caching="implicit",
+        ),
+        tool_adapter_kind="openai",
+        credential_required=True,
     ),
-    "google-antigravity": ProviderCatalogEntry(
+    ProviderCatalogEntry(
         provider_id="google-antigravity",
         display_name="Antigravity",
         runtime_id="openai_chat",
@@ -235,35 +302,94 @@ _PROVIDER_CATALOG: dict[str, ProviderCatalogEntry] = {
         oauth_flows=(GOOGLE_ANTIGRAVITY_OAUTH,),
         support_tier="deferred",
         auth_owner="broker",
+        capabilities=ProviderCapabilities(
+            tool_calls="parallel",
+            streaming="text_deltas",
+            json_mode="strict",
+            reasoning="encrypted",
+            caching="implicit",
+        ),
+        tool_adapter_kind="openai",
+        credential_required=True,
     ),
-    "mock": ProviderCatalogEntry(
+    ProviderCatalogEntry(
         provider_id="mock",
         display_name="Mock",
         runtime_id="mock_chat",
         default_api_variant="mock",
+        supports_native_tools=False,
+        supports_streaming=False,
+        capabilities=ProviderCapabilities(
+            tool_calls="sequential",
+            streaming="none",
+            json_mode="strict",
+            reasoning="none",
+            caching="none",
+        ),
+        tool_adapter_kind="openai",
+        credential_required=False,
     ),
-    "cli_mock": ProviderCatalogEntry(
+    ProviderCatalogEntry(
         provider_id="cli_mock",
         display_name="CLI Mock",
         runtime_id="cli_mock_chat",
         config_adapter_ids=("cli_mock_chat",),
         default_api_variant="mock",
+        supports_native_tools=False,
+        supports_streaming=False,
+        capabilities=ProviderCapabilities(
+            tool_calls="sequential",
+            streaming="none",
+            json_mode="strict",
+            reasoning="none",
+            caching="none",
+        ),
+        tool_adapter_kind="openai",
+        credential_required=False,
     ),
-    "smoke": ProviderCatalogEntry(
+    ProviderCatalogEntry(
         provider_id="smoke",
         display_name="Smoke",
         runtime_id="smoke_chat",
         config_adapter_ids=("smoke_chat",),
         default_api_variant="mock",
+        supports_native_tools=False,
+        supports_streaming=False,
+        capabilities=ProviderCapabilities(
+            tool_calls="sequential",
+            streaming="none",
+            json_mode="strict",
+            reasoning="none",
+            caching="none",
+        ),
+        tool_adapter_kind="openai",
+        credential_required=False,
     ),
-    "replay": ProviderCatalogEntry(
+    ProviderCatalogEntry(
         provider_id="replay",
         display_name="Replay",
         runtime_id="replay",
         config_adapter_ids=("replay",),
         default_api_variant="replay",
+        supports_streaming=False,
+        supports_reasoning_traces=True,
+        capabilities=ProviderCapabilities(
+            tool_calls="parallel",
+            streaming="none",
+            json_mode="strict",
+            reasoning="summary",
+            caching="none",
+        ),
+        tool_adapter_kind="openai",
+        credential_required=False,
     ),
+)
+
+_PROVIDER_CATALOG: dict[str, ProviderCatalogEntry] = {
+    entry.provider_id: entry for entry in _PROVIDER_DEFINITIONS
 }
+
+
 
 _CONFIG_ADAPTER_CATALOG: dict[str, ProviderCatalogEntry] = {}
 for _entry in _PROVIDER_CATALOG.values():

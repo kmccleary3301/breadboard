@@ -9,23 +9,14 @@ from breadboard.sandbox_factory import SandboxFactory
 from breadboard.sandbox_virtualized import SandboxFactory as LegacySandboxFactory
 from breadboard.sandbox_v2 import DevSandboxV2 as LegacyDevSandboxV2
 
-from breadboard_engine.orchestration.agent_session import OpenCodeAgent
-from breadboard_engine.agent_session import OpenCodeAgent as LegacyOpenCodeAgent
-from breadboard_engine.tool_calling.ir import ToolCallIR
-from breadboard_engine.tool_call_ir import ToolCallIR as LegacyToolCallIR
-from breadboard_engine.provider.runtime import provider_registry
-import breadboard_engine.provider_runtime as legacy_provider_runtime
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_mixed_canonical_and_legacy_imports_resolve_to_same_symbols() -> None:
+def test_sandbox_compatibility_imports_preserve_symbols() -> None:
     assert LegacyDevSandboxV2 is DevSandboxV2
     assert LegacySandboxFactory is SandboxFactory
-    assert LegacyOpenCodeAgent is OpenCodeAgent
-    assert LegacyToolCallIR is ToolCallIR
-    assert legacy_provider_runtime.provider_registry is provider_registry
 
 
 def test_mixed_canonical_and_legacy_script_paths_work_together() -> None:

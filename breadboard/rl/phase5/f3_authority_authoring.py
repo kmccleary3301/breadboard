@@ -12,8 +12,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from agentic_coder_prototype.compilation.bundle import ManifestReader, build_dependency_closure, ingest_member_map
-from agentic_coder_prototype.compilation.contracts import CompileOptions, DependencyEdge, canonical_json_bytes
+from breadboard_engine.compilation.bundle import ManifestReader, build_dependency_closure, ingest_member_map
+from breadboard_engine.compilation.contracts import CompileOptions, DependencyEdge, canonical_json_bytes
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from breadboard.rl.harness import contracts as c
@@ -44,7 +44,7 @@ from breadboard.rl.harness.runners.terminal import (
     TERMINAL_TOOL_DEFINITIONS,
     TerminalResponsesAdapter,
 )
-from breadboard.rl.state.cas import FilesystemCAS
+from breadboard.artifacts.cas import FilesystemCAS
 
 _DIGEST_PREFIX = "sha256:"
 _RESULT_ROLE = "terminal-result"
@@ -1035,7 +1035,7 @@ def build_f3_authority(spec: F3AuthorityInput, output_dir: str) -> str:
                     },
                 }
             )
-            from agentic_coder_prototype.compilation.server_compiler import compile_config
+            from breadboard_engine.compilation.server_compiler import compile_config
 
             compiled_manifest = compile_config(reader, closure, options)
             compiled_bytes = compiled_manifest.canonical_bytes()

@@ -1,8 +1,8 @@
-"""Explicit legacy client for the ATP adapter pending C1 removal.
+"""Explicit internal client for the ATP adapter pending C1 removal.
 
 This module is not exported from :mod:`breadboard_sdk` and is not part of the
-ordinary product client surface. Servers must explicitly enable compatibility
-routes before using it.
+ordinary product client surface. Raw session operations use the internal
+namespace and never overlap public session routes.
 """
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ class CompatibilityBreadboardClient(BreadBoardClient):
             payload["max_steps"] = int(max_steps)
         if permission_mode:
             payload["permission_mode"] = permission_mode
-        return self._request("POST", "/v1/sessions", body=payload)
+        return self._request("POST", "/v1/internal/sessions", body=payload)
 
     def post_command(self, session_id: str, *, command: str, payload: Dict[str, Any] | None = None) -> None:
-        self._request("POST", f"/v1/sessions/{session_id}/command", body={"command": command, "payload": payload or {}})
+        self._request("POST", f"/v1/internal/sessions/{session_id}/command", body={"command": command, "payload": payload or {}})

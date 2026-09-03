@@ -9,7 +9,7 @@
   },
   "protected_path_globs": [
     "breadboard/**",
-    "agentic_coder_prototype/**",
+    "breadboard_engine/**",
     "breadboard_sdk/**",
     "tool_calling/**",
     "docs/conformance/schemas/**",

@@ -31,7 +31,7 @@ async def test_checkpoint_list_and_restore_emit_events(tmp_path: Path) -> None:
     target.write_text("one\n", encoding="utf-8")
 
     manager = CheckpointManager(workspace)
-    ckpt1 = manager.create_checkpoint("first")
+    ckpt1 = manager.create_checkpoint("first", snapshot={"messages": [{"role": "user", "content": "one"}]})
 
     target.write_text("two\n", encoding="utf-8")
     manager.create_checkpoint("second")
@@ -52,7 +52,7 @@ async def test_checkpoint_list_and_restore_emit_events(tmp_path: Path) -> None:
     assert len(evt1.payload.get("checkpoints") or []) >= 2
 
     await runner.handle_command(
-        "restore_checkpoint", {"checkpoint_id": ckpt1.checkpoint_id, "mode": "code"}
+        "restore_checkpoint", {"checkpoint_id": ckpt1.checkpoint_id, "mode": "both"}
     )
     # restore emits checkpoint_restored then checkpoint_list
     evt2 = await asyncio.wait_for(session.event_queue.get(), timeout=1)
@@ -63,5 +63,8 @@ async def test_checkpoint_list_and_restore_emit_events(tmp_path: Path) -> None:
     assert "checkpoint_list" in types
 
     assert target.read_text(encoding="utf-8") == "one\n"
+    snapshot_ref = session.metadata["conversation_snapshot"]
+    assert snapshot_ref["checkpoint_id"] == ckpt1.checkpoint_id
+    assert Path(snapshot_ref["path"]).read_text(encoding="utf-8").startswith("{")
     checkpoints = manager.list_checkpoints()
     assert checkpoints and checkpoints[-1].checkpoint_id == ckpt1.checkpoint_id

@@ -62,7 +62,7 @@ def test_provider_layers_only_import_downward_and_facade_is_last() -> None:
                     violations.append(f"{path}: layer {owner_rank} imports higher layer {imported} ({imported_rank})")
             elif isinstance(node, ast.Import):
                 for alias in node.names:
-                    if alias.name in {"breadboard_engine.provider.runtime", "breadboard_engine.provider_runtime"} and owner != "breadboard_engine.provider.runtime":
+                    if alias.name in {"breadboard_engine.provider.runtime", "breadboard_engine.provider.runtime"} and owner != "breadboard_engine.provider.runtime":
                         violations.append(f"{path}: imports facade {alias.name}")
     assert violations == []
 
@@ -75,7 +75,7 @@ def test_conductor_imports_contracts_or_registry_not_provider_facade() -> None:
         for node in tree.body:
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    if alias.name in {"breadboard_engine.provider.runtime", "breadboard_engine.provider_runtime"}:
+                    if alias.name in {"breadboard_engine.provider.runtime", "breadboard_engine.provider.runtime"}:
                         violations.append(f"{path}: imports {alias.name}")
             elif isinstance(node, ast.ImportFrom):
                 module = node.module or ""

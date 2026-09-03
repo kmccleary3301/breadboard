@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from breadboard_engine.plan_bootstrapper import PlanBootstrapper
+from breadboard_engine.conductor.plan_bootstrapper import PlanBootstrapper
 
 
 class FakeSessionState:

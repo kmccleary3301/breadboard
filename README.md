@@ -139,8 +139,9 @@ The stable top-level zone model is documented in
 ├── agent_configs/                 product harness definitions + public top-level E4 dossier configs
 │   └── misc/                      scenario-specific, historical, and supporting configs
 ├── breadboard/
-│   └── rl/harness/                profile-driven RL episode, sandbox, verifier, and HTTP module
-├── agentic_coder_prototype/       temporary compat shim (legacy imports -> breadboard_engine)
+│   ├── product/                   public product operations and interfaces
+│   ├── artifacts/                 shared artifact ownership primitives
+│   └── rl/                        research-only training and evaluation modules
 ├── breadboard_engine/             canonical Python engine and runtime substrate
 │   ├── api/                       CLI bridge server, session runner, protocol surfaces
 │   ├── execution/                 runtime execution primitives
@@ -187,9 +188,9 @@ The stable top-level zone model is documented in
 
 Zone intent:
 
-- `breadboard/` is the public product-facing Python package area
-- `breadboard_engine/` is the canonical internal engine (renamed from
-  `agentic_coder_prototype/`, which remains as a temporary import shim)
+- `breadboard/product/` and `breadboard/artifacts/` are product-facing packages
+- `breadboard/rl/`, `breadboard/search/`, and `breadboard/optimize/` are research-only and excluded from the product wheel
+- `breadboard_engine/` is the canonical internal engine; the former package alias has been removed
 - `breadboard_ext/` is extension space
 - `breadboard_sdk/` and `sdk/` are SDK and host surfaces
 - `scripts/` and `docs/` are support surfaces with explicit taxonomy

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from breadboard.product.runtime.artifacts import AnchoredStorage, is_portable_basename
-from breadboard.product.runtime.events import KernelEvent, ProcessLock, Session
+from breadboard.product.runtime.events import AnnotationRecord, KernelEvent, ProcessLock, Session
 
 
 def session_directory(workspace: Path) -> Path:
@@ -89,6 +89,65 @@ _LOCAL_SESSION_LOCKS: weakref.WeakValueDictionary[tuple[str, str], threading.RLo
     weakref.WeakValueDictionary()
 )
 _LOCAL_SESSION_LOCKS_GUARD = threading.Lock()
+SessionDirectoryIdentity = tuple[int, int]
+
+
+def session_directory_identity(
+    workspace: str | Path,
+    *,
+    create: bool = False,
+) -> SessionDirectoryIdentity:
+    """Return the identity of a symlink-free workspace session directory."""
+    root = _workspace_root(workspace)
+    if os.name == "nt":
+        handles: list[int] = []
+        try:
+            for path in (root, root / ".breadboard", session_directory(root)):
+                handles.append(
+                    AnchoredStorage.windows_handle(
+                        path,
+                        directory=True,
+                        create=create,
+                    )
+                )
+            metadata = os.stat(session_directory(root), follow_symlinks=False)
+        finally:
+            for handle in reversed(handles):
+                AnchoredStorage.close_windows_handle(handle)
+        return int(metadata.st_dev), int(metadata.st_ino)
+
+    descriptors = [
+        os.open(
+            root,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+        )
+    ]
+    try:
+        for name in (".breadboard", "sessions"):
+            descriptors.append(
+                AnchoredStorage.open_directory(
+                    descriptors[-1],
+                    name,
+                    create=create,
+                )
+            )
+        metadata = os.fstat(descriptors[-1])
+        return int(metadata.st_dev), int(metadata.st_ino)
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+
+
+def _require_session_directory_identity(
+    metadata: os.stat_result,
+    expected: SessionDirectoryIdentity | None,
+) -> None:
+    if expected is None:
+        return
+    observed = int(metadata.st_dev), int(metadata.st_ino)
+    if observed != expected:
+        raise OSError("durable session directory identity changed")
+
 
 
 def validate_session_id(session_id: str) -> None:
@@ -1250,6 +1309,8 @@ def _persist_session_locked(
     workspace: Path,
     session: Session,
     event_path: Path | None = None,
+    *,
+    expected_session_directory_identity: SessionDirectoryIdentity | None = None,
 ) -> Path:
     session_id = session.read_model.session_id
     validate_session_id(session_id)
@@ -1277,6 +1338,10 @@ def _persist_session_locked(
         _digest(metadata_payload),
     )
     intent_name = _intent_name(session_id, legacy=legacy)
+    if expected_session_directory_identity is not None:
+        observed_identity = session_directory_identity(workspace)
+        if observed_identity != expected_session_directory_identity:
+            raise OSError("durable session directory identity changed")
     target = _projection_identity(event_payload, metadata_payload)
     authority = _prepare_projection_authority(workspace, session_id, target)
 
@@ -1295,6 +1360,10 @@ def _persist_session_locked(
                         create=False,
                     )
                 )
+            _require_session_directory_identity(
+                os.stat(session_directory(workspace), follow_symlinks=False),
+                expected_session_directory_identity,
+            )
             parent = session_directory(workspace)
             if not legacy:
                 parent = nested_path.parent
@@ -1345,6 +1414,10 @@ def _persist_session_locked(
                     create=False,
                 )
             )
+        _require_session_directory_identity(
+            os.fstat(descriptors[-1]),
+            expected_session_directory_identity,
+        )
         parent = descriptors[-1]
         if not legacy:
             descriptors.append(
@@ -1532,13 +1605,20 @@ def mutate_session(
     workspace: str | Path,
     session_id: str,
     mutation: Callable[[Session], _T],
+    *,
+    expected_session_directory_identity: SessionDirectoryIdentity | None = None,
 ) -> tuple[_T, Path]:
     """Run one domain mutation while holding the durable session guard."""
     with _session_guard(workspace, session_id, create=False) as root:
         _recover_pending_intents(root, session_id)
         session, event_path = _load_anchored(root, session_id)
         result = mutation(session)
-        _persist_session_locked(root, session, event_path)
+        _persist_session_locked(
+            root,
+            session,
+            event_path,
+            expected_session_directory_identity=expected_session_directory_identity,
+        )
         return result, event_path
 
 
@@ -1546,6 +1626,8 @@ def create_session(
     workspace: str | Path,
     session: Session,
     event_path: Path | None = None,
+    *,
+    expected_session_directory_identity: SessionDirectoryIdentity | None = None,
 ) -> tuple[Session, Path]:
     """Atomically claim a new session id and publish its first projection."""
     session_id = session.read_model.session_id
@@ -1569,7 +1651,29 @@ def create_session(
             pass
         else:
             raise ValueError(f"session already exists: {session_id}")
-        published_path = _persist_session_locked(root, session, event_path)
+        published_path = _persist_session_locked(
+            root,
+            session,
+            event_path,
+            expected_session_directory_identity=expected_session_directory_identity,
+        )
+
+        def commit_annotation(
+            record: AnnotationRecord,
+        ) -> tuple[KernelEvent, ...]:
+            def annotate(persisted: Session) -> tuple[KernelEvent, ...]:
+                persisted.annotate(record)
+                return persisted.events
+
+            events, _ = mutate_session(
+                root,
+                session_id,
+                annotate,
+                expected_session_directory_identity=expected_session_directory_identity,
+            )
+            return events
+
+        session._bind_terminal_annotation_commit(commit_annotation)
         return session, published_path
 
 
@@ -1870,10 +1974,18 @@ def authorize_session_artifact_manifest(
     workspace: str | Path,
     session_id: str,
     manifest_name: str,
+    *,
+    expected_session_directory_identity: SessionDirectoryIdentity | None = None,
 ) -> None:
     root = _workspace_root(workspace)
     validate_session_id(session_id)
     expected_digest = _manifest_digest_from_name(session_id, manifest_name)
+    if (
+        expected_session_directory_identity is not None
+        and session_directory_identity(root)
+        != expected_session_directory_identity
+    ):
+        raise OSError("durable session directory identity changed")
     with _session_guard(root, session_id, create=False):
         _recover_pending_intents(root, session_id)
         _load_anchored(root, session_id)
@@ -1897,6 +2009,12 @@ def authorize_session_artifact_manifest(
         updated = dict(record)
         updated["generation"] += 1
         updated["manifests"] = manifests
+        if (
+            expected_session_directory_identity is not None
+            and session_directory_identity(root)
+            != expected_session_directory_identity
+        ):
+            raise OSError("durable session directory identity changed")
         _write_projection_authority(root, session_id, updated)
 
 

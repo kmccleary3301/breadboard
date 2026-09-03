@@ -21,10 +21,13 @@ from breadboard_engine.model_roles import (
     ModelRoleResolutionError,
     resolve_role_name,
 )
-from breadboard_engine.permissions.broker import PermissionBroker
+from breadboard_engine.permissions import (
+    PermissionAuthority,
+    normalize_permission_responses,
+    resolve_permission_responses,
+)
 from breadboard_engine.security import WorkspaceFilesystem
 from breadboard_engine.skills.registry import normalize_skill_selection
-from breadboard_engine.permissions import upsert_permission_rule
 
 from .events import EventType
 
@@ -34,6 +37,7 @@ logger = logging.getLogger(__name__)
 class SessionControlHost(Protocol):
     """Explicit host port retained by command and permission control."""
 
+    permission_authority: PermissionAuthority
     session: Any
     registry: Any
     request: Any
@@ -72,43 +76,6 @@ class SessionControlHost(Protocol):
     def _apply_model_override(self) -> bool: ...
 
 
-_PERMISSION_ALIASES = {
-    alias: decision
-    for decision, aliases in {
-        "once": "once allow approve approved ok okay yes y allow-once allow_once",
-        "always": "always allow-always allow_always",
-        "reject": "reject deny denied no n deny-once deny_once deny-always deny_always deny-stop deny_stop",
-    }.items()
-    for alias in aliases.split()
-}
-
-
-def _permission_response_tokens(value: Any) -> list[str]:
-    if isinstance(value, dict):
-        return [
-            token
-            for nested in value.values()
-            for token in _permission_response_tokens(nested)
-        ]
-    return [value.strip().lower()] if isinstance(value, str) and value.strip() else []
-
-
-def _permission_item_ids(request: Any) -> list[str]:
-    return (
-        [
-            str(item["item_id"])
-            for item in request.get("items", [])
-            if isinstance(item, dict) and item.get("item_id")
-        ]
-        if isinstance(request, dict)
-        else []
-    )
-
-
-def _permission_default_response(config: Any) -> str:
-    return PermissionBroker(
-        (config.get("permissions") or {}) if isinstance(config, dict) else {}
-    )._default_response
 
 
 def _canonical_permission_resolution(
@@ -117,54 +84,13 @@ def _canonical_permission_resolution(
     requested_ids: Sequence[str] = (),
     missing_response: str = "reject",
 ) -> str:
-    explicit = responses.get("items") if isinstance(responses, dict) else None
-    wrapped = isinstance(explicit, dict)
-    if (
-        not wrapped
-        and isinstance(responses, dict)
-        and requested_ids
-        and any(item_id in responses for item_id in requested_ids)
-    ):
-        explicit = responses
-    if isinstance(responses, dict) and "default" in responses:
-        tokens = _permission_response_tokens(responses["default"])
-    elif isinstance(explicit, dict):
-        fallback = (
-            (
-                responses.get("fallback")
-                or responses.get("default_response")
-                or missing_response
-            )
-            if wrapped
-            else missing_response
-        )
-        tokens = (
-            [
-                _permission_response_tokens(explicit.get(item_id, fallback))
-                for item_id in requested_ids
-            ]
-            if requested_ids
-            else [_permission_response_tokens(value) for value in explicit.values()]
-        )
-        tokens = [token for group in tokens for token in group]
-    else:
-        tokens = _permission_response_tokens(
-            responses if isinstance(responses, dict) else response
-        )
-    values = [
-        PermissionBroker._coerce_response(_PERMISSION_ALIASES.get(token, token))
-        for token in tokens
-    ]
-    if not values:
-        raise ValueError("permission response contains no valid decisions")
-    return (
-        "reject"
-        if "reject" in values
-        else "always"
-        if all(value == "always" for value in values)
-        else "once"
+    return resolve_permission_responses(
+        response, responses, requested_ids, missing_response
     )
 
+
+def _canonical_permission_responses(responses: Dict[str, Any]) -> Dict[str, Any]:
+    return normalize_permission_responses(responses)
 
 def _control_kind(item: Any) -> str:
     return (
@@ -197,13 +123,6 @@ class _PauseAwareControlQueue:
         return item
 
 
-def _canonical_permission_responses(responses: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        key: _canonical_permission_responses(value)
-        if isinstance(value, dict)
-        else _canonical_permission_resolution(value, None)
-        for key, value in responses.items()
-    }
 
 
 class SessionControlController:
@@ -221,7 +140,7 @@ class SessionControlController:
         decision: str,
         scope: str,
     ) -> bool:
-        return upsert_permission_rule(
+        return self._runner.permission_authority.update_rule(
             workspace_dir,
             category=category,
             pattern=pattern,
@@ -367,10 +286,9 @@ class SessionControlController:
                         raise ValueError(
                             "permission_decision requires non-empty 'decision'"
                         )
-                    request_id, normalized = (
-                        request_id.strip(),
-                        decision.strip().lower(),
-                    )
+                    request_id = request_id.strip()
+                    resolved = runner.permission_authority.resolve_decision(decision)
+                    normalized = resolved.token
                     pending = runner.session.metadata.get("pending_permissions")
                     active = (
                         pending[0]
@@ -384,7 +302,7 @@ class SessionControlController:
                         != request_id
                     ):
                         raise ValueError("permission request is not active")
-                    response_value = _canonical_permission_resolution(normalized, None)
+                    response_value = resolved.value
                     rule, scope, note = (
                         payload.get("rule"),
                         payload.get("scope"),
@@ -407,30 +325,20 @@ class SessionControlController:
                             }
                         )
                         metadata["permission_rules"] = rules
-                        persist_rule = (
-                            (
-                                response_value == "always"
-                                or normalized in {"deny-always", "deny_always"}
-                            )
-                            and category
-                            and workspace_dir
+                        persist_rule = bool(
+                            resolved.persistent and category and workspace_dir
                         )
-                        try:
-                            persisted = (
-                                not persist_rule
-                                or self._upsert_permission_rule(
-                                    workspace_dir,
-                                    category=category,
-                                    pattern=str(rule).strip(),
-                                    decision=(
-                                        "deny"
-                                        if normalized.startswith("deny")
-                                        else "allow"
-                                    ),
-                                    scope=str(scope or "project"),
-                                )
+                        if persist_rule:
+                            persisted = self._upsert_permission_rule(
+                                workspace_dir,
+                                category=category,
+                                pattern=str(rule).strip(),
+                                decision=resolved.rule_decision or "allow",
+                                scope=str(scope or "project"),
                             )
-                        except Exception as exc:
+                        else:
+                            persisted = True
+                        if not persisted:
                             runner.transition_product_session(
                                 "fail",
                                 "permission_commit_failed",
@@ -438,14 +346,7 @@ class SessionControlController:
                             )
                             raise RuntimeError(
                                 "failed to commit permission decision"
-                            ) from exc
-                        if not persisted:
-                            runner.transition_product_session(
-                                "fail",
-                                "permission_commit_failed",
-                                "failed to commit permission decision",
                             )
-                            raise RuntimeError("failed to persist permission rule")
                         try:
                             await runner.registry.update_metadata(
                                 runner.session.session_id, metadata=metadata
@@ -897,7 +798,7 @@ class SessionControlController:
                 if isinstance(items, dict) and not isinstance(responses, dict):
                     responses = {"items": dict(items)}
                 canonical_responses = (
-                    _canonical_permission_responses(responses)
+                    runner.permission_authority.normalize_responses(responses)
                     if isinstance(responses, dict)
                     else None
                 )
@@ -916,12 +817,16 @@ class SessionControlController:
                     if isinstance(pending, list)
                     else {}
                 )
-                requested_ids = _permission_item_ids(pending_request)
-                resolution = _canonical_permission_resolution(
+                requested_ids = runner.permission_authority.request_item_ids(
+                    pending_request
+                )
+                resolution = runner.permission_authority.resolve_responses(
                     response,
                     canonical_responses,
                     requested_ids,
-                    _permission_default_response(runner.current_runtime_config()),
+                    runner.permission_authority.default_response(
+                        runner.current_runtime_config()
+                    ),
                 )
                 queue = getattr(runner, "_permission_queue", None)
                 if queue is None:
@@ -1173,11 +1078,13 @@ class SessionControlController:
                             runner.transition_product_session(
                                 "resolve_approval",
                                 request_id,
-                                _canonical_permission_resolution(
+                                runner.permission_authority.resolve_responses(
                                     info.get("response") or info.get("decision"),
                                     responses,
-                                    _permission_item_ids(request),
-                                    _permission_default_response(
+                                    runner.permission_authority.request_item_ids(
+                                        request
+                                    ),
+                                    runner.permission_authority.default_response(
                                         runner.current_runtime_config()
                                     ),
                                 ),
@@ -1216,12 +1123,14 @@ class SessionControlController:
                             runner.transition_product_session(
                                 "resolve_approval",
                                 deferred_id,
-                                _canonical_permission_resolution(
+                                runner.permission_authority.resolve_responses(
                                     deferred.get("response")
                                     or deferred.get("decision"),
                                     deferred.get("responses") or deferred.get("items"),
-                                    _permission_item_ids(request),
-                                    _permission_default_response(
+                                    runner.permission_authority.request_item_ids(
+                                        request
+                                    ),
+                                    runner.permission_authority.default_response(
                                         runner.current_runtime_config()
                                     ),
                                 ),

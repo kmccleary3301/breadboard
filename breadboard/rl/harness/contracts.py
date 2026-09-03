@@ -314,13 +314,13 @@ def _canonical_projection(value: Any) -> Any:
 
 
 def _canonical_bytes(value: Any) -> bytes:
-    from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+    from breadboard_engine.compilation.contracts import canonical_json_bytes
 
     return canonical_json_bytes(_canonical_projection(value))
 
 
 def _canonical_digest(value: Any) -> str:
-    from agentic_coder_prototype.compilation.contracts import canonical_sha256
+    from breadboard_engine.compilation.contracts import canonical_sha256
 
     return canonical_sha256(_canonical_projection(value))
 

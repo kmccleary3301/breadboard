@@ -15,7 +15,7 @@ from typing import Literal
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from scripts.rl_phase3.target_verl_smoke_train import F8TargetTrainingInput

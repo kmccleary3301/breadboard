@@ -17,6 +17,11 @@ from .credential_boundary import (
     register_protected_credential_path,
     validate_workspace_credential_boundary,
 )
+from .process_policy import (
+    ChildEnvironmentPlan,
+    ChildProcessLaunchPlan,
+    ChildProcessPolicy,
+)
 from .redaction import (
     REDACTED,
     RedactionProblem,
@@ -44,6 +49,9 @@ __all__ = [
     "provider_credentials_hidden",
     "purge_provider_credentials",
     "sanitized_process_environment",
+    "ChildEnvironmentPlan",
+    "ChildProcessLaunchPlan",
+    "ChildProcessPolicy",
     "REDACTED",
     "RedactionProblem",
     "clear_registered_secret_values",

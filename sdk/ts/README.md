@@ -31,6 +31,8 @@ contract.
 Each `payload_schema_version` resolves to the public lifecycle payload schema
 or the registered kernel observation payload schema.
 
-Legacy/runtime-only methods, including E4 inspection, are available only from
-`@breadboard/sdk/internal` through `createInternalBreadboardClient`.
+Product engine-management, canonical session, and lifecycle interfaces are
+available from `@breadboard/sdk/engine`, `@breadboard/sdk/session`, and
+`@breadboard/sdk/lifecycle`. These are explicit supported entrypoints; the
+package has no unstable catch-all entrypoint.
 

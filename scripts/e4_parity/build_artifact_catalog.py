@@ -14,13 +14,13 @@ WORKSPACE = ROOT.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agentic_coder_prototype.compilation.primitive_records import (  # noqa: E402
+from breadboard_engine.compilation.primitive_records import (  # noqa: E402
     canonical_record_bytes,
     finalize_record,
     get_spec,
     sha256_ref,
 )
-from agentic_coder_prototype.conformance.catalog_binding import catalog_segments, stable_entries_hash  # noqa: E402
+from breadboard_engine.conformance.catalog_binding import catalog_segments, stable_entries_hash  # noqa: E402
 
 DEFAULT_INVENTORY_PATH = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"
 DEFAULT_REPORT_ROLES_PATH = ROOT / "docs" / "conformance" / "e4_report_roles.json"

@@ -72,7 +72,6 @@ def test_generated_unknown_candidate_name_is_absent_from_production_source() -> 
         Path(name)
         for name in (
             "agent_configs",
-            "agentic_coder_prototype",
             "breadboard",
             "breadboard_ext",
             "breadboard_sdk",

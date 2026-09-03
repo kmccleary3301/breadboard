@@ -25,15 +25,15 @@ from typing import (
     runtime_checkable,
 )
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 from breadboard.rl.harness.contracts import (
     EffectiveExecutionPlan,
     EvidencePolicyRegistryRecord,
     RetentionPolicyRegistryRecord,
     SelectionCommitToken,
 )
-from breadboard.rl.state.cas import ArtifactIntegrityError, CASReader
-from breadboard.rl.state.state_ref import ArtifactRef
+from breadboard.artifacts.cas import ArtifactIntegrityError, CASReader
+from breadboard.artifacts.references import ArtifactRef
 from breadboard.rl.harness.materialization import (
     CleanupState,
     CleanupStepReceipt,

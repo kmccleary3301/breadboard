@@ -665,21 +665,39 @@ class DrainAuthorityMixin:
             if not self._session_admission_open:
                 raise LifecycleAuthorityError("admission_closed", "new session admission is closed")
 
-    async def admit_session(self, record: SessionRecord, runner: Any) -> SessionRecord:
+    @asynccontextmanager
+    async def publish_session(self, record: SessionRecord, runner: Any):
+        """Serialize admission, preparation, durable publication, and ledger visibility."""
+
         async with self._authority_lock:
-            self._try_rollback_control_drain(
-                require_orphaned_requester=True,
-            )
+            self._try_rollback_control_drain(require_orphaned_requester=True)
             if not self._session_admission_open:
                 raise LifecycleAuthorityError("admission_closed", "new session admission is closed")
-            await runner.prepare_start(admission_serialized=True)
-            try:
-                await self.create(record)
-            except BaseException:
-                await self.delete(record.session_id)
-                raise
+            async with self._lock:
+                collision = next(
+                    (
+                        session_id
+                        for session_id in self._records
+                        if session_id.casefold() == record.session_id.casefold()
+                    ),
+                    None,
+                )
+                if collision is not None:
+                    raise ValueError(f"session already exists: {record.session_id}")
+                await runner.prepare_start(admission_serialized=True)
+                yield
+                self._records[record.session_id] = record
             self._admission_epoch += 1
-            return record
+
+    async def admit_session(self, record: SessionRecord, runner: Any) -> SessionRecord:
+        try:
+            async with self.publish_session(record, runner):
+                pass
+            await self.persist(record)
+        except BaseException:
+            await self.delete(record.session_id)
+            raise
+        return record
 
     async def admit_turn(
         self,

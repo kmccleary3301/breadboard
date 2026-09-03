@@ -8,7 +8,7 @@ import pytest
 from breadboard_engine.api.cli_bridge.models import SessionCreateRequest, SessionStatus
 from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry
 from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
-from breadboard_engine.permission_rules_store import load_permission_rules
+from breadboard_engine.permissions.rules_store import load_permission_rules
 
 
 @pytest.mark.asyncio

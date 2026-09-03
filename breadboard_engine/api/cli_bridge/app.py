@@ -12,6 +12,7 @@ import secrets
 import stat
 import subprocess
 import time
+from copy import copy
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Dict
 from urllib.parse import urlsplit
@@ -35,7 +36,7 @@ from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.openapi.utils import get_openapi
 from fastapi.routing import APIRoute
 from starlette._utils import get_route_path
-from ...security import build_child_environment, sanitized_process_environment
+from ...security import ChildProcessPolicy, sanitized_process_environment
 
 try:
     from dotenv import load_dotenv
@@ -125,8 +126,6 @@ from .routes.engine_routes import register_engine_routes
 from .routes.provider_auth_routes import register_provider_auth_routes
 from .routes.sessions_routes import register_session_routes
 from .routes.system_routes import register_system_routes
-from breadboard.rl.phase3.api_router import create_phase3_rl_router
-from breadboard.rl.phase3.service_live import LiveRLRunService
 from breadboard_engine.api.public import mount_public_routes
 from breadboard_engine.api.public.models import (
     PUBLIC_CAPABILITIES,
@@ -219,6 +218,7 @@ def _drop_legacy_routes(app: FastAPI, *, drop_versioned: bool = False) -> None:
         for prefix, enabled in (
             ("/v1/e4", _env_flag("BREADBOARD_ENABLE_E4_API")),
             ("/v1/engine", True),
+            ("/v1/internal", True),
             ("/v1/models", True),
         )
         if enabled
@@ -263,7 +263,7 @@ def _run_git_command(
             capture_output=True,
             text=True,
             timeout=2,
-            env=build_child_environment(),
+            env=ChildProcessPolicy().environment_only().as_dict(),
         )
     except Exception:
         return None
@@ -446,7 +446,25 @@ def _p30_session_contract_descriptor(
     app: FastAPI,
     service: SessionService,
 ) -> dict[str, Any]:
-    document = get_openapi(title=app.title, version=app.version, routes=app.routes)
+    p30_route_keys = {
+        (method, path)
+        for method, path, _handler, _service_method in P30_SESSION_ROUTE_BINDINGS
+    }
+    contract_routes: list[APIRoute] = []
+    for route in app.routes:
+        if not isinstance(route, APIRoute) or not any(
+            route.path == path and method in route.methods
+            for method, path in p30_route_keys
+        ):
+            continue
+        contract_route = copy(route)
+        contract_route.include_in_schema = True
+        contract_routes.append(contract_route)
+    document = get_openapi(
+        title=app.title,
+        version=app.version,
+        routes=contract_routes,
+    )
     operations: list[dict[str, Any]] = []
     handler_bindings: list[dict[str, Any]] = []
     missing_routes: list[str] = []
@@ -513,7 +531,7 @@ def _p30_session_contract_descriptor(
     handler_bindings.append(
         {
             "method": "GET",
-            "path": "/v1/sessions/{session_id}/events",
+            "path": "/v1/internal/sessions/{session_id}/events",
             "handler": "prepared_event_stream",
             "expected_handler": "prepared_event_stream",
             "service_method": "prepared_event_stream",
@@ -525,7 +543,7 @@ def _p30_session_contract_descriptor(
     handler_bindings.append(
         {
             "method": "GET",
-            "path": "/v1/sessions/{session_id}/events",
+            "path": "/v1/internal/sessions/{session_id}/events",
             "handler": getattr(_encode_sse_event, "__name__", None),
             "expected_handler": "_encode_sse_event",
             "service_method": None,
@@ -537,7 +555,7 @@ def _p30_session_contract_descriptor(
     handler_bindings.append(
         {
             "method": "GET",
-            "path": "/v1/sessions/{session_id}/events",
+            "path": "/v1/internal/sessions/{session_id}/events",
             "handler": "SessionEvent.asdict",
             "expected_handler": "SessionEvent.asdict",
             "service_method": None,
@@ -549,7 +567,7 @@ def _p30_session_contract_descriptor(
     handler_bindings.append(
         {
             "method": "GET",
-            "path": "/v1/sessions/{session_id}",
+            "path": "/v1/internal/sessions/{session_id}",
             "handler": "SessionRecord.to_summary",
             "expected_handler": "SessionRecord.to_summary",
             "service_method": None,
@@ -587,7 +605,7 @@ def _p30_session_contract_descriptor(
             r
             for r in app.routes
             if isinstance(r, APIRoute)
-            and r.path == "/v1/sessions/{session_id}/input"
+            and r.path == "/v1/internal/sessions/{session_id}/input"
             and "POST" in r.methods
             and getattr(r.endpoint, "__name__", None) == "post_input"
         ),
@@ -598,7 +616,7 @@ def _p30_session_contract_descriptor(
             r
             for r in app.routes
             if isinstance(r, APIRoute)
-            and r.path == "/v1/sessions/{session_id}/events"
+            and r.path == "/v1/internal/sessions/{session_id}/events"
             and "GET" in r.methods
             and getattr(r.endpoint, "__name__", None) == "stream_events"
         ),
@@ -632,11 +650,11 @@ def _p30_session_contract_descriptor(
             if isinstance(route, APIRoute)
             and route.path
             in {
-                "/v1/sessions",
-                "/v1/sessions/{session_id}",
-                "/v1/sessions/{session_id}/input",
-                "/v1/sessions/{session_id}/turns/{turn_id}/cancel",
-                "/v1/sessions/{session_id}/events",
+                "/v1/internal/sessions",
+                "/v1/internal/sessions/{session_id}",
+                "/v1/internal/sessions/{session_id}/input",
+                "/v1/internal/sessions/{session_id}/turns/{turn_id}/cancel",
+                "/v1/internal/sessions/{session_id}/events",
             }
         }
     )
@@ -774,12 +792,6 @@ def create_app(
     app = FastAPI(title="BreadBoard CLI Bridge", version=engine_version)
     _service = service or SessionService()
     app.state.session_service = _service
-    rl_service = LiveRLRunService(
-        Path(os.environ.get("BREADBOARD_RL_RUN_STORE", ":memory:"))
-    )
-    rl_router = create_phase3_rl_router(rl_service)
-    app.include_router(rl_router, prefix="/v1/rl", tags=["rl"])
-    app.include_router(rl_router, prefix="/rl", tags=["rl"])
 
     @app.exception_handler(LifecycleAuthorityError)
     async def _lifecycle_authority_error_handler(
@@ -964,12 +976,33 @@ def create_app(
                     ).model_dump(),
                 )
         principal = _public_request_principal(request, required_token)
+        route_path = get_route_path(request.scope)
+        internal_session_request = (
+            route_path == "/v1/internal/sessions"
+            or route_path.startswith("/v1/internal/sessions/")
+        )
+        legacy_session_request = legacy_routes_enabled and (
+            route_path == "/v1/sessions"
+            or route_path.startswith("/v1/sessions/")
+            or route_path == "/sessions"
+            or route_path.startswith("/sessions/")
+        )
+        if internal_session_request or legacy_session_request:
+            try:
+                _require_local_control_request(request)
+            except HTTPException as error:
+                return JSONResponse(
+                    status_code=error.status_code,
+                    content=ErrorEnvelope(
+                        error="forbidden",
+                        detail=str(error.detail),
+                        path=route_path,
+                    ).model_dump(),
+                )
         if (
             public_api_enabled
             and not legacy_routes_enabled
-            and _is_public_runtime_setup_request(
-                request.method, get_route_path(request.scope)
-            )
+            and _is_public_runtime_setup_request(request.method, route_path)
         ):
             try:
                 _require_local_control_request(request)
@@ -1083,6 +1116,9 @@ def create_app(
         app,
         get_service=get_service,
         event_payloads=event_payloads,
+        route_prefix=(
+            "/v1/sessions" if legacy_routes_enabled else "/v1/internal/sessions"
+        ),
     )
     register_engine_routes(
         app,
@@ -1127,11 +1163,11 @@ def create_app(
         if isinstance(route, APIRoute)
         and route.path
         in {
-            "/v1/sessions",
-            "/v1/sessions/{session_id}",
-            "/v1/sessions/{session_id}/input",
-            "/v1/sessions/{session_id}/turns/{turn_id}/cancel",
-            "/v1/sessions/{session_id}/events",
+            "/v1/internal/sessions",
+            "/v1/internal/sessions/{session_id}",
+            "/v1/internal/sessions/{session_id}/input",
+            "/v1/internal/sessions/{session_id}/turns/{turn_id}/cancel",
+            "/v1/internal/sessions/{session_id}/events",
         }
     }
     return app

@@ -17,8 +17,8 @@ from pathlib import Path
 from typing import Any, Deque, Dict, List, Mapping, Optional, Sequence, Tuple
 from breadboard_engine.security import (
     ProcessIsolationUnavailable,
-    build_child_environment,
-    build_restricted_process_command,
+    ChildEnvironmentPlan,
+    ChildProcessPolicy,
     protected_credential_paths,
 )
 
@@ -84,7 +84,9 @@ def _codex_launch_contract(
     source_environment: Mapping[str, str] | None = None,
 ) -> tuple[Dict[str, str], Dict[str, str], Tuple[str, ...], str]:
     source = os.environ if source_environment is None else source_environment
-    environment = build_child_environment(source=source)
+    environment = ChildProcessPolicy(
+        source_environment=source
+    ).environment_only().as_dict()
     configured = dict(client or {})
     headers = configured.get("default_headers")
     if isinstance(headers, Mapping) and headers:
@@ -180,7 +182,15 @@ class _CodexJsonRpcClient:
             return
         self._prepare_state_home()
         try:
-            isolated_command, isolated_environment = build_restricted_process_command(
+            launch = ChildProcessPolicy(
+                workspace=self.cwd,
+                working_directory=self.cwd,
+                protected_paths=tuple(self.protected_paths),
+                allow_network=True,
+                trusted_credential_values=self.trusted_credentials,
+                provider_credential_read_roots=tuple(self.provider_read_roots),
+                provider_credential_write_roots=tuple(self.provider_read_roots),
+            ).command_and_environment(
                 [
                     self.codex_bin,
                     "-c",
@@ -189,24 +199,16 @@ class _CodexJsonRpcClient:
                     "--listen",
                     "stdio://",
                 ],
-                workspace=self.cwd,
-                working_directory=self.cwd,
-                shell=False,
-                environment=self.env,
-                protected_paths=self.protected_paths,
-                allow_network=True,
-                trusted_credential_values=self.trusted_credentials,
-                provider_credential_read_roots=self.provider_read_roots,
-                provider_credential_write_roots=self.provider_read_roots,
+                environment=ChildEnvironmentPlan(self.env),
             )
             self._proc = subprocess.Popen(
-                isolated_command,
+                launch.argv,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 cwd=self.cwd,
-                env=isolated_environment,
+                env=launch.environment_dict(),
                 bufsize=1,
                 shell=False,
             )
