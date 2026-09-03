@@ -1,0 +1,65 @@
+{
+  "schema_version": "breadboard.dsh_join_semantics_fixtures.v1",
+  "cases": [
+    {
+      "id": "rq_ablation_zero",
+      "node": "RQ-ABLATION",
+      "terminal_predecessors": [],
+      "unlocks": false
+    },
+    {
+      "id": "rq_ablation_pass",
+      "node": "RQ-ABLATION",
+      "terminal_predecessors": ["RQ-PASS"],
+      "unlocks": true
+    },
+    {
+      "id": "rq_ablation_reconstructed",
+      "node": "RQ-ABLATION",
+      "terminal_predecessors": ["RQ-RECONSTRUCTED"],
+      "unlocks": true
+    },
+    {
+      "id": "strict_two_zero",
+      "node": "DIT-GENERATION",
+      "terminal_predecessors": [],
+      "unlocks": false
+    },
+    {
+      "id": "strict_two_one",
+      "node": "DIT-GENERATION",
+      "terminal_predecessors": ["FT-02"],
+      "unlocks": false
+    },
+    {
+      "id": "strict_two_other",
+      "node": "DIT-GENERATION",
+      "terminal_predecessors": ["FT-06"],
+      "unlocks": false
+    },
+    {
+      "id": "strict_two_both",
+      "node": "DIT-GENERATION",
+      "terminal_predecessors": ["FT-02", "FT-06"],
+      "unlocks": true
+    },
+    {
+      "id": "rt_replay_one",
+      "node": "RT-REPLAY",
+      "terminal_predecessors": ["EVIDENCE-GATE"],
+      "unlocks": false
+    },
+    {
+      "id": "rt_replay_two",
+      "node": "RT-REPLAY",
+      "terminal_predecessors": ["EVIDENCE-GATE", "FT-04"],
+      "unlocks": false
+    },
+    {
+      "id": "rt_replay_all",
+      "node": "RT-REPLAY",
+      "terminal_predecessors": ["EVIDENCE-GATE", "FT-04", "RT-REPAIR"],
+      "unlocks": true
+    }
+  ]
+}
