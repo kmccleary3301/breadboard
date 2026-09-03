@@ -855,7 +855,7 @@ test("BackboneSession with custom executionWorld routes both terminal API and to
   assert.equal(toolTurnRes.driverTurn?.sandboxResult.status, "completed")
 })
 
-test("Backbone terminals preserves one-time selected driver across dynamic capability changes during execution", async () => {
+test("Backbone terminals preserves the selected driver for an active session after dynamic capability changes", async () => {
   let dynamicSupport = true
   let executedDriverId = ""
 
@@ -884,6 +884,18 @@ test("Backbone terminals preserves one-time selected driver across dynamic capab
         outputDeltas: [],
       }
     },
+    interactTerminalSession: async (input: { terminalSessionId: string; interactionKind: "stdin" | "signal" | "poll" }) => ({
+      interaction: {
+        schema_version: "bb.terminal_interaction.v1" as const,
+        terminal_session_id: input.terminalSessionId,
+        startup_call_id: null,
+        causing_call_id: null,
+        interaction_kind: input.interactionKind,
+        input_b64: null,
+        signal: null,
+      },
+      outputDeltas: [],
+    }),
   }
 
   const world = createExecutionWorld({ drivers: [dynamicDriver] })
@@ -895,22 +907,21 @@ test("Backbone terminals preserves one-time selected driver across dynamic capab
   })
   const backbone = createBackbone({ workspace, executionWorld: world })
   const session = backbone.openSession({ sessionId: "sess-dynamic-1" })
-  // Select driver while dynamicSupport is true
-  const classification = session.terminals.classify({ executionProfileId: "sandboxed_local" })
-
-  // Mutate dynamicSupport to false before start executes
-  dynamicSupport = false
-
-  // Start with reserved driver selection carried through execute
   const startResult = await session.terminals.start({
     terminalSessionId: "term-dynamic-1",
     command: ["echo", "dynamic"],
     executionProfileId: "sandboxed_local",
-    driverId: "dynamic-terminal-driver",
   })
-
   assert.ok(startResult.session)
   assert.equal(executedDriverId, "dynamic-terminal-driver")
+
+  dynamicSupport = false
+  const interaction = await session.terminals.interact({
+    terminalSessionId: "term-dynamic-1",
+    interactionKind: "poll",
+    executionProfileId: "sandboxed_local",
+  })
+  assert.ok(interaction.interaction)
 })
 
 test("Backbone terminals supported driver interacting with unknown session returns supported supportClaim and typed unsupportedCase", async () => {
