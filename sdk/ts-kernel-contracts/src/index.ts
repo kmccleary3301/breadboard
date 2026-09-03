@@ -6,9 +6,47 @@ import type { Ajv2020 as Ajv2020Instance, AnySchema, Options as Ajv2020Options }
 import { GENERATED_SCHEMAS, GENERATED_SCHEMA_OBJECTS } from "./generated/index.js"
 import type { ValidateFunction } from "ajv"
 import type { SessionTranscriptV1 } from "./generated/types/bb.session_transcript.v1.js"
-
+import type { DirectiveV1 } from "./generated/types/bb.directive.v1.js"
+import type { ReviewVerdictV1 } from "./generated/types/bb.review_verdict.v1.js"
+import type { SignalV1 } from "./generated/types/bb.signal.v1.js"
 export * from "./generated/index.js"
 export type SessionTranscriptV1Item = SessionTranscriptV1["items"][number]
+
+export type DirectiveCodeV1 = "continue" | "retry" | "checkpoint" | "escalate" | "terminate"
+export type SignalCodeV1 =
+  | "partial_complete"
+  | "merge_ready"
+  | "complete"
+  | "blocked"
+  | "no_progress"
+  | "retryable_failure"
+  | "catastrophic_failure"
+  | "human_required"
+
+export interface CoordinationInterventionSnapshotV1 {
+  intervention_id: string
+  status: "pending" | "resolved"
+  review_verdict_id: string
+  signal_id: string
+  source_task_id: string
+  mission_task_id?: string | null
+  required_input?: string | null
+  blocking_reason?: string | null
+  allowed_host_actions?: DirectiveCodeV1[]
+  review_verdict: ReviewVerdictV1
+  signal: SignalV1 | null
+  directives: DirectiveV1[]
+  host_responses: DirectiveV1[]
+}
+
+export interface CoordinationInspectionSnapshotV1 {
+  signals: SignalV1[]
+  review_verdicts: ReviewVerdictV1[]
+  directives: DirectiveV1[]
+  latest_signal_by_code: Partial<Record<SignalCodeV1, SignalV1>>
+  unresolved_interventions: CoordinationInterventionSnapshotV1[]
+  resolved_interventions: CoordinationInterventionSnapshotV1[]
+}
 
 
 export interface EngineConformanceManifestV1Row {
@@ -38,6 +76,7 @@ const MODULE_DIR = dirname(fileURLToPath(import.meta.url))
 
 function loadManifestSchema(): AnySchema {
   const candidates = [
+    join(MODULE_DIR, "../contracts/kernel/manifests/bb.engine_conformance_manifest.v1.schema.json"),
     join(MODULE_DIR, "../../../contracts/kernel/manifests/bb.engine_conformance_manifest.v1.schema.json"),
     join(MODULE_DIR, "../../../../contracts/kernel/manifests/bb.engine_conformance_manifest.v1.schema.json"),
   ]

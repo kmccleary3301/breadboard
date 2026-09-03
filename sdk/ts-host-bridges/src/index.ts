@@ -138,6 +138,9 @@ export type OpenClawToolSliceOptions = {
     capability: ExecutionCapabilityV1
     placement: ExecutionPlacementV1
     driverId: string
+    signal?: AbortSignal
+    deadlineAtMs?: number | null
+    terminationGraceMs?: number
     tool: OpenClawClientToolDefinition
     params: OpenClawEmbeddedRunParams
   }) => Promise<SandboxResultV1>
@@ -594,6 +597,8 @@ export async function runOpenClawEmbeddedViaBreadboard(
       allowNetHosts: options.toolSlice.allowNetHosts ?? [],
       driverIdHint: options.toolSlice.remoteExecutor || options.toolSlice.remoteHttp ? "remote" : imageRef ? "oci" : undefined,
       assistantText: null,
+      timeoutMs: params.timeoutMs,
+      signal: params.abortSignal,
       executeSandbox: options.toolSlice.executeSandbox
         ? (request, context) =>
             options.toolSlice!.executeSandbox!(request, {

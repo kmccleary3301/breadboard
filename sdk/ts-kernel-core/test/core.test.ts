@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-
+import { createExecutionWorld } from "@breadboard/execution-drivers"
 import {
   analyzeEffectiveToolSurface,
   buildTerminalInteractionEvent,
@@ -12,8 +12,9 @@ import {
   buildEffectiveToolSurface,
   buildConformanceSummary,
   buildTerminalCleanupResult,
-  executeDriverMediatedToolTurn,
   buildKernelEventId,
+  createKernelExecutionWorld,
+  executeDriverMediatedToolTurn,
   buildRunContextFromRequest,
   buildTranscriptContinuationPatch,
   buildTaskLineage,
@@ -71,9 +72,10 @@ test("kernel core transcript normalization maps legacy entries", () => {
   const normalized = normalizeTranscriptContractItem({ assistant: "hello" })
   assert.deepEqual(normalized, {
     kind: "assistant_message",
-    visibility: "model",
+    visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
     content: "hello",
-    provenance: { source: "legacy_transcript_entry", legacy_key: "assistant" },
+    content_schema_version: null,
+    provenance: { source: "import", source_ref: "legacy_transcript_entry:assistant" },
   })
 })
 
@@ -89,18 +91,20 @@ test("kernel core transcript normalization maps arrays of mixed items", () => {
   assert.deepEqual(normalized, [
     {
       kind: "user_message",
-      visibility: "model",
+      visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
       content: "seed user",
-      provenance: { source: "legacy_transcript_entry", legacy_key: "user" },
+      content_schema_version: null,
+      provenance: { source: "import", source_ref: "legacy_transcript_entry:user" },
     },
     {
       kind: "assistant_message",
-      visibility: "model",
+      visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
       content: { text: "seed assistant" },
+      content_schema_version: null,
+      provenance: { source: "import", source_ref: null },
     },
   ])
 })
-
 test("kernel core lineage and checkpoint helpers stay deterministic", () => {
   const lineage = buildTaskLineage(
     {
@@ -907,6 +911,146 @@ test("kernel core can execute a driver-mediated OCI tool turn", async () => {
   assert.equal(result.transcript.items.at(-1)?.kind, "assistant_message")
 })
 
+test("kernel core preserves provider-neutral equality across full Session product events for local and OCI worlds under timestamp-only mask", async () => {
+  const definitionRequest = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-lock-verify-1",
+    entry_mode: "interactive",
+    task: "Execute verification suite.",
+    workspace_root: "/tmp/workspace",
+  } as const
+
+  const localWorldResult = await executeDriverMediatedToolTurn(definitionRequest, {
+    sessionId: "sess-lock-verify-1",
+    toolName: "pytest_runner",
+    command: ["pytest", "tests/unit"],
+    workspaceRef: "/tmp/workspace",
+    imageRef: "docker://breadboard/python-base:latest",
+    isolationClass: "process",
+    securityTier: "trusted_dev",
+    startedAt: "2026-03-08T12:00:00.000Z",
+    executeSandbox: async (sandboxRequest) => ({
+      schema_version: "bb.sandbox_result.v1",
+      request_id: sandboxRequest.request_id,
+      status: "completed",
+      placement_id: `local-process:${sandboxRequest.request_id}`,
+      stdout_ref: "sha256:pytest-stdout-digest",
+      stderr_ref: "sha256:pytest-stderr-digest",
+      artifact_refs: ["artifact://pytest-report.xml"],
+      side_effect_digest: "sha256:pytest-run-digest",
+      usage: { exit_code: 0 },
+      evidence_refs: ["evidence://test/pytest-1"],
+      error: null,
+    }),
+  })
+
+  const ociWorldResult = await executeDriverMediatedToolTurn(definitionRequest, {
+    sessionId: "sess-lock-verify-1",
+    toolName: "pytest_runner",
+    command: ["pytest", "tests/unit"],
+    workspaceRef: "/tmp/workspace",
+    imageRef: "docker://breadboard/python-base:latest",
+    isolationClass: "oci",
+    securityTier: "single_tenant",
+    startedAt: "2026-03-08T12:00:00.000Z",
+    executeSandbox: async (sandboxRequest) => ({
+      schema_version: "bb.sandbox_result.v1",
+      request_id: sandboxRequest.request_id,
+      status: "completed",
+      placement_id: `oci:${sandboxRequest.request_id}`,
+      stdout_ref: "sha256:pytest-stdout-digest",
+      stderr_ref: "sha256:pytest-stderr-digest",
+      artifact_refs: ["artifact://pytest-report.xml"],
+      side_effect_digest: "sha256:pytest-run-digest",
+      usage: { exit_code: 0 },
+      evidence_refs: ["evidence://test/pytest-1"],
+      error: null,
+    }),
+  })
+
+  // Strip ONLY exact occurred_at and timestamp fields
+  const stripExactTimestamps = (obj: unknown): unknown => {
+    if (obj === null || typeof obj !== "object") return obj
+    if (Array.isArray(obj)) return obj.map(stripExactTimestamps)
+    const result: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+      if (key === "occurred_at_utc" || key === "occurred_at" || key === "timestamp" || key === "timestamp_utc") {
+        continue
+      }
+      result[key] = stripExactTimestamps(value)
+    }
+    return result
+  }
+
+  assert.deepEqual(
+    stripExactTimestamps(localWorldResult.events),
+    stripExactTimestamps(ociWorldResult.events),
+  )
+
+  assert.deepEqual(
+    stripExactTimestamps(localWorldResult.transcript),
+    stripExactTimestamps(ociWorldResult.transcript),
+  )
+
+  assert.equal(localWorldResult.driverId, "local-process")
+  assert.equal(ociWorldResult.driverId, "oci")
+  assert.equal(localWorldResult.executionPlacement.placement_class, "local_process")
+  assert.equal(ociWorldResult.executionPlacement.placement_class, "local_oci")
+  assert.ok(localWorldResult.sandboxResult.placement_id?.startsWith("local-process:"))
+  assert.ok(ociWorldResult.sandboxResult.placement_id?.startsWith("oci:"))
+  assert.equal(localWorldResult.sandboxRequest.image_ref, null)
+  assert.equal(ociWorldResult.sandboxRequest.image_ref, "docker://breadboard/python-base:latest")
+})
+
+test("kernel core handles pre-aborted signal in driver-mediated tool turn without throwing", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-preabort-1",
+    entry_mode: "interactive",
+    task: "Execute with pre-aborted signal.",
+    workspace_root: "/tmp/workspace",
+  } as const
+
+  const abortController = new AbortController()
+  abortController.abort(new Error("pre-aborted"))
+
+  const result = await executeDriverMediatedToolTurn(request, {
+    sessionId: "sess-preabort-1",
+    toolName: "preabort_tool",
+    command: ["echo", "unreachable"],
+    workspaceRef: "/tmp/workspace",
+    signal: abortController.signal,
+  })
+
+  assert.equal(result.sandboxResult.status, "cancelled")
+  assert.equal((result.events.find((e) => e.kind === "tool_call")?.payload as Record<string, unknown>)?.state, "cancelled")
+  assert.equal((result.events.find((e) => e.kind === "tool_result")?.payload as Record<string, unknown>)?.terminalState, "cancelled")
+  assert.ok(String((result.transcript.items.at(-1)?.content as Record<string, unknown>)?.text ?? "").includes("cancelled"))
+})
+
+test("kernel core handles pre-expired deadline in driver-mediated tool turn without throwing", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-preexpired-1",
+    entry_mode: "interactive",
+    task: "Execute with pre-expired deadline.",
+    workspace_root: "/tmp/workspace",
+  } as const
+
+  const result = await executeDriverMediatedToolTurn(request, {
+    sessionId: "sess-preexpired-1",
+    toolName: "preexpired_tool",
+    command: ["echo", "unreachable"],
+    workspaceRef: "/tmp/workspace",
+    deadlineMs: 0,
+  })
+
+  assert.equal(result.sandboxResult.status, "timed_out")
+  assert.equal((result.events.find((e) => e.kind === "tool_call")?.payload as Record<string, unknown>)?.state, "timed_out")
+  assert.equal((result.events.find((e) => e.kind === "tool_result")?.payload as Record<string, unknown>)?.terminalState, "timed_out")
+  assert.ok(String((result.transcript.items.at(-1)?.content as Record<string, unknown>)?.text ?? "").includes("timed_out"))
+})
+
 test("kernel core can execute a driver-mediated remote tool turn", async () => {
   const request = {
     schema_version: "bb.run_request.v1",
@@ -1056,12 +1200,65 @@ test("kernel core maps timed out sandbox driver results to timed_out v2 tool out
   assert.equal(result.events[2]?.kind, "tool_result")
   assert.equal(toolResultPayload.terminalState, "timed_out")
   assert.equal(toolResultPayload.result, null)
-  assert.deepEqual(toolResultPayload.error, { message: "sandbox timed out", code: "timeout", retryable: true })
+  assert.deepEqual(toolResultPayload.error, { message: "Execution exceeded its deadline", code: "timeout", retryable: true })
   assert.equal(toolResultMetadata.sandbox_status, "timed_out")
   if ("schema_version" in toolResultPayload) {
     assert.equal(toolResultPayload.schema_version, "bb.tool_execution_outcome.v2")
   }
   assert.deepEqual(toolRenderContent.parts, [{ part_kind: "error", content: "long_job timed_out via sandbox", truncated: false }])
+  if ("schema_version" in toolRenderContent) {
+    assert.equal(toolRenderContent.schema_version, "bb.tool_model_render.v2")
+  }
+})
+
+test("kernel core maps cancelled sandbox driver results to cancelled v2 tool outcomes", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "req-cancelled-1",
+    entry_mode: "interactive",
+    task: "Run a job that gets cancelled.",
+    workspace_root: "/tmp/workspace",
+  } as const
+  const result = await executeDriverMediatedToolTurn(request, {
+    sessionId: "sess-driver-cancelled-1",
+    toolName: "cancelled_job",
+    command: ["node", "cancelled-job.js"],
+    workspaceRef: "/tmp/workspace",
+    allowRunPrograms: ["node"],
+    executeSandbox: async (sandboxRequest) => ({
+      schema_version: "bb.sandbox_result.v1",
+      request_id: sandboxRequest.request_id,
+      status: "cancelled",
+      placement_id: "placement-cancelled-1",
+      stdout_ref: null,
+      stderr_ref: null,
+      artifact_refs: [],
+      side_effect_digest: null,
+      usage: { wall_ms: 120 },
+      evidence_refs: ["evidence://cancelled/1"],
+      error: { message: "sandbox cancelled", code: "cancelled", retryable: false },
+    }),
+  })
+
+  const toolCallPayload = expectRecord(result.events[1]?.payload, "cancelled tool-call payload")
+  const toolResultPayload = expectRecord(result.events[2]?.payload, "cancelled tool-result payload")
+  const toolResultMetadata = expectRecord(toolResultPayload.metadata, "cancelled tool-result metadata")
+  const toolRenderContent = expectRecord(result.transcript.items[1]?.content, "cancelled tool-render content")
+
+  assert.equal(result.sandboxResult.status, "cancelled")
+  assert.equal(result.events[1]?.kind, "tool_call")
+  assert.equal(toolCallPayload.state, "cancelled")
+  if ("schema_version" in toolCallPayload) {
+    assert.equal(toolCallPayload.schema_version, "bb.tool_call.v2")
+  }
+  assert.equal(result.events[2]?.kind, "tool_result")
+  assert.equal(toolResultPayload.terminalState, "cancelled")
+  assert.deepEqual(toolResultPayload.error, { message: "Execution was cancelled", code: "cancelled", retryable: false })
+  assert.equal(toolResultMetadata.sandbox_status, "cancelled")
+  if ("schema_version" in toolResultPayload) {
+    assert.equal(toolResultPayload.schema_version, "bb.tool_execution_outcome.v2")
+  }
+  assert.deepEqual(toolRenderContent.parts, [{ part_kind: "error", content: "cancelled_job cancelled via sandbox", truncated: false }])
   if ("schema_version" in toolRenderContent) {
     assert.equal(toolRenderContent.schema_version, "bb.tool_model_render.v2")
   }
@@ -1149,14 +1346,17 @@ test("kernel core can continue from an existing transcript during a provider-awa
   assert.deepEqual(result.transcript.items.slice(0, 2), [
     {
       kind: "user_message",
-      visibility: "model",
+      visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
       content: "seed user",
-      provenance: { source: "legacy_transcript_entry", legacy_key: "user" },
+      content_schema_version: null,
+      provenance: { source: "import", source_ref: "legacy_transcript_entry:user" },
     },
     {
       kind: "assistant_message",
-      visibility: "model",
+      visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
       content: { text: "seed assistant" },
+      content_schema_version: null,
+      provenance: { source: "import", source_ref: null },
     },
   ])
   assert.equal(result.transcript.items[4]?.kind, "assistant_message")
@@ -1175,13 +1375,23 @@ test("kernel core can continue from an existing transcript during a provider-awa
 test("kernel core can build transcript continuation patches and unsupported cases", () => {
   const patch = buildTranscriptContinuationPatch(
     {
-      schemaVersion: "bb.session_transcript.v1",
-      sessionId: "sess-1",
+      schema_version: "bb.session_transcript.v2",
+      session_id: "sess-1",
       items: [
-        { kind: "user_message", visibility: "model", content: { text: "hi" } },
-        { kind: "assistant_message", visibility: "model", content: { text: "hello" } },
+        {
+          kind: "user_message",
+          visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
+          content: { text: "hi" },
+          content_schema_version: null,
+        },
+        {
+          kind: "assistant_message",
+          visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
+          content: { text: "hello" },
+          content_schema_version: null,
+        },
       ],
-      eventCursor: 2,
+      event_cursor: 2,
     },
     {
       patchId: "patch-1",
@@ -1198,4 +1408,419 @@ test("kernel core can build transcript continuation patches and unsupported case
   })
   assert.equal(unsupported.schema_version, "bb.unsupported_case.v1")
   assert.equal(unsupported.fallback_taken, true)
+})
+
+test("createKernelExecutionWorld with executeSandbox observes cancellation or deadline when override responds to signal", async () => {
+  const world = createKernelExecutionWorld({
+    executeSandbox: async (_req, context) => {
+      return new Promise((_resolve, reject) => {
+        context.signal?.addEventListener("abort", () => {
+          reject(new Error("override received abort signal"))
+        })
+      })
+    },
+  })
+
+  const abortController = new AbortController()
+  const promise = world.execute({
+    kind: "sandbox",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-override-test",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-override-test",
+      placement_class: "local_process",
+      runtime_id: "local",
+      capability_id: "cap-override-test",
+    },
+    requestId: "req-override-test-1",
+    command: ["sleep", "60"],
+    signal: abortController.signal,
+    terminationGraceMs: 50,
+  })
+
+  await new Promise((r) => setTimeout(r, 10))
+  abortController.abort(new Error("aborted by caller"))
+  const result = await promise
+  assert.equal(result.kind, "sandbox")
+  assert.equal(result.sandboxResult?.status, "cancelled")
+  assert.equal(result.livenessEvidence.state, "cancelled")
+  assert.equal(result.livenessEvidence.terminationRequested, true)
+  assert.equal(result.livenessEvidence.terminationObserved, true)
+})
+
+test("createKernelExecutionWorld with stubborn executeSandbox override marks terminationObserved false when override ignores signal", async () => {
+  const world = createKernelExecutionWorld({
+    executeSandbox: async () => {
+      // Stubborn override: ignores signal and never settles
+      return new Promise(() => {})
+    },
+  })
+
+  const abortController = new AbortController()
+  const promise = world.execute({
+    kind: "sandbox",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-stubborn-test",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-stubborn-test",
+      placement_class: "local_process",
+      runtime_id: "local",
+      capability_id: "cap-stubborn-test",
+    },
+    requestId: "req-stubborn-test-1",
+    command: ["sleep", "60"],
+    signal: abortController.signal,
+    terminationGraceMs: 20,
+  })
+
+  await new Promise((r) => setTimeout(r, 10))
+  abortController.abort(new Error("aborted by caller"))
+  const result = await promise
+  assert.equal(result.kind, "sandbox")
+  assert.equal(result.sandboxResult?.status, "cancelled")
+  assert.equal(result.livenessEvidence.state, "cancelled")
+  assert.equal(result.livenessEvidence.terminationRequested, true)
+  assert.equal(result.livenessEvidence.terminationObserved, false)
+})
+test("createKernelExecutionWorld with executeSandbox does not invoke override when pre-aborted", async () => {
+  let backendInvoked = false
+  const world = createKernelExecutionWorld({
+    executeSandbox: async () => {
+      backendInvoked = true
+      return {
+        schema_version: "bb.sandbox_result.v1",
+        request_id: "req-pre-abort",
+        status: "completed",
+        placement_id: "place-1",
+        stdout_ref: null,
+        stderr_ref: null,
+        artifact_refs: [],
+        side_effect_digest: null,
+      }
+    },
+  })
+
+  const abortController = new AbortController()
+  abortController.abort(new Error("pre-aborted"))
+  const result = await world.execute({
+    kind: "sandbox",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-pre-abort",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-pre-abort",
+      placement_class: "local_process",
+      runtime_id: "local",
+      capability_id: "cap-pre-abort",
+    },
+    requestId: "req-pre-abort-1",
+    command: ["echo", "test"],
+    signal: abortController.signal,
+  })
+
+  assert.equal(backendInvoked, false)
+  assert.equal(result.kind, "sandbox")
+  assert.equal(result.sandboxResult?.status, "cancelled")
+  assert.equal(result.livenessEvidence.executionStarted, false)
+})
+
+test("executeDriverMediatedToolTurn passes execution context controls (signal, deadlineAtMs, terminationGraceMs) to executeSandbox callback", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-driver-context-1",
+    entry_mode: "interactive",
+    task: "Verify context controls.",
+    workspace_root: "/tmp/workspace",
+  } as const
+
+  let receivedSignal: AbortSignal | undefined
+  let receivedDeadlineAtMs: number | null | undefined
+  let receivedGraceMs: number | undefined
+
+  const controller = new AbortController()
+
+  const result = await executeDriverMediatedToolTurn(request, {
+    sessionId: "sess-driver-context-1",
+    toolName: "inspector",
+    command: ["test", "--dry-run"],
+    workspaceRef: "/tmp/workspace",
+    signal: controller.signal,
+    timeoutMs: 5000,
+    terminationGraceMs: 250,
+    executeSandbox: async (sandboxRequest, context) => {
+      receivedSignal = context.signal
+      receivedDeadlineAtMs = context.deadlineAtMs
+      receivedGraceMs = context.terminationGraceMs
+      return {
+        schema_version: "bb.sandbox_result.v1",
+        request_id: sandboxRequest.request_id,
+        status: "completed",
+        placement_id: "placement-context-1",
+        stdout_ref: null,
+        stderr_ref: null,
+        artifact_refs: [],
+        side_effect_digest: "sha256:context1",
+        error: null,
+      }
+    },
+  })
+
+  assert.equal(result.sandboxResult.status, "completed")
+  assert.ok(receivedSignal !== undefined)
+  assert.equal(typeof receivedDeadlineAtMs, "number")
+  assert.equal(receivedGraceMs, 250)
+})
+
+test("executeDriverMediatedToolTurn rejects when selected driver has no executable backend or sandbox request builder", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-driver-unsupported-driver-1",
+    entry_mode: "interactive",
+    task: "Verify driver without backend throws instead of synthesizing failed result.",
+    workspace_root: "/tmp/workspace",
+  } as const
+
+  const noExecuteDriver = {
+    driverId: "no-execute-driver",
+    supportedPlacements: ["local_process" as const],
+    supportsCapability: () => true,
+  }
+  const customWorld = createExecutionWorld({ drivers: [noExecuteDriver] })
+
+  await assert.rejects(
+    () =>
+      executeDriverMediatedToolTurn(request, {
+        sessionId: "sess-no-execute-1",
+        toolName: "test_tool",
+        command: ["echo", "hello"],
+        executionWorld: customWorld,
+      }),
+    /No execution driver produced a sandbox request|has no executable backend/,
+  )
+})
+
+test("executeDriverMediatedToolTurn on remote isolation without remote backend throws typed unsupported before sandbox result", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-remote-unconfigured-1",
+    entry_mode: "interactive",
+    task: "Run tool on remote backend without config",
+    workspace_root: "/tmp/workspace",
+  } as const
+
+  await assert.rejects(
+    () =>
+      executeDriverMediatedToolTurn(request, {
+        sessionId: "sess-remote-unconfigured-1",
+        toolName: "remote_tool",
+        command: ["python", "-c", "print(1)"],
+        isolationClass: "remote_service",
+        securityTier: "multi_tenant",
+        driverIdHint: "remote",
+      }),
+    /No execution driver supports remote_worker|No execution driver supports execution capability|No execution driver produced a sandbox request/,
+  )
+})
+
+test("createKernelExecutionWorld with executeSandbox override advertises and executes remote capability without remote backend config", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-remote-override-1",
+    entry_mode: "interactive",
+    task: "Run tool on remote capability with executeSandbox override",
+    workspace_root: "/tmp/workspace",
+  } as const
+
+  let injectedCalled = false
+  const world = createKernelExecutionWorld({
+    executeSandbox: async (req, context) => {
+      injectedCalled = true
+      assert.equal(context.driverId, "remote")
+      assert.equal(context.capability.isolation_class, "remote_service")
+      return {
+        schema_version: "bb.sandbox_result.v1",
+        request_id: req.request_id,
+        status: "completed",
+        placement_id: "remote:override-place-1",
+        stdout_ref: "sha256:remote-override-stdout",
+        stderr_ref: null,
+        artifact_refs: [],
+        side_effect_digest: "sha256:remote-override-digest",
+        usage: { exit_code: 0 },
+        evidence_refs: [],
+        error: null,
+      }
+    },
+  })
+
+  const result = await executeDriverMediatedToolTurn(request, {
+    sessionId: "sess-remote-override-1",
+    toolName: "remote_tool",
+    command: ["python", "-c", "print('remote override')"],
+    isolationClass: "remote_service",
+    securityTier: "multi_tenant",
+    driverIdHint: "remote",
+    executionWorld: world,
+  })
+
+  assert.ok(injectedCalled, "injected executeSandbox was called for remote placement")
+  assert.equal(result.sandboxResult.status, "completed")
+  assert.equal(result.driverId, "remote")
+})
+
+test("executeDriverMediatedToolTurn preserves image_ref, workspace_ref, and observable refs in tool call, outcome, and render", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-preserve-refs-1",
+    entry_mode: "interactive",
+    task: "Run tool with full observable refs",
+    workspace_root: "/workspace",
+  } as const
+
+  const world = createKernelExecutionWorld({
+    executeSandbox: async (req) => {
+      return {
+        schema_version: "bb.sandbox_result.v1",
+        request_id: req.request_id,
+        status: "completed",
+        placement_id: "place-preserve-1",
+        stdout_ref: "sha256:preserve-stdout-digest",
+        stderr_ref: "sha256:preserve-stderr-digest",
+        artifact_refs: ["artifact://file1.txt", "artifact://file2.txt"],
+        evidence_refs: ["evidence://test/1"],
+        side_effect_digest: "sha256:preserve-side-effect",
+        usage: { exit_code: 0 },
+        error: null,
+      }
+    },
+  })
+
+  const result = await executeDriverMediatedToolTurn(request, {
+    sessionId: "sess-preserve-refs-1",
+    toolName: "oci_tool",
+    command: ["python", "-c", "print('preserve')"],
+    imageRef: "docker://breadboard/custom:v1",
+    workspaceRef: "/custom/workspace",
+    isolationClass: "oci",
+    securityTier: "single_tenant",
+    driverIdHint: "oci",
+    executionWorld: world,
+  })
+
+  // Verify toolCall args preserve image_ref and workspace_ref
+  const toolCallEvent = result.events.find((e) => e.kind === "tool_call")
+  assert.ok(toolCallEvent)
+  const toolCall = toolCallEvent.payload as { args?: Record<string, unknown> }
+  assert.equal(toolCall.args?.image_ref, "docker://breadboard/custom:v1")
+  assert.equal(toolCall.args?.workspace_ref, "/custom/workspace")
+
+  // Verify tool_result preserves stdout, stderr, artifact, evidence refs and side effect digest
+  const toolResultEvent = result.events.find((e) => e.kind === "tool_result")
+  assert.ok(toolResultEvent)
+  const toolOutcome = toolResultEvent.payload as {
+    result?: Record<string, unknown>
+    metadata?: Record<string, unknown>
+  }
+  assert.equal(toolOutcome.result?.stdout_ref, "sha256:preserve-stdout-digest")
+  assert.equal(toolOutcome.result?.stderr_ref, "sha256:preserve-stderr-digest")
+  assert.deepEqual(toolOutcome.result?.artifact_refs, ["artifact://file1.txt", "artifact://file2.txt"])
+  assert.deepEqual(toolOutcome.result?.evidence_refs, ["evidence://test/1"])
+  assert.equal(toolOutcome.metadata?.side_effect_digest, "sha256:preserve-side-effect")
+
+  // Verify transcript tool_result item preserves render parts and metadata
+  const transcriptToolItem = result.transcript.items.find((item) => item.kind === "tool_result")
+  assert.ok(transcriptToolItem)
+  assert.equal(transcriptToolItem.metadata?.stdout_ref, "sha256:preserve-stdout-digest")
+  assert.equal(transcriptToolItem.metadata?.stderr_ref, "sha256:preserve-stderr-digest")
+  assert.deepEqual(transcriptToolItem.metadata?.artifact_refs, ["artifact://file1.txt", "artifact://file2.txt"])
+  assert.deepEqual(transcriptToolItem.metadata?.evidence_refs, ["evidence://test/1"])
+})
+
+test("executeDriverMediatedToolTurn rejects when injected executionWorld returns sandboxResult with mismatched request_id", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-hostile-world-1",
+    entry_mode: "interactive",
+    task: "Verify request_id identity enforcement",
+    workspace_root: "/workspace",
+  } as const
+
+  const hostileWorld = {
+    select: () => ({
+      driverId: "hostile-driver",
+      capability: {
+        schema_version: "bb.execution_capability.v1" as const,
+        capability_id: "cap-hostile",
+        security_tier: "trusted_dev" as const,
+        isolation_class: "process" as const,
+        secret_mode: "ref_only" as const,
+        evidence_mode: "minimal" as const,
+      },
+      placement: {
+        schema_version: "bb.execution_placement.v1" as const,
+        placement_id: "place-hostile",
+        placement_class: "local_process" as const,
+        runtime_id: "local",
+        capability_id: "cap-hostile",
+      },
+    }),
+    execute: async () => ({
+      kind: "sandbox" as const,
+      driverId: "hostile-driver",
+      plan: null,
+      sandboxResult: {
+        schema_version: "bb.sandbox_result.v1" as const,
+        request_id: "run-different-request-id:sandbox", // Mismatched request_id
+        status: "completed" as const,
+        placement_id: "place-hostile",
+        stdout_ref: null,
+        stderr_ref: null,
+        artifact_refs: [],
+        evidence_refs: [],
+        side_effect_digest: "sha256:hostile",
+        usage: { exit_code: 0 },
+        error: null,
+      },
+      livenessEvidence: {
+        observed: true,
+        executionStarted: true,
+        state: "completed" as const,
+        terminationRequested: false,
+        terminationObserved: false,
+        observedAtUtc: new Date().toISOString(),
+        evidenceRefs: [],
+      },
+    }),
+  }
+
+  await assert.rejects(
+    () =>
+      executeDriverMediatedToolTurn(request, {
+        sessionId: "sess-hostile-1",
+        toolName: "hostile_tool",
+        command: ["echo", "test"],
+        executionWorld: hostileWorld,
+      }),
+    /does not match expected 'run-hostile-world-1:sandbox'/,
+  )
 })

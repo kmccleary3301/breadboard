@@ -5,7 +5,12 @@ import type {
   SandboxResultV1,
 } from "@breadboard/kernel-contracts"
 import { assertValid } from "@breadboard/kernel-contracts"
-import type { ExecutionDriverV1, TerminalSessionDriverV1 } from "@breadboard/execution-drivers"
+import type {
+  ExecutionDriverExecutionContextV1,
+  ExecutionDriverTerminationContextV1,
+  ExecutionDriverV1,
+  TerminalSessionDriverV1,
+} from "@breadboard/execution-drivers"
 import { isPlacementCompatible } from "@breadboard/execution-drivers"
 import {
   makeRemoteTerminalSessionDriver,
@@ -13,7 +18,10 @@ import {
 } from "./terminals.js"
 
 export interface RemoteSandboxExecutor {
-  (request: SandboxRequestV1): Promise<SandboxResultV1>
+  (
+    request: SandboxRequestV1,
+    context?: ExecutionDriverExecutionContextV1,
+  ): Promise<SandboxResultV1>
 }
 
 export interface RemoteExecutionRequestEnvelopeV1 {
@@ -73,7 +81,7 @@ export function buildRemoteSandboxRequest(input: {
     rootfs_ref: null,
     image_ref: input.imageRef ?? null,
     snapshot_ref: null,
-    command: input.command,
+    command: [input.command[0] ?? "", ...input.command.slice(1)],
     network_policy: { allow: input.capability.allow_net_hosts ?? [] },
     secret_refs: [],
     timeout_seconds: null,
@@ -139,25 +147,51 @@ export async function executeRemoteSandboxRequest(
     request,
     metadata: options.metadata,
   })
-  const abortController =
-    options.timeoutMs != null && options.signal == null ? new AbortController() : null
-  const timeoutHandle =
-    abortController != null
-      ? setTimeout(() => {
-          abortController.abort(new Error(`Remote execution timed out after ${options.timeoutMs}ms`))
-        }, options.timeoutMs)
+  const internalController = new AbortController()
+  const forwardAbort = () => {
+    if (!internalController.signal.aborted) {
+      internalController.abort(options.signal?.reason)
+    }
+  }
+  if (options.signal) {
+    if (options.signal.aborted) {
+      forwardAbort()
+    } else {
+      options.signal.addEventListener("abort", forwardAbort, { once: true })
+    }
+  }
+  let timeoutHandle: NodeJS.Timeout | undefined
+  const timeoutPromise =
+    options.timeoutMs != null
+      ? new Promise<never>((_, reject) => {
+          timeoutHandle = setTimeout(() => {
+            if (!internalController.signal.aborted) {
+              internalController.abort(new Error(`Remote execution timed out after ${options.timeoutMs}ms`))
+            }
+            const err = new Error(`Remote execution timed out after ${options.timeoutMs}ms`)
+            err.name = "TimeoutError"
+            reject(err)
+          }, options.timeoutMs)
+        })
       : null
   try {
-    const response = await fetchImpl(options.endpointUrl, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(options.headers ?? {}),
-      },
-      body: JSON.stringify(envelope),
-      signal: options.signal ?? abortController?.signal,
-    })
-    const payload = (await response.json()) as RemoteExecutionResponseEnvelopeV1 | SandboxResultV1
+    const responseAndPayloadPromise = Promise.resolve(
+      fetchImpl(options.endpointUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(options.headers ?? {}),
+        },
+        body: JSON.stringify(envelope),
+        signal: internalController.signal,
+      }),
+    ).then(async (response) => ({
+      response,
+      payload: (await response.json()) as RemoteExecutionResponseEnvelopeV1 | SandboxResultV1,
+    }))
+    const { response, payload } = timeoutPromise
+      ? await Promise.race([responseAndPayloadPromise, timeoutPromise])
+      : await responseAndPayloadPromise
     if (!response.ok) {
       throw new Error(buildRemoteExecutionErrorSummary(payload, response.status))
     }
@@ -166,13 +200,24 @@ export async function executeRemoteSandboxRequest(
     }
     return assertValid<SandboxResultV1>("sandboxResult", payload as SandboxResultV1)
   } catch (error) {
-    if ((error as Error).name === "AbortError" || String((error as Error).message).includes("timed out")) {
-      throw new Error(`Remote execution timed out after ${options.timeoutMs ?? "unknown"}ms`)
+    if (options.signal?.aborted && options.signal.reason) {
+      throw options.signal.reason instanceof Error ? options.signal.reason : new Error(String(options.signal.reason))
+    }
+    if (
+      (error instanceof Error && error.name === "AbortError") ||
+      (error instanceof Error && error.message.includes("timed out")) ||
+      (typeof internalController.signal.reason === "string" && internalController.signal.reason.includes("timed out")) ||
+      (internalController.signal.reason instanceof Error && internalController.signal.reason.message.includes("timed out"))
+    ) {
+      const err = new Error(`Remote execution timed out after ${options.timeoutMs ?? "unknown"}ms`)
+      err.name = "TimeoutError"
+      throw err
     }
     throw error
   } finally {
-    if (timeoutHandle != null) {
-      clearTimeout(timeoutHandle)
+    clearTimeout(timeoutHandle)
+    if (options.signal) {
+      options.signal.removeEventListener("abort", forwardAbort)
     }
   }
 }
@@ -181,16 +226,19 @@ export function makeRemoteExecutionDriver(
   executor?: RemoteSandboxExecutor,
   httpOptions?: RemoteExecutionHttpOptions,
 ): TerminalSessionDriverV1 {
-  const executeRemote =
-    executor ??
-    (httpOptions
-      ? (request: SandboxRequestV1) =>
-          executeRemoteSandboxRequest(request, httpOptions)
-      : undefined)
+  const terminalDriver = httpOptions ? makeRemoteTerminalSessionDriver(httpOptions) : null
+  interface ActiveRemoteExecution {
+    controller: AbortController
+    completion: Promise<unknown>
+  }
+  const activeExecutions = new Map<string, ActiveRemoteExecution>()
   return {
     driverId: "remote",
     supportedPlacements: ["remote_worker", "delegated_python", "delegated_oci", "delegated_microvm"],
     supportsCapability(capability, placementClass) {
+      if (!executor && !httpOptions) {
+        return false
+      }
       return isPlacementCompatible(capability, placementClass)
     },
     buildSandboxRequest({ requestId, capability, command, workspaceRef, imageRef, placement, metadata }) {
@@ -207,8 +255,94 @@ export function makeRemoteExecutionDriver(
         metadata,
       })
     },
-    execute: executeRemote,
-    ...(httpOptions ? makeRemoteTerminalSessionDriver(httpOptions) : {}),
+    execute(request, context) {
+      const controller = new AbortController()
+      const forwardContextAbort = () => {
+        if (!controller.signal.aborted) {
+          controller.abort(context?.signal?.reason)
+        }
+      }
+      const forwardHttpAbort = () => {
+        if (!controller.signal.aborted) {
+          controller.abort(httpOptions?.signal?.reason)
+        }
+      }
+      if (context?.signal) {
+        if (context.signal.aborted) {
+          forwardContextAbort()
+        } else {
+          context.signal.addEventListener("abort", forwardContextAbort, { once: true })
+        }
+      }
+      if (httpOptions?.signal) {
+        if (httpOptions.signal.aborted) {
+          forwardHttpAbort()
+        } else {
+          httpOptions.signal.addEventListener("abort", forwardHttpAbort, { once: true })
+        }
+      }
+      const cleanup = () => {
+        activeExecutions.delete(request.request_id)
+        context?.signal?.removeEventListener("abort", forwardContextAbort)
+        httpOptions?.signal?.removeEventListener("abort", forwardHttpAbort)
+      }
+      let executionPromise: Promise<SandboxResultV1>
+      if (executor) {
+        const executionContext: ExecutionDriverExecutionContextV1 = {
+          signal: controller.signal,
+          deadlineAtMs: context?.deadlineAtMs ?? null,
+          terminationGraceMs: context?.terminationGraceMs ?? 2000,
+        }
+        try {
+          executionPromise = Promise.resolve(executor(request, executionContext))
+        } catch (error) {
+          cleanup()
+          return Promise.reject(error)
+        }
+      } else if (!httpOptions) {
+        cleanup()
+        return Promise.reject(new Error("remote driver has no configured executor or http endpoint"))
+      } else {
+        const deadlineTimeoutMs =
+          context?.deadlineAtMs != null ? Math.max(0, context.deadlineAtMs - Date.now()) : undefined
+        const effectiveTimeoutMs =
+          deadlineTimeoutMs != null && httpOptions.timeoutMs != null
+            ? Math.min(deadlineTimeoutMs, httpOptions.timeoutMs)
+            : deadlineTimeoutMs ?? httpOptions.timeoutMs
+        executionPromise = executeRemoteSandboxRequest(request, {
+          ...httpOptions,
+          signal: controller.signal,
+          timeoutMs: effectiveTimeoutMs,
+        })
+      }
+      activeExecutions.set(request.request_id, {
+        controller,
+        completion: executionPromise,
+      })
+      return executionPromise.finally(cleanup)
+    },
+    async terminate(request, context) {
+      const active = activeExecutions.get(request.request_id)
+      if (!active) return
+      if (!active.controller.signal.aborted) {
+        const reason =
+          context?.signal?.reason ??
+          new Error(`Remote execution ${context?.reason ?? "cancelled"} termination requested`)
+        active.controller.abort(reason)
+      }
+      await active.completion.catch(() => {})
+    },
+    ...(terminalDriver
+      ? {
+          supportsTerminalSessions: terminalDriver.supportsTerminalSessions,
+          startTerminalSession: terminalDriver.startTerminalSession,
+          interactTerminalSession: terminalDriver.interactTerminalSession,
+          snapshotTerminalRegistry: terminalDriver.snapshotTerminalRegistry,
+          cleanupTerminalSessions: terminalDriver.cleanupTerminalSessions,
+        }
+      : {
+          supportsTerminalSessions: () => false,
+        }),
   }
 }
 
