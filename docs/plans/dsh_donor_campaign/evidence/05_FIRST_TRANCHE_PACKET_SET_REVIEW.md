@@ -44,12 +44,12 @@ Residual findings: P0 0, P1 0, P2 0, P3 0.
 
 Verdict: `APPROVED`, confidence 0.99. Gate G-F passes. Future packet observations remain unverified; this review approves their contracts and scope only.
 
-## Second renewal review — APPROVED
+## Post-contract escalation review — PENDING
 
-Renewal date: 2026-09-02. Exact packet SHA-256 `ea3bcbaf05f145d6cb6302735189618146c653350113b5b775652ad2843043b5`. Pinned ENGINE/TUI heads unchanged.
+This is not a second renewal. The single renewal budget ended at line 45. Later automated PR review identified publication-blocking executable-contract defects after Gate G-F had closed. Section D §114 requires a split or escalation instead of a third round. Kyle's later DSH donor implementation mandate authorizes correcting every substantive review finding and requires a new exact-artifact independent review before merge; this section records that bounded escalation and reopens only the affected FT-02/FT-03 clauses.
 
-The independent renewal revalidated FT-02's fixed four-case barrier, exact commands and payloads, pinned ENGINE working directory and provenance, 30-second case deadlines, 240-second total deadline, observations, and cleanup contract. Its provider-free fixture replaces both the actually selected `openai_responses` runtime and possible `openai_chat` route with `MockRuntime`, asserts the resolved class before dispatch, guards concrete live runtimes and sockets, and records zero external-provider/network calls. FT-03 binds immutable fixture `ft03-request-v1` at SHA-256 `e8cfac26efd0210997ecc31241d95d805d656b0436f2ccd42f3b58523da4dcd2`, with exact prompt-section, tool-schema, history, default, adapter-override, canonicalization, and independent held-out-oracle inputs. FT-01 permits only qualifying test-only L1/L2 changes, including the named separate-TUI installed-product test for L2; production ENGINE and TUI bytes remain forbidden.
+Escalation candidate date: 2026-09-03. Exact packet SHA-256 `ca762e503a040b3d67484be975c708701dec3c3716e4923bab66aade49d2d3a6`. Pinned ENGINE/TUI heads unchanged.
 
-Residual findings: P0 0, P1 0, P2 0, P3 0.
+The escalation candidate corrects the FT-01 terminal route, the FT-03 fixture's normalized request representation, and its event-derived history/oracle-independence contract. It retains FT-02's fixed four-case barrier, provider-free runtime substitution, deadlines, cleanup contract, and zero-network guards. FT-03 now binds immutable fixture `ft03-request-v1` at SHA-256 `76e69938aa132dd4f5fd2d35f8d966c7209f4231eb1b9d8fbb27be285b882ce3`. Its ordered provider history is derived only from logical `assistant_message` and `user_message` events; expected normalized message blocks are independent oracle data and are forbidden reconstruction inputs.
 
-Verdict: `APPROVED`, confidence 0.99. Gate G-F passes on the exact packet digest above.
+Escalation verdict: `PENDING` exact-artifact independent review. Gate G-F remains blocked until that verdict records zero unresolved P0/P1/P2.

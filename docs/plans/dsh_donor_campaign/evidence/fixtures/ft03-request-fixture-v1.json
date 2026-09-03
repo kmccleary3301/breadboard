@@ -12,15 +12,15 @@
   "expected_provider_request": {
     "messages": [
       {
-        "content": "[policy]\nFollow tool outputs exactly.\n\n[workspace]\nWorkspace artifact: context/alpha.txt (sha256:b6a98d9ce9a2d9149288fa3df42d377c3e42737afdcdaf714e33c0a100b51060).",
+        "content": [{"type": "text", "text": "[policy]\nFollow tool outputs exactly.\n\n[workspace]\nWorkspace artifact: context/alpha.txt (sha256:b6a98d9ce9a2d9149288fa3df42d377c3e42737afdcdaf714e33c0a100b51060)."}],
         "role": "system"
       },
       {
-        "content": "Ready.",
+        "content": [{"type": "text", "text": "Ready."}],
         "role": "assistant"
       },
       {
-        "content": "Inspect context/alpha.txt and report its first line.",
+        "content": [{"type": "text", "text": "Inspect context/alpha.txt and report its first line."}],
         "role": "user"
       }
     ],
@@ -45,16 +45,6 @@
     ]
   },
   "fixture_id": "ft03-request-v1",
-  "history": [
-    {
-      "content": "Ready.",
-      "role": "assistant"
-    },
-    {
-      "content": "Inspect context/alpha.txt and report its first line.",
-      "role": "user"
-    }
-  ],
   "logical_session_events": [
     {
       "kind": "session.started",
@@ -65,12 +55,24 @@
       "sequence": 1
     },
     {
-      "kind": "input.accepted",
+      "kind": "assistant_message",
       "payload": {
-        "input_id": "ft03-input",
-        "text": "Inspect context/alpha.txt and report its first line."
+        "message": {
+          "content": "Ready.",
+          "role": "assistant"
+        }
       },
       "sequence": 2
+    },
+    {
+      "kind": "user_message",
+      "payload": {
+        "message": {
+          "content": "Inspect context/alpha.txt and report its first line.",
+          "role": "user"
+        }
+      },
+      "sequence": 3
     }
   ],
   "prompt_sections": [

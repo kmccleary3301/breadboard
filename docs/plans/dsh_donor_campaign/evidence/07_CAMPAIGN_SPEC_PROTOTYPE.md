@@ -384,7 +384,7 @@ The machine prototype in reviewed G evidence has 50 acyclic nodes, six first-tra
 First-tranche completion reaches one evidence gate. Only observed predicates open later families:
 
 - `EVIDENCE-GATE` waits for FT-06, and FT-06 waits for FT-01 + FT-02 + FT-03 + FT-04 + FT-05.
-- Every terminal FT-01 journal outcome opens `RT-REPAIR`: reproduced divergence is repaired at the existing owner; a coherent result records `RT-REPAIR` as evidence-backed `NOT-TAKEN`. `RT-REPAIR + FT-04 → RT-REPLAY`.
+- `KNOWN_DIVERGENCE` on the FT-01 journal branch opens `RT-REPAIR`; a coherent journal result records that repair as evidence-backed `NOT-TAKEN` and may join FT-04 directly at `RT-REPLAY`. `PRODUCT_RED` or any other terminal defect outcome stops at PROC-DEFECT: it opens neither `RT-REPAIR` nor `RT-REPLAY`. A completed repair plus FT-04, or a coherent result plus FT-04, is required for `RT-REPLAY`.
 - `RT-REPLAY + FT-06 → PROJ-CHAR → DIT-PROJECTION`; only approved DIT may open `PROJ-IMPLEMENT`.
 - FT-03 exact branch (`RQ-PASS`) or repaired branch (`RQ-INTERNAL → RQ-RECONSTRUCTED`) may feed the `ANY` join `RQ-ABLATION`.
 - `FT-02 + FT-06 → DIT-GENERATION`. After FT-02 evidence, `GEN-INTERNAL` must terminate as a current-owner repair or evidence-backed `NOT-TAKEN`. DIT-GENERATION must compare three designs when activation is needed or terminate `NOT-TAKEN`; it always drives `GEN-ACTIVATION` to approved implementation or evidence-backed `NOT-TAKEN`.
