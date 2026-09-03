@@ -199,12 +199,23 @@ def test_assistant_observation_registers_canonical_message_target() -> None:
 
     runner._record_product_observation(
         "message.assistant",
-        {"text": "candidate", "message": {"id": "provider-message-1"}},
+        {"text": "candidate", "message": {"message_id": "provider-message-1"}},
         trajectory_id="turn-1",
     )
 
     assert session.events[-1].payload["message_id"] == "provider-message-1"
     assert session.events[-1].payload["trajectory_id"] == "turn-1"
+
+
+def test_assistant_observation_rejects_conflicting_nested_message_ids() -> None:
+    runner, _session = _product_runner("assistant-observation-conflict")
+
+    with pytest.raises(RuntimeProtocolError, match="runtime_protocol_error"):
+        runner._record_product_observation(
+            "message.assistant",
+            {"text": "candidate", "message": {"message_id": "a", "id": "b"}},
+            trajectory_id="turn-1",
+        )
 def test_fallback_assistant_registers_canonical_message_target() -> None:
     runner, session = _product_runner("fallback-assistant")
     runner._agent = type(
@@ -214,7 +225,13 @@ def test_fallback_assistant_registers_canonical_message_target() -> None:
             "_local_mode": True,
             "config": {},
             "run_task": lambda *_args, **_kwargs: {
-                "messages": [{"role": "assistant", "content": "fallback"}],
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "content": "fallback",
+                        "message_id": "provider-fallback-1",
+                    }
+                ],
                 "completion_summary": {"completed": True},
             },
         },
@@ -230,6 +247,7 @@ def test_fallback_assistant_registers_canonical_message_target() -> None:
     )
     assert public_event.payload["message_id"] == product_payload["message_id"]
     assert public_event.payload["trajectory_id"] == product_payload["trajectory_id"]
+    assert product_payload["message_id"] == "provider-fallback-1"
     assert product_payload["trajectory_id"] == "turn-test"
 
 
@@ -676,6 +694,12 @@ async def test_anonymous_stream_identity_cannot_collide_with_provider_id(
             '{"type":"assistant_message","payload":{"text":"first","message":{"id":"duplicate"}}}',
             '{"type":"assistant_message","payload":{"text":"second","message":{"id":"duplicate"}}}',
         ),
+        (
+            '{"type":"assistant.message.start","payload":{}}',
+            '{"type":"assistant.message.delta","payload":{"delta":"hello"}}',
+            '{"type":"assistant.message.start","payload":{}}',
+            '{"type":"assistant.message.end","payload":{"text":"world"}}',
+        ),
     ],
 )
 async def test_replay_rejects_reused_canonical_message_identity(
@@ -700,6 +724,7 @@ async def test_replay_rejects_reused_canonical_message_identity(
     [
         '{"type":"assistant_message","payload":{"text":"bad","message_id":""}}',
         '{"type":"assistant_message","payload":{"text":"bad","message_id":"top","message":{"id":"nested"}}}',
+        '{"type":"assistant_message","payload":{"text":"bad","message":{"message_id":"a","id":"b"}}}',
         '{"type":"assistant_message","payload":{"text":"bad","source":123}}',
     ],
 )

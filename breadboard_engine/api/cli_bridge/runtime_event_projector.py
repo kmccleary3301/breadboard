@@ -493,13 +493,22 @@ class RuntimeEventProjector:
             if family == "message.assistant":
                 text = payload.get("text")
                 message = payload.get("message")
-                message_id = payload.get("message_id")
-                if message_id is None and isinstance(message, dict):
-                    message_id = message.get("id")
-                if message_id is not None and (
-                    not isinstance(message_id, str) or not message_id
+                supplied_message_ids: list[str] = []
+                for value in (
+                    payload.get("message_id"),
+                    message.get("message_id") if isinstance(message, dict) else None,
+                    message.get("id") if isinstance(message, dict) else None,
                 ):
+                    if value is None:
+                        continue
+                    if not isinstance(value, str) or not value:
+                        raise RuntimeProtocolError("runtime_protocol_error")
+                    supplied_message_ids.append(value)
+                if len(set(supplied_message_ids)) > 1:
                     raise RuntimeProtocolError("runtime_protocol_error")
+                message_id = (
+                    supplied_message_ids[0] if supplied_message_ids else None
+                )
                 if not isinstance(trajectory_id, str) or not trajectory_id:
                     raise RuntimeProtocolError("runtime_protocol_error")
                 if message_id is None:

@@ -347,6 +347,8 @@ class TaskExecutionOwner:
                     else None
                 )
                 if event_type is EventType.ASSISTANT_MESSAGE_START:
+                    if active_replay_stream is not None:
+                        raise RuntimeProtocolError("runtime_protocol_error")
                     if message_id is None:
                         anonymous_stream_count += 1
                         stream_key = ("anonymous", str(anonymous_stream_count))
@@ -473,21 +475,18 @@ class TaskExecutionOwner:
                         active_replay_stream = None
                 elif event_type is EventType.ASSISTANT_MESSAGE:
                     message = payload.get("message")
-                    raw_nested_message_id = (
-                        message.get("message_id")
-                        if isinstance(message, dict) and "message_id" in message
-                        else (
-                            message.get("id")
-                            if isinstance(message, dict) and "id" in message
-                            else None
-                        )
-                    )
-                    if raw_nested_message_id is not None and (
-                        not isinstance(raw_nested_message_id, str)
-                        or not raw_nested_message_id
-                    ):
+                    nested_ids: list[str] = []
+                    if isinstance(message, dict):
+                        for field in ("message_id", "id"):
+                            if field not in message:
+                                continue
+                            value = message[field]
+                            if not isinstance(value, str) or not value:
+                                raise RuntimeProtocolError("runtime_protocol_error")
+                            nested_ids.append(value)
+                    if len(set(nested_ids)) > 1:
                         raise RuntimeProtocolError("runtime_protocol_error")
-                    nested_message_id = raw_nested_message_id
+                    nested_message_id = nested_ids[0] if nested_ids else None
                     if (
                         message_id is not None
                         and nested_message_id is not None
