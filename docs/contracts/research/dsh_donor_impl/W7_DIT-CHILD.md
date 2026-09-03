@@ -114,6 +114,6 @@ The process pair may be exercised as local process and Docker variants; Docker r
 
 **Recommendation: Design A — Session-centered child factory**, because E4.12 explicitly makes child Sessions ordinary durable Sessions, and it adds the least new ownership while allowing Work Item to retain assignment/lineage. Design B is the fallback if a process-death fixture proves Work Item must own settlement conflict resolution. Design C should be admitted only if that fixture proves that A/B cannot close the cross-owner ordering without a coordinator. These are recommendations, not approval.
 
-**Decision: PENDING KYLE**
+**Decision: SELECTED A — Session-centered child factory.** Kyle selected the recommended existing-owner composition through the plan-authorized ask-tool auto-selection on 2026-09-02. Designs B and C are not selected.
 
 Before implementation or a public amendment, run one deterministic kill/restart fixture against both adapter pairs and require byte/digest equality for child/root lineage, replay head, Work Item attempt/placement, terminal outcome, cancellation, and artifact/result references. Reject any design with a second durable team truth, orphan process, ambient PID/actor authority, missing recovery reference, duplicate settlement, or late result after cancellation/replacement. W10.1 remains closed until this gate passes; public rollout remains closed until the normal amendment and generated-consumer chain passes.
