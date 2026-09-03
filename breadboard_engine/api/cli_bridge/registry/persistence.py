@@ -211,6 +211,50 @@ def _retained_terminal_payload(event_type: EventType, value: Any) -> Dict[str, A
     return {"error": {"code": safe_code[:128]}}
 
 
+def _turn_journal_digest(record: SessionRecord) -> str:
+    turns = []
+    for turn_id in sorted(record.turns_by_id):
+        turn = record.turns_by_id[turn_id]
+        turns.append(
+            {
+                "turn_id": turn.turn_id,
+                "input_id": turn.input_id,
+                "state": turn.state,
+                "cancellation_requested": turn.cancellation_requested,
+                "cancellation_reason": turn.cancellation_reason,
+                "execution_committed": turn.execution_committed,
+                "terminal_outcome": turn.terminal_outcome,
+                "terminal_resolution_committed": turn.terminal_resolution_committed,
+                "body_digest": turn.body_digest
+                or submission_body_digest(turn.content, turn.attachments),
+            }
+        )
+    submission_digests = {
+        *(identity_digest(key) for key in record.submissions_by_key),
+        *record.submissions_by_key_digest,
+    }
+    cancellation_digests = {
+        *(identity_digest(key) for key in record.cancellations_by_key),
+        *record.cancellations_by_key_digest,
+    }
+    payload = {
+        "turn_admission": record.turn_admission.value,
+        "active_turn_id": record.active_turn_id,
+        "queued_turn_ids": list(record.queued_turn_ids),
+        "turns": turns,
+        "submission_digests": sorted(submission_digests),
+        "cancellation_digests": sorted(cancellation_digests),
+        "admission_closed": record.admission_closed,
+    }
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
 class PersistenceMixin:
     """Retained session persistence and basic record operations."""
 
@@ -276,6 +320,52 @@ class PersistenceMixin:
                 record.last_activity_at = _utcnow()
                 self._persist_record_locked(record)
 
+    async def close_admission(
+        self,
+        session_id: str,
+        *,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        record = await self.get(session_id)
+        if record is None:
+            return
+        async with record.admission_lock:
+            async with self._lock:
+                with self._record_file_lock(session_id):
+                    current = self._records.get(session_id)
+                    if current is not record:
+                        return
+                    current_metadata = (
+                        record.metadata if isinstance(record.metadata, dict) else {}
+                    )
+                    require_disk = (
+                        record.loaded_from_retained_state
+                        or isinstance(current_metadata.get("durable_child"), dict)
+                        or isinstance(
+                            current_metadata.get("durable_parent_cancellation"), dict
+                        )
+                    )
+                    record = self._refresh_record_from_disk_locked(
+                        session_id, record, require_disk=require_disk
+                    )
+                    previous_closed = record.admission_closed
+                    previous_metadata = dict(record.metadata or {})
+                    previous_activity = record.last_activity_at
+                    record.admission_closed = True
+                    if metadata is not None:
+                        replacement = dict(metadata)
+                        durable_child = (record.metadata or {}).get("durable_child")
+                        if isinstance(durable_child, dict):
+                            replacement["durable_child"] = dict(durable_child)
+                        self._replace_metadata(record, replacement)
+                    record.last_activity_at = _utcnow()
+                    try:
+                        self._persist_record_locked(record)
+                    except Exception:
+                        record.admission_closed = previous_closed
+                        self._replace_metadata(record, previous_metadata)
+                        record.last_activity_at = previous_activity
+                        raise
     async def update_metadata(
         self,
         session_id: str,
@@ -519,6 +609,35 @@ class PersistenceMixin:
         target.replay_head_event_id = source.replay_head_event_id
         target.replay_head_sequence = source.replay_head_sequence
         target.terminal_event_envelopes[:] = source.terminal_event_envelopes
+        target_journal_dirty = (
+            target.retained_turn_journal_digest is not None
+            and _turn_journal_digest(target)
+            != target.retained_turn_journal_digest
+        )
+        if not target.admission_lock.locked() and not target_journal_dirty:
+            target.turn_admission = source.turn_admission
+            target.active_turn_id = source.active_turn_id
+            target.queued_turn_ids.clear()
+            target.queued_turn_ids.extend(source.queued_turn_ids)
+            target.turns_by_id.clear()
+            target.turns_by_id.update(source.turns_by_id)
+            target.submissions_by_key.clear()
+            target.submissions_by_key.update(source.submissions_by_key)
+            target.submissions_by_key_digest.clear()
+            target.submissions_by_key_digest.update(
+                source.submissions_by_key_digest
+            )
+            target.cancellations_by_key.clear()
+            target.cancellations_by_key.update(source.cancellations_by_key)
+            target.cancellations_by_key_digest.clear()
+            target.cancellations_by_key_digest.update(
+                source.cancellations_by_key_digest
+            )
+            target.admission_closed = source.admission_closed
+            target.retained_turn_journal_digest = (
+                source.retained_turn_journal_digest
+                or _turn_journal_digest(source)
+            )
     def _merge_durable_child_from_disk_locked(
         self,
         record: SessionRecord,
@@ -605,6 +724,7 @@ class PersistenceMixin:
             os.fsync(handle.fileno())
         try:
             os.replace(temp_path, path)
+            record.retained_turn_journal_digest = _turn_journal_digest(record)
         finally:
             try:
                 temp_path.unlink()
@@ -717,6 +837,10 @@ class PersistenceMixin:
                 "event_seq": record.event_seq,
                 "replay_head_sequence": durable_head_sequence,
                 "event_head_id": durable_head_event_id,
+                "turn_admission": record.turn_admission.value,
+                "active_turn_id": record.active_turn_id,
+                "queued_turn_ids": list(record.queued_turn_ids),
+                "admission_closed": record.admission_closed,
                 "model": _retained_model_id(metadata.get("model")),
                 "mode": (
                     str(metadata["mode"]).strip()
@@ -1089,6 +1213,40 @@ class PersistenceMixin:
             turn.terminal_resolution_committed = bool(
                 turn.terminal_outcome is not None and turn_id in committed_turn_ids
             )
-        record.turn_admission = TurnAdmission.IDLE
-        record.active_turn_id = None
+        turn_admission = session.get("turn_admission", TurnAdmission.IDLE.value)
+        try:
+            record.turn_admission = TurnAdmission(str(turn_admission))
+        except ValueError as error:
+            raise ValueError("retained turn admission is invalid") from error
+        active_turn_id = session.get("active_turn_id")
+        if active_turn_id is not None and (
+            not isinstance(active_turn_id, str)
+            or active_turn_id not in record.turns_by_id
+        ):
+            raise ValueError("retained active turn identity is invalid")
+        queued_turn_ids = session.get("queued_turn_ids", [])
+        if (
+            not isinstance(queued_turn_ids, list)
+            or any(
+                not isinstance(turn_id, str)
+                or turn_id not in record.turns_by_id
+                for turn_id in queued_turn_ids
+            )
+            or len(set(queued_turn_ids)) != len(queued_turn_ids)
+            or active_turn_id in queued_turn_ids
+        ):
+            raise ValueError("retained queued turn identities are invalid")
+        admission_closed = session.get("admission_closed", False)
+        if not isinstance(admission_closed, bool):
+            raise ValueError("retained admission closed state is invalid")
+        if record.turn_admission is TurnAdmission.IDLE and (
+            active_turn_id is not None or queued_turn_ids
+        ):
+            raise ValueError("idle retained admission has active turns")
+        if record.turn_admission is TurnAdmission.ACTIVE and active_turn_id is None:
+            raise ValueError("active retained admission has no active turn")
+        record.active_turn_id = active_turn_id
+        record.queued_turn_ids.extend(queued_turn_ids)
+        record.admission_closed = admission_closed
+        record.retained_turn_journal_digest = _turn_journal_digest(record)
         return record

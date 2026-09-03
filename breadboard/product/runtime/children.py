@@ -7,15 +7,17 @@ their existing owners; this module only composes their ordering.
 from __future__ import annotations
 
 import asyncio
-from contextlib import ExitStack, contextmanager
+import ctypes
 import hashlib
 import json
 import os
+import struct
 import subprocess
 import sys
 import threading
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, ClassVar, Protocol
@@ -29,9 +31,26 @@ from breadboard.product.coordination.work_items import (
     WorkItemRepository,
 )
 from breadboard.product.harness.lock import EffectiveHarnessLock
-from breadboard.product.runtime.artifacts import ArtifactRef, ArtifactStore
-from breadboard.product.runtime.events import Clock, IdSource, ProcessLock, Session, SystemClock, UUIDSource
-from breadboard.product.runtime.session_store import _mutate_session_locked, _session_transition_guard, create_session, load_session, mutate_session
+from breadboard.product.runtime.artifacts import (
+    ArtifactRef,
+    ArtifactStore,
+    artifact_store_ref,
+)
+from breadboard.product.runtime.events import (
+    Clock,
+    IdSource,
+    ProcessLock,
+    Session,
+    SystemClock,
+    UUIDSource,
+)
+from breadboard.product.runtime.session_store import (
+    _mutate_session_locked,
+    _session_transition_guard,
+    create_session,
+    load_session,
+    mutate_session,
+)
 
 _TERMINAL = frozenset({"completed", "failed", "canceled"})
 _CHILD_SCHEMA = "bb.durable_child.v1"
@@ -217,6 +236,54 @@ class ChildState:
         for field_name in boolean_fields:
             if type(value.get(field_name, False)) is not bool:
                 raise ValueError(f"durable child state field {field_name!r} must be boolean")
+        terminal_count = value.get("terminal_count", 0)
+        status = value.get("status")
+        terminal_outcome = value.get("terminal_outcome")
+        allowed_statuses = {"starting", "running", "cancel_requested", *_TERMINAL}
+        if status not in allowed_statuses:
+            raise ValueError("durable child status is invalid")
+        if type(terminal_count) is not int or terminal_count not in {0, 1}:
+            raise ValueError("durable child terminal_count must be exactly 0 or 1")
+        if terminal_count == 0 and (
+            terminal_outcome is not None or status in _TERMINAL
+        ):
+            raise ValueError("nonterminal durable child cannot have a terminal outcome")
+        if terminal_count == 1 and (
+            terminal_outcome not in _TERMINAL or status != terminal_outcome
+        ):
+            raise ValueError("terminal durable child status and outcome must agree")
+        execution_target_ref = value.get("execution_target_ref")
+        execution_target = value.get("execution_target")
+        if (
+            type(execution_target_ref) is not str
+            or not execution_target_ref
+            or not isinstance(execution_target, Mapping)
+            or execution_target.get("ref") != execution_target_ref
+        ):
+            raise ValueError("durable child execution target identity is invalid")
+        result_refs_value = value.get("result_refs", ())
+        if not isinstance(result_refs_value, (list, tuple)) or any(
+            type(ref) is not str for ref in result_refs_value
+        ):
+            raise ValueError("durable child result refs are invalid")
+        result_refs = tuple(result_refs_value)
+        settlement = value.get("settlement")
+        if settlement is not None:
+            if not isinstance(settlement, Mapping):
+                raise ValueError("durable child settlement is invalid")
+            settlement_outcome = settlement.get("outcome")
+            settlement_refs = settlement.get("result_refs")
+            if (
+                settlement_outcome not in _TERMINAL
+                or not isinstance(settlement_refs, (list, tuple))
+                or any(type(ref) is not str for ref in settlement_refs)
+                or tuple(settlement_refs) != result_refs
+                or (
+                    settlement_outcome == "completed"
+                    and value.get("result_prepared", False) is not True
+                )
+            ):
+                raise ValueError("durable child settlement is invalid")
         return cls(
             child_session_id=str(value["child_session_id"]),
             child_work_item_id=str(value["child_work_item_id"]),
@@ -225,26 +292,32 @@ class ChildState:
             parent_work_item_id=str(value["parent_work_item_id"]),
             attempt_id=str(value["attempt_id"]),
             recovery_ref=str(value["recovery_ref"]),
-            execution_target_ref=str(value["execution_target_ref"]),
+            execution_target_ref=execution_target_ref,
             adapter_family=str(value["adapter_family"]),
-            status=str(value["status"]),
+            status=str(status),
             revision=int(value["revision"]),
             cancellation_requested=value.get("cancellation_requested", False),
             launch_claimed=value.get("launch_claimed", False),
-            launch_claim_owner=str(value["launch_claim_owner"]) if value.get("launch_claim_owner") is not None else None,
-            launch_claim_until=float(value["launch_claim_until"]) if value.get("launch_claim_until") is not None else None,
+            launch_claim_owner=str(value["launch_claim_owner"])
+            if value.get("launch_claim_owner") is not None
+            else None,
+            launch_claim_until=float(value["launch_claim_until"])
+            if value.get("launch_claim_until") is not None
+            else None,
             launch_published=value.get("launch_published", False),
             startup_phase=str(value.get("startup_phase") or "unknown"),
-            startup_lease_until=float(value["startup_lease_until"]) if value.get("startup_lease_until") is not None else None,
+            startup_lease_until=float(value["startup_lease_until"])
+            if value.get("startup_lease_until") is not None
+            else None,
             cancellation_reason=value.get("cancellation_reason"),
             result_prepared=value.get("result_prepared", False),
-            result_refs=tuple(str(ref) for ref in value.get("result_refs", ())),
-            terminal_outcome=value.get("terminal_outcome"),
-            terminal_count=int(value.get("terminal_count", 0)),
+            result_refs=result_refs,
+            terminal_outcome=terminal_outcome,
+            terminal_count=terminal_count,
             joined=value.get("joined", False),
-            settlement=value.get("settlement"),
+            settlement=settlement,
             child_spec=value.get("child_spec") or {},
-            execution_target=value.get("execution_target") or {},
+            execution_target=execution_target,
         )
 
 
@@ -324,6 +397,19 @@ class DurableChildFactory:
         """Persist parent intent and every descendant intent before signaling."""
         parent, _ = load_session(self.workspace, parent_session_id)
         parent_work = WorkItem.restore(self.repository, parent_work_item_id, clock=self.clock, ids=self.ids)
+        parent_attempt = (
+            parent_work.read_model.current_attempt
+            or (
+                parent_work.read_model.attempts[-1]
+                if parent_work.read_model.attempts
+                else None
+            )
+        )
+        if (
+            parent_attempt is None
+            or parent_attempt.session_ref != parent_session_id
+        ):
+            raise ChildError("parent Work Item does not belong to the parent Session")
         records = self._registry("records")
         by_parent: dict[str, list[ChildState]] = {}
         for record in records:
@@ -402,28 +488,28 @@ class DurableChildFactory:
                     raise ValueError(
                         "checkpoint_then_stop requires a current checkpoint"
                     )
-        parent_record = self._registry("get", parent_session_id)
-        parent_metadata = dict(parent_record.metadata or {}) if parent_record is not None else {}
-        parent_metadata["durable_parent_cancellation"] = {
-            "work_item_id": parent_work_item_id,
-            "reason": reason,
-            "child_recovery_refs": [state.recovery_ref for state in descendants],
-        }
-        if parent_record is not None:
-            self._registry("update_metadata", parent_session_id, metadata=parent_metadata)
         if product_status in _TERMINAL and work_status not in _TERMINAL:
             try:
                 if product_status == "completed":
                     attempt = parent_work.read_model.current_attempt
                     if attempt is None:
-                        raise ChildError("completed Product Session has no active Work Item attempt")
-                    parent_work.complete("Product Session already completed", attempt_id=attempt.attempt_id)
+                        raise ChildError(
+                            "completed Product Session has no active Work Item attempt"
+                        )
+                    parent_work.complete(
+                        "Product Session already completed",
+                        attempt_id=attempt.attempt_id,
+                    )
                 elif product_status == "failed":
-                    parent_work.fail("product_session", "Product Session already failed")
+                    parent_work.fail(
+                        "product_session", "Product Session already failed"
+                    )
                 else:
                     parent_work.cancel("operator", reason)
             except (RuntimeError, ValueError) as error:
-                raise ChildError("Product Session terminal outcome cannot reconcile Work Item") from error
+                raise ChildError(
+                    "Product Session terminal outcome cannot reconcile Work Item"
+                ) from error
             work_status = parent_work.read_model.status
         elif work_status in _TERMINAL and product_status not in _TERMINAL:
             try:
@@ -449,18 +535,39 @@ class DurableChildFactory:
                         lambda current: current.cancel(reason),
                     )
             except (RuntimeError, ValueError) as error:
-                raise ChildError("Work Item terminal outcome cannot reconcile Product Session") from error
+                raise ChildError(
+                    "Work Item terminal outcome cannot reconcile Product Session"
+                ) from error
             parent, _ = load_session(self.workspace, parent_session_id)
         elif (
             product_status in _TERMINAL
             and work_status in _TERMINAL
             and product_status != work_status
         ):
-            raise ChildError("parent Product Session and Work Item terminal outcomes disagree")
+            raise ChildError(
+                "parent Product Session and Work Item terminal outcomes disagree"
+            )
+        parent_record = self._registry("get", parent_session_id)
+        parent_metadata = dict(parent_record.metadata or {}) if parent_record is not None else {}
+        parent_metadata["durable_parent_cancellation"] = {
+            "work_item_id": parent_work_item_id,
+            "reason": reason,
+            "child_recovery_refs": [state.recovery_ref for state in descendants],
+        }
+        if parent_record is not None:
+            self._registry(
+                "close_admission",
+                parent_session_id,
+                metadata=parent_metadata,
+            )
         adopted: list[ChildState] = []
         remaining_descendants: list[ChildState] = []
         for state in descendants:
             if state.terminal_count:
+                continue
+            child_events = self.repository.read(state.child_work_item_id)
+            if not child_events:
+                remaining_descendants.append(state)
                 continue
             child = WorkItem.restore(
                 self.repository,
@@ -469,7 +576,22 @@ class DurableChildFactory:
                 ids=self.ids,
             )
             if child.read_model.status in _TERMINAL and not state.cancellation_requested:
-                adopted.append(self._adopt_terminal_work_item(state, child, allow_cancellation_intent=True))
+                if child.read_model.status == "canceled":
+                    state = self._cas(
+                        state,
+                        status="cancel_requested",
+                        cancellation_requested=True,
+                        cancellation_reason=reason,
+                    )
+                    remaining_descendants.append(state)
+                else:
+                    adopted.append(
+                        self._adopt_terminal_work_item(
+                            state,
+                            child,
+                            allow_cancellation_intent=True,
+                        )
+                    )
             else:
                 remaining_descendants.append(state)
         descendants = remaining_descendants
@@ -518,6 +640,7 @@ class DurableChildFactory:
             else:
                 state = self._cas(state, status="canceled", terminal_outcome="canceled", terminal_count=1, settlement=None, joined=True)
                 self._repair_terminal_owners(state)
+                self._status(state)
                 settled.append(state)
         if not unsettled:
             current_parent_record = self._registry("get", parent_session_id)
@@ -566,20 +689,27 @@ class DurableChildFactory:
             attempt_id = event.payload.get("attempt_id")
             return attempt_id if isinstance(attempt_id, str) else None
         return None
-    def _final_launch_fence(self, state: ChildState, parent_attempt_id: str | None = None) -> ChildState:
+    def _final_launch_fence(
+        self, state: ChildState, parent_attempt_id: str | None = None
+    ) -> ChildState:
         current = self._record_state(state.child_session_id)
         parent_active = True
         try:
-            self._require_parent_start_active(state.parent_session_id, state.root_session_id)
+            self._require_parent_start_active(
+                state.parent_session_id, state.root_session_id
+            )
             parent_work = WorkItem.restore(
                 self.repository,
                 state.parent_work_item_id,
                 clock=self.clock,
                 ids=self.ids,
             )
-            expected_parent_attempt = parent_attempt_id or self._parent_attempt_id_for_child(
-                state.parent_work_item_id,
-                state.child_work_item_id,
+            expected_parent_attempt = (
+                parent_attempt_id
+                or self._parent_attempt_id_for_child(
+                    state.parent_work_item_id,
+                    state.child_work_item_id,
+                )
             )
             parent_attempt = parent_work.read_model.current_attempt
             if (
@@ -587,6 +717,7 @@ class DurableChildFactory:
                 or parent_work.read_model.status != "running"
                 or parent_attempt is None
                 or parent_attempt.attempt_id != expected_parent_attempt
+                or parent_attempt.session_ref != state.parent_session_id
             ):
                 raise ChildError("parent Work Item attempt is no longer active")
         except (ChildError, FileNotFoundError, ValueError):
@@ -600,7 +731,9 @@ class DurableChildFactory:
                 ids=self.ids,
             )
         except (FileNotFoundError, ValueError) as error:
-            raise ExpectedRevisionConflict("child owner became unavailable before launch") from error
+            raise ExpectedRevisionConflict(
+                "child owner became unavailable before launch"
+            ) from error
         if (
             parent_active
             and not current.cancellation_requested
@@ -620,7 +753,13 @@ class DurableChildFactory:
             "child owner became terminal before launch",
             signal=False,
         )
-    def _require_parent_work_start_active(self, parent_work_item_id: str, attempt_id: str) -> None:
+
+    def _require_parent_work_start_active(
+        self,
+        parent_work_item_id: str,
+        attempt_id: str,
+        parent_session_id: str,
+    ) -> None:
         parent = WorkItem.restore(
             self.repository,
             parent_work_item_id,
@@ -632,20 +771,39 @@ class DurableChildFactory:
             parent.read_model.status != "running"
             or attempt is None
             or attempt.attempt_id != attempt_id
+            or attempt.session_ref != parent_session_id
         ):
             raise ChildError("parent Work Item became terminal during child startup")
-    def _require_parent_start_active(self, parent_session_id: str, root_session_id: str) -> None:
-        for session_id, label in ((parent_session_id, "parent"), (root_session_id, "root")):
+
+    def _require_parent_start_active(
+        self, parent_session_id: str, root_session_id: str
+    ) -> None:
+        for session_id, label in (
+            (parent_session_id, "parent"),
+            (root_session_id, "root"),
+        ):
             record = self._registry("get", session_id)
-            if record is not None and isinstance(record.metadata, Mapping) and isinstance(record.metadata.get("durable_parent_cancellation"), Mapping):
+            if record is not None and (
+                record.admission_closed
+                or (
+                    isinstance(record.metadata, Mapping)
+                    and isinstance(
+                        record.metadata.get("durable_parent_cancellation"), Mapping
+                    )
+                )
+            ):
                 raise ChildError(f"{label} Product Session cancellation is pending")
         parent_product, _ = load_session(self.workspace, parent_session_id)
         if parent_product.read_model.status != "running":
-            raise ChildError("parent Product Session became terminal during child startup")
+            raise ChildError(
+                "parent Product Session became terminal during child startup"
+            )
         if root_session_id != parent_session_id:
             root_product, _ = load_session(self.workspace, root_session_id)
             if root_product.read_model.status != "running":
-                raise ChildError("root Product Session became terminal during child startup")
+                raise ChildError(
+                    "root Product Session became terminal during child startup"
+                )
 
 
     def _cas(self, state: ChildState, **changes: Any) -> ChildState:
@@ -703,8 +861,12 @@ class DurableChildFactory:
                 raise ChildError("root Product Session is not running")
         self._require_parent_start_active(parent_session_id, root_session_id)
         parent = WorkItem.restore(self.repository, parent_work_item_id, clock=self.clock, ids=self.ids)
-        if parent.read_model.status != "running" or parent.read_model.current_attempt is None:
-            raise ChildError("parent Work Item is not running")
+        if (
+            parent.read_model.status != "running"
+            or parent.read_model.current_attempt is None
+            or parent.read_model.current_attempt.session_ref != parent_session_id
+        ):
+            raise ChildError("parent Work Item is not running for the parent Session")
         parent_attempt_id = parent.read_model.current_attempt.attempt_id
         child_session_id = self.ids.new_id()
         child_work_item_id = self.ids.new_id()
@@ -712,21 +874,64 @@ class DurableChildFactory:
         recovery_ref = f"child://{child_session_id}/attempt/{attempt_id}"
         reserved = _reserved_target_ref(spec.adapter_family, child_session_id)
         child_spec = spec.retained()
-        task_artifact = self.artifacts.put(spec.task.encode(), media_type="text/plain; charset=utf-8")
-        child_spec["task_artifact_ref"] = task_artifact.as_dict()
-        child_spec["task_artifact_store"] = str(self.artifacts._root)
-        child_spec["artifact_store_root"] = str(self.artifacts._root)
-        child_spec["work_item_repository_path"] = str(self._repository_path)
         config_fn = getattr(self.adapters[spec.adapter_family], "retained_config", None)
         config = config_fn() if callable(config_fn) else {}
         if not isinstance(config, Mapping):
             raise ChildError("child adapter config is not durable")
         child_spec["adapter_config"] = dict(config)
-        execution_target: dict[str, Any] = {"ref": reserved}
-        if spec.adapter_family == RayJobAdapter.family:
-            execution_target["metadata"] = {"job": {"job_id": reserved.removeprefix("job:"), "agent_id": child_session_id, "owner_agent": parent_session_id, "kind": "agent", "state": "accepted", "seq": 0, "task_descriptor": {"child_session_id": child_session_id, "recovery_ref": recovery_ref, "task_hash": child_spec["task_hash"]}, "workspace": str(self.workspace), "artifact_store_root": str(self.artifacts._root)}}
-        initial = ChildState(child_session_id, child_work_item_id, parent_session_id, root_session_id, parent_work_item_id, attempt_id, recovery_ref, reserved, spec.adapter_family, "starting", 0, startup_phase="recorded", startup_lease_until=time.time() + 30.0, child_spec=child_spec, execution_target=execution_target)
-        self._create_record(initial)
+        created_artifacts: set[ArtifactRef] = set()
+        with self.artifacts.transaction():
+            task_artifact = self.artifacts.put(
+                spec.task.encode(),
+                media_type="text/plain; charset=utf-8",
+                created=created_artifacts,
+            )
+            child_spec["task_artifact_ref"] = task_artifact.as_dict()
+            child_spec["task_artifact_store"] = str(self.artifacts._root)
+            child_spec["artifact_store_root"] = str(self.artifacts._root)
+            child_spec["work_item_repository_path"] = str(self._repository_path)
+            execution_target: dict[str, Any] = {"ref": reserved}
+            if spec.adapter_family == RayJobAdapter.family:
+                execution_target["metadata"] = {
+                    "job": {
+                        "job_id": reserved.removeprefix("job:"),
+                        "agent_id": child_session_id,
+                        "owner_agent": parent_session_id,
+                        "kind": "agent",
+                        "state": "accepted",
+                        "seq": 0,
+                        "task_descriptor": {
+                            "child_session_id": child_session_id,
+                            "recovery_ref": recovery_ref,
+                            "task_hash": child_spec["task_hash"],
+                        },
+                        "workspace": str(self.workspace),
+                        "artifact_store_root": str(self.artifacts._root),
+                    }
+                }
+            initial = ChildState(
+                child_session_id,
+                child_work_item_id,
+                parent_session_id,
+                root_session_id,
+                parent_work_item_id,
+                attempt_id,
+                recovery_ref,
+                reserved,
+                spec.adapter_family,
+                "starting",
+                0,
+                startup_phase="recorded",
+                startup_lease_until=time.time() + 30.0,
+                child_spec=child_spec,
+                execution_target=execution_target,
+            )
+            try:
+                self._create_record(initial)
+            except BaseException:
+                for artifact in created_artifacts:
+                    self.artifacts.discard(artifact)
+                raise
         product = Session.start(spec.lock, spec.task, session_id=child_session_id, clock=self.clock, ids=self.ids)
         create_session(self.workspace, product)
         self._require_start_active(child_session_id)
@@ -737,6 +942,11 @@ class DurableChildFactory:
             or parent.read_model.status != "running"
             or parent.read_model.current_attempt is None
         ):
+            self._cancel_unpublished_start(
+                initial,
+                "parent owner became terminal during child startup",
+                signal=False,
+            )
             raise ChildError("parent owner became terminal during child startup")
         child = parent.delegate(
             spec.title,
@@ -793,7 +1003,11 @@ class DurableChildFactory:
             try:
                 self._require_start_active(child_session_id)
                 self._require_parent_start_active(parent_session_id, root_session_id)
-                self._require_parent_work_start_active(parent_work_item_id, parent_attempt_id)
+                self._require_parent_work_start_active(
+                    parent_work_item_id,
+                    parent_attempt_id,
+                    parent_session_id,
+                )
                 state = self._final_launch_fence(state, parent_attempt_id)
                 if state.terminal_count:
                     raise ExpectedRevisionConflict("child owner became terminal before launch")
@@ -892,7 +1106,7 @@ class DurableChildFactory:
             policy = CancellationPolicy.from_dict(state.child_spec["cancellation_policy"])
             if policy.mode == "never" or "operator" not in policy.cancellable_by:
                 raise ChildError("operator is not authorized to cancel this Work Item")
-            return self._cancel_unpublished_start(state, reason)
+            return self._cancel_unpublished_start(state, reason, signal=False)
         child = WorkItem.restore(self.repository, state.child_work_item_id, clock=self.clock, ids=self.ids)
         if child.read_model.status in _TERMINAL:
             return self._adopt_terminal_work_item(state, child)
@@ -969,6 +1183,37 @@ class DurableChildFactory:
         return self._settle(reserved, outcome, state.result_refs, allow_unprepared=outcome != "completed")
 
     def _settle(self, state: ChildState, outcome: str, result_refs: Sequence[str], *, allow_unprepared: bool) -> ChildState:
+        if outcome != "canceled":
+            parent_product, _ = load_session(
+                self.workspace, state.parent_session_id
+            )
+            parent_work = WorkItem.restore(
+                self.repository,
+                state.parent_work_item_id,
+                clock=self.clock,
+                ids=self.ids,
+            )
+            parent_attempt = parent_work.read_model.current_attempt
+            if (
+                parent_product.read_model.status != "running"
+                or parent_work.read_model.status != "running"
+                or parent_attempt is None
+                or parent_attempt.session_ref != state.parent_session_id
+            ):
+                raise LateResultRejected(
+                    "child settlement cannot follow parent termination"
+                )
+        if outcome == "completed":
+            if allow_unprepared or not state.result_prepared:
+                raise PreparationRequired(
+                    "result/artifact preparation must precede settlement"
+                )
+            if tuple(result_refs) != state.result_refs:
+                raise ExpectedRevisionConflict(
+                    "settlement result refs do not match prepared refs"
+                )
+            for digest in result_refs:
+                self.artifacts.read(artifact_store_ref(self.artifacts._root, digest))
         child = WorkItem.restore(self.repository, state.child_work_item_id, clock=self.clock, ids=self.ids)
         work_status = child.read_model.status
         latest_attempt = child.read_model.attempts[-1] if child.read_model.attempts else None
@@ -1013,11 +1258,19 @@ class DurableChildFactory:
         child: WorkItem,
         *,
         allow_cancellation_intent: bool = False,
+        execution_stopped: bool = False,
     ) -> ChildState:
-        """Join an already-terminal Work Item without issuing a late cancel."""
+        """Join an already-terminal Work Item after cancellation cleanup."""
         outcome = child.read_model.status
         if outcome not in _TERMINAL:
             raise ValueError("terminal Work Item adoption requires a terminal outcome")
+        if (
+            outcome == "canceled"
+            and state.launch_published
+            and not execution_stopped
+            and self.adapters[state.adapter_family].cancel(state.execution_target) is False
+        ):
+            return state
         session, _ = load_session(self.workspace, state.child_session_id)
         if session.read_model.status in _TERMINAL and session.read_model.status != outcome:
             raise ChildError("Product Session terminal outcome disagrees with Work Item")
@@ -1176,6 +1429,17 @@ class DurableChildFactory:
         return self._launch(state, activation, self._spec(state))
     def _repair_terminal_owners(self, state: ChildState) -> None:
         outcome = state.terminal_outcome or state.status
+        child_events = self.repository.read(state.child_work_item_id)
+        child = (
+            WorkItem.restore(
+                self.repository,
+                state.child_work_item_id,
+                clock=self.clock,
+                ids=self.ids,
+            )
+            if child_events
+            else None
+        )
         try:
             session, _ = load_session(self.workspace, state.child_session_id)
         except FileNotFoundError:
@@ -1198,10 +1462,6 @@ class DurableChildFactory:
             record = self._registry("get", state.child_session_id)
             if record is not None:
                 record.product_session = session
-        try:
-            child = WorkItem.restore(self.repository, state.child_work_item_id, clock=self.clock, ids=self.ids)
-        except (ChildError, ValueError):
-            child = None
         if child is not None:
             work_status = child.read_model.status
             if work_status in _TERMINAL and work_status != outcome:
@@ -1242,6 +1502,7 @@ class DurableChildFactory:
                 return self._cancel_unpublished_start(
                     state,
                     state.cancellation_reason or "operator request",
+                    signal=False,
                 )
             child = WorkItem.restore(
                 self.repository,
@@ -1250,10 +1511,19 @@ class DurableChildFactory:
                 ids=self.ids,
             )
             if child.read_model.status in _TERMINAL:
+                if self.adapters[state.adapter_family].cancel(
+                    state.execution_target
+                ) is False:
+                    return state
+                if child.read_model.status != "canceled":
+                    raise LateResultRejected(
+                        "terminal Work Item outcome cannot replace requested cancellation"
+                    )
                 return self._adopt_terminal_work_item(
                     state,
                     child,
                     allow_cancellation_intent=True,
+                    execution_stopped=True,
                 )
             if child.read_model.current_attempt is None:
                 if self.adapters[state.adapter_family].cancel(state.execution_target) is False:
@@ -1266,7 +1536,11 @@ class DurableChildFactory:
         if state.status == "starting":
             if not self.repository.read(state.child_work_item_id):
                 if state.cancellation_requested:
-                    return self._cancel_unpublished_start(state, state.cancellation_reason or "operator request")
+                    return self._cancel_unpublished_start(
+                        state,
+                        state.cancellation_reason or "operator request",
+                        signal=False,
+                    )
                 if state.startup_phase == "recorded" and state.startup_lease_until is not None and state.startup_lease_until > time.time():
                     return state
                 return self._abort_startup(state)
@@ -1298,6 +1572,7 @@ class DurableChildFactory:
                 self._require_parent_work_start_active(
                     state.parent_work_item_id,
                     parent_attempt_id,
+                    state.parent_session_id,
                 )
             except (ChildError, FileNotFoundError, ValueError):
                 return self._cancel_unpublished_start(
@@ -1386,6 +1661,14 @@ class DurableChildFactory:
                     return state
                 state = self._launch(state, activation, self._spec(state))
         if state.status == "running":
+            child = WorkItem.restore(
+                self.repository,
+                state.child_work_item_id,
+                clock=self.clock,
+                ids=self.ids,
+            )
+            if child.read_model.status in _TERMINAL:
+                return self._adopt_terminal_work_item(state, child)
             try:
                 product, _ = load_session(self.workspace, child_session_id)
             except FileNotFoundError:
@@ -1394,10 +1677,34 @@ class DurableChildFactory:
                 record = self._registry("get", child_session_id)
                 if record is not None:
                     record.product_session = product
+                product_outcome = product.read_model.status
+                if product_outcome in _TERMINAL:
+                    if product_outcome == "completed" and not state.result_prepared:
+                        raise ChildError(
+                            "completed child Product Session has no prepared result"
+                        )
+                    if (
+                        self.adapters[state.adapter_family].cancel(
+                            state.execution_target
+                        )
+                        is False
+                    ):
+                        return state
+                    return self._settle(
+                        state,
+                        product_outcome,
+                        state.result_refs,
+                        allow_unprepared=product_outcome != "completed",
+                    )
                 self._status(state)
         if state.settlement:
             payload = state.settlement
-            return self._settle(state, str(payload["outcome"]), tuple(str(ref) for ref in payload.get("result_refs", ())), allow_unprepared=True)
+            return self._settle(
+                state,
+                str(payload["outcome"]),
+                tuple(str(ref) for ref in payload.get("result_refs", ())),
+                allow_unprepared=str(payload["outcome"]) != "completed",
+            )
         if state.cancellation_requested:
             if self.adapters[state.adapter_family].cancel(state.execution_target) is False:
                 return state
@@ -1504,8 +1811,8 @@ class UnavailableChildAdapter:
     def observe(self, target: Mapping[str, Any]) -> str:
         return "absent"
 
-    def cancel(self, target: Mapping[str, Any]) -> None:
-        return None
+    def cancel(self, target: Mapping[str, Any]) -> bool:
+        return False
 
     def prepare_result(self, target: Mapping[str, Any], spec: ChildSpec) -> bytes | ArtifactRef | None:
         return None
@@ -1577,8 +1884,30 @@ class DurableChildReconciler:
             else:
                 adapters.append(factory())
         adapters.extend(self._adapters)
-        if family and not any(adapter.family == family for adapter in adapters):
-            adapters.append(UnavailableChildAdapter(family))
+        records = self.registry.records()
+        if hasattr(records, "__await__"):
+            records = await records
+        retained_families = {family} if family else set()
+        for candidate in records:
+            candidate_metadata = (
+                candidate.metadata
+                if isinstance(candidate.metadata, Mapping)
+                else {}
+            )
+            candidate_state = candidate_metadata.get("durable_child")
+            candidate_family = (
+                candidate_state.get("adapter_family")
+                if isinstance(candidate_state, Mapping)
+                and candidate_metadata.get("workspace") == workspace
+                else None
+            )
+            if isinstance(candidate_family, str) and candidate_family:
+                retained_families.add(candidate_family)
+        available_families = {adapter.family for adapter in adapters}
+        adapters.extend(
+            UnavailableChildAdapter(retained_family)
+            for retained_family in sorted(retained_families - available_families)
+        )
         loop = asyncio.get_running_loop()
         artifact_store = ArtifactStore(Path(artifact_store_root)) if isinstance(artifact_store_root, str) else None
         return DurableChildFactory(workspace, registry=_RegistryThreadBridge(self.registry, loop), repository=repository, adapters=adapters, artifact_store=artifact_store)
@@ -1592,6 +1921,11 @@ class DurableChildReconciler:
         state = await asyncio.to_thread(factory._record_state, child_session_id)
         return await asyncio.to_thread(factory.cancel, child_session_id, expected_revision=state.revision, reason=reason)
     async def cancel_tree(self, parent_session_id: str, *, reason: str = "operator request") -> tuple[ChildState, ...]:
+        close_admission = getattr(self.registry, "close_admission", None)
+        if callable(close_admission):
+            closed = close_admission(parent_session_id)
+            if hasattr(closed, "__await__"):
+                await closed
         records = self.registry.records()
         if hasattr(records, "__await__"):
             records = await records
@@ -1627,6 +1961,7 @@ class RayJobAdapter:
         self._default_actor_launcher = actor_launcher is None
         self._actor_launcher = self._launch_actor if self._default_actor_launcher else actor_launcher
         self._actors: dict[str, Any] = {}
+        self._actor_lookup_unavailable: set[str] = set()
         self._workspace: Path | None = None
 
     def bind_workspace(self, workspace: Path) -> None:
@@ -1694,11 +2029,28 @@ class RayJobAdapter:
             return actor
         try:
             import ray
+
             actor = ray.get_actor(self._actor_name(job_id))
-        except (ImportError, ValueError):
+        except (ImportError, RuntimeError):
+            self._actor_lookup_unavailable.add(job_id)
             return None
+        except ValueError:
+            self._actor_lookup_unavailable.discard(job_id)
+            return None
+        self._actor_lookup_unavailable.discard(job_id)
         self._actors[job_id] = actor
         return actor
+
+    def _refresh_actor_after_rpc_failure(
+        self, job_id: str, failed_actor: Any
+    ) -> Any | None:
+        if self._actors.get(job_id) is failed_actor:
+            self._actors.pop(job_id, None)
+        try:
+            refreshed = self._lookup_actor(job_id)
+        except BaseException:
+            return None
+        return refreshed
     def recover(self, target: Mapping[str, Any]) -> ExecutionTarget | None:
         job_id = str(target.get("ref", "")).removeprefix("job:")
         actor = self._lookup_actor(job_id)
@@ -1722,20 +2074,36 @@ class RayJobAdapter:
         if self.orchestrator.job_manager.get(job_id) is not None:
             return
         from breadboard_engine.orchestration.job_manager import JobRef
+
         try:
             job = JobRef(
                 job_id=job_id,
                 agent_id=str(job_data["agent_id"]),
                 owner_agent=str(job_data["owner_agent"]),
                 kind=str(job_data["kind"]),
-                state=str(job_data.get("state") or "accepted"),
+                state=(
+                    "accepted"
+                    if str(job_data.get("state") or "accepted") == "completed"
+                    else str(job_data.get("state") or "accepted")
+                ),
                 seq=int(job_data.get("seq") or 0),
                 task_descriptor=dict(job_data.get("task_descriptor") or {}),
-                result_payload=dict(job_data["result_payload"]) if isinstance(job_data.get("result_payload"), Mapping) else None,
+                result_payload=dict(job_data["result_payload"])
+                if isinstance(job_data.get("result_payload"), Mapping)
+                else None,
             )
         except (KeyError, TypeError, ValueError):
             return
         self.orchestrator.job_manager.restore_job(job)
+
+    def _mark_job_failed(self, target: Mapping[str, Any], job_id: str) -> None:
+        marked = self.orchestrator.job_manager.update_state(job_id, "failed")
+        metadata = target.get("metadata")
+        job_data = metadata.get("job") if isinstance(metadata, Mapping) else None
+        if isinstance(job_data, dict):
+            job_data["state"] = "failed"
+            if marked is not None:
+                job_data["seq"] = marked.seq
 
 
     @staticmethod
@@ -1796,6 +2164,13 @@ class RayJobAdapter:
                 task_descriptor=task_descriptor,
                 job_id=job_id,
             ).job
+        elif not isinstance(job.task_descriptor, dict) or job.task_descriptor.get("invocation_id") != invocation_id:
+            job.task_descriptor = dict(job.task_descriptor or {})
+            job.task_descriptor["invocation_id"] = invocation_id
+        if job.state in {"completed", "failed", "killed"}:
+            raise ChildError(
+                f"Ray job {job_id} is already terminal ({job.state})"
+            )
         actor = self._lookup_actor(job_id)
         try:
             if actor is None:
@@ -1836,27 +2211,72 @@ class RayJobAdapter:
             and job_data.get("state") == "completed"
             and isinstance(job_data.get("result_payload"), Mapping)
         ):
+            try:
+                durable_payload = self._durably_prepare_result(
+                    target, job_data["result_payload"]
+                )
+            except FileNotFoundError:
+                self._mark_job_failed(target, job_id)
+                return "failed"
+            except OSError:
+                return "accepted"
+            except (ChildError, KeyError, RuntimeError, TypeError, ValueError):
+                self._mark_job_failed(target, job_id)
+                return "failed"
+            if job is not None and job.state == "completed":
+                marked = job
+            else:
+                marked = self.orchestrator.job_manager.update_state(
+                    job_id,
+                    "completed",
+                    result_payload=dict(durable_payload),
+                )
+            if marked is None:
+                self._mark_job_failed(target, job_id)
+                return "failed"
+            if isinstance(job_data, dict):
+                job_data["state"] = "completed"
+                job_data["seq"] = marked.seq
+                job_data["result_payload"] = dict(durable_payload)
             return "completed"
         actor = self._lookup_actor(job_id)
         if actor is None:
+            if job_id in self._actor_lookup_unavailable:
+                return "pending"
             if job is not None and job.state == "completed":
                 return "completed"
             if job is not None and job.state not in {"failed", "killed"}:
                 self.orchestrator.job_manager.update_state(job_id, "failed")
             return "absent"
         if self._invocation_state(actor, self._invocation_id(job_id)) == "missing":
-            return "absent"
+            if isinstance(job_data, Mapping) and job_data.get("seq") == 0:
+                return "absent"
+            return "absent" if self.cancel(target) else "pending"
         try:
             state = str(self._ray_get(getattr(actor, "get_state", None))).lower()
         except BaseException:
-            return "pending"
+            if getattr(actor, "get_invocation_state", None) is None:
+                return "pending"
+            actor = self._refresh_actor_after_rpc_failure(job_id, actor)
+            if actor is None:
+                if job_id in self._actor_lookup_unavailable:
+                    return "pending"
+                self._mark_job_failed(target, job_id)
+                return "absent"
+            try:
+                state = str(self._ray_get(getattr(actor, "get_state", None))).lower()
+            except BaseException:
+                return "pending"
         if state == "completed":
             result = getattr(actor, "get_result", None)
             if result is None:
                 if job is not None and job.state not in {"failed", "killed"}:
                     self.orchestrator.job_manager.update_state(job_id, "failed")
                 return "failed"
-            result_payload = self._ray_get(result)
+            try:
+                result_payload = self._ray_get(result)
+            except BaseException:
+                return "pending"
             if not isinstance(result_payload, Mapping):
                 if job is not None and job.state not in {"failed", "killed"}:
                     self.orchestrator.job_manager.update_state(job_id, "failed")
@@ -1864,11 +2284,19 @@ class RayJobAdapter:
             try:
                 durable_payload = self._durably_prepare_result(target, result_payload)
             except ChildError:
-                if job is not None and job.state not in {"failed", "killed"}:
-                    self.orchestrator.job_manager.update_state(job_id, "failed")
+                self._mark_job_failed(target, job_id)
                 return "failed"
-            except (KeyError, OSError, RuntimeError, TypeError, ValueError):
+            except (KeyError, TypeError, ValueError):
+                self._mark_job_failed(target, job_id)
+                return "failed"
+            except FileNotFoundError:
+                self._mark_job_failed(target, job_id)
+                return "failed"
+            except OSError:
                 return "accepted"
+            except RuntimeError:
+                self._mark_job_failed(target, job_id)
+                return "failed"
             metadata = target.get("metadata")
             job_data = metadata.get("job") if isinstance(metadata, Mapping) else None
             if isinstance(job_data, dict):
@@ -1900,24 +2328,36 @@ class RayJobAdapter:
             job_data["result_payload"] = dict(payload)
     def cancel(self, target: Mapping[str, Any]) -> bool:
         job_id = str(target.get("ref", "")).removeprefix("job:")
+        metadata = target.get("metadata")
+        job_data = metadata.get("job") if isinstance(metadata, Mapping) else None
+        has_recovery_metadata = isinstance(job_data, Mapping) and all(
+            key in job_data for key in ("agent_id", "owner_agent", "kind")
+        )
+        self._restore_job(target, job_id)
         job = self.orchestrator.job_manager.get(job_id)
         if job is not None and job.state in {"completed", "failed", "killed"}:
             return True
         actor = self._lookup_actor(job_id)
-        if actor is not None:
-            try:
-                cancel = getattr(actor, "cancel", None)
-                if cancel is not None and not hasattr(cancel, "remote"):
-                    if cancel() is False:
-                        return False
-                else:
-                    import ray
-                    ray.kill(actor, no_restart=True)
-            except BaseException:
+        if actor is None:
+            if has_recovery_metadata:
                 return False
+            return (
+                self.orchestrator.job_manager.update_state(job_id, "killed") is not None
+            )
+        try:
+            cancel = getattr(actor, "cancel", None)
+            if cancel is not None and not hasattr(cancel, "remote"):
+                if cancel() is False:
+                    return False
+            else:
+                import ray
+
+                ray.kill(actor, no_restart=True)
+        except BaseException:
+            return False
         marked = self.orchestrator.job_manager.update_state(job_id, "killed")
-        metadata = target.get("metadata")
-        job_data = metadata.get("job") if isinstance(metadata, Mapping) else None
+        if job is not None and marked is None:
+            return False
         if isinstance(job_data, dict) and marked is not None:
             job_data["state"] = "killed"
             job_data["seq"] = marked.seq
@@ -2006,24 +2446,48 @@ class ProcessExecutionAdapter:
             raise ChildError(f"process child workspace is unavailable: {workspace}")
         return workspace
 
-
     @staticmethod
-    def _identity(pid: int) -> tuple[str, int]:
-        try:
-            raw = subprocess.check_output(
-                ["ps", "-p", str(pid), "-o", "lstart=,pgid="],
-                text=True,
-            ).strip()
-        except subprocess.CalledProcessError as error:
-            raise ProcessLookupError(pid) from error
-        fields = raw.rsplit(None, 1)
-        if len(fields) != 2:
-            raise RuntimeError(f"process identity inspection returned malformed data for pid {pid}")
-        try:
-            group = int(fields[1])
-        except ValueError as error:
-            raise RuntimeError(f"process identity inspection returned malformed group for pid {pid}") from error
-        return "sha256:" + hashlib.sha256(fields[0].encode()).hexdigest(), group
+    def _process_start_token(pid: int) -> str | int | None:
+        if sys.platform.startswith("linux"):
+            try:
+                data = Path(f"/proc/{pid}/stat").read_bytes()
+                boot_id = Path("/proc/sys/kernel/random/boot_id").read_text(
+                    encoding="ascii"
+                ).strip()
+            except OSError:
+                return None
+            fields = data[data.rfind(b")") + 1 :].split()
+            if len(fields) <= 19:
+                return None
+            try:
+                start_time = int(fields[19])
+            except ValueError:
+                return None
+            return f"{boot_id}:{start_time}"
+        if sys.platform == "darwin":
+            libc = ctypes.CDLL(None, use_errno=True)
+            mib = (ctypes.c_int * 4)(1, 14, 1, pid)
+            length = ctypes.c_size_t(0)
+            if libc.sysctl(mib, 4, None, ctypes.byref(length), None, 0) != 0:
+                return None
+            timeval_size = struct.calcsize("<qi")
+            buffer = (ctypes.c_char * length.value)()
+            if (
+                libc.sysctl(mib, 4, buffer, ctypes.byref(length), None, 0) != 0
+                or length.value < timeval_size
+            ):
+                return None
+            seconds, microseconds = struct.unpack_from("<qi", buffer.raw, 0)
+            return seconds * 1_000_000 + microseconds
+        return None
+
+    @classmethod
+    def _identity(cls, pid: int) -> tuple[str, int]:
+        start_token = cls._process_start_token(pid)
+        if start_token is None:
+            raise ProcessLookupError(pid)
+        group = os.getpgid(pid)
+        return f"kernel:{start_token}", group
     def _publish(self, target: ExecutionTarget) -> None:
         return None
     @staticmethod
@@ -2175,28 +2639,37 @@ class ProcessExecutionAdapter:
         if self.observe({"pid": pid, "start_token": token, "process_group_id": group}) != "running":
             return None
         return ExecutionTarget(str(target["ref"]), pid, token, group, metadata=dict(target.get("metadata") or {}))
+    def _signal_verified(self, target: Mapping[str, Any], signum: int) -> bool:
+        pid = target.get("pid")
+        token = target.get("start_token")
+        group = target.get("process_group_id")
+        if type(pid) is not int or type(token) is not str or type(group) is not int:
+            return False
+        try:
+            observed_token, observed_group = self._identity(pid)
+        except (OSError, ProcessLookupError, RuntimeError):
+            return False
+        if observed_token != token or observed_group != group:
+            return False
+        try:
+            os.killpg(group, signum)
+        except ProcessLookupError:
+            return True
+        except PermissionError:
+            return False
+        return True
+
     def cancel(self, target: Mapping[str, Any]) -> bool:
         observed = self.observe(target)
         if observed == "absent":
             return True
         if observed != "running":
             return False
-        group = target.get("process_group_id")
-        if type(group) is not int:
-            return False
-        try:
-            os.killpg(group, 15)
-        except ProcessLookupError:
-            return True
-        except PermissionError:
+        if not self._signal_verified(target, 15):
             return False
         if self._wait_for_exit(target, self._TERM_TIMEOUT_SECONDS):
             return True
-        try:
-            os.killpg(group, 9)
-        except ProcessLookupError:
-            return True
-        except PermissionError:
+        if not self._signal_verified(target, 9):
             return False
         return self._wait_for_exit(target, self._KILL_TIMEOUT_SECONDS)
 

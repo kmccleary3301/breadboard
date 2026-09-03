@@ -2226,23 +2226,42 @@ class SessionService:
             )
         if isinstance(parent_cancellation, Mapping) and repository is not None:
             work_item_id = str(parent_cancellation.get("work_item_id") or "").strip()
-            reason = str(parent_cancellation.get("reason") or "operator request")
+            reason_value = parent_cancellation.get("reason")
             workspace = str(metadata.get("workspace") or "").strip()
+            if not work_item_id:
+                raise RuntimeError(
+                    "durable parent cancellation has no parent Work Item"
+                )
+            if not workspace:
+                raise RuntimeError("durable parent cancellation has no workspace")
+            if not isinstance(reason_value, str) or not reason_value.strip():
+                raise RuntimeError("durable parent cancellation reason is invalid")
+            reason = reason_value.strip()
+            child_refs = parent_cancellation.get("child_recovery_refs")
+            if not isinstance(child_refs, (list, tuple)) or any(
+                not isinstance(ref, str) or not ref.strip() for ref in child_refs
+            ):
+                raise RuntimeError(
+                    "durable parent cancellation child references are invalid"
+                )
             if work_item_id and workspace:
-                child_refs = parent_cancellation.get("child_recovery_refs") or ()
-                if not isinstance(child_refs, (list, tuple)) or any(not isinstance(ref, str) or not ref.strip() for ref in child_refs):
-                    raise RuntimeError("durable parent cancellation child references are invalid")
                 cancel_child = getattr(self._durable_child_reconciler, "cancel", None)
-                reconcile_child = getattr(self._durable_child_reconciler, "__call__", None)
+                reconcile_child = getattr(
+                    self._durable_child_reconciler, "__call__", None
+                )
                 for child_ref in child_refs:
                     if not callable(cancel_child):
                         if not callable(reconcile_child):
-                            raise RuntimeError("durable parent cancellation cannot replay child cancellation")
+                            raise RuntimeError(
+                                "durable parent cancellation cannot replay child cancellation"
+                            )
                         repaired = reconcile_child(child_ref)
                         if inspect.isawaitable(repaired):
                             repaired = await repaired
                         if getattr(repaired, "terminal_count", 0) != 1:
-                            raise RuntimeError("durable parent cancellation replay did not settle child")
+                            raise RuntimeError(
+                                "durable parent cancellation replay did not settle child"
+                            )
                         continue
                     try:
                         result = cancel_child(child_ref, reason=reason)
@@ -2267,7 +2286,11 @@ class SessionService:
                 product_status = parent_product.read_model.status
                 work_status = parent_work.read_model.status
                 try:
-                    if work_status in {"canceled", "completed", "failed"} and product_status not in {
+                    if work_status in {
+                        "canceled",
+                        "completed",
+                        "failed",
+                    } and product_status not in {
                         "canceled",
                         "completed",
                         "failed",
@@ -2276,13 +2299,17 @@ class SessionService:
                             mutate_session(
                                 workspace,
                                 record.session_id,
-                                lambda current: current.complete("replayed Work Item completion"),
+                                lambda current: current.complete(
+                                    "replayed Work Item completion"
+                                ),
                             )
                         elif work_status == "failed":
                             mutate_session(
                                 workspace,
                                 record.session_id,
-                                lambda current: current.fail("work_item", "replayed Work Item failure"),
+                                lambda current: current.fail(
+                                    "work_item", "replayed Work Item failure"
+                                ),
                             )
                         else:
                             mutate_session(
@@ -2290,7 +2317,11 @@ class SessionService:
                                 record.session_id,
                                 lambda current: current.cancel(reason),
                             )
-                    elif product_status in {"canceled", "completed", "failed"} and work_status not in {
+                    elif product_status in {
+                        "canceled",
+                        "completed",
+                        "failed",
+                    } and work_status not in {
                         "canceled",
                         "completed",
                         "failed",
@@ -2306,7 +2337,9 @@ class SessionService:
                                 attempt_id=attempt.attempt_id,
                             )
                         elif product_status == "failed":
-                            parent_work.fail("product_session", "replayed Product Session failure")
+                            parent_work.fail(
+                                "product_session", "replayed Product Session failure"
+                            )
                         else:
                             parent_work.cancel("operator", reason)
                     elif product_status not in {
@@ -2333,16 +2366,52 @@ class SessionService:
                     not in {"canceled", "completed", "failed"}
                     or parent_product.read_model.status != parent_work.read_model.status
                 ):
-                    raise RuntimeError("durable parent cancellation did not settle owners")
+                    raise RuntimeError(
+                        "durable parent cancellation did not settle owners"
+                    )
                 bridge_status = {
                     "completed": SessionStatus.COMPLETED,
                     "failed": SessionStatus.FAILED,
                     "canceled": SessionStatus.STOPPED,
                 }[parent_product.read_model.status]
                 record.product_session = parent_product
+                terminal_runner = SessionRunner(
+                    session=record,
+                    registry=self.registry,
+                    request=SessionCreateRequest(
+                        task="", metadata=dict(record.metadata or {})
+                    ),
+                )
+                self._bind_restored_durable_product_session(
+                    record,
+                    terminal_runner,
+                )
+                self._restore_retained_workspace_attachments(record, terminal_runner)
+                terminal_runner.reconcile_retained_input_admissions()
+                async with record.admission_lock:
+                    record.admission_closed = True
+                await terminal_runner._terminalize_admitted_turns(
+                    outcome={
+                        "completed": "completed",
+                        "failed": "failed",
+                        "canceled": "cancelled",
+                    }[parent_product.read_model.status],
+                    reason="restored_parent_cancellation",
+                    error_code=(
+                        "runtime_failure"
+                        if parent_product.read_model.status == "failed"
+                        else None
+                    ),
+                )
+                terminal_runner._commit_terminal_product_session_locked()
                 await self.registry.update_status(record.session_id, bridge_status)
+                async with record.dispatch_lock:
+                    setattr(record, "_dispatcher_complete", True)
                 metadata["durable_parent_cancellation"] = None
-                await self.registry.update_metadata(record.session_id, metadata=metadata)
+                await self.registry.update_metadata(
+                    record.session_id, metadata=metadata
+                )
+                record.runner = None
                 record.loaded_from_retained_state = False
                 return
         metadata = dict(record.metadata or {})

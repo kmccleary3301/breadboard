@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+import threading
 import uuid
 
 import ray
@@ -15,7 +16,7 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
-@ray.remote
+@ray.remote(concurrency_groups={"execution": 1, "control": 4})
 class OpenCodeAgent:
     """
     Minimal agent session actor that executes tool-call style parts via DevSandboxV2
@@ -58,25 +59,61 @@ class OpenCodeAgent:
         self.state = "accepted"
         self.result_payload: Optional[Dict[str, Any]] = None
         self.error: Optional[str] = None
+        self.invocation_records: Dict[str, str] = {}
+        self._state_lock = threading.Lock()
 
+    @ray.method(concurrency_group="control")
     def get_state(self) -> str:
-        return self.state
+        with self._state_lock:
+            return self.state
 
+    @ray.method(concurrency_group="control")
     def get_result(self) -> Optional[Dict[str, Any]]:
-        return dict(self.result_payload) if self.result_payload is not None else None
+        with self._state_lock:
+            return (
+                dict(self.result_payload)
+                if self.result_payload is not None
+                else None
+            )
 
+    @ray.method(concurrency_group="control")
+    def get_invocation_state(self, invocation_id: str) -> str:
+        return self.invocation_records.get(invocation_id, "missing")
+
+    @ray.method(concurrency_group="execution")
+    def submit_message_once(
+        self, invocation_id: str, parts: List[Dict[str, Any]]
+    ) -> Dict[str, str]:
+        existing = self.invocation_records.get(invocation_id)
+        if existing is not None:
+            return {"state": existing}
+        self.invocation_records[invocation_id] = "accepted"
+        try:
+            self.invocation_records[invocation_id] = "running"
+            self.run_message(parts)
+        except BaseException:
+            self.invocation_records[invocation_id] = "failed"
+            raise
+        self.invocation_records[invocation_id] = "completed"
+        return {"state": "completed"}
+
+    @ray.method(concurrency_group="control")
     def cancel(self) -> str:
-        self.state = "killed"
-        return self.state
+        with self._state_lock:
+            self.state = "killed"
+            return self.state
 
+    @ray.method(concurrency_group="control")
     def get_session_info(self) -> Dict[str, Any]:
-        return {
-            "id": self.session_id,
-            "created": self.time_created,
-            "messages": len(self.messages),
-            "state": self.state,
-        }
+        with self._state_lock:
+            return {
+                "id": self.session_id,
+                "created": self.time_created,
+                "messages": len(self.messages),
+                "state": self.state,
+            }
 
+    @ray.method(concurrency_group="execution")
     def run_message(self, parts: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Execute a message comprised of parts. Supported part types:
@@ -85,12 +122,16 @@ class OpenCodeAgent:
         Returns a response with parts, where tool results appear as
         {type: 'tool_result', name, output, metadata}.
         """
-        if self.state == "killed":
-            raise RuntimeError("agent has been canceled")
-        self.state = "running"
+        with self._state_lock:
+            if self.state == "killed":
+                raise RuntimeError("agent has been canceled")
+            self.state = "running"
         try:
             response_parts: List[Dict[str, Any]] = []
             for p in parts:
+                with self._state_lock:
+                    if self.state == "killed":
+                        raise RuntimeError("agent has been canceled")
                 if p.get("type") == "text":
                     response_parts.append({"type": "echo", "text": p.get("text", "")})
                     continue
@@ -101,24 +142,33 @@ class OpenCodeAgent:
                     response_parts.append({"type": "tool_result", "name": name, **result})
                     continue
             msg = {"time": _now_ms(), "request": parts, "response": response_parts}
-            self.messages.append(msg)
             from breadboard.product.runtime.artifacts import ArtifactStore
             output = json.dumps(msg, sort_keys=True, separators=(",", ":")).encode()
-            artifact = ArtifactStore(self.artifact_store_root).put(output, media_type="application/json")
-            self.result_payload = {"artifact_ref": artifact.as_dict()}
-            self.state = "completed"
+            artifact = ArtifactStore(self.artifact_store_root).put(
+                output, media_type="application/json"
+            )
+            with self._state_lock:
+                if self.state == "killed":
+                    raise RuntimeError("agent has been canceled")
+                self.messages.append(msg)
+                self.result_payload = {"artifact_ref": artifact.as_dict()}
+                self.state = "completed"
             return msg
         except BaseException as error:
             self.error = type(error).__name__
-            self.state = "failed"
+            with self._state_lock:
+                if self.state != "killed":
+                    self.state = "failed"
             raise
 
+    @ray.method(concurrency_group="execution")
     def enable_storage(self, storage_root: str) -> None:
         from breadboard.storage import JSONStorage
 
         self.storage_root = storage_root
         self.store = JSONStorage(storage_root)
 
+    @ray.method(concurrency_group="execution")
     def persist_message(self, message: Dict[str, Any]) -> None:
         if not getattr(self, "store", None):
             return
