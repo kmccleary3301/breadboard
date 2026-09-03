@@ -6,6 +6,7 @@ import type {
 } from "@breadboard/kernel-contracts"
 import {
   createExecutionWorld,
+  isPlacementCompatible,
   type ExecutionWorldV1,
   type TerminalSessionDriverV1,
 } from "@breadboard/execution-drivers"
@@ -51,6 +52,12 @@ function withSandboxOverride(
   const activeOverrides = new Map<string, { promise: Promise<unknown>; controller: AbortController }>()
   return {
     ...driver,
+    supportsCapability(capability, placementClass) {
+      if (driver.supportsCapability(capability, placementClass)) {
+        return true
+      }
+      return isPlacementCompatible(capability, placementClass)
+    },
     execute(request, context) {
       if (context?.signal?.aborted) {
         const isCancelled =

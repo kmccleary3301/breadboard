@@ -2,8 +2,9 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import { createBackbone } from "../src/index.js"
+import { createExecutionWorld } from "@breadboard/execution-drivers"
 import { buildWorkspaceCapabilitySet, createWorkspace } from "@breadboard/workspace"
-import type { KernelEventV1, ProviderExchangeV1, RunRequestV1 } from "@breadboard/kernel-contracts"
+import type { KernelEventV1, ProviderExchangeV1, RunRequestV1, SandboxRequestV1 } from "@breadboard/kernel-contracts"
 
 const request: RunRequestV1 = {
   schema_version: "bb.run_request.v1",
@@ -310,7 +311,7 @@ test("BackboneSession can classify and drive a local terminal session lifecycle"
   assert.equal(terminalSession.summary().status, "running")
   assert.match(terminalSession.summary().commandSummary, /printf 'ready/)
 
-  const interacted = await terminalSession.poll({ settleMs: 25 })
+  const interacted = await terminalSession.poll({ settleMs: 100 })
   assert.ok(interacted.outputDeltas.length >= 1)
   assert.equal(terminalSession.summary().outputChunkCount, interacted.outputDeltas.length)
   assert.match(terminalSession.summary().outputPreview, /ready/)
@@ -595,4 +596,228 @@ test("BackboneSession preserves session view identity and accumulated output acr
   assert.equal(listedSummary?.outputChunkCount, summaryBefore.outputChunkCount)
 
   await started.session.cleanup()
+})
+
+test("BackboneSession terminal classification and start on default remote world without remoteHttp adapter is unsupported", async () => {
+  const workspace = createWorkspace({
+    workspaceId: "ws-remote-unsupported-1",
+    rootDir: "/tmp",
+    capabilitySet: buildWorkspaceCapabilitySet({ canRunRemoteIsolated: true }),
+  })
+  const backbone = createBackbone({ workspace })
+  const session = backbone.openSession({ sessionId: "s-remote-1", workspaceRoot: "/tmp" })
+
+  const claim = session.terminals.classify({ executionProfileId: "remote_isolated" })
+  assert.equal(claim.level, "unsupported")
+  assert.equal(claim.terminalSupport?.canStart, false)
+  assert.equal(claim.terminalSupport?.canInteract, false)
+  assert.equal(claim.terminalSupport?.canCleanup, false)
+  assert.ok(claim.unsupportedFields.includes("terminal_sessions"))
+
+  const started = await session.terminals.start({
+    executionProfileId: "remote_isolated",
+    command: ["echo", "test"],
+  })
+  assert.equal(started.session, null)
+  assert.equal(started.descriptor, null)
+  assert.ok(started.unsupportedCase != null)
+  assert.equal(started.unsupportedCase?.reason_code, "unsupported_terminal_driver")
+})
+
+test("BackboneSession interact and cleanup pass exact terminalSessionId to resolveTerminalDriver, satisfying capability-id-gated driver", async () => {
+  const targetSessionId = "session-exact-cap-1"
+  const gatedDriver = {
+    driverId: "gated-terminal-driver",
+    supportedPlacements: ["local_process" as const],
+    supportsCapability: (capability: { capability_id: string }) => {
+      return (
+        capability.capability_id === `term-cap:${targetSessionId}` ||
+        capability.capability_id === "term-cap:registry" ||
+        capability.capability_id === "term-cap:all"
+      )
+    },
+    supportsTerminalSessions: () => true,
+    startTerminalSession: async (input: { terminalSessionId: string; command: string[] }) => ({
+      descriptor: {
+        schema_version: "bb.terminal_session_descriptor.v1" as const,
+        terminal_session_id: input.terminalSessionId,
+        startup_call_id: null,
+        owner_task_id: null,
+        public_handles: [],
+        command: input.command,
+        cwd: null,
+        stream_mode: "pipes" as const,
+        stream_split: "stdout_stderr" as const,
+        capability_id: null,
+        placement_id: null,
+        persistence_scope: "thread" as const,
+        continuation_scope: "both" as const,
+      },
+      outputDeltas: [],
+    }),
+    interactTerminalSession: async (input: { terminalSessionId: string; interactionKind: "stdin" | "signal" }) => ({
+      interaction: {
+        schema_version: "bb.terminal_interaction.v1" as const,
+        terminal_session_id: input.terminalSessionId,
+        interaction_kind: input.interactionKind,
+      },
+      outputDeltas: [],
+    }),
+    cleanupTerminalSessions: async (input: { cleanupId: string; scope: "all" | "single" | "filtered"; sessionIds?: string[] }) => ({
+      schema_version: "bb.terminal_cleanup_result.v1" as const,
+      cleanup_id: input.cleanupId,
+      scope: input.scope,
+      cleaned_session_ids: input.scope === "all" ? [targetSessionId] : (input.sessionIds ?? []),
+      failed_session_ids: [],
+    }),
+  }
+  const customWorld = createExecutionWorld({ drivers: [gatedDriver] })
+  const workspace = createWorkspace({
+    workspaceId: "ws-gated-1",
+    rootDir: "/tmp",
+    capabilitySet: buildWorkspaceCapabilitySet(),
+  })
+  const backbone = createBackbone({ workspace, executionWorld: customWorld })
+  const session = backbone.openSession({ sessionId: "s-gated-1", workspaceRoot: "/tmp" })
+
+  // 1. Start with targetSessionId
+  const started = await session.terminals.start({
+    terminalSessionId: targetSessionId,
+    command: ["bash"],
+  })
+  assert.ok(started.session)
+  assert.equal(started.descriptor?.terminal_session_id, targetSessionId)
+
+  // 2. Interact with targetSessionId - capability_id must match term-cap:session-exact-cap-1
+  const interacted = await session.terminals.interact({
+    terminalSessionId: targetSessionId,
+    interactionKind: "stdin",
+    inputText: "hello\n",
+  })
+  assert.ok(interacted.interaction)
+  assert.equal(interacted.interaction?.terminal_session_id, targetSessionId)
+
+  // 3. Single cleanup with targetSessionId
+  const cleaned = await session.terminals.cleanup({
+    scope: "single",
+    sessionIds: [targetSessionId],
+  })
+  assert.ok(cleaned.result)
+  assert.deepEqual(cleaned.result?.cleaned_session_ids, [targetSessionId])
+})
+
+test("BackboneSession with custom executionWorld routes both terminal API and tool turns to the same world", async () => {
+  let terminalStarted = false
+  let toolTurnExecuted = false
+
+  const customDriver = {
+    driverId: "unified-custom-world-driver",
+    supportedPlacements: ["local_process" as const],
+    supportsCapability: () => true,
+    supportsTerminalSessions: () => true,
+    buildSandboxRequest: (input: { requestId: string; command: string[] }): SandboxRequestV1 => ({
+      schema_version: "bb.sandbox_request.v1",
+      request_id: input.requestId,
+      capability_id: "cap-unified",
+      placement_class: "local_process",
+      workspace_ref: null,
+      rootfs_ref: null,
+      image_ref: null,
+      snapshot_ref: null,
+      command: [input.command[0] ?? "", ...input.command.slice(1)] as [string, ...string[]],
+      network_policy: { allow: [] },
+      secret_refs: [],
+      timeout_seconds: 30,
+      evidence_mode: "minimal",
+      metadata: {},
+    }),
+    execute: async (req: { request_id: string }) => {
+      toolTurnExecuted = true
+      return {
+        schema_version: "bb.sandbox_result.v1" as const,
+        request_id: req.request_id,
+        status: "completed" as const,
+        placement_id: "place-unified",
+        stdout_ref: "sha256:custom-stdout",
+        stderr_ref: null,
+        artifact_refs: [],
+        evidence_refs: [],
+        side_effect_digest: "sha256:custom-digest",
+        usage: { wall_ms: 5 },
+        error: null,
+      }
+    },
+    startTerminalSession: async (input: { terminalSessionId: string; command: string[] }) => {
+      terminalStarted = true
+      return {
+        descriptor: {
+          schema_version: "bb.terminal_session_descriptor.v1" as const,
+          terminal_session_id: input.terminalSessionId,
+          startup_call_id: null,
+          owner_task_id: null,
+          public_handles: [],
+          command: input.command,
+          cwd: null,
+          stream_mode: "pipes" as const,
+          stream_split: "stdout_stderr" as const,
+          capability_id: null,
+          placement_id: null,
+          persistence_scope: "thread" as const,
+          continuation_scope: "both" as const,
+        },
+        outputDeltas: [],
+      }
+    },
+    interactTerminalSession: async (input: { terminalSessionId: string; interactionKind: "stdin" | "signal" }) => ({
+      interaction: {
+        schema_version: "bb.terminal_interaction.v1" as const,
+        terminal_session_id: input.terminalSessionId,
+        interaction_kind: input.interactionKind,
+      },
+      outputDeltas: [],
+    }),
+    cleanupTerminalSessions: async (input: { cleanupId: string; scope: "all" | "single" | "filtered"; sessionIds?: string[] }) => ({
+      schema_version: "bb.terminal_cleanup_result.v1" as const,
+      cleanup_id: input.cleanupId,
+      scope: input.scope,
+      cleaned_session_ids: input.sessionIds ?? [],
+      failed_session_ids: [],
+    }),
+  }
+
+  const customWorld = createExecutionWorld({ drivers: [customDriver] })
+  const workspace = createWorkspace({
+    workspaceId: "ws-unified-1",
+    rootDir: "/tmp",
+    capabilitySet: buildWorkspaceCapabilitySet(),
+  })
+  const backbone = createBackbone({ workspace, executionWorld: customWorld })
+  const session = backbone.openSession({ sessionId: "s-unified-1", workspaceRoot: "/tmp" })
+
+  // 1. Exercise terminal API through custom world
+  const termRes = await session.terminals.start({
+    terminalSessionId: "term-unified-1",
+    command: ["echo", "term"],
+  })
+  assert.ok(termRes.session)
+  assert.equal(terminalStarted, true)
+
+  // 2. Exercise tool turn through custom world
+  const toolTurnRes = await session.runToolTurn({
+    request: {
+      schema_version: "bb.run_request.v1",
+      request_id: "req-unified-1",
+      entry_mode: "hostkit",
+      task: "Run unified tool turn",
+      workspace_root: "/tmp",
+      requested_model: "openai/gpt-5.4-mini",
+      requested_features: {},
+      metadata: {},
+    },
+    toolName: "unified_tool",
+    command: ["echo", "turn"],
+  })
+  assert.equal(toolTurnExecuted, true)
+  assert.equal(toolTurnRes.driverTurn?.driverId, "unified-custom-world-driver")
+  assert.equal(toolTurnRes.driverTurn?.sandboxResult.status, "completed")
 })

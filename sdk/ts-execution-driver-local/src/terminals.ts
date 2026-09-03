@@ -70,6 +70,120 @@ function normalizeSignal(signal?: string | null): NodeJS.Signals {
   return (signal ?? "SIGTERM") as NodeJS.Signals
 }
 
+function isProcessAlive(pid: number, child?: ChildProcessWithoutNullStreams): boolean {
+  if (child && (child.exitCode !== null || child.signalCode !== null)) {
+    return false
+  }
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function killProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
+  if (child.pid == null) return
+  if (process.platform !== "win32") {
+    try {
+      process.kill(-child.pid, signal)
+    } catch {
+      try {
+        child.kill(signal)
+      } catch {}
+    }
+  } else {
+    try {
+      child.kill(signal)
+    } catch {}
+  }
+}
+
+async function terminateChildProcessTree(
+  child: ChildProcessWithoutNullStreams,
+  initialSignal: NodeJS.Signals,
+  graceMs = 250,
+): Promise<boolean> {
+  const pid = child.pid
+  if (pid == null) return true
+
+  if (!isProcessAlive(pid, child)) {
+    return true
+  }
+
+  killProcessTree(child, initialSignal)
+
+  const exitedGracefully = await new Promise<boolean>((resolve) => {
+    let done = false
+    const onExit = () => {
+      cleanup()
+      resolve(true)
+    }
+    child.once("exit", onExit)
+    child.once("close", onExit)
+
+    const checkTimer = setInterval(() => {
+      if (!isProcessAlive(pid, child)) {
+        cleanup()
+        resolve(true)
+      }
+    }, 20)
+
+    const timeoutTimer = setTimeout(() => {
+      cleanup()
+      resolve(!isProcessAlive(pid, child))
+    }, graceMs)
+
+    function cleanup() {
+      if (!done) {
+        done = true
+        child.removeListener("exit", onExit)
+        child.removeListener("close", onExit)
+        clearInterval(checkTimer)
+        clearTimeout(timeoutTimer)
+      }
+    }
+  })
+
+  if (exitedGracefully) {
+    return true
+  }
+
+  killProcessTree(child, "SIGKILL")
+
+  return new Promise<boolean>((resolve) => {
+    let done = false
+    const onExit = () => {
+      cleanup()
+      resolve(true)
+    }
+    child.once("exit", onExit)
+    child.once("close", onExit)
+
+    const checkTimer = setInterval(() => {
+      if (!isProcessAlive(pid, child)) {
+        cleanup()
+        resolve(true)
+      }
+    }, 20)
+
+    const timeoutTimer = setTimeout(() => {
+      cleanup()
+      resolve(!isProcessAlive(pid, child))
+    }, 500)
+
+    function cleanup() {
+      if (!done) {
+        done = true
+        child.removeListener("exit", onExit)
+        child.removeListener("close", onExit)
+        clearInterval(checkTimer)
+        clearTimeout(timeoutTimer)
+      }
+    }
+  })
+}
+
 export class LocalTerminalSessionManager {
   private readonly sessions = new Map<string, LocalTerminalSessionRecord>()
   private readonly endedSessionIds: string[] = []
@@ -104,9 +218,11 @@ export class LocalTerminalSessionManager {
       persistence_scope: input.persistenceScope ?? "thread",
       continuation_scope: input.continuationScope ?? "both",
     })
+    const isPosix = process.platform !== "win32"
     const child = spawn(input.command[0]!, input.command.slice(1), {
       cwd: input.cwd ?? undefined,
       stdio: ["pipe", "pipe", "pipe"],
+      detached: isPosix,
     })
     const record: LocalTerminalSessionRecord = {
       descriptor,
@@ -178,7 +294,7 @@ export class LocalTerminalSessionManager {
     if (input.interactionKind === "stdin") {
       record.child.stdin.write(decodeChunk(input))
     } else if (input.interactionKind === "signal") {
-      record.child.kill(normalizeSignal(input.signal))
+      killProcessTree(record.child, normalizeSignal(input.signal))
     }
 
     if ((input.settleMs ?? 0) > 0) {
@@ -226,17 +342,22 @@ export class LocalTerminalSessionManager {
         }
         continue
       }
-      record.child.kill(normalizeSignal(input.signal))
-      record.pendingEnd =
-        record.pendingEnd ??
-        buildTerminalEnd({
-          descriptor: record.descriptor,
-          state: "cleaned_up",
-          durationMs: Date.now() - record.startedAtMs,
-        })
-      cleaned.push(sessionId)
-      this.sessions.delete(sessionId)
-      this.rememberEndedSession(sessionId)
+      const initialSignal = normalizeSignal(input.signal)
+      const exited = await terminateChildProcessTree(record.child, initialSignal)
+      if (exited) {
+        record.pendingEnd =
+          record.pendingEnd ??
+          buildTerminalEnd({
+            descriptor: record.descriptor,
+            state: "cleaned_up",
+            durationMs: Date.now() - record.startedAtMs,
+          })
+        cleaned.push(sessionId)
+        this.sessions.delete(sessionId)
+        this.rememberEndedSession(sessionId)
+      } else {
+        failed.push(sessionId)
+      }
     }
     return assertValid<TerminalCleanupResultV1>("terminalCleanupResult", {
       schema_version: "bb.terminal_cleanup_result.v1",

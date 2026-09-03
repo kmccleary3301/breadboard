@@ -1,15 +1,19 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
+import type { ExecutionCapabilityV1, ExecutionPlacementV1 } from "@breadboard/kernel-contracts"
 import {
+  buildOciContainerName,
   buildOciRuntimeInvocation,
   buildOciSandboxRequest,
   chooseOciPlacement,
   executeOciSandboxRequest,
   makeConfiguredOciExecutionDriver,
   makeOciExecutionDriver,
+  makeOciTerminalSessionDriver,
   ociExecutionDriver,
   type OciCommandExecutor,
+  type OciTerminalSessionAdapter,
 } from "../src/index.js"
 
 test("oci driver chooses placement from capability isolation class", () => {
@@ -441,8 +445,8 @@ test("oci driver terminate triggers signal and awaits runtime exit", async () =>
   assert.equal(runtimeExited, true)
   const result = await execPromise
   assert.equal(result.status, "timed_out")
-  assert.ok(issuedCommands.some((c) => c.runtimeArgs.includes("--name") && c.runtimeArgs.includes("bb-oci-req-oci-term-verify")))
-  assert.ok(issuedCommands.some((c) => c.runtimeArgs[0] === "stop" && c.runtimeArgs.includes("bb-oci-req-oci-term-verify")))
+  assert.ok(issuedCommands.some((c) => c.runtimeArgs.includes("--name") && c.runtimeArgs.some((a) => a.startsWith("bb-oci-req-oci-term-verify"))))
+  assert.ok(issuedCommands.some((c) => c.runtimeArgs[0] === "stop" && c.runtimeArgs.some((a) => a.startsWith("bb-oci-req-oci-term-verify"))))
 })
 
 test("oci driver handles stubborn container that resists normal stop and forces kill/rm", async () => {
@@ -487,6 +491,470 @@ test("oci driver handles stubborn container that resists normal stop and forces 
   })
   const result = await execPromise
   assert.equal(result.status, "cancelled")
-  assert.ok(recordedArgs.some((args) => args[0] === "kill" && args.includes("bb-oci-req-stubborn-1")))
-  assert.ok(recordedArgs.some((args) => args[0] === "rm" && args.includes("bb-oci-req-stubborn-1")))
+  assert.ok(recordedArgs.some((args) => args[0] === "kill" && args.some((a) => a.startsWith("bb-oci-req-stubborn-1"))))
+  assert.ok(recordedArgs.some((args) => args[0] === "rm" && args.some((a) => a.startsWith("bb-oci-req-stubborn-1"))))
+})
+
+test("oci driver terminate creates fresh bounded cleanup signal even when work signal is already aborted", async () => {
+  const cleanupSignals: Array<{ arg0: string; signal?: AbortSignal }> = []
+  const customExecutor: OciCommandExecutor = async ({ runtimeArgs, signal }) => {
+    if (runtimeArgs[0] !== "run") {
+      cleanupSignals.push({ arg0: runtimeArgs[0] ?? "", signal })
+    }
+    if (runtimeArgs[0] === "run") {
+      return new Promise((resolve) => {
+        signal?.addEventListener("abort", () => {
+          resolve({
+            exitCode: 137,
+            stdout: "",
+            stderr: "killed",
+          })
+        })
+      })
+    }
+    return { exitCode: 0, stdout: "", stderr: "" }
+  }
+  const driver = makeConfiguredOciExecutionDriver({ commandExecutor: customExecutor })
+  const request = buildOciSandboxRequest({
+    requestId: "req-cleanup-sig",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-cleanup-sig",
+      security_tier: "single_tenant",
+      isolation_class: "oci",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["sleep", "60"],
+    imageRef: "docker://alpine:latest",
+  })
+  const execPromise = driver.execute!(request)
+  const abortController = new AbortController()
+  abortController.abort(new Error("pre-aborted work"))
+  await driver.terminate!(request, {
+    reason: "cancelled",
+    signal: abortController.signal,
+    deadlineAtMs: null,
+  })
+  await execPromise
+  assert.ok(cleanupSignals.length >= 2, "received cleanup subprocess invocations")
+  for (const call of cleanupSignals) {
+    assert.ok(call.signal != null, `cleanup subprocess ${call.arg0} received a signal`)
+    assert.equal(call.signal?.aborted, false, `cleanup subprocess ${call.arg0} signal is not pre-aborted`)
+  }
+})
+
+test("oci driver terminate treats nonzero or hanging stop as failure and executes kill then rm with fresh signals", async () => {
+  const invokedCommands: Array<{ command: string; abortedOnArrival: boolean }> = []
+  const customExecutor: OciCommandExecutor = async ({ runtimeArgs, signal }) => {
+    const cmd = runtimeArgs[0] ?? ""
+    invokedCommands.push({ command: cmd, abortedOnArrival: signal?.aborted ?? false })
+
+    if (cmd === "run") {
+      return new Promise((resolve) => {
+        signal?.addEventListener("abort", () => {
+          resolve({ exitCode: 137, stdout: "", stderr: "killed" })
+        })
+      })
+    }
+    if (cmd === "stop") {
+      // Return nonzero exit code to simulate failed stop
+      return { exitCode: 1, stdout: "", stderr: "stop failed: container unresponsive" }
+    }
+    if (cmd === "kill") {
+      return { exitCode: 0, stdout: "", stderr: "" }
+    }
+    if (cmd === "rm") {
+      return { exitCode: 0, stdout: "", stderr: "" }
+    }
+    return { exitCode: 0, stdout: "", stderr: "" }
+  }
+
+  const driver = makeConfiguredOciExecutionDriver({ commandExecutor: customExecutor })
+  const request = buildOciSandboxRequest({
+    requestId: "req-nonzero-stop",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-nonzero-stop",
+      security_tier: "single_tenant",
+      isolation_class: "oci",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["sleep", "60"],
+    imageRef: "docker://alpine:latest",
+  })
+
+  const execPromise = driver.execute!(request)
+  await driver.terminate!(request, {
+    reason: "cancelled",
+    signal: new AbortController().signal,
+    deadlineAtMs: null,
+  })
+  await execPromise
+
+  const stopCall = invokedCommands.find((c) => c.command === "stop")
+  const killCall = invokedCommands.find((c) => c.command === "kill")
+  const rmCall = invokedCommands.find((c) => c.command === "rm")
+
+  assert.ok(stopCall, "stop was invoked")
+  assert.equal(stopCall?.abortedOnArrival, false, "stop received fresh signal")
+  assert.ok(killCall, "kill was invoked following nonzero stop")
+  assert.equal(killCall?.abortedOnArrival, false, "kill received fresh signal")
+  assert.ok(rmCall, "rm was invoked following kill")
+  assert.equal(rmCall?.abortedOnArrival, false, "rm received fresh signal")
+})
+
+test("buildOciContainerName produces distinct collision-resistant names for distinct request IDs and valid OCI characters", () => {
+  const name1 = buildOciContainerName("run/a")
+  const name2 = buildOciContainerName("run_a")
+  const name3 = buildOciContainerName("run-a")
+  const name4 = buildOciContainerName("run.a")
+
+  assert.notEqual(name1, name2, "run/a and run_a do not collide")
+  assert.notEqual(name1, name3, "run/a and run-a do not collide")
+  assert.notEqual(name2, name3, "run_a and run-a do not collide")
+  assert.notEqual(name3, name4, "run-a and run.a do not collide")
+
+  // Verify valid OCI name syntax: starts with alphanumeric, contains only valid characters
+  for (const name of [name1, name2, name3, name4]) {
+    assert.match(name, /^[a-zA-Z0-9][a-zA-Z0-9_.-]+$/, `name '${name}' is valid OCI container name`)
+    assert.ok(name.length <= 63, `name '${name}' is bounded in length (${name.length} <= 63)`)
+  }
+})
+
+test("OCI terminal session manager preserves unrequested session after malformed cleanup returns extra IDs", async () => {
+  const capability: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-oci-manager-extra",
+    security_tier: "single_tenant",
+    isolation_class: "oci",
+    secret_mode: "ref_only",
+    evidence_mode: "replay_strict",
+  }
+  const placement: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-oci-manager-extra",
+    placement_class: "local_oci",
+    runtime_id: "local_oci",
+    capability_id: capability.capability_id,
+  }
+
+  const customAdapter: OciTerminalSessionAdapter = {
+    async startSession() {
+      return { outputDeltas: [] }
+    },
+    async interactSession() {
+      return { outputDeltas: [] }
+    },
+    async cleanupSessions() {
+      return ["term-oci-target", "term-oci-unrequested-victim"]
+    },
+  }
+
+  const driver = makeOciTerminalSessionDriver(customAdapter)
+
+  // 1. Start target session and victim session
+  await driver.startTerminalSession!({
+    terminalSessionId: "term-oci-target",
+    command: ["bash"],
+    capability,
+    placement,
+  })
+  await driver.startTerminalSession!({
+    terminalSessionId: "term-oci-unrequested-victim",
+    command: ["bash"],
+    capability,
+    placement,
+  })
+
+  // 2. Perform filtered cleanup targeting only term-oci-target
+  const cleanupRes = await driver.cleanupTerminalSessions!({
+    cleanupId: "clean-oci-single-1",
+    scope: "single",
+    sessionIds: ["term-oci-target"],
+  })
+
+  assert.deepEqual(cleanupRes.cleaned_session_ids, ["term-oci-target"])
+
+  // 3. Verify unrequested victim session remains active and interactive in manager
+  const interactRes = await driver.interactTerminalSession!({
+    terminalSessionId: "term-oci-unrequested-victim",
+    interactionKind: "stdin",
+    inputText: "status\n",
+  })
+  assert.ok(interactRes.interaction != null, "victim session remains active and interactive")
+})
+
+test("OCI terminal session manager rejects overlapping cleaned and failed IDs, preserves session active for subsequent interact", async () => {
+  const capability: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-oci-manager-overlap",
+    security_tier: "single_tenant",
+    isolation_class: "oci",
+    secret_mode: "ref_only",
+    evidence_mode: "replay_strict",
+  }
+  const placement: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-oci-manager-overlap",
+    placement_class: "local_oci",
+    runtime_id: "local_oci",
+    capability_id: capability.capability_id,
+  }
+
+  const customAdapter: OciTerminalSessionAdapter = {
+    async startSession() {
+      return { outputDeltas: [] }
+    },
+    async interactSession() {
+      return { outputDeltas: [] }
+    },
+    async cleanupSessions() {
+      return {
+        cleaned_session_ids: ["term-oci-overlap-target"],
+        failed_session_ids: ["term-oci-overlap-target"],
+      }
+    },
+  }
+
+  const driver = makeOciTerminalSessionDriver(customAdapter)
+
+  await driver.startTerminalSession!({
+    terminalSessionId: "term-oci-overlap-target",
+    command: ["bash"],
+    capability,
+    placement,
+  })
+
+  await assert.rejects(
+    () =>
+      driver.cleanupTerminalSessions!({
+        cleanupId: "clean-oci-overlap-1",
+        scope: "single",
+        sessionIds: ["term-oci-overlap-target"],
+      }),
+    /Invalid cleanup result: session ID 'term-oci-overlap-target' appears in both cleaned_session_ids and failed_session_ids/,
+  )
+
+  const interactRes = await driver.interactTerminalSession!({
+    terminalSessionId: "term-oci-overlap-target",
+    interactionKind: "stdin",
+    inputText: "echo alive\n",
+  })
+  assert.ok(interactRes.interaction != null, "session remains active and interactive after rejected cleanup")
+})
+
+test("OCI terminal session manager rejects wrong-ID end during interact without ending active session, preserving interactability", async () => {
+  const capability: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-oci-wrong-end-test",
+    security_tier: "single_tenant",
+    isolation_class: "oci",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const placement: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-oci-wrong-end-test",
+    placement_class: "local_oci",
+    runtime_id: "oci",
+    capability_id: capability.capability_id,
+  }
+
+  let wrongEndTriggered = true
+  const customAdapter: OciTerminalSessionAdapter = {
+    startSession: async ({ descriptor }) => ({
+      outputDeltas: [],
+    }),
+    interactSession: async ({ descriptor, interaction }) => {
+      if (wrongEndTriggered) {
+        wrongEndTriggered = false
+        return {
+          outputDeltas: [],
+          end: {
+            schema_version: "bb.terminal_session_end.v1",
+            terminal_session_id: "wrong-foreign-session-id",
+            terminal_state: "completed",
+            exit_code: 0,
+            signal: null,
+            clean_exit: true,
+            reason: "completed",
+            occurred_at_utc: new Date().toISOString(),
+          },
+        }
+      }
+      return {
+        outputDeltas: [],
+        end: undefined,
+      }
+    },
+  }
+
+  const driver = makeOciTerminalSessionDriver(customAdapter)
+
+  await driver.startTerminalSession!({
+    terminalSessionId: "term-oci-wrong-end-target",
+    command: ["bash"],
+    capability,
+    placement,
+  })
+
+  // Wrong end ID must be rejected
+  await assert.rejects(
+    () =>
+      driver.interactTerminalSession!({
+        terminalSessionId: "term-oci-wrong-end-target",
+        interactionKind: "stdin",
+        inputText: "trigger wrong end\n",
+      }),
+    /Terminal session end session ID 'wrong-foreign-session-id' does not match interaction session ID 'term-oci-wrong-end-target'/,
+  )
+
+  // Session was NOT deleted or marked ended in manager, so retry/subsequent interaction succeeds!
+  const interactRes = await driver.interactTerminalSession!({
+    terminalSessionId: "term-oci-wrong-end-target",
+    interactionKind: "stdin",
+    inputText: "retry after wrong end rejection\n",
+  })
+  assert.ok(interactRes.interaction != null, "active session remains interactable after rejected wrong-ID end")
+})
+
+test("OCI cleanup response omitting cleaned_session_ids but reporting failed_session_ids derives cleaned = targets - failed, preserving successful targets", async () => {
+  const capability: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-oci-failed-only-test",
+    security_tier: "single_tenant",
+    isolation_class: "oci",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const placement: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-oci-failed-only-test",
+    placement_class: "local_oci",
+    runtime_id: "oci",
+    capability_id: capability.capability_id,
+  }
+
+  const customAdapter: OciTerminalSessionAdapter = {
+    startSession: async ({ descriptor }) => ({
+      outputDeltas: [],
+    }),
+    interactSession: async ({ descriptor, interaction }) => ({
+      outputDeltas: [],
+    }),
+    cleanupSessions: async ({ sessionIds }) => {
+      // Omit cleaned_session_ids and report only failed_session_ids: ["term-fail-1"]
+      return {
+        failed_session_ids: ["term-fail-1"],
+      } as unknown as string[]
+    },
+  }
+
+  const driver = makeOciTerminalSessionDriver(customAdapter)
+
+  await driver.startTerminalSession!({
+    terminalSessionId: "term-success-1",
+    command: ["bash"],
+    capability,
+    placement,
+  })
+  await driver.startTerminalSession!({
+    terminalSessionId: "term-fail-1",
+    command: ["bash"],
+    capability,
+    placement,
+  })
+
+  const cleanupRes = await driver.cleanupTerminalSessions!({
+    cleanupId: "clean-failed-only-1",
+    scope: "filtered",
+    sessionIds: ["term-success-1", "term-fail-1"],
+  })
+
+  assert.ok(cleanupRes)
+  assert.deepEqual(cleanupRes.cleaned_session_ids, ["term-success-1"])
+  assert.deepEqual(cleanupRes.failed_session_ids, ["term-fail-1"])
+
+  // term-fail-1 remains active for interact, while term-success-1 was cleaned
+  const interactFail = await driver.interactTerminalSession!({
+    terminalSessionId: "term-fail-1",
+    interactionKind: "stdin",
+    inputText: "echo still alive\n",
+  })
+  assert.ok(interactFail.interaction != null, "failed session remains active")
+
+  await assert.rejects(
+    () =>
+      driver.interactTerminalSession!({
+        terminalSessionId: "term-success-1",
+        interactionKind: "stdin",
+        inputText: "echo cleaned\n",
+      }),
+    /already ended/,
+  )
+})
+
+test("OCI driver termination advances through stop/kill/rm and settles boundedly when injected commandExecutor ignores signal and never settles", async () => {
+  const invokedCommands: string[] = []
+  const neverSettlingExecutor: OciCommandExecutor = async ({ runtimeArgs }) => {
+    invokedCommands.push(runtimeArgs[0])
+    return new Promise<{ exitCode: number; stdout: string; stderr: string }>(() => {})
+  }
+
+  const driver = makeConfiguredOciExecutionDriver({
+    commandExecutor: neverSettlingExecutor,
+  })
+
+  const request = buildOciSandboxRequest({
+    requestId: "req-oci-never-settle",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-oci-never-settle",
+      security_tier: "single_tenant",
+      isolation_class: "oci",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["sleep", "100"],
+    imageRef: "docker://breadboard/base:latest",
+  })
+
+  const controller = new AbortController()
+  const cap = {
+    schema_version: "bb.execution_capability.v1" as const,
+    capability_id: "cap-oci-never-settle",
+    security_tier: "single_tenant" as const,
+    isolation_class: "oci" as const,
+    secret_mode: "ref_only" as const,
+    evidence_mode: "minimal" as const,
+  }
+  const place = {
+    schema_version: "bb.execution_placement.v1" as const,
+    placement_id: "place-oci-never-settle",
+    placement_class: "local_oci" as const,
+    runtime_id: "oci",
+    capability_id: cap.capability_id,
+  }
+  const execPromise = driver.execute!(request, {
+    signal: controller.signal,
+    deadlineAtMs: null,
+    terminationGraceMs: 100,
+    capability: cap,
+    placement: place,
+    driverId: "oci",
+  })
+
+  const startMs = Date.now()
+  await driver.terminate!(request, {
+    reason: "cancelled",
+    signal: controller.signal,
+    deadlineAtMs: null,
+  })
+  const durationMs = Date.now() - startMs
+  assert.ok(durationMs < 10000, `terminate resolved boundedly in ${durationMs}ms`)
+  assert.ok(invokedCommands.includes("stop"), "stop was invoked")
+  assert.ok(invokedCommands.includes("kill"), "kill was invoked after stop timed out")
+  assert.ok(invokedCommands.includes("rm"), "rm was invoked")
 })

@@ -98,7 +98,14 @@ export interface DriverMediatedToolTurnOptions {
   onTimeout?: (input: { driverId: string; request: SandboxRequestV1; liveness: ExecutionLivenessEvidenceV1 }) => void | Promise<void>
   executeSandbox?: (
     request: SandboxRequestV1,
-    context: { capability: ExecutionCapabilityV1; placement: ExecutionPlacementV1; driverId: string },
+    context: {
+      capability: ExecutionCapabilityV1
+      placement: ExecutionPlacementV1
+      driverId: string
+      signal?: AbortSignal
+      deadlineAtMs?: number | null
+      terminationGraceMs?: number
+    },
   ) => Promise<SandboxResultV1>
   executionWorld?: ExecutionWorldV1
   assistantText?: string | null

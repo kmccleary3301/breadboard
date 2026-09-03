@@ -42,7 +42,9 @@ export interface OciTerminalSessionAdapterResult {
 export interface OciTerminalSessionAdapter {
   startSession(input: OciTerminalSessionAdapterStartInput): Promise<OciTerminalSessionAdapterResult>
   interactSession(input: OciTerminalSessionAdapterInteractionInput): Promise<OciTerminalSessionAdapterResult>
-  cleanupSessions?(input: OciTerminalSessionAdapterCleanupInput): Promise<readonly string[]>
+  cleanupSessions?(
+    input: OciTerminalSessionAdapterCleanupInput,
+  ): Promise<readonly string[] | { readonly cleaned_session_ids?: readonly string[]; readonly failed_session_ids?: readonly string[] }>
 }
 
 interface OciTerminalSessionRecord {
@@ -109,6 +111,22 @@ export class OciTerminalSessionManager {
   async startSession(input: TerminalSessionStartInputV1): Promise<TerminalSessionStartResultV1> {
     const descriptor = buildDescriptor(input)
     const result = await this.adapter.startSession({ descriptor })
+    if (result.outputDeltas) {
+      for (const delta of result.outputDeltas) {
+        if (delta.terminal_session_id !== descriptor.terminal_session_id) {
+          throw new Error(
+            `Terminal output delta session ID '${delta.terminal_session_id}' does not match session ID '${descriptor.terminal_session_id}'`,
+          )
+        }
+      }
+    }
+    if (result.end) {
+      if (result.end.terminal_session_id !== descriptor.terminal_session_id) {
+        throw new Error(
+          `Terminal session end session ID '${result.end.terminal_session_id}' does not match session ID '${descriptor.terminal_session_id}'`,
+        )
+      }
+    }
     this.sessions.set(descriptor.terminal_session_id, {
       descriptor,
       end: result.end ?? null,
@@ -137,7 +155,21 @@ export class OciTerminalSessionManager {
       descriptor: record.descriptor,
       interaction,
     })
+    if (result.outputDeltas) {
+      for (const delta of result.outputDeltas) {
+        if (delta.terminal_session_id !== record.descriptor.terminal_session_id) {
+          throw new Error(
+            `Terminal output delta session ID '${delta.terminal_session_id}' does not match interaction session ID '${record.descriptor.terminal_session_id}'`,
+          )
+        }
+      }
+    }
     if (result.end) {
+      if (result.end.terminal_session_id !== record.descriptor.terminal_session_id) {
+        throw new Error(
+          `Terminal session end session ID '${result.end.terminal_session_id}' does not match interaction session ID '${record.descriptor.terminal_session_id}'`,
+        )
+      }
       this.sessions.delete(record.descriptor.terminal_session_id)
       this.rememberEndedSession(record.descriptor.terminal_session_id)
     }
@@ -164,12 +196,42 @@ export class OciTerminalSessionManager {
         : input.scope === "filtered"
           ? input.sessionIds ?? []
           : [...this.sessions.keys()]
+    const targetSet = new Set(targetIds)
     const alreadyEnded = targetIds.filter((sessionId) => !this.sessions.has(sessionId) && this.endedSessionIds.includes(sessionId))
-    const cleaned = this.adapter.cleanupSessions
-      ? [...await this.adapter.cleanupSessions({ sessionIds: targetIds, signal: normalizeSignal(input.signal) })]
-      : [...targetIds]
+    const rawResult = this.adapter.cleanupSessions
+      ? await this.adapter.cleanupSessions({ sessionIds: targetIds, signal: normalizeSignal(input.signal) })
+      : targetIds
+
+    let rawCleaned: readonly string[]
+    let rawFailed: readonly string[]
+    if (Array.isArray(rawResult)) {
+      rawCleaned = rawResult
+      rawFailed = []
+    } else if (rawResult && typeof rawResult === "object" && !Array.isArray(rawResult)) {
+      const obj = rawResult as { readonly cleaned_session_ids?: readonly string[]; readonly failed_session_ids?: readonly string[] }
+      rawFailed = obj.failed_session_ids ?? []
+      const failedSet = new Set(rawFailed)
+      rawCleaned =
+        obj.cleaned_session_ids ??
+        (obj.failed_session_ids ? targetIds.filter((id) => !failedSet.has(id)) : targetIds)
+    } else {
+      rawCleaned = targetIds
+      rawFailed = []
+    }
+
+    // Validate disjoint before any state mutation
+    const cleanedSetCheck = new Set(rawCleaned)
+    for (const failedId of rawFailed) {
+      if (cleanedSetCheck.has(failedId)) {
+        throw new Error(`Invalid cleanup result: session ID '${failedId}' appears in both cleaned_session_ids and failed_session_ids`)
+      }
+    }
+
+    const cleaned = input.scope === "all" ? rawCleaned : rawCleaned.filter((id) => targetSet.has(id))
+    const failed = input.scope === "all" ? rawFailed : rawFailed.filter((id) => targetSet.has(id))
     const cleanedSet = new Set([...cleaned, ...alreadyEnded])
-    const failed = targetIds.filter((sessionId) => !cleanedSet.has(sessionId))
+    const finalFailed = Array.from(new Set([...failed, ...targetIds.filter((sessionId) => !cleanedSet.has(sessionId))]))
+
     for (const sessionId of cleanedSet) {
       this.sessions.delete(sessionId)
       this.rememberEndedSession(sessionId)
@@ -179,7 +241,7 @@ export class OciTerminalSessionManager {
       cleanup_id: input.cleanupId || randomUUID(),
       scope: input.scope,
       cleaned_session_ids: [...cleanedSet],
-      failed_session_ids: failed,
+      failed_session_ids: finalFailed,
       metadata: { signal: normalizeSignal(input.signal) },
     })
   }

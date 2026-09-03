@@ -327,7 +327,9 @@ function buildTerminalSupportClaim(options: {
   executionProfileId: ExecutionProfileId
   summary: string
   unsupportedFields?: readonly string[]
+  supported?: boolean
 }): SupportClaim {
+  const supported = options.supported ?? ((options.unsupportedFields?.length ?? 0) === 0)
   return {
     ...buildSupportClaim({
       workspace: options.workspace,
@@ -342,17 +344,21 @@ function buildTerminalSupportClaim(options: {
       },
       executionProfileId: options.executionProfileId,
       summary: options.summary,
-      recommendedHostMode: options.executionProfileId === "remote_isolated" ? "background" : "streaming",
+      unsupportedFields: supported ? [] : (options.unsupportedFields ?? ["terminal_sessions"]),
+      recommendedHostMode:
+        options.executionProfileId === "remote_isolated"
+          ? "background"
+          : "streaming",
     }),
     terminalSupport: {
-      canStart: true,
-      canInteract: true,
-      canPoll: true,
-      canList: true,
-      canCleanup: true,
+      canStart: supported,
+      canInteract: supported,
+      canPoll: supported,
+      canList: supported,
+      canCleanup: supported,
       streamMode: "pipes",
     },
-    unsupportedFields: [...(options.unsupportedFields ?? [])],
+    unsupportedFields: supported ? [] : [...(options.unsupportedFields ?? ["terminal_sessions"])],
   }
 }
 
@@ -392,7 +398,8 @@ function resolveTerminalDriver(options: {
   })
   const placement = chooseTerminalPlacement(capability, options.executionProfileId)
   const driverId = options.executionWorld.select({ capability, placement, terminal: true }).driverId
-  const summary = driverId
+  const supported = driverId !== null
+  const summary = supported
     ? `Terminal sessions supported on ${options.executionProfileId} via ${driverId}.`
     : `Terminal sessions are not supported on ${options.executionProfileId}.`
   return {
@@ -403,7 +410,8 @@ function resolveTerminalDriver(options: {
       workspace: options.workspace,
       executionProfileId: options.executionProfileId,
       summary,
-      unsupportedFields: driverId ? [] : ["terminal_sessions"],
+      supported,
+      unsupportedFields: supported ? [] : ["terminal_sessions"],
     }),
   }
 }
@@ -605,6 +613,7 @@ export function createBackboneTerminalApi(options: {
       const resolved = resolveTerminalDriver({
         workspace: options.workspace,
         executionProfileId,
+        terminalSessionId: input.terminalSessionId,
         executionWorld,
       })
       if (!resolved.driverId) {
@@ -715,6 +724,7 @@ export function createBackboneTerminalApi(options: {
       const resolved = resolveTerminalDriver({
         workspace: options.workspace,
         executionProfileId,
+        terminalSessionId: "registry",
         executionWorld,
       })
       if (!resolved.driverId) {
@@ -794,9 +804,16 @@ export function createBackboneTerminalApi(options: {
     },
     async cleanup(input) {
       const executionProfileId = input.executionProfileId ?? options.workspace.defaultExecutionProfileId
+      const targetSessionId =
+        input.scope === "single" && input.sessionIds?.[0]
+          ? input.sessionIds[0]
+          : input.scope === "all"
+            ? "all"
+            : (input.sessionIds?.[0] ?? "filtered")
       const resolved = resolveTerminalDriver({
         workspace: options.workspace,
         executionProfileId,
+        terminalSessionId: targetSessionId,
         executionWorld,
       })
       if (!resolved.driverId) {

@@ -63,10 +63,10 @@ export type OciCommandExecutor = (input: {
   runtimeArgs: string[]
   signal?: AbortSignal
 }) => Promise<OciCommandExecutionResult>
-
 export function buildOciContainerName(requestId: string): string {
-  const sanitized = requestId.replace(/[^a-zA-Z0-9_.-]/g, "_")
-  return `bb-oci-${sanitized}`
+  const hash = createHash("sha256").update(requestId).digest("hex").slice(0, 16)
+  const sanitized = requestId.replace(/[^a-zA-Z0-9_.-]/g, "-").slice(0, 32)
+  return `bb-oci-${sanitized}-${hash}`
 }
 
 export function buildOciRuntimeInvocation(
@@ -105,8 +105,10 @@ export function defaultOciCommandExecutor(input: {
 }): Promise<OciCommandExecutionResult> {
   return new Promise((resolve, reject) => {
     let killed = false
+    const isPosix = process.platform !== "win32"
     const child = spawn(input.runtimeCommand, input.runtimeArgs, {
       stdio: ["ignore", "pipe", "pipe"],
+      detached: isPosix,
     })
     let stdout = ""
     let stderr = ""
@@ -127,14 +129,29 @@ export function defaultOciCommandExecutor(input: {
       })
     })
 
+    const killProcessGroup = (sig: NodeJS.Signals) => {
+      if (child.pid == null) return
+      if (isPosix) {
+        try {
+          process.kill(-child.pid, sig)
+        } catch {
+          try {
+            child.kill(sig)
+          } catch {}
+        }
+      } else {
+        try {
+          child.kill(sig)
+        } catch {}
+      }
+    }
+
     if (input.signal) {
       const onAbort = () => {
         killed = true
-        child.kill("SIGTERM")
+        killProcessGroup("SIGTERM")
         const escalateTimer = setTimeout(() => {
-          try {
-            child.kill("SIGKILL")
-          } catch {}
+          killProcessGroup("SIGKILL")
         }, 500)
         child.once("close", () => {
           clearTimeout(escalateTimer)
@@ -229,6 +246,37 @@ export async function executeOciSandboxRequest(
   }
 }
 
+async function runBoundedCleanupCommand(
+  executor: OciCommandExecutor,
+  runtimeCommand: string,
+  runtimeArgs: string[],
+  timeoutMs: number,
+): Promise<{ ok: boolean; exitCode?: number }> {
+  const controller = new AbortController()
+  let timer: NodeJS.Timeout | undefined
+  const timeoutPromise = new Promise<{ ok: boolean }>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort(new Error(`OCI command timeout: ${runtimeArgs[0]}`))
+      resolve({ ok: false })
+    }, timeoutMs)
+  })
+  try {
+    const execPromise = Promise.resolve(
+      executor({
+        runtimeCommand,
+        runtimeArgs,
+        signal: controller.signal,
+      }),
+    ).then(
+      (result) => ({ ok: result.exitCode === 0, exitCode: result.exitCode }),
+      () => ({ ok: false }),
+    )
+    return await Promise.race([execPromise, timeoutPromise])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
 function createOciExecutionDriver(options: {
   commandExecutor?: OciCommandExecutor
   runtimeCommand?: string
@@ -295,30 +343,41 @@ function createOciExecutionDriver(options: {
       active.controller.abort(
         context.signal.reason ?? new Error(`OCI runtime ${context.reason} termination requested`),
       )
-      try {
-        await executor({
-          runtimeCommand: active.runtimeCommand,
-          runtimeArgs: ["stop", "-t", "2", active.containerName],
-        })
-      } catch {
-        try {
-          await executor({
-            runtimeCommand: active.runtimeCommand,
-            runtimeArgs: ["kill", active.containerName],
-          })
-        } catch {
-          // fallback to removal
-        }
+
+      // Step 1: Attempt graceful stop with fresh bounded signal
+      const stopResult = await runBoundedCleanupCommand(
+        executor,
+        active.runtimeCommand,
+        ["stop", "-t", "2", active.containerName],
+        2500,
+      )
+
+      // Step 2: If stop failed (nonzero, timeout, abort, or threw), attempt kill with fresh bounded signal
+      if (!stopResult.ok) {
+        await runBoundedCleanupCommand(
+          executor,
+          active.runtimeCommand,
+          ["kill", active.containerName],
+          2000,
+        )
       }
-      try {
-        await executor({
-          runtimeCommand: active.runtimeCommand,
-          runtimeArgs: ["rm", "-f", active.containerName],
+
+      // Step 3: Always attempt rm -f with fresh bounded signal
+      await runBoundedCleanupCommand(
+        executor,
+        active.runtimeCommand,
+        ["rm", "-f", active.containerName],
+        2000,
+      )
+
+      const boundedCompletion = new Promise<void>((resolve) => {
+        const t = setTimeout(resolve, 2000)
+        active.completion.catch(() => {}).finally(() => {
+          clearTimeout(t)
+          resolve()
         })
-      } catch {
-        // Ignored if already removed
-      }
-      await active.completion.catch(() => {})
+      })
+      await boundedCompletion
     },
     ...(terminalDriver
       ? {

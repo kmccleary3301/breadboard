@@ -298,6 +298,7 @@ export interface BackboneOptions {
   readonly remoteHttp?: import("@breadboard/execution-driver-remote").RemoteExecutionHttpOptions
   readonly remoteExecutor?: import("@breadboard/execution-driver-remote").RemoteSandboxExecutor
   readonly ociTerminalAdapter?: import("@breadboard/execution-driver-oci").OciTerminalSessionAdapter
+  readonly executionWorld?: import("@breadboard/execution-drivers").ExecutionWorldV1
 }
 
 export interface Backbone {

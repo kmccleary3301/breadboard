@@ -13,6 +13,8 @@ import {
   type ToolModelRenderV2,
 } from "@breadboard/kernel-contracts"
 import {
+  buildExecutionDriverEvidenceExpectation,
+  buildExecutionDriverSideEffectExpectation,
   chooseExecutionPlacementClass,
 } from "@breadboard/execution-drivers"
 import { createKernelExecutionWorld } from "./default-world.js"
@@ -58,24 +60,14 @@ function buildDriverMediatedToolOutcome(input: {
       input.sandboxResult.status === "completed"
         ? {
             tool: input.toolName,
-            stdout_ref: input.sandboxResult.stdout_ref ?? null,
-            stderr_ref: input.sandboxResult.stderr_ref ?? null,
-            artifact_refs: input.sandboxResult.artifact_refs ?? [],
-            evidence_refs: input.sandboxResult.evidence_refs ?? [],
-            side_effect_digest: input.sandboxResult.side_effect_digest ?? null,
-            usage: input.sandboxResult.usage ?? null,
+            status: "completed",
+            exit_code: input.sandboxResult.usage?.exit_code ?? 0,
           }
         : null,
     visibility: { model_visible: false, provider_visible: false, host_visible: true, redaction_state: "none" },
     metadata: {
-      placement_id: input.sandboxResult.placement_id ?? null,
+      tool: input.toolName,
       sandbox_status: input.sandboxResult.status,
-      stdout_ref: input.sandboxResult.stdout_ref ?? null,
-      stderr_ref: input.sandboxResult.stderr_ref ?? null,
-      artifact_refs: input.sandboxResult.artifact_refs ?? [],
-      evidence_refs: input.sandboxResult.evidence_refs ?? [],
-      side_effect_digest: input.sandboxResult.side_effect_digest ?? null,
-      usage: input.sandboxResult.usage ?? null,
     },
   }
   if (input.sandboxResult.status !== "completed") {
@@ -111,10 +103,8 @@ function buildDriverMediatedToolRender(input: {
       },
     ],
     metadata: {
-      placement_id: input.sandboxResult.placement_id ?? null,
-      stdout_ref: input.sandboxResult.stdout_ref ?? null,
-      artifact_count: input.sandboxResult.artifact_refs?.length ?? 0,
-      evidence_count: input.sandboxResult.evidence_refs?.length ?? 0,
+      tool: input.toolName,
+      sandbox_status: input.sandboxResult.status,
     },
   })
 }
@@ -154,7 +144,7 @@ export async function executeDriverMediatedToolTurn(
     kind: "sandbox",
     capability,
     placement,
-    requestId: request.request_id,
+    requestId: `${request.request_id}:sandbox`,
     command: options.command,
     workspaceRef: options.workspaceRef ?? request.workspace_root ?? null,
     imageRef: options.imageRef ?? null,
@@ -168,13 +158,36 @@ export async function executeDriverMediatedToolTurn(
     terminationGraceMs: options.terminationGraceMs,
     onTimeout: options.onTimeout,
   })
-  if (worldResult.kind !== "sandbox" || !worldResult.plan || !worldResult.plan.sandboxRequest || !worldResult.sandboxResult) {
-    const summary = worldResult.kind === "sandbox" && worldResult.unsupportedCase ? worldResult.unsupportedCase.summary : null
-    throw new Error(summary ?? `No execution driver produced a sandbox request for ${placementClass}`)
+  if (worldResult.kind !== "sandbox" || !worldResult.sandboxResult || worldResult.unsupportedCase) {
+    const summary =
+      worldResult.kind === "sandbox" && worldResult.unsupportedCase
+        ? worldResult.unsupportedCase.summary
+        : `No execution driver produced a sandbox result for ${placementClass}`
+    throw new Error(summary)
   }
-  const plan = worldResult.plan
-  const sandboxRequest = plan.sandboxRequest
+  const driverId = worldResult.driverId ?? "world"
+  const sandboxRequest: SandboxRequestV1 =
+    worldResult.plan?.sandboxRequest ?? {
+      schema_version: "bb.sandbox_request.v1",
+      request_id: `${request.request_id}:sandbox`,
+      capability_id: capability.capability_id,
+      placement_class: placementClass,
+      workspace_ref: options.workspaceRef ?? request.workspace_root ?? null,
+      rootfs_ref: null,
+      image_ref: options.imageRef ?? null,
+      snapshot_ref: null,
+      command: [options.command[0] ?? "", ...options.command.slice(1)],
+      network_policy: { allow: capability.allow_net_hosts ?? [] },
+      secret_refs: [],
+      timeout_seconds: null,
+      evidence_mode: capability.evidence_mode,
+      metadata: { driver: driverId },
+    }
   const sandboxResult = assertValid<SandboxResultV1>("sandboxResult", worldResult.sandboxResult)
+  const sideEffectExpectation =
+    worldResult.plan?.sideEffectExpectation ?? buildExecutionDriverSideEffectExpectation(placementClass)
+  const evidenceExpectation =
+    worldResult.plan?.evidenceExpectation ?? buildExecutionDriverEvidenceExpectation({ capability, placementClass })
   const callId = `${request.request_id}:tool:1`
   const completedAtUtc = options.startedAt ?? new Date().toISOString()
   const toolCallState: ToolCallV2["state"] =
@@ -191,7 +204,6 @@ export async function executeDriverMediatedToolTurn(
     tool_name: options.toolName,
     args: {
       command: options.command,
-      image_ref: options.imageRef ?? null,
     },
     state: toolCallState,
     requested_at_utc: completedAtUtc,
@@ -231,13 +243,13 @@ export async function executeDriverMediatedToolTurn(
   })
   return {
     ...turn,
-    executionCapability: plan.capability,
-    executionPlacement: plan.placement,
-    driverId: plan.driver.driverId,
-    sandboxRequest: sandboxRequest as SandboxRequestV1,
+    executionCapability: capability,
+    executionPlacement: placement,
+    driverId,
+    sandboxRequest,
     sandboxResult,
-    sideEffectExpectation: plan.sideEffectExpectation,
-    evidenceExpectation: plan.evidenceExpectation,
+    sideEffectExpectation,
+    evidenceExpectation,
   }
 }
 

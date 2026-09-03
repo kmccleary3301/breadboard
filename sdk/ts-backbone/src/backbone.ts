@@ -33,6 +33,7 @@ function makeBackboneSession(options: BackboneOptions, descriptor: HostSessionDe
       remoteExecutor: options.remoteExecutor,
       remoteHttp: options.remoteHttp,
       ociTerminalAdapter: options.ociTerminalAdapter,
+      executionWorld: options.executionWorld,
     }),
     tools: {
       buildEffectiveSurface(input) {
@@ -109,6 +110,9 @@ function makeBackboneSession(options: BackboneOptions, descriptor: HostSessionDe
         signal: input.signal,
         terminationGraceMs: input.terminationGraceMs,
         onTimeout: input.onTimeout,
+        executionWorld: options.executionWorld,
+        remoteExecutor: options.remoteExecutor,
+        remoteHttp: options.remoteHttp,
       })
       const result = buildBackboneTurnResult({
         supportClaim,

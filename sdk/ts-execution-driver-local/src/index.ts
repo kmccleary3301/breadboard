@@ -57,9 +57,11 @@ export function defaultLocalCommandExecutor(input: {
 }): Promise<LocalCommandExecutionResult> {
   return new Promise((resolve, reject) => {
     let killed = false
+    const isPosix = process.platform !== "win32"
     const child = spawn(input.command[0]!, input.command.slice(1), {
       cwd: input.cwd ?? undefined,
       stdio: ["ignore", "pipe", "pipe"],
+      detached: isPosix,
     })
     let stdout = ""
     let stderr = ""
@@ -80,14 +82,29 @@ export function defaultLocalCommandExecutor(input: {
       })
     })
 
+    const killProcessGroup = (sig: NodeJS.Signals) => {
+      if (child.pid == null) return
+      if (isPosix) {
+        try {
+          process.kill(-child.pid, sig)
+        } catch {
+          try {
+            child.kill(sig)
+          } catch {}
+        }
+      } else {
+        try {
+          child.kill(sig)
+        } catch {}
+      }
+    }
+
     if (input.signal) {
       const onAbort = () => {
         killed = true
-        child.kill("SIGTERM")
+        killProcessGroup("SIGTERM")
         const escalateTimer = setTimeout(() => {
-          try {
-            child.kill("SIGKILL")
-          } catch {}
+          killProcessGroup("SIGKILL")
         }, 500)
         child.once("close", () => {
           clearTimeout(escalateTimer)
@@ -228,7 +245,14 @@ export function makeTrustedLocalExecutionDriver(commandExecutor?: LocalCommandEx
       active.controller.abort(
         context.signal.reason ?? new Error(`Local process ${context.reason} termination requested`),
       )
-      await active.completion.catch(() => {})
+      const boundedCompletion = new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 2000)
+        active.completion.catch(() => {}).finally(() => {
+          clearTimeout(timer)
+          resolve()
+        })
+      })
+      await boundedCompletion
     },
     supportsTerminalSessions() {
       return true

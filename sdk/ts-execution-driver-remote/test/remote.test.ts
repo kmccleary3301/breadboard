@@ -833,3 +833,426 @@ test("remote execution driver with stubborn executor marks terminationObserved f
   assert.equal(result.livenessEvidence.terminationRequested, true)
   assert.equal(result.livenessEvidence.terminationObserved, false)
 })
+
+test("remote terminal driver rejects malformed cleanup response arrays", async () => {
+  const driver = makeRemoteTerminalSessionDriver({
+    endpointUrl: "https://example.test/remote-term-malformed-cleanup",
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        schema_version: "bb.remote_terminal_response.v1",
+        payload: {
+          // Invalid: string instead of array of strings
+          cleaned_session_ids: "not-an-array",
+        },
+      }),
+    }) as Response,
+  })
+  await assert.rejects(
+    () =>
+      driver.cleanupTerminalSessions!({
+        cleanupId: "clean-malformed-1",
+        scope: "filtered",
+        sessionIds: ["term-1"],
+      }),
+    /malformed cleaned_session_ids/,
+  )
+})
+
+test("remote execution driver under shared world deadline returns timed_out status and liveness without competing timer failure", async () => {
+  const driver = makeRemoteExecutionDriver(undefined, {
+    endpointUrl: "https://example.test/remote-deadline",
+    fetchImpl: async (_input, init) => {
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new Error("aborted"))
+        })
+      })
+    },
+  })
+  const world = createExecutionWorld({ drivers: [driver] })
+  const result = await world.execute({
+    kind: "sandbox",
+    capability: remoteCapability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place:remote:deadline-1",
+      placement_class: "remote_worker",
+      runtime_id: "remote",
+      capability_id: remoteCapability.capability_id,
+    },
+    requestId: "req-remote-deadline-1",
+    command: ["python", "-m", "worker"],
+    deadlineMs: 50,
+    terminationGraceMs: 20,
+  })
+  assert.equal(result.kind, "sandbox")
+  if (result.kind !== "sandbox") throw new Error("expected sandbox result")
+  assert.equal(result.sandboxResult?.status, "timed_out")
+  assert.equal(result.livenessEvidence.state, "timed_out")
+  assert.equal(result.livenessEvidence.terminationRequested, true)
+})
+
+test("remote execution driver with configured transport timeout returns timed_out status and liveness", async () => {
+  const driver = makeRemoteExecutionDriver(undefined, {
+    endpointUrl: "https://example.test/remote-transport-timeout",
+    timeoutMs: 40,
+    fetchImpl: async (_input, init) => {
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new Error("timed out"))
+        })
+      })
+    },
+  })
+  const world = createExecutionWorld({ drivers: [driver] })
+  const result = await world.execute({
+    kind: "sandbox",
+    capability: remoteCapability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place:remote:transport-1",
+      placement_class: "remote_worker",
+      runtime_id: "remote",
+      capability_id: remoteCapability.capability_id,
+    },
+    requestId: "req-remote-transport-1",
+    command: ["python", "-m", "worker"],
+    terminationGraceMs: 20,
+  })
+  assert.equal(result.kind, "sandbox")
+  if (result.kind !== "sandbox") throw new Error("expected sandbox result")
+  assert.equal(result.sandboxResult?.status, "timed_out")
+  assert.equal(result.livenessEvidence.state, "timed_out")
+  assert.equal(result.livenessEvidence.terminationRequested, true)
+})
+
+test("unconfigured remote driver returns false for supportsCapability and yields unsupportedCase under execution world", async () => {
+  const unconfiguredDriver = makeRemoteExecutionDriver()
+  assert.equal(unconfiguredDriver.supportsCapability(remoteCapability, "remote_worker"), false)
+
+  const world = createExecutionWorld({ drivers: [unconfiguredDriver] })
+  const result = await world.execute({
+    kind: "sandbox",
+    capability: remoteCapability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place:remote:unconfigured-1",
+      placement_class: "remote_worker",
+      runtime_id: "remote",
+      capability_id: remoteCapability.capability_id,
+    },
+    requestId: "req-remote-unconfigured-1",
+    command: ["python", "-m", "worker"],
+  })
+  assert.equal(result.kind, "sandbox")
+  if (result.kind !== "sandbox") throw new Error("expected sandbox result")
+  assert.equal(result.sandboxResult, null)
+  assert.ok(result.unsupportedCase != null)
+  assert.equal(result.unsupportedCase?.unavailable_placement, "remote_worker")
+})
+
+test("Remote terminal session manager preserves unrequested session after malformed cleanup returns extra IDs", async () => {
+  const customFetch: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(init?.body as string)
+    if (body.action === "start") {
+      return new Response(
+        JSON.stringify({
+          schema_version: "bb.remote_terminal_response.v1",
+          payload: { output_deltas: [] },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    }
+    if (body.action === "cleanup") {
+      return new Response(
+        JSON.stringify({
+          schema_version: "bb.remote_terminal_response.v1",
+          payload: {
+            cleaned_session_ids: ["term-remote-target", "term-remote-unrequested-victim"],
+            failed_session_ids: [],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    }
+    if (body.action === "interact") {
+      return new Response(
+        JSON.stringify({
+          schema_version: "bb.remote_terminal_response.v1",
+          payload: { output_deltas: [] },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    }
+    return new Response(JSON.stringify({ error: "not found" }), { status: 404 })
+  }
+
+  const driver = makeRemoteTerminalSessionDriver({
+    endpointUrl: "https://example.test/remote-terminal",
+    fetchImpl: customFetch,
+  })
+
+  // 1. Start target and victim sessions
+  await driver.startTerminalSession!({
+    terminalSessionId: "term-remote-target",
+    command: ["python", "-i"],
+    capability: remoteCapability,
+  })
+  await driver.startTerminalSession!({
+    terminalSessionId: "term-remote-unrequested-victim",
+    command: ["python", "-i"],
+    capability: remoteCapability,
+  })
+
+  // 2. Cleanup only target session
+  const cleanupRes = await driver.cleanupTerminalSessions!({
+    cleanupId: "clean-remote-single-1",
+    scope: "single",
+    sessionIds: ["term-remote-target"],
+  })
+  assert.deepEqual(cleanupRes.cleaned_session_ids, ["term-remote-target"])
+
+  // 3. Verify unrequested victim session remains active in manager
+  const interactRes = await driver.interactTerminalSession!({
+    terminalSessionId: "term-remote-unrequested-victim",
+    interactionKind: "stdin",
+    inputText: "1 + 1\n",
+  })
+  assert.ok(interactRes.interaction != null, "victim session remains active and interactive")
+})
+
+test("Remote terminal session manager rejects overlapping cleaned and failed IDs, preserves session active for subsequent interact", async () => {
+  const customFetch: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(init?.body as string)
+    if (body.action === "start") {
+      return new Response(
+        JSON.stringify({
+          schema_version: "bb.remote_terminal_response.v1",
+          payload: { output_deltas: [] },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    }
+    if (body.action === "cleanup") {
+      return new Response(
+        JSON.stringify({
+          schema_version: "bb.remote_terminal_response.v1",
+          payload: {
+            cleaned_session_ids: ["term-remote-overlap-target"],
+            failed_session_ids: ["term-remote-overlap-target"],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    }
+    if (body.action === "interact") {
+      return new Response(
+        JSON.stringify({
+          schema_version: "bb.remote_terminal_response.v1",
+          payload: { output_deltas: [] },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    }
+    return new Response(JSON.stringify({ error: "not found" }), { status: 404 })
+  }
+
+  const driver = makeRemoteTerminalSessionDriver({
+    endpointUrl: "https://example.test/remote-terminal",
+    fetchImpl: customFetch,
+  })
+
+  await driver.startTerminalSession!({
+    terminalSessionId: "term-remote-overlap-target",
+    command: ["python", "-i"],
+    capability: remoteCapability,
+  })
+
+  await assert.rejects(
+    () =>
+      driver.cleanupTerminalSessions!({
+        cleanupId: "clean-remote-overlap-1",
+        scope: "single",
+        sessionIds: ["term-remote-overlap-target"],
+      }),
+    /Invalid cleanup result: session ID 'term-remote-overlap-target' appears in both cleaned_session_ids and failed_session_ids/,
+  )
+
+  const interactRes = await driver.interactTerminalSession!({
+    terminalSessionId: "term-remote-overlap-target",
+    interactionKind: "stdin",
+    inputText: "print('alive')\n",
+  })
+  assert.ok(interactRes.interaction != null, "session remains active and interactive after rejected cleanup")
+})
+
+test("Remote terminal session manager rejects wrong-ID end during interact without ending active session, preserving interactability", async () => {
+  let wrongEndTriggered = true
+  const customFetch: typeof fetch = async (_input, init) => {
+    const req = JSON.parse(init?.body as string)
+    if (req.action === "start") {
+      return new Response(
+        JSON.stringify({
+          schema_version: "bb.remote_terminal_response.v1",
+          action: "start",
+          payload: { descriptor: req.payload.descriptor, output_deltas: [] },
+          metadata: {},
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      )
+    }
+    if (req.action === "interact") {
+      if (wrongEndTriggered) {
+        wrongEndTriggered = false
+        return new Response(
+          JSON.stringify({
+            schema_version: "bb.remote_terminal_response.v1",
+            action: "interact",
+            payload: {
+              output_deltas: [],
+              end: {
+                schema_version: "bb.terminal_session_end.v1",
+                terminal_session_id: "wrong-foreign-remote-session-id",
+                terminal_state: "completed",
+                exit_code: 0,
+                signal: null,
+                clean_exit: true,
+                reason: "completed",
+                occurred_at_utc: new Date().toISOString(),
+              },
+            },
+            metadata: {},
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        )
+      }
+      return new Response(
+        JSON.stringify({
+          schema_version: "bb.remote_terminal_response.v1",
+          action: "interact",
+          payload: { output_deltas: [] },
+          metadata: {},
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      )
+    }
+    return new Response(JSON.stringify({ error: "not handled" }), { status: 404 })
+  }
+
+  const driver = makeRemoteExecutionDriver(undefined, {
+    endpointUrl: "http://remote-backend:8080/terminals",
+    fetchImpl: customFetch,
+  })
+
+  await driver.startTerminalSession!({
+    terminalSessionId: "term-remote-wrong-end-target",
+    command: ["python", "-i"],
+    capability: remoteCapability,
+  })
+
+  // Wrong end ID must be rejected
+  await assert.rejects(
+    () =>
+      driver.interactTerminalSession!({
+        terminalSessionId: "term-remote-wrong-end-target",
+        interactionKind: "stdin",
+        inputText: "trigger wrong end\n",
+      }),
+    /Terminal session end session ID 'wrong-foreign-remote-session-id' does not match interaction session ID 'term-remote-wrong-end-target'/,
+  )
+
+  // Session was NOT deleted or marked ended in manager, so retry/subsequent interaction succeeds!
+  const interactRes = await driver.interactTerminalSession!({
+    terminalSessionId: "term-remote-wrong-end-target",
+    interactionKind: "stdin",
+    inputText: "print('recovered')\n",
+  })
+  assert.ok(interactRes.interaction != null, "active remote session remains interactable after rejected wrong-ID end")
+})
+
+test("Remote cleanup response omitting cleaned_session_ids but reporting failed_session_ids derives cleaned = targets - failed, preserving successful targets", async () => {
+  const customFetch: typeof fetch = async (_input, init) => {
+    const req = JSON.parse(init?.body as string)
+    if (req.action === "start") {
+      return new Response(
+        JSON.stringify({
+          schema_version: "bb.remote_terminal_response.v1",
+          action: "start",
+          payload: { descriptor: req.payload.descriptor, output_deltas: [] },
+          metadata: {},
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      )
+    }
+    if (req.action === "cleanup") {
+      // Omit cleaned_session_ids, provide only failed_session_ids: ["term-rem-fail-1"]
+      return new Response(
+        JSON.stringify({
+          schema_version: "bb.remote_terminal_response.v1",
+          action: "cleanup",
+          payload: { failed_session_ids: ["term-rem-fail-1"] },
+          metadata: {},
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      )
+    }
+    if (req.action === "interact") {
+      return new Response(
+        JSON.stringify({
+          schema_version: "bb.remote_terminal_response.v1",
+          action: "interact",
+          payload: { output_deltas: [] },
+          metadata: {},
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      )
+    }
+    return new Response(JSON.stringify({ error: "not handled" }), { status: 404 })
+  }
+
+  const driver = makeRemoteExecutionDriver(undefined, {
+    endpointUrl: "http://remote-backend:8080/terminals",
+    fetchImpl: customFetch,
+  })
+
+  await driver.startTerminalSession!({
+    terminalSessionId: "term-rem-success-1",
+    command: ["python", "-i"],
+    capability: remoteCapability,
+  })
+  await driver.startTerminalSession!({
+    terminalSessionId: "term-rem-fail-1",
+    command: ["python", "-i"],
+    capability: remoteCapability,
+  })
+
+  const cleanupRes = await driver.cleanupTerminalSessions!({
+    cleanupId: "clean-rem-failed-only-1",
+    scope: "filtered",
+    sessionIds: ["term-rem-success-1", "term-rem-fail-1"],
+  })
+
+  assert.ok(cleanupRes)
+  assert.deepEqual(cleanupRes.cleaned_session_ids, ["term-rem-success-1"])
+  assert.deepEqual(cleanupRes.failed_session_ids, ["term-rem-fail-1"])
+
+  // term-rem-fail-1 remains active for interact, while term-rem-success-1 was cleaned
+  const interactFail = await driver.interactTerminalSession!({
+    terminalSessionId: "term-rem-fail-1",
+    interactionKind: "stdin",
+    inputText: "print('still active')\n",
+  })
+  assert.ok(interactFail.interaction != null, "failed remote session remains active")
+
+  await assert.rejects(
+    () =>
+      driver.interactTerminalSession!({
+        terminalSessionId: "term-rem-success-1",
+        interactionKind: "stdin",
+        inputText: "print('cleaned')\n",
+      }),
+    /already ended/,
+  )
+})

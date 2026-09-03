@@ -114,7 +114,15 @@ export function selectTerminalSessionDriver(input: {
       if (typeof driver.supportsTerminalSessions === "function") {
         return driver.supportsTerminalSessions(input.capability, input.placement.placement_class)
       }
-      return driver.supportsCapability(input.capability, input.placement.placement_class)
+      const hasTerminalMethod =
+        typeof driver.startTerminalSession === "function" ||
+        typeof driver.interactTerminalSession === "function" ||
+        typeof driver.snapshotTerminalRegistry === "function" ||
+        typeof driver.cleanupTerminalSessions === "function"
+      return (
+        hasTerminalMethod &&
+        driver.supportsCapability(input.capability, input.placement.placement_class)
+      )
     }) ?? null
   )
 }

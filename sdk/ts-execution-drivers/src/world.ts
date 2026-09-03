@@ -251,9 +251,9 @@ function buildSandboxFailureResult(input: {
     usage: input.previous?.usage ?? null,
     evidence_refs: input.previous?.evidence_refs ?? [],
     error: {
+      ...(input.previous?.error ?? {}),
       message: input.message,
       reason: input.reason,
-      ...(input.previous?.error ?? {}),
     },
   })
 }
@@ -286,6 +286,25 @@ function buildTerminalUnsupportedCase(
     metadata: { reason_code: reasonCode, ...metadata },
   })
 }
+function buildPrelaunchSandboxRequest(operation: ExecutionWorldSandboxInputV1): SandboxRequestV1 {
+  return {
+    schema_version: "bb.sandbox_request.v1",
+    request_id: operation.requestId,
+    capability_id: operation.capability.capability_id,
+    placement_class: operation.placement.placement_class,
+    workspace_ref: operation.workspaceRef ?? null,
+    rootfs_ref: null,
+    image_ref: operation.imageRef ?? null,
+    snapshot_ref: null,
+    command: operation.command && operation.command.length > 0 ? [operation.command[0] ?? "", ...operation.command.slice(1)] : ["prelaunch_aborted"],
+    network_policy: { allow: operation.capability.allow_net_hosts ?? [] },
+    secret_refs: [],
+    timeout_seconds: operation.deadlineMs != null ? Math.ceil(operation.deadlineMs / 1000) : null,
+    evidence_mode: operation.capability.evidence_mode,
+    metadata: operation.metadata ?? {},
+  }
+}
+
 
 export function createExecutionWorld(input: {
   drivers: readonly TerminalSessionDriverV1[]
@@ -296,13 +315,90 @@ export function createExecutionWorld(input: {
   const defaultDeadlineMs = input.defaultDeadlineMs ?? null
   const defaultTerminationGraceMs = input.terminationGraceMs ?? 2000
   const sessions = new Map<string, TerminalSessionDriverV1>()
-
+  const endedSessionOwners = new Map<string, TerminalSessionDriverV1>()
+  const MAX_ENDED_SESSIONS = 32
+  function rememberEndedSessionOwner(sessionId: string, driver: TerminalSessionDriverV1): void {
+    if (endedSessionOwners.has(sessionId)) {
+      endedSessionOwners.delete(sessionId)
+    }
+    endedSessionOwners.set(sessionId, driver)
+    if (endedSessionOwners.size > MAX_ENDED_SESSIONS) {
+      const oldest = endedSessionOwners.keys().next().value
+      if (oldest) endedSessionOwners.delete(oldest)
+    }
+  }
   async function executeSandbox(operation: ExecutionWorldSandboxInputV1): Promise<ExecutionWorldSandboxResultV1> {
     const driver = selectWorldDriver(drivers, {
       capability: operation.capability,
       placement: operation.placement,
       driverIdHint: operation.driverIdHint,
     })
+    const driverId = driver?.driverId ?? null
+
+    if (operation.signal?.aborted) {
+      const request = buildPrelaunchSandboxRequest(operation)
+      const livenessEvidence = buildLivenessEvidence({
+        requestId: request.request_id,
+        state: "cancelled",
+        executionStarted: false,
+        terminationRequested: false,
+        terminationObserved: false,
+      })
+      const sandboxResult = assertValid<SandboxResultV1>(
+        "sandboxResult",
+        buildSandboxFailureResult({
+          request,
+          status: "cancelled",
+          message: "Execution was cancelled before starting",
+          reason: "execution_cancelled",
+        }),
+      )
+      return {
+        kind: "sandbox",
+        driverId,
+        plan: null,
+        sandboxResult,
+        livenessEvidence,
+      }
+    }
+
+    const deadlineMs = operation.deadlineMs ?? defaultDeadlineMs
+    if (deadlineMs != null && deadlineMs <= 0) {
+      const request = buildPrelaunchSandboxRequest(operation)
+      const livenessEvidence = buildLivenessEvidence({
+        requestId: request.request_id,
+        state: "timed_out",
+        executionStarted: false,
+        terminationRequested: false,
+        terminationObserved: false,
+      })
+      if (operation.onTimeout) {
+        try {
+          void Promise.resolve(
+            operation.onTimeout({ driverId: driverId ?? "unknown", request, liveness: livenessEvidence }),
+          ).catch(() => {})
+        } catch {
+          // Timeout notification is advisory and cannot strand termination.
+        }
+      }
+      const sandboxResult = assertValid<SandboxResultV1>(
+        "sandboxResult",
+        buildSandboxFailureResult({
+          request,
+          status: "timed_out",
+          message: "Execution exceeded deadline before starting",
+          reason: "deadline_exceeded",
+        }),
+      )
+      return {
+        kind: "sandbox",
+        driverId,
+        plan: null,
+        sandboxResult,
+        livenessEvidence,
+      }
+    }
+
     if (!driver) {
       return {
         kind: "sandbox",
@@ -372,67 +468,6 @@ export function createExecutionWorld(input: {
     }
 
     const request = plan.sandboxRequest
-
-    if (operation.signal?.aborted) {
-      const livenessEvidence = buildLivenessEvidence({
-        requestId: request.request_id,
-        state: "cancelled",
-        executionStarted: false,
-        terminationRequested: false,
-        terminationObserved: false,
-      })
-      const sandboxResult = assertValid<SandboxResultV1>(
-        "sandboxResult",
-        buildSandboxFailureResult({
-          request,
-          status: "cancelled",
-          message: "Execution was cancelled before starting",
-          reason: "execution_cancelled",
-        }),
-      )
-      return {
-        kind: "sandbox",
-        driverId: driver.driverId,
-        plan,
-        sandboxResult,
-        livenessEvidence,
-      }
-    }
-    const deadlineMs = operation.deadlineMs ?? defaultDeadlineMs
-    if (deadlineMs != null && deadlineMs <= 0) {
-      const livenessEvidence = buildLivenessEvidence({
-        requestId: request.request_id,
-        state: "timed_out",
-        executionStarted: false,
-        terminationRequested: false,
-        terminationObserved: false,
-      })
-      if (operation.onTimeout) {
-        try {
-          void Promise.resolve(
-            operation.onTimeout({ driverId: driver.driverId, request, liveness: livenessEvidence }),
-          ).catch(() => {})
-        } catch {
-          // Timeout notification is advisory and cannot strand termination.
-        }
-      }
-      const sandboxResult = assertValid<SandboxResultV1>(
-        "sandboxResult",
-        buildSandboxFailureResult({
-          request,
-          status: "timed_out",
-          message: "Execution exceeded deadline before starting",
-          reason: "deadline_exceeded",
-        }),
-      )
-      return {
-        kind: "sandbox",
-        driverId: driver.driverId,
-        plan,
-        sandboxResult,
-        livenessEvidence,
-      }
-    }
 
     const controller = new AbortController()
     const deadlineAtMs = deadlineMs == null ? null : Date.now() + Math.max(0, deadlineMs)
@@ -523,7 +558,25 @@ export function createExecutionWorld(input: {
           if (!terminalized) {
             terminalized = true
             if (result) {
-              resolveTerminal?.({ status: result.status, result, executionStarted: true })
+              try {
+                const validResult = assertValid<SandboxResultV1>("sandboxResult", result)
+                if (validResult.request_id !== request.request_id) {
+                  throw new Error(
+                    `Sandbox result request_id '${validResult.request_id}' does not match request_id '${request.request_id}'`,
+                  )
+                }
+                resolveTerminal?.({ status: validResult.status, result: validResult, executionStarted: true })
+              } catch (validationError: unknown) {
+                resolveTerminal?.({
+                  status: "failed",
+                  error: new Error(
+                    validationError instanceof Error
+                      ? `Execution driver returned malformed result: ${validationError.message}`
+                      : "Execution driver returned malformed result",
+                  ),
+                  executionStarted: true,
+                })
+              }
             } else {
               resolveTerminal?.({
                 status: "failed",
@@ -533,14 +586,48 @@ export function createExecutionWorld(input: {
             }
           }
         },
-        (error: unknown) => {
+        async (error: unknown) => {
           if (!terminalized) {
             terminalized = true
-            resolveTerminal?.({ status: "failed", error, executionStarted: true })
+            const isTimeoutError = error instanceof Error && error.name === "TimeoutError"
+            const signalAborted = (operation.signal?.aborted ?? false) || controller.signal.aborted
+            const signalReason = controller.signal.reason ?? operation.signal?.reason
+            const isDeadlineReason =
+              signalReason === "deadline" ||
+              (typeof signalReason?.message === "string" && signalReason.message.toLowerCase().includes("deadline")) ||
+              isTimeoutError
+            const isTimeout = (signalAborted && isDeadlineReason) || isTimeoutError
+            const isCancelled = signalAborted && !isTimeout
+            if (isTimeout || isCancelled) {
+              const reason = isTimeout ? "deadline" : "cancelled"
+              let terminationObserved = false
+              if (driver.terminate) {
+                try {
+                  const terminationPromise = Promise.resolve(
+                    driver.terminate(request, {
+                      reason,
+                      signal: controller.signal,
+                      deadlineAtMs,
+                    }),
+                  )
+                  terminationObserved = await settleWithin(terminationPromise, terminationGraceMs)
+                } catch {
+                  terminationObserved = false
+                }
+              }
+              resolveTerminal?.({
+                status: isTimeout ? "timed_out" : "cancelled",
+                error,
+                executionStarted: true,
+                terminationRequested: true,
+                terminationObserved,
+              })
+            } else {
+              resolveTerminal?.({ status: "failed", error, executionStarted: true })
+            }
           }
         },
       )
-
     if (deadlineMs != null) {
       timer = setTimeout(() => void requestTermination("deadline"), Math.max(0, deadlineMs))
     }
@@ -561,13 +648,6 @@ export function createExecutionWorld(input: {
     if (externalAbortListener && operation.signal) operation.signal.removeEventListener("abort", externalAbortListener)
 
     const status = terminal.status
-    const livenessEvidence = buildLivenessEvidence({
-      requestId: request.request_id,
-      state: status,
-      executionStarted: terminal.executionStarted ?? executionStarted,
-      terminationRequested: terminal.terminationRequested,
-      terminationObserved: terminal.terminationObserved,
-    })
     let sandboxResult: SandboxResultV1
     try {
       const candidate = terminal.result
@@ -607,6 +687,11 @@ export function createExecutionWorld(input: {
                   : "adapter_execution_failed",
           })
       sandboxResult = assertValid<SandboxResultV1>("sandboxResult", candidate)
+      if (sandboxResult.request_id !== request.request_id) {
+        throw new Error(
+          `Sandbox result request_id '${sandboxResult.request_id}' does not match request_id '${request.request_id}'`,
+        )
+      }
     } catch (validationError: unknown) {
       sandboxResult = assertValid<SandboxResultV1>(
         "sandboxResult",
@@ -621,6 +706,13 @@ export function createExecutionWorld(input: {
         }),
       )
     }
+    const livenessEvidence = buildLivenessEvidence({
+      requestId: request.request_id,
+      state: sandboxResult.status,
+      executionStarted: terminal.executionStarted ?? executionStarted,
+      terminationRequested: terminal.terminationRequested,
+      terminationObserved: terminal.terminationObserved,
+    })
 
     return {
       kind: "sandbox",
@@ -661,14 +753,41 @@ export function createExecutionWorld(input: {
         "terminalSessionDescriptor",
         rawResult.descriptor,
       )
-      const outputDeltas = (rawResult.outputDeltas ?? []).map((delta) =>
-        assertValid<TerminalOutputDeltaV1>("terminalOutputDelta", delta),
-      )
+      if (descriptor.terminal_session_id !== operation.input.terminalSessionId) {
+        throw new Error(
+          `Terminal descriptor terminal_session_id '${descriptor.terminal_session_id}' does not match requested '${operation.input.terminalSessionId}'`,
+        )
+      }
+      const outputDeltas = (rawResult.outputDeltas ?? []).map((delta) => {
+        const validDelta = assertValid<TerminalOutputDeltaV1>("terminalOutputDelta", delta)
+        if (validDelta.terminal_session_id !== operation.input.terminalSessionId) {
+          throw new Error(
+            `Terminal output delta terminal_session_id '${validDelta.terminal_session_id}' does not match requested '${operation.input.terminalSessionId}'`,
+          )
+        }
+        return validDelta
+      })
+      let end: TerminalSessionEndV1 | undefined
+      if (rawResult.end) {
+        end = assertValid<TerminalSessionEndV1>("terminalSessionEnd", rawResult.end)
+        if (end.terminal_session_id !== operation.input.terminalSessionId) {
+          throw new Error(
+            `Terminal end terminal_session_id '${end.terminal_session_id}' does not match requested '${operation.input.terminalSessionId}'`,
+          )
+        }
+      }
       const result: TerminalSessionStartResultV1 = {
         descriptor,
         outputDeltas,
+        ...(end ? { end } : {}),
       }
-      sessions.set(operation.input.terminalSessionId, driver)
+      if (!end) {
+        sessions.set(operation.input.terminalSessionId, driver)
+        endedSessionOwners.delete(operation.input.terminalSessionId)
+      } else {
+        sessions.delete(operation.input.terminalSessionId)
+        rememberEndedSessionOwner(operation.input.terminalSessionId, driver)
+      }
       return {
         kind: "terminal_start",
         driverId: driver.driverId,
@@ -677,6 +796,19 @@ export function createExecutionWorld(input: {
         result,
       }
     } catch (error) {
+      sessions.delete(operation.input.terminalSessionId)
+      endedSessionOwners.delete(operation.input.terminalSessionId)
+      if (typeof driver.cleanupTerminalSessions === "function") {
+        try {
+          await driver.cleanupTerminalSessions({
+            cleanupId: `cleanup-validation-fail-${Date.now()}`,
+            scope: "filtered",
+            sessionIds: [operation.input.terminalSessionId],
+          })
+        } catch {
+          // Bounded cleanup best effort
+        }
+      }
       return {
         kind: "terminal_start",
         driverId: driver.driverId,
@@ -694,7 +826,7 @@ export function createExecutionWorld(input: {
   }
 
   async function executeTerminalInteract(operation: ExecutionWorldTerminalInteractionOperationV1): Promise<ExecutionWorldTerminalInteractionResultV1> {
-    const selected = sessions.get(operation.input.terminalSessionId)
+    const selected = sessions.get(operation.input.terminalSessionId) ?? endedSessionOwners.get(operation.input.terminalSessionId)
     const driver =
       selected ??
       selectWorldDriver(drivers, {
@@ -721,16 +853,37 @@ export function createExecutionWorld(input: {
         throw new Error("Terminal interaction driver returned null or invalid result")
       }
       const interaction = assertValid<TerminalInteractionV1>("terminalInteraction", rawResult.interaction)
-      const outputDeltas = (rawResult.outputDeltas ?? []).map((delta) =>
-        assertValid<TerminalOutputDeltaV1>("terminalOutputDelta", delta),
-      )
-      const end = rawResult.end
-        ? assertValid<TerminalSessionEndV1>("terminalSessionEnd", rawResult.end)
-        : undefined
+      if (interaction.terminal_session_id !== operation.input.terminalSessionId) {
+        throw new Error(
+          `Terminal interaction terminal_session_id '${interaction.terminal_session_id}' does not match requested '${operation.input.terminalSessionId}'`,
+        )
+      }
+      const outputDeltas = (rawResult.outputDeltas ?? []).map((delta) => {
+        const validDelta = assertValid<TerminalOutputDeltaV1>("terminalOutputDelta", delta)
+        if (validDelta.terminal_session_id !== operation.input.terminalSessionId) {
+          throw new Error(
+            `Terminal output delta terminal_session_id '${validDelta.terminal_session_id}' does not match requested '${operation.input.terminalSessionId}'`,
+          )
+        }
+        return validDelta
+      })
+      let end: TerminalSessionEndV1 | undefined
+      if (rawResult.end) {
+        end = assertValid<TerminalSessionEndV1>("terminalSessionEnd", rawResult.end)
+        if (end.terminal_session_id !== operation.input.terminalSessionId) {
+          throw new Error(
+            `Terminal end terminal_session_id '${end.terminal_session_id}' does not match requested '${operation.input.terminalSessionId}'`,
+          )
+        }
+      }
       const result: TerminalSessionInteractionResultV1 = {
         interaction,
         outputDeltas,
         ...(end ? { end } : {}),
+      }
+      if (end) {
+        sessions.delete(operation.input.terminalSessionId)
+        rememberEndedSessionOwner(operation.input.terminalSessionId, driver)
       }
       return { kind: "terminal_interact", driverId: driver.driverId, result }
     } catch (error) {
@@ -812,32 +965,121 @@ export function createExecutionWorld(input: {
     }
 
     if (operation.input.scope === "all") {
-      const cleanedSet = new Set<string>()
-      const failedSet = new Set<string>()
+      const activeKnownIds = Array.from(sessions.keys())
+      const pendingCleanedSet = new Set<string>(endedSessionOwners.keys())
+      const pendingFailedSet = new Set<string>()
+      const reportedCleanedSet = new Set<string>(endedSessionOwners.keys())
+      const reportedFailedSet = new Set<string>()
+
+      // Group active session IDs by owning driver
+      const driverToSessions = new Map<TerminalSessionDriverV1, string[]>()
+      for (const d of cleanupDrivers) {
+        driverToSessions.set(d, [])
+      }
       for (const [id, owner] of sessions.entries()) {
-        if (typeof owner.cleanupTerminalSessions !== "function") {
-          failedSet.add(id)
+        const list = driverToSessions.get(owner)
+        if (list) {
+          list.push(id)
+        } else {
+          const matchingDriver = cleanupDrivers.find((d) => d.driverId === owner.driverId)
+          if (matchingDriver) {
+            const mList = driverToSessions.get(matchingDriver) ?? []
+            mList.push(id)
+            driverToSessions.set(matchingDriver, mList)
+          } else {
+            pendingFailedSet.add(id)
+            reportedFailedSet.add(id)
+          }
         }
       }
+
       for (const d of cleanupDrivers) {
+        const ownedSessionIds = driverToSessions.get(d) ?? []
+        let driverCleaned: readonly string[] = []
+        let driverFailed: readonly string[] = []
         try {
-          const rawRes = await d.cleanupTerminalSessions(operation.input)
+          const rawRes = await d.cleanupTerminalSessions({
+            cleanupId: operation.input.cleanupId,
+            scope: "filtered",
+            sessionIds: ownedSessionIds,
+            signal: operation.input.signal,
+          })
           const res = assertValid<TerminalCleanupResultV1>("terminalCleanupResult", rawRes)
-          for (const id of res.cleaned_session_ids) {
-            cleanedSet.add(id)
-            sessions.delete(id)
-          }
-          if (res.failed_session_ids) {
-            for (const id of res.failed_session_ids) failedSet.add(id)
-          }
-        } catch {
-          for (const [id, owner] of sessions.entries()) {
-            if (owner === d || owner.driverId === d.driverId) {
-              failedSet.add(id)
+          const driverCleanedSet = new Set(res.cleaned_session_ids)
+          for (const failedId of res.failed_session_ids ?? []) {
+            if (driverCleanedSet.has(failedId)) {
+              throw new Error(
+                `Invalid cleanup result: session ID '${failedId}' appears in both cleaned_session_ids and failed_session_ids`,
+              )
             }
           }
+
+          // Cross-adapter / overbroad conflict checks
+          for (const failedId of res.failed_session_ids ?? []) {
+            if (reportedCleanedSet.has(failedId)) {
+              throw new Error(
+                `Invalid cleanup result: session ID '${failedId}' appears in both cleaned_session_ids and failed_session_ids`,
+              )
+            }
+          }
+          for (const cleanedId of res.cleaned_session_ids) {
+            if (reportedFailedSet.has(cleanedId)) {
+              throw new Error(
+                `Invalid cleanup result: session ID '${cleanedId}' appears in both cleaned_session_ids and failed_session_ids`,
+              )
+            }
+          }
+
+          for (const id of res.cleaned_session_ids) {
+            reportedCleanedSet.add(id)
+          }
+          for (const id of res.failed_session_ids ?? []) {
+            reportedFailedSet.add(id)
+          }
+
+          const allowedIds = new Set(ownedSessionIds)
+          driverCleaned = res.cleaned_session_ids.filter((id) => allowedIds.has(id))
+          driverFailed = (res.failed_session_ids ?? []).filter((id) => allowedIds.has(id))
+        } catch (driverError) {
+          if (driverError instanceof Error && driverError.message.startsWith("Invalid cleanup result:")) {
+            throw driverError
+          }
+          driverFailed = ownedSessionIds
+          for (const id of ownedSessionIds) {
+            if (reportedCleanedSet.has(id)) {
+              throw new Error(
+                `Invalid cleanup result: session ID '${id}' appears in both cleaned_session_ids and failed_session_ids`,
+              )
+            }
+            reportedFailedSet.add(id)
+          }
+        }
+
+        for (const id of driverCleaned) {
+          pendingCleanedSet.add(id)
+        }
+        for (const id of driverFailed) {
+          pendingFailedSet.add(id)
+        }
+        for (const id of ownedSessionIds) {
+          if (!pendingCleanedSet.has(id) && !pendingFailedSet.has(id)) {
+            pendingFailedSet.add(id)
+          }
         }
       }
+
+      for (const id of activeKnownIds) {
+        if (!pendingCleanedSet.has(id)) {
+          pendingFailedSet.add(id)
+        }
+      }
+
+      // Now that all drivers have been verified and global disjointness is guaranteed, apply state mutations
+      endedSessionOwners.clear()
+      for (const id of pendingCleanedSet) {
+        sessions.delete(id)
+      }
+
       return {
         kind: "terminal_cleanup",
         driverId: cleanupDrivers[0]?.driverId ?? null,
@@ -845,8 +1087,8 @@ export function createExecutionWorld(input: {
           schema_version: "bb.terminal_cleanup_result.v1",
           cleanup_id: operation.input.cleanupId,
           scope: "all",
-          cleaned_session_ids: Array.from(cleanedSet),
-          failed_session_ids: Array.from(failedSet),
+          cleaned_session_ids: Array.from(pendingCleanedSet),
+          failed_session_ids: Array.from(pendingFailedSet),
         },
       }
     }
@@ -863,27 +1105,37 @@ export function createExecutionWorld(input: {
         driverIdHint: operation.driverIdHint,
       }) ?? cleanupDrivers[0]!
 
-    // Group session IDs by owning driver
+    const pendingCleanedSet = new Set<string>()
+    const pendingFailedSet = new Set<string>()
+    let primaryDriverId: string | null = null
+
+    // Group active session IDs by owning driver, treating already ended sessions as idempotently cleaned
     const driverToSessions = new Map<TerminalSessionDriverV1, string[]>()
     for (const sessionId of requestedIds) {
+      if (endedSessionOwners.has(sessionId)) {
+        pendingCleanedSet.add(sessionId)
+        continue
+      }
       const owner = sessions.get(sessionId) ?? defaultDriver
       const list = driverToSessions.get(owner) ?? []
       list.push(sessionId)
       driverToSessions.set(owner, list)
     }
-
-    const cleanedSet = new Set<string>()
-    const failedSet = new Set<string>()
-    let primaryDriverId: string | null = null
-
     for (const [ownerDriver, sessionIds] of driverToSessions.entries()) {
       primaryDriverId = ownerDriver.driverId
       if (!ownerDriver.cleanupTerminalSessions) {
         for (const id of sessionIds) {
-          failedSet.add(id)
+          if (pendingCleanedSet.has(id)) {
+            throw new Error(
+              `Invalid cleanup result: session ID '${id}' appears in both cleaned_session_ids and failed_session_ids`,
+            )
+          }
+          pendingFailedSet.add(id)
         }
         continue
       }
+      let driverCleaned: readonly string[] = []
+      let driverFailed: readonly string[] = []
       try {
         const rawRes = await ownerDriver.cleanupTerminalSessions({
           cleanupId: operation.input.cleanupId,
@@ -892,16 +1144,57 @@ export function createExecutionWorld(input: {
           signal: operation.input.signal,
         })
         const res = assertValid<TerminalCleanupResultV1>("terminalCleanupResult", rawRes)
-        for (const id of res.cleaned_session_ids) {
-          cleanedSet.add(id)
-          sessions.delete(id)
+        const driverCleanedSet = new Set(res.cleaned_session_ids)
+        for (const failedId of res.failed_session_ids ?? []) {
+          if (driverCleanedSet.has(failedId)) {
+            throw new Error(
+              `Invalid cleanup result: session ID '${failedId}' appears in both cleaned_session_ids and failed_session_ids`,
+            )
+          }
         }
-        if (res.failed_session_ids) {
-          for (const id of res.failed_session_ids) failedSet.add(id)
+        const allowedIds = new Set(sessionIds)
+        driverCleaned = res.cleaned_session_ids.filter((id) => allowedIds.has(id))
+        driverFailed = (res.failed_session_ids ?? []).filter((id) => allowedIds.has(id))
+      } catch (driverError) {
+        if (driverError instanceof Error && driverError.message.startsWith("Invalid cleanup result:")) {
+          throw driverError
         }
-      } catch {
-        for (const id of sessionIds) failedSet.add(id)
+        driverFailed = sessionIds
       }
+
+      // Validate cross-adapter / intra-call disjointness
+      for (const failedId of driverFailed) {
+        if (pendingCleanedSet.has(failedId)) {
+          throw new Error(
+            `Invalid cleanup result: session ID '${failedId}' appears in both cleaned_session_ids and failed_session_ids`,
+          )
+        }
+      }
+      for (const cleanedId of driverCleaned) {
+        if (pendingFailedSet.has(cleanedId)) {
+          throw new Error(
+            `Invalid cleanup result: session ID '${cleanedId}' appears in both cleaned_session_ids and failed_session_ids`,
+          )
+        }
+      }
+
+      for (const id of driverCleaned) {
+        pendingCleanedSet.add(id)
+      }
+      for (const id of driverFailed) {
+        pendingFailedSet.add(id)
+      }
+      for (const id of sessionIds) {
+        if (!pendingCleanedSet.has(id) && !pendingFailedSet.has(id)) {
+          pendingFailedSet.add(id)
+        }
+      }
+    }
+
+    // Now apply state mutations after all driver checks pass
+    for (const id of pendingCleanedSet) {
+      sessions.delete(id)
+      endedSessionOwners.delete(id)
     }
 
     return {
@@ -911,8 +1204,8 @@ export function createExecutionWorld(input: {
         schema_version: "bb.terminal_cleanup_result.v1",
         cleanup_id: operation.input.cleanupId,
         scope: operation.input.scope,
-        cleaned_session_ids: Array.from(cleanedSet),
-        failed_session_ids: Array.from(failedSet),
+        cleaned_session_ids: Array.from(pendingCleanedSet),
+        failed_session_ids: Array.from(pendingFailedSet),
       },
     }
   }

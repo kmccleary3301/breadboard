@@ -165,6 +165,22 @@ export class RemoteTerminalSessionManager {
     })
     const outputDeltas = (response.payload.output_deltas as TerminalSessionStartResultV1["outputDeltas"] | undefined) ?? []
     const end = (response.payload.end as TerminalSessionEndV1 | undefined) ?? undefined
+    if (outputDeltas) {
+      for (const delta of outputDeltas) {
+        if (delta.terminal_session_id !== descriptor.terminal_session_id) {
+          throw new Error(
+            `Terminal output delta session ID '${delta.terminal_session_id}' does not match session ID '${descriptor.terminal_session_id}'`,
+          )
+        }
+      }
+    }
+    if (end) {
+      if (end.terminal_session_id !== descriptor.terminal_session_id) {
+        throw new Error(
+          `Terminal session end session ID '${end.terminal_session_id}' does not match session ID '${descriptor.terminal_session_id}'`,
+        )
+      }
+    }
     if (!end) {
       this.sessions.set(descriptor.terminal_session_id, { descriptor })
     } else {
@@ -194,7 +210,21 @@ export class RemoteTerminalSessionManager {
     })
     const outputDeltas = (response.payload.output_deltas as TerminalSessionInteractionResultV1["outputDeltas"] | undefined) ?? []
     const end = (response.payload.end as TerminalSessionEndV1 | undefined) ?? undefined
+    if (outputDeltas) {
+      for (const delta of outputDeltas) {
+        if (delta.terminal_session_id !== record.descriptor.terminal_session_id) {
+          throw new Error(
+            `Terminal output delta session ID '${delta.terminal_session_id}' does not match interaction session ID '${record.descriptor.terminal_session_id}'`,
+          )
+        }
+      }
+    }
     if (end) {
+      if (end.terminal_session_id !== record.descriptor.terminal_session_id) {
+        throw new Error(
+          `Terminal session end session ID '${end.terminal_session_id}' does not match interaction session ID '${record.descriptor.terminal_session_id}'`,
+        )
+      }
       this.sessions.delete(record.descriptor.terminal_session_id)
       this.rememberEndedSession(record.descriptor.terminal_session_id)
     }
@@ -234,6 +264,7 @@ export class RemoteTerminalSessionManager {
         : input.scope === "filtered"
           ? input.sessionIds ?? []
           : [...this.sessions.keys()]
+    const targetSet = new Set(targetIds)
     const alreadyEnded = targetIds.filter((sessionId) => !this.sessions.has(sessionId) && this.endedSessionIds.includes(sessionId))
     const response = await executeRemoteTerminalRequest(this.httpOptions, {
       schema_version: "bb.remote_terminal_request.v1",
@@ -241,10 +272,45 @@ export class RemoteTerminalSessionManager {
       payload: { session_ids: targetIds, signal: normalizeSignal(input.signal) },
       metadata: this.httpOptions.metadata ?? {},
     })
+    const rawCleaned = response.payload.cleaned_session_ids
+    const rawFailed = response.payload.failed_session_ids
+
+    const parseStringArray = (val: unknown): string[] | null => {
+      if (val === undefined || val === null) return null
+      if (!Array.isArray(val)) return null
+      if (!val.every((item) => typeof item === "string")) return null
+      return val
+    }
+
+    const validatedCleaned = parseStringArray(rawCleaned)
+    const validatedFailed = parseStringArray(rawFailed)
+
+    if (rawCleaned !== undefined && rawCleaned !== null && validatedCleaned === null) {
+      throw new Error("Remote cleanup returned malformed cleaned_session_ids (expected array of strings)")
+    }
+    if (rawFailed !== undefined && rawFailed !== null && validatedFailed === null) {
+      throw new Error("Remote cleanup returned malformed failed_session_ids (expected array of strings)")
+    }
+    const failedRaw = validatedFailed ?? []
+    const failedSet = new Set(failedRaw)
+    const cleanedRaw =
+      validatedCleaned ??
+      (validatedFailed ? targetIds.filter((id) => !failedSet.has(id)) : targetIds)
+
+    // Validate disjoint before any state mutation
+    const cleanedSetCheck = new Set(cleanedRaw)
+    for (const failedId of failedRaw) {
+      if (cleanedSetCheck.has(failedId)) {
+        throw new Error(`Invalid cleanup result: session ID '${failedId}' appears in both cleaned_session_ids and failed_session_ids`)
+      }
+    }
+
+    const cleanedTargeted = input.scope === "all" ? cleanedRaw : cleanedRaw.filter((id) => targetSet.has(id))
+    const failedTargeted = input.scope === "all" ? failedRaw : failedRaw.filter((id) => targetSet.has(id))
     const cleanedSessionIds = [
-      ...new Set([...(response.payload.cleaned_session_ids as string[] | undefined ?? targetIds), ...alreadyEnded]),
+      ...new Set([...cleanedTargeted, ...alreadyEnded]),
     ]
-    const failedSessionIds = (response.payload.failed_session_ids as string[] | undefined) ?? []
+    const finalFailed = Array.from(new Set([...failedTargeted, ...targetIds.filter((sessionId) => !cleanedSessionIds.includes(sessionId))]))
     for (const sessionId of cleanedSessionIds) {
       this.sessions.delete(sessionId)
       this.rememberEndedSession(sessionId)
@@ -254,7 +320,7 @@ export class RemoteTerminalSessionManager {
       cleanup_id: input.cleanupId || randomUUID(),
       scope: input.scope,
       cleaned_session_ids: cleanedSessionIds,
-      failed_session_ids: failedSessionIds,
+      failed_session_ids: finalFailed,
       metadata: { signal: normalizeSignal(input.signal) },
     })
   }

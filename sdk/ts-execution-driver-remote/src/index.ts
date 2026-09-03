@@ -191,11 +191,14 @@ export async function executeRemoteSandboxRequest(
       throw options.signal.reason instanceof Error ? options.signal.reason : new Error(String(options.signal.reason))
     }
     if (
-      (error as Error).name === "AbortError" ||
-      String((error as Error).message).includes("timed out") ||
-      String(internalController.signal.reason).includes("timed out")
+      (error instanceof Error && error.name === "AbortError") ||
+      (error instanceof Error && error.message.includes("timed out")) ||
+      (typeof internalController.signal.reason === "string" && internalController.signal.reason.includes("timed out")) ||
+      (internalController.signal.reason instanceof Error && internalController.signal.reason.message.includes("timed out"))
     ) {
-      throw new Error(`Remote execution timed out after ${options.timeoutMs ?? "unknown"}ms`)
+      const err = new Error(`Remote execution timed out after ${options.timeoutMs ?? "unknown"}ms`)
+      err.name = "TimeoutError"
+      throw err
     }
     throw error
   } finally {
@@ -220,6 +223,9 @@ export function makeRemoteExecutionDriver(
     driverId: "remote",
     supportedPlacements: ["remote_worker", "delegated_python", "delegated_oci", "delegated_microvm"],
     supportsCapability(capability, placementClass) {
+      if (!executor && !httpOptions) {
+        return false
+      }
       return isPlacementCompatible(capability, placementClass)
     },
     buildSandboxRequest({ requestId, capability, command, workspaceRef, imageRef, placement, metadata }) {
@@ -284,14 +290,10 @@ export function makeRemoteExecutionDriver(
         cleanup()
         return Promise.reject(new Error("remote driver has no configured executor or http endpoint"))
       } else {
-        const timeoutMs =
-          context?.deadlineAtMs != null
-            ? Math.max(0, context.deadlineAtMs - Date.now())
-            : httpOptions.timeoutMs
         executionPromise = executeRemoteSandboxRequest(request, {
           ...httpOptions,
           signal: controller.signal,
-          timeoutMs,
+          timeoutMs: context?.deadlineAtMs != null ? undefined : httpOptions.timeoutMs,
         })
       }
       activeExecutions.set(request.request_id, {
@@ -319,7 +321,9 @@ export function makeRemoteExecutionDriver(
           snapshotTerminalRegistry: terminalDriver.snapshotTerminalRegistry,
           cleanupTerminalSessions: terminalDriver.cleanupTerminalSessions,
         }
-      : {}),
+      : {
+          supportsTerminalSessions: () => false,
+        }),
   }
 }
 

@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-
+import { createExecutionWorld } from "@breadboard/execution-drivers"
 import {
   analyzeEffectiveToolSurface,
   buildTerminalInteractionEvent,
@@ -911,6 +911,130 @@ test("kernel core can execute a driver-mediated OCI tool turn", async () => {
   assert.equal(result.transcript.items.at(-1)?.kind, "assistant_message")
 })
 
+test("kernel core preserves provider-neutral equality across full Session product events for local and OCI worlds under timestamp-only mask", async () => {
+  const definitionRequest = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-lock-verify-1",
+    entry_mode: "interactive",
+    task: "Execute verification suite.",
+    workspace_root: "/tmp/workspace",
+  } as const
+
+  const localWorldResult = await executeDriverMediatedToolTurn(definitionRequest, {
+    sessionId: "sess-lock-verify-1",
+    toolName: "pytest_runner",
+    command: ["pytest", "tests/unit"],
+    workspaceRef: "/tmp/workspace",
+    imageRef: null,
+    isolationClass: "process",
+    securityTier: "trusted_dev",
+    startedAt: "2026-03-08T12:00:00.000Z",
+    localCommandExecutor: async () => ({
+      exitCode: 0,
+      stdout: "10 passed\n",
+      stderr: "",
+    }),
+  })
+
+  const ociWorldResult = await executeDriverMediatedToolTurn(definitionRequest, {
+    sessionId: "sess-lock-verify-1",
+    toolName: "pytest_runner",
+    command: ["pytest", "tests/unit"],
+    workspaceRef: "/tmp/workspace",
+    imageRef: "docker://breadboard/python-base:latest",
+    isolationClass: "oci",
+    securityTier: "single_tenant",
+    startedAt: "2026-03-08T12:00:00.000Z",
+    ociCommandExecutor: async () => ({
+      exitCode: 0,
+      stdout: "10 passed\n",
+      stderr: "",
+    }),
+  })
+
+  // Strip ONLY exact occurred_at and timestamp fields
+  const stripExactTimestamps = (obj: unknown): unknown => {
+    if (obj === null || typeof obj !== "object") return obj
+    if (Array.isArray(obj)) return obj.map(stripExactTimestamps)
+    const result: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+      if (key === "occurred_at_utc" || key === "occurred_at" || key === "timestamp" || key === "timestamp_utc") {
+        continue
+      }
+      result[key] = stripExactTimestamps(value)
+    }
+    return result
+  }
+
+  assert.deepEqual(
+    stripExactTimestamps(localWorldResult.events),
+    stripExactTimestamps(ociWorldResult.events),
+  )
+
+  assert.deepEqual(
+    stripExactTimestamps(localWorldResult.transcript),
+    stripExactTimestamps(ociWorldResult.transcript),
+  )
+
+  assert.equal(localWorldResult.driverId, "local-process")
+  assert.equal(ociWorldResult.driverId, "oci")
+  assert.equal(localWorldResult.executionPlacement.placement_class, "local_process")
+  assert.equal(ociWorldResult.executionPlacement.placement_class, "local_oci")
+  assert.ok(localWorldResult.sandboxResult.placement_id?.startsWith("local-process:"))
+  assert.ok(ociWorldResult.sandboxResult.placement_id?.startsWith("oci:"))
+  assert.equal(localWorldResult.sandboxRequest.image_ref, null)
+  assert.equal(ociWorldResult.sandboxRequest.image_ref, "docker://breadboard/python-base:latest")
+})
+
+test("kernel core handles pre-aborted signal in driver-mediated tool turn without throwing", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-preabort-1",
+    entry_mode: "interactive",
+    task: "Execute with pre-aborted signal.",
+    workspace_root: "/tmp/workspace",
+  } as const
+
+  const abortController = new AbortController()
+  abortController.abort(new Error("pre-aborted"))
+
+  const result = await executeDriverMediatedToolTurn(request, {
+    sessionId: "sess-preabort-1",
+    toolName: "preabort_tool",
+    command: ["echo", "unreachable"],
+    workspaceRef: "/tmp/workspace",
+    signal: abortController.signal,
+  })
+
+  assert.equal(result.sandboxResult.status, "cancelled")
+  assert.equal((result.events.find((e) => e.kind === "tool_call")?.payload as Record<string, unknown>)?.state, "cancelled")
+  assert.equal((result.events.find((e) => e.kind === "tool_result")?.payload as Record<string, unknown>)?.terminalState, "cancelled")
+  assert.ok(String((result.transcript.items.at(-1)?.content as Record<string, unknown>)?.text ?? "").includes("cancelled"))
+})
+
+test("kernel core handles pre-expired deadline in driver-mediated tool turn without throwing", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-preexpired-1",
+    entry_mode: "interactive",
+    task: "Execute with pre-expired deadline.",
+    workspace_root: "/tmp/workspace",
+  } as const
+
+  const result = await executeDriverMediatedToolTurn(request, {
+    sessionId: "sess-preexpired-1",
+    toolName: "preexpired_tool",
+    command: ["echo", "unreachable"],
+    workspaceRef: "/tmp/workspace",
+    deadlineMs: 0,
+  })
+
+  assert.equal(result.sandboxResult.status, "timed_out")
+  assert.equal((result.events.find((e) => e.kind === "tool_call")?.payload as Record<string, unknown>)?.state, "timed_out")
+  assert.equal((result.events.find((e) => e.kind === "tool_result")?.payload as Record<string, unknown>)?.terminalState, "timed_out")
+  assert.ok(String((result.transcript.items.at(-1)?.content as Record<string, unknown>)?.text ?? "").includes("timed_out"))
+})
+
 test("kernel core can execute a driver-mediated remote tool turn", async () => {
   const request = {
     schema_version: "bb.run_request.v1",
@@ -1060,7 +1184,7 @@ test("kernel core maps timed out sandbox driver results to timed_out v2 tool out
   assert.equal(result.events[2]?.kind, "tool_result")
   assert.equal(toolResultPayload.terminalState, "timed_out")
   assert.equal(toolResultPayload.result, null)
-  assert.deepEqual(toolResultPayload.error, { message: "sandbox timed out", code: "timeout", retryable: true })
+  assert.deepEqual(toolResultPayload.error, { message: "Execution exceeded its deadline", code: "timeout", retryable: true })
   assert.equal(toolResultMetadata.sandbox_status, "timed_out")
   if ("schema_version" in toolResultPayload) {
     assert.equal(toolResultPayload.schema_version, "bb.tool_execution_outcome.v2")
@@ -1113,7 +1237,7 @@ test("kernel core maps cancelled sandbox driver results to cancelled v2 tool out
   }
   assert.equal(result.events[2]?.kind, "tool_result")
   assert.equal(toolResultPayload.terminalState, "cancelled")
-  assert.deepEqual(toolResultPayload.error, { message: "sandbox cancelled", code: "cancelled", retryable: false })
+  assert.deepEqual(toolResultPayload.error, { message: "Execution was cancelled", code: "cancelled", retryable: false })
   assert.equal(toolResultMetadata.sandbox_status, "cancelled")
   if ("schema_version" in toolResultPayload) {
     assert.equal(toolResultPayload.schema_version, "bb.tool_execution_outcome.v2")
@@ -1402,4 +1526,148 @@ test("createKernelExecutionWorld with executeSandbox does not invoke override wh
   assert.equal(result.kind, "sandbox")
   assert.equal(result.sandboxResult?.status, "cancelled")
   assert.equal(result.livenessEvidence.executionStarted, false)
+})
+
+test("executeDriverMediatedToolTurn passes execution context controls (signal, deadlineAtMs, terminationGraceMs) to executeSandbox callback", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-driver-context-1",
+    entry_mode: "interactive",
+    task: "Verify context controls.",
+    workspace_root: "/tmp/workspace",
+  } as const
+
+  let receivedSignal: AbortSignal | undefined
+  let receivedDeadlineAtMs: number | null | undefined
+  let receivedGraceMs: number | undefined
+
+  const controller = new AbortController()
+
+  const result = await executeDriverMediatedToolTurn(request, {
+    sessionId: "sess-driver-context-1",
+    toolName: "inspector",
+    command: ["test", "--dry-run"],
+    workspaceRef: "/tmp/workspace",
+    signal: controller.signal,
+    timeoutMs: 5000,
+    terminationGraceMs: 250,
+    executeSandbox: async (sandboxRequest, context) => {
+      receivedSignal = context.signal
+      receivedDeadlineAtMs = context.deadlineAtMs
+      receivedGraceMs = context.terminationGraceMs
+      return {
+        schema_version: "bb.sandbox_result.v1",
+        request_id: sandboxRequest.request_id,
+        status: "completed",
+        placement_id: "placement-context-1",
+        stdout_ref: null,
+        stderr_ref: null,
+        artifact_refs: [],
+        side_effect_digest: "sha256:context1",
+        error: null,
+      }
+    },
+  })
+
+  assert.equal(result.sandboxResult.status, "completed")
+  assert.ok(receivedSignal !== undefined)
+  assert.equal(typeof receivedDeadlineAtMs, "number")
+  assert.equal(receivedGraceMs, 250)
+})
+
+test("executeDriverMediatedToolTurn rejects when selected driver has no executable backend or sandbox request builder", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-driver-unsupported-driver-1",
+    entry_mode: "interactive",
+    task: "Verify driver without backend throws instead of synthesizing failed result.",
+    workspace_root: "/tmp/workspace",
+  } as const
+
+  const noExecuteDriver = {
+    driverId: "no-execute-driver",
+    supportedPlacements: ["local_process" as const],
+    supportsCapability: () => true,
+  }
+  const customWorld = createExecutionWorld({ drivers: [noExecuteDriver] })
+
+  await assert.rejects(
+    () =>
+      executeDriverMediatedToolTurn(request, {
+        sessionId: "sess-no-execute-1",
+        toolName: "test_tool",
+        command: ["echo", "hello"],
+        executionWorld: customWorld,
+      }),
+    /No execution driver produced a sandbox request|has no executable backend/,
+  )
+})
+
+test("executeDriverMediatedToolTurn on remote isolation without remote backend throws typed unsupported before sandbox result", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-remote-unconfigured-1",
+    entry_mode: "interactive",
+    task: "Run tool on remote backend without config",
+    workspace_root: "/tmp/workspace",
+  } as const
+
+  await assert.rejects(
+    () =>
+      executeDriverMediatedToolTurn(request, {
+        sessionId: "sess-remote-unconfigured-1",
+        toolName: "remote_tool",
+        command: ["python", "-c", "print(1)"],
+        isolationClass: "remote_service",
+        securityTier: "multi_tenant",
+        driverIdHint: "remote",
+      }),
+    /No execution driver supports remote_worker|No execution driver supports execution capability|No execution driver produced a sandbox request/,
+  )
+})
+
+test("createKernelExecutionWorld with executeSandbox override advertises and executes remote capability without remote backend config", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-remote-override-1",
+    entry_mode: "interactive",
+    task: "Run tool on remote capability with executeSandbox override",
+    workspace_root: "/tmp/workspace",
+  } as const
+
+  let injectedCalled = false
+  const world = createKernelExecutionWorld({
+    executeSandbox: async (req, context) => {
+      injectedCalled = true
+      assert.equal(context.driverId, "remote")
+      assert.equal(context.capability.isolation_class, "remote_service")
+      return {
+        schema_version: "bb.sandbox_result.v1",
+        request_id: req.request_id,
+        status: "completed",
+        placement_id: "remote:override-place-1",
+        stdout_ref: "sha256:remote-override-stdout",
+        stderr_ref: null,
+        artifact_refs: [],
+        side_effect_digest: "sha256:remote-override-digest",
+        usage: { exit_code: 0 },
+        evidence_refs: [],
+        error: null,
+      }
+    },
+  })
+
+  const result = await executeDriverMediatedToolTurn(request, {
+    sessionId: "sess-remote-override-1",
+    toolName: "remote_tool",
+    command: ["python", "-c", "print('remote override')"],
+    isolationClass: "remote_service",
+    securityTier: "multi_tenant",
+    driverIdHint: "remote",
+    executionWorld: world,
+  })
+
+  assert.ok(injectedCalled, "injected executeSandbox was called for remote placement")
+  assert.equal(result.sandboxResult.status, "completed")
+  assert.equal(result.driverId, "remote")
 })

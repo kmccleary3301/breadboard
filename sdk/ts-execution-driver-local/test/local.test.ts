@@ -5,6 +5,7 @@ import { setTimeout as sleep } from "node:timers/promises"
 import {
   buildLocalProcessSandboxRequest,
   chooseTrustedLocalPlacement,
+  defaultLocalCommandExecutor,
   executeLocalProcessSandboxRequest,
   makeTrustedLocalExecutionDriver,
   trustedLocalExecutionDriver,
@@ -307,4 +308,185 @@ test("trusted local driver terminate triggers signal and awaits process exit", a
   assert.equal(processExited, true)
   const result = await execPromise
   assert.equal(result.status, "timed_out")
+})
+
+test("defaultLocalCommandExecutor terminates isolated process group including shell descendants on abort", async () => {
+  const abortController = new AbortController()
+  // Launch a process that writes its child pid to stdout, then sleeps
+  const execPromise = defaultLocalCommandExecutor({
+    command: [
+      "node",
+      "-e",
+      "const { spawn } = require('node:child_process'); const c = spawn('sleep', ['60']); console.log(c.pid);",
+    ],
+    signal: abortController.signal,
+  })
+
+  // Give the process enough time to spawn descendant
+  await sleep(100)
+  abortController.abort(new Error("aborted"))
+  const result = await execPromise
+  assert.ok(result.exitCode !== 0)
+  const descendantPid = parseInt(result.stdout.trim(), 10)
+  if (!isNaN(descendantPid) && descendantPid > 0 && process.platform !== "win32") {
+    // Wait briefly and verify descendant process is gone (sending signal 0 will throw ESRCH)
+    await sleep(200)
+    let isRunning = false
+    try {
+      process.kill(descendantPid, 0)
+      isRunning = true
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code === "ESRCH") {
+        isRunning = false
+      }
+    }
+    assert.equal(isRunning, false, "descendant process was successfully terminated")
+  }
+})
+
+test("trusted local driver cleanup escalates to SIGKILL for SIGTERM-ignoring process and verifies exit", async () => {
+  const start = await trustedLocalExecutionDriver.startTerminalSession?.({
+    terminalSessionId: "term-local-sigterm-ignore-1",
+    command: [
+      "node",
+      "-e",
+      "process.on('SIGTERM', () => {}); console.log('ready'); setInterval(() => {}, 1000);",
+    ],
+    cwd: "/tmp",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-term-ignore-1",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      secret_mode: "ref_only",
+      evidence_mode: "replay_strict",
+    },
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-term-ignore-1",
+      placement_class: "local_process",
+      runtime_id: "local",
+      capability_id: "cap-term-ignore-1",
+    },
+    startupCallId: "call-ignore-1",
+  })
+  assert.ok(start)
+  await sleep(100)
+
+  const cleanupResult = await trustedLocalExecutionDriver.cleanupTerminalSessions?.({
+    cleanupId: "cleanup-ignore-1",
+    scope: "single",
+    sessionIds: ["term-local-sigterm-ignore-1"],
+    signal: "SIGTERM",
+  })
+
+  assert.ok(cleanupResult)
+  assert.deepEqual(cleanupResult?.cleaned_session_ids, ["term-local-sigterm-ignore-1"])
+  assert.deepEqual(cleanupResult?.failed_session_ids, [])
+
+  const registry = await trustedLocalExecutionDriver.snapshotTerminalRegistry?.()
+  assert.ok(
+    !registry?.active_sessions.some((s) => s.terminal_session_id === "term-local-sigterm-ignore-1"),
+    "session was removed from active sessions after SIGKILL escalation",
+  )
+  assert.ok(
+    (registry?.ended_session_ids ?? []).includes("term-local-sigterm-ignore-1"),
+    "session is recorded in ended_session_ids",
+  )
+})
+
+test("trusted local driver cleanup handles simulated windows platform without hanging or false failure", async () => {
+  const originalPlatform = process.platform
+  try {
+    Object.defineProperty(process, "platform", { value: "win32" })
+    const start = await trustedLocalExecutionDriver.startTerminalSession?.({
+      terminalSessionId: "term-local-win32-1",
+      command: ["node", "-e", "console.log('ready'); setInterval(() => {}, 1000);"],
+      cwd: "/tmp",
+      capability: {
+        schema_version: "bb.execution_capability.v1",
+        capability_id: "cap-term-win32-1",
+        security_tier: "trusted_dev",
+        isolation_class: "process",
+        secret_mode: "ref_only",
+        evidence_mode: "minimal",
+      },
+      placement: {
+        schema_version: "bb.execution_placement.v1",
+        placement_id: "place-term-win32-1",
+        placement_class: "local_process",
+        runtime_id: "local",
+        capability_id: "cap-term-win32-1",
+      },
+      startupCallId: "call-win32-1",
+    })
+    assert.ok(start)
+    await sleep(50)
+
+    const cleanupResult = await trustedLocalExecutionDriver.cleanupTerminalSessions?.({
+      cleanupId: "cleanup-win32-1",
+      scope: "single",
+      sessionIds: ["term-local-win32-1"],
+      signal: "SIGTERM",
+    })
+
+    assert.ok(cleanupResult)
+    assert.deepEqual(cleanupResult?.cleaned_session_ids, ["term-local-win32-1"])
+    assert.deepEqual(cleanupResult?.failed_session_ids, [])
+  } finally {
+    Object.defineProperty(process, "platform", { value: originalPlatform })
+  }
+})
+
+test("trusted local driver terminate bounds settlement when executor ignores abort and never settles", async () => {
+  const neverSettlingExecutor = () => new Promise<{ exitCode: number; stdout: string; stderr: string }>(() => {})
+  const driver = makeTrustedLocalExecutionDriver(neverSettlingExecutor)
+
+  const request = buildLocalProcessSandboxRequest({
+    requestId: "req-local-never-settle",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-local-never-settle",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["sleep", "100"],
+  })
+
+  const controller = new AbortController()
+  const cap = {
+    schema_version: "bb.execution_capability.v1" as const,
+    capability_id: "cap-local-never-settle",
+    security_tier: "trusted_dev" as const,
+    isolation_class: "process" as const,
+    secret_mode: "ref_only" as const,
+    evidence_mode: "minimal" as const,
+  }
+  const place = {
+    schema_version: "bb.execution_placement.v1" as const,
+    placement_id: "place-local-never-settle",
+    placement_class: "local_process" as const,
+    runtime_id: "local",
+    capability_id: cap.capability_id,
+  }
+  const executePromise = driver.execute!(request, {
+    signal: controller.signal,
+    deadlineAtMs: null,
+    terminationGraceMs: 100,
+    capability: cap,
+    placement: place,
+    driverId: "local-process",
+  })
+
+  // Terminate should complete boundedly despite neverSettlingExecutor
+  const startMs = Date.now()
+  await driver.terminate!(request, {
+    reason: "cancelled",
+    signal: controller.signal,
+    deadlineAtMs: null,
+  })
+  const durationMs = Date.now() - startMs
+  assert.ok(durationMs < 3000, `terminate resolved boundedly in ${durationMs}ms`)
 })

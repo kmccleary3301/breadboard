@@ -138,6 +138,9 @@ export type OpenClawToolSliceOptions = {
     capability: ExecutionCapabilityV1
     placement: ExecutionPlacementV1
     driverId: string
+    signal?: AbortSignal
+    deadlineAtMs?: number | null
+    terminationGraceMs?: number
     tool: OpenClawClientToolDefinition
     params: OpenClawEmbeddedRunParams
   }) => Promise<SandboxResultV1>
