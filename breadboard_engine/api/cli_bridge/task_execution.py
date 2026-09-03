@@ -320,7 +320,7 @@ class TaskExecutionOwner:
         published_events = 0
         replay_assistant_content: dict[tuple[str, str], list[str]] = {}
         registered_assistant_ids: set[str] = set()
-        completed_stream_targets: dict[str, str] = {}
+        completed_stream_targets: dict[str, tuple[str, str | None, str]] = {}
         seen_stream_message_ids: set[str] = set()
         active_replay_stream: tuple[str, str] | None = None
         anonymous_stream_count = 0
@@ -510,7 +510,9 @@ class TaskExecutionOwner:
                     )
                     registered_assistant_ids.add(observed_message_id)
                     completed_stream_targets[observed_message_id] = (
-                        observed_trajectory_id
+                        observed_trajectory_id,
+                        observed_payload["text"],
+                        str(turn if turn is not None else correlation["turn_id"]),
                     )
                     payload["message_id"] = observed_message_id
                     payload["trajectory_id"] = observed_payload["trajectory_id"]
@@ -538,6 +540,30 @@ class TaskExecutionOwner:
                     ):
                         raise RuntimeProtocolError("runtime_protocol_error")
                     observed_message_id = message_id or nested_message_id
+                    direct_text = _first_assistant_visible_text(payload, ("text",))
+                    current_turn_id = str(
+                        turn if turn is not None else correlation["turn_id"]
+                    )
+                    completed_target = (
+                        completed_stream_targets.get(observed_message_id)
+                        if observed_message_id is not None
+                        else None
+                    )
+                    if (
+                        completed_target is not None
+                        and completed_target[2] != current_turn_id
+                    ):
+                        completed_target = None
+                    if observed_message_id is None and direct_text is not None:
+                        for target_id, target in completed_stream_targets.items():
+                            _, completed_text, target_turn_id = target
+                            if (
+                                target_turn_id == current_turn_id
+                                and completed_text == direct_text
+                            ):
+                                observed_message_id = target_id
+                                completed_target = target
+                                break
                     if observed_message_id is None:
                         observed_message_id = identity_digest(
                             "\0".join(
@@ -549,8 +575,8 @@ class TaskExecutionOwner:
                             )
                         )
                     supplied_trajectory_id = payload.get("trajectory_id")
-                    completed_trajectory_id = completed_stream_targets.get(
-                        observed_message_id
+                    completed_trajectory_id = (
+                        completed_target[0] if completed_target is not None else None
                     )
                     if completed_trajectory_id is not None:
                         if supplied_trajectory_id is None:
@@ -559,6 +585,7 @@ class TaskExecutionOwner:
                             raise RuntimeProtocolError("runtime_protocol_error")
                         else:
                             observed_trajectory_id = supplied_trajectory_id
+                        completed_stream_targets.pop(observed_message_id, None)
                     else:
                         observed_trajectory_id = (
                             supplied_trajectory_id
@@ -674,7 +701,7 @@ class TaskExecutionOwner:
         live_stream_ids: set[str] = set()
         live_stream_sequence = 0
         active_live_stream: tuple[str, str] | None = None
-        completed_live_stream_targets: list[tuple[str, str, str | None]] = []
+        completed_live_stream_targets: list[tuple[str, str, str | None, str]] = []
 
         def finish_live_assistant_stream(
             evt_type: EventType,
@@ -855,9 +882,6 @@ class TaskExecutionOwner:
                     EventType.ASSISTANT_MESSAGE_DELTA,
                     EventType.ASSISTANT_MESSAGE_END,
                 }:
-                    if evt_type is EventType.ASSISTANT_MESSAGE_START:
-                        with live_stream_lock:
-                            completed_live_stream_targets.clear()
                     completed_stream = finish_live_assistant_stream(
                         evt_type,
                         evt_payload,
@@ -878,6 +902,7 @@ class TaskExecutionOwner:
                                     completed_stream["message_id"],
                                     completed_stream["trajectory_id"],
                                     _first_assistant_visible_text(completed_stream, ("text",)),
+                                    str(evt_turn if evt_turn is not None else correlation["turn_id"]),
                                 )
                             )
                 else:
@@ -906,9 +931,14 @@ class TaskExecutionOwner:
                             direct_text = _first_assistant_visible_text(
                                 evt_payload, ("text",)
                             )
-                            matched_target: tuple[str, str, str | None] | None = None
+                            matched_target: tuple[str, str, str | None, str] | None = None
+                            current_turn_id = str(
+                                evt_turn if evt_turn is not None else correlation["turn_id"]
+                            )
                             for target in completed_live_stream_targets:
-                                completed_message_id, _, completed_text = target
+                                completed_message_id, _, completed_text, target_turn_id = target
+                                if target_turn_id != current_turn_id:
+                                    continue
                                 if (
                                     direct_message_id == completed_message_id
                                     or (
@@ -920,9 +950,12 @@ class TaskExecutionOwner:
                                     matched_target = target
                                     break
                             if matched_target is not None:
-                                completed_message_id, completed_trajectory_id, _ = (
-                                    matched_target
-                                )
+                                (
+                                    completed_message_id,
+                                    completed_trajectory_id,
+                                    _,
+                                    _,
+                                ) = matched_target
                                 if (
                                     supplied_trajectory_id is not None
                                     and supplied_trajectory_id
@@ -937,8 +970,6 @@ class TaskExecutionOwner:
                                     completed_trajectory_id
                                 )
                                 skip_product_observation = True
-                            elif completed_live_stream_targets:
-                                completed_live_stream_targets.clear()
                     if not skip_product_observation:
                         runner._record_product_observation(
                             event_family,

@@ -383,7 +383,7 @@ def test_live_canonical_message_matches_only_its_completed_stream() -> None:
         for event in runner.session.event_queue._queue
         if event is not None and event.type is EventType.ASSISTANT_MESSAGE
     )
-    assert canonical_event.payload["message_id"] == "second-stream"
+    assert canonical_event.payload["message_id"] == "first-stream"
 
 
 def test_live_assistant_stream_registers_delta_identity_and_content() -> None:
@@ -608,6 +608,103 @@ def test_later_aborted_stream_forces_fallback_after_completed_stream() -> None:
     assert assistant_targets == ["complete-first", "complete-second"]
 
 
+def test_multiple_completed_live_streams_reconcile_each_result_message() -> None:
+    runner, session = _product_runner("multiple-live-assistant-streams")
+
+    def run_task(*_args, **kwargs):  # type: ignore[no-untyped-def]
+        emit = kwargs["event_emitter"]
+        emit("assistant.message.start", {"message_id": "first"})
+        emit("assistant.message.end", {"message_id": "first", "text": "one"})
+        emit("assistant.message.start", {"message_id": "second"})
+        emit("assistant.message.end", {"message_id": "second", "text": "two"})
+        return {
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": "one",
+                    "message_id": "first",
+                },
+                {
+                    "role": "assistant",
+                    "content": "two",
+                    "message_id": "second",
+                },
+            ],
+            "completion_summary": {"completed": True},
+        }
+
+    runner._agent = type(
+        "Agent",
+        (),
+        {"_local_mode": True, "config": {}, "run_task": run_task},
+    )()
+
+    _execute_task(runner)
+
+    assert [
+        event.payload["message_id"]
+        for event in session.events
+        if event.kind == "assistant_message"
+    ] == ["first", "second"]
+
+
+def test_identityless_live_messages_reconcile_equal_text_streams_fifo() -> None:
+    runner, session = _product_runner("equal-live-assistant-streams")
+
+    def run_task(*_args, **kwargs):  # type: ignore[no-untyped-def]
+        emit = kwargs["event_emitter"]
+        emit("assistant.message.start", {"message_id": "first"})
+        emit("assistant.message.end", {"message_id": "first", "text": "same"})
+        emit("assistant.message.start", {"message_id": "second"})
+        emit("assistant.message.end", {"message_id": "second", "text": "same"})
+        return {
+            "messages": [
+                {"role": "assistant", "content": "same"},
+                {"role": "assistant", "content": "same"},
+            ],
+            "completion_summary": {"completed": True},
+        }
+
+    runner._agent = type(
+        "Agent",
+        (),
+        {"_local_mode": True, "config": {}, "run_task": run_task},
+    )()
+
+    _execute_task(runner)
+
+    assert [
+        event.payload["message_id"]
+        for event in session.events
+        if event.kind == "assistant_message"
+    ] == ["first", "second"]
+
+
+def test_live_text_fallback_does_not_cross_runtime_turns() -> None:
+    runner, session = _product_runner("live-stream-turn-scope")
+
+    def run_task(*_args, **kwargs):  # type: ignore[no-untyped-def]
+        emit = kwargs["event_emitter"]
+        emit("assistant.message.start", {"message_id": "first"}, turn=1)
+        emit(
+            "assistant.message.end",
+            {"message_id": "first", "text": "same"},
+            turn=1,
+        )
+        emit("assistant_message", {"text": "same"}, turn=2)
+        return {"completion_summary": {"completed": True}}
+
+    runner._agent = type(
+        "Agent",
+        (),
+        {"_local_mode": True, "config": {}, "run_task": run_task},
+    )()
+
+    _execute_task(runner)
+
+    assert sum(event.kind == "assistant_message" for event in session.events) == 2
+
+
 @pytest.mark.asyncio
 async def test_replay_stream_end_normalizes_content_blocks(tmp_path) -> None:
     fixture = tmp_path / "assistant-replay-content-block.jsonl"
@@ -736,7 +833,8 @@ async def test_replay_assistant_stream_registers_canonical_message_target(
                     "type": "assistant_message",
                     "payload": {
                         "text": "hello",
-                        "message": {"id": "replay-message-1"},
+
+                        "message": {"role": "assistant", "content": "hello"},
                     },
                 },
             )
@@ -758,6 +856,142 @@ async def test_replay_assistant_stream_registers_canonical_message_target(
     assert product_payload["message_id"] == "replay-message-1"
     assert product_payload["trajectory_id"] == "turn-test"
     assert product_payload["metadata"]["has_content"] is True
+    assert sum(event.kind == "assistant_message" for event in session.events) == 1
+@pytest.mark.asyncio
+async def test_replay_text_fallback_does_not_cross_fixture_turns(tmp_path) -> None:
+    fixture = tmp_path / "cross-turn-assistant-stream-replay.jsonl"
+    fixture.write_text(
+        "\n".join(
+            json.dumps(row)
+            for row in (
+                {
+                    "type": "assistant.message.start",
+                    "turn": 1,
+                    "payload": {"message_id": "replay-message-1"},
+                },
+                {
+                    "type": "assistant.message.end",
+                    "turn": 1,
+                    "payload": {
+                        "message_id": "replay-message-1",
+                        "text": "same",
+                    },
+                },
+                {
+                    "type": "assistant_message",
+                    "turn": 2,
+                    "payload": {"text": "same"},
+                },
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runner, session = _product_runner("replay-assistant-cross-turn")
+    await runner.registry.create(runner.session)
+    active_turn = runner.session.turns_by_id[runner.session.active_turn_id]
+
+    await runner._execute_replay_task(
+        f"replay:{fixture}",
+        input_id=active_turn.input_id,
+        turn_id=active_turn.turn_id,
+    )
+
+    assert sum(event.kind == "assistant_message" for event in session.events) == 2
+
+
+
+@pytest.mark.asyncio
+async def test_replay_explicit_stream_target_does_not_cross_fixture_turns(
+    tmp_path,
+) -> None:
+    fixture = tmp_path / "cross-turn-explicit-assistant-stream-replay.jsonl"
+    fixture.write_text(
+        "\n".join(
+            json.dumps(row)
+            for row in (
+                {
+                    "type": "assistant.message.start",
+                    "turn": 1,
+                    "payload": {"message_id": "reused"},
+                },
+                {
+                    "type": "assistant.message.end",
+                    "turn": 1,
+                    "payload": {"message_id": "reused", "text": "first"},
+                },
+                {
+                    "type": "assistant_message",
+                    "turn": 2,
+                    "payload": {"message_id": "reused", "text": "second"},
+                },
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runner, _ = _product_runner("replay-assistant-explicit-cross-turn")
+    await runner.registry.create(runner.session)
+    active_turn = runner.session.turns_by_id[runner.session.active_turn_id]
+
+    with pytest.raises(RuntimeProtocolError, match="runtime_protocol_error"):
+        await runner._execute_replay_task(
+            f"replay:{fixture}",
+            input_id=active_turn.input_id,
+            turn_id=active_turn.turn_id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_replay_consumes_completed_stream_reconciliation_target(
+    tmp_path,
+) -> None:
+    fixture = tmp_path / "duplicate-assistant-stream-replay.jsonl"
+    fixture.write_text(
+        "\n".join(
+            json.dumps(row)
+            for row in (
+                {
+                    "type": "assistant.message.start",
+                    "payload": {"message_id": "replay-message-1"},
+                },
+                {
+                    "type": "assistant.message.end",
+                    "payload": {
+                        "message_id": "replay-message-1",
+                        "text": "hello",
+                    },
+                },
+                {
+                    "type": "assistant_message",
+                    "payload": {
+                        "text": "hello",
+                        "message": {"id": "replay-message-1"},
+                    },
+                },
+                {
+                    "type": "assistant_message",
+                    "payload": {
+                        "text": "duplicate",
+                        "message": {"id": "replay-message-1"},
+                    },
+                },
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runner, session = _product_runner("duplicate-replay-assistant-stream")
+    await runner.registry.create(runner.session)
+    turn = runner.session.turns_by_id[runner.session.active_turn_id]
+
+    with pytest.raises(RuntimeProtocolError, match="runtime_protocol_error"):
+        await runner._execute_replay_task(
+            f"replay:{fixture}",
+            input_id=turn.input_id,
+            turn_id=turn.turn_id,
+        )
+
     assert sum(event.kind == "assistant_message" for event in session.events) == 1
 
 
