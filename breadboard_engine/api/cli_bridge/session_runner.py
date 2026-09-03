@@ -477,7 +477,11 @@ class SessionRunner:
             retained_turns = [
                 turn
                 for turn in self.session.turns_by_id.values()
-                if turn.logical_event_count_before_admission is not None
+                if (
+                    turn.logical_event_count_before_admission is not None
+                    and turn.terminal_outcome is None
+                    and not turn.terminal_resolution_committed
+                )
             ]
             if not retained_turns:
                 return

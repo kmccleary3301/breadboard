@@ -3757,3 +3757,60 @@ async def test_product_transition_after_registry_admission_aborts_input(
     finally:
         if recovered.runner is not None:
             await recovered.runner.stop()
+
+
+@pytest.mark.parametrize("terminal_kind", ["completed", "failed"])
+def test_terminal_retained_turn_is_unchanged_by_later_lifecycle_event(
+    tmp_path: Path,
+    terminal_kind: str,
+) -> None:
+    from dataclasses import asdict
+
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+    from breadboard.product.runtime.events import JsonlEventSink
+
+    session_id = f"session-terminal-retained-{terminal_kind}"
+    product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "f" * 64}),
+        "terminal retained turn",
+        session_id=session_id,
+        sink=JsonlEventSink(
+            tmp_path / session_id / "session_events.jsonl"
+        ),
+    )
+    if terminal_kind == "completed":
+        product_session.complete("already completed")
+        session_status = SessionStatus.COMPLETED
+    else:
+        product_session.fail("worker_failure", "already failed")
+        session_status = SessionStatus.FAILED
+    turn = TurnRecord(
+        input_id="input-terminal-retained",
+        turn_id="turn-terminal-retained",
+        client_message_id="client-terminal-retained",
+        content="",
+        attachments=(),
+        original_disposition="started",
+        state=terminal_kind,
+        terminal_outcome=terminal_kind,
+        terminal_resolution_committed=True,
+        logical_event_count_before_admission=1,
+        logical_input_content_hash="sha256:" + "a" * 64,
+    )
+    record = SessionRecord(
+        session_id=session_id,
+        status=session_status,
+    )
+    record.product_session = product_session
+    record.turns_by_id[turn.turn_id] = turn
+    runner = SessionRunner(
+        session=record,
+        registry=SessionRegistry(),
+        request=SessionCreateRequest(task=""),
+    )
+    before = asdict(turn)
+
+    runner.reconcile_retained_input_admissions()
+
+    assert asdict(turn) == before
