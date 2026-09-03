@@ -6360,8 +6360,8 @@
       },
       {
         "line_numbers": [
-          635,
-          638
+          639,
+          642
         ],
         "occurrence_count": 2,
         "path": "engine_root/breadboard_engine/api/cli_bridge/session_runner.py"
@@ -8833,7 +8833,7 @@
   "generated_by": "scripts/interface_inventory.py",
   "inputs": {
     "engine_root": {
-      "content_digest": "sha256:51b0b14f450d519d612dcaf7989c3e3adfabee8dc1ff099f336c0efdfa18dbf5",
+      "content_digest": "sha256:60016a1284ec6705b813517e24e66bd04baebc048d0b59149448beda516b00f5",
       "file_count": 4732
     },
     "tui_root": {
@@ -9435,6 +9435,10 @@
       "exists": true,
       "path": "engine_root/breadboard/product/runtime/events.py",
       "symbols": [
+        {
+          "kind": "class",
+          "name": "AnnotationRecord"
+        },
         {
           "kind": "class",
           "name": "Clock"
