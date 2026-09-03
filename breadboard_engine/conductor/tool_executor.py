@@ -9,6 +9,7 @@ import signal
 import subprocess
 import time
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -565,6 +566,71 @@ def execute_agent_calls(
         return executed_results, failed_at_index, validation_error, meta
     finally:
         conductor.agent_executor.allow_multiple_bash = previous_value
+
+
+@dataclass(slots=True)
+class ToolExecutionBatch:
+    """Typed result of admission and execution for one prepared turn."""
+
+    executed_results: List[Any]
+    failed_at_index: int
+    execution_error: Optional[Dict[str, Any]]
+    plan_metadata: Dict[str, Any]
+
+
+
+class ToolExecutor:
+    """Own tool admission, execution, and provider-neutral result shaping."""
+
+    def __init__(
+        self,
+        *,
+        conductor: ConductorContext,
+        session_state: SessionState,
+        exec_func: Callable[[Dict[str, Any]], Dict[str, Any]],
+        execute_calls: Callable[..., Tuple[List[Any], int, Optional[Dict[str, Any]], Dict[str, Any]]],
+    ) -> None:
+        self.conductor = conductor
+        self.session_state = session_state
+        self.exec_func = exec_func
+        self.execute_calls = execute_calls
+
+    def execute(
+        self,
+        parsed_calls: List[Any],
+        *,
+        transcript_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        policy_bypass: bool = False,
+    ) -> ToolExecutionBatch:
+        result = self.execute_calls(
+            self.conductor,
+            parsed_calls,
+            self.exec_func,
+            self.session_state,
+            transcript_callback=transcript_callback,
+            policy_bypass=policy_bypass,
+        )
+        return ToolExecutionBatch(*result)
+
+    def shape_results(self, executed_results: List[Tuple[Any, Any]]) -> List[Dict[str, Any]]:
+        shaped: List[Dict[str, Any]] = []
+        for parsed, result in executed_results:
+            output = result if isinstance(result, dict) else {}
+            name = str(getattr(parsed, "function", "") or "")
+            shaped.append(
+                {
+                    "fn": name,
+                    "provider_fn": getattr(parsed, "provider_name", name),
+                    "out": result,
+                    "args": getattr(parsed, "arguments", {}),
+                    "call_id": getattr(parsed, "call_id", None),
+                    "failed": self.conductor.agent_executor.is_tool_failure(
+                        name,
+                        output,
+                    ),
+                }
+            )
+        return shaped
 
 
 __all__ = ['_inject_async_result_retrieval', '_coordination_task_context', '_record_validated_signal', '_is_completion_action_result', 'build_exec_func', 'resolve_replay_todo_placeholders', '_emit_tool_denial_primitives', 'execute_agent_calls']

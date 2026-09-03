@@ -132,7 +132,7 @@
     "initial_failure": "A fresh service process returned HTTP 404 for a durable terminal session because SessionService.registry is process-local.",
     "resolution": "Public read endpoints now fall back to the durable product Session event log and session artifact manifest while mutation endpoints remain live-registry-only. Dot-segment session identifiers are rejected before path construction.",
     "changed_paths": [
-      "agentic_coder_prototype/api/public/session.py",
+      "breadboard_engine/api/public/session.py",
       "breadboard/product/cli/session.py",
       "tests/api/public/test_session.py",
       "tests/test_sdk_v1_default_server_smoke.py"

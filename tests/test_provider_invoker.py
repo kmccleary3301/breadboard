@@ -8,7 +8,7 @@ from unittest.mock import Mock
 import pytest
 
 from breadboard_engine.provider import ProviderInvoker
-from breadboard_engine.provider_runtime import (
+from breadboard_engine.provider.runtime import (
     ProviderMessage,
     ProviderResult,
     ProviderRuntimeContext,

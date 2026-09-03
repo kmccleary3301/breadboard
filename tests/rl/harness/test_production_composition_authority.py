@@ -36,7 +36,7 @@ from breadboard.rl.harness.composition import (
     TlsCallbackPolicyV1,
     TlsCallbackRuntimeInputV1,
 )
-from breadboard.rl.state.cas import FilesystemCAS
+from breadboard.artifacts.cas import FilesystemCAS
 
 
 def _digest(value: object) -> str:

@@ -9,10 +9,10 @@ const temp = mkdtempSync(join(tmpdir(), "breadboard-sdk-consumer-"))
 const artifact = join(temp, "artifact")
 try {
   execFileSync("node", [join(root, "scripts/pack-canonical.mjs"), artifact], { cwd: root, stdio: "inherit" })
-  const tarball = join(artifact, "breadboard-sdk-0.3.0.tgz")
+  const tarball = join(artifact, "breadboard-sdk-0.4.0.tgz")
   const repeatArtifact = join(temp, "artifact-repeat")
   execFileSync("node", [join(root, "scripts/pack-canonical.mjs"), repeatArtifact], { cwd: root, stdio: "inherit" })
-  const repeatTarball = join(repeatArtifact, "breadboard-sdk-0.3.0.tgz")
+  const repeatTarball = join(repeatArtifact, "breadboard-sdk-0.4.0.tgz")
   for (const suffix of ["", ".sha256", ".installed-files.json", ".engine-api-range"]) {
     assert.deepEqual(
       readFileSync(`${tarball}${suffix}`),
@@ -22,12 +22,16 @@ try {
   }
   const inventory = JSON.parse(readFileSync(`${tarball}.installed-files.json`, "utf8"))
   assert.equal(inventory.package, "@breadboard/sdk")
-  assert.equal(inventory.version, "0.3.0")
+  assert.equal(inventory.version, "0.4.0")
   const installedPaths = inventory.files.map((file) => file.path)
-  assert.equal(installedPaths.length, 28)
+  assert.equal(installedPaths.length, 34)
   assert.ok(installedPaths.includes("dist/public-client.js"))
   assert.ok(installedPaths.includes("dist/transport-security.js"))
-  assert.equal(readFileSync(`${tarball}.engine-api-range`, "utf8"), ">=0.1.0 <0.4.0\n")
+  assert.ok(installedPaths.includes("dist/engine.js"))
+  assert.ok(installedPaths.includes("dist/session.js"))
+  assert.ok(installedPaths.includes("dist/lifecycle.js"))
+  assert.ok(installedPaths.includes("dist/generated/session-event-bindings.js"))
+  assert.equal(readFileSync(`${tarball}.engine-api-range`, "utf8"), ">=0.4.0 <0.5.0\n")
   writeFileSync(join(temp, "package.json"), JSON.stringify({ type: "module", dependencies: { "@breadboard/sdk": `file:${tarball}` }, devDependencies: { typescript: "^5.5.4" }, scripts: { test: "node consumer.mjs" } }, null, 2))
   writeFileSync(join(temp, "consumer.ts"), `
 import {
@@ -47,20 +51,20 @@ import {
   type SessionEvent,
   type StageOutcome,
 } from "@breadboard/sdk"
+import type { AcquireOwnerInput } from "@breadboard/sdk/lifecycle"
 import {
-  type AcquireOwnerInput,
   type AuthCredentialView,
-  createInternalBreadboardClient,
+  createBreadboardClient as createEngineClient,
   type ReadSessionFileOptions,
   type SessionSummary,
-} from "@breadboard/sdk/internal"
+} from "@breadboard/sdk/engine"
 const input: AcquireOwnerInput = { ownerCredential: "fixture", expectedOwnerGeneration: 1 }
 void input
 const readOptions: ReadSessionFileOptions = { mode: "snippet", headLines: 1 }
 void readOptions
 const client = createBreadboardClient({ baseUrl: "http://fixture.test" })
-const internalClient = createInternalBreadboardClient({ baseUrl: "http://fixture.test" })
-void internalClient.resolveModelRoles
+const engineClient = createEngineClient({ baseUrl: "http://fixture.test" })
+void engineClient.resolveModelRoles
 void streamSessionEvents
 void ApiError
 const problem: Problem = { error_code: "fixture", message: "fixture" }
@@ -102,7 +106,7 @@ const approved: Promise<PublicResult> = client.approveSession("session", approva
 const canceled: Promise<PublicResult> = client.cancelSession("session", cancel.reason)
 const listed: Promise<PublicResult> = client.listArtifact()
 const read: Promise<PublicResult> = client.getSessionResult("session")
-const summary: Promise<SessionSummary> = internalClient.getSession("session")
+const summary: Promise<SessionSummary> = engineClient.getSession("session")
 const events: AsyncGenerator<SessionEvent, void, void> = client.eventsSession("session")
 void create
 void catalog
@@ -157,7 +161,7 @@ void event
   writeFileSync(join(temp, "consumer.mjs"), `
 import assert from "node:assert/strict"
 import { createBreadboardClient, streamSessionEvents } from "@breadboard/sdk"
-import { createInternalBreadboardClient } from "@breadboard/sdk/internal"
+import { createBreadboardClient as createEngineClient } from "@breadboard/sdk/engine"
 
 let calls = []
 globalThis.fetch = async (input, init) => {
@@ -170,11 +174,11 @@ const client = createBreadboardClient({
   baseUrl: "https://fixture.test",
   authToken: "fixture-token",
 })
-const internalClient = createInternalBreadboardClient({
+const engineClient = createEngineClient({
   baseUrl: "https://fixture.test",
   authToken: "fixture-token",
 })
-await internalClient.resolveModelRoles({ model_roles: { builder: "fixture" } })
+await engineClient.resolveModelRoles({ model_roles: { builder: "fixture" } })
 assert.equal(calls[0][1].headers.Authorization, "Bearer fixture-token")
 
 const expected = {

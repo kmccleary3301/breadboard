@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 from breadboard.rl.harness import contracts as harness_contracts
 from breadboard.rl.harness import evidence as evidence_module
 from breadboard.rl.harness.evidence import (
@@ -64,8 +64,8 @@ from breadboard.rl.harness.runners.base import (
     RunnerTerminationEvent,
     RunnerTurn,
 )
-from breadboard.rl.state.cas import InMemoryCAS
-from breadboard.rl.state.state_ref import ArtifactRef
+from breadboard.artifacts.cas import InMemoryCAS
+from breadboard.artifacts.references import ArtifactRef
 
 EPISODE = "evidence-episode"
 MEDIA_TYPE = "application/vnd.breadboard.evidence+json"

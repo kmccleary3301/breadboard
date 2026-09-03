@@ -13,7 +13,7 @@ from breadboard_engine.provider.normalizer import (
     normalized_result_replay,
 )
 
-from breadboard_engine.provider_runtime import (
+from breadboard_engine.provider.runtime import (
     OpenAIResponsesRuntime,
     ProviderRuntimeContext,
     ProviderRuntimeError,

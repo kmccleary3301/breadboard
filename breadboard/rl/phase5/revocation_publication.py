@@ -17,7 +17,7 @@ from typing import Any, Literal, Protocol, TypeVar, runtime_checkable
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from breadboard.rl.harness import contracts as c
-from breadboard.rl.state.cas import FilesystemCAS
+from breadboard.artifacts.cas import FilesystemCAS
 from breadboard.rl.phase5.f2_authority_authoring import F2C4DynamicAuthorityInput
 from breadboard.rl.phase5.f3_authority_authoring import F3AuthorityInput
 

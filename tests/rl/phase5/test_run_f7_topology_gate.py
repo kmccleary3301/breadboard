@@ -12,7 +12,7 @@ from typing import Any, Callable
 import pytest
 from pydantic import ValidationError
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 from scripts.rl_phase5.run_f7_topology_gate import (
     F4_CONFIG_IDS,
     F7CleanupObservation,

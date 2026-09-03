@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 import pytest
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes, canonical_json_loads
+from breadboard_engine.compilation.contracts import canonical_json_bytes, canonical_json_loads
 from pydantic import ValidationError
 
 from breadboard.rl.harness import contracts as c

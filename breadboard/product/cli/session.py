@@ -384,11 +384,9 @@ def list_sessions(arguments: object) -> OperationResult:
             "session.list",
             lambda: _remote_result(client.list_session()),
         )
+    runtime = session_operations.SessionRuntime(_context(arguments))
     return _run(
-        session_operations.list_sessions(
-            session_operations.ListSessionsRequest(),
-            _context(arguments),
-        )
+        runtime.list_sessions(session_operations.ListSessionsRequest())
     )
 
 
@@ -400,13 +398,13 @@ def get(arguments: object, command_name: str = "get") -> OperationResult:
             f"session.{command_name}",
             lambda: _remote_result(client.get_session(arguments.SESSION_ID)),
         )
+    runtime = session_operations.SessionRuntime(_context(arguments))
     return _run(
-        session_operations.get_session(
+        runtime.get_session(
             session_operations.GetSessionRequest(
                 session_id=arguments.SESSION_ID,
                 command_name=command_name,
-            ),
-            _context(arguments),
+            )
         )
     )
 
@@ -558,13 +556,11 @@ def start(arguments: object) -> OperationResult:
         task=str(getattr(arguments, "task", None) or getattr(arguments, "TASK")),
         session_id=getattr(arguments, "session_id", None),
     )
-    return _run(
-        session_operations.start(
-            request,
-            _context(arguments),
-            _DurableSessionMutationAdapter(),
-        )
+    runtime = session_operations.SessionRuntime(
+        _context(arguments),
+        mutation_port=_DurableSessionMutationAdapter(),
     )
+    return _run(runtime.start(request))
 
 
 def send_input(arguments: object) -> OperationResult:
@@ -586,14 +582,16 @@ def send_input(arguments: object) -> OperationResult:
                 )
             ),
         )
+    runtime = session_operations.SessionRuntime(
+        _context(arguments),
+        mutation_port=_DurableSessionMutationAdapter(),
+    )
     return _run(
-        session_operations.send_input(
+        runtime.send_input(
             session_operations.SendSessionInputRequest(
                 session_id=arguments.SESSION_ID,
                 content=content,
-            ),
-            _context(arguments),
-            _DurableSessionMutationAdapter(),
+            )
         )
     )
 
@@ -613,15 +611,17 @@ def approve(arguments: object) -> OperationResult:
                 )
             ),
         )
+    runtime = session_operations.SessionRuntime(
+        _context(arguments),
+        mutation_port=_DurableSessionMutationAdapter(),
+    )
     return _run(
-        session_operations.approve(
+        runtime.approve(
             session_operations.ApproveSessionRequest(
                 session_id=arguments.SESSION_ID,
                 request_id=arguments.request_id,
                 decision=arguments.decision,
-            ),
-            _context(arguments),
-            _DurableSessionMutationAdapter(),
+            )
         )
     )
 
@@ -639,11 +639,13 @@ def resume(arguments: object) -> OperationResult:
                 )
             ),
         )
+    runtime = session_operations.SessionRuntime(
+        _context(arguments),
+        mutation_port=_DurableSessionMutationAdapter(),
+    )
     return _run(
-        session_operations.resume(
-            session_operations.ResumeSessionRequest(arguments.SESSION_ID),
-            _context(arguments),
-            _DurableSessionMutationAdapter(),
+        runtime.resume(
+            session_operations.ResumeSessionRequest(arguments.SESSION_ID)
         )
     )
 
@@ -663,11 +665,13 @@ def cancel(arguments: object) -> OperationResult:
                 )
             ),
         )
+    runtime = session_operations.SessionRuntime(
+        _context(arguments),
+        mutation_port=_DurableSessionMutationAdapter(),
+    )
     return _run(
-        session_operations.cancel(
-            session_operations.CancelSessionRequest(arguments.SESSION_ID, reason),
-            _context(arguments),
-            _DurableSessionMutationAdapter(),
+        runtime.cancel(
+            session_operations.CancelSessionRequest(arguments.SESSION_ID, reason)
         )
     )
 
@@ -680,10 +684,10 @@ def events(arguments: object) -> OperationResult:
             "session.events",
             lambda: _remote_events_result(client, arguments.SESSION_ID),
         )
+    runtime = session_operations.SessionRuntime(_context(arguments))
     return _run(
-        session_operations.list_session_events(
-            session_operations.ListSessionEventsRequest(arguments.SESSION_ID),
-            _context(arguments),
+        runtime.list_session_events(
+            session_operations.ListSessionEventsRequest(arguments.SESSION_ID)
         )
     )
 
@@ -696,9 +700,9 @@ def artifacts(arguments: object) -> OperationResult:
             "session.artifacts",
             lambda: _remote_result(client.artifacts_session(arguments.SESSION_ID)),
         )
+    runtime = session_operations.SessionRuntime(_context(arguments))
     return _run(
-        session_operations.list_session_artifacts(
-            session_operations.ListSessionArtifactsRequest(arguments.SESSION_ID),
-            _context(arguments),
+        runtime.list_session_artifacts(
+            session_operations.ListSessionArtifactsRequest(arguments.SESSION_ID)
         )
     )

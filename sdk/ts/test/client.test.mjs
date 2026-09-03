@@ -101,8 +101,8 @@ test("configured fetch transport handles JSON and attachment requests", async (t
   assert.deepEqual(
     requests.map(({ path, init }) => [path, init?.method]),
     [
-      ["/v1/sessions", "POST"],
-      ["/v1/sessions/session-configured/attachments", "POST"],
+      ["/v1/internal/sessions", "POST"],
+      ["/v1/internal/sessions/session-configured/attachments", "POST"],
     ],
   )
   assert.ok(requests[1].init?.body instanceof FormData)

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.composition import (
     CASConfigRuntimeStore,
@@ -38,7 +38,7 @@ from breadboard.rl.phase5.f3_authority_authoring import (
     ImmutableAuthorityRef,
     author_f3_authority,
 )
-from breadboard.rl.state.cas import FilesystemCAS
+from breadboard.artifacts.cas import FilesystemCAS
 
 
 def _d(character: str) -> str:

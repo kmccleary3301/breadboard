@@ -15,7 +15,7 @@ from typing import Any, Literal
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from breadboard.rl.phase5.f4_campaign import VARIANT_IDS
@@ -34,7 +34,7 @@ from scripts.rl_phase5.run_f7_topology_gate import (
 )
 
 _SOURCE_ROLES: dict[str, str] = {
-    "agentic_coder_prototype/compilation/contracts.py": "canonical_json_contract",
+    "breadboard_engine/compilation/contracts.py": "canonical_json_contract",
     "scripts/rl_phase5/run_f4_target_canaries.py": "f4_lifecycle_authority",
     "scripts/rl_phase5/build_f7_target_launch_packet.py": "f7_packet_contract",
     "scripts/rl_phase5/run_f7_target_workload.py": "f7_target_workload",

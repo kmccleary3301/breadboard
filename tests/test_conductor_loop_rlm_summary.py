@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from breadboard_engine.conductor_loop import build_ctree_runtime_payload, build_rlm_summary
+from breadboard_engine.conductor.loop import build_ctree_runtime_payload, build_rlm_summary
 from breadboard_engine.state.session_state import SessionState
 
 

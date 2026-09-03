@@ -14,8 +14,8 @@ from breadboard_engine.provider.normalizer import (
     normalized_result_replay,
 )
 
-from breadboard_engine.provider_routing import provider_router
-from breadboard_engine.provider_runtime import (
+from breadboard_engine.provider.routing import provider_router
+from breadboard_engine.provider.runtime import (
     ProviderRuntimeContext,
     ProviderRuntimeError,
     provider_registry,

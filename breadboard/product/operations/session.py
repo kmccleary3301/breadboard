@@ -4,7 +4,7 @@ import asyncio
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Mapping, Protocol, Sequence
+from typing import Literal, Mapping, Protocol, Sequence
 
 from breadboard.product.harness.lock import EffectiveHarnessLock, load_lock
 from breadboard.product.operations.harness import LockHarnessRequest, lock_harness
@@ -17,6 +17,7 @@ from breadboard.product.operations.model import (
 )
 
 from breadboard.product.runtime.events import KernelEvent, Session, SessionView
+from breadboard.product.runtime.public_event_projection import public_session_events
 from breadboard.product.runtime.session_store import (
     load_session,
     session_artifact_rows,
@@ -29,50 +30,6 @@ TERMINAL_SESSION_STATUSES = frozenset({"completed", "failed", "canceled"})
 _RUNTIME_UNAVAILABLE_MESSAGE = (
     "session runtime state is unavailable after service restart"
 )
-_PUBLIC_PAYLOAD_SCHEMAS = {
-    "session.started": "bb.payload.product_session.lifecycle.v1",
-    "input.accepted": "bb.payload.product_session.lifecycle.v1",
-    "approval.requested": "bb.payload.product_session.lifecycle.v1",
-    "approval.resolved": "bb.payload.product_session.lifecycle.v1",
-    "session.reconfigured": "bb.payload.product_session.lifecycle.v1",
-    "session.paused": "bb.payload.product_session.lifecycle.v1",
-    "session.resumed": "bb.payload.product_session.lifecycle.v1",
-    "session.completed": "bb.payload.product_session.lifecycle.v1",
-    "session.failed": "bb.payload.product_session.lifecycle.v1",
-    "session.canceled": "bb.payload.product_session.lifecycle.v1",
-    "assistant_message": "bb.payload.message.assistant.v1",
-    "tool_call": "bb.payload.tool.called.v1",
-    "tool_result": "bb.payload.tool.completed.v1",
-}
-
-
-def public_session_event(
-    event: KernelEvent | Mapping[str, Any],
-) -> dict[str, Any]:
-    source = event.as_dict() if isinstance(event, KernelEvent) else event
-    session_id = str(source["session_id"])
-    sequence = int(source["sequence"])
-    kind = str(source["kind"])
-    return {
-        "schema_version": "bb.public_session_event.v1",
-        "event_id": f"session:{session_id}:{sequence}",
-        "seq": sequence,
-        "timestamp": source["occurred_at"],
-        "work_item_id": None,
-        "parent_work_item_id": None,
-        "attempt_id": None,
-        "session_id": session_id,
-        "span_id": None,
-        "visibility": {
-            "model_visible": True,
-            "provider_visible": True,
-            "host_visible": True,
-            "redaction_state": "none",
-        },
-        "kind": kind,
-        "payload": source["payload"],
-        "payload_schema_version": _PUBLIC_PAYLOAD_SCHEMAS[kind],
-    }
 
 
 class SessionMutationError(RuntimeError):
@@ -284,210 +241,369 @@ def _durable_sessions(
     return sessions, refs
 
 
-async def list_sessions(
-    _request: ListSessionsRequest,
-    context: OperationContext,
-    live_port: LiveSessionReadPort | None = None,
-) -> OperationResult:
-    try:
-        durable, refs = await asyncio.to_thread(_durable_sessions, context)
-        if live_port is None:
-            rows = [
-                {
-                    "session_id": session.read_model.session_id,
-                    "status": session.read_model.status,
-                    "event_count": session.read_model.event_count,
-                }
-                for session, _ in durable
-            ]
-        else:
-            rows_by_id = {
-                session.read_model.session_id: {
-                    "session_id": session.read_model.session_id,
-                    "status": session.read_model.status,
-                    "event_count": session.read_model.event_count,
-                }
-                for session, _ in durable
-                if session.read_model.status in TERMINAL_SESSION_STATUSES
-            }
-            for session in await live_port.list_live_sessions():
-                view = session.read_model
-                rows_by_id[view.session_id] = {
-                    "session_id": view.session_id,
-                    "status": view.status,
-                    "event_count": view.event_count,
-                }
-            rows = [rows_by_id[session_id] for session_id in sorted(rows_by_id)]
-        return OperationResult.success(
-            ["session", "list"],
-            {"sessions": rows, "count": len(rows)},
-            refs,
-            stage="session.list",
-        )
-    except Exception as error:
-        return from_exception(["session", "list"], error, "session.list")
+@dataclass(frozen=True, slots=True)
+class SessionRuntime:
+    """Authoritative session policy bound to one operation context."""
 
+    context: OperationContext
+    live_port: LiveSessionReadPort | None = None
+    mutation_port: SessionMutationPort | None = None
 
-async def get_session(
-    request: GetSessionRequest,
-    context: OperationContext,
-    live_port: LiveSessionReadPort | None = None,
-) -> OperationResult:
-    try:
-        if live_port is not None:
-            live_session = await live_port.get_live_session(request.session_id)
-            if live_session is not None:
-                return _session_result(live_session, request.command_name)
-        session, event_path = await asyncio.to_thread(
-            load_session,
-            context.workspace,
-            request.session_id,
-            allow_untrusted_running=live_port is not None,
-        )
-        if (
-            live_port is not None
-            and session.read_model.status not in TERMINAL_SESSION_STATUSES
-        ):
-            return _runtime_unavailable(request.command_name)
-        refs = (
-            ()
-            if live_port is not None
-            else (portable_ref(event_path, context.workspace),)
-        )
-        return _session_result(
-            session,
-            request.command_name,
-            refs=refs,
-        )
-    except Exception as error:
-        return from_exception(
-            ["session", request.command_name],
-            error,
-            f"session.{request.command_name}",
-        )
+    def _require_mutation_port(self) -> SessionMutationPort:
+        if self.mutation_port is None:
+            raise RuntimeError("session mutation port is unavailable")
+        return self.mutation_port
 
-
-async def list_session_artifacts(
-    request: ListSessionArtifactsRequest,
-    context: OperationContext,
-    live_port: LiveSessionReadPort | None = None,
-) -> OperationResult:
-    try:
-        if live_port is not None:
-            live_rows = await live_port.get_live_artifacts(request.session_id)
-            if live_rows is not None:
-                return OperationResult.success(
-                    ["session", "artifacts"],
+    async def list_sessions(
+        self,
+        _request: ListSessionsRequest,
+    ) -> OperationResult:
+        try:
+            durable, refs = await asyncio.to_thread(
+                _durable_sessions,
+                self.context,
+            )
+            if self.live_port is None:
+                rows = [
                     {
-                        "session_id": request.session_id,
-                        "artifacts": live_rows,
-                    },
-                    stage="session.artifacts",
+                        "session_id": session.read_model.session_id,
+                        "status": session.read_model.status,
+                        "event_count": session.read_model.event_count,
+                    }
+                    for session, _ in durable
+                ]
+            else:
+                rows_by_id = {
+                    session.read_model.session_id: {
+                        "session_id": session.read_model.session_id,
+                        "status": session.read_model.status,
+                        "event_count": session.read_model.event_count,
+                    }
+                    for session, _ in durable
+                    if session.read_model.status in TERMINAL_SESSION_STATUSES
+                }
+                for session in await self.live_port.list_live_sessions():
+                    view = session.read_model
+                    rows_by_id[view.session_id] = {
+                        "session_id": view.session_id,
+                        "status": view.status,
+                        "event_count": view.event_count,
+                    }
+                rows = [
+                    rows_by_id[session_id]
+                    for session_id in sorted(rows_by_id)
+                ]
+            return OperationResult.success(
+                ["session", "list"],
+                {"sessions": rows, "count": len(rows)},
+                refs,
+                stage="session.list",
+            )
+        except Exception as error:
+            return from_exception(["session", "list"], error, "session.list")
+
+    async def get_session(
+        self,
+        request: GetSessionRequest,
+    ) -> OperationResult:
+        try:
+            if self.live_port is not None:
+                live_session = await self.live_port.get_live_session(
+                    request.session_id
                 )
-        session, event_path = await asyncio.to_thread(
-            load_session,
-            context.workspace,
-            request.session_id,
-            allow_untrusted_running=live_port is not None,
-        )
-        if (
-            live_port is not None
-            and session.read_model.status not in TERMINAL_SESSION_STATUSES
-        ):
-            return _runtime_unavailable("artifacts")
-        rows = await asyncio.to_thread(
-            session_artifact_rows,
-            context.workspace,
-            request.session_id,
-        )
-        return OperationResult.success(
-            ["session", "artifacts"],
-            {"session_id": request.session_id, "artifacts": rows},
-            [portable_ref(event_path, context.workspace)],
-            stage="session.artifacts",
-        )
-    except Exception as error:
-        return from_exception(
-            ["session", "artifacts"],
-            error,
-            "session.artifacts",
-        )
-
-
-async def read_session_event_batch(
-    request: ListSessionEventsRequest,
-    context: OperationContext,
-    live_port: LiveSessionReadPort | None = None,
-) -> SessionEventBatch:
-    command = ["session", "events"]
-    try:
-        source: Literal["live", "durable"] = "durable"
-        session = None
-        if live_port is not None:
-            session = await live_port.get_live_session(request.session_id)
-            if session is not None:
-                source = "live"
-        record_ref = None
-        if session is None:
+                if live_session is not None:
+                    return _session_result(
+                        live_session,
+                        request.command_name,
+                    )
             session, event_path = await asyncio.to_thread(
                 load_session,
-                context.workspace,
+                self.context.workspace,
                 request.session_id,
-                allow_untrusted_running=live_port is not None,
+                allow_untrusted_running=self.live_port is not None,
             )
-            record_ref = portable_ref(event_path, context.workspace)
             if (
-                live_port is not None
+                self.live_port is not None
                 and session.read_model.status not in TERMINAL_SESSION_STATUSES
             ):
-                return SessionEventBatch(
-                    events=(),
-                    cursor=request.after_sequence,
-                    terminal=False,
-                    source=None,
-                    error=_runtime_unavailable("events"),
+                return _runtime_unavailable(request.command_name)
+            refs = (
+                ()
+                if self.live_port is not None
+                else (portable_ref(event_path, self.context.workspace),)
+            )
+            return _session_result(
+                session,
+                request.command_name,
+                refs=refs,
+            )
+        except Exception as error:
+            return from_exception(
+                ["session", request.command_name],
+                error,
+                f"session.{request.command_name}",
+            )
+
+    async def list_session_artifacts(
+        self,
+        request: ListSessionArtifactsRequest,
+    ) -> OperationResult:
+        try:
+            if self.live_port is not None:
+                live_rows = await self.live_port.get_live_artifacts(
+                    request.session_id
                 )
-        events = tuple(
-            event for event in session.events if event.sequence > request.after_sequence
+                if live_rows is not None:
+                    return OperationResult.success(
+                        ["session", "artifacts"],
+                        {
+                            "session_id": request.session_id,
+                            "artifacts": live_rows,
+                        },
+                        stage="session.artifacts",
+                    )
+            session, event_path = await asyncio.to_thread(
+                load_session,
+                self.context.workspace,
+                request.session_id,
+                allow_untrusted_running=self.live_port is not None,
+            )
+            if (
+                self.live_port is not None
+                and session.read_model.status not in TERMINAL_SESSION_STATUSES
+            ):
+                return _runtime_unavailable("artifacts")
+            rows = await asyncio.to_thread(
+                session_artifact_rows,
+                self.context.workspace,
+                request.session_id,
+            )
+            return OperationResult.success(
+                ["session", "artifacts"],
+                {"session_id": request.session_id, "artifacts": rows},
+                [portable_ref(event_path, self.context.workspace)],
+                stage="session.artifacts",
+            )
+        except Exception as error:
+            return from_exception(
+                ["session", "artifacts"],
+                error,
+                "session.artifacts",
+            )
+
+    async def read_session_event_batch(
+        self,
+        request: ListSessionEventsRequest,
+    ) -> SessionEventBatch:
+        command = ["session", "events"]
+        try:
+            source: Literal["live", "durable"] = "durable"
+            session = None
+            if self.live_port is not None:
+                session = await self.live_port.get_live_session(
+                    request.session_id
+                )
+                if session is not None:
+                    source = "live"
+            record_ref = None
+            if session is None:
+                session, event_path = await asyncio.to_thread(
+                    load_session,
+                    self.context.workspace,
+                    request.session_id,
+                    allow_untrusted_running=self.live_port is not None,
+                )
+                record_ref = portable_ref(
+                    event_path,
+                    self.context.workspace,
+                )
+                if (
+                    self.live_port is not None
+                    and session.read_model.status not in TERMINAL_SESSION_STATUSES
+                ):
+                    return SessionEventBatch(
+                        events=(),
+                        cursor=request.after_sequence,
+                        terminal=False,
+                        source=None,
+                        error=_runtime_unavailable("events"),
+                    )
+            events = tuple(
+                event
+                for event in session.events
+                if event.sequence > request.after_sequence
+            )
+            if request.limit is not None:
+                events = events[: request.limit]
+            cursor = (
+                events[-1].sequence
+                if events
+                else request.after_sequence
+            )
+            return SessionEventBatch(
+                events=events,
+                cursor=cursor,
+                terminal=session.read_model.status in TERMINAL_SESSION_STATUSES,
+                source=source,
+                record_ref=record_ref,
+            )
+        except Exception as error:
+            return SessionEventBatch(
+                events=(),
+                cursor=request.after_sequence,
+                terminal=False,
+                source=None,
+                error=from_exception(command, error, "session.events"),
+            )
+
+    async def list_session_events(
+        self,
+        request: ListSessionEventsRequest,
+    ) -> OperationResult:
+        batch = await self.read_session_event_batch(
+            ListSessionEventsRequest(
+                session_id=request.session_id,
+                after_sequence=request.after_sequence,
+                limit=None,
+            )
         )
+        if batch.error is not None:
+            return batch.error
+        refs = [batch.record_ref] if batch.record_ref is not None else []
+        events = list(public_session_events(batch.events))
         if request.limit is not None:
             events = events[: request.limit]
-        cursor = events[-1].sequence if events else request.after_sequence
-        return SessionEventBatch(
-            events=events,
-            cursor=cursor,
-            terminal=session.read_model.status in TERMINAL_SESSION_STATUSES,
-            source=source,
-            record_ref=record_ref,
-        )
-    except Exception as error:
-        return SessionEventBatch(
-            events=(),
-            cursor=request.after_sequence,
-            terminal=False,
-            source=None,
-            error=from_exception(command, error, "session.events"),
+        return OperationResult.success(
+            ["session", "events"],
+            {
+                "session_id": request.session_id,
+                "events": events,
+            },
+            refs,
+            stage="session.events",
         )
 
+    async def start(
+        self,
+        request: StartSessionRequest,
+    ) -> OperationResult:
+        command = ["session", "start"]
+        stage = "session.start"
+        try:
+            if request.session_id is not None:
+                validate_session_id(request.session_id)
+            effective_lock, source_path, checked = await asyncio.to_thread(
+                _resolve_start_lock,
+                request,
+                self.context,
+            )
+            if not checked.ok:
+                error = checked.error or {}
+                return OperationResult.failure(
+                    command,
+                    checked.exit_code,
+                    str(error.get("error_code") or "lock_drift"),
+                    str(error.get("message") or "harness lock validation failed"),
+                    stage,
+                    hint=error.get("hint"),
+                    refs=checked.record_refs,
+                    next_actions=checked.next_actions,
+                )
+            outcome = await self._require_mutation_port().start(
+                request,
+                self.context,
+                effective_lock,
+                source_path,
+            )
+            return _mutation_result(command, stage, outcome)
+        except SessionMutationError as error:
+            return _mutation_failure(command, stage, error)
+        except Exception as error:
+            return from_exception(command, error, stage)
 
-async def list_session_events(
-    request: ListSessionEventsRequest,
-    context: OperationContext,
-    live_port: LiveSessionReadPort | None = None,
-) -> OperationResult:
-    batch = await read_session_event_batch(request, context, live_port)
-    if batch.error is not None:
-        return batch.error
-    refs = [batch.record_ref] if batch.record_ref is not None else []
-    return OperationResult.success(
-        ["session", "events"],
-        {
-            "session_id": request.session_id,
-            "events": [public_session_event(event) for event in batch.events],
-        },
-        refs,
-        stage="session.events",
-    )
+    async def send_input(
+        self,
+        request: SendSessionInputRequest,
+    ) -> OperationResult:
+        command = ["session", "send-input"]
+        stage = "session.send-input"
+        try:
+            validate_session_id(request.session_id)
+            return _mutation_result(
+                command,
+                stage,
+                await self._require_mutation_port().send_input(
+                    request,
+                    self.context,
+                ),
+            )
+        except SessionMutationError as error:
+            return _mutation_failure(command, stage, error)
+        except Exception as error:
+            return from_exception(command, error, stage)
+
+    async def approve(
+        self,
+        request: ApproveSessionRequest,
+    ) -> OperationResult:
+        command = ["session", "approve"]
+        stage = "session.approve"
+        try:
+            validate_session_id(request.session_id)
+            return _mutation_result(
+                command,
+                stage,
+                await self._require_mutation_port().approve(
+                    request,
+                    self.context,
+                ),
+            )
+        except SessionMutationError as error:
+            return _mutation_failure(command, stage, error)
+        except Exception as error:
+            return from_exception(command, error, stage)
+
+    async def resume(
+        self,
+        request: ResumeSessionRequest,
+    ) -> OperationResult:
+        command = ["session", "resume"]
+        stage = "session.resume"
+        try:
+            validate_session_id(request.session_id)
+            return _mutation_result(
+                command,
+                stage,
+                await self._require_mutation_port().resume(
+                    request,
+                    self.context,
+                ),
+            )
+        except SessionMutationError as error:
+            return _mutation_failure(command, stage, error)
+        except Exception as error:
+            return from_exception(command, error, stage)
+
+    async def cancel(
+        self,
+        request: CancelSessionRequest,
+    ) -> OperationResult:
+        command = ["session", "cancel"]
+        stage = "session.cancel"
+        try:
+            validate_session_id(request.session_id)
+            return _mutation_result(
+                command,
+                stage,
+                await self._require_mutation_port().cancel(
+                    request,
+                    self.context,
+                ),
+            )
+        except SessionMutationError as error:
+            return _mutation_failure(command, stage, error)
+        except Exception as error:
+            return from_exception(command, error, stage)
 
 
 def _mutation_result(
@@ -559,123 +675,3 @@ def _resolve_start_lock(
         context,
     )
     return lock, source_path, checked
-
-
-async def start(
-    request: StartSessionRequest,
-    context: OperationContext,
-    mutation_port: SessionMutationPort,
-) -> OperationResult:
-    command = ["session", "start"]
-    stage = "session.start"
-    try:
-        if request.session_id is not None:
-            validate_session_id(request.session_id)
-        effective_lock, source_path, checked = await asyncio.to_thread(
-            _resolve_start_lock,
-            request,
-            context,
-        )
-        if not checked.ok:
-            error = checked.error or {}
-            return OperationResult.failure(
-                command,
-                checked.exit_code,
-                str(error.get("error_code") or "lock_drift"),
-                str(error.get("message") or "harness lock validation failed"),
-                stage,
-                hint=error.get("hint"),
-                refs=checked.record_refs,
-                next_actions=checked.next_actions,
-            )
-        outcome = await mutation_port.start(
-            request,
-            context,
-            effective_lock,
-            source_path,
-        )
-        return _mutation_result(command, stage, outcome)
-    except SessionMutationError as error:
-        return _mutation_failure(command, stage, error)
-    except Exception as error:
-        return from_exception(command, error, stage)
-
-
-async def send_input(
-    request: SendSessionInputRequest,
-    context: OperationContext,
-    mutation_port: SessionMutationPort,
-) -> OperationResult:
-    command = ["session", "send-input"]
-    stage = "session.send-input"
-    try:
-        validate_session_id(request.session_id)
-        return _mutation_result(
-            command,
-            stage,
-            await mutation_port.send_input(request, context),
-        )
-    except SessionMutationError as error:
-        return _mutation_failure(command, stage, error)
-    except Exception as error:
-        return from_exception(command, error, stage)
-
-
-async def approve(
-    request: ApproveSessionRequest,
-    context: OperationContext,
-    mutation_port: SessionMutationPort,
-) -> OperationResult:
-    command = ["session", "approve"]
-    stage = "session.approve"
-    try:
-        validate_session_id(request.session_id)
-        return _mutation_result(
-            command,
-            stage,
-            await mutation_port.approve(request, context),
-        )
-    except SessionMutationError as error:
-        return _mutation_failure(command, stage, error)
-    except Exception as error:
-        return from_exception(command, error, stage)
-
-
-async def resume(
-    request: ResumeSessionRequest,
-    context: OperationContext,
-    mutation_port: SessionMutationPort,
-) -> OperationResult:
-    command = ["session", "resume"]
-    stage = "session.resume"
-    try:
-        validate_session_id(request.session_id)
-        return _mutation_result(
-            command,
-            stage,
-            await mutation_port.resume(request, context),
-        )
-    except SessionMutationError as error:
-        return _mutation_failure(command, stage, error)
-    except Exception as error:
-        return from_exception(command, error, stage)
-
-
-async def cancel(
-    request: CancelSessionRequest,
-    context: OperationContext,
-    mutation_port: SessionMutationPort,
-) -> OperationResult:
-    command = ["session", "cancel"]
-    stage = "session.cancel"
-    try:
-        validate_session_id(request.session_id)
-        return _mutation_result(
-            command,
-            stage,
-            await mutation_port.cancel(request, context),
-        )
-    except SessionMutationError as error:
-        return _mutation_failure(command, stage, error)
-    except Exception as error:
-        return from_exception(command, error, stage)

@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from breadboard_engine.provider.routing import ProviderRouter
+from breadboard_engine.provider.routing import ProviderRouter, provider_router
 
 
 def test_openai_environment_key_is_broker_resolved_and_scoped(
@@ -33,7 +33,7 @@ def test_openai_environment_key_is_broker_resolved_and_scoped(
         ProviderBroker(SQLiteCredentialStore(tmp_path / "credentials.sqlite3")),
     )
 
-    router = ProviderRouter()
+    router = ProviderRouter(broker_module.get_provider_broker())
     metadata = router.create_client_config("openai/gpt-5.4-mini")
     assert metadata["api_key"] is None
     assert api_key not in json.dumps(metadata)
@@ -94,7 +94,7 @@ def test_stored_alternate_credentials_are_scoped_through_provider_errors(
         }
     )
     monkeypatch.setattr(broker_module, "_default_broker", broker)
-    router = ProviderRouter()
+    router = ProviderRouter(broker)
 
     with pytest.raises(RuntimeError) as error:
         with router.execution_client_config("openai/gpt-5.4-mini"):
@@ -157,7 +157,7 @@ def test_config_override_wins_and_applies_endpoint_metadata(
         headers={"Authorization": config_header},
     )
     monkeypatch.setattr(broker_module, "_default_broker", broker)
-    router = ProviderRouter()
+    router = ProviderRouter(broker)
 
     assert router.get_credential_origin("openai/gpt-5.4-mini") == {
         "kind": "config",
@@ -191,7 +191,7 @@ def test_router_session_id_reuses_durable_account_binding_after_broker_restart(
             }
         )
     monkeypatch.setattr(broker_module, "_default_broker", broker)
-    router = ProviderRouter()
+    router = ProviderRouter(broker)
     session_id = "e5-router-session"
 
     predicted = router.get_credential_origin(
@@ -242,7 +242,7 @@ def test_codex_execution_lease_scopes_broker_access_token(
             codex_auth_path=auth_path,
         ),
     )
-    router = ProviderRouter()
+    router = ProviderRouter(broker_module.get_provider_broker())
 
     with router.execution_client_config("codex/gpt-5.4") as client_config:
         assert client_config["access_token"] == secret
@@ -269,7 +269,7 @@ def test_provider_managed_exceptions_do_not_consult_broker(
         REMOTE_BROKER_URL_ENV,
         "https://unavailable-broker.example.test",
     )
-    router = ProviderRouter()
+    router = ProviderRouter(provider_router.credential_authority)
 
     assert router.get_credential_origin(route) == {
         "kind": "fallback",

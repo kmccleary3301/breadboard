@@ -10,8 +10,7 @@ from typing import Any, Dict, List, Optional
 from ..security import (
     WorkspaceFilesystem,
     WorkspacePathError,
-    build_child_environment,
-    build_restricted_process_command,
+    ChildProcessPolicy,
     provider_credential_values,
     redaction,
 )
@@ -111,22 +110,18 @@ class CheckpointManager:
             f"--work-tree={self._workspace_dir}",
             *args,
         ]
-        child_environment = build_child_environment()
-        isolated_command, child_environment = build_restricted_process_command(
-            cmd,
+        launch = ChildProcessPolicy(
             workspace=self._workspace_dir,
             working_directory=self._workspace_dir,
-            shell=False,
-            environment=child_environment,
-        )
+        ).command_and_environment(cmd)
         with redaction.secret_value_scope(*provider_credential_values()):
             proc = subprocess.run(
-                isolated_command,
+                launch.argv,
                 check=False,
                 capture_output=True,
                 text=True,
                 cwd=self._workspace_dir,
-                env=child_environment,
+                env=launch.environment_dict(),
                 shell=False,
             )
             stdout = redaction.scrub_text(proc.stdout or "")

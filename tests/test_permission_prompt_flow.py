@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from breadboard_engine.permission_broker import PermissionBroker, PermissionDeniedError
+from breadboard_engine.permissions.broker import PermissionBroker, PermissionDeniedError
 from breadboard_engine.state.session_state import SessionState
 
 

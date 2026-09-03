@@ -6,13 +6,7 @@ from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
 
-@dataclass(frozen=True)
-class ProviderCapabilities:
-    tool_calls: str  # e.g., "parallel", "sequential"
-    streaming: str  # e.g., "text_deltas", "event_deltas", "none"
-    json_mode: str  # e.g., "strict", "best_effort", "none"
-    reasoning: str  # e.g., "encrypted", "summary", "none"
-    caching: str  # e.g., "explicit", "implicit", "none"
+from ..provider_broker.catalog import ProviderCapabilities, routable_provider_catalog
 
 
 @dataclass(frozen=True)
@@ -51,60 +45,7 @@ def get_model_capability_override(
 
 
 CAPABILITY_MATRIX: Dict[str, ProviderCapabilities] = {
-    "codex": ProviderCapabilities(
-        tool_calls="parallel",
-        streaming="event_deltas",
-        json_mode="best_effort",
-        reasoning="summary",
-        caching="implicit",
-    ),
-    "openai": ProviderCapabilities(
-        tool_calls="parallel",
-        streaming="text_deltas",
-        json_mode="strict",
-        reasoning="encrypted",
-        caching="implicit",
-    ),
-    "openrouter": ProviderCapabilities(
-        tool_calls="parallel",
-        streaming="event_deltas",
-        json_mode="best_effort",
-        reasoning="summary",
-        caching="none",
-    ),
-    "anthropic": ProviderCapabilities(
-        tool_calls="parallel",
-        streaming="event_deltas",
-        json_mode="best_effort",
-        reasoning="summary",
-        caching="explicit",
-    ),
-    "mock": ProviderCapabilities(
-        tool_calls="sequential",
-        streaming="none",
-        json_mode="strict",
-        reasoning="none",
-        caching="none",
-    ),
-    "cli_mock": ProviderCapabilities(
-        tool_calls="sequential",
-        streaming="none",
-        json_mode="strict",
-        reasoning="none",
-        caching="none",
-    ),
-    "smoke": ProviderCapabilities(
-        tool_calls="sequential",
-        streaming="none",
-        json_mode="strict",
-        reasoning="none",
-        caching="none",
-    ),
-    "replay": ProviderCapabilities(
-        tool_calls="parallel",
-        streaming="none",
-        json_mode="strict",
-        reasoning="summary",
-        caching="none",
-    ),
+    entry.provider_id: entry.capabilities
+    for entry in routable_provider_catalog()
+    if entry.capabilities is not None
 }

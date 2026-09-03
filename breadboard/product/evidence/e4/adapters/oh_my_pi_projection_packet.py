@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any, Mapping
-from agentic_coder_prototype.conformance.catalog_binding import (
+from breadboard_engine.conformance.catalog_binding import (
     CATALOG_PATH,
     catalog_segment_hash,
     reusable_catalog_revision,

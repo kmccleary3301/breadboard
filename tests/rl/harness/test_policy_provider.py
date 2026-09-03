@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from agentic_coder_prototype.compilation.contracts import canonical_sha256
+from breadboard_engine.compilation.contracts import canonical_sha256
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.policy_provider import (
     E4TargetPolicyProjection,

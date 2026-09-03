@@ -4,13 +4,21 @@ import pytest
 
 from breadboard_engine.api.cli_bridge.model_catalog import build_model_catalog
 from breadboard_engine.provider.routing import ProviderRouteError, ProviderRouter
-from breadboard_engine.provider.adapters import provider_adapter_manager
-from breadboard_engine.provider_broker import ProviderBroker, SQLiteCredentialStore
+from breadboard_engine.provider.adapters import (
+    AnthropicAdapter,
+    OpenAIAdapter,
+    OpenRouterAdapter,
+    provider_adapter_manager,
+)
+from breadboard_engine.provider.capabilities import CAPABILITY_MATRIX
+from breadboard_engine.provider.runtime import provider_registry
 from breadboard_engine.provider_broker.catalog import (
     get_provider_catalog_entry,
     get_provider_catalog_entry_for_adapter,
     routable_provider_catalog,
 )
+from breadboard_engine.provider_broker.broker import ProviderBroker
+from breadboard_engine.provider_broker.store import SQLiteCredentialStore
 
 
 def test_product_provider_view_is_exact_bounded_core_and_secret_free(
@@ -62,8 +70,8 @@ def test_product_provider_view_is_exact_bounded_core_and_secret_free(
     assert "secret-not-returned" not in repr(openai)
 
 
-def test_router_is_catalog_derived_canonicalizes_codex_alias_and_fails_closed():
-    router = ProviderRouter()
+def test_router_is_catalog_derived_canonicalizes_codex_alias_and_fails_closed(tmp_path):
+    router = ProviderRouter(ProviderBroker(SQLiteCredentialStore(tmp_path / "router.sqlite3")))
     entries = {entry.provider_id: entry for entry in routable_provider_catalog()}
 
     assert (
@@ -283,3 +291,28 @@ def test_model_catalog_empty_and_malformed_inputs_are_deterministic():
         "invalid_model",
     ]
     assert [issue.index for issue in issues] == [0, 1, 2]
+
+
+def test_routable_provider_definition_projects_all_provider_surfaces(tmp_path):
+    router = ProviderRouter(ProviderBroker(SQLiteCredentialStore(tmp_path / "router.sqlite3")))
+    adapter_types = {
+        "openai": OpenAIAdapter,
+        "openrouter": OpenRouterAdapter,
+        "anthropic": AnthropicAdapter,
+    }
+
+    for entry in routable_provider_catalog():
+        descriptor, _ = router.get_runtime_descriptor(entry.provider_id)
+        config = router.providers[entry.provider_id]
+        adapter = provider_adapter_manager.get_adapter(entry.provider_id)
+
+        assert entry.capabilities is not None
+        assert CAPABILITY_MATRIX[entry.provider_id] is entry.capabilities
+        assert config.runtime_id == entry.runtime_id
+        assert descriptor.supports_native_tools == entry.supports_native_tools
+        assert descriptor.supports_streaming == entry.supports_streaming
+        assert descriptor.supports_reasoning_traces == entry.supports_reasoning_traces
+        assert descriptor.supports_cache_control == entry.supports_cache_control
+        assert isinstance(adapter, adapter_types[entry.tool_adapter_kind])
+        assert adapter.get_provider_id() == entry.provider_id
+        assert provider_registry.get_runtime_class(entry.runtime_id) is not None

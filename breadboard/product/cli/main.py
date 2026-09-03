@@ -68,7 +68,7 @@ def build_parser():
     return p
 def _legacy_explain(a):
     try:
-        from scripts.authoring.explain_agent_config import main as f
+        from breadboard.product.harness.config_explanation import main as f
         return f(["--config",a.PATH]+(["--strict"] if a.strict else []))
     except Exception as e:return emit(from_exception(["harness","explain"],e,"harness.explain"),False,bool(a.quiet))
 def main(argv:Sequence[str]|None=None):

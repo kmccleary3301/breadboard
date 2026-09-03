@@ -8,9 +8,9 @@ from typing import Any, Callable, Mapping
 
 import yaml
 
-from agentic_coder_prototype.compilation.effective_config_graph import finalize_effective_config_graph, graph_content_hash
-from agentic_coder_prototype.compilation.primitive_records import finalize_record, get_spec, validate_record
-from agentic_coder_prototype.conformance.catalog_binding import catalog_segment_hash, reusable_catalog_revision
+from breadboard_engine.compilation.effective_config_graph import finalize_effective_config_graph, graph_content_hash
+from breadboard_engine.compilation.primitive_records import finalize_record, get_spec, validate_record
+from breadboard_engine.conformance.catalog_binding import catalog_segment_hash, reusable_catalog_revision
 from breadboard.product.evidence.e4 import build_primitive_projection as primitive_projection
 from breadboard.product.evidence.e4 import lane_inventory_utils as lane_inventory
 from breadboard.product.evidence.e4 import lane_runtime
@@ -67,7 +67,7 @@ SUPPORT_CLAIM_GENERATED_AT_UTC = "2026-07-04T00:00:00Z"
 SOURCE_FREEZE_PATH = ROOT / "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json"
 FREEZE_MANIFEST_PATH = ROOT / "config/e4_target_freeze_manifest.yaml"
 HELPER_MODULE_PATH = ROOT / "breadboard_engine/compilation/effective_config_graph.py"
-HELPER_MODULE_REF = ROOT / "agentic_coder_prototype/compilation/effective_config_graph.py"
+HELPER_MODULE_REF = ROOT / "breadboard_engine/compilation/effective_config_graph.py"
 HELPER_TEST_PATH = ROOT / "tests/compilation/test_effective_config_graph.py"
 PROJECTION_BUILDER_PATH = ROOT / "scripts/e4_parity/build_primitive_projection.py"
 CATALOG_PATH = ROOT / "docs/conformance/e4_artifact_catalog.json"
@@ -661,7 +661,7 @@ def _write_agent_config(path: Path) -> None:
                 "",
                 "p3_acceptance:",
                 "  item: P3.1",
-                "  helper_module: agentic_coder_prototype.compilation.effective_config_graph",
+                "  helper_module: breadboard_engine.compilation.effective_config_graph",
                 "  contract: bb.effective_config_graph.v1",
                 "  source_capture: oh_my_pi_p6_0_l1_config_context_tool_surface",
                 "  compiler_behavior: precedence_hash_migration_redaction_loader_separation",

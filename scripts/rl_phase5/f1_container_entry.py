@@ -438,8 +438,8 @@ def main() -> int:
                     ),
                 }
                 try:
-                    from breadboard.rl.state.cas import FilesystemCAS
-                    from breadboard.rl.state.state_ref import ArtifactRef
+                    from breadboard.artifacts.cas import FilesystemCAS
+                    from breadboard.artifacts.references import ArtifactRef
 
                     completed_observation = http_observation(
                         "GET",

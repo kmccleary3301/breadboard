@@ -452,7 +452,6 @@ def test_materialized_unknown_candidate_name_is_absent_from_production_sources(
         root
         for root in (
             Path("agent_configs"),
-            Path("agentic_coder_prototype"),
             Path("breadboard"),
             Path("breadboard_ext"),
             Path("breadboard_sdk"),

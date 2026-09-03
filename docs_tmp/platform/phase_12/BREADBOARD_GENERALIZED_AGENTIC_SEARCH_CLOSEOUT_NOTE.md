@@ -40,7 +40,7 @@ Result:
 Compile validation:
 
 ```bash
-python -m compileall agentic_coder_prototype/artifact_tasks scripts/dev/artifact_task_smoke.py scripts/dev/config_explain.py scripts/dev/first_time_doctor.py
+python -m compileall breadboard_engine/artifact_tasks scripts/dev/artifact_task_smoke.py scripts/dev/config_explain.py scripts/dev/first_time_doctor.py
 ```
 
 Result: passed.

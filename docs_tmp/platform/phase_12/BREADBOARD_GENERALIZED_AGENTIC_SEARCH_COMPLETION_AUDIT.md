@@ -8,7 +8,7 @@ Objective: complete everything in `docs_tmp/platform/phase_12/BREADBOARD_GENERAL
 
 | Requirement | Evidence | Status |
 | --- | --- | --- |
-| Additive implementation only | New `agentic_coder_prototype/artifact_tasks/` package; no edits to `main.py`, provider runtime, DAG runtime, optimize core, RL core, or C-Trees runtime | Complete |
+| Additive implementation only | New `breadboard_engine/artifact_tasks/` package; no edits to `main.py`, provider runtime, DAG runtime, optimize core, RL core, or C-Trees runtime | Complete |
 | Artifact contract core | `contracts.py`; tests for missing, undersized, hash mismatch, valid artifact, duplicate paths, absolute paths, traversal | Complete |
 | Response materialization | `materialize.py`; tests for missing fence, wrong language, multiple fences, successful Python block | Complete |
 | Text success must not imply artifact success | `test_text_only_response_claiming_success_fails_artifact_task` | Complete |
@@ -45,7 +45,7 @@ Objective: complete everything in `docs_tmp/platform/phase_12/BREADBOARD_GENERAL
 
 ```bash
 pytest tests/test_artifact_tasks.py -q
-python -m compileall agentic_coder_prototype/artifact_tasks scripts/dev/artifact_task_smoke.py scripts/dev/config_explain.py scripts/dev/first_time_doctor.py
+python -m compileall breadboard_engine/artifact_tasks scripts/dev/artifact_task_smoke.py scripts/dev/config_explain.py scripts/dev/first_time_doctor.py
 python scripts/dev/first_time_doctor.py --profile engine --json
 python scripts/dev/artifact_task_smoke.py --out-dir /tmp/breadboard_artifact_task_smoke_phase12 --json
 python scripts/dev/config_explain.py --json

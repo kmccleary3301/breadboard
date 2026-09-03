@@ -7,7 +7,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 import pytest
 
 from breadboard.rl.harness import contracts as c
@@ -39,7 +39,7 @@ from breadboard.rl.harness.service import (
     V2LifecycleDependencies,
     V2OperationDisposition,
 )
-from breadboard.rl.state.cas import InMemoryCAS
+from breadboard.artifacts.cas import InMemoryCAS
 from tests.rl.harness.test_config_overlays import (
     _resolution_with_candidate_and_episode_overlay,
 )

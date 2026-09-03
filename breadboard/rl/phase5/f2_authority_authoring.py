@@ -14,8 +14,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
-from agentic_coder_prototype.compilation.bundle import ManifestReader, build_dependency_closure, ingest_member_map
-from agentic_coder_prototype.compilation.contracts import CompileOptions, DependencyEdge, canonical_json_bytes
+from breadboard_engine.compilation.bundle import ManifestReader, build_dependency_closure, ingest_member_map
+from breadboard_engine.compilation.contracts import CompileOptions, DependencyEdge, canonical_json_bytes
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from breadboard.rl.harness import contracts as c
@@ -47,7 +47,7 @@ from breadboard.rl.harness.policy_http import (
     POLICY_HTTP_RESPONSE_SCHEMA_DIGEST,
 )
 from breadboard.rl.harness.evidence import EvidenceRoleBindingV2, EvidenceRoleSourceV2
-from breadboard.rl.state.cas import FilesystemCAS
+from breadboard.artifacts.cas import FilesystemCAS
 from breadboard.rl.phase5.f2_composition import OpenSslAuthorityInput, StorePaths, TlsAuthorityInput, WrapperHostExecutablesInput
 
 _DIGEST_PREFIX = "sha256:"
@@ -1197,7 +1197,7 @@ def _compiled_identity(manifest: Any, digest: str) -> c.CompiledArtifactIdentity
 
 
 def _verify_authority_objects(objects: dict[str, bytes], graph: dict[str, Any]) -> None:
-    from agentic_coder_prototype.compilation.contracts import CompiledConfigManifest, ConfigBundleManifest
+    from breadboard_engine.compilation.contracts import CompiledConfigManifest, ConfigBundleManifest
     parsers: dict[str, Any] = {
         "compiled-manifest.json": lambda raw: CompiledConfigManifest.from_dict(json.loads(raw)),
         "config-bundle.json": lambda raw: ConfigBundleManifest.from_dict(json.loads(raw)),
@@ -1398,7 +1398,7 @@ def _compile_c4_config(
     capability: c.CapabilityVector,
     cas: FilesystemCAS,
 ) -> tuple[Any, Any, dict[str, bytes]]:
-    from agentic_coder_prototype.compilation.server_compiler import compile_config
+    from breadboard_engine.compilation.server_compiler import compile_config
 
     compiler_config = {
         "version": 2,

@@ -14,7 +14,7 @@ from typing import Any
 
 import numpy as np
 import pytest
-from agentic_coder_prototype.compilation.contracts import (
+from breadboard_engine.compilation.contracts import (
     canonical_json_bytes,
     canonical_json_loads,
 )
@@ -648,7 +648,7 @@ def _fixture(
             Path(
                 canonical_json_loads(Path(reload_harness_ref.path).read_bytes())["root"]
             )
-            / "agentic_coder_prototype/compilation/contracts.py"
+            / "breadboard_engine/compilation/contracts.py"
         )
         drift_path.chmod(0o600)
         drift_path.write_bytes(b"mutated import closure")

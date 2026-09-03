@@ -11,13 +11,13 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from agentic_coder_prototype.compilation.contracts import canonical_json_bytes
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.composition import (
     HarnessCompositionManifestV1,
     TlsCallbackRuntimeInputV1,
 )
-from breadboard.rl.state.cas import FilesystemCAS
+from breadboard.artifacts.cas import FilesystemCAS
 from breadboard.rl.harness.config_runtime import ConfigRuntime
 from breadboard.rl.phase5.f2_authority_authoring import (
     F2AuthorityAuthoringError,

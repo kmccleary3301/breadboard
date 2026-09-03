@@ -14,8 +14,7 @@ The goal is simple:
 | Root | Zone type | What it is | Canonical use |
 |---|---|---|---|
 | `breadboard/` | `public product surface` | core product-facing Python package for sandboxing and related host-visible runtime helpers | public-facing Python module area when the package already lives there |
-| `breadboard_engine/` | `canonical internal engine` | the canonical internal engine and orchestration substrate carrying runtime authority (renamed from `agentic_coder_prototype/` at the R-1 freeze event) | canonical home for new internal engine/runtime code |
-| `agentic_coder_prototype/` | `temporary compat namespace` | legacy import shim: installs the prefix-wide alias finder and self-replaces with `breadboard_engine` (policy: `BREADBOARD_LEGACY_IMPORTS=allow\|warn\|error`) | never add code here; legacy imports only, removal tracked by the compat-removal issue |
+| `breadboard_engine/` | `canonical internal engine` | the canonical internal engine and orchestration substrate carrying runtime authority | canonical home for new internal engine/runtime code |
 | `breadboard_sdk/` | `SDK surface` | Python SDK package area | stable SDK-facing code and interfaces |
 | `breadboard_ext/` | `extension space` | extension and experimental lane for non-core product surfaces | bounded extension work that should not claim canonical engine authority |
 | `sdk/` | `SDK and host surface` | TypeScript SDKs, host layers, transport adapters, and execution drivers | canonical home for TS, host, and driver work |
@@ -43,19 +42,6 @@ That means:
 - it is not the polished public brand we want to foreground
 - new internal engine/runtime code should prefer its canonical subpackages
 
-### `agentic_coder_prototype/`
-
-Temporary compatibility namespace left behind by the engine rename.
-
-The package contains exactly one file: a shim `__init__.py` (generated from
-`scripts/dev/shim_package_init.template.py`) that installs the prefix-wide
-`LegacyAliasFinder` and self-replaces with `breadboard_engine`. Legacy imports
-such as `import agentic_coder_prototype.x.y` resolve to the same module
-objects as `breadboard_engine.x.y`. Behavior is governed by
-`BREADBOARD_LEGACY_IMPORTS` (`allow` default, `warn`, `error`).
-
-Never add code here. Removal criteria are tracked by the compat-removal issue
-recorded in the rename migration guide.
 
 ### `breadboard_ext/`
 
