@@ -2,12 +2,14 @@
 Session state management for agentic coding loops
 """
 
+from collections.abc import Iterator
 from typing import Any, Callable, Dict, List, Optional
 from pathlib import Path
 import json
 import time
 import threading
 
+from contextlib import contextmanager
 from dataclasses import asdict
 
 from ..runtime.reasoning_trace_store import ReasoningTraceStore
@@ -520,6 +522,12 @@ class SessionState:
         except Exception:
             return None
     
+    @contextmanager
+    def context_mutation(self) -> Iterator[None]:
+        """Serialize model-facing context and raw-fact changes with compaction."""
+        with self._compaction_lock:
+            yield
+
     def compaction_snapshot(self) -> CompactionSnapshot:
         """Snapshot model-facing bytes and cumulative C-Tree identities at a quiescent boundary."""
         with self._compaction_lock:

@@ -407,6 +407,56 @@ def test_session_cli_accepts_hidden_internal_sequence_gap(
     assert [event["seq"] for event in output["data"]["events"]] == [1, 3]
 
 
+
+def test_session_cli_accepts_running_snapshot_ending_in_hidden_compaction(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    calls: list[tuple[int | None, int, bool]] = []
+
+    class HiddenTailClient:
+        def __init__(self, base_url: str, *, timeout_s: float) -> None:
+            pass
+
+        @staticmethod
+        def get_session(session_id: str) -> dict[str, Any]:
+            result = _result(["session", "get"])
+            result["data"] = {
+                "session": {"session_id": session_id, "event_count": 2}
+            }
+            return result
+
+        @staticmethod
+        def events_session(
+            session_id: str,
+            *,
+            resume_token: int | None = None,
+            limit: int = 256,
+            follow: bool = True,
+        ) -> Iterator[dict[str, Any]]:
+            calls.append((resume_token, limit, follow))
+            if resume_token is None:
+                yield {"seq": 1, "kind": "session.started"}
+
+    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", HiddenTailClient)
+    assert (
+        main(
+            [
+                "--json",
+                "session",
+                "--workspace",
+                str(tmp_path),
+                "--server",
+                "http://breadboard.test",
+                "events",
+                "running-compacted-session",
+            ]
+        )
+        == 0
+    )
+    output = json.loads(capsys.readouterr().out)
+    assert [event["seq"] for event in output["data"]["events"]] == [1]
+    assert calls == [(None, 2, False), (1, 1, False)]
+
 @pytest.mark.parametrize(
     ("event_count", "events", "expected_error"),
     [
@@ -418,7 +468,7 @@ def test_session_cli_accepts_hidden_internal_sequence_gap(
         (
             2,
             [(1, "assistant_message")],
-            "event snapshot ended before its initial bound",
+            "non-increasing session event page",
         ),
         (2, [], "event snapshot ended before its initial bound"),
         (

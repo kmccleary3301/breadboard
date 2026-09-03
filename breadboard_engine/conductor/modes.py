@@ -1035,8 +1035,9 @@ def setup_tool_prompts(
             prompt_tool_defs, active_dialect_names, primary_prompt
         )
 
-        session_state.messages[0]["content"] = comprehensive_prompt
-        session_state.provider_messages[0]["content"] = comprehensive_prompt
+        with session_state.context_mutation():
+            session_state.messages[0]["content"] = comprehensive_prompt
+            session_state.provider_messages[0]["content"] = comprehensive_prompt
 
         local_tools_prompt = (
             "(using cached comprehensive system prompt with research-based preferences)"
@@ -1063,12 +1064,9 @@ def setup_tool_prompts(
         )
 
         if tool_prompt_mode in ("system_once", "system_and_per_turn"):
-            session_state.messages[0]["content"] = (
-                session_state.messages[0].get("content") or ""
-            ) + tool_directive_text
-            session_state.provider_messages[0]["content"] = session_state.messages[0][
-                "content"
-            ]
+            with session_state.context_mutation():
+                session_state.messages[0]["content"] = (session_state.messages[0].get("content") or "") + tool_directive_text
+                session_state.provider_messages[0]["content"] = session_state.messages[0]["content"]
             markdown_logger.log_tool_availability([t.name for t in tool_defs])
 
     return local_tools_prompt

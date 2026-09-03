@@ -6278,8 +6278,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             if isinstance(seed_messages, list):
                 cleaned = [msg for msg in seed_messages if isinstance(msg, dict)]
                 if cleaned:
-                    session_state.messages = list(cleaned)
-                    session_state.provider_messages = list(cleaned)
+                    with session_state.context_mutation():
+                        session_state.messages = list(cleaned)
+                        session_state.provider_messages = list(cleaned)
                     resume_has_system = any(m.get("role") == "system" for m in cleaned if isinstance(m, dict))
             seed_transcript = resume_snapshot.get("transcript")
             if isinstance(seed_transcript, list):

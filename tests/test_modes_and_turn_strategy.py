@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 import os
 from types import SimpleNamespace
 import ray
@@ -68,6 +69,7 @@ def test_compiled_tool_prompt_preserves_first_class_input_media() -> None:
                 ],
             },
         ],
+        context_mutation=nullcontext,
     )
 
     add_enhanced_message_fields(

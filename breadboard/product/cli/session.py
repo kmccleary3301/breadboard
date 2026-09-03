@@ -317,6 +317,8 @@ def _remote_event_snapshot(
         if len(page) > page_limit:
             raise ValueError("server returned an oversized session event page")
         if not page:
+            if events:
+                return events
             raise ValueError(
                 "server event snapshot ended before its initial bound"
             )
@@ -345,10 +347,6 @@ def _remote_event_snapshot(
         events.extend(page)
         if next_resume_token == upper_sequence:
             return events
-        if len(page) < page_limit:
-            raise ValueError(
-                "server event snapshot ended before its initial bound"
-            )
         resume_token = next_resume_token
     return events
 
