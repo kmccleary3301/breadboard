@@ -1800,6 +1800,16 @@ async def test_legacy_managed_retained_session_rebinds_durable_workspace(
         event_root=workspace / ".breadboard" / "sessions",
     )
     record = await service.ensure_session(response.session_id)
+    workspace_journal = (
+        workspace
+        / ".breadboard"
+        / "sessions"
+        / response.session_id
+        / "session_events.jsonl"
+    )
+    workspace_sink = runtime_ports.JsonlEventSink(workspace_journal)
+    for event in record.product_session.events:
+        workspace_sink.append(event)
     record.metadata.pop("session_event_root", None)
     record.metadata.pop("durable_product_workspace", None)
     await service.registry.persist(record)
@@ -1817,6 +1827,41 @@ async def test_legacy_managed_retained_session_rebinds_durable_workspace(
     assert session_store.session_metadata_path(
         workspace, response.session_id
     ).is_file()
+    await _stop(recovered)
+
+
+@pytest.mark.asyncio
+async def test_legacy_internal_managed_session_does_not_gain_public_binding(
+    monkeypatch, tmp_path
+) -> None:
+    managed_root = tmp_path / "managed"
+    managed_root.mkdir(mode=0o700)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    monkeypatch.setenv("BREADBOARD_ENGINE_LAUNCH_ID", "legacy-internal-binding")
+    monkeypatch.setenv("BREADBOARD_ENGINE_STATE_ROOT", str(managed_root))
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+
+    service = SessionService()
+    response = await service.create_session(
+        SessionCreateRequest(
+            config_path=CONFIG,
+            task="restore legacy internal session",
+            workspace=str(workspace),
+        ),
+        session_id="legacy-internal-binding",
+    )
+    record = await service.ensure_session(response.session_id)
+    record.metadata.pop("session_event_root", None)
+    record.metadata.pop("durable_product_workspace", None)
+    await service.registry.persist(record)
+    await _stop(record)
+
+    recovered = await SessionService().ensure_session(response.session_id)
+    assert "durable_product_workspace" not in recovered.metadata
+    assert recovered.runner is not None
+    assert recovered.runner._durable_product_session is None
     await _stop(recovered)
 
 

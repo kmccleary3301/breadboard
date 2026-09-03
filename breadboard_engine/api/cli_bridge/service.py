@@ -1323,7 +1323,6 @@ class SessionService:
                 managed_event_root / record.session_id / "session_events.jsonl"
             ).is_file():
                 retained_event_root = managed_event_root
-                discovered_workspace_journal = True
             else:
                 retained_event_root = managed_event_root
         else:
