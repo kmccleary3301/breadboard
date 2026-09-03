@@ -1473,6 +1473,30 @@ async def test_generation_adoption_rejects_non_quiescent_session_and_rolls_back(
 
 
 @pytest.mark.asyncio
+async def test_stop_command_closes_admission_when_cancel_append_fails(
+    monkeypatch, tmp_path
+) -> None:
+    service, response, record = await _create(monkeypatch, tmp_path, task="")
+    record.product_session._sink = _Failing()
+
+    with pytest.raises(OSError, match="sink unavailable"):
+        await service.execute_command(
+            response.session_id,
+            SessionCommandRequest(command="stop"),
+        )
+    assert record.admission_closed is True
+    with pytest.raises(HTTPException) as late:
+        await service.send_input(
+            response.session_id,
+            SessionInputRequest(content="late admission"),
+        )
+    assert late.value.status_code == 409
+    assert late.value.detail == "session admission is closed"
+    record.product_session._sink = runtime_ports.NullEventSink()
+    await _stop(record)
+
+
+@pytest.mark.asyncio
 async def test_stop_closes_session_admission_before_teardown(
     monkeypatch, tmp_path
 ) -> None:
@@ -2125,9 +2149,10 @@ async def test_retained_resume_refuses_runtime_generation_drift(
     assert tuple(record.product_session.events) == durable_events
 
 
+@pytest.mark.parametrize("failure", [FileNotFoundError, yaml.YAMLError])
 @pytest.mark.asyncio
 async def test_retained_resume_wraps_unavailable_generation_and_remains_deletable(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, failure
 ) -> None:
     monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
     monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
@@ -2144,7 +2169,7 @@ async def test_retained_resume_wraps_unavailable_generation_and_remains_deletabl
 
     monkeypatch.setattr(
         RUNNER + "prepare_runtime_config",
-        lambda _runner: (_ for _ in ()).throw(FileNotFoundError("config removed")),
+        lambda _runner: (_ for _ in ()).throw(failure("config unavailable")),
     )
     fresh = SessionService(state_root=state_root)
     with pytest.raises(runtime_ports.ReplayError) as error:

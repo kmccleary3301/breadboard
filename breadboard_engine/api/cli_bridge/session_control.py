@@ -652,6 +652,8 @@ class SessionControlController:
                         raise
                 return {"status": "ok", "paused": False}
             case "stop":
+                async with self._admission_guard():
+                    runner.session.admission_closed = True
                 stopping = runner._request_stop("stop command")
                 return {"status": "ok", "stopping": stopping}
             case "set_role" | "set_model_role":

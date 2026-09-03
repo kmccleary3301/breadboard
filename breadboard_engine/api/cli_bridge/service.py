@@ -2276,7 +2276,7 @@ class SessionService:
                 runtime_config,
                 runner.request.config_path,
             ).as_dict()["graph_hash"]
-        except (ModelRoleResolutionError, OSError, TypeError, ValueError) as error:
+        except Exception as error:
             raise ReplayError(
                 "generation_unavailable",
                 f"retained session {record.session_id!r} runtime generation cannot be restored",
