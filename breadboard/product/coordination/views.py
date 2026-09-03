@@ -101,10 +101,17 @@ def project_coordination_snapshot(view: CoordinationView, *, as_of: ProjectionAs
         raise TypeError("coordination snapshot projection requires a CoordinationView")
     source, cursors = _coordination_source(view)
     if as_of is not None:
-        if type(as_of) is int and any(item.event_count != as_of for item in view.items):
-            raise CoordinationProjectionAsOfError(as_of, max(item.event_count for item in view.items))
-        if type(as_of) is not int and as_of != cursors:
-            raise CoordinationProjectionAsOfError(as_of, max(item.event_count for item in view.items))
+        maximum = max(item.event_count for item in view.items)
+        if type(as_of) is int:
+            if any(item.event_count != as_of for item in view.items):
+                raise CoordinationProjectionAsOfError(as_of, maximum)
+        elif type(as_of) is tuple and as_of and all(isinstance(cursor, ProjectionCursor) for cursor in as_of):
+            requested = {cursor.stream: cursor.sequence for cursor in as_of}
+            expected = {cursor.stream: cursor.sequence for cursor in cursors}
+            if len(requested) != len(as_of) or requested != expected:
+                raise CoordinationProjectionAsOfError(as_of, maximum)
+        else:
+            raise CoordinationProjectionAsOfError(as_of, maximum)
     return Projected(view, COORDINATION_PROJECTOR_VERSION, source, cursors)
 def project_coordination_live(work_items: Iterable[WorkItem], *, as_of: ProjectionAsOf | None = None, expected_projector_version: str | None = None) -> Projected[CoordinationView]:
     items = tuple(work_items)

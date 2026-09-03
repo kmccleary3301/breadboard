@@ -109,8 +109,12 @@ def test_coordination_heterogeneous_cursor_round_trips_without_truncation() -> N
     replayed = project_coordination_replay(streams, as_of=projected.as_of)
     live = project_coordination_live((short, long), as_of=projected.as_of)
     snapshot = project_coordination_snapshot(projected.value, as_of=projected.as_of)
+    reordered_snapshot = project_coordination_snapshot(
+        projected.value,
+        as_of=tuple(reversed(projected.as_of)),
+    )
 
-    assert projected == replayed == live == snapshot
+    assert projected == replayed == live == snapshot == reordered_snapshot
     assert [(cursor.stream, cursor.sequence) for cursor in projected.as_of] == [
         ("work_item:long", 3),
         ("work_item:short", 1),
