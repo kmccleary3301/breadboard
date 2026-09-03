@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -19,6 +21,10 @@ SURFACE = EVIDENCE / "raw/bb-inj5.2/surface-inventory.json"
 EXTRACTED_SURFACE = (
     EVIDENCE / "raw/bb-inj5.2/surface-inventory-extracted-v1.json"
 )
+DAG_ROOT = EVIDENCE / "raw/bb-inj5.7"
+DAG_VALIDATOR = DAG_ROOT / "validate_dag_prototype.py"
+DAG_GRAPH = DAG_ROOT / "dag-prototype.json"
+DAG_ROUTING = DAG_ROOT / "row-routing.json"
 FIXTURES = {
     EVIDENCE / "fixtures/ft03-request-fixture-v1.json": "76e69938aa132dd4f5fd2d35f8d966c7209f4231eb1b9d8fbb27be285b882ce3",
     EVIDENCE / "fixtures/ft03_openai_responses_capture_v1.py": "67346f2db2906107cde1684c9eec920bad43e471f1001825d080c9776682fbab",
@@ -38,6 +44,9 @@ REQUIRED = (
     PROTOTYPE_REVIEW,
     SURFACE,
     EXTRACTED_SURFACE,
+    DAG_VALIDATOR,
+    DAG_GRAPH,
+    DAG_ROUTING,
     *FIXTURES,
 )
 
@@ -57,6 +66,41 @@ def main() -> int:
     packets = PACKETS.read_text(encoding="utf-8")
     packet_review = PACKET_REVIEW.read_text(encoding="utf-8")
     prototype_review = PROTOTYPE_REVIEW.read_text(encoding="utf-8")
+
+    dag_validation = subprocess.run(
+        [sys.executable, str(DAG_VALIDATOR)],
+        cwd=DAG_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if dag_validation.returncode != 0:
+        findings.append(
+            "committed DAG validation failed: "
+            + (dag_validation.stderr.strip() or dag_validation.stdout.strip())
+        )
+    else:
+        try:
+            dag_result = json.loads(dag_validation.stdout)
+        except json.JSONDecodeError as exc:
+            findings.append(f"committed DAG validator emitted invalid JSON: {exc}")
+        else:
+            expected_dag_result = {
+                "verdict": "PASS",
+                "nodes": 50,
+                "acyclic_order_count": 50,
+                "first_tranche_packets": 6,
+                "routed_rows": 623,
+                "unique_rows": 623,
+                "dsh_phases": list(range(13)),
+                "unconditionally_promoted_new_seams": 0,
+            }
+            for key, expected in expected_dag_result.items():
+                if dag_result.get(key) != expected:
+                    findings.append(
+                        f"committed DAG {key} differs: "
+                        f"{dag_result.get(key)!r} != {expected!r}"
+                    )
     surface = json.loads(SURFACE.read_text(encoding="utf-8"))
 
     for head in HEADS:

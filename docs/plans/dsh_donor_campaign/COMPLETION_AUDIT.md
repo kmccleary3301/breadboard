@@ -11,6 +11,7 @@ Status: COMPLETE — all nine children and map `bb-inj5` closed; post-contract F
 - Donor: first-party `deepseek-ai/deepseek-harness`, tag `dsh-v0.1.0-rc.8`, commit `141eb6fef83422698aef7a981029e843e8161534`; [frozen inventory](evidence/DONOR_ITEMS.yaml)
 - Local tracker: map `bb-inj5`; children `bb-inj5.1` through `bb-inj5.9`
 - Post-contract escalation bindings: packet `5f9f42ef7b826518cfa3b25ae6059cf0142eb2352f4f4d47bc03d2bfc9412aae`; promoted DAG `958cb86c7cb13a5c3d0d7fe9f5bb19528d0a202b85434998f33c9d26a0e06cab`; prototype `f2665cd1fc0ff4f8573756941150913f2b871f7ac7835be6de3ea71f6eb63f59`; FT-03 fixture `67346f2db2906107cde1684c9eec920bad43e471f1001825d080c9776682fbab`; FT-06 extractor `d3025ad346b13b699dd315ea71375888a79c905dd31cd01d24ea6a3dd1037445`.
+- Committed DAG fixed-point inputs: validator `f9735440c53b197d1f421148d6cd0d05c5595377a695c40b8cf949c7c69ada89`; graph `b475dba4b961f6eba610554f1f4a8312f9227448941b596a1cf2e3be81a50867`; routing ledger `b43ded4b1b69dc4c77857af00c951697f550b7d3005f64c7319dab1607df5fb1`.
 
 ## Coverage and decisions
 
@@ -48,13 +49,13 @@ Digest method: SHA-256 over each raw store's sorted `relative-path NUL file-SHA2
 | `bb-inj5.6` | 3 | `2424661ac0a7e124d155c204be2e7607eda1545276d60c61d15be0db44943706` |
 | `bb-inj5.7` | 8 | `8cb9dfe87bb86e2daf7d42d019e6697dceddc3e81d932fd004cc5c29fc28b3c4` |
 | `bb-inj5.8` | 6 | `73ef4c6a118bf0f0a4dedcec99005e1f42480bb5f2acc23af7aa27b90f0b1c82` |
-| `bb-inj5.9` | 3 | `eb0c7a59aea4bffe29284531a4a028ace00a9645fc1a340959274488279899e8` |
+| `bb-inj5.9` | 3 | `04167df24a890033d80e7e84613621d5c12bc36ff32b4cd83101c88d704fe256` |
 
 Workstream I's binding covers its provenance block, deterministic package validator, and final validator result.
 
 ## Gate status
 
-- G-I final package validation: PASS; the authoritative source package has 19/19 byte-exact evidence copies and the self-contained publication package has 11/11 exact inputs, all 13 relative links resolve, all six packet guard pairs are present, and findings are empty.
+- G-I final package validation: PASS; the authoritative source package has 22/22 byte-exact evidence copies and the self-contained publication package has 14/14 exact inputs, including executable DAG validation of 50 acyclic nodes and 623/623 routes; all 13 relative links resolve, all six packet guard pairs are present, and findings are empty.
 - G-Score: PASS at 1000/1000 with every checked item linked and zero structural findings.
 - Phase 20 freeze checker: PASS at unchanged baseline `3b8d862f62ee9c2c421fe07758606b6973902c67`.
 - G-F/G-G/G-H escalation reviews: PASS. Corrected FT-01 terminal routes, FT-03 product-adapter oracle, and FT-06 executable fixed point are exact-artifact bound; P0/P1/P2/P3 = 0/0/0/0 for F/H and P0/P1 = 0/0 for G.
@@ -73,7 +74,7 @@ The specification contains mission/substrate, authorities and baseline heads, fr
 ## Finalization record
 
 - Package integrity: `/opt/homebrew/bin/python3.11 docs/plans/dsh_donor_campaign/check_package.py` → PASS, zero findings.
-- Source/package validator: PASS; 19 exact evidence/fixture/review copies, six packet sections/guard pairs, 13 valid relative links, zero findings.
+- Source/package validator: PASS; 22 exact evidence/fixture/review/validator copies, six packet sections/guard pairs, 13 valid relative links, zero findings.
 - Freeze checker: PASS at baseline `3b8d862f62ee9c2c421fe07758606b6973902c67`.
-- Local commit: package introduced at `c30415263b74a11d1c57d42badb48ff91829d8de`; the final audit-only amendment is recorded in the workspace resolution log.
+- Package provenance: exact candidate and validator-input SHA-256 identities are bound above; GitHub PR 98 records the complete reachable commit history and merge identity.
 - Original documentation finalization performed no production implementation, release, publication, or deployment. The later implementation campaign and this documentation PR are governed separately and do not retroactively expand this audit's authority.

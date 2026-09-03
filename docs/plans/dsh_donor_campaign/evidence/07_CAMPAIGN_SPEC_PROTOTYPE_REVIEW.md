@@ -100,7 +100,7 @@ Gate G-H remains **PASS** on the exact prototype digest above.
 
 Final escalation review date: 2026-09-03. Reviewed prototype SHA-256 `f2665cd1fc0ff4f8573756941150913f2b871f7ac7835be6de3ea71f6eb63f59`; pinned ENGINE/TUI heads unchanged.
 
-The independent final read verified the exact FT-01 2/16 schedule and retry scope; authenticated writable L1/L2 boundaries; terminal generation prerequisites and activation; H/I ordering and seven-piece gate; FT-03's product-adapter capture and typed stop wrapper; and FT-06's executable extractor against the generated fixed point without modifying the historical baseline. The source package contains 19 exact evidence copies; the self-contained publication package requires 11 exact inputs. The raw DAG remains bound at SHA-256 `958cb86c7cb13a5c3d0d7fe9f5bb19528d0a202b85434998f33c9d26a0e06cab`.
+The independent final read verified the exact FT-01 2/16 schedule and retry scope; authenticated writable L1/L2 boundaries; terminal generation prerequisites and activation; H/I ordering and seven-piece gate; FT-03's product-adapter capture and typed stop wrapper; and FT-06's executable extractor against the generated fixed point without modifying the historical baseline. The source package contains 22 exact evidence copies; the self-contained publication package requires 14 exact inputs, including the executable DAG validator and its machine inputs. The raw DAG remains bound at SHA-256 `958cb86c7cb13a5c3d0d7fe9f5bb19528d0a202b85434998f33c9d26a0e06cab`.
 
 Independent final escalation verdict: **APPROVED**. P0/P1/P2/P3: **0/0/0/0**. Confidence: 0.99.
 

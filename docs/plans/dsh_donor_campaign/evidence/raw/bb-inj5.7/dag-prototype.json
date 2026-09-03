@@ -1,0 +1,1166 @@
+{
+  "first_tranche": [
+    "FT-01",
+    "FT-02",
+    "FT-03",
+    "FT-04",
+    "FT-05",
+    "FT-06"
+  ],
+  "heads": {
+    "engine": "b3cacc7356244253305f8a6f84308a993485bfe2",
+    "tui": "73d6e6f55a238fc9ff0486bbcc9ecffe85705715"
+  },
+  "nodes": {
+    "ANN-CHAR": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "preference-label scenario names message/trajectory identity and immutable payload",
+      "deps": [
+        "FT-05",
+        "RT-REPLAY"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "evidence",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "ANN-INTERNAL": {
+      "approval": "Kyle explicit seam approval",
+      "attempts": 3,
+      "condition": "Kyle approves internal sidecar owner and no public schema change",
+      "deps": [
+        "DIT-ANNOTATION"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "new-seam-internal-pilot",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "BASE": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "pinned heads and approved A-F artifacts",
+      "deps": [],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "root",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "satisfied"
+    },
+    "CH-CHAR": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "current child/job process-death fixture has durable identity and settlement oracle",
+      "deps": [
+        "FT-05",
+        "RT-REPLAY"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "evidence",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "CH-PILOT": {
+      "approval": "Kyle explicit seam approval",
+      "attempts": 3,
+      "condition": "Kyle approves internal durable-child seam",
+      "deps": [
+        "DIT-CHILD"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "new-seam-internal-pilot",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "CONTRACT-SCHEMA": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "one feature-specific approved amendment",
+      "deps": [
+        "PUBLIC-AMEND"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "exact allowlist/hash in SPEC_AMENDMENTS and freeze checker",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "public-contract",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "high",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "CP-CHAR": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "long-horizon exact-recovery fixture and independent event/context oracle exist",
+      "deps": [
+        "RT-REPLAY"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "evidence",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "CP-IMPLEMENT": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "existing Session seam can implement lossless compaction without raw-fact deletion",
+      "deps": [
+        "CP-CHAR"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "internal-implementation",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "DIT-ANNOTATION": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "annotation owner selection required; common caller, >=2 real adapters including existing Session, deletion payoff, and three interface designs proven",
+      "deps": [
+        "ANN-CHAR"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "design-it-twice",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "DIT-CHILD": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "provider-neutral common caller, >=2 real adapters, deletion payoff, and three interface designs proven",
+      "deps": [
+        "CH-CHAR"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "design-it-twice",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "DIT-GENERATION": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "FT-02 and FT-06 reach a terminal design outcome: when activation is needed, common caller, >=2 real adapters (currently three), deletion payoff, and three interface designs proven; otherwise record NOT-TAKEN",
+      "deps": [
+        "FT-02",
+        "FT-06"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "design-it-twice",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "DIT-PROJECTION": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "common caller, >=2 real adapters, deletion payoff, three interface designs",
+      "deps": [
+        "PROJ-CHAR"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "design-it-twice",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "DIT-WORKFLOW": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "workflow controller need plus common caller, >=2 real adapters, deletion payoff, and three interface designs proven",
+      "deps": [
+        "WF-CHAR"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "design-it-twice",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "DIT-WORLD": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "equivalence result plus common caller, >=2 real foundations/adapters, deletion payoff, and three interface designs proven",
+      "deps": [
+        "EW-CHAR"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "design-it-twice",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "E4-CONFORMANCE": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "product facts stable; E4 remains consumer",
+      "deps": [
+        "INSTALLED-COMPOSITION"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "e4-consumer",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "EVIDENCE-GATE": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "six reports classified; all retained locks satisfy six holds",
+      "deps": [
+        "FT-06"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "gate",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "EW-CHAR": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "same Definition/Lock can run local and container with declared world-field mask",
+      "deps": [
+        "RT-REPLAY",
+        "FT-06"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "evidence",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "EW-PILOT": {
+      "approval": "Kyle explicit seam approval",
+      "attempts": 3,
+      "condition": "Kyle approves internal local/container world seam",
+      "deps": [
+        "DIT-WORLD"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "new-seam-internal-pilot",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "EW-SLURM": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "local/container pilot passes; Slurm event diff pre-registered",
+      "deps": [
+        "EW-PILOT"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "research",
+      "parallelism": "exclusive scheduler allocation",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "high",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "FT-01": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "always",
+      "deps": [
+        "BASE"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "evidence",
+      "parallelism": "exclusive installed-product slot",
+      "repos": [
+        "ENGINE",
+        "TUI",
+        "installed product"
+      ],
+      "review_rounds": 1,
+      "risk": "high",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "first-tranche"
+    },
+    "FT-02": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "always",
+      "deps": [
+        "BASE"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "evidence",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "first-tranche"
+    },
+    "FT-03": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "always",
+      "deps": [
+        "BASE"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "evidence",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "first-tranche"
+    },
+    "FT-04": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "always",
+      "deps": [
+        "BASE"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "evidence",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE",
+        "TUI"
+      ],
+      "review_rounds": 1,
+      "risk": "low",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "first-tranche"
+    },
+    "FT-05": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "always",
+      "deps": [
+        "BASE"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "evidence",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "low",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "first-tranche"
+    },
+    "FT-06": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "all five focused reports exist",
+      "deps": [
+        "FT-01",
+        "FT-02",
+        "FT-03",
+        "FT-04",
+        "FT-05"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "inventory",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE",
+        "TUI"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "first-tranche"
+    },
+    "GEN-ACTIVATION": {
+      "approval": "Kyle explicit seam approval",
+      "attempts": 3,
+      "condition": "Kyle records a terminal generation-activation decision: implement the approved seam or record NOT-TAKEN",
+      "deps": [
+        "DIT-GENERATION"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "internal only; public indicators require PUBLIC-AMEND",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "new-seam-implementation",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "GEN-INTERNAL": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "FT-02 reaches a terminal current-owner result: repair a law gap or record NOT-TAKEN",
+      "deps": [
+        "EVIDENCE-GATE"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "internal-implementation",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "GENERATE-BINDINGS": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "contract/schema validation green",
+      "deps": [
+        "CONTRACT-SCHEMA"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "generated-code",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "INSTALLED-COMPOSITION": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "all clients built from same contract revision",
+      "deps": [
+        "SDK-PY",
+        "TUI-SKELETON",
+        "TUI-BB"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "installed-conformance",
+      "parallelism": "exclusive installed-product slot",
+      "repos": [
+        "ENGINE",
+        "TUI",
+        "installed product"
+      ],
+      "review_rounds": 1,
+      "risk": "high",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "PROJ-CHAR": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "named as-of/lineage consumer and current projector gap",
+      "deps": [
+        "RT-REPLAY",
+        "FT-06"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "evidence",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "PROJ-IMPLEMENT": {
+      "approval": "Kyle explicit seam approval",
+      "attempts": 3,
+      "condition": "Kyle approves selected projection seam after design-it-twice",
+      "deps": [
+        "DIT-PROJECTION"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "internal only; public projection requires PUBLIC-AMEND",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "new-seam-implementation",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "PUBLIC-AMEND": {
+      "approval": "Kyle sign-off recorded in SPEC_AMENDMENTS.md",
+      "attempts": 3,
+      "condition": "named failing consumer/correctness case plus internal proof plus Kyle sign-off",
+      "deps": [
+        "FT-04",
+        "FT-06"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "amendment required before work",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "approval",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE",
+        "TUI"
+      ],
+      "review_rounds": 1,
+      "risk": "high",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "RESEARCH-ADVANCED-CLIENTS": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "named consumer and compatibility budget",
+      "deps": [
+        "PUBLIC-AMEND"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "research",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE",
+        "TUI"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "fog"
+    },
+    "RESEARCH-CODE-MODE": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "benchmark shows pre-registered gain with no success regression",
+      "deps": [
+        "FT-05"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "research",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "fog"
+    },
+    "RESEARCH-DISTRIBUTED-TEAMS": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "durable local children and WorkItem coordination proven",
+      "deps": [
+        "CH-PILOT",
+        "WF-CHAR"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "research",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "high",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "fog"
+    },
+    "RESEARCH-DYNAMIC-PACKAGES": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "named consumer, disposable generation/world, no ambient authority, explicit approval",
+      "deps": [
+        "EW-PILOT",
+        "GEN-ACTIVATION"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "research",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "high",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "fog"
+    },
+    "RQ-ABLATION": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "either predecessor supplies records-only exact reconstruction",
+      "deps": [
+        "RQ-PASS",
+        "RQ-RECONSTRUCTED"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "join": "any",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "research",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "RQ-INTERNAL": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "FT-03 names an internal missing fact fixable without public change",
+      "deps": [
+        "EVIDENCE-GATE"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "internal-implementation",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "RQ-PASS": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "FT-03 exact reconstruction passes; L3 retained",
+      "deps": [
+        "EVIDENCE-GATE"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "branch",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "RQ-RECONSTRUCTED": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "post-change exact reconstruction passes",
+      "deps": [
+        "RQ-INTERNAL"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "conformance",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "RT-REPAIR": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "FT-01 primary_classification is KNOWN_DIVERGENCE; repair only the reproduced logical-journal divergence at the existing Session event sink",
+      "deps": [
+        "EVIDENCE-GATE"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "internal-implementation",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "RT-REPLAY": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "FT-01 is COHERENT, or FT-01 was KNOWN_DIVERGENCE and RT-REPAIR is terminal; PRODUCT_RED and every other terminal defect close replay",
+      "deps": [
+        "EVIDENCE-GATE",
+        "FT-04"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "conformance",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "SDK-PY": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "generated Python binding exists",
+      "deps": [
+        "GENERATE-BINDINGS"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "client-adapter",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "SDK-TS": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "generated TypeScript binding exists",
+      "deps": [
+        "GENERATE-BINDINGS"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "client-adapter",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "SEVEN-PIECE-AUDIT": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "all seven substrate pieces have observed vertical evidence",
+      "deps": [
+        "SUBSTRATE-COMMAND",
+        "ANN-INTERNAL",
+        "WF-IMPLEMENT",
+        "CP-IMPLEMENT",
+        "GEN-INTERNAL",
+        "GEN-ACTIVATION"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "acceptance",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE",
+        "TUI"
+      ],
+      "review_rounds": 1,
+      "risk": "high",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "SUBSTRATE-COMMAND": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "experiment E/world W/generation G/projection P/compare E-prime inputs all have owners",
+      "deps": [
+        "RQ-ABLATION",
+        "PROJ-IMPLEMENT",
+        "EW-PILOT",
+        "E4-CONFORMANCE"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "acceptance",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE",
+        "TUI"
+      ],
+      "review_rounds": 1,
+      "risk": "high",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "TUI-BB": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "TS contract/binding available",
+      "deps": [
+        "SDK-TS"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "client-projection",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "TUI"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "TUI-SKELETON": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "TS contract/binding available",
+      "deps": [
+        "SDK-TS"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "client-projection",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "WF-CHAR": {
+      "approval": "none for evidence; Kyle for new seam/public surface",
+      "attempts": 3,
+      "condition": "workflow consumer, WorkItem invariants, replay divergence oracle named",
+      "deps": [
+        "CH-PILOT"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "evidence",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    },
+    "WF-IMPLEMENT": {
+      "approval": "Kyle explicit seam approval",
+      "attempts": 3,
+      "condition": "Kyle approves durable workflow controller",
+      "deps": [
+        "DIT-WORKFLOW"
+      ],
+      "failure_branch": "retain strongest bounded claim and route typed red",
+      "freeze": "none until explicit amendment node",
+      "kill": "stop on product-policy invention, missing independent oracle, or prohibited surface",
+      "kind": "new-seam-internal-pilot",
+      "parallelism": "isolated worktree unless installed process",
+      "repos": [
+        "ENGINE"
+      ],
+      "review_rounds": 1,
+      "risk": "medium",
+      "rollback": "packet commit or temporary report deletion",
+      "size": "small (one packet)",
+      "stale_rule": "invalidate on cited head, law, packet, fixture, or contract change",
+      "status": "conditional"
+    }
+  },
+  "public_generation_order": [
+    "PUBLIC-AMEND",
+    "CONTRACT-SCHEMA",
+    "GENERATE-BINDINGS",
+    [
+      "SDK-PY",
+      "SDK-TS"
+    ],
+    [
+      "TUI-SKELETON",
+      "TUI-BB"
+    ],
+    "INSTALLED-COMPOSITION",
+    "E4-CONFORMANCE"
+  ],
+  "schema_version": "breadboard.dsh_promoted_dag_prototype.v1",
+  "unconditionally_promoted_new_seams": 0
+}
