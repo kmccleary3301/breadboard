@@ -33,6 +33,7 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
             "entries": [
                 {"id": "error", "status": "active"},
                 {"id": "tool_result", "status": "active"},
+                {"id": "warning", "status": "active"},
             ],
         },
     )
@@ -55,6 +56,13 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
                 {
                     "schema_id": "bb.keep.v1",
                     "family": "keep",
+                    "lifecycle": "validate_only",
+                    "default_for_generation": False,
+                    "superseded_by": None,
+                },
+                {
+                    "schema_id": "bb.remove.v1",
+                    "family": "remove",
                     "lifecycle": "validate_only",
                     "default_for_generation": False,
                     "superseded_by": None,
@@ -83,6 +91,12 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
                     "disposition": "keep",
                     "consumers": [],
                 },
+                {
+                    "schema_id": "bb.remove.v1",
+                    "tier": "host_protocol",
+                    "disposition": "freeze",
+                    "consumers": [{"kind": "loader", "path": "breadboard_engine/loader.py"}],
+                },
             ],
         },
     )
@@ -90,6 +104,8 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
     _json(schema, {"$id": "bb.context_resource_pack.v1", "type": "object", "properties": {"items": {"type": "array"}}, "required": ["items"]})
     keep_schema = engine / "contracts" / "kernel" / "schemas" / "bb.keep.v1.schema.json"
     _json(keep_schema, {"$id": "bb.keep.v1", "type": "object", "properties": {"value": {"type": "string"}}})
+    remove_schema = engine / "contracts" / "kernel" / "schemas" / "bb.remove.v1.schema.json"
+    _json(remove_schema, {"$id": "bb.remove.v1", "type": "object", "properties": {"value": {"type": "string"}}})
     (engine / "breadboard_engine" / "api" / "cli_bridge").mkdir(parents=True)
     (engine / "breadboard_engine" / "api" / "cli_bridge" / "events.py").write_text("class EventType:\n    TOOL_RESULT = 'tool_result'\n", encoding="utf-8")
     (engine / "breadboard_sdk").mkdir(parents=True)
@@ -105,7 +121,9 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
     tui_source.write_text(
         "import { ApiError } from '@breadboard/sdk'\n"
         "export const eventKind = 'tool_result';\n"
-        "export const errorType = 'error';\n"
+        "function render(event: { type: string }) {\n"
+        "  switch (event.type) { case 'error': return event.type; case 'warning': return event.type; default: return 'ok'; }\n"
+        "}\n"
         "void ApiError;\n",
         encoding="utf-8",
     )
@@ -147,7 +165,7 @@ def test_inventory_interface_is_deterministic_and_recalls_sample(tmp_path: Path)
     assert first["tui_consumers"]["consumer_count"] == 1
     consumer_rows = first["tui_consumers"]["files"]
     consumer = next(row for row in consumer_rows if row["path"].endswith("consumer.ts"))
-    assert {"ApiError", "tool_result"} <= set(consumer["matched_tokens"])
+    assert {"ApiError", "tool_result", "error", "warning"} <= set(consumer["matched_tokens"])
     assert not any("generated/" in row["path"] for row in consumer_rows)
     assert not any(row["path"].startswith("engine_root/tests/") for row in first["compatibility_surfaces"]["reconfiguration"])
     deletion_ids = {
@@ -155,6 +173,15 @@ def test_inventory_interface_is_deterministic_and_recalls_sample(tmp_path: Path)
         for row in first["compatibility_surfaces"]["deletion_candidates"]
     }
     assert "bb.keep.v1" not in deletion_ids
+    remove_rows = [
+        row
+        for row in first["compatibility_surfaces"]["deletion_candidates"]
+        if row.get("schema_id") == "bb.remove.v1"
+    ]
+    assert len(remove_rows) == 1
+    assert remove_rows[0]["authorities"] == ["contract_tiers", "schema_lifecycle"]
+    assert remove_rows[0]["contract_tier"]["disposition"] == "freeze"
+    assert remove_rows[0]["schema_lifecycle"]["lifecycle"] == "validate_only"
     lifecycle_keep = next(
         row
         for row in first["compatibility_surfaces"]["schema_lifecycle"]["entries"]

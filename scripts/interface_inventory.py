@@ -515,15 +515,22 @@ def _event_pattern(token: str) -> re.Pattern[str]:
     quoted = rf"""['"`]{re.escape(token)}['"`]"""
     if token not in AMBIGUOUS_EVENT_IDS:
         return re.compile(quoted)
+    discriminator = (
+        r"(?:event|event_data|eventData|message|payload)"
+        r"(?:\s*\.\s*(?:type|kind|event_type|eventType|event_kind|eventKind)"
+        r"|\s*\[\s*['\"](?:type|kind|event_type|eventType|event_kind|eventKind)['\"]\s*\])"
+    )
     return re.compile(
         rf"(?:"
         rf"\b(?:type|kind|event|event_type|eventType|event_kind|eventKind)\s*[:=]\s*{quoted}"
         rf"|"
-        rf"\b(?:event|event_data|eventData|message|payload)\s*\.\s*"
-        rf"(?:type|kind|event_type|eventType|event_kind|eventKind)\s*(?:===|!==|==|!=)\s*{quoted}"
+        rf"\b{discriminator}\s*(?:===|!==|==|!=)\s*{quoted}"
         rf"|"
         rf"\b(?:type|kind|event_type|eventType|event_kind|eventKind)\s*"
         rf"(?:===|!==|==|!=)\s*{quoted}"
+        rf"|"
+        rf"\bswitch\s*\(\s*{discriminator}\s*\)\s*\{{?"
+        rf"[\s\S]{{0,320}}?\bcase\s*{quoted}\s*:"
         rf")"
     )
 
@@ -733,19 +740,43 @@ def _compatibility(
         if tier_row is not None:
             row["tier_disposition"] = tier_row.get("disposition")
             row["tier_consumers"] = tier_row.get("consumers", [])
-    deletion_candidates = [
-        row
-        for row in tiers
-        if row.get("disposition") != "keep" or row.get("superseded_by")
-    ] + [
-        row
-        for row in lifecycle
-        if (
+    candidates_by_schema: dict[str, dict[str, Any]] = {}
+    for row in tiers:
+        schema_id = row.get("schema_id")
+        if not isinstance(schema_id, str) or row.get("disposition") == "keep":
+            continue
+        candidates_by_schema[schema_id] = {
+            "entry_id": schema_id,
+            "schema_id": schema_id,
+            "authorities": ["contract_tiers"],
+            "contract_tier": dict(row),
+        }
+    for row in lifecycle:
+        schema_id = row.get("schema_id")
+        if not isinstance(schema_id, str):
+            continue
+        tier_row = tier_by_schema.get(schema_id)
+        if tier_row is not None and tier_row.get("disposition") == "keep":
+            continue
+        if not (
             row.get("superseded_by")
             or row.get("lifecycle") in {"frozen_accepted_evidence", "validate_only"}
+        ):
+            continue
+        candidate = candidates_by_schema.setdefault(
+            schema_id,
+            {
+                "entry_id": schema_id,
+                "schema_id": schema_id,
+                "authorities": [],
+            },
         )
-        and tier_by_schema.get(str(row.get("schema_id")), {}).get("disposition") != "keep"
-    ]
+        candidate["authorities"].append("schema_lifecycle")
+        candidate["schema_lifecycle"] = dict(row)
+    deletion_candidates = sorted(
+        candidates_by_schema.values(),
+        key=lambda item: str(item["schema_id"]),
+    )
     for row in (lifecycle, tiers, deletion_candidates):
         row.sort(key=lambda item: str(item.get("schema_id") or item.get("entry_id") or ""))
     return {

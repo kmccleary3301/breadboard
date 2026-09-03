@@ -5381,543 +5381,809 @@
     },
     "deletion_candidates": [
       {
-        "consumers": [
-          {
-            "kind": "loader",
-            "path": "breadboard_engine/compilation/v2_loader.py"
-          }
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
         ],
-        "disposition": "supersede",
+        "contract_tier": {
+          "consumers": [
+            {
+              "kind": "loader",
+              "path": "breadboard_engine/compilation/v2_loader.py"
+            }
+          ],
+          "disposition": "supersede",
+          "entry_id": "bb.agent_config_surface.v1",
+          "schema_id": "bb.agent_config_surface.v1",
+          "superseded_by": "bb.agent_config_surface.v2",
+          "tier": "config_algebra"
+        },
         "entry_id": "bb.agent_config_surface.v1",
         "schema_id": "bb.agent_config_surface.v1",
-        "superseded_by": "bb.agent_config_surface.v2",
-        "tier": "config_algebra"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.agent_config_surface.v1",
+          "family": "agent_config_surface",
+          "lifecycle": "validate_only",
+          "schema_id": "bb.agent_config_surface.v1",
+          "superseded_by": "bb.agent_config_surface.v2",
+          "tier_consumers": [
+            {
+              "kind": "loader",
+              "path": "breadboard_engine/compilation/v2_loader.py"
+            }
+          ],
+          "tier_disposition": "supersede"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.agent_config_surface.v1",
-        "family": "agent_config_surface",
-        "lifecycle": "validate_only",
-        "schema_id": "bb.agent_config_surface.v1",
-        "superseded_by": "bb.agent_config_surface.v2",
-        "tier_consumers": [
-          {
-            "kind": "loader",
-            "path": "breadboard_engine/compilation/v2_loader.py"
-          }
+        "authorities": [
+          "contract_tiers"
         ],
-        "tier_disposition": "supersede"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.config_mutation_record.v1",
+          "schema_id": "bb.config_mutation_record.v1",
+          "tier": "config_algebra"
+        },
         "entry_id": "bb.config_mutation_record.v1",
-        "schema_id": "bb.config_mutation_record.v1",
-        "tier": "config_algebra"
+        "schema_id": "bb.config_mutation_record.v1"
       },
       {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.context_resource_pack.v1",
+          "schema_id": "bb.context_resource_pack.v1",
+          "tier": "config_algebra"
+        },
         "entry_id": "bb.context_resource_pack.v1",
-        "schema_id": "bb.context_resource_pack.v1",
-        "tier": "config_algebra"
+        "schema_id": "bb.context_resource_pack.v1"
       },
       {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.coordination_delegated_verification_reference_slice.v1",
+          "schema_id": "bb.coordination_delegated_verification_reference_slice.v1",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.coordination_delegated_verification_reference_slice.v1",
         "schema_id": "bb.coordination_delegated_verification_reference_slice.v1",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.coordination_delegated_verification_reference_slice.v1",
+          "family": "coordination_delegated_verification_reference_slice",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.coordination_delegated_verification_reference_slice.v1",
+          "superseded_by": null,
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.coordination_delegated_verification_reference_slice.v1",
-        "family": "coordination_delegated_verification_reference_slice",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.coordination_delegated_verification_reference_slice.v1",
-        "superseded_by": null,
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.coordination_intervention_reference_slice.v1",
+          "schema_id": "bb.coordination_intervention_reference_slice.v1",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.coordination_intervention_reference_slice.v1",
         "schema_id": "bb.coordination_intervention_reference_slice.v1",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.coordination_intervention_reference_slice.v1",
+          "family": "coordination_intervention_reference_slice",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.coordination_intervention_reference_slice.v1",
+          "superseded_by": null,
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.coordination_intervention_reference_slice.v1",
-        "family": "coordination_intervention_reference_slice",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.coordination_intervention_reference_slice.v1",
-        "superseded_by": null,
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.coordination_longrun_reference_slice.v1",
+          "schema_id": "bb.coordination_longrun_reference_slice.v1",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.coordination_longrun_reference_slice.v1",
         "schema_id": "bb.coordination_longrun_reference_slice.v1",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.coordination_longrun_reference_slice.v1",
+          "family": "coordination_longrun_reference_slice",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.coordination_longrun_reference_slice.v1",
+          "superseded_by": null,
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.coordination_longrun_reference_slice.v1",
-        "family": "coordination_longrun_reference_slice",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.coordination_longrun_reference_slice.v1",
-        "superseded_by": null,
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.coordination_multi_worker_reference_slice.v1",
+          "schema_id": "bb.coordination_multi_worker_reference_slice.v1",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.coordination_multi_worker_reference_slice.v1",
         "schema_id": "bb.coordination_multi_worker_reference_slice.v1",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.coordination_multi_worker_reference_slice.v1",
+          "family": "coordination_multi_worker_reference_slice",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.coordination_multi_worker_reference_slice.v1",
+          "superseded_by": null,
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.coordination_multi_worker_reference_slice.v1",
-        "family": "coordination_multi_worker_reference_slice",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.coordination_multi_worker_reference_slice.v1",
-        "superseded_by": null,
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.coordination_pack.v3",
+          "schema_id": "bb.coordination_pack.v3",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.coordination_pack.v3",
         "schema_id": "bb.coordination_pack.v3",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.coordination_pack.v3",
+          "family": "coordination_pack",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.coordination_pack.v3",
+          "superseded_by": null,
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.coordination_pack.v3",
-        "family": "coordination_pack",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.coordination_pack.v3",
-        "superseded_by": null,
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.coordination_reference_slice.v1",
+          "schema_id": "bb.coordination_reference_slice.v1",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.coordination_reference_slice.v1",
         "schema_id": "bb.coordination_reference_slice.v1",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.coordination_reference_slice.v1",
+          "family": "coordination_reference_slice",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.coordination_reference_slice.v1",
+          "superseded_by": null,
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.coordination_reference_slice.v1",
-        "family": "coordination_reference_slice",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.coordination_reference_slice.v1",
-        "superseded_by": null,
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.coordination_slice.v2",
+          "schema_id": "bb.coordination_slice.v2",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.coordination_slice.v2",
         "schema_id": "bb.coordination_slice.v2",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.coordination_slice.v2",
+          "family": "coordination_slice",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.coordination_slice.v2",
+          "superseded_by": null,
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.coordination_slice.v2",
-        "family": "coordination_slice",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.coordination_slice.v2",
-        "superseded_by": null,
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.coordination_view.v1",
+          "schema_id": "bb.coordination_view.v1",
+          "tier": "runtime_protocol"
+        },
         "entry_id": "bb.coordination_view.v1",
         "schema_id": "bb.coordination_view.v1",
-        "tier": "runtime_protocol"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.coordination_view.v1",
+          "family": "coordination_view",
+          "lifecycle": "validate_only",
+          "schema_id": "bb.coordination_view.v1",
+          "superseded_by": null,
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.coordination_view.v1",
-        "family": "coordination_view",
-        "lifecycle": "validate_only",
-        "schema_id": "bb.coordination_view.v1",
-        "superseded_by": null,
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.distributed_task_descriptor.v1",
+          "schema_id": "bb.distributed_task_descriptor.v1",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.distributed_task_descriptor.v1",
         "schema_id": "bb.distributed_task_descriptor.v1",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.distributed_task_descriptor.v1",
+          "family": "distributed_task_descriptor",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.distributed_task_descriptor.v1",
+          "superseded_by": null,
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.distributed_task_descriptor.v1",
-        "family": "distributed_task_descriptor",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.distributed_task_descriptor.v1",
-        "superseded_by": null,
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.e4.artifact_catalog.v1",
+          "schema_id": "bb.e4.artifact_catalog.v1",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.e4.artifact_catalog.v1",
         "schema_id": "bb.e4.artifact_catalog.v1",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.e4.artifact_catalog.v1",
+          "family": "e4_artifact_catalog",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.e4.artifact_catalog.v1",
+          "superseded_by": "bb.e4.artifact_catalog.v2",
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.e4.artifact_catalog.v1",
-        "family": "e4_artifact_catalog",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.e4.artifact_catalog.v1",
-        "superseded_by": "bb.e4.artifact_catalog.v2",
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.e4.lane_def.v1",
+          "schema_id": "bb.e4.lane_def.v1",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.e4.lane_def.v1",
         "schema_id": "bb.e4.lane_def.v1",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.e4.lane_def.v1",
+          "family": "e4_lane_definition",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.e4.lane_def.v1",
+          "superseded_by": "bb.e4.lane_def.v2",
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.e4.lane_def.v1",
-        "family": "e4_lane_definition",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.e4.lane_def.v1",
-        "superseded_by": "bb.e4.lane_def.v2",
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.e4.lane_inventory.v1",
+          "schema_id": "bb.e4.lane_inventory.v1",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.e4.lane_inventory.v1",
         "schema_id": "bb.e4.lane_inventory.v1",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.e4.lane_inventory.v1",
+          "family": "e4_lane_inventory",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.e4.lane_inventory.v1",
+          "superseded_by": "bb.e4.lane_inventory.v2",
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.e4.lane_inventory.v1",
-        "family": "e4_lane_inventory",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.e4.lane_inventory.v1",
-        "superseded_by": "bb.e4.lane_inventory.v2",
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.e4.lane_lock.v1",
+          "schema_id": "bb.e4.lane_lock.v1",
+          "tier": "config_algebra"
+        },
         "entry_id": "bb.e4.lane_lock.v1",
-        "schema_id": "bb.e4.lane_lock.v1",
-        "tier": "config_algebra"
+        "schema_id": "bb.e4.lane_lock.v1"
       },
       {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.e4.support_claim.v1",
+          "schema_id": "bb.e4.support_claim.v1",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.e4.support_claim.v1",
         "schema_id": "bb.e4.support_claim.v1",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.e4.support_claim.v1",
+          "family": "support_claim",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.e4.support_claim.v1",
+          "superseded_by": "bb.e4.support_claim.v4",
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.e4.support_claim.v1",
-        "family": "support_claim",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.e4.support_claim.v1",
-        "superseded_by": "bb.e4.support_claim.v4",
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.e4.support_claim.v2",
+          "schema_id": "bb.e4.support_claim.v2",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.e4.support_claim.v2",
         "schema_id": "bb.e4.support_claim.v2",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.e4.support_claim.v2",
+          "family": "support_claim",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.e4.support_claim.v2",
+          "superseded_by": "bb.e4.support_claim.v4",
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.e4.support_claim.v2",
-        "family": "support_claim",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.e4.support_claim.v2",
-        "superseded_by": "bb.e4.support_claim.v4",
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.e4.support_claim.v3",
+          "schema_id": "bb.e4.support_claim.v3",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.e4.support_claim.v3",
         "schema_id": "bb.e4.support_claim.v3",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.e4.support_claim.v3",
+          "family": "support_claim",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.e4.support_claim.v3",
+          "superseded_by": "bb.e4.support_claim.v4",
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.e4.support_claim.v3",
-        "family": "support_claim",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.e4.support_claim.v3",
-        "superseded_by": "bb.e4.support_claim.v4",
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.e4.target_coverage.v1",
+          "schema_id": "bb.e4.target_coverage.v1",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.e4.target_coverage.v1",
         "schema_id": "bb.e4.target_coverage.v1",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.e4.target_coverage.v1",
+          "family": "e4_target_coverage",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.e4.target_coverage.v1",
+          "superseded_by": "bb.e4.target_coverage.v2",
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.e4.target_coverage.v1",
-        "family": "e4_target_coverage",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.e4.target_coverage.v1",
-        "superseded_by": "bb.e4.target_coverage.v2",
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.environment_selector.v1",
+          "schema_id": "bb.environment_selector.v1",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.environment_selector.v1",
         "schema_id": "bb.environment_selector.v1",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.environment_selector.v1",
+          "family": "environment_selector",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.environment_selector.v1",
+          "superseded_by": "bb.environment_selector.v2",
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.environment_selector.v1",
-        "family": "environment_selector",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.environment_selector.v1",
-        "superseded_by": "bb.environment_selector.v2",
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.environment_selector.v2",
+          "schema_id": "bb.environment_selector.v2",
+          "tier": "config_algebra"
+        },
         "entry_id": "bb.environment_selector.v2",
-        "schema_id": "bb.environment_selector.v2",
-        "tier": "config_algebra"
+        "schema_id": "bb.environment_selector.v2"
       },
       {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.kernel_event.v1",
+          "schema_id": "bb.kernel_event.v1",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.kernel_event.v1",
         "schema_id": "bb.kernel_event.v1",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.kernel_event.v1",
+          "family": "kernel_event_log",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.kernel_event.v1",
+          "superseded_by": "bb.kernel_event.v2",
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.kernel_event.v1",
-        "family": "kernel_event_log",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.kernel_event.v1",
-        "superseded_by": "bb.kernel_event.v2",
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [
-          {
-            "kind": "evidence_machinery",
-            "path": "scripts/build_python_reference_contract_fixtures.py"
-          }
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
         ],
-        "disposition": "supersede",
+        "contract_tier": {
+          "consumers": [
+            {
+              "kind": "evidence_machinery",
+              "path": "scripts/build_python_reference_contract_fixtures.py"
+            }
+          ],
+          "disposition": "supersede",
+          "entry_id": "bb.provider_exchange.v1",
+          "schema_id": "bb.provider_exchange.v1",
+          "tier": "host_protocol"
+        },
         "entry_id": "bb.provider_exchange.v1",
         "schema_id": "bb.provider_exchange.v1",
-        "tier": "host_protocol"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.provider_exchange.v1",
+          "family": "provider_exchange",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.provider_exchange.v1",
+          "superseded_by": "bb.provider_exchange.v2",
+          "tier_consumers": [
+            {
+              "kind": "evidence_machinery",
+              "path": "scripts/build_python_reference_contract_fixtures.py"
+            }
+          ],
+          "tier_disposition": "supersede"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.provider_exchange.v1",
-        "family": "provider_exchange",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.provider_exchange.v1",
-        "superseded_by": "bb.provider_exchange.v2",
-        "tier_consumers": [
-          {
-            "kind": "evidence_machinery",
-            "path": "scripts/build_python_reference_contract_fixtures.py"
-          }
+        "authorities": [
+          "contract_tiers"
         ],
-        "tier_disposition": "supersede"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.registry.v1",
+          "schema_id": "bb.registry.v1",
+          "tier": "config_algebra"
+        },
         "entry_id": "bb.registry.v1",
-        "schema_id": "bb.registry.v1",
-        "tier": "config_algebra"
+        "schema_id": "bb.registry.v1"
       },
       {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.session_transcript.v1",
+          "schema_id": "bb.session_transcript.v1",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.session_transcript.v1",
         "schema_id": "bb.session_transcript.v1",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.session_transcript.v1",
+          "family": "session_transcript_snapshot",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.session_transcript.v1",
+          "superseded_by": "bb.session_transcript.v2",
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.session_transcript.v1",
-        "family": "session_transcript_snapshot",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.session_transcript.v1",
-        "superseded_by": "bb.session_transcript.v2",
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.task.v1",
+          "schema_id": "bb.task.v1",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.task.v1",
         "schema_id": "bb.task.v1",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.task.v1",
+          "family": "task",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.task.v1",
+          "superseded_by": null,
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.task.v1",
-        "family": "task",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.task.v1",
-        "superseded_by": null,
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.tool_call.v1",
+          "schema_id": "bb.tool_call.v1",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.tool_call.v1",
         "schema_id": "bb.tool_call.v1",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.tool_call.v1",
+          "family": "tool_call",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.tool_call.v1",
+          "superseded_by": "bb.tool_call.v2",
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.tool_call.v1",
-        "family": "tool_call",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.tool_call.v1",
-        "superseded_by": "bb.tool_call.v2",
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.tool_execution_outcome.v1",
+          "schema_id": "bb.tool_execution_outcome.v1",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.tool_execution_outcome.v1",
         "schema_id": "bb.tool_execution_outcome.v1",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.tool_execution_outcome.v1",
+          "family": "tool_execution_outcome",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.tool_execution_outcome.v1",
+          "superseded_by": "bb.tool_execution_outcome.v2",
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.tool_execution_outcome.v1",
-        "family": "tool_execution_outcome",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.tool_execution_outcome.v1",
-        "superseded_by": "bb.tool_execution_outcome.v2",
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.tool_model_render.v1",
+          "schema_id": "bb.tool_model_render.v1",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.tool_model_render.v1",
         "schema_id": "bb.tool_model_render.v1",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.tool_model_render.v1",
+          "family": "tool_render",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.tool_model_render.v1",
+          "superseded_by": "bb.tool_model_render.v2",
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.tool_model_render.v1",
-        "family": "tool_render",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.tool_model_render.v1",
-        "superseded_by": "bb.tool_model_render.v2",
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.tool_spec.v1",
+          "schema_id": "bb.tool_spec.v1",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.tool_spec.v1",
         "schema_id": "bb.tool_spec.v1",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.tool_spec.v1",
+          "family": "tool_spec",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.tool_spec.v1",
+          "superseded_by": "bb.tool_spec.v2",
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.tool_spec.v1",
-        "family": "tool_spec",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.tool_spec.v1",
-        "superseded_by": "bb.tool_spec.v2",
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.tool_spec.v2",
+          "schema_id": "bb.tool_spec.v2",
+          "tier": "config_algebra"
+        },
         "entry_id": "bb.tool_spec.v2",
-        "schema_id": "bb.tool_spec.v2",
-        "tier": "config_algebra"
+        "schema_id": "bb.tool_spec.v2"
       },
       {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.work_item.v1",
+          "schema_id": "bb.work_item.v1",
+          "tier": "frozen_legacy"
+        },
         "entry_id": "bb.work_item.v1",
         "schema_id": "bb.work_item.v1",
-        "tier": "frozen_legacy"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.work_item.v1",
+          "family": "work_item",
+          "lifecycle": "frozen_accepted_evidence",
+          "schema_id": "bb.work_item.v1",
+          "superseded_by": "bb.work_item.v2",
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       },
       {
-        "default_for_generation": false,
-        "entry_id": "bb.work_item.v1",
-        "family": "work_item",
-        "lifecycle": "frozen_accepted_evidence",
-        "schema_id": "bb.work_item.v1",
-        "superseded_by": "bb.work_item.v2",
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
-      },
-      {
-        "consumers": [],
-        "disposition": "freeze",
+        "authorities": [
+          "contract_tiers",
+          "schema_lifecycle"
+        ],
+        "contract_tier": {
+          "consumers": [],
+          "disposition": "freeze",
+          "entry_id": "bb.work_placement.v1",
+          "schema_id": "bb.work_placement.v1",
+          "tier": "host_protocol"
+        },
         "entry_id": "bb.work_placement.v1",
         "schema_id": "bb.work_placement.v1",
-        "tier": "host_protocol"
-      },
-      {
-        "default_for_generation": false,
-        "entry_id": "bb.work_placement.v1",
-        "family": "work_placement",
-        "lifecycle": "validate_only",
-        "schema_id": "bb.work_placement.v1",
-        "superseded_by": null,
-        "tier_consumers": [],
-        "tier_disposition": "freeze"
+        "schema_lifecycle": {
+          "default_for_generation": false,
+          "entry_id": "bb.work_placement.v1",
+          "family": "work_placement",
+          "lifecycle": "validate_only",
+          "schema_id": "bb.work_placement.v1",
+          "superseded_by": null,
+          "tier_consumers": [],
+          "tier_disposition": "freeze"
+        }
       }
     ],
     "public_catalogs": [
@@ -20280,6 +20546,7 @@
         "matched_tokens": [
           "assistant_message",
           "completion",
+          "error",
           "reward_update",
           "tool_call",
           "tool_result"
