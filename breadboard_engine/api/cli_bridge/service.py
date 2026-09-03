@@ -2771,7 +2771,10 @@ class SessionService:
 
     async def delete_session(self, session_id: str) -> None:
         async with self._session_lock(session_id):
-            await self._stop_session_locked(session_id)
+            try:
+                await self._stop_session_locked(session_id)
+            except ReplayError:
+                pass
             await self.registry.delete(session_id)
     async def send_input(
         self,
@@ -3012,6 +3015,11 @@ class SessionService:
         try:
             if payload.command in reconfigure_commands:
                 async with record.admission_lock:
+                    if record.admission_closed:
+                        raise GenerationAdoptionError(
+                            "admission_closed",
+                            "generation adoption is closed for this session",
+                        )
                     if record.active_turn_id is not None or record.queued_turn_ids:
                         raise GenerationAdoptionError(
                             "non_quiescent",

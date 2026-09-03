@@ -1500,6 +1500,15 @@ async def test_stop_closes_session_admission_before_teardown(
 
     assert captured.value.status_code == 409
     assert captured.value.detail == "session admission is closed"
+    before = record.product_session.events
+    with pytest.raises(HTTPException) as reconfigure:
+        await service.execute_command(
+            response.session_id,
+            SessionCommandRequest(command="set_mode", payload={"mode": "plan"}),
+        )
+    assert reconfigure.value.status_code == 409
+    assert reconfigure.value.detail["code"] == "admission_closed"
+    assert record.product_session.events == before
     release.set()
     await stopping
     assert record.status is SessionStatus.STOPPED
@@ -2109,6 +2118,10 @@ async def test_retained_resume_refuses_runtime_generation_drift(
     with pytest.raises(runtime_ports.ReplayError) as error:
         await fresh.ensure_session(response.session_id)
     assert error.value.code == "generation_mismatch"
+    await fresh.delete_session(response.session_id)
+    with pytest.raises(HTTPException) as deleted:
+        await fresh.ensure_session(response.session_id)
+    assert deleted.value.status_code == 404
     assert tuple(record.product_session.events) == durable_events
 
 @pytest.mark.asyncio
