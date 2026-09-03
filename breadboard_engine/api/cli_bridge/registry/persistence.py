@@ -375,54 +375,58 @@ class PersistenceMixin:
         reason: str,
         child_recovery_refs: Iterable[str],
     ) -> None:
-        async with self._lock:
-            record = self._records.get(session_id)
-            if record is None:
-                return
-            with self._record_file_lock(session_id):
-                record = self._refresh_record_from_disk_locked(
-                    session_id,
-                    record,
-                    require_disk=True,
-                )
-                previous_closed = record.admission_closed
-                previous_metadata = dict(record.metadata or {})
-                previous_activity = record.last_activity_at
-                metadata = dict(previous_metadata)
-                marker = metadata.get("durable_parent_cancellation")
-                raw_requests = marker.get("requests") if isinstance(marker, Mapping) else None
-                if raw_requests is None:
-                    candidates = [marker] if isinstance(marker, Mapping) else []
-                elif isinstance(raw_requests, list):
-                    candidates = list(raw_requests)
-                else:
-                    raise RuntimeError(
-                        "durable parent cancellation marker is invalid"
+        record = await self.get(session_id)
+        if record is None:
+            return
+        async with record.admission_lock:
+            async with self._lock:
+                current = self._records.get(session_id)
+                if current is not record:
+                    return
+                with self._record_file_lock(session_id):
+                    record = self._refresh_record_from_disk_locked(
+                        session_id,
+                        record,
+                        require_disk=True,
                     )
-                requests = {
-                    str(candidate["work_item_id"]): dict(candidate)
-                    for candidate in candidates
-                    if isinstance(candidate, Mapping)
-                    and isinstance(candidate.get("work_item_id"), str)
-                }
-                requests[work_item_id] = {
-                    "work_item_id": work_item_id,
-                    "reason": reason,
-                    "child_recovery_refs": sorted(set(child_recovery_refs)),
-                }
-                metadata["durable_parent_cancellation"] = {
-                    "requests": [requests[key] for key in sorted(requests)]
-                }
-                record.admission_closed = True
-                self._replace_metadata(record, metadata)
-                record.last_activity_at = _utcnow()
-                try:
-                    self._persist_record_locked(record)
-                except Exception:
-                    record.admission_closed = previous_closed
-                    self._replace_metadata(record, previous_metadata)
-                    record.last_activity_at = previous_activity
-                    raise
+                    previous_closed = record.admission_closed
+                    previous_metadata = dict(record.metadata or {})
+                    previous_activity = record.last_activity_at
+                    metadata = dict(previous_metadata)
+                    marker = metadata.get("durable_parent_cancellation")
+                    raw_requests = marker.get("requests") if isinstance(marker, Mapping) else None
+                    if raw_requests is None:
+                        candidates = [marker] if isinstance(marker, Mapping) else []
+                    elif isinstance(raw_requests, list):
+                        candidates = list(raw_requests)
+                    else:
+                        raise RuntimeError(
+                            "durable parent cancellation marker is invalid"
+                        )
+                    requests = {
+                        str(candidate["work_item_id"]): dict(candidate)
+                        for candidate in candidates
+                        if isinstance(candidate, Mapping)
+                        and isinstance(candidate.get("work_item_id"), str)
+                    }
+                    requests[work_item_id] = {
+                        "work_item_id": work_item_id,
+                        "reason": reason,
+                        "child_recovery_refs": sorted(set(child_recovery_refs)),
+                    }
+                    metadata["durable_parent_cancellation"] = {
+                        "requests": [requests[key] for key in sorted(requests)]
+                    }
+                    record.admission_closed = True
+                    self._replace_metadata(record, metadata)
+                    record.last_activity_at = _utcnow()
+                    try:
+                        self._persist_record_locked(record)
+                    except Exception:
+                        record.admission_closed = previous_closed
+                        self._replace_metadata(record, previous_metadata)
+                        record.last_activity_at = previous_activity
+                        raise
     async def update_metadata(
         self,
         session_id: str,

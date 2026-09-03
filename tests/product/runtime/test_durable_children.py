@@ -1898,12 +1898,21 @@ def test_job_completion_replay_preserves_inline_result_payload() -> None:
 
     orchestrator = MultiAgentOrchestrator(TeamConfig("job-replay-inline"))
     spawned = orchestrator.spawn_subagent(owner_agent="parent-session", agent_id="child-session", async_mode=True)
-    orchestrator.mark_job_completed(spawned.job.job_id, result_payload={"result": "inline", "result_bytes": "encoded"})
+    result_payload = {
+        "error": None,
+        "output": "inline",
+        "subagent_type": "worker",
+        "verdict_code": "approved",
+    }
+    orchestrator.mark_job_completed(
+        spawned.job.job_id,
+        result_payload=result_payload,
+    )
 
     rebuilt = MultiAgentOrchestrator(TeamConfig("job-replay-inline"), event_log=orchestrator.event_log)
     restored = rebuilt.job_manager.get(spawned.job.job_id)
     assert restored is not None
-    assert restored.result_payload == {"result": "inline", "result_bytes": "encoded"}
+    assert restored.result_payload == result_payload
 
 
 
@@ -2900,6 +2909,45 @@ def test_ray_cancel_signal_failure_retains_recovery_state() -> None:
     assert adapter.cancel(target) is False
     assert adapter._actors[spawned.job.job_id] is actor
     assert orchestrator.job_manager.get(spawned.job.job_id).state == "accepted"
+
+
+def test_ray_pending_cancellation_does_not_terminalize_job() -> None:
+    from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
+
+    class Actor:
+        def cancel(self) -> str:
+            return "pending"
+
+    orchestrator = MultiAgentOrchestrator(TeamConfig("ray-cancel-in-flight"))
+    spawned = orchestrator.spawn_subagent(
+        owner_agent="parent-session",
+        agent_id="child-session",
+        async_mode=True,
+    )
+    adapter = RayJobAdapter(orchestrator)
+    adapter._actors[spawned.job.job_id] = Actor()
+    target = {
+        "ref": f"job:{spawned.job.job_id}",
+        "metadata": {"job": {"job_id": spawned.job.job_id}},
+    }
+
+    assert adapter.cancel(target) is False
+    assert orchestrator.job_manager.get(spawned.job.job_id).state == "accepted"
+
+
+def test_ray_actor_cancellation_waits_for_execution_group_to_quiesce() -> None:
+    from breadboard_engine.orchestration.agent_session import OpenCodeAgent
+
+    actor_class = OpenCodeAgent.__ray_metadata__.modified_class
+    actor = object.__new__(actor_class)
+    actor.state = "running"
+    actor._state_lock = threading.Lock()
+    actor._execution_idle = threading.Event()
+
+    assert actor_class.cancel(actor) == "pending"
+    assert actor.state == "killed"
+    actor._execution_idle.set()
+    assert actor_class.cancel(actor) == "killed"
 
 
 def test_ray_observe_state_failure_stays_recovery_pending() -> None:
@@ -4372,6 +4420,8 @@ def test_parent_cancellation_marker_merges_across_stale_registries(
         "work-b",
     ]
 
+
+
     asyncio_run(
         first.remove_durable_parent_cancellation_request(
             "parent-session",
@@ -4384,6 +4434,37 @@ def test_parent_cancellation_marker_merges_across_stale_registries(
     assert [request["work_item_id"] for request in remaining_marker["requests"]] == [
         "work-b"
     ]
+def test_parent_cancellation_waits_for_in_flight_admission(
+    tmp_path: Path,
+) -> None:
+    from breadboard_engine.api.cli_bridge.models import SessionStatus
+    from breadboard_engine.api.cli_bridge.registry.records import SessionRecord
+
+    async def scenario() -> None:
+        registry = SessionRegistry(state_root=tmp_path / "registry")
+        await registry.create(
+            SessionRecord("parent-session", status=SessionStatus.RUNNING)
+        )
+        record = await registry.get("parent-session")
+        assert record is not None
+        await record.admission_lock.acquire()
+        cancellation = asyncio.create_task(
+            registry.close_admission_for_parent_cancellation(
+                "parent-session",
+                work_item_id="work-a",
+                reason="cancel during admission",
+                child_recovery_refs=[],
+            )
+        )
+        try:
+            await asyncio.sleep(0)
+            assert not cancellation.done()
+        finally:
+            record.admission_lock.release()
+        await cancellation
+        assert record.admission_closed is True
+
+    asyncio_run(scenario())
 
 
 def test_generic_metadata_update_preserves_newer_parent_cancellation(

@@ -2865,11 +2865,17 @@ class RayJobAdapter:
                 cancellation_state = self._ray_get(cancel)
                 if cancellation_state is False:
                     return False
-                cancellation_state = str(cancellation_state).lower()
+                cancellation_state = (
+                    "killed"
+                    if cancellation_state is True
+                    else str(cancellation_state).lower()
+                )
                 if cancellation_state in {"completed", "failed"}:
                     observed = self.observe(target)
                     if observed == "completed":
                         self.acknowledge_result(target)
+                    return False
+                if cancellation_state != "killed":
                     return False
         except BaseException:
             return False

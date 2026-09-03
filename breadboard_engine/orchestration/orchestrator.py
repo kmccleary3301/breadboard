@@ -949,9 +949,9 @@ class MultiAgentOrchestrator:
                     result_payload = payload.get("result_payload")
                     if not isinstance(result_payload, dict):
                         result_payload = {
-                            key: payload[key]
-                            for key in ("artifact_ref", "result", "result_bytes")
-                            if key in payload
+                            key: value
+                            for key, value in payload.items()
+                            if key not in {"agent_id", "job_id", "seq", "state"}
                         }
                     self.job_manager.update_state(
                         job_id,

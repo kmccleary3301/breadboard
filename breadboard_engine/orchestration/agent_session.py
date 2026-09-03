@@ -61,6 +61,8 @@ class OpenCodeAgent:
         self.error: Optional[str] = None
         self.invocation_records: Dict[str, str] = {}
         self._state_lock = threading.Lock()
+        self._execution_idle = threading.Event()
+        self._execution_idle.set()
 
     @ray.method(concurrency_group="control")
     def get_state(self) -> str:
@@ -100,10 +102,10 @@ class OpenCodeAgent:
     @ray.method(concurrency_group="control")
     def cancel(self) -> str:
         with self._state_lock:
-            if self.state in {"completed", "failed", "killed"}:
+            if self.state in {"completed", "failed"}:
                 return self.state
             self.state = "killed"
-            return self.state
+            return "killed" if self._execution_idle.is_set() else "pending"
 
     @ray.method(concurrency_group="control")
     def get_session_info(self) -> Dict[str, Any]:
@@ -124,8 +126,10 @@ class OpenCodeAgent:
         Returns a response with parts, where tool results appear as
         {type: 'tool_result', name, output, metadata}.
         """
+        self._execution_idle.clear()
         with self._state_lock:
             if self.state == "killed":
+                self._execution_idle.set()
                 raise RuntimeError("agent has been canceled")
             self.state = "running"
         try:
@@ -162,6 +166,8 @@ class OpenCodeAgent:
                 if self.state != "killed":
                     self.state = "failed"
             raise
+        finally:
+            self._execution_idle.set()
 
     @ray.method(concurrency_group="execution")
     def enable_storage(self, storage_root: str) -> None:
