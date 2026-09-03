@@ -3,7 +3,7 @@
 Ticket: `bb-inj5.8`
 Date: 2026-09-02
 Candidate: `docs/plans/dsh_donor_campaign/evidence/07_CAMPAIGN_SPEC_PROTOTYPE.md`
-Reviewed SHA-256: `937896d907e17383b2b2d5174efabe7d20b9613e1245dd5fa6ca68e368afa42c`
+Reviewed SHA-256: `92324406fbeb86abf2f18862444a6f811a42cf6c9dfee17f46bf198be9646cb1`
 ENGINE: `b3cacc7356244253305f8a6f84308a993485bfe2`
 TUI: `73d6e6f55a238fc9ff0486bbcc9ecffe85705715`
 
@@ -54,14 +54,17 @@ One material renewal corrected every initial finding and all consistency defects
 - made FT-01 self-contained: fixed fixture bytes/IDs, error classes, deadlines, typed append-only records, content identities, independent comparators, receipt rules, branch precedence, nullable receipt identities, process authority, cleanup/finalization, preflight-abort encoding, lock audit, and invalidation;
 - restored exact Phase 20 schema exceptions and existing-schema tightening allowlist route.
 
-Binding renewal (2026-09-02, correction atop PR head `3b82027a`)
+Binding renewal (2026-09-02, correction atop PR head `4d38be25`)
 independently recomputed the candidate digest above and revalidated the raw
-DAG. Runtime repair, generation, and annotation gates now have reachable
-terminal outcomes; `SEVEN-PIECE-AUDIT` requires `WF-IMPLEMENT`; and the
-substrate command requires the complete public rollout through E4. FT-01
-retains every retry in append-only attempt streams with closed fail-closed
-classifications, complete permission/cardinality evidence, authenticated
-process identity, and test-only L1/L2 writes. The raw validator passed 50
+DAG. Runtime repair, generation, and annotation gates have reachable terminal
+outcomes; `SEVEN-PIECE-AUDIT` requires `WF-IMPLEMENT`; and the substrate
+command requires the complete public rollout through E4. FT-01 retains every
+retry in append-only attempt streams with closed fail-closed classifications,
+complete permission/cardinality evidence, authenticated process identity, and
+test-only L1/L2 writes. Installed backend and TUI-build revisions must equal
+the pinned heads; ancestor-only identities stop as `INFRASTRUCTURE_RED`.
+FT-06's B inventory input is committed and bound by its file digest, so a clean
+checkout can perform the required comparison. The raw validator passed 50
 acyclic nodes, 623/623 unique routes, phases 0–12, six packets, and zero
 unconditional seams. The package validator passed 14 exact evidence copies,
 13 relative links, six guard pairs, and no findings. The renewal found

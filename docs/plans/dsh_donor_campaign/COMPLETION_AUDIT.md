@@ -25,7 +25,7 @@ Status: COMPLETE — all nine children and map `bb-inj5` closed; final gates pas
 ## Evidence and review index
 
 - A: [donor pin](evidence/00_PROVENANCE_AND_REUSE.md), [independent review](evidence/00_PROVENANCE_AND_REUSE_REVIEW.md)
-- B: [current-state ledger](evidence/01_CURRENT_STATE_DONOR_LEDGER.md), [independent review](evidence/01_CURRENT_STATE_DONOR_REVIEW.md)
+- B: [current-state ledger](evidence/01_CURRENT_STATE_DONOR_LEDGER.md), [independent review](evidence/01_CURRENT_STATE_DONOR_REVIEW.md), [FT-06 inventory baseline](evidence/raw/bb-inj5.2/surface-inventory.json) at SHA-256 `7a6737557f4bfad619e55e0b605c84cac8521d8bbb6a56061609b4dd07ed0257`
 - C: [fault evidence](evidence/02_FAULT_BOUNDARY_EVIDENCE.md), [independent review](evidence/02_FAULT_BOUNDARY_REVIEW.md)
 - D: [evidence and approval contract](evidence/03_EVIDENCE_AND_APPROVAL_CONTRACT.md), [fresh-context read](evidence/reviews/bb-inj5.4-consistency-read.txt)
 - E: [semantic laws](evidence/04_NORMATIVE_SEMANTIC_LAWS.md), [fresh-context read](evidence/reviews/bb-inj5.5-consistency-read.txt)
@@ -35,7 +35,7 @@ Status: COMPLETE — all nine children and map `bb-inj5` closed; final gates pas
 
 ## Raw-store bindings
 
-Digest method: SHA-256 over each raw store's sorted `relative-path NUL file-SHA256 newline` records. These bind the local append-only stores without copying them into the repository.
+Digest method: SHA-256 over each raw store's sorted `relative-path NUL file-SHA256 newline` records. These bind the local append-only stores without copying them wholesale. The sole copied raw input is B's `surface-inventory.json`, required for a clean-checkout FT-06 comparison and bound above by its file digest.
 
 | Ticket raw store | Files | SHA-256 tree v1 |
 | --- | ---: | --- |

@@ -1,0 +1,101 @@
+{
+  "schema_version": "breadboard.dsh_current_surface_inventory.v1",
+  "provenance": {
+    "engine": {
+      "path": "/Users/kylemccleary/projects/breadboard-dsh-baseline-b3cacc73",
+      "head": "b3cacc7356244253305f8a6f84308a993485bfe2",
+      "status_short": "",
+      "python": "/opt/homebrew/opt/python@3.11/bin/python3.11",
+      "breadboard_engine_file": "/Users/kylemccleary/projects/breadboard-dsh-baseline-b3cacc73/breadboard_engine/__init__.py"
+    },
+    "tui": {
+      "path": "/Users/kylemccleary/projects/breadboard-tui-dsh-baseline-73d6e6f5",
+      "head": "73d6e6f55a238fc9ff0486bbcc9ecffe85705715",
+      "status_short": ""
+    },
+    "freeze_check": {
+      "status": "PASS",
+      "baseline": "3b8d862f62ee9c2c421fe07758606b6973902c67",
+      "raw": "raw/bb-inj5.2/freeze-check.txt"
+    },
+    "installed_identity_reused_at_same_heads": {
+      "anchor": "02_FAULT_BOUNDARY_EVIDENCE.md#Artifact identity",
+      "product_version": "18.0.1",
+      "distribution_sha256": "1b3336192a2442953d996ab446fcd9ff2200fe7db0ac15ef09333a3023793f5b",
+      "engine_executable_sha256": "53fa710803e862b2c51eefaa71bf23d29a9765de20414f5525271587b38ac9a9",
+      "runtime_bundle_sha256": "c245c42183962bdf5f68f7d8ef822cad5ef2604805ff4e8de370a454f9131ad2",
+      "served_backend_commit": "87616073288ab410a6e9f9bb4e5de4de821715ca",
+      "tui_build_commit": "458339c7a76ff5bc045e0cb5cf7f41dfa741c458"
+    }
+  },
+  "methods": {
+    "source_inventory": "Counted pinned tracked source/config/schema files and exact exported declarations; generated manifests are authoritative where present.",
+    "consumer_search": "Searched only the pinned ENGINE and TUI universes named below; workspace snapshots were excluded.",
+    "symbol_resolution": "Used structural declarations and exact-token references because no Python or TypeScript language server was available for the sampled files.",
+    "quantitative_rule": "Every count records numerator, denominator, identity, and extraction source; no confidence interval applies to deterministic repository inventories."
+  },
+  "consumer_universe": {
+    "engine_product": ["breadboard_engine/", "breadboard/", "breadboard_sdk/", "sdk/ts/", "sdk/ts-kernel-contracts/", "tui_skeleton/"],
+    "engine_contract_and_evidence": ["contracts/", "config/", "scripts/", "conformance/", "tests/", "generated outputs", "installed profiles", "E4 lanes"],
+    "tui_product": ["packages/coding-agent/", "other packages/", ".omp/"],
+    "binary_surfaces": ["pyproject.toml breadboard entry point", "bbh public operation bindings"],
+    "excluded": ["WORKSPACE snapshot directories", "mutable working checkouts", "historical summaries as current truth"]
+  },
+  "inventories": {
+    "http_routes": {"count": 135, "denominator": 429, "denominator_unit": "ENGINE Python files scanned", "method": "route-decorator/source-token scan", "anchors": ["breadboard_engine/api/", "breadboard/product/"]},
+    "public_operations": {"count": 26, "denominator": 26, "method": "generated binding manifest", "anchors": ["breadboard_sdk/generated/public_bindings.py", "sdk/ts/src/generated/public-bindings.ts", "contracts/public/operations.v2.json"]},
+    "cli": {"default_leaf_commands": 34, "legacy_leaf_commands": 5, "local_migration_leaf_commands": 1, "e4_parser_declarations": 24, "method": "parser declaration inventory", "anchors": ["breadboard/product/cli/main.py", "breadboard/product/cli/e4.py", "pyproject.toml"]},
+    "event_kinds": {"event_type_values": 42, "canonical_kernel_registry": 15, "projection_only_runtime": 2, "audit_only_runtime": 2, "method": "exact enum/registry value count", "anchors": ["breadboard_engine/state/session_state.py:EventType", "breadboard_engine/api/cli_bridge/events.py", "contracts/public/record_surface.v1.json"]},
+    "projections": {"owners": ["breadboard_engine/todo/projection.py:project_store_snapshot_to_tui_envelope", "breadboard_engine/state/session_state.py:SessionState", "breadboard_engine/orchestration/event_log.py:EventLog"], "method": "symbol-anchored current owners; no unified projection registry observed"},
+    "sdk_exports": {"python___all__": 24, "typescript_public_methods": 26, "typescript_extra_invoke_method": 1, "kernel_typescript_generated_reexports": 99, "method": "export declaration and generated manifest count", "anchors": ["breadboard_sdk/__init__.py", "sdk/ts/src/index.ts", "sdk/ts/src/public-client.ts", "sdk/ts-kernel-contracts/src/generated/index.ts"]},
+    "tui_consumers": {"tui_skeleton_sdk_import_files": 34, "tui_skeleton_source_files": 364, "tui_coding_agent_sdk_import_files": 17, "tui_coding_agent_source_files": 1351, "vendored_sdk_version": "0.4.0", "vendored_sdk_public_exports": 25, "method": "exact import/export token count", "anchors": ["tui_skeleton/src/", "TUI:packages/coding-agent/src/breadboard/", "TUI:packages/coding-agent/sdk-export-inventory.json"]},
+    "compatibility": {"owners": ["breadboard_sdk/compat.py:CompatibilityBreadboardClient", "contracts/kernel/registries/contract_tiers.v1.json", "contracts/kernel/registries/schema_lifecycle.v1.json"], "method": "explicit compatibility subclass and registry dispositions"},
+    "repository_surfaces": {"config_files": 165, "script_files": 505, "conformance_files": 168, "test_files": 1159, "generated_python_sdk_files": 3, "generated_ts_public_files": 5, "generated_kernel_ts_files": 107, "method": "tracked-file inventory at ENGINE head"},
+    "profiles_and_lanes": {"agent_config_files": 182, "agent_config_yaml": 177, "implementation_profiles": 2, "e4_lane_files": 34, "e4_lane_yaml": 24, "e4_lane_json": 8, "method": "tracked config inventory", "anchors": ["config/agent_configs/", "config/implementation_profiles/", "config/e4_lanes/"]},
+    "omp_adapters": {"engine_omp_present": false, "tui_omp_present": true, "tui_count": null, "status": "UNVERIFIED", "reason": "TUI .omp skills/commands were identified but not enumerated before the bounded search stopped."},
+    "binaries": {"tracked_bb_or_bbh_binary": false, "python_entrypoint": "breadboard", "bbh_candidate_bindings": 26, "method": "tracked path plus packaging/binding inventory"},
+    "durable_reconfigure": {"definition_count": 3, "invocation_count": 5, "guard_count": 1, "denominator": "all exact durable_reconfigure references in pinned ENGINE and TUI source", "status": "PARTIAL", "method": "exact-token search", "anchors": ["pinned ENGINE/TUI source references to durable_reconfigure"], "blind_spot": "The bounded raw synthesis retained counts but not every path; section 21 donor rows provide the symbol-level generation owners."}
+  },
+  "schema_tiers": {
+    "total": 104,
+    "source": "contracts/kernel/registries/contract_tiers.v1.json",
+    "by_tier_and_disposition": {
+      "config_algebra": {"keep": 8, "freeze": 6, "supersede": 1, "total": 15},
+      "evidence": {"keep": 20, "freeze": 0, "supersede": 0, "total": 20},
+      "frozen_legacy": {"keep": 0, "freeze": 24, "supersede": 0, "total": 24},
+      "host_protocol": {"keep": 32, "freeze": 1, "supersede": 1, "total": 34},
+      "runtime_protocol": {"keep": 10, "freeze": 1, "supersede": 0, "total": 11}
+    },
+    "schema_files": {"kernel": 123, "public": 27},
+    "consumer_rule": "Every registry entry carries consumers or a freeze/supersede disposition; registry baseline SHA is a22767c13f3cf4dbf17c3a93f26e377c525938c8."
+  },
+  "recall_check": {
+    "sample": "breadboard_sdk.client.BreadBoardClient",
+    "definition": "breadboard_sdk/client.py:348@b3cacc7356244253305f8a6f84308a993485bfe2",
+    "lsp": "UNAVAILABLE",
+    "fallback": "exact-token search over breadboard_sdk, sdk, tui_skeleton, and tests",
+    "confirmed": ["breadboard_sdk/__init__.py public re-export", "breadboard_sdk/compat.py CompatibilityBreadboardClient subclass", "26 generated Python/TypeScript binding rows", "SDK and public-binding parity tests", "CLI test substitutions"],
+    "missed_consumers": [],
+    "result": "The generated 26-operation catalog and compatibility subclass were recovered; no additional product owner appeared in the sampled universe.",
+    "blind_spot": "Dynamic imports and runtime entry-point lookup are not proven by an exact-token search."
+  },
+  "duplicate_authority_candidates": [
+    {"pair": ["canonical lifecycle event owner", "audit/guardrail event owner"], "status": "candidate", "needed": "name consumers and one survivor before simplification"},
+    {"pair": ["public session operations", "cli_bridge session operations"], "status": "candidate", "needed": "route/SDK consumer comparison"},
+    {"pair": ["breadboard_sdk generated bindings", "sdk/ts generated bindings"], "status": "intentional generated parity", "needed": "generator remains sole authority"},
+    {"pair": ["TUI canonicalClient", "TUI controlClient"], "status": "candidate", "needed": "lifecycle and callsite comparison"},
+    {"pair": ["kernel event v1", "kernel event v2"], "status": "registry-governed compatibility", "needed": "tier/supersede consumer migration before deletion"}
+  ],
+  "seam_adapter_counts": {
+    "activation_generation": {"count": 3, "adapters": ["ConfigDataGeneration", "ProviderRuntimeGeneration", "PluginRuntimeGeneration"], "source": "rows-15-24.jsonl:DSH-DONOR-21-016"},
+    "execution_world": {"count": 2, "adapters": ["DevSandboxV2", "DockerSandboxV2"], "source": "rows-15-24.jsonl:DSH-DONOR-23-023"},
+    "durable_reconfigure": {"definitions": 3, "invocations": 5, "guard": 1, "classification": "real current seam, but Session pinning and hidden candidate health/publish/drain contract remain PARTIAL"}
+  },
+  "blind_spots": [
+    "No language server was available for the sampled Python/TypeScript files; exact-token recall cannot prove dynamic lookup.",
+    "TUI .omp skills/commands were identified but not enumerated.",
+    "Installed product identities are reused from same-head C evidence; no installed scenario was rerun.",
+    "Route/source counts identify surface size, not behavior or parity.",
+    "durable_reconfigure per-reference paths were not retained by the interrupted researcher; donor row owners are the decision anchors."
+  ]
+}
