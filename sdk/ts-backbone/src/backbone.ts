@@ -104,6 +104,11 @@ function makeBackboneSession(options: BackboneOptions, descriptor: HostSessionDe
         driverIdHint,
         assistantText: input.assistantText ?? null,
         workspaceRef: descriptor.workspaceRoot ?? options.workspace.rootDir ?? null,
+        deadlineMs: input.deadlineMs,
+        timeoutMs: input.timeoutMs,
+        signal: input.signal,
+        terminationGraceMs: input.terminationGraceMs,
+        onTimeout: input.onTimeout,
       })
       const result = buildBackboneTurnResult({
         supportClaim,

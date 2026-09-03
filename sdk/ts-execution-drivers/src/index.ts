@@ -173,6 +173,7 @@ export function buildExecutionDriverUnsupportedCase(input: {
     schema_version: "bb.unsupported_case.v1",
     reason_code: input.reasonCode ?? (typeof input.metadata?.reason_code === "string" ? input.metadata.reason_code : "unsupported_execution_driver"),
     summary:
+      input.summary ??
       `No execution driver supports ${input.placementClass} for isolation ${input.capability.isolation_class}`,
     contract_family: "bb.execution_placement.v1",
     fallback_allowed: input.fallbackAllowed ?? false,

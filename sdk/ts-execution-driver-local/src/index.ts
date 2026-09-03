@@ -135,11 +135,22 @@ export async function executeLocalProcessSandboxRequest(
   const stderrPath = join(captureDir, "stderr.log")
   await writeFile(stdoutPath, result.stdout, "utf8")
   await writeFile(stderrPath, result.stderr, "utf8")
-  const timedOut = options.signal?.aborted === true
+  const isAborted = options.signal?.aborted === true
+  const isCancelled =
+    options.signal?.reason === "cancelled" ||
+    (typeof options.signal?.reason?.message === "string" &&
+      options.signal.reason.message.toLowerCase().includes("cancel"))
+  const status: SandboxResultV1["status"] = isAborted
+    ? isCancelled
+      ? "cancelled"
+      : "timed_out"
+    : result.exitCode === 0
+      ? "completed"
+      : "failed"
   return {
     schema_version: "bb.sandbox_result.v1",
     request_id: request.request_id,
-    status: timedOut ? "timed_out" : result.exitCode === 0 ? "completed" : "failed",
+    status,
     placement_id: `local-process:${request.request_id}`,
     stdout_ref: `file://${stdoutPath}`,
     stderr_ref: `file://${stderrPath}`,
@@ -147,15 +158,18 @@ export async function executeLocalProcessSandboxRequest(
     side_effect_digest: buildLocalSideEffectDigest(request, result),
     usage: { exit_code: result.exitCode },
     evidence_refs: [],
-    error:
-      timedOut
-        ? { message: "Local process exceeded its deadline", reason: "deadline_exceeded", exit_code: result.exitCode }
-        : result.exitCode === 0
-          ? null
-          : {
-              message: `Local process exited with code ${result.exitCode}`,
-              exit_code: result.exitCode,
-            },
+    error: isAborted
+      ? {
+          message: isCancelled ? "Execution was cancelled" : "Local process exceeded its deadline",
+          reason: isCancelled ? "execution_cancelled" : "deadline_exceeded",
+          exit_code: result.exitCode,
+        }
+      : result.exitCode === 0
+        ? null
+        : {
+            message: `Local process exited with code ${result.exitCode}`,
+            exit_code: result.exitCode,
+          },
   }
 }
 

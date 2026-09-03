@@ -395,18 +395,27 @@ test("oci terminal driver keeps multi-session listing and no-output poll semanti
 })
 
 test("oci driver terminate triggers signal and awaits runtime exit", async () => {
+  const issuedCommands: { runtimeArgs: string[] }[] = []
   let runtimeExited = false
-  const customExecutor: OciCommandExecutor = async ({ signal }) => {
-    return new Promise((resolve) => {
-      signal?.addEventListener("abort", () => {
-        runtimeExited = true
-        resolve({
-          exitCode: 137,
-          stdout: "",
-          stderr: "killed",
+  const customExecutor: OciCommandExecutor = async ({ runtimeArgs, signal }) => {
+    issuedCommands.push({ runtimeArgs })
+    if (runtimeArgs[0] === "run") {
+      return new Promise((resolve) => {
+        signal?.addEventListener("abort", () => {
+          runtimeExited = true
+          resolve({
+            exitCode: 137,
+            stdout: "",
+            stderr: "killed",
+          })
         })
       })
-    })
+    }
+    return {
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    }
   }
   const driver = makeConfiguredOciExecutionDriver({ commandExecutor: customExecutor })
   const request = buildOciSandboxRequest({
@@ -432,4 +441,52 @@ test("oci driver terminate triggers signal and awaits runtime exit", async () =>
   assert.equal(runtimeExited, true)
   const result = await execPromise
   assert.equal(result.status, "timed_out")
+  assert.ok(issuedCommands.some((c) => c.runtimeArgs.includes("--name") && c.runtimeArgs.includes("bb-oci-req-oci-term-verify")))
+  assert.ok(issuedCommands.some((c) => c.runtimeArgs[0] === "stop" && c.runtimeArgs.includes("bb-oci-req-oci-term-verify")))
+})
+
+test("oci driver handles stubborn container that resists normal stop and forces kill/rm", async () => {
+  const recordedArgs: string[][] = []
+  const customExecutor: OciCommandExecutor = async ({ runtimeArgs, signal }) => {
+    recordedArgs.push(runtimeArgs)
+    if (runtimeArgs[0] === "run") {
+      return new Promise((resolve) => {
+        signal?.addEventListener("abort", () => {
+          resolve({
+            exitCode: 137,
+            stdout: "",
+            stderr: "SIGKILL after stubborn run",
+          })
+        })
+      })
+    }
+    if (runtimeArgs[0] === "stop") {
+      throw new Error("container refusing stop")
+    }
+    return { exitCode: 0, stdout: "", stderr: "" }
+  }
+  const driver = makeConfiguredOciExecutionDriver({ commandExecutor: customExecutor })
+  const request = buildOciSandboxRequest({
+    requestId: "req-stubborn-1",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-oci-stubborn",
+      security_tier: "single_tenant",
+      isolation_class: "oci",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["sleep", "60"],
+    imageRef: "docker://alpine:latest",
+  })
+  const execPromise = driver.execute!(request)
+  await driver.terminate!(request, {
+    reason: "cancelled",
+    signal: new AbortController().signal,
+    deadlineAtMs: null,
+  })
+  const result = await execPromise
+  assert.equal(result.status, "cancelled")
+  assert.ok(recordedArgs.some((args) => args[0] === "kill" && args.includes("bb-oci-req-stubborn-1")))
+  assert.ok(recordedArgs.some((args) => args[0] === "rm" && args.includes("bb-oci-req-stubborn-1")))
 })

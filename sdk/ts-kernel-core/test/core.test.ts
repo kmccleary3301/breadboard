@@ -12,8 +12,9 @@ import {
   buildEffectiveToolSurface,
   buildConformanceSummary,
   buildTerminalCleanupResult,
-  executeDriverMediatedToolTurn,
   buildKernelEventId,
+  createKernelExecutionWorld,
+  executeDriverMediatedToolTurn,
   buildRunContextFromRequest,
   buildTranscriptContinuationPatch,
   buildTaskLineage,
@@ -1070,6 +1071,59 @@ test("kernel core maps timed out sandbox driver results to timed_out v2 tool out
   }
 })
 
+test("kernel core maps cancelled sandbox driver results to cancelled v2 tool outcomes", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "req-cancelled-1",
+    entry_mode: "interactive",
+    task: "Run a job that gets cancelled.",
+    workspace_root: "/tmp/workspace",
+  } as const
+  const result = await executeDriverMediatedToolTurn(request, {
+    sessionId: "sess-driver-cancelled-1",
+    toolName: "cancelled_job",
+    command: ["node", "cancelled-job.js"],
+    workspaceRef: "/tmp/workspace",
+    allowRunPrograms: ["node"],
+    executeSandbox: async (sandboxRequest) => ({
+      schema_version: "bb.sandbox_result.v1",
+      request_id: sandboxRequest.request_id,
+      status: "cancelled",
+      placement_id: "placement-cancelled-1",
+      stdout_ref: null,
+      stderr_ref: null,
+      artifact_refs: [],
+      side_effect_digest: null,
+      usage: { wall_ms: 120 },
+      evidence_refs: ["evidence://cancelled/1"],
+      error: { message: "sandbox cancelled", code: "cancelled", retryable: false },
+    }),
+  })
+
+  const toolCallPayload = expectRecord(result.events[1]?.payload, "cancelled tool-call payload")
+  const toolResultPayload = expectRecord(result.events[2]?.payload, "cancelled tool-result payload")
+  const toolResultMetadata = expectRecord(toolResultPayload.metadata, "cancelled tool-result metadata")
+  const toolRenderContent = expectRecord(result.transcript.items[1]?.content, "cancelled tool-render content")
+
+  assert.equal(result.sandboxResult.status, "cancelled")
+  assert.equal(result.events[1]?.kind, "tool_call")
+  assert.equal(toolCallPayload.state, "cancelled")
+  if ("schema_version" in toolCallPayload) {
+    assert.equal(toolCallPayload.schema_version, "bb.tool_call.v2")
+  }
+  assert.equal(result.events[2]?.kind, "tool_result")
+  assert.equal(toolResultPayload.terminalState, "cancelled")
+  assert.deepEqual(toolResultPayload.error, { message: "sandbox cancelled", code: "cancelled", retryable: false })
+  assert.equal(toolResultMetadata.sandbox_status, "cancelled")
+  if ("schema_version" in toolResultPayload) {
+    assert.equal(toolResultPayload.schema_version, "bb.tool_execution_outcome.v2")
+  }
+  assert.deepEqual(toolRenderContent.parts, [{ part_kind: "error", content: "cancelled_job cancelled via sandbox", truncated: false }])
+  if ("schema_version" in toolRenderContent) {
+    assert.equal(toolRenderContent.schema_version, "bb.tool_model_render.v2")
+  }
+})
+
 test("kernel core can execute a provider-aware constrained text turn", () => {
   const request = {
     schema_version: "bb.run_request.v1",
@@ -1214,4 +1268,138 @@ test("kernel core can build transcript continuation patches and unsupported case
   })
   assert.equal(unsupported.schema_version, "bb.unsupported_case.v1")
   assert.equal(unsupported.fallback_taken, true)
+})
+
+test("createKernelExecutionWorld with executeSandbox observes cancellation or deadline when override responds to signal", async () => {
+  const world = createKernelExecutionWorld({
+    executeSandbox: async (_req, context) => {
+      return new Promise((_resolve, reject) => {
+        context.signal?.addEventListener("abort", () => {
+          reject(new Error("override received abort signal"))
+        })
+      })
+    },
+  })
+
+  const abortController = new AbortController()
+  const promise = world.execute({
+    kind: "sandbox",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-override-test",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-override-test",
+      placement_class: "local_process",
+      runtime_id: "local",
+      capability_id: "cap-override-test",
+    },
+    requestId: "req-override-test-1",
+    command: ["sleep", "60"],
+    signal: abortController.signal,
+    terminationGraceMs: 50,
+  })
+
+  await new Promise((r) => setTimeout(r, 10))
+  abortController.abort(new Error("aborted by caller"))
+  const result = await promise
+  assert.equal(result.kind, "sandbox")
+  assert.equal(result.sandboxResult?.status, "cancelled")
+  assert.equal(result.livenessEvidence.state, "cancelled")
+  assert.equal(result.livenessEvidence.terminationRequested, true)
+  assert.equal(result.livenessEvidence.terminationObserved, true)
+})
+
+test("createKernelExecutionWorld with stubborn executeSandbox override marks terminationObserved false when override ignores signal", async () => {
+  const world = createKernelExecutionWorld({
+    executeSandbox: async () => {
+      // Stubborn override: ignores signal and never settles
+      return new Promise(() => {})
+    },
+  })
+
+  const abortController = new AbortController()
+  const promise = world.execute({
+    kind: "sandbox",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-stubborn-test",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-stubborn-test",
+      placement_class: "local_process",
+      runtime_id: "local",
+      capability_id: "cap-stubborn-test",
+    },
+    requestId: "req-stubborn-test-1",
+    command: ["sleep", "60"],
+    signal: abortController.signal,
+    terminationGraceMs: 20,
+  })
+
+  await new Promise((r) => setTimeout(r, 10))
+  abortController.abort(new Error("aborted by caller"))
+  const result = await promise
+  assert.equal(result.kind, "sandbox")
+  assert.equal(result.sandboxResult?.status, "cancelled")
+  assert.equal(result.livenessEvidence.state, "cancelled")
+  assert.equal(result.livenessEvidence.terminationRequested, true)
+  assert.equal(result.livenessEvidence.terminationObserved, false)
+})
+test("createKernelExecutionWorld with executeSandbox does not invoke override when pre-aborted", async () => {
+  let backendInvoked = false
+  const world = createKernelExecutionWorld({
+    executeSandbox: async () => {
+      backendInvoked = true
+      return {
+        schema_version: "bb.sandbox_result.v1",
+        request_id: "req-pre-abort",
+        status: "completed",
+        placement_id: "place-1",
+        stdout_ref: null,
+        stderr_ref: null,
+        artifact_refs: [],
+        side_effect_digest: null,
+      }
+    },
+  })
+
+  const abortController = new AbortController()
+  abortController.abort(new Error("pre-aborted"))
+  const result = await world.execute({
+    kind: "sandbox",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-pre-abort",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-pre-abort",
+      placement_class: "local_process",
+      runtime_id: "local",
+      capability_id: "cap-pre-abort",
+    },
+    requestId: "req-pre-abort-1",
+    command: ["echo", "test"],
+    signal: abortController.signal,
+  })
+
+  assert.equal(backendInvoked, false)
+  assert.equal(result.kind, "sandbox")
+  assert.equal(result.sandboxResult?.status, "cancelled")
+  assert.equal(result.livenessEvidence.executionStarted, false)
 })

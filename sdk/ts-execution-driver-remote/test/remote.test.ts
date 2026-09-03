@@ -2,7 +2,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import type { ExecutionCapabilityV1 } from "@breadboard/kernel-contracts"
-import { buildExecutionDriverUnsupportedCase } from "@breadboard/execution-drivers"
+import { buildExecutionDriverUnsupportedCase, createExecutionWorld } from "@breadboard/execution-drivers"
 import {
   buildRemoteExecutionErrorSummary,
   buildRemoteExecutionRequestEnvelope,
@@ -12,6 +12,7 @@ import {
   executeRemoteSandboxRequest,
   makeRemoteExecutionDriver,
   makeRemoteTerminalSessionDriver,
+  type RemoteSandboxExecutor,
 } from "../src/index.js"
 
 const remoteCapability: ExecutionCapabilityV1 = {
@@ -756,4 +757,79 @@ test("remote driver combines caller signal, world signal, and timeout without re
     () => driverForTimeout.execute!(req3),
     /timed out after 15ms/,
   )
+})
+
+test("makeRemoteExecutionDriver with httpOptions delegates terminal session methods", async () => {
+  const driver = makeRemoteExecutionDriver(undefined, {
+    endpointUrl: "https://example.test/remote-terminal-exec",
+    fetchImpl: async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          schema_version: "bb.remote_terminal_response.v1",
+          payload: {},
+        }),
+      }) as Response,
+  })
+  assert.ok(driver.supportsTerminalSessions)
+  assert.ok(driver.startTerminalSession)
+  assert.ok(driver.interactTerminalSession)
+  assert.ok(driver.snapshotTerminalRegistry)
+  assert.ok(driver.cleanupTerminalSessions)
+  assert.equal(driver.supportsTerminalSessions(remoteCapability, "remote_worker"), true)
+
+  const startResult = await driver.startTerminalSession({
+    terminalSessionId: "term-remote-delegated-1",
+    command: ["python", "-m", "worker"],
+    capability: remoteCapability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place:remote:1",
+      placement_class: "remote_worker",
+      runtime_id: "remote",
+      capability_id: remoteCapability.capability_id,
+    },
+  })
+  assert.equal(startResult.descriptor.terminal_session_id, "term-remote-delegated-1")
+  assert.equal(startResult.descriptor.persistence_scope, "thread")
+  const cleanupResult = await driver.cleanupTerminalSessions({
+    cleanupId: "clean-remote-1",
+    scope: "single",
+    sessionIds: ["term-remote-delegated-1"],
+  })
+  assert.deepEqual(cleanupResult.cleaned_session_ids, ["term-remote-delegated-1"])
+})
+test("remote execution driver with stubborn executor marks terminationObserved false when terminate exceeds grace", async () => {
+  const stubbornExecutor: RemoteSandboxExecutor = async () => {
+    // Intentionally ignores abort signal and hangs
+    return new Promise(() => {})
+  }
+  const driver = makeRemoteExecutionDriver(stubbornExecutor)
+  const world = createExecutionWorld({ drivers: [driver] })
+  const abortController = new AbortController()
+  const execPromise = world.execute({
+    kind: "sandbox",
+    capability: remoteCapability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-stubborn-remote",
+      placement_class: "remote_worker",
+      runtime_id: "remote",
+      capability_id: remoteCapability.capability_id,
+    },
+    requestId: "req-stubborn-remote-1",
+    command: ["python", "-m", "worker"],
+    signal: abortController.signal,
+    terminationGraceMs: 20,
+  })
+  await new Promise((r) => setTimeout(r, 10))
+  abortController.abort(new Error("external abort"))
+  const result = await execPromise
+  assert.equal(result.kind, "sandbox")
+  if (result.kind !== "sandbox") throw new Error("expected sandbox result")
+  assert.equal(result.sandboxResult?.status, "cancelled")
+  assert.equal(result.livenessEvidence.state, "cancelled")
+  assert.equal(result.livenessEvidence.terminationRequested, true)
+  assert.equal(result.livenessEvidence.terminationObserved, false)
 })

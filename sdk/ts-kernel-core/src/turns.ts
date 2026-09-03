@@ -46,7 +46,9 @@ function buildDriverMediatedToolOutcome(input: {
       ? "completed"
       : input.sandboxResult.status === "timed_out"
         ? "timed_out"
-        : "errored"
+        : input.sandboxResult.status === "cancelled"
+          ? "cancelled"
+          : "errored"
   const outcome: Record<string, unknown> = {
     schema_version: "bb.tool_execution_outcome.v2",
     call_id: input.callId,
@@ -152,7 +154,7 @@ export async function executeDriverMediatedToolTurn(
     kind: "sandbox",
     capability,
     placement,
-    requestId: `${request.request_id}:sandbox`,
+    requestId: request.request_id,
     command: options.command,
     workspaceRef: options.workspaceRef ?? request.workspace_root ?? null,
     imageRef: options.imageRef ?? null,
@@ -161,6 +163,10 @@ export async function executeDriverMediatedToolTurn(
       tool_description: options.toolDescription ?? null,
     },
     driverIdHint: options.driverIdHint,
+    deadlineMs: options.timeoutMs ?? options.deadlineMs,
+    signal: options.signal,
+    terminationGraceMs: options.terminationGraceMs,
+    onTimeout: options.onTimeout,
   })
   if (worldResult.kind !== "sandbox" || !worldResult.plan || !worldResult.plan.sandboxRequest || !worldResult.sandboxResult) {
     const summary = worldResult.kind === "sandbox" && worldResult.unsupportedCase ? worldResult.unsupportedCase.summary : null
@@ -172,7 +178,13 @@ export async function executeDriverMediatedToolTurn(
   const callId = `${request.request_id}:tool:1`
   const completedAtUtc = options.startedAt ?? new Date().toISOString()
   const toolCallState: ToolCallV2["state"] =
-    sandboxResult.status === "completed" ? "completed" : sandboxResult.status === "timed_out" ? "timed_out" : "failed"
+    sandboxResult.status === "completed"
+      ? "completed"
+      : sandboxResult.status === "timed_out"
+        ? "timed_out"
+        : sandboxResult.status === "cancelled"
+          ? "cancelled"
+          : "failed"
   const toolCall = assertValid<ToolCallV2>("toolCallV2", {
     schema_version: "bb.tool_call.v2",
     call_id: callId,

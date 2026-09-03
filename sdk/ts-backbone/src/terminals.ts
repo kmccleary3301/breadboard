@@ -51,6 +51,7 @@ function decodeTerminalOutputText(outputDeltas: readonly TerminalOutputDeltaV1[]
 type InternalTerminalSessionView = BackboneTerminalSessionView & {
   applyInteractionResult(result: BackboneTerminalInteractionResult): void
   applySnapshot(snapshot: TerminalRegistrySnapshotV1 | null): void
+  applyOutputDeltas(outputDeltas: readonly TerminalOutputDeltaV1[]): void
   markEndedIfMissing(end: TerminalSessionEndV1): void
   mergeEnd(end: TerminalSessionEndV1): void
 }
@@ -141,6 +142,9 @@ function createTerminalSessionView(options: {
     },
     applySnapshot(snapshot) {
       applySnapshot(snapshot)
+    },
+    applyOutputDeltas(deltas) {
+      appendOutput(deltas)
     },
     markEndedIfMissing(end) {
       lastEnd = lastEnd ?? end
@@ -449,6 +453,16 @@ export function createBackboneTerminalApi(options: {
     initialOutputDeltas?: readonly TerminalOutputDeltaV1[]
     initialEnd?: TerminalSessionEndV1 | undefined
   }): InternalTerminalSessionView {
+    const existing = sessionViews.get(viewOptions.descriptor.terminal_session_id)
+    if (existing) {
+      if (viewOptions.initialOutputDeltas && viewOptions.initialOutputDeltas.length > 0) {
+        existing.applyOutputDeltas(viewOptions.initialOutputDeltas)
+      }
+      if (viewOptions.initialEnd) {
+        existing.mergeEnd(viewOptions.initialEnd)
+      }
+      return existing
+    }
     return rememberSessionView(
       createTerminalSessionView({
         api,
@@ -750,11 +764,13 @@ export function createBackboneTerminalApi(options: {
       const endedCount = result.snapshot?.ended_session_ids?.length ?? 0
       if (result.snapshot) {
         for (const descriptor of result.snapshot.active_sessions) {
-          const session = buildSessionView({
-            descriptor,
-            supportClaim: result.supportClaim,
-            executionProfileId: input?.executionProfileId ?? options.workspace.defaultExecutionProfileId,
-          })
+          const session =
+            sessionViews.get(descriptor.terminal_session_id) ??
+            buildSessionView({
+              descriptor,
+              supportClaim: result.supportClaim,
+              executionProfileId: input?.executionProfileId ?? options.workspace.defaultExecutionProfileId,
+            })
           sessions.push(session)
           seen.add(descriptor.terminal_session_id)
         }

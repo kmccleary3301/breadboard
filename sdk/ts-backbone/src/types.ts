@@ -15,8 +15,10 @@ import type {
   TerminalRegistrySnapshotV1,
   ToolBindingV1,
   ToolSupportClaimV1,
+  SandboxRequestV1,
   UnsupportedCaseV1,
 } from "@breadboard/kernel-contracts"
+import type { ExecutionLivenessEvidenceV1 } from "@breadboard/execution-drivers"
 import type {
   DriverMediatedToolTurnResult,
   ProviderTextTurnResult,
@@ -74,6 +76,11 @@ export interface ToolTurnInput {
   readonly command: string[]
   readonly assistantText?: string | null
   readonly driverIdHint?: "trusted_local" | "oci" | "remote"
+  readonly deadlineMs?: number | null
+  readonly timeoutMs?: number | null
+  readonly signal?: AbortSignal
+  readonly terminationGraceMs?: number
+  readonly onTimeout?: (input: { driverId: string; request: SandboxRequestV1; liveness: ExecutionLivenessEvidenceV1 }) => void | Promise<void>
 }
 
 export interface BackboneTurnResult {

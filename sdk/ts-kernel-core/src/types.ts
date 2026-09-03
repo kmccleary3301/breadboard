@@ -17,6 +17,7 @@ import type {
 import type {
   ExecutionDriverEvidenceExpectationV1,
   ExecutionDriverSideEffectExpectationV1,
+  ExecutionLivenessEvidenceV1,
   ExecutionWorldV1,
 } from "@breadboard/execution-drivers"
 import type { LocalCommandExecutor } from "@breadboard/execution-driver-local"
@@ -90,6 +91,11 @@ export interface DriverMediatedToolTurnOptions {
   allowRunPrograms?: string[]
   allowNetHosts?: string[]
   driverIdHint?: "trusted_local" | "oci" | "remote"
+  deadlineMs?: number | null
+  timeoutMs?: number | null
+  signal?: AbortSignal
+  terminationGraceMs?: number
+  onTimeout?: (input: { driverId: string; request: SandboxRequestV1; liveness: ExecutionLivenessEvidenceV1 }) => void | Promise<void>
   executeSandbox?: (
     request: SandboxRequestV1,
     context: { capability: ExecutionCapabilityV1; placement: ExecutionPlacementV1; driverId: string },

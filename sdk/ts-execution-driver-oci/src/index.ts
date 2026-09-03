@@ -64,18 +64,25 @@ export type OciCommandExecutor = (input: {
   signal?: AbortSignal
 }) => Promise<OciCommandExecutionResult>
 
+export function buildOciContainerName(requestId: string): string {
+  const sanitized = requestId.replace(/[^a-zA-Z0-9_.-]/g, "_")
+  return `bb-oci-${sanitized}`
+}
+
 export function buildOciRuntimeInvocation(
   request: SandboxRequestV1,
   options: {
     runtimeCommand?: string
     workspaceMountTarget?: string
+    containerName?: string
   } = {},
-): { runtimeCommand: string; runtimeArgs: string[] } {
+): { runtimeCommand: string; runtimeArgs: string[]; containerName: string } {
   if (!request.image_ref) {
     throw new Error("OCI sandbox request requires image_ref")
   }
   const runtimeCommand = options.runtimeCommand ?? "docker"
-  const runtimeArgs: string[] = ["run", "--rm"]
+  const containerName = options.containerName ?? buildOciContainerName(request.request_id)
+  const runtimeArgs: string[] = ["run", "--rm", "--name", containerName]
   if (request.placement_class === "local_oci_gvisor") {
     runtimeArgs.push("--runtime=runsc")
   } else if (request.placement_class === "local_oci_kata") {
@@ -88,7 +95,7 @@ export function buildOciRuntimeInvocation(
   }
   runtimeArgs.push(request.image_ref)
   runtimeArgs.push(...request.command)
-  return { runtimeCommand, runtimeArgs }
+  return { runtimeCommand, runtimeArgs, containerName }
 }
 
 export function defaultOciCommandExecutor(input: {
@@ -163,6 +170,7 @@ export async function executeOciSandboxRequest(
     commandExecutor?: OciCommandExecutor
     runtimeCommand?: string
     workspaceMountTarget?: string
+    containerName?: string
     tempDirRoot?: string
     signal?: AbortSignal
   } = {},
@@ -171,18 +179,34 @@ export async function executeOciSandboxRequest(
   const invocation = buildOciRuntimeInvocation(request, {
     runtimeCommand: options.runtimeCommand,
     workspaceMountTarget: options.workspaceMountTarget,
+    containerName: options.containerName,
   })
-  const result = await commandExecutor({ ...invocation, signal: options.signal })
+  const result = await commandExecutor({
+    runtimeCommand: invocation.runtimeCommand,
+    runtimeArgs: invocation.runtimeArgs,
+    signal: options.signal,
+  })
   const captureDir = await mkdtemp(join(options.tempDirRoot ?? tmpdir(), "breadboard-oci-exec-"))
   const stdoutPath = join(captureDir, "stdout.log")
   const stderrPath = join(captureDir, "stderr.log")
   await writeFile(stdoutPath, result.stdout, "utf8")
   await writeFile(stderrPath, result.stderr, "utf8")
-  const timedOut = options.signal?.aborted === true
+  const isAborted = options.signal?.aborted === true
+  const isCancelled =
+    options.signal?.reason === "cancelled" ||
+    (typeof options.signal?.reason?.message === "string" &&
+      options.signal.reason.message.toLowerCase().includes("cancel"))
+  const status: SandboxResultV1["status"] = isAborted
+    ? isCancelled
+      ? "cancelled"
+      : "timed_out"
+    : result.exitCode === 0
+      ? "completed"
+      : "failed"
   return {
     schema_version: "bb.sandbox_result.v1",
     request_id: request.request_id,
-    status: timedOut ? "timed_out" : result.exitCode === 0 ? "completed" : "failed",
+    status,
     placement_id: `oci:${request.request_id}`,
     stdout_ref: `file://${stdoutPath}`,
     stderr_ref: `file://${stderrPath}`,
@@ -190,15 +214,18 @@ export async function executeOciSandboxRequest(
     side_effect_digest: buildOciSideEffectDigest(request, result),
     usage: { exit_code: result.exitCode, runtime: invocation.runtimeCommand },
     evidence_refs: [],
-    error:
-      timedOut
-        ? { message: "OCI runtime exceeded its deadline", reason: "deadline_exceeded", exit_code: result.exitCode }
-        : result.exitCode === 0
-          ? null
-          : {
-              message: `OCI runtime exited with code ${result.exitCode}`,
-              exit_code: result.exitCode,
-            },
+    error: isAborted
+      ? {
+          message: isCancelled ? "Execution was cancelled" : "OCI runtime exceeded its deadline",
+          reason: isCancelled ? "execution_cancelled" : "deadline_exceeded",
+          exit_code: result.exitCode,
+        }
+      : result.exitCode === 0
+        ? null
+        : {
+            message: `OCI runtime exited with code ${result.exitCode}`,
+            exit_code: result.exitCode,
+          },
   }
 }
 
@@ -212,6 +239,8 @@ function createOciExecutionDriver(options: {
   interface ActiveOciExecution {
     controller: AbortController
     completion: Promise<SandboxResultV1>
+    containerName: string
+    runtimeCommand: string
   }
   const activeExecutions = new Map<string, ActiveOciExecution>()
   return {
@@ -239,15 +268,20 @@ function createOciExecutionDriver(options: {
           context.signal.addEventListener("abort", forwardAbort, { once: true })
         }
       }
+      const containerName = buildOciContainerName(request.request_id)
+      const runtimeCommand = options.runtimeCommand ?? "docker"
       const executionPromise = executeOciSandboxRequest(request, {
         commandExecutor: options.commandExecutor,
-        runtimeCommand: options.runtimeCommand,
+        runtimeCommand,
         workspaceMountTarget: options.workspaceMountTarget,
+        containerName,
         signal: controller.signal,
       })
       activeExecutions.set(request.request_id, {
         controller,
         completion: executionPromise,
+        containerName,
+        runtimeCommand,
       })
       return executionPromise.finally(() => {
         activeExecutions.delete(request.request_id)
@@ -257,9 +291,33 @@ function createOciExecutionDriver(options: {
     async terminate(request, context) {
       const active = activeExecutions.get(request.request_id)
       if (!active) return
+      const executor = options.commandExecutor ?? defaultOciCommandExecutor
       active.controller.abort(
         context.signal.reason ?? new Error(`OCI runtime ${context.reason} termination requested`),
       )
+      try {
+        await executor({
+          runtimeCommand: active.runtimeCommand,
+          runtimeArgs: ["stop", "-t", "2", active.containerName],
+        })
+      } catch {
+        try {
+          await executor({
+            runtimeCommand: active.runtimeCommand,
+            runtimeArgs: ["kill", active.containerName],
+          })
+        } catch {
+          // fallback to removal
+        }
+      }
+      try {
+        await executor({
+          runtimeCommand: active.runtimeCommand,
+          runtimeArgs: ["rm", "-f", active.containerName],
+        })
+      } catch {
+        // Ignored if already removed
+      }
       await active.completion.catch(() => {})
     },
     ...(terminalDriver

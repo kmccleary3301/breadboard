@@ -5,7 +5,11 @@ import {
   type SandboxRequestV1,
   type SandboxResultV1,
   type TerminalCleanupResultV1,
+  type TerminalInteractionV1,
+  type TerminalOutputDeltaV1,
   type TerminalRegistrySnapshotV1,
+  type TerminalSessionDescriptorV1,
+  type TerminalSessionEndV1,
   type UnsupportedCaseV1,
 } from "@breadboard/kernel-contracts"
 import {
@@ -368,10 +372,72 @@ export function createExecutionWorld(input: {
     }
 
     const request = plan.sandboxRequest
-    const controller = new AbortController()
+
+    if (operation.signal?.aborted) {
+      const livenessEvidence = buildLivenessEvidence({
+        requestId: request.request_id,
+        state: "cancelled",
+        executionStarted: false,
+        terminationRequested: false,
+        terminationObserved: false,
+      })
+      const sandboxResult = assertValid<SandboxResultV1>(
+        "sandboxResult",
+        buildSandboxFailureResult({
+          request,
+          status: "cancelled",
+          message: "Execution was cancelled before starting",
+          reason: "execution_cancelled",
+        }),
+      )
+      return {
+        kind: "sandbox",
+        driverId: driver.driverId,
+        plan,
+        sandboxResult,
+        livenessEvidence,
+      }
+    }
     const deadlineMs = operation.deadlineMs ?? defaultDeadlineMs
+    if (deadlineMs != null && deadlineMs <= 0) {
+      const livenessEvidence = buildLivenessEvidence({
+        requestId: request.request_id,
+        state: "timed_out",
+        executionStarted: false,
+        terminationRequested: false,
+        terminationObserved: false,
+      })
+      if (operation.onTimeout) {
+        try {
+          void Promise.resolve(
+            operation.onTimeout({ driverId: driver.driverId, request, liveness: livenessEvidence }),
+          ).catch(() => {})
+        } catch {
+          // Timeout notification is advisory and cannot strand termination.
+        }
+      }
+      const sandboxResult = assertValid<SandboxResultV1>(
+        "sandboxResult",
+        buildSandboxFailureResult({
+          request,
+          status: "timed_out",
+          message: "Execution exceeded deadline before starting",
+          reason: "deadline_exceeded",
+        }),
+      )
+      return {
+        kind: "sandbox",
+        driverId: driver.driverId,
+        plan,
+        sandboxResult,
+        livenessEvidence,
+      }
+    }
+
+    const controller = new AbortController()
     const deadlineAtMs = deadlineMs == null ? null : Date.now() + Math.max(0, deadlineMs)
     const terminationGraceMs = Math.max(1, operation.terminationGraceMs ?? defaultTerminationGraceMs)
+    let executionStarted = false
     let terminalized = false
     let timer: ReturnType<typeof setTimeout> | undefined
     let externalAbortListener: (() => void) | undefined
@@ -380,6 +446,7 @@ export function createExecutionWorld(input: {
           status: "completed" | "failed" | "cancelled" | "timed_out"
           result?: SandboxResultV1
           error?: unknown
+          executionStarted?: boolean
           terminationRequested?: boolean
           terminationObserved?: boolean
         }) => void)
@@ -389,6 +456,7 @@ export function createExecutionWorld(input: {
       status: "completed" | "failed" | "cancelled" | "timed_out"
       result?: SandboxResultV1
       error?: unknown
+      executionStarted?: boolean
       terminationRequested?: boolean
       terminationObserved?: boolean
     }>((resolve) => {
@@ -399,14 +467,8 @@ export function createExecutionWorld(input: {
       if (terminalized) return
       terminalized = true
       controller.abort(new Error(reason === "deadline" ? "execution deadline exceeded" : "execution cancelled"))
-      const liveness = buildLivenessEvidence({
-        requestId: request.request_id,
-        state: reason === "deadline" ? "timed_out" : "cancelled",
-        executionStarted: true,
-        terminationRequested: true,
-      })
       let terminationObserved = false
-      if (driver.terminate) {
+      if (executionStarted && driver.terminate) {
         let terminationPromise: Promise<unknown>
         try {
           terminationPromise = Promise.resolve(
@@ -421,6 +483,13 @@ export function createExecutionWorld(input: {
         }
         terminationObserved = await settleWithin(terminationPromise, terminationGraceMs)
       }
+      const liveness = buildLivenessEvidence({
+        requestId: request.request_id,
+        state: reason === "deadline" ? "timed_out" : "cancelled",
+        executionStarted,
+        terminationRequested: executionStarted,
+        terminationObserved,
+      })
       if (reason === "deadline" && operation.onTimeout) {
         try {
           void Promise.resolve(operation.onTimeout({ driverId: driver.driverId, request, liveness })).catch(() => {})
@@ -430,7 +499,8 @@ export function createExecutionWorld(input: {
       }
       resolveTerminal?.({
         status: reason === "deadline" ? "timed_out" : "cancelled",
-        terminationRequested: true,
+        executionStarted,
+        terminationRequested: executionStarted,
         terminationObserved,
       })
     }
@@ -438,6 +508,7 @@ export function createExecutionWorld(input: {
     const executePromise = Promise.resolve()
       .then(() => {
         if (terminalized) return
+        executionStarted = true
         return driver.execute!(request, {
           signal: controller.signal,
           deadlineAtMs,
@@ -449,15 +520,23 @@ export function createExecutionWorld(input: {
       })
       .then(
         (result) => {
-          if (!terminalized && result) {
+          if (!terminalized) {
             terminalized = true
-            resolveTerminal?.({ status: result.status, result })
+            if (result) {
+              resolveTerminal?.({ status: result.status, result, executionStarted: true })
+            } else {
+              resolveTerminal?.({
+                status: "failed",
+                error: new Error("Execution driver returned null or undefined result"),
+                executionStarted: true,
+              })
+            }
           }
         },
         (error: unknown) => {
           if (!terminalized) {
             terminalized = true
-            resolveTerminal?.({ status: "failed", error })
+            resolveTerminal?.({ status: "failed", error, executionStarted: true })
           }
         },
       )
@@ -485,46 +564,64 @@ export function createExecutionWorld(input: {
     const livenessEvidence = buildLivenessEvidence({
       requestId: request.request_id,
       state: status,
-      executionStarted: true,
+      executionStarted: terminal.executionStarted ?? executionStarted,
       terminationRequested: terminal.terminationRequested,
       terminationObserved: terminal.terminationObserved,
     })
-    const sandboxResult = terminal.result
-      ? status === "timed_out"
-        ? buildSandboxFailureResult({
-            request,
-            status: "timed_out",
-            message: "Execution exceeded its deadline",
-            reason: "deadline_exceeded",
-            previous: terminal.result,
-          })
-        : status === "cancelled"
+    let sandboxResult: SandboxResultV1
+    try {
+      const candidate = terminal.result
+        ? status === "timed_out"
           ? buildSandboxFailureResult({
               request,
-              status: "cancelled",
-              message: "Execution was cancelled",
-              reason: "execution_cancelled",
+              status: "timed_out",
+              message: "Execution exceeded its deadline",
+              reason: "deadline_exceeded",
               previous: terminal.result,
             })
-          : terminal.result
-      : buildSandboxFailureResult({
+          : status === "cancelled"
+            ? buildSandboxFailureResult({
+                request,
+                status: "cancelled",
+                message: "Execution was cancelled",
+                reason: "execution_cancelled",
+                previous: terminal.result,
+              })
+            : assertValid<SandboxResultV1>("sandboxResult", terminal.result)
+        : buildSandboxFailureResult({
+            request,
+            status,
+            message:
+              status === "timed_out"
+                ? "Execution exceeded its deadline"
+                : status === "cancelled"
+                  ? "Execution was cancelled"
+                  : terminal.error instanceof Error
+                    ? terminal.error.message
+                    : "Execution driver failed",
+            reason:
+              status === "timed_out"
+                ? "deadline_exceeded"
+                : status === "cancelled"
+                  ? "execution_cancelled"
+                  : "adapter_execution_failed",
+          })
+      sandboxResult = assertValid<SandboxResultV1>("sandboxResult", candidate)
+    } catch (validationError: unknown) {
+      sandboxResult = assertValid<SandboxResultV1>(
+        "sandboxResult",
+        buildSandboxFailureResult({
           request,
-          status,
+          status: "failed",
           message:
-            status === "timed_out"
-              ? "Execution exceeded its deadline"
-              : status === "cancelled"
-                ? "Execution was cancelled"
-                : terminal.error instanceof Error
-                  ? terminal.error.message
-                  : "Execution driver failed",
-          reason:
-            status === "timed_out"
-              ? "deadline_exceeded"
-              : status === "cancelled"
-                ? "execution_cancelled"
-                : "adapter_execution_failed",
-        })
+            validationError instanceof Error
+              ? `Execution driver returned malformed result: ${validationError.message}`
+              : "Execution driver returned malformed result",
+          reason: "malformed_adapter_result",
+        }),
+      )
+    }
+
     return {
       kind: "sandbox",
       driverId: driver.driverId,
@@ -556,7 +653,21 @@ export function createExecutionWorld(input: {
       }
     }
     try {
-      const result = await driver.startTerminalSession(operation.input)
+      const rawResult = await driver.startTerminalSession(operation.input)
+      if (!rawResult || !rawResult.descriptor) {
+        throw new Error("Terminal start driver returned null or invalid result")
+      }
+      const descriptor = assertValid<TerminalSessionDescriptorV1>(
+        "terminalSessionDescriptor",
+        rawResult.descriptor,
+      )
+      const outputDeltas = (rawResult.outputDeltas ?? []).map((delta) =>
+        assertValid<TerminalOutputDeltaV1>("terminalOutputDelta", delta),
+      )
+      const result: TerminalSessionStartResultV1 = {
+        descriptor,
+        outputDeltas,
+      }
       sessions.set(operation.input.terminalSessionId, driver)
       return {
         kind: "terminal_start",
@@ -605,7 +716,22 @@ export function createExecutionWorld(input: {
       }
     }
     try {
-      const result = await driver.interactTerminalSession(operation.input)
+      const rawResult = await driver.interactTerminalSession(operation.input)
+      if (!rawResult || !rawResult.interaction) {
+        throw new Error("Terminal interaction driver returned null or invalid result")
+      }
+      const interaction = assertValid<TerminalInteractionV1>("terminalInteraction", rawResult.interaction)
+      const outputDeltas = (rawResult.outputDeltas ?? []).map((delta) =>
+        assertValid<TerminalOutputDeltaV1>("terminalOutputDelta", delta),
+      )
+      const end = rawResult.end
+        ? assertValid<TerminalSessionEndV1>("terminalSessionEnd", rawResult.end)
+        : undefined
+      const result: TerminalSessionInteractionResultV1 = {
+        interaction,
+        outputDeltas,
+        ...(end ? { end } : {}),
+      }
       return { kind: "terminal_interact", driverId: driver.driverId, result }
     } catch (error) {
       return {
@@ -646,7 +772,12 @@ export function createExecutionWorld(input: {
       }
     }
     try {
-      return { kind: "terminal_snapshot", driverId: driver.driverId, result: await driver.snapshotTerminalRegistry() }
+      const rawResult = await driver.snapshotTerminalRegistry()
+      if (!rawResult) {
+        throw new Error("Terminal snapshot driver returned null or invalid result")
+      }
+      const result = assertValid<TerminalRegistrySnapshotV1>("terminalRegistrySnapshot", rawResult)
+      return { kind: "terminal_snapshot", driverId: driver.driverId, result }
     } catch (error) {
       return {
         kind: "terminal_snapshot",
@@ -683,9 +814,15 @@ export function createExecutionWorld(input: {
     if (operation.input.scope === "all") {
       const cleanedSet = new Set<string>()
       const failedSet = new Set<string>()
+      for (const [id, owner] of sessions.entries()) {
+        if (typeof owner.cleanupTerminalSessions !== "function") {
+          failedSet.add(id)
+        }
+      }
       for (const d of cleanupDrivers) {
         try {
-          const res = await d.cleanupTerminalSessions(operation.input)
+          const rawRes = await d.cleanupTerminalSessions(operation.input)
+          const res = assertValid<TerminalCleanupResultV1>("terminalCleanupResult", rawRes)
           for (const id of res.cleaned_session_ids) {
             cleanedSet.add(id)
             sessions.delete(id)
@@ -694,7 +831,11 @@ export function createExecutionWorld(input: {
             for (const id of res.failed_session_ids) failedSet.add(id)
           }
         } catch {
-          // Driver level failure on scope:all retains any sessions that belonged to it
+          for (const [id, owner] of sessions.entries()) {
+            if (owner === d || owner.driverId === d.driverId) {
+              failedSet.add(id)
+            }
+          }
         }
       }
       return {
@@ -710,7 +851,10 @@ export function createExecutionWorld(input: {
       }
     }
 
-    const requestedIds = operation.input.sessionIds ?? []
+    const requestedIds =
+      operation.input.scope === "single"
+        ? (operation.input.sessionIds?.slice(0, 1) ?? [])
+        : (operation.input.sessionIds ?? [])
     const defaultDriver =
       selectWorldDriver(drivers, {
         capability: operation.capability,
@@ -741,12 +885,13 @@ export function createExecutionWorld(input: {
         continue
       }
       try {
-        const res = await ownerDriver.cleanupTerminalSessions({
+        const rawRes = await ownerDriver.cleanupTerminalSessions({
           cleanupId: operation.input.cleanupId,
-          scope: sessionIds.length === 1 && operation.input.scope === "single" ? "single" : "filtered",
+          scope: operation.input.scope === "single" ? "single" : "filtered",
           sessionIds,
           signal: operation.input.signal,
         })
+        const res = assertValid<TerminalCleanupResultV1>("terminalCleanupResult", rawRes)
         for (const id of res.cleaned_session_ids) {
           cleanedSet.add(id)
           sessions.delete(id)

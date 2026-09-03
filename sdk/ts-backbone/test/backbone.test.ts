@@ -554,3 +554,45 @@ test("BackboneSession terminal signal on an ended session shapes an unsupported 
   assert.equal(interaction.unsupportedCase?.metadata?.terminal_session_id, started.descriptor.terminal_session_id)
   assert.equal(interaction.unsupportedCase?.metadata?.interaction_kind, "signal")
 })
+
+test("BackboneSession preserves session view identity and accumulated output across listViews and summary", async () => {
+  const workspace = createWorkspace({
+    workspaceId: "ws-views-1",
+    rootDir: "/tmp",
+    capabilitySet: buildWorkspaceCapabilitySet(),
+  })
+  const backbone = createBackbone({ workspace })
+  const session = backbone.openSession({ sessionId: "s-views-1", workspaceRoot: "/tmp" })
+  await session.terminals.cleanup({ scope: "all" })
+
+  const started = await session.terminals.start({
+    command: ["/bin/bash", "-lc", "echo 'accumulated-payload-line'; sleep 5"],
+  })
+  assert.ok(started.session)
+  assert.ok(started.descriptor)
+  if (!started.session || !started.descriptor) {
+    throw new Error("expected started terminal session")
+  }
+
+  // Wait for initial output to be produced and polled
+  await started.session.poll({ settleMs: 50 })
+  const summaryBefore = started.session.summary()
+  assert.ok(summaryBefore.outputPreview.includes("accumulated-payload-line"))
+  assert.ok(summaryBefore.outputChunkCount > 0)
+
+  // Call listViews - should NOT recreate active descriptor or wipe accumulated output/end state
+  const listed = await session.terminals.listViews()
+  assert.equal(listed.sessions.length, 1)
+  const listedSession = listed.sessions[0]
+  assert.ok(listedSession)
+
+  const summaryAfter = started.session.summary()
+  assert.ok(summaryAfter.outputPreview.includes("accumulated-payload-line"))
+  assert.equal(summaryAfter.outputChunkCount, summaryBefore.outputChunkCount)
+
+  const listedSummary = listedSession?.summary()
+  assert.ok(listedSummary?.outputPreview.includes("accumulated-payload-line"))
+  assert.equal(listedSummary?.outputChunkCount, summaryBefore.outputChunkCount)
+
+  await started.session.cleanup()
+})

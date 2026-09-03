@@ -30,6 +30,7 @@ export interface KernelExecutionWorldOptions {
       driverId: string
       signal?: AbortSignal
       deadlineAtMs?: number | null
+      terminationGraceMs?: number
     },
   ) => Promise<SandboxResultV1>
   readonly localCommandExecutor?: LocalCommandExecutor
@@ -47,36 +48,72 @@ function withSandboxOverride(
   driver: TerminalSessionDriverV1,
   executeSandbox: NonNullable<KernelExecutionWorldOptions["executeSandbox"]>,
 ): TerminalSessionDriverV1 {
+  const activeOverrides = new Map<string, { promise: Promise<unknown>; controller: AbortController }>()
   return {
     ...driver,
     execute(request, context) {
-      const sandboxPromise = executeSandbox(request, {
-        capability: context?.capability ?? driverCapability(request),
-        placement: context?.placement ?? driverPlacement(request),
-        driverId: driver.driverId,
-        signal: context?.signal,
-        deadlineAtMs: context?.deadlineAtMs ?? null,
-      })
-      if (!context?.signal) {
-        return sandboxPromise
+      if (context?.signal?.aborted) {
+        const isCancelled =
+          context.signal.reason === "cancelled" ||
+          (typeof context.signal.reason?.message === "string" &&
+            context.signal.reason.message.toLowerCase().includes("cancel"))
+        const status: SandboxResultV1["status"] = isCancelled ? "cancelled" : "timed_out"
+        return Promise.resolve({
+          schema_version: "bb.sandbox_result.v1",
+          request_id: request.request_id,
+          status,
+          placement_id: `${driver.driverId}:${request.request_id}`,
+          stdout_ref: null,
+          stderr_ref: null,
+          artifact_refs: [],
+          side_effect_digest: null,
+          error: {
+            message: isCancelled ? "Execution was cancelled" : "Execution timed out",
+            reason: isCancelled ? "execution_cancelled" : "execution_timed_out",
+          },
+        })
       }
-      if (context.signal.aborted) {
-        return Promise.reject(context.signal.reason ?? new Error("Execution aborted"))
-      }
-      return new Promise<SandboxResultV1>((resolve, reject) => {
-        const onAbort = () => {
-          reject(context.signal.reason ?? new Error("Execution aborted"))
+      const controller = new AbortController()
+      const forwardAbort = () => {
+        if (!controller.signal.aborted) {
+          controller.abort(context?.signal?.reason)
         }
-        context.signal.addEventListener("abort", onAbort, { once: true })
-        sandboxPromise
-          .then(resolve, reject)
-          .finally(() => {
-            context.signal.removeEventListener("abort", onAbort)
-          })
-      })
+      }
+      if (context?.signal) {
+        context.signal.addEventListener("abort", forwardAbort, { once: true })
+      }
+      const sandboxPromise = Promise.resolve().then(() =>
+        executeSandbox(request, {
+          capability: context?.capability ?? driverCapability(request),
+          placement: context?.placement ?? driverPlacement(request),
+          driverId: driver.driverId,
+          signal: controller.signal,
+          deadlineAtMs: context?.deadlineAtMs ?? null,
+          terminationGraceMs: context?.terminationGraceMs ?? 2000,
+        }),
+      )
+
+      activeOverrides.set(request.request_id, { promise: sandboxPromise, controller })
+      const cleanup = () => {
+        activeOverrides.delete(request.request_id)
+        context?.signal?.removeEventListener("abort", forwardAbort)
+      }
+
+      return sandboxPromise.finally(cleanup)
     },
-    terminate(request, context) {
-      driver.terminate?.(request, context)
+    async terminate(request, context) {
+      const active = activeOverrides.get(request.request_id)
+      if (!active) {
+        if (driver.terminate) {
+          await driver.terminate(request, context)
+        }
+        return
+      }
+      const reason = context?.signal?.reason ?? new Error(`Execution ${context?.reason ?? "cancelled"}`)
+      if (!active.controller.signal.aborted) {
+        active.controller.abort(reason)
+      }
+      await active.promise.catch(() => {})
     },
   }
 }

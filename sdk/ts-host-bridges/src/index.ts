@@ -594,6 +594,8 @@ export async function runOpenClawEmbeddedViaBreadboard(
       allowNetHosts: options.toolSlice.allowNetHosts ?? [],
       driverIdHint: options.toolSlice.remoteExecutor || options.toolSlice.remoteHttp ? "remote" : imageRef ? "oci" : undefined,
       assistantText: null,
+      timeoutMs: params.timeoutMs,
+      signal: params.abortSignal,
       executeSandbox: options.toolSlice.executeSandbox
         ? (request, context) =>
             options.toolSlice!.executeSandbox!(request, {
