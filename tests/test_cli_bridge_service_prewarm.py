@@ -1696,6 +1696,36 @@ async def test_retained_event_journal_rejects_symlinked_directory_and_file(
 
 
 @pytest.mark.asyncio
+async def test_recovery_rejects_replaced_recorded_event_root(
+    monkeypatch, tmp_path
+) -> None:
+    from breadboard.product.runtime import ReplayError
+
+    state_root = tmp_path / "state"
+    event_root = tmp_path / "recorded-events"
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    initial_service = SessionService(state_root=state_root)
+    response = await initial_service.create_session(
+        SessionCreateRequest(config_path=CONFIG, task="retain event root"),
+        session_id="replaced-recorded-event-root",
+        event_root=event_root,
+        runtime_root=tmp_path / "records",
+    )
+    initial = await initial_service.ensure_session(response.session_id)
+    await _stop(initial)
+    await initial_service.registry.persist(initial)
+    retained_root = tmp_path / "retained-events"
+    event_root.rename(retained_root)
+    event_root.symlink_to(retained_root, target_is_directory=True)
+
+    with pytest.raises(ReplayError, match="unsafe logical event journal"):
+        await SessionService(state_root=state_root).ensure_session(
+            response.session_id
+        )
+
+
+@pytest.mark.asyncio
 async def test_retained_event_journal_rejects_oversized_file_before_read(
     monkeypatch, tmp_path
 ) -> None:
@@ -1741,6 +1771,44 @@ async def test_restored_event_sink_revalidates_identity_before_every_append(
         restored.complete()
 
     assert outside.read_bytes() == outside_before
+
+
+@pytest.mark.asyncio
+async def test_restored_event_sink_anchors_open_file_across_path_swap(
+    monkeypatch, tmp_path
+) -> None:
+    from breadboard_engine.api.cli_bridge.service import (
+        _RetainedEventSink,
+        _restore_product_session,
+    )
+
+    service, response, record = await _create(monkeypatch, tmp_path)
+    await _stop(record)
+    event_root = Path(record.metadata["session_event_root"])
+    journal = event_root / response.session_id / "session_events.jsonl"
+    original = journal.read_bytes()
+    restored = _restore_product_session(response.session_id, event_root=event_root)
+    retained_journal = journal.with_name("retained-events.jsonl")
+    outside = tmp_path / "outside-events.jsonl"
+    outside.write_bytes(original)
+    real_verify = _RetainedEventSink._verify_identity
+    verifications = 0
+
+    def swap_after_open(sink, directory_stat, file_stat):  # type: ignore[no-untyped-def]
+        nonlocal verifications
+        real_verify(sink, directory_stat, file_stat)
+        verifications += 1
+        if verifications == 1:
+            journal.rename(retained_journal)
+            journal.symlink_to(outside)
+
+    monkeypatch.setattr(_RetainedEventSink, "_verify_identity", swap_after_open)
+
+    with pytest.raises(RuntimeError, match="event journal identity changed"):
+        restored.complete()
+
+    assert outside.read_bytes() == original
+    assert retained_journal.read_bytes() == original
 
 
 def test_retained_manifest_history_rejects_excess_count_before_reads(

@@ -14,6 +14,7 @@ import weakref
 from pathlib import Path
 from dataclasses import dataclass
 from types import SimpleNamespace
+from threading import RLock
 from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Optional, Sequence
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import (
@@ -326,6 +327,8 @@ def _retained_event_journal_identity(
 
 
 class _RetainedEventSink:
+    _locks = tuple(RLock() for _ in range(64))
+
     def __init__(
         self,
         delegate: JsonlEventSink,
@@ -338,18 +341,210 @@ class _RetainedEventSink:
         self._event_root = event_root
         self._session_id = session_id
         self._expected_identity = expected_identity
+        self._lock = self._locks[hash(expected_identity) % len(self._locks)]
+
+    def _verify_identity(
+        self,
+        directory_stat: os.stat_result,
+        file_stat: os.stat_result,
+    ) -> None:
+        current_identity = (
+            (directory_stat.st_dev, directory_stat.st_ino),
+            (file_stat.st_dev, file_stat.st_ino),
+        )
+        if current_identity != self._expected_identity:
+            raise RuntimeError("retained event journal identity changed")
+
+    @staticmethod
+    def _write_all(descriptor: int, payload: bytes) -> None:
+        offset = 0
+        while offset < len(payload):
+            written = os.write(descriptor, payload[offset:])
+            if written <= 0:
+                raise OSError("short retained event journal write")
+            offset += written
+
+    @staticmethod
+    def _unlink_regular_at(directory_descriptor: int, name: str) -> None:
+        try:
+            entry_stat = os.stat(
+                name,
+                dir_fd=directory_descriptor,
+                follow_symlinks=False,
+            )
+        except FileNotFoundError:
+            return
+        if not stat.S_ISREG(entry_stat.st_mode):
+            raise OSError(f"unsafe retained event transaction entry: {name}")
+        os.unlink(name, dir_fd=directory_descriptor)
+
+    def _append_posix(self, event: object) -> None:
+        payload = (
+            json.dumps(
+                event.as_dict(),  # type: ignore[attr-defined]
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "\n"
+        ).encode()
+        root_descriptor = os.open(
+            self._event_root,
+            os.O_RDONLY
+            | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        session_descriptor: int | None = None
+        event_descriptor: int | None = None
+        try:
+            session_descriptor = AnchoredStorage.open_directory(
+                root_descriptor,
+                self._session_id,
+                create=False,
+            )
+            event_descriptor = os.open(
+                "session_events.jsonl",
+                os.O_RDWR
+                | os.O_APPEND
+                | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=session_descriptor,
+            )
+            self._verify_identity(
+                os.fstat(session_descriptor),
+                os.fstat(event_descriptor),
+            )
+            import fcntl
+
+            fcntl.flock(event_descriptor, fcntl.LOCK_EX)
+            transaction_name = ".session_events.jsonl.txn"
+            temporary_name = f"{transaction_name}.tmp"
+            self._unlink_regular_at(session_descriptor, temporary_name)
+            try:
+                transaction_descriptor = os.open(
+                    transaction_name,
+                    os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                    dir_fd=session_descriptor,
+                )
+            except FileNotFoundError:
+                transaction_descriptor = None
+            if transaction_descriptor is not None:
+                try:
+                    transaction_stat = os.fstat(transaction_descriptor)
+                    if not stat.S_ISREG(transaction_stat.st_mode):
+                        raise OSError("unsafe retained event transaction")
+                    raw_offset = os.read(transaction_descriptor, 64)
+                    if os.read(transaction_descriptor, 1):
+                        raise OSError("oversized retained event transaction")
+                    recovered_offset = int(raw_offset.decode("ascii"))
+                finally:
+                    os.close(transaction_descriptor)
+                current_size = os.fstat(event_descriptor).st_size
+                if recovered_offset < 0 or recovered_offset > current_size:
+                    raise OSError("invalid retained event transaction offset")
+                os.ftruncate(event_descriptor, recovered_offset)
+                os.fsync(event_descriptor)
+                self._unlink_regular_at(session_descriptor, transaction_name)
+                os.fsync(session_descriptor)
+
+            original_offset = os.lseek(event_descriptor, 0, os.SEEK_END)
+            transaction_descriptor = os.open(
+                temporary_name,
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+                dir_fd=session_descriptor,
+            )
+            try:
+                self._write_all(
+                    transaction_descriptor,
+                    str(original_offset).encode("ascii"),
+                )
+                os.fsync(transaction_descriptor)
+            finally:
+                os.close(transaction_descriptor)
+            os.replace(
+                temporary_name,
+                transaction_name,
+                src_dir_fd=session_descriptor,
+                dst_dir_fd=session_descriptor,
+            )
+            os.fsync(session_descriptor)
+            try:
+                self._write_all(event_descriptor, payload)
+                os.fsync(event_descriptor)
+                self._verify_identity(
+                    os.fstat(session_descriptor),
+                    os.fstat(event_descriptor),
+                )
+                path_stat = os.stat(
+                    "session_events.jsonl",
+                    dir_fd=session_descriptor,
+                    follow_symlinks=False,
+                )
+                expected_file = self._expected_identity[1]
+                if (path_stat.st_dev, path_stat.st_ino) != expected_file:
+                    raise RuntimeError("retained event journal identity changed")
+            except BaseException:
+                os.ftruncate(event_descriptor, original_offset)
+                os.fsync(event_descriptor)
+                raise
+            finally:
+                self._unlink_regular_at(session_descriptor, transaction_name)
+                self._unlink_regular_at(session_descriptor, temporary_name)
+                os.fsync(session_descriptor)
+        finally:
+            if event_descriptor is not None:
+                os.close(event_descriptor)
+            if session_descriptor is not None:
+                os.close(session_descriptor)
+            os.close(root_descriptor)
+
+    def _append_windows(self, event: object) -> None:
+        event_path = (
+            self._event_root / self._session_id / "session_events.jsonl"
+        )
+        handles: list[int] = []
+        try:
+            handles.append(
+                AnchoredStorage.windows_handle(
+                    self._event_root,
+                    directory=True,
+                    create=False,
+                )
+            )
+            handles.append(
+                AnchoredStorage.windows_handle(
+                    event_path.parent,
+                    directory=True,
+                    create=False,
+                )
+            )
+            handles.append(
+                AnchoredStorage.windows_handle(
+                    event_path,
+                    directory=False,
+                    create=False,
+                )
+            )
+            self._verify_identity(
+                event_path.parent.stat(follow_symlinks=False),
+                event_path.stat(follow_symlinks=False),
+            )
+            self._delegate.append(event)
+        finally:
+            for handle in reversed(handles):
+                AnchoredStorage.close_windows_handle(handle)
 
     def append(self, event: object) -> None:
         try:
-            current_identity = _retained_event_journal_identity(
-                self._event_root,
-                self._session_id,
-            )
+            with self._lock:
+                if os.name == "nt":
+                    self._append_windows(event)
+                else:
+                    self._append_posix(event)
         except OSError as exc:
             raise RuntimeError("retained event journal identity changed") from exc
-        if current_identity != self._expected_identity:
-            raise RuntimeError("retained event journal identity changed")
-        self._delegate.append(event)
 
 
 
@@ -1530,7 +1725,7 @@ class SessionService:
         recorded_event_root = metadata.get(_SESSION_EVENT_ROOT_METADATA_KEY)
         recorded_workspace = metadata.get("workspace")
         retained_workspace = (
-            Path(recorded_workspace).expanduser().resolve()
+            Path(recorded_workspace).expanduser().absolute()
             if isinstance(recorded_workspace, str) and recorded_workspace.strip()
             else None
         )
@@ -1563,7 +1758,7 @@ class SessionService:
                 retained_event_root = managed_event_root
         else:
             retained_event_root = (
-                Path(recorded_event_root).expanduser().resolve()
+                Path(recorded_event_root).expanduser().absolute()
                 if isinstance(recorded_event_root, str)
                 and recorded_event_root.strip()
                 else _event_root(self._managed_state_paths)
