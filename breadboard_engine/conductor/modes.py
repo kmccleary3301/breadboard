@@ -67,15 +67,17 @@ def _finalize_model_surface(
             }
         ]
     else:
+        message_field = "input" if "input" in request_body else "messages"
         system_messages = [
             (index, message.get("content"))
             for index, message in enumerate(messages)
-            if isinstance(message, dict) and message.get("role") == "system"
+            if isinstance(message, dict)
+            and message.get("role") in {"system", "developer"}
         ]
         system_sections = [
             {
                 "order": order,
-                "source_ref": f"provider_request.messages[{index}]",
+                "source_ref": f"provider_request.{message_field}[{index}]",
                 "content_sha256": _surface_digest(content),
                 "uncertainty": None,
             }
@@ -286,6 +288,7 @@ def get_model_response(
         pass
 
     send_messages = copy.deepcopy(session_state.provider_messages)
+    requested_model_history = copy.deepcopy(send_messages)
     cache_control = get_prompt_cache_control(
         {
             "provider_tools": getattr(conductor, "_provider_tools_effective", None)
@@ -630,7 +633,7 @@ def get_model_response(
             runtime._convert_messages_to_chat(send_messages, context=runtime_context),
             runtime._convert_tools_to_openai(tools_schema),
             requested_stream=stream_responses,
-            requested_messages=send_messages,
+            requested_messages=requested_model_history,
         )
     try:
         session_state.set_provider_metadata(

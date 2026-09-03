@@ -514,6 +514,33 @@ def test_responses_surface_uses_top_level_instructions() -> None:
     ]
 
 
+def test_responses_surface_treats_developer_input_as_system() -> None:
+    request_body = {
+        "input": [
+            {"role": "developer", "content": "system policy"},
+            {"role": "user", "content": "hello"},
+        ],
+    }
+
+    surface = _finalize_model_surface(
+        {"provider_request": {}},
+        request_body["input"],
+        None,
+        "",
+        request_body,
+    )
+
+    assert surface is not None
+    assert surface["wire_prompt_sections"]["system"] == [
+        {
+            "order": 0,
+            "source_ref": "provider_request.input[0]",
+            "content_sha256": _surface_digest("system policy"),
+            "uncertainty": None,
+        }
+    ]
+
+
 def test_structured_request_projection_redacts_embedded_attachment_bytes() -> None:
     request = {
         "model": "gpt-4o",
