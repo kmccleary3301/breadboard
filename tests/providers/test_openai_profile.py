@@ -119,12 +119,27 @@ def test_profile_request_provenance_separates_requested_default_and_adapter_fact
         }
     ]
 
+    requested_messages = [
+        {
+            "role": "user",
+            "content": [{"type": "image", "source": "canonical-media"}],
+        }
+    ]
     provenance = profile.chat_request_provenance(
-        messages, tools, requested_stream=False
+        messages,
+        tools,
+        requested_stream=False,
+        requested_messages=requested_messages,
     )
 
     assert provenance["messages"]["status"] == "requested"
     assert provenance["messages"]["source"] == "session.model_history"
+    assert provenance["messages"]["requested_digest"] == _surface_digest(
+        requested_messages
+    )
+    assert provenance["messages"]["effective_digest"] == _surface_digest(
+        messages
+    )
     assert provenance["tools"]["status"] == "requested"
     assert provenance["tools"]["source"] == "provider.tool_registry"
     assert provenance["n"] == {
@@ -544,7 +559,7 @@ def test_profile_wire_evidence_records_exact_authoritative_request():
     runtime = _runtime()
     context = ProviderRuntimeContext(None, {}, provider_profile=profile)
 
-    body, headers, endpoint, identity = _provider_wire_evidence(
+    body, headers, endpoint, identity, exact_body = _provider_wire_evidence(
         profile=profile,
         runtime=runtime,
         provider_id="openai",
@@ -571,6 +586,7 @@ def test_profile_wire_evidence_records_exact_authoritative_request():
     assert body["tools"][0]["function"]["strict"] is False
     assert endpoint == f"sha256:{identity['base_url_sha256']}"
     assert identity == profile.identity_dict()
+    assert exact_body == body
     assert headers == {
         "Authorization": "***REDACTED***",
         "X-Request-ID": "***REDACTED***",
@@ -620,7 +636,10 @@ def test_profile_wire_evidence_redacts_echoes_and_raw_endpoint(
 
     assert credential not in repr(evidence[0])
     assert header_value not in repr(evidence[0])
-    assert profile.base_url not in repr(evidence)
+    assert profile.base_url not in repr(evidence[:4])
+    assert credential in repr(evidence[4])
+    assert header_value in repr(evidence[4])
+    assert _surface_digest(evidence[4]) != _surface_digest(evidence[0])
     assert evidence[2] == f"sha256:{profile.identity_dict()['base_url_sha256']}"
 
 
@@ -668,7 +687,7 @@ def test_profile_wire_evidence_matches_media_and_tool_result_projection(tmp_path
         },
     ]
 
-    body, _, _, _ = _provider_wire_evidence(
+    body, _, _, _, _ = _provider_wire_evidence(
         profile=profile,
         runtime=runtime,
         provider_id="openai",
@@ -745,7 +764,7 @@ def test_unbound_openai_surface_digest_matches_runtime_wire_projection(tmp_path)
         }
     ]
 
-    body, _, _, _ = _provider_wire_evidence(
+    body, _, _, _, _ = _provider_wire_evidence(
         profile=None,
         runtime=runtime,
         provider_id="openai",
@@ -809,7 +828,7 @@ def test_unbound_openai_wire_evidence_includes_role_and_provider_options():
         stream=True,
     )
 
-    body, _, _, _ = _provider_wire_evidence(
+    body, _, _, _, _ = _provider_wire_evidence(
         profile=None,
         runtime=runtime,
         provider_id="openrouter",

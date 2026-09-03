@@ -94,6 +94,25 @@ def safe_exception_message(
     return f"{operation} failed ({error.__class__.__name__})"
 
 
+def redact_data_url_payloads(value: Any) -> Any:
+    """Remove embedded binary payloads while retaining data URL media metadata."""
+    if isinstance(value, Mapping):
+        return {key: redact_data_url_payloads(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [redact_data_url_payloads(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(redact_data_url_payloads(item) for item in value)
+    if isinstance(value, str):
+        metadata, separator, _payload = value.partition(",")
+        if (
+            separator
+            and metadata.lower().startswith("data:")
+            and ";base64" in metadata.lower()
+        ):
+            return f"{metadata},[REDACTED]"
+    return value
+
+
 def _fail_closed_short_secret_strings(value: Any) -> Any:
     short_secrets = tuple(
         secret for secret in iter_registered_secret_values() if len(secret) < 3

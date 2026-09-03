@@ -96,7 +96,7 @@ def test_openrouter_responses_wire_surface_digest_uses_responses_converters():
         }
     ]
 
-    body, _, _, _ = _provider_wire_evidence(
+    body, _, _, _, _ = _provider_wire_evidence(
         profile=None,
         runtime=runtime,
         provider_id="openrouter",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import random
@@ -35,6 +36,7 @@ from ..orchestration.coordination import (
     validate_signal_proposal,
 )
 from ..state.session_state import SessionState
+from ..security import redaction
 from ..turns import TurnContext
 from ..utils.assistant_progress import assistant_is_progress_update
 from ..checkpointing.checkpoint_manager import CheckpointManager
@@ -1177,6 +1179,9 @@ def retry_with_fallback(
         return sanitize_provider_result(result)
 
     def _invoke(target_model: str) -> ProviderResult:
+        observer = (runtime_context.extra or {}).get("stream_retry_observer")
+        if callable(observer):
+            observer(target_model, stream_responses)
         if client_lease is None:
             return sanitize_provider_result(
                 runtime.invoke(
@@ -1247,10 +1252,18 @@ def retry_with_fallback(
         _sleep_with_jitter(backoff_seconds)
 
         try:
+            retry_started_at = time.time()
             result = _invoke(model)
+            elapsed = time.time() - retry_started_at
             attempted.append((model, stream_responses, None))
             conductor.route_health.record_success(model)
             conductor._update_health_metadata(session_state)
+            result.metadata = dict(result.metadata or {})
+            result.metadata["_provider_success_metric"] = {
+                "route": model,
+                "stream": stream_responses,
+                "elapsed": elapsed,
+            }
             return _simplify_result(result)
         except ProviderRuntimeError as retry_error:
             recorder = getattr(runtime_context, "exchange_recorder", None)
@@ -1361,6 +1374,7 @@ def retry_with_fallback(
             project_request_body = getattr(
                 fallback_runtime, "project_request_body", None
             )
+            fallback_projection_exact = callable(project_request_body)
             if callable(project_request_body):
                 fallback_request_body = project_request_body(
                     model=fallback_model_resolved,
@@ -1382,6 +1396,23 @@ def retry_with_fallback(
                     "tools": tools_schema,
                     "stream": False,
                 }
+            fallback_request_meta = {
+                "fallback_of": current_route,
+                "request_projection_exact": fallback_projection_exact,
+            }
+            if fallback_projection_exact:
+                fallback_request_meta["request_sha256"] = hashlib.sha256(
+                    json.dumps(
+                        fallback_request_body,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        default=str,
+                    ).encode("utf-8")
+                ).hexdigest()
+            else:
+                fallback_request_meta["uncertainty"] = (
+                    "runtime request projection unavailable"
+                )
             try:
                 if getattr(
                     conductor.logger_v2,
@@ -1425,12 +1456,14 @@ def retry_with_fallback(
                             ),
                             model=fallback_model_resolved,
                             request_headers=headers_snapshot,
-                            request_body=fallback_request_body,
+                            request_body=redaction.redact_data_url_payloads(
+                                fallback_request_body
+                            ),
                             stream=False,
                             tool_count=len(tools_schema or []),
                             endpoint=fallback_client_config.get("base_url"),
                             attempt=len(attempted),
-                            extra={"fallback_of": current_route},
+                            extra=fallback_request_meta,
                         )
             except Exception:
                 pass
@@ -1467,15 +1500,6 @@ def retry_with_fallback(
                         )
                     )
             elapsed = time.time() - start_ts
-            try:
-                conductor.provider_metrics.add_call(
-                    fallback_model_resolved,
-                    stream=False,
-                    elapsed=elapsed,
-                    outcome="success",
-                )
-            except Exception:
-                pass
             session_state.set_provider_metadata(
                 "fallback_route",
                 {
@@ -1488,6 +1512,11 @@ def retry_with_fallback(
             conductor.route_health.record_success(fallback_model)
             conductor._update_health_metadata(session_state)
             result.metadata = dict(result.metadata or {})
+            result.metadata["_provider_success_metric"] = {
+                "route": fallback_model_resolved,
+                "stream": False,
+                "elapsed": elapsed,
+            }
             result.metadata[
                 "provider_exchange_identity"
             ] = fallback_identity.as_dict()

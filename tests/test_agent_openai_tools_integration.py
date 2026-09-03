@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+import hashlib
 import json
 import os
 import sys
@@ -422,6 +423,14 @@ def test_retry_with_fallback_marks_degraded(monkeypatch):
         "tools": [{"type": "function", "name": "run_shell"}],
         "parallel_tool_calls": False,
     }
+    assert structured_requests[-1]["extra"]["request_sha256"] == hashlib.sha256(
+        json.dumps(
+            structured_requests[-1]["request_body"],
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def test_retry_with_fallback_stops_when_recorder_observes_output(monkeypatch):

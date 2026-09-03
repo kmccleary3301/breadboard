@@ -447,6 +447,11 @@ def test_provider_invoker_stream_failure_falls_back_to_retry():
         "route_id": "openai/gpt-5.2",
         "model": "gpt-5.2",
     }
+    fallback_result.metadata["_provider_success_metric"] = {
+        "route": "openai/gpt-5.2",
+        "stream": False,
+        "elapsed": 0.25,
+    }
     runtime = _mk_runtime(should_raise=True)
     retry_with_fallback = Mock(return_value=fallback_result)
     invoker = _make_invoker(retry_with_fallback)
@@ -496,6 +501,11 @@ def test_provider_invoker_stream_failure_falls_back_to_retry():
     ]
     assert exchange["request"]["stream"] is False
     assert len(observations) == 1
+    success_metric = invoker.provider_metrics.add_call.call_args
+    assert success_metric.kwargs["outcome"] == "success"
+    assert success_metric.kwargs["details"] == {
+        "cache_observation": observation
+    }
 
 
 def test_provider_invoker_resets_lifecycle_only_events_before_safe_retry():
@@ -521,6 +531,16 @@ def test_provider_invoker_resets_lifecycle_only_events_before_safe_retry():
     invoker = _make_invoker(Mock(return_value=None))
     invoker.route_health.is_circuit_open.return_value = False
     session_state = _session_state()
+    retry_attempts = []
+    runtime_context = ProviderRuntimeContext(
+        session_state=session_state,
+        agent_config={},
+        extra={
+            "stream_retry_observer": lambda retry_model, retry_stream: (
+                retry_attempts.append((retry_model, retry_stream))
+            )
+        },
+    )
 
     result, used_streaming = invoker.invoke(
         runtime=runtime,
@@ -529,9 +549,7 @@ def test_provider_invoker_resets_lifecycle_only_events_before_safe_retry():
         send_messages=[],
         tools_schema=None,
         stream_responses=True,
-        runtime_context=ProviderRuntimeContext(
-            session_state=session_state, agent_config={}
-        ),
+        runtime_context=runtime_context,
         session_state=session_state,
         markdown_logger=_markdown_logger(),
         turn_index=1,
@@ -541,6 +559,7 @@ def test_provider_invoker_resets_lifecycle_only_events_before_safe_retry():
     assert result.messages[0].content == "ok"
     assert used_streaming is False
     assert streams == [True, False]
+    assert retry_attempts == [("cli_mock/dev", False)]
     exchange = session_state.get_provider_metadata("last_provider_exchange")
     assert [event["kind"] for event in exchange["events"]] == ["response_start"]
     assert exchange["request"]["stream"] is False
@@ -839,6 +858,9 @@ def test_provider_invoker_persistence_failure_does_not_record_cache_observation(
         )
 
     assert session_state.get_provider_metadata("last_cache_observation") is None
+    failure_metric = invoker.provider_metrics.add_call.call_args
+    assert failure_metric.kwargs["outcome"] == "error"
+    assert failure_metric.kwargs["error_reason"] == "provider_contract_error"
 
 
 def test_provider_invoker_requires_exact_correlation():

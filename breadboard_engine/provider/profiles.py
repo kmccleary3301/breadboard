@@ -492,11 +492,15 @@ class OpenAICompletionsProviderProfile:
         tools: list[dict[str, Any]] | None,
         *,
         requested_stream: bool | None = None,
+        requested_messages: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Describe the source of every effective profile request field."""
         request = self.chat_request(messages, tools)
+        source_messages = (
+            messages if requested_messages is None else requested_messages
+        )
         requested_messages_digest = hashlib.sha256(
-            canonical_json(messages).encode("utf-8")
+            canonical_json(source_messages).encode("utf-8")
         ).hexdigest()
         effective_messages_digest = hashlib.sha256(
             canonical_json(request["messages"]).encode("utf-8")

@@ -7,7 +7,11 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from breadboard_engine.conductor.modes import _finalize_model_surface, _surface_digest
+from breadboard_engine.conductor.modes import (
+    _finalize_model_surface,
+    _surface_digest,
+)
+from breadboard_engine.security import redaction
 from breadboard_engine.compilation.system_prompt_compiler import SystemPromptCompiler
 from breadboard_engine.core.core import ToolDefinition, ToolParameter
 from breadboard_engine.provider.contract_messages import ProviderMessage, ProviderResult
@@ -247,12 +251,15 @@ def test_w24_run_set_has_six_sessions_two_modes_and_one_swap() -> None:
     assert len(W24_RUN_SET) == 6
     assert len({case["session_id"] for case in W24_RUN_SET}) == 6
     assert {case["approval_mode"] for case in W24_RUN_SET} == {"yolo", "write"}
-    assert sum(
-        case["provider_before"] != case["provider_after"] for case in W24_RUN_SET
-    ) == 1
-    assert len(W24_RUN_SET) + sum(
-        case["provider_before"] != case["provider_after"] for case in W24_RUN_SET
-    ) == 7
+    assert (
+        sum(case["provider_before"] != case["provider_after"] for case in W24_RUN_SET)
+        == 1
+    )
+    assert (
+        len(W24_RUN_SET)
+        + sum(case["provider_before"] != case["provider_after"] for case in W24_RUN_SET)
+        == 7
+    )
 
 
 @pytest.mark.parametrize(
@@ -335,9 +342,7 @@ def test_records_only_ablation_reconstructs_each_request(
         reconstruct_messages, reconstruct_tools = _fixture_messages(
             route_fixture, reconstruct_compiler
         )
-        reconstructed = OpenAIChatRuntime(
-            _descriptor(profile)
-        ).profile_chat_request(
+        reconstructed = OpenAIChatRuntime(_descriptor(profile)).profile_chat_request(
             profile,
             reconstruct_messages,
             reconstruct_tools,
@@ -356,7 +361,10 @@ def test_records_only_ablation_reconstructs_each_request(
     if provider_swap:
         before_route = run_case["provider_before"]
         after_route = run_case["provider_after"]
-        assert profile_identity_by_route[before_route] != profile_identity_by_route[after_route]
+        assert (
+            profile_identity_by_route[before_route]
+            != profile_identity_by_route[after_route]
+        )
         assert held_out_by_route[before_route] != held_out_by_route[after_route]
 
 
@@ -373,7 +381,9 @@ def _invoker() -> ProviderInvoker:
     )
 
 
-def test_ft03_reconstructs_exact_request_bytes_at_profile_interface(tmp_path: Path) -> None:
+def test_ft03_reconstructs_exact_request_bytes_at_profile_interface(
+    tmp_path: Path,
+) -> None:
     fixture = _load_fixture()
     compiler = SystemPromptCompiler(cache_dir=str(tmp_path / "compiler-cache"))
     messages, raw_tools = _fixture_messages(fixture, compiler)
@@ -381,12 +391,12 @@ def test_ft03_reconstructs_exact_request_bytes_at_profile_interface(tmp_path: Pa
     oracle_path = tmp_path / "held-out-provider-request.json"
     records: list[dict[str, object]] = []
 
-    def record(event_type: str, payload: dict[str, object], turn: int | None = None) -> None:
+    def record(
+        event_type: str, payload: dict[str, object], turn: int | None = None
+    ) -> None:
         records.append({"type": event_type, "payload": payload, "turn": turn})
 
-    state = SessionState(
-        workspace=".", image="ft03", config={}, event_emitter=record
-    )
+    state = SessionState(workspace=".", image="ft03", config={}, event_emitter=record)
     state.set_provider_metadata("session_id", fixture["session"]["session_id"])
     state.set_provider_metadata("input_id", "ft03-input-01")
     state.set_provider_metadata("turn_id", "ft03-turn-01")
@@ -475,9 +485,78 @@ def test_model_surface_digest_matches_profile_wire_projection(tmp_path: Path) ->
     assert surface["provider_request"]["messages_sha256"] == _surface_digest(
         wire["messages"]
     )
-    assert surface["provider_request"]["tools_sha256"] == _surface_digest(
-        wire["tools"]
+    assert surface["provider_request"]["tools_sha256"] == _surface_digest(wire["tools"])
+    assert all(tool["function"]["strict"] is False for tool in wire["tools"])
+
+
+def test_responses_surface_uses_top_level_instructions() -> None:
+    request_body = {
+        "instructions": "system policy",
+        "input": [{"role": "user", "content": "hello"}],
+    }
+
+    surface = _finalize_model_surface(
+        {"provider_request": {}},
+        request_body["input"],
+        None,
+        "",
+        request_body,
     )
-    assert all(
-        tool["function"]["strict"] is False for tool in wire["tools"]
+
+    assert surface is not None
+    assert surface["wire_prompt_sections"]["system"] == [
+        {
+            "order": 0,
+            "source_ref": "provider_request.instructions",
+            "content_sha256": _surface_digest("system policy"),
+            "uncertainty": None,
+        }
+    ]
+
+
+def test_structured_request_projection_redacts_embedded_attachment_bytes() -> None:
+    request = {
+        "model": "gpt-4o",
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_image",
+                        "image_url": "data:image/png;base64,cHJpdmF0ZS1ieXRlcw==",
+                    }
+                ],
+            }
+        ],
+    }
+
+    recorded = redaction.redact_data_url_payloads(request)
+
+    assert recorded["input"][0]["content"][0]["image_url"] == (
+        "data:image/png;base64,[REDACTED]"
     )
+    assert "cHJpdmF0ZS1ieXRlcw==" not in json.dumps(recorded)
+    assert _surface_digest(request) != _surface_digest(recorded)
+
+
+def test_model_surface_withholds_hashes_without_exact_runtime_projection() -> None:
+    surface = _finalize_model_surface(
+        {"prompt_sections": {"system": [], "per_turn": []}, "tools": []},
+        [{"role": "user", "content": "hello"}],
+        None,
+        "",
+        {
+            "model": "claude",
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": False,
+        },
+        request_exact=False,
+    )
+
+    assert surface is not None
+    assert surface["provider_request"] == {
+        "messages_sha256": None,
+        "tools_sha256": None,
+        "request_sha256": None,
+        "uncertainty": "runtime request projection unavailable",
+    }

@@ -201,6 +201,27 @@ class ProviderInvoker:
             )
         def _persist_success(result_value: ProviderResult) -> None:
             nonlocal pending_success_metric
+            result_metadata = (
+                result_value.metadata
+                if isinstance(result_value.metadata, dict)
+                else {}
+            )
+            fallback_metric = result_metadata.pop("_provider_success_metric", None)
+            success_metric = pending_success_metric
+            if success_metric is None and isinstance(fallback_metric, Mapping):
+                metric_model = fallback_metric.get("route")
+                metric_stream = fallback_metric.get("stream")
+                metric_elapsed = fallback_metric.get("elapsed")
+                if (
+                    isinstance(metric_model, str)
+                    and isinstance(metric_stream, bool)
+                    and isinstance(metric_elapsed, (int, float))
+                ):
+                    success_metric = (
+                        metric_model,
+                        metric_stream,
+                        float(metric_elapsed),
+                    )
             try:
                 sanitize_provider_result(result_value)
                 _adopt_result_provider(result_value)
@@ -225,8 +246,8 @@ class ProviderInvoker:
                 )
                 result_value.metadata["provider_exchange"] = exchange
                 cache_observation = _observe_success(result_value)
-                if pending_success_metric is not None:
-                    metric_model, metric_stream, metric_elapsed = pending_success_metric
+                if success_metric is not None:
+                    metric_model, metric_stream, metric_elapsed = success_metric
                     self.provider_metrics.add_call(
                         metric_model,
                         stream=metric_stream,
@@ -236,6 +257,17 @@ class ProviderInvoker:
                     )
                     pending_success_metric = None
             except Exception:
+                if success_metric is not None:
+                    metric_model, metric_stream, metric_elapsed = success_metric
+                    self.provider_metrics.add_call(
+                        metric_model,
+                        stream=metric_stream,
+                        elapsed=metric_elapsed,
+                        outcome="error",
+                        error_reason="provider_contract_error",
+                        html_detected=False,
+                        details=None,
+                    )
                 pending_success_metric = None
                 failure = _contract_failure()
                 _terminalize_error(failure)
@@ -329,6 +361,10 @@ class ProviderInvoker:
             start_time = time.time()
             nonlocal pending_success_metric
             try:
+                if use_stream != stream_responses:
+                    observer = runtime_context.extra.get("stream_retry_observer")
+                    if callable(observer):
+                        observer(target_model, use_stream)
                 if self.client_lease is None or profile_bound:
                     call_result = sanitize_provider_result(
                         runtime.invoke(
