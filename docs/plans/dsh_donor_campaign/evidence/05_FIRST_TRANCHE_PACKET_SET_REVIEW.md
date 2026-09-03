@@ -58,7 +58,7 @@ Escalation verdict: `APPROVED`, confidence 0.99. P0/P1/P2/P3 = 0/0/0/0. Gate G-F
 
 Final escalation review date: 2026-09-03. Exact packet SHA-256 `5f9f42ef7b826518cfa3b25ae6059cf0142eb2352f4f4d47bc03d2bfc9412aae`; pinned heads unchanged.
 
-The independent final read verified FT-01's 2/16 schedule with intra-cell retries and authenticated writable L1/L2 worktree boundaries; terminal GEN-INTERNAL repair/NOT-TAKEN prerequisites and GEN-ACTIVATION; H/I ordering and the seven-piece gate; FT-03's product runtime adapter wrapper, error detail, and client-side capture; and FT-06's executable extractor, generated fixed point, and preserved historical baseline. The source package contains 22 exact evidence copies; the self-contained publication package requires 27 exact inputs, including the donor inventory and exact-artifact bindings for every blocking G-A through G-H review and the executable DAG validator with its machine inputs.
+The independent final read verified FT-01's 2/16 schedule with intra-cell retries and authenticated writable L1/L2 worktree boundaries; terminal GEN-INTERNAL repair/NOT-TAKEN prerequisites and GEN-ACTIVATION; H/I ordering and the seven-piece gate; FT-03's product runtime adapter wrapper, error detail, and client-side capture; and FT-06's executable extractor, generated fixed point, and preserved historical baseline. The source package contains 30 exact evidence copies; the self-contained publication package contains 35 exact inputs, while the checker enforces 37 REQUIRED paths including its two wrappers, the donor inventory, exact-artifact bindings for every blocking G-A through G-H review, and the executable DAG validator with its machine inputs.
 
 Final escalation verdict: `APPROVED`, confidence 0.99. P0/P1/P2/P3 = 0/0/0/0. Gate G-F passes on the exact packet digest above.
 
@@ -80,7 +80,7 @@ Final exact verdict: `APPROVED`, confidence 0.99. P0/P1/P2/P3 = 0/0/0/0. Gate G-
 
 ## Post-contract escalation review — held-turn and restart sequencing closure
 
-Final exact review date: 2026-09-03. Exact specification SHA-256 `a5bf42997d34877ccb55dbc9d587e37b5ef29abbf6ef81a7148b748ee9a0f26d`; exact packet SHA-256 `8c482f0807826d98ca829d6f55b743de37f50e520dcb836c4b8c43f6bc0a4b69`; pinned heads unchanged.
+Final exact review date: 2026-09-03. Exact specification SHA-256 `a518511738097a72a0662f4a703fc6069859fca979f525dedf18f0381e262ef0`; exact packet SHA-256 `8c482f0807826d98ca829d6f55b743de37f50e520dcb836c4b8c43f6bc0a4b69`; pinned heads unchanged.
 
 The independent combined read verified one coherent FT-02 sequence across the implementation specification and packet. Invalid input, mid-turn reconfiguration, and provider swap act while the deterministic provider invocation remains barrier-held and release it only after the action. Restart durability alone releases the barrier, completes the original turn, requires the Session to become quiescent, then applies `set_mode`, restarts through existing owners, and compares durable effective identity.
 
