@@ -1,0 +1,144 @@
+{
+  "artifact": {
+    "bytes_utf8": "alpha\n",
+    "logical_path": "context/alpha.txt",
+    "media_type": "text/plain",
+    "sha256": "b6a98d9ce9a2d9149288fa3df42d377c3e42737afdcdaf714e33c0a100b51060"
+  },
+  "effective_lock": {
+    "generation_id": "ft03-generation-v1",
+    "lock_id": "ft03-lock-v1",
+    "model": "gpt-5.4-mini",
+    "model_role_lock": null,
+    "provider_id": "openai",
+    "runtime_id": "openai_responses"
+  },
+  "expected_provider_request": {
+    "messages": [
+      {
+        "content": [{"type": "text", "text": "[policy]\nFollow tool outputs exactly.\n\n[workspace]\nWorkspace artifact: context/alpha.txt (sha256:b6a98d9ce9a2d9149288fa3df42d377c3e42737afdcdaf714e33c0a100b51060)."}],
+        "role": "system"
+      },
+      {
+        "content": [{"type": "text", "text": "Ready."}],
+        "role": "assistant"
+      },
+      {
+        "content": [{"type": "text", "text": "Inspect context/alpha.txt and report its first line."}],
+        "role": "user"
+      }
+    ],
+    "stream": true,
+    "tools": [
+      {
+        "description": "Read one immutable artifact.",
+        "name": "read_artifact",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "logical_path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "logical_path"
+          ],
+          "type": "object"
+        }
+      }
+    ]
+  },
+  "fixture_id": "ft03-request-v1",
+  "logical_session_events": [
+    {
+      "kind": "session.started",
+      "payload": {
+        "generation_id": "ft03-generation-v1",
+        "session_id": "ft03-session"
+      },
+      "sequence": 1
+    },
+    {
+      "kind": "assistant_message",
+      "payload": {
+        "message": {
+          "content": "Ready.",
+          "role": "assistant"
+        }
+      },
+      "sequence": 2
+    },
+    {
+      "kind": "user_message",
+      "payload": {
+        "message": {
+          "content": "Inspect context/alpha.txt and report its first line.",
+          "role": "user"
+        }
+      },
+      "sequence": 3
+    }
+  ],
+  "prompt_sections": [
+    {
+      "name": "policy",
+      "text": "Follow tool outputs exactly."
+    },
+    {
+      "name": "workspace",
+      "text": "Workspace artifact: context/alpha.txt (sha256:b6a98d9ce9a2d9149288fa3df42d377c3e42737afdcdaf714e33c0a100b51060)."
+    }
+  ],
+  "provider_fields": {
+    "adapter_override": {
+      "max_output_tokens": 64
+    },
+    "defaulted": {
+      "temperature": 0
+    },
+    "requested": {
+      "stream": true
+    }
+  },
+  "runtime_context": {
+    "agent_config": {
+      "active_model_role": null,
+      "model_role_lock": null,
+      "provider_tools": {
+        "openai": {
+          "include_reasoning": false,
+          "responses_stateful": false
+        }
+      }
+    },
+    "extra": {
+      "responses_extra": {
+        "max_output_tokens": 64,
+        "temperature": 0
+      }
+    },
+    "model": "gpt-5.4-mini",
+    "session_provider_metadata": {}
+  },
+  "tool_schemas": [
+    {
+      "function": {
+        "description": "Read one immutable artifact.",
+        "name": "read_artifact",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "logical_path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "logical_path"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "function"
+    }
+  ]
+}
