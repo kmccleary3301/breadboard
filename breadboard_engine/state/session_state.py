@@ -618,6 +618,7 @@ class SessionState:
             node_ids.append(node_id)
         if len(set(event_ids)) != len(event_ids) or len(set(node_ids)) != len(node_ids):
             raise ValueError("ctree_events contains duplicate retained identities")
+        restored.validate_node_ids(node_ids)
         with self._compaction_lock:
             self.ctree_store = restored
             last_node = restored.nodes[-1] if restored.nodes else None

@@ -552,6 +552,14 @@ def test_session_snapshot_rejects_non_exact_ctree_event_reconstruction() -> None
     with pytest.raises(ValueError, match="duplicate retained identities"):
         SessionState("ws", "image", {}).restore_ctree_events(duplicate_identity)
 
+    noncanonical_identity = copy.deepcopy(retained)
+    noncanonical_identity[0]["node_id"] = "fact-1"
+    noncanonical_identity[0]["node"]["id"] = "fact-1"
+    with pytest.raises(ValueError, match="canonical C-Tree identities"):
+        SessionState("ws", "image", {}).restore_ctree_events(
+            noncanonical_identity
+        )
+
 
 def test_session_snapshot_preserves_distinct_provider_context() -> None:
     state = SessionState("ws", "image", {})
