@@ -499,7 +499,7 @@ Reviewed decision artifacts:
 | F `bb-inj5.6` | `evidence/05_FIRST_TRANCHE_PACKET_SET.md` | G-F PASS; post-contract FT-01/FT-03 escalation |
 | G `bb-inj5.7` | `evidence/06_PROMOTED_WORKSTREAM_DAG.md` | G-G PASS; post-contract route escalation; guarded conditional |
 | H `bb-inj5.8` | approved prototype + exact-byte review | G-H PASS; post-contract escalation |
-| I `bb-inj5.9` | committed specification + completion audit | G-I/G-Score PASS; 16 exact package inputs |
+| I `bb-inj5.9` | committed specification + completion audit | G-I/G-Score PASS; 19 exact source-evidence copies and 11 self-contained package inputs |
 
 ## 16. Completion and implementation handoff
 
