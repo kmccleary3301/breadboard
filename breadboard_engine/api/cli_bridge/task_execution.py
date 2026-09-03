@@ -347,17 +347,36 @@ class TaskExecutionOwner:
                 elif event_type is EventType.ASSISTANT_MESSAGE_DELTA:
                     stream_id = message_id or active_replay_stream
                     if stream_id is not None:
-                        fragment = payload.get("delta")
-                        if isinstance(fragment, str):
+                        fragment = next(
+                            (
+                                payload.get(field)
+                                for field in ("delta", "text", "content")
+                                if isinstance(payload.get(field), str)
+                            ),
+                            None,
+                        )
+                        if fragment is not None:
                             replay_assistant_content.setdefault(stream_id, []).append(
                                 fragment
                             )
                 elif event_type is EventType.ASSISTANT_MESSAGE_END:
                     stream_id = message_id or active_replay_stream
                     if stream_id is not None:
+                        final_text = next(
+                            (
+                                payload.get(field)
+                                for field in ("text", "content")
+                                if isinstance(payload.get(field), str)
+                            ),
+                            None,
+                        )
                         observed_payload: dict[str, Any] = {
-                            "text": "".join(
-                                replay_assistant_content.get(stream_id, ())
+                            "text": (
+                                final_text
+                                if final_text is not None
+                                else "".join(
+                                    replay_assistant_content.get(stream_id, ())
+                                )
                             )
                         }
                         observed_payload["message_id"] = (
@@ -388,19 +407,31 @@ class TaskExecutionOwner:
                         active_replay_stream = None
                 elif event_type is EventType.ASSISTANT_MESSAGE:
                     message = payload.get("message")
-                    observed_message_id = message_id or (
-                        message.get("id") if isinstance(message, dict) else None
+                    nested_message_id = (
+                        message.get("message_id") or message.get("id")
+                        if isinstance(message, dict)
+                        else None
                     )
-                    if (
-                        not isinstance(observed_message_id, str)
-                        or observed_message_id not in registered_assistant_ids
-                    ):
+                    observed_message_id = message_id or nested_message_id
+                    if not isinstance(observed_message_id, str) or not observed_message_id:
+                        observed_message_id = identity_digest(
+                            "\0".join(
+                                (
+                                    str(runner.session.session_id),
+                                    str(correlation["turn_id"]),
+                                    f"replay-message:{published_events}",
+                                )
+                            )
+                        )
+                    payload["message_id"] = observed_message_id
+                    payload["trajectory_id"] = str(correlation["turn_id"])
+                    if observed_message_id not in registered_assistant_ids:
                         runner._record_product_observation(
                             "message.assistant",
                             payload,
                             trajectory_id=str(correlation["turn_id"]),
                         )
-                        registered_assistant_ids.add(str(payload["message_id"]))
+                        registered_assistant_ids.add(observed_message_id)
                 await runner.publish_event_async(
                     event_type,
                     payload,

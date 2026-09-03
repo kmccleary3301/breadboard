@@ -396,6 +396,73 @@ async def test_idless_replay_stream_remains_valid_without_product_session(
     assert public_end.payload["trajectory_id"] == "turn-test"
 
 
+@pytest.mark.asyncio
+async def test_direct_replay_assistant_remains_valid_without_product_session(
+    tmp_path,
+) -> None:
+    fixture = tmp_path / "legacy-direct-assistant-replay.jsonl"
+    fixture.write_text(
+        '{"type":"assistant_message","payload":{"text":"hello"}}\n',
+        encoding="utf-8",
+    )
+    runner = _runner("legacy-replay-direct-assistant")
+    await runner.registry.create(runner.session)
+    turn = runner.session.turns_by_id[runner.session.active_turn_id]
+
+    await runner._execute_replay_task(
+        f"replay:{fixture}",
+        input_id=turn.input_id,
+        turn_id=turn.turn_id,
+    )
+
+    public_message = next(
+        event
+        for event in runner.session.event_queue._queue
+        if event is not None and event.type is EventType.ASSISTANT_MESSAGE
+    )
+    assert public_message.payload["message_id"]
+    assert public_message.payload["trajectory_id"] == "turn-test"
+
+
+@pytest.mark.asyncio
+async def test_replay_stream_accumulates_every_accepted_text_field(tmp_path) -> None:
+    fixture = tmp_path / "assistant-text-field-replay.jsonl"
+    fixture.write_text(
+        "\n".join(
+            (
+                '{"type":"assistant.message.start","payload":{"item_id":"text-delta"}}',
+                '{"type":"assistant.message.delta","payload":{"text":"hello"}}',
+                '{"type":"assistant.message.end","payload":{"item_id":"text-delta"}}',
+                '{"type":"assistant.message.start","payload":{"item_id":"content-end"}}',
+                '{"type":"assistant.message.end","payload":{"item_id":"content-end","content":"done"}}',
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    runner, session = _product_runner("replay-assistant-text-fields")
+    await runner.registry.create(runner.session)
+    turn = runner.session.turns_by_id[runner.session.active_turn_id]
+
+    await runner._execute_replay_task(
+        f"replay:{fixture}",
+        input_id=turn.input_id,
+        turn_id=turn.turn_id,
+    )
+
+    assistant_events = [
+        event for event in session.events if event.kind == "assistant_message"
+    ]
+    assert [event.payload["message_id"] for event in assistant_events] == [
+        "text-delta",
+        "content-end",
+    ]
+    assert all(
+        event.payload["metadata"]["has_content"] is True
+        for event in assistant_events
+    )
+
+
 def test_product_observations_pair_canonical_and_message_tool_results() -> None:
     runner, session = _product_runner("paired-observations")
     runner._agent = type(
