@@ -10,7 +10,7 @@ Status: COMPLETE — all nine children and map `bb-inj5` closed; post-contract F
 - TUI evidence baseline: `/Users/kylemccleary/projects/breadboard-tui-dsh-baseline-73d6e6f5` at `73d6e6f55a238fc9ff0486bbcc9ecffe85705715`
 - Donor: first-party `deepseek-ai/deepseek-harness`, tag `dsh-v0.1.0-rc.8`, commit `141eb6fef83422698aef7a981029e843e8161534`; [frozen inventory](evidence/DONOR_ITEMS.yaml)
 - Local tracker: map `bb-inj5`; children `bb-inj5.1` through `bb-inj5.9`
-- Post-contract escalation bindings: packet `f0c65e9324f304bf7724aad4b954f9705265bb522280605fb7b8380a6d2514f4`; promoted DAG `958cb86c7cb13a5c3d0d7fe9f5bb19528d0a202b85434998f33c9d26a0e06cab`; prototype `f69d100faaa4bd63a0e4c88080ccffdd9e003ddb8aba82f3e38723db64dec6d0`; FT-03 fixture `76e69938aa132dd4f5fd2d35f8d966c7209f4231eb1b9d8fbb27be285b882ce3`.
+- Post-contract escalation bindings: packet `890ac7893ae6b3a80eb19dbe221f2e625d735ff6732f1bea1cdeba1f39c24d6b`; promoted DAG `958cb86c7cb13a5c3d0d7fe9f5bb19528d0a202b85434998f33c9d26a0e06cab`; prototype `f69d100faaa4bd63a0e4c88080ccffdd9e003ddb8aba82f3e38723db64dec6d0`; FT-03 fixture `76e69938aa132dd4f5fd2d35f8d966c7209f4231eb1b9d8fbb27be285b882ce3`.
 
 ## Coverage and decisions
 
