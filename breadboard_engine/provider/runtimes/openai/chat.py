@@ -202,6 +202,61 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
             self._convert_tools_to_openai(tools),
         )
 
+    def _unbound_request_options(
+        self,
+        model: str,
+        context: ProviderRuntimeContext,
+    ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+        extra_body: Optional[Dict[str, Any]] = None
+        if (
+            self.descriptor.provider_id == "openrouter"
+            and isinstance(model, str)
+            and model.startswith("openai/gpt-5")
+        ):
+            extra_body = {
+                "provider": {"order": ["openai"], "allow_fallbacks": False}
+            }
+        role_request, role_extra_body = openai_chat_role_options(
+            context,
+            provider_id=self.descriptor.provider_id,
+        )
+        if role_extra_body:
+            extra_body = {**(extra_body or {}), **role_extra_body}
+        return role_request, extra_body
+
+    def project_request_body(
+        self,
+        *,
+        model: str,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]],
+        stream: bool,
+        context: ProviderRuntimeContext,
+    ) -> Dict[str, Any]:
+        """Project the complete secret-free HTTP request body for evidence."""
+        profile = context.provider_profile
+        if profile is not None:
+            return self.profile_chat_request(
+                profile,
+                messages,
+                tools,
+                context=context,
+            )
+        request_messages = self._convert_messages_to_chat(messages, context=context)
+        request_tools = self._convert_tools_to_openai(tools)
+        role_request, extra_body = self._unbound_request_options(model, context)
+        body: Dict[str, Any] = {
+            "model": model,
+            "messages": request_messages,
+            "stream": stream,
+        }
+        body.update(role_request)
+        if request_tools:
+            body["tools"] = request_tools
+        if extra_body:
+            body.update(extra_body)
+        return body
+
     def _invoke(
         self,
         *,
@@ -267,23 +322,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                 details={"code": "profile_context_missing"},
             )
         else:
-            extra_body: Optional[Dict[str, Any]] = None
-            if (
-                self.descriptor.provider_id == "openrouter"
-                and isinstance(model, str)
-                and model.startswith("openai/gpt-5")
-            ):
-                # Force provider routing away from Azure for GPT-5 OpenAI models on OpenRouter,
-                # since some upstreams reject tool outputs.
-                extra_body = {
-                    "provider": {"order": ["openai"], "allow_fallbacks": False}
-                }
-            role_request, role_extra_body = openai_chat_role_options(
-                context,
-                provider_id=self.descriptor.provider_id,
-            )
-            if role_extra_body:
-                extra_body = {**(extra_body or {}), **role_extra_body}
+            role_request, extra_body = self._unbound_request_options(model, context)
 
         response: Any = None
         streamed_reasoning: Dict[int, Dict[str, Any]] = {}

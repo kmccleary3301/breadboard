@@ -84,6 +84,8 @@ def test_receipt_outcomes_and_closure_guards_are_stable(tmp_path: Path) -> None:
 
 def test_retry_fallback_sequence_and_provider_logging(monkeypatch: pytest.MonkeyPatch) -> None:
     events: list[str] = []
+    recorded_requests: list[dict[str, Any]] = []
+    observed_retries: list[tuple[str, bool]] = []
     state = _session()
     state.set_provider_metadata("current_turn_index", 4)
     class Health:
@@ -113,24 +115,91 @@ def test_retry_fallback_sequence_and_provider_logging(monkeypatch: pytest.Monkey
     class Registry:
         def create_runtime(self, descriptor): return fallback
     conductor = SimpleNamespace(
-        logger_v2=SimpleNamespace(run_dir=None), md_writer=SimpleNamespace(system=lambda text: text), route_health=Health(),
-        provider_metrics=Metrics(), _update_health_metadata=lambda *_: None,
-        _get_model_routing_preferences=lambda route: {"fallback_models": ["mock/fallback"]},
-        _select_fallback_route=lambda *args, **kwargs: ("mock/fallback", {"selected": True}),
+        logger_v2=SimpleNamespace(run_dir=None),
+        md_writer=SimpleNamespace(system=lambda text: text),
+        route_health=Health(),
+        provider_metrics=Metrics(),
+        _update_health_metadata=lambda *_: None,
+        _get_model_routing_preferences=lambda route: {
+            "fallback_models": ["mock/fallback"]
+        },
+        _select_fallback_route=lambda *args, **kwargs: (
+            "mock/fallback",
+            {"selected": True},
+        ),
         _log_routing_event=lambda *args, **kwargs: events.append("routing.event"),
+        structured_request_recorder=SimpleNamespace(
+            record_request=lambda *args, **kwargs: recorded_requests.append(kwargs)
+        ),
     )
     logger = _logger()
     monkeypatch.setattr(model_output.time, "sleep", lambda _: events.append("sleep"))
     result = model_output.retry_with_fallback(
-        conductor, Primary(), object(), "mock/primary", [{"role": "user", "content": "hi"}], None,
-        ProviderRuntimeContext(session_state=state, agent_config={}, stream=False), stream_responses=False,
-        session_state=state, markdown_logger=logger, attempted=[], last_error=ProviderRuntimeError("initial"),
-        provider_router_override=Router(), provider_registry_override=Registry(),
+        conductor,
+        Primary(),
+        object(),
+        "mock/primary",
+        [
+            {
+                "role": "user",
+                "content": "data:image/png;base64,private-image-bytes",
+            }
+        ],
+        None,
+        ProviderRuntimeContext(
+            session_state=state,
+            agent_config={},
+            stream=False,
+            extra={
+                "turn_index": 4,
+                "stream_retry_observer": lambda model, stream: (
+                    observed_retries.append((model, stream))
+                ),
+            },
+        ),
+        stream_responses=False,
+        session_state=state,
+        markdown_logger=logger,
+        attempted=[],
+        last_error=ProviderRuntimeError("initial"),
+        provider_router_override=Router(),
+        provider_registry_override=Registry(),
     )
     assert result is not None and result.messages[0].content == "ok"
     assert events[:4] == ["health.failure", "sleep", "primary.invoke", "health.failure"]
+    assert observed_retries == [
+        ("mock/primary", False)
+    ] * events.count("primary.invoke")
     assert "fallback.invoke" in events
     assert state.get_provider_metadata("fallback_route")["to"] == "mock/fallback"
+    assert recorded_requests == [
+        {
+            "provider_id": "mock",
+            "runtime_id": "mock",
+            "model": "mock/fallback",
+            "request_headers": {},
+            "request_body": {
+                "model": "mock/fallback",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "data:image/png;base64,[REDACTED]",
+                    }
+                ],
+                "tools": None,
+                "stream": False,
+            },
+            "stream": False,
+            "tool_count": 0,
+            "endpoint": None,
+            "attempt": 1,
+            "extra": {
+                "fallback_of": "mock/primary",
+                "request_projection_exact": False,
+                "uncertainty": "runtime request projection unavailable",
+            },
+        }
+    ]
 
     provider_message = ProviderMessage(role="assistant", content="hello", tool_calls=[], finish_reason="stop")
     session_events: list[Any] = []
@@ -140,6 +209,66 @@ def test_retry_fallback_sequence_and_provider_logging(monkeypatch: pytest.Monkey
     model_output.log_provider_message(fake_conductor, provider_message, fake_state, markdown, False)
     assert session_events and session_events[0][0] == "transcript"
     assert markdown.events == [("assistant", "hello")]
+
+
+def test_same_route_retry_returns_metric_for_persistence_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Runtime:
+        descriptor = SimpleNamespace(provider_id="mock", runtime_id="mock")
+
+        def invoke(self, **kwargs):
+            return ProviderResult(
+                messages=[
+                    ProviderMessage(
+                        role="assistant",
+                        content="ok",
+                        tool_calls=[],
+                    )
+                ],
+                raw_response={},
+                usage={},
+                metadata={},
+            )
+
+    health_successes: list[str] = []
+    conductor = SimpleNamespace(
+        logger_v2=SimpleNamespace(run_dir=None),
+        md_writer=SimpleNamespace(system=lambda text: text),
+        route_health=SimpleNamespace(
+            record_failure=lambda *_: None,
+            record_success=lambda route: health_successes.append(route),
+        ),
+        _update_health_metadata=lambda *_: None,
+    )
+    state = _session()
+    monkeypatch.setattr(model_output.time, "sleep", lambda _: None)
+
+    result = model_output.retry_with_fallback(
+        conductor,
+        Runtime(),
+        object(),
+        "mock/primary",
+        [{"role": "user", "content": "hi"}],
+        None,
+        ProviderRuntimeContext(
+            session_state=state,
+            agent_config={},
+            stream=False,
+        ),
+        stream_responses=False,
+        session_state=state,
+        markdown_logger=_logger(),
+        attempted=[],
+        last_error=ProviderRuntimeError("initial"),
+    )
+
+    assert result is not None
+    metric = result.metadata["_provider_success_metric"]
+    assert metric["route"] == "mock/primary"
+    assert metric["stream"] is False
+    assert metric["elapsed"] >= 0
+    assert health_successes == ["mock/primary"]
 
 
 def test_replay_mismatch_output_is_recorded_and_raised(monkeypatch: pytest.MonkeyPatch) -> None:

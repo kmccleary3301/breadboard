@@ -307,6 +307,9 @@ class OpenAICompletionsProviderProfile:
     )
     provider_id: str = "openai"
     runtime_id: str = "openai_chat"
+    _sampling_explicit_fields: frozenset[str] = field(
+        init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         model = _text(self.model, "profile.model", max_length=256)
@@ -335,6 +338,14 @@ class OpenAICompletionsProviderProfile:
             raise ProviderContractError(
                 f"profile.max_output_tokens must be {_EXACT_MAX_OUTPUT_TOKENS}"
             )
+        sampling_explicit_fields = (
+            frozenset(str(key) for key in self.sampling)
+            if isinstance(self.sampling, Mapping)
+            else frozenset()
+        )
+        object.__setattr__(
+            self, "_sampling_explicit_fields", sampling_explicit_fields
+        )
         object.__setattr__(
             self, "sampling", OpenAICompletionsSampling.from_value(self.sampling)
         )
@@ -474,6 +485,121 @@ class OpenAICompletionsProviderProfile:
                 request[field_name] = value
         request["enable_thinking"] = False
         return request
+
+    def chat_request_provenance(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        *,
+        requested_stream: bool | None = None,
+        requested_messages: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Describe the source of every effective profile request field."""
+        request = self.chat_request(messages, tools)
+        source_messages = (
+            messages if requested_messages is None else requested_messages
+        )
+        requested_messages_digest = hashlib.sha256(
+            canonical_json(source_messages).encode("utf-8")
+        ).hexdigest()
+        effective_messages_digest = hashlib.sha256(
+            canonical_json(request["messages"]).encode("utf-8")
+        ).hexdigest()
+        requested_tools = tools or []
+        effective_tools = request.get("tools") or []
+        provenance: dict[str, Any] = {
+            "model": {
+                "status": "effective",
+                "source": "lock.provider_profile.model",
+                "effective": self.model,
+                "uncertainty": None,
+            },
+            "messages": {
+                "status": "requested",
+                "source": "session.model_history",
+                "requested_digest": requested_messages_digest,
+                "effective_digest": effective_messages_digest,
+                "uncertainty": None,
+            },
+            "tools": {
+                "status": "requested",
+                "source": "provider.tool_registry",
+                "requested_digest": hashlib.sha256(
+                    canonical_json(requested_tools).encode("utf-8")
+                ).hexdigest(),
+                "effective_digest": hashlib.sha256(
+                    canonical_json(effective_tools).encode("utf-8")
+                ).hexdigest(),
+                "uncertainty": None,
+            },
+            "stream": {
+                "status": "adapter",
+                "source": "openai_chat.profile",
+                "requested": requested_stream,
+                "effective": request["stream"],
+                "uncertainty": None,
+            },
+            "stream_options": {
+                "status": "adapter",
+                "source": "openai_chat.profile",
+                "effective": request["stream_options"],
+                "uncertainty": None,
+            },
+            "max_tokens": {
+                "status": "effective",
+                "source": "lock.provider_profile.max_output_tokens",
+                "effective": request["max_tokens"],
+                "uncertainty": None,
+            },
+            "n": {
+                "status": (
+                    "effective"
+                    if "n" in self._sampling_explicit_fields
+                    else "default"
+                ),
+                "source": (
+                    "lock.provider_profile.sampling.n"
+                    if "n" in self._sampling_explicit_fields
+                    else "OpenAICompletionsSampling.n"
+                ),
+                "effective": request["n"],
+                "uncertainty": None,
+            },
+            "enable_thinking": {
+                "status": "adapter",
+                "source": "openai_chat.profile",
+                "effective": request["enable_thinking"],
+                "uncertainty": None,
+            },
+        }
+        for field_name in (
+            "temperature",
+            "top_p",
+            "seed",
+            "frequency_penalty",
+            "presence_penalty",
+        ):
+            if field_name in request:
+                provenance[field_name] = {
+                    "status": "effective",
+                    "source": f"lock.provider_profile.sampling.{field_name}",
+                    "effective": request[field_name],
+                    "uncertainty": None,
+                }
+        for index, _tool in enumerate(effective_tools):
+            requested_strict = None
+            if index < len(requested_tools):
+                requested_function = requested_tools[index].get("function")
+                if isinstance(requested_function, dict):
+                    requested_strict = requested_function.get("strict")
+            provenance[f"tools[{index}].function.strict"] = {
+                "status": "adapter",
+                "source": "openai_chat.profile",
+                "requested": requested_strict,
+                "effective": False,
+                "uncertainty": None,
+            }
+        return provenance
 
 
 __all__ = [

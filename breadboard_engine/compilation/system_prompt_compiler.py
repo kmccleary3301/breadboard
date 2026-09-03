@@ -547,8 +547,9 @@ class SystemPromptCompiler:
             if "@pack(base).tools_catalog_short" not in per_turn_order and (per_turn_order or not per_turn_defined):
                 per_turn_order.append("@pack(base).tools_catalog_short")
 
-        def _assemble(order: List[str]) -> str:
+        def _assemble(order: List[str]) -> tuple[str, List[Dict[str, Any]]]:
             segments: List[str] = []
+            contributions: List[Dict[str, Any]] = []
             seen_hashes: set[str] = set()
             for token in order:
                 if token == "mode_specific":
@@ -560,16 +561,24 @@ class SystemPromptCompiler:
                 text = (text or "").strip()
                 if not text:
                     continue
+                digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
                 if dedupe_enabled:
-                    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
                     if digest in seen_hashes:
                         continue
                     seen_hashes.add(digest)
+                contributions.append(
+                    {
+                        "order": len(contributions),
+                        "source_ref": token,
+                        "content_sha256": digest,
+                        "uncertainty": None,
+                    }
+                )
                 segments.append(text)
-            return "\n\n".join(segments).strip()
+            return "\n\n".join(segments).strip(), contributions
 
-        system_prompt = _assemble(system_order)
-        per_turn_prompt = _assemble(per_turn_order)
+        system_prompt, system_contributions = _assemble(system_order)
+        per_turn_prompt, per_turn_contributions = _assemble(per_turn_order)
 
         def _append_extra(base: str, blocks: List[str]) -> str:
             pieces: List[str] = []
@@ -582,10 +591,56 @@ class SystemPromptCompiler:
             return "\n\n".join(pieces).strip()
 
         extra_blocks = extra_blocks or {}
+        for slot, target, blocks in (
+            ("system", system_contributions, extra_blocks.get("system")),
+            ("per_turn", per_turn_contributions, extra_blocks.get("per_turn")),
+        ):
+            for index, block in enumerate(blocks or []):
+                text = str(block or "").strip()
+                if text:
+                    target.append(
+                        {
+                            "order": len(target),
+                            "source_ref": f"extra_blocks.{slot}[{index}]",
+                            "content_sha256": hashlib.sha256(
+                                text.encode("utf-8")
+                            ).hexdigest(),
+                            "uncertainty": None,
+                        }
+                    )
         if extra_blocks.get("system"):
             system_prompt = _append_extra(system_prompt, extra_blocks["system"])
         if extra_blocks.get("per_turn"):
             per_turn_prompt = _append_extra(per_turn_prompt, extra_blocks["per_turn"])
+
+        tool_contributions: List[Dict[str, Any]] = []
+        for index, tool in enumerate(tools or []):
+            tool_payload = {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": [
+                    {
+                        "name": parameter.name,
+                        "type": parameter.type,
+                        "description": parameter.description,
+                        "default": parameter.default,
+                    }
+                    for parameter in (tool.parameters or [])
+                ],
+            }
+            tool_digest = hashlib.sha256(
+                json.dumps(tool_payload, sort_keys=True, default=str).encode("utf-8")
+            ).hexdigest()
+            tool_contributions.append(
+                {
+                    "order": index,
+                    "source_ref": f"tool_registry[{index}]",
+                    "name": tool.name,
+                    "schema_sha256": tool_digest,
+                    "uncertainty": None,
+                }
+            )
+
 
         cache_payload = {
             "system_order": system_order,
@@ -602,6 +657,13 @@ class SystemPromptCompiler:
             "system": system_prompt or "",
             "per_turn": per_turn_prompt or "",
             "cache_key": cache_key,
+            "model_surface": {
+                "prompt_sections": {
+                    "system": system_contributions,
+                    "per_turn": per_turn_contributions,
+                },
+                "tools": tool_contributions,
+            },
         }
         if tpsl_meta:
             tpsl_meta["renderer"] = "builtin_v0"

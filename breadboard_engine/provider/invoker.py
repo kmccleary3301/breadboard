@@ -100,6 +100,34 @@ class ProviderInvoker:
         runtime_context.session_id = correlation.session_id
         runtime_context.input_id = correlation.input_id
         runtime_context.turn_id = correlation.turn_id
+        cache_observation_recorded = False
+        pending_success_metric: Optional[Tuple[str, bool, float]] = None
+        runtime_context.extra.pop("cache_observation", None)
+        try:
+            session_state.provider_metadata.pop("last_cache_observation", None)
+        except Exception:
+            pass
+
+        def _observe_success(result_value: ProviderResult) -> Dict[str, Any]:
+            nonlocal cache_observation_recorded
+            if cache_observation_recorded:
+                existing = runtime_context.extra.get("cache_observation")
+                return existing if isinstance(existing, dict) else {}
+            observation = self._cache_observation(
+                result_value,
+                route_id=recorder.provider.route_id or route_id or model,
+                model=recorder.provider.model,
+                context=runtime_context,
+            )
+            runtime_context.extra["cache_observation"] = observation
+            try:
+                session_state.set_provider_metadata(
+                    "last_cache_observation", observation
+                )
+            except Exception:
+                pass
+            cache_observation_recorded = True
+            return observation
 
         def _terminalize_error(exc: ProviderRuntimeError) -> None:
             details = exc.details if isinstance(exc.details, dict) else {}
@@ -171,8 +199,29 @@ class ProviderInvoker:
                 kind="protocol",
                 output_emitted=recorder.output_emitted,
             )
-
         def _persist_success(result_value: ProviderResult) -> None:
+            nonlocal pending_success_metric
+            result_metadata = (
+                result_value.metadata
+                if isinstance(result_value.metadata, dict)
+                else {}
+            )
+            fallback_metric = result_metadata.pop("_provider_success_metric", None)
+            success_metric = pending_success_metric
+            if success_metric is None and isinstance(fallback_metric, Mapping):
+                metric_model = fallback_metric.get("route")
+                metric_stream = fallback_metric.get("stream")
+                metric_elapsed = fallback_metric.get("elapsed")
+                if (
+                    isinstance(metric_model, str)
+                    and isinstance(metric_stream, bool)
+                    and isinstance(metric_elapsed, (int, float))
+                ):
+                    success_metric = (
+                        metric_model,
+                        metric_stream,
+                        float(metric_elapsed),
+                    )
             try:
                 sanitize_provider_result(result_value)
                 _adopt_result_provider(result_value)
@@ -196,7 +245,30 @@ class ProviderInvoker:
                     session_state, recorder, terminal, result=result_value
                 )
                 result_value.metadata["provider_exchange"] = exchange
+                cache_observation = _observe_success(result_value)
+                if success_metric is not None:
+                    metric_model, metric_stream, metric_elapsed = success_metric
+                    self.provider_metrics.add_call(
+                        metric_model,
+                        stream=metric_stream,
+                        elapsed=metric_elapsed,
+                        outcome="success",
+                        details={"cache_observation": cache_observation},
+                    )
+                    pending_success_metric = None
             except Exception:
+                if success_metric is not None:
+                    metric_model, metric_stream, metric_elapsed = success_metric
+                    self.provider_metrics.add_call(
+                        metric_model,
+                        stream=metric_stream,
+                        elapsed=metric_elapsed,
+                        outcome="error",
+                        error_reason="provider_contract_error",
+                        html_detected=False,
+                        details=None,
+                    )
+                pending_success_metric = None
                 failure = _contract_failure()
                 _terminalize_error(failure)
                 raise failure from None
@@ -287,7 +359,12 @@ class ProviderInvoker:
 
         def _call_runtime(target_model: str, use_stream: bool) -> ProviderResult:
             start_time = time.time()
+            nonlocal pending_success_metric
             try:
+                if use_stream != stream_responses:
+                    observer = runtime_context.extra.get("stream_retry_observer")
+                    if callable(observer):
+                        observer(target_model, use_stream)
                 if self.client_lease is None or profile_bound:
                     call_result = sanitize_provider_result(
                         runtime.invoke(
@@ -315,12 +392,7 @@ class ProviderInvoker:
                             )
                         )
                 elapsed = time.time() - start_time
-                self.provider_metrics.add_call(
-                    target_model,
-                    stream=use_stream,
-                    elapsed=elapsed,
-                    outcome="success",
-                )
+                pending_success_metric = (target_model, use_stream, elapsed)
                 self.set_last_latency(elapsed)
                 self.set_html_detected(False)
                 return call_result
@@ -738,6 +810,61 @@ class ProviderInvoker:
                 "provider result contains conflicting finish reasons"
             )
         return canonical_reasons[0]
+
+    @staticmethod
+    def _cache_observation(
+        result: ProviderResult,
+        *,
+        route_id: str,
+        model: str,
+        context: ProviderRuntimeContext,
+    ) -> Dict[str, Any]:
+        usage = result.usage if isinstance(result.usage, Mapping) else {}
+
+        def _token(*names: str) -> int | None:
+            for name in names:
+                value = usage.get(name)
+                if type(value) is int and value >= 0:
+                    return value
+            return None
+
+        def _nested_token(*names: str) -> int | None:
+            for name in names:
+                details = usage.get(name)
+                if isinstance(details, Mapping):
+                    value = details.get("cached_tokens")
+                    if type(value) is int and value >= 0:
+                        return value
+            return None
+
+        prefix_digest = (context.extra or {}).get("cache_prefix_digest")
+        divergence_reason = (context.extra or {}).get("cache_divergence_reason")
+        if not isinstance(prefix_digest, str):
+            prefix_digest = None
+        if not isinstance(divergence_reason, str):
+            divergence_reason = None
+        cache_read_tokens = _token(
+            "cache_read_tokens", "cache_read", "cache_read_input_tokens"
+        )
+        if cache_read_tokens is None:
+            cache_read_tokens = _nested_token(
+                "prompt_tokens_details", "input_tokens_details"
+            )
+        cache_write_tokens = _token(
+            "cache_write_tokens", "cache_write", "cache_creation_input_tokens"
+        )
+
+        return {
+            "observed": cache_read_tokens is not None or cache_write_tokens is not None,
+            "prefix_digest": prefix_digest,
+            "provider_tokens": {
+                "cache_read": cache_read_tokens,
+                "cache_write": cache_write_tokens,
+            },
+            "route_id": route_id,
+            "model": model,
+            "divergence_reason": divergence_reason,
+        }
 
     @staticmethod
     def _raw_finish(result: ProviderResult) -> Optional[str]:

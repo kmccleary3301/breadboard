@@ -9,7 +9,9 @@ from breadboard.product.runtime.artifacts import ArtifactStore
 from breadboard_engine.agent_llm_openai import OpenAIConductor
 from breadboard_engine.conductor.modes import (
     _bind_episode_provider_profile,
+    _finalize_model_surface,
     _provider_wire_evidence,
+    _surface_digest,
 )
 from breadboard_engine.provider import sdk_bindings
 from breadboard_engine.provider.runtimes.openai import chat as chat_module
@@ -101,6 +103,76 @@ def test_profile_builds_exact_qwen_stream_request_without_fallback():
     }
     assert "store" not in request
     assert "provider" not in request
+
+def test_profile_request_provenance_separates_requested_default_and_adapter_facts():
+    profile = _profile()
+    messages = [{"role": "system", "content": "sys"}]
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "read",
+                "description": "Read a file",
+                "parameters": {"type": "object"},
+                "strict": True,
+            },
+        }
+    ]
+
+    requested_messages = [
+        {
+            "role": "user",
+            "content": [{"type": "image", "source": "canonical-media"}],
+        }
+    ]
+    provenance = profile.chat_request_provenance(
+        messages,
+        tools,
+        requested_stream=False,
+        requested_messages=requested_messages,
+    )
+
+    assert provenance["messages"]["status"] == "requested"
+    assert provenance["messages"]["source"] == "session.model_history"
+    assert provenance["messages"]["requested_digest"] == _surface_digest(
+        requested_messages
+    )
+    assert provenance["messages"]["effective_digest"] == _surface_digest(
+        messages
+    )
+    assert provenance["tools"]["status"] == "requested"
+    assert provenance["tools"]["source"] == "provider.tool_registry"
+    assert provenance["n"] == {
+        "status": "default",
+        "source": "OpenAICompletionsSampling.n",
+        "effective": 1,
+        "uncertainty": None,
+    }
+    assert provenance["stream"] == {
+        "status": "adapter",
+        "source": "openai_chat.profile",
+        "requested": False,
+        "effective": True,
+        "uncertainty": None,
+    }
+    assert provenance["tools[0].function.strict"]["status"] == "adapter"
+    assert provenance["tools[0].function.strict"]["effective"] is False
+    assert all(item.get("uncertainty") is None for item in provenance.values())
+
+
+def test_profile_provenance_distinguishes_explicit_n_from_default():
+    profile = _profile(sampling={"n": 1})
+
+    provenance = profile.chat_request_provenance([], None)
+
+    assert provenance["n"] == {
+        "status": "effective",
+        "source": "lock.provider_profile.sampling.n",
+        "effective": 1,
+        "uncertainty": None,
+    }
+
+
 
 
 def test_profile_projects_exact_sdk_stream_request(monkeypatch):
@@ -487,7 +559,7 @@ def test_profile_wire_evidence_records_exact_authoritative_request():
     runtime = _runtime()
     context = ProviderRuntimeContext(None, {}, provider_profile=profile)
 
-    body, headers, endpoint, identity = _provider_wire_evidence(
+    body, headers, endpoint, identity, exact_body = _provider_wire_evidence(
         profile=profile,
         runtime=runtime,
         provider_id="openai",
@@ -514,6 +586,7 @@ def test_profile_wire_evidence_records_exact_authoritative_request():
     assert body["tools"][0]["function"]["strict"] is False
     assert endpoint == f"sha256:{identity['base_url_sha256']}"
     assert identity == profile.identity_dict()
+    assert exact_body == body
     assert headers == {
         "Authorization": "***REDACTED***",
         "X-Request-ID": "***REDACTED***",
@@ -563,7 +636,10 @@ def test_profile_wire_evidence_redacts_echoes_and_raw_endpoint(
 
     assert credential not in repr(evidence[0])
     assert header_value not in repr(evidence[0])
-    assert profile.base_url not in repr(evidence)
+    assert profile.base_url not in repr(evidence[:4])
+    assert credential in repr(evidence[4])
+    assert header_value in repr(evidence[4])
+    assert _surface_digest(evidence[4]) != _surface_digest(evidence[0])
     assert evidence[2] == f"sha256:{profile.identity_dict()['base_url_sha256']}"
 
 
@@ -611,7 +687,7 @@ def test_profile_wire_evidence_matches_media_and_tool_result_projection(tmp_path
         },
     ]
 
-    body, _, _, _ = _provider_wire_evidence(
+    body, _, _, _, _ = _provider_wire_evidence(
         profile=profile,
         runtime=runtime,
         provider_id="openai",
@@ -638,7 +714,143 @@ def test_profile_wire_evidence_matches_media_and_tool_result_projection(tmp_path
     }
 
 
+
+
+def test_unbound_openai_surface_digest_matches_runtime_wire_projection(tmp_path):
+    workspace = tmp_path / "workspace"
+    artifact = ArtifactStore(workspace / ".breadboard" / "artifacts").put(
+        b"\x89PNG\r\n\x1a\nunbound-surface",
+        media_type="image/png",
+    )
+    uri = f"attachment://{artifact.digest}"
+    metadata = {"attachment_capabilities": {uri: artifact.as_dict()}}
+    session_state = types.SimpleNamespace(
+        workspace=str(workspace),
+        get_provider_metadata=lambda key, default=None: metadata.get(key, default),
+    )
+    context = ProviderRuntimeContext(session_state, {}, provider_profile=None)
+    runtime = _runtime()
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "media",
+                    "kind": "image",
+                    "uri": uri,
+                    "mime": "image/png",
+                }
+            ],
+        },
+        {
+            "role": "tool_result",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "call_id": "call_1",
+                    "content": {"status": "ok"},
+                }
+            ],
+        },
+    ]
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "read",
+                "description": "Read a file",
+                "parameters": {"type": "object"},
+            },
+        }
+    ]
+
+    body, _, _, _, _ = _provider_wire_evidence(
+        profile=None,
+        runtime=runtime,
+        provider_id="openai",
+        model=MODEL,
+        messages=messages,
+        tools=tools,
+        stream=True,
+        client_config={},
+        context=context,
+    )
+    surface = _finalize_model_surface(
+        {"prompt_sections": {}, "tools": []},
+        body["messages"],
+        body["tools"],
+        "",
+        body,
+    )
+
+    assert body["messages"] == runtime._convert_messages_to_chat(
+        messages, context=context
+    )
+    assert body["tools"] == runtime._convert_tools_to_openai(tools)
+    assert surface is not None
+    assert surface["provider_request"] == {
+        "messages_sha256": _surface_digest(body["messages"]),
+        "tools_sha256": _surface_digest(body["tools"]),
+        "request_sha256": _surface_digest(body),
+    }
+def test_unbound_openai_wire_evidence_includes_role_and_provider_options():
+    runtime = OpenAIChatRuntime(
+        ProviderDescriptor(
+            provider_id="openrouter",
+            runtime_id="openai_chat",
+            default_api_variant="chat",
+            supports_native_tools=True,
+            supports_streaming=True,
+            supports_reasoning_traces=True,
+            supports_cache_control=False,
+            tool_schema_format="openai",
+            base_url="https://openrouter.ai/api/v1",
+            api_key_env=None,
+            default_headers={},
+        )
+    )
+    context = ProviderRuntimeContext(
+        types.SimpleNamespace(set_provider_metadata=lambda *_args: None),
+        {
+            "active_model_role": "worker",
+            "model_role_lock": {
+                "roles": {
+                    "worker": {
+                        "generation": {
+                            "temperature": 0.25,
+                            "max_output_tokens": 321,
+                        },
+                        "reasoning": {"mode": "disabled"},
+                    }
+                }
+            },
+        },
+        stream=True,
+    )
+
+    body, _, _, _, _ = _provider_wire_evidence(
+        profile=None,
+        runtime=runtime,
+        provider_id="openrouter",
+        model="openai/gpt-5-mini",
+        messages=[{"role": "user", "content": "hello"}],
+        tools=None,
+        stream=True,
+        client_config={},
+        context=context,
+    )
+
+    assert body["temperature"] == 0.25
+    assert body["max_completion_tokens"] == 321
+    assert body["reasoning"] == {"effort": "none"}
+    assert body["provider"] == {
+        "order": ["openai"],
+        "allow_fallbacks": False,
+    }
+
+
 def test_rejected_episode_does_not_retain_provider_profile():
+
     conductor_class = OpenAIConductor.__ray_metadata__.modified_class
     conductor = object.__new__(conductor_class)
     conductor._active_session_state = None

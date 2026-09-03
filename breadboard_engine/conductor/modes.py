@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..core.core import ToolDefinition
@@ -27,6 +29,101 @@ from ..surface import record_tool_schema_snapshot
 from ..security import redaction
 
 
+def _surface_digest(value: Any) -> str:
+    if isinstance(value, str):
+        payload = value.encode("utf-8")
+    else:
+        payload = json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+
+
+def _finalize_model_surface(
+    compiled_surface: Any,
+    messages: List[Dict[str, Any]],
+    tools_schema: Optional[List[Dict[str, Any]]],
+    per_turn_text: str,
+    request_body: Dict[str, Any],
+    *,
+    request_exact: bool = True,
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(compiled_surface, dict):
+        return None
+    surface = copy.deepcopy(compiled_surface)
+    instructions = request_body.get("instructions")
+    if isinstance(instructions, str):
+        system_sections = [
+            {
+                "order": 0,
+                "source_ref": "provider_request.instructions",
+                "content_sha256": _surface_digest(instructions),
+                "uncertainty": None,
+            }
+        ]
+    else:
+        message_field = "input" if "input" in request_body else "messages"
+        system_messages = [
+            (index, message.get("content"))
+            for index, message in enumerate(messages)
+            if isinstance(message, dict)
+            and message.get("role") in {"system", "developer"}
+        ]
+        system_sections = [
+            {
+                "order": order,
+                "source_ref": f"provider_request.{message_field}[{index}]",
+                "content_sha256": _surface_digest(content),
+                "uncertainty": None,
+            }
+            for order, (index, content) in enumerate(system_messages)
+        ]
+    surface["wire_prompt_sections"] = {
+        "system": system_sections,
+        "per_turn": (
+            [
+                {
+                    "order": 0,
+                    "source_ref": "provider_request.per_turn",
+                    "content_sha256": _surface_digest(per_turn_text),
+                    "uncertainty": None,
+                }
+            ]
+            if per_turn_text
+            else []
+        ),
+    }
+    surface["wire_tools"] = [
+        {
+            "order": index,
+            "source_ref": f"provider_request.tools[{index}]",
+            "schema_sha256": _surface_digest(tool),
+            "uncertainty": None,
+        }
+        for index, tool in enumerate(tools_schema or [])
+    ]
+    surface["provider_request"] = (
+        {
+            "messages_sha256": _surface_digest(messages),
+            "tools_sha256": _surface_digest(tools_schema),
+            "request_sha256": _surface_digest(request_body),
+        }
+        if request_exact
+        else {
+            "messages_sha256": None,
+            "tools_sha256": None,
+            "request_sha256": None,
+            "uncertainty": "runtime request projection unavailable",
+        }
+    )
+    return surface
+
+
 def _record_raw_provider_response(
     conductor: Any,
     result: ProviderResult,
@@ -44,6 +141,7 @@ def _record_raw_provider_response(
             )
     except Exception:
         pass
+
 
 def _bind_episode_provider_profile(
     episode: Any,
@@ -81,7 +179,13 @@ def _provider_wire_evidence(
     stream: bool,
     client_config: Dict[str, Any],
     context: ProviderRuntimeContext,
-) -> Tuple[Dict[str, Any], Dict[str, Any], Optional[str], Optional[Dict[str, Any]]]:
+) -> Tuple[
+    Dict[str, Any],
+    Dict[str, Any],
+    Optional[str],
+    Optional[Dict[str, Any]],
+    Dict[str, Any],
+]:
     if profile is not None:
         profile_identity = profile.identity_dict()
         request_headers = {"Authorization": redaction.REDACTED}
@@ -92,14 +196,15 @@ def _provider_wire_evidence(
             profile.scoped_credential,
             *profile.caller_headers.values(),
         ]
+        exact_request_body = runtime.profile_chat_request(
+            profile,
+            messages,
+            tools,
+            context=context,
+        )
         with redaction.secret_value_scope(*secret_values, allow_short=True):
             request_body, _redaction_problems = redaction.scrub_structure(
-                runtime.profile_chat_request(
-                    profile,
-                    messages,
-                    tools,
-                    context=context,
-                ),
+                exact_request_body,
                 path="$.provider_request",
             )
         if not isinstance(request_body, dict):
@@ -111,7 +216,26 @@ def _provider_wire_evidence(
             request_headers,
             f"sha256:{profile_identity['base_url_sha256']}",
             profile_identity,
+            exact_request_body,
         )
+    project_request_body = getattr(runtime, "project_request_body", None)
+    if callable(project_request_body):
+        request_body = project_request_body(
+            model=model,
+            messages=messages,
+            tools=tools,
+            stream=stream,
+            context=context,
+        )
+        if not isinstance(request_body, dict):
+            raise ProviderContractError("runtime request evidence must be an object")
+    else:
+        request_body = {
+            "model": model,
+            "messages": messages,
+            "tools": tools,
+            "stream": stream,
+        }
     try:
         request_headers = dict(client_config.get("default_headers") or {})
         if provider_id == "openrouter":
@@ -122,17 +246,12 @@ def _provider_wire_evidence(
         request_headers = {}
         endpoint = None
     return (
-        {
-            "model": model,
-            "messages": messages,
-            "tools": tools,
-            "stream": stream,
-        },
+        request_body,
         request_headers,
         endpoint,
         None,
+        request_body,
     )
-
 
 
 def get_model_response(
@@ -169,14 +288,22 @@ def get_model_response(
         pass
 
     send_messages = copy.deepcopy(session_state.provider_messages)
-    cache_control = get_prompt_cache_control({"provider_tools": getattr(conductor, "_provider_tools_effective", None) or (conductor.config.get("provider_tools") or {})})
+    requested_model_history = copy.deepcopy(send_messages)
+    cache_control = get_prompt_cache_control(
+        {
+            "provider_tools": getattr(conductor, "_provider_tools_effective", None)
+            or (conductor.config.get("provider_tools") or {})
+        }
+    )
     if cache_control:
         apply_cache_control_to_initial_user_prompt(send_messages, cache_control)
         # Anthropic only allows up to 4 cache_control blocks per request.
         # Applying cache_control to every tool_use/tool_result block can exceed this and cause a hard 400.
         route_hint_for_cache = getattr(conductor, "_current_route_id", None) or model
         try:
-            provider_id_for_cache = provider_router.parse_model_id(route_hint_for_cache)[0]
+            provider_id_for_cache = provider_router.parse_model_id(
+                route_hint_for_cache
+            )[0]
         except Exception:
             provider_id_for_cache = None
         if provider_id_for_cache != "anthropic":
@@ -186,7 +313,8 @@ def get_model_response(
     try:
         descriptor = getattr(runtime, "descriptor", None)
         if (
-            getattr(descriptor, "runtime_id", None) == "openai_responses" or getattr(descriptor, "default_api_variant", None) == "responses"
+            getattr(descriptor, "runtime_id", None) == "openai_responses"
+            or getattr(descriptor, "default_api_variant", None) == "responses"
         ):
             stub_text = "Continue."
     except Exception:
@@ -215,31 +343,47 @@ def get_model_response(
 
     try:
         if per_turn_written_text and conductor.logger_v2.run_dir:
-            rel = conductor.prompt_logger.save_per_turn(turn_index, per_turn_written_text)
-            conductor._register_prompt_hash("per_turn", per_turn_written_text, turn_index)
+            rel = conductor.prompt_logger.save_per_turn(
+                turn_index, per_turn_written_text
+            )
+            conductor._register_prompt_hash(
+                "per_turn", per_turn_written_text, turn_index
+            )
             conductor.logger_v2.append_text(
                 "conversation/conversation.md",
-                conductor.md_writer.tools_available_temp("Per-turn tools prompt appended.", rel),
+                conductor.md_writer.tools_available_temp(
+                    "Per-turn tools prompt appended.", rel
+                ),
             )
     except Exception:
         pass
 
-    session_state.add_transcript_entry({
-        "tools_context": {
-            "available_tools": conductor._dump_tool_defs(tool_defs),
-            "compiled_tools_prompt": local_tools_prompt,
+    session_state.add_transcript_entry(
+        {
+            "tools_context": {
+                "available_tools": conductor._dump_tool_defs(tool_defs),
+                "compiled_tools_prompt": local_tools_prompt,
+            }
         }
-    })
+    )
 
     try:
-        context_payload = conductor.context_guard.maybe_warn(session_state, send_messages)
+        context_payload = conductor.context_guard.maybe_warn(
+            session_state, send_messages
+        )
         if context_payload:
-            session_state.set_provider_metadata("context_window_warning", context_payload)
+            session_state.set_provider_metadata(
+                "context_window_warning", context_payload
+            )
     except Exception:
         pass
 
-    provider_tools_cfg = getattr(conductor, "_provider_tools_effective", None) or dict((conductor.config.get("provider_tools") or {}))
-    phase16_tool_choice = session_state.get_provider_metadata("phase16_provider_tool_choice")
+    provider_tools_cfg = getattr(conductor, "_provider_tools_effective", None) or dict(
+        (conductor.config.get("provider_tools") or {})
+    )
+    phase16_tool_choice = session_state.get_provider_metadata(
+        "phase16_provider_tool_choice"
+    )
     if phase16_tool_choice is not None:
         provider_tools_cfg = dict(provider_tools_cfg)
         provider_tools_cfg["tool_choice"] = phase16_tool_choice
@@ -247,7 +391,9 @@ def get_model_response(
     effective_config["provider_tools"] = provider_tools_cfg
     conductor._provider_tools_effective = provider_tools_cfg
     route_hint = getattr(conductor, "_current_route_id", None) or model
-    use_native_tools = provider_router.should_use_native_tools(route_hint, effective_config)
+    use_native_tools = provider_router.should_use_native_tools(
+        route_hint, effective_config
+    )
     if use_native_tools and not getattr(conductor, "current_native_tools", None):
         try:
             conductor._setup_native_tools(route_hint, True)
@@ -262,7 +408,8 @@ def get_model_response(
             native_tools = getattr(conductor, "current_native_tools", [])
             if allowed_tool_names:
                 native_tools = [
-                    tool for tool in native_tools
+                    tool
+                    for tool in native_tools
                     if getattr(tool, "name", None) in allowed_tool_names
                 ]
             hide_invalid = True
@@ -273,15 +420,22 @@ def get_model_response(
             except Exception:
                 hide_invalid = True
             if hide_invalid:
-                native_tools = [tool for tool in native_tools if getattr(tool, "name", None) != "invalid"]
+                native_tools = [
+                    tool
+                    for tool in native_tools
+                    if getattr(tool, "name", None) != "invalid"
+                ]
             if native_tools:
                 tools_schema = (
-                    provider_adapter_manager.translate_tools_to_native_schema(native_tools, provider_id
+                    provider_adapter_manager.translate_tools_to_native_schema(
+                        native_tools, provider_id
                     )
                 )
                 try:
                     if conductor.logger_v2.run_dir and tools_schema:
-                        conductor.provider_logger.save_tools_provided(turn_index, tools_schema)
+                        conductor.provider_logger.save_tools_provided(
+                            turn_index, tools_schema
+                        )
                         ids = []
                         try:
                             for it in tools_schema:
@@ -310,12 +464,14 @@ def get_model_response(
         try:
             source_defs = getattr(conductor, "yaml_tools", None) or []
             native_tools, text_based_tools = (
-                provider_adapter_manager.filter_tools_for_provider(source_defs, provider_id
+                provider_adapter_manager.filter_tools_for_provider(
+                    source_defs, provider_id
                 )
             )
             if allowed_tool_names:
                 native_tools = [
-                    tool for tool in native_tools
+                    tool
+                    for tool in native_tools
                     if getattr(tool, "name", None) in allowed_tool_names
                 ]
             hide_invalid = True
@@ -326,10 +482,15 @@ def get_model_response(
             except Exception:
                 hide_invalid = True
             if hide_invalid:
-                native_tools = [tool for tool in native_tools if getattr(tool, "name", None) != "invalid"]
+                native_tools = [
+                    tool
+                    for tool in native_tools
+                    if getattr(tool, "name", None) != "invalid"
+                ]
             if native_tools:
                 tools_schema = (
-                    provider_adapter_manager.translate_tools_to_native_schema(native_tools, provider_id
+                    provider_adapter_manager.translate_tools_to_native_schema(
+                        native_tools, provider_id
                     )
                 )
                 conductor.current_native_tools = native_tools
@@ -338,12 +499,16 @@ def get_model_response(
             tools_schema = None
     if tools_schema:
         try:
-            record_tool_schema_snapshot(session_state, tools_schema, turn_index=turn_index)
+            record_tool_schema_snapshot(
+                session_state, tools_schema, turn_index=turn_index
+            )
         except Exception:
             pass
     if provider_id == "anthropic":
         try:
-            anth_cfg = (conductor.config.get("provider_tools") or {}).get("anthropic", {}) or {}
+            anth_cfg = (conductor.config.get("provider_tools") or {}).get(
+                "anthropic", {}
+            ) or {}
             if isinstance(anth_cfg, dict) and anth_cfg.get("stream") is True:
                 stream_responses = True
         except Exception:
@@ -377,7 +542,9 @@ def get_model_response(
     }
     if stream_policy is not None:
         runtime_extra["stream_policy"] = stream_policy
-    phase16_parallel_tool_calls = session_state.get_provider_metadata("phase16_parallel_tool_calls")
+    phase16_parallel_tool_calls = session_state.get_provider_metadata(
+        "phase16_parallel_tool_calls"
+    )
     phase16_phase_label = session_state.get_provider_metadata("phase16_phase_label")
     responses_extra: Dict[str, Any] = {}
     if phase16_parallel_tool_calls is not None:
@@ -403,6 +570,7 @@ def get_model_response(
         request_headers,
         request_endpoint,
         profile_identity,
+        exact_wire_request_body,
     ) = _provider_wire_evidence(
         profile=provider_profile,
         runtime=runtime,
@@ -414,9 +582,66 @@ def get_model_response(
         client_config=client_config,
         context=runtime_context,
     )
+    wire_projection_exact = provider_profile is not None or callable(
+        getattr(runtime, "project_request_body", None)
+    )
     try:
-        session_state.set_provider_metadata("current_stream_requested", stream_responses)
-        session_state.set_provider_metadata("current_stream_effective", effective_stream_responses)
+        exact_wire_messages = exact_wire_request_body.get(
+            "messages", exact_wire_request_body.get("input")
+        )
+        if not isinstance(exact_wire_messages, list):
+            raise ProviderContractError("provider wire request is missing messages")
+        exact_wire_tools = exact_wire_request_body.get("tools")
+        if exact_wire_tools is not None and not isinstance(exact_wire_tools, list):
+            raise ProviderContractError("provider wire request has invalid tools")
+        compiled_surface = session_state.get_provider_metadata("compiled_model_surface")
+        final_surface = _finalize_model_surface(
+            compiled_surface,
+            exact_wire_messages,
+            exact_wire_tools,
+            per_turn_written_text,
+            exact_wire_request_body,
+            request_exact=wire_projection_exact,
+        )
+        if final_surface is not None:
+            session_state.set_provider_metadata("current_model_surface", final_surface)
+        instructions = exact_wire_request_body.get("instructions")
+        final_system_text = (
+            instructions
+            if isinstance(instructions, str)
+            else next(
+                (
+                    message.get("content")
+                    for message in exact_wire_messages
+                    if isinstance(message, dict)
+                    and message.get("role") == "system"
+                    and isinstance(message.get("content"), str)
+                ),
+                None,
+            )
+        )
+        conductor._register_prompt_hash("system", final_system_text)
+        if per_turn_written_text:
+            conductor._register_prompt_hash(
+                "per_turn", per_turn_written_text, turn_index
+            )
+    except Exception:
+        pass
+    request_provenance: Optional[Dict[str, Any]] = None
+    if provider_profile is not None:
+        request_provenance = provider_profile.chat_request_provenance(
+            runtime._convert_messages_to_chat(send_messages, context=runtime_context),
+            runtime._convert_tools_to_openai(tools_schema),
+            requested_stream=stream_responses,
+            requested_messages=requested_model_history,
+        )
+    try:
+        session_state.set_provider_metadata(
+            "current_stream_requested", stream_responses
+        )
+        session_state.set_provider_metadata(
+            "current_stream_effective", effective_stream_responses
+        )
     except Exception:
         pass
 
@@ -439,16 +664,52 @@ def get_model_response(
     except Exception:
         pass
 
-
-
     try:
         if getattr(conductor.logger_v2, "include_structured_requests", True):
             extra_meta: Dict[str, Any] = {
                 "message_count": len(send_messages or []),
                 "has_tools": bool(tools_schema),
             }
+            extra_meta["request_projection_exact"] = wire_projection_exact
+            if wire_projection_exact:
+                extra_meta["request_sha256"] = _surface_digest(
+                    exact_wire_request_body
+                )
             if profile_identity is not None:
                 extra_meta["provider_profile_identity"] = profile_identity
+            if request_provenance is not None:
+                extra_meta["request_provenance"] = request_provenance
+            model_surface = session_state.get_provider_metadata("current_model_surface")
+            if isinstance(model_surface, dict):
+                extra_meta["model_surface"] = model_surface
+            model_history = getattr(session_state, "provider_messages", []) or []
+            extra_meta["model_history"] = [
+                {
+                    "order": index,
+                    "source_ref": f"session.provider_messages[{index}]",
+                    "role": message.get("role"),
+                    "uncertainty": None,
+                }
+                for index, message in enumerate(model_history)
+                if isinstance(message, dict)
+            ]
+            attachment_capabilities = session_state.get_provider_metadata(
+                "attachment_capabilities", {}
+            )
+            if isinstance(attachment_capabilities, dict):
+                extra_meta["resource_refs"] = [
+                    {
+                        "source_ref": uri,
+                        "digest": ref.get("digest"),
+                        "size_bytes": ref.get("size_bytes"),
+                        "media_type": ref.get("media_type"),
+                        "uncertainty": None,
+                    }
+                    for uri, ref in sorted(attachment_capabilities.items())
+                    if isinstance(uri, str)
+                    and isinstance(ref, dict)
+                    and isinstance(ref.get("digest"), str)
+                ]
             if stream_policy:
                 extra_meta["stream_policy"] = {
                     "reason": stream_policy.get("reason"),
@@ -460,7 +721,7 @@ def get_model_response(
                 runtime_id=getattr(runtime.descriptor, "runtime_id", "unknown"),
                 model=model,
                 request_headers=request_headers,
-                request_body=wire_request_body,
+                request_body=redaction.redact_data_url_payloads(wire_request_body),
                 stream=effective_stream_responses,
                 tool_count=len(tools_schema or []),
                 endpoint=request_endpoint,
@@ -469,6 +730,86 @@ def get_model_response(
             )
     except Exception:
         pass
+
+    stream_retry_attempt = 0
+
+    def _record_stream_retry(target_model: str, use_stream: bool) -> None:
+        nonlocal stream_retry_attempt
+        if use_stream == effective_stream_responses:
+            return
+        stream_retry_attempt += 1
+        attempt_index = stream_retry_attempt
+        (
+            retry_body,
+            retry_headers,
+            retry_endpoint,
+            _,
+            exact_retry_body,
+        ) = _provider_wire_evidence(
+            profile=provider_profile,
+            runtime=runtime,
+            provider_id=provider_id,
+            model=target_model,
+            messages=send_messages,
+            tools=tools_schema,
+            stream=use_stream,
+            client_config=client_config,
+            context=runtime_context,
+        )
+        retry_projection_exact = provider_profile is not None or callable(
+            getattr(runtime, "project_request_body", None)
+        )
+        retry_messages = exact_retry_body.get(
+            "messages", exact_retry_body.get("input")
+        )
+        if not isinstance(retry_messages, list):
+            raise ProviderContractError("provider wire request is missing messages")
+        retry_tools = exact_retry_body.get("tools")
+        if retry_tools is not None and not isinstance(retry_tools, list):
+            raise ProviderContractError("provider wire request has invalid tools")
+        retry_surface = _finalize_model_surface(
+            compiled_surface,
+            retry_messages,
+            retry_tools,
+            per_turn_written_text,
+            exact_retry_body,
+            request_exact=retry_projection_exact,
+        )
+        if retry_surface is not None:
+            session_state.set_provider_metadata("current_model_surface", retry_surface)
+        session_state.set_provider_metadata("current_stream_effective", use_stream)
+        try:
+            if getattr(conductor.logger_v2, "include_structured_requests", True):
+                retry_extra: Dict[str, Any] = {
+                    "message_count": len(send_messages or []),
+                    "has_tools": bool(tools_schema),
+                    "retry_of_attempt": attempt_index - 1,
+                    "reason": "stream_downgrade",
+                }
+                retry_extra["request_projection_exact"] = retry_projection_exact
+                if retry_projection_exact:
+                    retry_extra["request_sha256"] = _surface_digest(
+                        exact_retry_body
+                    )
+                if retry_surface is not None:
+                    retry_extra["model_surface"] = retry_surface
+                conductor.structured_request_recorder.record_request(
+                    turn_index,
+                    provider_id=getattr(runtime.descriptor, "provider_id", "unknown"),
+                    runtime_id=getattr(runtime.descriptor, "runtime_id", "unknown"),
+                    model=target_model,
+                    request_headers=retry_headers,
+                    request_body=redaction.redact_data_url_payloads(retry_body),
+                    stream=use_stream,
+                    tool_count=len(tools_schema or []),
+                    endpoint=retry_endpoint,
+                    attempt=attempt_index,
+                    extra=retry_extra,
+                )
+        except Exception:
+            pass
+
+    runtime_context.extra["stream_retry_observer"] = _record_stream_retry
 
     result, _ = conductor._invoke_runtime_with_streaming(
         runtime,
@@ -497,7 +838,9 @@ def get_model_response(
     normalized_usage: Dict[str, Any] = {}
     if isinstance(usage_raw, dict):
         prompt_tokens = usage_raw.get("prompt_tokens") or usage_raw.get("input_tokens")
-        completion_tokens = usage_raw.get("completion_tokens") or usage_raw.get("output_tokens")
+        completion_tokens = usage_raw.get("completion_tokens") or usage_raw.get(
+            "output_tokens"
+        )
         if prompt_tokens is not None:
             normalized_usage["prompt_tokens"] = prompt_tokens
         if completion_tokens is not None:
@@ -584,16 +927,23 @@ def setup_native_tools(conductor: Any, model: str, use_native_tools: bool) -> bo
         try:
             provider_id = provider_router.parse_model_id(model)[0]
             native_tools, text_based_tools = (
-                provider_adapter_manager.filter_tools_for_provider(conductor.yaml_tools, provider_id
+                provider_adapter_manager.filter_tools_for_provider(
+                    conductor.yaml_tools, provider_id
                 )
             )
             will_use_native_tools = bool(native_tools)
             conductor.current_native_tools = native_tools
             conductor.current_text_based_tools = text_based_tools
-            if will_use_native_tools and provider_id in ("openai", "openrouter", "mock", "cli_mock",
+            if will_use_native_tools and provider_id in (
+                "openai",
+                "openrouter",
+                "mock",
+                "cli_mock",
             ):
                 try:
-                    alias_map = getattr(getattr(conductor, "agent_executor", None), "alias_map", None)
+                    alias_map = getattr(
+                        getattr(conductor, "agent_executor", None), "alias_map", None
+                    )
                     if isinstance(alias_map, dict):
                         for tool in native_tools:
                             name = getattr(tool, "name", None)
@@ -610,11 +960,15 @@ def setup_native_tools(conductor: Any, model: str, use_native_tools: bool) -> bo
     return will_use_native_tools
 
 
-def adjust_tool_prompt_mode(conductor: Any, tool_prompt_mode: str, will_use_native_tools: bool) -> str:
+def adjust_tool_prompt_mode(
+    conductor: Any, tool_prompt_mode: str, will_use_native_tools: bool
+) -> str:
     if will_use_native_tools:
         if str(tool_prompt_mode or "").strip().lower() == "none":
             return "none"
-        provider_cfg = getattr(conductor, "_provider_tools_effective", None) or (conductor.config.get("provider_tools") or {})
+        provider_cfg = getattr(conductor, "_provider_tools_effective", None) or (
+            conductor.config.get("provider_tools") or {}
+        )
         suppress_prompts = bool(provider_cfg.get("suppress_prompts", False))
         if suppress_prompts:
             return "none"
@@ -647,7 +1001,9 @@ def setup_tool_prompts(
                 session_state.set_provider_metadata("plan_turns", 0)
         mode_cfg = conductor._get_mode_config(active_mode)
         if mode_cfg:
-            prompt_tool_defs = conductor._filter_tools_by_mode(prompt_tool_defs, mode_cfg)
+            prompt_tool_defs = conductor._filter_tools_by_mode(
+                prompt_tool_defs, mode_cfg
+            )
         apply_turn_strategy_from_loop(conductor)
 
     active_tool_names: List[str] = []
@@ -675,7 +1031,9 @@ def setup_tool_prompts(
         compiler = get_compiler()
 
         primary_prompt = session_state.messages[0].get("content", "")
-        comprehensive_prompt, tools_hash = compiler.get_or_create_system_prompt(prompt_tool_defs, active_dialect_names, primary_prompt)
+        comprehensive_prompt, tools_hash = compiler.get_or_create_system_prompt(
+            prompt_tool_defs, active_dialect_names, primary_prompt
+        )
 
         session_state.messages[0]["content"] = comprehensive_prompt
         session_state.provider_messages[0]["content"] = comprehensive_prompt
@@ -705,8 +1063,12 @@ def setup_tool_prompts(
         )
 
         if tool_prompt_mode in ("system_once", "system_and_per_turn"):
-            session_state.messages[0]["content"] = (session_state.messages[0].get("content") or "") + tool_directive_text
-            session_state.provider_messages[0]["content"] = session_state.messages[0]["content"]
+            session_state.messages[0]["content"] = (
+                session_state.messages[0].get("content") or ""
+            ) + tool_directive_text
+            session_state.provider_messages[0]["content"] = session_state.messages[0][
+                "content"
+            ]
             markdown_logger.log_tool_availability([t.name for t in tool_defs])
 
     return local_tools_prompt
@@ -722,7 +1084,10 @@ def add_enhanced_message_fields(
     local_tools_prompt: str,
     user_prompt: str,
 ) -> None:
-    if tool_prompt_mode in ("system_once", "system_and_per_turn", "system_compiled_and_persistent_per_turn",
+    if tool_prompt_mode in (
+        "system_once",
+        "system_and_per_turn",
+        "system_compiled_and_persistent_per_turn",
     ):
         session_state.messages[0]["compiled_tools_available"] = [
             {
@@ -730,8 +1095,17 @@ def add_enhanced_message_fields(
                 "type_id": t.type_id,
                 "description": t.description,
                 "parameters": (
-                    [{"name": p.name, "type": p.type, "description": p.description, "default": p.default,
-                        } for p in t.parameters] if t.parameters else []
+                    [
+                        {
+                            "name": p.name,
+                            "type": p.type,
+                            "description": p.description,
+                            "default": p.default,
+                        }
+                        for p in t.parameters
+                    ]
+                    if t.parameters
+                    else []
                 ),
             }
             for t in tool_defs
@@ -742,7 +1116,9 @@ def add_enhanced_message_fields(
 
     if tool_prompt_mode == "system_compiled_and_persistent_per_turn":
         enabled_tools = [t.name for t in tool_defs]
-        tools_prompt_content = get_compiler().format_per_turn_availability(enabled_tools, active_dialect_names)
+        tools_prompt_content = get_compiler().format_per_turn_availability(
+            enabled_tools, active_dialect_names
+        )
     elif tool_prompt_mode in ("per_turn_append", "system_and_per_turn"):
         tools_prompt_content = local_tools_prompt
 
@@ -750,10 +1126,13 @@ def add_enhanced_message_fields(
         try:
             native_tools = getattr(conductor, "current_native_tools", [])
             if native_tools:
-                route_hint = getattr(conductor, "_current_route_id", None) or conductor.config.get("model", "gpt-4")
+                route_hint = getattr(
+                    conductor, "_current_route_id", None
+                ) or conductor.config.get("model", "gpt-4")
                 provider_id = provider_router.parse_model_id(route_hint)[0]
                 native_tools_spec = (
-                    provider_adapter_manager.translate_tools_to_native_schema(native_tools, provider_id
+                    provider_adapter_manager.translate_tools_to_native_schema(
+                        native_tools, provider_id
                     )
                 )
         except Exception:
@@ -798,16 +1177,12 @@ def add_enhanced_message_fields(
                         and isinstance(block, dict)
                         and block.get("type") == "text"
                     ):
-                        updated.append(
-                            {"type": "text", "text": initial_user_content}
-                        )
+                        updated.append({"type": "text", "text": initial_user_content})
                         replaced = True
                     else:
                         updated.append(block)
                 if not replaced:
-                    updated.insert(
-                        0, {"type": "text", "text": initial_user_content}
-                    )
+                    updated.insert(0, {"type": "text", "text": initial_user_content})
                 message["content"] = updated
             else:
                 message["content"] = initial_user_content

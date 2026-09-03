@@ -6052,6 +6052,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
 
         prompt_compile_key: Optional[str] = None
         prompt_compiler_version: Optional[str] = None
+        session_state.set_provider_metadata("compiled_model_surface", None)
         try:
             if int(self.config.get("version", 0)) == 2 and self.config.get("prompts"):
                 mode_name = self._resolve_active_mode()
@@ -6094,6 +6095,11 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 per_turn_prompt = v2.get("per_turn") or ""
                 prompt_compile_key = v2.get("cache_key")
                 prompt_compiler_version = "v2"
+                model_surface = v2.get("model_surface")
+                if isinstance(model_surface, dict):
+                    session_state.set_provider_metadata(
+                        "compiled_model_surface", model_surface
+                    )
                 if user_prompt_extra:
                     user_prompt = (
                         (user_prompt or "") + "\n\n" + "\n\n".join(user_prompt_extra)

@@ -1033,3 +1033,22 @@ def test_openrouter_chat_stream_classifies_sdk_shape_errors_as_adapter_faults():
     )
     assert "e3-crash-trace-canary" not in rendered
     assert "provider operation failed (TypeError)" in rendered
+
+def test_openai_usage_extraction_preserves_nested_cached_tokens() -> None:
+    descriptor, _model = provider_router.get_runtime_descriptor(
+        "openrouter/openai/gpt-4o-mini"
+    )
+    runtime = provider_registry.create_runtime(descriptor)
+    response = types.SimpleNamespace(
+        usage=types.SimpleNamespace(
+            prompt_tokens=12,
+            completion_tokens=7,
+            prompt_tokens_details=types.SimpleNamespace(cached_tokens=5),
+        )
+    )
+
+    assert runtime._extract_usage(response) == {
+        "prompt_tokens": 12,
+        "completion_tokens": 7,
+        "prompt_tokens_details": {"cached_tokens": 5},
+    }
