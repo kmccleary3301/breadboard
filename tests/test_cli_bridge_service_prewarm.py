@@ -110,7 +110,7 @@ async def test_default_session_create_uses_exact_profile_authority(
     await _stop(record)
 
 @pytest.mark.asyncio
-async def test_create_strips_caller_artifact_manifest_metadata(
+async def test_create_strips_caller_internal_runtime_metadata(
     monkeypatch, tmp_path
 ) -> None:
     monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
@@ -122,6 +122,8 @@ async def test_create_strips_caller_artifact_manifest_metadata(
             task="reject caller manifest metadata",
             metadata={
                 "artifact_manifest_ref": "caller-owned-value",
+                "runtime_overrides": {"mode": "plan"},
+                "skills_selection": {"mode": "allowlist", "allowlist": ["caller"]},
                 "safe": "retained",
             },
         ),
@@ -131,7 +133,11 @@ async def test_create_strips_caller_artifact_manifest_metadata(
     record = await service.ensure_session(response.session_id)
     await service.registry.persist(record)
 
-    assert "artifact_manifest_ref" not in record.metadata
+    assert {
+        "artifact_manifest_ref",
+        "runtime_overrides",
+        "skills_selection",
+    }.isdisjoint(record.metadata)
     assert record.metadata["safe"] == "retained"
     await service.stop_session(response.session_id)
     await _stop(record)
@@ -2069,6 +2075,41 @@ async def test_runtime_reconfigure_survives_fresh_retained_resume(
     )
     assert rebuilt_lock["graph_hash"] == pinned_generation
     await _stop(restored)
+
+
+@pytest.mark.asyncio
+async def test_retained_resume_refuses_runtime_generation_drift(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    state_root = tmp_path / "state"
+    service = SessionService(state_root=state_root)
+    response = await service.create_session(
+        SessionCreateRequest(config_path=CONFIG, task=""),
+        event_root=tmp_path / "events",
+        runtime_root=tmp_path / "records",
+    )
+    record = await service.ensure_session(response.session_id)
+    durable_events = tuple(record.product_session.events)
+    await service.registry.persist(record)
+    await _stop(record)
+    real_load = load_agent_config
+
+    def load_changed_config(path):
+        config = real_load(path)
+        config["mode"] = "plan" if config.get("mode") != "plan" else "implementation"
+        return config
+
+    monkeypatch.setattr(
+        "breadboard_engine.api.cli_bridge.session_runner.load_agent_config",
+        load_changed_config,
+    )
+    fresh = SessionService(state_root=state_root)
+    with pytest.raises(runtime_ports.ReplayError) as error:
+        await fresh.ensure_session(response.session_id)
+    assert error.value.code == "generation_mismatch"
+    assert tuple(record.product_session.events) == durable_events
 
 @pytest.mark.asyncio
 async def test_managed_retained_workspace_restores_attachments_without_binding(

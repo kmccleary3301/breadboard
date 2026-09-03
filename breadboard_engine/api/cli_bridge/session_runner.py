@@ -993,6 +993,14 @@ class SessionRunner:
                 overrides[key] = value
         self.request.overrides = overrides
         self._prepared_runtime_config = apply_dotted_overrides(base_cfg, overrides)
+        if isinstance(self._model_role_lock, Mapping):
+            self._prepared_runtime_config["model_role_lock"] = dict(
+                self._model_role_lock
+            )
+            if self._active_model_role is not None:
+                self._prepared_runtime_config["active_model_role"] = (
+                    self._active_model_role
+                )
         permissions = self._prepared_runtime_config.get("permissions")
         options = permissions.get("options") if isinstance(permissions, dict) else None
         effective_permission_mode = (

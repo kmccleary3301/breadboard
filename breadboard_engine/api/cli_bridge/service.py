@@ -1530,6 +1530,8 @@ class SessionService:
             _SESSION_EVENT_ROOT_METADATA_KEY,
             _SESSION_DURABLE_PRODUCT_WORKSPACE_METADATA_KEY,
             "artifact_manifest_ref",
+            "runtime_overrides",
+            "skills_selection",
         ):
             request_metadata.pop(reserved_key, None)
         if default_profile is not None:
@@ -2267,6 +2269,17 @@ class SessionService:
                 permission_mode=permission_mode,
             ),
         )
+        runtime_config = runner.prepare_runtime_config()
+        rebuilt_generation = self._runtime_lock(
+            record.session_id,
+            runtime_config,
+            runner.request.config_path,
+        ).as_dict()["graph_hash"]
+        if rebuilt_generation != record.product_session.pinned_generation_id:
+            raise ReplayError(
+                "generation_mismatch",
+                f"retained session {record.session_id!r} runtime generation does not match its durable journal",
+            )
         self._bind_restored_durable_product_session(
             record,
             runner,
@@ -2281,7 +2294,6 @@ class SessionService:
                     f"retained session {record.session_id!r} has no pending approval identity",
                 )
             record.product_session.resolve_approval(pending_approval, "deny")
-        runner.prepare_runtime_config()
         for turn in record.turns_by_id.values():
             if turn.terminal_outcome is not None:
                 continue
