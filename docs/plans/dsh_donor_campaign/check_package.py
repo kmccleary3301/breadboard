@@ -25,6 +25,11 @@ DAG_ROOT = EVIDENCE / "raw/bb-inj5.7"
 DAG_VALIDATOR = DAG_ROOT / "validate_dag_prototype.py"
 DAG_GRAPH = DAG_ROOT / "dag-prototype.json"
 DAG_ROUTING = DAG_ROOT / "row-routing.json"
+DAG_INPUT_DIGESTS = {
+    DAG_VALIDATOR: "f9735440c53b197d1f421148d6cd0d05c5595377a695c40b8cf949c7c69ada89",
+    DAG_GRAPH: "b475dba4b961f6eba610554f1f4a8312f9227448941b596a1cf2e3be81a50867",
+    DAG_ROUTING: "b43ded4b1b69dc4c77857af00c951697f550b7d3005f64c7319dab1607df5fb1",
+}
 FIXTURES = {
     EVIDENCE / "fixtures/ft03-request-fixture-v1.json": "76e69938aa132dd4f5fd2d35f8d966c7209f4231eb1b9d8fbb27be285b882ce3",
     EVIDENCE / "fixtures/ft03_openai_responses_capture_v1.py": "67346f2db2906107cde1684c9eec920bad43e471f1001825d080c9776682fbab",
@@ -92,6 +97,14 @@ def main() -> int:
                 "first_tranche_packets": 6,
                 "routed_rows": 623,
                 "unique_rows": 623,
+                "decision_counts": {
+                    "deferred-behind-named-evidence": 398,
+                    "promoted-with-first-tranche-packet": 5,
+                    "rejected": 10,
+                    "research-only-with-metric-and-kill": 29,
+                    "satisfied": 177,
+                    "superseded": 4,
+                },
                 "dsh_phases": list(range(13)),
                 "unconditionally_promoted_new_seams": 0,
             }
@@ -101,6 +114,13 @@ def main() -> int:
                         f"committed DAG {key} differs: "
                         f"{dag_result.get(key)!r} != {expected!r}"
                     )
+    for path, expected_digest in DAG_INPUT_DIGESTS.items():
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        if digest != expected_digest:
+            findings.append(
+                f"committed DAG input digest differs for "
+                f"{path.relative_to(ROOT)}: {digest}"
+            )
     surface = json.loads(SURFACE.read_text(encoding="utf-8"))
 
     for head in HEADS:
