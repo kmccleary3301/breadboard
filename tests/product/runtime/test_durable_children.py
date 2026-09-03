@@ -1903,6 +1903,10 @@ def test_job_completion_replay_preserves_inline_result_payload() -> None:
         "output": "inline",
         "subagent_type": "worker",
         "verdict_code": "approved",
+        "agent_id": "result-agent",
+        "job_id": "result-job",
+        "seq": 99,
+        "state": "result-state",
     }
     orchestrator.mark_job_completed(
         spawned.job.job_id,

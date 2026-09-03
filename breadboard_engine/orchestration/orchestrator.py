@@ -110,15 +110,18 @@ class MultiAgentOrchestrator:
         job = self.job_manager.update_state(job_id, "completed", result_payload=payload)
         if job is None:
             return None
-        payload.setdefault("job_id", job.job_id)
-        payload.setdefault("agent_id", job.agent_id)
-        payload.setdefault("state", job.state)
-        payload.setdefault("seq", job.seq)
+        event_payload = {
+            "job_id": job.job_id,
+            "agent_id": job.agent_id,
+            "state": job.state,
+            "seq": job.seq,
+            "result_payload": payload,
+        }
         self.event_log.add(
             "agent.job_completed",
             agent_id=job.agent_id,
             parent_agent_id=job.owner_agent,
-            payload=payload,
+            payload=event_payload,
         )
         return job
 
@@ -956,7 +959,7 @@ class MultiAgentOrchestrator:
                     self.job_manager.update_state(
                         job_id,
                         str(payload.get("state") or "completed"),
-                        result_payload=result_payload or None,
+                        result_payload=result_payload,
                     )
             elif event.type == "agent.wakeup_emitted":
                 job_id = str(payload.get("job_id") or "")
