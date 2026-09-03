@@ -8833,7 +8833,7 @@
   "generated_by": "scripts/interface_inventory.py",
   "inputs": {
     "engine_root": {
-      "content_digest": "sha256:4442e6956cf26f13ec5503f1f00f69822fa9e97c227c5f80bdd9c8213f8811ed",
+      "content_digest": "sha256:51b0b14f450d519d612dcaf7989c3e3adfabee8dc1ff099f336c0efdfa18dbf5",
       "file_count": 4732
     },
     "tui_root": {
@@ -20134,7 +20134,7 @@
     }
   },
   "tui_consumers": {
-    "consumer_count": 78,
+    "consumer_count": 79,
     "files": [
       {
         "matched_tokens": [
@@ -20358,11 +20358,13 @@
           "ReadSessionFileOptions",
           "SessionEvent",
           "SessionFileContent",
-          "SessionFileInfo"
+          "SessionFileInfo",
+          "task_event"
         ],
         "path": "engine_root/tui_skeleton/src/commands/repl/controller.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
+          "event-kind",
           "sdk-export"
         ]
       },
@@ -20444,11 +20446,13 @@
         "matched_tokens": [
           "ApiError",
           "SessionEvent",
-          "SessionFileInfo"
+          "SessionFileInfo",
+          "task_event"
         ],
         "path": "engine_root/tui_skeleton/src/commands/repl/controllerStateMethods.ts",
         "root_id": "engine-tui-skeleton",
         "signals": [
+          "event-kind",
           "sdk-export"
         ]
       },
@@ -21096,6 +21100,16 @@
         "matched_tokens": [
           "error"
         ],
+        "path": "tui_root/packages/coding-agent/src/live/protocol.ts",
+        "root_id": "paired-coding-agent",
+        "signals": [
+          "event-kind"
+        ]
+      },
+      {
+        "matched_tokens": [
+          "error"
+        ],
         "path": "tui_root/packages/coding-agent/src/live/transport.ts",
         "root_id": "paired-coding-agent",
         "signals": [
@@ -21170,7 +21184,7 @@
         "root_id": "paired-agent"
       },
       {
-        "consumer_count": 31,
+        "consumer_count": 32,
         "exists": true,
         "files_scanned": 1352,
         "root": "tui_root/packages/coding-agent/src",

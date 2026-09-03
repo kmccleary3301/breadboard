@@ -257,6 +257,26 @@ def _fixture_roots(tmp_path: Path) -> tuple[Path, Path]:
         "reduceWorkGraphEvent(state, { eventType: 'tool_call', data: {} });\n",
         encoding="utf-8",
     )
+    (tui_source.parent / "called-event-fallback.ts").write_text(
+        "reduceWorkGraphEvent(state, { eventType: options?.eventType ?? 'tool_call', data: {} });\n",
+        encoding="utf-8",
+    )
+    (tui_source.parent / "typed-event-fallback.ts").write_text(
+        "const value: NormalizedEvent = { eventType: options?.eventType ?? 'tool_call', data: {} };\n",
+        encoding="utf-8",
+    )
+    (tui_source.parent / "optional-called-event-fallback.ts").write_text(
+        "this.enqueueWorkGraphEvent?.(payload, { eventType: options?.eventType ?? 'tool_call' });\n",
+        encoding="utf-8",
+    )
+    (tui_source.parent / "method-event-fallback.ts").write_text(
+        "class Controller { enqueueWorkGraphEvent() { const value = { eventType: options?.eventType ?? 'tool_call' }; consume(value); } }\n",
+        encoding="utf-8",
+    )
+    (tui_source.parent / "unrelated-event-variable.ts").write_text(
+        "const unrelatedEvent: Result = { kind: options?.kind ?? 'error' };\n",
+        encoding="utf-8",
+    )
     (tui_source.parent / "callback-unrelated-event-literal.ts").write_text(
         "it('keeps local results', () => {\n"
         "  const result = { kind: 'error' };\n"
@@ -321,7 +341,7 @@ def test_inventory_interface_is_deterministic_and_recalls_sample(tmp_path: Path)
     found = {(row["registry_id"], row["entry_id"]) for row in first["authoritative_registry_entries"]}
     assert SAMPLE <= found
     assert str(engine) not in canonical_bytes(first).decode()
-    assert first["tui_consumers"]["consumer_count"] == 6
+    assert first["tui_consumers"]["consumer_count"] == 10
     assert set(first["inputs"]) == {"engine_root", "tui_root"}
     for root_identity in first["inputs"].values():
         assert root_identity["content_digest"].startswith("sha256:")
@@ -356,6 +376,34 @@ def test_inventory_interface_is_deterministic_and_recalls_sample(tmp_path: Path)
         if row["path"].endswith("called-event-literal.ts")
     )
     assert called["matched_tokens"] == ["tool_call"]
+    fallback = next(
+        row
+        for row in consumer_rows
+        if row["path"].endswith("called-event-fallback.ts")
+    )
+    assert fallback["matched_tokens"] == ["tool_call"]
+    typed_fallback = next(
+        row
+        for row in consumer_rows
+        if row["path"].endswith("typed-event-fallback.ts")
+    )
+    assert typed_fallback["matched_tokens"] == ["tool_call"]
+    optional_fallback = next(
+        row
+        for row in consumer_rows
+        if row["path"].endswith("optional-called-event-fallback.ts")
+    )
+    assert optional_fallback["matched_tokens"] == ["tool_call"]
+    method_fallback = next(
+        row
+        for row in consumer_rows
+        if row["path"].endswith("method-event-fallback.ts")
+    )
+    assert method_fallback["matched_tokens"] == ["tool_call"]
+    assert not any(
+        row["path"].endswith("unrelated-event-variable.ts")
+        for row in consumer_rows
+    )
     assert not any(
         row["path"].endswith("callback-unrelated-event-literal.ts")
         for row in consumer_rows
@@ -447,7 +495,12 @@ def test_engine_identity_tracks_scanned_generated_manifests(tmp_path: Path) -> N
 
 def test_inventory_cli_writes_and_checks_fixed_point(tmp_path: Path) -> None:
     engine, tui = _fixture_roots(tmp_path)
-    output = engine / "reports" / "inventory.json"
+    output = (
+        engine
+        / "breadboard_sdk"
+        / "generated"
+        / "interface_inventory_manifest.json"
+    )
     script = Path(__file__).resolve().parents[1] / "scripts" / "interface_inventory.py"
     command = [sys.executable, str(script), "--engine-root", str(engine), "--tui-root", str(tui), "--output", str(output)]
     written = subprocess.run(command, check=False, capture_output=True, text=True)

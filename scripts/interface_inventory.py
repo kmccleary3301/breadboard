@@ -504,17 +504,24 @@ def _ts_export_names(path: Path) -> list[dict[str, str]]:
     return [{"name": name, "kind": kind, "path": ""} for name, kind in sorted(found.items())]
 
 
-def _generated_manifests(engine_root: Path) -> list[dict[str, Any]]:
+def _generated_manifests(
+    engine_root: Path,
+    *,
+    excluded_paths: Sequence[Path] = (),
+) -> list[dict[str, Any]]:
     roots = (
         engine_root / "breadboard_sdk" / "generated",
         engine_root / "sdk" / "ts" / "src" / "generated",
         engine_root / "tui_skeleton" / "src" / "generated",
     )
+    excluded = {path.resolve() for path in excluded_paths}
     rows: list[dict[str, Any]] = []
     for root in roots:
         if not root.is_dir():
             continue
         for path in sorted(root.glob("*manifest*.json")):
+            if path.resolve() in excluded:
+                continue
             document = _load_json(path)
             operations = document.get("operations")
             operation_ids = sorted(
@@ -532,7 +539,11 @@ def _generated_manifests(engine_root: Path) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda item: str(item["path"]))
 
 
-def _sdk_exports(engine_root: Path) -> dict[str, Any]:
+def _sdk_exports(
+    engine_root: Path,
+    *,
+    excluded_paths: Sequence[Path] = (),
+) -> dict[str, Any]:
     python_root = engine_root / "breadboard_sdk" / "__init__.py"
     ts_root = engine_root / "sdk" / "ts" / "src" / "index.ts"
     python_rows = _python_exports(python_root) if python_root.is_file() else []
@@ -552,7 +563,10 @@ def _sdk_exports(engine_root: Path) -> dict[str, Any]:
             "exports": ts_rows,
             "export_count": len(ts_rows),
         },
-        "generated_manifests": _generated_manifests(engine_root),
+        "generated_manifests": _generated_manifests(
+            engine_root,
+            excluded_paths=excluded_paths,
+        ),
     }
 
 
@@ -752,11 +766,49 @@ def _event_literal_is_consumed(
         elif value in matching and stack and stack[-1][0] == matching[value]:
             stack.pop()
     for stack_index, (delimiter, opener) in enumerate(stack):
-        if delimiter != "(" or not _token_kind(tokens, opener - 1, "identifier"):
+        if delimiter != "(":
             continue
-        callee = tokens[opener - 1][1]
+        callee_index = opener - 1
+        while (
+            callee_index >= 0
+            and _token_kind(tokens, callee_index, "punctuation")
+            and tokens[callee_index][1] in {".", "?"}
+        ):
+            callee_index -= 1
+        if not _token_kind(tokens, callee_index, "identifier"):
+            continue
+        callee = tokens[callee_index][1]
         nested_delimiters = [item[0] for item in stack[stack_index + 1 :]]
         if "event" in callee.lower() and nested_delimiters == ["{"]:
+            return True
+    for delimiter, opener in reversed(stack[:-1]):
+        if delimiter != "{":
+            continue
+        parameter_closer = next(
+            (
+                index
+                for index in range(opener - 1, -1, -1)
+                if _token_is(tokens, index, "punctuation", ")")
+            ),
+            None,
+        )
+        if parameter_closer is None:
+            continue
+        depth = 0
+        parameter_opener: int | None = None
+        for index in range(parameter_closer, -1, -1):
+            if _token_is(tokens, index, "punctuation", ")"):
+                depth += 1
+            elif _token_is(tokens, index, "punctuation", "("):
+                depth -= 1
+                if depth == 0:
+                    parameter_opener = index
+                    break
+        if (
+            parameter_opener is not None
+            and _token_kind(tokens, parameter_opener - 1, "identifier")
+            and "event" in tokens[parameter_opener - 1][1].lower()
+        ):
             return True
     statement_start = 0
     for index in range(property_index - 1, -1, -1):
@@ -803,15 +855,39 @@ def _consumed_event_literal_matches(
     tokens = _lexical_tokens(text)
     matches: set[str] = set()
     for index in range(len(tokens) - 2):
-        if (
+        if not (
             _token_kind(tokens, index, "identifier")
             and tokens[index][1] in _EVENT_DISCRIMINATOR_NAMES
             and _token_is(tokens, index + 1, "punctuation", ":")
-            and _token_kind(tokens, index + 2, "string")
-            and tokens[index + 2][1] in event_tokens
             and _event_literal_is_consumed(tokens, index)
         ):
-            matches.add(tokens[index + 2][1])
+            continue
+        cursor = index + 2
+        delimiters: list[str] = []
+        while cursor < len(tokens):
+            kind, value = tokens[cursor]
+            if kind == "punctuation":
+                if value in "([{":
+                    delimiters.append(value)
+                elif value in ")]}":
+                    if not delimiters:
+                        break
+                    delimiters.pop()
+                elif value == "," and not delimiters:
+                    break
+            is_direct_literal = cursor == index + 2
+            is_nullish_fallback = (
+                cursor >= index + 4
+                and _token_is(tokens, cursor - 2, "punctuation", "?")
+                and _token_is(tokens, cursor - 1, "punctuation", "?")
+            )
+            if (
+                kind == "string"
+                and value in event_tokens
+                and (is_direct_literal or is_nullish_fallback)
+            ):
+                matches.add(value)
+            cursor += 1
     return matches
 
 
@@ -1192,7 +1268,10 @@ def inventory(
     schemas = _schema_rows(engine, registry_entries)
     events = _event_rows(registry_entries, engine)
     owners = _owner_rows(engine, registry_entries)
-    sdk_exports = _sdk_exports(engine)
+    sdk_exports = _sdk_exports(
+        engine,
+        excluded_paths=identity_excluded_paths,
+    )
     tui_consumers = _tui_consumers(engine, tui, events, schemas)
     compatibility_surfaces = _compatibility(engine, tui, registry_entries)
     projections = [
