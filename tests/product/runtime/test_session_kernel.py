@@ -112,6 +112,11 @@ def _append_from_process(path: str, sequence: int, start: Any) -> None:
 def test_sink_recovers_process_crash_partial_tail(tmp_path: Path) -> None:
     path = tmp_path / "events.jsonl"; sink = JsonlEventSink(path); sink.append(_event()); process = multiprocessing.get_context("spawn").Process(target=_crash_during_append, args=(str(path),)); process.start(); process.join(10); assert process.exitcode == 17
     recovered = JsonlEventSink(path); assert [json.loads(row)["sequence"] for row in path.read_text().splitlines()] == [1]; recovered.append(_event(2, "input.accepted")); assert [json.loads(row)["sequence"] for row in path.read_text().splitlines()] == [1, 2]
+def test_sink_rejects_append_past_configured_byte_limit(tmp_path: Path) -> None:
+    path = tmp_path / "events.jsonl"; sink = JsonlEventSink(path, max_bytes=0)
+    with pytest.raises(RuntimeError, match="exceeds byte limit"): sink.append(_event())
+    assert path.read_bytes() == b""
+
 def test_cross_process_event_appends_are_serialized(tmp_path: Path) -> None:
     path, context = tmp_path / "events.jsonl", multiprocessing.get_context("spawn"); start = context.Event(); processes = [context.Process(target=_append_from_process, args=(str(path), sequence, start)) for sequence in range(1, 9)]
     [process.start() for process in processes]; start.set(); [process.join(10) for process in processes]

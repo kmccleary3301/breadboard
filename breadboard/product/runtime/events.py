@@ -27,10 +27,21 @@ class _SinkState:
     def __init__(self) -> None: self.lock, self.poisoned = RLock(), set()
 _STATES = tuple(_SinkState() for _ in range(256))
 class JsonlEventSink:
-    def __init__(self, path: str | Path) -> None:
-        self.path = Path(path).resolve(); path, state = self.path, _STATES[hash(self.path) % len(_STATES)]
+    def __init__(self, path: str | Path, *, max_bytes: int | None = None) -> None:
+        self.path = Path(path).resolve(); self._max_bytes = max_bytes; path, state = self.path, _STATES[hash(self.path) % len(_STATES)]
         with state.lock: self._mkdir_parent(path.parent)
         with state.lock, ProcessLock(path): self._recover(path, state)
+    @classmethod
+    def _for_existing_path(
+        cls,
+        path: str | Path,
+        *,
+        max_bytes: int | None = None,
+    ) -> "JsonlEventSink":
+        sink = cls.__new__(cls)
+        sink.path = Path(path).resolve()
+        sink._max_bytes = max_bytes
+        return sink
     def _mkdir_parent(self, path: Path) -> None:
         if path.exists(): return
         self._mkdir_parent(path.parent)
@@ -62,28 +73,34 @@ class JsonlEventSink:
         os.replace(temporary, wal); self._sync_parent(path)
     def _finish(self, path: Path) -> None:
         wal, temporary = self._transaction_paths(path); temporary.unlink(missing_ok=True); wal.unlink(missing_ok=True); self._sync_parent(path)
-    def append(self, event: object) -> None:
-        payload = (json.dumps(event.as_dict(), sort_keys=True, separators=(",", ":")) + "\n").encode(); path = Path(self.path).resolve(); state = _STATES[hash(path) % len(_STATES)]  # type: ignore[attr-defined]
-        with state.lock, ProcessLock(path):
-            if path in state.poisoned: raise RuntimeError("event sink is poisoned after an unconfirmed rollback")
-            self._recover(path, state)
-            try: stream = path.open("x+b", buffering=0); created = True
-            except FileExistsError: stream = path.open("a+b", buffering=0); created = False
+    def _append_body(self, event: object, path: Path, state: _SinkState) -> None:
+        payload = (json.dumps(event.as_dict(), sort_keys=True, separators=(",", ":")) + "\n").encode()  # type: ignore[attr-defined]
+        if path in state.poisoned: raise RuntimeError("event sink is poisoned after an unconfirmed rollback")
+        self._recover(path, state)
+        try: stream = path.open("x+b", buffering=0); created = True
+        except FileExistsError: stream = path.open("a+b", buffering=0); created = False
+        try:
+            stream.seek(0, os.SEEK_END); offset = stream.tell()
+            if self._max_bytes is not None and offset + len(payload) > self._max_bytes: raise RuntimeError("event journal exceeds byte limit")
             try:
-                stream.seek(0, os.SEEK_END); offset = stream.tell()
+                self._begin(path, offset)
+                if stream.write(payload) != len(payload): raise OSError("short event sink write")
+                _sync(stream); self._finish(path)
+            except BaseException:
                 try:
-                    self._begin(path, offset)
-                    if stream.write(payload) != len(payload): raise OSError("short event sink write")
-                    _sync(stream); self._finish(path)
-                except BaseException:
-                    try:
-                        stream.seek(offset); stream.truncate(); _sync(stream); self._finish(path)
-                        if created: stream.close(); path.unlink(); self._sync_parent(path)
-                    except BaseException: state.poisoned.add(path)
-                    raise
-            finally:
-                try: stream.close()
-                except OSError: pass
+                    stream.seek(offset); stream.truncate(); _sync(stream); self._finish(path)
+                    if created: stream.close(); path.unlink(); self._sync_parent(path)
+                except BaseException: state.poisoned.add(path)
+                raise
+        finally:
+            try: stream.close()
+            except OSError: pass
+    def append(self, event: object) -> None:
+        path = Path(self.path).resolve(); state = _STATES[hash(path) % len(_STATES)]  # type: ignore[attr-defined]
+        with state.lock, ProcessLock(path): self._append_body(event, path, state)
+    def _append_with_process_lock(self, event: object) -> None:
+        path = Path(self.path).resolve(); state = _STATES[hash(path) % len(_STATES)]  # type: ignore[attr-defined]
+        with state.lock: self._append_body(event, path, state)
     def _sync_parent(self, path: Path) -> None:
         if os.name == "nt": return
         descriptor = os.open(path.parent, os.O_RDONLY)
@@ -292,6 +309,15 @@ _SESSION_ACTIONS = MappingProxyType({"accept input": ("running",), "observe assi
 def _graph_hash(lock: EffectiveHarnessLock) -> str:
     return _sha256(lock.as_dict().get("graph_hash"), "graph_hash")
 def _hash(value: str) -> str: return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
+class ReplayError(ValueError):
+    """A durable event stream cannot be rebuilt into a valid Session."""
+
+    def __init__(self, code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.code = code
+        self.detail = detail
+
+
 def _check(condition: bool, error: type[Exception], message: str) -> None:
     if not condition: raise error(message)
 class GenerationAdoptionError(RuntimeError):
@@ -329,7 +355,11 @@ class Session:
         event = KernelEvent.create(active_session_id, 1, "session.started", active_clock.now(), {"effective_lock_hash": graph_hash, "task_hash": _hash(task)}); active_sink = sink if sink is not None else NullEventSink(); active_sink.append(event)
         return cls((event,), clock=active_clock, sink=active_sink)
     @classmethod
-    def restore(cls, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None) -> "Session": return cls(events, clock=clock, sink=sink)
+    def restore(cls, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None) -> "Session":
+        try:
+            return cls(events, clock=clock, sink=sink)
+        except (AttributeError, TypeError, ValueError) as error:
+            raise ReplayError("invalid_event_stream", str(error)) from error
     @property
     def events(self) -> tuple[KernelEvent, ...]:
         with self._transition_lock: return tuple(self._events)
@@ -364,6 +394,21 @@ class Session:
     def projected_read_model(self, *, as_of: int | None = None, expected_projector_version: str | None = None) -> Projected[SessionView]:
         return project_session_live(self, as_of=as_of, expected_projector_version=expected_projector_version)
     def input(self, content: str, attachments: Iterable[ArtifactRef] = ()) -> SessionView: return self._append("accept input", "input.accepted", lambda: (_check(isinstance(content, str) and bool(content.strip()), ValueError, "input must be non-empty"), {"content_hash": _hash(content), "attachments": [ref.as_dict() for ref in attachments]})[1])
+    def input_digest(
+        self, content_hash: str, attachments: Iterable[ArtifactRef] = ()
+    ) -> SessionView:
+        """Append an accepted input when only its retained content hash is available."""
+        return self._append(
+            "accept input",
+            "input.accepted",
+            lambda: (
+                _sha256(content_hash, "content_hash"),
+                {
+                    "content_hash": content_hash,
+                    "attachments": [ref.as_dict() for ref in attachments],
+                },
+            )[1],
+        )
     def assistant_message(self, content: str, *, message_id: str | None = None, trajectory_id: str | None = None) -> SessionView: return self._append("observe assistant", "assistant_message", lambda: self._assistant_event_payload(content, message_id, trajectory_id))
     def _assistant_event_payload(self, content: str, message_id: str | None, trajectory_id: str | None) -> dict[str, Any]:
         payload = _assistant_payload(content, message_id, trajectory_id)

@@ -1322,9 +1322,6 @@ class SessionControlController:
                     str(activate.get("request_id") or activate.get("id") or ""),
                     operation,
                 )
-                runner.session.metadata["session_contract"] = (
-                    product_session.read_model.as_dict()
-                )
             if not project_before_activation:
                 if normalized:
                     runner.session.metadata["pending_permissions"] = normalized
@@ -1397,9 +1394,6 @@ class SessionControlController:
                             "Failed to re-expose pending approval after discarding undeliverable request",
                             exc_info=True,
                         )
-                runner.session.metadata["session_contract"] = (
-                    product_session.read_model.as_dict()
-                )
             if remaining:
                 runner.session.metadata["pending_permissions"] = remaining
             else:
