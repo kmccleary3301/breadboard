@@ -335,6 +335,53 @@ def test_public_event_limit_fetches_visible_resume_after_hidden_annotation(
     assert records[0]["seq"] == 5
 
 
+def test_live_event_limit_fetches_visible_row_after_hidden_annotation(
+    client: TestClient,
+) -> None:
+    lock_id = _locked_harness(client)
+    started = client.post(
+        "/v1/sessions",
+        json={
+            "lock_id": lock_id,
+            "task": "snapshot public events",
+            "session_id": "snapshot-fixture",
+        },
+        headers={"Idempotency-Key": "start-snapshot"},
+    )
+    assert started.status_code == 202, started.text
+    record = client.portal.call(
+        client.app.state.session_service.ensure_session,
+        "snapshot-fixture",
+    )
+    record.product_session.assistant_message(
+        "candidate",
+        message_id="message-a",
+        trajectory_id="trajectory-a",
+    )
+    record.product_session.annotate(
+        AnnotationRecord(
+            annotation_id="annotation-1",
+            message_id="message-a",
+            trajectory_id="trajectory-a",
+            label="preferred",
+            author="reviewer-1",
+            generation="generation-a",
+        )
+    )
+    record.product_session.input("visible after annotation")
+
+    response = client.get(
+        "/v1/sessions/snapshot-fixture/events"
+        "?resume_token=2&limit=1&follow=false"
+    )
+
+    assert response.status_code == 200
+    records = _stream_records(response)
+    assert len(records) == 1
+    assert records[0]["kind"] == "input.accepted"
+    assert records[0]["seq"] == 4
+
+
 def test_public_session_events_snapshot_closes_without_live_follow(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,

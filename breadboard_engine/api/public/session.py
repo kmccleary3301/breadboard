@@ -579,7 +579,7 @@ async def events(
             session_operations.ListSessionEventsRequest(
                 session_id=session_id,
                 after_sequence=start_after,
-                limit=limit,
+                limit=None if not follow else limit,
             )
         )
     except Exception as error:

@@ -166,18 +166,26 @@ async def test_runtime_event_listing_filters_internal_annotations(
             generation="generation-a",
         )
     )
+    session.input("visible after annotation")
     session_store.create_session(tmp_path, session)
 
     listed = await SessionRuntime(
         OperationContext(workspace=tmp_path)
     ).list_session_events(ListSessionEventsRequest("annotated"))
+    limited = await SessionRuntime(
+        OperationContext(workspace=tmp_path)
+    ).list_session_events(
+        ListSessionEventsRequest("annotated", after_sequence=2, limit=1)
+    )
 
-    assert listed.ok
-    assert [event["seq"] for event in listed.data["events"]] == [1, 2]
+    assert listed.ok and limited.ok
+    assert [event["seq"] for event in listed.data["events"]] == [1, 2, 4]
     assert [event["kind"] for event in listed.data["events"]] == [
         "session.started",
         "assistant_message",
+        "input.accepted",
     ]
+    assert [event["seq"] for event in limited.data["events"]] == [4]
 @pytest.mark.asyncio
 async def test_runtime_reads_live_sessions_through_explicit_read_port(
     tmp_path: Path,

@@ -193,6 +193,19 @@ def test_product_observations_reject_unregistered_and_unsafe_tool_names() -> Non
         [event.as_dict() for event in session.events],
         sort_keys=True,
     )
+def test_assistant_observation_registers_canonical_message_target() -> None:
+    runner, session = _product_runner("assistant-observation")
+
+    runner._record_product_observation(
+        "message.assistant",
+        {"text": "candidate", "message": {"id": "provider-message-1"}},
+        trajectory_id="turn-1",
+    )
+
+    assert session.events[-1].payload["message_id"] == "provider-message-1"
+    assert session.events[-1].payload["trajectory_id"] == "turn-1"
+
+
 def test_product_observations_pair_canonical_and_message_tool_results() -> None:
     runner, session = _product_runner("paired-observations")
     runner._agent = type(

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from breadboard.product.runtime.artifacts import AnchoredStorage, is_portable_basename
-from breadboard.product.runtime.events import KernelEvent, ProcessLock, Session
+from breadboard.product.runtime.events import AnnotationRecord, KernelEvent, ProcessLock, Session
 
 
 def session_directory(workspace: Path) -> Path:
@@ -1650,6 +1650,18 @@ def create_session(
             event_path,
             expected_session_directory_identity=expected_session_directory_identity,
         )
+
+        def commit_annotation(
+            record: AnnotationRecord,
+        ) -> tuple[KernelEvent, ...]:
+            def annotate(persisted: Session) -> tuple[KernelEvent, ...]:
+                persisted.annotate(record)
+                return persisted.events
+
+            events, _ = mutate_session(root, session_id, annotate)
+            return events
+
+        session._bind_terminal_annotation_commit(commit_annotation)
         return session, published_path
 
 

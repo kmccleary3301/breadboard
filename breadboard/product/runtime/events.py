@@ -276,7 +276,7 @@ def _assistant_payload(
 class Session:
     """Lifecycle owner; adapters may add only validated, minimal runtime observations."""
     def __init__(self, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None) -> None:
-        self._transition_lock = RLock(); self._appending = False; self._events = list(events); self._clock = clock if clock is not None else SystemClock(); self._sink = sink if sink is not None else NullEventSink(); self._view = rebuild(self._events)
+        self._transition_lock = RLock(); self._appending = False; self._events = list(events); self._clock = clock if clock is not None else SystemClock(); self._sink = sink if sink is not None else NullEventSink(); self._terminal_annotation_commit: Callable[[AnnotationRecord], tuple[KernelEvent, ...]] | None = None; self._view = rebuild(self._events)
     @classmethod
     def start(cls, lock: EffectiveHarnessLock, task: str, *, session_id: str | None = None, clock: Clock | None = None, ids: IdSource | None = None, sink: EventSink | None = None) -> "Session":
         if not isinstance(lock, EffectiveHarnessLock): raise TypeError("Session.start requires an EffectiveHarnessLock")
@@ -304,7 +304,32 @@ class Session:
             raise ValueError("duplicate canonical message identity")
         return payload
     def tool_called(self, tool: str) -> SessionView: return self._append("observe tool call", "tool_call", lambda: (_check(type(tool) is str and bool(tool), ValueError, "tool name must be a non-empty string"), {"tool": tool})[1])
-    def annotate(self, record: AnnotationRecord) -> SessionView: return self._append("annotate", "annotation", lambda: self._annotation_payload(record))
+    def annotate(self, record: AnnotationRecord) -> SessionView:
+        with self._transition_lock:
+            if self._view.status not in {"completed", "failed", "canceled"} or self._terminal_annotation_commit is None:
+                return self._append("annotate", "annotation", lambda: self._annotation_payload(record))
+            self._require("annotate")
+            self._annotation_payload(record)
+            self._appending = True
+            try:
+                events = tuple(self._terminal_annotation_commit(record))
+                if (
+                    len(events) <= len(self._events)
+                    or events[: len(self._events)] != tuple(self._events)
+                    or events[-1].kind != "annotation"
+                    or events[-1].payload != record.as_dict()
+                ):
+                    raise RuntimeError("durable annotation commit returned inconsistent events")
+                view = rebuild(events)
+                self._events, self._view = list(events), view
+                return view
+            finally:
+                self._appending = False
+    def _bind_terminal_annotation_commit(self, commit: Callable[[AnnotationRecord], tuple[KernelEvent, ...]]) -> None:
+        if not callable(commit):
+            raise TypeError("terminal annotation commit must be callable")
+        with self._transition_lock:
+            self._terminal_annotation_commit = commit
     def tool_completed(self, tool: str, failed: bool) -> SessionView: return self._append("observe tool result", "tool_result", lambda: (_check(type(tool) is str and bool(tool), ValueError, "tool name must be a non-empty string"), _check(type(failed) is bool, TypeError, "tool completion error flag must be boolean"), {"tool": tool, "error": failed})[2])
     def request_approval(self, request_id: str, operation: str) -> SessionView: return self._append("request approval", "approval.requested", lambda: (_check(bool(request_id and operation), ValueError, "approval request fields must be populated"), {"request_id": request_id, "operation": operation})[1])
     def resolve_approval(self, request_id: str, decision: str) -> SessionView: return self._append("resolve approval", "approval.resolved", lambda: (_check(bool(request_id and decision in _DECISIONS), ValueError, "invalid approval decision"), {"request_id": request_id, "decision": decision})[1])

@@ -6,6 +6,7 @@ from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime.artifacts import AnchoredStorage, ArtifactRef, ArtifactStore
 from breadboard.product.runtime.events import AnnotationRecord, JsonlEventSink, KernelEvent, Session, SessionView, rebuild
 from breadboard.product.runtime.session_store import validate_session_id
+from breadboard.product.runtime import session_store
 HASH, OTHER_HASH, PORTS, ARTIFACTS = "sha256:" + "a" * 64, "sha256:" + "b" * 64, "breadboard.product.runtime.events.os.", "breadboard.product.runtime.artifacts.os."
 def _lock(digest: str = HASH) -> EffectiveHarnessLock: return EffectiveHarnessLock._from_record({"graph_hash": digest})
 _PAYLOADS = {
@@ -333,6 +334,40 @@ def test_annotation_replay_is_stable_and_allows_post_terminal_labels() -> None:
     assert restored.events == session.events
     assert restored.read_model == session.read_model
     assert restored.events[-1].as_dict()["payload"] == record.as_dict()
+def test_post_terminal_annotation_updates_durable_projection_atomically(
+    tmp_path: Path,
+) -> None:
+    event_path = session_store.session_event_path(tmp_path, "terminal-annotation")
+    session = Session.start(
+        _lock(),
+        "task",
+        session_id="terminal-annotation",
+        sink=JsonlEventSink(event_path),
+    )
+    session.assistant_message(
+        "candidate",
+        message_id="message-a",
+        trajectory_id="trajectory-a",
+    )
+    session.complete("done")
+    session_store.create_session(tmp_path, session, event_path)
+
+    session.annotate(
+        AnnotationRecord(
+            annotation_id="annotation-1",
+            message_id="message-a",
+            trajectory_id="trajectory-a",
+            label="preferred",
+            author="reviewer-1",
+            generation="generation-a",
+        )
+    )
+    restored, _ = session_store.load_session(tmp_path, "terminal-annotation")
+
+    assert restored.events == session.events
+    assert restored.read_model == session.read_model
+
+
 def test_replay_rejects_duplicate_canonical_message_identity() -> None:
     session = Session.start(_lock(), "task")
     session.assistant_message(

@@ -72,6 +72,7 @@ class TaskExecutionHost(Protocol):
         payload: Dict[str, Any],
         *,
         message_projection: bool = False,
+        trajectory_id: str | None = None,
     ) -> None: ...
     def _apply_model_override(self) -> bool: ...
     def _install_control_queue(self, queue: Any) -> None: ...
@@ -497,6 +498,7 @@ class TaskExecutionOwner:
                             )
                         )
                     ),
+                    trajectory_id=str(correlation["turn_id"]),
                 )
             except BaseException as error:
                 with runtime_event_lock:

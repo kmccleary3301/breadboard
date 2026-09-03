@@ -460,6 +460,7 @@ class RuntimeEventProjector:
         payload: Dict[str, Any],
         *,
         message_projection: bool = False,
+        trajectory_id: str | None = None,
     ) -> None:
         if family not in {"message.assistant", "tool.called", "tool.completed"}:
             return
@@ -472,7 +473,31 @@ class RuntimeEventProjector:
                 return
             if family == "message.assistant":
                 text = payload.get("text")
-                product_session.assistant_message(text if isinstance(text, str) else "")
+                message = payload.get("message")
+                message_id = payload.get("message_id")
+                if message_id is None and isinstance(message, dict):
+                    message_id = message.get("id")
+                if message_id is not None and (
+                    not isinstance(message_id, str) or not message_id
+                ):
+                    raise RuntimeProtocolError("runtime_protocol_error")
+                if not isinstance(trajectory_id, str) or not trajectory_id:
+                    raise RuntimeProtocolError("runtime_protocol_error")
+                if message_id is None:
+                    message_id = identity_digest(
+                        "\0".join(
+                            (
+                                str(product_session.read_model.session_id),
+                                trajectory_id,
+                                str(product_session.read_model.event_count + 1),
+                            )
+                        )
+                    )
+                product_session.assistant_message(
+                    text if isinstance(text, str) else "",
+                    message_id=message_id,
+                    trajectory_id=trajectory_id,
+                )
             elif family == "tool.called":
                 tool = self._observation_tool_name(payload)
                 if tool is None:
