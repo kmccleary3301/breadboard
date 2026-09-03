@@ -44,12 +44,12 @@ Residual findings: P0 0, P1 0, P2 0, P3 0.
 
 Verdict: `APPROVED`, confidence 0.99. Gate G-F passes. Future packet observations remain unverified; this review approves their contracts and scope only.
 
-## Post-contract escalation review — PENDING
+## Post-contract escalation review — APPROVED
 
-This is not a second renewal. The single renewal budget ended at line 45. Later automated PR review identified publication-blocking executable-contract defects after Gate G-F had closed. Section D §114 requires a split or escalation instead of a third round. Kyle's later DSH donor implementation mandate authorizes correcting every substantive review finding and requires a new exact-artifact independent review before merge; this section records that bounded escalation and reopens only the affected FT-02/FT-03 clauses.
+This is not a second renewal. The single renewal budget ended at line 45. Later automated PR review identified publication-blocking executable-contract defects after Gate G-F had closed. Section D §114 requires a split or escalation instead of a third round. Kyle's later DSH donor implementation mandate authorizes correcting every substantive review finding and requires a new exact-artifact independent review before merge; this section records that bounded escalation and reopens only the affected FT-01/FT-03 clauses.
 
-Escalation candidate date: 2026-09-03. Exact packet SHA-256 `ca762e503a040b3d67484be975c708701dec3c3716e4923bab66aade49d2d3a6`. Pinned ENGINE/TUI heads unchanged.
+Escalation review date: 2026-09-03. Exact packet SHA-256 `dcbb745544e13bc67a2589a22a8aa008821494f8d3cfb06d99858171f8e7657d`. Pinned ENGINE/TUI heads unchanged.
 
-The escalation candidate corrects the FT-01 terminal route, the FT-03 fixture's normalized request representation, and its event-derived history/oracle-independence contract. It retains FT-02's fixed four-case barrier, provider-free runtime substitution, deadlines, cleanup contract, and zero-network guards. FT-03 now binds immutable fixture `ft03-request-v1` at SHA-256 `76e69938aa132dd4f5fd2d35f8d966c7209f4231eb1b9d8fbb27be285b882ce3`. Its ordered provider history is derived only from logical `assistant_message` and `user_message` events; expected normalized message blocks are independent oracle data and are forbidden reconstruction inputs.
+The escalation review independently verified the corrected FT-01 terminal route and FT-03 fixture/oracle contract. FT-03 binds immutable fixture `ft03-request-v1` at SHA-256 `76e69938aa132dd4f5fd2d35f8d966c7209f4231eb1b9d8fbb27be285b882ce3`. Ordered provider history is derived only from logical `assistant_message` and `user_message` events; expected normalized message blocks are independent oracle data and forbidden reconstruction inputs. Public `ProviderRequest` normalization reproduced the expected canonical bytes. The raw DAG and validator enforce `KNOWN_DIVERGENCE`-only repair, coherent direct replay, and closed PRODUCT_RED/terminal-defect branches. Package validation passed with 16 exact evidence, fixture, and escalated-review copies, 13 links, six guard pairs, and no findings.
 
-Escalation verdict: `PENDING` exact-artifact independent review. Gate G-F remains blocked until that verdict records zero unresolved P0/P1/P2.
+Escalation verdict: `APPROVED`, confidence 0.99. P0/P1/P2/P3 = 0/0/0/0. Gate G-F passes on the exact packet digest above.

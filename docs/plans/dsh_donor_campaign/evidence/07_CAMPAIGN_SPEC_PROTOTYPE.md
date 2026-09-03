@@ -1,22 +1,22 @@
 # BreadBoard DSH donor campaign specification prototype
 
 Ticket: `bb-inj5.8`
-Status: APPROVED — G-H passed; Kyle approved versioning
+Status: APPROVED — G-H revalidated by post-contract escalation; Kyle approved versioning
 Version: prototype 0.1
 
 ## Control panel
 
 - North star: hand a new supervisor an implementation-ready, evidence-gated plan whose first packet can start without policy invention and whose later work converges toward one research substrate without weakening the Lock.
-- Current claim: the draft composes all approved A–G decisions; deterministic trace validation, no-context dry read, and independent review pass; Kyle approved it for documentation-only versioning in I.
+- Current claim: the draft composes all approved A–G decisions; deterministic trace validation, no-context dry read, the permitted independent review renewal, and the later bounded route-correction escalation pass; Kyle approved it for documentation-only versioning in I.
 - Latest product signal: permission cancellation is coherent; engine replacement yielded one generic transport failure with no observed duplicate admission, while one recovered durable turn was absent from the selected logical Session journal.
-- Current red class: none. Final dry read and independent renewal both report P0/P1/P2/P3 = 0/0/0/0.
+- Current red class: none. The corrected terminal routes, raw machine predicates, and incorporated FT-03 contract passed the exact-artifact post-contract escalation with zero residual findings.
 - Next cheapest discriminator: Workstream I creates the separate spec worktree, copies reviewed evidence, resolves links, runs integrity/freeze checks, and commits locally.
-- Active external blocker: none.
+- Active external blocker: none. G-H is revalidated on the corrected prototype binding.
 - Stop or escalation: any P0/P1 blocks; P2 is fixed or Kyle-accepted; product defects use PROC-DEFECT; surface/seam/freeze changes use PROC-AMEND.
 
 DECISION THIS STAGE CAN MOVE: whether this draft is complete and executable enough to become the versioned campaign specification.
 EVIDENCE THAT WOULD MOVE IT: dry-read reconstruction of the first packet; independent traceability/freeze/consistency review; Kyle approval.
-EVIDENCE PRODUCED SO FAR: approved A–G artifacts, 615/615 donor extraction, 623/623 current-state and DAG routing, two bounded fault classifications, 54 law verdicts, 11 primitive/protocol verdicts, six packet contracts, a 50-node acyclic DAG, deterministic prototype validation, one passing dry read, one approved independent renewal, and Kyle's versioning approval.
+EVIDENCE PRODUCED SO FAR: approved A–G artifacts, 615/615 donor extraction, 623/623 current-state and DAG routing, two bounded fault classifications, 54 law verdicts, 11 primitive/protocol verdicts, six packet contracts, a 50-node acyclic DAG, deterministic prototype validation, one passing dry read, one approved independent renewal, one post-contract route-correction escalation with zero residual findings, and Kyle's versioning approval.
 PROVENANCE-ONLY ARTIFACTS PRODUCED SO FAR: `raw/bb-inj5.8/` contains two session provenance blocks, deterministic validation, dry-read verdict, and owner decision.
 
 ## Bounded charter
@@ -504,7 +504,7 @@ Approval state: H owner approval and I completion gates authorize the evidence p
 
 - Deterministic validation: PASS; seven reviewed source artifacts, 623/623 unique routes, 13 phases, six packets, nine tickets, honest `NOT RUNNABLE` substrate.
 - Fresh-context dry read: initial 0/6/1/0; one corrected renewal ended PASS with P0/P1/P2/P3 = 0/0/0/0 and no unresolved policy questions. It named FT-01 inputs, writes, proof, deadlines, stops, branches, next states, and invalidation from this document alone.
-- Independent raw-first review: initial CHANGES_REQUESTED at 0/2/4/0; one corrected renewal ended APPROVED with P0/P1/P2/P3 = 0/0/0/0. Gate G-H PASS. Review: `07_CAMPAIGN_SPEC_PROTOTYPE_REVIEW.md`.
+- Independent raw-first review: initial CHANGES_REQUESTED at 0/2/4/0; one corrected renewal ended APPROVED with P0/P1/P2/P3 = 0/0/0/0. A later bounded post-contract escalation independently revalidated the corrected FT-01 route predicates and incorporated FT-03 contract with zero residual findings. Gate G-H PASS. Review: `07_CAMPAIGN_SPEC_PROTOTYPE_REVIEW.md`.
 - Kyle selected **Approve for versioning**. The answer was auto-selected after timeout and counts as Kyle's answer. Raw: `raw/bb-inj5.8/owner-decision.txt`.
 
-H1–H6 are satisfied. This approval authorizes I to create the documentation-only spec worktree, copy reviewed evidence, audit, freeze-check, and commit locally. It does not authorize production implementation, public/schema/API change, compatibility deletion, push, PR, merge, release, or publication.
+H1–H6 remain satisfied on the post-contract escalation binding. This approval authorizes I to preserve the documentation-only specification package and audit. It does not authorize public/schema/API change, compatibility deletion, release, or publication; later implementation authority is governed by the separate implementation-campaign mandate and packet gates.

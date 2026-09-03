@@ -1,14 +1,14 @@
 # BreadBoard DSH donor campaign specification
 
 Version: 1.0
-Status: APPROVED implementation handoff; documentation-only local branch
+Status: APPROVED implementation handoff; post-contract review escalations passed
 Owner: Kyle McCleary
 Campaign map: `bb-inj5`; tickets `bb-inj5.1` through `bb-inj5.9`
 Approved prototype review: `evidence/07_CAMPAIGN_SPEC_PROTOTYPE_REVIEW.md`
 
 ## Specification status and ownership
 
-This specification freezes the decisions approved through Workstream H and is the sole implementation handoff for the DSH donor campaign. Exact reviewed decision artifacts are copied under `evidence/`; raw stores remain in the local campaign workspace and are content-bound in `COMPLETION_AUDIT.md`. The implementation supervisor needs no chat transcript.
+This specification freezes the decisions approved through Workstream H and revalidated by the bounded post-contract F/G/H escalations; it is the sole implementation handoff for the DSH donor campaign. Exact reviewed decision artifacts are copied under `evidence/`; raw stores remain in the local campaign workspace and are content-bound in `COMPLETION_AUDIT.md`. The implementation supervisor needs no chat transcript.
 
 The first runnable packet is FT-01, but it is authorized only after the final documentation commit exists, Gate G-I and G-Score pass, `bb-inj5.9` and map `bb-inj5` close, and the completion audit records those facts. No additional product-design approval is then required for FT-01 evidence. Every new seam, public surface, compatibility deletion, or freeze change still requires its named Kyle gate.
 
@@ -494,10 +494,10 @@ Reviewed decision artifacts:
 | C `bb-inj5.3` | `evidence/02_FAULT_BOUNDARY_EVIDENCE.md` | G-C PASS |
 | D `bb-inj5.4` | `evidence/03_EVIDENCE_AND_APPROVAL_CONTRACT.md` | G-D PASS |
 | E `bb-inj5.5` | `evidence/04_NORMATIVE_SEMANTIC_LAWS.md` | G-D/E PASS |
-| F `bb-inj5.6` | `evidence/05_FIRST_TRANCHE_PACKET_SET.md` | G-F PASS |
-| G `bb-inj5.7` | `evidence/06_PROMOTED_WORKSTREAM_DAG.md` | G-G PASS; guarded conditional |
-| H `bb-inj5.8` | approved prototype + exact-byte review | G-H PASS |
-| I `bb-inj5.9` | committed specification + completion audit | G-I/G-Score PASS |
+| F `bb-inj5.6` | `evidence/05_FIRST_TRANCHE_PACKET_SET.md` | G-F PASS; post-contract FT-01/FT-03 escalation |
+| G `bb-inj5.7` | `evidence/06_PROMOTED_WORKSTREAM_DAG.md` | G-G PASS; post-contract route escalation; guarded conditional |
+| H `bb-inj5.8` | approved prototype + exact-byte review | G-H PASS; post-contract escalation |
+| I `bb-inj5.9` | committed specification + completion audit | G-I/G-Score PASS; 16 exact package inputs |
 
 ## 16. Completion and implementation handoff
 

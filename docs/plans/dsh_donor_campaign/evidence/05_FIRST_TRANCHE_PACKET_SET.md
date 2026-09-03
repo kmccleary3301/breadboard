@@ -1,7 +1,7 @@
 # Evidence-only first-tranche packet set
 
 Ticket: `bb-inj5.6`
-Status: APPROVED — Kyle selected FT-01 through FT-06; Gate G-F passed
+Status: APPROVED — Kyle selected FT-01 through FT-06; Gate G-F revalidated by post-contract escalation
 Session: 2 of 2
 
 ## Control panel
@@ -9,14 +9,14 @@ Session: 2 of 2
 - North star: choose the smallest packet-ready tranche that reduces uncertainty on the seven-part research substrate without changing product behavior or weakening the Lock.
 - Current claim: six evidence-only, no-new-seam packets are executable without product-policy invention; they cover every F3/F6 obligation and the highest-value unresolved reconstruction law. No internal type is justified.
 - Latest product signal: a recovered durable turn was absent from the selected logical Session journal after engine replacement; first-tranche FT-01 is bounded to characterize, not repair, that held defect.
-- Current red class: none. The original evidence/executable-contract red was corrected and the sole renewal approved with zero residual findings.
+- Current red class: none. The original correction and sole renewal remain historical; the publication-blocking FT-03 corrections were independently revalidated under the bounded post-contract escalation recorded in the review.
 - Next cheapest discriminator: Workstream G maps every promoted item and deferred gate into the dependency DAG, using these six packet contracts as its first tranche.
-- Active external blocker: none.
+- Active external blocker: none. The post-contract escalation found zero residual P0/P1/P2.
 - Stop or escalation: reopen only through PROC-STALE/PROC-AMEND if a packet, disposition, head, or governing law changes. Any public surface, new seam, or product fix remains outside this tranche.
 
 DECISION THIS STAGE CAN MOVE: which evidence-only packets enter tranche one and which candidates remain deferred.
 EVIDENCE THAT WOULD MOVE IT: observed gaps or proven simplifications ranked against section 6.6 scenarios, with executable packet contracts and a zero-surface scope audit.
-EVIDENCE PRODUCED SO FAR: six selected packet contracts; Kyle's recorded selection; one CHANGES_REQUESTED review; corrections for six P1 and two P2; one permitted renewal with P0/P1/P2/P3 = 0/0/0/0 and Gate G-F PASS.
+EVIDENCE PRODUCED SO FAR: six selected packet contracts; Kyle's recorded selection; one CHANGES_REQUESTED review; corrections for six P1 and two P2; one permitted renewal with P0/P1/P2/P3 = 0/0/0/0; and one later bounded post-contract escalation that revalidated the corrected FT-03 fixture/oracle and terminal routes with zero residual findings.
 PROVENANCE-ONLY ARTIFACTS PRODUCED SO FAR: one raw store at `raw/bb-inj5.6/` containing two session provenance blocks and the owner decision.
 
 ## Gate card and bounded charter
@@ -250,11 +250,11 @@ No internal-type packet enters tranche one. The candidate set proves neither an 
 
 **DECIDED by Kyle, 2026-09-02:** select the balanced six-packet tranche, FT-01 through FT-06. This is the smallest set that covers every F3/F6 obligation while also exercising exact request reconstruction, the highest-leverage optional E5/section-6.6 question. The required-only five-packet cut was rejected because it postpones provider/prompt ablation evidence; the expanded eight-packet set was rejected because compaction and execution-world work exceed current evidence and the smallest-set rule. Raw decision: `raw/bb-inj5.6/q1-tranche-selection.txt`.
 
-The original independent review bound to SHA-256 `5a9d1178da50c04d1fecaaddd19a7954bd3c73d8d251a04dad2dc4620562c9b1` returned `CHANGES_REQUESTED`: six P1 and two P2. All eight were corrected without changing Kyle's selected six-packet scope. The one permitted renewal bound to SHA-256 `abcb7369d1bb13f7ce42b24a4491b746dd5319eb5edacaf277fd82b919446701` returned `APPROVED`, confidence 0.99, with no P0/P1/P2/P3. Review: `05_FIRST_TRANCHE_PACKET_SET_REVIEW.md`.
+The original independent review bound to SHA-256 `5a9d1178da50c04d1fecaaddd19a7954bd3c73d8d251a04dad2dc4620562c9b1` returned `CHANGES_REQUESTED`: six P1 and two P2. All eight were corrected without changing Kyle's selected six-packet scope. The one permitted renewal bound to SHA-256 `abcb7369d1bb13f7ce42b24a4491b746dd5319eb5edacaf277fd82b919446701` returned `APPROVED`, confidence 0.99, with no P0/P1/P2/P3. A later post-contract escalation, authorized by Kyle's implementation mandate rather than counted as another renewal, independently revalidated the corrected FT-03 fixture/oracle and FT-01 routes. Review: `05_FIRST_TRANCHE_PACKET_SET_REVIEW.md`.
 
 ## Closure
 
-- Gate G-F: PASS.
+- Gate G-F: PASS on the post-contract escalation binding.
 - Selected tranche: FT-01 through FT-06; 6/6 evidence-only packets; permanent-lock cap 3 against 7 learned behaviors.
 - Scope: public/schema/API change `none`; compatibility removal `none`; new seam/module/dispatch `none`; freeze impact `none`; no product defect repair.
 - Internal types: none admitted.

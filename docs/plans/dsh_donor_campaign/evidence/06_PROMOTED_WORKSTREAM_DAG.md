@@ -1,21 +1,21 @@
 # Promoted workstream DAG
 
 Ticket: `bb-inj5.7`
-Status: APPROVED — owner policy selected; fresh-context consistency renewal passed
+Status: APPROVED — guarded owner policy selected; post-contract route escalation passed
 Session: 2 of 2
 
 ## Control panel
 
 - North star: turn the approved evidence-only tranche into the smallest executable dependency graph that can converge on the seven-part research substrate without silently promoting donor ideas.
 - Current claim: 623/623 ledger rows have one typed route; the graph is acyclic; FT-01 through FT-06 are the only unconditional work packets; no new seam, public surface, compatibility deletion, or implementation is promoted.
-- Current red class: none in the graph prototype. The product-level north-star command is intentionally `FOG`: four of seven substrate pieces lack admitted runtime owners.
+- Current red class: none. The corrected FT-01 terminal predicates passed exact raw-machine validation and independent P0/P1 escalation review. The product-level north-star command is intentionally `FOG`: four of seven substrate pieces lack admitted runtime owners.
 - Next cheapest discriminator: execute FT-01 and FT-04 against pinned products, then the isolated FT-02/03/05 probes, then regenerate FT-06 and cross the evidence gate.
-- Active external blocker: none. Kyle selected the guarded-conditional policy; packet execution does not begin in this campaign.
+- Active external blocker: none. Kyle selected the guarded-conditional policy; the publication-blocking route contradiction is corrected and revalidated.
 - Stop or escalation: stale input uses PROC-STALE; product mismatch uses PROC-DEFECT; new seam, public surface, compatibility deletion, or freeze change uses PROC-AMEND and Kyle approval.
 
 DECISION THIS STAGE CAN MOVE: packet ordering, conditional admission, ownership, and the approval boundary after evidence turns green or red.
 EVIDENCE THAT WOULD MOVE IT: the six approved packet reports, their exact raw identities, and fresh interface counts from FT-06.
-EVIDENCE PRODUCED SO FAR: one 50-node typed DAG prototype, deterministic validator PASS, explicit routing for 623/623 donor rows, Kyle's guarded-conditional policy selection, and a fresh-context renewal with P0/P1 = 0/0.
+EVIDENCE PRODUCED SO FAR: one 50-node typed DAG prototype, deterministic validator PASS, explicit routing for 623/623 donor rows, Kyle's guarded-conditional policy selection, one permitted consistency renewal, and one later bounded post-contract route escalation with P0/P1 = 0/0.
 PROVENANCE-ONLY ARTIFACTS PRODUCED SO FAR: `raw/bb-inj5.7/` contains session provenance, row routing, DAG prototype, validator/result, owner decision, and consistency verdict.
 
 ## Gate card
@@ -291,6 +291,6 @@ Kyle selected **Guarded conditional**. Normative-law contradiction plus packet e
 
 The initial fresh-context read found one P1: the distributed-teams research node omitted the WorkItem-coordination predecessor its own condition required. During the one permitted renewal, the read also surfaced incomplete machine predicates on five design-it-twice gates and medium/low drift for FT-04/05 risk metadata. The raw DAG and validator now require `CH-PILOT + WF-CHAR`, the four global seam-admission facts on all six DIT nodes, Kyle approval on every conditional new-seam implementation, and the exact six first-tranche risk classes. The validator reran `PASS`.
 
-Final renewal: `PASS`, P0/P1 = 0/0. Exact reviewed-candidate binding and evidence: `raw/bb-inj5.7/consistency-read.txt`.
+Final permitted renewal: `PASS`, P0/P1 = 0/0. A later post-contract escalation, authorized by Kyle's implementation mandate rather than counted as another renewal, revalidated the corrected FT-01 terminal predicates at P0/P1 = 0/0. Exact bindings and evidence: `raw/bb-inj5.7/consistency-read.txt`.
 
-Gate G-G passes. G1–G10 are satisfied; 623/623 donor rows have typed routes; all DSH phases have explicit decisions; the six first-tranche packets remain unchanged in scope; every downstream implementation is conditional; no new seam or public/freeze change is promoted; and the seven-piece substrate remains honestly not runnable until its named fog gates pass. No packet execution belongs to this workstream.
+Gate G-G passes on the post-contract escalation binding. G1–G10 are satisfied; 623/623 donor rows have typed routes; all DSH phases have explicit decisions; the six first-tranche packets remain unchanged in scope; every downstream implementation is conditional; no new seam or public/freeze change is promoted; and the seven-piece substrate remains honestly not runnable until its named fog gates pass. No packet execution belongs to this workstream.

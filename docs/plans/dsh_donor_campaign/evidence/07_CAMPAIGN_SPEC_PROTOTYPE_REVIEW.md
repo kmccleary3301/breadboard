@@ -86,11 +86,12 @@ Historical fresh-context dry-read renewal: **PASS**, P0/P1/P2/P3 = **0/0/0/0**, 
 
 This is not a second renewal. The single renewal budget ended at line 83. Later automated PR review identified publication-blocking executable-contract defects after Gate G-H had closed. Section D §114 requires a split or escalation instead of a third round. Kyle's later DSH donor implementation mandate authorizes correcting every substantive review finding and requires a new exact-artifact independent review before merge; this section records that bounded escalation and reopens only the affected incorporated packet and routing clauses.
 
-Escalation candidate date: 2026-09-03. Reviewed prototype candidate SHA-256 `3f2cababd23fc5aeb87ef2264aeb35e05d256222cdd5fe6288a6a7719ab863d5`; pinned ENGINE/TUI heads unchanged.
+Escalation review date: 2026-09-03. Reviewed prototype SHA-256 `43cd4ef77886ee852f27bbb907759d3c5b0ada5a135ec4f4e8e47d6934d94958`; pinned ENGINE/TUI heads unchanged.
 
-The escalation candidate preserves FT-01's qualifying L2 exception and incorporates the corrected packet contract by normative exact-section link. Its routing now opens `RT-REPAIR` only for `KNOWN_DIVERGENCE`, joins coherent evidence directly with FT-04 at `RT-REPLAY`, and closes both RT nodes for `PRODUCT_RED` or another terminal defect.
+The escalation review independently verified that the prototype preserves FT-01's qualifying L2 exception, incorporates the corrected FT-03 contract by normative exact-section link, opens `RT-REPAIR` only for `KNOWN_DIVERGENCE`, joins coherent evidence with FT-04 at `RT-REPLAY`, and closes both RT nodes for `PRODUCT_RED` or another terminal defect. Raw DAG validation passes 50 acyclic nodes and 623 unique routes; prototype validation passes 19 checks; package validation passes 16 exact evidence, fixture, and escalated-review copies, 13 links, six guard pairs, and no findings.
 
-Independent escalation verdict: **PENDING**.
-P0/P1/P2/P3: **pending**.
+Independent escalation verdict: **APPROVED**.
+P0/P1/P2/P3: **0/0/0/0**.
+Confidence: 0.99.
 
-Gate G-H remains blocked until exact-artifact independent review approves the prototype digest above.
+Gate G-H remains **PASS** on the exact prototype digest above.

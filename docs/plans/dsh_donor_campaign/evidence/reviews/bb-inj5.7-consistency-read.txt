@@ -24,3 +24,18 @@ Evidence checked:
 - Cross-repo/generated/client/installed/E4 order, branch/rollback/stale/freeze/approval metadata, and DIT gates are explicit.
 - Seven-piece substrate remains honestly FOG/NOT RUNNABLE; no public command implementation is claimed.
 - owner-decision.txt records Guarded conditional.
+
+Post-contract escalation read — 2026-09-03
+
+This is not a second renewal. Later automated PR review identified a terminal-route contradiction after G-G closed. D §114 requires split or escalation after the permitted renewal. Kyle's later DSH donor implementation mandate authorizes correction of substantive PR findings and requires exact independent review before merge; this section records that bounded P0/P1-only escalation.
+
+Reviewed DAG SHA-256: 958cb86c7cb13a5c3d0d7fe9f5bb19528d0a202b85434998f33c9d26a0e06cab
+Reviewed raw DAG SHA-256: b475dba4b961f6eba610554f1f4a8312f9227448941b596a1cf2e3be81a50867
+Reviewed validator SHA-256: f9735440c53b197d1f421148d6cd0d05c5595377a695c40b8cf949c7c69ada89
+
+Independent result: PASS; P0=0, P1=0.
+- `RT-REPAIR` opens only for FT-01 `KNOWN_DIVERGENCE`.
+- FT-01 `COHERENT` joins FT-04 directly at `RT-REPLAY`.
+- `PRODUCT_RED` and every other terminal defect open neither RT node.
+- The validator enforces both exact predicates and dependencies.
+- Validator rerun: PASS; 50/50 nodes acyclic, 623/623 routes unique, phases 0–12, six first-tranche packets, zero unconditionally promoted new seams.

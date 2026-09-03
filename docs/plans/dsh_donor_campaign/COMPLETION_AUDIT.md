@@ -1,15 +1,16 @@
 # DSH donor campaign completion audit
 
-Status: COMPLETE — all nine children and map `bb-inj5` closed; final gates pass.
+Status: COMPLETE — all nine children and map `bb-inj5` closed; post-contract F/G/H escalations and final gates pass.
 
 ## Authority and immutable identities
 
 - Specification: [DSH_DONOR_CAMPAIGN_SPEC.md](DSH_DONOR_CAMPAIGN_SPEC.md)
-- Branch/worktree: `docs/dsh-donor-campaign-spec` at `/Users/kylemccleary/projects/breadboard-dsh-spec-20260902`
+- Branch/worktree: `docs/dsh-donor-campaign-spec` at `/Users/kylemccleary/projects/breadboard-dsh-spec-pr-20260902`
 - ENGINE evidence baseline: `/Users/kylemccleary/projects/breadboard-dsh-baseline-b3cacc73` at `b3cacc7356244253305f8a6f84308a993485bfe2`
 - TUI evidence baseline: `/Users/kylemccleary/projects/breadboard-tui-dsh-baseline-73d6e6f5` at `73d6e6f55a238fc9ff0486bbcc9ecffe85705715`
 - Donor: first-party `deepseek-ai/deepseek-harness`, tag `dsh-v0.1.0-rc.8`, commit `141eb6fef83422698aef7a981029e843e8161534`; [frozen inventory](evidence/DONOR_ITEMS.yaml)
 - Local tracker: map `bb-inj5`; children `bb-inj5.1` through `bb-inj5.9`
+- Post-contract escalation bindings: packet `dcbb745544e13bc67a2589a22a8aa008821494f8d3cfb06d99858171f8e7657d`; promoted DAG `958cb86c7cb13a5c3d0d7fe9f5bb19528d0a202b85434998f33c9d26a0e06cab`; prototype `43cd4ef77886ee852f27bbb907759d3c5b0ada5a135ec4f4e8e47d6934d94958`; FT-03 fixture `76e69938aa132dd4f5fd2d35f8d966c7209f4231eb1b9d8fbb27be285b882ce3`.
 
 ## Coverage and decisions
 
@@ -45,18 +46,18 @@ Digest method: SHA-256 over each raw store's sorted `relative-path NUL file-SHA2
 | `bb-inj5.4` | 4 | `97405c3815eba39021962705b9c152a95400c680a04a2d24efd69b0a52b648b3` |
 | `bb-inj5.5` | 7 | `911575b2f1a09fa434790389650be216614ab66d424852372f0433d7f76bc4f6` |
 | `bb-inj5.6` | 3 | `2424661ac0a7e124d155c204be2e7607eda1545276d60c61d15be0db44943706` |
-| `bb-inj5.7` | 8 | `2772110fb8d79d270d75b6b8f3815a09bce8cc2bbb2f1813e5011cea3c66f4f7` |
+| `bb-inj5.7` | 8 | `8cb9dfe87bb86e2daf7d42d019e6697dceddc3e81d932fd004cc5c29fc28b3c4` |
 | `bb-inj5.8` | 6 | `73ef4c6a118bf0f0a4dedcec99005e1f42480bb5f2acc23af7aa27b90f0b1c82` |
-| `bb-inj5.9` | 3 | `30224814a0d3bb40451a435df7fa7b0d5d3d1937a185faf370c45076dfd36722` |
+| `bb-inj5.9` | 3 | `c2671ee460c8b3bfa3375dcb4f5013e2a6e71fc2aac2fa5445e4c9666faf0d38` |
 
 Workstream I's binding covers its provenance block, deterministic package validator, and final validator result.
 
 ## Gate status
 
-- G-I final package validation: PASS; 14/14 reviewed evidence copies are byte-exact, all 13 relative links resolve, all six packet guard pairs are present, and findings are empty.
+- G-I final package validation: PASS; 16/16 reviewed evidence, fixture, and escalated-review inputs are byte-exact, all 13 relative links resolve, all six packet guard pairs are present, and findings are empty.
 - G-Score: PASS at 1000/1000 with every checked item linked and zero structural findings.
 - Phase 20 freeze checker: PASS at unchanged baseline `3b8d862f62ee9c2c421fe07758606b6973902c67`.
-- Prototype approval: PASS. Kyle approved versioning; G-H review PASS with P0/P1/P2/P3 = 0/0/0/0.
+- G-F/G-G/G-H escalation reviews: PASS. Corrected FT-03 oracle/history and FT-01 terminal routes are exact-artifact bound; P0/P1/P2/P3 = 0/0/0/0 for F/H and P0/P1 = 0/0 for G.
 - Tickets: `bb-inj5.1`–`bb-inj5.9` CLOSED in dependency order; map `bb-inj5` CLOSED.
 
 ## Known fog and tranche boundary
@@ -72,7 +73,7 @@ The specification contains mission/substrate, authorities and baseline heads, fr
 ## Finalization record
 
 - Plan integrity: `/opt/homebrew/bin/python3.11 .../check_plan.py` → PASS, 1000/1000, zero findings.
-- Package validator: PASS; 14 exact evidence copies, six packet sections/guard pairs, 13 valid relative links, zero findings.
+- Package validator: PASS; 16 exact evidence/fixture/review copies, six packet sections/guard pairs, 13 valid relative links, zero findings.
 - Freeze checker: PASS at baseline `3b8d862f62ee9c2c421fe07758606b6973902c67`.
 - Local commit: package introduced at `c30415263b74a11d1c57d42badb48ff91829d8de`; the final audit-only amendment is recorded in the workspace resolution log.
-- Push/PR/merge/implementation: NOT RUN.
+- Original documentation finalization performed no production implementation, release, publication, or deployment. The later implementation campaign and this documentation PR are governed separately and do not retroactively expand this audit's authority.
