@@ -3498,3 +3498,153 @@ async def test_legacy_workspace_journal_binds_before_terminal_publication(
     projection, _ = session_store.load_session(workspace, session_id)
     assert projection.read_model.status == "completed"
     assert projection.read_model.session_id == session_id
+
+
+def test_retained_admission_reconciliation_accepts_interleaved_observations() -> None:
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+    from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
+
+    record = SessionRecord(
+        session_id="session-interleaved-admission",
+        status=SessionStatus.RUNNING,
+    )
+    product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "c" * 64}),
+        "interleaved admission",
+        session_id=record.session_id,
+    )
+    record.product_session = product_session
+    content_hash = "sha256:" + (
+        __import__("hashlib").sha256(b"interleaved input").hexdigest()
+    )
+    turn = TurnRecord(
+        input_id="input-interleaved-admission",
+        turn_id="turn-interleaved-admission",
+        client_message_id="client-interleaved-admission",
+        content="interleaved input",
+        attachments=(),
+        original_disposition="started",
+        state="active",
+        logical_event_count_before_admission=1,
+        logical_input_content_hash=content_hash,
+    )
+    record.turns_by_id[turn.turn_id] = turn
+    record.active_turn_id = turn.turn_id
+    product_session.assistant_message("observation raced with admission")
+    product_session.input(turn.content, [])
+
+    runner = SessionRunner(
+        session=record,
+        registry=SessionRegistry(),
+        request=SessionCreateRequest(config_path="cfg.yaml", task=""),
+    )
+    runner.reconcile_retained_input_admissions()
+
+    accepted_events = [
+        event for event in product_session.events if event.kind == "input.accepted"
+    ]
+    assert len(accepted_events) == 1
+    assert accepted_events[0].payload["content_hash"] == content_hash
+
+
+@pytest.mark.asyncio
+async def test_duplicate_attachment_ids_are_canonical_before_registry_persist(
+    tmp_path: Path,
+) -> None:
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime import Session as ProductSession
+    from breadboard.product.runtime.events import JsonlEventSink
+    from breadboard_engine.api.cli_bridge.session_artifacts import SessionArtifactStore
+
+    class Upload:
+        filename = "proof.txt"
+        content_type = "text/plain"
+
+        def __init__(self) -> None:
+            self.data = b"proof"
+
+        async def read(self, size: int = -1) -> bytes:
+            data = self.data if size < 0 else self.data[:size]
+            self.data = self.data[len(data) :]
+            return data
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    metadata = {"workspace": str(workspace)}
+    session_id = "session-duplicate-attachment-ids"
+    artifacts = SessionArtifactStore(session_id=session_id, metadata=metadata)
+    uploaded = await artifacts.upload([Upload()], workspace_dir=workspace)
+    attachment_id = uploaded.attachments[0].id
+    runner_metadata = dict(metadata)
+    runner_artifacts = SessionArtifactStore(
+        session_id=session_id, metadata=runner_metadata
+    )
+    runner_artifacts.restore_manifest(workspace)
+
+    event_root = tmp_path / "events"
+    event_path = event_root / session_id / "session_events.jsonl"
+    product_session = ProductSession.start(
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "d" * 64}),
+        "duplicate attachment IDs",
+        session_id=session_id,
+        sink=JsonlEventSink(event_path),
+    )
+    state_root = tmp_path / "state"
+    registry = SessionRegistry(state_root=state_root)
+    record = SessionRecord(
+        session_id=session_id,
+        status=SessionStatus.RUNNING,
+        metadata={**runner_metadata, "session_event_root": str(event_root)},
+    )
+    record.product_session = product_session
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(
+            config_path="cfg.yaml", task="", workspace=str(workspace)
+        ),
+    )
+    runner.artifacts = runner_artifacts
+    record.runner = runner
+    await registry.create(record)
+
+    deferred: list[Any] = []
+    service = SessionService(registry=registry)
+    receipt = await service.send_input(
+        session_id,
+        SessionInputRequest(
+            content="use attachment",
+            attachments=[attachment_id, attachment_id],
+            client_message_id="client-duplicate-attachment-ids",
+        ),
+        defer_execution=deferred.append,
+    )
+
+    assert receipt.disposition == "started"
+    turn = record.turns_by_id[receipt.turn_id]
+    assert turn.attachments == (attachment_id,)
+    state_path = registry._state_path(session_id)
+    assert state_path is not None
+    retained = json.loads(state_path.read_text(encoding="utf-8"))
+    assert retained["turns"][0]["attachments"] == [attachment_id]
+    assert len(
+        [event for event in product_session.events if event.kind == "input.accepted"]
+    ) == 1
+    assert len(deferred) == 1
+    with pytest.raises(HTTPException) as invalid:
+        await service.send_input(
+            session_id,
+            SessionInputRequest(
+                content="invalid attachment",
+                attachments=["missing-attachment"],
+                client_message_id="client-invalid-attachment",
+            ),
+            defer_execution=deferred.append,
+        )
+    assert invalid.value.status_code == 400
+    assert len(record.turns_by_id) == 1
+    retained_after_invalid = json.loads(state_path.read_text(encoding="utf-8"))
+    assert len(retained_after_invalid["turns"]) == 1
+    assert len(deferred) == 1
+    await runner.stop()

@@ -393,6 +393,69 @@ class SessionRunner:
             await self.registry.update_status(self.session.session_id, final_status)
             self._closed = True
             await self._enqueue_termination()
+    @staticmethod
+    def canonicalize_input_attachments(
+        attachments: Optional[Sequence[str]],
+    ) -> list[str]:
+        canonical: list[str] = []
+        seen: set[str] = set()
+        for attachment in attachments or ():
+            if not isinstance(attachment, str) or not attachment.strip():
+                raise ValueError("attachment IDs must not be empty")
+            normalized = attachment.strip()
+            if normalized not in seen:
+                seen.add(normalized)
+                canonical.append(normalized)
+        return canonical
+
+    def validate_input_admission(
+        self,
+        content: str,
+        attachments: Sequence[str],
+        *,
+        input_id: Optional[str] = None,
+        turn_id: Optional[str] = None,
+    ) -> None:
+        if self._closed:
+            raise RuntimeError("session is closed")
+        if not content or not content.strip():
+            raise ValueError("input content must not be empty")
+        if (input_id is None) != (turn_id is None):
+            raise ValueError("input and turn IDs must be supplied together")
+        canonical_attachments = self.canonicalize_input_attachments(attachments)
+        if tuple(canonical_attachments) != tuple(attachments):
+            raise ValueError("attachments are not canonical")
+        if turn_id is not None:
+            admitted_turn = self.session.turns_by_id.get(turn_id)
+            if admitted_turn is None:
+                raise RuntimeError("turn_id was not admitted by the session registry")
+            if admitted_turn.input_id != input_id:
+                raise RuntimeError("input_id does not match the admitted turn")
+            if admitted_turn.terminal_outcome is not None:
+                raise RuntimeError("turn is already terminal")
+            admitted_active = (
+                admitted_turn.state == "active"
+                and self.session.active_turn_id == admitted_turn.turn_id
+            )
+            admitted_queued = (
+                admitted_turn.state == "queued"
+                and admitted_turn.turn_id in self.session.queued_turn_ids
+            )
+            if not (admitted_active or admitted_queued):
+                raise RuntimeError("turn is not active or queued for execution")
+            if admitted_turn.content != content:
+                raise RuntimeError("input content does not match the admitted turn")
+            if admitted_turn.attachments != tuple(canonical_attachments):
+                raise RuntimeError("attachments do not match the admitted turn")
+        with self._product_session_lock:
+            self.artifacts.selected_artifacts(canonical_attachments)
+            product_session = getattr(self.session, "product_session", None)
+            product_status = getattr(
+                getattr(product_session, "read_model", None), "status", None
+            )
+            if product_status is not None and product_status != "running":
+                raise RuntimeError("product session is not accepting input")
+
     def reconcile_retained_input_admissions(self) -> None:
         """Repair a registry-first admission that missed its journal append."""
         with self._product_session_lock:
@@ -407,7 +470,22 @@ class SessionRunner:
             if not retained_turns:
                 return
             events = product_session.events
-            for turn in retained_turns:
+            markers = [
+                turn.logical_event_count_before_admission
+                for turn in retained_turns
+            ]
+            if any(
+                current is None
+                or current < 1
+                or next_marker is None
+                or next_marker <= current
+                for current, next_marker in zip(markers, markers[1:])
+            ):
+                raise ReplayError(
+                    "admission_journal_mismatch",
+                    "retained input admission positions are out of order",
+                )
+            for index, turn in enumerate(retained_turns):
                 before = turn.logical_event_count_before_admission
                 content_hash = turn.logical_input_content_hash
                 if (
@@ -430,39 +508,59 @@ class SessionRunner:
                     ) from exc
                 expected_payload = {
                     "content_hash": content_hash,
-                    "attachments": [
+                    "attachments": tuple(
                         artifact.as_dict() for artifact in selected_artifacts
-                    ],
+                    ),
                 }
                 if before > len(events):
                     raise ReplayError(
                         "admission_journal_mismatch",
                         "retained input admission journal position is missing",
                     )
-                if before == len(events):
-                    if product_session.read_model.status != "running":
-                        raise ReplayError(
-                            "admission_journal_mismatch",
-                            "retained input admission cannot be appended to a terminal session",
-                        )
-                    product_session.input_digest(content_hash, selected_artifacts)
-                    events = product_session.events
-                    continue
-                event = events[before]
-                actual_payload = (
-                    {
-                        "content_hash": event.payload.get("content_hash"),
-                        "attachments": list(event.payload.get("attachments") or ()),
-                    }
-                    if isinstance(event.payload, Mapping)
-                    else None
+                next_before = (
+                    markers[index + 1] if index + 1 < len(markers) else None
                 )
-                if event.kind != "input.accepted" or actual_payload != expected_payload:
+                upper_bound = (
+                    min(next_before, len(events))
+                    if next_before is not None
+                    else len(events)
+                )
+                matches = []
+                for event in events[before:upper_bound]:
+                    actual_payload = (
+                        {
+                            "content_hash": event.payload.get("content_hash"),
+                            "attachments": tuple(
+                                event.payload.get("attachments") or ()
+                            ),
+                        }
+                        if isinstance(event.payload, Mapping)
+                        else None
+                    )
+                    if (
+                        event.kind == "input.accepted"
+                        and actual_payload == expected_payload
+                    ):
+                        matches.append(event)
+                if len(matches) > 1:
                     raise ReplayError(
                         "admission_journal_mismatch",
-                        "retained input admission does not match its journal event",
+                        "retained input admission has duplicate journal events",
                     )
-
+                if matches:
+                    continue
+                if next_before is not None:
+                    raise ReplayError(
+                        "admission_journal_mismatch",
+                        "retained input admission is ordered after a later admission",
+                    )
+                if product_session.read_model.status != "running":
+                    raise ReplayError(
+                        "admission_journal_mismatch",
+                        "retained input admission cannot be appended to a terminal session",
+                    )
+                product_session.input_digest(content_hash, selected_artifacts)
+                events = product_session.events
 
     async def enqueue_input(
         self,
@@ -499,13 +597,7 @@ class SessionRunner:
         if not (admitted_active or admitted_queued):
             raise RuntimeError("turn is not active or queued for execution")
 
-        attachment_ids = list(
-            dict.fromkeys(
-                item.strip()
-                for item in (attachments or [])
-                if isinstance(item, str) and item.strip()
-            )
-        )
+        attachment_ids = self.canonicalize_input_attachments(attachments)
         if admitted_turn.content != content:
             raise RuntimeError("input content does not match the admitted turn")
         if admitted_turn.attachments != tuple(attachment_ids):

@@ -1930,7 +1930,15 @@ class SessionService:
                 status_code=status.HTTP_409_CONFLICT, detail="session not active"
             )
         client_message_id = payload.client_message_id or uuid.uuid4().hex
-        attachments = tuple(payload.attachments or ())
+        try:
+            attachments = tuple(
+                SessionRunner.canonicalize_input_attachments(payload.attachments)
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
         body_digest = submission_body_digest(payload.content, attachments)
         key_digest = identity_digest(client_message_id)
         scheduled_after_admission: list[Callable[[], Awaitable[None]]] = []
@@ -2001,6 +2009,14 @@ class SessionService:
                 admission_persisted = False
                 logical_input_committed = False
                 try:
+                    validator = getattr(runner, "validate_input_admission", None)
+                    if callable(validator):
+                        validator(
+                            accepted_content,
+                            attachments,
+                            input_id=turn.input_id,
+                            turn_id=turn.turn_id,
+                        )
                     await self.registry.persist(record)
                     admission_persisted = True
                     accepted_content = await runner.enqueue_input(
