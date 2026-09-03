@@ -28,7 +28,7 @@ from breadboard_engine.provider.runtimes.testing import MockRuntime
 from breadboard.product.cli import session as session_operations
 from breadboard.product.runtime import session_store
 from breadboard.product.harness.lock import EffectiveHarnessLock
-from breadboard.product.runtime.events import KernelEvent, Session
+from breadboard.product.runtime.events import AnnotationRecord, KernelEvent, Session
 
 
 @pytest.fixture(autouse=True)
@@ -289,6 +289,50 @@ def test_session_lifecycle_and_resumable_event_stream(
         == "canceled"
     )
     assert client.get("/v1/sessions/session-fixture/artifacts").json()["ok"] is True
+
+
+def test_public_event_limit_fetches_visible_resume_after_hidden_annotation(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    session_id = "annotation-limit"
+    session = Session.start(
+        EffectiveHarnessLock._from_record(
+            {"graph_hash": "sha256:" + "a" * 64}
+        ),
+        "annotation limit",
+        session_id=session_id,
+    )
+    session.assistant_message(
+        "candidate",
+        message_id="message-a",
+        trajectory_id="trajectory-a",
+    )
+    session.pause("labeling")
+    session.annotate(
+        AnnotationRecord(
+            annotation_id="annotation-1",
+            message_id="message-a",
+            trajectory_id="trajectory-a",
+            label="preferred",
+            author="reviewer-1",
+            generation="generation-a",
+        )
+    )
+    session.resume()
+    session.complete("done")
+    session_store.create_session(tmp_path, session)
+
+    response = client.get(
+        f"/v1/sessions/{session_id}/events"
+        "?resume_token=3&limit=1&follow=false"
+    )
+
+    assert response.status_code == 200
+    records = _stream_records(response)
+    assert len(records) == 1
+    assert records[0]["kind"] == "session.resumed"
+    assert records[0]["seq"] == 5
 
 
 def test_public_session_events_snapshot_closes_without_live_follow(

@@ -652,7 +652,9 @@ async def events(
                 emitted += 1
                 if terminal or emitted >= limit:
                     return
-            if not follow:
+            if emitted >= limit:
+                return
+            if not follow and batch.source != "durable":
                 return
             batch = await runtime.read_session_event_batch(
                 session_operations.ListSessionEventsRequest(
@@ -663,7 +665,6 @@ async def events(
             )
             if batch.error is not None:
                 return
-
     return StreamingResponse(
         bounded_stream(),
         media_type="text/event-stream",
