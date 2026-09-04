@@ -1999,12 +1999,22 @@ test("scheduled adapter coalesces identical active requests and rejects collisio
     capability: remoteCapability,
     placement,
     command: ["python", "-c", "print('same')"],
-    metadata: {},
+    metadata: { alpha: 1, beta: 2 },
   })
   const execute = driver.execute
   assert.ok(execute)
   const first = execute(request, context)
-  const second = execute(request, context)
+  const second = execute(
+    {
+      ...request,
+      metadata: {
+        driver: request.metadata!["driver"]!,
+        beta: 2,
+        alpha: 1,
+      },
+    },
+    context,
+  )
   const collision = await execute(
     { ...request, command: ["python", "-c", "print('different')"] },
     context,
@@ -2509,6 +2519,49 @@ test("SSH Slurm backend rejects a reused request id with changed request content
     }),
     /request_id collision; existing execution remains owned/,
   )
+})
+
+test("SSH Slurm backend refreshes metadata when the scheduler reuses a job id", async () => {
+  const first = buildRemoteSandboxRequest({
+    requestId: "req:slurm:first-job-id-owner",
+    capability: slurmCapability,
+    command: ["python", "-c", "print('first')"],
+    placementClass: "remote_worker",
+  })
+  const second = buildRemoteSandboxRequest({
+    requestId: "req:slurm:second-job-id-owner",
+    capability: slurmCapability,
+    command: ["python", "-c", "print('second')"],
+    placementClass: "remote_worker",
+  })
+  const encoded = [first, second].map((request) =>
+    Buffer.from(JSON.stringify(request), "utf8").toString("base64")
+  )
+  let metadataReads = 0
+  const backend = makeSshSlurmBackend({
+    sshTarget: "cluster.example",
+    remoteEvidenceDirectory: "/tmp/evidence",
+    async runCommand(_program, args) {
+      const remoteCommand = args[1] ?? ""
+      if (remoteCommand.includes("setsid sh -c")) return { stdout: "", stderr: "" }
+      if (remoteCommand.includes("submission-") && remoteCommand.includes("then cat")) {
+        return { stdout: "4242;cluster\n", stderr: "" }
+      }
+      if (remoteCommand.startsWith("cat ") && remoteCommand.includes(".request.b64")) {
+        return { stdout: encoded[metadataReads++]!, stderr: "" }
+      }
+      assert.fail(`unexpected Slurm command: ${remoteCommand}`)
+    },
+  })
+  const context = {
+    signal: new AbortController().signal,
+    deadlineAtMs: null,
+    terminationGraceMs: 50,
+  }
+
+  assert.equal((await backend.submit(first, context)).executionId, "4242")
+  assert.equal((await backend.submit(second, context)).executionId, "4242")
+  assert.equal(metadataReads, 2)
 })
 
 test("SSH Slurm backend leaves a durable cancel marker when cancellation precedes a receipt", async () => {

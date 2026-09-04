@@ -7,9 +7,10 @@ import {
   buildCanonicalSandboxEvidence,
   persistCanonicalSandboxArtifact,
 } from "@breadboard/execution-drivers"
-import type {
-  ScheduledExecutionBackendV1,
-  ScheduledExecutionObservationV1,
+import {
+  canonicalScheduledRequestKey,
+  type ScheduledExecutionBackendV1,
+  type ScheduledExecutionObservationV1,
 } from "./scheduled.js"
 
 export interface CommandResultV1 {
@@ -84,29 +85,9 @@ function sha256(value: string): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`
 }
 
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value === "boolean" || typeof value === "string") {
-    return JSON.stringify(value)
-  }
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new Error("Slurm request contains a non-finite number")
-    return JSON.stringify(value)
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => canonicalJson(item)).join(",")}]`
-  }
-  if (typeof value === "object") {
-    const record = value as Record<string, unknown>
-    return `{${Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
-      .join(",")}}`
-  }
-  throw new Error("Slurm request contains a non-JSON value")
-}
 
 function requestDigest(request: SandboxRequestV1): string {
-  return sha256(canonicalJson(request))
+  return sha256(canonicalScheduledRequestKey(request))
 }
 
 function retainedSubmission(request: SandboxRequestV1): string {
@@ -411,6 +392,7 @@ export function makeSshSlurmBackend(
       if (!/^\d+$/.test(executionId)) {
         throw new Error("Slurm submission returned an invalid job id")
       }
+      submitted.delete(executionId)
       const execution = await loadExecution(executionId)
       if (execution.requestDigest !== expectedRequestDigest) {
         throw new Error(

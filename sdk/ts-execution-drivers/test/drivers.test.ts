@@ -5238,6 +5238,27 @@ test("canonical sandbox artifact resolution preserves safe legacy content", asyn
   }
 })
 
+test("canonical sandbox artifact resolution rejects shared-parent candidates", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "breadboard-cas-parent-test-"))
+  const content = "private sandbox output\n"
+  const ref = "sha256:1b196a8697e865cf57eb23b35220bd2b0434d8396d25be4254fa96986451c91a"
+  try {
+    await chmod(parent, 0o755)
+    await writeFile(join(parent, ref.slice("sha256:".length)), "attacker bytes", {
+      mode: 0o600,
+    })
+    const nestedRoot = canonicalSandboxArtifactRoot(parent)
+    await persistCanonicalSandboxArtifact(ref, content, nestedRoot)
+
+    const uri = canonicalSandboxArtifactUri(ref, parent)
+
+    assert.equal(await readFile(new URL(uri), "utf8"), content)
+    assert.equal(new URL(uri).pathname.startsWith(`${nestedRoot}/`), true)
+  } finally {
+    await rm(parent, { recursive: true, force: true })
+  }
+})
+
 test("canonical sandbox artifacts are owner-only and content-addressed", async () => {
 
   const artifactRoot = await mkdtemp(join(tmpdir(), "breadboard-cas-test-"))

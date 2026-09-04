@@ -15,6 +15,29 @@ import {
 } from "@breadboard/execution-drivers"
 import { buildRemoteSandboxRequest } from "./index.js"
 
+export function canonicalScheduledRequestKey(value: unknown): string {
+  if (value === null || typeof value === "boolean" || typeof value === "string") {
+    return JSON.stringify(value)
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new Error("scheduled request contains a non-finite number")
+    }
+    return JSON.stringify(value)
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalScheduledRequestKey(item)).join(",")}]`
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalScheduledRequestKey(record[key])}`)
+      .join(",")}}`
+  }
+  throw new Error("scheduled request contains a non-JSON value")
+}
+
 export type ScheduledExecutionStateV1 =
   | "accepted"
   | "running"
@@ -405,7 +428,7 @@ export function makeScheduledExecutionDriver(
     },
     async execute(request, context) {
       if (!context) throw new Error(`${driverId} execution requires a lifecycle context`)
-      const requestKey = JSON.stringify(request)
+      const requestKey = canonicalScheduledRequestKey(request)
       const existing = active.get(request.request_id)
       if (existing) {
         if (existing.requestKey !== requestKey) {
