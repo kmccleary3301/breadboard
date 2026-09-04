@@ -251,7 +251,7 @@ test("oci driver can execute through an injected runtime adapter", async () => {
     fs.readFileSync(
       new URL(canonicalSandboxArtifactUri(
         result.stdout_ref,
-        canonicalSandboxArtifactRoot(artifactRoot),
+        artifactRoot,
       )),
       "utf8",
     ),

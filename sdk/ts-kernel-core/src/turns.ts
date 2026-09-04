@@ -135,7 +135,9 @@ export async function executeDriverMediatedToolTurn(
     allowReadPaths: options.workspaceRef ? [options.workspaceRef] : request.workspace_root ? [request.workspace_root] : [],
     allowWritePaths: options.workspaceRef ? [options.workspaceRef] : request.workspace_root ? [request.workspace_root] : [],
     allowRunPrograms: options.allowRunPrograms ?? [],
-    allowNetHosts: options.allowNetHosts ?? [],
+    ...(options.allowNetHosts === undefined
+      ? {}
+      : { allowNetHosts: options.allowNetHosts }),
     ttyMode: "optional",
   })
   const placementClass = chooseExecutionPlacementClass(capability, options.driverIdHint)
@@ -190,7 +192,9 @@ export async function executeDriverMediatedToolTurn(
       image_ref: options.imageRef ?? null,
       snapshot_ref: null,
       command: [options.command[0] ?? "", ...options.command.slice(1)],
-      network_policy: { allow: capability.allow_net_hosts ?? [] },
+      network_policy: capability.allow_net_hosts === undefined
+        ? null
+        : { allow: capability.allow_net_hosts },
       secret_refs: [],
       timeout_seconds: null,
       evidence_mode: capability.evidence_mode,

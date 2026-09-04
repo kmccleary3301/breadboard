@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto"
+import { lstatSync } from "node:fs"
 import { chmod, lstat, mkdir, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -315,6 +316,7 @@ export function canonicalSandboxArtifactRoot(
 }
 
 const DEFAULT_SANDBOX_ARTIFACT_ROOT = canonicalSandboxArtifactRoot()
+const LEGACY_SANDBOX_ARTIFACT_ROOT = join(tmpdir(), "breadboard-sandbox-artifacts")
 
 export function canonicalSandboxArtifactUri(
   ref: string,
@@ -322,7 +324,51 @@ export function canonicalSandboxArtifactUri(
 ): string {
   const match = /^sha256:([0-9a-f]{64})$/.exec(ref)
   if (!match) throw new Error("sandbox artifact ref must be a sha256 digest")
-  return pathToFileURL(join(artifactRoot, match[1]!)).href
+  const artifactName = match[1]!
+  const destination = join(artifactRoot, artifactName)
+  try {
+    if (lstatSync(destination).isFile()) {
+      return pathToFileURL(destination).href
+    }
+  } catch {
+    // Resolve eligible artifacts from the pre-isolation store below.
+  }
+  if (artifactRoot !== DEFAULT_SANDBOX_ARTIFACT_ROOT) {
+    const nestedDestination = join(canonicalSandboxArtifactRoot(artifactRoot), artifactName)
+    try {
+      if (lstatSync(nestedDestination).isFile()) {
+        return pathToFileURL(nestedDestination).href
+      }
+    } catch {
+      // Callers may pass either an artifact directory or its historical parent.
+    }
+  }
+  const legacyArtifactRoot = artifactRoot === DEFAULT_SANDBOX_ARTIFACT_ROOT
+    ? LEGACY_SANDBOX_ARTIFACT_ROOT
+    : null
+  if (legacyArtifactRoot !== null) {
+    try {
+      const legacyRootStat = lstatSync(legacyArtifactRoot)
+      const legacyDestination = join(legacyArtifactRoot, artifactName)
+      const legacyArtifactStat = lstatSync(legacyDestination)
+      const currentUid = process.getuid?.()
+      if (
+        legacyRootStat.isDirectory()
+        && !legacyRootStat.isSymbolicLink()
+        && legacyArtifactStat.isFile()
+        && !legacyArtifactStat.isSymbolicLink()
+        && (currentUid === undefined
+          || (legacyRootStat.uid === currentUid && legacyArtifactStat.uid === currentUid))
+        && (legacyRootStat.mode & 0o077) === 0
+        && (legacyArtifactStat.mode & 0o077) === 0
+      ) {
+        return pathToFileURL(legacyDestination).href
+      }
+    } catch {
+      // A missing or unsafe legacy artifact is not a valid resolution target.
+    }
+  }
+  return pathToFileURL(destination).href
 }
 
 export async function persistCanonicalSandboxArtifact(

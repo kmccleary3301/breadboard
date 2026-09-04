@@ -120,7 +120,7 @@ test("trusted local driver can execute a local-process sandbox request", async (
     fs.readFileSync(
       new URL(canonicalSandboxArtifactUri(
         result.stdout_ref,
-        canonicalSandboxArtifactRoot(artifactRoot),
+        artifactRoot,
       )),
       "utf8",
     ),

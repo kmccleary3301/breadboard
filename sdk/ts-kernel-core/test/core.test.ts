@@ -865,10 +865,32 @@ test("kernel core can execute a driver-mediated trusted-local tool turn", async 
   assert.equal(result.driverId, "local-process")
   assert.equal(result.executionPlacement.placement_class, "local_process")
   assert.equal(result.sandboxRequest.placement_class, "local_process")
+  assert.equal(result.sandboxRequest.network_policy, null)
   assert.equal(result.sandboxResult.status, "completed")
   assert.equal(result.evidenceExpectation.require_evidence_refs, true)
   assert.equal(result.sideEffectExpectation.filesystem_scope, "workspace_scoped")
   assert.equal(result.transcript.items[1]?.kind, "tool_result")
+})
+
+test("kernel core executes the default unrestricted local process path", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-driver-local-default-network",
+    entry_mode: "interactive",
+    task: "Run a local command without a network policy.",
+    workspace_root: "/tmp",
+  } as const
+
+  const result = await executeDriverMediatedToolTurn(request, {
+    sessionId: "sess-driver-local-default-network",
+    toolName: "node",
+    command: [process.execPath, "-e", "process.stdout.write('local default ok')"],
+    workspaceRef: "/tmp",
+    allowRunPrograms: [process.execPath],
+  })
+
+  assert.equal(result.sandboxRequest.network_policy, null)
+  assert.equal(result.sandboxResult.status, "completed")
 })
 
 test("kernel core can execute a driver-mediated OCI tool turn", async () => {

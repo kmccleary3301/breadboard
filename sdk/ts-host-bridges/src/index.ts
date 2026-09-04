@@ -594,7 +594,9 @@ export async function runOpenClawEmbeddedViaBreadboard(
       isolationClass: options.toolSlice.isolationClass ?? "process",
       securityTier: options.toolSlice.securityTier ?? "trusted_dev",
       allowRunPrograms: options.toolSlice.allowRunPrograms ?? [command[0]].filter(Boolean),
-      allowNetHosts: options.toolSlice.allowNetHosts ?? [],
+      ...(options.toolSlice.allowNetHosts === undefined
+        ? {}
+        : { allowNetHosts: options.toolSlice.allowNetHosts }),
       driverIdHint: options.toolSlice.remoteExecutor || options.toolSlice.remoteHttp ? "remote" : imageRef ? "oci" : undefined,
       assistantText: null,
       timeoutMs: params.timeoutMs,

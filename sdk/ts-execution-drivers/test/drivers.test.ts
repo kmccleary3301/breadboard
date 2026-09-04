@@ -1,4 +1,5 @@
-import { chmod, mkdtemp, readFile, rm, stat } from "node:fs/promises"
+import { createHash } from "node:crypto"
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
@@ -5216,6 +5217,25 @@ test("canonical sandbox artifact roots are user-specific children", () => {
 
   assert.equal(root.startsWith(`${parent}/`), true)
   assert.match(root, /breadboard-sandbox-artifacts-(?:uid-\d+|current-user)$/)
+})
+
+test("canonical sandbox artifact resolution preserves safe legacy content", async () => {
+  const legacyRoot = join(tmpdir(), "breadboard-sandbox-artifacts")
+  const content = `legacy sandbox output ${process.pid} ${Date.now()}\n`
+  const ref = `sha256:${createHash("sha256").update(content).digest("hex")}`
+  const artifactName = ref.slice("sha256:".length)
+  try {
+    await mkdir(legacyRoot, { recursive: true, mode: 0o700 })
+    await chmod(legacyRoot, 0o700)
+    await writeFile(join(legacyRoot, artifactName), content, { mode: 0o600 })
+
+    const uri = canonicalSandboxArtifactUri(ref)
+
+    assert.equal(uri, new URL(`file://${join(legacyRoot, artifactName)}`).href)
+    assert.equal(await readFile(new URL(uri), "utf8"), content)
+  } finally {
+    await rm(join(legacyRoot, artifactName), { force: true })
+  }
 })
 
 test("canonical sandbox artifacts are owner-only and content-addressed", async () => {
