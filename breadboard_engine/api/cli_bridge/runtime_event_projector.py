@@ -588,11 +588,22 @@ class RuntimeEventProjector:
             raise RuntimeProtocolError("runtime_protocol_error") from None
         try:
             effective_context = base64.b64decode(encoded, validate=True)
+            effective_messages = json.loads(effective_context.decode("utf-8"))
+            if (
+                not isinstance(effective_messages, list)
+                or any(not isinstance(message, dict) for message in effective_messages)
+            ):
+                raise ValueError("effective context must be a message array")
             snapshot = CompactionSnapshot(
                 effective_context=effective_context,
                 raw_fact_ids=tuple(raw_fact_ids),
             )
-        except (ValueError, TypeError):
+        except (
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            ValueError,
+            TypeError,
+        ):
             raise RuntimeProtocolError("runtime_protocol_error") from None
         with self._product_session_lock:
             product_session = getattr(self.session, "product_session", None)

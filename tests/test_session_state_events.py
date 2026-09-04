@@ -780,6 +780,24 @@ def test_runtime_projector_rejects_invalid_ctree_identity_before_commit() -> Non
             None,
         )
 
+    for invalid_context in (
+        b"\xff",
+        b"{}",
+        b'["not-a-message"]',
+    ):
+        with pytest.raises(RuntimeProtocolError, match="runtime_protocol_error"):
+            projector.translate(
+                "conversation.compaction.end",
+                {
+                    "context_encoding": "base64",
+                    "effective_context": base64.b64encode(
+                        invalid_context
+                    ).decode("ascii"),
+                    "raw_fact_ids": ["ctn_000001"],
+                },
+                None,
+            )
+
     assert product.events == events_before
 
 

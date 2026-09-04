@@ -330,7 +330,7 @@ def _remote_event_snapshot(
         if len(page) > page_limit:
             raise ValueError("server returned an oversized session event page")
         if not page:
-            if consumed_cursor == upper_sequence and events:
+            if consumed_cursor is not None and consumed_cursor >= upper_sequence and events:
                 return events
             raise ValueError(
                 "server event snapshot ended before its initial bound"
