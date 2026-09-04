@@ -1866,10 +1866,10 @@ test("scheduled adapter retries failed evidence before later cleanup evidence", 
 
 test("scheduled evidence never regresses after a concurrent terminal observation", async () => {
   let observationCount = 0
-  let releaseRunning!: () => void
-  let runningObservationStarted!: () => void
-  const runningStarted = new Promise<void>((resolve) => {
-    runningObservationStarted = resolve
+  let releaseConflictingTerminal!: () => void
+  let observationStarted!: () => void
+  const firstObservationStarted = new Promise<void>((resolve) => {
+    observationStarted = resolve
   })
   const states: string[] = []
   const backend: ScheduledExecutionBackendV1 = {
@@ -1880,9 +1880,9 @@ test("scheduled evidence never regresses after a concurrent terminal observation
     async observe() {
       observationCount++
       if (observationCount === 1) {
-        runningObservationStarted()
+        observationStarted()
         return new Promise((resolve) => {
-          releaseRunning = () => resolve({ state: "running" })
+          releaseConflictingTerminal = () => resolve({ state: "completed" })
         })
       }
       return { state: "cancelled" }
@@ -1918,13 +1918,13 @@ test("scheduled evidence never regresses after a concurrent terminal observation
     driverId: "ray",
   })
 
-  await runningStarted
+  await firstObservationStarted
   await driver.terminate!(request, {
     reason: "cancelled",
     signal: new AbortController().signal,
     deadlineAtMs: null,
   })
-  releaseRunning()
+  releaseConflictingTerminal()
 
   assert.equal((await execution).status, "cancelled")
   assert.deepEqual(states, ["accepted", "cancelled"])
@@ -2299,6 +2299,7 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   let sacctResult = "COMPLETED|0:0|node-a\n"
   let squeueResult = "RUNNING|node-a\n"
   let oversizedTerminalOutput = false
+  let missingTerminalOutput = false
   const backend = makeSshSlurmBackend({
     sshTarget: "cluster.example",
     remoteEvidenceDirectory: "/tmp/breadboard evidence",
@@ -2321,6 +2322,7 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
         (remoteCommand.includes(".out") || remoteCommand.includes(".err"))
         && remoteCommand.includes("sha256sum")
       ) {
+        if (missingTerminalOutput) return { stdout: "M\n", stderr: "" }
         const content = remoteCommand.includes(".out")
           ? oversizedTerminalOutput ? "abcdefghij" : "world\n"
           : oversizedTerminalOutput ? "error-data" : ""
@@ -2425,6 +2427,12 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
     observation.result?.stdout_ref,
     observation.result?.stderr_ref,
   ])
+  missingTerminalOutput = true
+  await assert.rejects(
+    () => backend.observe(handle.executionId),
+    /completed Slurm execution output is missing/,
+  )
+  missingTerminalOutput = false
   assert.ok(observation.result?.side_effect_digest?.startsWith("sha256:"))
   assert.ok(
     invocations.some(

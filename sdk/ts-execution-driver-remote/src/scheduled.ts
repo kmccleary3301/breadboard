@@ -95,6 +95,7 @@ interface ActiveScheduledExecution {
   lastEvidenceKey?: string
   terminalObserved: boolean
   terminalEvidenceKey?: string
+  terminalObservation?: ScheduledExecutionObservationV1
   evidenceTail: Promise<void>
   failedEvidence?: {
     readonly key: string
@@ -291,7 +292,7 @@ export function makeScheduledExecutionDriver(
     entry: ActiveScheduledExecution,
     handle: ScheduledExecutionHandleV1,
     observation: ScheduledExecutionObservationV1,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const refs = evidenceRefs(
       handle.evidenceRefs,
       observation.evidenceRefs,
@@ -301,12 +302,14 @@ export function makeScheduledExecutionDriver(
       entry.terminalEvidenceKey !== undefined
       && entry.terminalEvidenceKey !== key
     ) {
-      return
+      await entry.evidenceTail
+      return false
     }
     if (TERMINAL_STATES.has(observation.state)) {
       entry.terminalEvidenceKey = key
+      entry.terminalObservation ??= observation
     }
-    if (entry.lastEvidenceKey === key) return
+    if (entry.lastEvidenceKey === key) return true
     const evidence: ScheduledExecutionEvidenceV1 = {
       driverId,
       backendId: backend.backendId,
@@ -333,6 +336,7 @@ export function makeScheduledExecutionDriver(
         }
       })
     await entry.evidenceTail
+    return true
   }
 
   async function recordUnconfirmedCancellation(
@@ -489,7 +493,10 @@ export function makeScheduledExecutionDriver(
             await recordEvidence(entry, handle, observation)
             if (TERMINAL_STATES.has(observation.state)) {
               entry.terminalObserved = true
-              return terminalResult(request, observation)
+              return terminalResult(
+                request,
+                entry.terminalObservation ?? observation,
+              )
             }
             if (!NONTERMINAL_STATES.has(observation.state)) {
               throw new Error(`${driverId} backend returned unknown execution state`)

@@ -472,7 +472,12 @@ export function makeSshSlurmBackend(
           `digest=$(sha256sum ${shellQuote(path)}); digest=\${digest%% *};`,
           `printf 'F:%s:%s\\n' "$size" "$digest"; fi`,
         ].join(" "))).stdout.trim()
-        if (header === "M") return { content: "", evidenceRefs: [] }
+        if (header === "M") {
+          if (status === "completed") {
+            throw new Error("completed Slurm execution output is missing")
+          }
+          return { content: "", evidenceRefs: [] }
+        }
         const fileMatch = /^F:(\d+):([0-9a-f]{64})$/.exec(header)
         if (!fileMatch) throw new Error("Slurm output metadata frame is invalid")
         const size = Number.parseInt(fileMatch[1] ?? "", 10)
