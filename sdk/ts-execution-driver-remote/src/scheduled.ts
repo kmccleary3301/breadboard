@@ -212,9 +212,9 @@ function assertProviderNeutralResultEvidence(
     throw new Error("scheduled execution result requires provider-neutral stderr evidence")
   }
   if (
-    !result.artifact_refs?.includes(result.stdout_ref)
-    || !result.artifact_refs.includes(result.stderr_ref)
-    || result.artifact_refs.some((ref) => !digest.test(ref))
+    result.artifact_refs?.length !== 2
+    || result.artifact_refs[0] !== result.stdout_ref
+    || result.artifact_refs[1] !== result.stderr_ref
   ) {
     throw new Error("scheduled execution result requires canonical output artifact evidence")
   }
