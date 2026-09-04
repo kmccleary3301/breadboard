@@ -2411,7 +2411,7 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
     activeObservation.evidenceRefs?.includes("slurm://job/24680/node/node-a"),
   )
   assert.ok(invocations[0]?.[1]?.includes(`case "$id" in ""|*[!0-9]*) exit 65`))
-  assert.ok(invocations[0]?.[1]?.includes(`"$job" > "$receipt.tmp"`))
+  assert.ok(invocations[0]?.[1]?.includes(`"$job" "$attempt" > "$receipt.tmp"`))
   squeueResult = ""
   const observation = await backend.observe(handle.executionId)
   assert.equal(observation.state, "completed")
@@ -2597,7 +2597,7 @@ test("SSH Slurm backend recovers a durable receipt after an ambiguous launch ack
   assert.equal(launches, 1)
 })
 
-test("SSH Slurm backend cancels a submitted job when metadata recovery fails", async () => {
+test("SSH Slurm backend cancels an owned submitted job when metadata recovery fails", async () => {
   const request = buildRemoteSandboxRequest({
     requestId: "req:slurm:metadata-failure",
     capability: slurmCapability,
@@ -2605,15 +2605,24 @@ test("SSH Slurm backend cancels a submitted job when metadata recovery fails", a
     placementClass: "remote_worker",
   })
   const commands: string[] = []
+  let submissionAttemptToken = ""
   const backend = makeSshSlurmBackend({
     sshTarget: "cluster.example",
     remoteEvidenceDirectory: "/tmp/evidence",
     async runCommand(_program, args) {
       const remoteCommand = args[1] ?? ""
       commands.push(remoteCommand)
-      if (remoteCommand.includes("setsid sh -c")) return { stdout: "", stderr: "" }
+      if (remoteCommand.includes("setsid sh -c")) {
+        submissionAttemptToken =
+          /\battempt=([0-9a-f]{32});/.exec(remoteCommand)?.[1] ?? ""
+        assert.match(submissionAttemptToken, /^[0-9a-f]{32}$/)
+        return { stdout: "", stderr: "" }
+      }
       if (remoteCommand.includes("submission-") && remoteCommand.includes("then cat")) {
-        return { stdout: "27182;cluster\n", stderr: "" }
+        return {
+          stdout: `27182;cluster\n${submissionAttemptToken}\n`,
+          stderr: "",
+        }
       }
       if (remoteCommand.startsWith("cat ") && remoteCommand.includes(".request.b64")) {
         throw new Error("metadata unavailable")
@@ -2631,9 +2640,45 @@ test("SSH Slurm backend cancels a submitted job when metadata recovery fails", a
       deadlineAtMs: null,
       terminationGraceMs: 50,
     }),
-    /submitted job cancellation was requested/,
+    /owned job cancellation was requested/,
   )
   assert.ok(commands.includes("timeout 30s scancel '27182'"))
+})
+
+test("SSH Slurm backend never cancels an unowned pre-existing receipt", async () => {
+  const request = buildRemoteSandboxRequest({
+    requestId: "req:slurm:unowned-metadata-failure",
+    capability: slurmCapability,
+    command: ["python", "-c", "print('do not cancel')"],
+    placementClass: "remote_worker",
+  })
+  const commands: string[] = []
+  const backend = makeSshSlurmBackend({
+    sshTarget: "cluster.example",
+    remoteEvidenceDirectory: "/tmp/evidence",
+    async runCommand(_program, args) {
+      const remoteCommand = args[1] ?? ""
+      commands.push(remoteCommand)
+      if (remoteCommand.includes("setsid sh -c")) return { stdout: "", stderr: "" }
+      if (remoteCommand.includes("submission-") && remoteCommand.includes("then cat")) {
+        return { stdout: "27183;cluster\n", stderr: "" }
+      }
+      if (remoteCommand.startsWith("cat ") && remoteCommand.includes(".request.b64")) {
+        throw new Error("metadata unavailable")
+      }
+      assert.fail(`unexpected Slurm command: ${remoteCommand}`)
+    },
+  })
+
+  await assert.rejects(
+    () => backend.submit(request, {
+      signal: new AbortController().signal,
+      deadlineAtMs: null,
+      terminationGraceMs: 50,
+    }),
+    /job ownership is unproven/,
+  )
+  assert.equal(commands.some((command) => command.includes("scancel '27183'")), false)
 })
 
 test("SSH Slurm backend rejects a reused request id with changed request content", async () => {

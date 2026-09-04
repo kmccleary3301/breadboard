@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto"
+import { createHash, randomBytes } from "node:crypto"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 
@@ -265,6 +265,7 @@ export function makeSshSlurmBackend(
       const expectedRequestDigest = requestDigest(request)
       const submissionKey = sha256(request.request_id).slice("sha256:".length)
       const jobName = `bb-${submissionKey.slice(0, 32)}`
+      const submissionAttemptToken = randomBytes(16).toString("hex")
       const receiptPath = remotePath(evidenceDirectory, `submission-${submissionKey}.receipt`)
       const cancelPath = remotePath(evidenceDirectory, `submission-${submissionKey}.cancel`)
       const lockPath = remotePath(evidenceDirectory, `submission-${submissionKey}.lock`)
@@ -300,6 +301,7 @@ export function makeSshSlurmBackend(
         `cancel=${shellQuote(cancelPath)};`,
         `owner="$lock/owner";`,
         "id='';",
+        `attempt=${submissionAttemptToken};`,
         `cancel_by_name() { touch "$cancel"; timeout ${commandTimeoutSeconds}s sh -c ${shellQuote(cancelByNameScript)} || true; };`,
         `cleanup() { if [ ! -s "$receipt" ]; then case "$id" in ""|*[!0-9]*) cancel_by_name;; *) timeout 1s scancel "$id" 2>/dev/null || true;; esac; fi; rm -rf "$lock"; };`,
         "trap cleanup EXIT;",
@@ -317,7 +319,7 @@ export function makeSshSlurmBackend(
         `metadata=${shellQuote(remotePath(evidenceDirectory, "slurm-"))}"\${id}.request.b64";`,
         `printf '%s\\n' ${shellQuote(encodedRequest)} > "$metadata.tmp";`,
         `mv "$metadata.tmp" "$metadata";`,
-        `printf '%s\\n' "$job" > "$receipt.tmp";`,
+        `printf '%s\\n%s\\n' "$job" "$attempt" > "$receipt.tmp";`,
         `mv "$receipt.tmp" "$receipt";`,
         `[ ! -f ${shellQuote(cancelPath)} ] || timeout 1s scancel "$id";`,
       ].join(" ")
@@ -361,6 +363,7 @@ export function makeSshSlurmBackend(
             `if [ -s ${shellQuote(receiptPath)} ]; then cat ${shellQuote(receiptPath)}; fi`,
             deadline - Date.now(),
             context.signal,
+            framedOutputMaxBytes,
           )).stdout.trim()
         } catch (error: unknown) {
           launchError = error
@@ -388,7 +391,9 @@ export function makeSshSlurmBackend(
           { cause: cleanupError ?? launchError },
         )
       }
-      const executionId = receipt.split(";", 1)[0] ?? ""
+      const receiptLines = receipt.split(/\r?\n/, 2)
+      const executionId = (receiptLines[0] ?? "").split(";", 1)[0] ?? ""
+      const receiptAttemptToken = receiptLines[1] ?? ""
       if (!/^\d+$/.test(executionId)) {
         throw new Error("Slurm submission returned an invalid job id")
       }
@@ -397,6 +402,12 @@ export function makeSshSlurmBackend(
       try {
         execution = await loadExecution(executionId)
       } catch (metadataError: unknown) {
+        if (receiptAttemptToken !== submissionAttemptToken) {
+          throw new Error(
+            "Slurm execution metadata failed for a pre-existing receipt; job ownership is unproven",
+            { cause: metadataError },
+          )
+        }
         let cancellationError: unknown
         try {
           await ssh(
@@ -410,7 +421,7 @@ export function makeSshSlurmBackend(
           cancellationError === undefined
             ? [metadataError]
             : [metadataError, cancellationError],
-          "Slurm execution metadata failed after receipt; submitted job cancellation was requested",
+          "Slurm execution metadata failed after receipt; owned job cancellation was requested",
         )
       }
       if (execution.requestDigest !== expectedRequestDigest) {
