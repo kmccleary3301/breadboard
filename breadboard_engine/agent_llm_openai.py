@@ -481,6 +481,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         self,
         session_state: SessionState,
         retained_effective_messages: Any,
+        *,
+        resume_retained_raw_fact_ids: Any = (),
+        retained_raw_fact_ids: Any = (),
     ) -> bool | None:
         if retained_effective_messages is None:
             return None
@@ -495,6 +498,18 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 "run context retained_effective_messages must be a message array"
             )
         restored = copy.deepcopy(retained_effective_messages)
+        resume_facts = tuple(resume_retained_raw_fact_ids or ())
+        retained_facts = tuple(retained_raw_fact_ids or ())
+        if resume_facts and resume_facts == retained_facts:
+            cached = session_state.provider_messages
+            if (
+                len(cached) < len(restored)
+                or cached[: len(restored)] != restored
+            ):
+                raise ProviderContractError(
+                    "resume messages diverge from retained Product context"
+                )
+            restored.extend(copy.deepcopy(cached[len(restored) :]))
         with session_state.context_mutation():
             session_state.messages = copy.deepcopy(restored)
             session_state.provider_messages = restored
@@ -6431,6 +6446,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         product_context_has_system = self._restore_product_effective_messages(
             session_state,
             retained_effective_messages,
+            resume_retained_raw_fact_ids=resume_retained_raw_fact_ids,
+            retained_raw_fact_ids=retained_raw_fact_ids,
         )
         if product_context_has_system is not None:
             resume_has_system = product_context_has_system

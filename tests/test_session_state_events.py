@@ -43,6 +43,7 @@ from breadboard_engine.api.cli_bridge.runtime_event_projector import (
 )
 from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
 from breadboard_engine.provider.contracts import (
+    ProviderContractError,
     strip_public_completion_sentinel_tree,
 )
 from breadboard_engine.conductor.context_window_guard import ContextWindowGuard
@@ -576,6 +577,46 @@ def test_product_effective_context_overrides_cached_resume_messages() -> None:
     assert state.provider_messages == retained
     assert state.messages is not retained
     assert state.provider_messages is not retained
+
+def test_product_effective_context_keeps_post_boundary_resume_suffix() -> None:
+    conductor_type = OpenAIConductor.__ray_metadata__.modified_class
+    conductor = object.__new__(conductor_type)
+    state = SessionState("ws", "image", {})
+    retained = [
+        {"role": "system", "content": "retained system"},
+        {"role": "user", "content": "compacted request"},
+    ]
+    final_answer = {"role": "assistant", "content": "post-boundary answer"}
+    state.messages = [*retained, final_answer]
+    state.provider_messages = [*retained, final_answer]
+
+    conductor._restore_product_effective_messages(
+        state,
+        retained,
+        resume_retained_raw_fact_ids=["ctn_000001"],
+        retained_raw_fact_ids=["ctn_000001"],
+    )
+
+    assert state.messages == [*retained, final_answer]
+    assert state.provider_messages == [*retained, final_answer]
+
+
+def test_product_effective_context_rejects_divergent_same_boundary_resume() -> None:
+    conductor_type = OpenAIConductor.__ray_metadata__.modified_class
+    conductor = object.__new__(conductor_type)
+    state = SessionState("ws", "image", {})
+    state.provider_messages = [{"role": "user", "content": "different"}]
+
+    with pytest.raises(
+        ProviderContractError,
+        match="resume messages diverge",
+    ):
+        conductor._restore_product_effective_messages(
+            state,
+            [{"role": "user", "content": "retained"}],
+            resume_retained_raw_fact_ids=["ctn_000001"],
+            retained_raw_fact_ids=["ctn_000001"],
+        )
 
 
 def test_context_threshold_emits_exact_effective_provider_context() -> None:
