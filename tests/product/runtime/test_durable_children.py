@@ -1516,6 +1516,14 @@ def test_child_completion_waits_for_every_delegated_child_settlement(
             outcome="completed",
             attempt_id=child.attempt_id,
         )
+    for outcome in ("failed", "canceled"):
+        with pytest.raises(ChildError, match="every delegated child"):
+            factory.settle(
+                child.child_session_id,
+                expected_revision=prepared_child.revision,
+                outcome=outcome,
+                attempt_id=child.attempt_id,
+            )
 
     prepared_grandchild = factory.prepare_result(
         grandchild.child_session_id,
@@ -2653,10 +2661,27 @@ def test_job_completion_replay_preserves_inline_result_payload() -> None:
 
 
 
-def test_absent_target_honors_retry_policy_with_new_attempt_and_recovery_ref(tmp_path: Path) -> None:
+def test_released_absent_target_honors_retry_policy_with_new_attempt_and_recovery_ref(
+    tmp_path: Path,
+) -> None:
+    class ReleasedRetryAdapter(RetryAdapter):
+        released_absence_is_terminal = True
+
+        def start(self, activation, spec):
+            target = super().start(activation, spec)
+            return ExecutionTarget(
+                target.execution_target_ref,
+                metadata={"launch_phase": "released"},
+            )
+
     workspace, repository, parent, registry = _running_parent(tmp_path)
-    adapter = RetryAdapter()
-    factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[adapter])
+    adapter = ReleasedRetryAdapter()
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
     spec = ChildSpec("retry child", "retry task", _lock(), "child-worker", adapter.family, retry_policy=RetryPolicy(2, True))
     activation = factory.start(parent_session_id="parent-session", root_session_id="parent-session", parent_work_item_id=parent.read_model.work_item_id, spec=spec)
     state = factory.reconcile(activation.recovery_ref)
@@ -2668,6 +2693,74 @@ def test_absent_target_honors_retry_policy_with_new_attempt_and_recovery_ref(tmp
     child_work = WorkItem.restore(repository, activation.child_work_item_id)
     assert [(attempt.number, attempt.status) for attempt in child_work.read_model.attempts] == [(1, "failed"), (2, "running")]
     assert factory.reconcile(state.recovery_ref) == state
+
+def test_parent_retry_cancels_propagating_descendants_without_closing_admission(
+    tmp_path: Path,
+) -> None:
+    class ParentFailureAdapter(RetryAdapter):
+        family = "parent-failure-retry"
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.failed_ref: str | None = None
+            self.canceled: list[str] = []
+
+        def observe(self, target):
+            return (
+                "absent"
+                if target.get("ref") == self.failed_ref
+                else "running"
+            )
+
+        def cancel(self, target):
+            self.canceled.append(str(target["ref"]))
+
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = ParentFailureAdapter()
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+    child = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=ChildSpec(
+            "retrying parent child",
+            "retry parent",
+            _lock(),
+            "child-worker",
+            adapter.family,
+            retry_policy=RetryPolicy(2, True),
+        ),
+    )
+    grandchild = factory.start(
+        parent_session_id=child.child_session_id,
+        root_session_id="parent-session",
+        parent_work_item_id=child.child_work_item_id,
+        spec=_spec(adapter.family, "prior-attempt grandchild"),
+    )
+    adapter.failed_ref = child.execution_target_ref
+
+    retried = factory.reconcile(child.recovery_ref)
+
+    assert retried.status == "running"
+    assert retried.attempt_id != child.attempt_id
+    assert factory._record_state(grandchild.child_session_id).terminal_outcome == (
+        "canceled"
+    )
+    assert adapter.canceled == [grandchild.execution_target_ref]
+    assert not await_record(registry, child.child_session_id).admission_closed
+    attempts = WorkItem.restore(
+        repository,
+        child.child_work_item_id,
+    ).read_model.attempts
+    assert [(attempt.number, attempt.status) for attempt in attempts] == [
+        (1, "failed"),
+        (2, "running"),
+    ]
 
 
 
@@ -3310,6 +3403,7 @@ def test_terminal_metadata_repairs_bridge_status_after_crash(tmp_path: Path, mon
 
 
 def test_ray_dead_cached_actor_is_evicted_and_terminalized(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import ray
@@ -3329,6 +3423,7 @@ def test_ray_dead_cached_actor_is_evicted_and_terminalized(
         async_mode=True,
     )
     adapter = RayJobAdapter(orchestrator)
+    adapter.bind_workspace(tmp_path)
     adapter._actors[spawned.job.job_id] = DeadActor()
     monkeypatch.setattr(
         ray,
@@ -5025,7 +5120,8 @@ def test_reconciler_without_children_leaves_parent_admission_open(
     assert activation.child_session_id
 
 
-def test_ray_actor_lookup_uses_stable_namespace(
+def test_ray_actor_lookup_uses_stable_workspace_namespace(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import ray
@@ -5042,17 +5138,24 @@ def test_ray_actor_lookup_uses_stable_namespace(
     adapter = RayJobAdapter(
         MultiAgentOrchestrator(TeamConfig("ray-stable-namespace"))
     )
+    adapter.bind_workspace(tmp_path)
 
     assert adapter._lookup_actor("job-stable-namespace") is actor
     assert lookups == [
         (
             "bb-child-job-stable-namespace",
-            "breadboard-durable-children-v1",
+            adapter._actor_namespace(tmp_path),
         )
     ]
+    other_workspace = tmp_path / "other"
+    other_workspace.mkdir()
+    assert adapter._actor_namespace(other_workspace) != adapter._actor_namespace(
+        tmp_path
+    )
 
 
 def test_ray_actor_lookup_runtime_failure_stays_pending(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import ray
@@ -5065,6 +5168,7 @@ def test_ray_actor_lookup_runtime_failure_stays_pending(
         async_mode=True,
     )
     adapter = RayJobAdapter(orchestrator)
+    adapter.bind_workspace(tmp_path)
     monkeypatch.setattr(
         ray,
         "get_actor",

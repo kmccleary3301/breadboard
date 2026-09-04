@@ -1530,6 +1530,45 @@ class DurableChildFactory:
             raise TypeError("prepared child result must be bytes, ArtifactRef, or None")
         return self._cas(state, result_prepared=True, result_refs=refs)
 
+    def _descendants_settled(
+        self,
+        state: ChildState,
+        *,
+        require_all: bool,
+    ) -> bool:
+        child_events = self.repository.read(state.child_work_item_id)
+        if not child_events:
+            return True
+        child = WorkItem.restore(
+            self.repository,
+            state.child_work_item_id,
+            clock=self.clock,
+            ids=self.ids,
+        )
+        descendant_ids = set(child.read_model.child_work_item_ids)
+        if (
+            not descendant_ids
+            or (
+                not require_all
+                and not child.read_model.cancellation_policy.propagate_to_children
+            )
+        ):
+            return True
+        descendants = self.child_states(
+            parent_work_item_id=state.child_work_item_id
+        )
+        descendants_by_id = {
+            descendant.child_work_item_id: descendant
+            for descendant in descendants
+        }
+        return (
+            set(descendants_by_id) == descendant_ids
+            and all(
+                descendants_by_id[child_id].terminal_count == 1
+                for child_id in descendant_ids
+            )
+        )
+
     def _has_propagating_descendants(self, state: ChildState) -> bool:
         child_events = self.repository.read(state.child_work_item_id)
         if not child_events:
@@ -1544,6 +1583,57 @@ class DurableChildFactory:
             child.read_model.cancellation_policy.propagate_to_children
             and bool(child.read_model.child_work_item_ids)
         )
+    def _cancel_propagating_descendants(
+        self,
+        state: ChildState,
+        *,
+        reason: str,
+    ) -> tuple[ChildState, ...]:
+        if not self._has_propagating_descendants(state):
+            return ()
+        child = WorkItem.restore(
+            self.repository,
+            state.child_work_item_id,
+            clock=self.clock,
+            ids=self.ids,
+        )
+        expected_ids = set(child.read_model.child_work_item_ids)
+        descendants = self.child_states(
+            parent_work_item_id=state.child_work_item_id
+        )
+        descendants_by_id = {
+            descendant.child_work_item_id: descendant
+            for descendant in descendants
+        }
+        if set(descendants_by_id) != expected_ids:
+            raise ChildError("delegated child settlement authority is incomplete")
+        settled: list[ChildState] = []
+        for child_id in sorted(expected_ids):
+            descendant = self._record_state(
+                descendants_by_id[child_id].child_session_id
+            )
+            if descendant.terminal_count:
+                settled.append(descendant)
+            elif self._has_propagating_descendants(descendant):
+                settled.append(
+                    self._cancel_nonleaf_locked(
+                        descendant,
+                        expected_revision=descendant.revision,
+                        reason=reason,
+                    )
+                )
+            elif descendant.cancellation_requested:
+                settled.append(self._reconcile(descendant.recovery_ref))
+            else:
+                settled.append(
+                    self._cancel(
+                        descendant.child_session_id,
+                        expected_revision=descendant.revision,
+                        reason=reason,
+                    )
+                )
+        return tuple(settled)
+
 
     def cancel(
         self,
@@ -1786,29 +1876,13 @@ class DurableChildFactory:
             raise ExpectedRevisionConflict(f"stale child revision: expected {expected_revision}, actual {state.revision}")
         if result_refs is not None and tuple(result_refs) != state.result_refs:
             raise ExpectedRevisionConflict("settlement result refs do not match prepared refs")
-        if outcome == "completed":
-            child = WorkItem.restore(
-                self.repository,
-                state.child_work_item_id,
-                clock=self.clock,
-                ids=self.ids,
+        if not self._descendants_settled(
+            state,
+            require_all=outcome == "completed",
+        ):
+            raise ChildError(
+                f"child {outcome} settlement requires every delegated child to settle"
             )
-            descendant_ids = set(child.read_model.child_work_item_ids)
-            if descendant_ids:
-                descendants = self.child_states(
-                    parent_work_item_id=state.child_work_item_id
-                )
-                descendants_by_id = {
-                    descendant.child_work_item_id: descendant
-                    for descendant in descendants
-                }
-                if set(descendants_by_id) != descendant_ids or any(
-                    descendants_by_id[child_id].terminal_count != 1
-                    for child_id in descendant_ids
-                ):
-                    raise ChildError(
-                        "child completion requires every delegated child to settle"
-                    )
         reserved = self._cas(
             state,
             settlement={
@@ -1912,6 +1986,13 @@ class DurableChildFactory:
         allow_unprepared: bool,
         allow_parent_terminal: bool = False,
     ) -> ChildState:
+        if not self._descendants_settled(
+            state,
+            require_all=outcome == "completed",
+        ):
+            raise ChildError(
+                f"child {outcome} settlement requires every delegated child to settle"
+            )
         if outcome != "canceled" and not allow_parent_terminal:
             parent_product, _ = load_session(
                 self.workspace, state.parent_session_id
@@ -2162,8 +2243,21 @@ class DurableChildFactory:
             adapter.cancel(target.retained())
             raise
 
-
     def _retry(self, state: ChildState, child: WorkItem) -> ChildState:
+        if self._has_propagating_descendants(state):
+            descendants = self._cancel_propagating_descendants(
+                state,
+                reason="parent execution target exited",
+            )
+            if any(descendant.terminal_count != 1 for descendant in descendants):
+                return self._record_state(state.child_session_id)
+            state = self._record_state(state.child_session_id)
+            child = WorkItem.restore(
+                self.repository,
+                state.child_work_item_id,
+                clock=self.clock,
+                ids=self.ids,
+            )
         snapshot = child.read_model
         if snapshot.status in _TERMINAL:
             return self._adopt_terminal_work_item(state, child)
@@ -2631,10 +2725,7 @@ class DurableChildFactory:
                 "release_committed",
                 "released",
             }:
-                try:
-                    return self._settle(state, "failed", (), allow_unprepared=True)
-                except LateResultRejected:
-                    return self._cancel_late_settlement(state)
+                return self._retry(state, child)
         if observed == "absent" and getattr(adapter, "absence_is_terminal", False):
             if child.read_model.status in _TERMINAL:
                 return self._adopt_terminal_work_item(state, child)
@@ -3011,7 +3102,7 @@ class DurableChildReconciler:
 class RayJobAdapter:
     family = "ray-agent-job"
     absence_is_terminal = True
-    _actor_namespace = "breadboard-durable-children-v1"
+    _actor_namespace_prefix = "breadboard-durable-children-v1"
 
     def __init__(self, orchestrator: Any, *, actor_launcher: Any | None = None) -> None:
         self.orchestrator = orchestrator
@@ -3019,6 +3110,7 @@ class RayJobAdapter:
         self._actor_launcher = self._launch_actor if self._default_actor_launcher else actor_launcher
         self._actors: dict[str, Any] = {}
         self._actor_lookup_unavailable: set[str] = set()
+        self._released_actor_ids: set[str] = set()
         self._workspace: Path | None = None
 
     def bind_workspace(self, workspace: Path) -> None:
@@ -3027,6 +3119,13 @@ class RayJobAdapter:
     @staticmethod
     def _actor_name(job_id: str) -> str:
         return "bb-child-" + job_id.replace(":", "_")
+
+    @classmethod
+    def _actor_namespace(cls, workspace: Path) -> str:
+        workspace_digest = hashlib.sha256(
+            str(workspace.expanduser().resolve()).encode("utf-8")
+        ).hexdigest()
+        return f"{cls._actor_namespace_prefix}-{workspace_digest[:32]}"
 
     @staticmethod
     def _invocation_id(job_id: str) -> str:
@@ -3079,12 +3178,15 @@ class RayJobAdapter:
         name = self._actor_name(job_id)
         created = False
         try:
-            actor = ray.get_actor(name, namespace=self._actor_namespace)
+            actor = ray.get_actor(
+                name,
+                namespace=self._actor_namespace(workspace),
+            )
         except ValueError:
             root = artifact_store_root or str(workspace / ".breadboard" / "artifacts")
             actor = OpenCodeAgent.options(
                 name=name,
-                namespace=self._actor_namespace,
+                namespace=self._actor_namespace(workspace),
                 lifetime="detached",
             ).remote(str(workspace), artifact_store_root=root)
         self._submit_invocation(actor, self._invocation_id(job_id), task)
@@ -3097,9 +3199,11 @@ class RayJobAdapter:
         try:
             import ray
 
+            if self._workspace is None:
+                raise RuntimeError("Ray child adapter is not bound to a workspace")
             actor = ray.get_actor(
                 self._actor_name(job_id),
-                namespace=self._actor_namespace,
+                namespace=self._actor_namespace(self._workspace),
             )
         except (ImportError, RuntimeError):
             self._actor_lookup_unavailable.add(job_id)
@@ -3168,20 +3272,27 @@ class RayJobAdapter:
 
     def release_terminal(self, target: Mapping[str, Any]) -> bool:
         job_id = str(target.get("ref", "")).removeprefix("job:")
+        if job_id in self._released_actor_ids:
+            return True
         actor = self._actors.pop(job_id, None)
         is_actor_handle = False
         if actor is None:
             actor = self._lookup_actor(job_id)
             self._actors.pop(job_id, None)
         if actor is None:
-            return job_id not in self._actor_lookup_unavailable
+            if job_id in self._actor_lookup_unavailable:
+                return False
+            self._released_actor_ids.add(job_id)
+            return True
         try:
             import ray
 
             is_actor_handle = isinstance(actor, ray.actor.ActorHandle)
             ray.kill(actor, no_restart=True)
         except BaseException:
-            return not is_actor_handle
+            if is_actor_handle:
+                return False
+        self._released_actor_ids.add(job_id)
         return True
 
     def _mark_job_failed(self, target: Mapping[str, Any], job_id: str) -> None:
