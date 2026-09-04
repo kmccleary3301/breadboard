@@ -2495,7 +2495,7 @@ test("scheduled adapter canonicalizes terminal observations without a result", a
       stderr: "",
       evidenceMode: remoteCapability.evidence_mode,
     }),
-    error: { reason: "scheduled_execution_failed" },
+    error: { reason: "execution_failed" },
   })
   const fallbackStdoutRef = result.sandboxResult?.stdout_ref
   assert.ok(fallbackStdoutRef)
@@ -2817,6 +2817,13 @@ test("SSH Slurm backend rejects unsafe targets and relative evidence paths", () 
       remoteEvidenceDirectory: "tmp/evidence",
     }),
     /absolute path/,
+  )
+  assert.throws(
+    () => makeSshSlurmBackend({
+      sshTarget: "cluster.example",
+      remoteEvidenceDirectory: "/tmp/..",
+    }),
+    /must not be the filesystem root/,
   )
   assert.throws(
     () => makeSshSlurmBackend({

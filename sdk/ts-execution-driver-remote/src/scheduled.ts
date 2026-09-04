@@ -262,7 +262,7 @@ async function terminalResult(
   return scheduledFailureResult(
     request,
     status,
-    status === "failed" ? "scheduled_execution_failed" : `execution_${status}`,
+    `execution_${status}`,
   )
 }
 

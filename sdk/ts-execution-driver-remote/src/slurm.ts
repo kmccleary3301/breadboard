@@ -232,6 +232,9 @@ export function makeSshSlurmBackend(
     throw new Error("remoteEvidenceDirectory must be an absolute path")
   }
   const evidenceDirectory = posixPath.normalize(rawEvidenceDirectory).replace(/\/+$/, "") || "/"
+  if (evidenceDirectory === "/") {
+    throw new Error("remoteEvidenceDirectory must not be the filesystem root")
+  }
   const sshProgram = options.sshProgram ?? "ssh"
   const runCommand = options.runCommand ?? defaultRunCommand
   const maxOutputBytes = options.maxOutputBytes ?? 4 * 1024 * 1024
