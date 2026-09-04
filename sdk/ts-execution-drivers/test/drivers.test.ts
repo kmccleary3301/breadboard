@@ -5611,8 +5611,10 @@ test("canonical sandbox artifacts are owner-only and content-addressed", async (
 
     assert.equal(uri, canonicalSandboxArtifactUri(ref, artifactRoot))
     assert.equal(await readFile(new URL(uri), "utf8"), content)
-    assert.equal((await stat(artifactRoot)).mode & 0o077, 0)
-    assert.equal((await stat(new URL(uri))).mode & 0o077, 0)
+    if (process.getuid !== undefined) {
+      assert.equal((await stat(artifactRoot)).mode & 0o077, 0)
+      assert.equal((await stat(new URL(uri))).mode & 0o077, 0)
+    }
   } finally {
     await rm(artifactRoot, { recursive: true, force: true })
   }

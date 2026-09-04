@@ -483,7 +483,7 @@ export async function persistCanonicalSandboxArtifact(
   if (currentUid !== undefined && rootStat.uid !== currentUid) {
     throw new Error("sandbox artifact root must be owned by the current user")
   }
-  if ((rootStat.mode & 0o077) !== 0) {
+  if (currentUid !== undefined && (rootStat.mode & 0o077) !== 0) {
     await chmod(artifactRoot, 0o700)
     const securedRootStat = await lstat(artifactRoot)
     if ((securedRootStat.mode & 0o077) !== 0) {
