@@ -263,6 +263,7 @@ export function makeSshSlurmBackend(
   }
   const framedOutputMaxBytes = Math.ceil(maxOutputBytes / 3) * 4 + 64
   const receiptOutputMaxBytes = 1024
+  const controlOutputMaxBytes = 64 * 1024
   const metadataOutputMaxBytes = 8 * 1024 * 1024
   if (!Number.isSafeInteger(framedOutputMaxBytes)) {
     throw new Error("maxOutputBytes is too large for framed transport")
@@ -279,7 +280,7 @@ export function makeSshSlurmBackend(
     remoteCommand: string,
     timeoutMs = commandTimeoutMs,
     signal?: AbortSignal,
-    outputLimitBytes = maxOutputBytes,
+    outputLimitBytes = controlOutputMaxBytes,
   ): Promise<CommandResultV1> {
     return runCommand(
       sshProgram,
@@ -440,6 +441,8 @@ export function makeSshSlurmBackend(
         `[ "$(stat -c %a "$evidence")" = "700" ] || exit 76;`,
         `lock=${shellQuote(lockPath)}; receipt=${shellQuote(receiptPath)}; now=$(date +%s);`,
         `if [ -d "$lock" ] && [ ! -s "$receipt" ]; then`,
+        `lock_digest=$(cat "$lock/digest" 2>/dev/null || true);`,
+        `[ "$lock_digest" = ${shellQuote(expectedRequestDigest)} ] || exit 77;`,
         `owner=$(cat "$lock/owner" 2>/dev/null || true);`,
         `pid=\${owner%% *}; owner_rest=\${owner#* }; created=\${owner_rest%% *}; owner_start=\${owner_rest#* };`,
         `case "$created" in ""|*[!0-9]*) created=$(stat -c %Y "$lock" 2>/dev/null || printf '0');; esac;`,
@@ -454,6 +457,7 @@ export function makeSshSlurmBackend(
         `if [ ! -s "$receipt" ] && mkdir "$lock" 2>/dev/null; then`,
         `owner_start=$(awk '{print $22}' /proc/$$/stat 2>/dev/null || true); printf '%s %s %s\\n' "$$" "$now" "$owner_start" > "$lock/owner";`,
         `printf '%s\n' ${shellQuote(submissionAttemptToken)} > "$lock/attempt";`,
+        `printf '%s\n' ${shellQuote(expectedRequestDigest)} > "$lock/digest";`,
         `setsid sh -c ${shellQuote(detachedScript)}`,
         `</dev/null >${shellQuote(launchLogPath)} 2>&1 &`,
         "fi",
@@ -561,7 +565,7 @@ export function makeSshSlurmBackend(
       return {
         executionId: durableExecutionHandle(executionId, execution.requestDigest),
         evidenceRefs: [
-          `slurm://job/${executionId}/submitted`,
+          `slurm://job/${durableExecutionHandle(executionId, execution.requestDigest)}/submitted`,
           `ssh://${sshTarget}${uriPath(receiptPath)}`,
           `ssh://${sshTarget}${uriPath(submissionCommandPath)}`,
           `ssh://${sshTarget}${uriPath(launchLogPath)}`,

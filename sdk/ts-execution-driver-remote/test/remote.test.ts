@@ -3023,6 +3023,9 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
       `[ "$current_start" = "$owner_start" ]; then owner_live=1`,
     ),
   )
+  assert.ok(invocations[0]?.[1]?.includes(`cat "$lock/digest"`))
+  assert.ok(invocations[0]?.[1]?.includes(`] || exit 77`))
+  assert.ok(invocations[0]?.[1]?.includes(`> "$lock/digest"`))
   assert.equal(invocations[0]?.[1]?.includes(`cat "$lock/job"`), false)
   assert.ok(invocations[0]?.[1]?.includes(`> "$lock/attempt"`))
   assert.ok(invocations[0]?.[1]?.includes("scancel --name"))
@@ -3162,6 +3165,11 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   assert.equal(commandTimeouts.length, invocations.length)
   assert.ok(commandTimeouts.every((timeout) => timeout > 0 && timeout <= 30_000))
   assert.ok(commandOutputLimits.some((limit) => limit > 8))
+  const schedulerCommandIndex = invocations.findIndex(
+    (args) => args[1]?.includes("squeue -h -j"),
+  )
+  assert.notEqual(schedulerCommandIndex, -1)
+  assert.equal(commandOutputLimits[schedulerCommandIndex], 64 * 1024)
   const metadataCommandIndex = invocations.findIndex(
     (args) => args[1]?.startsWith("cat ") && args[1]?.includes(".request.b64"),
   )
