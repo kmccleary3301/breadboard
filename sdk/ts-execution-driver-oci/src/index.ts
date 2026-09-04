@@ -406,20 +406,21 @@ function createOciExecutionDriver(options: {
       )
 
       let timer: ReturnType<typeof setTimeout> | undefined
-      const completionObserved = await Promise.race([
+      const settled = await Promise.race([
         active.completion.then(
-          () => true,
-          () => true,
+          (result) => ({ result }),
+          () => ({ result: undefined }),
         ),
-        new Promise<false>((resolve) => {
-          timer = setTimeout(() => resolve(false), 2000)
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), 2000)
         }),
       ])
       clearTimeout(timer)
-      if (!completionObserved) {
+      if (settled === null) {
         throw new Error("OCI termination was not observed within 2000ms")
       }
       active.cleanup()
+      return settled.result
     },
     ...(terminalDriver
       ? {

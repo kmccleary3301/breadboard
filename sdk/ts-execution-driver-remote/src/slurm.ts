@@ -590,6 +590,9 @@ export function makeSshSlurmBackend(
         : state === "completed"
           ? "failed"
           : state
+      // Terminal scheduler ownership is durable in remote metadata. Do not retain
+      // one in-memory request entry per failed evidence collection attempt.
+      submitted.delete(identity.jobId)
       const readOutput = async (
         path: string,
       ): Promise<{ readonly content: string; readonly evidenceRefs: readonly string[] }> => {
@@ -662,7 +665,6 @@ export function makeSshSlurmBackend(
         stdout.content,
         stderr.content,
       )
-      submitted.delete(identity.jobId)
       return {
         state: status,
         result: terminalResult,

@@ -467,14 +467,16 @@ test("trusted local driver terminate triggers signal and awaits process exit", a
   })
   const execPromise = driver.execute!(request)
   assert.equal(processExited, false)
-  await driver.terminate!(request, {
+  const terminationResult = await driver.terminate!(request, {
     reason: "deadline",
     signal: new AbortController().signal,
     deadlineAtMs: Date.now(),
   })
   assert.equal(processExited, true)
   const result = await execPromise
+  assert.deepEqual(terminationResult, result)
   assert.equal(result.status, "timed_out")
+  assert.ok(result.stderr_ref)
 })
 
 test("defaultLocalCommandExecutor terminates isolated process group including shell descendants on abort", async () => {

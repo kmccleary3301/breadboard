@@ -275,21 +275,22 @@ export function makeTrustedLocalExecutionDriver(commandExecutor?: LocalCommandEx
       active.controller.abort(context.reason)
       active.detach()
       let timer: ReturnType<typeof setTimeout> | undefined
-      const timeout = new Promise<false>((resolve) => {
-        timer = setTimeout(() => resolve(false), 2000)
+      const timeout = new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), 2000)
       })
       try {
-        const terminationObserved = await Promise.race([
+        const settled = await Promise.race([
           active.completion.then(
-            () => true,
-            () => true,
+            (result) => ({ result }),
+            () => ({ result: undefined }),
           ),
           timeout,
         ])
-        if (!terminationObserved) {
+        if (settled === null) {
           throw new Error("Local process termination was not observed within 2000ms")
         }
         active.cleanup()
+        return settled.result
       } finally {
         clearTimeout(timer)
       }

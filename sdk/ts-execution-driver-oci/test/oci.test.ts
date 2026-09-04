@@ -672,14 +672,16 @@ test("oci driver terminate triggers signal and awaits runtime exit", async () =>
   })
   const execPromise = driver.execute!(request)
   assert.equal(runtimeExited, false)
-  await driver.terminate!(request, {
+  const terminationResult = await driver.terminate!(request, {
     reason: "deadline",
     signal: new AbortController().signal,
     deadlineAtMs: Date.now(),
   })
   assert.equal(runtimeExited, true)
   const result = await execPromise
+  assert.deepEqual(terminationResult, result)
   assert.equal(result.status, "timed_out")
+  assert.ok(result.stderr_ref)
   assert.ok(issuedCommands.some((c) => c.runtimeArgs.includes("--name") && c.runtimeArgs.some((a) => a.startsWith("bb-oci-req-oci-term-verify"))))
   assert.ok(issuedCommands.some((c) => c.runtimeArgs[0] === "stop" && c.runtimeArgs.some((a) => a.startsWith("bb-oci-req-oci-term-verify"))))
 })
