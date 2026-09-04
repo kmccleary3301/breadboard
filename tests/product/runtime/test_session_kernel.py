@@ -315,8 +315,8 @@ def test_replay_differential_compares_live_owner_snapshot_to_durable_replay() ->
 
     assert set(difference) == {"effective_context", "raw_fact_ids"}
     assert difference["raw_fact_ids"] == {
-        "missing": ["ctn_000002"],
-        "unexpected": ["ctn_000001"],
+        "live": ["ctn_000002"],
+        "replay": ["ctn_000001"],
     }
 
 
