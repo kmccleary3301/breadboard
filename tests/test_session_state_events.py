@@ -873,6 +873,7 @@ def test_runtime_projector_rejects_invalid_ctree_identity_before_commit() -> Non
         b"\xff",
         b"{}",
         b'["not-a-message"]',
+        b'[{"role":"user","content":NaN}]',
     ):
         with pytest.raises(RuntimeProtocolError, match="runtime_protocol_error"):
             projector.translate(

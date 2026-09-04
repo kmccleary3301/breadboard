@@ -139,10 +139,16 @@ def validate_raw_fact_ids(values: Any, name: str = "raw_fact_ids") -> tuple[str,
         raise ValueError(f"{name} must not contain duplicates")
     return facts
 
+def _reject_nonfinite_json_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON constant {value!r}")
+
 def _validate_effective_context(context: bytes) -> None:
     try:
-        messages = json.loads(context.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        messages = json.loads(
+            context.decode("utf-8"),
+            parse_constant=_reject_nonfinite_json_constant,
+        )
+    except (UnicodeDecodeError, ValueError) as error:
         raise ValueError("effective_context must be UTF-8 JSON") from error
     if not isinstance(messages, list) or any(
         not isinstance(message, dict) for message in messages
