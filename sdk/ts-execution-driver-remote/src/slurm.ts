@@ -363,7 +363,7 @@ export function makeSshSlurmBackend(
         `attempt=${submissionAttemptToken};`,
         `digest=${expectedRequestDigest};`,
         `cancel_by_name() { touch "$cancel"; timeout ${commandTimeoutSeconds}s sh -c ${shellQuote(cancelByNameScript)} || true; };`,
-        `cleanup() { if [ -f "$cancel" ] || [ ! -s "$receipt" ]; then cancel_by_name; fi; rm -f "$cancel"; rm -rf "$lock"; };`,
+        `cleanup() { if [ -f "$cancel" ] || [ ! -s "$receipt" ]; then cancel_by_name; active=$(timeout 1s squeue -h --name ${shellQuote(jobName)} -o '%j' 2>/dev/null) || return 0; [ -z "$active" ] || return 0; fi; rm -f "$cancel"; rm -rf "$lock"; };`,
         "trap cleanup EXIT;",
         `owner_start=$(awk '{print $22}' /proc/$$/stat 2>/dev/null || true);`,
         `printf '%s %s %s\\n' "$$" "$(date +%s)" "$owner_start" > "$owner.tmp";`,
@@ -399,8 +399,10 @@ export function makeSshSlurmBackend(
         `current_start=''; case "$pid" in ""|*[!0-9]*) :;; *) current_start=$(awk '{print $22}' "/proc/$pid/stat" 2>/dev/null || true);; esac;`,
         `owner_live=1; case "$pid" in ""|*[!0-9]*) :;; *) if [ ! -d "/proc/$pid" ]; then owner_live=0; elif [ -n "$owner_start" ] && [ -n "$current_start" ] && [ "$current_start" != "$owner_start" ]; then owner_live=0; fi;; esac;`,
         `if [ $((now-created)) -ge ${lockLeaseSeconds} ] && [ "$owner_live" -eq 0 ]; then`,
-        `timeout 1s scancel --name ${shellQuote(jobName)} 2>/dev/null || true;`,
-        `rm -rf "$lock";`,
+        `if timeout 1s scancel --name ${shellQuote(jobName)} 2>/dev/null; then`,
+        `active=$(timeout 1s squeue -h --name ${shellQuote(jobName)} -o '%j' 2>/dev/null) || active=unknown;`,
+        `[ -z "$active" ] && rm -rf "$lock";`,
+        `fi;`,
         `fi; fi;`,
         `if [ ! -s "$receipt" ] && mkdir "$lock" 2>/dev/null; then`,
         `owner_start=$(awk '{print $22}' /proc/$$/stat 2>/dev/null || true); printf '%s %s %s\\n' "$$" "$now" "$owner_start" > "$lock/owner";`,
@@ -522,7 +524,7 @@ export function makeSshSlurmBackend(
         activeState = "",
         activeNodeList = "",
       ] = activeResult.stdout.trim().split("|")
-      if (activeJobName && activeJobName !== expectedJobName) {
+      if ((activeJobName || activeState) && activeJobName !== expectedJobName) {
         throw new Error("Slurm execution handle no longer owns the scheduler job id")
       }
       if (activeState) {

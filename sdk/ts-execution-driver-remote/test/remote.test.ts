@@ -2701,6 +2701,11 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   )
   assert.ok(invocations[0]?.[1]?.includes(`case "$id" in ""|*[!0-9]*) exit 65`))
   assert.ok(invocations[0]?.[1]?.includes(`"$job" "$attempt" "$digest" > "$receipt.tmp"`))
+  squeueResult = "|RUNNING|node-a\n"
+  await assert.rejects(
+    () => backend.observe(handle.executionId),
+    /no longer owns the scheduler job id/,
+  )
   squeueResult = ""
   const observation = await backend.observe(handle.executionId)
   assert.equal(observation.state, "completed")
