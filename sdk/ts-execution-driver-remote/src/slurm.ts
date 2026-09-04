@@ -173,6 +173,11 @@ function classifyState(
   return "failed"
 }
 
+function schedulerStateProvesExecution(state: string): boolean {
+  const base = state.split(/[ +]/, 1)[0]?.toUpperCase() ?? ""
+  return ["RUNNING", "COMPLETING", "STAGE_OUT", "SUSPENDED"].includes(base)
+}
+
 function schedulerEvidenceRefs(
   sshTarget: string,
   executionId: string,
@@ -584,8 +589,10 @@ export function makeSshSlurmBackend(
       }
       if (activeState) {
         const state = classifyState(activeState)
-        if (state === "running") {
+        if (schedulerStateProvesExecution(activeState)) {
           execution.observedRunning = true
+        }
+        if (state === "running") {
           return {
             state,
             evidenceRefs: schedulerEvidenceRefs(
@@ -618,8 +625,10 @@ export function makeSshSlurmBackend(
         throw new Error("Slurm execution handle no longer owns the scheduler job id")
       }
       const state = classifyState(schedulerState)
-      if (state === "running") {
+      if (schedulerStateProvesExecution(schedulerState)) {
         execution.observedRunning = true
+      }
+      if (state === "running") {
         return {
           state,
           evidenceRefs: schedulerEvidenceRefs(

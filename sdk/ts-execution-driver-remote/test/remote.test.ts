@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto"
-import { readFile } from "node:fs/promises"
 import test from "node:test"
 import assert from "node:assert/strict"
 
@@ -9,7 +8,6 @@ import type {
 } from "@breadboard/kernel-contracts"
 import {
   buildCanonicalSandboxEvidence,
-  canonicalSandboxArtifactUri,
   buildExecutionDriverUnsupportedCase,
   createExecutionWorld,
 } from "@breadboard/execution-drivers"
@@ -2065,6 +2063,15 @@ test("scheduled evidence never regresses after a concurrent terminal observation
     observationStarted = resolve
   })
   const states: string[] = []
+  const command = ["python", "-c", "print('monotonic')"]
+  const cancellationEvidence = buildCanonicalSandboxEvidence({
+    command,
+    status: "cancelled",
+    exitCode: null,
+    stdout: "",
+    stderr: "",
+    evidenceMode: remoteCapability.evidence_mode,
+  })
   const backend: ScheduledExecutionBackendV1 = {
     backendId: "ray-terminal-monotonic",
     async submit() {
@@ -2078,7 +2085,16 @@ test("scheduled evidence never regresses after a concurrent terminal observation
           releaseConflictingTerminal = () => resolve({ state: "completed" })
         })
       }
-      return { state: "cancelled" }
+      return {
+        state: "cancelled",
+        result: {
+          schema_version: "bb.sandbox_result.v1",
+          request_id: "req:ray:terminal-monotonic",
+          status: "cancelled",
+          ...cancellationEvidence,
+          error: { reason: "execution_cancelled" },
+        },
+      } as const
     },
     async cancel() {},
   }
@@ -2100,7 +2116,7 @@ test("scheduled evidence never regresses after a concurrent terminal observation
     requestId: "req:ray:terminal-monotonic",
     capability: remoteCapability,
     placement,
-    command: ["python", "-c", "print('monotonic')"],
+    command,
   })
   const execution = driver.execute!(request, {
     signal: new AbortController().signal,
@@ -2708,7 +2724,7 @@ test("Slurm scheduled adapter confirms cancellation before timeout settlement", 
   assert.equal(result.livenessEvidence.terminationObserved, true)
 })
 
-test("scheduled adapter canonicalizes terminal observations without a result", async () => {
+test("scheduled adapter rejects terminal observations without a result", async () => {
   const backend: ScheduledExecutionBackendV1 = {
     backendId: "slurm-cluster",
     async submit() {
@@ -2746,26 +2762,13 @@ test("scheduled adapter canonicalizes terminal observations without a result", a
   })
 
   assert.equal(result.kind, "sandbox")
-  assert.deepEqual(result.sandboxResult, {
-    schema_version: "bb.sandbox_result.v1",
-    request_id: "req:slurm:terminal-without-result",
-    status: "failed",
-    ...buildCanonicalSandboxEvidence({
-      command,
-      status: "failed",
-      exitCode: null,
-      stdout: "",
-      stderr: "",
-      evidenceMode: remoteCapability.evidence_mode,
-    }),
-    error: { reason: "execution_failed" },
-  })
-  const fallbackStdoutRef = result.sandboxResult?.stdout_ref
-  assert.ok(fallbackStdoutRef)
-  assert.equal(
-    await readFile(new URL(canonicalSandboxArtifactUri(fallbackStdoutRef)), "utf8"),
-    "",
-  )
+  assert.equal(result.sandboxResult?.status, "failed")
+  assert.equal(result.sandboxResult?.error?.reason, "adapter_execution_failed")
+  assert.equal(result.sandboxResult?.stdout_ref, null)
+  assert.equal(result.sandboxResult?.stderr_ref, null)
+  assert.equal(result.sandboxResult?.side_effect_digest, null)
+  assert.deepEqual(result.sandboxResult?.artifact_refs, [])
+  assert.deepEqual(result.sandboxResult?.evidence_refs, [])
 })
 
 test("scheduled adapter rejects provider-specific terminal result evidence", async () => {
@@ -3028,6 +3031,15 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   assert.ok(invocations[0]?.[1]?.includes(`rm -rf "$lock"; }; trap cleanup EXIT;`))
 
   assert.ok(invocations[0]?.[1]?.includes(`touch "$stdout" "$stderr"`))
+  squeueResult = `${jobName}|PENDING|(null)\n`
+  const pendingObservation = await backend.observe(handle.executionId)
+  assert.equal(pendingObservation.state, "running")
+  squeueResult = ""
+  sacctResult = ""
+  const pendingAccountingGap = await backend.observe(handle.executionId)
+  assert.equal(pendingAccountingGap.state, "accepted")
+  squeueResult = `${jobName}|RUNNING|node-a\n`
+  sacctResult = `${jobName}|COMPLETED|0:0|node-a\n`
   const activeObservation = await backend.observe(handle.executionId)
   assert.equal(activeObservation.state, "running")
   assert.ok(

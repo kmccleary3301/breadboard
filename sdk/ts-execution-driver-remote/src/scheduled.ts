@@ -278,15 +278,7 @@ async function terminalResult(
     assertProviderNeutralResultEvidence(request, result)
     return result
   }
-  if (observation.state === "completed") {
-    throw new Error("completed scheduled execution has no sandbox result")
-  }
-  const status = expectedStatus as Exclude<SandboxResultV1["status"], "completed">
-  return scheduledFailureResult(
-    request,
-    status,
-    `execution_${status}`,
-  )
+  throw new Error(`${observation.state} scheduled execution has no sandbox result`)
 }
 
 function backendFailure(driverId: string, operation: string, cause: unknown): Error {
