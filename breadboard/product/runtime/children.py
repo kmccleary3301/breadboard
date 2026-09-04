@@ -1530,6 +1530,21 @@ class DurableChildFactory:
             raise TypeError("prepared child result must be bytes, ArtifactRef, or None")
         return self._cas(state, result_prepared=True, result_refs=refs)
 
+    def _has_propagating_descendants(self, state: ChildState) -> bool:
+        child_events = self.repository.read(state.child_work_item_id)
+        if not child_events:
+            return False
+        child = WorkItem.restore(
+            self.repository,
+            state.child_work_item_id,
+            clock=self.clock,
+            ids=self.ids,
+        )
+        return (
+            child.read_model.cancellation_policy.propagate_to_children
+            and bool(child.read_model.child_work_item_ids)
+        )
+
     def cancel(
         self,
         child_session_id: str,
@@ -1552,20 +1567,7 @@ class DurableChildFactory:
             ),
         ):
             state = self._record_state(child_session_id)
-            child_events = self.repository.read(state.child_work_item_id)
-            has_propagating_descendants = False
-            if child_events:
-                child = WorkItem.restore(
-                    self.repository,
-                    state.child_work_item_id,
-                    clock=self.clock,
-                    ids=self.ids,
-                )
-                has_propagating_descendants = (
-                    child.read_model.status not in _TERMINAL
-                    and child.read_model.cancellation_policy.propagate_to_children
-                    and bool(child.read_model.child_work_item_ids)
-                )
+            has_propagating_descendants = self._has_propagating_descendants(state)
             if not has_propagating_descendants:
                 return self._cancel(
                     child_session_id,
@@ -1592,37 +1594,40 @@ class DurableChildFactory:
                 )
             if state.terminal_count:
                 raise LateResultRejected("cannot cancel a terminal child")
-            if state.settlement is not None or state.cancellation_requested:
-                raise ExpectedRevisionConflict("child cancellation is already reserved")
-            child = WorkItem.restore(
-                self.repository,
-                state.child_work_item_id,
-                clock=self.clock,
-                ids=self.ids,
-            )
-            policy = child.read_model.cancellation_policy
-            if policy.mode == "never" or "operator" not in policy.cancellable_by:
-                raise ChildError("operator is not authorized to cancel this Work Item")
-            current_attempt = child.read_model.current_attempt
-            if (
-                current_attempt is not None
-                and policy.cleanup == "checkpoint_then_stop"
-                and current_attempt.checkpoint_ref is None
-            ):
-                raise ValueError(
-                    "checkpoint_then_stop requires a current checkpoint"
+            if state.settlement is not None:
+                raise ExpectedRevisionConflict("child settlement is already reserved")
+            if not state.cancellation_requested:
+                child = WorkItem.restore(
+                    self.repository,
+                    state.child_work_item_id,
+                    clock=self.clock,
+                    ids=self.ids,
                 )
-            state = self._cas(
-                state,
-                status="cancel_requested",
-                cancellation_requested=True,
-                cancellation_reason=reason,
-            )
-        self.cancel_tree(
+                policy = child.read_model.cancellation_policy
+                if policy.mode == "never" or "operator" not in policy.cancellable_by:
+                    raise ChildError("operator is not authorized to cancel this Work Item")
+                current_attempt = child.read_model.current_attempt
+                if (
+                    current_attempt is not None
+                    and policy.cleanup == "checkpoint_then_stop"
+                    and current_attempt.checkpoint_ref is None
+                ):
+                    raise ValueError(
+                        "checkpoint_then_stop requires a current checkpoint"
+                    )
+                state = self._cas(
+                    state,
+                    status="cancel_requested",
+                    cancellation_requested=True,
+                    cancellation_reason=reason,
+                )
+        descendants = self.cancel_tree(
             parent_session_id=state.child_session_id,
             parent_work_item_id=state.child_work_item_id,
             reason=reason,
         )
+        if any(descendant.terminal_count != 1 for descendant in descendants):
+            return self._record_state(state.child_session_id)
         with self._lifecycle_lock, self._owner_lock(state.parent_work_item_id), self._owner_process_lock(state.parent_work_item_id), self._tree_process_lock(state.root_session_id), self._product_transition_guard(state.parent_session_id, state.root_session_id, state.child_session_id):
             state = self._record_state(state.child_session_id)
             child = WorkItem.restore(
@@ -2284,6 +2289,15 @@ class DurableChildFactory:
     def reconcile(self, recovery_ref: str) -> ChildState:
         child_session_id = recovery_ref.split("/attempt/", 1)[0].removeprefix("child://")
         state = self._record_state(child_session_id)
+        if (
+            state.cancellation_requested
+            and self._has_propagating_descendants(state)
+        ):
+            return self._cancel_nonleaf(
+                state,
+                expected_revision=state.revision,
+                reason=state.cancellation_reason or "operator request",
+            )
         with (
             self._lifecycle_lock,
             self._owner_lock(state.parent_work_item_id),
@@ -3571,7 +3585,7 @@ class ProcessExecutionAdapter:
         self._write_control(self._known_control_path(target_ref, "release"), b"1")
 
     def _clear_handoff(self, target_ref: str) -> None:
-        for suffix in ("task", "release"):
+        for suffix in ("task", "release", "guard"):
             try:
                 self._known_control_path(target_ref, suffix).unlink(missing_ok=True)
             except ChildError:
@@ -3670,34 +3684,40 @@ class ProcessExecutionAdapter:
         status_path = self._status_path(target_ref, workspace)
         task_path = self._control_path(target_ref, "task", workspace)
         release_path = self._control_path(target_ref, "release", workspace)
+        guard_path = self._control_path(target_ref, "guard", workspace)
         self._status_paths[target_ref] = status_path
-        for path in (status_path, task_path, release_path):
+        for path in (status_path, task_path, release_path, guard_path):
             path.unlink(missing_ok=True)
         self._write_control(task_path, spec.task.encode("utf-8"))
+        group_token = os.urandom(32).hex()
         wrapper = (
             "import os,signal,subprocess,sys,time\n"
-            "release=sys.argv[2]\n"
+            "release=sys.argv[3]\n"
             "while not os.path.exists(release): time.sleep(0.01)\n"
-            "task=open(sys.argv[3],'rb').read()\n"
-            "status=sys.argv[4]\n"
+            "task=open(sys.argv[4],'rb').read()\n"
+            "status=sys.argv[5]\n"
+            "guard=sys.argv[6]\n"
+            "guardian_code=\"import os,sys,time\\nwhile not os.path.exists(sys.argv[1]): time.sleep(0.01)\\n\"\n"
+            "guardian=subprocess.Popen([sys.executable,'-c',guardian_code,guard,sys.argv[2]])\n"
             "signal.signal(signal.SIGTERM,signal.SIG_IGN)\n"
             "reset_term=lambda: signal.signal(signal.SIGTERM,signal.SIG_DFL)\n"
-            "result=subprocess.run(sys.argv[5:],input=task,preexec_fn=reset_term).returncode\n"
+            "result=subprocess.run(sys.argv[7:],input=task,preexec_fn=reset_term).returncode\n"
             "group=os.getpgrp()\n"
             "def descendants_alive():\n"
             " try: rows=subprocess.check_output(['ps','-axo','pid=,pgid=,stat='],text=True,start_new_session=True).splitlines()\n"
             " except (OSError,subprocess.CalledProcessError): return True\n"
             " for row in rows:\n"
             "  fields=row.strip().split()\n"
-            "  if len(fields)>=3 and int(fields[0])!=os.getpid() and int(fields[1])==group and not fields[2].startswith('Z'): return True\n"
+            "  if len(fields)>=3 and int(fields[0]) not in {os.getpid(),guardian.pid} and int(fields[1])==group and not fields[2].startswith('Z'): return True\n"
             " return False\n"
             "while descendants_alive(): time.sleep(0.01)\n"
             "temporary=f'{status}.{os.getpid()}.tmp'\n"
             "fd=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)\n"
             "os.write(fd,str(result).encode('ascii'));os.fsync(fd);os.close(fd)\n"
             "os.replace(temporary,status)\n"
+            "fd=os.open(guard,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600);os.fsync(fd);os.close(fd)\n"
             "directory=os.open(os.path.dirname(status),os.O_RDONLY)\n"
-            "os.fsync(directory);os.close(directory)\n"
+            "os.fsync(directory);os.close(directory);guardian.wait()\n"
             "os._exit(result)\n"
         )
         process = subprocess.Popen(
@@ -3706,9 +3726,11 @@ class ProcessExecutionAdapter:
                 "-c",
                 wrapper,
                 target_ref,
+                group_token,
                 str(release_path),
                 str(task_path),
                 str(status_path),
+                str(guard_path),
                 *self.command,
             ),
             stdin=subprocess.DEVNULL,
@@ -3716,8 +3738,21 @@ class ProcessExecutionAdapter:
             cwd=str(workspace),
         )
         self._processes[target_ref] = process
-        token, group = self._identity(process.pid)
-        metadata: dict[str, Any] = {"launch_phase": "pending"}
+        try:
+            token, group = self._identity(process.pid)
+        except BaseException:
+            self._processes.pop(target_ref, None)
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                pass
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            raise
+        metadata: dict[str, Any] = {"launch_phase": "pending", "process_group_token": group_token}
         target = ExecutionTarget(target_ref, process.pid, token, group, process, metadata)
         accepted = False
         try:
@@ -3758,6 +3793,10 @@ class ProcessExecutionAdapter:
                 return self._group_alive(group)
             except (OSError, subprocess.CalledProcessError, RuntimeError):
                 return None
+        def terminal_state() -> str:
+            completed = self._completed_status(target_ref)
+            return "completed" if completed is True else "absent"
+
 
         if process is not None and process.poll() is not None:
             alive = group_state()
@@ -3766,8 +3805,7 @@ class ProcessExecutionAdapter:
             if alive is None:
                 return "pending"
             self._processes.pop(target_ref, None)
-            completed = self._completed_status(target_ref)
-            return "completed" if completed is True else "absent"
+            return terminal_state()
         if type(pid) is not int or type(token) is not str:
             return "pending"
         try:
@@ -3775,32 +3813,31 @@ class ProcessExecutionAdapter:
         except ProcessLookupError:
             alive = group_state()
             if alive is False:
-                completed = self._completed_status(target_ref)
-                return "completed" if completed is True else "absent"
+                return terminal_state()
             return "running" if alive is True else "pending"
         except (OSError, subprocess.CalledProcessError, RuntimeError):
             alive = group_state()
             if alive is False:
-                return "absent"
+                return terminal_state()
             return "running" if alive is True else "pending"
         if observed_token != token or observed_group != group:
-            return "absent" if group_state() is False else "pending"
+            return terminal_state() if group_state() is False else "pending"
         try:
             state = subprocess.check_output(["ps", "-p", str(pid), "-o", "stat="], text=True).strip()
         except ProcessLookupError:
             alive = group_state()
             if alive is False:
-                return "absent"
+                return terminal_state()
             return "running" if alive is True else "pending"
         except (OSError, subprocess.CalledProcessError, RuntimeError):
             alive = group_state()
             if alive is False:
-                return "absent"
+                return terminal_state()
             return "running" if alive is True else "pending"
         if not state or state.startswith("Z"):
             alive = group_state()
             if alive is False:
-                return "absent"
+                return terminal_state()
             return "running" if alive is True else "pending"
         return "running"
 
@@ -3889,17 +3926,73 @@ class ProcessExecutionAdapter:
             group,
             metadata=recovered_metadata,
         )
+    @staticmethod
+    def _group_member_pids(group: int) -> tuple[int, ...]:
+        try:
+            output = subprocess.check_output(
+                ["ps", "-axo", "pid=,pgid=,stat="],
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError):
+            return ()
+        members: list[int] = []
+        for row in output.splitlines():
+            fields = row.strip().split()
+            if len(fields) < 3 or fields[2].startswith("Z"):
+                continue
+            try:
+                pid, process_group = int(fields[0]), int(fields[1])
+            except ValueError:
+                continue
+            if process_group == group:
+                members.append(pid)
+        return tuple(members)
+
+    @staticmethod
+    def _process_has_group_token(pid: int, token: str) -> bool:
+        try:
+            command = subprocess.check_output(
+                ["ps", "-p", str(pid), "-o", "command="],
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError):
+            return False
+        return token in command
+
+    def _verified_group_owner(self, target: Mapping[str, Any]) -> bool:
+        group = target.get("process_group_id")
+        metadata = target.get("metadata")
+        token = (
+            metadata.get("process_group_token")
+            if isinstance(metadata, Mapping)
+            else None
+        )
+        if (
+            type(group) is not int
+            or type(token) is not str
+            or len(token) != 64
+            or any(character not in "0123456789abcdef" for character in token)
+        ):
+            return False
+        return any(
+            self._process_has_group_token(pid, token)
+            for pid in self._group_member_pids(group)
+        )
+
     def _signal_verified(self, target: Mapping[str, Any], signum: int) -> bool:
         pid = target.get("pid")
         token = target.get("start_token")
         group = target.get("process_group_id")
         if type(pid) is not int or type(token) is not str or type(group) is not int:
             return False
+        leader_verified = False
         try:
             observed_token, observed_group = self._identity(pid)
         except (OSError, ProcessLookupError, RuntimeError):
-            return False
-        if observed_token != token or observed_group != group:
+            pass
+        else:
+            leader_verified = observed_token == token and observed_group == group
+        if not leader_verified and not self._verified_group_owner(target):
             return False
         try:
             os.killpg(group, signum)

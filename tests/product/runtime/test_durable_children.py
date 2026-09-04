@@ -275,6 +275,45 @@ def test_process_wrapper_retains_identity_until_background_descendants_exit(
     assert adapter.cancel(target.retained()) is True
     assert adapter.observe(target.retained()) == "completed"
 
+def test_process_adapter_cancels_verified_group_after_leader_loss(
+    tmp_path: Path,
+) -> None:
+    adapter = ProcessExecutionAdapter(
+        command=("/bin/sh", "-c", "sleep 30 & exit 0")
+    )
+    target_ref = "reserved:leader-loss-descendant"
+    activation = ChildActivation(
+        "parent-session",
+        "parent-session",
+        "parent-work",
+        "child-session",
+        "child-work",
+        "attempt",
+        "child://child-session/attempt/attempt",
+        target_ref,
+        adapter.family,
+        str(tmp_path),
+    )
+    target = adapter.start(
+        activation,
+        _spec(adapter.family, "leader loss descendant"),
+    )
+    time.sleep(0.1)
+    process = target.volatile_handle
+    assert isinstance(process, subprocess.Popen)
+    os.kill(process.pid, signal.SIGKILL)
+    process.wait(timeout=2)
+
+    restarted = ProcessExecutionAdapter(
+        command=("/bin/sh", "-c", "sleep 30 & exit 0")
+    )
+    restarted.bind_workspace(tmp_path)
+    assert restarted.observe(target.retained()) == "running"
+    assert restarted.cancel(target.retained()) is True
+    assert restarted.observe(target.retained()) == "absent"
+
+
+
 
 def test_process_release_is_committed_before_command_execution(tmp_path: Path) -> None:
     marker = tmp_path / "command-ran"
@@ -1379,6 +1418,66 @@ def test_direct_nonleaf_cancel_signals_descendants_before_settlement(
         grandchild.execution_target_ref,
         child.execution_target_ref,
     ]
+
+
+def test_direct_nonleaf_cancel_waits_for_descendant_settlement(
+    tmp_path: Path,
+) -> None:
+    class PendingDescendantAdapter(RetryAdapter):
+        def __init__(self) -> None:
+            super().__init__()
+            self.descendant_ready = False
+            self.blocked_ref: str | None = None
+            self.canceled: list[str] = []
+
+        def cancel(self, target):
+            target_ref = str(target["ref"])
+            self.canceled.append(target_ref)
+            if target_ref == self.blocked_ref and not self.descendant_ready:
+                return False
+            return True
+
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = PendingDescendantAdapter()
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+    child = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family, "nonleaf pending child"),
+    )
+    grandchild = factory.start(
+        parent_session_id=child.child_session_id,
+        root_session_id="parent-session",
+        parent_work_item_id=child.child_work_item_id,
+        spec=_spec(adapter.family, "pending grandchild"),
+    )
+    adapter.blocked_ref = grandchild.execution_target_ref
+
+    pending = factory.cancel(
+        child.child_session_id,
+        expected_revision=factory._record_state(child.child_session_id).revision,
+    )
+    assert pending.terminal_count == 0
+    assert pending.cancellation_requested is True
+    assert factory._record_state(grandchild.child_session_id).terminal_count == 0
+    assert adapter.canceled == [grandchild.execution_target_ref]
+
+    adapter.descendant_ready = True
+    settled = factory.reconcile(child.recovery_ref)
+    assert settled.terminal_outcome == "canceled"
+    assert factory._record_state(grandchild.child_session_id).terminal_outcome == "canceled"
+    assert adapter.canceled == [
+        grandchild.execution_target_ref,
+        grandchild.execution_target_ref,
+        child.execution_target_ref,
+    ]
+
 
 
 def test_child_completion_waits_for_every_delegated_child_settlement(
@@ -6738,6 +6837,56 @@ def test_parent_stop_remains_pending_until_child_cancellation_settles(
         asyncio_run(service.stop_session(parent.session_id))
 
     assert await_record(registry, parent.session_id).status is SessionStatus.RUNNING
+
+
+def test_parent_stop_honors_pending_authoritative_tree_result(
+    tmp_path: Path,
+) -> None:
+    from breadboard_engine.api.cli_bridge.models import SessionStatus
+    from breadboard_engine.api.cli_bridge.registry.records import SessionRecord
+    from breadboard_engine.api.cli_bridge.service import SessionService
+
+    registry = SessionRegistry(state_root=tmp_path / "registry")
+    parent = SessionRecord(
+        "parent-session",
+        status=SessionStatus.RUNNING,
+        metadata={"workspace": str(tmp_path)},
+    )
+    asyncio_run(registry.create(parent))
+
+    class PendingState:
+        terminal_count = 0
+
+    class PendingReconciler:
+        def __call__(self, recovery_ref: str):
+            raise AssertionError(recovery_ref)
+
+        def cancel(self, recovery_ref: str, *, reason: str = "operator request"):
+            raise AssertionError(recovery_ref)
+
+        def cancel_tree(
+            self,
+            parent_session_id: str,
+            *,
+            reason: str = "operator request",
+        ):
+            assert parent_session_id == parent.session_id
+            return (PendingState(),)
+
+    service = SessionService(
+        registry=registry,
+        state_root=tmp_path / "registry",
+        durable_child_reconciler=PendingReconciler(),
+        durable_child_repository=WorkItemRepository(
+            tmp_path / "work-items.jsonl"
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="cancellation remains pending"):
+        asyncio_run(service.stop_session(parent.session_id))
+
+    assert await_record(registry, parent.session_id).status is SessionStatus.RUNNING
+
 
 
 def test_reconciler_skips_process_factory_for_nonprocess_child(

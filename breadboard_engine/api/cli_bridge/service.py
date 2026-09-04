@@ -3122,11 +3122,12 @@ class SessionService:
             raise RuntimeError(
                 "cannot stop parent with retained children without an authoritative reconciler"
             )
+        canceled_tree = None
         if callable(cancel_tree):
             try:
-                result = cancel_tree(session_id, reason=reason or "operator request")
-                if inspect.isawaitable(result):
-                    await result
+                canceled_tree = cancel_tree(session_id, reason=reason or "operator request")
+                if inspect.isawaitable(canceled_tree):
+                    canceled_tree = await canceled_tree
             except (ExpectedRevisionConflict, LateResultRejected):
                 reconcile_child = getattr(self._durable_child_reconciler, "__call__", None)
                 if callable(reconcile_child):
@@ -3145,10 +3146,15 @@ class SessionService:
                                 await repaired
                         except (ExpectedRevisionConflict, LateResultRejected):
                             continue
-                    retry = cancel_tree(session_id, reason=reason or "operator request")
-                    if inspect.isawaitable(retry):
-                        await retry
-        if retained_children:
+                    canceled_tree = cancel_tree(session_id, reason=reason or "operator request")
+                    if inspect.isawaitable(canceled_tree):
+                        canceled_tree = await canceled_tree
+        if canceled_tree is not None and any(
+            getattr(child_state, "terminal_count", 0) != 1
+            for child_state in canceled_tree
+        ):
+            raise RuntimeError("durable child cancellation remains pending")
+        if retained_children or callable(cancel_tree):
             remaining_children = await self.registry.records()
             for child_record in remaining_children:
                 child_metadata = (
