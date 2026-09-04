@@ -3160,7 +3160,7 @@ test("SSH Slurm backend leaves a durable cancel marker when cancellation precede
   assert.ok(commands[1]?.includes(".lock/attempt"))
   assert.ok(commands[1]?.includes("scancel --name"))
   assert.ok(commands[1]?.includes("receipt_attempt=$(sed -n '2p'"))
-  assert.ok(commands[1]?.includes("receipt_digest=$(sed -n '3p'"))
+  assert.equal(commands[1]?.includes("receipt_digest="), false)
   assert.ok(commands[0]?.includes(`[ -f "$cancel" ] || [ ! -s "$receipt" ]`))
   assert.equal(commands[1]?.includes("sed -n '1p'"), false)
 })

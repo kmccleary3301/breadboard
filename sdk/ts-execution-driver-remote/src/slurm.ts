@@ -393,7 +393,7 @@ export function makeSshSlurmBackend(
         `pid=\${owner%% *}; owner_rest=\${owner#* }; created=\${owner_rest%% *}; owner_start=\${owner_rest#* };`,
         `case "$created" in ""|*[!0-9]*) created=$(stat -c %Y "$lock" 2>/dev/null || printf '0');; esac;`,
         `current_start=''; case "$pid" in ""|*[!0-9]*) :;; *) current_start=$(awk '{print $22}' "/proc/$pid/stat" 2>/dev/null || true);; esac;`,
-        `owner_live=1; if [ -n "$owner_start" ]; then [ -n "$current_start" ] && [ "$current_start" = "$owner_start" ] || owner_live=0; fi;`,
+        `owner_live=1; case "$pid" in ""|*[!0-9]*) :;; *) if [ ! -d "/proc/$pid" ]; then owner_live=0; elif [ -n "$owner_start" ] && [ -n "$current_start" ] && [ "$current_start" != "$owner_start" ]; then owner_live=0; fi;; esac;`,
         `if [ $((now-created)) -ge ${lockLeaseSeconds} ] && [ "$owner_live" -eq 0 ]; then`,
         `timeout 1s scancel --name ${shellQuote(jobName)} 2>/dev/null || true;`,
         `rm -rf "$lock";`,
@@ -435,9 +435,8 @@ export function makeSshSlurmBackend(
           await ssh([
             `touch ${shellQuote(cancelPath)};`,
             `receipt_attempt=$(sed -n '2p' ${shellQuote(receiptPath)} 2>/dev/null || true);`,
-            `receipt_digest=$(sed -n '3p' ${shellQuote(receiptPath)} 2>/dev/null || true);`,
             `lock_attempt=$(cat ${shellQuote(`${lockPath}/attempt`)} 2>/dev/null || true);`,
-            `if [ "$receipt_attempt" = ${shellQuote(submissionAttemptToken)} ] || [ "$receipt_digest" = ${shellQuote(expectedRequestDigest)} ] || [ "$lock_attempt" = ${shellQuote(submissionAttemptToken)} ]; then`,
+            `if [ "$receipt_attempt" = ${shellQuote(submissionAttemptToken)} ] || [ "$lock_attempt" = ${shellQuote(submissionAttemptToken)} ]; then`,
             `timeout ${commandTimeoutSeconds}s scancel --name ${shellQuote(jobName)} 2>/dev/null || true;`,
             "fi",
           ].join(" "), context.terminationGraceMs)
