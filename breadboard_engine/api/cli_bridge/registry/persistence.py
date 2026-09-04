@@ -361,6 +361,8 @@ class PersistenceMixin:
             return
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         with ProcessLock(lock_path):
+            if await self.get(session_id) is None:
+                raise RuntimeError("turn admission SessionRecord disappeared")
             yield
 
     async def update_status(self, session_id: str, status: SessionStatus) -> None:

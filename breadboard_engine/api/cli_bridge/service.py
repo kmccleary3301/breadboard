@@ -2000,7 +2000,9 @@ class SessionService:
         turn: TurnRecord | None = None
         cancellation: CancellationRecord | None = None
         disposition: str | None = None
-        async with record.admission_lock:
+        async with self.registry.fence_parent_turn_admission(
+            session_id
+        ), record.admission_lock:
             existing = record.cancellations_by_key.get(key)
             if existing is None:
                 existing = record.cancellations_by_key_digest.get(key_digest)
