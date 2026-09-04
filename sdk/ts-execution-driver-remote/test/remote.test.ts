@@ -64,6 +64,18 @@ test("remote driver builds a remote sandbox request", () => {
   assert.deepEqual(request.command, ["python", "worker.py"])
 })
 
+test("remote driver rejects programs outside the capability allowlist", () => {
+  assert.throws(
+    () =>
+      buildRemoteSandboxRequest({
+        requestId: "req:remote:disallowed",
+        capability: remoteCapability,
+        command: ["node", "worker.js"],
+      }),
+    /program "node" is not allowed by capability cap:remote:1/,
+  )
+})
+
 test("remote driver builds an explicit remote execution envelope", () => {
   const request = buildRemoteSandboxRequest({
     requestId: "req:remote:env",

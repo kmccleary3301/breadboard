@@ -62,6 +62,23 @@ export function chooseRemotePlacement(
   }
 }
 
+function assertAllowedRemoteProgram(
+  capability: ExecutionCapabilityV1,
+  command: string[],
+): void {
+  const program = command[0]
+  if (!program) {
+    throw new Error("Remote execution requires a non-empty command")
+  }
+  const allowedPrograms = capability.allow_run_programs
+  if (allowedPrograms !== undefined && !allowedPrograms.includes(program)) {
+    throw new Error(
+      `Remote execution program ${JSON.stringify(program)} is not allowed by capability ${capability.capability_id}`,
+    )
+  }
+}
+
+
 export function buildRemoteSandboxRequest(input: {
   requestId: string
   capability: ExecutionCapabilityV1
@@ -71,6 +88,7 @@ export function buildRemoteSandboxRequest(input: {
   placementClass?: ExecutionPlacementV1["placement_class"]
   metadata?: Record<string, unknown>
 }): SandboxRequestV1 {
+  assertAllowedRemoteProgram(input.capability, input.command)
   const placementClass = input.placementClass ?? chooseRemotePlacement(input.capability)
   return {
     schema_version: "bb.sandbox_request.v1",
