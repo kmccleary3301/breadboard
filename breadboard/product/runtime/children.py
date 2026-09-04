@@ -713,12 +713,27 @@ class DurableChildFactory:
         ):
             raise ChildError("parent Work Item does not belong to the parent Session")
         records = self._registry("records")
+        expected_root_session_id = self._tree_root_session_id(parent_session_id)
         by_parent: dict[str, list[ChildState]] = {}
         for record in records:
             metadata = record.metadata if isinstance(record.metadata, dict) else {}
             value = metadata.get("durable_child")
-            if isinstance(value, Mapping):
-                by_parent.setdefault(str(value.get("parent_work_item_id")), []).append(self._record_state(record.session_id))
+            if not isinstance(value, Mapping):
+                continue
+            state = self._record_state(record.session_id)
+            child_spec = state.child_spec
+            repository_path = child_spec.get("work_item_repository_path")
+            workspace_path = metadata.get("workspace")
+            if (
+                state.root_session_id != expected_root_session_id
+                or not isinstance(repository_path, str)
+                or Path(repository_path).expanduser().resolve()
+                != self._repository_path
+                or not isinstance(workspace_path, str)
+                or Path(workspace_path).expanduser().resolve() != self.workspace
+            ):
+                continue
+            by_parent.setdefault(state.parent_work_item_id, []).append(state)
         retained_tree_refs: list[str] = []
         retained_queue = [parent_work_item_id]
         while retained_queue:
@@ -841,6 +856,11 @@ class DurableChildFactory:
                     },
                 ),
                 expected_child_recovery_refs=retained_tree_refs,
+                expected_child_owner=(
+                    str(self.workspace),
+                    str(self._repository_path),
+                    expected_root_session_id,
+                ),
                 _tree_lock_held=True,
             )
         if product_status in _TERMINAL and work_status not in _TERMINAL:
@@ -1747,10 +1767,16 @@ class DurableChildFactory:
                 if parent_work.read_model.attempts
                 else None
             )
+            expected_parent_attempt_id = self._parent_attempt_id_for_child(
+                state.parent_work_item_id,
+                state.child_work_item_id,
+            )
             if (
                 parent_product.read_model.status in _TERMINAL
                 or parent_work.read_model.status in _TERMINAL
                 or parent_attempt is None
+                or expected_parent_attempt_id is None
+                or parent_attempt.attempt_id != expected_parent_attempt_id
                 or parent_attempt.session_ref != state.parent_session_id
             ):
                 raise LateResultRejected(
@@ -1839,7 +1865,6 @@ class DurableChildFactory:
                     raise ChildError(
                         "Work Item terminal outcome disagrees with settlement"
                     ) from error
-                raise
         parent_work = WorkItem.restore(self.repository, state.parent_work_item_id, clock=self.clock, ids=self.ids)
         parent_work.join_child(state.child_work_item_id, state.child_session_id, outcome, result_refs)
         state = self._cas(state, status=outcome, terminal_outcome=outcome, terminal_count=1, result_refs=tuple(result_refs), settlement=None, joined=True)
@@ -1849,8 +1874,8 @@ class DurableChildFactory:
             "release_terminal",
             None,
         )
-        if callable(release_terminal):
-            release_terminal(state.execution_target)
+        if callable(release_terminal) and release_terminal(state.execution_target) is False:
+            raise ChildError("terminal execution owner release remains pending")
         return state
 
     def _adopt_terminal_work_item(
@@ -2117,8 +2142,8 @@ class DurableChildFactory:
             "release_terminal",
             None,
         )
-        if callable(release_terminal):
-            release_terminal(state.execution_target)
+        if callable(release_terminal) and release_terminal(state.execution_target) is False:
+            raise ChildError("terminal execution owner release remains pending")
     def reconcile(self, recovery_ref: str) -> ChildState:
         child_session_id = recovery_ref.split("/attempt/", 1)[0].removeprefix("child://")
         state = self._record_state(child_session_id)
@@ -2842,20 +2867,23 @@ class RayJobAdapter:
             return
         self.orchestrator.job_manager.restore_job(job)
 
-    def release_terminal(self, target: Mapping[str, Any]) -> None:
+    def release_terminal(self, target: Mapping[str, Any]) -> bool:
         job_id = str(target.get("ref", "")).removeprefix("job:")
         actor = self._actors.pop(job_id, None)
+        is_actor_handle = False
         if actor is None:
             actor = self._lookup_actor(job_id)
             self._actors.pop(job_id, None)
         if actor is None:
-            return
+            return job_id not in self._actor_lookup_unavailable
         try:
             import ray
 
+            is_actor_handle = isinstance(actor, ray.actor.ActorHandle)
             ray.kill(actor, no_restart=True)
         except BaseException:
-            pass
+            return not is_actor_handle
+        return True
 
     def _mark_job_failed(self, target: Mapping[str, Any], job_id: str) -> None:
         marked = self.orchestrator.job_manager.update_state(job_id, "failed")

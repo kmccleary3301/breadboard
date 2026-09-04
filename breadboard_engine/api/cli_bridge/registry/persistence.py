@@ -377,7 +377,7 @@ class PersistenceMixin:
         """Return the canonical stored id for a case-insensitive candidate."""
         folded = candidate.casefold()
         async with self._lock:
-            self._refresh_records_from_disk_locked()
+            await self._refresh_records_from_disk_locked()
             return next(
                 (
                     session_id
@@ -390,11 +390,11 @@ class PersistenceMixin:
 
     async def records(self) -> list[SessionRecord]:
         async with self._lock:
-            self._refresh_records_from_disk_locked()
+            await self._refresh_records_from_disk_locked()
             return list(self._records.values())
     async def list(self) -> Iterable[SessionSummary]:
         async with self._lock:
-            self._refresh_records_from_disk_locked()
+            await self._refresh_records_from_disk_locked()
             return [record.to_summary() for record in self._records.values()]
     @asynccontextmanager
     async def fence_parent_turn_admission(self, session_id: str):
@@ -503,6 +503,7 @@ class PersistenceMixin:
         *,
         requests: Iterable[Mapping[str, Any]],
         expected_child_recovery_refs: Iterable[str] | None = None,
+        expected_child_owner: tuple[str, str, str] | None = None,
     ) -> None:
         normalized_requests: list[dict[str, Any]] = []
         for request in requests:
@@ -550,7 +551,7 @@ class PersistenceMixin:
             )
         async with record.admission_lock:
             async with self._lock:
-                self._refresh_records_from_disk_locked()
+                await self._refresh_records_from_disk_locked()
                 current = self._records.get(session_id)
                 if current is not record:
                     raise RuntimeError(
@@ -581,6 +582,23 @@ class PersistenceMixin:
                                 or candidate.session_id in descendant_session_ids
                             ):
                                 continue
+                            if expected_child_owner is not None:
+                                (
+                                    expected_workspace,
+                                    expected_repository,
+                                    expected_root_session,
+                                ) = expected_child_owner
+                                child_spec = child_state.get("child_spec")
+                                if (
+                                    candidate_metadata.get("workspace")
+                                    != expected_workspace
+                                    or not isinstance(child_spec, Mapping)
+                                    or child_spec.get("work_item_repository_path")
+                                    != expected_repository
+                                    or child_state.get("root_session_id")
+                                    != expected_root_session
+                                ):
+                                    continue
                             descendant_session_ids.add(candidate.session_id)
                             recovery_ref = child_state.get("recovery_ref")
                             if isinstance(recovery_ref, str) and recovery_ref.strip():
@@ -958,18 +976,29 @@ class PersistenceMixin:
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         async with _process_lock(lock_path):
             yield
-    def _refresh_records_from_disk_locked(self) -> None:
+    async def _refresh_records_from_disk_locked(self) -> None:
         if self._state_root is None:
             return
         for path in sorted(self._state_root.glob("*.json")):
-            if path.with_suffix(".deleted").exists():
+            marker = path.with_suffix(".deleted")
+            if marker.exists():
                 for session_id in tuple(self._records):
                     if self._state_path(session_id) == path:
                         self._records.pop(session_id, None)
                 continue
             try:
-                payload = json.loads(path.read_text(encoding="utf-8"))
-                refreshed = self._deserialize_record(payload)
+                provisional = self._deserialize_record(
+                    json.loads(path.read_text(encoding="utf-8"))
+                )
+                async with self._record_file_lock(provisional.session_id):
+                    if marker.exists():
+                        self._records.pop(provisional.session_id, None)
+                        continue
+                    refreshed = self._deserialize_record(
+                        json.loads(path.read_text(encoding="utf-8"))
+                    )
+                    if self._state_path(refreshed.session_id) != path:
+                        raise ValueError("retained session identity does not match its path")
             except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
                 continue
             current = self._records.get(refreshed.session_id)
@@ -1428,9 +1457,14 @@ class PersistenceMixin:
     def _load_retained_records(self) -> None:
         assert self._state_root is not None
         for path in sorted(self._state_root.glob("*.json")):
+            marker = path.with_suffix(".deleted")
+            if marker.exists():
+                continue
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
                 record = self._deserialize_record(payload)
+                if marker.exists():
+                    continue
             except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
                 continue
             self._records[record.session_id] = record

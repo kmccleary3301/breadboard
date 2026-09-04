@@ -2829,6 +2829,7 @@ def test_cancel_tree_terminalizes_bridge_for_child_without_work_item(
                 media_type="text/plain; charset=utf-8",
             ).as_dict(),
             "task_artifact_store": str(factory.artifacts._root),
+            "work_item_repository_path": str(factory._repository_path),
         },
         execution_target={"ref": "reserved:child-tree-cancel-start"},
     )
@@ -5686,11 +5687,11 @@ def test_parent_cancellation_fences_concurrent_child_start(
     release_refresh = threading.Event()
     original_refresh = registry._refresh_records_from_disk_locked
 
-    def pause_refresh() -> None:
+    async def pause_refresh() -> None:
         entered_refresh.set()
-        if not release_refresh.wait(timeout=2):
+        if not await asyncio.to_thread(release_refresh.wait, 2):
             raise RuntimeError("test did not release cancellation refresh")
-        original_refresh()
+        await original_refresh()
 
     monkeypatch.setattr(registry, "_refresh_records_from_disk_locked", pause_refresh)
     cancellation_errors: list[BaseException] = []
