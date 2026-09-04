@@ -3154,6 +3154,29 @@ class SessionService:
                     retry = cancel_tree(session_id, reason=reason or "operator request")
                     if inspect.isawaitable(retry):
                         await retry
+        if retained_children:
+            remaining_children = await self.registry.records()
+            for child_record in remaining_children:
+                child_metadata = (
+                    child_record.metadata
+                    if isinstance(child_record.metadata, Mapping)
+                    else {}
+                )
+                child_state = child_metadata.get("durable_child")
+                if (
+                    not isinstance(child_state, Mapping)
+                    or child_state.get("parent_session_id") != session_id
+                ):
+                    continue
+                terminal_count = child_state.get("terminal_count", 0)
+                if type(terminal_count) is not int or terminal_count not in {0, 1}:
+                    raise RuntimeError(
+                        "retained durable child terminal_count must be exactly 0 or 1"
+                    )
+                if terminal_count == 0:
+                    raise RuntimeError(
+                        "durable child cancellation remains pending"
+                    )
         record = await self._ensure_session_locked(session_id)
         metadata = dict(record.metadata or {})
         durable_child = metadata.get("durable_child")

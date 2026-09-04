@@ -656,8 +656,9 @@ def test_process_launch_crash_window_is_recovered_or_terminated(tmp_path: Path, 
     )
     recovered = restarted.reconcile(state.recovery_ref)
     assert recovered.launch_published is True
-    restarted.cancel(recovered.child_session_id, expected_revision=recovered.revision)
+    assert len(restarted_adapter._processes) == 1
     process = restarted_adapter._processes[recovered.execution_target_ref]
+    restarted.cancel(recovered.child_session_id, expected_revision=recovered.revision)
     assert process.wait(timeout=2) is not None
     assert restarted_adapter._pending_pid(recovered.execution_target_ref) is None
 
@@ -1378,6 +1379,65 @@ def test_direct_nonleaf_cancel_signals_descendants_before_settlement(
         grandchild.execution_target_ref,
         child.execution_target_ref,
     ]
+
+
+def test_child_completion_waits_for_every_delegated_child_settlement(
+    tmp_path: Path,
+) -> None:
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = RetryAdapter()
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+    child = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family, "nonleaf child"),
+    )
+    grandchild = factory.start(
+        parent_session_id=child.child_session_id,
+        root_session_id="parent-session",
+        parent_work_item_id=child.child_work_item_id,
+        spec=_spec(adapter.family, "grandchild"),
+    )
+    prepared_child = factory.prepare_result(
+        child.child_session_id,
+        expected_revision=factory._record_state(child.child_session_id).revision,
+        attempt_id=child.attempt_id,
+    )
+
+    with pytest.raises(ChildError, match="every delegated child"):
+        factory.settle(
+            child.child_session_id,
+            expected_revision=prepared_child.revision,
+            outcome="completed",
+            attempt_id=child.attempt_id,
+        )
+
+    prepared_grandchild = factory.prepare_result(
+        grandchild.child_session_id,
+        expected_revision=factory._record_state(
+            grandchild.child_session_id
+        ).revision,
+        attempt_id=grandchild.attempt_id,
+    )
+    factory.settle(
+        grandchild.child_session_id,
+        expected_revision=prepared_grandchild.revision,
+        outcome="completed",
+        attempt_id=grandchild.attempt_id,
+    )
+    completed = factory.settle(
+        child.child_session_id,
+        expected_revision=prepared_child.revision,
+        outcome="completed",
+        attempt_id=child.attempt_id,
+    )
+    assert completed.terminal_outcome == "completed"
 def test_rejected_parent_cancel_leaves_no_replayed_intent(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -6617,3 +6677,102 @@ def test_darwin_process_start_token_uses_process_start_time() -> None:
     assert isinstance(token, int)
     started_seconds = token // 1_000_000
     assert 946_684_800 <= started_seconds <= int(time.time())
+
+
+def test_parent_stop_remains_pending_until_child_cancellation_settles(
+    tmp_path: Path,
+) -> None:
+    from breadboard_engine.api.cli_bridge.models import SessionStatus
+    from breadboard_engine.api.cli_bridge.registry.records import SessionRecord
+    from breadboard_engine.api.cli_bridge.service import SessionService
+
+    registry = SessionRegistry(state_root=tmp_path / "registry")
+    parent = SessionRecord(
+        "parent-session",
+        status=SessionStatus.RUNNING,
+        metadata={"workspace": str(tmp_path)},
+    )
+    child = SessionRecord(
+        "child-session",
+        status=SessionStatus.RUNNING,
+        metadata={
+            "workspace": str(tmp_path),
+            "durable_child": {
+                "parent_session_id": parent.session_id,
+                "terminal_count": 0,
+            },
+        },
+    )
+    asyncio_run(registry.create(parent))
+    asyncio_run(registry.create(child))
+
+    class PendingReconciler:
+        def __call__(self, recovery_ref: str):
+            raise AssertionError(recovery_ref)
+
+        def cancel(self, recovery_ref: str, *, reason: str = "operator request"):
+            raise AssertionError(recovery_ref)
+
+        def cancel_tree(
+            self,
+            parent_session_id: str,
+            *,
+            reason: str = "operator request",
+        ):
+            assert parent_session_id == parent.session_id
+            return ()
+
+    service = SessionService(
+        registry=registry,
+        state_root=tmp_path / "registry",
+        durable_child_reconciler=PendingReconciler(),
+        durable_child_repository=WorkItemRepository(
+            tmp_path / "work-items.jsonl"
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="cancellation remains pending"):
+        asyncio_run(service.stop_session(parent.session_id))
+
+    assert await_record(registry, parent.session_id).status is SessionStatus.RUNNING
+
+
+def test_reconciler_skips_process_factory_for_nonprocess_child(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class UnsupportedProcessAdapter:
+        family = "execution-world-process"
+
+        def __init__(self, *args, **kwargs) -> None:
+            raise ChildError("process execution is unavailable")
+
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = RetryAdapter()
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family, "nonprocess child"),
+    )
+    monkeypatch.setattr(
+        children_module,
+        "ProcessExecutionAdapter",
+        UnsupportedProcessAdapter,
+    )
+    reconciler = DurableChildReconciler(
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+        adapter_factories=(UnsupportedProcessAdapter,),
+    )
+
+    assert asyncio_run(reconciler(activation.recovery_ref)).child_session_id == (
+        activation.child_session_id
+    )

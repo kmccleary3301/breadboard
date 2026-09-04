@@ -1530,30 +1530,53 @@ class DurableChildFactory:
             raise TypeError("prepared child result must be bytes, ArtifactRef, or None")
         return self._cas(state, result_prepared=True, result_refs=refs)
 
-    def cancel(self, child_session_id: str, *, expected_revision: int, reason: str = "operator request") -> ChildState:
+    def cancel(
+        self,
+        child_session_id: str,
+        *,
+        expected_revision: int,
+        reason: str = "operator request",
+    ) -> ChildState:
         if type(reason) is not str or not reason.strip():
             raise ValueError("reason must be a non-empty string")
         state = self._record_state(child_session_id)
-        child_events = self.repository.read(state.child_work_item_id)
-        if child_events:
-            child = WorkItem.restore(
-                self.repository,
-                state.child_work_item_id,
-                clock=self.clock,
-                ids=self.ids,
-            )
-            if (
-                child.read_model.status not in _TERMINAL
-                and child.read_model.cancellation_policy.propagate_to_children
-                and child.read_model.child_work_item_ids
-            ):
-                return self._cancel_nonleaf(
-                    state,
+        with (
+            self._lifecycle_lock,
+            self._owner_lock(state.parent_work_item_id),
+            self._owner_process_lock(state.parent_work_item_id),
+            self._tree_process_lock(state.root_session_id),
+            self._product_transition_guard(
+                state.parent_session_id,
+                state.root_session_id,
+                state.child_session_id,
+            ),
+        ):
+            state = self._record_state(child_session_id)
+            child_events = self.repository.read(state.child_work_item_id)
+            has_propagating_descendants = False
+            if child_events:
+                child = WorkItem.restore(
+                    self.repository,
+                    state.child_work_item_id,
+                    clock=self.clock,
+                    ids=self.ids,
+                )
+                has_propagating_descendants = (
+                    child.read_model.status not in _TERMINAL
+                    and child.read_model.cancellation_policy.propagate_to_children
+                    and bool(child.read_model.child_work_item_ids)
+                )
+            if not has_propagating_descendants:
+                return self._cancel(
+                    child_session_id,
                     expected_revision=expected_revision,
                     reason=reason,
                 )
-        with self._lifecycle_lock, self._owner_lock(state.parent_work_item_id), self._owner_process_lock(state.parent_work_item_id), self._product_transition_guard(state.parent_session_id, state.root_session_id, state.child_session_id):
-            return self._cancel(child_session_id, expected_revision=expected_revision, reason=reason)
+        return self._cancel_nonleaf(
+            state,
+            expected_revision=expected_revision,
+            reason=reason,
+        )
     def _cancel_nonleaf(
         self,
         state: ChildState,
@@ -1561,7 +1584,7 @@ class DurableChildFactory:
         expected_revision: int,
         reason: str,
     ) -> ChildState:
-        with self._lifecycle_lock, self._owner_lock(state.parent_work_item_id), self._owner_process_lock(state.parent_work_item_id), self._product_transition_guard(state.parent_session_id, state.root_session_id, state.child_session_id):
+        with self._lifecycle_lock, self._owner_lock(state.parent_work_item_id), self._owner_process_lock(state.parent_work_item_id), self._tree_process_lock(state.root_session_id), self._product_transition_guard(state.parent_session_id, state.root_session_id, state.child_session_id):
             state = self._record_state(state.child_session_id)
             if state.revision != expected_revision:
                 raise ExpectedRevisionConflict(
@@ -1600,7 +1623,7 @@ class DurableChildFactory:
             parent_work_item_id=state.child_work_item_id,
             reason=reason,
         )
-        with self._lifecycle_lock, self._owner_lock(state.parent_work_item_id), self._owner_process_lock(state.parent_work_item_id), self._product_transition_guard(state.parent_session_id, state.root_session_id, state.child_session_id):
+        with self._lifecycle_lock, self._owner_lock(state.parent_work_item_id), self._owner_process_lock(state.parent_work_item_id), self._tree_process_lock(state.root_session_id), self._product_transition_guard(state.parent_session_id, state.root_session_id, state.child_session_id):
             state = self._record_state(state.child_session_id)
             child = WorkItem.restore(
                 self.repository,
@@ -1680,6 +1703,7 @@ class DurableChildFactory:
             self._lifecycle_lock,
             self._owner_lock(state.parent_work_item_id),
             self._owner_process_lock(state.parent_work_item_id),
+            self._tree_process_lock(state.root_session_id),
             self._product_transition_guard(
                 state.parent_session_id,
                 state.root_session_id,
@@ -1736,6 +1760,29 @@ class DurableChildFactory:
             raise ExpectedRevisionConflict(f"stale child revision: expected {expected_revision}, actual {state.revision}")
         if result_refs is not None and tuple(result_refs) != state.result_refs:
             raise ExpectedRevisionConflict("settlement result refs do not match prepared refs")
+        if outcome == "completed":
+            child = WorkItem.restore(
+                self.repository,
+                state.child_work_item_id,
+                clock=self.clock,
+                ids=self.ids,
+            )
+            descendant_ids = set(child.read_model.child_work_item_ids)
+            if descendant_ids:
+                descendants = self.child_states(
+                    parent_work_item_id=state.child_work_item_id
+                )
+                descendants_by_id = {
+                    descendant.child_work_item_id: descendant
+                    for descendant in descendants
+                }
+                if set(descendants_by_id) != descendant_ids or any(
+                    descendants_by_id[child_id].terminal_count != 1
+                    for child_id in descendant_ids
+                ):
+                    raise ChildError(
+                        "child completion requires every delegated child to settle"
+                    )
         reserved = self._cas(
             state,
             settlement={
@@ -2680,7 +2727,9 @@ class DurableChildReconciler:
         )
         adapters = []
         for factory in self._adapter_factories:
-            if family == ProcessExecutionAdapter.family and factory is ProcessExecutionAdapter:
+            if factory is ProcessExecutionAdapter:
+                if family != ProcessExecutionAdapter.family:
+                    continue
                 command = adapter_config.get("command")
                 if not isinstance(command, list) or not command or any(type(part) is not str or not part for part in command):
                     raise ChildError("durable process child command is malformed")
