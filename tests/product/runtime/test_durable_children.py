@@ -242,6 +242,37 @@ def test_process_adapter_reaps_natural_exit_and_reports_absent(tmp_path: Path) -
     assert target_ref not in adapter._processes
 
 
+def test_process_release_is_committed_before_command_execution(tmp_path: Path) -> None:
+    marker = tmp_path / "command-ran"
+    phases: list[str] = []
+
+    def publish(target: ExecutionTarget) -> None:
+        phase = str(target.metadata.get("launch_phase"))
+        phases.append(phase)
+        if phase == "release_committed":
+            raise RuntimeError("simulated crash before release")
+
+    adapter = ProcessExecutionAdapter(command=("/bin/sh", "-c", f"touch {marker}"))
+    activation = ChildActivation(
+        "parent-session",
+        "parent-session",
+        "parent-work",
+        "child-session",
+        "child-work",
+        "attempt",
+        "child://child-session/attempt/attempt",
+        "reserved:release-order",
+        adapter.family,
+        str(tmp_path),
+        publish_target=publish,
+    )
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        adapter.start(activation, _spec(adapter.family, "release ordering"))
+    assert phases == ["pending", "release_committed"]
+    assert marker.exists() is False
+    assert adapter._processes == {}
+
+
 def test_process_adapter_uses_activation_workspace_and_rejects_missing_cwd(tmp_path: Path) -> None:
     adapter = ProcessExecutionAdapter(command=("/bin/sh", "-c", "pwd > relative-cwd.txt"))
     workspace = tmp_path / "child-workspace"
@@ -2587,6 +2618,55 @@ def test_reserved_launch_claim_does_not_relaunch_on_pending_observation(tmp_path
     assert recovered.terminal_count == 0
     assert recovered.launch_published is False
     assert adapter.starts == 1
+
+
+def test_pending_release_observation_never_cancels_and_relaunches(tmp_path: Path) -> None:
+    class ReleaseRaceAdapter:
+        family = "release-race"
+
+        def __init__(self) -> None:
+            self.starts = 0
+            self.cancels = 0
+
+        def start(self, activation, spec):
+            self.starts += 1
+            return ExecutionTarget(activation.execution_target_ref, metadata={"launch_phase": "released"})
+
+        def observe(self, target):
+            return "running"
+
+        def release_pending(self, target):
+            return target.get("metadata", {}).get("launch_phase") == "pending"
+
+        def recover(self, target):
+            raise AssertionError("pending wrapper must remain under observation")
+
+        def cancel(self, target):
+            self.cancels += 1
+            return True
+
+        def prepare_result(self, target, spec):
+            return None
+
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = ReleaseRaceAdapter()
+    factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[adapter])
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family, "release race"),
+    )
+    state = factory._record_state(activation.child_session_id)
+    target = dict(state.execution_target)
+    target["metadata"] = {"launch_phase": "pending"}
+    state = factory._cas(state, execution_target=target)
+    recovered = factory.reconcile(activation.recovery_ref)
+    assert recovered == state
+    assert adapter.starts == 1
+    assert adapter.cancels == 0
+
+
 def test_reserved_empty_target_published_once(tmp_path: Path) -> None:
     class ReservedAdapter:
         family = "reserved-empty"

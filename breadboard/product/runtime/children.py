@@ -2287,18 +2287,7 @@ class DurableChildFactory:
             adapter = self.adapters[state.adapter_family]
             release_pending = getattr(adapter, "release_pending", None)
             if callable(release_pending) and release_pending(state.execution_target):
-                if adapter.cancel(state.execution_target) is False:
-                    return state
-                state = self._cas(
-                    state,
-                    execution_target=self._reserved_execution_target(state, state.execution_target_ref),
-                    launch_claimed=True,
-                    launch_claim_owner=self._owner_id,
-                    launch_claim_until=time.time() + 30.0,
-                    launch_published=False,
-                )
-                activation = ChildActivation(state.parent_session_id, state.root_session_id, state.parent_work_item_id, state.child_session_id, state.child_work_item_id, state.attempt_id, state.recovery_ref, state.execution_target_ref, state.adapter_family, str(self.workspace), artifact_store_root=str(self.artifacts._root))
-                return self._launch(state, activation, self._spec(state))
+                return state
             recover = getattr(adapter, "recover", None)
             if callable(recover):
                 target = recover(state.execution_target)
@@ -3201,6 +3190,9 @@ class ProcessExecutionAdapter:
         try:
             self._publish(target)
             publisher = activation.publish_target
+            if publisher is not None:
+                publisher(target)
+            metadata["launch_phase"] = "release_committed"
             if publisher is not None:
                 publisher(target)
             if process.stdin is not None:
