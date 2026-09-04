@@ -20,6 +20,20 @@ import {
   type LocalCommandExecutor,
 } from "../src/index.js"
 
+test("local command executor decodes UTF-8 after complete stream collection", async () => {
+  const result = await defaultLocalCommandExecutor({
+    command: [
+      process.execPath,
+      "-e",
+      "process.stdout.write(Buffer.from([0xe2])); process.stderr.write(Buffer.from([0xf0,0x9f])); setTimeout(() => { process.stdout.write(Buffer.from([0x82,0xac])); process.stderr.write(Buffer.from([0x98,0x80])); }, 25)",
+    ],
+  })
+
+  assert.equal(result.exitCode, 0)
+  assert.equal(result.stdout, "€")
+  assert.equal(result.stderr, "😀")
+})
+
 test("trusted local driver chooses inline vs local process cleanly", () => {
   assert.equal(
     chooseTrustedLocalPlacement({

@@ -67,13 +67,13 @@ export function defaultLocalCommandExecutor(input: {
       stdio: ["ignore", "pipe", "pipe"],
       detached: isPosix,
     })
-    let stdout = ""
-    let stderr = ""
-    child.stdout?.on("data", (chunk) => {
-      stdout += String(chunk)
+    const stdoutChunks: Buffer[] = []
+    const stderrChunks: Buffer[] = []
+    child.stdout?.on("data", (chunk: Buffer) => {
+      stdoutChunks.push(Buffer.from(chunk))
     })
-    child.stderr?.on("data", (chunk) => {
-      stderr += String(chunk)
+    child.stderr?.on("data", (chunk: Buffer) => {
+      stderrChunks.push(Buffer.from(chunk))
     })
     let abortListener: (() => void) | null = null
     const removeAbortListener = () => {
@@ -90,8 +90,8 @@ export function defaultLocalCommandExecutor(input: {
       removeAbortListener()
       resolve({
         exitCode: exitCode ?? 1,
-        stdout,
-        stderr,
+        stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+        stderr: Buffer.concat(stderrChunks).toString("utf8"),
       })
     })
 
