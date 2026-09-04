@@ -1477,6 +1477,44 @@ test("createKernelExecutionWorld with executeSandbox observes cancellation or de
   assert.equal(result.livenessEvidence.terminationObserved, true)
 })
 
+test("kernel override retains rejected execution until world termination cleanup", async () => {
+  let receivedSignal: AbortSignal | undefined
+  const world = createKernelExecutionWorld({
+    executeSandbox: async (_request, context) => {
+      receivedSignal = context.signal
+      throw new Error("override rejected after launch")
+    },
+  })
+
+  const result = await world.execute({
+    kind: "sandbox",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-override-rejected-after-launch",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-override-rejected-after-launch",
+      placement_class: "local_process",
+      runtime_id: "local",
+      capability_id: "cap-override-rejected-after-launch",
+    },
+    requestId: "req-override-rejected-after-launch",
+    command: ["sleep", "60"],
+    terminationGraceMs: 50,
+  })
+
+  assert.equal(result.kind, "sandbox")
+  assert.equal(result.sandboxResult?.status, "failed")
+  assert.equal(receivedSignal?.aborted, true)
+  assert.equal(result.livenessEvidence.terminationRequested, true)
+  assert.equal(result.livenessEvidence.terminationObserved, true)
+})
+
 test("createKernelExecutionWorld with stubborn executeSandbox override marks terminationObserved false when override ignores signal", async () => {
   const world = createKernelExecutionWorld({
     executeSandbox: async () => {

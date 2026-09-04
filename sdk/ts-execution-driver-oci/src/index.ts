@@ -320,6 +320,8 @@ function createOciExecutionDriver(options: {
     completion: Promise<SandboxResultV1>
     containerName: string
     runtimeCommand: string
+    cleanup: () => void
+    detach: () => void
   }
   const activeExecutions = new Map<string, ActiveOciExecution>()
   return {
@@ -338,6 +340,11 @@ function createOciExecutionDriver(options: {
       return buildOciSandboxRequest({ requestId, capability, command, workspaceRef, imageRef })
     },
     execute(request, context) {
+      if (activeExecutions.has(request.request_id)) {
+        return Promise.reject(
+          new Error(`OCI execution request '${request.request_id}' is already active`),
+        )
+      }
       const controller = new AbortController()
       const forwardAbort = () => controller.abort(context?.signal.reason)
       if (context?.signal) {
@@ -356,15 +363,24 @@ function createOciExecutionDriver(options: {
         containerName,
         signal: controller.signal,
       })
+      const detach = () => context?.signal.removeEventListener("abort", forwardAbort)
+      const cleanup = () => {
+        if (activeExecutions.get(request.request_id)?.controller === controller) {
+          activeExecutions.delete(request.request_id)
+        }
+        detach()
+      }
       activeExecutions.set(request.request_id, {
         controller,
         completion: executionPromise,
         containerName,
         runtimeCommand,
+        cleanup,
+        detach,
       })
-      return executionPromise.finally(() => {
-        activeExecutions.delete(request.request_id)
-        context?.signal.removeEventListener("abort", forwardAbort)
+      return executionPromise.then((result) => {
+        cleanup()
+        return result
       })
     },
     async terminate(request, context) {
@@ -372,6 +388,7 @@ function createOciExecutionDriver(options: {
       if (!active) return
       const executor = options.commandExecutor ?? defaultOciCommandExecutor
       active.controller.abort(context.reason)
+      active.detach()
 
       // Step 1: Attempt graceful stop with fresh bounded signal
       const stopResult = await runBoundedCleanupCommand(
@@ -413,6 +430,7 @@ function createOciExecutionDriver(options: {
       if (!completionObserved) {
         throw new Error("OCI termination was not observed within 2000ms")
       }
+      active.cleanup()
     },
     ...(terminalDriver
       ? {

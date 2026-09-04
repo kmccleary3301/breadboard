@@ -1203,6 +1203,45 @@ test("OCI driver termination rejects boundedly when execution and cleanup never 
   assert.ok(invokedCommands.includes("rm"), "rm was invoked")
 })
 
+test("OCI driver retains rejected execution until termination cleanup", async () => {
+  const invokedCommands: string[] = []
+  let runSignal: AbortSignal | undefined
+  const executor: OciCommandExecutor = ({ runtimeArgs, signal }) => {
+    invokedCommands.push(runtimeArgs[0] ?? "")
+    if (runtimeArgs[0] === "run") {
+      runSignal = signal
+      return Promise.reject(new Error("runtime rejected after launch"))
+    }
+    return Promise.resolve({ exitCode: 0, stdout: "", stderr: "" })
+  }
+  const driver = makeConfiguredOciExecutionDriver({ commandExecutor: executor })
+  const request = buildOciSandboxRequest({
+    requestId: "req-oci-rejected-after-launch",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-oci-rejected-after-launch",
+      security_tier: "single_tenant",
+      isolation_class: "oci",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["sleep", "100"],
+    imageRef: "docker://breadboard/base:latest",
+  })
+
+  await assert.rejects(() => driver.execute!(request), /rejected after launch/)
+  await assert.rejects(() => driver.execute!(request), /already active/)
+  assert.deepEqual(invokedCommands, ["run"])
+  assert.equal(runSignal?.aborted, false)
+  await driver.terminate!(request, {
+    reason: "cancelled",
+    signal: new AbortController().signal,
+    deadlineAtMs: null,
+  })
+  assert.equal(runSignal?.aborted, true)
+  assert.deepEqual(invokedCommands, ["run", "stop", "rm"])
+})
+
 test("OCI driver termination continues to kill/rm when commandExecutor throws synchronously during stop", async () => {
   const invokedCommands: string[] = []
   const throwingExecutor: OciCommandExecutor = ({ runtimeArgs }) => {

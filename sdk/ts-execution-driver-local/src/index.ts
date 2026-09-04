@@ -220,6 +220,8 @@ export function makeTrustedLocalExecutionDriver(commandExecutor?: LocalCommandEx
   interface ActiveLocalExecution {
     controller: AbortController
     completion: Promise<SandboxResultV1>
+    cleanup: () => void
+    detach: () => void
   }
   const activeExecutions = new Map<string, ActiveLocalExecution>()
   return {
@@ -242,6 +244,11 @@ export function makeTrustedLocalExecutionDriver(commandExecutor?: LocalCommandEx
       })
     },
     execute(request, context) {
+      if (activeExecutions.has(request.request_id)) {
+        return Promise.reject(
+          new Error(`Local execution request '${request.request_id}' is already active`),
+        )
+      }
       const controller = new AbortController()
       const forwardAbort = () => controller.abort(context?.signal.reason)
       if (context?.signal) {
@@ -255,19 +262,29 @@ export function makeTrustedLocalExecutionDriver(commandExecutor?: LocalCommandEx
         commandExecutor,
         signal: controller.signal,
       })
+      const detach = () => context?.signal.removeEventListener("abort", forwardAbort)
+      const cleanup = () => {
+        if (activeExecutions.get(request.request_id)?.controller === controller) {
+          activeExecutions.delete(request.request_id)
+        }
+        detach()
+      }
       activeExecutions.set(request.request_id, {
         controller,
         completion: executionPromise,
+        cleanup,
+        detach,
       })
-      return executionPromise.finally(() => {
-        activeExecutions.delete(request.request_id)
-        context?.signal.removeEventListener("abort", forwardAbort)
+      return executionPromise.then((result) => {
+        cleanup()
+        return result
       })
     },
     async terminate(request, context) {
       const active = activeExecutions.get(request.request_id)
       if (!active) return
       active.controller.abort(context.reason)
+      active.detach()
       let timer: ReturnType<typeof setTimeout> | undefined
       const timeout = new Promise<false>((resolve) => {
         timer = setTimeout(() => resolve(false), 2000)
@@ -283,6 +300,7 @@ export function makeTrustedLocalExecutionDriver(commandExecutor?: LocalCommandEx
         if (!terminationObserved) {
           throw new Error("Local process termination was not observed within 2000ms")
         }
+        active.cleanup()
       } finally {
         clearTimeout(timer)
       }

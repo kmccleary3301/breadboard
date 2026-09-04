@@ -767,6 +767,32 @@ test("remote driver injected executor aborts on driver.terminate", async () => {
   assert.equal(receivedSignal?.aborted, true)
 })
 
+test("remote driver retains rejected execution until termination cleanup", async () => {
+  let receivedSignal: AbortSignal | undefined
+  let launches = 0
+  const driver = makeRemoteExecutionDriver(async (_request, context) => {
+    launches += 1
+    receivedSignal = context?.signal
+    throw new Error("remote executor rejected after launch")
+  })
+  const request = buildRemoteSandboxRequest({
+    requestId: "req:remote:rejected-after-launch",
+    capability: remoteCapability,
+    command: ["python", "worker.py"],
+  })
+
+  await assert.rejects(() => driver.execute!(request), /rejected after launch/)
+  await assert.rejects(() => driver.execute!(request), /already active/)
+  assert.equal(launches, 1)
+  assert.equal(receivedSignal?.aborted, false)
+  await driver.terminate!(request, {
+    reason: "cancelled",
+    signal: new AbortController().signal,
+    deadlineAtMs: null,
+  })
+  assert.equal(receivedSignal?.aborted, true)
+})
+
 test("remote driver direct execute with httpOptions.timeoutMs enforces timeout without hanging", async () => {
   const driver = makeRemoteExecutionDriver(undefined, {
     endpointUrl: "https://example.test/remote-direct-timeout",
@@ -2249,6 +2275,24 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
     command: ["python", "-c", "print(\"a'b\")"],
     placementClass: "remote_worker",
   })
+  const imagedRequest = buildRemoteSandboxRequest({
+    requestId: "req:slurm:imaged",
+    capability: slurmCapability,
+    command: ["python", "-c", "print('wrong runtime')"],
+    placementClass: "remote_worker",
+    imageRef: "docker://breadboard/worker:latest",
+  })
+  await assert.rejects(
+    () =>
+      backend.submit(imagedRequest, {
+        signal: new AbortController().signal,
+        deadlineAtMs: null,
+        terminationGraceMs: 50,
+      }),
+    /cannot honor an image_ref/,
+  )
+  assert.equal(invocations.length, 0)
+
   encodedMetadata = Buffer.from(JSON.stringify(request), "utf8").toString("base64")
 
   const handle = await backend.submit(request, {

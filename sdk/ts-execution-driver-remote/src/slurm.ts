@@ -262,6 +262,11 @@ export function makeSshSlurmBackend(
           "Slurm backend cannot enforce the requested network policy",
         )
       }
+      if (request.image_ref !== null && request.image_ref !== undefined) {
+        throw new Error(
+          "Slurm backend cannot honor an image_ref without a configured container runtime",
+        )
+      }
       const expectedRequestDigest = requestDigest(request)
       const submissionKey = sha256(request.request_id).slice("sha256:".length)
       const jobName = `bb-${submissionKey.slice(0, 32)}`

@@ -421,6 +421,7 @@ export function createExecutionWorld(input: {
   const endedSessionOwners = new Map<string, TerminalSessionDriverV1>()
   const cleanedSessionOwners = new Map<string, string>()
   const startingSessionIds = new Set<string>()
+  const activeSandboxRequests = new Map<string, symbol>()
   function rememberEndedSessionOwner(sessionId: string, driver: TerminalSessionDriverV1): void {
     if (endedSessionOwners.has(sessionId)) {
       endedSessionOwners.delete(sessionId)
@@ -474,7 +475,34 @@ export function createExecutionWorld(input: {
     }
     return activeIds
   }
-  async function executeSandbox(operation: ExecutionWorldSandboxInputV1): Promise<ExecutionWorldSandboxResultV1> {
+  async function executeSandbox(
+    operation: ExecutionWorldSandboxInputV1,
+  ): Promise<ExecutionWorldSandboxResultV1> {
+    if (activeSandboxRequests.has(operation.requestId)) {
+      throw new Error(`Execution request '${operation.requestId}' is already active`)
+    }
+    const token = Symbol(operation.requestId)
+    let releaseDeferred = false
+    const release = () => {
+      if (activeSandboxRequests.get(operation.requestId) === token) {
+        activeSandboxRequests.delete(operation.requestId)
+      }
+    }
+    const deferRelease = (termination: Promise<unknown>) => {
+      releaseDeferred = true
+      void termination.finally(release).catch(() => {})
+    }
+    activeSandboxRequests.set(operation.requestId, token)
+    try {
+      return await executeSandboxOnce(operation, deferRelease)
+    } finally {
+      if (!releaseDeferred) release()
+    }
+  }
+  async function executeSandboxOnce(
+    operation: ExecutionWorldSandboxInputV1,
+    deferRelease: (termination: Promise<unknown>) => void,
+  ): Promise<ExecutionWorldSandboxResultV1> {
     const driver = selectWorldDriver(drivers, {
       capability: operation.capability,
       placement: operation.placement,
@@ -675,26 +703,34 @@ export function createExecutionWorld(input: {
       }
     }
 
+    const terminateExecution = async (
+      reason: "deadline" | "cancelled",
+    ): Promise<boolean> => {
+      if (!driver.terminate) return false
+      let termination: Promise<unknown>
+      try {
+        termination = Promise.resolve(
+          driver.terminate(request, {
+            reason,
+            signal: controller.signal,
+            deadlineAtMs,
+          }),
+        )
+      } catch {
+        return false
+      }
+      const observed = await settleWithin(termination, terminationGraceMs)
+      if (!observed) deferRelease(termination)
+      return observed
+    }
+
     const requestTermination = async (reason: "deadline" | "cancelled"): Promise<void> => {
       if (terminalized) return
       terminalized = true
       controller.abort(new Error(reason === "deadline" ? "execution deadline exceeded" : "execution cancelled"))
-      let terminationObserved = false
-      if (executionStarted && driver.terminate) {
-        let terminationPromise: Promise<unknown>
-        try {
-          terminationPromise = Promise.resolve(
-            driver.terminate(request, {
-              reason,
-              signal: controller.signal,
-              deadlineAtMs,
-            }),
-          )
-        } catch {
-          terminationPromise = Promise.reject(new Error("synchronous terminate failure"))
-        }
-        terminationObserved = await settleWithin(terminationPromise, terminationGraceMs)
-      }
+      const terminationObserved = executionStarted
+        ? await terminateExecution(reason)
+        : false
       const liveness = buildLivenessEvidence({
         requestId: request.request_id,
         state: reason === "deadline" ? "timed_out" : "cancelled",
@@ -771,21 +807,7 @@ export function createExecutionWorld(input: {
             const isCancelled = signalAborted && !isTimeout
             if (isTimeout || isCancelled) {
               const reason = isTimeout ? "deadline" : "cancelled"
-              let terminationObserved = false
-              if (driver.terminate) {
-                try {
-                  const terminationPromise = Promise.resolve(
-                    driver.terminate(request, {
-                      reason,
-                      signal: controller.signal,
-                      deadlineAtMs,
-                    }),
-                  )
-                  terminationObserved = await settleWithin(terminationPromise, terminationGraceMs)
-                } catch {
-                  terminationObserved = false
-                }
-              }
+              const terminationObserved = await terminateExecution(reason)
               resolveTerminal?.({
                 status: isTimeout ? "timed_out" : "cancelled",
                 error,
@@ -794,23 +816,7 @@ export function createExecutionWorld(input: {
                 terminationObserved,
               })
             } else {
-              let terminationObserved = false
-              if (driver.terminate) {
-                try {
-                  terminationObserved = await settleWithin(
-                    Promise.resolve(
-                      driver.terminate(request, {
-                        reason: "cancelled",
-                        signal: controller.signal,
-                        deadlineAtMs,
-                      }),
-                    ),
-                    terminationGraceMs,
-                  )
-                } catch {
-                  terminationObserved = false
-                }
-              }
+              const terminationObserved = await terminateExecution("cancelled")
               resolveTerminal?.({
                 status: "failed",
                 error,

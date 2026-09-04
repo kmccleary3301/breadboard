@@ -631,6 +631,39 @@ test("trusted local driver terminate bounds settlement when executor ignores abo
   assert.ok(durationMs >= 1900 && durationMs < 3000, `terminate timed out in ${durationMs}ms`)
 })
 
+test("trusted local driver retains rejected execution until termination cleanup", async () => {
+  let receivedSignal: AbortSignal | undefined
+  let launches = 0
+  const driver = makeTrustedLocalExecutionDriver(({ signal }) => {
+    launches += 1
+    receivedSignal = signal
+    return Promise.reject(new Error("executor rejected after launch"))
+  })
+  const request = buildLocalProcessSandboxRequest({
+    requestId: "req-local-rejected-after-launch",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-local-rejected-after-launch",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["sleep", "100"],
+  })
+
+  await assert.rejects(() => driver.execute!(request), /rejected after launch/)
+  await assert.rejects(() => driver.execute!(request), /already active/)
+  assert.equal(launches, 1)
+  assert.equal(receivedSignal?.aborted, false)
+  await driver.terminate!(request, {
+    reason: "cancelled",
+    signal: new AbortController().signal,
+    deadlineAtMs: null,
+  })
+  assert.equal(receivedSignal?.aborted, true)
+})
+
 test("trusted local driver cleanup terminates live descendants in process group when parent process exited first", async () => {
   if (process.platform === "win32") return
 

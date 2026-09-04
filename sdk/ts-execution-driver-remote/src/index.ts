@@ -232,6 +232,8 @@ export function makeRemoteExecutionDriver(
   interface ActiveRemoteExecution {
     controller: AbortController
     completion: Promise<unknown>
+    cleanup: () => void
+    detach: () => void
   }
   const activeExecutions = new Map<string, ActiveRemoteExecution>()
   return {
@@ -258,6 +260,11 @@ export function makeRemoteExecutionDriver(
       })
     },
     execute(request, context) {
+      if (activeExecutions.has(request.request_id)) {
+        return Promise.reject(
+          new Error(`Remote execution request '${request.request_id}' is already active`),
+        )
+      }
       const controller = new AbortController()
       const forwardContextAbort = () => {
         if (!controller.signal.aborted) {
@@ -283,10 +290,15 @@ export function makeRemoteExecutionDriver(
           httpOptions.signal.addEventListener("abort", forwardHttpAbort, { once: true })
         }
       }
-      const cleanup = () => {
-        activeExecutions.delete(request.request_id)
+      const detach = () => {
         context?.signal?.removeEventListener("abort", forwardContextAbort)
         httpOptions?.signal?.removeEventListener("abort", forwardHttpAbort)
+      }
+      const cleanup = () => {
+        if (activeExecutions.get(request.request_id)?.controller === controller) {
+          activeExecutions.delete(request.request_id)
+        }
+        detach()
       }
       let executionPromise: Promise<SandboxResultV1>
       if (executor) {
@@ -298,8 +310,7 @@ export function makeRemoteExecutionDriver(
         try {
           executionPromise = Promise.resolve(executor(request, executionContext))
         } catch (error) {
-          cleanup()
-          return Promise.reject(error)
+          executionPromise = Promise.reject(error)
         }
       } else if (!httpOptions) {
         cleanup()
@@ -320,19 +331,29 @@ export function makeRemoteExecutionDriver(
       activeExecutions.set(request.request_id, {
         controller,
         completion: executionPromise,
+        cleanup,
+        detach,
       })
-      return executionPromise.finally(cleanup)
+      return executionPromise.then((result) => {
+        cleanup()
+        return result
+      })
     },
     async terminate(request, context) {
       const active = activeExecutions.get(request.request_id)
       if (!active) return
-      if (!active.controller.signal.aborted) {
-        const reason =
-          context?.signal?.reason ??
-          new Error(`Remote execution ${context?.reason ?? "cancelled"} termination requested`)
-        active.controller.abort(reason)
+      try {
+        if (!active.controller.signal.aborted) {
+          const reason =
+            context?.signal?.reason ??
+            new Error(`Remote execution ${context?.reason ?? "cancelled"} termination requested`)
+          active.controller.abort(reason)
+        }
+        active.detach()
+        await active.completion.catch(() => {})
+      } finally {
+        active.cleanup()
       }
-      await active.completion.catch(() => {})
     },
     ...(terminalDriver
       ? {

@@ -257,6 +257,159 @@ test("execution world selects one adapter and never falls back after execution s
   assert.equal(result.livenessEvidence?.executionStarted, true)
 })
 
+test("execution world rejects duplicate active request IDs before a second launch", async () => {
+  const capability: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-world-duplicate",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const placement: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-world-duplicate",
+    placement_class: "local_process",
+    runtime_id: "local",
+    capability_id: capability.capability_id,
+  }
+  let executeCalls = 0
+  let terminateCalls = 0
+  let resolveExecution: ((result: SandboxResultV1) => void) | undefined
+  const driver: TerminalSessionDriverV1 = {
+    driverId: "local-process",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    buildSandboxRequest: ({ requestId, capability: requestedCapability, command }) => ({
+      schema_version: "bb.sandbox_request.v1",
+      request_id: requestId,
+      capability_id: requestedCapability.capability_id,
+      placement_class: "local_process",
+      workspace_ref: null,
+      rootfs_ref: null,
+      image_ref: null,
+      snapshot_ref: null,
+      command: [command[0] ?? "", ...command.slice(1)],
+      network_policy: { allow: [] },
+      secret_refs: [],
+      timeout_seconds: null,
+      evidence_mode: requestedCapability.evidence_mode,
+      metadata: {},
+    }),
+    execute: (request) => {
+      executeCalls += 1
+      return new Promise<SandboxResultV1>((resolve) => {
+        resolveExecution = resolve
+      })
+    },
+    terminate: async () => {
+      terminateCalls += 1
+    },
+  }
+  const world = createExecutionWorld({ drivers: [driver] })
+  const operation = {
+    kind: "sandbox" as const,
+    capability,
+    placement,
+    requestId: "req-world-duplicate",
+    command: ["printf", "done"],
+  }
+
+  const first = world.execute(operation)
+  await assert.rejects(() => world.execute(operation), /already active/)
+  assert.equal(executeCalls, 1)
+  assert.equal(terminateCalls, 0)
+  resolveExecution?.({
+    schema_version: "bb.sandbox_result.v1",
+    request_id: operation.requestId,
+    status: "completed",
+    placement_id: placement.placement_id,
+    stdout_ref: null,
+    stderr_ref: null,
+    artifact_refs: [],
+    side_effect_digest: null,
+    evidence_refs: [],
+    usage: null,
+    error: null,
+  })
+  const completed = await first
+  assert.equal(completed.kind, "sandbox")
+  assert.equal(completed.sandboxResult?.status, "completed")
+})
+
+test("execution world retains timed-out request ID until termination settles", async () => {
+  const capability: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-world-unobserved-termination",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const placement: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-world-unobserved-termination",
+    placement_class: "local_process",
+    runtime_id: "local",
+    capability_id: capability.capability_id,
+  }
+  let resolveTermination: (() => void) | undefined
+  const driver: TerminalSessionDriverV1 = {
+    driverId: "local-process",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    buildSandboxRequest: ({ requestId, capability: requestedCapability, command }) => ({
+      schema_version: "bb.sandbox_request.v1",
+      request_id: requestId,
+      capability_id: requestedCapability.capability_id,
+      placement_class: "local_process",
+      workspace_ref: null,
+      rootfs_ref: null,
+      image_ref: null,
+      snapshot_ref: null,
+      command: [command[0] ?? "", ...command.slice(1)],
+      network_policy: { allow: [] },
+      secret_refs: [],
+      timeout_seconds: null,
+      evidence_mode: requestedCapability.evidence_mode,
+      metadata: {},
+    }),
+    execute: () => new Promise<SandboxResultV1>(() => {}),
+    terminate: () =>
+      new Promise<void>((resolve) => {
+        resolveTermination = resolve
+      }),
+  }
+  const world = createExecutionWorld({
+    drivers: [driver],
+    terminationGraceMs: 1,
+  })
+  const operation = {
+    kind: "sandbox" as const,
+    capability,
+    placement,
+    requestId: "req-world-unobserved-termination",
+    command: ["sleep", "60"],
+    deadlineMs: 1,
+  }
+
+  const timedOut = await world.execute(operation)
+  assert.equal(timedOut.kind, "sandbox")
+  assert.equal(timedOut.livenessEvidence.terminationObserved, false)
+  await assert.rejects(() => world.execute(operation), /already active/)
+
+  resolveTermination?.()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const preAborted = new AbortController()
+  preAborted.abort("cancelled")
+  const retry = await world.execute({
+    ...operation,
+    signal: preAborted.signal,
+  })
+  assert.equal(retry.kind, "sandbox")
+  assert.equal(retry.livenessEvidence.executionStarted, false)
+})
+
 test("execution world enforces timeout notification and bounded adapter termination", async () => {
   let timeoutNotified = false
   let terminateCalled = false
