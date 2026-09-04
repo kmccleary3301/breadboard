@@ -1938,6 +1938,7 @@ class DurableChildFactory:
         observed = str(adapter.observe(state.execution_target)).lower()
         if observed not in {"completed", "failed"}:
             return self._record_state(state.child_session_id)
+        state = self._cas(state, execution_target=state.execution_target)
         cleanup_handoff = getattr(adapter, "cleanup_handoff", None)
         if callable(cleanup_handoff):
             cleanup_handoff(state.execution_target)
@@ -2883,6 +2884,60 @@ class DurableChildReconciler:
             )
             if isinstance(candidate_family, str) and candidate_family:
                 retained_families.add(candidate_family)
+        if (
+            ProcessExecutionAdapter.family in retained_families
+            and not any(
+                adapter.family == ProcessExecutionAdapter.family
+                for adapter in adapters
+            )
+        ):
+            process_factory = next(
+                (
+                    factory
+                    for factory in self._adapter_factories
+                    if factory is ProcessExecutionAdapter
+                ),
+                None,
+            )
+            if process_factory is not None:
+                process_command: list[str] | None = None
+                for candidate in records:
+                    candidate_metadata = (
+                        candidate.metadata
+                        if isinstance(candidate.metadata, Mapping)
+                        else {}
+                    )
+                    candidate_state = candidate_metadata.get("durable_child")
+                    candidate_spec = (
+                        candidate_state.get("child_spec")
+                        if isinstance(candidate_state, Mapping)
+                        and candidate_state.get("adapter_family")
+                        == ProcessExecutionAdapter.family
+                        and candidate_metadata.get("workspace") == workspace
+                        else None
+                    )
+                    candidate_config = (
+                        candidate_spec.get("adapter_config")
+                        if isinstance(candidate_spec, Mapping)
+                        else None
+                    )
+                    command = (
+                        candidate_config.get("command")
+                        if isinstance(candidate_config, Mapping)
+                        else None
+                    )
+                    if isinstance(command, list):
+                        process_command = command
+                        break
+                if (
+                    not process_command
+                    or any(
+                        type(part) is not str or not part
+                        for part in process_command
+                    )
+                ):
+                    raise ChildError("durable process child command is malformed")
+                adapters.append(process_factory(command=tuple(process_command)))
         available_families = {adapter.family for adapter in adapters}
         adapters.extend(
             UnavailableChildAdapter(retained_family)

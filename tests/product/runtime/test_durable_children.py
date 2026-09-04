@@ -5899,6 +5899,58 @@ def test_cancel_tree_clears_uncommitted_child_settlement_after_parent_terminal(
 
 
 
+def test_terminal_cancel_adoption_persists_target_before_acknowledgement(
+    tmp_path: Path,
+) -> None:
+    persisted_before_acknowledgement: list[bool] = []
+
+    class CompletedAdapter(RetryAdapter):
+        family = "completed-during-cancel-adoption"
+
+        def start(self, activation, spec):
+            self.starts += 1
+            return ExecutionTarget(
+                activation.execution_target_ref,
+                metadata={"phase": "accepted"},
+            )
+
+        def observe(self, target):
+            target["metadata"]["phase"] = "completed"
+            return "completed"
+
+        def prepare_result(self, target, spec):
+            return b"completed during cancellation"
+
+        def acknowledge_result(self, target):
+            retained = factory._record_state(activation.child_session_id)
+            persisted_before_acknowledgement.append(
+                retained.execution_target["metadata"]["phase"] == "completed"
+            )
+
+    workspace, repository, parent_work, registry = _running_parent(tmp_path)
+    adapter = CompletedAdapter()
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent_work.read_model.work_item_id,
+        spec=_spec(adapter.family, "completed during cancel adoption"),
+    )
+
+    settled = factory._adopt_terminal_target_after_cancel(
+        factory._record_state(activation.child_session_id)
+    )
+
+    assert persisted_before_acknowledgement == [True]
+    assert settled.status == "completed"
+    assert settled.terminal_count == 1
+
+
 def test_reconcile_cancels_late_completed_result_after_parent_terminal(
     tmp_path: Path,
 ) -> None:
@@ -6337,6 +6389,62 @@ def test_reconciler_cancellation_supports_mixed_unavailable_families(
         second.child_session_id,
     }
     assert all(state.cancellation_requested for state in states)
+
+
+def test_reconciler_cancels_process_child_when_ray_is_representative(
+    tmp_path: Path,
+) -> None:
+    class RayLikeAdapter(RetryAdapter):
+        family = RayJobAdapter.family
+
+        def observe(self, target):
+            return "running"
+
+        def cancel(self, target):
+            return True
+
+    workspace, repository, parent_work, registry = _running_parent(tmp_path)
+    ray_adapter = RayLikeAdapter()
+    process_adapter = ProcessExecutionAdapter(
+        command=("/bin/sh", "-c", "sleep 30")
+    )
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[ray_adapter, process_adapter],
+    )
+    ray_child = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent_work.read_model.work_item_id,
+        spec=_spec(ray_adapter.family, "ray child"),
+    )
+    process_child = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent_work.read_model.work_item_id,
+        spec=_spec(process_adapter.family, "process child"),
+    )
+    process_target = factory._record_state(
+        process_child.child_session_id
+    ).execution_target
+    reconciler = DurableChildReconciler(
+        registry=registry,
+        repository=repository,
+        adapters=[RayLikeAdapter()],
+        adapter_factories=[ProcessExecutionAdapter],
+    )
+
+    try:
+        states = asyncio_run(reconciler.cancel_tree("parent-session"))
+        assert {state.child_session_id for state in states} == {
+            ray_child.child_session_id,
+            process_child.child_session_id,
+        }
+        assert all(state.terminal_count == 1 for state in states)
+    finally:
+        process_adapter.cancel(process_target)
 
 
 def test_settlement_reservation_clears_when_child_attempt_is_paused(
