@@ -306,6 +306,47 @@ def test_process_release_is_committed_before_command_execution(tmp_path: Path) -
     assert marker.exists() is False
     assert adapter._processes == {}
 
+def test_process_release_survives_final_publication_failure(tmp_path: Path) -> None:
+    marker = tmp_path / "accepted-command-ran"
+    phases: list[str] = []
+    targets: list[ExecutionTarget] = []
+
+    def publish(target: ExecutionTarget) -> None:
+        phase = str(target.metadata.get("launch_phase"))
+        phases.append(phase)
+        targets.append(target)
+        if phase == "released":
+            raise RuntimeError("simulated crash after release")
+
+    adapter = ProcessExecutionAdapter(
+        command=("/bin/sh", "-c", f"touch {marker}; sleep 30")
+    )
+    activation = ChildActivation(
+        "parent-session",
+        "parent-session",
+        "parent-work",
+        "child-session",
+        "child-work",
+        "attempt",
+        "child://child-session/attempt/attempt",
+        "reserved:post-release-publication",
+        adapter.family,
+        str(tmp_path),
+        publish_target=publish,
+    )
+
+    with pytest.raises(RuntimeError, match="simulated crash after release"):
+        adapter.start(activation, _spec(adapter.family, "post-release publication"))
+    deadline = time.monotonic() + 2
+    while not marker.exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    assert phases == ["pending", "release_committed", "released"]
+    assert marker.exists()
+    assert activation.execution_target_ref in adapter._processes
+    assert adapter.cancel(targets[-1].retained()) is True
+
+
 def test_process_adapter_releases_durably_committed_wrapper_after_restart(
     tmp_path: Path,
 ) -> None:

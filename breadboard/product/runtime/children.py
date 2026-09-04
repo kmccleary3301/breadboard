@@ -3372,6 +3372,7 @@ class ProcessExecutionAdapter:
         token, group = self._identity(process.pid)
         metadata: dict[str, Any] = {"launch_phase": "pending"}
         target = ExecutionTarget(target_ref, process.pid, token, group, process, metadata)
+        accepted = False
         try:
             self._publish(target)
             publisher = activation.publish_target
@@ -3381,10 +3382,14 @@ class ProcessExecutionAdapter:
             if publisher is not None:
                 publisher(target)
             self._release(target_ref)
+            accepted = True
             metadata["launch_phase"] = "released"
             if publisher is not None:
                 publisher(target)
         except BaseException:
+            if accepted:
+                raise
+            self._processes.pop(target_ref, None)
             try:
                 os.killpg(group, 15)
             except ProcessLookupError:
