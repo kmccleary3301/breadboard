@@ -239,6 +239,7 @@ def test_process_adapter_reaps_natural_exit_and_reports_completion(tmp_path: Pat
     while adapter.observe(target.retained()) != "completed" and time.monotonic() < deadline:
         time.sleep(0.01)
     assert adapter.observe(target.retained()) == "completed"
+    assert adapter._wait_for_exit(target.retained(), 0.01) is True
     assert target_ref not in adapter._processes
     restarted = ProcessExecutionAdapter(command=("/bin/sh", "-c", "exit 0"))
     restarted.bind_workspace(tmp_path)
@@ -274,6 +275,49 @@ def test_process_release_is_committed_before_command_execution(tmp_path: Path) -
     assert phases == ["pending", "release_committed"]
     assert marker.exists() is False
     assert adapter._processes == {}
+
+def test_process_adapter_releases_durably_committed_wrapper_after_restart(
+    tmp_path: Path,
+) -> None:
+    adapter = ProcessExecutionAdapter(command=("/bin/true",))
+    adapter.bind_workspace(tmp_path)
+    target_ref = "reserved:release-recovery"
+    release_path = adapter._control_path(target_ref, "release")
+    marker = tmp_path / "released-after-restart"
+    process = subprocess.Popen(
+        (
+            sys.executable,
+            "-c",
+            (
+                "import pathlib,sys,time\n"
+                "release=pathlib.Path(sys.argv[2])\n"
+                "while not release.exists(): time.sleep(0.01)\n"
+                "pathlib.Path(sys.argv[3]).touch()\n"
+            ),
+            target_ref,
+            str(release_path),
+            str(marker),
+        ),
+        start_new_session=True,
+    )
+    token, group = adapter._identity(process.pid)
+    target = ExecutionTarget(
+        target_ref,
+        process.pid,
+        token,
+        group,
+        metadata={"launch_phase": "release_committed"},
+    )
+
+    try:
+        assert release_path.exists() is False
+        assert adapter.release_pending(target.retained()) is True
+        process.wait(timeout=2)
+        assert marker.exists()
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
 
 
 def test_process_adapter_uses_activation_workspace_and_rejects_missing_cwd(tmp_path: Path) -> None:
@@ -374,6 +418,38 @@ def test_successful_process_child_reconciles_as_completed(
 
 
 
+def test_process_adapter_hands_off_large_tasks_without_blocking_start(
+    tmp_path: Path,
+) -> None:
+    adapter = ProcessExecutionAdapter(command=("/bin/sh", "-c", "exit 0"))
+    target_ref = "reserved:large-task"
+    activation = ChildActivation(
+        "parent-session",
+        "parent-session",
+        "parent-work",
+        "child-session",
+        "child-work",
+        "attempt",
+        "child://child-session/attempt/attempt",
+        target_ref,
+        adapter.family,
+        str(tmp_path),
+    )
+
+    target = adapter.start(
+        activation,
+        ChildSpec(
+            "large child task",
+            "x" * (2 * 1024 * 1024),
+            _lock(),
+            "child-worker",
+            adapter.family,
+        ),
+    )
+    assert adapter._processes[target_ref].wait(timeout=2) == 0
+    assert adapter.observe(target.retained()) == "completed"
+
+
 def test_process_death_restarts_child_and_rejects_late_result(tmp_path: Path) -> None:
     repository = WorkItemRepository(tmp_path / "work-items.jsonl")
     workspace, repository, parent, registry = _running_parent(tmp_path, repository)
@@ -381,6 +457,8 @@ def test_process_death_restarts_child_and_rejects_late_result(tmp_path: Path) ->
     factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[adapter])
     activation = factory.start(parent_session_id="parent-session", root_session_id="parent-session", parent_work_item_id=parent.read_model.work_item_id, spec=_spec(adapter.family))
     assert activation.parent_session_id == "parent-session"
+
+
     assert activation.root_session_id == "parent-session"
     assert activation.child_session_id != activation.parent_session_id
     assert activation.parent_work_item_id == "parent-work"

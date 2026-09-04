@@ -14,6 +14,7 @@ import math
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -3096,7 +3097,7 @@ class ProcessExecutionAdapter:
 
     def _wait_for_exit(self, target: Mapping[str, Any], timeout: float) -> bool:
         deadline = time.monotonic() + timeout
-        while self.observe(target) != "absent":
+        while self.observe(target) not in {"absent", "completed"}:
             if time.monotonic() >= deadline:
                 return False
             time.sleep(0.01)
@@ -3111,9 +3112,10 @@ class ProcessExecutionAdapter:
             raise ChildError(f"process child workspace is unavailable: {workspace}")
         return workspace
 
-    def _status_path(
+    def _control_path(
         self,
         target_ref: str,
+        suffix: str,
         workspace: Path | None = None,
     ) -> Path:
         root = workspace if workspace is not None else self._workspace
@@ -3125,7 +3127,48 @@ class ProcessExecutionAdapter:
             raise ChildError("process child status root is not a directory")
         status_root.chmod(0o700)
         identity = hashlib.sha256(target_ref.encode("utf-8")).hexdigest()
-        return status_root / f"{identity}.status"
+        return status_root / f"{identity}.{suffix}"
+
+    def _status_path(
+        self,
+        target_ref: str,
+        workspace: Path | None = None,
+    ) -> Path:
+        return self._control_path(target_ref, "status", workspace)
+
+    def _known_control_path(self, target_ref: str, suffix: str) -> Path:
+        status_path = self._status_paths.get(target_ref)
+        if status_path is not None:
+            return status_path.with_suffix(f".{suffix}")
+        return self._control_path(target_ref, suffix)
+
+    @staticmethod
+    def _write_control(path: Path, content: bytes) -> None:
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{path.name}.",
+            dir=path.parent,
+        )
+        temporary = Path(temporary_name)
+        try:
+            stream = os.fdopen(descriptor, "wb")
+            descriptor = -1
+            with stream:
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, path)
+            directory = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+            temporary.unlink(missing_ok=True)
+
+    def _release(self, target_ref: str) -> None:
+        self._write_control(self._known_control_path(target_ref, "release"), b"1")
 
     def _completed_status(self, target_ref: str) -> bool | None:
         path = self._status_paths.get(target_ref)
@@ -3218,13 +3261,19 @@ class ProcessExecutionAdapter:
         workspace = self._workspace_path(activation)
         target_ref = activation.execution_target_ref
         status_path = self._status_path(target_ref, workspace)
+        task_path = self._control_path(target_ref, "task", workspace)
+        release_path = self._control_path(target_ref, "release", workspace)
         self._status_paths[target_ref] = status_path
-        status_path.unlink(missing_ok=True)
+        for path in (status_path, task_path, release_path):
+            path.unlink(missing_ok=True)
+        self._write_control(task_path, spec.task.encode("utf-8"))
         wrapper = (
-            "import os,subprocess,sys\n"
-            "if os.read(0,1) != b'1': os._exit(78)\n"
-            "status=sys.argv[2]\n"
-            "result=subprocess.call(sys.argv[3:])\n"
+            "import os,subprocess,sys,time\n"
+            "release=sys.argv[2]\n"
+            "while not os.path.exists(release): time.sleep(0.01)\n"
+            "task=open(sys.argv[3],'rb').read()\n"
+            "status=sys.argv[4]\n"
+            "result=subprocess.run(sys.argv[5:],input=task).returncode\n"
             "temporary=f'{status}.{os.getpid()}.tmp'\n"
             "fd=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)\n"
             "os.write(fd,str(result).encode('ascii'));os.fsync(fd);os.close(fd)\n"
@@ -3239,10 +3288,12 @@ class ProcessExecutionAdapter:
                 "-c",
                 wrapper,
                 target_ref,
+                str(release_path),
+                str(task_path),
                 str(status_path),
                 *self.command,
             ),
-            stdin=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
             start_new_session=True,
             cwd=str(workspace),
         )
@@ -3258,9 +3309,7 @@ class ProcessExecutionAdapter:
             metadata["launch_phase"] = "release_committed"
             if publisher is not None:
                 publisher(target)
-            if process.stdin is not None:
-                process.stdin.write(b"1" + spec.task.encode("utf-8"))
-                process.stdin.close()
+            self._release(target_ref)
             metadata["launch_phase"] = "released"
             if publisher is not None:
                 publisher(target)
@@ -3333,16 +3382,30 @@ class ProcessExecutionAdapter:
         return "running"
     def release_pending(self, target: Mapping[str, Any]) -> bool:
         metadata = target.get("metadata")
-        if not isinstance(metadata, Mapping) or metadata.get("launch_phase") != "pending":
+        if not isinstance(metadata, Mapping):
+            return False
+        phase = metadata.get("launch_phase")
+        if phase not in {"pending", "release_committed"}:
             return False
         pid = target.get("pid")
-        if type(pid) is not int:
+        token = target.get("start_token")
+        group = target.get("process_group_id")
+        if type(pid) is not int or type(token) is not str or type(group) is not int:
             return False
         try:
-            command = subprocess.check_output(["ps", "-p", str(pid), "-o", "command="], text=True)
-        except (OSError, subprocess.CalledProcessError):
+            if self._identity(pid) != (token, group):
+                return False
+            command = subprocess.check_output(
+                ["ps", "-p", str(pid), "-o", "command="],
+                text=True,
+            )
+        except (OSError, ProcessLookupError, subprocess.CalledProcessError):
             return False
-        return str(target.get("ref", "")) in command
+        if str(target.get("ref", "")) not in command:
+            return False
+        if phase == "release_committed":
+            self._release(str(target["ref"]))
+        return True
 
     def recover(self, target: Mapping[str, Any]) -> ExecutionTarget | None:
         pid, token, group = target.get("pid"), target.get("start_token"), target.get("process_group_id")
@@ -3423,6 +3486,16 @@ class ProcessExecutionAdapter:
 
     def prepare_result(self, target: Mapping[str, Any], spec: ChildSpec) -> bytes | None:
         return None
+
+
+    def acknowledge_result(self, target: Mapping[str, Any]) -> None:
+        target_ref = str(target.get("ref", ""))
+        for suffix in ("task", "release"):
+            try:
+                self._known_control_path(target_ref, suffix).unlink(missing_ok=True)
+            except ChildError:
+                return
+
 
 
 __all__ = ["ChildActivation", "ChildError", "ChildExecutionAdapter", "ChildSpec", "ChildState", "DurableChildFactory", "DurableChildReconciler", "ExpectedRevisionConflict", "ExecutionTarget", "LateResultRejected", "PreparationRequired", "ProcessExecutionAdapter", "RayJobAdapter", "UnavailableChildAdapter"]
