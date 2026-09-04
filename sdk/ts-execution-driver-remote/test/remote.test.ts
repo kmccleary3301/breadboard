@@ -1,9 +1,11 @@
+import { readFile } from "node:fs/promises"
 import test from "node:test"
 import assert from "node:assert/strict"
 
 import type { ExecutionCapabilityV1, ExecutionPlacementV1 } from "@breadboard/kernel-contracts"
 import {
   buildCanonicalSandboxEvidence,
+  canonicalSandboxArtifactUri,
   buildExecutionDriverUnsupportedCase,
   createExecutionWorld,
 } from "@breadboard/execution-drivers"
@@ -1775,6 +1777,63 @@ test("Ray scheduled adapter polls to one provider-neutral result", async () => {
   })
 })
 
+test("scheduled adapter retries failed evidence before later cleanup evidence", async () => {
+  let cancelled = false
+  let evidenceAttempts = 0
+  const recordedStates: string[] = []
+  const backend: ScheduledExecutionBackendV1 = {
+    backendId: "ray-evidence-retry",
+    async submit() {
+      return {
+        executionId: "ray-evidence-retry-1",
+        evidenceRefs: ["ray://submission/retry"],
+      }
+    },
+    async observe() {
+      return {
+        state: cancelled ? "cancelled" : "running",
+        evidenceRefs: [cancelled ? "ray://cancelled/retry" : "ray://running/retry"],
+      }
+    },
+    async cancel() {
+      cancelled = true
+    },
+  }
+  const world = createExecutionWorld({
+    drivers: [makeRayExecutionDriver(backend, {
+      pollIntervalMs: 1,
+      recordEvidence(evidence) {
+        evidenceAttempts++
+        if (evidenceAttempts === 1) throw new Error("transient evidence sink failure")
+        recordedStates.push(evidence.state)
+      },
+    })],
+  })
+
+  const result = await world.execute({
+    kind: "sandbox",
+    capability: remoteCapability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place:ray:evidence-retry",
+      placement_class: "delegated_python",
+      runtime_id: "ray",
+      capability_id: remoteCapability.capability_id,
+    },
+    requestId: "req:ray:evidence-retry",
+    command: ["python", "-c", "print('retry')"],
+    driverId: "ray",
+    terminationGraceMs: 50,
+  })
+
+  assert.equal(result.kind, "sandbox")
+  assert.equal(result.sandboxResult?.status, "failed")
+  assert.equal(cancelled, true)
+  assert.deepEqual(recordedStates, ["accepted", "cancelled"])
+})
+
+
+
 
 test("scheduled adapter cancels a handle that arrives after timeout settlement", async () => {
   let releaseSubmit!: (value: { executionId: string }) => void
@@ -2053,6 +2112,12 @@ test("scheduled adapter canonicalizes terminal observations without a result", a
     }),
     error: { reason: "scheduled_execution_failed" },
   })
+  const fallbackStdoutRef = result.sandboxResult?.stdout_ref
+  assert.ok(fallbackStdoutRef)
+  assert.equal(
+    await readFile(new URL(canonicalSandboxArtifactUri(fallbackStdoutRef)), "utf8"),
+    "",
+  )
 })
 
 test("scheduled adapter rejects provider-specific terminal result evidence", async () => {
@@ -2123,6 +2188,7 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   let encodedMetadata = ""
   let sacctResult = "COMPLETED|0:0|node-a\n"
   let squeueResult = "RUNNING|node-a\n"
+  let oversizedTerminalOutput = false
   const backend = makeSshSlurmBackend({
     sshTarget: "cluster.example",
     remoteEvidenceDirectory: "/tmp/breadboard evidence",
@@ -2140,9 +2206,19 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
       if (remoteCommand.includes("sacct")) return { stdout: sacctResult, stderr: "" }
       if (remoteCommand.includes("scancel")) return { stdout: "", stderr: "" }
       if (remoteCommand.includes("if [ ! -f") && remoteCommand.includes(".out"))
-        return { stdout: "world\n", stderr: "" }
+        return {
+          stdout: oversizedTerminalOutput
+            ? "__breadboard_output_exceeds_4194304__"
+            : "world\n",
+          stderr: "",
+        }
       if (remoteCommand.includes("if [ ! -f") && remoteCommand.includes(".err"))
-        return { stdout: "", stderr: "" }
+        return {
+          stdout: oversizedTerminalOutput
+            ? "__breadboard_output_exceeds_4194304__"
+            : "",
+          stderr: "",
+        }
       assert.fail(`unexpected Slurm command: ${remoteCommand}`)
     },
   })
@@ -2172,7 +2248,7 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   assert.ok(invocations[0]?.[1]?.includes(`[ ! -s "$receipt" ]`))
   assert.ok(
     invocations[0]?.[1]?.includes(
-      `if [ -n "$id" ] && [ ! -s "$receipt" ]`,
+      `case "$id" in ""|*[!0-9]*) scancel --name`,
     ),
   )
   assert.ok(invocations[0]?.[1]?.includes(`kill -0 "$pid"`))
@@ -2187,7 +2263,7 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
     activeObservation.evidenceRefs?.includes("slurm://job/24680/node/node-a"),
   )
   assert.ok(invocations[0]?.[1]?.includes(`case "$id" in ""|*[!0-9]*) exit 65`))
-  assert.ok(invocations[0]?.[1]?.includes(`"$id" > "$receipt.tmp"`))
+  assert.ok(invocations[0]?.[1]?.includes(`"$job" > "$receipt.tmp"`))
   squeueResult = ""
   const observation = await backend.observe(handle.executionId)
   assert.equal(observation.state, "completed")
@@ -2226,10 +2302,29 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   const signalled = await backend.observe(handle.executionId)
   assert.equal(signalled.state, "failed")
   assert.equal(signalled.result?.usage?.exit_code, 137)
+  oversizedTerminalOutput = true
   sacctResult = "CANCELLED|0:15|node-a\n"
   const canceledWithoutOutputs = await backend.observe(handle.executionId)
   assert.equal(canceledWithoutOutputs.state, "cancelled")
   assert.equal(canceledWithoutOutputs.result?.status, "cancelled")
+  assert.equal(
+    canceledWithoutOutputs.result?.stdout_ref,
+    `sha256:${"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}`,
+  )
+  assert.equal(
+    canceledWithoutOutputs.result?.stderr_ref,
+    `sha256:${"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}`,
+  )
+  assert.ok(
+    canceledWithoutOutputs.evidenceRefs?.includes(
+      "ssh://cluster.example/tmp/breadboard%20evidence/slurm-24680.out#truncated-at-4194304-bytes",
+    ),
+  )
+  assert.ok(
+    canceledWithoutOutputs.evidenceRefs?.includes(
+      "ssh://cluster.example/tmp/breadboard%20evidence/slurm-24680.err#truncated-at-4194304-bytes",
+    ),
+  )
   const cancelDeadlineAtMs = Date.now() + 100
   await backend.cancel(handle.executionId, {
     reason: "cancelled",
@@ -2259,6 +2354,39 @@ test("SSH Slurm backend rejects unsafe targets and relative evidence paths", () 
       remoteEvidenceDirectory: "tmp/evidence",
     }),
     /absolute path/,
+  )
+  assert.throws(
+    () => makeSshSlurmBackend({
+      sshTarget: "cluster.example",
+      remoteEvidenceDirectory: "/tmp/evidence",
+      commandTimeoutMs: Number.POSITIVE_INFINITY,
+    }),
+    /positive safe integer/,
+  )
+  const backend: ScheduledExecutionBackendV1 = {
+    backendId: "invalid-options",
+    async submit() {
+      return { executionId: "unused" }
+    },
+    async observe() {
+      return { state: "running" }
+    },
+    async cancel() {},
+  }
+  assert.throws(
+    () => makeRayExecutionDriver(backend, {
+      pollIntervalMs: Number.NaN,
+      recordEvidence() {},
+    }),
+    /pollIntervalMs/,
+  )
+  assert.throws(
+    () => makeRayExecutionDriver(backend, {
+      pollIntervalMs: 1,
+      cancellationObservationTimeoutMs: Number.POSITIVE_INFINITY,
+      recordEvidence() {},
+    }),
+    /cancellationObservationTimeoutMs/,
   )
 })
 
@@ -2333,7 +2461,7 @@ test("SSH Slurm backend rejects a reused request id with changed request content
       deadlineAtMs: null,
       terminationGraceMs: 50,
     }),
-    /receipt request mismatch/,
+    /request_id collision; existing execution remains owned/,
   )
 })
 
@@ -2369,6 +2497,7 @@ test("SSH Slurm backend leaves a durable cancel marker when cancellation precede
   assert.ok(commands[1]?.includes(".cancel';"))
   assert.ok(commands[0]?.includes("[ ! -f"))
   assert.ok(commands[0]?.includes("scancel"))
+  assert.ok(commands[1]?.includes("scancel --name"))
 })
 
 test("SSH Slurm backend reconciles an active job after adapter restart", async () => {

@@ -8,6 +8,7 @@ import {
 import {
   buildCanonicalSandboxEvidence,
   isPlacementCompatible,
+  persistCanonicalSandboxArtifact,
   type ExecutionDriverExecutionContextV1,
   type ExecutionDriverTerminationContextV1,
   type ExecutionDriverV1,
@@ -72,6 +73,10 @@ interface ActiveScheduledExecution {
   lastEvidenceKey?: string
   terminalObserved: boolean
   evidenceTail: Promise<void>
+  failedEvidence?: {
+    readonly key: string
+    readonly evidence: ScheduledExecutionEvidenceV1
+  }
 }
 
 const TERMINAL_STATES = new Set<ScheduledExecutionStateV1>([
@@ -135,23 +140,28 @@ async function settleBefore<T>(
   }
 }
 
-function scheduledFailureResult(
+async function scheduledFailureResult(
   request: SandboxRequestV1,
   status: Exclude<SandboxResultV1["status"], "completed">,
   reason: string,
-): SandboxResultV1 {
+): Promise<SandboxResultV1> {
+  const evidence = buildCanonicalSandboxEvidence({
+    command: request.command,
+    status,
+    exitCode: null,
+    stdout: "",
+    stderr: "",
+    evidenceMode: request.evidence_mode,
+  })
+  await Promise.all([
+    persistCanonicalSandboxArtifact(evidence.stdout_ref, ""),
+    persistCanonicalSandboxArtifact(evidence.stderr_ref, ""),
+  ])
   return assertValid<SandboxResultV1>("sandboxResult", {
     schema_version: "bb.sandbox_result.v1",
     request_id: request.request_id,
     status,
-    ...buildCanonicalSandboxEvidence({
-      command: request.command,
-      status,
-      exitCode: null,
-      stdout: "",
-      stderr: "",
-      evidenceMode: request.evidence_mode,
-    }),
+    ...evidence,
     error: { reason },
   })
 }
@@ -196,10 +206,10 @@ function assertProviderNeutralResultEvidence(
   }
 }
 
-function terminalResult(
+async function terminalResult(
   request: SandboxRequestV1,
   observation: ScheduledExecutionObservationV1,
-): SandboxResultV1 {
+): Promise<SandboxResultV1> {
   const expectedStatus = observation.state === "timed_out"
     ? "timed_out"
     : observation.state === "cancelled"
@@ -242,11 +252,20 @@ export function makeScheduledExecutionDriver(
   if (typeof options.recordEvidence !== "function") {
     throw new Error(`${driverId} execution driver requires an evidence sink`)
   }
-  const pollIntervalMs = Math.max(1, options.pollIntervalMs ?? 250)
-  const cancellationObservationTimeoutMs = Math.max(
-    pollIntervalMs,
-    options.cancellationObservationTimeoutMs ?? 2_000,
-  )
+  const pollIntervalMs = options.pollIntervalMs ?? 250
+  if (!Number.isSafeInteger(pollIntervalMs) || pollIntervalMs < 1) {
+    throw new Error("scheduled execution pollIntervalMs must be a positive safe integer")
+  }
+  const cancellationObservationTimeoutMs =
+    options.cancellationObservationTimeoutMs ?? 2_000
+  if (
+    !Number.isSafeInteger(cancellationObservationTimeoutMs)
+    || cancellationObservationTimeoutMs < pollIntervalMs
+  ) {
+    throw new Error(
+      "scheduled execution cancellationObservationTimeoutMs must be a safe integer at least pollIntervalMs",
+    )
+  }
   const active = new Map<string, ActiveScheduledExecution>()
 
   async function recordEvidence(
@@ -267,10 +286,24 @@ export function makeScheduledExecutionDriver(
       state: observation.state,
       evidenceRefs: refs,
     }
-    entry.lastEvidenceKey = key
-    entry.evidenceTail = entry.evidenceTail.then(
-      () => options.recordEvidence(evidence),
-    )
+    entry.evidenceTail = entry.evidenceTail
+      .catch(() => undefined)
+      .then(async () => {
+        const failed = entry.failedEvidence
+        if (failed) {
+          await options.recordEvidence(failed.evidence)
+          entry.lastEvidenceKey = failed.key
+          entry.failedEvidence = undefined
+        }
+        if (entry.lastEvidenceKey === key) return
+        try {
+          await options.recordEvidence(evidence)
+          entry.lastEvidenceKey = key
+        } catch (error: unknown) {
+          entry.failedEvidence = { key, evidence }
+          throw error
+        }
+      })
     await entry.evidenceTail
   }
 

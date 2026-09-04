@@ -196,7 +196,7 @@ Design 2 (`@breadboard/execution-drivers` shared execution-world owner) is selec
 
 ## W5.4 Four-world execution proof
 
-One fixed `SandboxRequestV1` (`req:dsh:world:equivalence-v3`) printed
+One fixed `SandboxRequestV1` (`req:dsh:world:equivalence-v4`) printed
 `breadboard-dsh-world-v1` through the actual local process,
 `python:3.11-alpine` OCI container, local Ray actor, and remote Slurm
 adapters. All four returned the same provider-neutral `SandboxResultV1`:
@@ -208,9 +208,9 @@ The local content-addressed store resolved the stdout and stderr digests after
 each run, so these references are retained artifacts rather than labels.
 
 Provider-specific proof stayed outside that result. The Ray callback recorded
-accepted, running, and completed observations for bridge process `64238`,
-actor `4013509e9657804a6b56d18d01000000`, and node
-`3a41921e22acacba742cd0a1923f1c635197b61093dfc6355ee54cb0`. The Slurm
-callback recorded job `38415` completing on `cnode-183`, with its receipt,
+accepted, running, and completed observations for bridge process `68022`,
+actor `bbc712ad72683b06ecc172a501000000`, and node
+`0abb408fad5ca2dc7d1151a39404aaaae98abde17ad6ab3c45c6e1d6`. The Slurm
+callback recorded job `38451` completing on `cnode-183`, with its receipt,
 exact encoded submission command, launch log, stdout, and stderr retained
 under `/shared/breadboard-dsh-world`.

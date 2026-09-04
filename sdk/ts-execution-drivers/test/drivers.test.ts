@@ -1,3 +1,6 @@
+import { chmod, mkdtemp, readFile, rm, stat } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import test from "node:test"
 import assert from "node:assert/strict"
 import type {
@@ -17,6 +20,8 @@ import {
   buildExecutionDriverUnsupportedCase,
   buildPlannedExecution,
   createExecutionWorld,
+  canonicalSandboxArtifactUri,
+  persistCanonicalSandboxArtifact,
   isPlacementCompatible,
   selectTerminalSessionDriver,
   type ExecutionDriverV1,
@@ -5202,4 +5207,22 @@ test("execution world does not retain a session ID after an empty-command start 
   assert.equal(accepted.kind, "terminal_start")
   assert.equal(accepted.result?.descriptor.terminal_session_id, "term-prelaunch-validation")
   assert.equal(startCalls, 1)
+})
+
+test("canonical sandbox artifacts are owner-only and content-addressed", async () => {
+  const artifactRoot = await mkdtemp(join(tmpdir(), "breadboard-cas-test-"))
+  try {
+    await chmod(artifactRoot, 0o755)
+    const content = "private sandbox output\n"
+    const ref = "sha256:1b196a8697e865cf57eb23b35220bd2b0434d8396d25be4254fa96986451c91a"
+
+    const uri = await persistCanonicalSandboxArtifact(ref, content, artifactRoot)
+
+    assert.equal(uri, canonicalSandboxArtifactUri(ref, artifactRoot))
+    assert.equal(await readFile(new URL(uri), "utf8"), content)
+    assert.equal((await stat(artifactRoot)).mode & 0o077, 0)
+    assert.equal((await stat(new URL(uri))).mode & 0o077, 0)
+  } finally {
+    await rm(artifactRoot, { recursive: true, force: true })
+  }
 })

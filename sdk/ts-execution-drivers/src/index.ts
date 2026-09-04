@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto"
-import { mkdir, rename, rm, writeFile } from "node:fs/promises"
+import { chmod, lstat, mkdir, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -328,11 +328,30 @@ export async function persistCanonicalSandboxArtifact(
   if (ref !== expectedRef) {
     throw new Error("sandbox artifact content does not match its digest ref")
   }
-  await mkdir(artifactRoot, { recursive: true })
+  await mkdir(artifactRoot, { recursive: true, mode: 0o700 })
+  const rootStat = await lstat(artifactRoot)
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+    throw new Error("sandbox artifact root must be a directory, not a symbolic link")
+  }
+  const currentUid = process.getuid?.()
+  if (currentUid !== undefined && rootStat.uid !== currentUid) {
+    throw new Error("sandbox artifact root must be owned by the current user")
+  }
+  if ((rootStat.mode & 0o077) !== 0) {
+    await chmod(artifactRoot, 0o700)
+    const securedRootStat = await lstat(artifactRoot)
+    if ((securedRootStat.mode & 0o077) !== 0) {
+      throw new Error("sandbox artifact root must be accessible only by its owner")
+    }
+  }
   const destination = join(artifactRoot, ref.slice("sha256:".length))
   const temporary = `${destination}.${process.pid}.${randomUUID()}.tmp`
   try {
-    await writeFile(temporary, content, "utf8")
+    await writeFile(temporary, content, {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600,
+    })
     await rename(temporary, destination)
   } finally {
     await rm(temporary, { force: true })

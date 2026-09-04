@@ -233,7 +233,10 @@ export function makeSshSlurmBackend(
   if (!Number.isSafeInteger(maxOutputBytes) || maxOutputBytes < 1) {
     throw new Error("maxOutputBytes must be a positive safe integer")
   }
-  const commandTimeoutMs = Math.max(1, options.commandTimeoutMs ?? 30_000)
+  const commandTimeoutMs = options.commandTimeoutMs ?? 30_000
+  if (!Number.isSafeInteger(commandTimeoutMs) || commandTimeoutMs < 1) {
+    throw new Error("commandTimeoutMs must be a positive safe integer")
+  }
   const submitted = new Map<string, SubmittedSlurmExecution>()
   const commandTimeoutSeconds = Math.max(1, Math.ceil(commandTimeoutMs / 1_000))
   const lockLeaseSeconds = commandTimeoutSeconds * 2 + 5
@@ -298,7 +301,7 @@ export function makeSshSlurmBackend(
         `receipt=${shellQuote(receiptPath)};`,
         `owner="$lock/owner";`,
         "id='';",
-        `cleanup() { if [ -n "$id" ] && [ ! -s "$receipt" ]; then case "$id" in *[!0-9]*) :;; *) scancel "$id" || true;; esac; fi; rm -rf "$lock"; };`,
+        `cleanup() { if [ ! -s "$receipt" ]; then case "$id" in ""|*[!0-9]*) scancel --name ${shellQuote(jobName)} 2>/dev/null || true;; *) scancel "$id" || true;; esac; fi; rm -rf "$lock"; };`,
         "trap cleanup EXIT;",
         `printf '%s %s\\n' "$$" "$(date +%s)" > "$owner.tmp";`,
         `mv "$owner.tmp" "$owner";`,
@@ -313,7 +316,7 @@ export function makeSshSlurmBackend(
         `metadata=${shellQuote(remotePath(evidenceDirectory, "slurm-"))}"\${id}.request.b64";`,
         `printf '%s\\n' ${shellQuote(encodedRequest)} > "$metadata.tmp";`,
         `mv "$metadata.tmp" "$metadata";`,
-        `printf '%s\\n' "$id" > "$receipt.tmp";`,
+        `printf '%s\\n' "$job" > "$receipt.tmp";`,
         `mv "$receipt.tmp" "$receipt";`,
         `[ ! -f ${shellQuote(cancelPath)} ] || scancel "$id";`,
       ].join(" ")
@@ -364,7 +367,7 @@ export function makeSshSlurmBackend(
             `touch ${shellQuote(cancelPath)};`,
             `if [ -s ${shellQuote(receiptPath)} ]; then`,
             `job=$(cat ${shellQuote(receiptPath)}); scancel "\${job%%;*}";`,
-            "fi",
+            `else scancel --name ${shellQuote(jobName)} 2>/dev/null || true; fi`,
           ].join(" "), context.terminationGraceMs)
         } catch (error: unknown) {
           cleanupError = error
@@ -384,7 +387,9 @@ export function makeSshSlurmBackend(
       }
       const execution = await loadExecution(executionId)
       if (execution.requestDigest !== expectedRequestDigest) {
-        throw new Error("Slurm submission receipt request mismatch")
+        throw new Error(
+          "Slurm request_id collision; existing execution remains owned by its original request",
+        )
       }
       return {
         executionId,
@@ -450,26 +455,57 @@ export function makeSshSlurmBackend(
         : state === "completed"
           ? "failed"
           : state
-      const readOutput = (path: string) => ssh([
-        `if [ ! -f ${shellQuote(path)} ]; then exit ${status === "completed" ? 66 : 0}; fi;`,
-        `size=$(wc -c < ${shellQuote(path)});`,
-        `[ "$size" -le ${maxOutputBytes} ] || exit 67;`,
-        `cat ${shellQuote(path)}`,
-      ].join(" "))
+      const overflowMarker = `__breadboard_output_exceeds_${maxOutputBytes}__`
+      const readOutput = async (
+        path: string,
+      ): Promise<{ readonly content: string; readonly evidenceRefs: readonly string[] }> => {
+        const command = status === "completed"
+          ? [
+              `if [ ! -f ${shellQuote(path)} ]; then exit 66; fi;`,
+              `size=$(wc -c < ${shellQuote(path)});`,
+              `[ "$size" -le ${maxOutputBytes} ] || exit 67;`,
+              `cat ${shellQuote(path)}`,
+            ].join(" ")
+          : [
+              `if [ ! -f ${shellQuote(path)} ]; then exit 0; fi;`,
+              `size=$(wc -c < ${shellQuote(path)});`,
+              `if [ "$size" -le ${maxOutputBytes} ]; then cat ${shellQuote(path)};`,
+              `else printf '%s' ${shellQuote(overflowMarker)}; fi`,
+            ].join(" ")
+        const output = (await ssh(command)).stdout
+        return output === overflowMarker
+          ? {
+              content: "",
+              evidenceRefs: [
+                `ssh://${sshTarget}${uriPath(path)}#truncated-at-${maxOutputBytes}-bytes`,
+              ],
+            }
+          : { content: output, evidenceRefs: [] }
+      }
       const [stdout, stderr] = await Promise.all([
-        readOutput(execution.stdoutPath).then((output) => output.stdout),
-        readOutput(execution.stderrPath).then((output) => output.stdout),
+        readOutput(execution.stdoutPath),
+        readOutput(execution.stderrPath),
       ])
       return {
         state: status,
-        result: await resultFor(execution, status, numericExitCode, stdout, stderr),
-        evidenceRefs: schedulerEvidenceRefs(
-          sshTarget,
-          executionId,
+        result: await resultFor(
           execution,
-          schedulerState,
-          nodeList,
+          status,
+          numericExitCode,
+          stdout.content,
+          stderr.content,
         ),
+        evidenceRefs: [
+          ...schedulerEvidenceRefs(
+            sshTarget,
+            executionId,
+            execution,
+            schedulerState,
+            nodeList,
+          ),
+          ...stdout.evidenceRefs,
+          ...stderr.evidenceRefs,
+        ],
       }
     },
     async cancel(executionId, context) {
