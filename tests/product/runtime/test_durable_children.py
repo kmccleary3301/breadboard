@@ -3829,6 +3829,43 @@ def test_default_service_refuses_parent_stop_with_unreconciled_child(
     assert child_state.cancellation_requested is False
 
 
+def test_parent_stop_rejects_noninteger_retained_terminal_count(
+    tmp_path: Path,
+) -> None:
+    from breadboard_engine.api.cli_bridge.models import SessionStatus
+    from breadboard_engine.api.cli_bridge.registry.records import SessionRecord
+    from breadboard_engine.api.cli_bridge.service import SessionService
+
+    registry = SessionRegistry(state_root=tmp_path / "registry")
+    asyncio_run(
+        registry.create(
+            SessionRecord(
+                "parent-session",
+                status=SessionStatus.RUNNING,
+                metadata={"workspace": str(tmp_path)},
+            )
+        )
+    )
+    asyncio_run(
+        registry.create(
+            SessionRecord(
+                "child-session",
+                status=SessionStatus.RUNNING,
+                metadata={
+                    "workspace": str(tmp_path),
+                    "durable_child": {
+                        "parent_session_id": "parent-session",
+                        "terminal_count": True,
+                    },
+                },
+            )
+        )
+    )
+    service = SessionService(registry=registry, state_root=tmp_path / "registry")
+
+    with pytest.raises(RuntimeError, match="terminal_count must be exactly 0 or 1"):
+        asyncio_run(service.stop_session("parent-session"))
+
 def test_default_service_reconciles_process_child_after_restart(tmp_path: Path) -> None:
     from breadboard_engine.api.cli_bridge.service import SessionService
 
@@ -4193,7 +4230,7 @@ def test_child_start_rejects_mismatched_parent_session_and_work_item(
     assert await_records(registry) == []
 
 
-def test_reconciler_closes_parent_admission_without_existing_children(
+def test_reconciler_without_children_leaves_parent_admission_open(
     tmp_path: Path,
 ) -> None:
     from breadboard_engine.api.cli_bridge.models import SessionStatus
@@ -4216,9 +4253,9 @@ def test_reconciler_closes_parent_admission_without_existing_children(
     )
 
     assert asyncio_run(reconciler.cancel_tree("parent-session")) == ()
-    assert await_record(registry, "parent-session").admission_closed
+    assert not await_record(registry, "parent-session").admission_closed
     restarted = SessionRegistry(state_root=tmp_path / "registry")
-    assert await_record(restarted, "parent-session").admission_closed
+    assert not await_record(restarted, "parent-session").admission_closed
 
     factory = DurableChildFactory(
         workspace,
@@ -4226,13 +4263,13 @@ def test_reconciler_closes_parent_admission_without_existing_children(
         repository=repository,
         adapters=[RetryAdapter()],
     )
-    with pytest.raises(ChildError, match="cancellation is pending"):
-        factory.start(
-            parent_session_id="parent-session",
-            root_session_id="parent-session",
-            parent_work_item_id=parent.read_model.work_item_id,
-            spec=_spec(RetryAdapter.family, "late child"),
-        )
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(RetryAdapter.family, "new child"),
+    )
+    assert activation.child_session_id
 
 
 def test_ray_actor_lookup_runtime_failure_stays_pending(

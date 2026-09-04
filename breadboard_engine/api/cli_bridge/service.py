@@ -3102,10 +3102,16 @@ class SessionService:
                 else {}
             )
             child_state = child_metadata.get("durable_child")
+            if not isinstance(child_state, Mapping):
+                continue
+            terminal_count = child_state.get("terminal_count", 0)
+            if type(terminal_count) is not int or terminal_count not in {0, 1}:
+                raise RuntimeError(
+                    "retained durable child terminal_count must be exactly 0 or 1"
+                )
             if (
-                isinstance(child_state, Mapping)
-                and child_state.get("parent_session_id") == session_id
-                and not int(child_state.get("terminal_count", 0) or 0)
+                child_state.get("parent_session_id") == session_id
+                and terminal_count == 0
             ):
                 retained_children.append(child_state)
         if retained_children and not callable(cancel_tree):
@@ -3147,10 +3153,15 @@ class SessionService:
             else ""
         )
         cancel_child = getattr(self._durable_child_reconciler, "cancel", None)
-        if recovery_ref and callable(cancel_child) and not (
-            isinstance(durable_child, Mapping)
-            and int(durable_child.get("terminal_count", 0) or 0)
-        ):
+        durable_child_terminal = False
+        if isinstance(durable_child, Mapping):
+            terminal_count = durable_child.get("terminal_count", 0)
+            if type(terminal_count) is not int or terminal_count not in {0, 1}:
+                raise RuntimeError(
+                    "retained durable child terminal_count must be exactly 0 or 1"
+                )
+            durable_child_terminal = terminal_count == 1
+        if recovery_ref and callable(cancel_child) and not durable_child_terminal:
             try:
                 result = cancel_child(recovery_ref, reason=reason or "operator request")
                 if inspect.isawaitable(result):

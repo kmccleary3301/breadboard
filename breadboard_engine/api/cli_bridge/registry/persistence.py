@@ -375,6 +375,53 @@ class PersistenceMixin:
         reason: str,
         child_recovery_refs: Iterable[str],
     ) -> None:
+        await self.close_admission_for_parent_cancellations(
+            session_id,
+            requests=(
+                {
+                    "work_item_id": work_item_id,
+                    "reason": reason,
+                    "child_recovery_refs": tuple(child_recovery_refs),
+                },
+            ),
+        )
+
+    async def close_admission_for_parent_cancellations(
+        self,
+        session_id: str,
+        *,
+        requests: Iterable[Mapping[str, Any]],
+    ) -> None:
+        normalized_requests: list[dict[str, Any]] = []
+        for request in requests:
+            work_item_id = request.get("work_item_id")
+            reason = request.get("reason")
+            child_recovery_refs = request.get("child_recovery_refs")
+            if not isinstance(work_item_id, str) or not work_item_id.strip():
+                raise ValueError("parent cancellation work_item_id must be non-empty")
+            if not isinstance(reason, str) or not reason.strip():
+                raise ValueError("parent cancellation reason must be non-empty")
+            if not isinstance(child_recovery_refs, Iterable) or isinstance(
+                child_recovery_refs, (str, bytes)
+            ):
+                raise ValueError("parent cancellation child references must be iterable")
+            normalized_refs = tuple(child_recovery_refs)
+            if any(
+                not isinstance(ref, str) or not ref.strip()
+                for ref in normalized_refs
+            ):
+                raise ValueError(
+                    "parent cancellation child references must be non-empty strings"
+                )
+            normalized_requests.append(
+                {
+                    "work_item_id": work_item_id,
+                    "reason": reason,
+                    "child_recovery_refs": sorted(set(normalized_refs)),
+                }
+            )
+        if not normalized_requests:
+            return
         record = await self.get(session_id)
         if record is None:
             return
@@ -394,7 +441,9 @@ class PersistenceMixin:
                     previous_activity = record.last_activity_at
                     metadata = dict(previous_metadata)
                     marker = metadata.get("durable_parent_cancellation")
-                    raw_requests = marker.get("requests") if isinstance(marker, Mapping) else None
+                    raw_requests = (
+                        marker.get("requests") if isinstance(marker, Mapping) else None
+                    )
                     if raw_requests is None:
                         candidates = [marker] if isinstance(marker, Mapping) else []
                     elif isinstance(raw_requests, list):
@@ -403,19 +452,18 @@ class PersistenceMixin:
                         raise RuntimeError(
                             "durable parent cancellation marker is invalid"
                         )
-                    requests = {
+                    merged_requests = {
                         str(candidate["work_item_id"]): dict(candidate)
                         for candidate in candidates
                         if isinstance(candidate, Mapping)
                         and isinstance(candidate.get("work_item_id"), str)
                     }
-                    requests[work_item_id] = {
-                        "work_item_id": work_item_id,
-                        "reason": reason,
-                        "child_recovery_refs": sorted(set(child_recovery_refs)),
-                    }
+                    for request in normalized_requests:
+                        merged_requests[request["work_item_id"]] = request
                     metadata["durable_parent_cancellation"] = {
-                        "requests": [requests[key] for key in sorted(requests)]
+                        "requests": [
+                            merged_requests[key] for key in sorted(merged_requests)
+                        ]
                     }
                     record.admission_closed = True
                     self._replace_metadata(record, metadata)
