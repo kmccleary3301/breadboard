@@ -717,6 +717,13 @@ class DurableChildFactory:
             value = metadata.get("durable_child")
             if isinstance(value, Mapping):
                 by_parent.setdefault(str(value.get("parent_work_item_id")), []).append(self._record_state(record.session_id))
+        retained_tree_refs: list[str] = []
+        retained_queue = [parent_work_item_id]
+        while retained_queue:
+            retained_parent_id = retained_queue.pop(0)
+            for retained_state in by_parent.get(retained_parent_id, ()):
+                retained_tree_refs.append(retained_state.recovery_ref)
+                retained_queue.append(retained_state.child_work_item_id)
         descendants: list[ChildState] = []
         queue = [parent_work_item_id] if parent_work.read_model.cancellation_policy.propagate_to_children else []
         while queue:
@@ -831,7 +838,7 @@ class DurableChildFactory:
                         "child_recovery_refs": child_recovery_refs,
                     },
                 ),
-                expected_child_recovery_refs=child_recovery_refs,
+                expected_child_recovery_refs=retained_tree_refs,
             )
         if product_status in _TERMINAL and work_status not in _TERMINAL:
             try:
