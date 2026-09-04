@@ -7587,3 +7587,27 @@ def test_direct_child_stop_remains_pending_until_adapter_confirms_exit(
         asyncio_run(service.delete_session(record.session_id))
 
     assert await_record(registry, record.session_id).status is SessionStatus.RUNNING
+
+
+def test_registry_records_evicts_session_deleted_by_another_owner(
+    tmp_path: Path,
+) -> None:
+    from breadboard_engine.api.cli_bridge.models import SessionStatus
+    from breadboard_engine.api.cli_bridge.registry.records import SessionRecord
+
+    async def scenario() -> None:
+        state_root = tmp_path / "registry"
+        deleting = SessionRegistry(state_root=state_root)
+        stale = SessionRegistry(state_root=state_root)
+        await deleting.create(
+            SessionRecord("ordinary-session", status=SessionStatus.RUNNING)
+        )
+        assert [record.session_id for record in await stale.records()] == [
+            "ordinary-session"
+        ]
+
+        await deleting.delete("ordinary-session")
+
+        assert await stale.records() == []
+
+    asyncio_run(scenario())

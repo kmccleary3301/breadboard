@@ -1006,10 +1006,18 @@ class PersistenceMixin:
             else:
                 self._records[refreshed.session_id] = refreshed
         for session_id, record in tuple(self._records.items()):
-            metadata = record.metadata if isinstance(record.metadata, dict) else {}
-            if not (record.loaded_from_retained_state or isinstance(metadata.get("durable_child"), dict) or isinstance(metadata.get("durable_parent_cancellation"), dict)):
-                continue
             path = self._state_path(session_id)
+            marker = self._tombstone_path(session_id)
+            if marker is not None and marker.exists():
+                self._records.pop(session_id, None)
+                continue
+            metadata = record.metadata if isinstance(record.metadata, dict) else {}
+            if not (
+                record.loaded_from_retained_state
+                or isinstance(metadata.get("durable_child"), dict)
+                or isinstance(metadata.get("durable_parent_cancellation"), dict)
+            ):
+                continue
             if path is not None and not path.exists():
                 self._records.pop(session_id, None)
 
