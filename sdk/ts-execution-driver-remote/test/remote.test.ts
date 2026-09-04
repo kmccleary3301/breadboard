@@ -29,6 +29,17 @@ import {
   type ScheduledExecutionBackendV1,
 } from "../src/index.js"
 
+function slurmTestJobName(
+  sshTarget: string,
+  evidenceDirectory: string,
+  requestId: string,
+): string {
+  return `bb-${createHash("sha256")
+    .update(`${sshTarget}\0${evidenceDirectory}\0${requestId}`)
+    .digest("hex")
+    .slice(0, 32)}`
+}
+
 const remoteCapability: ExecutionCapabilityV1 = {
   schema_version: "bb.execution_capability.v1",
   capability_id: "cap:remote:1",
@@ -2623,7 +2634,11 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
     workspaceRef: "/tmp/workspace with space",
     placementClass: "remote_worker",
   })
-  const jobName = `bb-${createHash("sha256").update(request.request_id).digest("hex").slice(0, 32)}`
+  const jobName = slurmTestJobName(
+    "cluster.example",
+    "/tmp/breadboard evidence",
+    request.request_id,
+  )
   sacctResult = `${jobName}|COMPLETED|0:0|node-a\n`
   squeueResult = `${jobName}|RUNNING|node-a\n`
   const imagedRequest = buildRemoteSandboxRequest({
@@ -2672,7 +2687,7 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   assert.ok(invocations[0]?.[1]?.includes("timeout 30s sh -c"))
   assert.ok(invocations[0]?.[1]?.includes(`[ ! -f "$cancel" ] || exit 75`))
   assert.ok(invocations[0]?.[1]?.includes(`[ $((now-created)) -ge`))
-  assert.ok(invocations[0]?.[1]?.includes(`cat "$lock/job"`))
+  assert.equal(invocations[0]?.[1]?.includes(`cat "$lock/job"`), false)
   assert.ok(invocations[0]?.[1]?.includes(`> "$lock/attempt"`))
   assert.ok(invocations[0]?.[1]?.includes("scancel --name"))
   assert.ok(invocations[0]?.[1]?.includes("timeout 30s sbatch"))
@@ -2758,6 +2773,11 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   assert.equal(commandTimeouts.length, invocations.length)
   assert.ok(commandTimeouts.every((timeout) => timeout > 0 && timeout <= 30_000))
   assert.ok(commandOutputLimits.some((limit) => limit > 8))
+  const metadataCommandIndex = invocations.findIndex(
+    (args) => args[1]?.startsWith("cat ") && args[1]?.includes(".request.b64"),
+  )
+  assert.notEqual(metadataCommandIndex, -1)
+  assert.equal(commandOutputLimits[metadataCommandIndex], 8 * 1024 * 1024)
   assert.ok((commandTimeouts.at(-1) ?? Number.POSITIVE_INFINITY) <= 100)
 })
 
@@ -3139,6 +3159,9 @@ test("SSH Slurm backend leaves a durable cancel marker when cancellation precede
   assert.ok(commands[1]?.startsWith("touch "))
   assert.ok(commands[1]?.includes(".lock/attempt"))
   assert.ok(commands[1]?.includes("scancel --name"))
+  assert.ok(commands[1]?.includes("receipt_attempt=$(sed -n '2p'"))
+  assert.ok(commands[1]?.includes("receipt_digest=$(sed -n '3p'"))
+  assert.ok(commands[0]?.includes(`[ -f "$cancel" ] || [ ! -s "$receipt" ]`))
   assert.equal(commands[1]?.includes("sed -n '1p'"), false)
 })
 
@@ -3150,7 +3173,11 @@ test("SSH Slurm backend reconciles an active job after adapter restart", async (
     placementClass: "remote_worker",
   })
   const encodedMetadata = Buffer.from(JSON.stringify(request), "utf8").toString("base64")
-  const recoveredJobName = `bb-${createHash("sha256").update(request.request_id).digest("hex").slice(0, 32)}`
+  const recoveredJobName = slurmTestJobName(
+    "cluster.example",
+    "/tmp/evidence",
+    request.request_id,
+  )
   const recovered = makeSshSlurmBackend({
     sshTarget: "cluster.example",
     remoteEvidenceDirectory: "/tmp/evidence",

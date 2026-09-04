@@ -84,6 +84,16 @@ function sha256(value: string): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`
 }
 
+function slurmJobName(
+  sshTarget: string,
+  evidenceDirectory: string,
+  requestId: string,
+): string {
+  const ownershipKey = sha256(`${sshTarget}\0${evidenceDirectory}\0${requestId}`)
+    .slice("sha256:".length)
+  return `bb-${ownershipKey.slice(0, 32)}`
+}
+
 
 function requestDigest(request: SandboxRequestV1): string {
   return sha256(canonicalScheduledRequestKey(request))
@@ -113,7 +123,7 @@ function retainedSubmission(request: SandboxRequestV1): string {
 function genericFailureReason(status: SandboxResultV1["status"]): string {
   if (status === "timed_out") return "execution_timed_out"
   if (status === "cancelled") return "execution_cancelled"
-  return "scheduled_execution_failed"
+  return "execution_failed"
 }
 
 async function resultFor(
@@ -227,7 +237,8 @@ export function makeSshSlurmBackend(
     throw new Error("maxOutputBytes must be a positive safe integer")
   }
   const framedOutputMaxBytes = Math.ceil(maxOutputBytes / 3) * 4 + 64
-  const receiptOutputMaxBytes = Math.max(framedOutputMaxBytes, 256)
+  const receiptOutputMaxBytes = 1024
+  const metadataOutputMaxBytes = 8 * 1024 * 1024
   if (!Number.isSafeInteger(framedOutputMaxBytes)) {
     throw new Error("maxOutputBytes is too large for framed transport")
   }
@@ -271,6 +282,7 @@ export function makeSshSlurmBackend(
       `cat ${shellQuote(metadataPath)}`,
       timeoutMs,
       signal,
+      metadataOutputMaxBytes,
     )
     const execution = parseExecution(
       metadata.stdout,
@@ -305,7 +317,7 @@ export function makeSshSlurmBackend(
       }
       const expectedRequestDigest = requestDigest(request)
       const submissionKey = sha256(request.request_id).slice("sha256:".length)
-      const jobName = `bb-${submissionKey.slice(0, 32)}`
+      const jobName = slurmJobName(sshTarget, evidenceDirectory, request.request_id)
       const submissionAttemptToken = randomBytes(16).toString("hex")
       const receiptPath = remotePath(evidenceDirectory, `submission-${submissionKey}.receipt`)
       const cancelPath = remotePath(evidenceDirectory, `submission-${submissionKey}.cancel`)
@@ -347,7 +359,7 @@ export function makeSshSlurmBackend(
         `attempt=${submissionAttemptToken};`,
         `digest=${expectedRequestDigest};`,
         `cancel_by_name() { touch "$cancel"; timeout ${commandTimeoutSeconds}s sh -c ${shellQuote(cancelByNameScript)} || true; };`,
-        `cleanup() { if [ ! -s "$receipt" ]; then cancel_by_name; fi; rm -f "$cancel"; rm -rf "$lock"; };`,
+        `cleanup() { if [ -f "$cancel" ] || [ ! -s "$receipt" ]; then cancel_by_name; fi; rm -f "$cancel"; rm -rf "$lock"; };`,
         "trap cleanup EXIT;",
         `owner_start=$(awk '{print $22}' /proc/$$/stat 2>/dev/null || true);`,
         `printf '%s %s %s\\n' "$$" "$(date +%s)" "$owner_start" > "$owner.tmp";`,
@@ -381,10 +393,9 @@ export function makeSshSlurmBackend(
         `pid=\${owner%% *}; owner_rest=\${owner#* }; created=\${owner_rest%% *}; owner_start=\${owner_rest#* };`,
         `case "$created" in ""|*[!0-9]*) created=$(stat -c %Y "$lock" 2>/dev/null || printf '0');; esac;`,
         `current_start=''; case "$pid" in ""|*[!0-9]*) :;; *) current_start=$(awk '{print $22}' "/proc/$pid/stat" 2>/dev/null || true);; esac;`,
-        `owner_live=0; [ -n "$owner_start" ] && [ "$current_start" = "$owner_start" ] && owner_live=1;`,
+        `owner_live=1; if [ -n "$owner_start" ]; then [ -n "$current_start" ] && [ "$current_start" = "$owner_start" ] || owner_live=0; fi;`,
         `if [ $((now-created)) -ge ${lockLeaseSeconds} ] && [ "$owner_live" -eq 0 ]; then`,
-        `stale_job=$(cat "$lock/job" 2>/dev/null || true);`,
-        `case "$stale_job" in ""|*[!0-9]*) timeout 1s scancel --name ${shellQuote(jobName)} 2>/dev/null || true;; *) timeout 1s scancel "$stale_job" 2>/dev/null || true;; esac;`,
+        `timeout 1s scancel --name ${shellQuote(jobName)} 2>/dev/null || true;`,
         `rm -rf "$lock";`,
         `fi; fi;`,
         `if [ ! -s "$receipt" ] && mkdir "$lock" 2>/dev/null; then`,
@@ -423,7 +434,10 @@ export function makeSshSlurmBackend(
         try {
           await ssh([
             `touch ${shellQuote(cancelPath)};`,
-            `if [ "$(cat ${shellQuote(`${lockPath}/attempt`)} 2>/dev/null || true)" = ${shellQuote(submissionAttemptToken)} ] && [ -s ${shellQuote(receiptPath)} ]; then`,
+            `receipt_attempt=$(sed -n '2p' ${shellQuote(receiptPath)} 2>/dev/null || true);`,
+            `receipt_digest=$(sed -n '3p' ${shellQuote(receiptPath)} 2>/dev/null || true);`,
+            `lock_attempt=$(cat ${shellQuote(`${lockPath}/attempt`)} 2>/dev/null || true);`,
+            `if [ "$receipt_attempt" = ${shellQuote(submissionAttemptToken)} ] || [ "$receipt_digest" = ${shellQuote(expectedRequestDigest)} ] || [ "$lock_attempt" = ${shellQuote(submissionAttemptToken)} ]; then`,
             `timeout ${commandTimeoutSeconds}s scancel --name ${shellQuote(jobName)} 2>/dev/null || true;`,
             "fi",
           ].join(" "), context.terminationGraceMs)
@@ -492,7 +506,11 @@ export function makeSshSlurmBackend(
     async observe(executionId) {
       const identity = parseExecutionHandle(executionId)
       const execution = await loadExecution(executionId)
-      const expectedJobName = `bb-${sha256(execution.request.request_id).slice("sha256:".length).slice(0, 32)}`
+      const expectedJobName = slurmJobName(
+        sshTarget,
+        evidenceDirectory,
+        execution.request.request_id,
+      )
       const activeResult = await ssh(
         `squeue -h -j ${shellQuote(identity.jobId)} -o '%j|%T|%N'`,
       )
@@ -542,7 +560,7 @@ export function makeSshSlurmBackend(
           state,
           evidenceRefs: schedulerEvidenceRefs(
             sshTarget,
-            executionId,
+            identity.jobId,
             execution,
             schedulerState,
             nodeList,
@@ -665,8 +683,11 @@ export function makeSshSlurmBackend(
       )
       remaining = deadline - Date.now()
       if (remaining <= 0) throw new Error("Slurm cancellation deadline expired")
-      const expectedJobName =
-        `bb-${sha256(execution.request.request_id).slice("sha256:".length).slice(0, 32)}`
+      const expectedJobName = slurmJobName(
+        sshTarget,
+        evidenceDirectory,
+        execution.request.request_id,
+      )
       await ssh(
         `timeout ${commandTimeoutSeconds}s scancel --name ${shellQuote(expectedJobName)} 2>/dev/null || true`,
         remaining,

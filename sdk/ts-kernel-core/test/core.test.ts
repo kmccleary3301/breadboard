@@ -1746,7 +1746,25 @@ test("createKernelExecutionWorld with executeSandbox override advertises and exe
   assert.ok(injectedCalled, "injected executeSandbox was called for remote placement")
   assert.equal(result.sandboxResult.status, "completed")
   assert.equal(result.driverId, "remote")
+  const fallback = await executeDriverMediatedToolTurn(
+    { ...request, request_id: "run-ray-hint-fallback-1" },
+    {
+      sessionId: "sess-ray-hint-fallback-1",
+      toolName: "remote_tool",
+      command: ["python", "-c", "print('remote fallback')"],
+      isolationClass: "remote_service",
+      securityTier: "multi_tenant",
+      driverIdHint: "ray",
+      executionWorld: world,
+    },
+  )
+  assert.equal(fallback.driverId, "remote")
+  assert.equal(
+    fallback.executionPlacement.runtime_id,
+    "breadboard.ts-execution-driver-remote",
+  )
 })
+
 
 test("createKernelExecutionWorld registers configured Ray and Slurm drivers", () => {
   const capability = {
