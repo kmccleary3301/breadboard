@@ -246,6 +246,36 @@ def test_process_adapter_reaps_natural_exit_and_reports_completion(tmp_path: Pat
     assert restarted.observe(target.retained()) == "completed"
 
 
+def test_process_wrapper_retains_identity_until_background_descendants_exit(
+    tmp_path: Path,
+) -> None:
+    adapter = ProcessExecutionAdapter(
+        command=("/bin/sh", "-c", "sleep 30 & exit 0")
+    )
+    target_ref = "reserved:background-descendant"
+    activation = ChildActivation(
+        "parent-session",
+        "parent-session",
+        "parent-work",
+        "child-session",
+        "child-work",
+        "attempt",
+        "child://child-session/attempt/attempt",
+        target_ref,
+        adapter.family,
+        str(tmp_path),
+    )
+    target = adapter.start(
+        activation,
+        _spec(adapter.family, "background descendant"),
+    )
+    time.sleep(0.1)
+
+    assert adapter.observe(target.retained()) == "running"
+    assert adapter.cancel(target.retained()) is True
+    assert adapter.observe(target.retained()) == "completed"
+
+
 def test_process_release_is_committed_before_command_execution(tmp_path: Path) -> None:
     marker = tmp_path / "command-ran"
     phases: list[str] = []
