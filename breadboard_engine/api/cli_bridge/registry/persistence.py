@@ -114,10 +114,9 @@ async def _process_lock(lock_path: Path):
         await asyncio.shield(asyncio.to_thread(lock.__exit__, None, None, None))
 
 def _fsync_directory(path: Path) -> None:
-    try:
-        descriptor = os.open(path, os.O_RDONLY)
-    except OSError:
+    if os.name == "nt":
         return
+    descriptor = os.open(path, os.O_RDONLY)
     try:
         os.fsync(descriptor)
     finally:
