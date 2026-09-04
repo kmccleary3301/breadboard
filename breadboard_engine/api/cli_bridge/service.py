@@ -3458,7 +3458,7 @@ class SessionService:
                 )
 
         async with self.registry.fence_parent_turn_admission(session_id):
-            record = await self.ensure_session(session_id)
+            record = await self.registry.get(session_id)
             runner = getattr(record, "runner", None)
             if not runner:
                 raise HTTPException(

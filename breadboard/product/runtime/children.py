@@ -2302,6 +2302,7 @@ class DurableChildFactory:
             self._lifecycle_lock,
             self._owner_lock(state.parent_work_item_id),
             self._owner_process_lock(state.parent_work_item_id),
+            self._tree_process_lock(state.root_session_id),
             self._product_transition_guard(
                 state.parent_session_id,
                 state.root_session_id,
