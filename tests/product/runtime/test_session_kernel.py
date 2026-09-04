@@ -13,7 +13,7 @@ def _lock(digest: str = HASH) -> EffectiveHarnessLock: return EffectiveHarnessLo
 _PAYLOADS = {
     "session.started": {"effective_lock_hash": HASH, "task_hash": HASH}, "input.accepted": {"content_hash": HASH, "attachments": []},
     "assistant_message": {"metadata": {"has_content": True}}, "tool_call": {"tool": "list_dir"}, "tool_result": {"tool": "list_dir", "error": False},
-    "context.compacted": {"compaction_index": 1, "source_sequence_start": 1, "source_sequence_end": 1, "context_encoding": "base64", "effective_context": "", "context_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "raw_fact_ids": [], "shadowed_raw_fact_ids": []},
+    "context.compacted": {"compaction_index": 1, "source_sequence_start": 1, "source_sequence_end": 1, "context_encoding": "base64", "effective_context": "W10=", "context_sha256": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945", "raw_fact_ids": [], "shadowed_raw_fact_ids": []},
     "approval.requested": {"request_id": "r", "operation": "write"}, "approval.resolved": {"request_id": "r", "decision": "allow"},
     "session.reconfigured": {"effective_lock_hash": OTHER_HASH, "reason": ""}, "session.paused": {"reason": ""}, "session.resumed": {},
     "session.completed": {"outcome": "completed", "summary": ""}, "session.failed": {"outcome": "failed", "error": "error", "detail": "detail"}, "session.canceled": {"outcome": "canceled", "reason": ""}}
@@ -31,7 +31,7 @@ def test_session_view_deeply_freezes_terminal_outcome() -> None:
     with pytest.raises(TypeError): view.terminal_outcome["nested"]["code"] = 3  # type: ignore[index]
     assert view.as_dict()["terminal_outcome"]["nested"]["code"] == 1; Changing = type("Changing", (dict,), {"items": lambda self: {"outcome": "failed", "summary": 7}.items()})
     with pytest.raises(ValueError): SessionView("s-1", "completed", HASH, HASH, 2, terminal_outcome=Changing(outcome="completed", summary="ok"))
-_ACTIONS = {"input": lambda s: s.input("content"), "assistant": lambda s: s.assistant_message("content"), "tool_call": lambda s: s.tool_called("list_dir"), "tool_result": lambda s: s.tool_completed("list_dir", False), "compact": lambda s: s.compact(CompactionSnapshot(b"context", ())), "request": lambda s: s.request_approval("r", "write"), "resolve": lambda s: s.resolve_approval("r", "allow"), "reconfigure": lambda s: s.reconfigure(_lock(OTHER_HASH), ""), "pause": lambda s: s.pause(""), "resume": lambda s: s.resume(), "cancel": lambda s: s.cancel(""), "complete": lambda s: s.complete(""), "fail": lambda s: s.fail("error", "detail")}
+_ACTIONS = {"input": lambda s: s.input("content"), "assistant": lambda s: s.assistant_message("content"), "tool_call": lambda s: s.tool_called("list_dir"), "tool_result": lambda s: s.tool_completed("list_dir", False), "compact": lambda s: s.compact(CompactionSnapshot(b"[]", ())), "request": lambda s: s.request_approval("r", "write"), "resolve": lambda s: s.resolve_approval("r", "allow"), "reconfigure": lambda s: s.reconfigure(_lock(OTHER_HASH), ""), "pause": lambda s: s.pause(""), "resume": lambda s: s.resume(), "cancel": lambda s: s.cancel(""), "complete": lambda s: s.complete(""), "fail": lambda s: s.fail("error", "detail")}
 _FACADE_ALLOWED = {"input": {"running"}, "assistant": {"running"}, "tool_call": {"running"}, "tool_result": {"running"}, "compact": {"running"}, "request": {"running"}, "resolve": {"awaiting_approval"}, "reconfigure": {"running", "awaiting_approval", "paused"}, "pause": {"running"}, "resume": {"paused"}, "cancel": {"running", "awaiting_approval", "paused"}, "complete": {"running"}, "fail": {"running", "awaiting_approval", "paused"}}
 def _session(status: str) -> Session:
     session = Session.start(_lock(), "task"); {"awaiting_approval": lambda: session.request_approval("r", "write"), "paused": lambda: session.pause(""), "completed": lambda: session.complete(""), "failed": lambda: session.fail("error", "detail"), "canceled": lambda: session.cancel("")}[status]() if status != "running" else None; return session
@@ -307,7 +307,7 @@ def test_session_compaction_reconstructs_exact_context_and_raw_facts(
 
 def test_replay_differential_compares_live_owner_snapshot_to_durable_replay() -> None:
     session = Session.start(_lock(), "task")
-    session.compact(CompactionSnapshot(b"durable", ("ctn_000001",)))
+    session.compact(CompactionSnapshot(b"[]", ("ctn_000001",)))
     session._effective_context = b"live divergence"
     session._raw_fact_ids = ("ctn_000002",)
 
@@ -340,11 +340,11 @@ def test_compaction_replay_rejects_fact_loss_and_invalid_boundaries(
 ) -> None:
     session = Session.start(_lock(), "task")
     first = session.compact(
-        CompactionSnapshot(b"one", ("ctn_000001", "ctn_000002"))
+        CompactionSnapshot(b'[{"content":"one"}]', ("ctn_000001", "ctn_000002"))
     )
     second = session.compact(
         CompactionSnapshot(
-            b"two",
+            b'[{"content":"two"}]',
             ("ctn_000001", "ctn_000002", "ctn_000003"),
         )
     )
@@ -362,13 +362,13 @@ def test_compaction_replay_rejects_fact_loss_and_invalid_boundaries(
 def test_live_compaction_rejects_reordered_cumulative_facts() -> None:
     session = Session.start(_lock(), "task")
     session.compact(
-        CompactionSnapshot(b"one", ("ctn_000001", "ctn_000002"))
+        CompactionSnapshot(b'[{"content":"one"}]', ("ctn_000001", "ctn_000002"))
     )
 
     with pytest.raises(ValueError, match="reorder or discard"):
         session.compact(
             CompactionSnapshot(
-                b"two",
+                b'[{"content":"two"}]',
                 ("ctn_000002", "ctn_000001", "ctn_000003"),
             )
         )
@@ -376,9 +376,9 @@ def test_live_compaction_rejects_reordered_cumulative_facts() -> None:
 
 def test_compaction_replay_rejects_incorrect_shadow_chain() -> None:
     session = Session.start(_lock(), "task")
-    session.compact(CompactionSnapshot(b"one", ("ctn_000001",)))
+    session.compact(CompactionSnapshot(b'[{"content":"one"}]', ("ctn_000001",)))
     session.compact(
-        CompactionSnapshot(b"two", ("ctn_000001", "ctn_000002"))
+        CompactionSnapshot(b'[{"content":"two"}]', ("ctn_000001", "ctn_000002"))
     )
     rows = list(session.events)
     replacement = rows[-1].as_dict()
@@ -404,18 +404,29 @@ def test_compaction_event_rejects_corrupt_context_and_fact_identity(
     patch: dict[str, Any],
 ) -> None:
     session = Session.start(_lock(), "task")
-    session.compact(CompactionSnapshot(b"exact", ("ctn_000001",)))
+    session.compact(CompactionSnapshot(b"[]", ("ctn_000001",)))
     record = session.events[-1].as_dict()
     record["payload"].update(patch)
 
     with pytest.raises(ValueError):
         KernelEvent(**record)
 
+@pytest.mark.parametrize(
+    "effective_context",
+    [b"\xff", b"not-json", b"{}", b'["not-a-message"]'],
+)
+def test_compaction_snapshot_rejects_non_message_context(
+    effective_context: bytes,
+) -> None:
+    with pytest.raises(ValueError, match="effective_context"):
+        CompactionSnapshot(effective_context, ())
+
+
 def test_compaction_snapshot_rejects_noncanonical_raw_fact_identity() -> None:
     session = Session.start(_lock(), "task")
 
     with pytest.raises(ValueError, match="canonical C-Tree identities"):
-        session.compact(CompactionSnapshot(b"exact", ("fact-1",)))
+        session.compact(CompactionSnapshot(b"[]", ("fact-1",)))
 
 def test_annotation_event_uses_registered_target_and_preserves_message_owner_bytes() -> None:
 

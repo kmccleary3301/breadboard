@@ -687,6 +687,11 @@ def test_final_product_context_preserves_post_boundary_suffix_for_fresh_turn() -
         product_compaction_owner=True,
     )
     conductor._restore_product_effective_messages(current, retained)
+    wire_surface = [
+        *retained,
+        {"role": "user", "content": "Continue."},
+    ]
+    current.record_provider_request_surface(wire_surface)
     final_answer = {"role": "assistant", "content": "post-boundary answer"}
     current.add_message(final_answer)
 
@@ -700,7 +705,7 @@ def test_final_product_context_preserves_post_boundary_suffix_for_fresh_turn() -
         next_turn,
         json.loads(product.effective_context),
     )
-    assert next_turn.provider_messages == [*retained, final_answer]
+    assert next_turn.provider_messages == [*wire_surface, final_answer]
 
 
 def test_context_threshold_emits_exact_effective_provider_context() -> None:

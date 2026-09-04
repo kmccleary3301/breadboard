@@ -406,7 +406,7 @@ def test_public_event_limit_fetches_visible_resume_after_hidden_annotation(
         )
     )
     session.resume()
-    session.compact(CompactionSnapshot(b"compacted", ("fact-a",)))
+    session.compact(CompactionSnapshot(b"[]", ("ctn_000001",)))
     session.complete("done")
     session_store.create_session(tmp_path, session)
 

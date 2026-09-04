@@ -139,6 +139,19 @@ def validate_raw_fact_ids(values: Any, name: str = "raw_fact_ids") -> tuple[str,
         raise ValueError(f"{name} must not contain duplicates")
     return facts
 
+def _validate_effective_context(context: bytes) -> None:
+    try:
+        messages = json.loads(context.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("effective_context must be UTF-8 JSON") from error
+    if not isinstance(messages, list) or any(
+        not isinstance(message, dict) for message in messages
+    ):
+        raise ValueError(
+            "effective_context must be a JSON array of message objects"
+        )
+
+
 def _decode_compaction_context(payload: Mapping[str, Any]) -> bytes:
     if payload.get("context_encoding") != "base64":
         raise ValueError("compaction context_encoding must be base64")
@@ -151,6 +164,7 @@ def _decode_compaction_context(payload: Mapping[str, Any]) -> bytes:
         raise ValueError("effective_context must be canonical base64")
     if _hash_bytes(context) != payload.get("context_sha256"):
         raise ValueError("compaction context_sha256 does not match effective_context")
+    _validate_effective_context(context)
     return context
 def _validate_compaction_payload(payload: Mapping[str, Any]) -> None:
     required = {
@@ -240,6 +254,7 @@ class CompactionSnapshot:
     def __post_init__(self) -> None:
         if type(self.effective_context) is not bytes:
             raise TypeError("effective_context must be bytes")
+        _validate_effective_context(self.effective_context)
         facts = validate_raw_fact_ids(self.raw_fact_ids)
         object.__setattr__(self, "raw_fact_ids", facts)
 @dataclass(frozen=True, slots=True)

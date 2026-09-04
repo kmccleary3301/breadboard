@@ -537,7 +537,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             and not session_state.has_persisted_compaction()
         ):
             return
-        session_state.persist_compaction_snapshot()
+        session_state.persist_compaction_snapshot(
+            session_state.final_provider_context()
+        )
 
     def request_stop(self) -> None:
         """Best-effort interrupt: stop the current run at the next safe boundary."""

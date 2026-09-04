@@ -340,6 +340,7 @@ def get_model_response(
         append_text_block=conductor._append_text_block,
         current_native_tools=getattr(conductor, "current_native_tools", None),
     )
+    session_state.record_provider_request_surface(send_messages)
 
     try:
         if per_turn_written_text and conductor.logger_v2.run_dir:

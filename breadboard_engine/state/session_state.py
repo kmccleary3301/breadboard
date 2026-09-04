@@ -194,6 +194,10 @@ class SessionState:
         self.ctree_store = CTreeStore()
         self._retained_raw_fact_ids: tuple[str, ...] = ()
         self._compaction_persisted_this_run = False
+        self._last_sent_provider_messages: Optional[List[Dict[str, Any]]] = None
+        self._provider_messages_before_last_send: Optional[
+            List[Dict[str, Any]]
+        ] = None
 
     def set_event_emitter(
         self,
@@ -540,6 +544,40 @@ class SessionState:
         """Serialize model-facing context and raw-fact changes with compaction."""
         with self._compaction_lock:
             yield
+
+    def record_provider_request_surface(
+        self,
+        effective_messages: List[Dict[str, Any]],
+    ) -> None:
+        if not isinstance(effective_messages, list) or any(
+            not isinstance(message, dict) for message in effective_messages
+        ):
+            raise TypeError("provider request surface must be a message array")
+        with self._compaction_lock:
+            self._last_sent_provider_messages = copy.deepcopy(effective_messages)
+            self._provider_messages_before_last_send = copy.deepcopy(
+                self.provider_messages
+            )
+
+    def final_provider_context(self) -> List[Dict[str, Any]]:
+        with self._compaction_lock:
+            if (
+                self._last_sent_provider_messages is None
+                or self._provider_messages_before_last_send is None
+            ):
+                return copy.deepcopy(self.provider_messages)
+            previous = self._provider_messages_before_last_send
+            if (
+                len(self.provider_messages) < len(previous)
+                or self.provider_messages[: len(previous)] != previous
+            ):
+                raise RuntimeError(
+                    "provider messages diverged after the last request"
+                )
+            return [
+                *copy.deepcopy(self._last_sent_provider_messages),
+                *copy.deepcopy(self.provider_messages[len(previous) :]),
+            ]
 
     def compaction_snapshot(
         self,
