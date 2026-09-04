@@ -182,12 +182,15 @@ class ChildSpec:
     workflow_step_id: str | None = None
     workflow_definition_hash: str | None = None
 
+    adapter_config: Mapping[str, Any] = field(default_factory=dict, compare=False)
     def __post_init__(self) -> None:
         if not isinstance(self.lock, EffectiveHarnessLock):
             raise TypeError("child lock must be an EffectiveHarnessLock")
         for value, name in ((self.title, "title"), (self.task, "task"), (self.worker_id, "worker_id"), (self.adapter_family, "adapter_family")):
             if type(value) is not str or not value.strip():
                 raise ValueError(f"child {name} must be non-empty")
+        if not isinstance(self.adapter_config, Mapping):
+            raise TypeError("child adapter config must be a mapping")
         workflow_fields = (
             self.workflow_id,
             self.workflow_step_id,
@@ -2774,6 +2777,11 @@ class DurableChildFactory:
             workflow_id=value.get("workflow_id"),
             workflow_step_id=value.get("workflow_step_id"),
             workflow_definition_hash=value.get("workflow_definition_hash"),
+            adapter_config=(
+                dict(value.get("adapter_config"))
+                if isinstance(value.get("adapter_config"), Mapping)
+                else {}
+            ),
         )
 
 class UnavailableChildAdapter:
@@ -2900,44 +2908,7 @@ class DurableChildReconciler:
                 None,
             )
             if process_factory is not None:
-                process_command: list[str] | None = None
-                for candidate in records:
-                    candidate_metadata = (
-                        candidate.metadata
-                        if isinstance(candidate.metadata, Mapping)
-                        else {}
-                    )
-                    candidate_state = candidate_metadata.get("durable_child")
-                    candidate_spec = (
-                        candidate_state.get("child_spec")
-                        if isinstance(candidate_state, Mapping)
-                        and candidate_state.get("adapter_family")
-                        == ProcessExecutionAdapter.family
-                        and candidate_metadata.get("workspace") == workspace
-                        else None
-                    )
-                    candidate_config = (
-                        candidate_spec.get("adapter_config")
-                        if isinstance(candidate_spec, Mapping)
-                        else None
-                    )
-                    command = (
-                        candidate_config.get("command")
-                        if isinstance(candidate_config, Mapping)
-                        else None
-                    )
-                    if isinstance(command, list):
-                        process_command = command
-                        break
-                if (
-                    not process_command
-                    or any(
-                        type(part) is not str or not part
-                        for part in process_command
-                    )
-                ):
-                    raise ChildError("durable process child command is malformed")
-                adapters.append(process_factory(command=tuple(process_command)))
+                adapters.append(process_factory())
         available_families = {adapter.family for adapter in adapters}
         adapters.extend(
             UnavailableChildAdapter(retained_family)
@@ -3201,6 +3172,12 @@ class RayJobAdapter:
         ).hexdigest()
         return f"{cls._actor_namespace_prefix}-{workspace_digest[:32]}"
 
+    @classmethod
+    def _manager_job_id(cls, job_id: str, workspace: Path | None) -> str:
+        if workspace is None:
+            return job_id
+        return f"{cls._actor_namespace(workspace)}:{job_id}"
+
     @staticmethod
     def _invocation_id(job_id: str) -> str:
         return "child-invocation:" + job_id
@@ -3305,11 +3282,12 @@ class RayJobAdapter:
     def recover(self, target: Mapping[str, Any]) -> ExecutionTarget | None:
         job_id = str(target.get("ref", "")).removeprefix("job:")
         workspace = self._target_workspace(target)
+        manager_job_id = self._manager_job_id(job_id, workspace)
         actor = self._lookup_actor(job_id, workspace)
         invocation_missing = actor is not None and self._invocation_state(actor, self._invocation_id(job_id)) == "missing"
         if invocation_missing:
             actor = None
-        job = self.orchestrator.job_manager.get(job_id)
+        job = self.orchestrator.job_manager.get(manager_job_id)
         metadata = target.get("metadata")
         if not isinstance(metadata, Mapping):
             return None
@@ -3326,13 +3304,15 @@ class RayJobAdapter:
         job_data = metadata.get("job") if isinstance(metadata, Mapping) else None
         if not isinstance(job_data, Mapping) or job_data.get("job_id") != job_id:
             return
-        if self.orchestrator.job_manager.get(job_id) is not None:
+        workspace = self._target_workspace(target)
+        manager_job_id = self._manager_job_id(job_id, workspace)
+        if self.orchestrator.job_manager.get(manager_job_id) is not None:
             return
         from breadboard_engine.orchestration.job_manager import JobRef
 
         try:
             job = JobRef(
-                job_id=job_id,
+                job_id=manager_job_id,
                 agent_id=str(job_data["agent_id"]),
                 owner_agent=str(job_data["owner_agent"]),
                 kind=str(job_data["kind"]),
@@ -3381,7 +3361,8 @@ class RayJobAdapter:
         return True
 
     def _mark_job_failed(self, target: Mapping[str, Any], job_id: str) -> None:
-        marked = self.orchestrator.mark_job_failed(job_id)
+        manager_job_id = self._manager_job_id(job_id, self._target_workspace(target))
+        marked = self.orchestrator.mark_job_failed(manager_job_id)
         metadata = target.get("metadata")
         job_data = metadata.get("job") if isinstance(metadata, Mapping) else None
         if isinstance(job_data, dict):
@@ -3431,23 +3412,29 @@ class RayJobAdapter:
     def start(self, activation: ChildActivation, spec: ChildSpec) -> ExecutionTarget:
         target_ref = activation.execution_target_ref
         job_id = target_ref.removeprefix("job:")
-        workspace = Path(activation.workspace) if activation.workspace is not None else self._workspace
+        invocation_id = self._invocation_id(job_id)
+        workspace = (
+            Path(activation.workspace).expanduser().resolve()
+            if activation.workspace is not None
+            else self._workspace
+        )
         if workspace is None:
             raise ChildError("Ray child adapter is not bound to a workspace")
+        manager_job_id = self._manager_job_id(job_id, workspace)
         artifact_store_root = activation.artifact_store_root or str(workspace / ".breadboard" / "artifacts")
         task_descriptor = {
             "child_session_id": activation.child_session_id,
             "recovery_ref": activation.recovery_ref,
             "task_hash": spec.retained()["task_hash"],
         }
-        job = self.orchestrator.job_manager.get(job_id)
+        job = self.orchestrator.job_manager.get(manager_job_id)
         if job is None:
             job = self.orchestrator.spawn_subagent(
                 owner_agent=activation.parent_session_id,
                 agent_id=activation.child_session_id,
                 async_mode=True,
                 task_descriptor=task_descriptor,
-                job_id=job_id,
+                job_id=manager_job_id,
             ).job
         elif not isinstance(job.task_descriptor, dict) or job.task_descriptor.get("invocation_id") != invocation_id:
             job.task_descriptor = dict(job.task_descriptor or {})
@@ -3467,12 +3454,12 @@ class RayJobAdapter:
                 self._submit_invocation(actor, invocation_id, spec.task)
         except BaseException:
             if self._lookup_actor(job_id, workspace) is None:
-                self.orchestrator.mark_job_failed(job_id)
+                self.orchestrator.mark_job_failed(manager_job_id)
             raise
         self._actors[self._actor_key(job_id, workspace)] = actor
         metadata = {
             "job": {
-                "job_id": job.job_id,
+                "job_id": job_id,
                 "agent_id": job.agent_id,
                 "owner_agent": job.owner_agent,
                 "kind": job.kind,
@@ -3486,8 +3473,10 @@ class RayJobAdapter:
         return ExecutionTarget(target_ref, volatile_handle=actor, metadata=metadata)
     def observe(self, target: Mapping[str, Any]) -> str:
         job_id = str(target.get("ref", "")).removeprefix("job:")
+        workspace = self._target_workspace(target)
+        manager_job_id = self._manager_job_id(job_id, workspace)
         self._restore_job(target, job_id)
-        job = self.orchestrator.job_manager.get(job_id)
+        job = self.orchestrator.job_manager.get(manager_job_id)
         if job is not None and job.state in {"failed", "killed"}:
             return str(job.state)
         metadata = target.get("metadata")
@@ -3516,7 +3505,6 @@ class RayJobAdapter:
                 job_data["state"] = "completed"
                 job_data["result_payload"] = dict(durable_payload)
             return "completed"
-        workspace = self._target_workspace(target)
         actor = self._lookup_actor(job_id, workspace)
         if actor is None:
             if self._actor_lookup_is_unavailable(job_id, workspace):
@@ -3526,7 +3514,7 @@ class RayJobAdapter:
             if isinstance(job_data, Mapping) and job_data.get("seq") == 0:
                 return "absent"
             if job is not None and job.state not in {"failed", "killed"}:
-                self.orchestrator.mark_job_failed(job_id)
+                self.orchestrator.mark_job_failed(manager_job_id)
             return "absent"
         if self._invocation_state(actor, self._invocation_id(job_id)) == "missing":
             if isinstance(job_data, Mapping) and job_data.get("seq") == 0:
@@ -3588,10 +3576,12 @@ class RayJobAdapter:
 
     def acknowledge_result(self, target: Mapping[str, Any]) -> None:
         job_id = str(target.get("ref", "")).removeprefix("job:")
+        workspace = self._target_workspace(target)
+        manager_job_id = self._manager_job_id(job_id, workspace)
         metadata = target.get("metadata")
         job_data = metadata.get("job") if isinstance(metadata, Mapping) else None
         payload = job_data.get("result_payload") if isinstance(job_data, Mapping) else None
-        job = self.orchestrator.job_manager.get(job_id)
+        job = self.orchestrator.job_manager.get(manager_job_id)
         if (not isinstance(payload, Mapping) or not payload) and job is not None:
             payload = getattr(job, "result_payload", None)
             if isinstance(job_data, dict) and isinstance(payload, Mapping):
@@ -3601,7 +3591,7 @@ class RayJobAdapter:
         if job is not None and job.state == "completed":
             marked = job
         else:
-            marked = self.orchestrator.mark_job_completed(job_id, result_payload=dict(payload))
+            marked = self.orchestrator.mark_job_completed(manager_job_id, result_payload=dict(payload))
         if marked is None:
             raise ChildError("completed Ray child could not be durably marked")
         if isinstance(job_data, dict):
@@ -3611,13 +3601,15 @@ class RayJobAdapter:
         self.release_terminal(target)
     def cancel(self, target: Mapping[str, Any]) -> bool:
         job_id = str(target.get("ref", "")).removeprefix("job:")
+        workspace = self._target_workspace(target)
+        manager_job_id = self._manager_job_id(job_id, workspace)
         metadata = target.get("metadata")
         job_data = metadata.get("job") if isinstance(metadata, Mapping) else None
         has_recovery_metadata = isinstance(job_data, Mapping) and all(
             key in job_data for key in ("agent_id", "owner_agent", "kind")
         )
         self._restore_job(target, job_id)
-        job = self.orchestrator.job_manager.get(job_id)
+        job = self.orchestrator.job_manager.get(manager_job_id)
         if job is not None and job.state in {"completed", "failed"}:
             return False
         if job is not None and job.state == "killed":
@@ -3627,7 +3619,7 @@ class RayJobAdapter:
             if has_recovery_metadata:
                 return False
             return (
-                self.orchestrator.mark_job_killed(job_id) is not None
+                self.orchestrator.mark_job_killed(manager_job_id) is not None
             )
         try:
             cancel = getattr(actor, "cancel", None)
@@ -3654,7 +3646,7 @@ class RayJobAdapter:
                     return False
         except BaseException:
             return False
-        marked = self.orchestrator.mark_job_killed(job_id)
+        marked = self.orchestrator.mark_job_killed(manager_job_id)
         if job is not None and marked is None:
             return False
         if isinstance(job_data, dict) and marked is not None:
@@ -3667,7 +3659,8 @@ class RayJobAdapter:
         self, target: Mapping[str, Any], spec: ChildSpec
     ) -> bytes | ArtifactRef | None:
         job_id = str(target.get("ref", "")).removeprefix("job:")
-        job = self.orchestrator.job_manager.get(job_id)
+        manager_job_id = self._manager_job_id(job_id, self._target_workspace(target))
+        job = self.orchestrator.job_manager.get(manager_job_id)
         payload = getattr(job, "result_payload", None) if job is not None else None
         metadata = target.get("metadata")
         job_data = metadata.get("job") if isinstance(metadata, Mapping) else None
@@ -3905,6 +3898,23 @@ class ProcessExecutionAdapter:
     def start(self, activation: ChildActivation, spec: ChildSpec) -> ExecutionTarget:
         workspace = self._workspace_path(activation)
         target_ref = activation.execution_target_ref
+        command = self.command
+        if spec.adapter_config:
+            adapter_config = spec.adapter_config
+            command_value = (
+                adapter_config.get("command")
+                if isinstance(adapter_config, Mapping)
+                else None
+            )
+            if (
+                not isinstance(command_value, list)
+                or not command_value
+                or any(
+                    type(part) is not str or not part for part in command_value
+                )
+            ):
+                raise ChildError("durable process child command is malformed")
+            command = tuple(command_value)
         status_path = self._status_path(target_ref, workspace)
         task_path = self._control_path(target_ref, "task", workspace)
         release_path = self._control_path(target_ref, "release", workspace)
@@ -3955,7 +3965,7 @@ class ProcessExecutionAdapter:
                 str(task_path),
                 str(status_path),
                 str(guard_path),
-                *self.command,
+                *command,
             ),
             stdin=subprocess.DEVNULL,
             start_new_session=True,

@@ -3417,14 +3417,16 @@ def test_ray_dead_cached_actor_is_evicted_and_terminalized(
             raise RuntimeError("actor is dead")
 
     orchestrator = MultiAgentOrchestrator(TeamConfig("ray-dead-cache"))
+    adapter = RayJobAdapter(orchestrator)
+    provider_job_id = "ray-dead-cache-job"
+    adapter.bind_workspace(tmp_path)
     spawned = orchestrator.spawn_subagent(
         owner_agent="parent-session",
         agent_id="child-session",
         async_mode=True,
+        job_id=adapter._manager_job_id(provider_job_id, tmp_path),
     )
-    adapter = RayJobAdapter(orchestrator)
-    adapter.bind_workspace(tmp_path)
-    actor_key = adapter._actor_key(spawned.job.job_id, tmp_path)
+    actor_key = adapter._actor_key(provider_job_id, tmp_path)
     adapter._actors[actor_key] = DeadActor()
     monkeypatch.setattr(
         ray,
@@ -3432,13 +3434,18 @@ def test_ray_dead_cached_actor_is_evicted_and_terminalized(
         lambda _name, **_kwargs: (_ for _ in ()).throw(ValueError("actor not found")),
     )
     target = {
-        "ref": f"job:{spawned.job.job_id}",
-        "metadata": {"job": {"job_id": spawned.job.job_id, "workspace": str(tmp_path)}},
+        "ref": f"job:{provider_job_id}",
+        "metadata": {"job": {"job_id": provider_job_id, "workspace": str(tmp_path)}},
     }
 
     assert adapter.observe(target) == "absent"
     assert actor_key not in adapter._actors
-    assert orchestrator.job_manager.get(spawned.job.job_id).state == "failed"
+    assert (
+        orchestrator.job_manager.get(
+            adapter._manager_job_id(provider_job_id, tmp_path)
+        ).state
+        == "failed"
+    )
 def test_process_identity_is_retained_before_restart_without_private_journal(tmp_path: Path) -> None:
     workspace, repository, parent, registry = _running_parent(tmp_path)
     adapter = ProcessExecutionAdapter(command=("/bin/sh", "-c", "sleep 30"))
@@ -3843,22 +3850,26 @@ def test_ray_cancel_signal_failure_retains_recovery_state(tmp_path: Path) -> Non
             raise RuntimeError("transient cancellation failure")
 
     orchestrator = MultiAgentOrchestrator(TeamConfig("ray-cancel-recovery"))
+    adapter = RayJobAdapter(orchestrator)
+    provider_job_id = "ray-cancel-recovery-job"
     spawned = orchestrator.spawn_subagent(
         owner_agent="parent-session",
         agent_id="child-session",
         async_mode=True,
+        job_id=adapter._manager_job_id(provider_job_id, tmp_path),
     )
     actor = Actor()
-    adapter = RayJobAdapter(orchestrator)
-    actor_key = adapter._actor_key(spawned.job.job_id, tmp_path)
+    actor_key = adapter._actor_key(provider_job_id, tmp_path)
     adapter._actors[actor_key] = actor
     target = {
-        "ref": f"job:{spawned.job.job_id}",
-        "metadata": {"job": {"job_id": spawned.job.job_id, "workspace": str(tmp_path)}},
+        "ref": f"job:{provider_job_id}",
+        "metadata": {"job": {"job_id": provider_job_id, "workspace": str(tmp_path)}},
     }
     assert adapter.cancel(target) is False
     assert adapter._actors[actor_key] is actor
-    assert orchestrator.job_manager.get(spawned.job.job_id).state == "accepted"
+    assert orchestrator.job_manager.get(
+        adapter._manager_job_id(provider_job_id, tmp_path)
+    ).state == "accepted"
 
 
 def test_ray_pending_cancellation_does_not_terminalize_job(tmp_path: Path) -> None:
@@ -3869,20 +3880,24 @@ def test_ray_pending_cancellation_does_not_terminalize_job(tmp_path: Path) -> No
             return "pending"
 
     orchestrator = MultiAgentOrchestrator(TeamConfig("ray-cancel-in-flight"))
+    adapter = RayJobAdapter(orchestrator)
+    provider_job_id = "ray-cancel-in-flight-job"
     spawned = orchestrator.spawn_subagent(
         owner_agent="parent-session",
         agent_id="child-session",
         async_mode=True,
+        job_id=adapter._manager_job_id(provider_job_id, tmp_path),
     )
-    adapter = RayJobAdapter(orchestrator)
-    adapter._actors[adapter._actor_key(spawned.job.job_id, tmp_path)] = Actor()
+    adapter._actors[adapter._actor_key(provider_job_id, tmp_path)] = Actor()
     target = {
-        "ref": f"job:{spawned.job.job_id}",
-        "metadata": {"job": {"job_id": spawned.job.job_id, "workspace": str(tmp_path)}},
+        "ref": f"job:{provider_job_id}",
+        "metadata": {"job": {"job_id": provider_job_id, "workspace": str(tmp_path)}},
     }
 
     assert adapter.cancel(target) is False
-    assert orchestrator.job_manager.get(spawned.job.job_id).state == "accepted"
+    assert orchestrator.job_manager.get(
+        adapter._manager_job_id(provider_job_id, tmp_path)
+    ).state == "accepted"
 
 
 def test_ray_actor_cancellation_waits_for_execution_group_to_quiesce() -> None:
@@ -3908,22 +3923,26 @@ def test_ray_observe_state_failure_stays_recovery_pending(tmp_path: Path) -> Non
             raise RuntimeError("transient state inspection failure")
 
     orchestrator = MultiAgentOrchestrator(TeamConfig("ray-observe-recovery"))
+    adapter = RayJobAdapter(orchestrator)
+    provider_job_id = "ray-observe-recovery-job"
     spawned = orchestrator.spawn_subagent(
         owner_agent="parent-session",
         agent_id="child-session",
         async_mode=True,
+        job_id=adapter._manager_job_id(provider_job_id, tmp_path),
     )
     actor = Actor()
-    adapter = RayJobAdapter(orchestrator)
-    actor_key = adapter._actor_key(spawned.job.job_id, tmp_path)
+    actor_key = adapter._actor_key(provider_job_id, tmp_path)
     adapter._actors[actor_key] = actor
     target = {
-        "ref": f"job:{spawned.job.job_id}",
-        "metadata": {"job": {"job_id": spawned.job.job_id, "workspace": str(tmp_path)}},
+        "ref": f"job:{provider_job_id}",
+        "metadata": {"job": {"job_id": provider_job_id, "workspace": str(tmp_path)}},
     }
     assert adapter.observe(target) == "pending"
     assert adapter._actors[actor_key] is actor
-    assert orchestrator.job_manager.get(spawned.job.job_id).state == "accepted"
+    assert orchestrator.job_manager.get(
+        adapter._manager_job_id(provider_job_id, tmp_path)
+    ).state == "accepted"
 
 def test_ray_result_rpc_failure_stays_recovery_pending(tmp_path: Path) -> None:
     from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
@@ -3936,20 +3955,24 @@ def test_ray_result_rpc_failure_stays_recovery_pending(tmp_path: Path) -> None:
             raise RuntimeError("transient result inspection failure")
 
     orchestrator = MultiAgentOrchestrator(TeamConfig("ray-result-recovery"))
+    adapter = RayJobAdapter(orchestrator)
+    provider_job_id = "ray-result-recovery-job"
     spawned = orchestrator.spawn_subagent(
         owner_agent="parent-session",
         agent_id="child-session",
         async_mode=True,
+        job_id=adapter._manager_job_id(provider_job_id, tmp_path),
     )
-    adapter = RayJobAdapter(orchestrator)
-    adapter._actors[adapter._actor_key(spawned.job.job_id, tmp_path)] = Actor()
+    adapter._actors[adapter._actor_key(provider_job_id, tmp_path)] = Actor()
     target = {
-        "ref": f"job:{spawned.job.job_id}",
-        "metadata": {"job": {"job_id": spawned.job.job_id, "workspace": str(tmp_path)}},
+        "ref": f"job:{provider_job_id}",
+        "metadata": {"job": {"job_id": provider_job_id, "workspace": str(tmp_path)}},
     }
 
     assert adapter.observe(target) == "pending"
-    assert orchestrator.job_manager.get(spawned.job.job_id).state == "accepted"
+    assert orchestrator.job_manager.get(
+        adapter._manager_job_id(provider_job_id, tmp_path)
+    ).state == "accepted"
 def test_ray_cancel_preserves_completed_actor_result(tmp_path: Path) -> None:
     from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
 
@@ -3964,18 +3987,20 @@ def test_ray_cancel_preserves_completed_actor_result(tmp_path: Path) -> None:
             return {"result_bytes": b"completed before cancellation"}
 
     orchestrator = MultiAgentOrchestrator(TeamConfig("ray-completed-cancel"))
+    adapter = RayJobAdapter(orchestrator)
+    provider_job_id = "ray-completed-cancel-job"
     spawned = orchestrator.spawn_subagent(
         owner_agent="parent-session",
         agent_id="child-session",
         async_mode=True,
+        job_id=adapter._manager_job_id(provider_job_id, tmp_path),
     )
-    adapter = RayJobAdapter(orchestrator)
-    adapter._actors[adapter._actor_key(spawned.job.job_id, tmp_path)] = Actor()
+    adapter._actors[adapter._actor_key(provider_job_id, tmp_path)] = Actor()
     target = {
-        "ref": f"job:{spawned.job.job_id}",
+        "ref": f"job:{provider_job_id}",
         "metadata": {
             "job": {
-                "job_id": spawned.job.job_id,
+                "job_id": provider_job_id,
                 "workspace": str(tmp_path),
                 "artifact_store_root": str(tmp_path / "artifacts"),
             }
@@ -3983,7 +4008,9 @@ def test_ray_cancel_preserves_completed_actor_result(tmp_path: Path) -> None:
     }
 
     assert adapter.cancel(target) is False
-    job = orchestrator.job_manager.get(spawned.job.job_id)
+    job = orchestrator.job_manager.get(
+        adapter._manager_job_id(provider_job_id, tmp_path)
+    )
     assert job is not None and job.state == "completed"
     assert target["metadata"]["job"]["state"] == "completed"
 def test_ray_cancel_after_restart_without_actor_remains_pending(
@@ -4168,7 +4195,9 @@ def test_ray_reserved_target_relaunches_after_clean_restart(
     assert recovered.launch_published is True
     assert launches == ["child task"]
     job = second_orchestrator.job_manager.get(
-        state.execution_target_ref.removeprefix("job:")
+        second_adapter._manager_job_id(
+            state.execution_target_ref.removeprefix("job:"), workspace
+        )
     )
     assert job is not None and job.state == "accepted"
 
@@ -4234,6 +4263,113 @@ def test_shared_ray_adapter_keeps_artifact_roots_isolated(
         str(root) for root in roots
     }
     assert set(seen_workspaces) == set(workspaces)
+
+def test_shared_job_manager_scopes_ray_ids_by_workspace(
+    tmp_path: Path,
+) -> None:
+    from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
+    from breadboard_engine.orchestration.job_manager import JobManager
+
+    class Actor:
+        def __init__(self, result: bytes) -> None:
+            self.result = result
+
+        def get_state(self) -> str:
+            return "completed"
+
+        def get_result(self) -> dict[str, bytes]:
+            return {"result_bytes": self.result}
+
+        def cancel(self) -> bool:
+            return True
+
+    shared_manager = JobManager()
+    orchestrator = MultiAgentOrchestrator(
+        TeamConfig("ray-shared-job-manager"),
+        job_manager=shared_manager,
+    )
+    actors: dict[Path, Actor] = {}
+
+    def launch(_job_id: str, workspace: Path, _task: str) -> Actor:
+        actor = Actor(workspace.name.encode())
+        actors[workspace] = actor
+        return actor
+
+    adapter = RayJobAdapter(orchestrator, actor_launcher=launch)
+    provider_job_id = "same-provider-job"
+    workspaces = (tmp_path / "workspace-a", tmp_path / "workspace-b")
+    for workspace in workspaces:
+        workspace.mkdir()
+
+    def activation(workspace: Path, child_id: str) -> ChildActivation:
+        return ChildActivation(
+            "parent-session",
+            "parent-session",
+            "parent-work",
+            child_id,
+            f"{child_id}-work",
+            f"{child_id}-attempt",
+            f"child://{child_id}/attempt/{child_id}-attempt",
+            f"job:{provider_job_id}",
+            adapter.family,
+            str(workspace),
+        )
+
+    targets = tuple(
+        adapter.start(
+            activation(workspace, f"child-{index}"),
+            _spec(adapter.family, f"shared job {index}"),
+        )
+        for index, workspace in enumerate(workspaces, 1)
+    )
+    assert [
+        target.metadata["job"]["job_id"]
+        for target in targets
+    ] == [provider_job_id, provider_job_id]
+    manager_jobs = tuple(
+        shared_manager.get(adapter._manager_job_id(provider_job_id, workspace))
+        for workspace in workspaces
+    )
+    assert all(job is not None for job in manager_jobs)
+    assert manager_jobs[0] is not manager_jobs[1]
+    assert adapter._actors[
+        adapter._actor_key(provider_job_id, workspaces[0])
+    ] is actors[workspaces[0]]
+    assert adapter._actors[
+        adapter._actor_key(provider_job_id, workspaces[1])
+    ] is actors[workspaces[1]]
+
+    assert adapter.observe(targets[0].retained()) == "completed"
+    adapter.acknowledge_result(targets[0].retained())
+    assert (
+        shared_manager.get(
+            adapter._manager_job_id(provider_job_id, workspaces[0])
+        ).state
+        == "completed"
+    )
+    assert (
+        shared_manager.get(
+            adapter._manager_job_id(provider_job_id, workspaces[1])
+        ).state
+        == "accepted"
+    )
+    assert adapter.cancel(targets[1].retained()) is True
+    assert (
+        shared_manager.get(
+            adapter._manager_job_id(provider_job_id, workspaces[0])
+        ).state
+        == "completed"
+    )
+    assert (
+        shared_manager.get(
+            adapter._manager_job_id(provider_job_id, workspaces[1])
+        ).state
+        == "killed"
+    )
+    assert {
+        adapter._actor_key(provider_job_id, workspace)
+        for workspace in workspaces
+    } == adapter._released_actor_ids
 
 
 def test_ray_adapter_launches_named_runtime_with_locked_task(tmp_path: Path) -> None:
@@ -4324,8 +4460,9 @@ def test_ray_result_persistence_failure_stays_retryable(tmp_path: Path, monkeypa
 
     monkeypatch.setattr(adapter, "_durably_prepare_result", reject_persistence)
     assert adapter.observe(target) == "accepted"
-    job = orchestrator.job_manager.get(target["ref"].removeprefix("job:"))
-    assert job is not None and job.state == "accepted" and job.result_payload is None
+    job = orchestrator.job_manager.get(
+        adapter._manager_job_id(target["ref"].removeprefix("job:"), workspace)
+    )
 
 
 @pytest.mark.parametrize("failure_type", (RuntimeError, FileNotFoundError))
@@ -4371,8 +4508,9 @@ def test_ray_result_integrity_failure_is_terminal(
     )
 
     assert adapter.observe(target) == "failed"
-    job = orchestrator.job_manager.get(target["ref"].removeprefix("job:"))
-    assert job is not None and job.state == "failed"
+    job = orchestrator.job_manager.get(
+        adapter._manager_job_id(target["ref"].removeprefix("job:"), tmp_path)
+    )
 def test_ray_malformed_completed_payload_fails_once(tmp_path: Path) -> None:
     from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
 
@@ -4396,8 +4534,9 @@ def test_ray_malformed_completed_payload_fails_once(tmp_path: Path) -> None:
     target = factory._record_state(activation.child_session_id).execution_target
     assert adapter.observe(target) == "failed"
     assert adapter.observe(target) == "failed"
-    job = orchestrator.job_manager.get(target["ref"].removeprefix("job:"))
-    assert job is not None and job.state == "failed"
+    job = orchestrator.job_manager.get(
+        adapter._manager_job_id(target["ref"].removeprefix("job:"), workspace)
+    )
 
 def test_ray_malformed_artifact_reference_fails_once(tmp_path: Path) -> None:
     from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
@@ -4431,8 +4570,9 @@ def test_ray_malformed_artifact_reference_fails_once(tmp_path: Path) -> None:
 
     assert adapter.observe(target) == "failed"
     assert adapter.observe(target) == "failed"
-    job = orchestrator.job_manager.get(target["ref"].removeprefix("job:"))
-    assert job is not None and job.state == "failed"
+    job = orchestrator.job_manager.get(
+        adapter._manager_job_id(target["ref"].removeprefix("job:"), workspace)
+    )
 
 
 
@@ -4464,8 +4604,9 @@ def test_ray_retained_completed_payload_is_validated_before_adoption(
     }
 
     assert adapter.observe(target) == "failed"
-    job = orchestrator.job_manager.get(job_id)
-    assert job is not None and job.state == "failed"
+    job = orchestrator.job_manager.get(
+        adapter._manager_job_id(job_id, tmp_path)
+    )
 
 
 def test_ray_cancellation_adopts_retained_completion_without_actor(
@@ -4782,20 +4923,24 @@ def test_ray_actor_failure_updates_job_manager(
 
     orchestrator = MultiAgentOrchestrator(TeamConfig("ray-actor-failure"))
     adapter = RayJobAdapter(orchestrator)
+    provider_job_id = "ray-actor-failure-job"
     spawned = orchestrator.spawn_subagent(
         owner_agent="parent-session",
         agent_id="child-session",
         async_mode=True,
         task_descriptor={"recovery_ref": "child://child-session/attempt/a"},
+        job_id=adapter._manager_job_id(provider_job_id, tmp_path),
     )
     monkeypatch.setattr(adapter, "_lookup_actor", lambda _job_id, _workspace: FailedActor())
     target = {
-        "ref": f"job:{spawned.job.job_id}",
-        "metadata": {"job": {"job_id": spawned.job.job_id, "workspace": str(tmp_path)}},
+        "ref": f"job:{provider_job_id}",
+        "metadata": {"job": {"job_id": provider_job_id, "workspace": str(tmp_path)}},
     }
 
     assert adapter.observe(target) == "failed"
-    assert orchestrator.job_manager.get(spawned.job.job_id).state == "failed"
+    assert orchestrator.job_manager.get(
+        adapter._manager_job_id(provider_job_id, tmp_path)
+    ).state == "failed"
 
 
 def test_ray_absent_nonterminal_job_is_failed(
@@ -4806,19 +4951,23 @@ def test_ray_absent_nonterminal_job_is_failed(
 
     orchestrator = MultiAgentOrchestrator(TeamConfig("ray-absent"))
     adapter = RayJobAdapter(orchestrator)
+    provider_job_id = "ray-absent-job"
     spawned = orchestrator.spawn_subagent(
         owner_agent="parent-session",
         agent_id="child-session",
         async_mode=True,
         task_descriptor={"recovery_ref": "child://child-session/attempt/a"},
+        job_id=adapter._manager_job_id(provider_job_id, tmp_path),
     )
     monkeypatch.setattr(adapter, "_lookup_actor", lambda job_id, _workspace: None)
     target = {
-        "ref": f"job:{spawned.job.job_id}",
-        "metadata": {"job": {"job_id": spawned.job.job_id, "workspace": str(tmp_path)}},
+        "ref": f"job:{provider_job_id}",
+        "metadata": {"job": {"job_id": provider_job_id, "workspace": str(tmp_path)}},
     }
     assert adapter.observe(target) == "absent"
-    assert orchestrator.job_manager.get(spawned.job.job_id).state == "failed"
+    assert orchestrator.job_manager.get(
+        adapter._manager_job_id(provider_job_id, tmp_path)
+    ).state == "failed"
 
 
 def test_ray_missing_invocation_cancels_detached_actor_and_job(
@@ -4839,19 +4988,21 @@ def test_ray_missing_invocation_cancels_detached_actor_and_job(
             return True
 
     orchestrator = MultiAgentOrchestrator(TeamConfig("ray-missing-invocation"))
+    adapter = RayJobAdapter(orchestrator)
+    provider_job_id = "ray-missing-invocation-job"
     spawned = orchestrator.spawn_subagent(
         owner_agent="parent-session",
         agent_id="child-session",
         async_mode=True,
         task_descriptor={"recovery_ref": "child://child-session/attempt/a"},
+        job_id=adapter._manager_job_id(provider_job_id, tmp_path),
     )
     actor = Actor()
-    adapter = RayJobAdapter(orchestrator)
-    actor_key = adapter._actor_key(spawned.job.job_id, tmp_path)
+    actor_key = adapter._actor_key(provider_job_id, tmp_path)
     adapter._actors[actor_key] = actor
     target = {
-        "ref": f"job:{spawned.job.job_id}",
-        "metadata": {"job": {"job_id": spawned.job.job_id, "workspace": str(tmp_path)}},
+        "ref": f"job:{provider_job_id}",
+        "metadata": {"job": {"job_id": provider_job_id, "workspace": str(tmp_path)}},
     }
     killed: list[object] = []
     import ray
@@ -4866,7 +5017,9 @@ def test_ray_missing_invocation_cancels_detached_actor_and_job(
 
     assert adapter.observe(target) == "absent"
     assert actor.cancelled
-    assert orchestrator.job_manager.get(spawned.job.job_id).state == "killed"
+    assert orchestrator.job_manager.get(
+        adapter._manager_job_id(provider_job_id, tmp_path)
+    ).state == "killed"
     assert killed == [(actor, True)]
     assert actor_key not in adapter._actors
 def test_registry_record_lock_uses_portable_process_lock(
@@ -5239,26 +5392,29 @@ def test_ray_actor_lookup_runtime_failure_stays_pending(
     from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
 
     orchestrator = MultiAgentOrchestrator(TeamConfig("ray-lookup-unavailable"))
+    adapter = RayJobAdapter(orchestrator)
+    adapter.bind_workspace(tmp_path)
+    provider_job_id = "ray-lookup-unavailable-job"
     spawned = orchestrator.spawn_subagent(
         owner_agent="parent-session",
         agent_id="child-session",
         async_mode=True,
+        job_id=adapter._manager_job_id(provider_job_id, tmp_path),
     )
-    adapter = RayJobAdapter(orchestrator)
-    adapter.bind_workspace(tmp_path)
     monkeypatch.setattr(
         ray,
         "get_actor",
         lambda _name, **_kwargs: (_ for _ in ()).throw(RuntimeError("Ray unavailable")),
     )
     target = {
-        "ref": f"job:{spawned.job.job_id}",
-        "metadata": {"job": {"job_id": spawned.job.job_id}},
+        "ref": f"job:{provider_job_id}",
+        "metadata": {"job": {"job_id": provider_job_id}},
     }
 
     assert adapter.observe(target) == "pending"
-    assert orchestrator.job_manager.get(spawned.job.job_id).state == "accepted"
-
+    assert orchestrator.job_manager.get(
+        adapter._manager_job_id(provider_job_id, tmp_path)
+    ).state == "accepted"
 
 def test_reconcile_adopts_failed_child_owner_before_target_observation(
     tmp_path: Path,
@@ -6445,6 +6601,76 @@ def test_reconciler_cancels_process_child_when_ray_is_representative(
         assert all(state.terminal_count == 1 for state in states)
     finally:
         process_adapter.cancel(process_target)
+
+def test_reconciler_relaunches_process_child_from_its_retained_command(
+    tmp_path: Path,
+) -> None:
+    workspace, repository, parent_work, registry = _running_parent(tmp_path)
+    command_a = ("/bin/sh", "-c", "printf a >> child-a.txt; exit 1")
+    command_b = ("/bin/sh", "-c", "printf b >> child-b.txt; exit 1")
+    factory_a = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[ProcessExecutionAdapter(command=command_a)],
+    )
+    first = factory_a.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent_work.read_model.work_item_id,
+        spec=ChildSpec(
+            "first process child",
+            "first process task",
+            _lock(),
+            "child-worker",
+            ProcessExecutionAdapter.family,
+            retry_policy=RetryPolicy(2, True),
+        ),
+    )
+    factory_b = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[ProcessExecutionAdapter(command=command_b)],
+    )
+    second = factory_b.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent_work.read_model.work_item_id,
+        spec=ChildSpec(
+            "second process child",
+            "second process task",
+            _lock(),
+            "child-worker",
+            ProcessExecutionAdapter.family,
+            retry_policy=RetryPolicy(2, True),
+        ),
+    )
+
+    deadline = time.monotonic() + 2.0
+    marker = workspace / "child-b.txt"
+    process_adapter = factory_b.adapters[ProcessExecutionAdapter.family]
+    target = factory_b._record_state(second.child_session_id).execution_target
+    observed = process_adapter.observe(target)
+    while (
+        (not marker.exists() or marker.read_text() != "b" or observed != "absent")
+        and time.monotonic() < deadline
+    ):
+        time.sleep(0.01)
+        observed = process_adapter.observe(target)
+    assert observed == "absent"
+
+    reconciler = DurableChildReconciler(
+        registry=registry,
+        repository=repository,
+        adapter_factories=[ProcessExecutionAdapter],
+    )
+    asyncio_run(reconciler(second.recovery_ref))
+
+    deadline = time.monotonic() + 2.0
+    while marker.read_text() != "bb" and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert marker.read_text() == "bb"
 
 
 def test_settlement_reservation_clears_when_child_attempt_is_paused(
