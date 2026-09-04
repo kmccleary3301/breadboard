@@ -1332,6 +1332,52 @@ def test_cancel_tree_honors_nonpropagating_child_policy(tmp_path: Path) -> None:
     assert retained["status"] == "running"
     canceled = factory.cancel(second.child_session_id, expected_revision=int(retained["revision"]))
     assert canceled.terminal_count == 1
+
+
+def test_direct_nonleaf_cancel_signals_descendants_before_settlement(
+    tmp_path: Path,
+) -> None:
+    class TrackingAdapter(RetryAdapter):
+        def __init__(self) -> None:
+            super().__init__()
+            self.canceled: list[str] = []
+
+        def cancel(self, target):
+            self.canceled.append(str(target["ref"]))
+            return None
+
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = TrackingAdapter()
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+    child = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family, "nonleaf child"),
+    )
+    grandchild = factory.start(
+        parent_session_id=child.child_session_id,
+        root_session_id="parent-session",
+        parent_work_item_id=child.child_work_item_id,
+        spec=_spec(adapter.family, "grandchild"),
+    )
+
+    canceled = factory.cancel(
+        child.child_session_id,
+        expected_revision=factory._record_state(child.child_session_id).revision,
+    )
+
+    assert canceled.terminal_outcome == "canceled"
+    assert factory._record_state(grandchild.child_session_id).terminal_outcome == "canceled"
+    assert adapter.canceled == [
+        grandchild.execution_target_ref,
+        child.execution_target_ref,
+    ]
 def test_rejected_parent_cancel_leaves_no_replayed_intent(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()

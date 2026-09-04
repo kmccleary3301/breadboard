@@ -258,6 +258,56 @@ class WorkItemRepository:
                 with ProcessLock(self._path):
                     self._reload()
                     self._append_locked(expected_revisions, rows)
+    def append_child_join(
+        self,
+        work_item_id: str,
+        child_work_item_id: str,
+        child_session_id: str,
+        outcome: str,
+        result_refs: tuple[str, ...],
+        occurred_at: str,
+    ) -> tuple[WorkItemEvent, ...]:
+        def append_locked() -> tuple[WorkItemEvent, ...]:
+            current = tuple(self._streams.get(work_item_id, ()))
+            for existing in current:
+                if (
+                    existing.kind != "child.joined"
+                    or existing.payload.get("child_work_item_id")
+                    != child_work_item_id
+                ):
+                    continue
+                same = (
+                    existing.payload.get("child_session_id") == child_session_id
+                    and existing.payload.get("outcome") == outcome
+                    and tuple(existing.payload.get("result_refs", ()))
+                    == result_refs
+                )
+                if not same:
+                    raise RuntimeError(
+                        "child join conflicts with an existing outcome"
+                    )
+                return current
+            event = WorkItemEvent(
+                work_item_id,
+                len(current) + 1,
+                "child.joined",
+                occurred_at,
+                {
+                    "child_work_item_id": child_work_item_id,
+                    "child_session_id": child_session_id,
+                    "outcome": outcome,
+                    "result_refs": list(result_refs),
+                },
+            )
+            self._append_locked({work_item_id: len(current)}, (event,))
+            return (*current, event)
+
+        with self._lock:
+            if self._path is None:
+                return append_locked()
+            with ProcessLock(self._path):
+                self._reload()
+                return append_locked()
 @dataclass(frozen=True, slots=True)
 class WorkItemSnapshot:
     work_item_id: str; title: str; status: str; parent_work_item_id: str | None
@@ -525,27 +575,19 @@ class WorkItem:
     def join_child(self, child_work_item_id: str, child_session_id: str, outcome: str, result_refs: Iterable[str] = ()) -> WorkItemSnapshot:
         refs = tuple(result_refs)
         with self._lock:
-            self._refresh()
-            for event in self._events:
-                if event.kind != "child.joined" or event.payload.get("child_work_item_id") != child_work_item_id:
-                    continue
-                same = (
-                    event.payload.get("child_session_id") == child_session_id
-                    and event.payload.get("outcome") == outcome
-                    and tuple(event.payload.get("result_refs", ())) == refs
-                )
-                if not same:
-                    raise RuntimeError("child join conflicts with an existing outcome")
-                return self._snapshot
-            return self._append(
-                "child.joined",
-                lambda: {
-                    "child_work_item_id": child_work_item_id,
-                    "child_session_id": child_session_id,
-                    "outcome": outcome,
-                    "result_refs": list(refs),
-                },
+            events = self._repository.append_child_join(
+                self._work_item_id,
+                child_work_item_id,
+                child_session_id,
+                outcome,
+                refs,
+                self._clock.now(),
             )
+            snapshot = rebuild_work_item(events)
+            self._events = list(events)
+            self._snapshot = snapshot
+            self._set_fences(snapshot)
+            return snapshot
     def _expiry_event(self, occurred_at: str) -> WorkItemEvent | None:
         lease = self._snapshot.active_lease
         if lease is None or not lease._expired_by(occurred_at): return None

@@ -3386,7 +3386,7 @@ class SessionService:
                                 or current_turn.terminal_outcome is not None
                             ):
                                 return
-                            await scheduled_operation()
+                        await scheduled_operation()
                     except Exception:
                         advance_queue = (
                             turn.state == "active"

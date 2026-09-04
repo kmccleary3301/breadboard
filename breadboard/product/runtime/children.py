@@ -1534,8 +1534,88 @@ class DurableChildFactory:
         if type(reason) is not str or not reason.strip():
             raise ValueError("reason must be a non-empty string")
         state = self._record_state(child_session_id)
+        child_events = self.repository.read(state.child_work_item_id)
+        if child_events:
+            child = WorkItem.restore(
+                self.repository,
+                state.child_work_item_id,
+                clock=self.clock,
+                ids=self.ids,
+            )
+            if (
+                child.read_model.status not in _TERMINAL
+                and child.read_model.cancellation_policy.propagate_to_children
+                and child.read_model.child_work_item_ids
+            ):
+                return self._cancel_nonleaf(
+                    state,
+                    expected_revision=expected_revision,
+                    reason=reason,
+                )
         with self._lifecycle_lock, self._owner_lock(state.parent_work_item_id), self._owner_process_lock(state.parent_work_item_id), self._product_transition_guard(state.parent_session_id, state.root_session_id, state.child_session_id):
             return self._cancel(child_session_id, expected_revision=expected_revision, reason=reason)
+    def _cancel_nonleaf(
+        self,
+        state: ChildState,
+        *,
+        expected_revision: int,
+        reason: str,
+    ) -> ChildState:
+        with self._lifecycle_lock, self._owner_lock(state.parent_work_item_id), self._owner_process_lock(state.parent_work_item_id), self._product_transition_guard(state.parent_session_id, state.root_session_id, state.child_session_id):
+            state = self._record_state(state.child_session_id)
+            if state.revision != expected_revision:
+                raise ExpectedRevisionConflict(
+                    f"stale child revision: expected {expected_revision}, actual {state.revision}"
+                )
+            if state.terminal_count:
+                raise LateResultRejected("cannot cancel a terminal child")
+            if state.settlement is not None or state.cancellation_requested:
+                raise ExpectedRevisionConflict("child cancellation is already reserved")
+            child = WorkItem.restore(
+                self.repository,
+                state.child_work_item_id,
+                clock=self.clock,
+                ids=self.ids,
+            )
+            policy = child.read_model.cancellation_policy
+            if policy.mode == "never" or "operator" not in policy.cancellable_by:
+                raise ChildError("operator is not authorized to cancel this Work Item")
+            current_attempt = child.read_model.current_attempt
+            if (
+                current_attempt is not None
+                and policy.cleanup == "checkpoint_then_stop"
+                and current_attempt.checkpoint_ref is None
+            ):
+                raise ValueError(
+                    "checkpoint_then_stop requires a current checkpoint"
+                )
+            state = self._cas(
+                state,
+                status="cancel_requested",
+                cancellation_requested=True,
+                cancellation_reason=reason,
+            )
+        self.cancel_tree(
+            parent_session_id=state.child_session_id,
+            parent_work_item_id=state.child_work_item_id,
+            reason=reason,
+        )
+        with self._lifecycle_lock, self._owner_lock(state.parent_work_item_id), self._owner_process_lock(state.parent_work_item_id), self._product_transition_guard(state.parent_session_id, state.root_session_id, state.child_session_id):
+            state = self._record_state(state.child_session_id)
+            child = WorkItem.restore(
+                self.repository,
+                state.child_work_item_id,
+                clock=self.clock,
+                ids=self.ids,
+            )
+            if not self._execution_stopped_after_cancel(state):
+                return state
+            return self._adopt_terminal_work_item(
+                state,
+                child,
+                allow_cancellation_intent=True,
+                execution_stopped=True,
+            )
     def _cancel(self, child_session_id: str, *, expected_revision: int, reason: str = "operator request") -> ChildState:
         state = self._record_state(child_session_id)
         if state.terminal_count:
@@ -2504,6 +2584,9 @@ class DurableChildFactory:
             RetryPolicy.from_dict(value["retry_policy"]),
             ResumePolicy.from_dict(value["resume_policy"]),
             CancellationPolicy.from_dict(value["cancellation_policy"]),
+            workflow_id=value.get("workflow_id"),
+            workflow_step_id=value.get("workflow_step_id"),
+            workflow_definition_hash=value.get("workflow_definition_hash"),
         )
 
 class UnavailableChildAdapter:
@@ -3212,6 +3295,8 @@ class ProcessExecutionAdapter:
     family = "execution-world-process"
 
     def __init__(self, command: Sequence[str] = ("/bin/sh", "-c", "sleep 30")) -> None:
+        if os.name == "nt":
+            raise ChildError("process child adapter requires POSIX process-group support")
         self.command = tuple(command)
         self._processes: dict[str, subprocess.Popen[bytes]] = {}
         self._status_paths: dict[str, Path] = {}
@@ -3476,8 +3561,8 @@ class ProcessExecutionAdapter:
             metadata["launch_phase"] = "release_committed"
             if publisher is not None:
                 publisher(target)
-            self._release(target_ref)
             accepted = True
+            self._release(target_ref)
             metadata["launch_phase"] = "released"
             if publisher is not None:
                 publisher(target)
