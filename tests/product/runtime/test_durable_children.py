@@ -415,6 +415,8 @@ def test_successful_process_child_reconciles_as_completed(
         1,
     )
     assert (workspace / "reconciled-task.txt").read_text() == "child task"
+    assert adapter._control_path(activation.execution_target_ref, "task").exists() is False
+    assert adapter._control_path(activation.execution_target_ref, "release").exists() is False
 
 
 
@@ -607,6 +609,8 @@ def test_process_cancel_escalates_sigkill_before_settlement(tmp_path: Path) -> N
     assert process.poll() is not None
     assert adapter.observe(canceled.execution_target) == "absent"
     assert adapter._pending_pid(activation.execution_target_ref) is None
+    assert adapter._control_path(activation.execution_target_ref, "task").exists() is False
+    assert adapter._control_path(activation.execution_target_ref, "release").exists() is False
 
 
 def test_process_cancel_leaves_recovery_pending_when_exit_unverified(
@@ -2818,6 +2822,63 @@ def test_pending_release_observation_never_cancels_and_relaunches(tmp_path: Path
     assert recovered == state
     assert adapter.starts == 1
     assert adapter.cancels == 0
+
+
+def test_reconciler_commits_pending_process_release_before_execution(
+    tmp_path: Path,
+) -> None:
+    class DurableReleaseAdapter:
+        family = "durable-release"
+
+        def __init__(self) -> None:
+            self.release_phases: list[str] = []
+
+        def start(self, activation, spec):
+            return ExecutionTarget(
+                activation.execution_target_ref,
+                metadata={"launch_phase": "released"},
+            )
+
+        def observe(self, target):
+            return "running"
+
+        def release_committed(self, target):
+            self.release_phases.append(target["metadata"]["launch_phase"])
+            return True
+
+        def recover(self, target):
+            raise AssertionError("committed wrapper must be released before recovery")
+
+        def cancel(self, target):
+            return True
+
+        def prepare_result(self, target, spec):
+            return None
+
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = DurableReleaseAdapter()
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family, "durable release"),
+    )
+    state = factory._record_state(activation.child_session_id)
+    target = dict(state.execution_target)
+    target["metadata"] = {"launch_phase": "pending"}
+    state = factory._cas(state, execution_target=target)
+
+    recovered = factory.reconcile(activation.recovery_ref)
+
+    assert recovered.execution_target["metadata"]["launch_phase"] == "released"
+    assert recovered.revision == state.revision + 2
+    assert adapter.release_phases == ["release_committed"]
 
 
 def test_reserved_empty_target_published_once(tmp_path: Path) -> None:

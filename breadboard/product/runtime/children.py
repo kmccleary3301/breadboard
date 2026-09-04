@@ -2286,6 +2286,25 @@ class DurableChildFactory:
             return state
         if observed in {"running", "started", "live", "accepted"}:
             adapter = self.adapters[state.adapter_family]
+            metadata = state.execution_target.get("metadata")
+            release_committed = getattr(adapter, "release_committed", None)
+            if (
+                isinstance(metadata, Mapping)
+                and metadata.get("launch_phase") == "pending"
+                and callable(release_committed)
+            ):
+                committed_target = dict(state.execution_target)
+                committed_metadata = dict(metadata)
+                committed_metadata["launch_phase"] = "release_committed"
+                committed_target["metadata"] = committed_metadata
+                state = self._cas(state, execution_target=committed_target)
+                if release_committed(state.execution_target):
+                    released_target = dict(state.execution_target)
+                    released_metadata = dict(committed_metadata)
+                    released_metadata["launch_phase"] = "released"
+                    released_target["metadata"] = released_metadata
+                    state = self._cas(state, execution_target=released_target)
+                return state
             release_pending = getattr(adapter, "release_pending", None)
             if callable(release_pending) and release_pending(state.execution_target):
                 return state
@@ -2324,6 +2343,10 @@ class DurableChildFactory:
                 return self._cancel_late_settlement(state)
         child = WorkItem.restore(self.repository, state.child_work_item_id, clock=self.clock, ids=self.ids)
         adapter = self.adapters[state.adapter_family]
+        if observed == "absent":
+            acknowledge = getattr(adapter, "acknowledge_result", None)
+            if callable(acknowledge):
+                acknowledge(state.execution_target)
         if observed == "absent" and getattr(adapter, "absence_is_terminal", False):
             if child.read_model.status in _TERMINAL:
                 return self._adopt_terminal_work_item(state, child)
@@ -3170,6 +3193,13 @@ class ProcessExecutionAdapter:
     def _release(self, target_ref: str) -> None:
         self._write_control(self._known_control_path(target_ref, "release"), b"1")
 
+    def _clear_handoff(self, target_ref: str) -> None:
+        for suffix in ("task", "release"):
+            try:
+                self._known_control_path(target_ref, suffix).unlink(missing_ok=True)
+            except ChildError:
+                return
+
     def _completed_status(self, target_ref: str) -> bool | None:
         path = self._status_paths.get(target_ref)
         if path is None:
@@ -3380,13 +3410,8 @@ class ProcessExecutionAdapter:
                 return "absent"
             return "running" if alive is True else "pending"
         return "running"
-    def release_pending(self, target: Mapping[str, Any]) -> bool:
-        metadata = target.get("metadata")
-        if not isinstance(metadata, Mapping):
-            return False
-        phase = metadata.get("launch_phase")
-        if phase not in {"pending", "release_committed"}:
-            return False
+
+    def _verified_pending_process(self, target: Mapping[str, Any]) -> bool:
         pid = target.get("pid")
         token = target.get("start_token")
         group = target.get("process_group_id")
@@ -3401,11 +3426,24 @@ class ProcessExecutionAdapter:
             )
         except (OSError, ProcessLookupError, subprocess.CalledProcessError):
             return False
-        if str(target.get("ref", "")) not in command:
+        return str(target.get("ref", "")) in command
+
+    def release_committed(self, target: Mapping[str, Any]) -> bool:
+        if not self._verified_pending_process(target):
             return False
-        if phase == "release_committed":
-            self._release(str(target["ref"]))
+        self._release(str(target["ref"]))
         return True
+
+    def release_pending(self, target: Mapping[str, Any]) -> bool:
+        metadata = target.get("metadata")
+        if not isinstance(metadata, Mapping):
+            return False
+        phase = metadata.get("launch_phase")
+        if phase == "pending":
+            return self._verified_pending_process(target)
+        if phase == "release_committed":
+            return self.release_committed(target)
+        return False
 
     def recover(self, target: Mapping[str, Any]) -> ExecutionTarget | None:
         pid, token, group = target.get("pid"), target.get("start_token"), target.get("process_group_id")
@@ -3449,7 +3487,15 @@ class ProcessExecutionAdapter:
             }
         ) != "running":
             return None
-        return ExecutionTarget(str(target["ref"]), pid, token, group, metadata=dict(target.get("metadata") or {}))
+        recovered_metadata = dict(target.get("metadata") or {})
+        recovered_metadata.setdefault("launch_phase", "pending")
+        return ExecutionTarget(
+            str(target["ref"]),
+            pid,
+            token,
+            group,
+            metadata=recovered_metadata,
+        )
     def _signal_verified(self, target: Mapping[str, Any], signum: int) -> bool:
         pid = target.get("pid")
         token = target.get("start_token")
@@ -3472,29 +3518,30 @@ class ProcessExecutionAdapter:
 
     def cancel(self, target: Mapping[str, Any]) -> bool:
         observed = self.observe(target)
+        target_ref = str(target.get("ref", ""))
         if observed == "absent":
+            self._clear_handoff(target_ref)
             return True
         if observed != "running":
             return False
         if not self._signal_verified(target, 15):
             return False
         if self._wait_for_exit(target, self._TERM_TIMEOUT_SECONDS):
+            self._clear_handoff(target_ref)
             return True
         if not self._signal_verified(target, 9):
             return False
-        return self._wait_for_exit(target, self._KILL_TIMEOUT_SECONDS)
+        exited = self._wait_for_exit(target, self._KILL_TIMEOUT_SECONDS)
+        if exited:
+            self._clear_handoff(target_ref)
+        return exited
 
     def prepare_result(self, target: Mapping[str, Any], spec: ChildSpec) -> bytes | None:
         return None
 
 
     def acknowledge_result(self, target: Mapping[str, Any]) -> None:
-        target_ref = str(target.get("ref", ""))
-        for suffix in ("task", "release"):
-            try:
-                self._known_control_path(target_ref, suffix).unlink(missing_ok=True)
-            except ChildError:
-                return
+        self._clear_handoff(str(target.get("ref", "")))
 
 
 
