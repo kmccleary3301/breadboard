@@ -643,10 +643,17 @@ class DurableChildFactory:
             metadata = record.metadata if isinstance(record.metadata, dict) else {}
             retained = metadata.get("durable_child")
             if (
-                isinstance(retained, Mapping)
-                and retained.get("parent_work_item_id") == parent_work_item_id
+                not isinstance(retained, Mapping)
+                or retained.get("parent_work_item_id") != parent_work_item_id
             ):
-                states.append(self._record_state(record.session_id))
+                continue
+            state = self._record_state(record.session_id)
+            repository_path = state.child_spec.get("work_item_repository_path")
+            if (
+                metadata.get("workspace") == str(self.workspace)
+                and repository_path == str(self._repository_path)
+            ):
+                states.append(state)
         return tuple(sorted(states, key=lambda state: state.child_session_id))
     def prepare_cancel_tree(
         self,
@@ -1862,9 +1869,12 @@ class DurableChildFactory:
                     ids=self.ids,
                 )
                 if refreshed.read_model.status in _TERMINAL:
-                    raise ChildError(
-                        "Work Item terminal outcome disagrees with settlement"
-                    ) from error
+                    if refreshed.read_model.status != outcome:
+                        raise ChildError(
+                            "Work Item terminal outcome disagrees with settlement"
+                        ) from error
+                else:
+                    raise
         parent_work = WorkItem.restore(self.repository, state.parent_work_item_id, clock=self.clock, ids=self.ids)
         parent_work.join_child(state.child_work_item_id, state.child_session_id, outcome, result_refs)
         state = self._cas(state, status=outcome, terminal_outcome=outcome, terminal_count=1, result_refs=tuple(result_refs), settlement=None, joined=True)

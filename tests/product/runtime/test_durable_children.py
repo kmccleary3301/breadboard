@@ -6365,6 +6365,7 @@ def test_workflow_reconciles_retained_predelegation_child_without_stream(
                 media_type="text/plain; charset=utf-8",
             ).as_dict(),
             "task_artifact_store": str(factory.artifacts._root),
+            "work_item_repository_path": str(factory._repository_path),
         },
         execution_target={"ref": "reserved:child-startup-replay"},
     )
