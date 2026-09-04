@@ -655,15 +655,17 @@ export function makeSshSlurmBackend(
         readOutput(execution.stdoutPath),
         readOutput(execution.stderrPath),
       ])
+      const terminalResult = await resultFor(
+        execution,
+        status,
+        numericExitCode,
+        stdout.content,
+        stderr.content,
+      )
+      submitted.delete(identity.jobId)
       return {
         state: status,
-        result: await resultFor(
-          execution,
-          status,
-          numericExitCode,
-          stdout.content,
-          stderr.content,
-        ),
+        result: terminalResult,
         evidenceRefs: [
           ...schedulerEvidenceRefs(
             sshTarget,

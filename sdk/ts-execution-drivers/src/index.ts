@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto"
 import { lstatSync, readFileSync } from "node:fs"
 import { chmod, lstat, mkdir, rename, rm, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 
@@ -342,7 +342,7 @@ export function buildCanonicalSandboxEvidence(input: {
 }
 
 export function canonicalSandboxArtifactRoot(
-  parentRoot = tmpdir(),
+  parentRoot = join(homedir(), ".breadboard"),
 ): string {
   const userNamespace = process.getuid === undefined
     ? "current-user"

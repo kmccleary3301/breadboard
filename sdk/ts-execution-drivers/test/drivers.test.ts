@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
 import assert from "node:assert/strict"
@@ -5497,6 +5497,14 @@ test("execution world does not retain a session ID after an empty-command start 
   assert.equal(accepted.result?.descriptor.terminal_session_id, "term-prelaunch-validation")
   assert.equal(startCalls, 1)
 })
+
+test("default sandbox artifact root is anchored in the user home", () => {
+  assert.equal(
+    canonicalSandboxArtifactRoot().startsWith(`${join(homedir(), ".breadboard")}/`),
+    true,
+  )
+})
+
 
 test("canonical sandbox artifact roots are user-specific children", () => {
   const parent = join(tmpdir(), "shared-parent")
