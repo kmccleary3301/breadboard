@@ -5347,6 +5347,98 @@ def test_parent_cancellation_refreshes_cross_process_descendants(
         if isinstance(record.metadata.get("durable_child"), dict)
     }
 
+def test_parent_cancellation_fences_concurrent_child_start(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from breadboard_engine.api.cli_bridge.models import SessionStatus
+    from breadboard_engine.api.cli_bridge.registry.records import SessionRecord
+
+    workspace, repository, parent_work, registry = _running_parent(tmp_path)
+    asyncio_run(
+        registry.create(
+            SessionRecord(
+                "parent-session",
+                status=SessionStatus.RUNNING,
+                metadata={"workspace": str(workspace)},
+            )
+        )
+    )
+    entered_refresh = threading.Event()
+    release_refresh = threading.Event()
+    original_refresh = registry._refresh_records_from_disk_locked
+
+    def pause_refresh() -> None:
+        entered_refresh.set()
+        if not release_refresh.wait(timeout=2):
+            raise RuntimeError("test did not release cancellation refresh")
+        original_refresh()
+
+    monkeypatch.setattr(registry, "_refresh_records_from_disk_locked", pause_refresh)
+    cancellation_errors: list[BaseException] = []
+
+    def cancel_parent() -> None:
+        try:
+            asyncio_run(
+                registry.close_admission_for_parent_cancellations(
+                    "parent-session",
+                    requests=(
+                        {
+                            "work_item_id": parent_work.read_model.work_item_id,
+                            "reason": "operator request",
+                            "child_recovery_refs": (),
+                        },
+                    ),
+                    expected_child_recovery_refs=(),
+                )
+            )
+        except BaseException as error:
+            cancellation_errors.append(error)
+
+    cancellation_thread = threading.Thread(target=cancel_parent)
+    cancellation_thread.start()
+    assert entered_refresh.wait(timeout=2)
+
+    adapter = RetryAdapter()
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+    start_errors: list[BaseException] = []
+
+    def start_child() -> None:
+        try:
+            factory.start(
+                parent_session_id="parent-session",
+                root_session_id="parent-session",
+                parent_work_item_id=parent_work.read_model.work_item_id,
+                spec=_spec(adapter.family, "concurrent child"),
+            )
+        except BaseException as error:
+            start_errors.append(error)
+
+    start_thread = threading.Thread(target=start_child)
+    start_thread.start()
+    time.sleep(0.05)
+    assert start_thread.is_alive()
+    release_refresh.set()
+    cancellation_thread.join(timeout=2)
+    start_thread.join(timeout=2)
+
+    assert not cancellation_thread.is_alive()
+    assert not start_thread.is_alive()
+    assert cancellation_errors == []
+    assert len(start_errors) == 1
+    assert isinstance(start_errors[0], ChildError)
+    assert "cancellation is pending" in str(start_errors[0])
+    assert adapter.starts == 0
+    assert factory.child_states(
+        parent_work_item_id=parent_work.read_model.work_item_id
+    ) == ()
+
+
 
 def test_reconciler_persists_complete_nested_intent_before_signaling(
     tmp_path: Path,
@@ -5593,6 +5685,37 @@ def _hold_replayed_workflow_decision(
     )
     while True:
         time.sleep(1)
+
+
+@pytest.mark.parametrize(
+    ("parent_outcome", "expected_action"),
+    (("failed", "fail"), ("canceled", "cancel")),
+)
+def test_workflow_decision_honors_terminal_parent_outcome(
+    tmp_path: Path,
+    parent_outcome: str,
+    expected_action: str,
+) -> None:
+    workspace, repository, parent_work, registry = _running_parent(tmp_path)
+    if parent_outcome == "failed":
+        parent_work.fail("parent_failed", "workflow parent failed")
+    else:
+        parent_work.cancel("operator", "workflow parent canceled")
+    decision = ReplayableWorkflowController(
+        DurableChildFactory(
+            workspace,
+            registry=registry,
+            repository=repository,
+            adapters=[WorkflowAdapter()],
+        ),
+        workflow_id="terminal-parent",
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent_work.read_model.work_item_id,
+        definition=_workflow_definition(),
+    ).decision()
+
+    assert decision.action == expected_action
 
 
 def test_workflow_decision_replays_across_controller_restart(tmp_path: Path) -> None:

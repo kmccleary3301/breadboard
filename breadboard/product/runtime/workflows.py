@@ -298,8 +298,14 @@ def project_workflow_decision(
         )
     )
     blocked = tuple(sorted(unstarted - set(ready)))
-    if failed:
+    if parent.value.status == "failed":
         action: WorkflowAction = "fail"
+    elif parent.value.status == "canceled":
+        action = "cancel"
+    elif parent.value.status == "completed":
+        action = "complete"
+    elif failed:
+        action = "fail"
     elif canceled:
         action = "cancel"
     elif len(completed) == len(definition.steps):

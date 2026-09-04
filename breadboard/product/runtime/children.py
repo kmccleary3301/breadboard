@@ -635,6 +635,18 @@ class DurableChildFactory:
     def _owner_lock(cls, key: str) -> threading.RLock:
         with cls._owner_locks_guard:
             return cls._owner_locks.setdefault(key, threading.RLock())
+    def _tree_root_session_id(self, session_id: str) -> str:
+        record = self._registry("get", session_id)
+        metadata = record.metadata if record is not None and isinstance(record.metadata, Mapping) else {}
+        retained = metadata.get("durable_child")
+        root_session_id = (
+            retained.get("root_session_id")
+            if isinstance(retained, Mapping)
+            else session_id
+        )
+        if not isinstance(root_session_id, str) or not root_session_id.strip():
+            raise ChildError("durable child root Session identity is invalid")
+        return root_session_id
     def child_states(self, *, parent_work_item_id: str) -> tuple[ChildState, ...]:
         if type(parent_work_item_id) is not str or not parent_work_item_id.strip():
             raise ValueError("parent_work_item_id must be a non-empty string")
@@ -658,7 +670,8 @@ class DurableChildFactory:
         if type(reason) is not str or not reason.strip():
             raise ValueError("reason must be a non-empty string")
         transition_ids = self._root_transition_session_ids(parent_session_id)
-        with self._lifecycle_lock, self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id), self._product_transition_guard(*transition_ids):
+        root_session_id = self._tree_root_session_id(parent_session_id)
+        with self._lifecycle_lock, self._tree_process_lock(root_session_id), self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id), self._product_transition_guard(*transition_ids):
             return self._cancel_tree(
                 parent_session_id=parent_session_id,
                 parent_work_item_id=parent_work_item_id,
@@ -676,7 +689,8 @@ class DurableChildFactory:
         if type(reason) is not str or not reason.strip():
             raise ValueError("reason must be a non-empty string")
         transition_ids = self._root_transition_session_ids(parent_session_id)
-        with self._lifecycle_lock, self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id), self._product_transition_guard(*transition_ids):
+        root_session_id = self._tree_root_session_id(parent_session_id)
+        with self._lifecycle_lock, self._tree_process_lock(root_session_id), self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id), self._product_transition_guard(*transition_ids):
             return self._cancel_tree(
                 parent_session_id=parent_session_id,
                 parent_work_item_id=parent_work_item_id,
@@ -991,6 +1005,13 @@ class DurableChildFactory:
             )
         return tuple(settled)
     @contextmanager
+    def _tree_process_lock(self, root_session_id: str):
+        lock_path = self.workspace / ".breadboard" / f"child-tree-{hashlib.sha256(root_session_id.encode()).hexdigest()}.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with ProcessLock(lock_path):
+            yield
+
+    @contextmanager
     def _owner_process_lock(self, key: str):
         lock_path = self.workspace / ".breadboard" / f"child-owner-{hashlib.sha256(key.encode()).hexdigest()}.lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1215,7 +1236,7 @@ class DurableChildFactory:
         self._status(state)
         return state
     def start(self, *, parent_session_id: str, root_session_id: str, parent_work_item_id: str, spec: ChildSpec) -> ChildActivation:
-        with self._lifecycle_lock, self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id):
+        with self._lifecycle_lock, self._tree_process_lock(root_session_id), self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id):
             return self._start(parent_session_id=parent_session_id, root_session_id=root_session_id, parent_work_item_id=parent_work_item_id, spec=spec)
     def _start(self, *, parent_session_id: str, root_session_id: str, parent_work_item_id: str, spec: ChildSpec) -> ChildActivation:
         if spec.adapter_family not in self.adapters:

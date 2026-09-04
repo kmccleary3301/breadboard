@@ -5,6 +5,7 @@ import json
 import os
 import tempfile
 from contextlib import contextmanager
+from functools import wraps
 from datetime import datetime
 from pathlib import Path
 from typing import (
@@ -57,6 +58,42 @@ _PROVIDER_USAGE_FIELDS = {
     "reasoningTokens",
     "extensions",
 }
+
+def _fence_parent_cancellation(method):
+    @wraps(method)
+    async def fenced(self, session_id: str, *args: Any, **kwargs: Any):
+        record = await self.get(session_id)
+        if record is None:
+            raise RuntimeError(
+                "parent cancellation requires a retained parent SessionRecord"
+            )
+        metadata = record.metadata if isinstance(record.metadata, Mapping) else {}
+        retained_child = metadata.get("durable_child")
+        root_session_id = (
+            retained_child.get("root_session_id")
+            if isinstance(retained_child, Mapping)
+            else session_id
+        )
+        if not isinstance(root_session_id, str) or not root_session_id.strip():
+            raise RuntimeError("parent cancellation root Session identity is invalid")
+        workspace = metadata.get("workspace")
+        if isinstance(workspace, str) and workspace.strip():
+            lock_root = Path(workspace).expanduser().resolve() / ".breadboard"
+        elif self._state_root is not None:
+            lock_root = self._state_root.parent / ".breadboard-child-tree-locks"
+        else:
+            return await method(self, session_id, *args, **kwargs)
+        lock_root.mkdir(parents=True, exist_ok=True)
+        lock_path = lock_root / (
+            "child-tree-"
+            + hashlib.sha256(root_session_id.encode()).hexdigest()
+            + ".lock"
+        )
+        with ProcessLock(lock_path):
+            return await method(self, session_id, *args, **kwargs)
+
+    return fenced
+
 
 
 def _retained_skills_selection(value: Any) -> Dict[str, Any] | None:
@@ -386,6 +423,7 @@ class PersistenceMixin:
             ),
         )
 
+    @_fence_parent_cancellation
     async def close_admission_for_parent_cancellations(
         self,
         session_id: str,
