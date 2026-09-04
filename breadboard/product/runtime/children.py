@@ -1407,11 +1407,12 @@ class DurableChildFactory:
         if result is None:
             spec = self._spec(state)
             result = self.adapters[state.adapter_family].prepare_result(state.execution_target, spec)
+        artifact_store = self._artifact_store_for_state(state)
         if isinstance(result, ArtifactRef):
-            self.artifacts.read(result)
+            artifact_store.read(result)
             refs = (result.digest,)
         elif isinstance(result, bytes):
-            refs = (self.artifacts.put(result).digest,)
+            refs = (artifact_store.put(result).digest,)
         elif result is None:
             refs = ()
         else:

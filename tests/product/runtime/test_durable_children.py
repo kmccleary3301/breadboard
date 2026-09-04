@@ -1285,6 +1285,64 @@ def test_cancel_tree_adopts_each_child_from_its_retained_artifact_store(
 
 
 
+def test_cancel_tree_prepares_adopted_sibling_result_in_retained_store(
+    tmp_path: Path,
+) -> None:
+    class PreparedRetryAdapter(RetryAdapter):
+        def prepare_result(self, target, spec):
+            return b"retained-sibling-result"
+
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    first_store = ArtifactStore(tmp_path / "first-artifacts")
+    second_store = ArtifactStore(tmp_path / "second-artifacts")
+    first_factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[PreparedRetryAdapter()],
+        artifact_store=first_store,
+    )
+    second_factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[PreparedRetryAdapter()],
+        artifact_store=second_store,
+    )
+    first_factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec("retry-adapter", "first sibling"),
+    )
+    second = second_factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec("retry-adapter", "second sibling"),
+    )
+    child = WorkItem.restore(repository, second.child_work_item_id)
+    attempt = child.read_model.current_attempt
+    assert attempt is not None
+    child.complete("completed before result preparation", attempt_id=attempt.attempt_id)
+
+    settled = first_factory.cancel_tree(
+        parent_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+    )
+
+    adopted = next(
+        state for state in settled if state.child_session_id == second.child_session_id
+    )
+    assert adopted.terminal_outcome == "completed"
+    assert adopted.result_prepared is True
+    assert len(adopted.result_refs) == 1
+    digest = adopted.result_refs[0].removeprefix("sha256:")
+    relative = Path("sha256") / digest[:2] / digest
+    assert (second_store._root / relative).read_bytes() == b"retained-sibling-result"
+    assert not (first_store._root / relative).exists()
+
+
 def test_cancel_tree_adopts_completed_child_after_parent_completion(
     tmp_path: Path,
 ) -> None:
