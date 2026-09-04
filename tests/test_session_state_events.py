@@ -463,6 +463,54 @@ def test_context_threshold_emits_exact_effective_provider_context() -> None:
     assert json.loads(base64.b64decode(encoded)) == effective_messages
     assert json.loads(base64.b64decode(encoded)) != state.provider_messages
 
+
+def test_context_compaction_holds_mutation_lock_through_persistence() -> None:
+    started = threading.Event()
+    finished = threading.Event()
+    captured: Dict[str, Any] = {}
+    writer: list[threading.Thread] = []
+
+    def emit(
+        event_type: str,
+        payload: Dict[str, Any],
+        *,
+        turn: Optional[int] = None,
+    ) -> None:
+        if event_type != "conversation.compaction.end":
+            return
+        captured.update(payload)
+
+        def add_message() -> None:
+            started.set()
+            state.add_message({"role": "user", "content": "after-boundary"})
+            finished.set()
+
+        worker = threading.Thread(target=add_message)
+        writer.append(worker)
+        worker.start()
+        assert started.wait(timeout=1)
+        assert not finished.is_set()
+
+    state = SessionState(
+        "ws",
+        "image",
+        {},
+        event_emitter=emit,
+        product_compaction_owner=True,
+    )
+    effective_messages = [{"role": "user", "content": "before-boundary"}]
+    ContextWindowGuard(max_tokens=1, warn_ratio=1.0).maybe_compact(
+        state,
+        effective_messages,
+    )
+    writer[0].join(timeout=1)
+
+    assert finished.is_set()
+    assert json.loads(base64.b64decode(captured["effective_context"])) == effective_messages
+    emitted_ids = captured["raw_fact_ids"]
+    final_ids = state.compaction_snapshot().raw_fact_ids
+    assert tuple(emitted_ids) == final_ids[:-1]
+
 def test_context_threshold_without_durable_owner_remains_warning_only() -> None:
     collector = EventCollector()
     state = SessionState("ws", "image", {}, event_emitter=collector)
@@ -635,6 +683,33 @@ def test_compaction_snapshot_serializes_message_and_fact_mutation() -> None:
         {"content": "after-boundary", "role": "user"}
     ]
     assert len(after.raw_fact_ids) == 1
+
+
+def test_restored_raw_fact_ids_serialize_with_context_mutation() -> None:
+    state = SessionState("ws", "image", {})
+    state.restore_raw_fact_ids(["ctn_000001"])
+    started = threading.Event()
+    finished = threading.Event()
+
+    def restore() -> None:
+        started.set()
+        state.restore_raw_fact_ids(["ctn_000001", "ctn_000002"])
+        finished.set()
+
+    with state._compaction_lock:
+        worker = threading.Thread(target=restore)
+        worker.start()
+        assert started.wait(timeout=1)
+        assert not finished.is_set()
+        assert state.compaction_snapshot().raw_fact_ids == ("ctn_000001",)
+    worker.join(timeout=1)
+
+    assert finished.is_set()
+    assert state.compaction_snapshot().raw_fact_ids == (
+        "ctn_000001",
+        "ctn_000002",
+    )
+
 
 def test_persistent_snapshot_waits_for_message_fact_transaction() -> None:
     state = SessionState("ws", "image", {})

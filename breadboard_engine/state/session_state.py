@@ -578,16 +578,28 @@ class SessionState:
             turn=self._active_turn_index,
         )
 
+    def persist_compaction_snapshot(
+        self,
+        effective_messages: Optional[List[Dict[str, Any]]] = None,
+    ) -> CompactionSnapshot:
+        """Snapshot and persist one compaction boundary without admitting mutations."""
+        with self._compaction_lock:
+            snapshot = self.compaction_snapshot(effective_messages)
+            self.emit_compaction_snapshot(snapshot)
+            return snapshot
+
     def restore_raw_fact_ids(self, raw_fact_ids: Any) -> None:
         """Reserve identities retained by the Product Session owner."""
         if not isinstance(raw_fact_ids, (list, tuple)):
             raise ValueError("raw_fact_ids must be an array")
         retained = tuple(raw_fact_ids)
-        self.ctree_store = CTreeStore()
-        self.ctree_store.reserve_node_ids(retained)
-        self._retained_raw_fact_ids = retained
-        self._last_ctree_node_id = None
-        self._last_ctree_snapshot = None
+        with self._compaction_lock:
+            restored = CTreeStore()
+            restored.reserve_node_ids(retained)
+            self.ctree_store = restored
+            self._retained_raw_fact_ids = retained
+            self._last_ctree_node_id = None
+            self._last_ctree_snapshot = None
 
     def restore_ctree_events(self, events: Any) -> None:
         """Restore retained C-Tree identities before admitting new facts."""
