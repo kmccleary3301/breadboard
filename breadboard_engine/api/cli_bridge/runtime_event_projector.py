@@ -916,10 +916,7 @@ class RuntimeEventProjector:
             normalized_payload = self._normalize_permission_request(normalized_payload)
         elif evt is EventType.PERMISSION_RESPONSE:
             normalized_payload = self._normalize_permission_response(normalized_payload)
-        elif (
-            evt is EventType.CONVERSATION_COMPACTION_END
-            and "effective_context" in normalized_payload
-        ):
+        elif evt is EventType.CONVERSATION_COMPACTION_END:
             normalized_payload = self._record_context_compaction(
                 normalized_payload
             )
