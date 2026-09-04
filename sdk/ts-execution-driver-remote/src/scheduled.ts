@@ -86,6 +86,13 @@ export interface ScheduledExecutionDriverOptionsV1 {
     evidence: ScheduledExecutionEvidenceV1,
   ) => Promise<void> | void
 }
+export interface ScheduledExecutionDriverRegistrationV1 {
+  readonly backend: ScheduledExecutionBackendV1
+  readonly options: Omit<
+    ScheduledExecutionDriverOptionsV1,
+    "driverId" | "placementClass"
+  >
+}
 interface ActiveScheduledExecution {
   readonly handle: Promise<ScheduledExecutionHandleV1>
   readonly requestKey: string
@@ -365,18 +372,24 @@ export function makeScheduledExecutionDriver(
   ): Promise<SandboxResultV1> {
     if (entry.cancellation) return entry.cancellation
     const cancellation = entry.handle.then(async (handle) => {
+      const deadline = Date.now() + cancellationObservationTimeoutMs
+      const cleanupController = new AbortController()
       const cleanupContext: ExecutionDriverTerminationContextV1 = {
         reason: context.reason,
-        signal: new AbortController().signal,
-        deadlineAtMs: Date.now() + cancellationObservationTimeoutMs,
+        signal: cleanupController.signal,
+        deadlineAtMs: deadline,
       }
       try {
-        await backend.cancel(handle.executionId, cleanupContext)
+        await settleBefore(
+          backend.cancel(handle.executionId, cleanupContext),
+          deadline,
+          `${driverId} cancellation exceeded the cleanup deadline`,
+        )
       } catch (error: unknown) {
+        cleanupController.abort(error)
         await recordUnconfirmedCancellation(entry, handle)
         throw backendFailure(driverId, "cancellation", error)
       }
-      const deadline = Date.now() + cancellationObservationTimeoutMs
       while (true) {
         let observation: ScheduledExecutionObservationV1
         try {

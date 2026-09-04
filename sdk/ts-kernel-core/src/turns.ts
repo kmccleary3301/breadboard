@@ -147,14 +147,18 @@ export async function executeDriverMediatedToolTurn(
     placementId: `${request.request_id}:placement:${placementClass}`,
     placementClass,
     runtimeId:
-      placementClass === "local_process"
-        ? "breadboard.ts-execution-driver-local"
-        : placementClass === "remote_worker" ||
-            placementClass === "delegated_python" ||
-            placementClass === "delegated_oci" ||
-            placementClass === "delegated_microvm"
-          ? "breadboard.ts-execution-driver-remote"
-          : "breadboard.ts-execution-driver-oci",
+      options.driverIdHint === "ray"
+        ? "breadboard.ts-execution-driver-ray"
+        : options.driverIdHint === "slurm"
+          ? "breadboard.ts-execution-driver-slurm"
+          : placementClass === "local_process"
+            ? "breadboard.ts-execution-driver-local"
+            : placementClass === "remote_worker" ||
+                placementClass === "delegated_python" ||
+                placementClass === "delegated_oci" ||
+                placementClass === "delegated_microvm"
+              ? "breadboard.ts-execution-driver-remote"
+              : "breadboard.ts-execution-driver-oci",
   })
   const world = options.executionWorld ?? createKernelExecutionWorld(options)
   const worldResult = await world.execute({

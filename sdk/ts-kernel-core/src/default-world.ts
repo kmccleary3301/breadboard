@@ -17,9 +17,12 @@ import {
   type OciTerminalSessionAdapter,
 } from "@breadboard/execution-driver-oci"
 import {
+  makeRayExecutionDriver,
   makeRemoteExecutionDriver,
+  makeSlurmExecutionDriver,
   type RemoteExecutionHttpOptions,
   type RemoteSandboxExecutor,
+  type ScheduledExecutionDriverRegistrationV1,
 } from "@breadboard/execution-driver-remote"
 
 export interface KernelExecutionWorldOptions {
@@ -41,6 +44,8 @@ export interface KernelExecutionWorldOptions {
   readonly ociTerminalAdapter?: OciTerminalSessionAdapter
   readonly remoteExecutor?: RemoteSandboxExecutor
   readonly remoteHttp?: RemoteExecutionHttpOptions
+  readonly ray?: ScheduledExecutionDriverRegistrationV1
+  readonly slurm?: ScheduledExecutionDriverRegistrationV1
   readonly defaultDeadlineMs?: number | null
   readonly terminationGraceMs?: number
 }
@@ -188,7 +193,17 @@ export function createKernelExecutionWorld(options: KernelExecutionWorldOptions 
     terminalAdapter: options.ociTerminalAdapter,
   })
   const remoteDriver = makeRemoteExecutionDriver(options.remoteExecutor, options.remoteHttp)
-  const baseDrivers = [localDriver, ociDriver, remoteDriver]
+  const baseDrivers: TerminalSessionDriverV1[] = [
+    localDriver,
+    ociDriver,
+    remoteDriver,
+    ...(options.ray
+      ? [makeRayExecutionDriver(options.ray.backend, options.ray.options)]
+      : []),
+    ...(options.slurm
+      ? [makeSlurmExecutionDriver(options.slurm.backend, options.slurm.options)]
+      : []),
+  ]
   const drivers = options.executeSandbox
     ? baseDrivers.map((driver) => withSandboxOverride(driver, options.executeSandbox!))
     : baseDrivers

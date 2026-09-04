@@ -28,7 +28,12 @@ import {
   type TerminalSessionStartResultV1,
 } from "./index.js"
 
-export type ExecutionDriverHintV1 = "trusted_local" | "oci" | "remote"
+export type ExecutionDriverHintV1 =
+  | "trusted_local"
+  | "oci"
+  | "remote"
+  | "ray"
+  | "slurm"
 
 export interface ExecutionDriverExecutionContextV1 {
   readonly signal: AbortSignal
@@ -197,9 +202,11 @@ export interface ExecutionWorldV1 {
 }
 
 const DRIVER_ORDER: Record<ExecutionDriverHintV1, string[]> = {
-  trusted_local: ["local-process", "oci", "remote"],
-  oci: ["oci", "local-process", "remote"],
-  remote: ["remote", "oci", "local-process"],
+  trusted_local: ["local-process", "oci", "remote", "ray", "slurm"],
+  oci: ["oci", "local-process", "remote", "ray", "slurm"],
+  remote: ["remote", "ray", "slurm", "oci", "local-process"],
+  ray: ["ray", "remote", "slurm", "oci", "local-process"],
+  slurm: ["slurm", "remote", "ray", "oci", "local-process"],
 }
 
 function orderDrivers<T extends ExecutionDriverV1>(drivers: readonly T[], hint?: ExecutionDriverHintV1): T[] {
@@ -831,6 +838,7 @@ export function createExecutionWorld(input: {
               const termination = await terminateExecution("cancelled")
               resolveTerminal?.({
                 status: "failed",
+                result: termination.result,
                 error,
                 executionStarted: true,
                 terminationRequested: Boolean(driver.terminate),
@@ -887,7 +895,18 @@ export function createExecutionWorld(input: {
                 reason: "execution_cancelled",
                 previous: terminal.result,
               })
-            : assertValid<SandboxResultV1>("sandboxResult", terminal.result)
+            : status === "failed" && terminal.error
+              ? buildSandboxFailureResult({
+                  request,
+                  status: "failed",
+                  message:
+                    terminal.error instanceof Error
+                      ? terminal.error.message
+                      : "Execution driver failed",
+                  reason: "adapter_execution_failed",
+                  previous: terminal.result,
+                })
+              : assertValid<SandboxResultV1>("sandboxResult", terminal.result)
         : buildSandboxFailureResult({
             request,
             status,
@@ -1710,6 +1729,8 @@ export function chooseExecutionPlacementClass(
   capability: ExecutionCapabilityV1,
   driverIdHint?: ExecutionDriverHintV1,
 ): ExecutionPlacementV1["placement_class"] {
+  if (driverIdHint === "ray") return "delegated_python"
+  if (driverIdHint === "slurm") return "remote_worker"
   if (driverIdHint === "remote" || capability.isolation_class === "remote_service") {
     switch (capability.isolation_class) {
       case "remote_service":

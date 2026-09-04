@@ -1748,6 +1748,60 @@ test("createKernelExecutionWorld with executeSandbox override advertises and exe
   assert.equal(result.driverId, "remote")
 })
 
+test("createKernelExecutionWorld registers configured Ray and Slurm drivers", () => {
+  const capability = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap:scheduled-world",
+    security_tier: "multi_tenant",
+    isolation_class: "remote_service",
+    secret_mode: "ref_only",
+    evidence_mode: "replay_strict",
+  } as const
+  const backend = {
+    backendId: "configured-scheduler",
+    async submit() {
+      return { executionId: "configured-1" }
+    },
+    async observe() {
+      return { state: "running" as const }
+    },
+    async cancel() {},
+  }
+  const registration = {
+    backend,
+    options: {
+      recordEvidence() {},
+    },
+  }
+  const rayWorld = createKernelExecutionWorld({ ray: registration })
+  const slurmWorld = createKernelExecutionWorld({ slurm: registration })
+
+  assert.equal(rayWorld.select({
+    capability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place:ray:configured",
+      placement_class: "delegated_python",
+      runtime_id: "ray",
+      capability_id: capability.capability_id,
+    },
+    driverIdHint: "ray",
+  }).driverId, "ray")
+  assert.equal(slurmWorld.select({
+    capability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place:slurm:configured",
+      placement_class: "remote_worker",
+      runtime_id: "slurm",
+      capability_id: capability.capability_id,
+    },
+    driverIdHint: "slurm",
+  }).driverId, "slurm")
+})
+
+
+
 test("executeDriverMediatedToolTurn preserves image_ref, workspace_ref, and observable refs in tool call, outcome, and render", async () => {
   const request = {
     schema_version: "bb.run_request.v1",
