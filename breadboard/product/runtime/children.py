@@ -1641,6 +1641,9 @@ class DurableChildFactory:
         observed = str(adapter.observe(state.execution_target)).lower()
         if observed not in {"completed", "failed"}:
             return self._record_state(state.child_session_id)
+        cleanup_handoff = getattr(adapter, "cleanup_handoff", None)
+        if callable(cleanup_handoff):
+            cleanup_handoff(state.execution_target)
         current = self._record_state(state.child_session_id)
         if observed == "completed" and not current.result_prepared:
             current = self.prepare_result(
@@ -2344,9 +2347,9 @@ class DurableChildFactory:
         child = WorkItem.restore(self.repository, state.child_work_item_id, clock=self.clock, ids=self.ids)
         adapter = self.adapters[state.adapter_family]
         if observed == "absent":
-            acknowledge = getattr(adapter, "acknowledge_result", None)
-            if callable(acknowledge):
-                acknowledge(state.execution_target)
+            cleanup_handoff = getattr(adapter, "cleanup_handoff", None)
+            if callable(cleanup_handoff):
+                cleanup_handoff(state.execution_target)
         if observed == "absent" and getattr(adapter, "absence_is_terminal", False):
             if child.read_model.status in _TERMINAL:
                 return self._adopt_terminal_work_item(state, child)
@@ -3539,6 +3542,9 @@ class ProcessExecutionAdapter:
     def prepare_result(self, target: Mapping[str, Any], spec: ChildSpec) -> bytes | None:
         return None
 
+
+    def cleanup_handoff(self, target: Mapping[str, Any]) -> None:
+        self._clear_handoff(str(target.get("ref", "")))
 
     def acknowledge_result(self, target: Mapping[str, Any]) -> None:
         self._clear_handoff(str(target.get("ref", "")))
