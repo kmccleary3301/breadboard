@@ -818,14 +818,20 @@ class DurableChildFactory:
         if prepare_only:
             return tuple(descendants)
         if not admission_preclosed:
+            child_recovery_refs = [
+                state.recovery_ref for state in descendants
+            ]
             self._registry(
-                "close_admission_for_parent_cancellation",
+                "close_admission_for_parent_cancellations",
                 parent_session_id,
-                work_item_id=parent_work_item_id,
-                reason=reason,
-                child_recovery_refs=[
-                    state.recovery_ref for state in descendants
-                ],
+                requests=(
+                    {
+                        "work_item_id": parent_work_item_id,
+                        "reason": reason,
+                        "child_recovery_refs": child_recovery_refs,
+                    },
+                ),
+                expected_child_recovery_refs=child_recovery_refs,
             )
         if product_status in _TERMINAL and work_status not in _TERMINAL:
             try:
@@ -1828,6 +1834,13 @@ class DurableChildFactory:
         parent_work.join_child(state.child_work_item_id, state.child_session_id, outcome, result_refs)
         state = self._cas(state, status=outcome, terminal_outcome=outcome, terminal_count=1, result_refs=tuple(result_refs), settlement=None, joined=True)
         self._status(state)
+        release_terminal = getattr(
+            self.adapters[state.adapter_family],
+            "release_terminal",
+            None,
+        )
+        if callable(release_terminal):
+            release_terminal(state.execution_target)
         return state
 
     def _adopt_terminal_work_item(
@@ -2812,7 +2825,8 @@ class RayJobAdapter:
             return
         self.orchestrator.job_manager.restore_job(job)
 
-    def _terminate_actor(self, job_id: str) -> None:
+    def release_terminal(self, target: Mapping[str, Any]) -> None:
+        job_id = str(target.get("ref", "")).removeprefix("job:")
         actor = self._actors.pop(job_id, None)
         if actor is None:
             actor = self._lookup_actor(job_id)
@@ -2834,7 +2848,7 @@ class RayJobAdapter:
             job_data["state"] = "failed"
             if marked is not None:
                 job_data["seq"] = marked.seq
-        self._terminate_actor(job_id)
+        self.release_terminal(target)
 
 
     @staticmethod
@@ -3052,7 +3066,7 @@ class RayJobAdapter:
             job_data["state"] = "completed"
             job_data["seq"] = marked.seq
             job_data["result_payload"] = dict(payload)
-        self._terminate_actor(job_id)
+        self.release_terminal(target)
     def cancel(self, target: Mapping[str, Any]) -> bool:
         job_id = str(target.get("ref", "")).removeprefix("job:")
         metadata = target.get("metadata")
@@ -3104,7 +3118,7 @@ class RayJobAdapter:
         if isinstance(job_data, dict) and marked is not None:
             job_data["state"] = "killed"
             job_data["seq"] = marked.seq
-        self._terminate_actor(job_id)
+        self.release_terminal(target)
         return True
 
     def prepare_result(

@@ -113,6 +113,16 @@ async def _process_lock(lock_path: Path):
     finally:
         await asyncio.shield(asyncio.to_thread(lock.__exit__, None, None, None))
 
+def _fsync_directory(path: Path) -> None:
+    try:
+        descriptor = os.open(path, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
 
 
 
@@ -344,6 +354,7 @@ class PersistenceMixin:
                 if tombstone is not None:
                     try:
                         tombstone.unlink()
+                        _fsync_directory(tombstone.parent)
                     except FileNotFoundError:
                         pass
         return record
@@ -844,6 +855,7 @@ class PersistenceMixin:
                     with tombstone.open("wb") as marker:
                         marker.flush()
                         os.fsync(marker.fileno())
+                    _fsync_directory(tombstone.parent)
                 self._records.pop(session_id, None)
                 path = self._state_path(session_id)
                 if path is not None:
@@ -851,6 +863,7 @@ class PersistenceMixin:
                         path.unlink()
                     except FileNotFoundError:
                         pass
+                    _fsync_directory(path.parent)
 
     async def persist(
         self,
@@ -949,6 +962,11 @@ class PersistenceMixin:
         if self._state_root is None:
             return
         for path in sorted(self._state_root.glob("*.json")):
+            if path.with_suffix(".deleted").exists():
+                for session_id in tuple(self._records):
+                    if self._state_path(session_id) == path:
+                        self._records.pop(session_id, None)
+                continue
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
                 refreshed = self._deserialize_record(payload)
@@ -1153,6 +1171,7 @@ class PersistenceMixin:
             os.fsync(handle.fileno())
         try:
             os.replace(temp_path, path)
+            _fsync_directory(path.parent)
             record.retained_turn_journal_digest = _turn_journal_digest(record)
         finally:
             try:
