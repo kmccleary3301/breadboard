@@ -350,3 +350,5 @@ export const remoteExecutionDriver: ExecutionDriverV1 = makeRemoteExecutionDrive
 
 export type { RemoteTerminalExecutionHttpOptions }
 export * from "./terminals.js"
+export * from "./scheduled.js"
+export * from "./slurm.js"

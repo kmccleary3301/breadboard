@@ -10,9 +10,13 @@ import {
   buildRemoteSandboxRequest,
   chooseRemotePlacement,
   executeRemoteSandboxRequest,
+  makeRayExecutionDriver,
   makeRemoteExecutionDriver,
   makeRemoteTerminalSessionDriver,
+  makeSlurmExecutionDriver,
+  makeSshSlurmBackend,
   type RemoteSandboxExecutor,
+  type ScheduledExecutionBackendV1,
 } from "../src/index.js"
 
 const remoteCapability: ExecutionCapabilityV1 = {
@@ -1681,4 +1685,168 @@ test("Remote terminal scope-all filters foreign cleanup confirmations and does n
       }),
     /Unknown remote terminal session/,
   )
+})
+
+
+test("Ray scheduled adapter polls to one provider-neutral result", async () => {
+  const states = ["accepted", "running", "completed"] as const
+  let observation = 0
+  const backend: ScheduledExecutionBackendV1 = {
+    backendId: "ray-local",
+    async submit() {
+      return {
+        executionId: "ray-task-1",
+        evidenceRefs: ["evidence://ray/submit"],
+      }
+    },
+    async observe() {
+      const state = states[Math.min(observation++, states.length - 1)]
+      return state === "completed"
+        ? {
+            state,
+            result: {
+              schema_version: "bb.sandbox_result.v1",
+              request_id: "req:ray:1",
+              status: "completed",
+              evidence_refs: ["evidence://ray/result"],
+            },
+            evidenceRefs: ["evidence://ray/terminal"],
+          }
+        : { state }
+    },
+    async cancel() {
+      assert.fail("completed Ray execution must not be cancelled")
+    },
+  }
+  const world = createExecutionWorld({
+    drivers: [makeRayExecutionDriver(backend, { pollIntervalMs: 1 })],
+  })
+  const capability = {
+    ...remoteCapability,
+    capability_id: "cap:ray:1",
+  }
+  const result = await world.execute({
+    kind: "sandbox",
+    capability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place:ray:1",
+      placement_class: "delegated_python",
+      runtime_id: "ray",
+      capability_id: capability.capability_id,
+      metadata: {},
+    },
+    requestId: "req:ray:1",
+    command: ["python", "-c", "print('world')"],
+    driverId: "ray",
+  })
+
+  assert.equal(result.kind, "sandbox")
+  assert.equal(result.driverId, "ray")
+  assert.equal(result.sandboxResult?.status, "completed")
+  assert.deepEqual(result.sandboxResult?.evidence_refs, [
+    "evidence://ray/result",
+    "evidence://ray/submit",
+    "evidence://ray/terminal",
+  ])
+})
+
+
+test("Slurm scheduled adapter confirms cancellation before timeout settlement", async () => {
+  let cancelled = false
+  const backend: ScheduledExecutionBackendV1 = {
+    backendId: "slurm-cluster",
+    async submit() {
+      return { executionId: "12345" }
+    },
+    async observe() {
+      return { state: cancelled ? "cancelled" : "running" }
+    },
+    async cancel(executionId) {
+      assert.equal(executionId, "12345")
+      cancelled = true
+    },
+  }
+  const world = createExecutionWorld({
+    drivers: [
+      makeSlurmExecutionDriver(backend, {
+        pollIntervalMs: 1,
+        cancellationObservationTimeoutMs: 20,
+      }),
+    ],
+  })
+  const result = await world.execute({
+    kind: "sandbox",
+    capability: remoteCapability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place:slurm:1",
+      placement_class: "remote_worker",
+      runtime_id: "slurm",
+      capability_id: remoteCapability.capability_id,
+      metadata: {},
+    },
+    requestId: "req:slurm:1",
+    command: ["python", "-c", "print('world')"],
+    driverId: "slurm",
+    deadlineMs: 5,
+    terminationGraceMs: 50,
+  })
+
+  assert.equal(result.kind, "sandbox")
+  assert.equal(cancelled, true)
+  assert.equal(result.sandboxResult?.status, "timed_out")
+  assert.equal(result.livenessEvidence.terminationObserved, true)
+})
+
+
+test("SSH Slurm backend submits, polls, and cancels with scheduler evidence", async () => {
+  const invocations: string[][] = []
+  const backend = makeSshSlurmBackend({
+    sshTarget: "cluster.example",
+    remoteEvidenceDirectory: "/tmp/breadboard evidence",
+    async runCommand(program, args) {
+      assert.equal(program, "ssh")
+      invocations.push([...args])
+      const remoteCommand = args[1] ?? ""
+      if (remoteCommand.includes("sbatch")) return { stdout: "24680;cluster\\n", stderr: "" }
+      if (remoteCommand.includes("sacct")) return { stdout: "COMPLETED|0:0\\n", stderr: "" }
+      if (remoteCommand.includes("scancel")) return { stdout: "", stderr: "" }
+      assert.fail(`unexpected Slurm command: ${remoteCommand}`)
+    },
+  })
+  const request = buildRemoteSandboxRequest({
+    requestId: "req:slurm:backend",
+    capability: remoteCapability,
+    command: ["python", "-c", "print(\"a'b\")"],
+    placementClass: "remote_worker",
+  })
+
+  const handle = await backend.submit(request, {
+    signal: new AbortController().signal,
+    deadlineAtMs: null,
+    terminationGraceMs: 50,
+  })
+  assert.equal(handle.executionId, "24680")
+  assert.equal(
+    invocations[0]?.[1]?.includes("mkdir -p '/tmp/breadboard evidence'"),
+    true,
+  )
+  assert.equal(invocations[0]?.[1]?.includes("--wrap="), true)
+
+  const observation = await backend.observe(handle.executionId)
+  assert.equal(observation.state, "completed")
+  assert.equal(observation.result?.status, "completed")
+  assert.equal(observation.result?.request_id, request.request_id)
+  assert.deepEqual(observation.result?.evidence_refs, [
+    "slurm://job/24680",
+    "slurm://job/24680/state/COMPLETED",
+  ])
+
+  await backend.cancel(handle.executionId, {
+    reason: "cancelled",
+    signal: new AbortController().signal,
+    deadlineAtMs: null,
+  })
+  assert.match(invocations[2]?.[1] ?? "", /^scancel '24680'$/)
 })
