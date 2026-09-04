@@ -3011,6 +3011,7 @@ class DurableChildReconciler:
 class RayJobAdapter:
     family = "ray-agent-job"
     absence_is_terminal = True
+    _actor_namespace = "breadboard-durable-children-v1"
 
     def __init__(self, orchestrator: Any, *, actor_launcher: Any | None = None) -> None:
         self.orchestrator = orchestrator
@@ -3078,15 +3079,15 @@ class RayJobAdapter:
         name = self._actor_name(job_id)
         created = False
         try:
-            actor = ray.get_actor(name)
+            actor = ray.get_actor(name, namespace=self._actor_namespace)
         except ValueError:
             root = artifact_store_root or str(workspace / ".breadboard" / "artifacts")
-            actor = OpenCodeAgent.options(name=name, lifetime="detached").remote(
-                str(workspace), artifact_store_root=root
-            )
-            created = True
-        if created:
-            actor.run_message.remote([{"type": "text", "text": task}])
+            actor = OpenCodeAgent.options(
+                name=name,
+                namespace=self._actor_namespace,
+                lifetime="detached",
+            ).remote(str(workspace), artifact_store_root=root)
+        self._submit_invocation(actor, self._invocation_id(job_id), task)
         return actor
 
     def _lookup_actor(self, job_id: str) -> Any | None:
@@ -3096,7 +3097,10 @@ class RayJobAdapter:
         try:
             import ray
 
-            actor = ray.get_actor(self._actor_name(job_id))
+            actor = ray.get_actor(
+                self._actor_name(job_id),
+                namespace=self._actor_namespace,
+            )
         except (ImportError, RuntimeError):
             self._actor_lookup_unavailable.add(job_id)
             return None

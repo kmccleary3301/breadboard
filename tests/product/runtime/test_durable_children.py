@@ -3333,7 +3333,7 @@ def test_ray_dead_cached_actor_is_evicted_and_terminalized(
     monkeypatch.setattr(
         ray,
         "get_actor",
-        lambda _name: (_ for _ in ()).throw(ValueError("actor not found")),
+        lambda _name, **_kwargs: (_ for _ in ()).throw(ValueError("actor not found")),
     )
     target = {
         "ref": f"job:{spawned.job.job_id}",
@@ -5006,6 +5006,33 @@ def test_reconciler_without_children_leaves_parent_admission_open(
     assert activation.child_session_id
 
 
+def test_ray_actor_lookup_uses_stable_namespace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import ray
+    from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
+
+    actor = object()
+    lookups: list[tuple[str, str | None]] = []
+
+    def get_actor(name: str, *, namespace: str | None = None):
+        lookups.append((name, namespace))
+        return actor
+
+    monkeypatch.setattr(ray, "get_actor", get_actor)
+    adapter = RayJobAdapter(
+        MultiAgentOrchestrator(TeamConfig("ray-stable-namespace"))
+    )
+
+    assert adapter._lookup_actor("job-stable-namespace") is actor
+    assert lookups == [
+        (
+            "bb-child-job-stable-namespace",
+            "breadboard-durable-children-v1",
+        )
+    ]
+
+
 def test_ray_actor_lookup_runtime_failure_stays_pending(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -5022,7 +5049,7 @@ def test_ray_actor_lookup_runtime_failure_stays_pending(
     monkeypatch.setattr(
         ray,
         "get_actor",
-        lambda _name: (_ for _ in ()).throw(RuntimeError("Ray unavailable")),
+        lambda _name, **_kwargs: (_ for _ in ()).throw(RuntimeError("Ray unavailable")),
     )
     target = {
         "ref": f"job:{spawned.job.job_id}",
