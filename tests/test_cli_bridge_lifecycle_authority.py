@@ -2427,6 +2427,27 @@ async def test_disk_refresh_preserves_live_admission_payload_identity(
 
 
 @pytest.mark.asyncio
+async def test_disk_refresh_and_restart_preserve_logging_directory(
+    tmp_path: Path,
+) -> None:
+    registry, _, _, _ = registry_fixture(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="logging-directory-refresh",
+        status=SessionStatus.RUNNING,
+        logging_dir=str(tmp_path / "logs"),
+    )
+    await registry.create(record)
+
+    refreshed = await registry.get(record.session_id)
+    restarted = await SessionRegistry(state_root=tmp_path).get(record.session_id)
+
+    assert refreshed is record
+    assert refreshed.logging_dir == str(tmp_path / "logs")
+    assert restarted is not None
+    assert restarted.logging_dir == str(tmp_path / "logs")
+
+
+@pytest.mark.asyncio
 async def test_initial_task_is_retained_before_session_becomes_runnable(
     tmp_path: Path,
 ) -> None:

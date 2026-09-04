@@ -1047,6 +1047,7 @@ class PersistenceMixin:
                 "status": record.status.value,
                 "created_at": record.created_at.isoformat(),
                 "last_activity_at": record.last_activity_at.isoformat(),
+                "logging_dir": record.logging_dir,
                 "event_seq": record.event_seq,
                 "replay_head_sequence": durable_head_sequence,
                 "event_head_id": durable_head_event_id,
@@ -1217,6 +1218,11 @@ class PersistenceMixin:
             raise ValueError("empty retained replay has a head identity")
         if persisted_replay_head_sequence > 0 and persisted_head_event_id is None:
             raise ValueError("retained replay head has no identity")
+        logging_dir = session.get("logging_dir")
+        if logging_dir is not None and (
+            not isinstance(logging_dir, str) or not logging_dir
+        ):
+            raise ValueError("retained session logging directory is invalid")
         model = _retained_model_id(session.get("model"))
         metadata: Dict[str, Any] = {}
         durable_child = session.get("durable_child")
@@ -1298,6 +1304,7 @@ class PersistenceMixin:
             status=SessionStatus(str(session["status"])),
             created_at=datetime.fromisoformat(str(session["created_at"])),
             last_activity_at=datetime.fromisoformat(str(session["last_activity_at"])),
+            logging_dir=logging_dir,
             event_seq=persisted_event_seq,
             replay_history_partial=bool(persisted_event_seq),
             replay_head_event_id=persisted_head_event_id,
