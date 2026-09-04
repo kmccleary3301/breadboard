@@ -219,7 +219,7 @@ def test_non_json_adapter_config_leaves_no_child_record(
 
     assert list_workspace_artifacts(workspace) == []
     assert await_records(registry) == []
-def test_process_adapter_reaps_natural_exit_and_reports_absent(tmp_path: Path) -> None:
+def test_process_adapter_reaps_natural_exit_and_reports_completion(tmp_path: Path) -> None:
     adapter = ProcessExecutionAdapter(command=("/bin/sh", "-c", "exit 0"))
     target_ref = "reserved:natural-exit"
     activation = ChildActivation(
@@ -236,10 +236,13 @@ def test_process_adapter_reaps_natural_exit_and_reports_absent(tmp_path: Path) -
     )
     target = adapter.start(activation, _spec(adapter.family, "natural exit"))
     deadline = time.monotonic() + 2.0
-    while adapter.observe(target.retained()) != "absent" and time.monotonic() < deadline:
+    while adapter.observe(target.retained()) != "completed" and time.monotonic() < deadline:
         time.sleep(0.01)
-    assert adapter.observe(target.retained()) == "absent"
+    assert adapter.observe(target.retained()) == "completed"
     assert target_ref not in adapter._processes
+    restarted = ProcessExecutionAdapter(command=("/bin/sh", "-c", "exit 0"))
+    restarted.bind_workspace(tmp_path)
+    assert restarted.observe(target.retained()) == "completed"
 
 
 def test_process_release_is_committed_before_command_execution(tmp_path: Path) -> None:
@@ -296,7 +299,79 @@ def test_process_adapter_uses_activation_workspace_and_rejects_missing_cwd(tmp_p
     process = adapter._processes[target.execution_target_ref]
     assert process.wait(timeout=2) == 0
     assert (workspace / "relative-cwd.txt").read_text().strip() == str(workspace)
-    assert adapter.observe(target.retained()) == "absent"
+    assert adapter.observe(target.retained()) == "completed"
+
+
+def test_process_adapter_delivers_each_delegated_task_on_stdin(
+    tmp_path: Path,
+) -> None:
+    adapter = ProcessExecutionAdapter(
+        command=("/bin/sh", "-c", "cat > delegated-task.txt")
+    )
+    for index, task in enumerate(("first delegated task", "second delegated task")):
+        workspace = tmp_path / f"workspace-{index}"
+        workspace.mkdir()
+        target_ref = f"reserved:delegated-task:{index}"
+        activation = ChildActivation(
+            "parent-session",
+            "parent-session",
+            "parent-work",
+            f"child-session-{index}",
+            f"child-work-{index}",
+            f"attempt-{index}",
+            f"child://child-session-{index}/attempt/attempt-{index}",
+            target_ref,
+            adapter.family,
+            str(workspace),
+        )
+
+        target = adapter.start(
+            activation,
+            ChildSpec(
+                f"child {index}",
+                task,
+                _lock(),
+                "child-worker",
+                adapter.family,
+            ),
+        )
+        assert adapter._processes[target_ref].wait(timeout=2) == 0
+        assert adapter.observe(target.retained()) == "completed"
+        assert (workspace / "delegated-task.txt").read_text() == task
+
+def test_successful_process_child_reconciles_as_completed(
+    tmp_path: Path,
+) -> None:
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = ProcessExecutionAdapter(
+        command=("/bin/sh", "-c", "cat > reconciled-task.txt")
+    )
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family),
+    )
+
+    deadline = time.monotonic() + 2.0
+    state = factory.reconcile(activation.recovery_ref)
+    while not state.terminal_count and time.monotonic() < deadline:
+        time.sleep(0.01)
+        state = factory.reconcile(activation.recovery_ref)
+
+    assert (state.status, state.terminal_outcome, state.terminal_count) == (
+        "completed",
+        "completed",
+        1,
+    )
+    assert (workspace / "reconciled-task.txt").read_text() == "child task"
+
 
 
 def test_process_death_restarts_child_and_rejects_late_result(tmp_path: Path) -> None:

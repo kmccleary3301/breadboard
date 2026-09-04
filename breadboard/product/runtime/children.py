@@ -3065,6 +3065,7 @@ class ProcessExecutionAdapter:
     def __init__(self, command: Sequence[str] = ("/bin/sh", "-c", "sleep 30")) -> None:
         self.command = tuple(command)
         self._processes: dict[str, subprocess.Popen[bytes]] = {}
+        self._status_paths: dict[str, Path] = {}
         self._workspace: Path | None = None
     def retained_config(self) -> dict[str, Any]:
         return {"command": list(self.command)}
@@ -3109,6 +3110,41 @@ class ProcessExecutionAdapter:
         if not workspace.is_dir():
             raise ChildError(f"process child workspace is unavailable: {workspace}")
         return workspace
+
+    def _status_path(
+        self,
+        target_ref: str,
+        workspace: Path | None = None,
+    ) -> Path:
+        root = workspace if workspace is not None else self._workspace
+        if root is None:
+            raise ChildError("process child adapter is not bound to a workspace")
+        status_root = root / ".breadboard" / "process-children"
+        status_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if status_root.is_symlink() or not status_root.is_dir():
+            raise ChildError("process child status root is not a directory")
+        status_root.chmod(0o700)
+        identity = hashlib.sha256(target_ref.encode("utf-8")).hexdigest()
+        return status_root / f"{identity}.status"
+
+    def _completed_status(self, target_ref: str) -> bool | None:
+        path = self._status_paths.get(target_ref)
+        if path is None:
+            try:
+                path = self._status_path(target_ref)
+            except ChildError:
+                return None
+        try:
+            value = path.read_text(encoding="ascii")
+        except OSError:
+            return None
+        if value == "0":
+            return True
+        try:
+            int(value)
+        except ValueError:
+            return None
+        return False
 
     @staticmethod
     def _process_start_token(pid: int) -> str | int | None:
@@ -3181,8 +3217,35 @@ class ProcessExecutionAdapter:
     def start(self, activation: ChildActivation, spec: ChildSpec) -> ExecutionTarget:
         workspace = self._workspace_path(activation)
         target_ref = activation.execution_target_ref
-        wrapper = "import os,sys\nif os.read(0,1) != b'1': os._exit(78)\nos.execvpe(sys.argv[2],sys.argv[2:],os.environ.copy())\n"
-        process = subprocess.Popen((sys.executable, "-c", wrapper, target_ref, *self.command), stdin=subprocess.PIPE, start_new_session=True, cwd=str(workspace))
+        status_path = self._status_path(target_ref, workspace)
+        self._status_paths[target_ref] = status_path
+        status_path.unlink(missing_ok=True)
+        wrapper = (
+            "import os,subprocess,sys\n"
+            "if os.read(0,1) != b'1': os._exit(78)\n"
+            "status=sys.argv[2]\n"
+            "result=subprocess.call(sys.argv[3:])\n"
+            "temporary=f'{status}.{os.getpid()}.tmp'\n"
+            "fd=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)\n"
+            "os.write(fd,str(result).encode('ascii'));os.fsync(fd);os.close(fd)\n"
+            "os.replace(temporary,status)\n"
+            "directory=os.open(os.path.dirname(status),os.O_RDONLY)\n"
+            "os.fsync(directory);os.close(directory)\n"
+            "os._exit(result)\n"
+        )
+        process = subprocess.Popen(
+            (
+                sys.executable,
+                "-c",
+                wrapper,
+                target_ref,
+                str(status_path),
+                *self.command,
+            ),
+            stdin=subprocess.PIPE,
+            start_new_session=True,
+            cwd=str(workspace),
+        )
         self._processes[target_ref] = process
         token, group = self._identity(process.pid)
         metadata: dict[str, Any] = {"launch_phase": "pending"}
@@ -3196,7 +3259,7 @@ class ProcessExecutionAdapter:
             if publisher is not None:
                 publisher(target)
             if process.stdin is not None:
-                process.stdin.write(b"1")
+                process.stdin.write(b"1" + spec.task.encode("utf-8"))
                 process.stdin.close()
             metadata["launch_phase"] = "released"
             if publisher is not None:
@@ -3231,7 +3294,8 @@ class ProcessExecutionAdapter:
             if alive is None:
                 return "pending"
             self._processes.pop(target_ref, None)
-            return "absent"
+            completed = self._completed_status(target_ref)
+            return "completed" if completed is True else "absent"
         if type(pid) is not int or type(token) is not str:
             return "pending"
         try:
@@ -3239,7 +3303,8 @@ class ProcessExecutionAdapter:
         except ProcessLookupError:
             alive = group_state()
             if alive is False:
-                return "absent"
+                completed = self._completed_status(target_ref)
+                return "completed" if completed is True else "absent"
             return "running" if alive is True else "pending"
         except (OSError, subprocess.CalledProcessError, RuntimeError):
             alive = group_state()
@@ -3312,7 +3377,14 @@ class ProcessExecutionAdapter:
                 token, group = self._identity(pid)
             except (OSError, ProcessLookupError, RuntimeError):
                 return None
-        if self.observe({"pid": pid, "start_token": token, "process_group_id": group}) != "running":
+        if self.observe(
+            {
+                "ref": str(target.get("ref", "")),
+                "pid": pid,
+                "start_token": token,
+                "process_group_id": group,
+            }
+        ) != "running":
             return None
         return ExecutionTarget(str(target["ref"]), pid, token, group, metadata=dict(target.get("metadata") or {}))
     def _signal_verified(self, target: Mapping[str, Any], signum: int) -> bool:
