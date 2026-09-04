@@ -327,6 +327,7 @@ function buildSandboxFailureResult(input: {
   reason: string
   previous?: SandboxResultV1 | null
 }): SandboxResultV1 {
+  const preservesCanonicalEvidence = input.previous?.status === input.status
   return assertValid<SandboxResultV1>("sandboxResult", {
     schema_version: "bb.sandbox_result.v1",
     request_id: input.request.request_id,
@@ -335,9 +336,13 @@ function buildSandboxFailureResult(input: {
     stdout_ref: input.previous?.stdout_ref ?? null,
     stderr_ref: input.previous?.stderr_ref ?? null,
     artifact_refs: input.previous?.artifact_refs ?? [],
-    side_effect_digest: input.previous?.side_effect_digest ?? null,
+    side_effect_digest: preservesCanonicalEvidence
+      ? input.previous?.side_effect_digest ?? null
+      : null,
     usage: input.previous?.usage ?? null,
-    evidence_refs: input.previous?.evidence_refs ?? [],
+    evidence_refs: preservesCanonicalEvidence
+      ? input.previous?.evidence_refs ?? []
+      : [],
     error: {
       ...(input.previous?.error ?? {}),
       message: input.message,
@@ -878,53 +883,28 @@ export function createExecutionWorld(input: {
     const status = terminal.status
     let sandboxResult: SandboxResultV1
     try {
-      const candidate = terminal.result
-        ? status === "timed_out"
-          ? buildSandboxFailureResult({
+      const candidate =
+        terminal.result?.status === status
+          ? assertValid<SandboxResultV1>("sandboxResult", terminal.result)
+          : buildSandboxFailureResult({
               request,
-              status: "timed_out",
-              message: "Execution exceeded its deadline",
-              reason: "deadline_exceeded",
-              previous: terminal.result,
-            })
-          : status === "cancelled"
-            ? buildSandboxFailureResult({
-                request,
-                status: "cancelled",
-                message: "Execution was cancelled",
-                reason: "execution_cancelled",
-                previous: terminal.result,
-              })
-            : status === "failed" && terminal.error
-              ? buildSandboxFailureResult({
-                  request,
-                  status: "failed",
-                  message:
-                    terminal.error instanceof Error
+              status,
+              message:
+                status === "timed_out"
+                  ? "Execution exceeded its deadline"
+                  : status === "cancelled"
+                    ? "Execution was cancelled"
+                    : terminal.error instanceof Error
                       ? terminal.error.message
                       : "Execution driver failed",
-                  reason: "adapter_execution_failed",
-                  previous: terminal.result,
-                })
-              : assertValid<SandboxResultV1>("sandboxResult", terminal.result)
-        : buildSandboxFailureResult({
-            request,
-            status,
-            message:
-              status === "timed_out"
-                ? "Execution exceeded its deadline"
-                : status === "cancelled"
-                  ? "Execution was cancelled"
-                  : terminal.error instanceof Error
-                    ? terminal.error.message
-                    : "Execution driver failed",
-            reason:
-              status === "timed_out"
-                ? "deadline_exceeded"
-                : status === "cancelled"
-                  ? "execution_cancelled"
-                  : "adapter_execution_failed",
-          })
+              reason:
+                status === "timed_out"
+                  ? "deadline_exceeded"
+                  : status === "cancelled"
+                    ? "execution_cancelled"
+                    : "adapter_execution_failed",
+              previous: terminal.result,
+            })
       sandboxResult = assertValid<SandboxResultV1>("sandboxResult", candidate)
       if (sandboxResult.request_id !== request.request_id) {
         throw new Error(

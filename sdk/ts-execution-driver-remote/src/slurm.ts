@@ -333,8 +333,7 @@ export function makeSshSlurmBackend(
       ).toString("base64")
       const cancelByNameScript = [
         "while true; do",
-        `ids=$(timeout 1s squeue --noheader --name ${shellQuote(jobName)} --format=%A 2>/dev/null || true);`,
-        `for candidate in $ids; do case "$candidate" in ""|*[!0-9]*) :;; *) timeout 1s scancel "$candidate" 2>/dev/null || true;; esac; done;`,
+        `timeout 1s scancel --name ${shellQuote(jobName)} 2>/dev/null || true;`,
         "sleep 1;",
         "done",
       ].join(" ")
@@ -348,7 +347,7 @@ export function makeSshSlurmBackend(
         `attempt=${submissionAttemptToken};`,
         `digest=${expectedRequestDigest};`,
         `cancel_by_name() { touch "$cancel"; timeout ${commandTimeoutSeconds}s sh -c ${shellQuote(cancelByNameScript)} || true; };`,
-        `cleanup() { if [ ! -s "$receipt" ]; then case "$id" in ""|*[!0-9]*) cancel_by_name;; *) timeout 1s scancel "$id" 2>/dev/null || true;; esac; fi; rm -f "$cancel"; rm -rf "$lock"; };`,
+        `cleanup() { if [ ! -s "$receipt" ]; then cancel_by_name; fi; rm -f "$cancel"; rm -rf "$lock"; };`,
         "trap cleanup EXIT;",
         `owner_start=$(awk '{print $22}' /proc/$$/stat 2>/dev/null || true);`,
         `printf '%s %s %s\\n' "$$" "$(date +%s)" "$owner_start" > "$owner.tmp";`,
@@ -367,7 +366,7 @@ export function makeSshSlurmBackend(
         `mv "$metadata.tmp" "$metadata";`,
         `printf '%s\\n%s\\n%s\\n' "$job" "$attempt" "$digest" > "$receipt.tmp";`,
         `mv "$receipt.tmp" "$receipt";`,
-        `[ ! -f ${shellQuote(cancelPath)} ] || timeout 1s scancel "$id";`,
+        `[ ! -f ${shellQuote(cancelPath)} ] || timeout 1s scancel --name ${shellQuote(jobName)};`,
       ].join(" ")
       const launchCommand = [
         `umask 077; evidence=${shellQuote(evidenceDirectory)};`,
@@ -423,12 +422,10 @@ export function makeSshSlurmBackend(
         let cleanupError: unknown
         try {
           await ssh([
-            `if [ "$(cat ${shellQuote(`${lockPath}/attempt`)} 2>/dev/null || true)" = ${shellQuote(submissionAttemptToken)} ]; then`,
             `touch ${shellQuote(cancelPath)};`,
-            `if [ -s ${shellQuote(receiptPath)} ]; then`,
-            `job=$(sed -n '1p' ${shellQuote(receiptPath)}); job=\${job%%;*};`,
-            `case "$job" in ""|*[!0-9]*) :;; *) timeout ${commandTimeoutSeconds}s scancel "$job";; esac;`,
-            "fi; fi",
+            `if [ "$(cat ${shellQuote(`${lockPath}/attempt`)} 2>/dev/null || true)" = ${shellQuote(submissionAttemptToken)} ] && [ -s ${shellQuote(receiptPath)} ]; then`,
+            `timeout ${commandTimeoutSeconds}s scancel --name ${shellQuote(jobName)} 2>/dev/null || true;`,
+            "fi",
           ].join(" "), context.terminationGraceMs)
         } catch (error: unknown) {
           cleanupError = error
@@ -566,12 +563,17 @@ export function makeSshSlurmBackend(
       const readOutput = async (
         path: string,
       ): Promise<{ readonly content: string; readonly evidenceRefs: readonly string[] }> => {
-        const header = (await ssh([
-          `if [ ! -f ${shellQuote(path)} ]; then printf 'M\\n'; else`,
-          `size=$(wc -c < ${shellQuote(path)});`,
-          `digest=$(sha256sum ${shellQuote(path)}); digest=\${digest%% *};`,
-          `printf 'F:%s:%s\\n' "$size" "$digest"; fi`,
-        ].join(" "))).stdout.trim()
+        const header = (await ssh(
+          [
+            `if [ ! -f ${shellQuote(path)} ]; then printf 'M\\n'; else`,
+            `size=$(wc -c < ${shellQuote(path)});`,
+            `digest=$(sha256sum ${shellQuote(path)}); digest=\${digest%% *};`,
+            `printf 'F:%s:%s\\n' "$size" "$digest"; fi`,
+          ].join(" "),
+          commandTimeoutMs,
+          undefined,
+          receiptOutputMaxBytes,
+        )).stdout.trim()
         if (header === "M") {
           if (status === "completed" || status === "failed") {
             throw new Error(`${status} Slurm execution output is missing`)
@@ -663,16 +665,10 @@ export function makeSshSlurmBackend(
       )
       remaining = deadline - Date.now()
       if (remaining <= 0) throw new Error("Slurm cancellation deadline expired")
-      const expectedJobName = shellQuote(
-        `bb-${sha256(execution.request.request_id).slice("sha256:".length).slice(0, 32)}`,
-      )
+      const expectedJobName =
+        `bb-${sha256(execution.request.request_id).slice("sha256:".length).slice(0, 32)}`
       await ssh(
-        [
-          `name=$(squeue -h -j ${shellQuote(identity.jobId)} -o '%j' 2>/dev/null || true);`,
-          `if [ -z "$name" ]; then name=$(sacct -X -j ${shellQuote(identity.jobId)} --noheader --parsable2 --format=JobName 2>/dev/null | sed -n '1p'); fi;`,
-          `[ "$name" = ${expectedJobName} ] || exit 66;`,
-          `timeout ${commandTimeoutSeconds}s scancel ${shellQuote(identity.jobId)}`,
-        ].join(" "),
+        `timeout ${commandTimeoutSeconds}s scancel --name ${shellQuote(expectedJobName)} 2>/dev/null || true`,
         remaining,
         context.signal,
       )

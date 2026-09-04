@@ -1896,6 +1896,7 @@ test("scheduled adapter retries failed evidence before later cleanup evidence", 
 
   assert.equal(result.kind, "sandbox")
   assert.equal(result.sandboxResult?.status, "failed")
+  assert.equal(result.livenessEvidence.state, "failed")
   assert.equal(cancelled, true)
   assert.deepEqual(recordedStates, ["accepted", "cancelled"])
 })
@@ -1975,6 +1976,7 @@ test("scheduled adapter retries failed terminal evidence before suppressing late
 
   assert.equal(result.kind, "sandbox")
   assert.equal(result.sandboxResult?.status, "failed")
+  assert.equal(result.livenessEvidence.state, "failed")
   assert.equal(cancelled, true)
   assert.equal(completedAttempts, 2)
   assert.deepEqual(recordedStates, ["accepted", "completed"])
@@ -2216,17 +2218,16 @@ test("scheduled adapter cleans up after observation transport failure", async ()
   })
   assert.equal(result.kind, "sandbox")
   assert.equal(result.sandboxResult?.status, "failed")
-  assert.equal(result.sandboxResult?.error?.message, "ray backend observation failed")
+  assert.equal(result.sandboxResult?.error?.reason, "adapter_execution_failed")
+  assert.equal(result.livenessEvidence.state, "failed")
   assert.equal(
     JSON.stringify(result.sandboxResult).includes("raw provider transport detail"),
     false,
   )
   assert.equal(cancelled, true)
   assert.equal(result.livenessEvidence.terminationObserved, true)
-  assert.equal(result.sandboxResult?.stdout_ref, `sha256:${"a".repeat(64)}`)
-  assert.deepEqual(result.sandboxResult?.evidence_refs, [
-    `sha256:${"c".repeat(64)}`,
-  ])
+  assert.deepEqual(result.sandboxResult?.evidence_refs, [])
+  assert.equal(result.sandboxResult?.side_effect_digest, null)
 })
 
 test("scheduled adapter rejects unknown states before recording evidence", async () => {
@@ -2272,6 +2273,7 @@ test("scheduled adapter rejects unknown states before recording evidence", async
 
   assert.equal(result.kind, "sandbox")
   assert.equal(result.sandboxResult?.status, "failed")
+  assert.equal(result.livenessEvidence.state, "failed")
   assert.equal(recordedStates.includes("BOGUS"), false)
 })
 
@@ -2425,8 +2427,10 @@ test("Slurm scheduled adapter confirms cancellation before timeout settlement", 
   assert.equal(result.kind, "sandbox")
   assert.equal(cancelled, true)
   assert.equal(result.sandboxResult?.status, "timed_out")
+  assert.equal(result.livenessEvidence.state, "timed_out")
   assert.equal(result.sandboxResult?.stdout_ref, `sha256:${"0".repeat(64)}`)
-  assert.deepEqual(result.sandboxResult?.evidence_refs, [`sha256:${"3".repeat(64)}`])
+  assert.deepEqual(result.sandboxResult?.evidence_refs, [])
+  assert.equal(result.sandboxResult?.side_effect_digest, null)
   assert.equal(result.livenessEvidence.terminationObserved, true)
 })
 
@@ -2664,9 +2668,8 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   assert.ok(submissionCommand?.includes("--chdir='/tmp/workspace with space'"))
   assert.ok(invocations[0]?.[1]?.includes(`[ ! -s "$receipt" ]`))
   assert.ok(invocations[0]?.[1]?.includes(`cancel_by_name() { touch "$cancel"`))
-  assert.ok(invocations[0]?.[1]?.includes("squeue --noheader --name"))
+  assert.ok(invocations[0]?.[1]?.includes("scancel --name"))
   assert.ok(invocations[0]?.[1]?.includes("timeout 30s sh -c"))
-  assert.ok(invocations[0]?.[1]?.includes("timeout 1s squeue"))
   assert.ok(invocations[0]?.[1]?.includes(`[ ! -f "$cancel" ] || exit 75`))
   assert.ok(invocations[0]?.[1]?.includes(`[ $((now-created)) -ge`))
   assert.ok(invocations[0]?.[1]?.includes(`cat "$lock/job"`))
@@ -2749,8 +2752,9 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   })
   const cancelCommand = [...invocations]
     .reverse()
-    .find((args) => args[1]?.includes("scancel '24680'"))
-  assert.ok(cancelCommand?.[1]?.includes(`[ "$name" = '${jobName}' ]`))
+    .find((args) => args[1]?.includes("scancel --name"))
+  assert.ok(cancelCommand?.[1]?.includes(jobName))
+  assert.equal(cancelCommand?.[1]?.includes("scancel '24680'"), false)
   assert.equal(commandTimeouts.length, invocations.length)
   assert.ok(commandTimeouts.every((timeout) => timeout > 0 && timeout <= 30_000))
   assert.ok(commandOutputLimits.some((limit) => limit > 8))
@@ -3131,10 +3135,11 @@ test("SSH Slurm backend leaves a durable cancel marker when cancellation precede
   assert.equal(commands.length, 2)
   assert.ok(commands[1]?.includes(".cancel';"))
   assert.ok(commands[0]?.includes("[ ! -f"))
-  assert.ok(commands[0]?.includes("scancel"))
+  assert.ok(commands[0]?.includes("scancel --name"))
+  assert.ok(commands[1]?.startsWith("touch "))
   assert.ok(commands[1]?.includes(".lock/attempt"))
-  assert.equal(commands[1]?.includes("scancel --name"), false)
-  assert.ok(commands[1]?.includes("sed -n '1p'"))
+  assert.ok(commands[1]?.includes("scancel --name"))
+  assert.equal(commands[1]?.includes("sed -n '1p'"), false)
 })
 
 test("SSH Slurm backend reconciles an active job after adapter restart", async () => {
