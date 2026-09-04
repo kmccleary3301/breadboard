@@ -1678,6 +1678,84 @@ def test_cancel_tree_retries_prior_pending_child_signal(tmp_path: Path) -> None:
     )
     assert await_record(registry, "parent-session").metadata.get("durable_parent_cancellation") is None
     assert adapter.cancel_calls == 3
+
+
+def test_cancel_tree_settles_canceled_child_when_execution_completed(
+    tmp_path: Path,
+) -> None:
+    class CompletedDuringCancelAdapter:
+        family = "tree-completed-during-cancel"
+
+        def __init__(self) -> None:
+            self.observed = "running"
+
+        def start(self, activation, spec):
+            return ExecutionTarget(activation.execution_target_ref)
+
+        def observe(self, target):
+            return self.observed
+
+        def cancel(self, target):
+            return False
+
+        def prepare_result(self, target, spec):
+            raise AssertionError("late result must not replace cancellation")
+
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = CompletedDuringCancelAdapter()
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family, "completed during cancellation"),
+    )
+    from breadboard_engine.api.cli_bridge.models import SessionStatus
+    from breadboard_engine.api.cli_bridge.registry.records import SessionRecord
+
+    asyncio_run(
+        registry.create(
+            SessionRecord(
+                "parent-session",
+                status=SessionStatus.RUNNING,
+                metadata={"workspace": str(workspace)},
+            )
+        )
+    )
+    first = factory.cancel_tree(
+        parent_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+    )
+    assert first[0].terminal_count == 0
+    assert (
+        WorkItem.restore(repository, activation.child_work_item_id).read_model.status
+        == "canceled"
+    )
+    adapter.observed = "completed"
+
+    second = factory.cancel_tree(
+        parent_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+    )
+
+    assert (second[0].status, second[0].terminal_outcome, second[0].terminal_count) == (
+        "canceled",
+        "canceled",
+        1,
+    )
+    assert (
+        await_record(registry, "parent-session").metadata.get(
+            "durable_parent_cancellation"
+        )
+        is None
+    )
+
+
 def test_cancel_adopts_terminal_child_work_item_without_signaling(
     tmp_path: Path,
 ) -> None:

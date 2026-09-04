@@ -926,7 +926,7 @@ class DurableChildFactory:
                 self._registry("update_status", parent_session_id, status=bridge_status)
         unsettled = False
         for state in pending:
-            if self.adapters[state.adapter_family].cancel(state.execution_target) is False:
+            if not self._execution_stopped_after_cancel(state):
                 unsettled = True
                 settled.append(self._record_state(state.child_session_id))
                 continue
@@ -1583,6 +1583,16 @@ class DurableChildFactory:
             return current
         return self._settle(current, "canceled", (), allow_unprepared=True)
 
+    def _execution_stopped_after_cancel(self, state: ChildState) -> bool:
+        adapter = self.adapters[state.adapter_family]
+        if adapter.cancel(state.execution_target) is not False:
+            return True
+        try:
+            observed = str(adapter.observe(state.execution_target)).lower()
+        except BaseException:
+            return False
+        return observed in {"completed", "failed"}
+
     def _adopt_terminal_target_after_cancel(
         self, state: ChildState
     ) -> ChildState:
@@ -1762,7 +1772,7 @@ class DurableChildFactory:
             outcome == "canceled"
             and state.launch_published
             and not execution_stopped
-            and self.adapters[state.adapter_family].cancel(state.execution_target) is False
+            and not self._execution_stopped_after_cancel(state)
         ):
             return state
         session, _ = load_session(self.workspace, state.child_session_id)
@@ -2028,9 +2038,7 @@ class DurableChildFactory:
                 ids=self.ids,
             )
             if child.read_model.status in _TERMINAL:
-                if self.adapters[state.adapter_family].cancel(
-                    state.execution_target
-                ) is False:
+                if not self._execution_stopped_after_cancel(state):
                     return state
                 if child.read_model.status != "canceled":
                     raise LateResultRejected(
