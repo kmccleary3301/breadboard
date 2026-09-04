@@ -277,6 +277,42 @@ export interface CanonicalSandboxEvidenceV1 {
   readonly evidence_refs: string[]
 }
 
+function deriveCanonicalSandboxEvidence(input: {
+  command: readonly string[]
+  status: SandboxResultV1["status"]
+  exitCode: number | null
+  stdout: string
+  stderr: string
+  evidenceMode: SandboxRequestV1["evidence_mode"]
+}): {
+  evidence: CanonicalSandboxEvidenceV1
+  sideEffectManifest: string
+} {
+  const digest = (value: string) =>
+    `sha256:${createHash("sha256").update(value).digest("hex")}`
+  const stdoutRef = digest(input.stdout)
+  const stderrRef = digest(input.stderr)
+  const sideEffectManifest = JSON.stringify({
+    command: input.command,
+    exit_code: input.exitCode,
+    status: input.status,
+    stderr_ref: stderrRef,
+    stdout_ref: stdoutRef,
+  })
+  const sideEffectDigest = digest(sideEffectManifest)
+  return {
+    evidence: {
+      stdout_ref: stdoutRef,
+      stderr_ref: stderrRef,
+      artifact_refs: [stdoutRef, stderrRef],
+      side_effect_digest: sideEffectDigest,
+      usage: { exit_code: input.exitCode },
+      evidence_refs: input.evidenceMode === "minimal" ? [] : [sideEffectDigest],
+    },
+    sideEffectManifest,
+  }
+}
+
 export function buildCanonicalSandboxEvidence(input: {
   command: readonly string[]
   status: SandboxResultV1["status"]
@@ -285,25 +321,7 @@ export function buildCanonicalSandboxEvidence(input: {
   stderr: string
   evidenceMode: SandboxRequestV1["evidence_mode"]
 }): CanonicalSandboxEvidenceV1 {
-  const digest = (value: string) =>
-    `sha256:${createHash("sha256").update(value).digest("hex")}`
-  const stdoutRef = digest(input.stdout)
-  const stderrRef = digest(input.stderr)
-  const sideEffectDigest = digest(JSON.stringify({
-    command: input.command,
-    exit_code: input.exitCode,
-    status: input.status,
-    stderr_ref: stderrRef,
-    stdout_ref: stdoutRef,
-  }))
-  return {
-    stdout_ref: stdoutRef,
-    stderr_ref: stderrRef,
-    artifact_refs: [stdoutRef, stderrRef],
-    side_effect_digest: sideEffectDigest,
-    usage: { exit_code: input.exitCode },
-    evidence_refs: input.evidenceMode === "minimal" ? [] : [sideEffectDigest],
-  }
+  return deriveCanonicalSandboxEvidence(input).evidence
 }
 
 export function canonicalSandboxArtifactRoot(
@@ -415,6 +433,27 @@ export async function persistCanonicalSandboxArtifact(
     await rm(temporary, { force: true })
   }
   return canonicalSandboxArtifactUri(ref, artifactRoot)
+}
+
+export async function buildAndPersistCanonicalSandboxEvidence(input: {
+  command: readonly string[]
+  status: SandboxResultV1["status"]
+  exitCode: number | null
+  stdout: string
+  stderr: string
+  evidenceMode: SandboxRequestV1["evidence_mode"]
+}, artifactRoot = DEFAULT_SANDBOX_ARTIFACT_ROOT): Promise<CanonicalSandboxEvidenceV1> {
+  const { evidence, sideEffectManifest } = deriveCanonicalSandboxEvidence(input)
+  await Promise.all([
+    persistCanonicalSandboxArtifact(evidence.stdout_ref, input.stdout, artifactRoot),
+    persistCanonicalSandboxArtifact(evidence.stderr_ref, input.stderr, artifactRoot),
+    persistCanonicalSandboxArtifact(
+      evidence.side_effect_digest,
+      sideEffectManifest,
+      artifactRoot,
+    ),
+  ])
+  return evidence
 }
 
 export function buildExecutionDriverEvidenceExpectation(input: {

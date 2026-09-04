@@ -9,10 +9,9 @@ import type {
 } from "@breadboard/kernel-contracts"
 import type { TerminalSessionDriverV1 } from "@breadboard/execution-drivers"
 import {
-  buildCanonicalSandboxEvidence,
+  buildAndPersistCanonicalSandboxEvidence,
   canonicalSandboxArtifactRoot,
   isPlacementCompatible,
-  persistCanonicalSandboxArtifact,
 } from "@breadboard/execution-drivers"
 import { makeOciTerminalSessionDriver, type OciTerminalSessionAdapter } from "./terminals.js"
 
@@ -243,29 +242,17 @@ export async function executeOciSandboxRequest(
     : status === "cancelled"
       ? "execution_cancelled"
       : "execution_failed"
-  const evidence = buildCanonicalSandboxEvidence({
+  const artifactRoot = options.tempDirRoot === undefined
+    ? undefined
+    : canonicalSandboxArtifactRoot(options.tempDirRoot)
+  const evidence = await buildAndPersistCanonicalSandboxEvidence({
     command: request.command,
     status,
     exitCode: result.exitCode,
     stdout: result.stdout,
     stderr: result.stderr,
     evidenceMode: request.evidence_mode,
-  })
-  const artifactRoot = options.tempDirRoot === undefined
-    ? undefined
-    : canonicalSandboxArtifactRoot(options.tempDirRoot)
-  await Promise.all([
-    persistCanonicalSandboxArtifact(
-      evidence.stdout_ref,
-      result.stdout,
-      artifactRoot,
-    ),
-    persistCanonicalSandboxArtifact(
-      evidence.stderr_ref,
-      result.stderr,
-      artifactRoot,
-    ),
-  ])
+  }, artifactRoot)
   return {
     schema_version: "bb.sandbox_result.v1",
     request_id: request.request_id,

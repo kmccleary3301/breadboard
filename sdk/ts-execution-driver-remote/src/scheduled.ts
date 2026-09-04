@@ -6,9 +6,8 @@ import {
   type SandboxResultV1,
 } from "@breadboard/kernel-contracts"
 import {
-  buildCanonicalSandboxEvidence,
+  buildAndPersistCanonicalSandboxEvidence,
   isPlacementCompatible,
-  persistCanonicalSandboxArtifact,
   type ExecutionDriverExecutionContextV1,
   type ExecutionDriverTerminationContextV1,
   type ExecutionDriverV1,
@@ -168,7 +167,7 @@ async function scheduledFailureResult(
   status: Exclude<SandboxResultV1["status"], "completed">,
   reason: string,
 ): Promise<SandboxResultV1> {
-  const evidence = buildCanonicalSandboxEvidence({
+  const evidence = await buildAndPersistCanonicalSandboxEvidence({
     command: request.command,
     status,
     exitCode: null,
@@ -176,10 +175,6 @@ async function scheduledFailureResult(
     stderr: "",
     evidenceMode: request.evidence_mode,
   })
-  await Promise.all([
-    persistCanonicalSandboxArtifact(evidence.stdout_ref, ""),
-    persistCanonicalSandboxArtifact(evidence.stderr_ref, ""),
-  ])
   return assertValid<SandboxResultV1>("sandboxResult", {
     schema_version: "bb.sandbox_result.v1",
     request_id: request.request_id,

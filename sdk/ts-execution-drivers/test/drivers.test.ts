@@ -17,6 +17,7 @@ import { makeConfiguredOciExecutionDriver } from "../../ts-execution-driver-oci/
 
 import {
   buildExecutionDriverEvidenceExpectation,
+  buildAndPersistCanonicalSandboxEvidence,
   buildExecutionDriverSideEffectExpectation,
   buildExecutionDriverUnsupportedCase,
   buildPlannedExecution,
@@ -5426,6 +5427,37 @@ test("canonical sandbox artifacts are owner-only and content-addressed", async (
     assert.equal(await readFile(new URL(uri), "utf8"), content)
     assert.equal((await stat(artifactRoot)).mode & 0o077, 0)
     assert.equal((await stat(new URL(uri))).mode & 0o077, 0)
+  } finally {
+    await rm(artifactRoot, { recursive: true, force: true })
+  }
+})
+
+test("canonical sandbox evidence persists its advertised manifest", async () => {
+  const artifactRoot = await mkdtemp(join(tmpdir(), "breadboard-evidence-test-"))
+  try {
+    const evidence = await buildAndPersistCanonicalSandboxEvidence({
+      command: ["printf", "world"],
+      status: "completed",
+      exitCode: 0,
+      stdout: "world",
+      stderr: "",
+      evidenceMode: "replay_strict",
+    }, artifactRoot)
+
+    assert.deepEqual(evidence.evidence_refs, [evidence.side_effect_digest])
+    const manifest = JSON.parse(
+      await readFile(
+        new URL(canonicalSandboxArtifactUri(evidence.side_effect_digest, artifactRoot)),
+        "utf8",
+      ),
+    )
+    assert.deepEqual(manifest, {
+      command: ["printf", "world"],
+      exit_code: 0,
+      status: "completed",
+      stderr_ref: evidence.stderr_ref,
+      stdout_ref: evidence.stdout_ref,
+    })
   } finally {
     await rm(artifactRoot, { recursive: true, force: true })
   }

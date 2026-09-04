@@ -4,8 +4,7 @@ import { promisify } from "node:util"
 
 import { assertValid, type SandboxRequestV1, type SandboxResultV1 } from "@breadboard/kernel-contracts"
 import {
-  buildCanonicalSandboxEvidence,
-  persistCanonicalSandboxArtifact,
+  buildAndPersistCanonicalSandboxEvidence,
 } from "@breadboard/execution-drivers"
 import {
   canonicalScheduledRequestKey,
@@ -107,7 +106,7 @@ async function resultFor(
   stdout: string,
   stderr: string,
 ): Promise<SandboxResultV1> {
-  const evidence = buildCanonicalSandboxEvidence({
+  const evidence = await buildAndPersistCanonicalSandboxEvidence({
     command: execution.request.command,
     status,
     exitCode,
@@ -115,10 +114,6 @@ async function resultFor(
     stderr,
     evidenceMode: execution.request.evidence_mode,
   })
-  await Promise.all([
-    persistCanonicalSandboxArtifact(evidence.stdout_ref, stdout),
-    persistCanonicalSandboxArtifact(evidence.stderr_ref, stderr),
-  ])
   return {
     schema_version: "bb.sandbox_result.v1",
     request_id: execution.request.request_id,
