@@ -393,6 +393,20 @@ def test_candidate_python_sdk_streams_generated_session_events_route(
     with pytest.raises(StopIteration) as stopped:
         next(cursor_stream)
     assert stopped.value.value == 2
+    for truncated in (
+        ["id: 2"],
+        ["id: 2", f"data: {json.dumps(expected)}"],
+    ):
+        _StreamResponse.lines = truncated
+        with pytest.raises(ValueError, match="incomplete SSE frame"):
+            list(
+                client.events_session(
+                    "session id",
+                    resume_token=0,
+                    limit=2,
+                    follow=False,
+                )
+            )
     forged = {**expected, "kind": "session.completed", "payload": {}}
     with pytest.raises(ValueError, match="lifecycle payload fields"):
         client_module._session_event(json.dumps(forged), "session id", "1")

@@ -410,6 +410,37 @@ def test_product_owned_fact_ids_continue_after_conductor_restart() -> None:
     )
 
 
+def test_product_restore_preserves_post_compaction_facts() -> None:
+    original = SessionState("ws", "image", {})
+    original.add_message({"role": "user", "content": "before compaction"})
+    product = Session.start(
+        EffectiveHarnessLock._from_record(
+            {"graph_hash": "sha256:" + "a" * 64}
+        ),
+        "long horizon",
+    )
+    product.compact(original.compaction_snapshot())
+    original.add_message({"role": "assistant", "content": "after compaction"})
+    retained = original.create_snapshot("mock")
+
+    restarted = SessionState("ws", "image", {})
+    restarted.restore_ctree_events(retained["ctree_events"])
+    restarted.restore_raw_fact_ids(product.raw_fact_ids)
+
+    assert [node["id"] for node in restarted.ctree_store.nodes] == [
+        "ctn_000002"
+    ]
+    assert (
+        restarted.ctree_store.record("message", {"role": "user"})
+        == "ctn_000003"
+    )
+    assert restarted.compaction_snapshot().raw_fact_ids == (
+        "ctn_000001",
+        "ctn_000002",
+        "ctn_000003",
+    )
+
+
 def test_product_turns_retain_ctree_identity_sequence() -> None:
     conductor_type = OpenAIConductor.__ray_metadata__.modified_class
     conductor = object.__new__(conductor_type)

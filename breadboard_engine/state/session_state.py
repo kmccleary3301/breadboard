@@ -589,17 +589,39 @@ class SessionState:
             return snapshot
 
     def restore_raw_fact_ids(self, raw_fact_ids: Any) -> None:
-        """Reserve identities retained by the Product Session owner."""
+        """Merge Product-owned compacted identities with newer retained facts."""
         if not isinstance(raw_fact_ids, (list, tuple)):
             raise ValueError("raw_fact_ids must be an array")
-        retained = tuple(raw_fact_ids)
+        retained = CTreeStore.validate_node_ids(tuple(raw_fact_ids))
         with self._compaction_lock:
-            restored = CTreeStore()
+            current_ids = tuple(str(node["id"]) for node in self.ctree_store.nodes)
+            known_ids = (*self._retained_raw_fact_ids, *current_ids)
+            if known_ids[: len(retained)] == retained:
+                suffix_ids = known_ids[len(retained) :]
+                suffix_set = set(suffix_ids)
+                suffix_events = [
+                    event
+                    for event in self.ctree_store.events
+                    if event.get("node_id") in suffix_set
+                ]
+                restored = CTreeStore.from_events(suffix_events)
+                restored_ids = tuple(str(node["id"]) for node in restored.nodes)
+                if restored_ids != suffix_ids:
+                    raise ValueError("retained C-Tree facts do not round-trip exactly")
+            elif retained[: len(known_ids)] == known_ids:
+                restored = CTreeStore()
+            else:
+                raise ValueError("durable raw_fact_ids diverge from retained C-Tree facts")
             restored.reserve_node_ids(retained)
             self.ctree_store = restored
             self._retained_raw_fact_ids = retained
-            self._last_ctree_node_id = None
-            self._last_ctree_snapshot = None
+            last_node = restored.nodes[-1] if restored.nodes else None
+            self._last_ctree_node_id = (
+                str(last_node["id"]) if isinstance(last_node, dict) else None
+            )
+            self._last_ctree_snapshot = (
+                restored.snapshot() if last_node is not None else None
+            )
 
     def restore_ctree_events(self, events: Any) -> None:
         """Restore retained C-Tree identities before admitting new facts."""

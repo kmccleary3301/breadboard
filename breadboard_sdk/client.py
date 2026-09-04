@@ -663,7 +663,7 @@ class BreadBoardClient:
                 raise ApiError("Event stream failed", resp.status_code, payload)
 
             data_lines: List[str] = []
-            sse_id: str | None = None
+            pending_cursor: int | None = None
             last_cursor: int | None = None
             for raw in resp.iter_lines(decode_unicode=True):
                 if raw is None:
@@ -679,20 +679,27 @@ class BreadBoardClient:
                             "session.failed",
                             "session.canceled",
                         }
+                        if pending_cursor is not None:
+                            last_cursor = pending_cursor
                         if terminal:
                             resp.close()
                         yield event
                         if terminal:
                             return last_cursor
+                    elif pending_cursor is not None:
+                        last_cursor = pending_cursor
                     sse_id = None
+                    pending_cursor = None
                     continue
                 if line.startswith("id:"):
                     sse_id = line[len("id:") :].lstrip()
                     if not sse_id.isdigit() or int(sse_id) < 1:
                         raise ValueError("invalid session event sequence")
-                    last_cursor = int(sse_id)
+                    pending_cursor = int(sse_id)
                 elif line.startswith("data:"):
                     data_lines.append(line[len("data:") :].lstrip())
+            if data_lines or pending_cursor is not None:
+                raise ValueError("incomplete SSE frame")
             return last_cursor
         finally:
             resp.close()
