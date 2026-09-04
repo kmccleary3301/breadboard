@@ -299,13 +299,16 @@ export function makeSshSlurmBackend(
         "set -eu;",
         `lock=${shellQuote(lockPath)};`,
         `receipt=${shellQuote(receiptPath)};`,
+        `cancel=${shellQuote(cancelPath)};`,
         `owner="$lock/owner";`,
         "id='';",
-        `cleanup() { if [ ! -s "$receipt" ]; then case "$id" in ""|*[!0-9]*) scancel --name ${shellQuote(jobName)} 2>/dev/null || true;; *) scancel "$id" || true;; esac; fi; rm -rf "$lock"; };`,
+        `cancel_by_name() { touch "$cancel"; attempt=0; while [ "$attempt" -lt ${commandTimeoutSeconds} ]; do ids=$(squeue --noheader --name ${shellQuote(jobName)} --format=%A 2>/dev/null || true); for candidate in $ids; do case "$candidate" in ""|*[!0-9]*) :;; *) scancel "$candidate" 2>/dev/null || true;; esac; done; attempt=$((attempt+1)); [ "$attempt" -ge ${commandTimeoutSeconds} ] || sleep 1; done; };`,
+        `cleanup() { if [ ! -s "$receipt" ]; then case "$id" in ""|*[!0-9]*) cancel_by_name;; *) scancel "$id" || true;; esac; fi; rm -rf "$lock"; };`,
         "trap cleanup EXIT;",
         `printf '%s %s\\n' "$$" "$(date +%s)" > "$owner.tmp";`,
         `mv "$owner.tmp" "$owner";`,
         `[ -s "$receipt" ] && exit 0;`,
+        `[ ! -f "$cancel" ] || exit 75;`,
         `printf '%s\\n' ${shellQuote(encodedSubmissionCommand)} > ${shellQuote(`${submissionCommandPath}.tmp`)};`,
         `mv ${shellQuote(`${submissionCommandPath}.tmp`)} ${shellQuote(submissionCommandPath)};`,
         `job=$(${submissionCommand});`,
@@ -455,32 +458,52 @@ export function makeSshSlurmBackend(
         : state === "completed"
           ? "failed"
           : state
-      const overflowMarker = `__breadboard_output_exceeds_${maxOutputBytes}__`
       const readOutput = async (
         path: string,
       ): Promise<{ readonly content: string; readonly evidenceRefs: readonly string[] }> => {
-        const command = status === "completed"
-          ? [
-              `if [ ! -f ${shellQuote(path)} ]; then exit 66; fi;`,
-              `size=$(wc -c < ${shellQuote(path)});`,
-              `[ "$size" -le ${maxOutputBytes} ] || exit 67;`,
-              `cat ${shellQuote(path)}`,
-            ].join(" ")
-          : [
-              `if [ ! -f ${shellQuote(path)} ]; then exit 0; fi;`,
-              `size=$(wc -c < ${shellQuote(path)});`,
-              `if [ "$size" -le ${maxOutputBytes} ]; then cat ${shellQuote(path)};`,
-              `else printf '%s' ${shellQuote(overflowMarker)}; fi`,
-            ].join(" ")
-        const output = (await ssh(command)).stdout
-        return output === overflowMarker
-          ? {
-              content: "",
-              evidenceRefs: [
-                `ssh://${sshTarget}${uriPath(path)}#truncated-at-${maxOutputBytes}-bytes`,
-              ],
-            }
-          : { content: output, evidenceRefs: [] }
+        if (status === "completed") {
+          const output = await ssh([
+            `if [ ! -f ${shellQuote(path)} ]; then exit 66; fi;`,
+            `size=$(wc -c < ${shellQuote(path)});`,
+            `[ "$size" -le ${maxOutputBytes} ] || exit 67;`,
+            `cat ${shellQuote(path)}`,
+          ].join(" "))
+          return { content: output.stdout, evidenceRefs: [] }
+        }
+        const output = (await ssh([
+          `if [ ! -f ${shellQuote(path)} ]; then printf 'M\\n'; exit 0; fi;`,
+          `size=$(wc -c < ${shellQuote(path)});`,
+          `if [ "$size" -le ${maxOutputBytes} ]; then`,
+          `printf 'C:%s\\n' "$size"; cat ${shellQuote(path)};`,
+          `else printf 'T:%s\\n' "$size"; fi`,
+        ].join(" "))).stdout
+        const separator = output.indexOf("\n")
+        if (separator < 0) throw new Error("Slurm output framing is invalid")
+        const header = output.slice(0, separator)
+        const content = output.slice(separator + 1)
+        if (header === "M") return { content: "", evidenceRefs: [] }
+        const contentMatch = /^C:(\d+)$/.exec(header)
+        if (contentMatch) {
+          const size = Number.parseInt(contentMatch[1] ?? "", 10)
+          if (size <= maxOutputBytes && Buffer.byteLength(content, "utf8") === size) {
+            return { content, evidenceRefs: [] }
+          }
+          throw new Error("Slurm output content length does not match its frame")
+        }
+        const truncatedMatch = /^T:(\d+)$/.exec(header)
+        if (truncatedMatch) {
+          const size = Number.parseInt(truncatedMatch[1] ?? "", 10)
+          if (size <= maxOutputBytes) {
+            throw new Error("Slurm output truncation frame is below the configured limit")
+          }
+          return {
+            content: "",
+            evidenceRefs: [
+              `ssh://${sshTarget}${uriPath(path)}#truncated-${size}-bytes-at-limit-${maxOutputBytes}`,
+            ],
+          }
+        }
+        throw new Error("Slurm output framing is invalid")
       }
       const [stdout, stderr] = await Promise.all([
         readOutput(execution.stdoutPath),

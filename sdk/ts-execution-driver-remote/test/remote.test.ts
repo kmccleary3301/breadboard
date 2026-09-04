@@ -2208,15 +2208,19 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
       if (remoteCommand.includes("if [ ! -f") && remoteCommand.includes(".out"))
         return {
           stdout: oversizedTerminalOutput
-            ? "__breadboard_output_exceeds_4194304__"
-            : "world\n",
+            ? "T:5000000\n"
+            : remoteCommand.includes("C:%s")
+              ? "C:6\nworld\n"
+              : "world\n",
           stderr: "",
         }
       if (remoteCommand.includes("if [ ! -f") && remoteCommand.includes(".err"))
         return {
           stdout: oversizedTerminalOutput
-            ? "__breadboard_output_exceeds_4194304__"
-            : "",
+            ? "T:5000000\n"
+            : remoteCommand.includes("C:%s")
+              ? "C:0\n"
+              : "",
           stderr: "",
         }
       assert.fail(`unexpected Slurm command: ${remoteCommand}`)
@@ -2246,11 +2250,10 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   assert.equal(invocations[0]?.[1]?.includes("setsid sh -c"), true)
   assert.equal(invocations[0]?.[1]?.includes("--wrap="), true)
   assert.ok(invocations[0]?.[1]?.includes(`[ ! -s "$receipt" ]`))
-  assert.ok(
-    invocations[0]?.[1]?.includes(
-      `case "$id" in ""|*[!0-9]*) scancel --name`,
-    ),
-  )
+  assert.ok(invocations[0]?.[1]?.includes(`cancel_by_name() { touch "$cancel"`))
+  assert.ok(invocations[0]?.[1]?.includes("squeue --noheader --name"))
+  assert.ok(invocations[0]?.[1]?.includes(`while [ "$attempt" -lt 30 ]`))
+  assert.ok(invocations[0]?.[1]?.includes(`[ ! -f "$cancel" ] || exit 75`))
   assert.ok(invocations[0]?.[1]?.includes(`kill -0 "$pid"`))
   assert.ok(invocations[0]?.[1]?.includes(`cat "$lock/job"`))
   assert.ok(invocations[0]?.[1]?.includes("scancel --name"))
@@ -2309,20 +2312,20 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   assert.equal(canceledWithoutOutputs.result?.status, "cancelled")
   assert.equal(
     canceledWithoutOutputs.result?.stdout_ref,
-    `sha256:${"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}`,
+    "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   )
   assert.equal(
     canceledWithoutOutputs.result?.stderr_ref,
-    `sha256:${"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}`,
+    "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   )
   assert.ok(
     canceledWithoutOutputs.evidenceRefs?.includes(
-      "ssh://cluster.example/tmp/breadboard%20evidence/slurm-24680.out#truncated-at-4194304-bytes",
+      "ssh://cluster.example/tmp/breadboard%20evidence/slurm-24680.out#truncated-5000000-bytes-at-limit-4194304",
     ),
   )
   assert.ok(
     canceledWithoutOutputs.evidenceRefs?.includes(
-      "ssh://cluster.example/tmp/breadboard%20evidence/slurm-24680.err#truncated-at-4194304-bytes",
+      "ssh://cluster.example/tmp/breadboard%20evidence/slurm-24680.err#truncated-5000000-bytes-at-limit-4194304",
     ),
   )
   const cancelDeadlineAtMs = Date.now() + 100
