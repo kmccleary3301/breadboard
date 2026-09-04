@@ -3118,12 +3118,16 @@ class SessionService:
                 )
             if terminal_count == 0:
                 retained_children.append(child_state)
+        workspace = initial_metadata.get("workspace")
+        should_cancel_tree = bool(retained_children) or (
+            isinstance(workspace, str) and bool(workspace.strip())
+        )
         if retained_children and not callable(cancel_tree):
             raise RuntimeError(
                 "cannot stop parent with retained children without an authoritative reconciler"
             )
         canceled_tree = None
-        if callable(cancel_tree):
+        if should_cancel_tree and callable(cancel_tree):
             try:
                 canceled_tree = cancel_tree(session_id, reason=reason or "operator request")
                 if inspect.isawaitable(canceled_tree):
@@ -3154,7 +3158,7 @@ class SessionService:
             for child_state in canceled_tree
         ):
             raise RuntimeError("durable child cancellation remains pending")
-        if retained_children or callable(cancel_tree):
+        if should_cancel_tree:
             remaining_children = await self.registry.records()
             for child_record in remaining_children:
                 child_metadata = (

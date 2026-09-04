@@ -3108,13 +3108,32 @@ class RayJobAdapter:
         self.orchestrator = orchestrator
         self._default_actor_launcher = actor_launcher is None
         self._actor_launcher = self._launch_actor if self._default_actor_launcher else actor_launcher
-        self._actors: dict[str, Any] = {}
-        self._actor_lookup_unavailable: set[str] = set()
-        self._released_actor_ids: set[str] = set()
+        self._actors: dict[tuple[str, str], Any] = {}
+        self._actor_lookup_unavailable: set[tuple[str, str]] = set()
+        self._released_actor_ids: set[tuple[str, str]] = set()
         self._workspace: Path | None = None
 
     def bind_workspace(self, workspace: Path) -> None:
         self._workspace = workspace
+
+    def _target_workspace(self, target: Mapping[str, Any]) -> Path | None:
+        metadata = target.get("metadata")
+        job_data = metadata.get("job") if isinstance(metadata, Mapping) else None
+        workspace = job_data.get("workspace") if isinstance(job_data, Mapping) else None
+        if isinstance(workspace, str) and workspace.strip():
+            return Path(workspace).expanduser().resolve()
+        return self._workspace
+
+    @staticmethod
+    def _actor_key(job_id: str, workspace: Path) -> tuple[str, str]:
+        return (str(workspace.expanduser().resolve()), job_id)
+
+    def _actor_lookup_is_unavailable(
+        self, job_id: str, workspace: Path | None
+    ) -> bool:
+        return workspace is None or self._actor_key(
+            job_id, workspace
+        ) in self._actor_lookup_unavailable
 
     @staticmethod
     def _actor_name(job_id: str) -> str:
@@ -3192,42 +3211,49 @@ class RayJobAdapter:
         self._submit_invocation(actor, self._invocation_id(job_id), task)
         return actor
 
-    def _lookup_actor(self, job_id: str) -> Any | None:
-        actor = self._actors.get(job_id)
+    def _lookup_actor(self, job_id: str, workspace: Path | None) -> Any | None:
+        if workspace is None:
+            return None
+        key = self._actor_key(job_id, workspace)
+        actor = self._actors.get(key)
         if actor is not None:
             return actor
         try:
             import ray
 
-            if self._workspace is None:
-                raise RuntimeError("Ray child adapter is not bound to a workspace")
             actor = ray.get_actor(
                 self._actor_name(job_id),
-                namespace=self._actor_namespace(self._workspace),
+                namespace=self._actor_namespace(workspace),
             )
         except (ImportError, RuntimeError):
-            self._actor_lookup_unavailable.add(job_id)
+            self._actor_lookup_unavailable.add(key)
             return None
         except ValueError:
-            self._actor_lookup_unavailable.discard(job_id)
+            self._actor_lookup_unavailable.discard(key)
             return None
-        self._actor_lookup_unavailable.discard(job_id)
-        self._actors[job_id] = actor
+        self._actor_lookup_unavailable.discard(key)
+        self._actors[key] = actor
         return actor
 
     def _refresh_actor_after_rpc_failure(
-        self, job_id: str, failed_actor: Any
+        self, job_id: str, failed_actor: Any, workspace: Path | None
     ) -> Any | None:
-        if self._actors.get(job_id) is failed_actor:
-            self._actors.pop(job_id, None)
+        if workspace is not None:
+            key = self._actor_key(job_id, workspace)
+            if self._actors.get(key) is failed_actor:
+                self._actors.pop(key, None)
         try:
-            refreshed = self._lookup_actor(job_id)
+            return self._lookup_actor(job_id, workspace)
         except BaseException:
             return None
-        return refreshed
+
     def recover(self, target: Mapping[str, Any]) -> ExecutionTarget | None:
         job_id = str(target.get("ref", "")).removeprefix("job:")
-        actor = self._lookup_actor(job_id)
+        workspace = self._target_workspace(target)
+        actor = self._lookup_actor(job_id, workspace)
+        invocation_missing = actor is not None and self._invocation_state(actor, self._invocation_id(job_id)) == "missing"
+        if invocation_missing:
+            actor = None
         job = self.orchestrator.job_manager.get(job_id)
         metadata = target.get("metadata")
         if not isinstance(metadata, Mapping):
@@ -3272,17 +3298,21 @@ class RayJobAdapter:
 
     def release_terminal(self, target: Mapping[str, Any]) -> bool:
         job_id = str(target.get("ref", "")).removeprefix("job:")
-        if job_id in self._released_actor_ids:
+        workspace = self._target_workspace(target)
+        if workspace is None:
+            return False
+        key = self._actor_key(job_id, workspace)
+        if key in self._released_actor_ids:
             return True
-        actor = self._actors.pop(job_id, None)
+        actor = self._actors.pop(key, None)
         is_actor_handle = False
         if actor is None:
-            actor = self._lookup_actor(job_id)
-            self._actors.pop(job_id, None)
+            actor = self._lookup_actor(job_id, workspace)
+            self._actors.pop(key, None)
         if actor is None:
-            if job_id in self._actor_lookup_unavailable:
+            if self._actor_lookup_is_unavailable(job_id, workspace):
                 return False
-            self._released_actor_ids.add(job_id)
+            self._released_actor_ids.add(key)
             return True
         try:
             import ray
@@ -3292,7 +3322,7 @@ class RayJobAdapter:
         except BaseException:
             if is_actor_handle:
                 return False
-        self._released_actor_ids.add(job_id)
+        self._released_actor_ids.add(key)
         return True
 
     def _mark_job_failed(self, target: Mapping[str, Any], job_id: str) -> None:
@@ -3371,7 +3401,7 @@ class RayJobAdapter:
             raise ChildError(
                 f"Ray job {job_id} is already terminal ({job.state})"
             )
-        actor = self._lookup_actor(job_id)
+        actor = self._lookup_actor(job_id, workspace)
         try:
             if actor is None:
                 if self._default_actor_launcher:
@@ -3381,10 +3411,10 @@ class RayJobAdapter:
             else:
                 self._submit_invocation(actor, invocation_id, spec.task)
         except BaseException:
-            if self._lookup_actor(job_id) is None:
+            if self._lookup_actor(job_id, workspace) is None:
                 self.orchestrator.mark_job_failed(job_id)
             raise
-        self._actors[job_id] = actor
+        self._actors[self._actor_key(job_id, workspace)] = actor
         metadata = {
             "job": {
                 "job_id": job.job_id,
@@ -3431,9 +3461,10 @@ class RayJobAdapter:
                 job_data["state"] = "completed"
                 job_data["result_payload"] = dict(durable_payload)
             return "completed"
-        actor = self._lookup_actor(job_id)
+        workspace = self._target_workspace(target)
+        actor = self._lookup_actor(job_id, workspace)
         if actor is None:
-            if job_id in self._actor_lookup_unavailable:
+            if self._actor_lookup_is_unavailable(job_id, workspace):
                 return "pending"
             if job is not None and job.state == "completed":
                 return "completed"
@@ -3451,9 +3482,11 @@ class RayJobAdapter:
         except BaseException:
             if getattr(actor, "get_invocation_state", None) is None:
                 return "pending"
-            actor = self._refresh_actor_after_rpc_failure(job_id, actor)
+            actor = self._refresh_actor_after_rpc_failure(
+                job_id, actor, workspace
+            )
             if actor is None:
-                if job_id in self._actor_lookup_unavailable:
+                if self._actor_lookup_is_unavailable(job_id, workspace):
                     return "pending"
                 self._mark_job_failed(target, job_id)
                 return "absent"
@@ -3534,7 +3567,7 @@ class RayJobAdapter:
             return False
         if job is not None and job.state == "killed":
             return True
-        actor = self._lookup_actor(job_id)
+        actor = self._lookup_actor(job_id, self._target_workspace(target))
         if actor is None:
             if has_recovery_metadata:
                 return False
@@ -3586,7 +3619,7 @@ class RayJobAdapter:
         if not isinstance(payload, Mapping) or not payload:
             payload = job_data.get("result_payload") if isinstance(job_data, Mapping) else None
         if not isinstance(payload, Mapping) or not payload:
-            actor = self._lookup_actor(job_id)
+            actor = self._lookup_actor(job_id, self._target_workspace(target))
             if actor is not None:
                 result = getattr(actor, "get_result", None)
                 payload = self._ray_get(result) if result is not None else None

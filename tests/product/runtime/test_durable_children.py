@@ -3424,7 +3424,8 @@ def test_ray_dead_cached_actor_is_evicted_and_terminalized(
     )
     adapter = RayJobAdapter(orchestrator)
     adapter.bind_workspace(tmp_path)
-    adapter._actors[spawned.job.job_id] = DeadActor()
+    actor_key = adapter._actor_key(spawned.job.job_id, tmp_path)
+    adapter._actors[actor_key] = DeadActor()
     monkeypatch.setattr(
         ray,
         "get_actor",
@@ -3432,11 +3433,11 @@ def test_ray_dead_cached_actor_is_evicted_and_terminalized(
     )
     target = {
         "ref": f"job:{spawned.job.job_id}",
-        "metadata": {"job": {"job_id": spawned.job.job_id}},
+        "metadata": {"job": {"job_id": spawned.job.job_id, "workspace": str(tmp_path)}},
     }
 
     assert adapter.observe(target) == "absent"
-    assert spawned.job.job_id not in adapter._actors
+    assert actor_key not in adapter._actors
     assert orchestrator.job_manager.get(spawned.job.job_id).state == "failed"
 def test_process_identity_is_retained_before_restart_without_private_journal(tmp_path: Path) -> None:
     workspace, repository, parent, registry = _running_parent(tmp_path)
@@ -3834,7 +3835,7 @@ def test_ray_completed_result_uses_custom_artifact_store(tmp_path: Path) -> None
 
 
 
-def test_ray_cancel_signal_failure_retains_recovery_state() -> None:
+def test_ray_cancel_signal_failure_retains_recovery_state(tmp_path: Path) -> None:
     from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
 
     class Actor:
@@ -3849,17 +3850,18 @@ def test_ray_cancel_signal_failure_retains_recovery_state() -> None:
     )
     actor = Actor()
     adapter = RayJobAdapter(orchestrator)
-    adapter._actors[spawned.job.job_id] = actor
+    actor_key = adapter._actor_key(spawned.job.job_id, tmp_path)
+    adapter._actors[actor_key] = actor
     target = {
         "ref": f"job:{spawned.job.job_id}",
-        "metadata": {"job": {"job_id": spawned.job.job_id}},
+        "metadata": {"job": {"job_id": spawned.job.job_id, "workspace": str(tmp_path)}},
     }
     assert adapter.cancel(target) is False
-    assert adapter._actors[spawned.job.job_id] is actor
+    assert adapter._actors[actor_key] is actor
     assert orchestrator.job_manager.get(spawned.job.job_id).state == "accepted"
 
 
-def test_ray_pending_cancellation_does_not_terminalize_job() -> None:
+def test_ray_pending_cancellation_does_not_terminalize_job(tmp_path: Path) -> None:
     from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
 
     class Actor:
@@ -3873,10 +3875,10 @@ def test_ray_pending_cancellation_does_not_terminalize_job() -> None:
         async_mode=True,
     )
     adapter = RayJobAdapter(orchestrator)
-    adapter._actors[spawned.job.job_id] = Actor()
+    adapter._actors[adapter._actor_key(spawned.job.job_id, tmp_path)] = Actor()
     target = {
         "ref": f"job:{spawned.job.job_id}",
-        "metadata": {"job": {"job_id": spawned.job.job_id}},
+        "metadata": {"job": {"job_id": spawned.job.job_id, "workspace": str(tmp_path)}},
     }
 
     assert adapter.cancel(target) is False
@@ -3898,7 +3900,7 @@ def test_ray_actor_cancellation_waits_for_execution_group_to_quiesce() -> None:
     assert actor_class.cancel(actor) == "killed"
 
 
-def test_ray_observe_state_failure_stays_recovery_pending() -> None:
+def test_ray_observe_state_failure_stays_recovery_pending(tmp_path: Path) -> None:
     from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
 
     class Actor:
@@ -3913,16 +3915,17 @@ def test_ray_observe_state_failure_stays_recovery_pending() -> None:
     )
     actor = Actor()
     adapter = RayJobAdapter(orchestrator)
-    adapter._actors[spawned.job.job_id] = actor
+    actor_key = adapter._actor_key(spawned.job.job_id, tmp_path)
+    adapter._actors[actor_key] = actor
     target = {
         "ref": f"job:{spawned.job.job_id}",
-        "metadata": {"job": {"job_id": spawned.job.job_id}},
+        "metadata": {"job": {"job_id": spawned.job.job_id, "workspace": str(tmp_path)}},
     }
     assert adapter.observe(target) == "pending"
-    assert adapter._actors[spawned.job.job_id] is actor
+    assert adapter._actors[actor_key] is actor
     assert orchestrator.job_manager.get(spawned.job.job_id).state == "accepted"
 
-def test_ray_result_rpc_failure_stays_recovery_pending() -> None:
+def test_ray_result_rpc_failure_stays_recovery_pending(tmp_path: Path) -> None:
     from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
 
     class Actor:
@@ -3939,10 +3942,10 @@ def test_ray_result_rpc_failure_stays_recovery_pending() -> None:
         async_mode=True,
     )
     adapter = RayJobAdapter(orchestrator)
-    adapter._actors[spawned.job.job_id] = Actor()
+    adapter._actors[adapter._actor_key(spawned.job.job_id, tmp_path)] = Actor()
     target = {
         "ref": f"job:{spawned.job.job_id}",
-        "metadata": {"job": {"job_id": spawned.job.job_id}},
+        "metadata": {"job": {"job_id": spawned.job.job_id, "workspace": str(tmp_path)}},
     }
 
     assert adapter.observe(target) == "pending"
@@ -3967,7 +3970,7 @@ def test_ray_cancel_preserves_completed_actor_result(tmp_path: Path) -> None:
         async_mode=True,
     )
     adapter = RayJobAdapter(orchestrator)
-    adapter._actors[spawned.job.job_id] = Actor()
+    adapter._actors[adapter._actor_key(spawned.job.job_id, tmp_path)] = Actor()
     target = {
         "ref": f"job:{spawned.job.job_id}",
         "metadata": {
@@ -4011,7 +4014,7 @@ def test_ray_cancel_after_restart_without_actor_remains_pending(
     }
     restarted = MultiAgentOrchestrator(TeamConfig("ray-cancel-restarted"))
     adapter = RayJobAdapter(restarted)
-    monkeypatch.setattr(adapter, "_lookup_actor", lambda _job_id: None)
+    monkeypatch.setattr(adapter, "_lookup_actor", lambda _job_id, _workspace: None)
 
     assert adapter.cancel(target) is False
     restored = restarted.job_manager.get(spawned.job.job_id)
@@ -4079,7 +4082,7 @@ def test_ray_actor_submission_crash_is_resumed_once_after_claim_expiry(
     workspace, repository, parent, registry = _running_parent(tmp_path)
     first_orchestrator = MultiAgentOrchestrator(TeamConfig("ray-submit-crash"))
     first_adapter = RayJobAdapter(first_orchestrator, actor_launcher=create_then_crash)
-    monkeypatch.setattr(first_adapter, "_lookup_actor", lambda job_id: actors.get(job_id))
+    monkeypatch.setattr(first_adapter, "_lookup_actor", lambda job_id, _workspace: actors.get(job_id))
     first_factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[first_adapter])
     with pytest.raises(RuntimeError, match="crash after actor creation"):
         first_factory.start(
@@ -4098,7 +4101,7 @@ def test_ray_actor_submission_crash_is_resumed_once_after_claim_expiry(
         second_orchestrator,
         actor_launcher=lambda *_args: pytest.fail("recovery must reuse named actor"),
     )
-    monkeypatch.setattr(second_adapter, "_lookup_actor", lambda job_id: actors.get(job_id))
+    monkeypatch.setattr(second_adapter, "_lookup_actor", lambda job_id, _workspace: actors.get(job_id))
     second_factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[second_adapter])
     assert second_factory.reconcile(state.recovery_ref) == state
     state = first_factory._cas(state, launch_claim_until=0.0)
@@ -4122,7 +4125,7 @@ def test_ray_reserved_target_relaunches_after_clean_restart(
             RuntimeError("crash before target publication")
         ),
     )
-    monkeypatch.setattr(first_adapter, "_lookup_actor", lambda _job_id: None)
+    monkeypatch.setattr(first_adapter, "_lookup_actor", lambda _job_id, _workspace: None)
     first_factory = DurableChildFactory(
         workspace,
         registry=registry,
@@ -4153,7 +4156,7 @@ def test_ray_reserved_target_relaunches_after_clean_restart(
 
     second_orchestrator = MultiAgentOrchestrator(TeamConfig("ray-clean-restart"))
     second_adapter = RayJobAdapter(second_orchestrator, actor_launcher=relaunch)
-    monkeypatch.setattr(second_adapter, "_lookup_actor", lambda _job_id: None)
+    monkeypatch.setattr(second_adapter, "_lookup_actor", lambda _job_id, _workspace: None)
     second_factory = DurableChildFactory(
         workspace,
         registry=registry,
@@ -4190,7 +4193,7 @@ def test_shared_ray_adapter_keeps_artifact_roots_isolated(
         MultiAgentOrchestrator(TeamConfig("ray-shared-root")),
         actor_launcher=launch,
     )
-    monkeypatch.setattr(adapter, "_lookup_actor", lambda job_id: None)
+    monkeypatch.setattr(adapter, "_lookup_actor", lambda job_id, _workspace: None)
     workspaces = (tmp_path / "workspace-a", tmp_path / "workspace-b")
     roots = (workspaces[0] / "artifacts-a", workspaces[1] / "artifacts-b")
     activations = tuple(
@@ -4289,7 +4292,7 @@ def test_ray_completed_result_survives_actor_disappearance_from_job_manager(tmp_
     )
     target = factory._record_state(activation.child_session_id).execution_target
     assert adapter.observe(target) == "completed"
-    monkeypatch.setattr(adapter, "_lookup_actor", lambda job_id: None)
+    monkeypatch.setattr(adapter, "_lookup_actor", lambda job_id, _workspace: None)
     assert adapter.observe(target) == "completed"
     result_ref = adapter.prepare_result(target, _spec(adapter.family, "ray disappearance"))
     assert isinstance(result_ref, ArtifactRef)
@@ -4440,7 +4443,7 @@ def test_ray_retained_completed_payload_is_validated_before_adoption(
 
     orchestrator = MultiAgentOrchestrator(TeamConfig("ray-retained-malformed"))
     adapter = RayJobAdapter(orchestrator)
-    monkeypatch.setattr(adapter, "_lookup_actor", lambda _job_id: None)
+    monkeypatch.setattr(adapter, "_lookup_actor", lambda _job_id, _workspace: None)
     job_id = "retained-malformed-job"
     target = {
         "ref": f"job:{job_id}",
@@ -4513,7 +4516,7 @@ def test_ray_cancellation_adopts_retained_completion_without_actor(
         TeamConfig("ray-retained-winner")
     )
     recovered_adapter = RayJobAdapter(recovered_orchestrator)
-    monkeypatch.setattr(recovered_adapter, "_lookup_actor", lambda _job_id: None)
+    monkeypatch.setattr(recovered_adapter, "_lookup_actor", lambda _job_id, _workspace: None)
     recovered_factory = DurableChildFactory(
         workspace,
         registry=SessionRegistry(state_root=tmp_path / "registry"),
@@ -4569,6 +4572,34 @@ def test_job_completion_replay_preserves_artifact_reference() -> None:
     assert rebuilt.job_manager.get(failed.job_id).state == "failed"
     assert rebuilt.job_manager.get(killed.job_id).state == "killed"
 
+
+
+def test_default_service_stops_and_deletes_ordinary_sessions_without_workspace(
+    tmp_path: Path,
+) -> None:
+    from breadboard_engine.api.cli_bridge.models import SessionStatus
+    from breadboard_engine.api.cli_bridge.registry.records import SessionRecord
+    from breadboard_engine.api.cli_bridge.service import SessionService
+
+    registry = SessionRegistry(state_root=tmp_path / "registry")
+    for session_id in ("stop-session", "delete-session"):
+        asyncio_run(
+            registry.create(
+                SessionRecord(
+                    session_id,
+                    status=SessionStatus.RUNNING,
+                    metadata={},
+                )
+            )
+        )
+    service = SessionService(registry=registry, state_root=tmp_path / "registry")
+
+    asyncio_run(service.stop_session("stop-session"))
+    stopped = asyncio_run(registry.get("stop-session"))
+    assert stopped is not None
+
+    asyncio_run(service.delete_session("delete-session"))
+    assert asyncio_run(registry.get("delete-session")) is None
 
 
 def test_default_service_refuses_parent_stop_with_unreconciled_child(
@@ -4738,6 +4769,7 @@ def test_ray_submission_waits_for_actor_invocation_acceptance() -> None:
 
 def test_ray_actor_failure_updates_job_manager(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
 
@@ -4756,14 +4788,20 @@ def test_ray_actor_failure_updates_job_manager(
         async_mode=True,
         task_descriptor={"recovery_ref": "child://child-session/attempt/a"},
     )
-    monkeypatch.setattr(adapter, "_lookup_actor", lambda _job_id: FailedActor())
-    target = ExecutionTarget(f"job:{spawned.job.job_id}").retained()
+    monkeypatch.setattr(adapter, "_lookup_actor", lambda _job_id, _workspace: FailedActor())
+    target = {
+        "ref": f"job:{spawned.job.job_id}",
+        "metadata": {"job": {"job_id": spawned.job.job_id, "workspace": str(tmp_path)}},
+    }
 
     assert adapter.observe(target) == "failed"
     assert orchestrator.job_manager.get(spawned.job.job_id).state == "failed"
 
 
-def test_ray_absent_nonterminal_job_is_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ray_absent_nonterminal_job_is_failed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
 
     orchestrator = MultiAgentOrchestrator(TeamConfig("ray-absent"))
@@ -4774,13 +4812,18 @@ def test_ray_absent_nonterminal_job_is_failed(monkeypatch: pytest.MonkeyPatch) -
         async_mode=True,
         task_descriptor={"recovery_ref": "child://child-session/attempt/a"},
     )
-    monkeypatch.setattr(adapter, "_lookup_actor", lambda job_id: None)
-    assert adapter.observe(ExecutionTarget(f"job:{spawned.job.job_id}").retained()) == "absent"
+    monkeypatch.setattr(adapter, "_lookup_actor", lambda job_id, _workspace: None)
+    target = {
+        "ref": f"job:{spawned.job.job_id}",
+        "metadata": {"job": {"job_id": spawned.job.job_id, "workspace": str(tmp_path)}},
+    }
+    assert adapter.observe(target) == "absent"
     assert orchestrator.job_manager.get(spawned.job.job_id).state == "failed"
 
 
 def test_ray_missing_invocation_cancels_detached_actor_and_job(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
 
@@ -4804,8 +4847,12 @@ def test_ray_missing_invocation_cancels_detached_actor_and_job(
     )
     actor = Actor()
     adapter = RayJobAdapter(orchestrator)
-    adapter._actors[spawned.job.job_id] = actor
-    target = ExecutionTarget(f"job:{spawned.job.job_id}").retained()
+    actor_key = adapter._actor_key(spawned.job.job_id, tmp_path)
+    adapter._actors[actor_key] = actor
+    target = {
+        "ref": f"job:{spawned.job.job_id}",
+        "metadata": {"job": {"job_id": spawned.job.job_id, "workspace": str(tmp_path)}},
+    }
     killed: list[object] = []
     import ray
 
@@ -4821,7 +4868,7 @@ def test_ray_missing_invocation_cancels_detached_actor_and_job(
     assert actor.cancelled
     assert orchestrator.job_manager.get(spawned.job.job_id).state == "killed"
     assert killed == [(actor, True)]
-    assert spawned.job.job_id not in adapter._actors
+    assert actor_key not in adapter._actors
 def test_registry_record_lock_uses_portable_process_lock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -5128,30 +5175,60 @@ def test_ray_actor_lookup_uses_stable_workspace_namespace(
     from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
 
     actor = object()
+    other_actor = object()
+    other_workspace = tmp_path / "other"
+    other_workspace.mkdir()
     lookups: list[tuple[str, str | None]] = []
 
     def get_actor(name: str, *, namespace: str | None = None):
         lookups.append((name, namespace))
-        return actor
+        return (
+            other_actor
+            if namespace == RayJobAdapter._actor_namespace(other_workspace)
+            else actor
+        )
 
     monkeypatch.setattr(ray, "get_actor", get_actor)
     adapter = RayJobAdapter(
         MultiAgentOrchestrator(TeamConfig("ray-stable-namespace"))
     )
-    adapter.bind_workspace(tmp_path)
 
-    assert adapter._lookup_actor("job-stable-namespace") is actor
+    assert adapter._lookup_actor("job-stable-namespace", tmp_path) is actor
+    assert (
+        adapter._lookup_actor("job-stable-namespace", other_workspace)
+        is other_actor
+    )
+    restarted = RayJobAdapter(
+        MultiAgentOrchestrator(TeamConfig("ray-stable-namespace-restart"))
+    )
+    recovered = restarted.recover(
+        {
+            "ref": "job:job-stable-namespace",
+            "metadata": {
+                "job": {
+                    "job_id": "job-stable-namespace",
+                    "workspace": str(tmp_path),
+                }
+            },
+        }
+    )
+
+    assert recovered is not None
+    assert recovered.volatile_handle is actor
     assert lookups == [
         (
             "bb-child-job-stable-namespace",
             adapter._actor_namespace(tmp_path),
-        )
+        ),
+        (
+            "bb-child-job-stable-namespace",
+            adapter._actor_namespace(other_workspace),
+        ),
+        (
+            "bb-child-job-stable-namespace",
+            adapter._actor_namespace(tmp_path),
+        ),
     ]
-    other_workspace = tmp_path / "other"
-    other_workspace.mkdir()
-    assert adapter._actor_namespace(other_workspace) != adapter._actor_namespace(
-        tmp_path
-    )
 
 
 def test_ray_actor_lookup_runtime_failure_stays_pending(
