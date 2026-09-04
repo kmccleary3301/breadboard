@@ -43,6 +43,26 @@ def test_compaction_event_queue_failure_is_not_silenced() -> None:
         emit("conversation.compaction.end", {"reason": "threshold"})
 
 
+def test_compaction_event_requires_positive_persistence_acknowledgement() -> None:
+    class EventQueue:
+        item: tuple[object, ...] | None = None
+
+        def put(self, item: tuple[object, ...]) -> None:
+            self.item = item
+
+    events = EventQueue()
+
+    class RejectedAcknowledgement:
+        def get(self, *, timeout: float) -> tuple[object, bool]:
+            assert timeout == 30
+            assert events.item is not None
+            return events.item[3], False
+
+    emit = _queue_event_emitter(events, RejectedAcknowledgement())
+    with pytest.raises(RuntimeError, match="was not acknowledged"):
+        emit("conversation.compaction.end", {"reason": "threshold"})
+
+
 
 
 def test_provider_schema_names_roundtrip():

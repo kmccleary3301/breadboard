@@ -46,7 +46,7 @@ from breadboard_engine.provider.contracts import (
     strip_public_completion_sentinel_tree,
 )
 from breadboard_engine.conductor.context_window_guard import ContextWindowGuard
-from breadboard_engine.agent_llm_openai import OpenAIConductor
+from breadboard_engine.agent_llm_openai import OpenAIConductor, _queue_event_emitter
 from breadboard_engine.state.session_state import SessionState
 
 
@@ -3493,15 +3493,15 @@ def test_remote_nonstreaming_compaction_reaches_product_session(
 
     class FakeQueue:
         def __init__(self) -> None:
-            self.queue: "queue.Queue[Tuple[Any, Any, Any]]" = queue.Queue()
+            self.queue: "queue.Queue[Tuple[Any, ...]]" = queue.Queue()
 
-        def put(self, item: Tuple[Any, Any, Any]) -> None:
+        def put(self, item: Tuple[Any, ...]) -> None:
             self.queue.put(item)
 
-        def get(self, timeout: float | None = None) -> Tuple[Any, Any, Any]:
-            raise queue.Empty
+        def get(self, timeout: float | None = None) -> Tuple[Any, ...]:
+            return self.queue.get(timeout=timeout)
 
-        def get_nowait(self) -> Tuple[Any, Any, Any]:
+        def get_nowait(self) -> Tuple[Any, ...]:
             return self.queue.get_nowait()
 
     class RemoteAgent:
@@ -3513,26 +3513,27 @@ def test_remote_nonstreaming_compaction_reaches_product_session(
             assert kwargs["event_emitter"] is None
             assert kwargs["context"]["retained_raw_fact_ids"] == ["ctn_000001"]
             assert kwargs["context"]["_product_compaction_owner"] is True
-            kwargs["event_queue"].put(
-                (
-                    "assistant_message",
-                    {"message": {"role": "assistant", "content": "must stay private"}},
-                    1,
-                )
+            emit = _queue_event_emitter(
+                kwargs["event_queue"],
+                kwargs["event_ack_queue"],
             )
-            kwargs["event_queue"].put(
-                (
-                    "conversation.compaction.end",
-                    {
-                        "context_encoding": "base64",
-                        "effective_context": base64.b64encode(
-                            effective_context
-                        ).decode("ascii"),
-                        "raw_fact_ids": ["ctn_000001", "ctn_000002"],
-                    },
-                    1,
-                )
+            emit(
+                "assistant_message",
+                {"message": {"role": "assistant", "content": "must stay private"}},
+                1,
             )
+            emit(
+                "conversation.compaction.end",
+                {
+                    "context_encoding": "base64",
+                    "effective_context": base64.b64encode(
+                        effective_context
+                    ).decode("ascii"),
+                    "raw_fact_ids": ["ctn_000001", "ctn_000002"],
+                },
+                1,
+            )
+            assert product_session.effective_context == effective_context
             return {
                 "completion_summary": {"completed": True},
                 "reward_metrics_payload": {},

@@ -1399,18 +1399,28 @@ class SessionRunner:
         event_queue: Any,
         handle_event: Callable[[str, Dict[str, Any], Optional[int]], None],
         *,
+        acknowledgement_queue: Any = None,
         errors: Optional[List[BaseException]] = None,
     ) -> tuple[Any, Any]:
         return self._task_execution.start_queue_pump(
-            event_queue, handle_event, errors=errors
+            event_queue,
+            handle_event,
+            acknowledgement_queue=acknowledgement_queue,
+            errors=errors,
         )
 
     def _drain_event_queue(
         self,
         event_queue: Any,
         handle_event: Callable[[str, Dict[str, Any], Optional[int]], None],
+        *,
+        acknowledgement_queue: Any = None,
     ) -> None:
-        return self._task_execution.drain_event_queue(event_queue, handle_event)
+        return self._task_execution.drain_event_queue(
+            event_queue,
+            handle_event,
+            acknowledgement_queue=acknowledgement_queue,
+        )
 
     def get_workspace_dir(self) -> Optional[Path]:
         if self._workspace_path:

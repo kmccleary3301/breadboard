@@ -252,12 +252,24 @@ def compute_tool_prompt_mode(tool_prompt_mode: str, will_use_native_tools: bool,
     return tool_prompt_mode
 def _queue_event_emitter(
     event_queue: Any,
+    acknowledgement_queue: Any = None,
 ) -> Callable[[str, Dict[str, Any], Optional[int]], None]:
     def emit(
         event_type: str, payload: Dict[str, Any], turn: Optional[int] = None
     ) -> None:
         try:
-            event_queue.put((event_type, payload, turn))
+            if event_type != "conversation.compaction.end":
+                event_queue.put((event_type, payload, turn))
+                return
+            acknowledgement_id = uuid.uuid4().hex
+            event_queue.put((event_type, payload, turn, acknowledgement_id))
+            if acknowledgement_queue is None:
+                raise RuntimeError(
+                    "compaction persistence acknowledgement queue is unavailable"
+                )
+            acknowledged_id, persisted = acknowledgement_queue.get(timeout=30)
+            if acknowledged_id != acknowledgement_id or persisted is not True:
+                raise RuntimeError("compaction persistence was not acknowledged")
         except Exception:
             if event_type == "conversation.compaction.end":
                 raise
@@ -5640,6 +5652,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         event_emitter: Optional[Callable[[str, Dict[str, Any], Optional[int]], None]] = None,
         event_queue: Optional[Any] = None,
         permission_queue: Optional[Any] = None,
+        event_ack_queue: Optional[Any] = None,
         control_queue: Optional[Any] = None,
         context: Optional[Dict[str, Any]] = None,
         kernel_emitter_run_dir: Optional[str] = None,
@@ -5656,7 +5669,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         # Initialize components
         emitter = event_emitter
         if emitter is None and event_queue is not None:
-            emitter = _queue_event_emitter(event_queue)
+            emitter = _queue_event_emitter(event_queue, event_ack_queue)
         self.todo_manager = None
         kernel_emitter = None
         if kernel_emitter_run_dir:
