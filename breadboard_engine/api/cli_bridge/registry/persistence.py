@@ -1631,6 +1631,16 @@ class PersistenceMixin:
                 for attachment in attachments
             ):
                 raise ValueError("retained turn attachments are invalid")
+            retained_flags = {
+                field: item.get(field, False)
+                for field in (
+                    "cancellation_requested",
+                    "execution_committed",
+                    "terminal_resolution_committed",
+                )
+            }
+            if any(type(value) is not bool for value in retained_flags.values()):
+                raise ValueError("retained turn flags must be booleans")
             turn = TurnRecord(
                 input_id=str(item["input_id"]),
                 turn_id=str(item["turn_id"]),
@@ -1639,13 +1649,13 @@ class PersistenceMixin:
                 attachments=tuple(attachments),
                 original_disposition=str(item["original_disposition"]),
                 state=str(item["state"]),
-                cancellation_requested=bool(item.get("cancellation_requested")),
+                cancellation_requested=retained_flags["cancellation_requested"],
                 cancellation_reason=item.get("cancellation_reason"),
-                execution_committed=bool(item.get("execution_committed")),
+                execution_committed=retained_flags["execution_committed"],
                 terminal_outcome=item.get("terminal_outcome"),
-                terminal_resolution_committed=bool(
-                    item.get("terminal_resolution_committed")
-                ),
+                terminal_resolution_committed=retained_flags[
+                    "terminal_resolution_committed"
+                ],
                 body_digest=str(item["body_digest"]),
                 logical_event_count_before_admission=marker,
                 logical_input_content_hash=content_hash,

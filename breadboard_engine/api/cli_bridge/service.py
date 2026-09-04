@@ -1151,12 +1151,21 @@ class SessionService:
                 or os.environ.get("BREADBOARD_SESSION_STATE_ROOT")
                 or (default_runtime_record_root() / "session_state")
             )
+        create_default_child_runtime = (
+            registry is None
+            and durable_child_reconciler is None
+            and durable_child_repository is None
+        )
         self.registry = registry or SessionRegistry(
             configured_state_root,
             process_identity=get_engine_process_identity(),
             bootstrap_verifier=get_launch_bootstrap_verifier(),
         )
         child_repository = durable_child_repository
+        if create_default_child_runtime:
+            child_repository = WorkItemRepository(
+                Path(configured_state_root).parent / "work_items.jsonl"
+            )
         if durable_child_reconciler is None and child_repository is not None:
             child_orchestrator = MultiAgentOrchestrator(TeamConfig("durable-child-runtime"))
             durable_child_reconciler = DurableChildReconciler(

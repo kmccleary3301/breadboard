@@ -5815,11 +5815,13 @@ def test_reconciler_persists_complete_nested_intent_before_signaling(
             *,
             requests,
             expected_child_recovery_refs=None,
+            expected_child_owner=None,
         ) -> None:
             await super().close_admission_for_parent_cancellations(
                 session_id,
                 requests=requests,
                 expected_child_recovery_refs=expected_child_recovery_refs,
+                expected_child_owner=expected_child_owner,
             )
             raise RuntimeError("simulated crash after durable batch")
 

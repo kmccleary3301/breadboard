@@ -146,6 +146,7 @@ class WorkItemRepository:
     """Existing Work Item owner with optional durable JSONL backing."""
     def __init__(self, path: str | Path | None = None) -> None:
         self._lock, self._streams, self._path = RLock(), {}, Path(path).resolve() if path is not None else None
+        self._poisoned: BaseException | None = None
         if self._path is not None:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             with ProcessLock(self._path):
@@ -178,8 +179,23 @@ class WorkItemRepository:
                 raise TypeError("invalid Work Item event frame")
             events.append(WorkItemEvent(row["work_item_id"], int(row["sequence"]), row["kind"], row["occurred_at"], row.get("payload", {})))
         return tuple(events)
+    @staticmethod
+    def _fsync_parent_directory(path: Path) -> None:
+        if os.name == "nt":
+            return
+        directory_fd = os.open(
+            path.parent,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+        )
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+
 
     def _reload(self) -> None:
+        if self._poisoned is not None:
+            raise RuntimeError("Work Item repository is poisoned") from self._poisoned
         if self._path is None or not self._path.exists():
             return
         streams: dict[str, list[WorkItemEvent]] = {}
@@ -231,20 +247,31 @@ class WorkItemRepository:
             if any(row.sequence != len(current) + offset for offset, row in enumerate(group, 1)): raise ValueError("appended event sequence is not contiguous")
             rebuild_work_item((*current, *group))
         if self._path is not None:
+            if self._poisoned is not None:
+                raise RuntimeError("Work Item repository is poisoned") from self._poisoned
             created = not self._path.exists()
-            with self._path.open("ab") as stream:
-                stream.write(self._transaction_frame(rows))
-                stream.flush()
-                os.fsync(stream.fileno())
-            if created and os.name != "nt":
-                directory_fd = os.open(
-                    self._path.parent,
-                    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
-                )
+            offset = self._path.stat().st_size if not created else 0
+            try:
+                with self._path.open("ab") as stream:
+                    stream.write(self._transaction_frame(rows))
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                if created:
+                    self._fsync_parent_directory(self._path)
+            except BaseException as error:
                 try:
-                    os.fsync(directory_fd)
-                finally:
-                    os.close(directory_fd)
+                    with self._path.open("r+b") as stream:
+                        stream.truncate(offset)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    if created:
+                        self._fsync_parent_directory(self._path)
+                except BaseException as rollback_error:
+                    self._poisoned = rollback_error
+                    raise RuntimeError(
+                        "Work Item journal append failed and rollback could not be confirmed"
+                    ) from error
+                raise
         for work_item_id, group in grouped.items():
             self._streams.setdefault(work_item_id, []).extend(group)
 

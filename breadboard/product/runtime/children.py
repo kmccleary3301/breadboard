@@ -2540,6 +2540,18 @@ class DurableChildFactory:
             cleanup_handoff = getattr(adapter, "cleanup_handoff", None)
             if callable(cleanup_handoff):
                 cleanup_handoff(state.execution_target)
+        if observed == "absent" and getattr(
+            adapter, "released_absence_is_terminal", False
+        ):
+            metadata = state.execution_target.get("metadata")
+            if isinstance(metadata, Mapping) and metadata.get("launch_phase") in {
+                "release_committed",
+                "released",
+            }:
+                try:
+                    return self._settle(state, "failed", (), allow_unprepared=True)
+                except LateResultRejected:
+                    return self._cancel_late_settlement(state)
         if observed == "absent" and getattr(adapter, "absence_is_terminal", False):
             if child.read_model.status in _TERMINAL:
                 return self._adopt_terminal_work_item(state, child)
@@ -2712,20 +2724,115 @@ class DurableChildReconciler:
         child_session_id = recovery_ref.split("/attempt/", 1)[0].removeprefix("child://")
         state = await asyncio.to_thread(factory._record_state, child_session_id)
         return await asyncio.to_thread(factory.cancel, child_session_id, expected_revision=state.revision, reason=reason)
-    async def cancel_tree(self, parent_session_id: str, *, reason: str = "operator request") -> tuple[ChildState, ...]:
+    async def cancel_tree(
+        self,
+        parent_session_id: str,
+        *,
+        reason: str = "operator request",
+    ) -> tuple[ChildState, ...]:
         records = self.registry.records()
         if hasattr(records, "__await__"):
             records = await records
+        parent_record = self.registry.get(parent_session_id)
+        if hasattr(parent_record, "__await__"):
+            parent_record = await parent_record
+        if parent_record is None:
+            direct_owner_scopes: set[tuple[str, str]] = set()
+            for candidate in records:
+                metadata = (
+                    candidate.metadata
+                    if isinstance(candidate.metadata, Mapping)
+                    else {}
+                )
+                retained = metadata.get("durable_child")
+                workspace = metadata.get("workspace")
+                root_session = (
+                    retained.get("root_session_id")
+                    if isinstance(retained, Mapping)
+                    and retained.get("parent_session_id") == parent_session_id
+                    else None
+                )
+                if (
+                    isinstance(workspace, str)
+                    and workspace.strip()
+                    and isinstance(root_session, str)
+                    and root_session.strip()
+                ):
+                    direct_owner_scopes.add((workspace, root_session))
+            if not direct_owner_scopes:
+                return ()
+            if len(direct_owner_scopes) != 1:
+                raise ChildError(
+                    "durable parent cancellation crosses workspace or root owners"
+                )
+            expected_workspace, expected_root_session = next(
+                iter(direct_owner_scopes)
+            )
+        else:
+            parent_metadata = (
+                parent_record.metadata
+                if isinstance(parent_record.metadata, Mapping)
+                else {}
+            )
+            expected_workspace = parent_metadata.get("workspace")
+            if (
+                not isinstance(expected_workspace, str)
+                or not expected_workspace.strip()
+            ):
+                raise ChildError("durable parent retained state has no workspace")
+            parent_child_state = parent_metadata.get("durable_child")
+            expected_root_session = (
+                parent_child_state.get("root_session_id")
+                if isinstance(parent_child_state, Mapping)
+                else parent_session_id
+            )
+            if (
+                not isinstance(expected_root_session, str)
+                or not expected_root_session.strip()
+            ):
+                raise ChildError("durable parent root identity is malformed")
+
         parent_work_item_ids: dict[str, str] = {}
+        repository_paths: set[str] = set()
         for candidate in records:
-            metadata = candidate.metadata if isinstance(candidate.metadata, Mapping) else {}
+            metadata = (
+                candidate.metadata if isinstance(candidate.metadata, Mapping) else {}
+            )
             retained = metadata.get("durable_child")
-            if not isinstance(retained, Mapping) or retained.get("parent_session_id") != parent_session_id:
+            child_spec = retained.get("child_spec") if isinstance(retained, Mapping) else None
+            if (
+                not isinstance(retained, Mapping)
+                or retained.get("parent_session_id") != parent_session_id
+                or metadata.get("workspace") != expected_workspace
+                or retained.get("root_session_id") != expected_root_session
+                or not isinstance(child_spec, Mapping)
+            ):
                 continue
-            parent_work_item_id = str(retained.get("parent_work_item_id") or "").strip()
+            repository_path = child_spec.get("work_item_repository_path")
+            if not isinstance(repository_path, str) or not repository_path.strip():
+                raise ChildError(
+                    "durable child WorkItemRepository identity is unavailable"
+                )
+            repository_paths.add(repository_path)
+            parent_work_item_id = str(
+                retained.get("parent_work_item_id") or ""
+            ).strip()
             recovery_ref = str(retained.get("recovery_ref") or "").strip()
             if parent_work_item_id and recovery_ref:
                 parent_work_item_ids.setdefault(parent_work_item_id, recovery_ref)
+        if not parent_work_item_ids:
+            return ()
+        if len(repository_paths) != 1:
+            raise ChildError(
+                "durable parent cancellation crosses WorkItemRepository owners"
+            )
+        expected_repository = next(iter(repository_paths))
+        expected_owner = (
+            expected_workspace,
+            expected_repository,
+            expected_root_session,
+        )
+
         descendant_session_ids = {parent_session_id}
         observed_child_refs: set[str] = set()
         changed = True
@@ -2738,11 +2845,21 @@ class DurableChildReconciler:
                     else {}
                 )
                 retained = metadata.get("durable_child")
+                child_spec = (
+                    retained.get("child_spec")
+                    if isinstance(retained, Mapping)
+                    else None
+                )
                 if (
                     not isinstance(retained, Mapping)
                     or retained.get("parent_session_id")
                     not in descendant_session_ids
                     or candidate.session_id in descendant_session_ids
+                    or metadata.get("workspace") != expected_workspace
+                    or not isinstance(child_spec, Mapping)
+                    or child_spec.get("work_item_repository_path")
+                    != expected_repository
+                    or retained.get("root_session_id") != expected_root_session
                 ):
                     continue
                 descendant_session_ids.add(candidate.session_id)
@@ -2750,8 +2867,7 @@ class DurableChildReconciler:
                 if isinstance(recovery_ref, str) and recovery_ref.strip():
                     observed_child_refs.add(recovery_ref)
                 changed = True
-        if not parent_work_item_ids:
-            return ()
+
         factories: dict[str, DurableChildFactory] = {}
         descendants_by_parent: dict[str, tuple[ChildState, ...]] = {}
         for parent_work_item_id, recovery_ref in parent_work_item_ids.items():
@@ -2785,6 +2901,7 @@ class DurableChildReconciler:
                 for parent_work_item_id in sorted(parent_work_item_ids)
             ),
             expected_child_recovery_refs=observed_child_refs,
+            expected_child_owner=expected_owner,
         )
         if hasattr(closed, "__await__"):
             await closed
@@ -3293,6 +3410,7 @@ class RayJobAdapter:
         return None
 class ProcessExecutionAdapter:
     family = "execution-world-process"
+    released_absence_is_terminal = True
 
     def __init__(self, command: Sequence[str] = ("/bin/sh", "-c", "sleep 30")) -> None:
         if os.name == "nt":

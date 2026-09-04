@@ -250,3 +250,36 @@ def test_first_journal_append_syncs_parent_directory(
 
     item.acquire_lease("worker", lease_id="lease-1")
     assert synced_directory_fds == 1
+
+
+def test_failed_journal_sync_rolls_back_complete_frame(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import os
+
+    path = tmp_path / "work-items.jsonl"
+    repository = WorkItemRepository(path)
+    item = WorkItem.create(
+        "durable owner",
+        work_item_id="work-1",
+        repository=repository,
+        clock=CLOCK,
+    )
+    original = path.read_bytes()
+    real_fsync = os.fsync
+    failed = False
+
+    def fail_once(fd: int) -> None:
+        nonlocal failed
+        if not failed:
+            failed = True
+            raise OSError("injected journal sync failure")
+        real_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", fail_once)
+    with pytest.raises(OSError, match="injected journal sync failure"):
+        item.acquire_lease("worker", lease_id="lease-1")
+
+    assert path.read_bytes() == original
+    assert WorkItem.restore(WorkItemRepository(path), "work-1").read_model.status == "ready"

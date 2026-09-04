@@ -12,6 +12,8 @@ import pytest
 from fastapi import HTTPException
 
 from breadboard.product.runtime import ReplayError, session_store
+from breadboard.product.coordination.work_items import WorkItemRepository
+from breadboard.product.runtime.children import DurableChildReconciler
 from breadboard_engine.api.cli_bridge.events import EventType, SessionEvent
 from breadboard_engine.api.cli_bridge.models import (
     SessionCreateRequest,
@@ -3959,3 +3961,50 @@ def test_terminal_retained_turn_is_unchanged_by_later_lifecycle_event(
     runner.reconcile_retained_input_admissions()
 
     assert asdict(turn) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "field",
+    [
+        "cancellation_requested",
+        "execution_committed",
+        "terminal_resolution_committed",
+    ],
+)
+async def test_restart_rejects_non_boolean_retained_turn_flags(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id=f"sess-invalid-{field}",
+        status=SessionStatus.RUNNING,
+    )
+    turn = TurnRecord(
+        input_id="input-active",
+        turn_id="turn-active",
+        client_message_id="client-active",
+        content="active",
+        attachments=(),
+        original_disposition="started",
+        state="active",
+    )
+    record.turns_by_id[turn.turn_id] = turn
+    record.active_turn_id = turn.turn_id
+    await registry.create(record)
+    state_path = next(tmp_path.glob("*.json"))
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    payload["turns"][0][field] = "false"
+    state_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    restarted = SessionRegistry(state_root=tmp_path)
+
+    assert await restarted.get(record.session_id) is None
+
+
+def test_default_service_wires_durable_child_recovery(tmp_path: Path) -> None:
+    service = SessionService(state_root=tmp_path / "session-state")
+
+    assert isinstance(service._durable_child_repository, WorkItemRepository)
+    assert isinstance(service._durable_child_reconciler, DurableChildReconciler)
