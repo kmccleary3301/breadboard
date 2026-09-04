@@ -786,6 +786,104 @@ async def test_session_runner_can_defer_execution_until_after_admission_response
 
 
 @pytest.mark.asyncio
+async def test_deferred_input_does_not_enqueue_after_parent_cancellation(
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "registry"
+    registry = SessionRegistry(state_root=state_root)
+    record = SessionRecord(
+        session_id="sess-deferred-cancel",
+        status=SessionStatus.RUNNING,
+        metadata={"workspace": str(tmp_path / "workspace")},
+    )
+
+    class Runner:
+        def __init__(self) -> None:
+            self.inputs: list[str] = []
+
+        def prepare_input_content(self, content: str) -> str:
+            return content
+
+        def validate_input_admission(self, *_args, **_kwargs) -> None:
+            return None
+
+        async def enqueue_input(
+            self,
+            content: str,
+            attachments: list[str],
+            *,
+            defer_execution: Any,
+            **_kwargs,
+        ) -> str:
+            async def execute() -> None:
+                self.inputs.append(content)
+
+            defer_execution(execute)
+            return content
+
+    runner = Runner()
+    record.runner = runner
+    await registry.create(record)
+    service = SessionService(registry=registry)
+    deferred: list[Any] = []
+    receipt = await service.send_input(
+        record.session_id,
+        SessionInputRequest(content="must not execute"),
+        defer_execution=deferred.append,
+    )
+
+    await registry.close_admission_for_parent_cancellation(
+        record.session_id,
+        work_item_id="work-parent",
+        reason="operator stop",
+        child_recovery_refs=[],
+    )
+    await deferred[0]()
+
+    cancelled = await registry.get(record.session_id)
+    assert cancelled is not None and cancelled.admission_closed is True
+    assert runner.inputs == []
+
+
+@pytest.mark.asyncio
+async def test_stale_registry_cannot_recreate_cross_process_deleted_session(
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "registry"
+    owner = SessionRegistry(state_root=state_root)
+    record = SessionRecord(
+        session_id="sess-cross-process-delete",
+        status=SessionStatus.RUNNING,
+    )
+    await owner.create(record)
+    deleter = SessionRegistry(state_root=state_root)
+    assert await deleter.get(record.session_id) is not None
+    await deleter.delete(record.session_id)
+
+    with pytest.raises(RuntimeError, match="deleted before persistence"):
+        await owner.persist(record)
+    assert await SessionRegistry(state_root=state_root).get(record.session_id) is None
+
+
+@pytest.mark.asyncio
+async def test_record_lock_wait_does_not_block_event_loop(tmp_path: Path) -> None:
+    state_root = tmp_path / "registry"
+    owner = SessionRegistry(state_root=state_root)
+    record = SessionRecord(
+        session_id="sess-record-lock-wait",
+        status=SessionStatus.RUNNING,
+    )
+    await owner.create(record)
+    waiter = SessionRegistry(state_root=state_root)
+
+    async with owner._record_file_lock(record.session_id):
+        waiting = asyncio.create_task(waiter.get(record.session_id))
+        await asyncio.wait_for(asyncio.sleep(0.05), timeout=0.5)
+        assert not waiting.done()
+    assert await asyncio.wait_for(waiting, timeout=2) is not None
+
+
+@pytest.mark.asyncio
 async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None:
     registry = SessionRegistry()
     record = SessionRecord(

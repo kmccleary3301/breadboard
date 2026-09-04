@@ -1671,6 +1671,10 @@ class DurableChildFactory:
         cleanup_handoff = getattr(adapter, "cleanup_handoff", None)
         if callable(cleanup_handoff):
             cleanup_handoff(state.execution_target)
+        if observed == "completed":
+            acknowledge = getattr(adapter, "acknowledge_result", None)
+            if callable(acknowledge):
+                acknowledge(state.execution_target)
         current = self._record_state(state.child_session_id)
         if observed == "completed" and not current.result_prepared:
             current = self.prepare_result(

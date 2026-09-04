@@ -5,7 +5,7 @@ import hashlib
 import json
 import os
 import tempfile
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager
 from functools import wraps
 from datetime import datetime
 from pathlib import Path
@@ -319,7 +319,13 @@ class PersistenceMixin:
 
     async def create(self, record: SessionRecord) -> SessionRecord:
         async with self._lock:
-            with self._record_file_lock(record.session_id):
+            async with self._record_file_lock(record.session_id):
+                tombstone = self._tombstone_path(record.session_id)
+                if tombstone is not None:
+                    try:
+                        tombstone.unlink()
+                    except FileNotFoundError:
+                        pass
                 self._records[record.session_id] = record
                 self._persist_record_locked(record)
         return record
@@ -332,7 +338,7 @@ class PersistenceMixin:
             metadata = record.metadata if isinstance(record.metadata, dict) else {}
             require_disk = record.loaded_from_retained_state or isinstance(metadata.get("durable_child"), dict) or isinstance(metadata.get("durable_parent_cancellation"), dict)
             try:
-                with self._record_file_lock(session_id):
+                async with self._record_file_lock(session_id):
                     return self._refresh_record_from_disk_locked(session_id, record, require_disk=require_disk)
             except SessionRecordDeletedError:
                 self._records.pop(session_id, None)
@@ -378,7 +384,9 @@ class PersistenceMixin:
 
     async def update_status(self, session_id: str, status: SessionStatus) -> None:
         async with self._lock:
-            with self._record_file_lock(session_id):
+            if session_id not in self._records:
+                return
+            async with self._record_file_lock(session_id):
                 record = self._records.get(session_id)
                 if not record:
                     return
@@ -405,7 +413,7 @@ class PersistenceMixin:
             return
         async with record.admission_lock:
             async with self._lock:
-                with self._record_file_lock(session_id):
+                async with self._record_file_lock(session_id):
                     current = self._records.get(session_id)
                     if current is not record:
                         return
@@ -519,7 +527,7 @@ class PersistenceMixin:
                     raise RuntimeError(
                         "parent cancellation SessionRecord changed during admission closure"
                     )
-                with self._record_file_lock(session_id):
+                async with self._record_file_lock(session_id):
                     record = self._refresh_record_from_disk_locked(
                         session_id,
                         record,
@@ -605,7 +613,9 @@ class PersistenceMixin:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         async with self._lock:
-            with self._record_file_lock(session_id):
+            if session_id not in self._records:
+                return
+            async with self._record_file_lock(session_id):
                 record = self._records.get(session_id)
                 if not record:
                     return
@@ -671,7 +681,7 @@ class PersistenceMixin:
             record = self._records.get(session_id)
             if record is None:
                 return False
-            with self._record_file_lock(session_id):
+            async with self._record_file_lock(session_id):
                 record = self._refresh_record_from_disk_locked(
                     session_id,
                     record,
@@ -707,7 +717,7 @@ class PersistenceMixin:
             record = self._records.get(session_id)
             if record is None:
                 return
-            with self._record_file_lock(session_id):
+            async with self._record_file_lock(session_id):
                 record = self._refresh_record_from_disk_locked(
                     session_id,
                     record,
@@ -765,7 +775,7 @@ class PersistenceMixin:
     ) -> None:
         """CAS-update private child coordination retained on a SessionRecord."""
         async with self._lock:
-            with self._record_file_lock(session_id):
+            async with self._record_file_lock(session_id):
                 record = self._records.get(session_id)
                 if record is None:
                     raise KeyError(f"session {session_id} is not retained")
@@ -804,7 +814,18 @@ class PersistenceMixin:
 
     async def delete(self, session_id: str) -> None:
         async with self._lock:
-            with self._record_file_lock(session_id):
+            path = self._state_path(session_id)
+            if session_id not in self._records and (
+                path is None or not path.exists()
+            ):
+                return
+            async with self._record_file_lock(session_id):
+                tombstone = self._tombstone_path(session_id)
+                if tombstone is not None:
+                    tombstone.parent.mkdir(parents=True, exist_ok=True)
+                    with tombstone.open("wb") as marker:
+                        marker.flush()
+                        os.fsync(marker.fileno())
                 self._records.pop(session_id, None)
                 path = self._state_path(session_id)
                 if path is not None:
@@ -821,7 +842,7 @@ class PersistenceMixin:
         cursor_event: SessionEvent | None = None,
     ) -> None:
         async with self._lock:
-            with self._record_file_lock(record.session_id):
+            async with self._record_file_lock(record.session_id):
                 state_path = self._state_path(record.session_id)
                 metadata = record.metadata if isinstance(record.metadata, dict) else {}
                 disk_authority = (
@@ -829,11 +850,14 @@ class PersistenceMixin:
                     or isinstance(metadata.get("durable_child"), dict)
                     or isinstance(metadata.get("durable_parent_cancellation"), dict)
                 )
-                if disk_authority and (state_path is None or not state_path.exists()):
-                    raise SessionRecordDeletedError(
-                        f"session {record.session_id} was deleted before persistence"
-                    )
-                if disk_authority and self._records.get(record.session_id) is not record:
+                tombstone = self._tombstone_path(record.session_id)
+                if (
+                    tombstone is not None
+                    and tombstone.exists()
+                ) or (
+                    self._state_root is not None
+                    and self._records.get(record.session_id) is not record
+                ):
                     raise SessionRecordDeletedError(
                         f"session {record.session_id} was deleted before persistence"
                     )
@@ -887,15 +911,21 @@ class PersistenceMixin:
             return None
         filename = hashlib.sha256(session_id.encode("utf-8")).hexdigest() + ".json"
         return self._state_root / filename
-    @contextmanager
-    def _record_file_lock(self, session_id: str):
+    def _tombstone_path(self, session_id: str) -> Path | None:
+        state_path = self._state_path(session_id)
+        if state_path is None:
+            return None
+        return state_path.with_suffix(".deleted")
+
+    @asynccontextmanager
+    async def _record_file_lock(self, session_id: str):
         state_path = self._state_path(session_id)
         if state_path is None:
             yield
             return
         lock_path = state_path.with_suffix(".lock")
         lock_path.parent.mkdir(parents=True, exist_ok=True)
-        with ProcessLock(lock_path):
+        async with _process_lock(lock_path):
             yield
     def _refresh_records_from_disk_locked(self) -> None:
         if self._state_root is None:
@@ -1055,6 +1085,11 @@ class PersistenceMixin:
         require_disk: bool = False,
     ) -> SessionRecord:
         path = self._state_path(session_id)
+        tombstone = self._tombstone_path(session_id)
+        if tombstone is not None and tombstone.exists():
+            raise SessionRecordDeletedError(
+                f"session {session_id} was deleted before persistence"
+            )
         if path is None:
             return record
         if not path.exists():

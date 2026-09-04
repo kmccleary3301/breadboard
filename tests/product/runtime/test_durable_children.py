@@ -4205,9 +4205,10 @@ def test_ray_cancellation_adopts_retained_completion_without_actor(
         execution_target=target,
     )
 
-    recovered_adapter = RayJobAdapter(
-        MultiAgentOrchestrator(TeamConfig("ray-retained-winner"))
+    recovered_orchestrator = MultiAgentOrchestrator(
+        TeamConfig("ray-retained-winner")
     )
+    recovered_adapter = RayJobAdapter(recovered_orchestrator)
     monkeypatch.setattr(recovered_adapter, "_lookup_actor", lambda _job_id: None)
     recovered_factory = DurableChildFactory(
         workspace,
@@ -4221,6 +4222,12 @@ def test_ray_cancellation_adopts_retained_completion_without_actor(
     assert recovered.terminal_outcome == "completed"
     assert recovered.result_refs == (artifact.digest,)
     assert recovered_factory.artifacts.read(artifact) == b"retained result"
+    completion_events = [
+        event
+        for event in recovered_orchestrator.event_log.events
+        if event.type == "agent.job_completed"
+    ]
+    assert len(completion_events) == 1
 def test_job_completion_replay_preserves_artifact_reference() -> None:
     from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
 
@@ -4499,9 +4506,15 @@ def test_registry_record_lock_uses_portable_process_lock(
     monkeypatch.setattr(persistence.os, "name", "nt")
     mixin = object.__new__(persistence.PersistenceMixin)
     mixin._state_root = tmp_path
-    with mixin._record_file_lock("windows-session"):
-        pass
-    assert lock_paths == [tmp_path / (hashlib.sha256(b"windows-session").hexdigest() + ".lock")]
+    async def acquire() -> None:
+        async with mixin._record_file_lock("windows-session"):
+            pass
+
+    asyncio_run(acquire())
+    identity = hashlib.sha256(
+        f"{tmp_path.resolve()}\0windows-session".encode("utf-8")
+    ).hexdigest()
+    assert lock_paths == [tmp_path.parent / ".breadboard-session-locks" / identity]
 
 
 

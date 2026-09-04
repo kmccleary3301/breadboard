@@ -3370,7 +3370,23 @@ class SessionService:
 
                 async def execute_admitted_turn() -> None:
                     try:
-                        await scheduled_operation()
+                        async with self.registry.fence_parent_turn_admission(
+                            session_id
+                        ):
+                            current = await self.registry.get(session_id)
+                            current_turn = (
+                                current.turns_by_id.get(turn.turn_id)
+                                if current is not None
+                                else None
+                            )
+                            if (
+                                current is None
+                                or current.admission_closed
+                                or current_turn is None
+                                or current_turn.terminal_outcome is not None
+                            ):
+                                return
+                            await scheduled_operation()
                     except Exception:
                         advance_queue = (
                             turn.state == "active"
