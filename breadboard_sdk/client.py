@@ -663,6 +663,7 @@ class BreadBoardClient:
                 raise ApiError("Event stream failed", resp.status_code, payload)
 
             data_lines: List[str] = []
+            sse_id: str | None = None
             pending_cursor: int | None = None
             last_cursor: int | None = None
             for raw in resp.iter_lines(decode_unicode=True):
