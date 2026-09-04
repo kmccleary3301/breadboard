@@ -382,6 +382,28 @@ export function makeScheduledExecutionDriver(
     })
   }
 
+  async function recordTerminalCancellationEvidence(
+    entry: ActiveScheduledExecution,
+    handle: ScheduledExecutionHandleV1,
+    observation: ScheduledExecutionObservationV1,
+    deadline: number,
+  ): Promise<void> {
+    while (true) {
+      try {
+        await recordEvidence(entry, handle, observation)
+        return
+      } catch (error: unknown) {
+        const remainingMs = deadline - Date.now()
+        if (remainingMs <= 0) {
+          throw backendFailure(driverId, "terminal cancellation evidence", error)
+        }
+        await new Promise((resolve) => {
+          setTimeout(resolve, Math.min(pollIntervalMs, remainingMs))
+        })
+      }
+    }
+  }
+
   function requestCancellation(
     entry: ActiveScheduledExecution,
     request: SandboxRequestV1,
@@ -423,7 +445,16 @@ export function makeScheduledExecutionDriver(
         if (!terminal && !NONTERMINAL_STATES.has(observation.state)) {
           throw new Error(`${driverId} backend returned unknown execution state`)
         }
-        await recordEvidence(entry, handle, observation)
+        if (terminal) {
+          await recordTerminalCancellationEvidence(
+            entry,
+            handle,
+            observation,
+            deadline,
+          )
+        } else {
+          await recordEvidence(entry, handle, observation)
+        }
         if (terminal) {
           entry.terminalObserved = true
           return terminalResult(

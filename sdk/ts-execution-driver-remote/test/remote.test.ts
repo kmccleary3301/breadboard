@@ -1912,6 +1912,68 @@ test("scheduled adapter retries failed evidence before later cleanup evidence", 
   assert.deepEqual(recordedStates, ["accepted", "cancelled"])
 })
 
+test("scheduled cancellation retries failed terminal evidence", async () => {
+  let cancelled = false
+  let cancelledEvidenceAttempts = 0
+  const recordedStates: string[] = []
+  const backend: ScheduledExecutionBackendV1 = {
+    backendId: "ray-cancellation-terminal-evidence-retry",
+    async submit() {
+      return {
+        executionId: "ray-cancellation-terminal-evidence-retry-1",
+        evidenceRefs: ["ray://submission/cancellation-terminal-retry"],
+      }
+    },
+    async observe() {
+      if (!cancelled) throw new Error("execution observation failed")
+      return {
+        state: "cancelled",
+        evidenceRefs: ["ray://cancelled/cancellation-terminal-retry"],
+      }
+    },
+    async cancel() {
+      cancelled = true
+    },
+  }
+  const world = createExecutionWorld({
+    drivers: [makeRayExecutionDriver(backend, {
+      pollIntervalMs: 1,
+      recordEvidence(evidence) {
+        if (evidence.state === "cancelled") {
+          cancelledEvidenceAttempts += 1
+          if (cancelledEvidenceAttempts === 1) {
+            throw new Error("transient terminal cancellation evidence failure")
+          }
+        }
+        recordedStates.push(evidence.state)
+      },
+    })],
+  })
+
+  const result = await world.execute({
+    kind: "sandbox",
+    capability: remoteCapability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place:ray:cancellation-terminal-evidence-retry",
+      placement_class: "delegated_python",
+      runtime_id: "ray",
+      capability_id: remoteCapability.capability_id,
+    },
+    requestId: "req:ray:cancellation-terminal-evidence-retry",
+    command: ["python", "-c", "print('retry')"],
+    driverId: "ray",
+    terminationGraceMs: 50,
+  })
+
+  assert.equal(result.kind, "sandbox")
+  assert.equal(result.sandboxResult?.status, "failed")
+  assert.equal(result.livenessEvidence.state, "failed")
+  assert.equal(cancelled, true)
+  assert.equal(cancelledEvidenceAttempts, 2)
+  assert.deepEqual(recordedStates, ["accepted", "cancelled"])
+})
+
 test("scheduled adapter retries failed terminal evidence before suppressing later states", async () => {
   let cancelled = false
   let completedAttempts = 0
