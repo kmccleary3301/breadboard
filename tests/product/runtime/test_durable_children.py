@@ -1230,6 +1230,61 @@ def test_cancel_tree_adopts_terminal_child_work_item(
     assert WorkItem.restore(repository, activation.child_work_item_id).read_model.status == outcome
 
 
+def test_cancel_tree_adopts_each_child_from_its_retained_artifact_store(
+    tmp_path: Path,
+) -> None:
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    first_factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[RetryAdapter()],
+        artifact_store=ArtifactStore(tmp_path / "first-artifacts"),
+    )
+    second_factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[RetryAdapter()],
+        artifact_store=ArtifactStore(tmp_path / "second-artifacts"),
+    )
+    first_factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec("retry-adapter", "first sibling"),
+    )
+    second = second_factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec("retry-adapter", "second sibling"),
+    )
+    second_state = second_factory._record_state(second.child_session_id)
+    second_state = second_factory.prepare_result(
+        second.child_session_id,
+        expected_revision=second_state.revision,
+        result=b"second-store-result",
+        attempt_id=second_state.attempt_id,
+    )
+    child = WorkItem.restore(repository, second.child_work_item_id)
+    attempt = child.read_model.current_attempt
+    assert attempt is not None
+    child.complete("completed before child-state CAS", attempt_id=attempt.attempt_id)
+
+    settled = first_factory.cancel_tree(
+        parent_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+    )
+
+    adopted = next(
+        state for state in settled if state.child_session_id == second.child_session_id
+    )
+    assert adopted.terminal_outcome == "completed"
+    assert adopted.result_refs == second_state.result_refs
+
+
+
 def test_cancel_tree_adopts_completed_child_after_parent_completion(
     tmp_path: Path,
 ) -> None:
@@ -4912,8 +4967,12 @@ def test_workflow_decision_replays_across_controller_restart(tmp_path: Path) -> 
     assert first == projected.value
     assert tuple(source.stream for source in projected.source.components) == (
         "work_item:parent-work",
+        f"child_state:{inspect.child_session_id}",
         f"work_item:{inspect.child_work_item_id}",
     )
+    assert tuple(
+        (cursor.stream, cursor.sequence) for cursor in projected.as_of
+    )[1] == (f"child_state:{inspect.child_session_id}", inspect.revision + 1)
     prepared = factory.prepare_result(
         inspect.child_session_id,
         expected_revision=inspect.revision,
@@ -5220,6 +5279,17 @@ def test_workflow_reconciles_retained_predelegation_child_without_stream(
     before_repair = controller.decision()
     assert before_repair.action == "wait"
     assert before_repair.active_step_ids == ("inspect",)
+    before_projected = project_workflow_decision(
+        definition,
+        workflow_id="startup-replay",
+        parent_work_item_events=repository.read("parent-work"),
+        children=((initial, ()),),
+    )
+    before_child_cursor = next(
+        cursor
+        for cursor in before_projected.as_of
+        if cursor.stream == "child_state:child-startup-replay"
+    )
     repaired = controller.advance()
 
     assert repaired.action == "fail"
@@ -5227,6 +5297,20 @@ def test_workflow_reconciles_retained_predelegation_child_without_stream(
     assert repaired.blocked_step_ids == ("verify",)
     assert repository.read("work-startup-replay") == ()
     assert len(repository.read("parent-work")) == parent_event_count
+    repaired_state = factory.child_states(parent_work_item_id="parent-work")[0]
+    after_projected = project_workflow_decision(
+        definition,
+        workflow_id="startup-replay",
+        parent_work_item_events=repository.read("parent-work"),
+        children=((repaired_state, ()),),
+    )
+    after_child_cursor = next(
+        cursor
+        for cursor in after_projected.as_of
+        if cursor.stream == "child_state:child-startup-replay"
+    )
+    assert after_projected.value.action == "fail"
+    assert after_child_cursor.sequence > before_child_cursor.sequence
 
 
 def test_workflow_waits_for_active_step_before_starting_another_root(

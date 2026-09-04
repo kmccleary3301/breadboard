@@ -208,6 +208,18 @@ def project_workflow_decision(
         ).retained()
         if any(child_spec.get(key) != value for key, value in expected.items()):
             raise ChildError("retained workflow child specification changed")
+        child_state_source = ProjectionSource(
+            f"child_state:{state.child_session_id}",
+            1,
+            state.revision + 1,
+        )
+        sources.append(child_state_source)
+        cursors.append(
+            ProjectionCursor(
+                child_state_source.stream,
+                child_state_source.last_sequence,
+            )
+        )
         child_event_rows = tuple(child_events)
         if not child_event_rows:
             if state.startup_phase != "recorded":

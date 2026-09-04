@@ -1613,6 +1613,14 @@ class DurableChildFactory:
             allow_parent_terminal=True,
         )
 
+    def _artifact_store_for_state(self, state: ChildState) -> ArtifactStore:
+        retained_root = state.child_spec.get("artifact_store_root")
+        if retained_root is None:
+            return self.artifacts
+        if not isinstance(retained_root, str) or not retained_root.strip():
+            raise ChildError("durable child artifact store identity is malformed")
+        return ArtifactStore(Path(retained_root))
+
     def _settle(
         self,
         state: ChildState,
@@ -1655,8 +1663,11 @@ class DurableChildFactory:
                 raise ExpectedRevisionConflict(
                     "settlement result refs do not match prepared refs"
                 )
+            artifact_store = self._artifact_store_for_state(state)
             for digest in result_refs:
-                self.artifacts.read(artifact_store_ref(self.artifacts._root, digest))
+                artifact_store.read(
+                    artifact_store_ref(artifact_store._root, digest)
+                )
         child = WorkItem.restore(self.repository, state.child_work_item_id, clock=self.clock, ids=self.ids)
         work_status = child.read_model.status
         latest_attempt = child.read_model.attempts[-1] if child.read_model.attempts else None
