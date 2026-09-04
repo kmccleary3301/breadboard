@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -85,6 +86,16 @@ def _parent_tree_lock_path(
         + hashlib.sha256(root_session_id.encode()).hexdigest()
         + ".lock"
     )
+@asynccontextmanager
+async def _process_lock(lock_path: Path):
+    lock = ProcessLock(lock_path)
+    await asyncio.to_thread(lock.__enter__)
+    try:
+        yield
+    finally:
+        await asyncio.shield(asyncio.to_thread(lock.__exit__, None, None, None))
+
+
 
 
 def _fence_parent_cancellation(method):
@@ -99,7 +110,7 @@ def _fence_parent_cancellation(method):
         if lock_path is None:
             return await method(self, session_id, *args, **kwargs)
         lock_path.parent.mkdir(parents=True, exist_ok=True)
-        with ProcessLock(lock_path):
+        async with _process_lock(lock_path):
             return await method(self, session_id, *args, **kwargs)
 
     return fenced
@@ -360,7 +371,7 @@ class PersistenceMixin:
             yield
             return
         lock_path.parent.mkdir(parents=True, exist_ok=True)
-        with ProcessLock(lock_path):
+        async with _process_lock(lock_path):
             if await self.get(session_id) is None:
                 raise RuntimeError("turn admission SessionRecord disappeared")
             yield

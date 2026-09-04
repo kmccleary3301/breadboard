@@ -2318,6 +2318,64 @@ def test_cancel_cannot_overwrite_inflight_settlement_reservation(tmp_path: Path,
     repaired = factory.reconcile(activation.recovery_ref)
     assert (repaired.status, repaired.terminal_outcome, repaired.terminal_count) == ("completed", "completed", 1)
 
+def test_reconcile_resumes_reserved_settlement_after_work_item_terminal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = RetryAdapter()
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family, "resume reserved settlement"),
+    )
+    current = factory._record_state(activation.child_session_id)
+    prepared = factory.prepare_result(
+        activation.child_session_id,
+        expected_revision=current.revision,
+        result=b"done",
+        attempt_id=current.attempt_id,
+    )
+    original_join_child = WorkItem.join_child
+
+    def fail_join(*_args, **_kwargs):
+        raise RuntimeError("simulated settlement crash")
+
+    monkeypatch.setattr(WorkItem, "join_child", fail_join)
+    with pytest.raises(RuntimeError, match="simulated settlement crash"):
+        factory.settle(
+            activation.child_session_id,
+            expected_revision=prepared.revision,
+            outcome="completed",
+            result_refs=prepared.result_refs,
+            attempt_id=current.attempt_id,
+        )
+    monkeypatch.setattr(WorkItem, "join_child", original_join_child)
+
+    reserved = factory._record_state(activation.child_session_id)
+    assert reserved.settlement is not None
+    assert WorkItem.restore(
+        repository,
+        activation.child_work_item_id,
+    ).read_model.status == "completed"
+    repaired = factory.reconcile(activation.recovery_ref)
+    assert (
+        repaired.status,
+        repaired.terminal_outcome,
+        repaired.terminal_count,
+        repaired.settlement,
+        repaired.joined,
+    ) == ("completed", "completed", 1, None, True)
+
+
+
 
 def test_work_item_journal_truncates_torn_last_frame(tmp_path: Path) -> None:
     path = tmp_path / "work-items.jsonl"
@@ -3455,6 +3513,12 @@ def test_ray_completed_result_uses_custom_artifact_store(tmp_path: Path) -> None
     recovered = factory.reconcile(activation.recovery_ref)
     assert recovered.status == "completed"
     assert recovered.result_refs
+    completion_events = [
+        event
+        for event in orchestrator.event_log.events
+        if event.type == "agent.job_completed"
+    ]
+    assert len(completion_events) == 1
     target = factory._record_state(activation.child_session_id).execution_target
     artifact_payload = target["metadata"]["job"]["result_payload"]["artifact_ref"]
     artifact = ArtifactRef(
@@ -5142,6 +5206,41 @@ def test_parent_cancellation_waits_for_cross_registry_turn_fence(
     assert not cancellation_thread.is_alive()
     assert cancellation_errors == []
     assert await_record(cancelling, "parent-session").admission_closed is True
+
+def test_cross_registry_cancellation_does_not_block_event_loop(
+    tmp_path: Path,
+) -> None:
+    from breadboard_engine.api.cli_bridge.models import SessionStatus
+    from breadboard_engine.api.cli_bridge.registry.records import SessionRecord
+
+    async def scenario() -> None:
+        state_root = tmp_path / "registry"
+        workspace = tmp_path / "workspace"
+        admitting = SessionRegistry(state_root=state_root)
+        await admitting.create(
+            SessionRecord(
+                "parent-session",
+                status=SessionStatus.RUNNING,
+                metadata={"workspace": str(workspace)},
+            )
+        )
+        cancelling = SessionRegistry(state_root=state_root)
+        async with admitting.fence_parent_turn_admission("parent-session"):
+            cancellation = asyncio.create_task(
+                cancelling.close_admission_for_parent_cancellation(
+                    "parent-session",
+                    work_item_id="work-a",
+                    reason="cancel during same-loop admission",
+                    child_recovery_refs=[],
+                )
+            )
+            await asyncio.sleep(0.05)
+            assert not cancellation.done()
+        await asyncio.wait_for(cancellation, timeout=2)
+
+    asyncio_run(scenario())
+
+
 
 
 def test_generic_metadata_update_preserves_newer_parent_cancellation(

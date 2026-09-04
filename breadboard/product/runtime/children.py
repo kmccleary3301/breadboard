@@ -1865,6 +1865,20 @@ class DurableChildFactory:
             return adopted
         if latest_attempt.attempt_id != state.attempt_id:
             raise ExpectedRevisionConflict("terminal Work Item attempt does not match retained child")
+        if state.settlement is not None:
+            retained_outcome = state.settlement.get("outcome")
+            retained_refs = tuple(state.settlement.get("result_refs", ()))
+            if retained_outcome != outcome or retained_refs != state.result_refs:
+                raise ChildError(
+                    "retained settlement disagrees with terminal Work Item"
+                )
+            return self._settle(
+                state,
+                outcome,
+                retained_refs,
+                allow_unprepared=outcome != "completed",
+                allow_parent_terminal=allow_parent_terminal,
+            )
         if outcome == "completed" and not state.result_prepared:
             state = self.prepare_result(
                 state.child_session_id,
@@ -2921,20 +2935,11 @@ class RayJobAdapter:
             except (ChildError, KeyError, RuntimeError, TypeError, ValueError):
                 self._mark_job_failed(target, job_id)
                 return "failed"
-            if job is not None and job.state == "completed":
-                marked = job
-            else:
-                marked = self.orchestrator.job_manager.update_state(
-                    job_id,
-                    "completed",
-                    result_payload=dict(durable_payload),
-                )
-            if marked is None:
+            if job is None:
                 self._mark_job_failed(target, job_id)
                 return "failed"
             if isinstance(job_data, dict):
                 job_data["state"] = "completed"
-                job_data["seq"] = marked.seq
                 job_data["result_payload"] = dict(durable_payload)
             return "completed"
         actor = self._lookup_actor(job_id)
