@@ -647,13 +647,50 @@ class DurableChildFactory:
             ):
                 states.append(self._record_state(record.session_id))
         return tuple(sorted(states, key=lambda state: state.child_session_id))
-    def cancel_tree(self, *, parent_session_id: str, parent_work_item_id: str, reason: str = "operator request") -> tuple[ChildState, ...]:
+    def prepare_cancel_tree(
+        self,
+        *,
+        parent_session_id: str,
+        parent_work_item_id: str,
+        reason: str = "operator request",
+    ) -> tuple[ChildState, ...]:
         if type(reason) is not str or not reason.strip():
             raise ValueError("reason must be a non-empty string")
         transition_ids = self._root_transition_session_ids(parent_session_id)
         with self._lifecycle_lock, self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id), self._product_transition_guard(*transition_ids):
-            return self._cancel_tree(parent_session_id=parent_session_id, parent_work_item_id=parent_work_item_id, reason=reason)
-    def _cancel_tree(self, *, parent_session_id: str, parent_work_item_id: str, reason: str = "operator request") -> tuple[ChildState, ...]:
+            return self._cancel_tree(
+                parent_session_id=parent_session_id,
+                parent_work_item_id=parent_work_item_id,
+                reason=reason,
+                prepare_only=True,
+            )
+    def cancel_tree(
+        self,
+        *,
+        parent_session_id: str,
+        parent_work_item_id: str,
+        reason: str = "operator request",
+        admission_preclosed: bool = False,
+    ) -> tuple[ChildState, ...]:
+        if type(reason) is not str or not reason.strip():
+            raise ValueError("reason must be a non-empty string")
+        transition_ids = self._root_transition_session_ids(parent_session_id)
+        with self._lifecycle_lock, self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id), self._product_transition_guard(*transition_ids):
+            return self._cancel_tree(
+                parent_session_id=parent_session_id,
+                parent_work_item_id=parent_work_item_id,
+                reason=reason,
+                admission_preclosed=admission_preclosed,
+            )
+    def _cancel_tree(
+        self,
+        *,
+        parent_session_id: str,
+        parent_work_item_id: str,
+        reason: str = "operator request",
+        prepare_only: bool = False,
+        admission_preclosed: bool = False,
+    ) -> tuple[ChildState, ...]:
         """Persist parent intent and every descendant intent before signaling."""
         parent, _ = load_session(self.workspace, parent_session_id)
         parent_work = WorkItem.restore(self.repository, parent_work_item_id, clock=self.clock, ids=self.ids)
@@ -775,15 +812,18 @@ class DurableChildFactory:
             )
         except ValueError as error:
             raise ChildError("durable parent cancellation marker is invalid") from error
-        self._registry(
-            "close_admission_for_parent_cancellation",
-            parent_session_id,
-            work_item_id=parent_work_item_id,
-            reason=reason,
-            child_recovery_refs=[
-                state.recovery_ref for state in descendants
-            ],
-        )
+        if prepare_only:
+            return tuple(descendants)
+        if not admission_preclosed:
+            self._registry(
+                "close_admission_for_parent_cancellation",
+                parent_session_id,
+                work_item_id=parent_work_item_id,
+                reason=reason,
+                child_recovery_refs=[
+                    state.recovery_ref for state in descendants
+                ],
+            )
         if product_status in _TERMINAL and work_status not in _TERMINAL:
             try:
                 if product_status == "completed":
@@ -2468,52 +2508,65 @@ class DurableChildReconciler:
         if hasattr(records, "__await__"):
             records = await records
         parent_work_item_ids: dict[str, str] = {}
-        all_child_recovery_refs: set[str] = set()
         for candidate in records:
             metadata = candidate.metadata if isinstance(candidate.metadata, Mapping) else {}
             retained = metadata.get("durable_child")
-            if not isinstance(retained, Mapping):
-                continue
-            recovery_ref = str(retained.get("recovery_ref") or "").strip()
-            if recovery_ref and (
-                retained.get("root_session_id") == parent_session_id
-                or retained.get("parent_session_id") == parent_session_id
-            ):
-                all_child_recovery_refs.add(recovery_ref)
-            if retained.get("parent_session_id") != parent_session_id:
+            if not isinstance(retained, Mapping) or retained.get("parent_session_id") != parent_session_id:
                 continue
             parent_work_item_id = str(retained.get("parent_work_item_id") or "").strip()
+            recovery_ref = str(retained.get("recovery_ref") or "").strip()
             if parent_work_item_id and recovery_ref:
                 parent_work_item_ids.setdefault(parent_work_item_id, recovery_ref)
-        if parent_work_item_ids:
-            close_admission = getattr(
-                self.registry, "close_admission_for_parent_cancellations", None
-            )
-            if not callable(close_admission):
-                raise ChildError(
-                    "durable parent cancellation requires atomic admission closure"
-                )
-            closed = close_admission(
-                parent_session_id,
-                requests=(
-                    {
-                        "work_item_id": parent_work_item_id,
-                        "reason": reason,
-                        "child_recovery_refs": tuple(sorted(all_child_recovery_refs)),
-                    }
-                    for parent_work_item_id in sorted(parent_work_item_ids)
-                ),
-            )
-            if hasattr(closed, "__await__"):
-                await closed
-        settled: list[ChildState] = []
+        if not parent_work_item_ids:
+            return ()
+        factories: dict[str, DurableChildFactory] = {}
+        descendants_by_parent: dict[str, tuple[ChildState, ...]] = {}
         for parent_work_item_id, recovery_ref in parent_work_item_ids.items():
             factory = await self._build_factory(recovery_ref)
-            result = await asyncio.to_thread(
-                factory.cancel_tree,
+            descendants = await asyncio.to_thread(
+                factory.prepare_cancel_tree,
                 parent_session_id=parent_session_id,
                 parent_work_item_id=parent_work_item_id,
                 reason=reason,
+            )
+            factories[parent_work_item_id] = factory
+            descendants_by_parent[parent_work_item_id] = descendants
+        close_admission = getattr(
+            self.registry, "close_admission_for_parent_cancellations", None
+        )
+        if not callable(close_admission):
+            raise ChildError(
+                "durable parent cancellation requires atomic admission closure"
+            )
+        closed = close_admission(
+            parent_session_id,
+            requests=(
+                {
+                    "work_item_id": parent_work_item_id,
+                    "reason": reason,
+                    "child_recovery_refs": tuple(
+                        state.recovery_ref
+                        for state in descendants_by_parent[parent_work_item_id]
+                    ),
+                }
+                for parent_work_item_id in sorted(parent_work_item_ids)
+            ),
+        )
+        if hasattr(closed, "__await__"):
+            await closed
+        parent_record = self.registry.get(parent_session_id)
+        if hasattr(parent_record, "__await__"):
+            parent_record = await parent_record
+        if parent_record is None or not parent_record.admission_closed:
+            raise ChildError("parent cancellation admission closure was not retained")
+        settled: list[ChildState] = []
+        for parent_work_item_id in parent_work_item_ids:
+            result = await asyncio.to_thread(
+                factories[parent_work_item_id].cancel_tree,
+                parent_session_id=parent_session_id,
+                parent_work_item_id=parent_work_item_id,
+                reason=reason,
+                admission_preclosed=True,
             )
             settled.extend(result)
         return tuple(settled)

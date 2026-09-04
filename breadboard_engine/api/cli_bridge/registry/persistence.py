@@ -424,18 +424,46 @@ class PersistenceMixin:
             return
         record = await self.get(session_id)
         if record is None:
-            return
+            raise RuntimeError(
+                "parent cancellation requires a retained parent SessionRecord"
+            )
         async with record.admission_lock:
             async with self._lock:
                 current = self._records.get(session_id)
                 if current is not record:
-                    return
+                    raise RuntimeError(
+                        "parent cancellation SessionRecord changed during admission closure"
+                    )
                 with self._record_file_lock(session_id):
                     record = self._refresh_record_from_disk_locked(
                         session_id,
                         record,
                         require_disk=True,
                     )
+                    descendant_session_ids = {session_id}
+                    retained_child_refs: set[str] = set()
+                    changed = True
+                    while changed:
+                        changed = False
+                        for candidate in self._records.values():
+                            candidate_metadata = (
+                                candidate.metadata
+                                if isinstance(candidate.metadata, Mapping)
+                                else {}
+                            )
+                            child_state = candidate_metadata.get("durable_child")
+                            if (
+                                not isinstance(child_state, Mapping)
+                                or child_state.get("parent_session_id")
+                                not in descendant_session_ids
+                                or candidate.session_id in descendant_session_ids
+                            ):
+                                continue
+                            descendant_session_ids.add(candidate.session_id)
+                            recovery_ref = child_state.get("recovery_ref")
+                            if isinstance(recovery_ref, str) and recovery_ref.strip():
+                                retained_child_refs.add(recovery_ref)
+                            changed = True
                     previous_closed = record.admission_closed
                     previous_metadata = dict(record.metadata or {})
                     previous_activity = record.last_activity_at
@@ -459,7 +487,11 @@ class PersistenceMixin:
                         and isinstance(candidate.get("work_item_id"), str)
                     }
                     for request in normalized_requests:
-                        merged_requests[request["work_item_id"]] = request
+                        merged_request = dict(request)
+                        merged_request["child_recovery_refs"] = sorted(
+                            set(request["child_recovery_refs"]) | retained_child_refs
+                        )
+                        merged_requests[request["work_item_id"]] = merged_request
                     metadata["durable_parent_cancellation"] = {
                         "requests": [
                             merged_requests[key] for key in sorted(merged_requests)

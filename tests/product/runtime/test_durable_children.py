@@ -4961,6 +4961,76 @@ def test_child_completion_joins_nonterminal_waiting_parent(
     parent_product, _ = load_session(workspace, "parent-session")
     assert parent_product.read_model.status == "awaiting_approval"
 
+def test_reconciler_persists_complete_nested_intent_before_signaling(
+    tmp_path: Path,
+) -> None:
+    class CrashAfterBatchRegistry(SessionRegistry):
+        async def close_admission_for_parent_cancellations(
+            self,
+            session_id: str,
+            *,
+            requests,
+        ) -> None:
+            await super().close_admission_for_parent_cancellations(
+                session_id,
+                requests=requests,
+            )
+            raise RuntimeError("simulated crash after durable batch")
+
+    workspace, repository, parent_work, _ = _running_parent(tmp_path)
+    registry = CrashAfterBatchRegistry(state_root=tmp_path / "registry")
+    adapter = RetryAdapter()
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+    first = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent_work.read_model.work_item_id,
+        spec=_spec(adapter.family, "nested parent"),
+    )
+    first_work = WorkItem.restore(repository, first.child_work_item_id)
+    second = factory.start(
+        parent_session_id=first.child_session_id,
+        root_session_id="parent-session",
+        parent_work_item_id=first_work.read_model.work_item_id,
+        spec=_spec(adapter.family, "nested child"),
+    )
+    second_work = WorkItem.restore(repository, second.child_work_item_id)
+    third = factory.start(
+        parent_session_id=second.child_session_id,
+        root_session_id="parent-session",
+        parent_work_item_id=second_work.read_model.work_item_id,
+        spec=_spec(adapter.family, "nested grandchild"),
+    )
+    reconciler = DurableChildReconciler(
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        asyncio_run(reconciler.cancel_tree(first.child_session_id))
+
+    retained_parent = await_record(registry, first.child_session_id)
+    requests = retained_parent.metadata["durable_parent_cancellation"]["requests"]
+    assert requests == [
+        {
+            "work_item_id": first.child_work_item_id,
+            "reason": "operator request",
+            "child_recovery_refs": sorted(
+                [second.recovery_ref, third.recovery_ref]
+            ),
+        }
+    ]
+    assert retained_parent.admission_closed
+    assert not factory._record_state(second.child_session_id).cancellation_requested
+    assert not factory._record_state(third.child_session_id).cancellation_requested
+
+
 def test_reconciler_cancellation_supports_mixed_unavailable_families(
     tmp_path: Path,
 ) -> None:
