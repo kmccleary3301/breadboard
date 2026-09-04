@@ -862,6 +862,13 @@ async def test_stale_registry_cannot_recreate_cross_process_deleted_session(
 
     with pytest.raises(RuntimeError, match="deleted before persistence"):
         await owner.persist(record)
+    with pytest.raises(RuntimeError, match="permanently deleted"):
+        await owner.create(
+            SessionRecord(
+                session_id=record.session_id,
+                status=SessionStatus.RUNNING,
+            )
+        )
     assert await SessionRegistry(state_root=state_root).get(record.session_id) is None
 
 

@@ -129,6 +129,8 @@ def _fsync_directory(path: Path) -> None:
 def _fence_parent_cancellation(method):
     @wraps(method)
     async def fenced(self, session_id: str, *args: Any, **kwargs: Any):
+        if kwargs.pop("_tree_lock_held", False):
+            return await method(self, session_id, *args, **kwargs)
         record = await self.get(session_id)
         if record is None:
             raise RuntimeError(
@@ -348,15 +350,13 @@ class PersistenceMixin:
     async def create(self, record: SessionRecord) -> SessionRecord:
         async with self._lock:
             async with self._record_file_lock(record.session_id):
+                tombstone = self._tombstone_path(record.session_id)
+                if tombstone is not None and tombstone.exists():
+                    raise SessionRecordDeletedError(
+                        f"session {record.session_id} was permanently deleted"
+                    )
                 self._records[record.session_id] = record
                 self._persist_record_locked(record)
-                tombstone = self._tombstone_path(record.session_id)
-                if tombstone is not None:
-                    try:
-                        tombstone.unlink()
-                        _fsync_directory(tombstone.parent)
-                    except FileNotFoundError:
-                        pass
         return record
 
     async def get(self, session_id: str) -> Optional[SessionRecord]:

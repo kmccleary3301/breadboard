@@ -658,14 +658,15 @@ class DurableChildFactory:
         if type(reason) is not str or not reason.strip():
             raise ValueError("reason must be a non-empty string")
         root_session_id = self._tree_root_session_id(parent_session_id)
-        transition_ids = self._root_transition_session_ids(root_session_id)
-        with self._lifecycle_lock, self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id), self._product_transition_guard(*transition_ids):
-            return self._cancel_tree(
-                parent_session_id=parent_session_id,
-                parent_work_item_id=parent_work_item_id,
-                reason=reason,
-                prepare_only=True,
-            )
+        with self._lifecycle_lock, self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id), self._tree_process_lock(root_session_id):
+            transition_ids = self._root_transition_session_ids(root_session_id)
+            with self._product_transition_guard(*transition_ids):
+                return self._cancel_tree(
+                    parent_session_id=parent_session_id,
+                    parent_work_item_id=parent_work_item_id,
+                    reason=reason,
+                    prepare_only=True,
+                )
     def cancel_tree(
         self,
         *,
@@ -677,14 +678,15 @@ class DurableChildFactory:
         if type(reason) is not str or not reason.strip():
             raise ValueError("reason must be a non-empty string")
         root_session_id = self._tree_root_session_id(parent_session_id)
-        transition_ids = self._root_transition_session_ids(root_session_id)
-        with self._lifecycle_lock, self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id), self._product_transition_guard(*transition_ids):
-            return self._cancel_tree(
-                parent_session_id=parent_session_id,
-                parent_work_item_id=parent_work_item_id,
-                reason=reason,
-                admission_preclosed=admission_preclosed,
-            )
+        with self._lifecycle_lock, self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id), self._tree_process_lock(root_session_id):
+            transition_ids = self._root_transition_session_ids(root_session_id)
+            with self._product_transition_guard(*transition_ids):
+                return self._cancel_tree(
+                    parent_session_id=parent_session_id,
+                    parent_work_item_id=parent_work_item_id,
+                    reason=reason,
+                    admission_preclosed=admission_preclosed,
+                )
     def _cancel_tree(
         self,
         *,
@@ -839,6 +841,7 @@ class DurableChildFactory:
                     },
                 ),
                 expected_child_recovery_refs=retained_tree_refs,
+                _tree_lock_held=True,
             )
         if product_status in _TERMINAL and work_status not in _TERMINAL:
             try:
@@ -1252,7 +1255,7 @@ class DurableChildFactory:
     def start(self, *, parent_session_id: str, root_session_id: str, parent_work_item_id: str, spec: ChildSpec) -> ChildActivation:
         if type(root_session_id) is not str or not root_session_id.strip():
             raise ValueError("root_session_id must be a non-empty string")
-        with self._lifecycle_lock, self._tree_process_lock(root_session_id), self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id):
+        with self._lifecycle_lock, self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id), self._tree_process_lock(root_session_id):
             canonical_root_session_id = self._tree_root_session_id(parent_session_id)
             if root_session_id != canonical_root_session_id:
                 raise ChildError("root Session does not match retained parent lineage")
@@ -2109,6 +2112,13 @@ class DurableChildFactory:
         parent_work = WorkItem.restore(self.repository, state.parent_work_item_id, clock=self.clock, ids=self.ids)
         if state.child_work_item_id in parent_work.read_model.child_work_item_ids:
             parent_work.join_child(state.child_work_item_id, state.child_session_id, outcome, state.result_refs)
+        release_terminal = getattr(
+            self.adapters[state.adapter_family],
+            "release_terminal",
+            None,
+        )
+        if callable(release_terminal):
+            release_terminal(state.execution_target)
     def reconcile(self, recovery_ref: str) -> ChildState:
         child_session_id = recovery_ref.split("/attempt/", 1)[0].removeprefix("child://")
         state = self._record_state(child_session_id)
