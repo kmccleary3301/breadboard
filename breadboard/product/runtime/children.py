@@ -3301,12 +3301,14 @@ class ProcessExecutionAdapter:
             path.unlink(missing_ok=True)
         self._write_control(task_path, spec.task.encode("utf-8"))
         wrapper = (
-            "import os,subprocess,sys,time\n"
+            "import os,signal,subprocess,sys,time\n"
             "release=sys.argv[2]\n"
             "while not os.path.exists(release): time.sleep(0.01)\n"
             "task=open(sys.argv[3],'rb').read()\n"
             "status=sys.argv[4]\n"
-            "result=subprocess.run(sys.argv[5:],input=task).returncode\n"
+            "signal.signal(signal.SIGTERM,signal.SIG_IGN)\n"
+            "reset_term=lambda: signal.signal(signal.SIGTERM,signal.SIG_DFL)\n"
+            "result=subprocess.run(sys.argv[5:],input=task,preexec_fn=reset_term).returncode\n"
             "temporary=f'{status}.{os.getpid()}.tmp'\n"
             "fd=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)\n"
             "os.write(fd,str(result).encode('ascii'));os.fsync(fd);os.close(fd)\n"

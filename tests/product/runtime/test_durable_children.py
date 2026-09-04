@@ -591,17 +591,35 @@ def test_process_launch_crash_window_is_recovered_or_terminated(tmp_path: Path, 
     assert restarted_adapter._pending_pid(recovered.execution_target_ref) is None
 
 
-def test_process_cancel_escalates_sigkill_before_settlement(tmp_path: Path) -> None:
+def test_process_cancel_escalates_sigkill_before_settlement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     repository = WorkItemRepository(tmp_path / "work-items.jsonl")
     workspace, repository, parent, registry = _running_parent(tmp_path, repository)
-    adapter = ProcessExecutionAdapter(command=("/bin/sh", "-c", "trap '' TERM; sleep 30"))
+    ready = tmp_path / "term-ignored"
+    adapter = ProcessExecutionAdapter(
+        command=("/bin/sh", "-c", f"trap '' TERM; touch {ready}; sleep 30")
+    )
     factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[adapter])
+    signals: list[int] = []
+    real_killpg = os.killpg
+
+    def record_signal(process_group: int, signum: int) -> None:
+        signals.append(signum)
+        real_killpg(process_group, signum)
+
+    monkeypatch.setattr(os, "killpg", record_signal)
     activation = factory.start(
         parent_session_id="parent-session",
         root_session_id="parent-session",
         parent_work_item_id=parent.read_model.work_item_id,
         spec=_spec(adapter.family, "sigterm ignore"),
     )
+    deadline = time.monotonic() + 2
+    while not ready.exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert ready.exists()
     state = factory._record_state(activation.child_session_id)
     canceled = factory.cancel(activation.child_session_id, expected_revision=state.revision)
     process = adapter._processes[activation.execution_target_ref]
@@ -611,6 +629,7 @@ def test_process_cancel_escalates_sigkill_before_settlement(tmp_path: Path) -> N
     assert adapter._pending_pid(activation.execution_target_ref) is None
     assert adapter._control_path(activation.execution_target_ref, "task").exists() is False
     assert adapter._control_path(activation.execution_target_ref, "release").exists() is False
+    assert signals == [signal.SIGTERM, signal.SIGKILL]
 
 
 def test_process_cancel_leaves_recovery_pending_when_exit_unverified(
