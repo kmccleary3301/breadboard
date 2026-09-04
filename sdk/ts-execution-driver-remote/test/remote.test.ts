@@ -2767,6 +2767,11 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   assert.ok(
     activeObservation.evidenceRefs?.includes("slurm://job/24680/node/node-a"),
   )
+  squeueResult = ""
+  sacctResult = ""
+  const accountingGapObservation = await backend.observe(handle.executionId)
+  assert.equal(accountingGapObservation.state, "running")
+  sacctResult = `${jobName}|COMPLETED|0:0|node-a\n`
   assert.ok(invocations[0]?.[1]?.includes(`case "$id" in ""|*[!0-9]*) exit 65`))
   assert.ok(invocations[0]?.[1]?.includes(`"$job" "$attempt" "$digest" > "$receipt.tmp"`))
   squeueResult = "|RUNNING|node-a\n"

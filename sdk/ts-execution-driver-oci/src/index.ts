@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto"
 import { spawn } from "node:child_process"
+import { constants as osConstants } from "node:os"
 
 import type {
   ExecutionCapabilityV1,
@@ -10,6 +11,7 @@ import type {
 import type { TerminalSessionDriverV1 } from "@breadboard/execution-drivers"
 import {
   buildAndPersistCanonicalSandboxEvidence,
+  canonicalProcessExitCode,
   assertExecutionProgramAllowed,
   canonicalSandboxArtifactRoot,
   isPlacementCompatible,
@@ -117,6 +119,7 @@ export function defaultOciCommandExecutor(input: {
 }): Promise<OciCommandExecutionResult> {
   return new Promise((resolve, reject) => {
     let killed = false
+    let spawnFailed = false
     const isPosix = process.platform !== "win32"
     const child = spawn(input.runtimeCommand, input.runtimeArgs, {
       stdio: ["ignore", "pipe", "pipe"],
@@ -139,12 +142,17 @@ export function defaultOciCommandExecutor(input: {
     }
     child.on("error", (err) => {
       removeAbortListener()
-      if (!killed) reject(err)
+      if (!killed) {
+        spawnFailed = true
+        reject(err)
+      }
     })
-    child.on("close", (exitCode) => {
+    child.on("close", (exitCode, signal) => {
+      if (spawnFailed) return
       removeAbortListener()
+      const signalNumber = signal === null ? null : osConstants.signals[signal]
       resolve({
-        exitCode: exitCode ?? 1,
+        exitCode: canonicalProcessExitCode(exitCode, signalNumber) ?? 1,
         stdout: Buffer.concat(stdoutChunks).toString("utf8"),
         stderr: Buffer.concat(stderrChunks).toString("utf8"),
       })

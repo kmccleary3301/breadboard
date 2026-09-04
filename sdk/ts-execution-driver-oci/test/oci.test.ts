@@ -39,6 +39,23 @@ test("OCI command executor decodes UTF-8 after complete stream collection", asyn
   assert.equal(result.stderr, "😀")
 })
 
+test("OCI command executor canonicalizes a POSIX signal exit", async () => {
+  const abortController = new AbortController()
+  const execution = defaultOciCommandExecutor({
+    runtimeCommand: process.execPath,
+    runtimeArgs: ["-e", "setInterval(() => {}, 1000)"],
+    signal: abortController.signal,
+  })
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  abortController.abort(new Error("cancelled"))
+  const result = await execution
+  if (process.platform === "win32") {
+    assert.ok(result.exitCode !== 0)
+  } else {
+    assert.equal(result.exitCode, 143)
+  }
+})
+
 test("oci driver chooses placement from capability isolation class", () => {
   assert.equal(
     chooseOciPlacement({

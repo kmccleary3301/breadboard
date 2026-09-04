@@ -298,6 +298,31 @@ function canonicalSandboxDigest(value: string): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`
 }
 
+export function canonicalProcessExitCode(
+  exitCode: number | null,
+  signalNumber: number | null,
+): number | null {
+  if (signalNumber !== null) {
+    if (!Number.isSafeInteger(signalNumber) || signalNumber < 0) {
+      throw new Error("process signal number must be a non-negative safe integer")
+    }
+    if (signalNumber > 0) {
+      const signaledExitCode = 128 + signalNumber
+      if (!Number.isSafeInteger(signaledExitCode)) {
+        throw new Error("canonical signaled exit code exceeds safe integer range")
+      }
+      return signaledExitCode
+    }
+  }
+  if (
+    exitCode !== null
+    && (!Number.isSafeInteger(exitCode) || exitCode < 0)
+  ) {
+    throw new Error("process exit code must be a non-negative safe integer")
+  }
+  return exitCode
+}
+
 function buildCanonicalSandboxSideEffectManifest(input: {
   command: readonly string[]
   status: SandboxResultV1["status"]

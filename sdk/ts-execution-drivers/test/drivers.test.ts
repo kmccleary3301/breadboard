@@ -22,6 +22,7 @@ import {
   buildExecutionDriverUnsupportedCase,
   buildPlannedExecution,
   createExecutionWorld,
+  canonicalProcessExitCode,
   canonicalSandboxArtifactRoot,
   canonicalSandboxArtifactUri,
   persistCanonicalSandboxArtifact,
@@ -31,6 +32,17 @@ import {
   type ExecutionLivenessEvidenceV1,
   type TerminalSessionDriverV1,
 } from "../src/index.js"
+
+test("canonical process exit codes normalize POSIX signals", () => {
+  assert.equal(canonicalProcessExitCode(0, 0), 0)
+  assert.equal(canonicalProcessExitCode(0, 9), 137)
+  assert.equal(canonicalProcessExitCode(null, 15), 143)
+  assert.equal(canonicalProcessExitCode(null, null), null)
+  assert.throws(
+    () => canonicalProcessExitCode(null, -1),
+    /non-negative safe integer/,
+  )
+})
 
 test("execution driver helpers classify placement compatibility", () => {
   assert.equal(

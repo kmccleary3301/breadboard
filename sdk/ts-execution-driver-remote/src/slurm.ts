@@ -6,6 +6,7 @@ import { promisify } from "node:util"
 import { assertValid, type SandboxRequestV1, type SandboxResultV1 } from "@breadboard/kernel-contracts"
 import {
   buildAndPersistCanonicalSandboxEvidence,
+  canonicalProcessExitCode,
 } from "@breadboard/execution-drivers"
 import {
   canonicalScheduledRequestKey,
@@ -43,6 +44,7 @@ interface SubmittedSlurmExecution {
   readonly request: SandboxRequestV1
   readonly stdoutPath: string
   readonly requestDigest: string
+  observedRunning?: boolean
   readonly stderrPath: string
 }
 
@@ -303,6 +305,7 @@ export function makeSshSlurmBackend(
     if (cached && cached.requestDigest !== execution.requestDigest) {
       throw new Error("Slurm scheduler job identity changed")
     }
+    execution.observedRunning = cached?.observedRunning
     submitted.set(identity.jobId, execution)
     return execution
   }
@@ -537,6 +540,7 @@ export function makeSshSlurmBackend(
       if (activeState) {
         const state = classifyState(activeState)
         if (state === "running") {
+          execution.observedRunning = true
           return {
             state,
             evidenceRefs: schedulerEvidenceRefs(
@@ -556,7 +560,9 @@ export function makeSshSlurmBackend(
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean)
-      if (records.length === 0) return { state: "accepted" }
+      if (records.length === 0) {
+        return { state: execution.observedRunning ? "running" : "accepted" }
+      }
       const [
         accountingJobName = "",
         schedulerState = "UNKNOWN",
@@ -568,6 +574,7 @@ export function makeSshSlurmBackend(
       }
       const state = classifyState(schedulerState)
       if (state === "running") {
+        execution.observedRunning = true
         return {
           state,
           evidenceRefs: schedulerEvidenceRefs(
@@ -582,9 +589,7 @@ export function makeSshSlurmBackend(
       const exitMatch = /^(\d+):(\d+)$/.exec(exitCode)
       const returnCode = exitMatch ? Number.parseInt(exitMatch[1] ?? "", 10) : null
       const signal = exitMatch ? Number.parseInt(exitMatch[2] ?? "", 10) : null
-      const numericExitCode = signal !== null && signal > 0
-        ? 128 + signal
-        : returnCode
+      const numericExitCode = canonicalProcessExitCode(returnCode, signal)
       const status = state === "completed" && returnCode === 0 && signal === 0
         ? "completed"
         : state === "completed"

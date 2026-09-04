@@ -495,7 +495,11 @@ test("defaultLocalCommandExecutor terminates isolated process group including sh
   await sleep(100)
   abortController.abort(new Error("aborted"))
   const result = await execPromise
-  assert.ok(result.exitCode !== 0)
+  if (process.platform === "win32") {
+    assert.ok(result.exitCode !== 0)
+  } else {
+    assert.equal(result.exitCode, 143)
+  }
   const descendantPid = parseInt(result.stdout.trim(), 10)
   if (!isNaN(descendantPid) && descendantPid > 0 && process.platform !== "win32") {
     // Wait briefly and verify descendant process is gone (sending signal 0 will throw ESRCH)
