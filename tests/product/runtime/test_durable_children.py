@@ -6107,6 +6107,48 @@ def test_terminal_cancel_adoption_persists_target_before_acknowledgement(
     assert settled.terminal_count == 1
 
 
+def test_failed_observation_after_cancellation_settles_as_canceled(
+    tmp_path: Path,
+) -> None:
+    class FailedDuringCancelAdapter(RetryAdapter):
+        family = "failed-during-cancel-adoption"
+
+        def cancel(self, target):
+            return False
+
+        def observe(self, target):
+            return "failed"
+
+    workspace, repository, parent_work, registry = _running_parent(tmp_path)
+    adapter = FailedDuringCancelAdapter()
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent_work.read_model.work_item_id,
+        spec=_spec(adapter.family, "failed after cancellation"),
+    )
+    state = factory._record_state(activation.child_session_id)
+    state = factory._cas(
+        state,
+        status="cancel_requested",
+        cancellation_requested=True,
+        cancellation_reason="operator request",
+    )
+
+    settled = factory.reconcile(state.recovery_ref)
+
+    assert settled.status == "canceled"
+    assert settled.terminal_outcome == "canceled"
+    assert settled.settlement is None
+    assert settled.terminal_count == 1
+
+
 def test_reconcile_cancels_late_completed_result_after_parent_terminal(
     tmp_path: Path,
 ) -> None:

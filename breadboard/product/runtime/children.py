@@ -1941,6 +1941,7 @@ class DurableChildFactory:
         observed = str(adapter.observe(state.execution_target)).lower()
         if observed not in {"completed", "failed"}:
             return self._record_state(state.child_session_id)
+        outcome = "completed" if observed == "completed" else "canceled"
         state = self._cas(state, execution_target=state.execution_target)
         cleanup_handoff = getattr(adapter, "cleanup_handoff", None)
         if callable(cleanup_handoff):
@@ -1961,15 +1962,15 @@ class DurableChildFactory:
             current = self._cas(
                 current,
                 settlement={
-                    "outcome": observed,
+                    "outcome": outcome,
                     "result_refs": list(current.result_refs),
                 },
             )
         return self._settle(
             current,
-            observed,
-            current.result_refs,
-            allow_unprepared=observed != "completed",
+            outcome,
+            current.result_refs if outcome == "completed" else (),
+            allow_unprepared=outcome != "completed",
             allow_parent_terminal=True,
         )
 
