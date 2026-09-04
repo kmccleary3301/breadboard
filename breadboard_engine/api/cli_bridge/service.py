@@ -3104,15 +3104,14 @@ class SessionService:
             child_state = child_metadata.get("durable_child")
             if not isinstance(child_state, Mapping):
                 continue
+            if child_state.get("parent_session_id") != session_id:
+                continue
             terminal_count = child_state.get("terminal_count", 0)
             if type(terminal_count) is not int or terminal_count not in {0, 1}:
                 raise RuntimeError(
                     "retained durable child terminal_count must be exactly 0 or 1"
                 )
-            if (
-                child_state.get("parent_session_id") == session_id
-                and terminal_count == 0
-            ):
+            if terminal_count == 0:
                 retained_children.append(child_state)
         if retained_children and not callable(cancel_tree):
             raise RuntimeError(

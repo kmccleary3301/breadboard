@@ -3849,6 +3849,15 @@ def test_parent_stop_rejects_noninteger_retained_terminal_count(
     asyncio_run(
         registry.create(
             SessionRecord(
+                "unrelated-parent",
+                status=SessionStatus.RUNNING,
+                metadata={"workspace": str(tmp_path)},
+            )
+        )
+    )
+    asyncio_run(
+        registry.create(
+            SessionRecord(
                 "child-session",
                 status=SessionStatus.RUNNING,
                 metadata={
@@ -3862,6 +3871,7 @@ def test_parent_stop_rejects_noninteger_retained_terminal_count(
         )
     )
     service = SessionService(registry=registry, state_root=tmp_path / "registry")
+    asyncio_run(service.stop_session("unrelated-parent"))
 
     with pytest.raises(RuntimeError, match="terminal_count must be exactly 0 or 1"):
         asyncio_run(service.stop_session("parent-session"))
