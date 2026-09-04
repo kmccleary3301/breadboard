@@ -233,6 +233,10 @@ export function makeSshSlurmBackend(
   if (!Number.isSafeInteger(maxOutputBytes) || maxOutputBytes < 1) {
     throw new Error("maxOutputBytes must be a positive safe integer")
   }
+  const framedOutputMaxBytes = Math.ceil(maxOutputBytes / 3) * 4 + 64
+  if (!Number.isSafeInteger(framedOutputMaxBytes)) {
+    throw new Error("maxOutputBytes is too large for framed transport")
+  }
   const commandTimeoutMs = options.commandTimeoutMs ?? 30_000
   if (!Number.isSafeInteger(commandTimeoutMs) || commandTimeoutMs < 1) {
     throw new Error("commandTimeoutMs must be a positive safe integer")
@@ -245,13 +249,14 @@ export function makeSshSlurmBackend(
     remoteCommand: string,
     timeoutMs = commandTimeoutMs,
     signal?: AbortSignal,
+    outputLimitBytes = maxOutputBytes,
   ): Promise<CommandResultV1> {
     return runCommand(
       sshProgram,
       [sshTarget, remoteCommand],
       {
         timeoutMs: Math.max(1, Math.min(commandTimeoutMs, timeoutMs)),
-        maxOutputBytes,
+        maxOutputBytes: outputLimitBytes,
         signal,
       },
     )
@@ -477,13 +482,18 @@ export function makeSshSlurmBackend(
           ].join(" "))
           return { content: output.stdout, evidenceRefs: [] }
         }
-        const output = (await ssh([
-          `if [ ! -f ${shellQuote(path)} ]; then printf 'M\\n'; exit 0; fi;`,
-          `size=$(wc -c < ${shellQuote(path)});`,
-          `if [ "$size" -le ${maxOutputBytes} ]; then`,
-          `printf 'C:%s\\n' "$size"; base64 < ${shellQuote(path)} | tr -d '\\n';`,
-          `else printf 'T:%s\\n' "$size"; fi`,
-        ].join(" "))).stdout
+        const output = (await ssh(
+          [
+            `if [ ! -f ${shellQuote(path)} ]; then printf 'M\\n'; exit 0; fi;`,
+            `size=$(wc -c < ${shellQuote(path)});`,
+            `if [ "$size" -le ${maxOutputBytes} ]; then`,
+            `printf 'C:%s\\n' "$size"; base64 < ${shellQuote(path)} | tr -d '\\n';`,
+            `else printf 'T:%s\\n' "$size"; fi`,
+          ].join(" "),
+          commandTimeoutMs,
+          undefined,
+          framedOutputMaxBytes,
+        )).stdout
         const separator = output.indexOf("\n")
         if (separator < 0) throw new Error("Slurm output framing is invalid")
         const header = output.slice(0, separator)

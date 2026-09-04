@@ -2185,6 +2185,7 @@ test("scheduled adapter rejects provider-specific terminal result evidence", asy
 test("SSH Slurm backend durably submits, polls, and cancels with external scheduler evidence", async () => {
   const invocations: string[][] = []
   const commandTimeouts: number[] = []
+  const commandOutputLimits: number[] = []
   let encodedMetadata = ""
   let sacctResult = "COMPLETED|0:0|node-a\n"
   let squeueResult = "RUNNING|node-a\n"
@@ -2196,6 +2197,7 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
       assert.equal(program, "ssh")
       invocations.push([...args])
       commandTimeouts.push(options.timeoutMs)
+      commandOutputLimits.push(options.maxOutputBytes)
       const remoteCommand = args[1] ?? ""
       if (remoteCommand.includes("setsid sh -c")) return { stdout: "", stderr: "" }
       if (remoteCommand.includes("submission-") && remoteCommand.includes("then cat"))
@@ -2341,6 +2343,7 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   assert.match(cancelCommand?.[1] ?? "", /^timeout 30s scancel '24680'$/)
   assert.equal(commandTimeouts.length, invocations.length)
   assert.ok(commandTimeouts.every((timeout) => timeout > 0 && timeout <= 30_000))
+  assert.ok(commandOutputLimits.some((limit) => limit > 4 * 1024 * 1024))
   assert.ok((commandTimeouts.at(-1) ?? Number.POSITIVE_INFINITY) <= 100)
 })
 
@@ -2366,6 +2369,14 @@ test("SSH Slurm backend rejects unsafe targets and relative evidence paths", () 
       commandTimeoutMs: Number.POSITIVE_INFINITY,
     }),
     /positive safe integer/,
+  )
+  assert.throws(
+    () => makeSshSlurmBackend({
+      sshTarget: "cluster.example",
+      remoteEvidenceDirectory: "/tmp/evidence",
+      maxOutputBytes: Number.MAX_SAFE_INTEGER,
+    }),
+    /too large for framed transport/,
   )
   const backend: ScheduledExecutionBackendV1 = {
     backendId: "invalid-options",
