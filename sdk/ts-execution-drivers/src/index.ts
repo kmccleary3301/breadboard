@@ -305,10 +305,16 @@ export function buildCanonicalSandboxEvidence(input: {
   }
 }
 
-const DEFAULT_SANDBOX_ARTIFACT_ROOT = join(
-  tmpdir(),
-  "breadboard-sandbox-artifacts",
-)
+export function canonicalSandboxArtifactRoot(
+  parentRoot = tmpdir(),
+): string {
+  const userNamespace = process.getuid === undefined
+    ? "current-user"
+    : `uid-${process.getuid()}`
+  return join(parentRoot, `breadboard-sandbox-artifacts-${userNamespace}`)
+}
+
+const DEFAULT_SANDBOX_ARTIFACT_ROOT = canonicalSandboxArtifactRoot()
 
 export function canonicalSandboxArtifactUri(
   ref: string,

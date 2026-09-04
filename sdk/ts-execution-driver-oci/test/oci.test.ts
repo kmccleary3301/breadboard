@@ -5,7 +5,10 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import type { ExecutionCapabilityV1, ExecutionPlacementV1 } from "@breadboard/kernel-contracts"
-import { canonicalSandboxArtifactUri } from "@breadboard/execution-drivers"
+import {
+  canonicalSandboxArtifactRoot,
+  canonicalSandboxArtifactUri,
+} from "@breadboard/execution-drivers"
 import {
   buildOciContainerName,
   buildOciRuntimeInvocation,
@@ -189,7 +192,30 @@ test("oci driver can build a concrete runtime invocation", () => {
   const invocation = buildOciRuntimeInvocation(request)
   assert.equal(invocation.runtimeCommand, "docker")
   assert.ok(invocation.runtimeArgs.includes("--runtime=runsc"))
+  assert.ok(invocation.runtimeArgs.includes("--network=none"))
   assert.ok(invocation.runtimeArgs.includes("ghcr.io/example/lint:latest"))
+})
+
+test("OCI runtime rejects network host allowlists it cannot enforce", () => {
+  const request = buildOciSandboxRequest({
+    requestId: "oci-network-allowlist",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-oci-network-allowlist",
+      security_tier: "single_tenant",
+      isolation_class: "oci",
+      allow_net_hosts: ["api.example.com"],
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["true"],
+    imageRef: "alpine:latest",
+  })
+
+  assert.throws(
+    () => buildOciRuntimeInvocation(request),
+    /cannot enforce a network host allowlist/,
+  )
 })
 
 test("oci driver can execute through an injected runtime adapter", async () => {
@@ -209,6 +235,7 @@ test("oci driver can execute through an injected runtime adapter", async () => {
     imageRef: "ghcr.io/example/ruff:latest",
   })
   const artifactRoot = fs.mkdtempSync(join(tmpdir(), "bb-oci-artifacts-"))
+  fs.chmodSync(artifactRoot, 0o755)
   const result = await executeOciSandboxRequest(request, {
     commandExecutor: async ({ runtimeCommand, runtimeArgs }) => ({
       exitCode: runtimeCommand === "docker" && runtimeArgs.includes("ghcr.io/example/ruff:latest") ? 0 : 1,
@@ -222,10 +249,18 @@ test("oci driver can execute through an injected runtime adapter", async () => {
   assert.match(result.stdout_ref, /^sha256:/)
   assert.equal(
     fs.readFileSync(
-      new URL(canonicalSandboxArtifactUri(result.stdout_ref, artifactRoot)),
+      new URL(canonicalSandboxArtifactUri(
+        result.stdout_ref,
+        canonicalSandboxArtifactRoot(artifactRoot),
+      )),
       "utf8",
     ),
     "oci ok",
+  )
+  assert.equal(fs.statSync(artifactRoot).mode & 0o077, 0o055)
+  assert.equal(
+    fs.statSync(canonicalSandboxArtifactRoot(artifactRoot)).mode & 0o077,
+    0,
   )
   assert.ok(result.side_effect_digest?.startsWith("sha256:"))
 })

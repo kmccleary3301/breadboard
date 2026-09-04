@@ -10,6 +10,7 @@ import type {
 import type { TerminalSessionDriverV1 } from "@breadboard/execution-drivers"
 import {
   buildCanonicalSandboxEvidence,
+  canonicalSandboxArtifactRoot,
   isPlacementCompatible,
   persistCanonicalSandboxArtifact,
 } from "@breadboard/execution-drivers"
@@ -45,7 +46,9 @@ export function buildOciSandboxRequest(input: {
     image_ref: input.imageRef,
     snapshot_ref: null,
     command: [input.command[0] ?? "", ...input.command.slice(1)],
-    network_policy: { allow: input.capability.allow_net_hosts ?? [] },
+    network_policy: input.capability.allow_net_hosts === undefined
+      ? null
+      : { allow: input.capability.allow_net_hosts },
     secret_refs: [],
     timeout_seconds: null,
     evidence_mode: input.capability.evidence_mode,
@@ -88,6 +91,13 @@ export function buildOciRuntimeInvocation(
     runtimeArgs.push("--runtime=runsc")
   } else if (request.placement_class === "local_oci_kata") {
     runtimeArgs.push("--runtime=io.containerd.kata.v2")
+  }
+  if (request.network_policy !== null && request.network_policy !== undefined) {
+    const allowedHosts = request.network_policy["allow"]
+    if (!Array.isArray(allowedHosts) || allowedHosts.length !== 0) {
+      throw new Error("OCI backend cannot enforce a network host allowlist")
+    }
+    runtimeArgs.push("--network=none")
   }
   const mountTarget = options.workspaceMountTarget ?? "/workspace"
   if (request.workspace_ref && request.workspace_ref.startsWith("/")) {
@@ -241,16 +251,19 @@ export async function executeOciSandboxRequest(
     stderr: result.stderr,
     evidenceMode: request.evidence_mode,
   })
+  const artifactRoot = options.tempDirRoot === undefined
+    ? undefined
+    : canonicalSandboxArtifactRoot(options.tempDirRoot)
   await Promise.all([
     persistCanonicalSandboxArtifact(
       evidence.stdout_ref,
       result.stdout,
-      options.tempDirRoot,
+      artifactRoot,
     ),
     persistCanonicalSandboxArtifact(
       evidence.stderr_ref,
       result.stderr,
-      options.tempDirRoot,
+      artifactRoot,
     ),
   ])
   return {

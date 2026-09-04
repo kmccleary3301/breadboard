@@ -20,6 +20,7 @@ import {
   buildExecutionDriverUnsupportedCase,
   buildPlannedExecution,
   createExecutionWorld,
+  canonicalSandboxArtifactRoot,
   canonicalSandboxArtifactUri,
   persistCanonicalSandboxArtifact,
   isPlacementCompatible,
@@ -5209,7 +5210,16 @@ test("execution world does not retain a session ID after an empty-command start 
   assert.equal(startCalls, 1)
 })
 
+test("canonical sandbox artifact roots are user-specific children", () => {
+  const parent = join(tmpdir(), "shared-parent")
+  const root = canonicalSandboxArtifactRoot(parent)
+
+  assert.equal(root.startsWith(`${parent}/`), true)
+  assert.match(root, /breadboard-sandbox-artifacts-(?:uid-\d+|current-user)$/)
+})
+
 test("canonical sandbox artifacts are owner-only and content-addressed", async () => {
+
   const artifactRoot = await mkdtemp(join(tmpdir(), "breadboard-cas-test-"))
   try {
     await chmod(artifactRoot, 0o755)

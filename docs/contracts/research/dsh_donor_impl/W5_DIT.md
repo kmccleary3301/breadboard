@@ -196,21 +196,25 @@ Design 2 (`@breadboard/execution-drivers` shared execution-world owner) is selec
 
 ## W5.4 Four-world execution proof
 
-One fixed `SandboxRequestV1` (`req:dsh:world:equivalence-v4`) printed
+One fixed unrestricted `SandboxRequestV1`
+(`req:dsh:world:equivalence-v5`, `network_policy: null`) printed
 `breadboard-dsh-world-v1` through the actual local process,
-`python:3.11-alpine` OCI container, local Ray actor, and remote Slurm
-adapters. All four returned the same provider-neutral `SandboxResultV1`:
-completed status, exit code zero, stdout
+cached `python:3.11-alpine` OCI container, local Ray actor, and remote Slurm
+adapters. Explicit network policies take only backends that can enforce them;
+the Slurm backend rejects rather than silently weakening one. All four returned
+the same provider-neutral `SandboxResultV1`: completed status, exit code zero,
+stdout
 `sha256:c0041fd90663154e18cf02d322869f9c04d2014c1f9b3b165dbdb5c3a2b1c795`,
 empty stderr, and side-effect/evidence digest
 `sha256:9ff5cd6be759737fa1ba8d5918b62b3f942c38ad4485970af3a0b29e1cfea24a`.
-The local content-addressed store resolved the stdout and stderr digests after
-each run, so these references are retained artifacts rather than labels.
+The user-specific local content-addressed store resolved the stdout and stderr
+digests after each run, so these references are retained artifacts rather than
+labels.
 
 Provider-specific proof stayed outside that result. The Ray callback recorded
-accepted, running, and completed observations for bridge process `68022`,
-actor `bbc712ad72683b06ecc172a501000000`, and node
-`0abb408fad5ca2dc7d1151a39404aaaae98abde17ad6ab3c45c6e1d6`. The Slurm
-callback recorded job `38451` completing on `cnode-183`, with its receipt,
-exact encoded submission command, launch log, stdout, and stderr retained
-under `/shared/breadboard-dsh-world`.
+accepted, running, and completed observations for bridge process `75213`,
+actor `4e22ed7a696bdacf9608d90701000000`, and node
+`4fbaf175b1c0e652fe44839be508996df8e89bba0d3880ab6e07d2e2`. The Slurm
+callback recorded job `38510` completing on `cnode-183`, with its owner-only
+receipt, exact encoded submission command, launch log, stdout, and stderr
+retained under `/shared/breadboard-dsh-world`.

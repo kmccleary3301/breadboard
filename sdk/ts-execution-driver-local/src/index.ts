@@ -9,6 +9,7 @@ import type {
 import type { TerminalSessionDriverV1 } from "@breadboard/execution-drivers"
 import {
   buildCanonicalSandboxEvidence,
+  canonicalSandboxArtifactRoot,
   isPlacementCompatible,
   persistCanonicalSandboxArtifact,
 } from "@breadboard/execution-drivers"
@@ -30,7 +31,9 @@ export function buildLocalProcessSandboxRequest(input: {
     image_ref: null,
     snapshot_ref: null,
     command: [input.command[0] ?? "", ...input.command.slice(1)],
-    network_policy: { allow: input.capability.allow_net_hosts ?? [] },
+    network_policy: input.capability.allow_net_hosts === undefined
+      ? null
+      : { allow: input.capability.allow_net_hosts },
     secret_refs: [],
     timeout_seconds: null,
     evidence_mode: input.capability.evidence_mode,
@@ -146,6 +149,11 @@ export async function executeLocalProcessSandboxRequest(
     signal?: AbortSignal
   } = {},
 ): Promise<SandboxResultV1> {
+  if (request.network_policy !== null && request.network_policy !== undefined) {
+    throw new Error(
+      "trusted local process cannot enforce the requested network policy",
+    )
+  }
   const executeCommand = options.commandExecutor ?? defaultLocalCommandExecutor
   const cwd = request.workspace_ref && request.workspace_ref.startsWith("/") ? request.workspace_ref : null
   const preAborted = options.signal?.aborted === true
@@ -183,16 +191,19 @@ export async function executeLocalProcessSandboxRequest(
     stderr: result.stderr,
     evidenceMode: request.evidence_mode,
   })
+  const artifactRoot = options.tempDirRoot === undefined
+    ? undefined
+    : canonicalSandboxArtifactRoot(options.tempDirRoot)
   await Promise.all([
     persistCanonicalSandboxArtifact(
       evidence.stdout_ref,
       result.stdout,
-      options.tempDirRoot,
+      artifactRoot,
     ),
     persistCanonicalSandboxArtifact(
       evidence.stderr_ref,
       result.stderr,
-      options.tempDirRoot,
+      artifactRoot,
     ),
   ])
   return {

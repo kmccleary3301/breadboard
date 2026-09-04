@@ -276,6 +276,11 @@ export function makeSshSlurmBackend(
   return {
     backendId: `slurm:${sshTarget}`,
     async submit(request, context) {
+      if (request.network_policy !== null && request.network_policy !== undefined) {
+        throw new Error(
+          "Slurm backend cannot enforce the requested network policy",
+        )
+      }
       const expectedRequestDigest = requestDigest(request)
       const submissionKey = sha256(request.request_id).slice("sha256:".length)
       const jobName = `bb-${submissionKey.slice(0, 32)}`
@@ -308,7 +313,7 @@ export function makeSshSlurmBackend(
         "done",
       ].join(" ")
       const detachedScript = [
-        "set -eu;",
+        "umask 077; set -eu;",
         `lock=${shellQuote(lockPath)};`,
         `receipt=${shellQuote(receiptPath)};`,
         `cancel=${shellQuote(cancelPath)};`,
@@ -336,7 +341,11 @@ export function makeSshSlurmBackend(
         `[ ! -f ${shellQuote(cancelPath)} ] || timeout 1s scancel "$id";`,
       ].join(" ")
       const launchCommand = [
-        `mkdir -p ${shellQuote(evidenceDirectory)} &&`,
+        `umask 077; evidence=${shellQuote(evidenceDirectory)};`,
+        `[ ! -L "$evidence" ] || exit 73;`,
+        `mkdir -p "$evidence";`,
+        `[ -d "$evidence" ] && [ "$(stat -c %u "$evidence")" = "$(id -u)" ] || exit 74;`,
+        `chmod 700 "$evidence";`,
         `lock=${shellQuote(lockPath)}; receipt=${shellQuote(receiptPath)}; now=$(date +%s);`,
         `if [ -d "$lock" ] && [ ! -s "$receipt" ]; then`,
         `owner=$(cat "$lock/owner" 2>/dev/null || true);`,
@@ -359,7 +368,7 @@ export function makeSshSlurmBackend(
       )
       let launchError: unknown
       try {
-        await ssh(launchCommand, deadline - Date.now())
+        await ssh(launchCommand, deadline - Date.now(), context.signal)
       } catch (error: unknown) {
         launchError = error
       }
@@ -369,6 +378,7 @@ export function makeSshSlurmBackend(
           receipt = (await ssh(
             `if [ -s ${shellQuote(receiptPath)} ]; then cat ${shellQuote(receiptPath)}; fi`,
             deadline - Date.now(),
+            context.signal,
           )).stdout.trim()
         } catch (error: unknown) {
           launchError = error

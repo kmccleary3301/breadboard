@@ -5,7 +5,10 @@ import { join } from "node:path"
 import test from "node:test"
 import assert from "node:assert/strict"
 import { setTimeout as sleep } from "node:timers/promises"
-import { canonicalSandboxArtifactUri } from "@breadboard/execution-drivers"
+import {
+  canonicalSandboxArtifactRoot,
+  canonicalSandboxArtifactUri,
+} from "@breadboard/execution-drivers"
 import {
   buildLocalProcessSandboxRequest,
   chooseTrustedLocalPlacement,
@@ -99,7 +102,6 @@ test("trusted local driver can execute a local-process sandbox request", async (
       capability_id: "cap-exec-1",
       security_tier: "trusted_dev",
       isolation_class: "process",
-      allow_net_hosts: [],
       secret_mode: "ref_only",
       evidence_mode: "replay_strict",
     },
@@ -107,6 +109,7 @@ test("trusted local driver can execute a local-process sandbox request", async (
     workspaceRef: "/tmp",
   })
   const artifactRoot = fs.mkdtempSync(join(tmpdir(), "bb-local-artifacts-"))
+  fs.chmodSync(artifactRoot, 0o755)
   const result = await executeLocalProcessSandboxRequest(request, {
     tempDirRoot: artifactRoot,
   })
@@ -115,12 +118,41 @@ test("trusted local driver can execute a local-process sandbox request", async (
   assert.match(result.stdout_ref, /^sha256:/)
   assert.equal(
     fs.readFileSync(
-      new URL(canonicalSandboxArtifactUri(result.stdout_ref, artifactRoot)),
+      new URL(canonicalSandboxArtifactUri(
+        result.stdout_ref,
+        canonicalSandboxArtifactRoot(artifactRoot),
+      )),
       "utf8",
     ),
     "local ok",
   )
+  assert.equal(fs.statSync(artifactRoot).mode & 0o077, 0o055)
+  assert.equal(
+    fs.statSync(canonicalSandboxArtifactRoot(artifactRoot)).mode & 0o077,
+    0,
+  )
   assert.ok(result.side_effect_digest?.startsWith("sha256:"))
+})
+
+test("trusted local execution rejects unenforceable network policy", async () => {
+  const request = buildLocalProcessSandboxRequest({
+    requestId: "sandbox-network-policy",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-network-policy",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      allow_net_hosts: [],
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["node", "-e", "process.stdout.write('blocked')"],
+  })
+
+  await assert.rejects(
+    () => executeLocalProcessSandboxRequest(request),
+    /cannot enforce the requested network policy/,
+  )
 })
 
 test("trusted local direct execution classifies an ordinary abort as cancelled", async () => {

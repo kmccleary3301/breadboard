@@ -41,6 +41,11 @@ const remoteCapability: ExecutionCapabilityV1 = {
   evidence_mode: "audit_full",
 }
 
+const slurmCapability: ExecutionCapabilityV1 = {
+  ...remoteCapability,
+  allow_net_hosts: undefined,
+}
+
 test("remote driver chooses delegated placement from capability", () => {
   assert.equal(chooseRemotePlacement(remoteCapability), "remote_worker")
 })
@@ -2230,7 +2235,7 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   })
   const request = buildRemoteSandboxRequest({
     requestId: "req:slurm:backend",
-    capability: remoteCapability,
+    capability: slurmCapability,
     command: ["python", "-c", "print(\"a'b\")"],
     placementClass: "remote_worker",
   })
@@ -2245,10 +2250,10 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   assert.ok(handle.evidenceRefs?.some((ref) => ref.endsWith(".command.b64")))
   assert.ok(handle.evidenceRefs?.some((ref) => ref.endsWith(".log")))
   assert.equal(handle.executionId, "24680")
-  assert.equal(
-    invocations[0]?.[1]?.includes("mkdir -p '/tmp/breadboard evidence'"),
-    true,
-  )
+  assert.equal(invocations[0]?.[1]?.includes(`mkdir -p "$evidence"`), true)
+  assert.equal(invocations[0]?.[1]?.includes(`umask 077`), true)
+  assert.equal(invocations[0]?.[1]?.includes(`stat -c %u "$evidence"`), true)
+  assert.equal(invocations[0]?.[1]?.includes(`chmod 700 "$evidence"`), true)
   assert.equal(invocations[0]?.[1]?.includes("setsid sh -c"), true)
   assert.equal(invocations[0]?.[1]?.includes("--wrap="), true)
   assert.ok(invocations[0]?.[1]?.includes(`[ ! -s "$receipt" ]`))
@@ -2405,10 +2410,35 @@ test("SSH Slurm backend rejects unsafe targets and relative evidence paths", () 
   )
 })
 
+test("SSH Slurm backend rejects network policies it cannot enforce", async () => {
+  const backend = makeSshSlurmBackend({
+    sshTarget: "cluster.example",
+    remoteEvidenceDirectory: "/tmp/evidence",
+    async runCommand() {
+      assert.fail("network policy rejection must precede SSH")
+    },
+  })
+  const request = buildRemoteSandboxRequest({
+    requestId: "req:slurm:network-policy",
+    capability: remoteCapability,
+    command: ["python", "-c", "print('blocked')"],
+    placementClass: "remote_worker",
+  })
+
+  await assert.rejects(
+    () => backend.submit(request, {
+      signal: new AbortController().signal,
+      deadlineAtMs: null,
+      terminationGraceMs: 50,
+    }),
+    /cannot enforce the requested network policy/,
+  )
+})
+
 test("SSH Slurm backend recovers a durable receipt after an ambiguous launch acknowledgement", async () => {
   const request = buildRemoteSandboxRequest({
     requestId: "req:slurm:ambiguous",
-    capability: remoteCapability,
+    capability: slurmCapability,
     command: ["python", "-c", "print('durable')"],
     placementClass: "remote_worker",
   })
@@ -2443,13 +2473,13 @@ test("SSH Slurm backend recovers a durable receipt after an ambiguous launch ack
 test("SSH Slurm backend rejects a reused request id with changed request content", async () => {
   const original = buildRemoteSandboxRequest({
     requestId: "req:slurm:collision",
-    capability: remoteCapability,
+    capability: slurmCapability,
     command: ["python", "-c", "print('original')"],
     placementClass: "remote_worker",
   })
   const changed = buildRemoteSandboxRequest({
     requestId: original.request_id,
-    capability: remoteCapability,
+    capability: slurmCapability,
     command: ["python", "-c", "print('changed')"],
     placementClass: "remote_worker",
   })
@@ -2487,15 +2517,17 @@ test("SSH Slurm backend leaves a durable cancel marker when cancellation precede
   const backend = makeSshSlurmBackend({
     sshTarget: "cluster.example",
     remoteEvidenceDirectory: "/tmp/evidence",
-    async runCommand(_program, args) {
+    async runCommand(_program, args, options) {
       const remoteCommand = args[1] ?? ""
       commands.push(remoteCommand)
+      if (commands.length === 1) assert.equal(options.signal, controller.signal)
+      else assert.equal(options.signal, undefined)
       return { stdout: "", stderr: "" }
     },
   })
   const request = buildRemoteSandboxRequest({
     requestId: "req:slurm:cancel-before-receipt",
-    capability: remoteCapability,
+    capability: slurmCapability,
     command: ["python", "-c", "print('cancel')"],
     placementClass: "remote_worker",
   })
@@ -2518,7 +2550,7 @@ test("SSH Slurm backend leaves a durable cancel marker when cancellation precede
 test("SSH Slurm backend reconciles an active job after adapter restart", async () => {
   const request = buildRemoteSandboxRequest({
     requestId: "req:slurm:restart",
-    capability: remoteCapability,
+    capability: slurmCapability,
     command: ["python", "-c", "print('restart')"],
     placementClass: "remote_worker",
   })
