@@ -321,7 +321,10 @@ export function makeSshSlurmBackend(
       const jobName = slurmJobName(sshTarget, evidenceDirectory, request.request_id)
       const submissionAttemptToken = randomBytes(16).toString("hex")
       const receiptPath = remotePath(evidenceDirectory, `submission-${submissionKey}.receipt`)
-      const cancelPath = remotePath(evidenceDirectory, `submission-${submissionKey}.cancel`)
+      const cancelPath = remotePath(
+        evidenceDirectory,
+        `submission-${submissionKey}-${submissionAttemptToken}.cancel`,
+      )
       const lockPath = remotePath(evidenceDirectory, `submission-${submissionKey}.lock`)
       const launchLogPath = remotePath(evidenceDirectory, `submission-${submissionKey}.log`)
       const submissionCommandPath = remotePath(
