@@ -2459,34 +2459,9 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   assert.equal(signalled.result?.usage?.exit_code, 137)
   oversizedTerminalOutput = true
   sacctResult = "CANCELLED|0:15|node-a\n"
-  const canceledWithoutOutputs = await backend.observe(handle.executionId)
-  assert.equal(canceledWithoutOutputs.state, "cancelled")
-  assert.equal(canceledWithoutOutputs.result?.status, "cancelled")
-  const expectedOversizedEvidence = buildCanonicalSandboxEvidence({
-    command: request.command,
-    status: "cancelled",
-    exitCode: 143,
-    stdout: "abcdefghij",
-    stderr: "error-data",
-    evidenceMode: request.evidence_mode,
-  })
-  assert.equal(
-    canceledWithoutOutputs.result?.stdout_ref,
-    expectedOversizedEvidence.stdout_ref,
-  )
-  assert.equal(
-    canceledWithoutOutputs.result?.stderr_ref,
-    expectedOversizedEvidence.stderr_ref,
-  )
-  assert.ok(
-    canceledWithoutOutputs.evidenceRefs?.includes(
-      `ssh://cluster.example/tmp/breadboard%20evidence/slurm-24680.out#sha256-${expectedOversizedEvidence.stdout_ref.slice("sha256:".length)}-10-bytes`,
-    ),
-  )
-  assert.ok(
-    canceledWithoutOutputs.evidenceRefs?.includes(
-      `ssh://cluster.example/tmp/breadboard%20evidence/slurm-24680.err#sha256-${expectedOversizedEvidence.stderr_ref.slice("sha256:".length)}-10-bytes`,
-    ),
+  await assert.rejects(
+    () => backend.observe(handle.executionId),
+    /exceeds the configured per-stream limit/,
   )
   const cancelDeadlineAtMs = Date.now() + 100
   await backend.cancel(handle.executionId, {
@@ -2620,6 +2595,45 @@ test("SSH Slurm backend recovers a durable receipt after an ambiguous launch ack
   })
   assert.equal(handle.executionId, "31415")
   assert.equal(launches, 1)
+})
+
+test("SSH Slurm backend cancels a submitted job when metadata recovery fails", async () => {
+  const request = buildRemoteSandboxRequest({
+    requestId: "req:slurm:metadata-failure",
+    capability: slurmCapability,
+    command: ["python", "-c", "print('must cancel')"],
+    placementClass: "remote_worker",
+  })
+  const commands: string[] = []
+  const backend = makeSshSlurmBackend({
+    sshTarget: "cluster.example",
+    remoteEvidenceDirectory: "/tmp/evidence",
+    async runCommand(_program, args) {
+      const remoteCommand = args[1] ?? ""
+      commands.push(remoteCommand)
+      if (remoteCommand.includes("setsid sh -c")) return { stdout: "", stderr: "" }
+      if (remoteCommand.includes("submission-") && remoteCommand.includes("then cat")) {
+        return { stdout: "27182;cluster\n", stderr: "" }
+      }
+      if (remoteCommand.startsWith("cat ") && remoteCommand.includes(".request.b64")) {
+        throw new Error("metadata unavailable")
+      }
+      if (remoteCommand.startsWith("timeout 30s scancel ")) {
+        return { stdout: "", stderr: "" }
+      }
+      assert.fail(`unexpected Slurm command: ${remoteCommand}`)
+    },
+  })
+
+  await assert.rejects(
+    () => backend.submit(request, {
+      signal: new AbortController().signal,
+      deadlineAtMs: null,
+      terminationGraceMs: 50,
+    }),
+    /submitted job cancellation was requested/,
+  )
+  assert.ok(commands.includes("timeout 30s scancel '27182'"))
 })
 
 test("SSH Slurm backend rejects a reused request id with changed request content", async () => {

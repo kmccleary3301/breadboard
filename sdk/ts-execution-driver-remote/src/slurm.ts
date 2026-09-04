@@ -393,7 +393,26 @@ export function makeSshSlurmBackend(
         throw new Error("Slurm submission returned an invalid job id")
       }
       submitted.delete(executionId)
-      const execution = await loadExecution(executionId)
+      let execution: SubmittedSlurmExecution
+      try {
+        execution = await loadExecution(executionId)
+      } catch (metadataError: unknown) {
+        let cancellationError: unknown
+        try {
+          await ssh(
+            `timeout ${commandTimeoutSeconds}s scancel ${shellQuote(executionId)}`,
+            context.terminationGraceMs,
+          )
+        } catch (error: unknown) {
+          cancellationError = error
+        }
+        throw new AggregateError(
+          cancellationError === undefined
+            ? [metadataError]
+            : [metadataError, cancellationError],
+          "Slurm execution metadata failed after receipt; submitted job cancellation was requested",
+        )
+      }
       if (execution.requestDigest !== expectedRequestDigest) {
         throw new Error(
           "Slurm request_id collision; existing execution remains owned by its original request",
@@ -485,6 +504,9 @@ export function makeSshSlurmBackend(
         if (!Number.isSafeInteger(size)) {
           throw new Error("Slurm output size exceeds the safe integer range")
         }
+        if (size > maxOutputBytes) {
+          throw new Error("Slurm output exceeds the configured per-stream limit")
+        }
         const chunks: Buffer[] = []
         for (let offset = 0; offset < size; offset += maxOutputBytes) {
           const count = Math.min(maxOutputBytes, size - offset)
@@ -519,11 +541,7 @@ export function makeSshSlurmBackend(
         }
         return {
           content,
-          evidenceRefs: size > maxOutputBytes
-            ? [
-                `ssh://${sshTarget}${uriPath(path)}#sha256-${remoteDigest}-${size}-bytes`,
-              ]
-            : [],
+          evidenceRefs: [],
         }
       }
       const [stdout, stderr] = await Promise.all([
