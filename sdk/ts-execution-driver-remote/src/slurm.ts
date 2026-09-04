@@ -295,6 +295,13 @@ export function makeSshSlurmBackend(
         submissionCommand,
         "utf8",
       ).toString("base64")
+      const cancelByNameScript = [
+        "while true; do",
+        `ids=$(timeout 1s squeue --noheader --name ${shellQuote(jobName)} --format=%A 2>/dev/null || true);`,
+        `for candidate in $ids; do case "$candidate" in ""|*[!0-9]*) :;; *) timeout 1s scancel "$candidate" 2>/dev/null || true;; esac; done;`,
+        "sleep 1;",
+        "done",
+      ].join(" ")
       const detachedScript = [
         "set -eu;",
         `lock=${shellQuote(lockPath)};`,
@@ -302,8 +309,8 @@ export function makeSshSlurmBackend(
         `cancel=${shellQuote(cancelPath)};`,
         `owner="$lock/owner";`,
         "id='';",
-        `cancel_by_name() { touch "$cancel"; attempt=0; while [ "$attempt" -lt ${commandTimeoutSeconds} ]; do ids=$(squeue --noheader --name ${shellQuote(jobName)} --format=%A 2>/dev/null || true); for candidate in $ids; do case "$candidate" in ""|*[!0-9]*) :;; *) scancel "$candidate" 2>/dev/null || true;; esac; done; attempt=$((attempt+1)); [ "$attempt" -ge ${commandTimeoutSeconds} ] || sleep 1; done; };`,
-        `cleanup() { if [ ! -s "$receipt" ]; then case "$id" in ""|*[!0-9]*) cancel_by_name;; *) scancel "$id" || true;; esac; fi; rm -rf "$lock"; };`,
+        `cancel_by_name() { touch "$cancel"; timeout ${commandTimeoutSeconds}s sh -c ${shellQuote(cancelByNameScript)} || true; };`,
+        `cleanup() { if [ ! -s "$receipt" ]; then case "$id" in ""|*[!0-9]*) cancel_by_name;; *) timeout 1s scancel "$id" 2>/dev/null || true;; esac; fi; rm -rf "$lock"; };`,
         "trap cleanup EXIT;",
         `printf '%s %s\\n' "$$" "$(date +%s)" > "$owner.tmp";`,
         `mv "$owner.tmp" "$owner";`,
@@ -321,7 +328,7 @@ export function makeSshSlurmBackend(
         `mv "$metadata.tmp" "$metadata";`,
         `printf '%s\\n' "$job" > "$receipt.tmp";`,
         `mv "$receipt.tmp" "$receipt";`,
-        `[ ! -f ${shellQuote(cancelPath)} ] || scancel "$id";`,
+        `[ ! -f ${shellQuote(cancelPath)} ] || timeout 1s scancel "$id";`,
       ].join(" ")
       const launchCommand = [
         `mkdir -p ${shellQuote(evidenceDirectory)} &&`,
@@ -332,7 +339,7 @@ export function makeSshSlurmBackend(
         `case "$created" in ""|*[!0-9]*) created=$(stat -c %Y "$lock" 2>/dev/null || printf '0');; esac;`,
         `if ! kill -0 "$pid" 2>/dev/null && [ $((now-created)) -ge ${lockLeaseSeconds} ]; then`,
         `stale_job=$(cat "$lock/job" 2>/dev/null || true);`,
-        `case "$stale_job" in ""|*[!0-9]*) scancel --name ${shellQuote(jobName)} 2>/dev/null || true;; *) scancel "$stale_job" 2>/dev/null || true;; esac;`,
+        `case "$stale_job" in ""|*[!0-9]*) timeout 1s scancel --name ${shellQuote(jobName)} 2>/dev/null || true;; *) timeout 1s scancel "$stale_job" 2>/dev/null || true;; esac;`,
         `rm -rf "$lock";`,
         `fi; fi;`,
         `if [ ! -s "$receipt" ] && mkdir "$lock" 2>/dev/null; then`,
@@ -369,8 +376,8 @@ export function makeSshSlurmBackend(
           await ssh([
             `touch ${shellQuote(cancelPath)};`,
             `if [ -s ${shellQuote(receiptPath)} ]; then`,
-            `job=$(cat ${shellQuote(receiptPath)}); scancel "\${job%%;*}";`,
-            `else scancel --name ${shellQuote(jobName)} 2>/dev/null || true; fi`,
+            `job=$(cat ${shellQuote(receiptPath)}); timeout ${commandTimeoutSeconds}s scancel "\${job%%;*}";`,
+            `else timeout ${commandTimeoutSeconds}s scancel --name ${shellQuote(jobName)} 2>/dev/null || true; fi`,
           ].join(" "), context.terminationGraceMs)
         } catch (error: unknown) {
           cleanupError = error
@@ -474,19 +481,20 @@ export function makeSshSlurmBackend(
           `if [ ! -f ${shellQuote(path)} ]; then printf 'M\\n'; exit 0; fi;`,
           `size=$(wc -c < ${shellQuote(path)});`,
           `if [ "$size" -le ${maxOutputBytes} ]; then`,
-          `printf 'C:%s\\n' "$size"; cat ${shellQuote(path)};`,
+          `printf 'C:%s\\n' "$size"; base64 < ${shellQuote(path)} | tr -d '\\n';`,
           `else printf 'T:%s\\n' "$size"; fi`,
         ].join(" "))).stdout
         const separator = output.indexOf("\n")
         if (separator < 0) throw new Error("Slurm output framing is invalid")
         const header = output.slice(0, separator)
-        const content = output.slice(separator + 1)
+        const payload = output.slice(separator + 1)
         if (header === "M") return { content: "", evidenceRefs: [] }
         const contentMatch = /^C:(\d+)$/.exec(header)
         if (contentMatch) {
           const size = Number.parseInt(contentMatch[1] ?? "", 10)
-          if (size <= maxOutputBytes && Buffer.byteLength(content, "utf8") === size) {
-            return { content, evidenceRefs: [] }
+          const bytes = Buffer.from(payload, "base64")
+          if (size <= maxOutputBytes && bytes.length === size) {
+            return { content: bytes.toString("utf8"), evidenceRefs: [] }
           }
           throw new Error("Slurm output content length does not match its frame")
         }
@@ -536,7 +544,11 @@ export function makeSshSlurmBackend(
       const deadline = context.deadlineAtMs ?? Date.now() + commandTimeoutMs
       const remaining = deadline - Date.now()
       if (remaining <= 0) throw new Error("Slurm cancellation deadline expired")
-      await ssh(`scancel ${shellQuote(executionId)}`, remaining, context.signal)
+      await ssh(
+        `timeout ${commandTimeoutSeconds}s scancel ${shellQuote(executionId)}`,
+        remaining,
+        context.signal,
+      )
     },
   }
 }

@@ -2210,7 +2210,7 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
           stdout: oversizedTerminalOutput
             ? "T:5000000\n"
             : remoteCommand.includes("C:%s")
-              ? "C:6\nworld\n"
+              ? "C:6\nd29ybGQK"
               : "world\n",
           stderr: "",
         }
@@ -2252,7 +2252,8 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   assert.ok(invocations[0]?.[1]?.includes(`[ ! -s "$receipt" ]`))
   assert.ok(invocations[0]?.[1]?.includes(`cancel_by_name() { touch "$cancel"`))
   assert.ok(invocations[0]?.[1]?.includes("squeue --noheader --name"))
-  assert.ok(invocations[0]?.[1]?.includes(`while [ "$attempt" -lt 30 ]`))
+  assert.ok(invocations[0]?.[1]?.includes("timeout 30s sh -c"))
+  assert.ok(invocations[0]?.[1]?.includes("timeout 1s squeue"))
   assert.ok(invocations[0]?.[1]?.includes(`[ ! -f "$cancel" ] || exit 75`))
   assert.ok(invocations[0]?.[1]?.includes(`kill -0 "$pid"`))
   assert.ok(invocations[0]?.[1]?.includes(`cat "$lock/job"`))
@@ -2336,8 +2337,8 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   })
   const cancelCommand = [...invocations]
     .reverse()
-    .find((args) => args[1]?.startsWith("scancel "))
-  assert.match(cancelCommand?.[1] ?? "", /^scancel '24680'$/)
+    .find((args) => args[1]?.startsWith("timeout 30s scancel "))
+  assert.match(cancelCommand?.[1] ?? "", /^timeout 30s scancel '24680'$/)
   assert.equal(commandTimeouts.length, invocations.length)
   assert.ok(commandTimeouts.every((timeout) => timeout > 0 && timeout <= 30_000))
   assert.ok((commandTimeouts.at(-1) ?? Number.POSITIVE_INFINITY) <= 100)
