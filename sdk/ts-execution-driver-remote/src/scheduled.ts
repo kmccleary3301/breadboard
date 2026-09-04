@@ -94,6 +94,7 @@ interface ActiveScheduledExecution {
   cancellation?: Promise<void>
   lastEvidenceKey?: string
   terminalObserved: boolean
+  terminalEvidenceKey?: string
   evidenceTail: Promise<void>
   failedEvidence?: {
     readonly key: string
@@ -296,6 +297,15 @@ export function makeScheduledExecutionDriver(
       observation.evidenceRefs,
     )
     const key = JSON.stringify([observation.state, refs])
+    if (
+      entry.terminalEvidenceKey !== undefined
+      && entry.terminalEvidenceKey !== key
+    ) {
+      return
+    }
+    if (TERMINAL_STATES.has(observation.state)) {
+      entry.terminalEvidenceKey = key
+    }
     if (entry.lastEvidenceKey === key) return
     const evidence: ScheduledExecutionEvidenceV1 = {
       driverId,

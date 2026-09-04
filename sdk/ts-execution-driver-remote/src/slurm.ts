@@ -466,55 +466,60 @@ export function makeSshSlurmBackend(
       const readOutput = async (
         path: string,
       ): Promise<{ readonly content: string; readonly evidenceRefs: readonly string[] }> => {
-        if (status === "completed") {
-          const output = await ssh([
-            `if [ ! -f ${shellQuote(path)} ]; then exit 66; fi;`,
-            `size=$(wc -c < ${shellQuote(path)});`,
-            `[ "$size" -le ${maxOutputBytes} ] || exit 67;`,
-            `cat ${shellQuote(path)}`,
-          ].join(" "))
-          return { content: output.stdout, evidenceRefs: [] }
-        }
-        const output = (await ssh(
-          [
-            `if [ ! -f ${shellQuote(path)} ]; then printf 'M\\n'; exit 0; fi;`,
-            `size=$(wc -c < ${shellQuote(path)});`,
-            `if [ "$size" -le ${maxOutputBytes} ]; then`,
-            `printf 'C:%s\\n' "$size"; base64 < ${shellQuote(path)} | tr -d '\\n';`,
-            `else printf 'T:%s\\n' "$size"; fi`,
-          ].join(" "),
-          commandTimeoutMs,
-          undefined,
-          framedOutputMaxBytes,
-        )).stdout
-        const separator = output.indexOf("\n")
-        if (separator < 0) throw new Error("Slurm output framing is invalid")
-        const header = output.slice(0, separator)
-        const payload = output.slice(separator + 1)
+        const header = (await ssh([
+          `if [ ! -f ${shellQuote(path)} ]; then printf 'M\\n'; else`,
+          `size=$(wc -c < ${shellQuote(path)});`,
+          `digest=$(sha256sum ${shellQuote(path)}); digest=\${digest%% *};`,
+          `printf 'F:%s:%s\\n' "$size" "$digest"; fi`,
+        ].join(" "))).stdout.trim()
         if (header === "M") return { content: "", evidenceRefs: [] }
-        const contentMatch = /^C:(\d+)$/.exec(header)
-        if (contentMatch) {
-          const size = Number.parseInt(contentMatch[1] ?? "", 10)
-          const bytes = Buffer.from(payload, "base64")
-          if (size <= maxOutputBytes && bytes.length === size) {
-            return { content: bytes.toString("utf8"), evidenceRefs: [] }
-          }
-          throw new Error("Slurm output content length does not match its frame")
+        const fileMatch = /^F:(\d+):([0-9a-f]{64})$/.exec(header)
+        if (!fileMatch) throw new Error("Slurm output metadata frame is invalid")
+        const size = Number.parseInt(fileMatch[1] ?? "", 10)
+        const remoteDigest = fileMatch[2] ?? ""
+        if (!Number.isSafeInteger(size)) {
+          throw new Error("Slurm output size exceeds the safe integer range")
         }
-        const truncatedMatch = /^T:(\d+)$/.exec(header)
-        if (truncatedMatch) {
-          const size = Number.parseInt(truncatedMatch[1] ?? "", 10)
-          if (size <= maxOutputBytes) {
-            throw new Error("Slurm output truncation frame is below the configured limit")
+        const chunks: Buffer[] = []
+        for (let offset = 0; offset < size; offset += maxOutputBytes) {
+          const count = Math.min(maxOutputBytes, size - offset)
+          const encoded = (await ssh(
+            [
+              `dd if=${shellQuote(path)} bs=1 skip=${offset} count=${count} status=none`,
+              "| base64 | tr -d '\\n'",
+            ].join(" "),
+            commandTimeoutMs,
+            undefined,
+            framedOutputMaxBytes,
+          )).stdout
+          const bytes = Buffer.from(encoded, "base64")
+          if (bytes.length !== count) {
+            throw new Error("Slurm output chunk length does not match its frame")
           }
-          return {
-            content: "",
-            evidenceRefs: [
-              `ssh://${sshTarget}${uriPath(path)}#truncated-${size}-bytes-at-limit-${maxOutputBytes}`,
-            ],
-          }
+          chunks.push(bytes)
         }
-        throw new Error("Slurm output framing is invalid")
+        const bytes = Buffer.concat(chunks)
+        if (
+          bytes.length !== size
+          || createHash("sha256").update(bytes).digest("hex") !== remoteDigest
+        ) {
+          throw new Error("Slurm output content does not match remote evidence")
+        }
+        const content = bytes.toString("utf8")
+        if (
+          Buffer.byteLength(content, "utf8") !== size
+          || createHash("sha256").update(content).digest("hex") !== remoteDigest
+        ) {
+          throw new Error("Slurm output is not canonical UTF-8 text")
+        }
+        return {
+          content,
+          evidenceRefs: size > maxOutputBytes
+            ? [
+                `ssh://${sshTarget}${uriPath(path)}#sha256-${remoteDigest}-${size}-bytes`,
+              ]
+            : [],
+        }
       }
       const [stdout, stderr] = await Promise.all([
         readOutput(execution.stdoutPath),

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { readFile } from "node:fs/promises"
 import test from "node:test"
 import assert from "node:assert/strict"
@@ -1863,6 +1864,73 @@ test("scheduled adapter retries failed evidence before later cleanup evidence", 
   assert.deepEqual(recordedStates, ["accepted", "cancelled"])
 })
 
+test("scheduled evidence never regresses after a concurrent terminal observation", async () => {
+  let observationCount = 0
+  let releaseRunning!: () => void
+  let runningObservationStarted!: () => void
+  const runningStarted = new Promise<void>((resolve) => {
+    runningObservationStarted = resolve
+  })
+  const states: string[] = []
+  const backend: ScheduledExecutionBackendV1 = {
+    backendId: "ray-terminal-monotonic",
+    async submit() {
+      return { executionId: "ray-terminal-monotonic-1" }
+    },
+    async observe() {
+      observationCount++
+      if (observationCount === 1) {
+        runningObservationStarted()
+        return new Promise((resolve) => {
+          releaseRunning = () => resolve({ state: "running" })
+        })
+      }
+      return { state: "cancelled" }
+    },
+    async cancel() {},
+  }
+  const driver = makeRayExecutionDriver(backend, {
+    pollIntervalMs: 1,
+    cancellationObservationTimeoutMs: 50,
+    recordEvidence(evidence) {
+      states.push(evidence.state)
+    },
+  })
+  const placement: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place:ray:terminal-monotonic",
+    placement_class: "delegated_python",
+    runtime_id: "ray",
+    capability_id: remoteCapability.capability_id,
+  }
+  const request = driver.buildSandboxRequest!({
+    requestId: "req:ray:terminal-monotonic",
+    capability: remoteCapability,
+    placement,
+    command: ["python", "-c", "print('monotonic')"],
+  })
+  const execution = driver.execute!(request, {
+    signal: new AbortController().signal,
+    deadlineAtMs: null,
+    terminationGraceMs: 50,
+    capability: remoteCapability,
+    placement,
+    driverId: "ray",
+  })
+
+  await runningStarted
+  await driver.terminate!(request, {
+    reason: "cancelled",
+    signal: new AbortController().signal,
+    deadlineAtMs: null,
+  })
+  releaseRunning()
+
+  assert.equal((await execution).status, "cancelled")
+  assert.deepEqual(states, ["accepted", "cancelled"])
+})
+
+
 
 
 
@@ -2234,6 +2302,7 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   const backend = makeSshSlurmBackend({
     sshTarget: "cluster.example",
     remoteEvidenceDirectory: "/tmp/breadboard evidence",
+    maxOutputBytes: 8,
     async runCommand(program, args, options) {
       assert.equal(program, "ssh")
       invocations.push([...args])
@@ -2248,24 +2317,35 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
       if (remoteCommand.includes("squeue")) return { stdout: squeueResult, stderr: "" }
       if (remoteCommand.includes("sacct")) return { stdout: sacctResult, stderr: "" }
       if (remoteCommand.includes("scancel")) return { stdout: "", stderr: "" }
-      if (remoteCommand.includes("if [ ! -f") && remoteCommand.includes(".out"))
+      if (
+        (remoteCommand.includes(".out") || remoteCommand.includes(".err"))
+        && remoteCommand.includes("sha256sum")
+      ) {
+        const content = remoteCommand.includes(".out")
+          ? oversizedTerminalOutput ? "abcdefghij" : "world\n"
+          : oversizedTerminalOutput ? "error-data" : ""
+        const bytes = Buffer.from(content, "utf8")
+        const digest = createHash("sha256").update(bytes).digest("hex")
         return {
-          stdout: oversizedTerminalOutput
-            ? "T:5000000\n"
-            : remoteCommand.includes("C:%s")
-              ? "C:6\nd29ybGQK"
-              : "world\n",
+          stdout: `F:${bytes.length}:${digest}\n`,
           stderr: "",
         }
-      if (remoteCommand.includes("if [ ! -f") && remoteCommand.includes(".err"))
-        return {
-          stdout: oversizedTerminalOutput
-            ? "T:5000000\n"
-            : remoteCommand.includes("C:%s")
-              ? "C:0\n"
-              : "",
-          stderr: "",
-        }
+      }
+      if (remoteCommand.startsWith("dd if=")) {
+        const content = remoteCommand.includes(".out")
+          ? oversizedTerminalOutput ? "abcdefghij" : "world\n"
+          : oversizedTerminalOutput ? "error-data" : ""
+        const offset = Number.parseInt(
+          /\bskip=(\d+)/.exec(remoteCommand)?.[1] ?? "",
+          10,
+        )
+        const count = Number.parseInt(
+          /\bcount=(\d+)/.exec(remoteCommand)?.[1] ?? "",
+          10,
+        )
+        const bytes = Buffer.from(content, "utf8").subarray(offset, offset + count)
+        return { stdout: bytes.toString("base64"), stderr: "" }
+      }
       assert.fail(`unexpected Slurm command: ${remoteCommand}`)
     },
   })
@@ -2350,9 +2430,10 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
     invocations.some(
       (args) =>
         args[1]?.includes("wc -c")
-        && args[1]?.includes(`[ "$size" -le 4194304 ]`),
+        && args[1]?.includes("sha256sum"),
     ),
   )
+  assert.ok(invocations.some((args) => args[1]?.startsWith("dd if=")))
   assert.deepEqual(observation.evidenceRefs, [
     "slurm://job/24680",
     "slurm://job/24680/state/COMPLETED",
@@ -2373,22 +2454,30 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   const canceledWithoutOutputs = await backend.observe(handle.executionId)
   assert.equal(canceledWithoutOutputs.state, "cancelled")
   assert.equal(canceledWithoutOutputs.result?.status, "cancelled")
+  const expectedOversizedEvidence = buildCanonicalSandboxEvidence({
+    command: request.command,
+    status: "cancelled",
+    exitCode: 143,
+    stdout: "abcdefghij",
+    stderr: "error-data",
+    evidenceMode: request.evidence_mode,
+  })
   assert.equal(
     canceledWithoutOutputs.result?.stdout_ref,
-    "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    expectedOversizedEvidence.stdout_ref,
   )
   assert.equal(
     canceledWithoutOutputs.result?.stderr_ref,
-    "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    expectedOversizedEvidence.stderr_ref,
   )
   assert.ok(
     canceledWithoutOutputs.evidenceRefs?.includes(
-      "ssh://cluster.example/tmp/breadboard%20evidence/slurm-24680.out#truncated-5000000-bytes-at-limit-4194304",
+      `ssh://cluster.example/tmp/breadboard%20evidence/slurm-24680.out#sha256-${expectedOversizedEvidence.stdout_ref.slice("sha256:".length)}-10-bytes`,
     ),
   )
   assert.ok(
     canceledWithoutOutputs.evidenceRefs?.includes(
-      "ssh://cluster.example/tmp/breadboard%20evidence/slurm-24680.err#truncated-5000000-bytes-at-limit-4194304",
+      `ssh://cluster.example/tmp/breadboard%20evidence/slurm-24680.err#sha256-${expectedOversizedEvidence.stderr_ref.slice("sha256:".length)}-10-bytes`,
     ),
   )
   const cancelDeadlineAtMs = Date.now() + 100
@@ -2403,7 +2492,7 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   assert.match(cancelCommand?.[1] ?? "", /^timeout 30s scancel '24680'$/)
   assert.equal(commandTimeouts.length, invocations.length)
   assert.ok(commandTimeouts.every((timeout) => timeout > 0 && timeout <= 30_000))
-  assert.ok(commandOutputLimits.some((limit) => limit > 4 * 1024 * 1024))
+  assert.ok(commandOutputLimits.some((limit) => limit > 8))
   assert.ok((commandTimeouts.at(-1) ?? Number.POSITIVE_INFINITY) <= 100)
 })
 
