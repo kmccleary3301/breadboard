@@ -3185,7 +3185,7 @@ class RayJobAdapter:
         return True
 
     def _mark_job_failed(self, target: Mapping[str, Any], job_id: str) -> None:
-        marked = self.orchestrator.job_manager.update_state(job_id, "failed")
+        marked = self.orchestrator.mark_job_failed(job_id)
         metadata = target.get("metadata")
         job_data = metadata.get("job") if isinstance(metadata, Mapping) else None
         if isinstance(job_data, dict):
@@ -3270,7 +3270,8 @@ class RayJobAdapter:
             else:
                 self._submit_invocation(actor, invocation_id, spec.task)
         except BaseException:
-            self.orchestrator.job_manager.update_state(job_id, "failed")
+            if self._lookup_actor(job_id) is None:
+                self.orchestrator.mark_job_failed(job_id)
             raise
         self._actors[job_id] = actor
         metadata = {
@@ -3328,7 +3329,7 @@ class RayJobAdapter:
             if isinstance(job_data, Mapping) and job_data.get("seq") == 0:
                 return "absent"
             if job is not None and job.state not in {"failed", "killed"}:
-                self.orchestrator.job_manager.update_state(job_id, "failed")
+                self.orchestrator.mark_job_failed(job_id)
             return "absent"
         if self._invocation_state(actor, self._invocation_id(job_id)) == "missing":
             if isinstance(job_data, Mapping) and job_data.get("seq") == 0:
@@ -3352,16 +3353,14 @@ class RayJobAdapter:
         if state == "completed":
             result = getattr(actor, "get_result", None)
             if result is None:
-                if job is not None and job.state not in {"failed", "killed"}:
-                    self.orchestrator.job_manager.update_state(job_id, "failed")
+                self._mark_job_failed(target, job_id)
                 return "failed"
             try:
                 result_payload = self._ray_get(result)
             except BaseException:
                 return "pending"
             if not isinstance(result_payload, Mapping):
-                if job is not None and job.state not in {"failed", "killed"}:
-                    self.orchestrator.job_manager.update_state(job_id, "failed")
+                self._mark_job_failed(target, job_id)
                 return "failed"
             try:
                 durable_payload = self._durably_prepare_result(target, result_payload)
@@ -3429,7 +3428,7 @@ class RayJobAdapter:
             if has_recovery_metadata:
                 return False
             return (
-                self.orchestrator.job_manager.update_state(job_id, "killed") is not None
+                self.orchestrator.mark_job_killed(job_id) is not None
             )
         try:
             cancel = getattr(actor, "cancel", None)
@@ -3456,7 +3455,7 @@ class RayJobAdapter:
                     return False
         except BaseException:
             return False
-        marked = self.orchestrator.job_manager.update_state(job_id, "killed")
+        marked = self.orchestrator.mark_job_killed(job_id)
         if job is not None and marked is None:
             return False
         if isinstance(job_data, dict) and marked is not None:

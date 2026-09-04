@@ -4454,6 +4454,25 @@ def test_job_completion_replay_preserves_artifact_reference() -> None:
     restored = rebuilt.job_manager.get(spawned.job.job_id)
     assert restored is not None
     assert restored.result_payload == {"artifact_ref": artifact}
+    failed = orchestrator.spawn_subagent(
+        owner_agent="parent-session",
+        agent_id="failed-child-session",
+        async_mode=True,
+    ).job
+    killed = orchestrator.spawn_subagent(
+        owner_agent="parent-session",
+        agent_id="killed-child-session",
+        async_mode=True,
+    ).job
+    assert orchestrator.mark_job_failed(failed.job_id) is not None
+    assert orchestrator.mark_job_killed(killed.job_id) is not None
+
+    rebuilt = MultiAgentOrchestrator(
+        TeamConfig("job-terminal-replay"),
+        event_log=orchestrator.event_log,
+    )
+    assert rebuilt.job_manager.get(failed.job_id).state == "failed"
+    assert rebuilt.job_manager.get(killed.job_id).state == "killed"
 
 
 

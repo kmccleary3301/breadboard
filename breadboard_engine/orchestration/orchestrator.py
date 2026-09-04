@@ -127,6 +127,48 @@ class MultiAgentOrchestrator:
             payload=event_payload,
         )
         return job
+    def _mark_job_terminal(
+        self,
+        job_id: str,
+        *,
+        state: str,
+        event_type: str,
+    ) -> Optional[JobRef]:
+        if state not in {"failed", "killed"}:
+            raise ValueError("terminal job state must be failed or killed")
+        existing = self.job_manager.get(job_id)
+        if existing is not None and existing.state in {"completed", "failed", "killed"}:
+            return existing if existing.state == state else None
+        job = self.job_manager.update_state(job_id, state)
+        if job is None:
+            return None
+        self.event_log.add(
+            event_type,
+            agent_id=job.agent_id,
+            parent_agent_id=job.owner_agent,
+            payload={
+                "job_id": job.job_id,
+                "agent_id": job.agent_id,
+                "state": job.state,
+                "seq": job.seq,
+            },
+        )
+        return job
+
+    def mark_job_failed(self, job_id: str) -> Optional[JobRef]:
+        return self._mark_job_terminal(
+            job_id,
+            state="failed",
+            event_type="agent.job_failed",
+        )
+
+    def mark_job_killed(self, job_id: str) -> Optional[JobRef]:
+        return self._mark_job_terminal(
+            job_id,
+            state="killed",
+            event_type="agent.job_killed",
+        )
+
 
     def emit_coordination_signal(self, job: JobRef, signal: Dict[str, Any]) -> Event:
         payload = dict(signal or {})
@@ -963,6 +1005,13 @@ class MultiAgentOrchestrator:
                         job_id,
                         str(payload.get("state") or "completed"),
                         result_payload=result_payload,
+                    )
+            elif event.type in {"agent.job_failed", "agent.job_killed"}:
+                job_id = str(payload.get("job_id") or "")
+                if job_id:
+                    self.job_manager.update_state(
+                        job_id,
+                        str(payload.get("state") or ""),
                     )
             elif event.type == "agent.wakeup_emitted":
                 job_id = str(payload.get("job_id") or "")
