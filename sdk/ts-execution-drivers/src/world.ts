@@ -14,6 +14,7 @@ import {
 } from "@breadboard/kernel-contracts"
 import {
   buildExecutionDriverUnsupportedCase,
+  assertExecutionProgramAllowed,
   buildPlannedExecution,
   selectExecutionDriver,
   selectTerminalSessionDriver,
@@ -706,7 +707,10 @@ export function createExecutionWorld(input: {
     const terminateExecution = async (
       reason: "deadline" | "cancelled",
     ): Promise<boolean> => {
-      if (!driver.terminate) return false
+      if (!driver.terminate) {
+        deferRelease(executePromise)
+        return false
+      }
       let termination: Promise<unknown>
       try {
         termination = Promise.resolve(
@@ -717,10 +721,13 @@ export function createExecutionWorld(input: {
           }),
         )
       } catch {
+        deferRelease(executePromise)
         return false
       }
       const observed = await settleWithin(termination, terminationGraceMs)
-      if (!observed) deferRelease(termination)
+      if (!observed) {
+        deferRelease(termination.catch(() => executePromise))
+      }
       return observed
     }
 
@@ -986,6 +993,23 @@ export function createExecutionWorld(input: {
           operation.capability,
           operation.placement,
           "Terminal sessions require a non-empty command.",
+          "terminal_start_failed",
+        ),
+      }
+    }
+    try {
+      assertExecutionProgramAllowed(operation.capability, operation.input.command)
+    } catch (error) {
+      return {
+        kind: "terminal_start",
+        driverId: driver.driverId,
+        capability: operation.capability,
+        placement: operation.placement,
+        result: null,
+        unsupportedCase: buildTerminalUnsupportedCase(
+          operation.capability,
+          operation.placement,
+          error instanceof Error ? error.message : "Terminal program is not allowed.",
           "terminal_start_failed",
         ),
       }

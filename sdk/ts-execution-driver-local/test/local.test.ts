@@ -54,6 +54,7 @@ test("trusted local driver can build a local-process sandbox request", () => {
       security_tier: "trusted_dev",
       isolation_class: "process",
       allow_net_hosts: ["api.openai.com"],
+      allow_run_programs: ["bash"],
       secret_mode: "ref_only",
       evidence_mode: "replay_strict",
     },
@@ -78,6 +79,7 @@ test("trusted local driver can build a local-process sandbox request", () => {
       security_tier: "trusted_dev",
       isolation_class: "process",
       allow_net_hosts: [],
+      allow_run_programs: ["node"],
       secret_mode: "ref_only",
       evidence_mode: "replay_strict",
     },
@@ -92,6 +94,26 @@ test("trusted local driver can build a local-process sandbox request", () => {
     workspaceRef: "workspace://repo/main",
   })
   assert.equal(built?.placement_class, "local_process")
+})
+
+test("trusted local driver rejects programs outside the capability allowlist", () => {
+  assert.throws(
+    () =>
+      buildLocalProcessSandboxRequest({
+        requestId: "sandbox-disallowed",
+        capability: {
+          schema_version: "bb.execution_capability.v1",
+          capability_id: "cap-local-program-policy",
+          security_tier: "trusted_dev",
+          isolation_class: "process",
+          allow_run_programs: ["python"],
+          secret_mode: "ref_only",
+          evidence_mode: "minimal",
+        },
+        command: ["node", "worker.js"],
+      }),
+    /program "node" is not allowed by capability cap-local-program-policy/,
+  )
 })
 
 test("trusted local driver can execute a local-process sandbox request", async () => {

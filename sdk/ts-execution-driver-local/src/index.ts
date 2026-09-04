@@ -9,6 +9,7 @@ import type {
 import type { TerminalSessionDriverV1 } from "@breadboard/execution-drivers"
 import {
   buildAndPersistCanonicalSandboxEvidence,
+  assertExecutionProgramAllowed,
   canonicalSandboxArtifactRoot,
   isPlacementCompatible,
 } from "@breadboard/execution-drivers"
@@ -20,6 +21,7 @@ export function buildLocalProcessSandboxRequest(input: {
   command: string[]
   workspaceRef?: string | null
 }): SandboxRequestV1 {
+  assertExecutionProgramAllowed(input.capability, input.command)
   return {
     schema_version: "bb.sandbox_request.v1",
     request_id: input.requestId,

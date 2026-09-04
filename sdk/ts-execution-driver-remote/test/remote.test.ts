@@ -76,6 +76,27 @@ test("remote driver rejects programs outside the capability allowlist", () => {
   )
 })
 
+test("remote terminal driver rejects disallowed programs before transport", async () => {
+  let transportCalls = 0
+  const driver = makeRemoteTerminalSessionDriver({
+    endpointUrl: "https://worker.example/terminals",
+    async fetchImpl() {
+      transportCalls += 1
+      throw new Error("transport must not run")
+    },
+  })
+  await assert.rejects(
+    () =>
+      driver.startTerminalSession!({
+        terminalSessionId: "terminal-disallowed",
+        command: ["node", "worker.js"],
+        capability: remoteCapability,
+      }),
+    /program "node" is not allowed by capability cap:remote:1/,
+  )
+  assert.equal(transportCalls, 0)
+})
+
 test("remote driver builds an explicit remote execution envelope", () => {
   const request = buildRemoteSandboxRequest({
     requestId: "req:remote:env",
@@ -1875,6 +1896,87 @@ test("scheduled adapter retries failed evidence before later cleanup evidence", 
   assert.equal(cancelled, true)
   assert.deepEqual(recordedStates, ["accepted", "cancelled"])
 })
+
+test("scheduled adapter retries failed terminal evidence before suppressing later states", async () => {
+  let cancelled = false
+  let completedAttempts = 0
+  const recordedStates: string[] = []
+  const backend: ScheduledExecutionBackendV1 = {
+    backendId: "ray-terminal-evidence-retry",
+    async submit() {
+      return {
+        executionId: "ray-terminal-evidence-retry-1",
+        evidenceRefs: ["ray://submission/terminal-retry"],
+      }
+    },
+    async observe() {
+      return {
+        state: cancelled ? "cancelled" : "completed",
+        evidenceRefs: [
+          cancelled
+            ? "ray://cancelled/terminal-retry"
+            : "ray://completed/terminal-retry",
+        ],
+        result: cancelled
+          ? undefined
+          : {
+              schema_version: "bb.sandbox_result.v1",
+              request_id: "req:ray:terminal-evidence-retry",
+              status: "completed",
+              stdout_ref: `sha256:${"0".repeat(64)}`,
+              stderr_ref: `sha256:${"1".repeat(64)}`,
+              artifact_refs: [
+                `sha256:${"0".repeat(64)}`,
+                `sha256:${"1".repeat(64)}`,
+              ],
+              side_effect_digest: `sha256:${"2".repeat(64)}`,
+              usage: { exit_code: 0 },
+              evidence_refs: [`sha256:${"3".repeat(64)}`],
+            },
+      }
+    },
+    async cancel() {
+      cancelled = true
+    },
+  }
+  const world = createExecutionWorld({
+    drivers: [makeRayExecutionDriver(backend, {
+      pollIntervalMs: 1,
+      recordEvidence(evidence) {
+        if (evidence.state === "completed") {
+          completedAttempts += 1
+          if (completedAttempts === 1) {
+            throw new Error("transient terminal evidence failure")
+          }
+        }
+        recordedStates.push(evidence.state)
+      },
+    })],
+  })
+
+  const result = await world.execute({
+    kind: "sandbox",
+    capability: remoteCapability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place:ray:terminal-evidence-retry",
+      placement_class: "delegated_python",
+      runtime_id: "ray",
+      capability_id: remoteCapability.capability_id,
+    },
+    requestId: "req:ray:terminal-evidence-retry",
+    command: ["python", "-c", "print('retry')"],
+    driverId: "ray",
+    terminationGraceMs: 50,
+  })
+
+  assert.equal(result.kind, "sandbox")
+  assert.equal(result.sandboxResult?.status, "failed")
+  assert.equal(cancelled, true)
+  assert.equal(completedAttempts, 2)
+  assert.deepEqual(recordedStates, ["accepted", "completed"])
+})
+
 
 test("scheduled evidence never regresses after a concurrent terminal observation", async () => {
   let observationCount = 0

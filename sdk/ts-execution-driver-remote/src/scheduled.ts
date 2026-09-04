@@ -298,14 +298,10 @@ export function makeScheduledExecutionDriver(
       observation.evidenceRefs,
     )
     const key = JSON.stringify([observation.state, refs])
-    if (
-      entry.terminalEvidenceKey !== undefined
-      && entry.terminalEvidenceKey !== key
-    ) {
-      await entry.evidenceTail
-      return false
-    }
-    if (TERMINAL_STATES.has(observation.state)) {
+    const mayRecord =
+      entry.terminalEvidenceKey === undefined
+      || entry.terminalEvidenceKey === key
+    if (TERMINAL_STATES.has(observation.state) && mayRecord) {
       entry.terminalEvidenceKey = key
       entry.terminalObservation ??= observation
     }
@@ -326,7 +322,7 @@ export function makeScheduledExecutionDriver(
           entry.lastEvidenceKey = failed.key
           entry.failedEvidence = undefined
         }
-        if (entry.lastEvidenceKey === key) return
+        if (!mayRecord || entry.lastEvidenceKey === key) return
         try {
           await options.recordEvidence(evidence)
           entry.lastEvidenceKey = key
@@ -336,7 +332,7 @@ export function makeScheduledExecutionDriver(
         }
       })
     await entry.evidenceTail
-    return true
+    return mayRecord
   }
 
   async function recordUnconfirmedCancellation(

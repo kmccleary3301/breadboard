@@ -158,6 +158,41 @@ test("execution driver helpers can build a planned execution record", () => {
   assert.equal(plan?.evidenceExpectation.require_evidence_refs, true)
 })
 
+test("planned execution rejects programs outside the capability allowlist", () => {
+  const capability: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-program-policy",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+    allow_run_programs: ["python"],
+  }
+  assert.throws(
+    () =>
+      buildPlannedExecution({
+        capability,
+        placement: {
+          schema_version: "bb.execution_placement.v1",
+          placement_id: "place-program-policy",
+          placement_class: "local_process",
+          runtime_id: "local",
+          capability_id: capability.capability_id,
+        },
+        drivers: [
+          {
+            driverId: "local",
+            supportedPlacements: ["local_process"],
+            supportsCapability: () => true,
+          },
+        ],
+        requestId: "req-program-policy",
+        command: ["node", "worker.js"],
+      }),
+    /program "node" is not allowed by capability cap-program-policy/,
+  )
+})
+
 test("execution driver helpers can select a terminal-capable driver", () => {
   const capability: ExecutionCapabilityV1 = {
     schema_version: "bb.execution_capability.v1",
@@ -410,6 +445,88 @@ test("execution world retains timed-out request ID until termination settles", a
   assert.equal(retry.kind, "sandbox")
   assert.equal(retry.livenessEvidence.executionStarted, false)
 })
+
+test("execution world retains a timed-out request until an unterminated execution settles", async () => {
+  const capability: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-world-no-termination",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const placement: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-world-no-termination",
+    placement_class: "local_process",
+    runtime_id: "local",
+    capability_id: capability.capability_id,
+  }
+  let resolveExecution: ((result: SandboxResultV1) => void) | undefined
+  const driver: ExecutionDriverV1 = {
+    driverId: "unterminated",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    buildSandboxRequest: ({ requestId, capability: requestedCapability, command }) => ({
+      schema_version: "bb.sandbox_request.v1",
+      request_id: requestId,
+      capability_id: requestedCapability.capability_id,
+      placement_class: "local_process",
+      workspace_ref: null,
+      rootfs_ref: null,
+      image_ref: null,
+      snapshot_ref: null,
+      command: [command[0] ?? "", ...command.slice(1)],
+      network_policy: null,
+      secret_refs: [],
+      timeout_seconds: null,
+      evidence_mode: requestedCapability.evidence_mode,
+      metadata: {},
+    }),
+    execute: () =>
+      new Promise<SandboxResultV1>((resolve) => {
+        resolveExecution = resolve
+      }),
+  }
+  const world = createExecutionWorld({ drivers: [driver] })
+  const operation = {
+    kind: "sandbox" as const,
+    capability,
+    placement,
+    requestId: "req-world-no-termination",
+    command: ["sleep", "60"],
+    deadlineMs: 1,
+  }
+
+  const timedOut = await world.execute(operation)
+  assert.equal(timedOut.kind, "sandbox")
+  if (timedOut.kind !== "sandbox") throw new Error("expected sandbox result")
+  assert.equal(timedOut.sandboxResult?.status, "timed_out")
+  assert.equal(timedOut.livenessEvidence.terminationObserved, false)
+  await assert.rejects(() => world.execute(operation), /already active/)
+
+  resolveExecution?.({
+    schema_version: "bb.sandbox_result.v1",
+    request_id: operation.requestId,
+    status: "completed",
+    placement_id: placement.placement_id,
+    stdout_ref: null,
+    stderr_ref: null,
+    artifact_refs: [],
+    side_effect_digest: null,
+    evidence_refs: [],
+    usage: null,
+    error: null,
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const preAborted = new AbortController()
+  preAborted.abort("cancelled")
+  const retry = await world.execute({ ...operation, signal: preAborted.signal })
+  assert.equal(retry.kind, "sandbox")
+  if (retry.kind !== "sandbox") throw new Error("expected sandbox result")
+  assert.equal(retry.livenessEvidence.executionStarted, false)
+})
+
 
 test("execution world enforces timeout notification and bounded adapter termination", async () => {
   let timeoutNotified = false
@@ -5309,6 +5426,7 @@ test("execution world does not retain a session ID after an empty-command start 
     isolation_class: "process",
     secret_mode: "ref_only",
     evidence_mode: "minimal",
+    allow_run_programs: ["sh"],
   }
   const placement: ExecutionPlacementV1 = {
     schema_version: "bb.execution_placement.v1",
@@ -5347,6 +5465,15 @@ test("execution world does not retain a session ID after an empty-command start 
     placement,
     input: { terminalSessionId: "term-prelaunch-validation", command: [] },
   })
+  const disallowed = await world.execute({
+    kind: "terminal_start",
+    capability,
+    placement,
+    input: {
+      terminalSessionId: "term-prelaunch-validation",
+      command: ["node"],
+    },
+  })
   const accepted = await world.execute({
     kind: "terminal_start",
     capability,
@@ -5360,6 +5487,12 @@ test("execution world does not retain a session ID after an empty-command start 
   assert.equal(rejected.kind, "terminal_start")
   assert.equal(rejected.result, null)
   assert.equal(rejected.unsupportedCase?.reason_code, "terminal_start_failed")
+  assert.equal(disallowed.kind, "terminal_start")
+  assert.equal(disallowed.result, null)
+  assert.match(
+    disallowed.unsupportedCase?.summary ?? "",
+    /program "node" is not allowed/,
+  )
   assert.equal(accepted.kind, "terminal_start")
   assert.equal(accepted.result?.descriptor.terminal_session_id, "term-prelaunch-validation")
   assert.equal(startCalls, 1)

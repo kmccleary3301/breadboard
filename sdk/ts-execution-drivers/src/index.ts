@@ -159,6 +159,23 @@ export interface PlannedExecutionV1 {
   evidenceExpectation: ExecutionDriverEvidenceExpectationV1
 }
 
+export function assertExecutionProgramAllowed(
+  capability: ExecutionCapabilityV1,
+  command: readonly string[],
+): void {
+  const program = command[0]
+  if (!program) {
+    throw new Error("Execution requires a non-empty command")
+  }
+  const allowedPrograms = capability.allow_run_programs
+  if (allowedPrograms !== undefined && !allowedPrograms.includes(program)) {
+    throw new Error(
+      `Execution program ${JSON.stringify(program)} is not allowed by capability ${capability.capability_id}`,
+    )
+  }
+}
+
+
 export function isPlacementCompatible(
   capability: ExecutionCapabilityV1,
   placementClass: ExecutionPlacementV1["placement_class"],
@@ -505,6 +522,9 @@ export function buildPlannedExecution(input: {
   })
   if (!driver) {
     return null
+  }
+  if (input.command) {
+    assertExecutionProgramAllowed(input.capability, input.command)
   }
   const sideEffectExpectation = buildExecutionDriverSideEffectExpectation(input.placement.placement_class)
   const evidenceExpectation = buildExecutionDriverEvidenceExpectation({

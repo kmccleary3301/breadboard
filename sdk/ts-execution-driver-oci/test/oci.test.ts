@@ -59,6 +59,7 @@ test("oci driver can build an OCI sandbox request", () => {
       security_tier: "shared_host",
       isolation_class: "gvisor",
       allow_net_hosts: ["registry.example.com"],
+      allow_run_programs: ["node"],
       secret_mode: "ref_only",
       evidence_mode: "audit_full",
     },
@@ -90,6 +91,7 @@ test("oci driver can build an OCI sandbox request", () => {
       security_tier: "single_tenant",
       isolation_class: "oci",
       allow_net_hosts: [],
+      allow_run_programs: ["ruff"],
       secret_mode: "ref_only",
       evidence_mode: "replay_strict",
     },
@@ -105,6 +107,27 @@ test("oci driver can build an OCI sandbox request", () => {
     imageRef: "docker://breadboard/base:latest",
   })
   assert.equal(built?.placement_class, "local_oci")
+})
+
+test("OCI driver rejects programs outside the capability allowlist", () => {
+  assert.throws(
+    () =>
+      buildOciSandboxRequest({
+        requestId: "oci-disallowed",
+        capability: {
+          schema_version: "bb.execution_capability.v1",
+          capability_id: "cap-oci-program-policy",
+          security_tier: "single_tenant",
+          isolation_class: "oci",
+          allow_run_programs: ["python"],
+          secret_mode: "ref_only",
+          evidence_mode: "minimal",
+        },
+        command: ["node", "worker.js"],
+        imageRef: "docker://breadboard/base:latest",
+      }),
+    /program "node" is not allowed by capability cap-oci-program-policy/,
+  )
 })
 
 

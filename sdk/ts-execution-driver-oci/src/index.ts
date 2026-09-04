@@ -10,6 +10,7 @@ import type {
 import type { TerminalSessionDriverV1 } from "@breadboard/execution-drivers"
 import {
   buildAndPersistCanonicalSandboxEvidence,
+  assertExecutionProgramAllowed,
   canonicalSandboxArtifactRoot,
   isPlacementCompatible,
 } from "@breadboard/execution-drivers"
@@ -35,6 +36,7 @@ export function buildOciSandboxRequest(input: {
   workspaceRef?: string | null
   imageRef: string
 }): SandboxRequestV1 {
+  assertExecutionProgramAllowed(input.capability, input.command)
   return {
     schema_version: "bb.sandbox_request.v1",
     request_id: input.requestId,

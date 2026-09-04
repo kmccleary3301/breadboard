@@ -21,6 +21,7 @@ import type {
   TerminalSessionStartInputV1,
   TerminalSessionStartResultV1,
 } from "@breadboard/execution-drivers"
+import { assertExecutionProgramAllowed } from "@breadboard/execution-drivers"
 
 interface LocalTerminalSessionRecord {
   readonly descriptor: TerminalSessionDescriptorV1
@@ -329,6 +330,9 @@ export class LocalTerminalSessionManager {
   }
 
   async startSession(input: TerminalSessionStartInputV1): Promise<TerminalSessionStartResultV1> {
+    if (input.capability) {
+      assertExecutionProgramAllowed(input.capability, input.command)
+    }
     if ((process.platform as string) === "win32") {
       throw new Error("Local terminal sessions with durable process tree cleanup are not supported on Windows (POSIX process groups unavailable)")
     }
