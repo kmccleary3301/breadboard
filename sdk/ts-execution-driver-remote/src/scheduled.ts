@@ -381,13 +381,14 @@ export function makeScheduledExecutionDriver(
           await recordUnconfirmedCancellation(entry, handle)
           throw backendFailure(driverId, "cancellation observation", error)
         }
+        const terminal = TERMINAL_STATES.has(observation.state)
+        if (!terminal && !NONTERMINAL_STATES.has(observation.state)) {
+          throw new Error(`${driverId} backend returned unknown execution state`)
+        }
         await recordEvidence(entry, handle, observation)
-        if (TERMINAL_STATES.has(observation.state)) {
+        if (terminal) {
           entry.terminalObserved = true
           return
-        }
-        if (!NONTERMINAL_STATES.has(observation.state)) {
-          throw new Error(`${driverId} backend returned unknown execution state`)
         }
         await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
       }
@@ -490,16 +491,17 @@ export function makeScheduledExecutionDriver(
             } catch (error: unknown) {
               throw backendFailure(driverId, "observation", error)
             }
+            const terminal = TERMINAL_STATES.has(observation.state)
+            if (!terminal && !NONTERMINAL_STATES.has(observation.state)) {
+              throw new Error(`${driverId} backend returned unknown execution state`)
+            }
             await recordEvidence(entry, handle, observation)
-            if (TERMINAL_STATES.has(observation.state)) {
+            if (terminal) {
               entry.terminalObserved = true
               return terminalResult(
                 request,
                 entry.terminalObservation ?? observation,
               )
-            }
-            if (!NONTERMINAL_STATES.has(observation.state)) {
-              throw new Error(`${driverId} backend returned unknown execution state`)
             }
             await waitForPoll(pollIntervalMs, context.signal)
           }

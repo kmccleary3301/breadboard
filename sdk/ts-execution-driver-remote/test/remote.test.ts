@@ -2034,6 +2034,52 @@ test("scheduled adapter cleans up after observation transport failure", async ()
   assert.equal(result.livenessEvidence.terminationObserved, true)
 })
 
+test("scheduled adapter rejects unknown states before recording evidence", async () => {
+  let cancelled = false
+  const recordedStates: string[] = []
+  const backend: ScheduledExecutionBackendV1 = {
+    backendId: "ray-invalid-state",
+    async submit() {
+      return { executionId: "ray-invalid-state-1" }
+    },
+    async observe() {
+      return cancelled
+        ? { state: "cancelled" }
+        : ({ state: "BOGUS" } as never)
+    },
+    async cancel() {
+      cancelled = true
+    },
+  }
+  const world = createExecutionWorld({
+    drivers: [makeRayExecutionDriver(backend, {
+      pollIntervalMs: 1,
+      recordEvidence(evidence) {
+        recordedStates.push(evidence.state)
+      },
+    })],
+  })
+
+  const result = await world.execute({
+    kind: "sandbox",
+    capability: remoteCapability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place:ray:invalid-state",
+      placement_class: "delegated_python",
+      runtime_id: "ray",
+      capability_id: remoteCapability.capability_id,
+    },
+    requestId: "req:ray:invalid-state",
+    command: ["python", "-c", "print('invalid')"],
+    driverId: "ray",
+  })
+
+  assert.equal(result.kind, "sandbox")
+  assert.equal(result.sandboxResult?.status, "failed")
+  assert.equal(recordedStates.includes("BOGUS"), false)
+})
+
 test("scheduled adapter coalesces identical active requests and rejects collisions", async () => {
   let releases = 0
   let submits = 0
@@ -2411,7 +2457,7 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
     activeObservation.evidenceRefs?.includes("slurm://job/24680/node/node-a"),
   )
   assert.ok(invocations[0]?.[1]?.includes(`case "$id" in ""|*[!0-9]*) exit 65`))
-  assert.ok(invocations[0]?.[1]?.includes(`"$job" "$attempt" > "$receipt.tmp"`))
+  assert.ok(invocations[0]?.[1]?.includes(`"$job" "$attempt" "$digest" > "$receipt.tmp"`))
   squeueResult = ""
   const observation = await backend.observe(handle.executionId)
   assert.equal(observation.state, "completed")
@@ -2597,11 +2643,11 @@ test("SSH Slurm backend recovers a durable receipt after an ambiguous launch ack
   assert.equal(launches, 1)
 })
 
-test("SSH Slurm backend cancels an owned submitted job when metadata recovery fails", async () => {
+test("SSH Slurm backend recovers an owned receipt when metadata recovery fails", async () => {
   const request = buildRemoteSandboxRequest({
     requestId: "req:slurm:metadata-failure",
     capability: slurmCapability,
-    command: ["python", "-c", "print('must cancel')"],
+    command: ["python", "-c", "print('recover handle')"],
     placementClass: "remote_worker",
   })
   const commands: string[] = []
@@ -2627,22 +2673,17 @@ test("SSH Slurm backend cancels an owned submitted job when metadata recovery fa
       if (remoteCommand.startsWith("cat ") && remoteCommand.includes(".request.b64")) {
         throw new Error("metadata unavailable")
       }
-      if (remoteCommand.startsWith("timeout 30s scancel ")) {
-        return { stdout: "", stderr: "" }
-      }
       assert.fail(`unexpected Slurm command: ${remoteCommand}`)
     },
   })
 
-  await assert.rejects(
-    () => backend.submit(request, {
-      signal: new AbortController().signal,
-      deadlineAtMs: null,
-      terminationGraceMs: 50,
-    }),
-    /owned job cancellation was requested/,
-  )
-  assert.ok(commands.includes("timeout 30s scancel '27182'"))
+  const handle = await backend.submit(request, {
+    signal: new AbortController().signal,
+    deadlineAtMs: null,
+    terminationGraceMs: 50,
+  })
+  assert.equal(handle.executionId, "27182")
+  assert.equal(commands.some((command) => command.includes("scancel '27182'")), false)
 })
 
 test("SSH Slurm backend never cancels an unowned pre-existing receipt", async () => {
@@ -2679,6 +2720,49 @@ test("SSH Slurm backend never cancels an unowned pre-existing receipt", async ()
     /job ownership is unproven/,
   )
   assert.equal(commands.some((command) => command.includes("scancel '27183'")), false)
+})
+
+test("SSH Slurm backend recovers a digest-authorized receipt after restart", async () => {
+  const request = buildRemoteSandboxRequest({
+    requestId: "req:slurm:digest-recovery",
+    capability: slurmCapability,
+    command: ["python", "-c", "print('recover durable handle')"],
+    placementClass: "remote_worker",
+  })
+  let receiptDigest = ""
+  const commands: string[] = []
+  const backend = makeSshSlurmBackend({
+    sshTarget: "cluster.example",
+    remoteEvidenceDirectory: "/tmp/evidence",
+    async runCommand(_program, args) {
+      const remoteCommand = args[1] ?? ""
+      commands.push(remoteCommand)
+      if (remoteCommand.includes("setsid sh -c")) {
+        receiptDigest =
+          /\bdigest=(sha256:[0-9a-f]{64});/.exec(remoteCommand)?.[1] ?? ""
+        assert.match(receiptDigest, /^sha256:[0-9a-f]{64}$/)
+        return { stdout: "", stderr: "" }
+      }
+      if (remoteCommand.includes("submission-") && remoteCommand.includes("then cat")) {
+        return {
+          stdout: `27184;cluster\n${"a".repeat(32)}\n${receiptDigest}\n`,
+          stderr: "",
+        }
+      }
+      if (remoteCommand.startsWith("cat ") && remoteCommand.includes(".request.b64")) {
+        throw new Error("metadata unavailable")
+      }
+      assert.fail(`unexpected Slurm command: ${remoteCommand}`)
+    },
+  })
+
+  const handle = await backend.submit(request, {
+    signal: new AbortController().signal,
+    deadlineAtMs: null,
+    terminationGraceMs: 50,
+  })
+  assert.equal(handle.executionId, "27184")
+  assert.equal(commands.some((command) => command.includes("scancel '27184'")), false)
 })
 
 test("SSH Slurm backend rejects a reused request id with changed request content", async () => {

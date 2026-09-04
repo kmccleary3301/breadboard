@@ -210,6 +210,7 @@ export function makeSshSlurmBackend(
     throw new Error("maxOutputBytes must be a positive safe integer")
   }
   const framedOutputMaxBytes = Math.ceil(maxOutputBytes / 3) * 4 + 64
+  const receiptOutputMaxBytes = Math.max(framedOutputMaxBytes, 256)
   if (!Number.isSafeInteger(framedOutputMaxBytes)) {
     throw new Error("maxOutputBytes is too large for framed transport")
   }
@@ -302,6 +303,7 @@ export function makeSshSlurmBackend(
         `owner="$lock/owner";`,
         "id='';",
         `attempt=${submissionAttemptToken};`,
+        `digest=${expectedRequestDigest};`,
         `cancel_by_name() { touch "$cancel"; timeout ${commandTimeoutSeconds}s sh -c ${shellQuote(cancelByNameScript)} || true; };`,
         `cleanup() { if [ ! -s "$receipt" ]; then case "$id" in ""|*[!0-9]*) cancel_by_name;; *) timeout 1s scancel "$id" 2>/dev/null || true;; esac; fi; rm -rf "$lock"; };`,
         "trap cleanup EXIT;",
@@ -319,7 +321,7 @@ export function makeSshSlurmBackend(
         `metadata=${shellQuote(remotePath(evidenceDirectory, "slurm-"))}"\${id}.request.b64";`,
         `printf '%s\\n' ${shellQuote(encodedRequest)} > "$metadata.tmp";`,
         `mv "$metadata.tmp" "$metadata";`,
-        `printf '%s\\n%s\\n' "$job" "$attempt" > "$receipt.tmp";`,
+        `printf '%s\\n%s\\n%s\\n' "$job" "$attempt" "$digest" > "$receipt.tmp";`,
         `mv "$receipt.tmp" "$receipt";`,
         `[ ! -f ${shellQuote(cancelPath)} ] || timeout 1s scancel "$id";`,
       ].join(" ")
@@ -363,7 +365,7 @@ export function makeSshSlurmBackend(
             `if [ -s ${shellQuote(receiptPath)} ]; then cat ${shellQuote(receiptPath)}; fi`,
             deadline - Date.now(),
             context.signal,
-            framedOutputMaxBytes,
+            receiptOutputMaxBytes,
           )).stdout.trim()
         } catch (error: unknown) {
           launchError = error
@@ -391,9 +393,10 @@ export function makeSshSlurmBackend(
           { cause: cleanupError ?? launchError },
         )
       }
-      const receiptLines = receipt.split(/\r?\n/, 2)
+      const receiptLines = receipt.split(/\r?\n/, 3)
       const executionId = (receiptLines[0] ?? "").split(";", 1)[0] ?? ""
       const receiptAttemptToken = receiptLines[1] ?? ""
+      const receiptRequestDigest = receiptLines[2] ?? ""
       if (!/^\d+$/.test(executionId)) {
         throw new Error("Slurm submission returned an invalid job id")
       }
@@ -402,27 +405,28 @@ export function makeSshSlurmBackend(
       try {
         execution = await loadExecution(executionId)
       } catch (metadataError: unknown) {
-        if (receiptAttemptToken !== submissionAttemptToken) {
+        const receiptAuthorizesRecovery =
+          receiptAttemptToken === submissionAttemptToken
+          || receiptRequestDigest === expectedRequestDigest
+        if (!receiptAuthorizesRecovery) {
+          if (receiptRequestDigest) {
+            throw new Error(
+              "Slurm request_id collision; existing execution remains owned by its original request",
+              { cause: metadataError },
+            )
+          }
           throw new Error(
             "Slurm execution metadata failed for a pre-existing receipt; job ownership is unproven",
             { cause: metadataError },
           )
         }
-        let cancellationError: unknown
-        try {
-          await ssh(
-            `timeout ${commandTimeoutSeconds}s scancel ${shellQuote(executionId)}`,
-            context.terminationGraceMs,
-          )
-        } catch (error: unknown) {
-          cancellationError = error
+        execution = {
+          request,
+          requestDigest: expectedRequestDigest,
+          stdoutPath: remotePath(evidenceDirectory, `slurm-${executionId}.out`),
+          stderrPath: remotePath(evidenceDirectory, `slurm-${executionId}.err`),
         }
-        throw new AggregateError(
-          cancellationError === undefined
-            ? [metadataError]
-            : [metadataError, cancellationError],
-          "Slurm execution metadata failed after receipt; owned job cancellation was requested",
-        )
+        submitted.set(executionId, execution)
       }
       if (execution.requestDigest !== expectedRequestDigest) {
         throw new Error(
