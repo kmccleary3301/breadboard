@@ -4456,7 +4456,9 @@ def test_ray_absent_nonterminal_job_is_failed(monkeypatch: pytest.MonkeyPatch) -
     assert orchestrator.job_manager.get(spawned.job.job_id).state == "failed"
 
 
-def test_ray_missing_invocation_cancels_detached_actor_and_job() -> None:
+def test_ray_missing_invocation_cancels_detached_actor_and_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
 
     class Actor:
@@ -4481,10 +4483,22 @@ def test_ray_missing_invocation_cancels_detached_actor_and_job() -> None:
     adapter = RayJobAdapter(orchestrator)
     adapter._actors[spawned.job.job_id] = actor
     target = ExecutionTarget(f"job:{spawned.job.job_id}").retained()
+    killed: list[object] = []
+    import ray
+
+    monkeypatch.setattr(
+        ray,
+        "kill",
+        lambda killed_actor, *, no_restart: killed.append(
+            (killed_actor, no_restart)
+        ),
+    )
 
     assert adapter.observe(target) == "absent"
     assert actor.cancelled
     assert orchestrator.job_manager.get(spawned.job.job_id).state == "killed"
+    assert killed == [(actor, True)]
+    assert spawned.job.job_id not in adapter._actors
 def test_registry_record_lock_uses_portable_process_lock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -4515,6 +4529,46 @@ def test_registry_record_lock_uses_portable_process_lock(
         f"{tmp_path.resolve()}\0windows-session".encode("utf-8")
     ).hexdigest()
     assert lock_paths == [tmp_path.parent / ".breadboard-session-locks" / identity]
+
+def test_process_lock_releases_after_cancelled_acquisition(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from breadboard_engine.api.cli_bridge.registry import persistence
+
+    acquisition_started = threading.Event()
+    allow_acquisition = threading.Event()
+    released = threading.Event()
+
+    class BlockingProcessLock:
+        def __init__(self, _path: Path) -> None:
+            pass
+
+        def __enter__(self):
+            acquisition_started.set()
+            assert allow_acquisition.wait(timeout=2)
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            released.set()
+
+    monkeypatch.setattr(persistence, "ProcessLock", BlockingProcessLock)
+
+    async def scenario() -> None:
+        async def acquire() -> None:
+            async with persistence._process_lock(tmp_path / "cancel.lock"):
+                pytest.fail("cancelled acquisition must not enter the body")
+
+        task = asyncio.create_task(acquire())
+        assert await asyncio.to_thread(acquisition_started.wait, 1)
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not task.done()
+        allow_acquisition.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio_run(scenario())
+    assert released.is_set()
 
 
 

@@ -2812,6 +2812,20 @@ class RayJobAdapter:
             return
         self.orchestrator.job_manager.restore_job(job)
 
+    def _terminate_actor(self, job_id: str) -> None:
+        actor = self._actors.pop(job_id, None)
+        if actor is None:
+            actor = self._lookup_actor(job_id)
+            self._actors.pop(job_id, None)
+        if actor is None:
+            return
+        try:
+            import ray
+
+            ray.kill(actor, no_restart=True)
+        except BaseException:
+            pass
+
     def _mark_job_failed(self, target: Mapping[str, Any], job_id: str) -> None:
         marked = self.orchestrator.job_manager.update_state(job_id, "failed")
         metadata = target.get("metadata")
@@ -2820,6 +2834,7 @@ class RayJobAdapter:
             job_data["state"] = "failed"
             if marked is not None:
                 job_data["seq"] = marked.seq
+        self._terminate_actor(job_id)
 
 
     @staticmethod
@@ -3037,6 +3052,7 @@ class RayJobAdapter:
             job_data["state"] = "completed"
             job_data["seq"] = marked.seq
             job_data["result_payload"] = dict(payload)
+        self._terminate_actor(job_id)
     def cancel(self, target: Mapping[str, Any]) -> bool:
         job_id = str(target.get("ref", "")).removeprefix("job:")
         metadata = target.get("metadata")
@@ -3088,6 +3104,7 @@ class RayJobAdapter:
         if isinstance(job_data, dict) and marked is not None:
             job_data["state"] = "killed"
             job_data["seq"] = marked.seq
+        self._terminate_actor(job_id)
         return True
 
     def prepare_result(

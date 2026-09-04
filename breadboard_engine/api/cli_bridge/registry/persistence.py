@@ -89,7 +89,25 @@ def _parent_tree_lock_path(
 @asynccontextmanager
 async def _process_lock(lock_path: Path):
     lock = ProcessLock(lock_path)
-    await asyncio.to_thread(lock.__enter__)
+    acquisition = asyncio.create_task(asyncio.to_thread(lock.__enter__))
+    try:
+        await asyncio.shield(acquisition)
+    except asyncio.CancelledError:
+        async def release_after_acquisition() -> None:
+            try:
+                await acquisition
+            except BaseException:
+                return
+            await asyncio.to_thread(lock.__exit__, None, None, None)
+
+        cleanup = asyncio.create_task(release_after_acquisition())
+        while not cleanup.done():
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                continue
+        cleanup.result()
+        raise
     try:
         yield
     finally:
@@ -320,14 +338,14 @@ class PersistenceMixin:
     async def create(self, record: SessionRecord) -> SessionRecord:
         async with self._lock:
             async with self._record_file_lock(record.session_id):
+                self._records[record.session_id] = record
+                self._persist_record_locked(record)
                 tombstone = self._tombstone_path(record.session_id)
                 if tombstone is not None:
                     try:
                         tombstone.unlink()
                     except FileNotFoundError:
                         pass
-                self._records[record.session_id] = record
-                self._persist_record_locked(record)
         return record
 
     async def get(self, session_id: str) -> Optional[SessionRecord]:
