@@ -6474,8 +6474,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         
         # Setup tool prompts and system messages
         local_tools_prompt = self._setup_tool_prompts(
-            tool_prompt_mode, tool_defs, active_dialect_names, 
+            tool_prompt_mode, tool_defs, active_dialect_names,
             session_state, markdown_logger, caller,
+            preserve_system_prompt=product_context_has_system is not None,
         )
         
         # Add enhanced descriptive fields to initial messages after tool setup

@@ -740,11 +740,12 @@ def replay_differential(session: Session) -> dict[str, Any]:
             "live": None if session.effective_context is None else _hash_bytes(session.effective_context),
             "replay": None if restored.effective_context is None else _hash_bytes(restored.effective_context),
         }
-    live_facts, replay_facts = set(session.raw_fact_ids), set(restored.raw_fact_ids)
+    live_facts = tuple(session.raw_fact_ids)
+    replay_facts = tuple(restored.raw_fact_ids)
     if live_facts != replay_facts:
         difference["raw_fact_ids"] = {
-            "missing": sorted(live_facts - replay_facts),
-            "unexpected": sorted(replay_facts - live_facts),
+            "live": list(live_facts),
+            "replay": list(replay_facts),
         }
     return difference
 def project_session_live(session: Session, *, as_of: int | None = None, expected_projector_version: str | None = None) -> Projected[SessionView]:

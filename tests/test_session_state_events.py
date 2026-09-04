@@ -361,6 +361,27 @@ def test_session_state_compaction_snapshot_reconstructs_after_three_boundaries()
         assert set(restored.raw_fact_ids) == retained
         assert replay_differential(session) == {}
 
+def test_replay_differential_detects_raw_fact_reordering() -> None:
+    state = SessionState("ws", "image", {})
+    state.add_message({"role": "user", "content": "first"})
+    state.add_message({"role": "assistant", "content": "second"})
+    session = Session.start(
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64}),
+        "order-sensitive replay",
+        session_id="compaction-order-differential",
+    )
+    session.compact(state.compaction_snapshot())
+    expected = session.raw_fact_ids
+    assert len(expected) == 2
+
+    with session._transition_lock:
+        session._raw_fact_ids = tuple(reversed(expected))
+
+    assert replay_differential(session)["raw_fact_ids"] == {
+        "live": list(reversed(expected)),
+        "replay": list(expected),
+    }
+
 
 def test_session_snapshot_restores_ctree_identity_before_new_facts() -> None:
     original = SessionState("ws", "image", {})

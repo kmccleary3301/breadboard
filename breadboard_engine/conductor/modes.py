@@ -981,6 +981,8 @@ def setup_tool_prompts(
     session_state,
     markdown_logger: MarkdownLogger,
     caller,
+    *,
+    preserve_system_prompt: bool = False,
 ) -> str:
     prompt_tool_defs = getattr(conductor, "current_text_based_tools", None) or tool_defs
     mode_cfg = None
@@ -1024,7 +1026,10 @@ def setup_tool_prompts(
                 active_tool_names.append(name)
     conductor._active_tool_names = active_tool_names
 
-    if tool_prompt_mode == "system_compiled_and_persistent_per_turn":
+    if (
+        tool_prompt_mode == "system_compiled_and_persistent_per_turn"
+        and not preserve_system_prompt
+    ):
         compiler = get_compiler()
 
         primary_prompt = session_state.messages[0].get("content", "")
@@ -1060,7 +1065,7 @@ def setup_tool_prompts(
             "Do NOT include extra prose.\nEND SYSTEM MESSAGE\n"
         )
 
-        if tool_prompt_mode in ("system_once", "system_and_per_turn"):
+        if tool_prompt_mode in ("system_once", "system_and_per_turn") and not preserve_system_prompt:
             with session_state.context_mutation():
                 session_state.messages[0]["content"] = (session_state.messages[0].get("content") or "") + tool_directive_text
                 session_state.provider_messages[0]["content"] = session_state.messages[0]["content"]
