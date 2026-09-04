@@ -106,6 +106,14 @@ function durableExecutionHandle(jobId: string, digest: string): string {
   return `${jobId}@${digest.slice("sha256:".length)}`
 }
 
+function slurmArtifactStem(jobId: string, digest: string): string {
+  const digestHex = digest.slice("sha256:".length)
+  if (!/^[0-9a-f]{64}$/.test(digestHex)) {
+    throw new Error("invalid Slurm request digest")
+  }
+  return `slurm-${digestHex}-${jobId}`
+}
+
 function parseExecutionHandle(value: string): {
   readonly jobId: string
   readonly expectedRequestDigest: string | null
@@ -172,11 +180,15 @@ function schedulerEvidenceRefs(
   schedulerState: string,
   nodeList: string,
 ): string[] {
+  const durableId = durableExecutionHandle(
+    executionId,
+    execution.requestDigest,
+  )
   return [
-    `slurm://job/${executionId}`,
-    `slurm://job/${executionId}/state/${encodeURIComponent(schedulerState)}`,
+    `slurm://job/${durableId}`,
+    `slurm://job/${durableId}/state/${encodeURIComponent(schedulerState)}`,
     ...(nodeList && nodeList !== "(null)"
-      ? [`slurm://job/${executionId}/node/${encodeURIComponent(nodeList)}`]
+      ? [`slurm://job/${durableId}/node/${encodeURIComponent(nodeList)}`]
       : []),
     `ssh://${sshTarget}${uriPath(execution.stdoutPath)}`,
     `ssh://${sshTarget}${uriPath(execution.stderrPath)}`,
@@ -214,8 +226,8 @@ function parseExecution(
   return {
     request,
     requestDigest: digest,
-    stdoutPath: remotePath(evidenceDirectory, `slurm-${executionId}.out`),
-    stderrPath: remotePath(evidenceDirectory, `slurm-${executionId}.err`),
+    stdoutPath: remotePath(evidenceDirectory, `${slurmArtifactStem(executionId, digest)}.out`),
+    stderrPath: remotePath(evidenceDirectory, `${slurmArtifactStem(executionId, digest)}.err`),
   }
 }
 
@@ -234,6 +246,7 @@ export function makeSshSlurmBackend(
     throw new Error("remoteEvidenceDirectory must be an absolute path")
   }
   const evidenceDirectory = posixPath.normalize(rawEvidenceDirectory).replace(/\/+$/, "") || "/"
+  const launchCommandMaxBytes = 64 * 1024
   if (evidenceDirectory === "/") {
     throw new Error("remoteEvidenceDirectory must not be the filesystem root")
   }
@@ -280,17 +293,32 @@ export function makeSshSlurmBackend(
     signal?: AbortSignal,
   ): Promise<SubmittedSlurmExecution> {
     const identity = parseExecutionHandle(executionId)
+    if (identity.expectedRequestDigest === null) {
+      throw new Error("Slurm execution handle is not bound to a request digest")
+    }
     const cached = submitted.get(identity.jobId)
     const metadataPath = remotePath(
       evidenceDirectory,
-      `slurm-${identity.jobId}.request.b64`,
+      `${slurmArtifactStem(identity.jobId, identity.expectedRequestDigest)}.request.b64`,
     )
-    const metadata = await ssh(
-      `cat ${shellQuote(metadataPath)}`,
-      timeoutMs,
-      signal,
-      metadataOutputMaxBytes,
-    )
+    let metadata: CommandResultV1
+    try {
+      metadata = await ssh(
+        `cat ${shellQuote(metadataPath)}`,
+        timeoutMs,
+        signal,
+        metadataOutputMaxBytes,
+      )
+    } catch (error: unknown) {
+      if (
+        cached
+        && identity.expectedRequestDigest !== null
+        && cached.requestDigest === identity.expectedRequestDigest
+      ) {
+        return cached
+      }
+      throw error
+    }
     const execution = parseExecution(
       metadata.stdout,
       evidenceDirectory,
@@ -346,11 +374,11 @@ export function makeSshSlurmBackend(
       const submissionCommand = [
         `timeout ${commandTimeoutSeconds}s sbatch --parsable`,
         `--job-name=${shellQuote(jobName)}`,
-        `--output=${shellQuote(remotePath(evidenceDirectory, "slurm-%j.out"))}`,
+        `--output=${shellQuote(remotePath(evidenceDirectory, `${slurmArtifactStem("%j", expectedRequestDigest)}.out`))}`,
         ...(request.workspace_ref
           ? [`--chdir=${shellQuote(request.workspace_ref)}`]
           : []),
-        `--error=${shellQuote(remotePath(evidenceDirectory, "slurm-%j.err"))}`,
+        `--error=${shellQuote(remotePath(evidenceDirectory, `${slurmArtifactStem("%j", expectedRequestDigest)}.err`))}`,
         `--wrap=${shellQuote(command)}`,
       ].join(" ")
       const encodedSubmissionCommand = Buffer.from(
@@ -387,7 +415,11 @@ export function makeSshSlurmBackend(
         `case "$id" in ""|*[!0-9]*) exit 65;; esac;`,
         `printf '%s\\n' "$id" > "$lock/job.tmp";`,
         `mv "$lock/job.tmp" "$lock/job";`,
-        `metadata=${shellQuote(remotePath(evidenceDirectory, "slurm-"))}"\${id}.request.b64";`,
+        `artifact_stem=${shellQuote(remotePath(evidenceDirectory, `slurm-${expectedRequestDigest.slice("sha256:".length)}-`))}"\${id}";`,
+        `stdout="$artifact_stem.out";`,
+        `stderr="$artifact_stem.err";`,
+        `touch "$stdout" "$stderr"; chmod 600 "$stdout" "$stderr";`,
+        `metadata="$artifact_stem.request.b64";`,
         `printf '%s\\n' ${shellQuote(encodedRequest)} > "$metadata.tmp";`,
         `mv "$metadata.tmp" "$metadata";`,
         `printf '%s\\n%s\\n%s\\n' "$job" "$attempt" "$digest" > "$receipt.tmp";`,
@@ -421,6 +453,9 @@ export function makeSshSlurmBackend(
         `</dev/null >${shellQuote(launchLogPath)} 2>&1 &`,
         "fi",
       ].join(" ")
+      if (Buffer.byteLength(launchCommand, "utf8") > launchCommandMaxBytes) {
+        throw new Error("Slurm submission launch command exceeds the safe argument limit")
+      }
       const deadline = Math.min(
         Date.now() + commandTimeoutMs,
         context.deadlineAtMs ?? Number.POSITIVE_INFINITY,
@@ -475,10 +510,14 @@ export function makeSshSlurmBackend(
       if (!/^\d+$/.test(executionId)) {
         throw new Error("Slurm submission returned an invalid job id")
       }
-      submitted.delete(executionId)
+      if (submitted.get(executionId)?.requestDigest !== expectedRequestDigest) {
+        submitted.delete(executionId)
+      }
       let execution: SubmittedSlurmExecution
       try {
-        execution = await loadExecution(executionId)
+        execution = await loadExecution(
+          durableExecutionHandle(executionId, expectedRequestDigest),
+        )
       } catch (metadataError: unknown) {
         const receiptAuthorizesRecovery =
           receiptAttemptToken === submissionAttemptToken
@@ -498,8 +537,14 @@ export function makeSshSlurmBackend(
         execution = {
           request,
           requestDigest: expectedRequestDigest,
-          stdoutPath: remotePath(evidenceDirectory, `slurm-${executionId}.out`),
-          stderrPath: remotePath(evidenceDirectory, `slurm-${executionId}.err`),
+          stdoutPath: remotePath(
+            evidenceDirectory,
+            `${slurmArtifactStem(executionId, expectedRequestDigest)}.out`,
+          ),
+          stderrPath: remotePath(
+            evidenceDirectory,
+            `${slurmArtifactStem(executionId, expectedRequestDigest)}.err`,
+          ),
         }
         submitted.set(executionId, execution)
       }
@@ -613,15 +658,7 @@ export function makeSshSlurmBackend(
           receiptOutputMaxBytes,
         )).stdout.trim()
         if (header === "M") {
-          if (
-            status === "completed"
-            || status === "failed"
-            || execution.observedRunning
-            || (nodeList !== "" && nodeList !== "(null)")
-          ) {
-            throw new Error(`${status} Slurm execution output is missing`)
-          }
-          return { content: "", evidenceRefs: [] }
+          throw new Error(`${status} Slurm execution output is missing`)
         }
         const fileMatch = /^F:(\d+):([0-9a-f]{64})$/.exec(header)
         if (!fileMatch) throw new Error("Slurm output metadata frame is invalid")

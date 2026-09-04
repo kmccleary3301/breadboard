@@ -440,8 +440,37 @@ export function makeScheduledExecutionDriver(
     context: ExecutionDriverTerminationContextV1,
   ): Promise<SandboxResultV1> {
     if (entry.cancellation) return entry.cancellation
-    const cancellation = entry.handle.then(async (handle) => {
-      const deadline = Date.now() + cancellationObservationTimeoutMs
+    const deadline = Date.now() + cancellationObservationTimeoutMs
+    const cancellation = (async (): Promise<SandboxResultV1> => {
+      let handle: ScheduledExecutionHandleV1
+      try {
+        handle = await settleBefore(
+          entry.handle,
+          deadline,
+          `${driverId} submission did not settle before the cleanup deadline`,
+        )
+      } catch (error: unknown) {
+        void entry.handle
+          .then(async (lateHandle) => {
+            const lateDeadline = Date.now() + cancellationObservationTimeoutMs
+            const lateController = new AbortController()
+            try {
+              await settleBefore(
+                backend.cancel(lateHandle.executionId, {
+                  reason: context.reason,
+                  signal: lateController.signal,
+                  deadlineAtMs: lateDeadline,
+                }),
+                lateDeadline,
+                `${driverId} late submission cancellation exceeded the cleanup deadline`,
+              )
+            } finally {
+              lateController.abort()
+            }
+          })
+          .catch(() => undefined)
+        throw backendFailure(driverId, "cancellation submission", error)
+      }
       const cleanupController = new AbortController()
       const cleanupContext: ExecutionDriverTerminationContextV1 = {
         reason: context.reason,
@@ -491,7 +520,7 @@ export function makeScheduledExecutionDriver(
             deadline,
           )
         } else {
-          await recordEvidence(entry, handle, observation)
+          await recordEvidence(entry, handle, observation, deadline)
         }
         if (terminal) {
           entry.terminalObserved = true
@@ -500,9 +529,19 @@ export function makeScheduledExecutionDriver(
             entry.terminalObservation ?? observation,
           )
         }
-        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
+        const remainingMs = deadline - Date.now()
+        if (remainingMs <= 0) {
+          throw backendFailure(
+            driverId,
+            "cancellation observation",
+            new Error(`${driverId} cancellation observation exceeded the cleanup deadline`),
+          )
+        }
+        await new Promise((resolve) => {
+          setTimeout(resolve, Math.min(pollIntervalMs, remainingMs))
+        })
       }
-    })
+    })()
     entry.cancellation = cancellation
     void cancellation.catch(() => {
       if (entry.cancellation === cancellation) entry.cancellation = undefined
@@ -617,7 +656,7 @@ export function makeScheduledExecutionDriver(
           }
         } finally {
           if (
-            entry.terminalObserved
+            (entry.terminalObserved || entry.executionId === undefined)
             && active.get(request.request_id) === entry
           ) {
             active.delete(request.request_id)
