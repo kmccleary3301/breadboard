@@ -477,6 +477,29 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         if retained_raw_fact_ids is not None:
             session_state.restore_raw_fact_ids(retained_raw_fact_ids)
 
+    def _restore_product_effective_messages(
+        self,
+        session_state: SessionState,
+        retained_effective_messages: Any,
+    ) -> bool | None:
+        if retained_effective_messages is None:
+            return None
+        if (
+            not isinstance(retained_effective_messages, list)
+            or any(
+                not isinstance(message, dict)
+                for message in retained_effective_messages
+            )
+        ):
+            raise ProviderContractError(
+                "run context retained_effective_messages must be a message array"
+            )
+        restored = copy.deepcopy(retained_effective_messages)
+        with session_state.context_mutation():
+            session_state.messages = copy.deepcopy(restored)
+            session_state.provider_messages = restored
+        return any(message.get("role") == "system" for message in restored)
+
     def _retain_ctree(self, session_state: SessionState, session_id: str) -> None:
         self._retained_ctree_session_id = session_id
         self._retained_ctree_events = copy.deepcopy(session_state.ctree_store.events)
@@ -5728,6 +5751,22 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             raise ProviderContractError(
                 "run context retained_raw_fact_ids must be an array"
             )
+        retained_effective_messages = context.get(
+            "retained_effective_messages"
+        )
+        if (
+            retained_effective_messages is not None
+            and (
+                not isinstance(retained_effective_messages, list)
+                or any(
+                    not isinstance(message, dict)
+                    for message in retained_effective_messages
+                )
+            )
+        ):
+            raise ProviderContractError(
+                "run context retained_effective_messages must be a message array"
+            )
         session_state = SessionState(
             self.workspace,
             self.image,
@@ -6389,6 +6428,12 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 (),
             )
             session_state.set_provider_metadata("resume_snapshot_applied", True)
+        product_context_has_system = self._restore_product_effective_messages(
+            session_state,
+            retained_effective_messages,
+        )
+        if product_context_has_system is not None:
+            resume_has_system = product_context_has_system
         self._restore_turn_ctree(
             session_state,
             provider_session_id,

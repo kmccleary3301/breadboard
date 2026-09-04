@@ -1169,6 +1169,31 @@ class TaskExecutionOwner:
                 task_context["retained_raw_fact_ids"] = list(
                     product_session.raw_fact_ids
                 )
+            if (
+                product_session is not None
+                and product_session.effective_context is not None
+            ):
+                try:
+                    retained_effective_messages = json.loads(
+                        product_session.effective_context.decode("utf-8")
+                    )
+                except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                    raise RuntimeError(
+                        "retained Product Session effective context is invalid"
+                    ) from error
+                if (
+                    not isinstance(retained_effective_messages, list)
+                    or any(
+                        not isinstance(message, dict)
+                        for message in retained_effective_messages
+                    )
+                ):
+                    raise RuntimeError(
+                        "retained Product Session effective context must be a message array"
+                    )
+                task_context["retained_effective_messages"] = (
+                    retained_effective_messages
+                )
             kernel_emitter_run_dir = None
             kernel_emitter_mode = None
             try:

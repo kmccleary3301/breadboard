@@ -537,6 +537,26 @@ def test_product_turn_restore_merges_cached_post_compaction_facts() -> None:
     )
 
 
+def test_product_effective_context_overrides_cached_resume_messages() -> None:
+    conductor_type = OpenAIConductor.__ray_metadata__.modified_class
+    conductor = object.__new__(conductor_type)
+    state = SessionState("ws", "image", {})
+    state.messages = [{"role": "user", "content": "stale logical"}]
+    state.provider_messages = [{"role": "user", "content": "stale provider"}]
+    retained = [
+        {"role": "system", "content": "retained system"},
+        {"role": "assistant", "content": "retained answer"},
+    ]
+
+    has_system = conductor._restore_product_effective_messages(state, retained)
+
+    assert has_system is True
+    assert state.messages == retained
+    assert state.provider_messages == retained
+    assert state.messages is not retained
+    assert state.provider_messages is not retained
+
+
 def test_context_threshold_emits_exact_effective_provider_context() -> None:
     collector = EventCollector()
     state = SessionState(
@@ -3513,6 +3533,9 @@ def test_remote_nonstreaming_compaction_reaches_product_session(
             assert kwargs["event_emitter"] is None
             assert kwargs["context"]["retained_raw_fact_ids"] == ["ctn_000001"]
             assert kwargs["context"]["_product_compaction_owner"] is True
+            assert kwargs["context"]["retained_effective_messages"] == [
+                {"content": "retained remote context", "role": "user"}
+            ]
             emit = _queue_event_emitter(
                 kwargs["event_queue"],
                 kwargs["event_ack_queue"],
@@ -3548,6 +3571,9 @@ def test_remote_nonstreaming_compaction_reaches_product_session(
     )
     retained_state = SessionState("ws", "image", {})
     retained_state.ctree_store.record("message", {"role": "user"})
+    retained_state.provider_messages = [
+        {"role": "user", "content": "retained remote context"}
+    ]
     product_session.compact(retained_state.compaction_snapshot())
     record = SessionRecord(
         session_id="remote-compaction",
