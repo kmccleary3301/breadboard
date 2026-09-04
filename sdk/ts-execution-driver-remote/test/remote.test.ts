@@ -2561,6 +2561,7 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   assert.ok(invocations[0]?.[1]?.includes(`[ ! -f "$cancel" ] || exit 75`))
   assert.ok(invocations[0]?.[1]?.includes(`kill -0 "$pid"`))
   assert.ok(invocations[0]?.[1]?.includes(`cat "$lock/job"`))
+  assert.ok(invocations[0]?.[1]?.includes(`> "$lock/attempt"`))
   assert.ok(invocations[0]?.[1]?.includes("scancel --name"))
   assert.ok(invocations[0]?.[1]?.includes("timeout 30s sbatch"))
   assert.ok(invocations[0]?.[1]?.includes(`rm -rf "$lock"; }; trap cleanup EXIT;`))
@@ -2996,7 +2997,8 @@ test("SSH Slurm backend leaves a durable cancel marker when cancellation precede
   assert.ok(commands[1]?.includes(".cancel';"))
   assert.ok(commands[0]?.includes("[ ! -f"))
   assert.ok(commands[0]?.includes("scancel"))
-  assert.ok(commands[1]?.includes("scancel --name"))
+  assert.ok(commands[1]?.includes(".lock/attempt"))
+  assert.equal(commands[1]?.includes("scancel --name"), false)
 })
 
 test("SSH Slurm backend reconciles an active job after adapter restart", async () => {

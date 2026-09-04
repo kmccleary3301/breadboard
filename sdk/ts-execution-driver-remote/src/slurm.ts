@@ -344,6 +344,7 @@ export function makeSshSlurmBackend(
         `fi; fi;`,
         `if [ ! -s "$receipt" ] && mkdir "$lock" 2>/dev/null; then`,
         `printf '%s %s\\n' "$$" "$now" > "$lock/owner";`,
+        `printf '%s\n' ${shellQuote(submissionAttemptToken)} > "$lock/attempt";`,
         `setsid sh -c ${shellQuote(detachedScript)}`,
         `</dev/null >${shellQuote(launchLogPath)} 2>&1 &`,
         "fi",
@@ -376,10 +377,11 @@ export function makeSshSlurmBackend(
         let cleanupError: unknown
         try {
           await ssh([
+            `if [ "$(cat ${shellQuote(`${lockPath}/attempt`)} 2>/dev/null || true)" = ${shellQuote(submissionAttemptToken)} ]; then`,
             `touch ${shellQuote(cancelPath)};`,
             `if [ -s ${shellQuote(receiptPath)} ]; then`,
             `job=$(cat ${shellQuote(receiptPath)}); timeout ${commandTimeoutSeconds}s scancel "\${job%%;*}";`,
-            `else timeout ${commandTimeoutSeconds}s scancel --name ${shellQuote(jobName)} 2>/dev/null || true; fi`,
+            "fi; fi",
           ].join(" "), context.terminationGraceMs)
         } catch (error: unknown) {
           cleanupError = error

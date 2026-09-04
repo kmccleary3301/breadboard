@@ -134,7 +134,9 @@ export async function executeDriverMediatedToolTurn(
     evidenceMode: options.evidenceMode ?? "replay_strict",
     allowReadPaths: options.workspaceRef ? [options.workspaceRef] : request.workspace_root ? [request.workspace_root] : [],
     allowWritePaths: options.workspaceRef ? [options.workspaceRef] : request.workspace_root ? [request.workspace_root] : [],
-    allowRunPrograms: options.allowRunPrograms ?? [],
+    allowRunPrograms:
+      options.allowRunPrograms
+      ?? [options.command[0] ?? ""].filter((program) => program.length > 0),
     ...(options.allowNetHosts === undefined
       ? {}
       : { allowNetHosts: options.allowNetHosts }),

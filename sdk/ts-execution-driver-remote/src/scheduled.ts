@@ -318,11 +318,22 @@ export function makeScheduledExecutionDriver(
       .then(async () => {
         const failed = entry.failedEvidence
         if (failed) {
-          await options.recordEvidence(failed.evidence)
-          entry.lastEvidenceKey = failed.key
+          if (
+            failed.evidence.state === "accepted"
+            || entry.terminalEvidenceKey === undefined
+            || entry.terminalEvidenceKey === failed.key
+          ) {
+            await options.recordEvidence(failed.evidence)
+            entry.lastEvidenceKey = failed.key
+          }
           entry.failedEvidence = undefined
         }
-        if (!mayRecord || entry.lastEvidenceKey === key) return
+        if (
+          observation.state !== "accepted"
+          && entry.terminalEvidenceKey !== undefined
+          && entry.terminalEvidenceKey !== key
+        ) return
+        if (entry.lastEvidenceKey === key) return
         try {
           await options.recordEvidence(evidence)
           entry.lastEvidenceKey = key
