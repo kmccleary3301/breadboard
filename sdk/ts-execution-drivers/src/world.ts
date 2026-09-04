@@ -794,7 +794,30 @@ export function createExecutionWorld(input: {
                 terminationObserved,
               })
             } else {
-              resolveTerminal?.({ status: "failed", error, executionStarted: true })
+              let terminationObserved = false
+              if (driver.terminate) {
+                try {
+                  terminationObserved = await settleWithin(
+                    Promise.resolve(
+                      driver.terminate(request, {
+                        reason: "cancelled",
+                        signal: controller.signal,
+                        deadlineAtMs,
+                      }),
+                    ),
+                    terminationGraceMs,
+                  )
+                } catch {
+                  terminationObserved = false
+                }
+              }
+              resolveTerminal?.({
+                status: "failed",
+                error,
+                executionStarted: true,
+                terminationRequested: Boolean(driver.terminate),
+                terminationObserved,
+              })
             }
           }
         },

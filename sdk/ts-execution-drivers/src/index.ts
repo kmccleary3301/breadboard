@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+
 import type {
   ExecutionCapabilityV1,
   ExecutionPlacementV1,
@@ -259,6 +261,38 @@ export function buildExecutionDriverSideEffectExpectation(
     },
   }
   return mapping[placementClass]
+}
+
+export function buildCanonicalSandboxEvidence(input: {
+  command: readonly string[]
+  status: SandboxResultV1["status"]
+  exitCode: number | null
+  stdout: string
+  stderr: string
+  evidenceMode: SandboxRequestV1["evidence_mode"]
+}): Pick<
+  SandboxResultV1,
+  "stdout_ref" | "stderr_ref" | "artifact_refs" | "side_effect_digest" | "usage" | "evidence_refs"
+> {
+  const digest = (value: string) =>
+    `sha256:${createHash("sha256").update(value).digest("hex")}`
+  const stdoutRef = digest(input.stdout)
+  const stderrRef = digest(input.stderr)
+  const sideEffectDigest = digest(JSON.stringify({
+    command: input.command,
+    exit_code: input.exitCode,
+    status: input.status,
+    stderr_ref: stderrRef,
+    stdout_ref: stdoutRef,
+  }))
+  return {
+    stdout_ref: stdoutRef,
+    stderr_ref: stderrRef,
+    artifact_refs: [stdoutRef, stderrRef],
+    side_effect_digest: sideEffectDigest,
+    usage: { exit_code: input.exitCode },
+    evidence_refs: input.evidenceMode === "minimal" ? [] : [sideEffectDigest],
+  }
 }
 
 export function buildExecutionDriverEvidenceExpectation(input: {

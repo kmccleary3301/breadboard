@@ -478,10 +478,7 @@ test("execution world exercises real local and OCI adapter paths with provider-n
     return rest
   }
 
-  assert.equal(localResult.sandboxResult?.status, ociResult.sandboxResult?.status)
-  assert.equal(localResult.sandboxResult?.request_id, ociResult.sandboxResult?.request_id)
-  assert.equal(localResult.sandboxResult?.error, ociResult.sandboxResult?.error)
-  assert.equal(localResult.sandboxResult?.usage?.exit_code, ociResult.sandboxResult?.usage?.exit_code)
+  assert.deepEqual(localResult.sandboxResult, ociResult.sandboxResult)
 
   // External liveness evidence is captured but separate from product payload
   assert.deepEqual(maskVolatileTimestamps(localResult.livenessEvidence), maskVolatileTimestamps(ociResult.livenessEvidence))

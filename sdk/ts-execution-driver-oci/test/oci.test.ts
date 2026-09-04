@@ -129,7 +129,7 @@ test("oci direct execution rejects a pre-aborted request before invoking the run
 
   assert.equal(executorCalls, 0)
   assert.equal(result.status, "timed_out")
-  assert.equal(result.error?.reason, "deadline_exceeded")
+  assert.equal(result.error?.reason, "execution_timed_out")
 })
 
 
@@ -161,7 +161,7 @@ test("oci direct execution classifies standard timeout abort reasons", async () 
 
   assert.equal(executorCalls, 0)
   assert.equal(result.status, "timed_out")
-  assert.equal(result.error?.reason, "deadline_exceeded")
+  assert.equal(result.error?.reason, "execution_timed_out")
 })
 
 
@@ -212,7 +212,7 @@ test("oci driver can execute through an injected runtime adapter", async () => {
     }),
   })
   assert.equal(result.status, "completed")
-  assert.ok(result.stdout_ref?.startsWith("file://"))
+  assert.ok(result.stdout_ref?.startsWith("sha256:"))
   assert.ok(result.side_effect_digest?.startsWith("sha256:"))
 })
 

@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto"
 import { mkdtemp, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -11,7 +10,10 @@ import type {
   SandboxResultV1,
 } from "@breadboard/kernel-contracts"
 import type { TerminalSessionDriverV1 } from "@breadboard/execution-drivers"
-import { isPlacementCompatible } from "@breadboard/execution-drivers"
+import {
+  buildCanonicalSandboxEvidence,
+  isPlacementCompatible,
+} from "@breadboard/execution-drivers"
 import { LocalTerminalSessionManager, trustedLocalTerminalSessionDriver } from "./terminals.js"
 
 export function buildLocalProcessSandboxRequest(input: {
@@ -138,19 +140,6 @@ function isDeadlineAbort(signal?: AbortSignal): boolean {
       (reason.name === "TimeoutError" || reason.message.toLowerCase().includes("deadline")))
   )
 }
-function buildLocalSideEffectDigest(request: SandboxRequestV1, result: LocalCommandExecutionResult): string {
-  return `sha256:${createHash("sha256")
-    .update(
-      JSON.stringify({
-        request_id: request.request_id,
-        placement_class: request.placement_class,
-        command: request.command,
-        workspace_ref: request.workspace_ref,
-        exit_code: result.exitCode,
-      }),
-    )
-    .digest("hex")}`
-}
 export async function executeLocalProcessSandboxRequest(
   request: SandboxRequestV1,
   options: {
@@ -188,29 +177,24 @@ export async function executeLocalProcessSandboxRequest(
     : result.exitCode === 0
       ? "completed"
       : "failed"
+  const errorReason = status === "timed_out"
+    ? "execution_timed_out"
+    : status === "cancelled"
+      ? "execution_cancelled"
+      : "execution_failed"
   return {
     schema_version: "bb.sandbox_result.v1",
     request_id: request.request_id,
     status,
-    placement_id: `local-process:${request.request_id}`,
-    stdout_ref: `file://${stdoutPath}`,
-    stderr_ref: `file://${stderrPath}`,
-    artifact_refs: [],
-    side_effect_digest: buildLocalSideEffectDigest(request, result),
-    usage: { exit_code: result.exitCode },
-    evidence_refs: [],
-    error: isAborted
-      ? {
-          message: isDeadline ? "Local process exceeded its deadline" : "Execution was cancelled",
-          reason: isDeadline ? "deadline_exceeded" : "execution_cancelled",
-          exit_code: result.exitCode,
-        }
-      : result.exitCode === 0
-        ? null
-        : {
-            message: `Local process exited with code ${result.exitCode}`,
-            exit_code: result.exitCode,
-          },
+    ...buildCanonicalSandboxEvidence({
+      command: request.command,
+      status,
+      exitCode: result.exitCode,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      evidenceMode: request.evidence_mode,
+    }),
+    error: status === "completed" ? null : { reason: errorReason },
   }
 }
 

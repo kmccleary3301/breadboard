@@ -163,7 +163,7 @@ Design 2 (`@breadboard/execution-drivers` shared execution-world owner) is selec
   - OCI container: `makeConfiguredOciExecutionDriver` (`@breadboard/execution-driver-oci`)
   - Remote worker: `makeRemoteExecutionDriver` (`@breadboard/execution-driver-remote`)
   - Ray actor: `makeRayExecutionDriver` over `ScheduledExecutionBackendV1` narrow host bridge (`@breadboard/execution-driver-remote`)
-  - Slurm: `makeSlurmExecutionDriver` + `makeSshSlurmBackend` with direct `sbatch --parsable`, `sacct`, and `scancel` lifecycle (`@breadboard/execution-driver-remote`)
+  - Slurm: `makeSlurmExecutionDriver` + `makeSshSlurmBackend` with durable idempotent request receipts, direct `sbatch --parsable`, `squeue`/`sacct` observation, ambiguous-ack recovery, and `scancel` lifecycle (`@breadboard/execution-driver-remote`)
 - **Migrated Callers**:
   - `sdk/ts-kernel-core/src/turns.ts:executeDriverMediatedToolTurn`
   - `sdk/ts-kernel-core/src/default-world.ts:createKernelExecutionWorld`
@@ -193,5 +193,20 @@ Design 2 (`@breadboard/execution-drivers` shared execution-world owner) is selec
 - `breadboard/sandbox.py:34-75,310-475,698-738` — Ray local actor, timeout/process-group cleanup, and constructor/selector path.
 - `breadboard/sandbox_docker.py:28-86,340-509` — Ray Docker actor, network/image/mount policy, timeout, and `--rm` runtime invocation.
 - `breadboard/sandbox_driver.py:13-107` — explicit process/Docker actor selection and typed selector failures.
-- `breadboard/rl/phase3/scheduler.py:10-58` — Slurm spec, parsable submission receipt, and weak output-file collection contract.
-- `scripts/rl_phase5/run_f3_target_episode.py:3178-3285` — target Slurm identity checks and setup-failure evidence/cleanup boundaries.
+
+## W5.4 Four-world execution proof
+
+One fixed `SandboxRequestV1` printed `breadboard-dsh-world-v1` through the
+actual local process, `python:3.11-alpine` OCI container, local Ray actor, and
+remote Slurm adapters. All four returned the same provider-neutral
+`SandboxResultV1`: completed status, exit code zero, and identical
+content-addressed stdout, stderr, artifact, side-effect, and evidence
+references.
+
+Provider-specific proof stayed outside that result. The Ray callback recorded
+accepted, running, and completed observations for bridge process `55526`,
+actor `34ea4e0efb53401b60c6c94e01000000`, and node
+`f855cf3120792bef4c0d9f5a81209d8678d195dabb961eaf47c5aaa3`. The Slurm
+callback recorded job `38270` completing on `cnode-183`; a repeated submission
+with the same request identity recovered that receipt instead of submitting a
+duplicate job.

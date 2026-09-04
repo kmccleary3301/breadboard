@@ -105,7 +105,7 @@ test("trusted local driver can execute a local-process sandbox request", async (
   })
   const result = await executeLocalProcessSandboxRequest(request)
   assert.equal(result.status, "completed")
-  assert.ok(result.stdout_ref?.startsWith("file://"))
+  assert.ok(result.stdout_ref?.startsWith("sha256:"))
   assert.ok(result.side_effect_digest?.startsWith("sha256:"))
 })
 
@@ -162,9 +162,9 @@ test("trusted local direct execution classifies an already-deadline-aborted requ
     },
   })
   assert.equal(result.status, "timed_out")
-  assert.equal(result.error?.reason, "deadline_exceeded")
-  assert.ok(result.stdout_ref?.startsWith("file://"))
-  assert.ok(result.stderr_ref?.startsWith("file://"))
+  assert.equal(result.error?.reason, "execution_timed_out")
+  assert.ok(result.stdout_ref?.startsWith("sha256:"))
+  assert.ok(result.stderr_ref?.startsWith("sha256:"))
   assert.ok(result.side_effect_digest?.startsWith("sha256:"))
   assert.equal(executorCalls, 0)
 })

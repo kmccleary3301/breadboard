@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+
 import {
   assertValid,
   type ExecutionPlacementV1,
@@ -44,15 +46,31 @@ export interface ScheduledExecutionBackendV1 {
   ): Promise<void>
 }
 
+export interface ScheduledExecutionEvidenceV1 {
+  readonly driverId: string
+  readonly backendId: string
+  readonly executionId: string
+  readonly state: ScheduledExecutionStateV1
+  readonly evidenceRefs: readonly string[]
+}
+
 export interface ScheduledExecutionDriverOptionsV1 {
   readonly driverId: string
   readonly placementClass: ExecutionPlacementV1["placement_class"]
   readonly pollIntervalMs?: number
   readonly cancellationObservationTimeoutMs?: number
+  readonly recordEvidence?: (
+    evidence: ScheduledExecutionEvidenceV1,
+  ) => Promise<void> | void
 }
-
 interface ActiveScheduledExecution {
   readonly handle: Promise<ScheduledExecutionHandleV1>
+  readonly requestKey: string
+  result?: Promise<SandboxResultV1>
+  executionId?: string
+  cancellation?: Promise<void>
+  lastEvidenceKey?: string
+  terminalObserved: boolean
 }
 
 const TERMINAL_STATES = new Set<ScheduledExecutionStateV1>([
@@ -60,6 +78,10 @@ const TERMINAL_STATES = new Set<ScheduledExecutionStateV1>([
   "failed",
   "cancelled",
   "timed_out",
+])
+const NONTERMINAL_STATES = new Set<ScheduledExecutionStateV1>([
+  "accepted",
+  "running",
 ])
 
 function requireNonempty(value: string, name: string): string {
@@ -91,10 +113,87 @@ function waitForPoll(milliseconds: number, signal: AbortSignal): Promise<void> {
   })
 }
 
+
+async function settleBefore<T>(
+  promise: Promise<T>,
+  deadline: number,
+  message: string,
+): Promise<T> {
+  const remaining = deadline - Date.now()
+  if (remaining <= 0) throw new Error(message)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), remaining)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+function sha256(value: string): string {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`
+}
+
+function scheduledFailureResult(
+  request: SandboxRequestV1,
+  status: Exclude<SandboxResultV1["status"], "completed">,
+  reason: string,
+): SandboxResultV1 {
+  const emptyRef = sha256("")
+  const sideEffectDigest = sha256(JSON.stringify({
+    command: request.command,
+    status,
+    stderr_ref: emptyRef,
+    stdout_ref: emptyRef,
+  }))
+  return assertValid<SandboxResultV1>("sandboxResult", {
+    schema_version: "bb.sandbox_result.v1",
+    request_id: request.request_id,
+    status,
+    stdout_ref: emptyRef,
+    stderr_ref: emptyRef,
+    artifact_refs: [emptyRef],
+    side_effect_digest: sideEffectDigest,
+    usage: { exit_code: null },
+    evidence_refs: request.evidence_mode === "minimal" ? [] : [sideEffectDigest],
+    error: { reason },
+  })
+}
+
+function assertProviderNeutralResultEvidence(
+  request: SandboxRequestV1,
+  result: SandboxResultV1,
+): void {
+  const digest = /^sha256:[0-9a-f]{64}$/
+  if (!result.stdout_ref || !digest.test(result.stdout_ref)) {
+    throw new Error("scheduled execution result requires provider-neutral stdout evidence")
+  }
+  if (!result.stderr_ref || !digest.test(result.stderr_ref)) {
+    throw new Error("scheduled execution result requires provider-neutral stderr evidence")
+  }
+  if (!result.artifact_refs?.length || result.artifact_refs.some((ref) => !digest.test(ref))) {
+    throw new Error("scheduled execution result requires provider-neutral artifact evidence")
+  }
+  if (!result.side_effect_digest || !digest.test(result.side_effect_digest)) {
+    throw new Error("scheduled execution result requires a provider-neutral side-effect digest")
+  }
+  if (request.evidence_mode !== "minimal" && !result.usage) {
+    throw new Error("scheduled execution result requires usage metadata")
+  }
+  if (
+    request.evidence_mode !== "minimal"
+    && (!result.evidence_refs?.length || result.evidence_refs.some((ref) => !digest.test(ref)))
+  ) {
+    throw new Error("scheduled execution result requires provider-neutral evidence digests")
+  }
+}
+
 function terminalResult(
   request: SandboxRequestV1,
   observation: ScheduledExecutionObservationV1,
-  refs: string[],
 ): SandboxResultV1 {
   const expectedStatus = observation.state === "timed_out"
     ? "timed_out"
@@ -111,25 +210,22 @@ function terminalResult(
     if (result.status !== expectedStatus) {
       throw new Error("scheduled execution result status does not match terminal observation")
     }
-    return {
-      ...result,
-      evidence_refs: evidenceRefs(result.evidence_refs, refs),
-    }
+    assertProviderNeutralResultEvidence(request, result)
+    return result
   }
   if (observation.state === "completed") {
     throw new Error("completed scheduled execution has no sandbox result")
   }
-  return assertValid<SandboxResultV1>("sandboxResult", {
-    schema_version: "bb.sandbox_result.v1",
-    request_id: request.request_id,
-    status: expectedStatus,
-    evidence_refs: refs,
-    error: {
-      reason: expectedStatus === "failed"
-        ? "scheduled_execution_failed"
-        : `execution_${expectedStatus}`,
-    },
-  })
+  const status = expectedStatus as Exclude<SandboxResultV1["status"], "completed">
+  return scheduledFailureResult(
+    request,
+    status,
+    status === "failed" ? "scheduled_execution_failed" : `execution_${status}`,
+  )
+}
+
+function backendFailure(driverId: string, operation: string, cause: unknown): Error {
+  return new Error(`${driverId} backend ${operation} failed`, { cause })
 }
 
 export function makeScheduledExecutionDriver(
@@ -145,13 +241,90 @@ export function makeScheduledExecutionDriver(
   )
   const active = new Map<string, ActiveScheduledExecution>()
 
+  async function recordEvidence(
+    entry: ActiveScheduledExecution,
+    handle: ScheduledExecutionHandleV1,
+    observation: ScheduledExecutionObservationV1,
+  ): Promise<void> {
+    if (!options.recordEvidence) return
+    const refs = evidenceRefs(
+      handle.evidenceRefs,
+      observation.evidenceRefs,
+    )
+    const key = JSON.stringify([observation.state, refs])
+    if (entry.lastEvidenceKey === key) return
+    await options.recordEvidence({
+      driverId,
+      backendId: backend.backendId,
+      executionId: handle.executionId,
+      state: observation.state,
+      evidenceRefs: refs,
+    })
+    entry.lastEvidenceKey = key
+  }
+
+  function requestCancellation(
+    entry: ActiveScheduledExecution,
+    context: ExecutionDriverTerminationContextV1,
+  ): Promise<void> {
+    if (entry.cancellation) return entry.cancellation
+    const cancellation = entry.handle.then(async (handle) => {
+      const cleanupContext: ExecutionDriverTerminationContextV1 = {
+        reason: context.reason,
+        signal: new AbortController().signal,
+        deadlineAtMs: Date.now() + cancellationObservationTimeoutMs,
+      }
+      try {
+        await backend.cancel(handle.executionId, cleanupContext)
+      } catch (error: unknown) {
+        throw backendFailure(driverId, "cancellation", error)
+      }
+      const deadline = Date.now() + cancellationObservationTimeoutMs
+      while (true) {
+        let observation: ScheduledExecutionObservationV1
+        try {
+          observation = await settleBefore(
+            backend.observe(handle.executionId),
+            deadline,
+            `${driverId} cancellation observation exceeded the cleanup deadline`,
+          )
+        } catch (error: unknown) {
+          throw backendFailure(driverId, "cancellation observation", error)
+        }
+        await recordEvidence(entry, handle, observation)
+        if (TERMINAL_STATES.has(observation.state)) {
+          entry.terminalObserved = true
+          return
+        }
+        if (!NONTERMINAL_STATES.has(observation.state)) {
+          throw new Error(`${driverId} backend returned unknown execution state`)
+        }
+        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
+      }
+    })
+    entry.cancellation = cancellation
+    void cancellation.catch(() => {
+      if (entry.cancellation === cancellation) entry.cancellation = undefined
+    })
+    return cancellation
+  }
+
   return {
     driverId,
     supportedPlacements: [options.placementClass],
     supportsCapability(capability, placementClass) {
-      return placementClass === options.placementClass && isPlacementCompatible(capability, placementClass)
+      return placementClass === options.placementClass
+        && isPlacementCompatible(capability, placementClass)
     },
-    buildSandboxRequest({ requestId, capability, command, workspaceRef, imageRef, placement, metadata }) {
+    buildSandboxRequest({
+      requestId,
+      capability,
+      command,
+      workspaceRef,
+      imageRef,
+      placement,
+      metadata,
+    }) {
       if (command.length === 0) {
         throw new Error(`${driverId} execution driver requires a non-empty command`)
       }
@@ -174,42 +347,92 @@ export function makeScheduledExecutionDriver(
     },
     async execute(request, context) {
       if (!context) throw new Error(`${driverId} execution requires a lifecycle context`)
-      const handlePromise = Promise.resolve(backend.submit(request, context)).then((handle) => ({
-        executionId: requireNonempty(handle.executionId, "executionId"),
-        evidenceRefs: evidenceRefs(handle.evidenceRefs),
-      }))
-      const entry = { handle: handlePromise }
-      active.set(request.request_id, entry)
-      try {
-        const handle = await handlePromise
-        while (true) {
-          const observation = await backend.observe(handle.executionId)
-          if (TERMINAL_STATES.has(observation.state)) {
-            return terminalResult(
-              request,
-              observation,
-              evidenceRefs(handle.evidenceRefs, observation.evidenceRefs),
-            )
-          }
-          await waitForPoll(pollIntervalMs, context.signal)
+      const requestKey = JSON.stringify(request)
+      const existing = active.get(request.request_id)
+      if (existing) {
+        if (existing.requestKey !== requestKey) {
+          return scheduledFailureResult(
+            request,
+            "failed",
+            "request_id_collision",
+          )
         }
-      } finally {
-        if (active.get(request.request_id) === entry) active.delete(request.request_id)
+        if (!existing.result) {
+          throw new Error(`${driverId} active execution has no result promise`)
+        }
+        return existing.result
       }
+      let entry: ActiveScheduledExecution
+      const handlePromise = Promise.resolve()
+        .then(() => backend.submit(request, context))
+        .catch((error: unknown) => {
+          throw backendFailure(driverId, "submission", error)
+        })
+        .then((handle) => {
+          const normalized = {
+            executionId: requireNonempty(handle.executionId, "executionId"),
+            evidenceRefs: evidenceRefs(handle.evidenceRefs),
+          }
+          entry.executionId = normalized.executionId
+          return normalized
+        })
+      entry = {
+        handle: handlePromise,
+        requestKey,
+        terminalObserved: false,
+      }
+      const result = (async (): Promise<SandboxResultV1> => {
+        try {
+          const handle = await handlePromise
+          await recordEvidence(entry, handle, {
+            state: "accepted",
+            evidenceRefs: handle.evidenceRefs,
+          })
+          if (entry.cancellation) {
+            await entry.cancellation
+            throw context.signal.reason ?? new Error(`${driverId} execution was cancelled`)
+          }
+          while (true) {
+            let observation: ScheduledExecutionObservationV1
+            try {
+              observation = await backend.observe(handle.executionId)
+            } catch (error: unknown) {
+              throw backendFailure(driverId, "observation", error)
+            }
+            await recordEvidence(entry, handle, observation)
+            if (TERMINAL_STATES.has(observation.state)) {
+              entry.terminalObserved = true
+              return terminalResult(request, observation)
+            }
+            if (!NONTERMINAL_STATES.has(observation.state)) {
+              throw new Error(`${driverId} backend returned unknown execution state`)
+            }
+            await waitForPoll(pollIntervalMs, context.signal)
+          }
+        } finally {
+          if (
+            entry.terminalObserved
+            && active.get(request.request_id) === entry
+          ) {
+            active.delete(request.request_id)
+          }
+        }
+      })()
+      entry.result = result
+      active.set(request.request_id, entry)
+      return result
     },
     async terminate(request, context) {
       const entry = active.get(request.request_id)
       if (!entry) return
-      const handle = await entry.handle
-      await backend.cancel(handle.executionId, context)
-      const deadline = Date.now() + cancellationObservationTimeoutMs
-      while (true) {
-        const observation = await backend.observe(handle.executionId)
-        if (TERMINAL_STATES.has(observation.state)) return
-        if (Date.now() >= deadline) {
-          throw new Error(`${driverId} cancellation was not observed before the cleanup deadline`)
-        }
-        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
+      try {
+        await requestCancellation(entry, context)
+      } catch (error: unknown) {
+        if (entry.executionId === undefined) active.delete(request.request_id)
+        throw error
+      }
+      if (active.get(request.request_id) === entry) {
+        active.delete(request.request_id)
       }
     },
   }
