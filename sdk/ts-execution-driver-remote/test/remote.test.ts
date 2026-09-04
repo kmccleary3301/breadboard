@@ -2755,6 +2755,12 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   assert.ok(invocations[0]?.[1]?.includes("timeout 30s sh -c"))
   assert.ok(invocations[0]?.[1]?.includes(`[ ! -f "$cancel" ] || exit 75`))
   assert.ok(invocations[0]?.[1]?.includes(`[ $((now-created)) -ge`))
+  assert.ok(invocations[0]?.[1]?.includes(`owner_live=0; case "$pid"`))
+  assert.ok(
+    invocations[0]?.[1]?.includes(
+      `[ "$current_start" = "$owner_start" ]; then owner_live=1`,
+    ),
+  )
   assert.equal(invocations[0]?.[1]?.includes(`cat "$lock/job"`), false)
   assert.ok(invocations[0]?.[1]?.includes(`> "$lock/attempt"`))
   assert.ok(invocations[0]?.[1]?.includes("scancel --name"))

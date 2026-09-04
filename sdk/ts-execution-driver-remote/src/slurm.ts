@@ -407,7 +407,7 @@ export function makeSshSlurmBackend(
         `pid=\${owner%% *}; owner_rest=\${owner#* }; created=\${owner_rest%% *}; owner_start=\${owner_rest#* };`,
         `case "$created" in ""|*[!0-9]*) created=$(stat -c %Y "$lock" 2>/dev/null || printf '0');; esac;`,
         `current_start=''; case "$pid" in ""|*[!0-9]*) :;; *) current_start=$(awk '{print $22}' "/proc/$pid/stat" 2>/dev/null || true);; esac;`,
-        `owner_live=1; case "$pid" in ""|*[!0-9]*) :;; *) if [ ! -d "/proc/$pid" ]; then owner_live=0; elif [ -n "$owner_start" ] && [ -n "$current_start" ] && [ "$current_start" != "$owner_start" ]; then owner_live=0; fi;; esac;`,
+        `owner_live=0; case "$pid" in ""|*[!0-9]*) :;; *) if [ -d "/proc/$pid" ] && [ -n "$owner_start" ] && [ -n "$current_start" ] && [ "$current_start" = "$owner_start" ]; then owner_live=1; fi;; esac;`,
         `if [ $((now-created)) -ge ${lockLeaseSeconds} ] && [ "$owner_live" -eq 0 ]; then`,
         `if timeout 1s scancel --name ${shellQuote(jobName)} 2>/dev/null; then`,
         `active=$(timeout 1s squeue -h --name ${shellQuote(jobName)} -o '%j' 2>/dev/null) || active=unknown;`,
