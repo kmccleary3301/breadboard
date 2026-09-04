@@ -4970,10 +4970,12 @@ def test_reconciler_persists_complete_nested_intent_before_signaling(
             session_id: str,
             *,
             requests,
+            expected_child_recovery_refs=None,
         ) -> None:
             await super().close_admission_for_parent_cancellations(
                 session_id,
                 requests=requests,
+                expected_child_recovery_refs=expected_child_recovery_refs,
             )
             raise RuntimeError("simulated crash after durable batch")
 
@@ -5006,6 +5008,30 @@ def test_reconciler_persists_complete_nested_intent_before_signaling(
         parent_work_item_id=second_work.read_model.work_item_id,
         spec=_spec(adapter.family, "nested grandchild"),
     )
+    nonpropagating = factory.start(
+        parent_session_id=first.child_session_id,
+        root_session_id="parent-session",
+        parent_work_item_id=first_work.read_model.work_item_id,
+        spec=ChildSpec(
+            "nonpropagating nested child",
+            "nested child task",
+            _lock(),
+            "child-worker",
+            adapter.family,
+            cancellation_policy=CancellationPolicy(
+                propagate_to_children=False
+            ),
+        ),
+    )
+    nonpropagating_work = WorkItem.restore(
+        repository, nonpropagating.child_work_item_id
+    )
+    excluded = factory.start(
+        parent_session_id=nonpropagating.child_session_id,
+        root_session_id="parent-session",
+        parent_work_item_id=nonpropagating_work.read_model.work_item_id,
+        spec=_spec(adapter.family, "excluded nested grandchild"),
+    )
     reconciler = DurableChildReconciler(
         registry=registry,
         repository=repository,
@@ -5022,13 +5048,18 @@ def test_reconciler_persists_complete_nested_intent_before_signaling(
             "work_item_id": first.child_work_item_id,
             "reason": "operator request",
             "child_recovery_refs": sorted(
-                [second.recovery_ref, third.recovery_ref]
+                [
+                    second.recovery_ref,
+                    third.recovery_ref,
+                    nonpropagating.recovery_ref,
+                ]
             ),
         }
     ]
     assert retained_parent.admission_closed
     assert not factory._record_state(second.child_session_id).cancellation_requested
     assert not factory._record_state(third.child_session_id).cancellation_requested
+    assert not factory._record_state(excluded.child_session_id).cancellation_requested
 
 
 def test_reconciler_cancellation_supports_mixed_unavailable_families(

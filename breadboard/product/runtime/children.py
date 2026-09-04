@@ -2517,6 +2517,30 @@ class DurableChildReconciler:
             recovery_ref = str(retained.get("recovery_ref") or "").strip()
             if parent_work_item_id and recovery_ref:
                 parent_work_item_ids.setdefault(parent_work_item_id, recovery_ref)
+        descendant_session_ids = {parent_session_id}
+        observed_child_refs: set[str] = set()
+        changed = True
+        while changed:
+            changed = False
+            for candidate in records:
+                metadata = (
+                    candidate.metadata
+                    if isinstance(candidate.metadata, Mapping)
+                    else {}
+                )
+                retained = metadata.get("durable_child")
+                if (
+                    not isinstance(retained, Mapping)
+                    or retained.get("parent_session_id")
+                    not in descendant_session_ids
+                    or candidate.session_id in descendant_session_ids
+                ):
+                    continue
+                descendant_session_ids.add(candidate.session_id)
+                recovery_ref = retained.get("recovery_ref")
+                if isinstance(recovery_ref, str) and recovery_ref.strip():
+                    observed_child_refs.add(recovery_ref)
+                changed = True
         if not parent_work_item_ids:
             return ()
         factories: dict[str, DurableChildFactory] = {}
@@ -2551,6 +2575,7 @@ class DurableChildReconciler:
                 }
                 for parent_work_item_id in sorted(parent_work_item_ids)
             ),
+            expected_child_recovery_refs=observed_child_refs,
         )
         if hasattr(closed, "__await__"):
             await closed

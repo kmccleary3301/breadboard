@@ -391,6 +391,7 @@ class PersistenceMixin:
         session_id: str,
         *,
         requests: Iterable[Mapping[str, Any]],
+        expected_child_recovery_refs: Iterable[str] | None = None,
     ) -> None:
         normalized_requests: list[dict[str, Any]] = []
         for request in requests:
@@ -420,6 +421,15 @@ class PersistenceMixin:
                     "child_recovery_refs": sorted(set(normalized_refs)),
                 }
             )
+        expected_refs = (
+            None
+            if expected_child_recovery_refs is None
+            else {
+                ref
+                for ref in expected_child_recovery_refs
+                if isinstance(ref, str) and ref.strip()
+            }
+        )
         if not normalized_requests:
             return
         record = await self.get(session_id)
@@ -464,6 +474,13 @@ class PersistenceMixin:
                             if isinstance(recovery_ref, str) and recovery_ref.strip():
                                 retained_child_refs.add(recovery_ref)
                             changed = True
+                    if (
+                        expected_refs is not None
+                        and retained_child_refs != expected_refs
+                    ):
+                        raise RuntimeError(
+                            "retained child set changed during parent cancellation"
+                        )
                     previous_closed = record.admission_closed
                     previous_metadata = dict(record.metadata or {})
                     previous_activity = record.last_activity_at
@@ -487,11 +504,7 @@ class PersistenceMixin:
                         and isinstance(candidate.get("work_item_id"), str)
                     }
                     for request in normalized_requests:
-                        merged_request = dict(request)
-                        merged_request["child_recovery_refs"] = sorted(
-                            set(request["child_recovery_refs"]) | retained_child_refs
-                        )
-                        merged_requests[request["work_item_id"]] = merged_request
+                        merged_requests[request["work_item_id"]] = request
                     metadata["durable_parent_cancellation"] = {
                         "requests": [
                             merged_requests[key] for key in sorted(merged_requests)
