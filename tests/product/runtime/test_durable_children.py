@@ -5051,6 +5051,70 @@ def test_child_completion_joins_nonterminal_waiting_parent(
     parent_product, _ = load_session(workspace, "parent-session")
     assert parent_product.read_model.status == "awaiting_approval"
 
+def test_parent_cancellation_refreshes_cross_process_descendants(
+    tmp_path: Path,
+) -> None:
+    workspace, repository, parent_work, initial_registry = _running_parent(tmp_path)
+    adapter = RetryAdapter()
+    first = DurableChildFactory(
+        workspace,
+        registry=initial_registry,
+        repository=repository,
+        adapters=[adapter],
+    ).start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent_work.read_model.work_item_id,
+        spec=_spec(adapter.family, "nested parent"),
+    )
+    stale_registry = SessionRegistry(state_root=tmp_path / "registry")
+    assert len(await_records(stale_registry)) == 1
+
+    first_work = WorkItem.restore(repository, first.child_work_item_id)
+    writer_registry = SessionRegistry(state_root=tmp_path / "registry")
+    second = DurableChildFactory(
+        workspace,
+        registry=writer_registry,
+        repository=repository,
+        adapters=[adapter],
+    ).start(
+        parent_session_id=first.child_session_id,
+        root_session_id="parent-session",
+        parent_work_item_id=first_work.read_model.work_item_id,
+        spec=_spec(adapter.family, "late nested child"),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="retained child set changed during parent cancellation",
+    ):
+        asyncio_run(
+            stale_registry.close_admission_for_parent_cancellations(
+                first.child_session_id,
+                requests=(
+                    {
+                        "work_item_id": first.child_work_item_id,
+                        "reason": "operator request",
+                        "child_recovery_refs": (),
+                    },
+                ),
+                expected_child_recovery_refs=(),
+            )
+        )
+
+    parent_record = await_record(stale_registry, first.child_session_id)
+    assert parent_record.admission_closed is False
+    assert (
+        parent_record.metadata.get("durable_parent_cancellation")
+        is None
+    )
+    assert second.recovery_ref in {
+        record.metadata["durable_child"]["recovery_ref"]
+        for record in await_records(stale_registry)
+        if isinstance(record.metadata.get("durable_child"), dict)
+    }
+
+
 def test_reconciler_persists_complete_nested_intent_before_signaling(
     tmp_path: Path,
 ) -> None:

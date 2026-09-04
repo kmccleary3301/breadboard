@@ -439,6 +439,7 @@ class PersistenceMixin:
             )
         async with record.admission_lock:
             async with self._lock:
+                self._refresh_records_from_disk_locked()
                 current = self._records.get(session_id)
                 if current is not record:
                     raise RuntimeError(
