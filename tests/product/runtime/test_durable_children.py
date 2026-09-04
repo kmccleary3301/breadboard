@@ -3322,6 +3322,9 @@ def test_service_restart_routes_retained_child_to_reconciler_not_session_runner(
     assert seen == [activation.recovery_ref]
     assert record.product_session is not None
     assert record.runner is None
+    again = asyncio_run(service.ensure_session(activation.child_session_id))
+    assert seen == [activation.recovery_ref, activation.recovery_ref]
+    assert again.loaded_from_retained_state is True
 
 
 def test_service_retries_retained_pending_cancel_until_verified_exit(tmp_path: Path) -> None:
@@ -6776,3 +6779,59 @@ def test_reconciler_skips_process_factory_for_nonprocess_child(
     assert asyncio_run(reconciler(activation.recovery_ref)).child_session_id == (
         activation.child_session_id
     )
+
+
+def test_direct_child_stop_remains_pending_until_adapter_confirms_exit(
+    tmp_path: Path,
+) -> None:
+    from breadboard_engine.api.cli_bridge.models import SessionStatus
+    from breadboard_engine.api.cli_bridge.registry.records import SessionRecord
+    from breadboard_engine.api.cli_bridge.service import SessionService
+
+    registry = SessionRegistry(state_root=tmp_path / "registry")
+    record = SessionRecord(
+        "child-session",
+        status=SessionStatus.RUNNING,
+        metadata={
+            "workspace": str(tmp_path),
+            "durable_child": {
+                "recovery_ref": "child://child-session/attempt/attempt-1",
+                "terminal_count": 0,
+            },
+        },
+    )
+    asyncio_run(registry.create(record))
+
+    class PendingState:
+        terminal_count = 0
+        status = "cancel_requested"
+        cancellation_requested = True
+
+    class PendingReconciler:
+        def __call__(self, recovery_ref: str):
+            return PendingState()
+
+        def cancel(self, recovery_ref: str, *, reason: str = "operator request"):
+            return PendingState()
+
+        def cancel_tree(
+            self,
+            parent_session_id: str,
+            *,
+            reason: str = "operator request",
+        ):
+            return ()
+
+    service = SessionService(
+        registry=registry,
+        state_root=tmp_path / "registry",
+        durable_child_reconciler=PendingReconciler(),
+        durable_child_repository=WorkItemRepository(
+            tmp_path / "work-items.jsonl"
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="cancellation remains pending"):
+        asyncio_run(service.delete_session(record.session_id))
+
+    assert await_record(registry, record.session_id).status is SessionStatus.RUNNING

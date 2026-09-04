@@ -2190,16 +2190,6 @@ class SessionService:
             reconciled = reconciler(recovery_ref)
             if inspect.isawaitable(reconciled):
                 reconciled = await reconciled
-            if (
-                not getattr(reconciled, "terminal_count", 0)
-                and not isinstance(metadata.get("durable_parent_cancellation"), Mapping)
-                and (
-                    getattr(reconciled, "status", None) == "starting"
-                    or getattr(reconciled, "cancellation_requested", False)
-                )
-            ):
-                record.runner = None
-                return
             recorded_workspace = metadata.get("workspace")
             workspace = (
                 str(recorded_workspace).strip()
@@ -2220,8 +2210,12 @@ class SessionService:
             else:
                 record.product_session = product
             record.runner = None
-            if not isinstance(metadata.get("durable_parent_cancellation"), Mapping):
-                record.loaded_from_retained_state = False
+            if not isinstance(
+                metadata.get("durable_parent_cancellation"),
+                Mapping,
+            ):
+                if getattr(reconciled, "terminal_count", 0):
+                    record.loaded_from_retained_state = False
                 return
         parent_cancellation = metadata.get("durable_parent_cancellation")
         if record.status in {
@@ -3195,19 +3189,29 @@ class SessionService:
                 )
             durable_child_terminal = terminal_count == 1
         if recovery_ref and callable(cancel_child) and not durable_child_terminal:
+            canceled_child = None
             try:
-                result = cancel_child(recovery_ref, reason=reason or "operator request")
-                if inspect.isawaitable(result):
-                    await result
+                canceled_child = cancel_child(
+                    recovery_ref,
+                    reason=reason or "operator request",
+                )
+                if inspect.isawaitable(canceled_child):
+                    canceled_child = await canceled_child
             except (ExpectedRevisionConflict, LateResultRejected):
-                reconcile_child = getattr(self._durable_child_reconciler, "__call__", None)
+                reconcile_child = getattr(
+                    self._durable_child_reconciler,
+                    "__call__",
+                    None,
+                )
                 if callable(reconcile_child):
                     try:
-                        repaired = reconcile_child(recovery_ref)
-                        if inspect.isawaitable(repaired):
-                            await repaired
+                        canceled_child = reconcile_child(recovery_ref)
+                        if inspect.isawaitable(canceled_child):
+                            canceled_child = await canceled_child
                     except (ExpectedRevisionConflict, LateResultRejected):
-                        pass
+                        canceled_child = None
+            if getattr(canceled_child, "terminal_count", 0) != 1:
+                raise RuntimeError("durable child cancellation remains pending")
         runner: Optional[SessionRunner] = getattr(record, "runner", None)
         try:
             if runner:
