@@ -1,6 +1,3 @@
-import { mkdtemp, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import { spawn } from "node:child_process"
 
 import type {
@@ -13,6 +10,7 @@ import type { TerminalSessionDriverV1 } from "@breadboard/execution-drivers"
 import {
   buildCanonicalSandboxEvidence,
   isPlacementCompatible,
+  persistCanonicalSandboxArtifact,
 } from "@breadboard/execution-drivers"
 import { LocalTerminalSessionManager, trustedLocalTerminalSessionDriver } from "./terminals.js"
 
@@ -165,11 +163,6 @@ export async function executeLocalProcessSandboxRequest(
       })
   const isAborted = preAborted || options.signal?.aborted === true
   const isDeadline = deadlineBeforeExecution || isDeadlineAbort(options.signal)
-  const captureDir = await mkdtemp(join(options.tempDirRoot ?? tmpdir(), "breadboard-local-exec-"))
-  const stdoutPath = join(captureDir, "stdout.log")
-  const stderrPath = join(captureDir, "stderr.log")
-  await writeFile(stdoutPath, result.stdout, "utf8")
-  await writeFile(stderrPath, result.stderr, "utf8")
   const status: SandboxResultV1["status"] = isAborted
     ? isDeadline
       ? "timed_out"
@@ -182,18 +175,31 @@ export async function executeLocalProcessSandboxRequest(
     : status === "cancelled"
       ? "execution_cancelled"
       : "execution_failed"
+  const evidence = buildCanonicalSandboxEvidence({
+    command: request.command,
+    status,
+    exitCode: result.exitCode,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    evidenceMode: request.evidence_mode,
+  })
+  await Promise.all([
+    persistCanonicalSandboxArtifact(
+      evidence.stdout_ref,
+      result.stdout,
+      options.tempDirRoot,
+    ),
+    persistCanonicalSandboxArtifact(
+      evidence.stderr_ref,
+      result.stderr,
+      options.tempDirRoot,
+    ),
+  ])
   return {
     schema_version: "bb.sandbox_result.v1",
     request_id: request.request_id,
     status,
-    ...buildCanonicalSandboxEvidence({
-      command: request.command,
-      status,
-      exitCode: result.exitCode,
-      stdout: result.stdout,
-      stderr: result.stderr,
-      evidenceMode: request.evidence_mode,
-    }),
+    ...evidence,
     error: status === "completed" ? null : { reason: errorReason },
   }
 }

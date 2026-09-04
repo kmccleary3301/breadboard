@@ -11,6 +11,7 @@ Current scope:
 - Ray host-bridge driver registration
 - direct SSH Slurm submission with durable request receipts, `squeue`/`sacct`
   observation, ambiguous-ack recovery, and `scancel` cleanup
+- configurable per-stream output bounds, enforced remotely before evidence reads
 - timeout/error-envelope handling for delegated execution
 - explicit non-claim of direct sandbox implementation
 

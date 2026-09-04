@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto"
 
 import {
   assertValid,
@@ -6,12 +5,13 @@ import {
   type SandboxRequestV1,
   type SandboxResultV1,
 } from "@breadboard/kernel-contracts"
-import type {
-  ExecutionDriverExecutionContextV1,
-  ExecutionDriverTerminationContextV1,
-  ExecutionDriverV1,
+import {
+  buildCanonicalSandboxEvidence,
+  isPlacementCompatible,
+  type ExecutionDriverExecutionContextV1,
+  type ExecutionDriverTerminationContextV1,
+  type ExecutionDriverV1,
 } from "@breadboard/execution-drivers"
-import { isPlacementCompatible } from "@breadboard/execution-drivers"
 import { buildRemoteSandboxRequest } from "./index.js"
 
 export type ScheduledExecutionStateV1 =
@@ -59,7 +59,7 @@ export interface ScheduledExecutionDriverOptionsV1 {
   readonly placementClass: ExecutionPlacementV1["placement_class"]
   readonly pollIntervalMs?: number
   readonly cancellationObservationTimeoutMs?: number
-  readonly recordEvidence?: (
+  readonly recordEvidence: (
     evidence: ScheduledExecutionEvidenceV1,
   ) => Promise<void> | void
 }
@@ -71,6 +71,7 @@ interface ActiveScheduledExecution {
   cancellation?: Promise<void>
   lastEvidenceKey?: string
   terminalObserved: boolean
+  evidenceTail: Promise<void>
 }
 
 const TERMINAL_STATES = new Set<ScheduledExecutionStateV1>([
@@ -133,32 +134,24 @@ async function settleBefore<T>(
     clearTimeout(timer)
   }
 }
-function sha256(value: string): string {
-  return `sha256:${createHash("sha256").update(value).digest("hex")}`
-}
 
 function scheduledFailureResult(
   request: SandboxRequestV1,
   status: Exclude<SandboxResultV1["status"], "completed">,
   reason: string,
 ): SandboxResultV1 {
-  const emptyRef = sha256("")
-  const sideEffectDigest = sha256(JSON.stringify({
-    command: request.command,
-    status,
-    stderr_ref: emptyRef,
-    stdout_ref: emptyRef,
-  }))
   return assertValid<SandboxResultV1>("sandboxResult", {
     schema_version: "bb.sandbox_result.v1",
     request_id: request.request_id,
     status,
-    stdout_ref: emptyRef,
-    stderr_ref: emptyRef,
-    artifact_refs: [emptyRef],
-    side_effect_digest: sideEffectDigest,
-    usage: { exit_code: null },
-    evidence_refs: request.evidence_mode === "minimal" ? [] : [sideEffectDigest],
+    ...buildCanonicalSandboxEvidence({
+      command: request.command,
+      status,
+      exitCode: null,
+      stdout: "",
+      stderr: "",
+      evidenceMode: request.evidence_mode,
+    }),
     error: { reason },
   })
 }
@@ -184,10 +177,22 @@ function assertProviderNeutralResultEvidence(
     throw new Error("scheduled execution result requires usage metadata")
   }
   if (
-    request.evidence_mode !== "minimal"
-    && (!result.evidence_refs?.length || result.evidence_refs.some((ref) => !digest.test(ref)))
+    request.evidence_mode === "minimal"
+      ? (result.evidence_refs?.length ?? 0) !== 0
+      : (!result.evidence_refs?.length
+        || result.evidence_refs.some((ref) => !digest.test(ref)))
   ) {
-    throw new Error("scheduled execution result requires provider-neutral evidence digests")
+    throw new Error("scheduled execution result has invalid provider-neutral evidence digests")
+  }
+  if (
+    result.placement_id != null
+    || (result.usage != null
+      && (
+        Object.keys(result.usage).some((key) => key !== "exit_code")
+        || !("exit_code" in result.usage)
+      ))
+  ) {
+    throw new Error("scheduled execution result contains provider-specific result metadata")
   }
 }
 
@@ -234,6 +239,9 @@ export function makeScheduledExecutionDriver(
 ): ExecutionDriverV1 {
   requireNonempty(backend.backendId, "backendId")
   const driverId = requireNonempty(options.driverId, "driverId")
+  if (typeof options.recordEvidence !== "function") {
+    throw new Error(`${driverId} execution driver requires an evidence sink`)
+  }
   const pollIntervalMs = Math.max(1, options.pollIntervalMs ?? 250)
   const cancellationObservationTimeoutMs = Math.max(
     pollIntervalMs,
@@ -246,21 +254,36 @@ export function makeScheduledExecutionDriver(
     handle: ScheduledExecutionHandleV1,
     observation: ScheduledExecutionObservationV1,
   ): Promise<void> {
-    if (!options.recordEvidence) return
     const refs = evidenceRefs(
       handle.evidenceRefs,
       observation.evidenceRefs,
     )
     const key = JSON.stringify([observation.state, refs])
     if (entry.lastEvidenceKey === key) return
-    await options.recordEvidence({
+    const evidence: ScheduledExecutionEvidenceV1 = {
       driverId,
       backendId: backend.backendId,
       executionId: handle.executionId,
       state: observation.state,
       evidenceRefs: refs,
-    })
+    }
     entry.lastEvidenceKey = key
+    entry.evidenceTail = entry.evidenceTail.then(
+      () => options.recordEvidence(evidence),
+    )
+    await entry.evidenceTail
+  }
+
+  async function recordUnconfirmedCancellation(
+    entry: ActiveScheduledExecution,
+    handle: ScheduledExecutionHandleV1,
+  ): Promise<void> {
+    await recordEvidence(entry, handle, {
+      state: "running",
+      evidenceRefs: [
+        `scheduled://${encodeURIComponent(backend.backendId)}/${encodeURIComponent(handle.executionId)}/cancellation-unconfirmed`,
+      ],
+    })
   }
 
   function requestCancellation(
@@ -277,6 +300,7 @@ export function makeScheduledExecutionDriver(
       try {
         await backend.cancel(handle.executionId, cleanupContext)
       } catch (error: unknown) {
+        await recordUnconfirmedCancellation(entry, handle)
         throw backendFailure(driverId, "cancellation", error)
       }
       const deadline = Date.now() + cancellationObservationTimeoutMs
@@ -289,6 +313,7 @@ export function makeScheduledExecutionDriver(
             `${driverId} cancellation observation exceeded the cleanup deadline`,
           )
         } catch (error: unknown) {
+          await recordUnconfirmedCancellation(entry, handle)
           throw backendFailure(driverId, "cancellation observation", error)
         }
         await recordEvidence(entry, handle, observation)
@@ -379,6 +404,7 @@ export function makeScheduledExecutionDriver(
       entry = {
         handle: handlePromise,
         requestKey,
+        evidenceTail: Promise.resolve(),
         terminalObserved: false,
       }
       const result = (async (): Promise<SandboxResultV1> => {
@@ -440,7 +466,7 @@ export function makeScheduledExecutionDriver(
 
 export function makeRayExecutionDriver(
   backend: ScheduledExecutionBackendV1,
-  options: Omit<ScheduledExecutionDriverOptionsV1, "driverId" | "placementClass"> = {},
+  options: Omit<ScheduledExecutionDriverOptionsV1, "driverId" | "placementClass">,
 ): ExecutionDriverV1 {
   return makeScheduledExecutionDriver(backend, {
     ...options,
@@ -451,7 +477,7 @@ export function makeRayExecutionDriver(
 
 export function makeSlurmExecutionDriver(
   backend: ScheduledExecutionBackendV1,
-  options: Omit<ScheduledExecutionDriverOptionsV1, "driverId" | "placementClass"> = {},
+  options: Omit<ScheduledExecutionDriverOptionsV1, "driverId" | "placementClass">,
 ): ExecutionDriverV1 {
   return makeScheduledExecutionDriver(backend, {
     ...options,

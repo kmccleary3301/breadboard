@@ -1,7 +1,11 @@
+import fs from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import test from "node:test"
 import assert from "node:assert/strict"
 
 import type { ExecutionCapabilityV1, ExecutionPlacementV1 } from "@breadboard/kernel-contracts"
+import { canonicalSandboxArtifactUri } from "@breadboard/execution-drivers"
 import {
   buildOciContainerName,
   buildOciRuntimeInvocation,
@@ -204,15 +208,25 @@ test("oci driver can execute through an injected runtime adapter", async () => {
     workspaceRef: "/tmp/workspace",
     imageRef: "ghcr.io/example/ruff:latest",
   })
+  const artifactRoot = fs.mkdtempSync(join(tmpdir(), "bb-oci-artifacts-"))
   const result = await executeOciSandboxRequest(request, {
     commandExecutor: async ({ runtimeCommand, runtimeArgs }) => ({
       exitCode: runtimeCommand === "docker" && runtimeArgs.includes("ghcr.io/example/ruff:latest") ? 0 : 1,
       stdout: "oci ok",
       stderr: "",
     }),
+    tempDirRoot: artifactRoot,
   })
   assert.equal(result.status, "completed")
-  assert.ok(result.stdout_ref?.startsWith("sha256:"))
+  if (!result.stdout_ref) assert.fail("OCI execution must return stdout evidence")
+  assert.match(result.stdout_ref, /^sha256:/)
+  assert.equal(
+    fs.readFileSync(
+      new URL(canonicalSandboxArtifactUri(result.stdout_ref, artifactRoot)),
+      "utf8",
+    ),
+    "oci ok",
+  )
   assert.ok(result.side_effect_digest?.startsWith("sha256:"))
 })
 

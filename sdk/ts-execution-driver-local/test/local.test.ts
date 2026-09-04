@@ -1,8 +1,11 @@
 import fs from "node:fs"
 import { spawn } from "node:child_process"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import test from "node:test"
 import assert from "node:assert/strict"
 import { setTimeout as sleep } from "node:timers/promises"
+import { canonicalSandboxArtifactUri } from "@breadboard/execution-drivers"
 import {
   buildLocalProcessSandboxRequest,
   chooseTrustedLocalPlacement,
@@ -103,9 +106,20 @@ test("trusted local driver can execute a local-process sandbox request", async (
     command: ["node", "-e", "process.stdout.write('local ok')"],
     workspaceRef: "/tmp",
   })
-  const result = await executeLocalProcessSandboxRequest(request)
+  const artifactRoot = fs.mkdtempSync(join(tmpdir(), "bb-local-artifacts-"))
+  const result = await executeLocalProcessSandboxRequest(request, {
+    tempDirRoot: artifactRoot,
+  })
   assert.equal(result.status, "completed")
-  assert.ok(result.stdout_ref?.startsWith("sha256:"))
+  if (!result.stdout_ref) assert.fail("local execution must return stdout evidence")
+  assert.match(result.stdout_ref, /^sha256:/)
+  assert.equal(
+    fs.readFileSync(
+      new URL(canonicalSandboxArtifactUri(result.stdout_ref, artifactRoot)),
+      "utf8",
+    ),
+    "local ok",
+  )
   assert.ok(result.side_effect_digest?.startsWith("sha256:"))
 })
 

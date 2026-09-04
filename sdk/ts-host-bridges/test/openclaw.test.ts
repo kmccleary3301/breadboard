@@ -390,7 +390,7 @@ test("openclaw bridge can use the trusted-local driver path without a bespoke sa
   assert.equal(invocation.mode, "breadboard")
   assert.equal(invocation.driverTurn?.driverId, "local-process")
   assert.equal(invocation.driverTurn?.sandboxResult.status, "completed")
-  assert.match(invocation.driverTurn?.sandboxResult.stdout_ref ?? "", /^file:\/\//)
+  assert.match(invocation.driverTurn?.sandboxResult.stdout_ref ?? "", /^sha256:/)
   assert.equal(invocation.result.payloads?.[0]?.text, "repo_linter completed successfully.")
   assert.deepEqual(seen, [
     "tool:repo_linter completed via sandbox (repo_linter --quick)",
@@ -430,7 +430,7 @@ test("openclaw bridge can preserve provider quirks on an OCI-backed tool slice",
   assert.equal(invocation.driverTurn?.driverId, fixture.expected.driverId)
   assert.equal(invocation.executionPlacement.placement_class, fixture.expected.placementClass)
   assert.equal(invocation.driverTurn?.sandboxResult.status, "completed")
-  assert.match(invocation.driverTurn?.sandboxResult.stdout_ref ?? "", /^file:\/\//)
+  assert.match(invocation.driverTurn?.sandboxResult.stdout_ref ?? "", /^sha256:/)
   assert.equal(invocation.result.meta.agentMeta?.provider, fixture.expected.provider)
   assert.equal(invocation.result.meta.agentMeta?.model, fixture.expected.model)
 })

@@ -1,4 +1,8 @@
-import { createHash } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
+import { mkdir, rename, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { pathToFileURL } from "node:url"
 
 import type {
   ExecutionCapabilityV1,
@@ -263,6 +267,15 @@ export function buildExecutionDriverSideEffectExpectation(
   return mapping[placementClass]
 }
 
+export interface CanonicalSandboxEvidenceV1 {
+  readonly stdout_ref: string
+  readonly stderr_ref: string
+  readonly artifact_refs: string[]
+  readonly side_effect_digest: string
+  readonly usage: { readonly exit_code: number | null }
+  readonly evidence_refs: string[]
+}
+
 export function buildCanonicalSandboxEvidence(input: {
   command: readonly string[]
   status: SandboxResultV1["status"]
@@ -270,10 +283,7 @@ export function buildCanonicalSandboxEvidence(input: {
   stdout: string
   stderr: string
   evidenceMode: SandboxRequestV1["evidence_mode"]
-}): Pick<
-  SandboxResultV1,
-  "stdout_ref" | "stderr_ref" | "artifact_refs" | "side_effect_digest" | "usage" | "evidence_refs"
-> {
+}): CanonicalSandboxEvidenceV1 {
   const digest = (value: string) =>
     `sha256:${createHash("sha256").update(value).digest("hex")}`
   const stdoutRef = digest(input.stdout)
@@ -293,6 +303,41 @@ export function buildCanonicalSandboxEvidence(input: {
     usage: { exit_code: input.exitCode },
     evidence_refs: input.evidenceMode === "minimal" ? [] : [sideEffectDigest],
   }
+}
+
+const DEFAULT_SANDBOX_ARTIFACT_ROOT = join(
+  tmpdir(),
+  "breadboard-sandbox-artifacts",
+)
+
+export function canonicalSandboxArtifactUri(
+  ref: string,
+  artifactRoot = DEFAULT_SANDBOX_ARTIFACT_ROOT,
+): string {
+  const match = /^sha256:([0-9a-f]{64})$/.exec(ref)
+  if (!match) throw new Error("sandbox artifact ref must be a sha256 digest")
+  return pathToFileURL(join(artifactRoot, match[1]!)).href
+}
+
+export async function persistCanonicalSandboxArtifact(
+  ref: string,
+  content: string,
+  artifactRoot = DEFAULT_SANDBOX_ARTIFACT_ROOT,
+): Promise<string> {
+  const expectedRef = `sha256:${createHash("sha256").update(content).digest("hex")}`
+  if (ref !== expectedRef) {
+    throw new Error("sandbox artifact content does not match its digest ref")
+  }
+  await mkdir(artifactRoot, { recursive: true })
+  const destination = join(artifactRoot, ref.slice("sha256:".length))
+  const temporary = `${destination}.${process.pid}.${randomUUID()}.tmp`
+  try {
+    await writeFile(temporary, content, "utf8")
+    await rename(temporary, destination)
+  } finally {
+    await rm(temporary, { force: true })
+  }
+  return canonicalSandboxArtifactUri(ref, artifactRoot)
 }
 
 export function buildExecutionDriverEvidenceExpectation(input: {

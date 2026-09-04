@@ -196,17 +196,21 @@ Design 2 (`@breadboard/execution-drivers` shared execution-world owner) is selec
 
 ## W5.4 Four-world execution proof
 
-One fixed `SandboxRequestV1` printed `breadboard-dsh-world-v1` through the
-actual local process, `python:3.11-alpine` OCI container, local Ray actor, and
-remote Slurm adapters. All four returned the same provider-neutral
-`SandboxResultV1`: completed status, exit code zero, and identical
-content-addressed stdout, stderr, artifact, side-effect, and evidence
-references.
+One fixed `SandboxRequestV1` (`req:dsh:world:equivalence-v3`) printed
+`breadboard-dsh-world-v1` through the actual local process,
+`python:3.11-alpine` OCI container, local Ray actor, and remote Slurm
+adapters. All four returned the same provider-neutral `SandboxResultV1`:
+completed status, exit code zero, stdout
+`sha256:c0041fd90663154e18cf02d322869f9c04d2014c1f9b3b165dbdb5c3a2b1c795`,
+empty stderr, and side-effect/evidence digest
+`sha256:9ff5cd6be759737fa1ba8d5918b62b3f942c38ad4485970af3a0b29e1cfea24a`.
+The local content-addressed store resolved the stdout and stderr digests after
+each run, so these references are retained artifacts rather than labels.
 
 Provider-specific proof stayed outside that result. The Ray callback recorded
-accepted, running, and completed observations for bridge process `55526`,
-actor `34ea4e0efb53401b60c6c94e01000000`, and node
-`f855cf3120792bef4c0d9f5a81209d8678d195dabb961eaf47c5aaa3`. The Slurm
-callback recorded job `38270` completing on `cnode-183`; a repeated submission
-with the same request identity recovered that receipt instead of submitting a
-duplicate job.
+accepted, running, and completed observations for bridge process `64238`,
+actor `4013509e9657804a6b56d18d01000000`, and node
+`3a41921e22acacba742cd0a1923f1c635197b61093dfc6355ee54cb0`. The Slurm
+callback recorded job `38415` completing on `cnode-183`, with its receipt,
+exact encoded submission command, launch log, stdout, and stderr retained
+under `/shared/breadboard-dsh-world`.

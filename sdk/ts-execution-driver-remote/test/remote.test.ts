@@ -2,7 +2,11 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import type { ExecutionCapabilityV1, ExecutionPlacementV1 } from "@breadboard/kernel-contracts"
-import { buildExecutionDriverUnsupportedCase, createExecutionWorld } from "@breadboard/execution-drivers"
+import {
+  buildCanonicalSandboxEvidence,
+  buildExecutionDriverUnsupportedCase,
+  createExecutionWorld,
+} from "@breadboard/execution-drivers"
 import {
   buildRemoteExecutionErrorSummary,
   buildRemoteExecutionRequestEnvelope,
@@ -1792,6 +1796,7 @@ test("scheduled adapter cancels a handle that arrives after timeout settlement",
     drivers: [makeRayExecutionDriver(backend, {
       pollIntervalMs: 1,
       cancellationObservationTimeoutMs: 20,
+      recordEvidence() {},
     })],
   })
   const execution = world.execute({
@@ -1842,6 +1847,7 @@ test("scheduled adapter cleans up after observation transport failure", async ()
     drivers: [makeRayExecutionDriver(backend, {
       pollIntervalMs: 1,
       cancellationObservationTimeoutMs: 20,
+      recordEvidence() {},
     })],
   })
   const result = await world.execute({
@@ -1905,7 +1911,10 @@ test("scheduled adapter coalesces identical active requests and rejects collisio
       releases++
     },
   }
-  const driver = makeRayExecutionDriver(backend, { pollIntervalMs: 1 })
+  const driver = makeRayExecutionDriver(backend, {
+    pollIntervalMs: 1,
+    recordEvidence() {},
+  })
   const placement: ExecutionPlacementV1 = {
     schema_version: "bb.execution_placement.v1",
     placement_id: "place:ray:idempotent",
@@ -1964,6 +1973,7 @@ test("Slurm scheduled adapter confirms cancellation before timeout settlement", 
       makeSlurmExecutionDriver(backend, {
         pollIntervalMs: 1,
         cancellationObservationTimeoutMs: 20,
+        recordEvidence() {},
       }),
     ],
   })
@@ -1991,6 +2001,121 @@ test("Slurm scheduled adapter confirms cancellation before timeout settlement", 
   assert.equal(result.livenessEvidence.terminationObserved, true)
 })
 
+test("scheduled adapter canonicalizes terminal observations without a result", async () => {
+  const backend: ScheduledExecutionBackendV1 = {
+    backendId: "slurm-cluster",
+    async submit() {
+      return { executionId: "terminal-without-result" }
+    },
+    async observe() {
+      return { state: "failed" }
+    },
+    async cancel() {},
+  }
+  const world = createExecutionWorld({
+    drivers: [makeSlurmExecutionDriver(backend, {
+      pollIntervalMs: 1,
+      recordEvidence() {},
+    })],
+  })
+  const command = ["python", "-c", "raise SystemExit(2)"]
+
+  const result = await world.execute({
+    kind: "sandbox",
+    capability: remoteCapability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place:slurm:terminal-without-result",
+      placement_class: "remote_worker",
+      runtime_id: "slurm",
+      capability_id: remoteCapability.capability_id,
+      metadata: {},
+    },
+    requestId: "req:slurm:terminal-without-result",
+    command,
+    driverId: "slurm",
+    deadlineMs: 1_000,
+    terminationGraceMs: 50,
+  })
+
+  assert.equal(result.kind, "sandbox")
+  assert.deepEqual(result.sandboxResult, {
+    schema_version: "bb.sandbox_result.v1",
+    request_id: "req:slurm:terminal-without-result",
+    status: "failed",
+    ...buildCanonicalSandboxEvidence({
+      command,
+      status: "failed",
+      exitCode: null,
+      stdout: "",
+      stderr: "",
+      evidenceMode: remoteCapability.evidence_mode,
+    }),
+    error: { reason: "scheduled_execution_failed" },
+  })
+})
+
+test("scheduled adapter rejects provider-specific terminal result evidence", async () => {
+  const capability = {
+    ...remoteCapability,
+    capability_id: "cap:ray:minimal-evidence",
+    evidence_mode: "minimal" as const,
+  }
+  const backend: ScheduledExecutionBackendV1 = {
+    backendId: "ray-minimal-evidence",
+    async submit() {
+      return { executionId: "ray-minimal-evidence-1" }
+    },
+    async observe() {
+      return {
+        state: "completed",
+        result: {
+          schema_version: "bb.sandbox_result.v1" as const,
+          request_id: "req:ray:minimal-evidence",
+          status: "completed" as const,
+          stdout_ref: `sha256:${"0".repeat(64)}`,
+          stderr_ref: `sha256:${"1".repeat(64)}`,
+          artifact_refs: [
+            `sha256:${"0".repeat(64)}`,
+            `sha256:${"1".repeat(64)}`,
+          ],
+          side_effect_digest: `sha256:${"2".repeat(64)}`,
+          usage: { exit_code: 0 },
+          evidence_refs: ["ray://provider/result"],
+        },
+      }
+    },
+    async cancel() {},
+  }
+  const world = createExecutionWorld({
+    drivers: [makeRayExecutionDriver(backend, {
+      pollIntervalMs: 1,
+      recordEvidence() {},
+    })],
+  })
+
+  const result = await world.execute({
+    kind: "sandbox",
+    capability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place:ray:minimal-evidence",
+      placement_class: "delegated_python",
+      runtime_id: "ray",
+      capability_id: capability.capability_id,
+    },
+    requestId: "req:ray:minimal-evidence",
+    command: ["python", "-c", "print('world')"],
+    driverId: "ray",
+  })
+
+  assert.equal(result.kind, "sandbox")
+  assert.equal(result.sandboxResult?.status, "failed")
+  assert.equal(JSON.stringify(result.sandboxResult).includes("ray://provider"), false)
+})
+
+
+
 
 test("SSH Slurm backend durably submits, polls, and cancels with external scheduler evidence", async () => {
   const invocations: string[][] = []
@@ -2014,9 +2139,9 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
       if (remoteCommand.includes("squeue")) return { stdout: squeueResult, stderr: "" }
       if (remoteCommand.includes("sacct")) return { stdout: sacctResult, stderr: "" }
       if (remoteCommand.includes("scancel")) return { stdout: "", stderr: "" }
-      if (remoteCommand.includes("if [ -f") && remoteCommand.includes(".out"))
+      if (remoteCommand.includes("if [ ! -f") && remoteCommand.includes(".out"))
         return { stdout: "world\n", stderr: "" }
-      if (remoteCommand.includes("if [ -f") && remoteCommand.includes(".err"))
+      if (remoteCommand.includes("if [ ! -f") && remoteCommand.includes(".err"))
         return { stdout: "", stderr: "" }
       assert.fail(`unexpected Slurm command: ${remoteCommand}`)
     },
@@ -2034,6 +2159,9 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
     deadlineAtMs: null,
     terminationGraceMs: 50,
   })
+  assert.ok(handle.evidenceRefs?.some((ref) => ref.endsWith(".receipt")))
+  assert.ok(handle.evidenceRefs?.some((ref) => ref.endsWith(".command.b64")))
+  assert.ok(handle.evidenceRefs?.some((ref) => ref.endsWith(".log")))
   assert.equal(handle.executionId, "24680")
   assert.equal(
     invocations[0]?.[1]?.includes("mkdir -p '/tmp/breadboard evidence'"),
@@ -2041,12 +2169,25 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   )
   assert.equal(invocations[0]?.[1]?.includes("setsid sh -c"), true)
   assert.equal(invocations[0]?.[1]?.includes("--wrap="), true)
+  assert.ok(invocations[0]?.[1]?.includes(`[ ! -s "$receipt" ]`))
+  assert.ok(
+    invocations[0]?.[1]?.includes(
+      `if [ -n "$id" ] && [ ! -s "$receipt" ]`,
+    ),
+  )
+  assert.ok(invocations[0]?.[1]?.includes(`kill -0 "$pid"`))
+  assert.ok(invocations[0]?.[1]?.includes(`cat "$lock/job"`))
+  assert.ok(invocations[0]?.[1]?.includes("scancel --name"))
+  assert.ok(invocations[0]?.[1]?.includes("timeout 30s sbatch"))
+  assert.ok(invocations[0]?.[1]?.includes(`rm -rf "$lock"; }; trap cleanup EXIT;`))
 
   const activeObservation = await backend.observe(handle.executionId)
   assert.equal(activeObservation.state, "running")
   assert.ok(
     activeObservation.evidenceRefs?.includes("slurm://job/24680/node/node-a"),
   )
+  assert.ok(invocations[0]?.[1]?.includes(`case "$id" in ""|*[!0-9]*) exit 65`))
+  assert.ok(invocations[0]?.[1]?.includes(`"$id" > "$receipt.tmp"`))
   squeueResult = ""
   const observation = await backend.observe(handle.executionId)
   assert.equal(observation.state, "completed")
@@ -2063,6 +2204,13 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
     observation.result?.stderr_ref,
   ])
   assert.ok(observation.result?.side_effect_digest?.startsWith("sha256:"))
+  assert.ok(
+    invocations.some(
+      (args) =>
+        args[1]?.includes("wc -c")
+        && args[1]?.includes(`[ "$size" -le 4194304 ]`),
+    ),
+  )
   assert.deepEqual(observation.evidenceRefs, [
     "slurm://job/24680",
     "slurm://job/24680/state/COMPLETED",
@@ -2074,15 +2222,27 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   const deadline = await backend.observe(handle.executionId)
   assert.equal(deadline.state, "timed_out")
   assert.deepEqual(deadline.result?.error, { reason: "execution_timed_out" })
-
+  sacctResult = "COMPLETED|0:9|node-a\n"
+  const signalled = await backend.observe(handle.executionId)
+  assert.equal(signalled.state, "failed")
+  assert.equal(signalled.result?.usage?.exit_code, 137)
+  sacctResult = "CANCELLED|0:15|node-a\n"
+  const canceledWithoutOutputs = await backend.observe(handle.executionId)
+  assert.equal(canceledWithoutOutputs.state, "cancelled")
+  assert.equal(canceledWithoutOutputs.result?.status, "cancelled")
+  const cancelDeadlineAtMs = Date.now() + 100
   await backend.cancel(handle.executionId, {
     reason: "cancelled",
     signal: new AbortController().signal,
-    deadlineAtMs: null,
+    deadlineAtMs: cancelDeadlineAtMs,
   })
-  assert.match(invocations[12]?.[1] ?? "", /^scancel '24680'$/)
-  assert.equal(commandTimeouts.length, 13)
+  const cancelCommand = [...invocations]
+    .reverse()
+    .find((args) => args[1]?.startsWith("scancel "))
+  assert.match(cancelCommand?.[1] ?? "", /^scancel '24680'$/)
+  assert.equal(commandTimeouts.length, invocations.length)
   assert.ok(commandTimeouts.every((timeout) => timeout > 0 && timeout <= 30_000))
+  assert.ok((commandTimeouts.at(-1) ?? Number.POSITIVE_INFINITY) <= 100)
 })
 
 test("SSH Slurm backend rejects unsafe targets and relative evidence paths", () => {
@@ -2135,6 +2295,46 @@ test("SSH Slurm backend recovers a durable receipt after an ambiguous launch ack
   })
   assert.equal(handle.executionId, "31415")
   assert.equal(launches, 1)
+})
+
+test("SSH Slurm backend rejects a reused request id with changed request content", async () => {
+  const original = buildRemoteSandboxRequest({
+    requestId: "req:slurm:collision",
+    capability: remoteCapability,
+    command: ["python", "-c", "print('original')"],
+    placementClass: "remote_worker",
+  })
+  const changed = buildRemoteSandboxRequest({
+    requestId: original.request_id,
+    capability: remoteCapability,
+    command: ["python", "-c", "print('changed')"],
+    placementClass: "remote_worker",
+  })
+  const encodedMetadata = Buffer.from(JSON.stringify(original), "utf8").toString("base64")
+  const backend = makeSshSlurmBackend({
+    sshTarget: "cluster.example",
+    remoteEvidenceDirectory: "/tmp/evidence",
+    async runCommand(_program, args) {
+      const remoteCommand = args[1] ?? ""
+      if (remoteCommand.includes("setsid sh -c")) return { stdout: "", stderr: "" }
+      if (remoteCommand.includes("submission-") && remoteCommand.includes("then cat")) {
+        return { stdout: "16180;cluster\n", stderr: "" }
+      }
+      if (remoteCommand.startsWith("cat ") && remoteCommand.includes(".request.b64")) {
+        return { stdout: encodedMetadata, stderr: "" }
+      }
+      assert.fail(`unexpected Slurm command: ${remoteCommand}`)
+    },
+  })
+
+  await assert.rejects(
+    () => backend.submit(changed, {
+      signal: new AbortController().signal,
+      deadlineAtMs: null,
+      terminationGraceMs: 50,
+    }),
+    /receipt request mismatch/,
+  )
 })
 
 test("SSH Slurm backend leaves a durable cancel marker when cancellation precedes a receipt", async () => {
