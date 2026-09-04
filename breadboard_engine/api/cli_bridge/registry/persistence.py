@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 import tempfile
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from functools import wraps
 from datetime import datetime
 from pathlib import Path
@@ -59,6 +59,34 @@ _PROVIDER_USAGE_FIELDS = {
     "extensions",
 }
 
+def _parent_tree_lock_path(
+    registry: Any,
+    record: SessionRecord,
+    session_id: str,
+) -> Path | None:
+    metadata = record.metadata if isinstance(record.metadata, Mapping) else {}
+    retained_child = metadata.get("durable_child")
+    root_session_id = (
+        retained_child.get("root_session_id")
+        if isinstance(retained_child, Mapping)
+        else session_id
+    )
+    if not isinstance(root_session_id, str) or not root_session_id.strip():
+        raise RuntimeError("parent cancellation root Session identity is invalid")
+    workspace = metadata.get("workspace")
+    if isinstance(workspace, str) and workspace.strip():
+        lock_root = Path(workspace).expanduser().resolve() / ".breadboard"
+    elif registry._state_root is not None:
+        lock_root = registry._state_root.parent / ".breadboard-child-tree-locks"
+    else:
+        return None
+    return lock_root / (
+        "child-tree-"
+        + hashlib.sha256(root_session_id.encode()).hexdigest()
+        + ".lock"
+    )
+
+
 def _fence_parent_cancellation(method):
     @wraps(method)
     async def fenced(self, session_id: str, *args: Any, **kwargs: Any):
@@ -67,28 +95,10 @@ def _fence_parent_cancellation(method):
             raise RuntimeError(
                 "parent cancellation requires a retained parent SessionRecord"
             )
-        metadata = record.metadata if isinstance(record.metadata, Mapping) else {}
-        retained_child = metadata.get("durable_child")
-        root_session_id = (
-            retained_child.get("root_session_id")
-            if isinstance(retained_child, Mapping)
-            else session_id
-        )
-        if not isinstance(root_session_id, str) or not root_session_id.strip():
-            raise RuntimeError("parent cancellation root Session identity is invalid")
-        workspace = metadata.get("workspace")
-        if isinstance(workspace, str) and workspace.strip():
-            lock_root = Path(workspace).expanduser().resolve() / ".breadboard"
-        elif self._state_root is not None:
-            lock_root = self._state_root.parent / ".breadboard-child-tree-locks"
-        else:
+        lock_path = _parent_tree_lock_path(self, record, session_id)
+        if lock_path is None:
             return await method(self, session_id, *args, **kwargs)
-        lock_root.mkdir(parents=True, exist_ok=True)
-        lock_path = lock_root / (
-            "child-tree-"
-            + hashlib.sha256(root_session_id.encode()).hexdigest()
-            + ".lock"
-        )
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
         with ProcessLock(lock_path):
             return await method(self, session_id, *args, **kwargs)
 
@@ -340,6 +350,19 @@ class PersistenceMixin:
         async with self._lock:
             self._refresh_records_from_disk_locked()
             return [record.to_summary() for record in self._records.values()]
+    @asynccontextmanager
+    async def fence_parent_turn_admission(self, session_id: str):
+        record = await self.get(session_id)
+        if record is None:
+            raise RuntimeError("turn admission requires a retained SessionRecord")
+        lock_path = _parent_tree_lock_path(self, record, session_id)
+        if lock_path is None:
+            yield
+            return
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with ProcessLock(lock_path):
+            yield
+
     async def update_status(self, session_id: str, status: SessionStatus) -> None:
         async with self._lock:
             with self._record_file_lock(session_id):

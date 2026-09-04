@@ -3397,7 +3397,15 @@ class SessionService:
                     original_disposition=disposition,
                 )
 
-        response = await self.registry.admit_turn(admit)
+        async with self.registry.fence_parent_turn_admission(session_id):
+            record = await self.ensure_session(session_id)
+            runner = getattr(record, "runner", None)
+            if not runner:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="session not active",
+                )
+            response = await self.registry.admit_turn(admit)
         if scheduled_after_admission:
             if len(scheduled_after_admission) != 1:
                 raise RuntimeError("admitted input has an invalid execution schedule")

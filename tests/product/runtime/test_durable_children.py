@@ -5053,6 +5053,56 @@ def test_parent_cancellation_waits_for_in_flight_admission(
     asyncio_run(scenario())
 
 
+def test_parent_cancellation_waits_for_cross_registry_turn_fence(
+    tmp_path: Path,
+) -> None:
+    from breadboard_engine.api.cli_bridge.models import SessionStatus
+    from breadboard_engine.api.cli_bridge.registry.records import SessionRecord
+
+    state_root = tmp_path / "registry"
+    workspace = tmp_path / "workspace"
+    admitting = SessionRegistry(state_root=state_root)
+    asyncio_run(
+        admitting.create(
+            SessionRecord(
+                "parent-session",
+                status=SessionStatus.RUNNING,
+                metadata={"workspace": str(workspace)},
+            )
+        )
+    )
+    cancelling = SessionRegistry(state_root=state_root)
+    cancellation_errors: list[BaseException] = []
+
+    def cancel_parent() -> None:
+        try:
+            asyncio_run(
+                cancelling.close_admission_for_parent_cancellation(
+                    "parent-session",
+                    work_item_id="work-a",
+                    reason="cancel during cross-registry admission",
+                    child_recovery_refs=[],
+                )
+            )
+        except BaseException as error:
+            cancellation_errors.append(error)
+
+    cancellation_thread = threading.Thread(target=cancel_parent)
+
+    async def hold_admission_fence() -> None:
+        async with admitting.fence_parent_turn_admission("parent-session"):
+            cancellation_thread.start()
+            await asyncio.sleep(0.05)
+            assert cancellation_thread.is_alive()
+
+    asyncio_run(hold_admission_fence())
+    cancellation_thread.join(timeout=2)
+
+    assert not cancellation_thread.is_alive()
+    assert cancellation_errors == []
+    assert await_record(cancelling, "parent-session").admission_closed is True
+
+
 def test_generic_metadata_update_preserves_newer_parent_cancellation(
     tmp_path: Path,
 ) -> None:
@@ -5376,6 +5426,37 @@ def test_parent_cancellation_refreshes_cross_process_descendants(
         for record in await_records(stale_registry)
         if isinstance(record.metadata.get("durable_child"), dict)
     }
+
+def test_nested_child_start_rejects_a_noncanonical_root_session(
+    tmp_path: Path,
+) -> None:
+    workspace, repository, parent_work, registry = _running_parent(tmp_path)
+    adapter = RetryAdapter()
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+    first = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent_work.read_model.work_item_id,
+        spec=_spec(adapter.family, "nested parent"),
+    )
+    first_work = WorkItem.restore(repository, first.child_work_item_id)
+
+    with pytest.raises(
+        ChildError,
+        match="root Session does not match retained parent lineage",
+    ):
+        factory.start(
+            parent_session_id=first.child_session_id,
+            root_session_id=first.child_session_id,
+            parent_work_item_id=first_work.read_model.work_item_id,
+            spec=_spec(adapter.family, "invalid nested root"),
+        )
+
 
 def test_parent_cancellation_fences_concurrent_child_start(
     tmp_path: Path,

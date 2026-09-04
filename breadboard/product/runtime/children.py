@@ -657,7 +657,8 @@ class DurableChildFactory:
     ) -> tuple[ChildState, ...]:
         if type(reason) is not str or not reason.strip():
             raise ValueError("reason must be a non-empty string")
-        transition_ids = self._root_transition_session_ids(parent_session_id)
+        root_session_id = self._tree_root_session_id(parent_session_id)
+        transition_ids = self._root_transition_session_ids(root_session_id)
         with self._lifecycle_lock, self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id), self._product_transition_guard(*transition_ids):
             return self._cancel_tree(
                 parent_session_id=parent_session_id,
@@ -675,7 +676,8 @@ class DurableChildFactory:
     ) -> tuple[ChildState, ...]:
         if type(reason) is not str or not reason.strip():
             raise ValueError("reason must be a non-empty string")
-        transition_ids = self._root_transition_session_ids(parent_session_id)
+        root_session_id = self._tree_root_session_id(parent_session_id)
+        transition_ids = self._root_transition_session_ids(root_session_id)
         with self._lifecycle_lock, self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id), self._product_transition_guard(*transition_ids):
             return self._cancel_tree(
                 parent_session_id=parent_session_id,
@@ -1007,6 +1009,19 @@ class DurableChildFactory:
     def _registry(self, method: str, *args: Any, **kwargs: Any) -> Any:
         return _sync(getattr(self.registry, method)(*args, **kwargs))
 
+    def _tree_root_session_id(self, session_id: str) -> str:
+        record = self._registry("get", session_id)
+        if record is None:
+            return session_id
+        metadata = record.metadata if isinstance(record.metadata, dict) else {}
+        retained = metadata.get("durable_child")
+        if not isinstance(retained, Mapping):
+            return session_id
+        root_session_id = retained.get("root_session_id")
+        if not isinstance(root_session_id, str) or not root_session_id.strip():
+            raise ChildError("retained child root Session identity is invalid")
+        return root_session_id
+
     def _root_transition_session_ids(self, root_session_id: str) -> tuple[str, ...]:
         session_ids = {root_session_id}
         for record in self._registry("records"):
@@ -1222,8 +1237,13 @@ class DurableChildFactory:
         self._status(state)
         return state
     def start(self, *, parent_session_id: str, root_session_id: str, parent_work_item_id: str, spec: ChildSpec) -> ChildActivation:
+        if type(root_session_id) is not str or not root_session_id.strip():
+            raise ValueError("root_session_id must be a non-empty string")
         with self._lifecycle_lock, self._tree_process_lock(root_session_id), self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id):
-            return self._start(parent_session_id=parent_session_id, root_session_id=root_session_id, parent_work_item_id=parent_work_item_id, spec=spec)
+            canonical_root_session_id = self._tree_root_session_id(parent_session_id)
+            if root_session_id != canonical_root_session_id:
+                raise ChildError("root Session does not match retained parent lineage")
+            return self._start(parent_session_id=parent_session_id, root_session_id=canonical_root_session_id, parent_work_item_id=parent_work_item_id, spec=spec)
     def _start(self, *, parent_session_id: str, root_session_id: str, parent_work_item_id: str, spec: ChildSpec) -> ChildActivation:
         if spec.adapter_family not in self.adapters:
             raise ChildError(f"child adapter family is not registered: {spec.adapter_family}")
