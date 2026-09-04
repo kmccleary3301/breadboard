@@ -467,6 +467,76 @@ def test_product_turns_retain_ctree_identity_sequence() -> None:
     assert unrelated.ctree_store.nodes == []
 
 
+def test_product_turn_restore_merges_cached_post_compaction_facts() -> None:
+    conductor_type = OpenAIConductor.__ray_metadata__.modified_class
+    conductor = object.__new__(conductor_type)
+    conductor._retained_ctree_session_id = None
+    conductor._retained_ctree_events = None
+    first = SessionState("ws", "image", {})
+    first.ctree_store.record("message", {"role": "user"})
+    product = Session.start(
+        EffectiveHarnessLock._from_record(
+            {"graph_hash": "sha256:" + "a" * 64}
+        ),
+        "long horizon",
+    )
+    product.compact(first.compaction_snapshot())
+    first.ctree_store.record("message", {"role": "assistant"})
+    conductor._retain_ctree(first, "product-session")
+
+    restarted = SessionState("ws", "image", {})
+    conductor._restore_turn_ctree(
+        restarted,
+        "product-session",
+        resume_ctree_events=None,
+        resume_retained_raw_fact_ids=(),
+        retained_raw_fact_ids=product.raw_fact_ids,
+    )
+
+    assert [node["id"] for node in restarted.ctree_store.nodes] == [
+        "ctn_000002"
+    ]
+    assert (
+        restarted.ctree_store.record("message", {"role": "user"})
+        == "ctn_000003"
+    )
+    snapshot = restarted.create_snapshot("mock")
+    assert snapshot["retained_raw_fact_ids"] == ["ctn_000001"]
+    resumed = SessionState("ws", "image", {})
+    conductor._restore_turn_ctree(
+        resumed,
+        "product-session",
+        resume_ctree_events=snapshot["ctree_events"],
+        resume_retained_raw_fact_ids=snapshot["retained_raw_fact_ids"],
+        retained_raw_fact_ids=product.raw_fact_ids,
+    )
+    assert [node["id"] for node in resumed.ctree_store.nodes] == [
+        "ctn_000002",
+        "ctn_000003",
+    ]
+    assert (
+        resumed.ctree_store.record("message", {"role": "assistant"})
+        == "ctn_000004"
+    )
+    conductor._retain_ctree(restarted, "product-session")
+    next_turn = SessionState("ws", "image", {})
+    conductor._restore_turn_ctree(
+        next_turn,
+        "product-session",
+        resume_ctree_events=None,
+        resume_retained_raw_fact_ids=(),
+        retained_raw_fact_ids=product.raw_fact_ids,
+    )
+    assert [node["id"] for node in next_turn.ctree_store.nodes] == [
+        "ctn_000002",
+        "ctn_000003",
+    ]
+    assert (
+        next_turn.ctree_store.record("message", {"role": "assistant"})
+        == "ctn_000004"
+    )
+
+
 def test_context_threshold_emits_exact_effective_provider_context() -> None:
     collector = EventCollector()
     state = SessionState(

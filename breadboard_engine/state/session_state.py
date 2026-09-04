@@ -623,12 +623,18 @@ class SessionState:
                 restored.snapshot() if last_node is not None else None
             )
 
-    def restore_ctree_events(self, events: Any) -> None:
-        """Restore retained C-Tree identities before admitting new facts."""
+    def restore_ctree_events(
+        self,
+        events: Any,
+        *,
+        retained_raw_fact_ids: Any = (),
+    ) -> None:
+        """Restore live C-Tree events and their already-compacted identity prefix."""
         if not isinstance(events, list) or any(
             not isinstance(event, dict) for event in events
         ):
             raise ValueError("ctree_events must be an array of objects")
+        retained_prefix = CTreeStore.validate_node_ids(retained_raw_fact_ids)
         retained_events = copy.deepcopy(events)
         restored = CTreeStore.from_events(retained_events)
         if restored.events != retained_events:
@@ -653,13 +659,20 @@ class SessionState:
         if len(set(event_ids)) != len(event_ids) or len(set(node_ids)) != len(node_ids):
             raise ValueError("ctree_events contains duplicate retained identities")
         restored.validate_node_ids(node_ids)
+        restored.reserve_node_ids(retained_prefix)
         with self._compaction_lock:
             self.ctree_store = restored
+            self._retained_raw_fact_ids = retained_prefix
             last_node = restored.nodes[-1] if restored.nodes else None
             self._last_ctree_node_id = (
                 str(last_node["id"]) if isinstance(last_node, dict) else None
             )
             self._last_ctree_snapshot = restored.snapshot()
+
+    @property
+    def retained_raw_fact_ids(self) -> tuple[str, ...]:
+        with self._compaction_lock:
+            return self._retained_raw_fact_ids
 
     def add_message(self, message: Dict[str, Any], to_provider: bool = True):
         with self._compaction_lock:
@@ -1172,6 +1185,7 @@ class SessionState:
                 "reward_metrics": copy.deepcopy(self.reward_metrics_payload()),
                 "provider_metadata": copy.deepcopy(self.provider_metadata),
                 "ctree_events": copy.deepcopy(self.ctree_store.events),
+                "retained_raw_fact_ids": list(self._retained_raw_fact_ids),
                 "todos": copy.deepcopy(self.todo_snapshot()),
                 "reasoning_trace_counts": {
                     "encrypted": len(self.reasoning_traces.get_encrypted_traces()),

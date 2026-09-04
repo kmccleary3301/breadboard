@@ -427,6 +427,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         self._active_session_state: Optional[SessionState] = None
         self._retained_ctree_session_id: Optional[str] = None
         self._retained_ctree_events: Optional[List[Dict[str, Any]]] = None
+        self._retained_ctree_raw_fact_ids: tuple[str, ...] = ()
         self._multi_agent_last_wakeup_event_id = 0
 
     def _restore_retained_ctree(
@@ -436,11 +437,38 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             self._retained_ctree_session_id == session_id
             and self._retained_ctree_events is not None
         ):
-            session_state.restore_ctree_events(self._retained_ctree_events)
+            session_state.restore_ctree_events(
+                self._retained_ctree_events,
+                retained_raw_fact_ids=getattr(
+                    self,
+                    "_retained_ctree_raw_fact_ids",
+                    (),
+                ),
+            )
+
+    def _restore_turn_ctree(
+        self,
+        session_state: SessionState,
+        session_id: str,
+        *,
+        resume_ctree_events: Any,
+        resume_retained_raw_fact_ids: Any,
+        retained_raw_fact_ids: Any,
+    ) -> None:
+        if resume_ctree_events is not None:
+            session_state.restore_ctree_events(
+                resume_ctree_events,
+                retained_raw_fact_ids=resume_retained_raw_fact_ids,
+            )
+        else:
+            self._restore_retained_ctree(session_state, session_id)
+        if retained_raw_fact_ids is not None:
+            session_state.restore_raw_fact_ids(retained_raw_fact_ids)
 
     def _retain_ctree(self, session_state: SessionState, session_id: str) -> None:
         self._retained_ctree_session_id = session_id
         self._retained_ctree_events = copy.deepcopy(session_state.ctree_store.events)
+        self._retained_ctree_raw_fact_ids = session_state.retained_raw_fact_ids
 
     def request_stop(self) -> None:
         """Best-effort interrupt: stop the current run at the next safe boundary."""
@@ -6308,6 +6336,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         }
         resume_snapshot = self._load_resume_snapshot()
         resume_has_system = False
+        resume_ctree_events: Any = None
+        resume_retained_raw_fact_ids: Any = ()
         if isinstance(resume_snapshot, dict):
             seed_messages = resume_snapshot.get("messages")
             if isinstance(seed_messages, list):
@@ -6340,14 +6370,19 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             meta = resume_snapshot.get("provider_metadata")
             if isinstance(meta, dict):
                 session_state.provider_metadata.update(meta)
-            ctree_events = resume_snapshot.get("ctree_events")
-            if ctree_events is not None:
-                session_state.restore_ctree_events(ctree_events)
+            resume_ctree_events = resume_snapshot.get("ctree_events")
+            resume_retained_raw_fact_ids = resume_snapshot.get(
+                "retained_raw_fact_ids",
+                (),
+            )
             session_state.set_provider_metadata("resume_snapshot_applied", True)
-        if retained_raw_fact_ids is not None:
-            session_state.restore_raw_fact_ids(retained_raw_fact_ids)
-        else:
-            self._restore_retained_ctree(session_state, provider_session_id)
+        self._restore_turn_ctree(
+            session_state,
+            provider_session_id,
+            resume_ctree_events=resume_ctree_events,
+            resume_retained_raw_fact_ids=resume_retained_raw_fact_ids,
+            retained_raw_fact_ids=retained_raw_fact_ids,
+        )
         # Resume snapshots are subordinate to the owning product session.
         session_state.set_provider_metadata("session_id", provider_session_id)
         # Resume metadata is session-scoped, but these fields are turn-scoped.
