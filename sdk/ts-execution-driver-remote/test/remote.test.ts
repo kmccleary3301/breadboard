@@ -2576,6 +2576,7 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   let squeueResult = ""
   let oversizedTerminalOutput = false
   let missingTerminalOutput = false
+  let malformedTerminalOutput = false
   const backend = makeSshSlurmBackend({
     sshTarget: "cluster.example",
     remoteEvidenceDirectory: "/tmp/breadboard evidence",
@@ -2602,7 +2603,9 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
         const content = remoteCommand.includes(".out")
           ? oversizedTerminalOutput ? "abcdefghij" : "world\n"
           : oversizedTerminalOutput ? "error-data" : ""
-        const bytes = Buffer.from(content, "utf8")
+        const bytes = malformedTerminalOutput
+          ? remoteCommand.includes(".out") ? Buffer.from([0x66, 0x80]) : Buffer.from([0x67, 0xff])
+          : Buffer.from(content, "utf8")
         const digest = createHash("sha256").update(bytes).digest("hex")
         return {
           stdout: `F:${bytes.length}:${digest}\n`,
@@ -2621,7 +2624,10 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
           /\bcount=(\d+)/.exec(remoteCommand)?.[1] ?? "",
           10,
         )
-        const bytes = Buffer.from(content, "utf8").subarray(offset, offset + count)
+        const source = malformedTerminalOutput
+          ? remoteCommand.includes(".out") ? Buffer.from([0x66, 0x80]) : Buffer.from([0x67, 0xff])
+          : Buffer.from(content, "utf8")
+        const bytes = source.subarray(offset, offset + count)
         return { stdout: bytes.toString("base64"), stderr: "" }
       }
       assert.fail(`unexpected Slurm command: ${remoteCommand}`)
@@ -2721,6 +2727,17 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
     observation.result?.stdout_ref,
     observation.result?.stderr_ref,
   ])
+  malformedTerminalOutput = true
+  const malformedObservation = await backend.observe(handle.executionId)
+  assert.equal(
+    malformedObservation.result?.stdout_ref,
+    `sha256:${createHash("sha256").update("f\ufffd").digest("hex")}`,
+  )
+  assert.equal(
+    malformedObservation.result?.stderr_ref,
+    `sha256:${createHash("sha256").update("g\ufffd").digest("hex")}`,
+  )
+  malformedTerminalOutput = false
   missingTerminalOutput = true
   await assert.rejects(
     () => backend.observe(handle.executionId),
@@ -3185,11 +3202,13 @@ test("SSH Slurm backend reconciles an active job after adapter restart", async (
   )
   const recovered = makeSshSlurmBackend({
     sshTarget: "cluster.example",
-    remoteEvidenceDirectory: "/tmp/evidence/",
+    remoteEvidenceDirectory: "/tmp//nested/../evidence/",
     async runCommand(_program, args) {
       const remoteCommand = args[1] ?? ""
-      if (remoteCommand.startsWith("cat ") && remoteCommand.includes(".request.b64"))
+      if (remoteCommand.startsWith("cat ") && remoteCommand.includes(".request.b64")) {
+        assert.ok(remoteCommand.includes("'/tmp/evidence/slurm-27182.request.b64'"))
         return { stdout: encodedMetadata, stderr: "" }
+      }
       if (remoteCommand.includes("squeue"))
         return { stdout: `${recoveredJobName}|RUNNING|node-recovered\n`, stderr: "" }
       assert.fail(`unexpected Slurm command: ${remoteCommand}`)

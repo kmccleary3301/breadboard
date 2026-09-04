@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto"
 import { execFile } from "node:child_process"
+import { posix as posixPath } from "node:path"
 import { promisify } from "node:util"
 
 import { assertValid, type SandboxRequestV1, type SandboxResultV1 } from "@breadboard/kernel-contracts"
@@ -230,7 +231,7 @@ export function makeSshSlurmBackend(
   if (!rawEvidenceDirectory.startsWith("/")) {
     throw new Error("remoteEvidenceDirectory must be an absolute path")
   }
-  const evidenceDirectory = rawEvidenceDirectory.replace(/\/+$/, "") || "/"
+  const evidenceDirectory = posixPath.normalize(rawEvidenceDirectory).replace(/\/+$/, "") || "/"
   const sshProgram = options.sshProgram ?? "ssh"
   const runCommand = options.runCommand ?? defaultRunCommand
   const maxOutputBytes = options.maxOutputBytes ?? 4 * 1024 * 1024
@@ -642,12 +643,6 @@ export function makeSshSlurmBackend(
           throw new Error("Slurm output content does not match remote evidence")
         }
         const content = bytes.toString("utf8")
-        if (
-          Buffer.byteLength(content, "utf8") !== size
-          || createHash("sha256").update(content).digest("hex") !== remoteDigest
-        ) {
-          throw new Error("Slurm output is not canonical UTF-8 text")
-        }
         return {
           content,
           evidenceRefs: [],
