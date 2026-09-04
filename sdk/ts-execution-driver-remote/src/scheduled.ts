@@ -7,6 +7,7 @@ import {
 } from "@breadboard/kernel-contracts"
 import {
   buildAndPersistCanonicalSandboxEvidence,
+  buildCanonicalSandboxSideEffectDigest,
   isPlacementCompatible,
   type ExecutionDriverExecutionContextV1,
   type ExecutionDriverTerminationContextV1,
@@ -192,6 +193,12 @@ async function scheduledFailureResult(
     error: { reason },
   })
 }
+function requireCanonicalExitCode(value: unknown): number | null {
+  if (value === null) return null
+  if (typeof value === "number" && Number.isSafeInteger(value)) return value
+  throw new Error("scheduled execution result requires canonical exit-code usage")
+}
+
 
 function assertProviderNeutralResultEvidence(
   request: SandboxRequestV1,
@@ -204,31 +211,41 @@ function assertProviderNeutralResultEvidence(
   if (!result.stderr_ref || !digest.test(result.stderr_ref)) {
     throw new Error("scheduled execution result requires provider-neutral stderr evidence")
   }
-  if (!result.artifact_refs?.length || result.artifact_refs.some((ref) => !digest.test(ref))) {
-    throw new Error("scheduled execution result requires provider-neutral artifact evidence")
-  }
-  if (!result.side_effect_digest || !digest.test(result.side_effect_digest)) {
-    throw new Error("scheduled execution result requires a provider-neutral side-effect digest")
-  }
-  if (request.evidence_mode !== "minimal" && !result.usage) {
-    throw new Error("scheduled execution result requires usage metadata")
+  if (
+    !result.artifact_refs?.includes(result.stdout_ref)
+    || !result.artifact_refs.includes(result.stderr_ref)
+    || result.artifact_refs.some((ref) => !digest.test(ref))
+  ) {
+    throw new Error("scheduled execution result requires canonical output artifact evidence")
   }
   if (
-    request.evidence_mode === "minimal"
-      ? (result.evidence_refs?.length ?? 0) !== 0
-      : (!result.evidence_refs?.length
-        || result.evidence_refs.some((ref) => !digest.test(ref)))
+    result.usage == null
+    || Object.keys(result.usage).some((key) => key !== "exit_code")
+    || !("exit_code" in result.usage)
   ) {
-    throw new Error("scheduled execution result has invalid provider-neutral evidence digests")
+    throw new Error("scheduled execution result requires canonical exit-code usage")
   }
+  const exitCode = requireCanonicalExitCode(result.usage.exit_code)
+  const expectedSideEffectDigest = buildCanonicalSandboxSideEffectDigest({
+    command: request.command,
+    status: result.status,
+    exitCode,
+    stdoutRef: result.stdout_ref,
+    stderrRef: result.stderr_ref,
+  })
+  if (result.side_effect_digest !== expectedSideEffectDigest) {
+    throw new Error("scheduled execution result side-effect digest does not match its evidence")
+  }
+  const expectedEvidenceRefs = request.evidence_mode === "minimal"
+    ? []
+    : [expectedSideEffectDigest]
   if (
-    result.placement_id != null
-    || (result.usage != null
-      && (
-        Object.keys(result.usage).some((key) => key !== "exit_code")
-        || !("exit_code" in result.usage)
-      ))
+    result.evidence_refs?.length !== expectedEvidenceRefs.length
+    || expectedEvidenceRefs.some((ref) => !result.evidence_refs?.includes(ref))
   ) {
+    throw new Error("scheduled execution result has invalid canonical evidence references")
+  }
+  if (result.placement_id != null) {
     throw new Error("scheduled execution result contains provider-specific result metadata")
   }
 }

@@ -1777,6 +1777,14 @@ test("Ray scheduled adapter polls to one provider-neutral result", async () => {
   const states = ["accepted", "running", "completed"] as const
   let observation = 0
   const recordedEvidence: object[] = []
+  const terminalEvidence = buildCanonicalSandboxEvidence({
+    command: ["python", "-c", "print('world')"],
+    status: "completed",
+    exitCode: 0,
+    stdout: "world\n",
+    stderr: "",
+    evidenceMode: remoteCapability.evidence_mode,
+  })
   const backend: ScheduledExecutionBackendV1 = {
     backendId: "ray-local",
     async submit() {
@@ -1794,15 +1802,7 @@ test("Ray scheduled adapter polls to one provider-neutral result", async () => {
               schema_version: "bb.sandbox_result.v1",
               request_id: "req:ray:1",
               status: "completed",
-              stdout_ref: `sha256:${"0".repeat(64)}`,
-              stderr_ref: `sha256:${"1".repeat(64)}`,
-              artifact_refs: [
-                `sha256:${"0".repeat(64)}`,
-                `sha256:${"1".repeat(64)}`,
-              ],
-              side_effect_digest: `sha256:${"2".repeat(64)}`,
-              usage: { exit_code: 0 },
-              evidence_refs: [`sha256:${"3".repeat(64)}`],
+              ...terminalEvidence,
             },
             evidenceRefs: ["evidence://ray/terminal"],
           }
@@ -1843,7 +1843,7 @@ test("Ray scheduled adapter polls to one provider-neutral result", async () => {
   assert.equal(result.kind, "sandbox")
   assert.equal(result.driverId, "ray")
   assert.equal(result.sandboxResult?.status, "completed")
-  assert.deepEqual(result.sandboxResult?.evidence_refs, [`sha256:${"3".repeat(64)}`])
+  assert.deepEqual(result.sandboxResult?.evidence_refs, terminalEvidence.evidence_refs)
   assert.deepEqual(recordedEvidence.at(-1), {
     driverId: "ray",
     backendId: "ray-local",
@@ -2172,6 +2172,14 @@ test("scheduled cancellation bounds a hung backend cancel call", async () => {
 test("scheduled adapter cleans up after observation transport failure", async () => {
   let cancelled = false
   let observations = 0
+  const cancellationEvidence = buildCanonicalSandboxEvidence({
+    command: ["python", "-c", "print('observe')"],
+    status: "cancelled",
+    exitCode: null,
+    stdout: "",
+    stderr: "",
+    evidenceMode: remoteCapability.evidence_mode,
+  })
   const backend: ScheduledExecutionBackendV1 = {
     backendId: "ray-observe-failure",
     async submit() {
@@ -2187,15 +2195,7 @@ test("scheduled adapter cleans up after observation transport failure", async ()
               schema_version: "bb.sandbox_result.v1",
               request_id: "req:ray:observe-failure",
               status: "cancelled",
-              stdout_ref: `sha256:${"a".repeat(64)}`,
-              stderr_ref: `sha256:${"d".repeat(64)}`,
-              artifact_refs: [
-                `sha256:${"a".repeat(64)}`,
-                `sha256:${"d".repeat(64)}`,
-              ],
-              side_effect_digest: `sha256:${"b".repeat(64)}`,
-              usage: { exit_code: null },
-              evidence_refs: [`sha256:${"c".repeat(64)}`],
+              ...cancellationEvidence,
               error: { reason: "execution_cancelled" },
             },
           }
@@ -2291,6 +2291,14 @@ test("scheduled adapter rejects unknown states before recording evidence", async
 test("scheduled adapter coalesces identical active requests and rejects collisions", async () => {
   let releases = 0
   let submits = 0
+  const terminalEvidence = buildCanonicalSandboxEvidence({
+    command: ["python", "-c", "print('same')"],
+    status: "completed",
+    exitCode: 0,
+    stdout: "same\n",
+    stderr: "",
+    evidenceMode: remoteCapability.evidence_mode,
+  })
   let releaseSubmit!: (value: { executionId: string }) => void
   const backend: ScheduledExecutionBackendV1 = {
     backendId: "ray-idempotent",
@@ -2307,15 +2315,7 @@ test("scheduled adapter coalesces identical active requests and rejects collisio
           schema_version: "bb.sandbox_result.v1",
           request_id: "req:ray:idempotent",
           status: "completed",
-          stdout_ref: `sha256:${"0".repeat(64)}`,
-          stderr_ref: `sha256:${"1".repeat(64)}`,
-          artifact_refs: [
-            `sha256:${"0".repeat(64)}`,
-            `sha256:${"1".repeat(64)}`,
-          ],
-          side_effect_digest: `sha256:${"2".repeat(64)}`,
-          usage: { exit_code: 0 },
-          evidence_refs: [`sha256:${"3".repeat(64)}`],
+          ...terminalEvidence,
         },
       }
     },
@@ -2377,6 +2377,14 @@ test("scheduled adapter coalesces identical active requests and rejects collisio
 
 test("Slurm scheduled adapter confirms cancellation before timeout settlement", async () => {
   let cancelled = false
+  const cancellationEvidence = buildCanonicalSandboxEvidence({
+    command: ["python", "-c", "print('world')"],
+    status: "cancelled",
+    exitCode: null,
+    stdout: "",
+    stderr: "",
+    evidenceMode: remoteCapability.evidence_mode,
+  })
   const backend: ScheduledExecutionBackendV1 = {
     backendId: "slurm-cluster",
     async submit() {
@@ -2390,15 +2398,7 @@ test("Slurm scheduled adapter confirms cancellation before timeout settlement", 
           schema_version: "bb.sandbox_result.v1",
           request_id: "req:slurm:1",
           status: "cancelled",
-          stdout_ref: `sha256:${"0".repeat(64)}`,
-          stderr_ref: `sha256:${"1".repeat(64)}`,
-          artifact_refs: [
-            `sha256:${"0".repeat(64)}`,
-            `sha256:${"1".repeat(64)}`,
-          ],
-          side_effect_digest: `sha256:${"2".repeat(64)}`,
-          usage: { exit_code: null },
-          evidence_refs: [`sha256:${"3".repeat(64)}`],
+          ...cancellationEvidence,
           error: { reason: "execution_cancelled" },
         },
       } as const
@@ -2439,7 +2439,7 @@ test("Slurm scheduled adapter confirms cancellation before timeout settlement", 
   assert.equal(cancelled, true)
   assert.equal(result.sandboxResult?.status, "timed_out")
   assert.equal(result.livenessEvidence.state, "timed_out")
-  assert.equal(result.sandboxResult?.stdout_ref, `sha256:${"0".repeat(64)}`)
+  assert.equal(result.sandboxResult?.stdout_ref, cancellationEvidence.stdout_ref)
   assert.deepEqual(result.sandboxResult?.evidence_refs, [])
   assert.equal(result.sandboxResult?.side_effect_digest, null)
   assert.equal(result.livenessEvidence.terminationObserved, true)

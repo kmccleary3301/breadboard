@@ -294,6 +294,36 @@ export interface CanonicalSandboxEvidenceV1 {
   readonly evidence_refs: string[]
 }
 
+function canonicalSandboxDigest(value: string): string {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`
+}
+
+function buildCanonicalSandboxSideEffectManifest(input: {
+  command: readonly string[]
+  status: SandboxResultV1["status"]
+  exitCode: number | null
+  stdoutRef: string
+  stderrRef: string
+}): string {
+  return JSON.stringify({
+    command: input.command,
+    exit_code: input.exitCode,
+    status: input.status,
+    stderr_ref: input.stderrRef,
+    stdout_ref: input.stdoutRef,
+  })
+}
+
+export function buildCanonicalSandboxSideEffectDigest(input: {
+  command: readonly string[]
+  status: SandboxResultV1["status"]
+  exitCode: number | null
+  stdoutRef: string
+  stderrRef: string
+}): string {
+  return canonicalSandboxDigest(buildCanonicalSandboxSideEffectManifest(input))
+}
+
 function deriveCanonicalSandboxEvidence(input: {
   command: readonly string[]
   status: SandboxResultV1["status"]
@@ -305,18 +335,16 @@ function deriveCanonicalSandboxEvidence(input: {
   evidence: CanonicalSandboxEvidenceV1
   sideEffectManifest: string
 } {
-  const digest = (value: string) =>
-    `sha256:${createHash("sha256").update(value).digest("hex")}`
-  const stdoutRef = digest(input.stdout)
-  const stderrRef = digest(input.stderr)
-  const sideEffectManifest = JSON.stringify({
+  const stdoutRef = canonicalSandboxDigest(input.stdout)
+  const stderrRef = canonicalSandboxDigest(input.stderr)
+  const sideEffectManifest = buildCanonicalSandboxSideEffectManifest({
     command: input.command,
-    exit_code: input.exitCode,
     status: input.status,
-    stderr_ref: stderrRef,
-    stdout_ref: stdoutRef,
+    exitCode: input.exitCode,
+    stdoutRef,
+    stderrRef,
   })
-  const sideEffectDigest = digest(sideEffectManifest)
+  const sideEffectDigest = canonicalSandboxDigest(sideEffectManifest)
   return {
     evidence: {
       stdout_ref: stdoutRef,
