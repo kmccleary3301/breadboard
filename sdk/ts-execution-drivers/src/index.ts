@@ -50,7 +50,7 @@ export interface ExecutionDriverV1 {
       signal: AbortSignal
       deadlineAtMs: number | null
     },
-  ): Promise<void> | void
+  ): Promise<SandboxResultV1 | void> | SandboxResultV1 | void
 }
 
 export interface TerminalSessionStartInputV1 {

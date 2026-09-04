@@ -706,12 +706,12 @@ export function createExecutionWorld(input: {
 
     const terminateExecution = async (
       reason: "deadline" | "cancelled",
-    ): Promise<boolean> => {
+    ): Promise<{ readonly observed: boolean; readonly result?: SandboxResultV1 }> => {
       if (!driver.terminate) {
         deferRelease(executePromise)
-        return false
+        return { observed: false }
       }
-      let termination: Promise<unknown>
+      let termination: Promise<SandboxResultV1 | void>
       try {
         termination = Promise.resolve(
           driver.terminate(request, {
@@ -722,35 +722,39 @@ export function createExecutionWorld(input: {
         )
       } catch {
         deferRelease(executePromise)
-        return false
+        return { observed: false }
       }
-      const observed = await settleWithin(termination, terminationGraceMs)
-      if (!observed) {
+      const settled = await settleValueWithin(termination, terminationGraceMs)
+      if (!settled.settled) {
         deferRelease(termination.catch(() => executePromise))
+        return { observed: false }
       }
-      return observed
+      return settled.value
+        ? { observed: true, result: settled.value }
+        : { observed: true }
     }
 
     const requestTermination = async (reason: "deadline" | "cancelled"): Promise<void> => {
       if (terminalized) return
       terminalized = true
       controller.abort(new Error(reason === "deadline" ? "execution deadline exceeded" : "execution cancelled"))
-      const terminationObserved = executionStarted
+      const termination = executionStarted
         ? await terminateExecution(reason)
-        : false
+        : { observed: false }
       const liveness = buildLivenessEvidence({
         requestId: request.request_id,
         state: reason === "deadline" ? "timed_out" : "cancelled",
         executionStarted,
         terminationRequested: executionStarted,
-        terminationObserved,
+        terminationObserved: termination.observed,
       })
       if (reason === "deadline") notifyTimeout(liveness)
       resolveTerminal?.({
         status: reason === "deadline" ? "timed_out" : "cancelled",
+        result: termination.result,
         executionStarted,
         terminationRequested: executionStarted,
-        terminationObserved,
+        terminationObserved: termination.observed,
       })
     }
 
@@ -814,22 +818,23 @@ export function createExecutionWorld(input: {
             const isCancelled = signalAborted && !isTimeout
             if (isTimeout || isCancelled) {
               const reason = isTimeout ? "deadline" : "cancelled"
-              const terminationObserved = await terminateExecution(reason)
+              const termination = await terminateExecution(reason)
               resolveTerminal?.({
                 status: isTimeout ? "timed_out" : "cancelled",
+                result: termination.result,
                 error,
                 executionStarted: true,
                 terminationRequested: true,
-                terminationObserved,
+                terminationObserved: termination.observed,
               })
             } else {
-              const terminationObserved = await terminateExecution("cancelled")
+              const termination = await terminateExecution("cancelled")
               resolveTerminal?.({
                 status: "failed",
                 error,
                 executionStarted: true,
                 terminationRequested: Boolean(driver.terminate),
-                terminationObserved,
+                terminationObserved: termination.observed,
               })
             }
           }

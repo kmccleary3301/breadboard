@@ -89,6 +89,23 @@ function requestDigest(request: SandboxRequestV1): string {
   return sha256(canonicalScheduledRequestKey(request))
 }
 
+function durableExecutionHandle(jobId: string, digest: string): string {
+  return `${jobId}@${digest.slice("sha256:".length)}`
+}
+
+function parseExecutionHandle(value: string): {
+  readonly jobId: string
+  readonly expectedRequestDigest: string | null
+} {
+  const match = /^(\d+)(?:@([0-9a-f]{64}))?$/.exec(value)
+  if (!match) throw new Error("invalid Slurm execution id")
+  return {
+    jobId: match[1]!,
+    expectedRequestDigest: match[2] ? `sha256:${match[2]}` : null,
+  }
+}
+
+
 function retainedSubmission(request: SandboxRequestV1): string {
   return JSON.stringify({ request, requestDigest: requestDigest(request) })
 }
@@ -240,13 +257,27 @@ export function makeSshSlurmBackend(
   }
 
   async function loadExecution(executionId: string): Promise<SubmittedSlurmExecution> {
-    if (!/^\d+$/.test(executionId)) throw new Error("invalid Slurm execution id")
-    const cached = submitted.get(executionId)
-    if (cached) return cached
-    const metadataPath = remotePath(evidenceDirectory, `slurm-${executionId}.request.b64`)
+    const identity = parseExecutionHandle(executionId)
+    const cached = submitted.get(identity.jobId)
+    if (cached) {
+      if (
+        identity.expectedRequestDigest !== null
+        && cached.requestDigest !== identity.expectedRequestDigest
+      ) {
+        throw new Error("Slurm execution handle no longer owns the scheduler job id")
+      }
+      return cached
+    }
+    const metadataPath = remotePath(evidenceDirectory, `slurm-${identity.jobId}.request.b64`)
     const metadata = await ssh(`cat ${shellQuote(metadataPath)}`)
-    const execution = parseExecution(metadata.stdout, evidenceDirectory, executionId)
-    submitted.set(executionId, execution)
+    const execution = parseExecution(metadata.stdout, evidenceDirectory, identity.jobId)
+    if (
+      identity.expectedRequestDigest !== null
+      && execution.requestDigest !== identity.expectedRequestDigest
+    ) {
+      throw new Error("Slurm execution handle no longer owns the scheduler job id")
+    }
+    submitted.set(identity.jobId, execution)
     return execution
   }
 
@@ -281,6 +312,9 @@ export function makeSshSlurmBackend(
         `timeout ${commandTimeoutSeconds}s sbatch --parsable`,
         `--job-name=${shellQuote(jobName)}`,
         `--output=${shellQuote(remotePath(evidenceDirectory, "slurm-%j.out"))}`,
+        ...(request.workspace_ref
+          ? [`--chdir=${shellQuote(request.workspace_ref)}`]
+          : []),
         `--error=${shellQuote(remotePath(evidenceDirectory, "slurm-%j.err"))}`,
         `--wrap=${shellQuote(command)}`,
       ].join(" ")
@@ -305,7 +339,7 @@ export function makeSshSlurmBackend(
         `attempt=${submissionAttemptToken};`,
         `digest=${expectedRequestDigest};`,
         `cancel_by_name() { touch "$cancel"; timeout ${commandTimeoutSeconds}s sh -c ${shellQuote(cancelByNameScript)} || true; };`,
-        `cleanup() { if [ ! -s "$receipt" ]; then case "$id" in ""|*[!0-9]*) cancel_by_name;; *) timeout 1s scancel "$id" 2>/dev/null || true;; esac; fi; rm -rf "$lock"; };`,
+        `cleanup() { if [ ! -s "$receipt" ]; then case "$id" in ""|*[!0-9]*) cancel_by_name;; *) timeout 1s scancel "$id" 2>/dev/null || true;; esac; rm -f "$cancel"; fi; rm -rf "$lock"; };`,
         "trap cleanup EXIT;",
         `printf '%s %s\\n' "$$" "$(date +%s)" > "$owner.tmp";`,
         `mv "$owner.tmp" "$owner";`,
@@ -337,7 +371,7 @@ export function makeSshSlurmBackend(
         `owner=$(cat "$lock/owner" 2>/dev/null || true);`,
         `pid=\${owner%% *}; created=\${owner#* };`,
         `case "$created" in ""|*[!0-9]*) created=$(stat -c %Y "$lock" 2>/dev/null || printf '0');; esac;`,
-        `if ! kill -0 "$pid" 2>/dev/null && [ $((now-created)) -ge ${lockLeaseSeconds} ]; then`,
+        `if [ $((now-created)) -ge ${lockLeaseSeconds} ]; then`,
         `stale_job=$(cat "$lock/job" 2>/dev/null || true);`,
         `case "$stale_job" in ""|*[!0-9]*) timeout 1s scancel --name ${shellQuote(jobName)} 2>/dev/null || true;; *) timeout 1s scancel "$stale_job" 2>/dev/null || true;; esac;`,
         `rm -rf "$lock";`,
@@ -380,7 +414,8 @@ export function makeSshSlurmBackend(
             `if [ "$(cat ${shellQuote(`${lockPath}/attempt`)} 2>/dev/null || true)" = ${shellQuote(submissionAttemptToken)} ]; then`,
             `touch ${shellQuote(cancelPath)};`,
             `if [ -s ${shellQuote(receiptPath)} ]; then`,
-            `job=$(cat ${shellQuote(receiptPath)}); timeout ${commandTimeoutSeconds}s scancel "\${job%%;*}";`,
+            `job=$(sed -n '1p' ${shellQuote(receiptPath)}); job=\${job%%;*};`,
+            `case "$job" in ""|*[!0-9]*) :;; *) timeout ${commandTimeoutSeconds}s scancel "$job";; esac;`,
             "fi; fi",
           ].join(" "), context.terminationGraceMs)
         } catch (error: unknown) {
@@ -436,7 +471,7 @@ export function makeSshSlurmBackend(
         )
       }
       return {
-        executionId,
+        executionId: durableExecutionHandle(executionId, execution.requestDigest),
         evidenceRefs: [
           `slurm://job/${executionId}/submitted`,
           `ssh://${sshTarget}${uriPath(receiptPath)}`,
@@ -446,9 +481,10 @@ export function makeSshSlurmBackend(
       }
     },
     async observe(executionId) {
+      const identity = parseExecutionHandle(executionId)
       const execution = await loadExecution(executionId)
       const activeResult = await ssh(
-        `squeue -h -j ${shellQuote(executionId)} -o '%T|%N'`,
+        `squeue -h -j ${shellQuote(identity.jobId)} -o '%T|%N'`,
       )
       const [activeState = "", activeNodeList = ""] = activeResult.stdout.trim().split("|")
       if (activeState) {
@@ -458,7 +494,7 @@ export function makeSshSlurmBackend(
             state,
             evidenceRefs: schedulerEvidenceRefs(
               sshTarget,
-              executionId,
+              identity.jobId,
               execution,
               activeState,
               activeNodeList,
@@ -467,7 +503,7 @@ export function makeSshSlurmBackend(
         }
       }
       const result = await ssh(
-        `sacct -X -j ${shellQuote(executionId)} --noheader --parsable2 --format=State,ExitCode,NodeList`,
+        `sacct -X -j ${shellQuote(identity.jobId)} --noheader --parsable2 --format=State,ExitCode,NodeList`,
       )
       const records = result.stdout
         .split("\n")
@@ -509,8 +545,8 @@ export function makeSshSlurmBackend(
           `printf 'F:%s:%s\\n' "$size" "$digest"; fi`,
         ].join(" "))).stdout.trim()
         if (header === "M") {
-          if (status === "completed") {
-            throw new Error("completed Slurm execution output is missing")
+          if (status === "completed" || status === "failed") {
+            throw new Error(`${status} Slurm execution output is missing`)
           }
           return { content: "", evidenceRefs: [] }
         }
@@ -577,7 +613,7 @@ export function makeSshSlurmBackend(
         evidenceRefs: [
           ...schedulerEvidenceRefs(
             sshTarget,
-            executionId,
+            identity.jobId,
             execution,
             schedulerState,
             nodeList,
@@ -588,12 +624,13 @@ export function makeSshSlurmBackend(
       }
     },
     async cancel(executionId, context) {
-      if (!/^\d+$/.test(executionId)) throw new Error("invalid Slurm execution id")
+      const identity = parseExecutionHandle(executionId)
+      await loadExecution(executionId)
       const deadline = context.deadlineAtMs ?? Date.now() + commandTimeoutMs
       const remaining = deadline - Date.now()
       if (remaining <= 0) throw new Error("Slurm cancellation deadline expired")
       await ssh(
-        `timeout ${commandTimeoutSeconds}s scancel ${shellQuote(executionId)}`,
+        `timeout ${commandTimeoutSeconds}s scancel ${shellQuote(identity.jobId)}`,
         remaining,
         context.signal,
       )

@@ -2289,7 +2289,25 @@ test("Slurm scheduled adapter confirms cancellation before timeout settlement", 
       return { executionId: "12345" }
     },
     async observe() {
-      return { state: cancelled ? "cancelled" : "running" }
+      if (!cancelled) return { state: "running" }
+      return {
+        state: "cancelled",
+        result: {
+          schema_version: "bb.sandbox_result.v1",
+          request_id: "req:slurm:1",
+          status: "cancelled",
+          stdout_ref: `sha256:${"0".repeat(64)}`,
+          stderr_ref: `sha256:${"1".repeat(64)}`,
+          artifact_refs: [
+            `sha256:${"0".repeat(64)}`,
+            `sha256:${"1".repeat(64)}`,
+          ],
+          side_effect_digest: `sha256:${"2".repeat(64)}`,
+          usage: { exit_code: null },
+          evidence_refs: [`sha256:${"3".repeat(64)}`],
+          error: { reason: "execution_cancelled" },
+        },
+      } as const
     },
     async cancel(executionId) {
       assert.equal(executionId, "12345")
@@ -2326,6 +2344,8 @@ test("Slurm scheduled adapter confirms cancellation before timeout settlement", 
   assert.equal(result.kind, "sandbox")
   assert.equal(cancelled, true)
   assert.equal(result.sandboxResult?.status, "timed_out")
+  assert.equal(result.sandboxResult?.stdout_ref, `sha256:${"0".repeat(64)}`)
+  assert.deepEqual(result.sandboxResult?.evidence_refs, [`sha256:${"3".repeat(64)}`])
   assert.equal(result.livenessEvidence.terminationObserved, true)
 })
 
@@ -2515,6 +2535,7 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
     requestId: "req:slurm:backend",
     capability: slurmCapability,
     command: ["python", "-c", "print(\"a'b\")"],
+    workspaceRef: "/tmp/workspace with space",
     placementClass: "remote_worker",
   })
   const imagedRequest = buildRemoteSandboxRequest({
@@ -2545,7 +2566,7 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   assert.ok(handle.evidenceRefs?.some((ref) => ref.endsWith(".receipt")))
   assert.ok(handle.evidenceRefs?.some((ref) => ref.endsWith(".command.b64")))
   assert.ok(handle.evidenceRefs?.some((ref) => ref.endsWith(".log")))
-  assert.equal(handle.executionId, "24680")
+  assert.match(handle.executionId, /^24680@[0-9a-f]{64}$/)
   assert.equal(invocations[0]?.[1]?.includes(`mkdir -p "$evidence"`), true)
   assert.equal(invocations[0]?.[1]?.includes(`umask 077`), true)
   assert.equal(invocations[0]?.[1]?.includes(`stat -c %u "$evidence"`), true)
@@ -2553,17 +2574,22 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   assert.equal(invocations[0]?.[1]?.includes(`stat -c %a "$evidence"`), true)
   assert.equal(invocations[0]?.[1]?.includes("setsid sh -c"), true)
   assert.equal(invocations[0]?.[1]?.includes("--wrap="), true)
+  const submissionCommand = (invocations[0]?.[1]?.match(/[A-Za-z0-9+/]{40,}={0,2}/g) ?? [])
+    .map((encoded) => Buffer.from(encoded, "base64").toString("utf8"))
+    .find((decoded) => decoded.includes("sbatch --parsable"))
+  assert.ok(submissionCommand?.includes("--chdir='/tmp/workspace with space'"))
   assert.ok(invocations[0]?.[1]?.includes(`[ ! -s "$receipt" ]`))
   assert.ok(invocations[0]?.[1]?.includes(`cancel_by_name() { touch "$cancel"`))
   assert.ok(invocations[0]?.[1]?.includes("squeue --noheader --name"))
   assert.ok(invocations[0]?.[1]?.includes("timeout 30s sh -c"))
   assert.ok(invocations[0]?.[1]?.includes("timeout 1s squeue"))
   assert.ok(invocations[0]?.[1]?.includes(`[ ! -f "$cancel" ] || exit 75`))
-  assert.ok(invocations[0]?.[1]?.includes(`kill -0 "$pid"`))
+  assert.ok(invocations[0]?.[1]?.includes(`[ $((now-created)) -ge`))
   assert.ok(invocations[0]?.[1]?.includes(`cat "$lock/job"`))
   assert.ok(invocations[0]?.[1]?.includes(`> "$lock/attempt"`))
   assert.ok(invocations[0]?.[1]?.includes("scancel --name"))
   assert.ok(invocations[0]?.[1]?.includes("timeout 30s sbatch"))
+  assert.ok(invocations[0]?.[1]?.includes(`rm -f "$cancel"`))
   assert.ok(invocations[0]?.[1]?.includes(`rm -rf "$lock"; }; trap cleanup EXIT;`))
 
   const activeObservation = await backend.observe(handle.executionId)
@@ -2614,6 +2640,13 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   const deadline = await backend.observe(handle.executionId)
   assert.equal(deadline.state, "timed_out")
   assert.deepEqual(deadline.result?.error, { reason: "execution_timed_out" })
+  sacctResult = "FAILED|1:0|node-a\n"
+  missingTerminalOutput = true
+  await assert.rejects(
+    () => backend.observe(handle.executionId),
+    /failed Slurm execution output is missing/,
+  )
+  missingTerminalOutput = false
   sacctResult = "COMPLETED|0:9|node-a\n"
   const signalled = await backend.observe(handle.executionId)
   assert.equal(signalled.state, "failed")
@@ -2754,7 +2787,7 @@ test("SSH Slurm backend recovers a durable receipt after an ambiguous launch ack
     deadlineAtMs: null,
     terminationGraceMs: 50,
   })
-  assert.equal(handle.executionId, "31415")
+  assert.match(handle.executionId, /^31415@[0-9a-f]{64}$/)
   assert.equal(launches, 1)
 })
 
@@ -2797,7 +2830,7 @@ test("SSH Slurm backend recovers an owned receipt when metadata recovery fails",
     deadlineAtMs: null,
     terminationGraceMs: 50,
   })
-  assert.equal(handle.executionId, "27182")
+  assert.match(handle.executionId, /^27182@[0-9a-f]{64}$/)
   assert.equal(commands.some((command) => command.includes("scancel '27182'")), false)
 })
 
@@ -2876,7 +2909,7 @@ test("SSH Slurm backend recovers a digest-authorized receipt after restart", asy
     deadlineAtMs: null,
     terminationGraceMs: 50,
   })
-  assert.equal(handle.executionId, "27184")
+  assert.match(handle.executionId, /^27184@[0-9a-f]{64}$/)
   assert.equal(commands.some((command) => command.includes("scancel '27184'")), false)
 })
 
@@ -2958,8 +2991,23 @@ test("SSH Slurm backend refreshes metadata when the scheduler reuses a job id", 
     terminationGraceMs: 50,
   }
 
-  assert.equal((await backend.submit(first, context)).executionId, "4242")
-  assert.equal((await backend.submit(second, context)).executionId, "4242")
+  const firstHandle = await backend.submit(first, context)
+  const secondHandle = await backend.submit(second, context)
+  assert.match(firstHandle.executionId, /^4242@[0-9a-f]{64}$/)
+  assert.match(secondHandle.executionId, /^4242@[0-9a-f]{64}$/)
+  assert.notEqual(firstHandle.executionId, secondHandle.executionId)
+  await assert.rejects(
+    () => backend.observe(firstHandle.executionId),
+    /no longer owns the scheduler job id/,
+  )
+  await assert.rejects(
+    () => backend.cancel(firstHandle.executionId, {
+      reason: "cancelled",
+      signal: new AbortController().signal,
+      deadlineAtMs: null,
+    }),
+    /no longer owns the scheduler job id/,
+  )
   assert.equal(metadataReads, 2)
 })
 
@@ -2999,6 +3047,7 @@ test("SSH Slurm backend leaves a durable cancel marker when cancellation precede
   assert.ok(commands[0]?.includes("scancel"))
   assert.ok(commands[1]?.includes(".lock/attempt"))
   assert.equal(commands[1]?.includes("scancel --name"), false)
+  assert.ok(commands[1]?.includes("sed -n '1p'"))
 })
 
 test("SSH Slurm backend reconciles an active job after adapter restart", async () => {

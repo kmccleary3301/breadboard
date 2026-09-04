@@ -91,7 +91,7 @@ interface ActiveScheduledExecution {
   readonly requestKey: string
   result?: Promise<SandboxResultV1>
   executionId?: string
-  cancellation?: Promise<void>
+  cancellation?: Promise<SandboxResultV1>
   lastEvidenceKey?: string
   terminalObserved: boolean
   terminalEvidenceKey?: string
@@ -360,8 +360,9 @@ export function makeScheduledExecutionDriver(
 
   function requestCancellation(
     entry: ActiveScheduledExecution,
+    request: SandboxRequestV1,
     context: ExecutionDriverTerminationContextV1,
-  ): Promise<void> {
+  ): Promise<SandboxResultV1> {
     if (entry.cancellation) return entry.cancellation
     const cancellation = entry.handle.then(async (handle) => {
       const cleanupContext: ExecutionDriverTerminationContextV1 = {
@@ -395,7 +396,10 @@ export function makeScheduledExecutionDriver(
         await recordEvidence(entry, handle, observation)
         if (terminal) {
           entry.terminalObserved = true
-          return
+          return terminalResult(
+            request,
+            entry.terminalObservation ?? observation,
+          )
         }
         await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
       }
@@ -528,8 +532,9 @@ export function makeScheduledExecutionDriver(
     async terminate(request, context) {
       const entry = active.get(request.request_id)
       if (!entry) return
+      let result: SandboxResultV1
       try {
-        await requestCancellation(entry, context)
+        result = await requestCancellation(entry, request, context)
       } catch (error: unknown) {
         if (entry.executionId === undefined) active.delete(request.request_id)
         throw error
@@ -537,6 +542,7 @@ export function makeScheduledExecutionDriver(
       if (active.get(request.request_id) === entry) {
         active.delete(request.request_id)
       }
+      return result
     },
   }
 }
