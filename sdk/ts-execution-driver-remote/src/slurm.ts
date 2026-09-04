@@ -613,7 +613,12 @@ export function makeSshSlurmBackend(
           receiptOutputMaxBytes,
         )).stdout.trim()
         if (header === "M") {
-          if (status === "completed" || status === "failed") {
+          if (
+            status === "completed"
+            || status === "failed"
+            || execution.observedRunning
+            || (nodeList !== "" && nodeList !== "(null)")
+          ) {
             throw new Error(`${status} Slurm execution output is missing`)
           }
           return { content: "", evidenceRefs: [] }

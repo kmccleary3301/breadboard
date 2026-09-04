@@ -158,7 +158,10 @@ async function settleBefore<T>(
   message: string,
 ): Promise<T> {
   const remaining = deadline - Date.now()
-  if (remaining <= 0) throw new Error(message)
+  if (remaining <= 0) {
+    void promise.catch(() => undefined)
+    throw new Error(message)
+  }
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     return await Promise.race([
@@ -226,6 +229,9 @@ function assertProviderNeutralResultEvidence(
     throw new Error("scheduled execution result requires canonical exit-code usage")
   }
   const exitCode = requireCanonicalExitCode(result.usage.exit_code)
+  if (result.status === "completed" && exitCode !== 0) {
+    throw new Error("completed scheduled execution result requires exit code zero")
+  }
   const expectedSideEffectDigest = buildCanonicalSandboxSideEffectDigest({
     command: request.command,
     status: result.status,
@@ -316,6 +322,7 @@ export function makeScheduledExecutionDriver(
     entry: ActiveScheduledExecution,
     handle: ScheduledExecutionHandleV1,
     observation: ScheduledExecutionObservationV1,
+    deadline?: number,
   ): Promise<boolean> {
     const refs = evidenceRefs(
       handle.evidenceRefs,
@@ -337,6 +344,20 @@ export function makeScheduledExecutionDriver(
       state: observation.state,
       evidenceRefs: refs,
     }
+    const writeEvidence = async (
+      value: ScheduledExecutionEvidenceV1,
+    ): Promise<void> => {
+      const write = Promise.resolve().then(() => options.recordEvidence(value))
+      if (deadline === undefined) {
+        await write
+        return
+      }
+      await settleBefore(
+        write,
+        deadline,
+        `${driverId} evidence recording exceeded the cleanup deadline`,
+      )
+    }
     entry.evidenceTail = entry.evidenceTail
       .catch(() => undefined)
       .then(async () => {
@@ -347,7 +368,7 @@ export function makeScheduledExecutionDriver(
             || entry.terminalEvidenceKey === undefined
             || entry.terminalEvidenceKey === failed.key
           ) {
-            await options.recordEvidence(failed.evidence)
+            await writeEvidence(failed.evidence)
             entry.lastEvidenceKey = failed.key
           }
           entry.failedEvidence = undefined
@@ -359,27 +380,36 @@ export function makeScheduledExecutionDriver(
         ) return
         if (entry.lastEvidenceKey === key) return
         try {
-          await options.recordEvidence(evidence)
+          await writeEvidence(evidence)
           entry.lastEvidenceKey = key
         } catch (error: unknown) {
           entry.failedEvidence = { key, evidence }
           throw error
         }
       })
-    await entry.evidenceTail
+    if (deadline === undefined) {
+      await entry.evidenceTail
+    } else {
+      await settleBefore(
+        entry.evidenceTail,
+        deadline,
+        `${driverId} evidence queue exceeded the cleanup deadline`,
+      )
+    }
     return mayRecord
   }
 
   async function recordUnconfirmedCancellation(
     entry: ActiveScheduledExecution,
     handle: ScheduledExecutionHandleV1,
+    deadline: number,
   ): Promise<void> {
     await recordEvidence(entry, handle, {
       state: "running",
       evidenceRefs: [
         `scheduled://${encodeURIComponent(backend.backendId)}/${encodeURIComponent(handle.executionId)}/cancellation-unconfirmed`,
       ],
-    })
+    }, deadline)
   }
 
   async function recordTerminalCancellationEvidence(
@@ -390,7 +420,7 @@ export function makeScheduledExecutionDriver(
   ): Promise<void> {
     while (true) {
       try {
-        await recordEvidence(entry, handle, observation)
+        await recordEvidence(entry, handle, observation, deadline)
         return
       } catch (error: unknown) {
         const remainingMs = deadline - Date.now()
@@ -426,7 +456,11 @@ export function makeScheduledExecutionDriver(
         )
       } catch (error: unknown) {
         cleanupController.abort(error)
-        await recordUnconfirmedCancellation(entry, handle)
+        try {
+          await recordUnconfirmedCancellation(entry, handle, deadline)
+        } catch {
+          // Preserve the primary cancellation failure after the bounded evidence attempt.
+        }
         throw backendFailure(driverId, "cancellation", error)
       }
       while (true) {
@@ -438,7 +472,11 @@ export function makeScheduledExecutionDriver(
             `${driverId} cancellation observation exceeded the cleanup deadline`,
           )
         } catch (error: unknown) {
-          await recordUnconfirmedCancellation(entry, handle)
+          try {
+            await recordUnconfirmedCancellation(entry, handle, deadline)
+          } catch {
+            // Preserve the primary observation failure after the bounded evidence attempt.
+          }
           throw backendFailure(driverId, "cancellation observation", error)
         }
         const terminal = TERMINAL_STATES.has(observation.state)
@@ -597,7 +635,12 @@ export function makeScheduledExecutionDriver(
       try {
         result = await requestCancellation(entry, request, context)
       } catch (error: unknown) {
-        if (entry.executionId === undefined) active.delete(request.request_id)
+        if (
+          entry.executionId === undefined
+          || entry.terminalObservation !== undefined
+        ) {
+          active.delete(request.request_id)
+        }
         throw error
       }
       if (active.get(request.request_id) === entry) {

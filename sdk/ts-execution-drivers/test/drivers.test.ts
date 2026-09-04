@@ -18,6 +18,7 @@ import { makeConfiguredOciExecutionDriver } from "../../ts-execution-driver-oci/
 import {
   buildExecutionDriverEvidenceExpectation,
   buildAndPersistCanonicalSandboxEvidence,
+  buildCanonicalSandboxSideEffectDigest,
   buildExecutionDriverSideEffectExpectation,
   buildExecutionDriverUnsupportedCase,
   buildPlannedExecution,
@@ -785,7 +786,7 @@ test("execution world handles synchronously and asynchronously throwing terminat
     security_tier: "trusted_dev",
     isolation_class: "process",
     secret_mode: "ref_only",
-    evidence_mode: "minimal",
+    evidence_mode: "replay_strict",
   }
   const placement: ExecutionPlacementV1 = {
     schema_version: "bb.execution_placement.v1",
@@ -821,13 +822,33 @@ test("execution world handles synchronously and asynchronously throwing terminat
         })
       })
     },
-    terminate: (_request, _context) => {
+    terminate: (request, _context) => {
       if (throwMode === "sync") {
         throw new Error("synchronous terminate failure")
       } else if (throwMode === "async") {
         return Promise.reject(new Error("asynchronous terminate failure"))
       } else {
-        return Promise.resolve()
+        const stdoutRef = `sha256:${"0".repeat(64)}`
+        const stderrRef = `sha256:${"1".repeat(64)}`
+        const sideEffectDigest = buildCanonicalSandboxSideEffectDigest({
+          command: request.command,
+          status: "cancelled",
+          exitCode: 143,
+          stdoutRef,
+          stderrRef,
+        })
+        return Promise.resolve({
+          schema_version: "bb.sandbox_result.v1",
+          request_id: request.request_id,
+          status: "cancelled",
+          stdout_ref: stdoutRef,
+          stderr_ref: stderrRef,
+          artifact_refs: [stdoutRef, stderrRef],
+          side_effect_digest: sideEffectDigest,
+          usage: { exit_code: 143 },
+          evidence_refs: [sideEffectDigest],
+          error: { reason: "execution_cancelled" },
+        })
       }
     },
   })
@@ -882,6 +903,18 @@ test("execution world handles synchronously and asynchronously throwing terminat
   assert.equal(successResult.livenessEvidence.state, "timed_out")
   assert.equal(successResult.livenessEvidence.terminationRequested, true)
   assert.equal(successResult.livenessEvidence.terminationObserved, true)
+  const translated = successResult.sandboxResult
+  assert.ok(translated?.stdout_ref)
+  assert.ok(translated?.stderr_ref)
+  const translatedDigest = buildCanonicalSandboxSideEffectDigest({
+    command: ["sleep", "10"],
+    status: "timed_out",
+    exitCode: 143,
+    stdoutRef: translated.stdout_ref,
+    stderrRef: translated.stderr_ref,
+  })
+  assert.equal(translated.side_effect_digest, translatedDigest)
+  assert.deepEqual(translated.evidence_refs, [translatedDigest])
 })
 
 test("execution world correctly normalizes cancelled status with distinct execution_cancelled reason", async () => {

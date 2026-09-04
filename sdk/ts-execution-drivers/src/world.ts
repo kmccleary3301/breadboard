@@ -14,6 +14,7 @@ import {
 } from "@breadboard/kernel-contracts"
 import {
   buildExecutionDriverUnsupportedCase,
+  buildCanonicalSandboxSideEffectDigest,
   assertExecutionProgramAllowed,
   buildPlannedExecution,
   selectExecutionDriver,
@@ -327,24 +328,72 @@ function buildSandboxFailureResult(input: {
   reason: string
   previous?: SandboxResultV1 | null
 }): SandboxResultV1 {
-  const preservesCanonicalEvidence = input.previous?.status === input.status
+  const previous = input.previous
+    ? assertValid<SandboxResultV1>("sandboxResult", input.previous)
+    : null
+  const preservesCanonicalEvidence = previous?.status === input.status
+  const previousUsage = previous?.usage
+  let translatedSideEffectDigest: string | null = null
+  let translatedEvidenceRefs: string[] = []
+  if (
+    previous !== null
+    && !preservesCanonicalEvidence
+    && previous.request_id === input.request.request_id
+    && previous.stdout_ref !== null
+    && previous.stderr_ref !== null
+    && previous.artifact_refs?.length === 2
+    && previous.artifact_refs[0] === previous.stdout_ref
+    && previous.artifact_refs[1] === previous.stderr_ref
+    && previousUsage !== null
+    && previousUsage !== undefined
+    && Object.keys(previousUsage).length === 1
+    && "exit_code" in previousUsage
+    && (previousUsage.exit_code === null || typeof previousUsage.exit_code === "number")
+  ) {
+    const previousDigest = buildCanonicalSandboxSideEffectDigest({
+      command: input.request.command,
+      status: previous.status,
+      exitCode: previousUsage.exit_code,
+      stdoutRef: previous.stdout_ref,
+      stderrRef: previous.stderr_ref,
+    })
+    const previousEvidenceRefs = input.request.evidence_mode === "minimal"
+      ? []
+      : [previousDigest]
+    if (
+      previous.side_effect_digest === previousDigest
+      && previous.evidence_refs?.length === previousEvidenceRefs.length
+      && previousEvidenceRefs.every((ref) => previous.evidence_refs?.includes(ref))
+    ) {
+      translatedSideEffectDigest = buildCanonicalSandboxSideEffectDigest({
+        command: input.request.command,
+        status: input.status,
+        exitCode: previousUsage.exit_code,
+        stdoutRef: previous.stdout_ref,
+        stderrRef: previous.stderr_ref,
+      })
+      translatedEvidenceRefs = input.request.evidence_mode === "minimal"
+        ? []
+        : [translatedSideEffectDigest]
+    }
+  }
   return assertValid<SandboxResultV1>("sandboxResult", {
     schema_version: "bb.sandbox_result.v1",
     request_id: input.request.request_id,
     status: input.status,
-    placement_id: input.previous?.placement_id ?? null,
-    stdout_ref: input.previous?.stdout_ref ?? null,
-    stderr_ref: input.previous?.stderr_ref ?? null,
-    artifact_refs: input.previous?.artifact_refs ?? [],
+    placement_id: previous?.placement_id ?? null,
+    stdout_ref: previous?.stdout_ref ?? null,
+    stderr_ref: previous?.stderr_ref ?? null,
+    artifact_refs: previous?.artifact_refs ?? [],
     side_effect_digest: preservesCanonicalEvidence
-      ? input.previous?.side_effect_digest ?? null
-      : null,
-    usage: input.previous?.usage ?? null,
+      ? previous?.side_effect_digest ?? null
+      : translatedSideEffectDigest,
+    usage: previous?.usage ?? null,
     evidence_refs: preservesCanonicalEvidence
-      ? input.previous?.evidence_refs ?? []
-      : [],
+      ? previous?.evidence_refs ?? []
+      : translatedEvidenceRefs,
     error: {
-      ...(input.previous?.error ?? {}),
+      ...(previous?.error ?? {}),
       message: input.message,
       reason: input.reason,
     },

@@ -2230,6 +2230,112 @@ test("scheduled cancellation bounds a hung backend cancel call", async () => {
   await executionRejected
 })
 
+test("scheduled cancellation bounds hung terminal evidence and releases request ownership", async () => {
+  let cancelled = false
+  let recovering = false
+  let hangTerminalEvidence = true
+  let submissions = 0
+  const command = ["python", "-c", "print('hung evidence')"]
+  const cancelledEvidence = buildCanonicalSandboxEvidence({
+    command,
+    status: "cancelled",
+    exitCode: null,
+    stdout: "",
+    stderr: "",
+    evidenceMode: remoteCapability.evidence_mode,
+  })
+  const completedEvidence = buildCanonicalSandboxEvidence({
+    command,
+    status: "completed",
+    exitCode: 0,
+    stdout: "recovered",
+    stderr: "",
+    evidenceMode: remoteCapability.evidence_mode,
+  })
+  const backend: ScheduledExecutionBackendV1 = {
+    backendId: "ray-hung-terminal-evidence",
+    async submit() {
+      submissions += 1
+      return { executionId: `ray-hung-terminal-evidence-${submissions}` }
+    },
+    async observe() {
+      if (recovering) {
+        return {
+          state: "completed",
+          result: {
+            schema_version: "bb.sandbox_result.v1",
+            request_id: "req:ray:hung-terminal-evidence",
+            status: "completed",
+            ...completedEvidence,
+            error: null,
+          },
+        } as const
+      }
+      if (!cancelled) return { state: "running" }
+      return {
+        state: "cancelled",
+        result: {
+          schema_version: "bb.sandbox_result.v1",
+          request_id: "req:ray:hung-terminal-evidence",
+          status: "cancelled",
+          ...cancelledEvidence,
+          error: { reason: "execution_cancelled" },
+        },
+      } as const
+    },
+    async cancel() {
+      cancelled = true
+    },
+  }
+  const driver = makeRayExecutionDriver(backend, {
+    pollIntervalMs: 1,
+    cancellationObservationTimeoutMs: 10,
+    recordEvidence(evidence) {
+      if (evidence.state === "cancelled" && hangTerminalEvidence) {
+        return new Promise<void>(() => {})
+      }
+    },
+  })
+  const placement: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place:ray:hung-terminal-evidence",
+    placement_class: "delegated_python",
+    runtime_id: "ray",
+    capability_id: remoteCapability.capability_id,
+  }
+  const request = driver.buildSandboxRequest!({
+    requestId: "req:ray:hung-terminal-evidence",
+    capability: remoteCapability,
+    placement,
+    command,
+  })
+  const executionContext = {
+    signal: new AbortController().signal,
+    deadlineAtMs: null,
+    terminationGraceMs: 50,
+    capability: remoteCapability,
+    placement,
+    driverId: "ray",
+  }
+  void driver.execute!(request, executionContext).catch(() => undefined)
+  await new Promise((resolve) => setTimeout(resolve, 1))
+
+  await assert.rejects(
+    () => Promise.resolve(driver.terminate!(request, {
+      reason: "cancelled",
+      signal: new AbortController().signal,
+      deadlineAtMs: null,
+    })),
+    /terminal cancellation evidence failed/,
+  )
+
+  hangTerminalEvidence = false
+  recovering = true
+  const recovered = await driver.execute!(request, executionContext)
+  assert.equal(recovered.status, "completed")
+  assert.equal(submissions, 2)
+})
+
 
 test("scheduled adapter cleans up after observation transport failure", async () => {
   let cancelled = false
@@ -2299,8 +2405,22 @@ test("scheduled adapter cleans up after observation transport failure", async ()
   )
   assert.equal(cancelled, true)
   assert.equal(result.livenessEvidence.terminationObserved, true)
-  assert.deepEqual(result.sandboxResult?.evidence_refs, [])
-  assert.equal(result.sandboxResult?.side_effect_digest, null)
+  const failedEvidence = buildCanonicalSandboxEvidence({
+    command: ["python", "-c", "print('observe')"],
+    status: "failed",
+    exitCode: null,
+    stdout: "",
+    stderr: "",
+    evidenceMode: remoteCapability.evidence_mode,
+  })
+  assert.deepEqual(
+    result.sandboxResult?.evidence_refs,
+    failedEvidence.evidence_refs,
+  )
+  assert.equal(
+    result.sandboxResult?.side_effect_digest,
+    failedEvidence.side_effect_digest,
+  )
 })
 
 test("scheduled adapter rejects unknown states before recording evidence", async () => {
@@ -2502,8 +2622,22 @@ test("Slurm scheduled adapter confirms cancellation before timeout settlement", 
   assert.equal(result.sandboxResult?.status, "timed_out")
   assert.equal(result.livenessEvidence.state, "timed_out")
   assert.equal(result.sandboxResult?.stdout_ref, cancellationEvidence.stdout_ref)
-  assert.deepEqual(result.sandboxResult?.evidence_refs, [])
-  assert.equal(result.sandboxResult?.side_effect_digest, null)
+  const timedOutEvidence = buildCanonicalSandboxEvidence({
+    command: ["python", "-c", "print('world')"],
+    status: "timed_out",
+    exitCode: null,
+    stdout: "",
+    stderr: "",
+    evidenceMode: remoteCapability.evidence_mode,
+  })
+  assert.deepEqual(
+    result.sandboxResult?.evidence_refs,
+    timedOutEvidence.evidence_refs,
+  )
+  assert.equal(
+    result.sandboxResult?.side_effect_digest,
+    timedOutEvidence.side_effect_digest,
+  )
   assert.equal(result.livenessEvidence.terminationObserved, true)
 })
 
@@ -2624,6 +2758,64 @@ test("scheduled adapter rejects provider-specific terminal result evidence", asy
   assert.equal(result.kind, "sandbox")
   assert.equal(result.sandboxResult?.status, "failed")
   assert.equal(JSON.stringify(result.sandboxResult).includes("ray://provider"), false)
+})
+
+test("scheduled adapter rejects completed results with nonzero exit codes", async () => {
+  const command = ["python", "-c", "raise SystemExit(2)"]
+  const backend: ScheduledExecutionBackendV1 = {
+    backendId: "ray-nonzero-completed",
+    async submit() {
+      return { executionId: "ray-nonzero-completed-1" }
+    },
+    async observe() {
+      return {
+        state: "completed",
+        result: {
+          schema_version: "bb.sandbox_result.v1",
+          request_id: "req:ray:nonzero-completed",
+          status: "completed",
+          ...buildCanonicalSandboxEvidence({
+            command,
+            status: "completed",
+            exitCode: 2,
+            stdout: "",
+            stderr: "failed",
+            evidenceMode: remoteCapability.evidence_mode,
+          }),
+          error: null,
+        },
+      }
+    },
+    async cancel() {},
+  }
+  const world = createExecutionWorld({
+    drivers: [makeRayExecutionDriver(backend, {
+      pollIntervalMs: 1,
+      recordEvidence() {},
+    })],
+  })
+
+  const result = await world.execute({
+    kind: "sandbox",
+    capability: remoteCapability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place:ray:nonzero-completed",
+      placement_class: "delegated_python",
+      runtime_id: "ray",
+      capability_id: remoteCapability.capability_id,
+    },
+    requestId: "req:ray:nonzero-completed",
+    command,
+    driverId: "ray",
+  })
+
+  assert.equal(result.kind, "sandbox")
+  assert.equal(result.sandboxResult?.status, "failed")
+  const message = result.sandboxResult?.error?.message
+  assert.equal(typeof message, "string")
+  if (typeof message !== "string") throw new Error("expected string error message")
+  assert.match(message, /completed scheduled execution result requires exit code zero/)
 })
 
 
@@ -2854,6 +3046,13 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
     () => backend.observe(handle.executionId),
     /exceeds the configured per-stream limit/,
   )
+  oversizedTerminalOutput = false
+  missingTerminalOutput = true
+  await assert.rejects(
+    () => backend.observe(handle.executionId),
+    /cancelled Slurm execution output is missing/,
+  )
+  missingTerminalOutput = false
   const cancelDeadlineAtMs = Date.now() + 100
   await backend.cancel(handle.executionId, {
     reason: "cancelled",
