@@ -482,8 +482,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         session_state: SessionState,
         retained_effective_messages: Any,
         *,
-        resume_retained_raw_fact_ids: Any = (),
-        retained_raw_fact_ids: Any = (),
+        resume_retained_raw_fact_ids: Any = None,
+        retained_raw_fact_ids: Any = None,
     ) -> bool | None:
         if retained_effective_messages is None:
             return None
@@ -500,7 +500,11 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         restored = copy.deepcopy(retained_effective_messages)
         resume_facts = tuple(resume_retained_raw_fact_ids or ())
         retained_facts = tuple(retained_raw_fact_ids or ())
-        if resume_facts and resume_facts == retained_facts:
+        if (
+            resume_retained_raw_fact_ids is not None
+            and retained_raw_fact_ids is not None
+            and resume_facts == retained_facts
+        ):
             cached = session_state.provider_messages
             if (
                 len(cached) < len(restored)
@@ -519,6 +523,21 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         self._retained_ctree_session_id = session_id
         self._retained_ctree_events = copy.deepcopy(session_state.ctree_store.events)
         self._retained_ctree_raw_fact_ids = session_state.retained_raw_fact_ids
+
+    def _persist_final_product_context(
+        self,
+        session_state: SessionState,
+        *,
+        had_retained_product_context: bool,
+    ) -> None:
+        if not session_state.can_persist_compaction():
+            return
+        if (
+            not had_retained_product_context
+            and not session_state.has_persisted_compaction()
+        ):
+            return
+        session_state.persist_compaction_snapshot()
 
     def request_stop(self) -> None:
         """Best-effort interrupt: stop the current run at the next safe boundary."""
@@ -6404,7 +6423,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         resume_snapshot = self._load_resume_snapshot()
         resume_has_system = False
         resume_ctree_events: Any = None
-        resume_retained_raw_fact_ids: Any = ()
+        resume_retained_raw_fact_ids: Any = None
         if isinstance(resume_snapshot, dict):
             seed_messages = resume_snapshot.get("messages")
             if isinstance(seed_messages, list):
@@ -6707,6 +6726,10 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                         pass
                 finally:
                     session_state._episode_provider_client = None
+            self._persist_final_product_context(
+                session_state,
+                had_retained_product_context=retained_effective_messages is not None,
+            )
             self._retain_ctree(session_state, provider_session_id)
             self._persist_final_workspace()
             try:

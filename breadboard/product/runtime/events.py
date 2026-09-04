@@ -331,7 +331,6 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
     annotation_ids: set[str] = set()
     compaction_count = 0
     last_compaction_sequence: int | None = None
-    retained_raw_facts: set[str] = set()
     retained_raw_fact_order: tuple[str, ...] = ()
     last_compaction_context_hash: str | None = None
     for expected, event in enumerate(rows, 1):
@@ -364,9 +363,11 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
             ):
                 raise ValueError("compaction source range does not match durable event order")
             current_raw_fact_order = tuple(event.payload["raw_fact_ids"])
-            current_raw_facts = set(current_raw_fact_order)
-            if not retained_raw_facts.issubset(current_raw_facts):
-                raise ValueError("compaction cannot discard retained raw facts")
+            if (
+                current_raw_fact_order[: len(retained_raw_fact_order)]
+                != retained_raw_fact_order
+            ):
+                raise ValueError("compaction cannot reorder or discard retained raw facts")
             expected_shadowed = (
                 retained_raw_fact_order
                 if last_compaction_context_hash is not None
@@ -380,7 +381,6 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
                 )
             compaction_count += 1
             last_compaction_sequence = event.sequence
-            retained_raw_facts = current_raw_facts
             retained_raw_fact_order = current_raw_fact_order
             last_compaction_context_hash = event.payload["context_sha256"]
         if event.kind == "approval.requested":
@@ -602,8 +602,11 @@ class Session:
             (row for row in reversed(self._events) if row.kind == "context.compacted"),
             None,
         )
-        if not set(self.raw_fact_ids).issubset(snapshot.raw_fact_ids):
-            raise ValueError("compaction cannot discard retained raw facts")
+        if (
+            snapshot.raw_fact_ids[: len(self.raw_fact_ids)]
+            != self.raw_fact_ids
+        ):
+            raise ValueError("compaction cannot reorder or discard retained raw facts")
         context_sha256 = _hash_bytes(snapshot.effective_context)
         shadowed_raw_fact_ids = (
             list(previous.payload["raw_fact_ids"])

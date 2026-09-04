@@ -17,7 +17,11 @@ from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import ReplayError, session_store
 from breadboard.product.coordination.work_items import WorkItemRepository
 from breadboard.product.runtime.children import DurableChildReconciler
-from breadboard.product.runtime.events import Session, replay_differential
+from breadboard.product.runtime.events import (
+    CompactionSnapshot,
+    Session,
+    replay_differential,
+)
 from breadboard_engine.api.cli_bridge.events import EventType, SessionEvent
 from breadboard_engine.api.cli_bridge.models import (
     SessionCreateRequest,
@@ -617,6 +621,86 @@ def test_product_effective_context_rejects_divergent_same_boundary_resume() -> N
             resume_retained_raw_fact_ids=["ctn_000001"],
             retained_raw_fact_ids=["ctn_000001"],
         )
+
+
+def test_product_effective_context_rejects_divergent_empty_boundary_resume() -> None:
+    conductor_type = OpenAIConductor.__ray_metadata__.modified_class
+    conductor = object.__new__(conductor_type)
+    state = SessionState("ws", "image", {})
+    state.provider_messages = [{"role": "user", "content": "different"}]
+
+    with pytest.raises(
+        ProviderContractError,
+        match="resume messages diverge",
+    ):
+        conductor._restore_product_effective_messages(
+            state,
+            [{"role": "user", "content": "retained"}],
+            resume_retained_raw_fact_ids=(),
+            retained_raw_fact_ids=(),
+        )
+
+
+def test_final_product_context_preserves_post_boundary_suffix_for_fresh_turn() -> None:
+    conductor_type = OpenAIConductor.__ray_metadata__.modified_class
+    conductor = object.__new__(conductor_type)
+    retained = [
+        {"role": "system", "content": "retained system"},
+        {"role": "user", "content": "compacted request"},
+    ]
+    product = Session.start(
+        EffectiveHarnessLock._from_record(
+            {"graph_hash": "sha256:" + "a" * 64}
+        ),
+        "long horizon",
+    )
+    product.compact(
+        CompactionSnapshot(
+            json.dumps(
+                retained,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8"),
+            (),
+        )
+    )
+
+    def persist(
+        event_type: str,
+        payload: Dict[str, Any],
+        *,
+        turn: Optional[int] = None,
+    ) -> None:
+        assert event_type == "conversation.compaction.end"
+        product.compact(
+            CompactionSnapshot(
+                base64.b64decode(payload["effective_context"]),
+                tuple(payload["raw_fact_ids"]),
+            )
+        )
+
+    current = SessionState(
+        "ws",
+        "image",
+        {},
+        event_emitter=persist,
+        product_compaction_owner=True,
+    )
+    conductor._restore_product_effective_messages(current, retained)
+    final_answer = {"role": "assistant", "content": "post-boundary answer"}
+    current.add_message(final_answer)
+
+    conductor._persist_final_product_context(
+        current,
+        had_retained_product_context=True,
+    )
+
+    next_turn = SessionState("ws", "image", {})
+    conductor._restore_product_effective_messages(
+        next_turn,
+        json.loads(product.effective_context),
+    )
+    assert next_turn.provider_messages == [*retained, final_answer]
 
 
 def test_context_threshold_emits_exact_effective_provider_context() -> None:

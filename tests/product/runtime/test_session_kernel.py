@@ -327,6 +327,10 @@ def test_replay_differential_compares_live_owner_snapshot_to_durable_replay() ->
             "raw_fact_ids": ["ctn_000002", "ctn_000003"],
             "shadowed_raw_fact_ids": ["ctn_000002"],
         },
+        {
+            "raw_fact_ids": ["ctn_000002", "ctn_000001", "ctn_000003"],
+            "shadowed_raw_fact_ids": ["ctn_000001", "ctn_000002"],
+        },
         {"source_sequence_start": 1},
         {"compaction_index": 7},
     ],
@@ -353,6 +357,21 @@ def test_compaction_replay_rejects_fact_loss_and_invalid_boundaries(
 
     with pytest.raises(ReplayError, match="compaction"):
         Session.restore(rows)
+
+
+def test_live_compaction_rejects_reordered_cumulative_facts() -> None:
+    session = Session.start(_lock(), "task")
+    session.compact(
+        CompactionSnapshot(b"one", ("ctn_000001", "ctn_000002"))
+    )
+
+    with pytest.raises(ValueError, match="reorder or discard"):
+        session.compact(
+            CompactionSnapshot(
+                b"two",
+                ("ctn_000002", "ctn_000001", "ctn_000003"),
+            )
+        )
 
 
 def test_compaction_replay_rejects_incorrect_shadow_chain() -> None:

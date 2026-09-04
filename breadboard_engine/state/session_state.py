@@ -193,6 +193,7 @@ class SessionState:
         self.tool_usage_summary.setdefault("todo_calls", 0)
         self.ctree_store = CTreeStore()
         self._retained_raw_fact_ids: tuple[str, ...] = ()
+        self._compaction_persisted_this_run = False
 
     def set_event_emitter(
         self,
@@ -202,6 +203,10 @@ class SessionState:
 
     def can_persist_compaction(self) -> bool:
         return self._product_compaction_owner and self._event_emitter is not None
+
+    def has_persisted_compaction(self) -> bool:
+        with self._compaction_lock:
+            return self._compaction_persisted_this_run
 
     def set_turn_context(
         self,
@@ -577,6 +582,7 @@ class SessionState:
             },
             turn=self._active_turn_index,
         )
+        self._compaction_persisted_this_run = True
 
     def persist_compaction_snapshot(
         self,
