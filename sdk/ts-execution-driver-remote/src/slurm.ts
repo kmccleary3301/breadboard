@@ -223,13 +223,14 @@ export function makeSshSlurmBackend(
   if (sshTarget.startsWith("-")) {
     throw new Error("sshTarget must not begin with an option prefix")
   }
-  const evidenceDirectory = requireSafeValue(
+  const rawEvidenceDirectory = requireSafeValue(
     options.remoteEvidenceDirectory,
     "remoteEvidenceDirectory",
   )
-  if (!evidenceDirectory.startsWith("/")) {
+  if (!rawEvidenceDirectory.startsWith("/")) {
     throw new Error("remoteEvidenceDirectory must be an absolute path")
   }
+  const evidenceDirectory = rawEvidenceDirectory.replace(/\/+$/, "") || "/"
   const sshProgram = options.sshProgram ?? "ssh"
   const runCommand = options.runCommand ?? defaultRunCommand
   const maxOutputBytes = options.maxOutputBytes ?? 4 * 1024 * 1024
@@ -328,6 +329,9 @@ export function makeSshSlurmBackend(
         `submission-${submissionKey}.command.b64`,
       )
       const encodedRequest = Buffer.from(retainedSubmission(request), "utf8").toString("base64")
+      if (Buffer.byteLength(encodedRequest, "utf8") + 1 > metadataOutputMaxBytes) {
+        throw new Error("Slurm retained request metadata exceeds the transport limit")
+      }
       const command = request.command.map(shellQuote).join(" ")
       const submissionCommand = [
         `timeout ${commandTimeoutSeconds}s sbatch --parsable`,

@@ -3180,7 +3180,7 @@ test("SSH Slurm backend reconciles an active job after adapter restart", async (
   )
   const recovered = makeSshSlurmBackend({
     sshTarget: "cluster.example",
-    remoteEvidenceDirectory: "/tmp/evidence",
+    remoteEvidenceDirectory: "/tmp/evidence/",
     async runCommand(_program, args) {
       const remoteCommand = args[1] ?? ""
       if (remoteCommand.startsWith("cat ") && remoteCommand.includes(".request.b64"))
