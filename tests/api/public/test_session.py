@@ -9,6 +9,7 @@ from threading import Barrier, Lock, Thread
 from time import monotonic, sleep
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
@@ -508,18 +509,8 @@ def test_public_session_events_snapshot_excludes_annotation_appended_after_first
         message_id="message-a",
         trajectory_id="trajectory-a",
     )
+    session.complete()
     session_store.create_session(tmp_path, session)
-
-    response = client.portal.call(
-        public_session_api.events,
-        session_id,
-        SimpleNamespace(app=client.app),
-        follow=False,
-    )
-    stream = response.body_iterator
-    first_chunk = client.portal.call(stream.__anext__)
-    assert "event: session.started\n" in first_chunk
-
     held_out = AnnotationRecord(
         annotation_id="held-out",
         message_id="message-a",
@@ -528,22 +519,39 @@ def test_public_session_events_snapshot_excludes_annotation_appended_after_first
         author="reviewer",
         generation="generation-a",
     )
-    session_store.mutate_session(
-        tmp_path,
-        session_id,
-        lambda current: current.annotate(held_out),
-    )
+    appended = False
 
-    chunks = [first_chunk]
-    while True:
-        try:
-            chunks.append(client.portal.call(stream.__anext__))
-        except StopAsyncIteration:
-            break
-    original_records = _stream_records(SimpleNamespace(text="".join(chunks)))
-    assert [event["kind"] for event in original_records] == [
+    async def append_during_response(scope, receive, send):
+        async def send_chunk(message):
+            nonlocal appended
+            await send(message)
+            if (
+                message["type"] == "http.response.body"
+                and message.get("body")
+                and not appended
+            ):
+                appended = True
+                session_store.mutate_session(
+                    tmp_path,
+                    session_id,
+                    lambda current: current.annotate(held_out),
+                )
+
+        await client.app(scope, receive, send_chunk)
+
+    async def read_snapshot():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=append_during_response),
+            base_url="http://127.0.0.1",
+        ) as reader:
+            return await reader.get(f"/v1/sessions/{session_id}/events?follow=false")
+
+    response = client.portal.call(read_snapshot)
+    assert response.status_code == 200, response.text
+    assert [event["kind"] for event in _stream_records(response)] == [
         "session.started",
         "assistant_message",
+        "session.completed",
     ]
 
     fresh_snapshot = client.get(
