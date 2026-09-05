@@ -353,19 +353,49 @@ class PersistenceMixin:
                     raise SessionRecordDeletedError(
                         f"session {record.session_id} was permanently deleted"
                     )
-                self._records[record.session_id] = record
+                state_path = self._state_path(record.session_id)
+                if record.session_id in self._records or (
+                    state_path is not None and state_path.exists()
+                ):
+                    raise ValueError(f"session already exists: {record.session_id}")
                 self._persist_record_locked(record)
+                self._records[record.session_id] = record
         return record
 
     async def get(self, session_id: str) -> Optional[SessionRecord]:
         async with self._lock:
             record = self._records.get(session_id)
-            if record is None or self._state_root is None:
+            if self._state_root is None:
                 return record
-            metadata = record.metadata if isinstance(record.metadata, dict) else {}
-            require_disk = record.loaded_from_retained_state or isinstance(metadata.get("durable_child"), dict) or isinstance(metadata.get("durable_parent_cancellation"), dict)
             try:
                 async with self._record_file_lock(session_id):
+                    if record is None:
+                        tombstone = self._tombstone_path(session_id)
+                        if tombstone is not None and tombstone.exists():
+                            return None
+                        path = self._state_path(session_id)
+                        if path is None or not path.exists():
+                            return None
+                        try:
+                            payload = json.loads(path.read_text(encoding="utf-8"))
+                            loaded = self._deserialize_record(payload)
+                        except (
+                            OSError,
+                            ValueError,
+                            TypeError,
+                            KeyError,
+                            json.JSONDecodeError,
+                        ):
+                            return None
+                        if (
+                            loaded.session_id != session_id
+                            or self._state_path(loaded.session_id) != path
+                        ):
+                            return None
+                        self._records[session_id] = loaded
+                        return loaded
+                    metadata = record.metadata if isinstance(record.metadata, dict) else {}
+                    require_disk = record.loaded_from_retained_state or isinstance(metadata.get("durable_child"), dict) or isinstance(metadata.get("durable_parent_cancellation"), dict)
                     return self._refresh_record_from_disk_locked(session_id, record, require_disk=require_disk)
             except SessionRecordDeletedError:
                 self._records.pop(session_id, None)

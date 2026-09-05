@@ -7672,3 +7672,87 @@ def test_registry_records_evicts_session_deleted_by_another_owner(
         assert await stale.records() == []
 
     asyncio_run(scenario())
+
+
+def test_preexisting_registry_get_loads_record_created_by_another_owner(
+    tmp_path: Path,
+) -> None:
+    from breadboard_engine.api.cli_bridge.models import SessionStatus
+    from breadboard_engine.api.cli_bridge.registry.records import SessionRecord
+
+    state_root = tmp_path / "registry"
+    observer = SessionRegistry(state_root=state_root)
+    creator = SessionRegistry(state_root=state_root)
+    session_id = "created-after-observer"
+
+    assert asyncio_run(observer.get(session_id)) is None
+    record = SessionRecord(
+        session_id,
+        status=SessionStatus.RUNNING,
+        logging_dir=str(tmp_path / "accepted-logs"),
+        metadata={
+            "config_path": str(tmp_path / "accepted-config.yaml"),
+            "workspace": str(tmp_path / "accepted-workspace"),
+            "mode": "accepted-mode",
+        },
+    )
+    asyncio_run(creator.create(record))
+
+    observed = asyncio_run(observer.get(session_id))
+    assert observed is not None
+    assert observed.session_id == session_id
+    assert observed.status is SessionStatus.RUNNING
+    assert observed.logging_dir == record.logging_dir
+    assert observed.metadata == record.metadata
+
+
+def test_explicit_id_create_rejects_disk_collision_without_overwriting_first_record(
+    tmp_path: Path,
+) -> None:
+    from breadboard_engine.api.cli_bridge.models import SessionStatus
+    from breadboard_engine.api.cli_bridge.registry.records import SessionRecord
+
+    state_root = tmp_path / "registry"
+    first_owner = SessionRegistry(state_root=state_root)
+    second_owner = SessionRegistry(state_root=state_root)
+    session_id = "explicit-id-collision"
+    first = SessionRecord(
+        session_id,
+        status=SessionStatus.RUNNING,
+        logging_dir=str(tmp_path / "first-logs"),
+        metadata={
+            "config_path": str(tmp_path / "first-config.yaml"),
+            "workspace": str(tmp_path / "first-workspace"),
+            "mode": "first-mode",
+        },
+    )
+    duplicate = SessionRecord(
+        session_id,
+        status=SessionStatus.FAILED,
+        logging_dir=str(tmp_path / "duplicate-logs"),
+        metadata={
+            "config_path": str(tmp_path / "duplicate-config.yaml"),
+            "workspace": str(tmp_path / "duplicate-workspace"),
+            "mode": "duplicate-mode",
+        },
+    )
+
+    assert asyncio_run(first_owner.get(session_id)) is None
+    assert asyncio_run(second_owner.get(session_id)) is None
+    asyncio_run(first_owner.create(first))
+    state_path = first_owner._state_path(session_id)
+    assert state_path is not None
+    accepted_bytes = state_path.read_bytes()
+
+    with pytest.raises(ValueError, match="already exists"):
+        asyncio_run(second_owner.create(duplicate))
+
+    assert state_path.read_bytes() == accepted_bytes
+    reloaded = asyncio_run(
+        SessionRegistry(state_root=state_root).get(session_id)
+    )
+    assert reloaded is not None
+    assert reloaded.session_id == session_id
+    assert reloaded.status is SessionStatus.RUNNING
+    assert reloaded.logging_dir == first.logging_dir
+    assert reloaded.metadata == first.metadata
