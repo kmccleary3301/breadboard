@@ -1439,16 +1439,47 @@ def _prepare_candidate_root(candidate_root: Path, stages: Sequence[Stage]) -> No
     )
 
 
+def _validate_promotion_destination(destination: Path) -> None:
+    """Reject destination parents that resolve outside their authorized root."""
+
+    destination_absolute = Path(os.path.abspath(destination))
+    checkout_root = Path(os.path.abspath(ROOT))
+    if destination_absolute.is_relative_to(checkout_root):
+        boundary = checkout_root
+        boundary_label = "checkout"
+    else:
+        workspace_root = Path(os.path.abspath(workspace_root_for_checkout(ROOT)))
+        if destination_absolute.is_relative_to(workspace_root):
+            boundary = workspace_root
+            boundary_label = "declared workspace"
+        else:
+            raise ValueError(
+                f"promotion destination escapes checkout and declared workspace: "
+                f"{destination}"
+            )
+    try:
+        destination_absolute.parent.resolve(strict=False).relative_to(
+            boundary.resolve(strict=False)
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ValueError(
+            f"promotion destination parent escapes {boundary_label} boundary: "
+            f"{destination}"
+        ) from exc
+
+
 def _accepted_path(candidate_root: Path, candidate_path: Path) -> Path:
-    """Map a candidate path lexically, without dereferencing symlinks."""
+    """Map the leaf lexically while confining its parent to the accepted root."""
 
     candidate_absolute = Path(os.path.abspath(candidate_path))
     root_absolute = Path(os.path.abspath(candidate_root))
     workspace_absolute = Path(os.path.abspath(candidate_root.parent))
     try:
-        return ROOT / candidate_absolute.relative_to(root_absolute)
+        destination = ROOT / candidate_absolute.relative_to(root_absolute)
     except ValueError:
-        return workspace_root_for_checkout(ROOT) / candidate_absolute.relative_to(workspace_absolute)
+        destination = workspace_root_for_checkout(ROOT) / candidate_absolute.relative_to(workspace_absolute)
+    _validate_promotion_destination(destination)
+    return destination
 
 
 def _write_set_entries(
@@ -1495,8 +1526,9 @@ def _remove_path(path: Path) -> None:
 
 def _rollback_promoted_write_set(applied: Sequence[tuple[Path, Path | None]]) -> None:
     for destination, backup in reversed(applied):
+        _validate_promotion_destination(destination)
         _remove_path(destination)
-        if backup is not None and backup.exists():
+        if backup is not None and (backup.exists() or backup.is_symlink()):
             destination.parent.mkdir(parents=True, exist_ok=True)
             backup.replace(destination)
 
@@ -1525,6 +1557,7 @@ def _promote_write_set(
     applied: list[tuple[Path, Path | None]] = []
     try:
         for staged_path, destination, backup_path in staged:
+            _validate_promotion_destination(destination)
             backup: Path | None = None
             if destination.exists() or destination.is_symlink():
                 backup_path.parent.mkdir(parents=True, exist_ok=True)

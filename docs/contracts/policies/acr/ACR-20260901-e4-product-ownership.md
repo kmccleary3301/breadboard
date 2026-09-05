@@ -102,3 +102,19 @@ Missing fixtures are recovered from the governed input bundle, the pinned source
 archive, and the retained integration checkout. Existing accepted bytes are not
 overwritten or invented. Full E4 and fixed-point CI remain the landing gates;
 missing or stale historical custody is classified separately from product reds.
+
+## 10) Promotion destination-parent boundary correction — 2026-09-05
+
+Promotion keeps candidate paths lexical so legitimate candidate symlinks can
+be dereferenced and accepted leaf symlinks can be replaced. Before staging any
+write, candidate-to-accepted mapping resolves the destination parent and requires
+containment within the intended checkout or declared workspace root, before
+discovery can traverse it. Each promotion and rollback operation rechecks that
+containment before mutating its destination.
+Rollback restores dangling leaf symlinks too: their directory entries are accepted
+state even when their targets do not exist.
+
+A nested destination-parent symlink that resolves outside its authorized root
+therefore fails closed before promotion side effects. This is a bounded
+non-hostile-filesystem guarantee; check-then-use validation does not claim
+race-free protection against an active hostile path swap.
