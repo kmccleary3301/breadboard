@@ -141,3 +141,7 @@ remains with the permission owner. No permission API or default policy changes.
 ### W9 point-in-time snapshot correction
 
 `follow=false` stops after draining its captured batch, including durable post-terminal annotations already present at capture. It no longer rereads durable storage after yielding that batch. Events appended while the response is streaming appear only in a later snapshot. The ASGI regression appends a held-out annotation after the first response chunk and checks both responses. Live-follow behavior and public schemas are unchanged.
+
+### W9 exact Python world-mask type
+
+`WorldFieldMask.paths` is the fixed ordered tuple `("/occurred_at", "/timestamp")`, matching AM29, the canonical schema and the TypeScript tuple. The prior list annotation admitted incomplete, reordered and duplicated paths. A clean mypy consumer accepted an incomplete mask before correction and rejects it afterward; the valid tuple type-checks and serializes to the unchanged JSON array. No new operation, schema or runtime owner.
