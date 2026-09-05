@@ -9,6 +9,7 @@ from threading import Barrier, Lock, Thread
 from time import monotonic, sleep
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
@@ -492,6 +493,74 @@ def test_live_event_limit_returns_annotation_before_later_input(
     assert records[0]["seq"] == 3
     assert records[0]["payload"]["trajectory_id"] == "trajectory-a"
     assert records[0]["visibility"]["provider_visible"] is False
+
+
+def test_public_session_events_snapshot_excludes_annotation_appended_after_first_chunk(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    session_id = "snapshot-boundary"
+    lock = EffectiveHarnessLock._from_record(
+        {"graph_hash": "sha256:" + "a" * 64}
+    )
+    session = Session.start(lock, "snapshot boundary", session_id=session_id)
+    session.assistant_message(
+        "candidate",
+        message_id="message-a",
+        trajectory_id="trajectory-a",
+    )
+    session.complete()
+    session_store.create_session(tmp_path, session)
+    held_out = AnnotationRecord(
+        annotation_id="held-out",
+        message_id="message-a",
+        trajectory_id="trajectory-a",
+        label="preferred",
+        author="reviewer",
+        generation="generation-a",
+    )
+    appended = False
+
+    async def append_during_response(scope, receive, send):
+        async def send_chunk(message):
+            nonlocal appended
+            await send(message)
+            if (
+                message["type"] == "http.response.body"
+                and message.get("body")
+                and not appended
+            ):
+                appended = True
+                session_store.mutate_session(
+                    tmp_path,
+                    session_id,
+                    lambda current: current.annotate(held_out),
+                )
+
+        await client.app(scope, receive, send_chunk)
+
+    async def read_snapshot():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=append_during_response),
+            base_url="http://127.0.0.1",
+        ) as reader:
+            return await reader.get(f"/v1/sessions/{session_id}/events?follow=false")
+
+    response = client.portal.call(read_snapshot)
+    assert response.status_code == 200, response.text
+    assert [event["kind"] for event in _stream_records(response)] == [
+        "session.started",
+        "assistant_message",
+        "session.completed",
+    ]
+
+    fresh_snapshot = client.get(
+        f"/v1/sessions/{session_id}/events?follow=false"
+    )
+    assert fresh_snapshot.status_code == 200
+    fresh_records = _stream_records(fresh_snapshot)
+    assert fresh_records[-1]["kind"] == "annotation"
+    assert fresh_records[-1]["payload"]["annotation_id"] == "held-out"
 
 
 def test_public_session_events_snapshot_closes_without_live_follow(
