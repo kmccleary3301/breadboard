@@ -201,6 +201,10 @@ def _validate_compaction_payload(payload: Mapping[str, Any]) -> None:
     _sha256(payload.get("context_sha256"), "context_sha256")
     _decode_compaction_context(payload)
 def _validate_payload(kind: str, payload: Mapping[str, Any]) -> None:
+    if "lineage" in payload:
+        if kind != "session.started" and kind not in _TERMINAL:
+            raise ValueError("lineage belongs only to Session start and settlement")
+        SessionLineage.from_dict(payload["lineage"])
     if kind == "session.started": _sha256(payload.get("effective_lock_hash"), "effective_lock_hash"); _sha256(payload.get("task_hash"), "task_hash")
     elif kind == "assistant_message":
         metadata = payload.get("metadata")
@@ -264,6 +268,35 @@ class CompactionSnapshot:
         facts = validate_raw_fact_ids(self.raw_fact_ids)
         object.__setattr__(self, "raw_fact_ids", facts)
 @dataclass(frozen=True, slots=True)
+class SessionLineage:
+    """Immutable parent and Work Item identities carried by a child Session."""
+
+    parent_session_id: str
+    root_session_id: str
+    parent_work_item_id: str
+    child_work_item_id: str
+
+    def __post_init__(self) -> None:
+        for name in ("parent_session_id", "root_session_id", "parent_work_item_id", "child_work_item_id"):
+            _string(getattr(self, name), name)
+        if self.parent_work_item_id == self.child_work_item_id:
+            raise ValueError("child and parent Work Item identities must differ")
+
+    @classmethod
+    def from_dict(cls, value: object) -> "SessionLineage":
+        if not isinstance(value, Mapping) or set(value) != {"parent_session_id", "root_session_id", "parent_work_item_id", "child_work_item_id"}:
+            raise ValueError("lineage must contain exactly its four stable identities")
+        return cls(value["parent_session_id"], value["root_session_id"], value["parent_work_item_id"], value["child_work_item_id"])
+
+    def as_dict(self) -> dict[str, str]:
+        return {
+            "parent_session_id": self.parent_session_id,
+            "root_session_id": self.root_session_id,
+            "parent_work_item_id": self.parent_work_item_id,
+            "child_work_item_id": self.child_work_item_id,
+        }
+
+@dataclass(frozen=True, slots=True)
 class AnnotationRecord:
     """Stable, immutable label metadata for one canonical message target."""
 
@@ -326,12 +359,19 @@ def _compaction_event(event: KernelEvent) -> CompactionEvent:
         raw_fact_ids=tuple(event.payload["raw_fact_ids"]),
         shadowed_raw_fact_ids=tuple(event.payload["shadowed_raw_fact_ids"]),
     )
+def _trajectory_segment_id(session_id: str, index: int, generation_id: str) -> str:
+    return f"{session_id}:segment:{index}:{generation_id.removeprefix('sha256:')}"
+
 @dataclass(frozen=True, slots=True)
 class SessionView:
-    session_id: str; status: str; effective_lock_hash: str; task_hash: str; event_count: int
+    session_id: str; status: str; effective_lock_hash: str; task_hash: str; event_count: int; trajectory_segment_id: str
     pending_approval: str | None = None; terminal_outcome: Mapping[str, Any] | None = None
+    lineage: SessionLineage | None = None
     def __post_init__(self) -> None:
         _string(self.session_id, "session_id"); _sha256(self.effective_lock_hash, "effective_lock_hash"); _sha256(self.task_hash, "task_hash")
+        _string(self.trajectory_segment_id, "trajectory_segment_id")
+        if self.lineage is not None and not isinstance(self.lineage, SessionLineage):
+            raise TypeError("lineage must be a SessionLineage")
         if type(self.status) is not str or self.status not in _STATUSES: raise ValueError("invalid session status")
         if type(self.event_count) is not int or self.event_count < 1: raise ValueError("event_count must be a positive integer")
         if self.status != "running" and self.event_count == 1: raise ValueError("non-running sessions require at least two events")
@@ -341,13 +381,18 @@ class SessionView:
             if not isinstance(self.terminal_outcome, Mapping): raise ValueError("terminal_outcome must match terminal status")
             terminal = _frozen(self.terminal_outcome); _validate_payload(f"session.{self.status}", terminal); object.__setattr__(self, "terminal_outcome", terminal)
         elif self.terminal_outcome is not None: raise ValueError("terminal_outcome requires terminal status")
-    def as_dict(self) -> dict[str, Any]: return {"schema_version": "bb.session.v1", "session_id": self.session_id, "status": self.status, "effective_lock_hash": self.effective_lock_hash, "task_hash": self.task_hash, "event_count": self.event_count, "pending_approval": self.pending_approval, "terminal_outcome": _plain(self.terminal_outcome)}
+    def as_dict(self) -> dict[str, Any]: return {"schema_version": "bb.session.v1", "session_id": self.session_id, "status": self.status, "effective_lock_hash": self.effective_lock_hash, "generation_id": self.effective_lock_hash, "trajectory_segment_id": self.trajectory_segment_id, "lineage": None if self.lineage is None else self.lineage.as_dict(), "task_hash": self.task_hash, "event_count": self.event_count, "pending_approval": self.pending_approval, "terminal_outcome": _plain(self.terminal_outcome)}
 def rebuild(events: Iterable[KernelEvent]) -> SessionView:
     rows = tuple(events)
     if not rows or rows[0].kind != "session.started":
         raise ValueError("event stream must begin with session.started")
     start, status, pending, outcome = rows[0], "running", None, None
     lock_hash = start.payload["effective_lock_hash"]
+    generation_index = 0
+    lineage_payload = start.payload.get("lineage")
+    lineage = None if lineage_payload is None else SessionLineage.from_dict(lineage_payload)
+    if lineage is not None and start.session_id in (lineage.parent_session_id, lineage.root_session_id):
+        raise ValueError("child Session cannot be its own parent or root")
     message_targets: dict[str, str] = {}
     annotation_ids: set[str] = set()
     compaction_count = 0
@@ -361,6 +406,8 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
             continue
         if status not in _ALLOWED.get(event.kind, ()):
             raise ValueError(f"invalid {event.kind} transition from {status}")
+        if event.kind in _TERMINAL and event.payload.get("lineage") != lineage_payload:
+            raise ValueError("Session settlement lineage differs from its start")
         if event.kind == "assistant_message" and "message_id" in event.payload:
             message_id = event.payload["message_id"]
             trajectory_id = event.payload["trajectory_id"]
@@ -412,14 +459,15 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
             pending, status = None, "running"
         elif event.kind == "session.reconfigured":
             lock_hash = event.payload["effective_lock_hash"]
+            generation_index += 1
         elif event.kind == "session.paused":
             status = "paused"
         elif event.kind == "session.resumed":
             status = "running"
         elif event.kind.startswith("session."):
             pending, status, outcome = None, event.kind.removeprefix("session."), event.payload
-    return SessionView(start.session_id, status, lock_hash, start.payload["task_hash"], len(rows), pending, outcome)
-SESSION_PROJECTOR_VERSION = "bb.session.projector.v1"
+    return SessionView(start.session_id, status, lock_hash, start.payload["task_hash"], len(rows), _trajectory_segment_id(start.session_id, generation_index, lock_hash), pending, outcome, lineage)
+SESSION_PROJECTOR_VERSION = "bb.session.projector.v2"
 class SessionProjectionError(ValueError):
     """A Session projection request cannot be satisfied."""
 class SessionProjectionAsOfError(SessionProjectionError):
@@ -527,11 +575,18 @@ class Session:
             () if compaction is None else tuple(compaction.payload["raw_fact_ids"])
         )
     @classmethod
-    def start(cls, lock: EffectiveHarnessLock, task: str, *, session_id: str | None = None, clock: Clock | None = None, ids: IdSource | None = None, sink: EventSink | None = None) -> "Session":
+    def start(cls, lock: EffectiveHarnessLock, task: str, *, session_id: str | None = None, clock: Clock | None = None, ids: IdSource | None = None, sink: EventSink | None = None, lineage: SessionLineage | None = None) -> "Session":
         if not isinstance(lock, EffectiveHarnessLock): raise TypeError("Session.start requires an EffectiveHarnessLock")
         if not isinstance(task, str) or not task.strip(): raise ValueError("task must be non-empty")
         active_clock, active_ids = clock if clock is not None else SystemClock(), ids if ids is not None else UUIDSource(); graph_hash, active_session_id = _graph_hash(lock), session_id if session_id is not None else active_ids.new_id()
-        event = KernelEvent.create(active_session_id, 1, "session.started", active_clock.now(), {"effective_lock_hash": graph_hash, "task_hash": _hash(task)}); active_sink = sink if sink is not None else NullEventSink(); active_sink.append(event)
+        payload: dict[str, Any] = {"effective_lock_hash": graph_hash, "task_hash": _hash(task)}
+        if lineage is not None:
+            if not isinstance(lineage, SessionLineage):
+                raise TypeError("lineage must be a SessionLineage")
+            if active_session_id in (lineage.parent_session_id, lineage.root_session_id):
+                raise ValueError("child Session cannot be its own parent or root")
+            payload["lineage"] = lineage.as_dict()
+        event = KernelEvent.create(active_session_id, 1, "session.started", active_clock.now(), payload); active_sink = sink if sink is not None else NullEventSink(); active_sink.append(event)
         return cls((event,), clock=active_clock, sink=active_sink, task=task)
     @classmethod
     def restore(cls, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None, task: str | None = None) -> "Session":
@@ -582,7 +637,7 @@ class Session:
             return tuple(
                 MappingProxyType(
                     {
-                        "segment_id": f"{session_id}:segment:{index}:{boundary.payload['effective_lock_hash'].removeprefix('sha256:')}",
+                        "segment_id": _trajectory_segment_id(session_id, index, boundary.payload["effective_lock_hash"]),
                         "segment_index": index,
                         "generation_id": boundary.payload["effective_lock_hash"],
                         "start_sequence": boundary.sequence,
@@ -608,7 +663,7 @@ class Session:
                                 "new_generation_id": generation,
                                 "reason": event.payload["reason"],
                                 "effective_sequence": event.sequence,
-                                "trajectory_segment_id": f"{session_id}:segment:{len(history) + 1}:{generation.removeprefix('sha256:')}",
+                                "trajectory_segment_id": _trajectory_segment_id(session_id, len(history) + 1, generation),
                             }
                         )
                     )
@@ -758,7 +813,10 @@ class Session:
         with self._transition_lock:
             self._require(action); self._appending = True
             try:
-                body = payload(); event = KernelEvent.create(self._view.session_id, len(self._events) + 1, kind, self._clock.now(), body); next_events = [*self._events, event]; next_view = rebuild(next_events); self._sink.append(event)
+                body = payload()
+                if kind in _TERMINAL and self._view.lineage is not None:
+                    body["lineage"] = self._view.lineage.as_dict()
+                event = KernelEvent.create(self._view.session_id, len(self._events) + 1, kind, self._clock.now(), body); next_events = [*self._events, event]; next_view = rebuild(next_events); self._sink.append(event)
                 self._events, self._view = next_events, next_view; return event, next_view
             finally: self._appending = False
     def _append(self, action: str, kind: str, payload: Callable[[], dict[str, Any]]) -> SessionView:

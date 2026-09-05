@@ -4,6 +4,7 @@ import test from "node:test"
 import { openEventStream, streamSessionEvents } from "../dist/stream.js"
 import { ApiError } from "../dist/client.js"
 const payloadSchemaVersion = (kind) => ({
+  annotation: "bb.payload.product_session.annotation.v1",
   assistant_message: "bb.payload.message.assistant.v1",
   tool_call: "bb.payload.tool.called.v1",
   tool_result: "bb.payload.tool.completed.v1",
@@ -236,6 +237,43 @@ test("streamSessionEvents preserves snapshot and compatibility query keys", asyn
   assert.deepEqual(events, [expected])
 })
 
+test("openEventStream snapshot retains annotations after settlement", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  const completed = eventEnvelope("archive", 1, "session.completed", {
+    outcome: "completed", summary: "done",
+  })
+  const annotation = eventEnvelope("archive", 2, "annotation", {
+    annotation_id: "label-a", message_id: "message-a", trajectory_id: "trajectory-a",
+    label: "preferred", author: "reviewer", generation: "sha256:" + "a".repeat(64),
+  })
+  annotation.visibility = {
+    host_visible: true, model_visible: false, provider_visible: false, redaction_state: "none",
+  }
+  const body = [completed, annotation]
+    .map((event) => `id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`).join("")
+  globalThis.fetch = async () => new Response(body, {
+    headers: { "content-type": "text/event-stream" },
+  })
+  const observed = []
+  await new Promise((resolve, reject) => {
+    const deadline = setTimeout(() => reject(new Error("snapshot lost its post-run label")), 1000)
+    const handle = openEventStream("archive", {
+      onEvent(event) {
+        observed.push(event)
+        if (event.kind === "annotation") resolve()
+      },
+      onError: reject,
+    }, {
+      config: { baseUrl: "http://127.0.0.1" },
+      query: { follow: false },
+    })
+    t.after(() => { clearTimeout(deadline); handle.close() })
+  })
+  assert.deepEqual(observed.map((event) => event.kind), ["session.completed", "annotation"])
+  assert.equal(observed[1].payload.annotation_id, "label-a")
+})
+
 test("openEventStream does not reconnect a follow=false snapshot", async (t) => {
   const originalFetch = globalThis.fetch
   t.after(() => {
@@ -355,6 +393,185 @@ test("streamSessionEvents rejects lifecycle kinds with another lifecycle payload
       }
     },
     /Invalid session event lifecycle payload fields/,
+  )
+})
+test("streamSessionEvents decodes annotations, lineage, and paired assistant identities", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  const annotation = eventEnvelope("session-identities", 1, "annotation", {
+    annotation_id: "annotation-1",
+    message_id: "message-1",
+    trajectory_id: "trajectory-1",
+    label: "verified",
+    author: "operator",
+    generation: "sha256:" + "a".repeat(64),
+  })
+  annotation.visibility = {
+    model_visible: false,
+    provider_visible: false,
+    host_visible: true,
+    redaction_state: "none",
+  }
+  const started = eventEnvelope("session-identities", 2, "session.started", {
+    effective_lock_hash: "sha256:" + "b".repeat(64),
+    task_hash: "sha256:" + "c".repeat(64),
+    lineage: {
+      parent_session_id: "parent-session",
+      root_session_id: "root-session",
+      parent_work_item_id: "parent-work-item",
+      child_work_item_id: "child-work-item",
+    },
+  })
+  started.work_item_id = "child-work-item"
+  started.parent_work_item_id = "parent-work-item"
+  const assistant = eventEnvelope("session-identities", 3, "assistant_message", {
+    metadata: { has_content: true },
+    message_id: "message-1",
+    trajectory_id: "trajectory-1",
+  })
+  const encoded = new TextEncoder().encode([
+    `id: 1\ndata: ${JSON.stringify(annotation)}\n\n`,
+    `id: 2\ndata: ${JSON.stringify(started)}\n\n`,
+    `id: 3\ndata: ${JSON.stringify(assistant)}\n\n`,
+  ].join(""))
+  globalThis.fetch = async () => new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoded)
+        controller.close()
+      },
+    }),
+    { headers: { "content-type": "text/event-stream" } },
+  )
+
+  const events = []
+  for await (const event of streamSessionEvents("session-identities", {
+    config: { baseUrl: "http://breadboard.test:9099" },
+  })) {
+    events.push(event)
+  }
+
+  assert.equal(events[0].kind, "annotation")
+  assert.deepEqual(events[0].visibility, {
+    model_visible: false,
+    provider_visible: false,
+    host_visible: true,
+    redaction_state: "none",
+  })
+  assert.deepEqual(events[0].payload, annotation.payload)
+  assert.deepEqual(events[1].payload.lineage, started.payload.lineage)
+  assert.deepEqual(events[2].payload, assistant.payload)
+})
+
+test("streamSessionEvents rejects partial assistant identities", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  const forged = eventEnvelope("session-partial-identity", 1, "assistant_message", {
+    metadata: { has_content: true },
+    message_id: "message-1",
+  })
+  const encoded = new TextEncoder().encode(`id: 1\ndata: ${JSON.stringify(forged)}\n\n`)
+  globalThis.fetch = async () => new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoded)
+        controller.close()
+      },
+    }),
+    { headers: { "content-type": "text/event-stream" } },
+  )
+
+  await assert.rejects(
+    async () => {
+      for await (const _event of streamSessionEvents("session-partial-identity", {
+        config: { baseUrl: "http://breadboard.test:9099" },
+      })) {
+        assert.fail("unexpected partial assistant identity")
+      }
+    },
+    /Invalid session event assistant identity fields/,
+  )
+})
+
+test("streamSessionEvents rejects non-host annotation visibility", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  const forged = eventEnvelope("session-annotation-visibility", 1, "annotation", {
+    annotation_id: "annotation-1",
+    message_id: "message-1",
+    trajectory_id: "trajectory-1",
+    label: "verified",
+    author: "operator",
+    generation: "sha256:" + "a".repeat(64),
+  })
+  forged.visibility.provider_visible = true
+  const encoded = new TextEncoder().encode(`id: 1\ndata: ${JSON.stringify(forged)}\n\n`)
+  globalThis.fetch = async () => new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoded)
+        controller.close()
+      },
+    }),
+    { headers: { "content-type": "text/event-stream" } },
+  )
+
+  await assert.rejects(
+    async () => {
+      for await (const _event of streamSessionEvents("session-annotation-visibility", {
+        config: { baseUrl: "http://breadboard.test:9099" },
+      })) {
+        assert.fail("unexpected provider-visible annotation")
+      }
+    },
+    /Invalid session event annotation visibility/,
+  )
+})
+test("streamSessionEvents rejects contradictory lineage correlations", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  const forged = eventEnvelope("session-lineage-mismatch", 1, "session.started", {
+    effective_lock_hash: "sha256:" + "a".repeat(64),
+    task_hash: "sha256:" + "b".repeat(64),
+    lineage: {
+      parent_session_id: "parent-session",
+      root_session_id: "root-session",
+      parent_work_item_id: "parent-work-item",
+      child_work_item_id: "child-work-item",
+    },
+  })
+  const encoded = new TextEncoder().encode(`id: 1\ndata: ${JSON.stringify(forged)}\n\n`)
+  globalThis.fetch = async () => new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoded)
+        controller.close()
+      },
+    }),
+    { headers: { "content-type": "text/event-stream" } },
+  )
+
+  await assert.rejects(
+    async () => {
+      for await (const _event of streamSessionEvents("session-lineage-mismatch", {
+        config: { baseUrl: "http://breadboard.test:9099" },
+      })) {
+        assert.fail("unexpected lineage mismatch")
+      }
+    },
+    /Invalid session event lineage correlations/,
   )
 })
 

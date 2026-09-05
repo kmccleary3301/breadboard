@@ -1,12 +1,12 @@
 // GENERATED FILE - do not edit by hand.
 // generator: scripts/quality/generate_public_bindings.py
-// generator-version: 4
+// generator-version: 5
 // catalog-id: bb.public_operation_catalog.v2
 // catalog-sha256: sha256:23c3596e075e609539ede6ba64a005110ceb85935f046e0246ff36cd39b990f6
 // kernel-event-registry: contracts/kernel/registries/kernel_event_kinds.v1.json
 // kernel-event-registry-sha256: sha256:cc235e72f8756caf99a4dc7aa00dfdc1f3d8e2ef0ce6e35657b451127215ba22
 // public-projection-module: breadboard/product/runtime/public_event_projection.py
-// public-projection-sha256: sha256:df816a622ff8b4ee6f65da8a235baebdc2ab2315761db665c08e0de40d963c8f
+// public-projection-sha256: sha256:2cb18c5cd23e7c17f4e506323b4f8f5d9ebcb1b5484ef157d17cc2d414263a7d
 
 export type GeneratedEventType = "assistant.message.delta" | "assistant.message.end" | "assistant.message.start" | "assistant.reasoning.delta" | "assistant.thought_summary.delta" | "assistant.tool_call.delta" | "assistant.tool_call.end" | "assistant.tool_call.start" | "assistant_delta" | "assistant_message" | "checkpoint_list" | "checkpoint_restored" | "completion" | "conversation.compaction.end" | "conversation.compaction.start" | "coordination_directive" | "coordination_review_verdict" | "coordination_signal" | "ctree_node" | "ctree_snapshot" | "error" | "guardrail_event" | "lifecycle_event" | "limits_update" | "log_link" | "permission_request" | "permission_response" | "provider_response" | "provider_response_v2" | "reward_update" | "run_finished" | "session_control" | "skills_catalog" | "skills_selection" | "stream.gap" | "task_event" | "todo_event" | "tool.exec.end" | "tool.exec.start" | "tool.exec.stderr.delta" | "tool.exec.stdout.delta" | "tool.result" | "tool_call" | "tool_result" | "turn_cancelled" | "turn_completed" | "turn_failed" | "turn_start" | "user_message" | "warning";
 export type GeneratedEventDecoder = "assistant-message" | "assistant-start" | "assistant-tool-delta" | "assistant-tool-end" | "assistant-tool-start" | "checkpoint-list" | "checkpoint-restored" | "compaction-end" | "compaction-start" | "completion" | "ctree-node" | "ctree-snapshot" | "deprecated" | "gap" | "input-text" | "limits" | "log-link" | "optional-text" | "permission-requested" | "permission-responded" | "reward" | "run-finished" | "runtime-error" | "session-control" | "skills-catalog" | "skills-selection" | "task-observed" | "text" | "todo" | "tool-called" | "tool-exec-end" | "tool-exec-start" | "tool-exec-stderr" | "tool-exec-stdout" | "tool-result-or-todo" | "turn-cancelled" | "turn-completed" | "turn-failed" | "turn-start" | "unsupported" | "warning";
@@ -579,6 +579,7 @@ export const GENERATED_EVENT_KIND_METADATA_BY_TYPE: Readonly<Record<string, Gene
 } as const;
 
 export const PUBLIC_SESSION_EVENT_PAYLOAD_SCHEMAS = {
+  "annotation": "bb.payload.product_session.annotation.v1",
   "approval.requested": "bb.payload.product_session.lifecycle.v1",
   "approval.resolved": "bb.payload.product_session.lifecycle.v1",
   "assistant_message": "bb.payload.message.assistant.v1",

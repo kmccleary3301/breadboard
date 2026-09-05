@@ -1,4 +1,4 @@
-import { createParser, type EventSourceParseCallback, type ParsedEvent, type ReconnectInterval } from "eventsource-parser"
+import { createParser, type ParsedEvent, type ReconnectInterval } from "eventsource-parser"
 import { ApiError, type BreadboardClientConfig } from "./client.js"
 import { assertProtectedBearerTransport } from "./transport-security.js"
 import type { SessionEvent } from "./types.js"
@@ -9,7 +9,6 @@ import {
 import {
   PUBLIC_SESSION_EVENT_PAYLOAD_SCHEMAS,
   type PublicSessionEventKind as EventKind,
-  type PublicSessionEventPayloadSchema as EventPayloadSchema,
 } from "./generated/session-event-bindings.js"
 export const bindGeneratedRoute = (
   binding: PublicOperationBinding,
@@ -66,56 +65,73 @@ export interface EventStreamHandle {
 const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 
-const SESSION_EVENT_FIELDS = new Set([
-  "schema_version",
-  "event_id",
-  "seq",
-  "timestamp",
-  "work_item_id",
-  "parent_work_item_id",
-  "attempt_id",
-  "session_id",
-  "span_id",
-  "visibility",
-  "kind",
-  "payload",
-  "payload_schema_version",
-])
+type FieldSet = Readonly<Record<string, true>>
 
-const SESSION_EVENT_VISIBILITY_FIELDS = new Set([
-  "model_visible",
-  "provider_visible",
-  "host_visible",
-  "redaction_state",
-])
+const EMPTY_FIELDS: FieldSet = {}
+const SESSION_EVENT_FIELDS = {
+  schema_version: true, event_id: true, seq: true, timestamp: true, work_item_id: true,
+  parent_work_item_id: true, attempt_id: true, session_id: true, span_id: true,
+  visibility: true, kind: true, payload: true, payload_schema_version: true,
+} satisfies FieldSet
+const SESSION_EVENT_VISIBILITY_FIELDS = {
+  model_visible: true, provider_visible: true, host_visible: true, redaction_state: true,
+} satisfies FieldSet
+const LIFECYCLE_PAYLOAD_FIELDS = {
+  "session.started": { effective_lock_hash: true, task_hash: true },
+  "input.accepted": { content_hash: true, attachments: true },
+  "approval.requested": { request_id: true, operation: true },
+  "approval.resolved": { request_id: true, decision: true },
+  "session.reconfigured": { effective_lock_hash: true, reason: true },
+  "session.paused": { reason: true },
+  "session.resumed": EMPTY_FIELDS,
+  "session.completed": { outcome: true, summary: true },
+  "session.failed": { outcome: true, error: true, detail: true },
+  "session.canceled": { outcome: true, reason: true },
+} satisfies Readonly<Record<string, FieldSet>>
+const LIFECYCLE_LINEAGE_KINDS = {
+  "session.started": true, "session.completed": true, "session.failed": true, "session.canceled": true,
+} satisfies FieldSet
+const LINEAGE_FIELDS = {
+  parent_session_id: true, root_session_id: true, parent_work_item_id: true, child_work_item_id: true,
+} satisfies FieldSet
+const ANNOTATION_PAYLOAD_FIELDS = {
+  annotation_id: true, message_id: true, trajectory_id: true, label: true, author: true, generation: true,
+} satisfies FieldSet
+const KERNEL_PAYLOAD_FIELDS = {
+  assistant_message: { seq: true, metadata: true, message: true, text: true, source: true, message_id: true, trajectory_id: true },
+  tool_call: { seq: true, metadata: true, call: true, call_id: true, tool: true, tool_name: true, state: true },
+  tool_result: { seq: true, metadata: true, message: true, tool: true, success: true, status: true, error: true, call_id: true, todo: true },
+} satisfies Readonly<Record<string, FieldSet>>
+const LINEAGE_OPTIONAL_FIELDS = { lineage: true } satisfies FieldSet
+const ATTACHMENT_FIELDS = { digest: true, size_bytes: true, media_type: true } satisfies FieldSet
 
-const LIFECYCLE_PAYLOAD_FIELDS: Readonly<Record<string, ReadonlySet<string>>> = {
-  "session.started": new Set(["effective_lock_hash", "task_hash"]),
-  "input.accepted": new Set(["content_hash", "attachments"]),
-  "approval.requested": new Set(["request_id", "operation"]),
-  "approval.resolved": new Set(["request_id", "decision"]),
-  "session.reconfigured": new Set(["effective_lock_hash", "reason"]),
-  "session.paused": new Set(["reason"]),
-  "session.resumed": new Set(),
-  "session.completed": new Set(["outcome", "summary"]),
-  "session.failed": new Set(["outcome", "error", "detail"]),
-  "session.canceled": new Set(["outcome", "reason"]),
-}
-
-const KERNEL_PAYLOAD_FIELDS: Readonly<Record<string, ReadonlySet<string>>> = {
-  assistant_message: new Set(["seq", "metadata", "message", "text", "source"]),
-  tool_call: new Set(["seq", "metadata", "call", "call_id", "tool", "tool_name", "state"]),
-  tool_result: new Set(["seq", "metadata", "message", "tool", "success", "status", "error", "call_id", "todo"]),
+const hasRequiredFields = (
+  value: Record<string, unknown>,
+  required: FieldSet,
+  optional: FieldSet,
+): boolean => {
+  for (const field in required) {
+    if (Object.hasOwn(required, field) && !Object.hasOwn(value, field)) return false
+  }
+  for (const field in value) {
+    if (Object.hasOwn(value, field) && !Object.hasOwn(required, field) && !Object.hasOwn(optional, field)) return false
+  }
+  return true
 }
 
 const hasExactFields = (
   value: Record<string, unknown>,
-  fields: ReadonlySet<string>,
-): boolean => {
-  const keys = Object.keys(value)
-  return keys.length === fields.size && keys.every((key) => fields.has(key))
-}
+  fields: FieldSet,
+): boolean => hasRequiredFields(value, fields, EMPTY_FIELDS)
 
+const validateLineage = (value: unknown): boolean => {
+  if (!record(value) || !hasExactFields(value, LINEAGE_FIELDS)) return false
+  for (const field in LINEAGE_FIELDS) {
+    const fieldValue = value[field]
+    if (typeof fieldValue !== "string" || fieldValue.length === 0) return false
+  }
+  return true
+}
 
 const requiredString = (value: unknown, field: string): string => {
   if (typeof value !== "string" || value.length === 0) throw new Error(`Invalid session event ${field}`)
@@ -195,15 +211,16 @@ const requiredBoolean = (value: unknown, field: string): boolean => {
   if (typeof value !== "boolean") throw new Error(`Invalid session event ${field}`)
   return value
 }
+
 const sha256 = (value: unknown): boolean =>
   typeof value === "string" && /^sha256:[0-9a-f]{64}$/.test(value)
 
 const validateKernelPayload = (
-  kind: string,
+  kind: keyof typeof KERNEL_PAYLOAD_FIELDS,
   payload: Record<string, unknown>,
 ): void => {
   const fields = KERNEL_PAYLOAD_FIELDS[kind]
-  if (!fields || !Object.keys(payload).every((field) => fields.has(field))) {
+  if (!fields || !hasRequiredFields(payload, EMPTY_FIELDS, fields)) {
     throw new Error("Invalid session event payload fields")
   }
   if (
@@ -227,6 +244,17 @@ const validateKernelPayload = (
       throw new Error(`Invalid session event payload ${field}`)
     }
   }
+  if (kind === "assistant_message") {
+    const hasMessageId = Object.hasOwn(payload, "message_id")
+    const hasTrajectoryId = Object.hasOwn(payload, "trajectory_id")
+    if (hasMessageId !== hasTrajectoryId) {
+      throw new Error("Invalid session event assistant identity fields")
+    }
+    if (hasMessageId) {
+      requiredString(payload.message_id, "payload.message_id")
+      requiredString(payload.trajectory_id, "payload.trajectory_id")
+    }
+  }
   if (kind === "tool_call" && "call" in payload && !record(payload.call)) {
     throw new Error("Invalid session event payload call")
   }
@@ -238,7 +266,7 @@ const validateKernelPayload = (
 const validateAttachments = (value: unknown): boolean =>
   Array.isArray(value) && value.every((attachment) =>
     record(attachment)
-    && hasExactFields(attachment, new Set(["digest", "size_bytes", "media_type"]))
+    && hasExactFields(attachment, ATTACHMENT_FIELDS)
     && sha256(attachment.digest)
     && typeof attachment.size_bytes === "number"
     && Number.isSafeInteger(attachment.size_bytes)
@@ -246,13 +274,28 @@ const validateAttachments = (value: unknown): boolean =>
     && typeof attachment.media_type === "string"
     && attachment.media_type.length > 0)
 
+const validateAnnotationPayload = (payload: Record<string, unknown>): void => {
+  if (!hasExactFields(payload, ANNOTATION_PAYLOAD_FIELDS)) {
+    throw new Error("Invalid session event annotation payload fields")
+  }
+  for (const field in ANNOTATION_PAYLOAD_FIELDS) {
+    requiredString(payload[field], `payload.${field}`)
+  }
+}
+
 const validateLifecyclePayload = (
-  kind: string,
+  kind: keyof typeof LIFECYCLE_PAYLOAD_FIELDS,
   payload: Record<string, unknown>,
 ): void => {
   const fields = LIFECYCLE_PAYLOAD_FIELDS[kind]
-  if (!fields || !hasExactFields(payload, fields)) {
+  const optionalFields = Object.hasOwn(LIFECYCLE_LINEAGE_KINDS, kind)
+    ? LINEAGE_OPTIONAL_FIELDS
+    : EMPTY_FIELDS
+  if (!fields || !hasRequiredFields(payload, fields, optionalFields)) {
     throw new Error("Invalid session event lifecycle payload fields")
+  }
+  if ("lineage" in payload && !validateLineage(payload.lineage)) {
+    throw new Error("Invalid session event lifecycle payload lineage")
   }
   let valid = false
   switch (kind) {
@@ -302,22 +345,23 @@ const validateEventPayload = (
   kind: string,
   schemaVersion: string,
   payload: Record<string, unknown>,
-): { kind: EventKind; schemaVersion: EventPayloadSchema } => {
+): void => {
   if (!publicSessionEventKind(kind)) throw new Error("Invalid session event kind")
   const expectedSchema = PUBLIC_SESSION_EVENT_PAYLOAD_SCHEMAS[kind]
   if (schemaVersion !== expectedSchema) {
     throw new Error("Invalid session event payload_schema_version")
   }
-  if (kind in LIFECYCLE_PAYLOAD_FIELDS) validateLifecyclePayload(kind, payload)
-  else validateKernelPayload(kind, payload)
-  return { kind, schemaVersion: expectedSchema }
+  if (kind === "annotation") validateAnnotationPayload(payload)
+  else if (kind === "assistant_message" || kind === "tool_call" || kind === "tool_result") {
+    validateKernelPayload(kind, payload)
+  } else validateLifecyclePayload(kind, payload)
 }
 
-const decodeSessionEvent = (
+function validateSessionEvent(
   raw: unknown,
   expectedSessionId: string,
   sseId: string | undefined,
-): SessionEvent => {
+): asserts raw is SessionEvent {
   if (!record(raw)) throw new Error("Invalid session event envelope")
   if (!hasExactFields(raw, SESSION_EVENT_FIELDS)) throw new Error("Invalid session event fields")
   if (raw.schema_version !== "bb.public_session_event.v1") {
@@ -342,32 +386,35 @@ const decodeSessionEvent = (
     raw.payload_schema_version,
     "payload_schema_version",
   )
-  const validatedPayload = validateEventPayload(kind, payloadSchemaVersion, raw.payload)
+  validateEventPayload(kind, payloadSchemaVersion, raw.payload)
+  const modelVisible = requiredBoolean(raw.visibility.model_visible, "visibility.model_visible")
+  const providerVisible = requiredBoolean(raw.visibility.provider_visible, "visibility.provider_visible")
+  const hostVisible = requiredBoolean(raw.visibility.host_visible, "visibility.host_visible")
   const redactionState = raw.visibility.redaction_state
   if (redactionState !== "none" && redactionState !== "redacted") {
     throw new Error("Invalid session event visibility.redaction_state")
   }
-
-  return {
-    schema_version: "bb.public_session_event.v1",
-    event_id: eventId,
-    seq: sequence,
-    timestamp: requiredRfc3339Timestamp(raw.timestamp, "timestamp"),
-    work_item_id: nullableString(raw.work_item_id, "work_item_id"),
-    parent_work_item_id: nullableString(raw.parent_work_item_id, "parent_work_item_id"),
-    attempt_id: nullableString(raw.attempt_id, "attempt_id"),
-    session_id: sessionId,
-    span_id: nullableString(raw.span_id, "span_id"),
-    visibility: {
-      model_visible: requiredBoolean(raw.visibility.model_visible, "visibility.model_visible"),
-      provider_visible: requiredBoolean(raw.visibility.provider_visible, "visibility.provider_visible"),
-      host_visible: requiredBoolean(raw.visibility.host_visible, "visibility.host_visible"),
-      redaction_state: redactionState,
-    },
-    kind: validatedPayload.kind,
-    payload: raw.payload,
-    payload_schema_version: validatedPayload.schemaVersion,
+  if (kind === "annotation"
+    && (modelVisible || providerVisible || !hostVisible)) {
+    throw new Error("Invalid session event annotation visibility")
   }
+  const workItemId = nullableString(raw.work_item_id, "work_item_id")
+  const parentWorkItemId = nullableString(raw.parent_work_item_id, "parent_work_item_id")
+  if (Object.hasOwn(LIFECYCLE_LINEAGE_KINDS, kind) && "lineage" in raw.payload) {
+    const lineage = raw.payload.lineage
+    if (!record(lineage)) throw new Error("Invalid session event lifecycle payload lineage")
+    const childWorkItemId = requiredString(lineage.child_work_item_id, "payload.lineage.child_work_item_id")
+    const lineageParentWorkItemId = requiredString(
+      lineage.parent_work_item_id,
+      "payload.lineage.parent_work_item_id",
+    )
+    if (workItemId !== childWorkItemId || parentWorkItemId !== lineageParentWorkItemId) {
+      throw new Error("Invalid session event lineage correlations")
+    }
+  }
+  requiredRfc3339Timestamp(raw.timestamp, "timestamp")
+  nullableString(raw.attempt_id, "attempt_id")
+  nullableString(raw.span_id, "span_id")
 }
 
 const sessionEventsBinding = PUBLIC_BINDINGS_BY_OPERATION_ID["session.events"]
@@ -438,10 +485,12 @@ export const streamSessionEvents = async function* (
     reader = response.body.getReader()
     const decoder = new TextDecoder()
     const buffer: SessionEvent[] = []
-    const parser = createParser(((event: ParsedEvent | ReconnectInterval) => {
+    const parser = createParser((event: ParsedEvent | ReconnectInterval) => {
       if (event.type !== "event" || !("data" in event) || !event.data) return
-      buffer.push(decodeSessionEvent(JSON.parse(event.data), sessionId, event.id))
-    }) as EventSourceParseCallback)
+      const value: unknown = JSON.parse(event.data)
+      validateSessionEvent(value, sessionId, event.id)
+      buffer.push(value)
+    })
 
     while (!options.signal?.aborted) {
       const { value, done } = await reader.read()
@@ -514,13 +563,14 @@ export const openEventStream = (
         if (closed) return
         lastEventId = resumeCursor(event)
         resumeToken = event.seq
-        terminal =
+        terminal ||=
           event.kind === "session.completed"
           || event.kind === "session.failed"
           || event.kind === "session.canceled"
-        if (terminal) markClosed()
+        const stopAtTerminal = terminal && options.query?.follow !== false
+        if (stopAtTerminal) markClosed()
         handlers.onEvent(event)
-        if (terminal) return
+        if (stopAtTerminal) return
       }
     } catch (error) {
       if ((!closed || terminal) && !attemptController.signal.aborted) {

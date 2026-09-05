@@ -28,8 +28,19 @@ for await (const event of client.eventsSession(session.session_id)) {
 Session streams use the strict `bb.public_session_event.v1` projection. The
 canonical kernel `bb.kernel_event.v2` envelope remains a separate internal
 contract.
-Each `payload_schema_version` resolves to the public lifecycle payload schema
-or the registered kernel observation payload schema.
+Each `payload_schema_version` resolves to the public lifecycle or annotation
+payload schema, or a registered kernel observation payload schema.
+
+`annotation` carries an immutable annotation ID, message/trajectory target,
+label, author, and generation. It is host-visible, never model/provider input.
+`follow: false` snapshots retain annotations written after Session settlement;
+live followers still stop at settlement.
+
+Public Session records expose the pinned `generation_id`, current
+`trajectory_segment_id`, and nullable child `lineage`. Child start and settlement
+events preserve their parent/root Session and parent/child Work Item identities.
+Assistant observations preserve paired `message_id`/`trajectory_id` values.
+`WorldFieldMask` permits only `["/occurred_at", "/timestamp"]`.
 
 Product engine-management, canonical session, and lifecycle interfaces are
 available from `@breadboard/sdk/engine`, `@breadboard/sdk/session`, and

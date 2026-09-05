@@ -2,15 +2,60 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Literal, Optional, TypedDict
 
+from .generated.session_event_bindings import (
+    PublicSessionEventKind,
+    PublicSessionEventPayloadSchema,
+    PublicSessionLifecycleEventKind,
+)
+
 
 class SessionEventVisibility(TypedDict):
     model_visible: bool
     provider_visible: bool
     host_visible: bool
-    redaction_state: str
+    redaction_state: Literal["none", "redacted"]
 
 
-class SessionEvent(TypedDict):
+class SessionEventLineage(TypedDict):
+    parent_session_id: str
+    root_session_id: str
+    parent_work_item_id: str
+    child_work_item_id: str
+
+
+class SessionAnnotationPayload(TypedDict):
+    annotation_id: str
+    message_id: str
+    trajectory_id: str
+    label: str
+    author: str
+    generation: str
+
+
+class WorldFieldMask(TypedDict):
+    schema_version: Literal["bb.world_field_mask.v1"]
+    paths: List[Literal["/occurred_at", "/timestamp"]]
+
+
+
+
+class _SessionLifecyclePayload(TypedDict, total=False):
+    effective_lock_hash: str
+    task_hash: str
+    content_hash: str
+    attachments: List[Dict[str, Any]]
+    request_id: str
+    operation: str
+    decision: Literal["allow", "deny", "once", "always", "reject"]
+    reason: str
+    outcome: Literal["completed", "failed", "canceled"]
+    summary: str
+    error: str
+    detail: str
+    lineage: SessionEventLineage
+
+
+class _SessionEventEnvelope(TypedDict):
     schema_version: Literal["bb.public_session_event.v1"]
     event_id: str
     seq: int
@@ -21,9 +66,31 @@ class SessionEvent(TypedDict):
     session_id: str
     span_id: Optional[str]
     visibility: SessionEventVisibility
-    kind: str
+
+
+class _SessionLifecycleEvent(_SessionEventEnvelope):
+    kind: PublicSessionLifecycleEventKind
+    payload: _SessionLifecyclePayload
+    payload_schema_version: Literal["bb.payload.product_session.lifecycle.v1"]
+
+
+class _SessionAnnotationEvent(_SessionEventEnvelope):
+    kind: Literal["annotation"]
+    payload: SessionAnnotationPayload
+    payload_schema_version: Literal["bb.payload.product_session.annotation.v1"]
+
+
+class _SessionKernelEvent(_SessionEventEnvelope):
+    kind: Literal["assistant_message", "tool_call", "tool_result"]
     payload: Dict[str, Any]
-    payload_schema_version: str
+    payload_schema_version: Literal[
+        "bb.payload.message.assistant.v1",
+        "bb.payload.tool.called.v1",
+        "bb.payload.tool.completed.v1",
+    ]
+
+
+SessionEvent = _SessionLifecycleEvent | _SessionAnnotationEvent | _SessionKernelEvent
 
 
 class ArtifactRefPreview(TypedDict, total=False):
@@ -72,17 +139,29 @@ class SessionCreateResponse(TypedDict, total=False):
     logging_dir: Optional[str]
 
 
-class SessionSummary(TypedDict, total=False):
-    session_id: str
-    status: str
+class _SessionSummaryOptional(TypedDict, total=False):
     created_at: str
     last_activity_at: str
+    schema_version: str
+    effective_lock_hash: str
+    task_hash: str
+    event_count: int
+    pending_approval: Optional[str]
+    terminal_outcome: Optional[Dict[str, Any]]
     model: Optional[str]
     mode: Optional[str]
     completion_summary: Optional[Dict[str, Any]]
     reward_summary: Optional[Dict[str, Any]]
     logging_dir: Optional[str]
     metadata: Optional[Dict[str, Any]]
+
+
+class SessionSummary(_SessionSummaryOptional):
+    session_id: str
+    status: str
+    generation_id: str
+    trajectory_segment_id: str
+    lineage: Optional[SessionEventLineage]
 
 
 class ModelCatalogEntry(TypedDict, total=False):

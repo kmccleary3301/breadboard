@@ -377,7 +377,7 @@ def test_session_lifecycle_and_resumable_event_stream(
     assert client.get("/v1/sessions/session-fixture/artifacts").json()["ok"] is True
 
 
-def test_public_event_limit_fetches_visible_resume_after_hidden_annotation(
+def test_public_event_limit_counts_annotations_but_skips_compaction(
     client: TestClient,
     tmp_path: Path,
 ) -> None:
@@ -408,6 +408,9 @@ def test_public_event_limit_fetches_visible_resume_after_hidden_annotation(
     session.resume()
     session.compact(CompactionSnapshot(b"[]", ("ctn_000001",)))
     session.complete("done")
+    session.annotate(
+        AnnotationRecord("post-run", "message-a", "trajectory-a", "verified", "reviewer-2", "generation-a")
+    )
     session_store.create_session(tmp_path, session)
 
     response = client.get(
@@ -418,8 +421,10 @@ def test_public_event_limit_fetches_visible_resume_after_hidden_annotation(
     assert response.status_code == 200
     records = _stream_records(response)
     assert len(records) == 1
-    assert records[0]["kind"] == "session.resumed"
-    assert records[0]["seq"] == 5
+    assert records[0]["kind"] == "annotation"
+    assert records[0]["seq"] == 4
+    assert records[0]["payload"]["message_id"] == "message-a"
+    assert records[0]["visibility"]["model_visible"] is False
     resumed_after_compaction = client.get(
         f"/v1/sessions/{session_id}/events"
         "?resume_token=5&limit=1&follow=false"
@@ -430,9 +435,16 @@ def test_public_event_limit_fetches_visible_resume_after_hidden_annotation(
     assert len(after_compaction) == 1
     assert after_compaction[0]["kind"] == "session.completed"
     assert after_compaction[0]["seq"] == 7
+    labels_after_settlement = client.get(
+        f"/v1/sessions/{session_id}/events?resume_token=7&limit=1&follow=false"
+    )
+    assert labels_after_settlement.status_code == 200
+    label = _stream_records(labels_after_settlement)[0]
+    assert label["seq"] == 8
+    assert label["payload"]["annotation_id"] == "post-run"
 
 
-def test_live_event_limit_fetches_visible_row_after_hidden_annotation(
+def test_live_event_limit_returns_annotation_before_later_input(
     client: TestClient,
 ) -> None:
     lock_id = _locked_harness(client)
@@ -475,8 +487,10 @@ def test_live_event_limit_fetches_visible_row_after_hidden_annotation(
     assert response.status_code == 200
     records = _stream_records(response)
     assert len(records) == 1
-    assert records[0]["kind"] == "input.accepted"
-    assert records[0]["seq"] == 4
+    assert records[0]["kind"] == "annotation"
+    assert records[0]["seq"] == 3
+    assert records[0]["payload"]["trajectory_id"] == "trajectory-a"
+    assert records[0]["visibility"]["provider_visible"] is False
 
 
 def test_public_session_events_snapshot_closes_without_live_follow(

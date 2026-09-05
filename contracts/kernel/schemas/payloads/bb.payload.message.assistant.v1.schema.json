@@ -5,6 +5,8 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "message_id": { "type": "string", "minLength": 1 },
+    "trajectory_id": { "type": "string", "minLength": 1 },
     "seq": {
       "type": "integer",
       "minimum": 0
@@ -20,5 +22,9 @@
     "source": {
       "type": "string"
     }
+  },
+  "dependentRequired": {
+    "message_id": ["trajectory_id"],
+    "trajectory_id": ["message_id"]
   }
 }

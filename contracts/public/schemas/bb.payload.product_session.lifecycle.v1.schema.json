@@ -15,13 +15,25 @@
     { "$ref": "#/$defs/sessionCanceled" }
   ],
   "$defs": {
+    "lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parent_session_id", "root_session_id", "parent_work_item_id", "child_work_item_id"],
+      "properties": {
+        "parent_session_id": { "type": "string", "minLength": 1 },
+        "root_session_id": { "type": "string", "minLength": 1 },
+        "parent_work_item_id": { "type": "string", "minLength": 1 },
+        "child_work_item_id": { "type": "string", "minLength": 1 }
+      }
+    },
     "sessionStarted": {
       "type": "object",
       "additionalProperties": false,
       "required": ["effective_lock_hash", "task_hash"],
       "properties": {
         "effective_lock_hash": { "$ref": "#/$defs/sha256" },
-        "task_hash": { "$ref": "#/$defs/sha256" }
+        "task_hash": { "$ref": "#/$defs/sha256" },
+        "lineage": { "$ref": "#/$defs/lineage" }
       }
     },
     "inputAccepted": {
@@ -89,7 +101,8 @@
       "required": ["outcome", "summary"],
       "properties": {
         "outcome": { "const": "completed" },
-        "summary": { "type": "string" }
+        "summary": { "type": "string" },
+        "lineage": { "$ref": "#/$defs/lineage" }
       }
     },
     "sessionFailed": {
@@ -99,7 +112,8 @@
       "properties": {
         "outcome": { "const": "failed" },
         "error": { "type": "string", "minLength": 1 },
-        "detail": { "type": "string", "minLength": 1 }
+        "detail": { "type": "string", "minLength": 1 },
+        "lineage": { "$ref": "#/$defs/lineage" }
       }
     },
     "sessionCanceled": {
@@ -108,7 +122,8 @@
       "required": ["outcome", "reason"],
       "properties": {
         "outcome": { "const": "canceled" },
-        "reason": { "type": "string" }
+        "reason": { "type": "string" },
+        "lineage": { "$ref": "#/$defs/lineage" }
       }
     },
     "sha256": {
