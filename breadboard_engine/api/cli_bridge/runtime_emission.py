@@ -177,6 +177,7 @@ _RETAINED_RUNTIME_OVERRIDE_KEYS = frozenset(
         "mode",
         "permissions.edit.default",
         "permissions.options.default_response",
+        "permissions.options.mode",
         "permissions.read.default",
         "permissions.shell.default",
         "permissions.webfetch.default",
@@ -208,7 +209,7 @@ def retained_runtime_overrides(
             if isinstance(item, list) and all(
                 isinstance(entry, str) and entry.strip() for entry in item
             ):
-                retained[name] = [entry.strip() for entry in item]
+                retained[name] = list(item)
             else:
                 invalid.append(name)
         elif name == "completion.natural_finish.idle_turn_limit":
@@ -217,7 +218,7 @@ def retained_runtime_overrides(
             else:
                 invalid.append(name)
         elif isinstance(item, str) and item.strip():
-            retained[name] = item.strip()
+            retained[name] = item
         else:
             invalid.append(name)
     if reject_unsupported and (unsupported or invalid):

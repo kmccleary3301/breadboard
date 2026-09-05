@@ -132,8 +132,8 @@ Proof: durable child recovery through the ordinary public reader; full HTTP and 
 
 Kyle's standing-approval rule authorizes AM26–AM30. Merge still requires green checks and the independent review corrections. Rollback remains a protected merge revert; preserve durable source events, with no destructive state migration.
 
-The installed-client correction retains the five existing permission-default
-overrides supplied by the TUI. They remain bounded nonempty strings, interpreted
-by the permission owner; unknown keys and structured secret-bearing values stay
-rejected. Fresh authority restoration preserves the requested policy and pinned
-generation. No permission API or default policy changes.
+The client correction retains the existing permission-default and mode overrides
+used by the installed TUI and skeleton. Validated strings and lists retain their
+exact values, so persistence cannot change the pinned runtime generation.
+Unknown keys and structured secret-bearing values stay rejected; interpretation
+remains with the permission owner. No permission API or default policy changes.

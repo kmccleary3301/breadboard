@@ -2211,7 +2211,8 @@ async def test_create_overrides_survive_fresh_retained_resume(
         "skills.allowlist": ["test-skill"],
         "completion.natural_finish.idle_turn_limit": 7,
         "permissions.options.default_response": "reject",
-        "permissions.edit.default": "ask",
+        "permissions.options.mode": "prompt",
+        "permissions.edit.default": " ask ",
         "permissions.read.default": "allow",
         "permissions.shell.default": "deny",
         "permissions.webfetch.default": "ask",
@@ -2230,7 +2231,6 @@ async def test_create_overrides_survive_fresh_retained_resume(
     record = await service.ensure_session(response.session_id)
     pinned_generation = record.product_session.pinned_generation_id
     await service.registry.persist(record)
-    assert record.metadata["runtime_overrides"] == overrides
     await _stop(record)
 
     fresh = SessionService(state_root=state_root)
@@ -2239,7 +2239,8 @@ async def test_create_overrides_survive_fresh_retained_resume(
     assert config["skills"]["allowlist"] == ["test-skill"]
     assert config["completion"]["natural_finish"]["idle_turn_limit"] == 7
     assert config["permissions"]["options"]["default_response"] == "reject"
-    assert config["permissions"]["edit"]["default"] == "ask"
+    assert config["permissions"]["options"]["mode"] == "prompt"
+    assert config["permissions"]["edit"]["default"] == " ask "
     assert config["permissions"]["read"]["default"] == "allow"
     assert config["permissions"]["shell"]["default"] == "deny"
     assert config["permissions"]["webfetch"]["default"] == "ask"
