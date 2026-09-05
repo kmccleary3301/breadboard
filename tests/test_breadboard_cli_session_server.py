@@ -302,7 +302,7 @@ def test_session_cli_rejects_remote_plaintext_bearer_before_sse_request(
     assert requests == []
 
 
-def test_session_cli_bounds_complete_remote_event_snapshot_to_initial_count(
+def test_session_cli_bounds_remote_event_snapshot_through_post_settlement_annotation(
     monkeypatch, tmp_path, capsys
 ) -> None:
     calls: list[tuple[int | None, int, bool]] = []
@@ -332,12 +332,13 @@ def test_session_cli_bounds_complete_remote_event_snapshot_to_initial_count(
         ) -> Iterator[dict[str, Any]]:
             calls.append((resume_token, limit, follow))
             if resume_token is None:
-                for sequence in range(1, limit + 1):
+                for sequence in range(1, limit):
                     yield {"seq": sequence, "kind": "assistant_message"}
+                yield {"seq": limit, "kind": "session.completed"}
                 return
             assert resume_token == 256
             assert limit == 1
-            yield {"seq": 257, "kind": "session.completed"}
+            yield {"seq": 257, "kind": "annotation"}
 
     monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", PagingClient)
     assert (
@@ -357,6 +358,11 @@ def test_session_cli_bounds_complete_remote_event_snapshot_to_initial_count(
     )
     output = json.loads(capsys.readouterr().out)
     assert len(output["data"]["events"]) == 257
+    assert [event["seq"] for event in output["data"]["events"]][-2:] == [256, 257]
+    assert [event["kind"] for event in output["data"]["events"]][-2:] == [
+        "session.completed",
+        "annotation",
+    ]
     assert calls == [(None, 256, False), (256, 1, False)]
 
 
@@ -525,7 +531,7 @@ def test_session_cli_stops_before_event_appended_after_initial_bound(
                 (2, "session.completed"),
                 (3, "assistant_message"),
             ],
-            "event snapshot terminated before its initial bound",
+            "event after termination",
         ),
         (
             2,

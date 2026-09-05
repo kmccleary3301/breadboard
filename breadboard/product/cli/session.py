@@ -301,6 +301,7 @@ def _remote_event_snapshot(
 ) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     resume_token = 0
+    terminal_sequence: int | None = None
     while resume_token < upper_sequence:
         page_limit = min(
             _REMOTE_EVENT_PAGE_SIZE,
@@ -335,7 +336,6 @@ def _remote_event_snapshot(
             raise ValueError(
                 "server event snapshot ended before its initial bound"
             )
-        terminal_sequence = None
         previous_sequence = resume_token
         bounded_page: list[dict[str, Any]] = []
         crossed_bound = False
@@ -348,13 +348,9 @@ def _remote_event_snapshot(
             if sequence > upper_sequence:
                 crossed_bound = True
                 break
-            if terminal_sequence is not None:
+            if terminal_sequence is not None and event["kind"] != "annotation":
                 raise ValueError("server returned an event after termination")
             if event["kind"] in _TERMINAL_EVENT_KINDS:
-                if sequence != upper_sequence:
-                    raise ValueError(
-                        "server event snapshot terminated before its initial bound"
-                    )
                 terminal_sequence = sequence
             previous_sequence = sequence
             bounded_page.append(event)
