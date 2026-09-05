@@ -475,9 +475,22 @@ def rebuild_work_item(events: Iterable[WorkItemEvent]) -> WorkItemSnapshot:
     if not rows or rows[0].kind != "work_item.created": raise ValueError("event stream must begin with work_item.created")
     if rows[0].sequence != 1: raise ValueError("Work Item event stream must start at sequence 1")
     snapshot = _created(rows[0]); previous_occurred_at = _timestamp(rows[0].occurred_at, "occurred_at")
+    joined_children: dict[str, tuple[str, str, tuple[str, ...]]] = {}
     for expected, event in enumerate(rows[1:], 2):
         _reject(event.work_item_id != rows[0].work_item_id or event.sequence != expected, "event stream is not contiguous for one Work Item"); occurred_at = _timestamp(event.occurred_at, "occurred_at"); _reject(occurred_at < previous_occurred_at, "Work Item event timestamps must be nondecreasing"); previous_occurred_at = occurred_at
-        snapshot = replace(_apply(snapshot, event), event_count=expected)
+        next_snapshot = _apply(snapshot, event)
+        if event.kind == "child.joined":
+            child_id = _required(event.payload["child_work_item_id"], "child_work_item_id")
+            joined = (
+                _required(event.payload["child_session_id"], "child_session_id"),
+                _required(event.payload["outcome"], "outcome"),
+                _strings(event.payload["result_refs"], "result_refs"),
+            )
+            prior = joined_children.get(child_id)
+            if prior is not None and prior != joined:
+                raise ValueError("child join conflicts with an existing outcome")
+            joined_children[child_id] = joined
+        snapshot = replace(next_snapshot, event_count=expected)
     return snapshot
 WORK_ITEM_PROJECTOR_VERSION = "bb.work_item.projector.v1"
 class WorkItemProjectionError(ValueError):

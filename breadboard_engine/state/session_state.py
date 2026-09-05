@@ -2,15 +2,20 @@
 Session state management for agentic coding loops
 """
 
+import base64
+from collections.abc import Iterator
 from typing import Any, Callable, Dict, List, Optional
 from pathlib import Path
+import copy
 import json
 import time
 import threading
 
+from contextlib import contextmanager
 from dataclasses import asdict
 
 from ..runtime.reasoning_trace_store import ReasoningTraceStore
+from breadboard.product.runtime.events import CompactionSnapshot
 from ..ctrees.store import CTreeStore
 from ..monitoring.reward_metrics import RewardMetricsRecorder, RewardMetricsRecord
 from ..provider.ir import (
@@ -120,6 +125,7 @@ class SessionState:
         config: Optional[Dict[str, Any]] = None,
         *,
         event_emitter: Optional[Callable[[str, Dict[str, Any], Optional[int]], None]] = None,
+        product_compaction_owner: bool = False,
         kernel_emitter: Optional[Any] = None,
         clock: Optional[Callable[[], str]] = None,
         episode_provider_profile: Optional[Any] = None,
@@ -142,6 +148,7 @@ class SessionState:
         self.coordination_directives: List[Dict[str, Any]] = []
         self.provider_metadata: Dict[str, Any] = {}
         self._provider_metadata_lock = threading.RLock()
+        self._compaction_lock = threading.RLock()
         self.reasoning_traces = ReasoningTraceStore()
         self.ir_events: List[IRDeltaEvent] = []
         self.ir_finish: Optional[IRFinish] = None
@@ -169,6 +176,7 @@ class SessionState:
         self.lifecycle_events: List[Dict[str, Any]] = []
         self._event_seq = 0
         self._event_emitter = event_emitter
+        self._product_compaction_owner = product_compaction_owner is True
         self._kernel_emitter = kernel_emitter
         self._clock = clock or _utc_now
         self._emitted_tool_declared_call_ids: set[str] = set()
@@ -184,12 +192,25 @@ class SessionState:
         self.todo_manager = None
         self.tool_usage_summary.setdefault("todo_calls", 0)
         self.ctree_store = CTreeStore()
+        self._retained_raw_fact_ids: tuple[str, ...] = ()
+        self._compaction_persisted_this_run = False
+        self._last_sent_provider_messages: Optional[List[Dict[str, Any]]] = None
+        self._provider_messages_before_last_send: Optional[
+            List[Dict[str, Any]]
+        ] = None
 
     def set_event_emitter(
         self,
         emitter: Optional[Callable[[str, Dict[str, Any], Optional[int]], None]],
     ) -> None:
         self._event_emitter = emitter
+
+    def can_persist_compaction(self) -> bool:
+        return self._product_compaction_owner and self._event_emitter is not None
+
+    def has_persisted_compaction(self) -> bool:
+        with self._compaction_lock:
+            return self._compaction_persisted_this_run
 
     def set_turn_context(
         self,
@@ -518,7 +539,190 @@ class SessionState:
         except Exception:
             return None
     
+    @contextmanager
+    def context_mutation(self) -> Iterator[None]:
+        """Serialize model-facing context and raw-fact changes with compaction."""
+        with self._compaction_lock:
+            yield
+
+    def record_provider_request_surface(
+        self,
+        effective_messages: List[Dict[str, Any]],
+    ) -> None:
+        if not isinstance(effective_messages, list) or any(
+            not isinstance(message, dict) for message in effective_messages
+        ):
+            raise TypeError("provider request surface must be a message array")
+        with self._compaction_lock:
+            self._last_sent_provider_messages = copy.deepcopy(effective_messages)
+            self._provider_messages_before_last_send = copy.deepcopy(
+                self.provider_messages
+            )
+
+    def final_provider_context(self) -> List[Dict[str, Any]]:
+        with self._compaction_lock:
+            if (
+                self._last_sent_provider_messages is None
+                or self._provider_messages_before_last_send is None
+            ):
+                return copy.deepcopy(self.provider_messages)
+            previous = self._provider_messages_before_last_send
+            if (
+                len(self.provider_messages) < len(previous)
+                or self.provider_messages[: len(previous)] != previous
+            ):
+                raise RuntimeError(
+                    "provider messages diverged after the last request"
+                )
+            return [
+                *copy.deepcopy(self._last_sent_provider_messages),
+                *copy.deepcopy(self.provider_messages[len(previous) :]),
+            ]
+
+    def compaction_snapshot(
+        self,
+        effective_messages: Optional[List[Dict[str, Any]]] = None,
+    ) -> CompactionSnapshot:
+        """Snapshot exact model-facing bytes and cumulative C-Tree identities."""
+        with self._compaction_lock:
+            messages = (
+                self.provider_messages
+                if effective_messages is None
+                else effective_messages
+            )
+            effective_context = json.dumps(
+                messages,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            ).encode("utf-8")
+            current_ids = tuple(node["id"] for node in self.ctree_store.nodes)
+            return CompactionSnapshot(
+                effective_context=effective_context,
+                raw_fact_ids=(*self._retained_raw_fact_ids, *current_ids),
+            )
+
+    def emit_compaction_snapshot(self, snapshot: CompactionSnapshot) -> None:
+        """Send one strict persistence-boundary snapshot to the Product Session owner."""
+        if not isinstance(snapshot, CompactionSnapshot):
+            raise TypeError("snapshot must be a CompactionSnapshot")
+        if not self.can_persist_compaction():
+            raise RuntimeError("compaction persistence owner unavailable")
+        self._event_emitter(
+            "conversation.compaction.end",
+            {
+                "context_encoding": "base64",
+                "effective_context": base64.b64encode(
+                    snapshot.effective_context
+                ).decode("ascii"),
+                "raw_fact_ids": list(snapshot.raw_fact_ids),
+            },
+            turn=self._active_turn_index,
+        )
+        self._compaction_persisted_this_run = True
+
+    def persist_compaction_snapshot(
+        self,
+        effective_messages: Optional[List[Dict[str, Any]]] = None,
+    ) -> CompactionSnapshot:
+        """Snapshot and persist one compaction boundary without admitting mutations."""
+        with self._compaction_lock:
+            snapshot = self.compaction_snapshot(effective_messages)
+            self.emit_compaction_snapshot(snapshot)
+            return snapshot
+
+    def restore_raw_fact_ids(self, raw_fact_ids: Any) -> None:
+        """Merge Product-owned compacted identities with newer retained facts."""
+        if not isinstance(raw_fact_ids, (list, tuple)):
+            raise ValueError("raw_fact_ids must be an array")
+        retained = CTreeStore.validate_node_ids(tuple(raw_fact_ids))
+        with self._compaction_lock:
+            current_ids = tuple(str(node["id"]) for node in self.ctree_store.nodes)
+            known_ids = (*self._retained_raw_fact_ids, *current_ids)
+            if known_ids[: len(retained)] == retained:
+                suffix_ids = known_ids[len(retained) :]
+                suffix_set = set(suffix_ids)
+                suffix_events = [
+                    event
+                    for event in self.ctree_store.events
+                    if event.get("node_id") in suffix_set
+                ]
+                restored = CTreeStore.from_events(suffix_events)
+                restored_ids = tuple(str(node["id"]) for node in restored.nodes)
+                if restored_ids != suffix_ids:
+                    raise ValueError("retained C-Tree facts do not round-trip exactly")
+            elif retained[: len(known_ids)] == known_ids:
+                restored = CTreeStore()
+            else:
+                raise ValueError("durable raw_fact_ids diverge from retained C-Tree facts")
+            restored.reserve_node_ids(retained)
+            self.ctree_store = restored
+            self._retained_raw_fact_ids = retained
+            last_node = restored.nodes[-1] if restored.nodes else None
+            self._last_ctree_node_id = (
+                str(last_node["id"]) if isinstance(last_node, dict) else None
+            )
+            self._last_ctree_snapshot = (
+                restored.snapshot() if last_node is not None else None
+            )
+
+    def restore_ctree_events(
+        self,
+        events: Any,
+        *,
+        retained_raw_fact_ids: Any = (),
+    ) -> None:
+        """Restore live C-Tree events and their already-compacted identity prefix."""
+        if not isinstance(events, list) or any(
+            not isinstance(event, dict) for event in events
+        ):
+            raise ValueError("ctree_events must be an array of objects")
+        retained_prefix = CTreeStore.validate_node_ids(retained_raw_fact_ids)
+        retained_events = copy.deepcopy(events)
+        restored = CTreeStore.from_events(retained_events)
+        if restored.events != retained_events:
+            raise ValueError("ctree_events does not round-trip exactly")
+        event_ids: List[str] = []
+        node_ids: List[str] = []
+        for event in retained_events:
+            event_id = event.get("event_id")
+            node_id = event.get("node_id")
+            node = event.get("node")
+            if (
+                not isinstance(event_id, str)
+                or not event_id
+                or not isinstance(node_id, str)
+                or not node_id
+                or not isinstance(node, dict)
+                or node.get("id") != node_id
+            ):
+                raise ValueError("ctree_events contains an invalid retained identity")
+            event_ids.append(event_id)
+            node_ids.append(node_id)
+        if len(set(event_ids)) != len(event_ids) or len(set(node_ids)) != len(node_ids):
+            raise ValueError("ctree_events contains duplicate retained identities")
+        restored.validate_node_ids(node_ids)
+        restored.reserve_node_ids(retained_prefix)
+        with self._compaction_lock:
+            self.ctree_store = restored
+            self._retained_raw_fact_ids = retained_prefix
+            last_node = restored.nodes[-1] if restored.nodes else None
+            self._last_ctree_node_id = (
+                str(last_node["id"]) if isinstance(last_node, dict) else None
+            )
+            self._last_ctree_snapshot = restored.snapshot()
+
+    @property
+    def retained_raw_fact_ids(self) -> tuple[str, ...]:
+        with self._compaction_lock:
+            return self._retained_raw_fact_ids
+
     def add_message(self, message: Dict[str, Any], to_provider: bool = True):
+        with self._compaction_lock:
+            return self._add_message_unlocked(message, to_provider)
+
+    def _add_message_unlocked(self, message: Dict[str, Any], to_provider: bool = True):
         """Add a message to the session state"""
         should_store_message = True
         if to_provider and self.messages:
@@ -527,9 +731,9 @@ class SessionState:
             except Exception:
                 should_store_message = True
         if should_store_message:
-            self.messages.append(message)
+            self.messages.append(copy.deepcopy(message))
         if to_provider:
-            self.provider_messages.append(message.copy())
+            self.provider_messages.append(copy.deepcopy(message))
         if not isinstance(message, dict):
             return
 
@@ -898,24 +1102,25 @@ class SessionState:
         *,
         turn: Optional[int] = None,
     ) -> Optional[str]:
-        node_id = self.ctree_store.record(kind, payload, turn=turn)
-        try:
-            node = self.ctree_store.nodes[-1] if self.ctree_store.nodes else None
-            if isinstance(node, dict):
-                self._last_ctree_node_id = node.get("id")
-                snapshot = self.ctree_store.snapshot()
-                self._last_ctree_snapshot = snapshot
-                self._emit_event(
-                    "ctree_node",
-                    {
-                        "node": dict(node),
-                        "snapshot": snapshot,
-                    },
-                    turn=turn,
-                )
-        except Exception:
-            pass
-        return node_id
+        with self._compaction_lock:
+            node_id = self.ctree_store.record(kind, payload, turn=turn)
+            try:
+                node = self.ctree_store.nodes[-1] if self.ctree_store.nodes else None
+                if isinstance(node, dict):
+                    self._last_ctree_node_id = node.get("id")
+                    snapshot = self.ctree_store.snapshot()
+                    self._last_ctree_snapshot = snapshot
+                    self._emit_event(
+                        "ctree_node",
+                        {
+                            "node": dict(node),
+                            "snapshot": snapshot,
+                        },
+                        turn=turn,
+                    )
+            except Exception:
+                pass
+            return node_id
 
     def emit_ctree_snapshot(self, payload: Dict[str, Any]) -> None:
         """Emit a summary snapshot for C-Tree metadata."""
@@ -1008,28 +1213,33 @@ class SessionState:
         return self.reward_metrics.as_payload()
     
     def create_snapshot(self, model: str, diff: Dict[str, Any] = None) -> Dict[str, Any]:
-        """Create a session snapshot for debugging and persistence"""
-        snapshot = {
-            "workspace": self.workspace,
-            "image": self.image,
-            "model": model,
-            "messages": self.messages,
-            "transcript": self.transcript,
-            "diff": diff or {"ok": False, "data": {"diff": ""}},
-            "debug_info": self.get_debug_info(),
-            "tool_analysis": self.analyze_tool_usage(),
-            "completion_summary": self.completion_summary,
-            "reward_metrics": self.reward_metrics_payload(),
-            "provider_metadata": self.provider_metadata,
-            "todos": self.todo_snapshot(),
-            "reasoning_trace_counts": {
-                "encrypted": len(self.reasoning_traces.get_encrypted_traces()),
-                "summaries": len(self.reasoning_traces.get_summaries()),
-            },
-            "ir_version": "1",
-            "conversation_ir": asdict(self.build_conversation_ir(conversation_id="snapshot")),
-        }
-        return snapshot
+        """Create a session snapshot for debugging and persistence."""
+        with self._compaction_lock:
+            return {
+                "workspace": self.workspace,
+                "image": self.image,
+                "model": model,
+                "messages": copy.deepcopy(self.messages),
+                "provider_messages": copy.deepcopy(self.provider_messages),
+                "transcript": copy.deepcopy(self.transcript),
+                "diff": copy.deepcopy(diff or {"ok": False, "data": {"diff": ""}}),
+                "debug_info": copy.deepcopy(self.get_debug_info()),
+                "tool_analysis": copy.deepcopy(self.analyze_tool_usage()),
+                "completion_summary": copy.deepcopy(self.completion_summary),
+                "reward_metrics": copy.deepcopy(self.reward_metrics_payload()),
+                "provider_metadata": copy.deepcopy(self.provider_metadata),
+                "ctree_events": copy.deepcopy(self.ctree_store.events),
+                "retained_raw_fact_ids": list(self._retained_raw_fact_ids),
+                "todos": copy.deepcopy(self.todo_snapshot()),
+                "reasoning_trace_counts": {
+                    "encrypted": len(self.reasoning_traces.get_encrypted_traces()),
+                    "summaries": len(self.reasoning_traces.get_summaries()),
+                },
+                "ir_version": "1",
+                "conversation_ir": asdict(
+                    self.build_conversation_ir(conversation_id="snapshot")
+                ),
+            }
     
     def write_snapshot(self, output_path: Optional[str], model: str, diff: Dict[str, Any] = None):
         """Write session snapshot to JSON file"""

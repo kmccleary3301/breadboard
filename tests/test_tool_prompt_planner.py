@@ -1,4 +1,5 @@
 from __future__ import annotations
+from contextlib import nullcontext
 
 from types import SimpleNamespace
 
@@ -8,6 +9,10 @@ from breadboard_engine.conductor.prompt_planner import ToolPromptPlanner
 class DummySessionState:
     def __init__(self) -> None:
         self.provider_messages = [{"role": "user", "content": "context"}]
+
+    @staticmethod
+    def context_mutation():
+        return nullcontext()
 
 
 def _append(message: dict, text: str) -> None:

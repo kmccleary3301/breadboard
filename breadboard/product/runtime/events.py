@@ -1,6 +1,6 @@
 """Immutable events and the deterministic Session read model."""
 from __future__ import annotations
-import hashlib, json, os
+import base64, hashlib, json, os, re
 from collections.abc import Callable, Iterable, Mapping; from dataclasses import dataclass; from datetime import datetime, timezone; from pathlib import Path; from threading import RLock; from types import MappingProxyType; from typing import Any, Protocol; from uuid import uuid4
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from .artifacts import ArtifactRef
@@ -109,8 +109,8 @@ class JsonlEventSink:
 class NullEventSink:
     def append(self, event: object) -> None: return None
 _OBSERVATION_EVENT_KINDS = frozenset({"assistant_message", "tool_call", "tool_result"})
-_EVENT_KINDS = frozenset({"session.started", "input.accepted", "annotation", "approval.requested", "approval.resolved", "session.reconfigured", "session.paused", "session.resumed", "session.completed", "session.failed", "session.canceled"}) | _OBSERVATION_EVENT_KINDS
-_ALLOWED = MappingProxyType({"input.accepted": ("running",), "assistant_message": ("running",), "tool_call": ("running",), "tool_result": ("running",), "annotation": ("running", "awaiting_approval", "paused", "completed", "failed", "canceled"), "approval.requested": ("running",), "approval.resolved": ("awaiting_approval",), "session.paused": ("running",), "session.reconfigured": ("running", "awaiting_approval", "paused"), "session.resumed": ("paused",), "session.completed": ("running",), "session.failed": ("running", "awaiting_approval", "paused"), "session.canceled": ("running", "awaiting_approval", "paused")})
+_EVENT_KINDS = frozenset({"session.started", "input.accepted", "annotation", "context.compacted", "approval.requested", "approval.resolved", "session.reconfigured", "session.paused", "session.resumed", "session.completed", "session.failed", "session.canceled"}) | _OBSERVATION_EVENT_KINDS
+_ALLOWED = MappingProxyType({"input.accepted": ("running",), "assistant_message": ("running",), "tool_call": ("running",), "tool_result": ("running",), "annotation": ("running", "awaiting_approval", "paused", "completed", "failed", "canceled"), "context.compacted": ("running",), "approval.requested": ("running",), "approval.resolved": ("awaiting_approval",), "session.paused": ("running",), "session.reconfigured": ("running", "awaiting_approval", "paused"), "session.resumed": ("paused",), "session.completed": ("running",), "session.failed": ("running", "awaiting_approval", "paused"), "session.canceled": ("running", "awaiting_approval", "paused")})
 _STATUSES, _DECISIONS = frozenset({"running", "awaiting_approval", "paused", "completed", "failed", "canceled"}), frozenset({"allow", "deny", "once", "always", "reject"})
 _TERMINAL = {"session.completed": ("completed", ("summary",)), "session.failed": ("failed", ("error", "detail")), "session.canceled": ("canceled", ("reason",))}
 def _string(value: Any, name: str, populated: bool = True) -> str:
@@ -125,6 +125,81 @@ def _validate_annotation_payload(payload: Mapping[str, Any]) -> None:
         raise ValueError("annotation payload must contain only stable annotation fields")
     for name in required:
         _string(payload.get(name), name)
+_RAW_FACT_ID = re.compile(r"ctn_[0-9]{6,}")
+def validate_raw_fact_ids(values: Any, name: str = "raw_fact_ids") -> tuple[str, ...]:
+    if not isinstance(values, (list, tuple)):
+        raise ValueError(f"{name} must be an array")
+    facts = tuple(values)
+    if any(
+        type(value) is not str or _RAW_FACT_ID.fullmatch(value) is None
+        for value in facts
+    ):
+        raise ValueError(f"{name} must contain canonical C-Tree identities")
+    if len(set(facts)) != len(facts):
+        raise ValueError(f"{name} must not contain duplicates")
+    return facts
+
+def _reject_nonfinite_json_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON constant {value!r}")
+
+def _validate_effective_context(context: bytes) -> None:
+    try:
+        messages = json.loads(
+            context.decode("utf-8"),
+            parse_constant=_reject_nonfinite_json_constant,
+        )
+    except (UnicodeDecodeError, ValueError) as error:
+        raise ValueError("effective_context must be UTF-8 JSON") from error
+    if not isinstance(messages, list) or any(
+        not isinstance(message, dict) for message in messages
+    ):
+        raise ValueError(
+            "effective_context must be a JSON array of message objects"
+        )
+
+
+def _decode_compaction_context(payload: Mapping[str, Any]) -> bytes:
+    if payload.get("context_encoding") != "base64":
+        raise ValueError("compaction context_encoding must be base64")
+    encoded = _string(payload.get("effective_context"), "effective_context", False)
+    try:
+        context = base64.b64decode(encoded, validate=True)
+    except (ValueError, TypeError) as error:
+        raise ValueError("effective_context must be canonical base64") from error
+    if base64.b64encode(context).decode("ascii") != encoded:
+        raise ValueError("effective_context must be canonical base64")
+    if _hash_bytes(context) != payload.get("context_sha256"):
+        raise ValueError("compaction context_sha256 does not match effective_context")
+    _validate_effective_context(context)
+    return context
+def _validate_compaction_payload(payload: Mapping[str, Any]) -> None:
+    required = {
+        "compaction_index",
+        "source_sequence_start",
+        "source_sequence_end",
+        "context_encoding",
+        "effective_context",
+        "context_sha256",
+        "raw_fact_ids",
+        "shadowed_raw_fact_ids",
+    }
+    if set(payload) != required:
+        raise ValueError("context.compacted payload must contain only stable compaction fields")
+    for name in ("compaction_index", "source_sequence_start", "source_sequence_end"):
+        value = payload.get(name)
+        if type(value) is not int or value < 1:
+            raise ValueError(f"{name} must be a positive integer")
+    if payload["source_sequence_start"] > payload["source_sequence_end"]:
+        raise ValueError("compaction source range must be ordered")
+    raw_fact_ids = validate_raw_fact_ids(payload.get("raw_fact_ids"))
+    shadowed_raw_fact_ids = validate_raw_fact_ids(
+        payload.get("shadowed_raw_fact_ids"),
+        "shadowed_raw_fact_ids",
+    )
+    if not set(shadowed_raw_fact_ids).issubset(raw_fact_ids):
+        raise ValueError("shadowed_raw_fact_ids must cite retained raw facts")
+    _sha256(payload.get("context_sha256"), "context_sha256")
+    _decode_compaction_context(payload)
 def _validate_payload(kind: str, payload: Mapping[str, Any]) -> None:
     if kind == "session.started": _sha256(payload.get("effective_lock_hash"), "effective_lock_hash"); _sha256(payload.get("task_hash"), "task_hash")
     elif kind == "assistant_message":
@@ -145,6 +220,8 @@ def _validate_payload(kind: str, payload: Mapping[str, Any]) -> None:
         _string(payload.get("tool"), "tool")
     elif kind == "annotation":
         _validate_annotation_payload(payload)
+    elif kind == "context.compacted":
+        _validate_compaction_payload(payload)
     elif kind == "input.accepted":
         _sha256(payload.get("content_hash"), "content_hash"); attachments = payload.get("attachments")
         if not isinstance(attachments, (list, tuple)): raise ValueError("attachments must be an array")
@@ -173,6 +250,19 @@ def _plain(value: Any) -> Any:
     if isinstance(value, Mapping): return {key: _plain(item) for key, item in value.items()}
     if isinstance(value, tuple): return [_plain(item) for item in value]
     return value
+@dataclass(frozen=True, slots=True)
+class CompactionSnapshot:
+    """Persistence-owner bytes and cumulative raw-fact identities at one boundary."""
+
+    effective_context: bytes
+    raw_fact_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if type(self.effective_context) is not bytes:
+            raise TypeError("effective_context must be bytes")
+        _validate_effective_context(self.effective_context)
+        facts = validate_raw_fact_ids(self.raw_fact_ids)
+        object.__setattr__(self, "raw_fact_ids", facts)
 @dataclass(frozen=True, slots=True)
 class AnnotationRecord:
     """Stable, immutable label metadata for one canonical message target."""
@@ -211,6 +301,32 @@ class KernelEvent:
     def create(cls, session_id: str, sequence: int, kind: str, occurred_at: str, payload: Mapping[str, Any]) -> "KernelEvent": return cls(session_id, sequence, kind, occurred_at, payload)
     def as_dict(self) -> dict[str, Any]: return {"schema_version": self.schema_version, "session_id": self.session_id, "sequence": self.sequence, "kind": self.kind, "occurred_at": self.occurred_at, "payload": _plain(self.payload)}
 @dataclass(frozen=True, slots=True)
+class CompactionEvent:
+    """Decoded durable compaction boundary returned by Session.compact."""
+
+    session_id: str
+    sequence: int
+    compaction_index: int
+    source_sequence_start: int
+    source_sequence_end: int
+    effective_context: bytes
+    raw_fact_ids: tuple[str, ...]
+    shadowed_raw_fact_ids: tuple[str, ...]
+
+def _compaction_event(event: KernelEvent) -> CompactionEvent:
+    if event.kind != "context.compacted":
+        raise ValueError("compaction event requires context.compacted")
+    return CompactionEvent(
+        session_id=event.session_id,
+        sequence=event.sequence,
+        compaction_index=event.payload["compaction_index"],
+        source_sequence_start=event.payload["source_sequence_start"],
+        source_sequence_end=event.payload["source_sequence_end"],
+        effective_context=_decode_compaction_context(event.payload),
+        raw_fact_ids=tuple(event.payload["raw_fact_ids"]),
+        shadowed_raw_fact_ids=tuple(event.payload["shadowed_raw_fact_ids"]),
+    )
+@dataclass(frozen=True, slots=True)
 class SessionView:
     session_id: str; status: str; effective_lock_hash: str; task_hash: str; event_count: int
     pending_approval: str | None = None; terminal_outcome: Mapping[str, Any] | None = None
@@ -234,6 +350,10 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
     lock_hash = start.payload["effective_lock_hash"]
     message_targets: dict[str, str] = {}
     annotation_ids: set[str] = set()
+    compaction_count = 0
+    last_compaction_sequence: int | None = None
+    retained_raw_fact_order: tuple[str, ...] = ()
+    last_compaction_context_hash: str | None = None
     for expected, event in enumerate(rows, 1):
         if event.session_id != start.session_id or event.sequence != expected:
             raise ValueError("event stream is not contiguous for one session")
@@ -254,6 +374,36 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
             annotation_ids.add(annotation_id)
             if message_targets.get(event.payload["message_id"]) != event.payload["trajectory_id"]:
                 raise ValueError("annotation target is not registered for this session")
+        elif event.kind == "context.compacted":
+            expected_start = last_compaction_sequence or 1
+            if event.payload["compaction_index"] != compaction_count + 1:
+                raise ValueError("compaction indexes must be contiguous")
+            if (
+                event.payload["source_sequence_start"] != expected_start
+                or event.payload["source_sequence_end"] != event.sequence - 1
+            ):
+                raise ValueError("compaction source range does not match durable event order")
+            current_raw_fact_order = tuple(event.payload["raw_fact_ids"])
+            if (
+                current_raw_fact_order[: len(retained_raw_fact_order)]
+                != retained_raw_fact_order
+            ):
+                raise ValueError("compaction cannot reorder or discard retained raw facts")
+            expected_shadowed = (
+                retained_raw_fact_order
+                if last_compaction_context_hash is not None
+                and event.payload["context_sha256"]
+                != last_compaction_context_hash
+                else ()
+            )
+            if tuple(event.payload["shadowed_raw_fact_ids"]) != expected_shadowed:
+                raise ValueError(
+                    "compaction shadow chain does not cite the replaced surface"
+                )
+            compaction_count += 1
+            last_compaction_sequence = event.sequence
+            retained_raw_fact_order = current_raw_fact_order
+            last_compaction_context_hash = event.payload["context_sha256"]
         if event.kind == "approval.requested":
             pending, status = event.payload["request_id"], "awaiting_approval"
         elif event.kind == "approval.resolved":
@@ -305,10 +455,11 @@ def project_session_snapshot(view: SessionView, *, as_of: int | None = None, exp
     if as_of is not None and (type(as_of) is not int or as_of != view.event_count):
         raise SessionProjectionAsOfError(as_of, view.event_count)
     return Projected(view, SESSION_PROJECTOR_VERSION, ProjectionSource(f"session:{view.session_id}", 1, view.event_count), view.event_count)
-_SESSION_ACTIONS = MappingProxyType({"accept input": ("running",), "observe assistant": ("running",), "observe tool call": ("running",), "observe tool result": ("running",), "annotate": ("running", "awaiting_approval", "paused", "completed", "failed", "canceled"), "request approval": ("running",), "resolve approval": ("awaiting_approval",), "reconfigure": ("running", "awaiting_approval", "paused"), "pause": ("running",), "resume": ("paused",), "cancel": ("running", "awaiting_approval", "paused"), "complete": ("running",), "fail": ("running", "awaiting_approval", "paused")})
+_SESSION_ACTIONS = MappingProxyType({"accept input": ("running",), "observe assistant": ("running",), "observe tool call": ("running",), "observe tool result": ("running",), "annotate": ("running", "awaiting_approval", "paused", "completed", "failed", "canceled"), "compact": ("running",), "request approval": ("running",), "resolve approval": ("awaiting_approval",), "reconfigure": ("running", "awaiting_approval", "paused"), "pause": ("running",), "resume": ("paused",), "cancel": ("running", "awaiting_approval", "paused"), "complete": ("running",), "fail": ("running", "awaiting_approval", "paused")})
 def _graph_hash(lock: EffectiveHarnessLock) -> str:
     return _sha256(lock.as_dict().get("graph_hash"), "graph_hash")
 def _hash(value: str) -> str: return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
+def _hash_bytes(value: bytes) -> str: return "sha256:" + hashlib.sha256(value).hexdigest()
 class ReplayError(ValueError):
     """A durable event stream cannot be rebuilt into a valid Session."""
 
@@ -345,9 +496,36 @@ def _assistant_payload(
     return payload
 class Session:
     """Lifecycle owner; adapters may add only validated, minimal runtime observations."""
-    def __init__(self, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None, task: str | None = None) -> None:
-        if task is not None and (not isinstance(task, str) or not task.strip()): raise ValueError("task must be non-empty when retained")
-        self._task = task; self._transition_lock = RLock(); self._appending = False; self._events = list(events); self._clock = clock if clock is not None else SystemClock(); self._sink = sink if sink is not None else NullEventSink(); self._terminal_annotation_commit: Callable[[AnnotationRecord], tuple[KernelEvent, ...]] | None = None; self._view = rebuild(self._events)
+    def __init__(
+        self,
+        events: Iterable[KernelEvent],
+        *,
+        clock: Clock | None = None,
+        sink: EventSink | None = None,
+        task: str | None = None,
+    ) -> None:
+        if task is not None and (not isinstance(task, str) or not task.strip()):
+            raise ValueError("task must be non-empty when retained")
+        self._task = task
+        self._transition_lock = RLock()
+        self._appending = False
+        self._events = list(events)
+        self._clock = clock if clock is not None else SystemClock()
+        self._sink = sink if sink is not None else NullEventSink()
+        self._terminal_annotation_commit: Callable[
+            [AnnotationRecord], tuple[KernelEvent, ...]
+        ] | None = None
+        self._view = rebuild(self._events)
+        compaction = next(
+            (row for row in reversed(self._events) if row.kind == "context.compacted"),
+            None,
+        )
+        self._effective_context = (
+            None if compaction is None else _decode_compaction_context(compaction.payload)
+        )
+        self._raw_fact_ids = (
+            () if compaction is None else tuple(compaction.payload["raw_fact_ids"])
+        )
     @classmethod
     def start(cls, lock: EffectiveHarnessLock, task: str, *, session_id: str | None = None, clock: Clock | None = None, ids: IdSource | None = None, sink: EventSink | None = None) -> "Session":
         if not isinstance(lock, EffectiveHarnessLock): raise TypeError("Session.start requires an EffectiveHarnessLock")
@@ -370,6 +548,14 @@ class Session:
     @property
     def read_model(self) -> SessionView:
         with self._transition_lock: return self._view
+    @property
+    def effective_context(self) -> bytes | None:
+        with self._transition_lock:
+            return self._effective_context
+    @property
+    def raw_fact_ids(self) -> tuple[str, ...]:
+        with self._transition_lock:
+            return self._raw_fact_ids
     @property
     def pinned_generation_id(self) -> str:
         """The immutable Lock identity pinned by this Session."""
@@ -430,6 +616,45 @@ class Session:
             return tuple(history)
     def projected_read_model(self, *, as_of: int | None = None, expected_projector_version: str | None = None) -> Projected[SessionView]:
         return project_session_live(self, as_of=as_of, expected_projector_version=expected_projector_version)
+    def compact(self, snapshot: CompactionSnapshot) -> CompactionEvent:
+        if not isinstance(snapshot, CompactionSnapshot):
+            raise TypeError("compact requires a CompactionSnapshot")
+        with self._transition_lock:
+            event, _ = self._append_event(
+                "compact",
+                "context.compacted",
+                lambda: self._compaction_payload(snapshot),
+            )
+            self._effective_context = snapshot.effective_context
+            self._raw_fact_ids = snapshot.raw_fact_ids
+            return _compaction_event(event)
+    def _compaction_payload(self, snapshot: CompactionSnapshot) -> dict[str, Any]:
+        previous = next(
+            (row for row in reversed(self._events) if row.kind == "context.compacted"),
+            None,
+        )
+        if (
+            snapshot.raw_fact_ids[: len(self.raw_fact_ids)]
+            != self.raw_fact_ids
+        ):
+            raise ValueError("compaction cannot reorder or discard retained raw facts")
+        context_sha256 = _hash_bytes(snapshot.effective_context)
+        shadowed_raw_fact_ids = (
+            list(previous.payload["raw_fact_ids"])
+            if previous is not None
+            and previous.payload["context_sha256"] != context_sha256
+            else []
+        )
+        return {
+            "compaction_index": 1 if previous is None else previous.payload["compaction_index"] + 1,
+            "source_sequence_start": 1 if previous is None else previous.sequence,
+            "source_sequence_end": len(self._events),
+            "context_encoding": "base64",
+            "effective_context": base64.b64encode(snapshot.effective_context).decode("ascii"),
+            "context_sha256": context_sha256,
+            "raw_fact_ids": list(snapshot.raw_fact_ids),
+            "shadowed_raw_fact_ids": shadowed_raw_fact_ids,
+        }
     def input(self, content: str, attachments: Iterable[ArtifactRef] = ()) -> SessionView: return self._append("accept input", "input.accepted", lambda: (_check(isinstance(content, str) and bool(content.strip()), ValueError, "input must be non-empty"), {"content_hash": _hash(content), "attachments": [ref.as_dict() for ref in attachments]})[1])
     def input_digest(
         self, content_hash: str, attachments: Iterable[ArtifactRef] = ()
@@ -529,16 +754,34 @@ class Session:
     def _require(self, action: str) -> None:
         if self._appending: raise RuntimeError("cannot mutate session while an append is in progress")
         if self._view.status not in _SESSION_ACTIONS[action]: raise RuntimeError(f"cannot {action} while session is {self._view.status}")
-    def _append(self, action: str, kind: str, payload: Callable[[], dict[str, Any]]) -> SessionView:
+    def _append_event(self, action: str, kind: str, payload: Callable[[], dict[str, Any]]) -> tuple[KernelEvent, SessionView]:
         with self._transition_lock:
             self._require(action); self._appending = True
             try:
                 body = payload(); event = KernelEvent.create(self._view.session_id, len(self._events) + 1, kind, self._clock.now(), body); next_events = [*self._events, event]; next_view = rebuild(next_events); self._sink.append(event)
-                self._events, self._view = next_events, next_view; return next_view
-            finally:
-                self._appending = False
-
-
+                self._events, self._view = next_events, next_view; return event, next_view
+            finally: self._appending = False
+    def _append(self, action: str, kind: str, payload: Callable[[], dict[str, Any]]) -> SessionView:
+        return self._append_event(action, kind, payload)[1]
+def replay_differential(session: Session) -> dict[str, Any]:
+    """Compare live compaction reconstruction with a fresh durable replay."""
+    if not isinstance(session, Session):
+        raise TypeError("replay_differential requires a Session")
+    restored = Session.restore(session.events)
+    difference: dict[str, Any] = {}
+    if restored.effective_context != session.effective_context:
+        difference["effective_context"] = {
+            "live": None if session.effective_context is None else _hash_bytes(session.effective_context),
+            "replay": None if restored.effective_context is None else _hash_bytes(restored.effective_context),
+        }
+    live_facts = tuple(session.raw_fact_ids)
+    replay_facts = tuple(restored.raw_fact_ids)
+    if live_facts != replay_facts:
+        difference["raw_fact_ids"] = {
+            "live": list(live_facts),
+            "replay": list(replay_facts),
+        }
+    return difference
 def project_session_live(session: Session, *, as_of: int | None = None, expected_projector_version: str | None = None) -> Projected[SessionView]:
     if not isinstance(session, Session):
         raise TypeError("live Session projection requires a Session")

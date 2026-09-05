@@ -244,6 +244,8 @@ class OpenAIConductorFacadeMethods:
         session_state: Any,
         markdown_logger: Any,
         caller: Any,
+        *,
+        preserve_system_prompt: bool = False,
     ) -> str:
         return setup_tool_prompts(
             self,
@@ -253,6 +255,7 @@ class OpenAIConductorFacadeMethods:
             session_state,
             markdown_logger,
             caller,
+            preserve_system_prompt=preserve_system_prompt,
         )
 
     def _add_enhanced_message_fields(

@@ -609,7 +609,7 @@ class BreadBoardClient:
         last_event_id: int | None = None,
         limit: int = 256,
         follow: bool = True,
-    ) -> Generator[SessionEvent, None, None]:
+    ) -> Generator[SessionEvent, None, int | None]:
         query: Dict[str, Any] = {"resume_token": resume_token, "limit": limit}
         if not follow:
             query["follow"] = "false"
@@ -629,7 +629,7 @@ class BreadBoardClient:
         session_id: str,
         last_event_id: str | None = None,
         query: Dict[str, Any] | None = None,
-    ) -> Generator[SessionEvent, None, None]:
+    ) -> Generator[SessionEvent, None, int | None]:
         binding = PUBLIC_BINDINGS_BY_OPERATION_ID.get(operation_id)
         if binding is None:
             raise ValueError(f"unknown public operation ID: {operation_id}")
@@ -664,6 +664,8 @@ class BreadBoardClient:
 
             data_lines: List[str] = []
             sse_id: str | None = None
+            pending_cursor: int | None = None
+            last_cursor: int | None = None
             for raw in resp.iter_lines(decode_unicode=True):
                 if raw is None:
                     continue
@@ -678,16 +680,27 @@ class BreadBoardClient:
                             "session.failed",
                             "session.canceled",
                         }
+                        if pending_cursor is not None:
+                            last_cursor = pending_cursor
                         if terminal:
                             resp.close()
                         yield event
                         if terminal:
-                            return
-                        sse_id = None
+                            return last_cursor
+                    elif pending_cursor is not None:
+                        last_cursor = pending_cursor
+                    sse_id = None
+                    pending_cursor = None
                     continue
                 if line.startswith("id:"):
                     sse_id = line[len("id:") :].lstrip()
+                    if not sse_id.isdigit() or int(sse_id) < 1:
+                        raise ValueError("invalid session event sequence")
+                    pending_cursor = int(sse_id)
                 elif line.startswith("data:"):
                     data_lines.append(line[len("data:") :].lstrip())
+            if data_lines or pending_cursor is not None:
+                raise ValueError("incomplete SSE frame")
+            return last_cursor
         finally:
             resp.close()

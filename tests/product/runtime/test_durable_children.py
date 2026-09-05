@@ -1258,6 +1258,41 @@ def test_terminal_owner_repair_rejects_corrupt_work_journal_before_mutation(
         factory.reconcile(activation.recovery_ref)
     product, _ = load_session(workspace, activation.child_session_id)
     assert product.read_model.status == "running"
+
+
+def test_terminal_owner_repair_persists_join_completion(
+    tmp_path: Path,
+) -> None:
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = RetryAdapter()
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family, "repair pending join"),
+    )
+    state = factory._record_state(activation.child_session_id)
+    pending_join = factory._cas(
+        state,
+        status="failed",
+        terminal_outcome="failed",
+        terminal_count=1,
+        settlement=None,
+    )
+    assert pending_join.joined is False
+
+    repaired = factory.reconcile(activation.recovery_ref)
+
+    assert repaired.joined is True
+    assert factory._record_state(activation.child_session_id).joined is True
+
+
 def await_record(registry, session_id):
     return asyncio_run(registry.get(session_id))
 
@@ -5595,6 +5630,7 @@ def test_work_item_cancel_torn_transaction_does_not_orphan_descendant(tmp_path: 
         },
         {"status": "unknown"},
         {"status": "completed", "terminal_count": 0, "terminal_outcome": None},
+        {"joined": True},
     ),
 )
 def test_child_state_rejects_inconsistent_terminal_cardinality(

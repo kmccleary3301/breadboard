@@ -237,6 +237,39 @@ def test_journal_semantic_corruption_is_typed_and_never_truncated(tmp_path: Path
     assert path.read_bytes() == corrupted
 
 
+def test_replay_rejects_conflicting_duplicate_child_join() -> None:
+    parent = _new()
+    _run(parent)
+    parent.delegate(
+        "child",
+        attempt_id="attempt-1",
+        child_work_item_id="child-1",
+    )
+    parent.join_child(
+        "child-1",
+        "child-session",
+        "completed",
+        ("sha256:" + "a" * 64,),
+    )
+    prior = parent.events[-1]
+    duplicate = WorkItemEvent(
+        prior.work_item_id,
+        prior.sequence + 1,
+        prior.kind,
+        prior.occurred_at,
+        dict(prior.payload),
+    )
+    assert rebuild_work_item((*parent.events, duplicate)).event_count == len(parent.events) + 1
+
+    conflicting = WorkItemEvent(
+        prior.work_item_id,
+        prior.sequence + 1,
+        prior.kind,
+        prior.occurred_at,
+        {**prior.payload, "outcome": "failed"},
+    )
+    with pytest.raises(ValueError, match="child join conflicts"):
+        rebuild_work_item((*parent.events, conflicting))
 def test_first_journal_append_syncs_parent_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

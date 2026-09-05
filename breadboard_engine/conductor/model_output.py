@@ -1073,7 +1073,8 @@ def handle_native_tool_calls(
                         to_provider=True,
                     )
             if tool_messages_to_relay:
-                session_state.provider_messages.extend(tool_messages_to_relay)
+                with session_state.context_mutation():
+                    session_state.provider_messages.extend(tool_messages_to_relay)
         except Exception:
             if tool_messages_to_relay:
                 fallback_blob = "\n\n".join(
