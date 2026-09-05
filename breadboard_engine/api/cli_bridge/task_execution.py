@@ -689,9 +689,8 @@ class TaskExecutionOwner:
         # Runtime completion events remain provisional until the owning provider
         # exchange validates and the turn terminal is durably committed.
         defer_terminal_events = True
-        event_queue = permission_queue = control_queue = queue_stop = queue_thread = (
-            None
-        )
+        event_queue = event_ack_queue = permission_queue = control_queue = None
+        queue_stop = queue_thread = None
         # A remote pump cannot raise into this owner thread; carry failures back
         # across the join boundary before processing any successful completion.
         queue_errors: list[BaseException] = []
@@ -1065,24 +1064,41 @@ class TaskExecutionOwner:
         )
         if runner._model_override:
             runner._apply_model_override()
-        if not is_local_agent and (
-            interactive_permissions or (runner.request.stream and remote_stream_enabled)
-        ):
+        publish_remote_runtime_events = interactive_permissions or (
+            runner.request.stream and remote_stream_enabled
+        )
+
+        def handle_remote_runtime_event(
+            event_type: str,
+            payload: Dict[str, Any],
+            *,
+            turn: Optional[int] = None,
+        ) -> None:
+            if (
+                publish_remote_runtime_events
+                or event_type == "conversation.compaction.end"
+            ):
+                handle_runtime_event(event_type, payload, turn=turn)
+
+        if not is_local_agent:
             try:
                 from ray.util.queue import Queue
-            except ImportError:  # pragma: no cover
-                Queue = None  # type: ignore[misc]
-            if Queue is not None:
-                event_queue = Queue()
-                queue_stop, queue_thread = self.start_queue_pump(
-                    event_queue,
-                    handle_runtime_event,
-                    errors=queue_errors,
-                )
-                logger.info(
-                    "session(%s) remote event queue initialized",
-                    runner.session.session_id,
-                )
+            except ImportError as exc:  # pragma: no cover
+                raise RuntimeError(
+                    "Ray Queue required for remote runtime durability"
+                ) from exc
+            event_queue = Queue()
+            event_ack_queue = Queue()
+            queue_stop, queue_thread = self.start_queue_pump(
+                event_queue,
+                handle_remote_runtime_event,
+                acknowledgement_queue=event_ack_queue,
+                errors=queue_errors,
+            )
+            logger.info(
+                "session(%s) remote durability queue initialized",
+                runner.session.session_id,
+            )
         if interactive_permissions:
             if is_local_agent:
                 import queue as pyqueue
@@ -1141,6 +1157,43 @@ class TaskExecutionOwner:
             task_context["input_media"] = [
                 dict(block) for block in runner._active_input_media
             ]
+            product_session = runner.session.product_session
+            task_context["_product_compaction_owner"] = bool(
+                product_session is not None
+                and product_session.read_model.status == "running"
+            )
+            if (
+                product_session is not None
+                and product_session.raw_fact_ids
+            ):
+                task_context["retained_raw_fact_ids"] = list(
+                    product_session.raw_fact_ids
+                )
+            if (
+                product_session is not None
+                and product_session.effective_context is not None
+            ):
+                try:
+                    retained_effective_messages = json.loads(
+                        product_session.effective_context.decode("utf-8")
+                    )
+                except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                    raise RuntimeError(
+                        "retained Product Session effective context is invalid"
+                    ) from error
+                if (
+                    not isinstance(retained_effective_messages, list)
+                    or any(
+                        not isinstance(message, dict)
+                        for message in retained_effective_messages
+                    )
+                ):
+                    raise RuntimeError(
+                        "retained Product Session effective context must be a message array"
+                    )
+                task_context["retained_effective_messages"] = (
+                    retained_effective_messages
+                )
             kernel_emitter_run_dir = None
             kernel_emitter_mode = None
             try:
@@ -1178,6 +1231,7 @@ class TaskExecutionOwner:
                 stream=runner.request.stream,
                 event_emitter=handle_runtime_event if is_local_agent else None,
                 event_queue=event_queue,
+                event_ack_queue=event_ack_queue,
                 permission_queue=permission_queue,
                 control_queue=control_queue,
                 context=task_context if task_context else None,
@@ -1206,7 +1260,11 @@ class TaskExecutionOwner:
                 queue_thread.join()
             if event_queue is not None:
                 try:
-                    self.drain_event_queue(event_queue, handle_runtime_event)
+                    self.drain_event_queue(
+                        event_queue,
+                        handle_remote_runtime_event,
+                        acknowledgement_queue=event_ack_queue,
+                    )
                 except BaseException:
                     if run_task_error is None:
                         raise
@@ -1586,6 +1644,7 @@ class TaskExecutionOwner:
         event_queue: Any,
         handle_event: Callable[[str, Dict[str, Any], Optional[int]], None],
         *,
+        acknowledgement_queue: Any = None,
         errors: Optional[List[BaseException]] = None,
     ) -> tuple[Any, Any]:
         import threading
@@ -1602,18 +1661,27 @@ class TaskExecutionOwner:
                 if not item:
                     continue
                 try:
-                    event_type, payload, turn = item
-                except ValueError:
+                    event_type, payload, turn, *acknowledgements = item
+                except (TypeError, ValueError):
                     continue
+                if len(acknowledgements) > 1:
+                    continue
+                acknowledgement_id = (
+                    acknowledgements[0] if acknowledgements else None
+                )
                 if event_type is None:
                     break
                 try:
                     handle_event(event_type, payload, turn=turn)
                 except BaseException as error:
+                    if acknowledgement_id is not None and acknowledgement_queue is not None:
+                        acknowledgement_queue.put((acknowledgement_id, False))
                     if errors is not None:
                         errors.append(error)
                     stop_signal.set()
                     return
+                if acknowledgement_id is not None and acknowledgement_queue is not None:
+                    acknowledgement_queue.put((acknowledgement_id, True))
 
         thread = threading.Thread(target=runner, daemon=True)
         thread.start()
@@ -1623,6 +1691,8 @@ class TaskExecutionOwner:
         self,
         event_queue: Any,
         handle_event: Callable[[str, Dict[str, Any], Optional[int]], None],
+        *,
+        acknowledgement_queue: Any = None,
     ) -> None:
         runner = self._runner
         from queue import Empty
@@ -1635,12 +1705,22 @@ class TaskExecutionOwner:
             if not item:
                 continue
             try:
-                event_type, payload, turn = item
-            except ValueError:
+                event_type, payload, turn, *acknowledgements = item
+            except (TypeError, ValueError):
                 continue
+            if len(acknowledgements) > 1:
+                continue
+            acknowledgement_id = acknowledgements[0] if acknowledgements else None
             if event_type is None:
                 continue
-            handle_event(event_type, payload, turn=turn)
+            try:
+                handle_event(event_type, payload, turn=turn)
+            except BaseException:
+                if acknowledgement_id is not None and acknowledgement_queue is not None:
+                    acknowledgement_queue.put((acknowledgement_id, False))
+                raise
+            if acknowledgement_id is not None and acknowledgement_queue is not None:
+                acknowledgement_queue.put((acknowledgement_id, True))
         logger.info(
             "session(%s) published %s events",
             runner.session.session_id,

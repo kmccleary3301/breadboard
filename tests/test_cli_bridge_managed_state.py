@@ -195,3 +195,40 @@ async def test_two_terminal_turns_reload_from_managed_state_without_raw_inputs(
     assert [summary.session_id for summary in summaries] == [session_id]
     assert summaries[0].status is SessionStatus.COMPLETED
     assert len(summaries[0].terminal_turns) == 2
+
+
+@pytest.mark.asyncio
+async def test_reward_summary_survives_refresh_and_registry_replacement(
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "session-state"
+    registry = SessionRegistry(state_root)
+    session_id = "session-reward"
+    reward_summary = {
+        "metric_names": ["PAS", "TPF_DELTA"],
+        "turns": [
+            {
+                "turn": 1,
+                "metrics": {"PAS": 0.75, "TPF_DELTA": 1.0},
+                "meta": {"source": "test"},
+            }
+        ],
+    }
+    await registry.create(
+        SessionRecord(session_id=session_id, status=SessionStatus.RUNNING)
+    )
+
+    await registry.update_metadata(session_id, reward_summary=reward_summary)
+
+    refreshed = await registry.get(session_id)
+    retained_records = await registry.records()
+    retained_summaries = await registry.list()
+    assert refreshed is not None
+    assert refreshed.reward_summary == reward_summary
+    assert retained_records[0].reward_summary == reward_summary
+    assert retained_summaries[0].reward_summary == reward_summary
+
+    replacement = SessionRegistry(state_root)
+    replaced = await replacement.get(session_id)
+    assert replaced is not None
+    assert replaced.to_summary().reward_summary == reward_summary

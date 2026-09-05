@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import json
 
 from typing import Any, Callable, Dict, Optional, Tuple
 
+from breadboard.product.runtime.events import CompactionSnapshot, validate_raw_fact_ids
 from breadboard_engine.provider.contracts import strip_public_completion_sentinel_lines
-from .registry import identity_digest
 from breadboard_engine.state.session_state import (
     AUDIT_ONLY_RUNTIME_EVENT_TYPES,
     CANONICAL_KERNEL_EVENT_TYPES,
@@ -16,6 +17,7 @@ from breadboard_engine.state.session_state import (
 
 from .event_normalization import normalize_task_event_payload
 from .events import EventType
+from .registry import identity_digest
 
 KERNEL_PASSTHROUGH_RUNTIME_EVENT_TYPES = {
     "assistant_message",
@@ -566,6 +568,58 @@ class RuntimeEventProjector:
                         )
                     self._product_tool_completions[fingerprint] = duplicate_count + 1
 
+    def _record_context_compaction(
+        self,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        if payload.get("context_encoding") != "base64":
+            raise RuntimeProtocolError("runtime_protocol_error")
+        encoded = payload.get("effective_context")
+        raw_fact_ids = payload.get("raw_fact_ids")
+        if (
+            not isinstance(encoded, str)
+            or not isinstance(raw_fact_ids, list)
+            or any(not isinstance(value, str) or not value for value in raw_fact_ids)
+        ):
+            raise RuntimeProtocolError("runtime_protocol_error")
+        try:
+            validate_raw_fact_ids(raw_fact_ids)
+        except ValueError:
+            raise RuntimeProtocolError("runtime_protocol_error") from None
+        try:
+            effective_context = base64.b64decode(encoded, validate=True)
+            effective_messages = json.loads(effective_context.decode("utf-8"))
+            if (
+                not isinstance(effective_messages, list)
+                or any(not isinstance(message, dict) for message in effective_messages)
+            ):
+                raise ValueError("effective context must be a message array")
+            snapshot = CompactionSnapshot(
+                effective_context=effective_context,
+                raw_fact_ids=tuple(raw_fact_ids),
+            )
+        except (
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            ValueError,
+            TypeError,
+        ):
+            raise RuntimeProtocolError("runtime_protocol_error") from None
+        with self._product_session_lock:
+            product_session = getattr(self.session, "product_session", None)
+            if (
+                product_session is None
+                or product_session.read_model.status != "running"
+            ):
+                raise RuntimeProtocolError("runtime_protocol_error")
+            event = product_session.compact(snapshot)
+        return {
+            "compaction_index": event.compaction_index,
+            "source_sequence_start": event.source_sequence_start,
+            "source_sequence_end": event.source_sequence_end,
+            "raw_fact_count": len(event.raw_fact_ids),
+        }
+
     def _normalize_tool_call_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         call = payload.get("call") or payload.get("tool_call") or payload.get("tool")
         if not isinstance(call, dict):
@@ -873,6 +927,10 @@ class RuntimeEventProjector:
             normalized_payload = self._normalize_permission_request(normalized_payload)
         elif evt is EventType.PERMISSION_RESPONSE:
             normalized_payload = self._normalize_permission_response(normalized_payload)
+        elif evt is EventType.CONVERSATION_COMPACTION_END:
+            normalized_payload = self._record_context_compaction(
+                normalized_payload
+            )
         elif evt is EventType.ERROR:
             nested_error = normalized_payload.get("error")
             nested_code = (

@@ -58,3 +58,19 @@ def test_agent_patch_flow(ray_cluster, tmp_path):
     out = parts[0]["output"]
     assert out["action"] == "apply_patch"
 
+
+
+def test_cancel_cannot_replace_completed_terminal_state(ray_cluster, tmp_path):
+    workspace = tmp_path / f"ws-{uuid.uuid4()}"
+    workspace.mkdir(parents=True, exist_ok=True)
+    agent = OpenCodeAgent.options(name=f"ag-{uuid.uuid4()}").remote(
+        workspace=str(workspace)
+    )
+    ray.get(
+        agent.run_message.remote(
+            [{"type": "text", "text": "complete before cancellation"}]
+        )
+    )
+
+    assert ray.get(agent.cancel.remote()) == "completed"
+    assert ray.get(agent.get_state.remote()) == "completed"

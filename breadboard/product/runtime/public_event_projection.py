@@ -32,7 +32,7 @@ _PUBLIC_PAYLOAD_SCHEMAS: Final[Mapping[str, str]] = MappingProxyType(
 
 # Public name used by deterministic code generation and equivalence checks.
 PUBLIC_PAYLOAD_SCHEMAS: Final[Mapping[str, str]] = _PUBLIC_PAYLOAD_SCHEMAS
-_INTERNAL_EVENT_KINDS = frozenset({"annotation"})
+_INTERNAL_EVENT_KINDS = frozenset({"annotation", "context.compacted"})
 _IDENTITY_ONLY_ASSISTANT_FIELDS = frozenset({"message_id", "trajectory_id"})
 
 

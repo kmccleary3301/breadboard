@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 import threading
 import uuid
 
@@ -17,6 +17,7 @@ class JobRef:
     state: str = "accepted"  # accepted|running|completed|failed|killed
     seq: int = 0
     task_descriptor: Optional[Dict[str, Any]] = None
+    result_payload: Optional[Dict[str, Any]] = None
 
 
 class JobManager:
@@ -32,9 +33,12 @@ class JobManager:
         owner_agent: str,
         kind: str,
         task_descriptor: Optional[Dict[str, Any]] = None,
+        job_id: Optional[str] = None,
     ) -> JobRef:
         with self._lock:
-            job_id = uuid.uuid4().hex[:12]
+            job_id = str(job_id or uuid.uuid4().hex[:12])
+            if job_id in self._jobs:
+                raise ValueError(f"job id already exists: {job_id}")
             seq = self._next_seq
             self._next_seq += 1
             job = JobRef(
@@ -58,13 +62,32 @@ class JobManager:
         with self._lock:
             return self._jobs.get(job_id)
 
-    def update_state(self, job_id: str, state: str) -> Optional[JobRef]:
+    def _transition_state(
+        self,
+        job_id: str,
+        state: str,
+        *,
+        result_payload: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[Optional[JobRef], bool]:
+        """Return the job and whether this call performed a fresh transition."""
         with self._lock:
             job = self._jobs.get(job_id)
             if job is None:
-                return None
+                return None, False
+            if job.state in {"completed", "failed", "killed"}:
+                if state != job.state:
+                    return None, False
+                if result_payload is not None and job.result_payload != dict(result_payload):
+                    return None, False
+                return job, False
             job.state = state
-            return job
+            if result_payload is not None:
+                job.result_payload = dict(result_payload)
+            return job, True
+
+    def update_state(self, job_id: str, state: str, *, result_payload: Optional[Dict[str, Any]] = None) -> Optional[JobRef]:
+        job, _ = self._transition_state(job_id, state, result_payload=result_payload)
+        return job
 
     def all_jobs(self) -> Dict[str, JobRef]:
         with self._lock:

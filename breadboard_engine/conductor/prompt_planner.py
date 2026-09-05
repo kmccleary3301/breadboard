@@ -63,9 +63,10 @@ class ToolPromptPlanner:
 
             if per_turn_availability:
                 append_text_block(last_message, "\n\n" + per_turn_availability)
-                provider_messages = session_state.provider_messages
-                if provider_messages:
-                    append_text_block(provider_messages[-1], "\n\n" + per_turn_availability)
+                with session_state.context_mutation():
+                    provider_messages = session_state.provider_messages
+                    if provider_messages:
+                        append_text_block(provider_messages[-1], "\n\n" + per_turn_availability)
                 per_turn_written_text = per_turn_availability
 
         return per_turn_written_text

@@ -417,7 +417,7 @@ def test_python_sdk_explicit_methods_match_catalog() -> None:
     assert actual == expected
     for row in rows:
         expected_return = (
-            Generator[SessionEvent, None, None]
+            Generator[SessionEvent, None, int | None]
             if row["operation_id"] == "session.events"
             else PublicResult
         )

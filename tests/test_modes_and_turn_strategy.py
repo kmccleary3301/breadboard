@@ -1,10 +1,14 @@
+from contextlib import nullcontext
 import os
 from types import SimpleNamespace
 import ray
 import pytest
 
 from breadboard_engine.agent_llm_openai import OpenAIConductor
-from breadboard_engine.conductor.modes import add_enhanced_message_fields
+from breadboard_engine.conductor.modes import (
+    add_enhanced_message_fields,
+    setup_tool_prompts,
+)
 
 
 @pytest.mark.skipif('OPENAI_API_KEY' not in os.environ, reason="requires provider key")
@@ -40,6 +44,31 @@ def test_mode_tool_gating_and_turn_strategy(tmp_path):
     assert isinstance(out, dict)
     ray.kill(actor)
 
+def test_system_once_preserves_restored_product_system_prompt() -> None:
+    restored_system = "retained exact system prompt"
+    state = SimpleNamespace(
+        messages=[{"role": "system", "content": restored_system}],
+        provider_messages=[{"role": "system", "content": restored_system}],
+        context_mutation=nullcontext,
+    )
+    conductor = SimpleNamespace(config={}, current_text_based_tools=[])
+    caller = SimpleNamespace(build_prompt=lambda _tools: "tool definitions")
+    logger = SimpleNamespace(log_tool_availability=lambda _names: None)
+
+    setup_tool_prompts(
+        conductor,
+        "system_once",
+        [],
+        [],
+        state,
+        logger,
+        caller,
+        preserve_system_prompt=True,
+    )
+
+    assert state.messages[0]["content"] == restored_system
+    assert state.provider_messages[0]["content"] == restored_system
+
 def test_compiled_tool_prompt_preserves_first_class_input_media() -> None:
     media = {
         "type": "media",
@@ -68,6 +97,7 @@ def test_compiled_tool_prompt_preserves_first_class_input_media() -> None:
                 ],
             },
         ],
+        context_mutation=nullcontext,
     )
 
     add_enhanced_message_fields(

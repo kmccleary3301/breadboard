@@ -64,12 +64,14 @@ class MultiAgentOrchestrator:
         async_mode: bool = False,
         payload: Optional[Dict[str, Any]] = None,
         task_descriptor: Optional[Dict[str, Any]] = None,
+        job_id: Optional[str] = None,
     ) -> SpawnResult:
         job = self.job_manager.create_job(
             agent_id=agent_id,
             owner_agent=owner_agent,
             kind=kind,
             task_descriptor=task_descriptor,
+            job_id=job_id,
         )
         ack_payload = dict(payload or {})
         ack_payload.setdefault("job_id", job.job_id)
@@ -99,21 +101,71 @@ class MultiAgentOrchestrator:
         return SpawnResult(job=job, ack_payload=ack_payload)
 
     def mark_job_completed(self, job_id: str, *, result_payload: Optional[Dict[str, Any]] = None) -> Optional[JobRef]:
-        job = self.job_manager.update_state(job_id, "completed")
-        if job is None:
-            return None
         payload = dict(result_payload or {})
-        payload.setdefault("job_id", job.job_id)
-        payload.setdefault("agent_id", job.agent_id)
-        payload.setdefault("state", job.state)
-        payload.setdefault("seq", job.seq)
+        job, transitioned = self.job_manager._transition_state(
+            job_id,
+            "completed",
+            result_payload=payload,
+        )
+        if job is None or not transitioned:
+            return job
+        event_payload = dict(payload)
+        event_payload.update(
+            {
+                "job_id": job.job_id,
+                "agent_id": job.agent_id,
+                "state": job.state,
+                "seq": job.seq,
+                "result_payload": payload,
+            }
+        )
         self.event_log.add(
             "agent.job_completed",
             agent_id=job.agent_id,
             parent_agent_id=job.owner_agent,
-            payload=payload,
+            payload=event_payload,
         )
         return job
+
+    def _mark_job_terminal(
+        self,
+        job_id: str,
+        *,
+        state: str,
+        event_type: str,
+    ) -> Optional[JobRef]:
+        if state not in {"failed", "killed"}:
+            raise ValueError("terminal job state must be failed or killed")
+        job, transitioned = self.job_manager._transition_state(job_id, state)
+        if job is None or not transitioned:
+            return job
+        self.event_log.add(
+            event_type,
+            agent_id=job.agent_id,
+            parent_agent_id=job.owner_agent,
+            payload={
+                "job_id": job.job_id,
+                "agent_id": job.agent_id,
+                "state": job.state,
+                "seq": job.seq,
+            },
+        )
+        return job
+
+    def mark_job_failed(self, job_id: str) -> Optional[JobRef]:
+        return self._mark_job_terminal(
+            job_id,
+            state="failed",
+            event_type="agent.job_failed",
+        )
+
+    def mark_job_killed(self, job_id: str) -> Optional[JobRef]:
+        return self._mark_job_terminal(
+            job_id,
+            state="killed",
+            event_type="agent.job_killed",
+        )
+
 
     def emit_coordination_signal(self, job: JobRef, signal: Dict[str, Any]) -> Event:
         payload = dict(signal or {})
@@ -939,7 +991,25 @@ class MultiAgentOrchestrator:
             elif event.type == "agent.job_completed":
                 job_id = str(payload.get("job_id") or "")
                 if job_id:
-                    self.job_manager.update_state(job_id, str(payload.get("state") or "completed"))
+                    result_payload = payload.get("result_payload")
+                    if not isinstance(result_payload, dict):
+                        result_payload = {
+                            key: value
+                            for key, value in payload.items()
+                            if key not in {"agent_id", "job_id", "seq", "state"}
+                        }
+                    self.job_manager.update_state(
+                        job_id,
+                        str(payload.get("state") or "completed"),
+                        result_payload=result_payload,
+                    )
+            elif event.type in {"agent.job_failed", "agent.job_killed"}:
+                job_id = str(payload.get("job_id") or "")
+                if job_id:
+                    self.job_manager.update_state(
+                        job_id,
+                        str(payload.get("state") or ""),
+                    )
             elif event.type == "agent.wakeup_emitted":
                 job_id = str(payload.get("job_id") or "")
                 subscription_id = str(payload.get("subscription_id") or "")

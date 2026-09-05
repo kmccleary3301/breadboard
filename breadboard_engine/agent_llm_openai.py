@@ -250,6 +250,33 @@ def compute_tool_prompt_mode(tool_prompt_mode: str, will_use_native_tools: bool,
         suppress_prompts = bool((config or {}).get("provider_tools", {}).get("suppress_prompts", False))
         return "none" if suppress_prompts else "per_turn_append"
     return tool_prompt_mode
+def _queue_event_emitter(
+    event_queue: Any,
+    acknowledgement_queue: Any = None,
+) -> Callable[[str, Dict[str, Any], Optional[int]], None]:
+    def emit(
+        event_type: str, payload: Dict[str, Any], turn: Optional[int] = None
+    ) -> None:
+        try:
+            if event_type != "conversation.compaction.end":
+                event_queue.put((event_type, payload, turn))
+                return
+            acknowledgement_id = uuid.uuid4().hex
+            event_queue.put((event_type, payload, turn, acknowledgement_id))
+            if acknowledgement_queue is None:
+                raise RuntimeError(
+                    "compaction persistence acknowledgement queue is unavailable"
+                )
+            acknowledged_id, persisted = acknowledgement_queue.get(timeout=30)
+            if acknowledged_id != acknowledgement_id or persisted is not True:
+                raise RuntimeError("compaction persistence was not acknowledged")
+        except Exception:
+            if event_type == "conversation.compaction.end":
+                raise
+
+    return emit
+
+
 
 
 def build_shell_timeout_diagnostic(command: str, exit_code: Any, stdout: str = "", stderr: str = "") -> str:
@@ -410,7 +437,109 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         self._stop_requested = False
         # Runtime-only reference used for streaming task events (e.g., async subagent completions).
         self._active_session_state: Optional[SessionState] = None
+        self._retained_ctree_session_id: Optional[str] = None
+        self._retained_ctree_events: Optional[List[Dict[str, Any]]] = None
+        self._retained_ctree_raw_fact_ids: tuple[str, ...] = ()
         self._multi_agent_last_wakeup_event_id = 0
+
+    def _restore_retained_ctree(
+        self, session_state: SessionState, session_id: str
+    ) -> None:
+        if (
+            self._retained_ctree_session_id == session_id
+            and self._retained_ctree_events is not None
+        ):
+            session_state.restore_ctree_events(
+                self._retained_ctree_events,
+                retained_raw_fact_ids=getattr(
+                    self,
+                    "_retained_ctree_raw_fact_ids",
+                    (),
+                ),
+            )
+
+    def _restore_turn_ctree(
+        self,
+        session_state: SessionState,
+        session_id: str,
+        *,
+        resume_ctree_events: Any,
+        resume_retained_raw_fact_ids: Any,
+        retained_raw_fact_ids: Any,
+    ) -> None:
+        if resume_ctree_events is not None:
+            session_state.restore_ctree_events(
+                resume_ctree_events,
+                retained_raw_fact_ids=resume_retained_raw_fact_ids,
+            )
+        else:
+            self._restore_retained_ctree(session_state, session_id)
+        if retained_raw_fact_ids is not None:
+            session_state.restore_raw_fact_ids(retained_raw_fact_ids)
+
+    def _restore_product_effective_messages(
+        self,
+        session_state: SessionState,
+        retained_effective_messages: Any,
+        *,
+        resume_retained_raw_fact_ids: Any = None,
+        retained_raw_fact_ids: Any = None,
+    ) -> bool | None:
+        if retained_effective_messages is None:
+            return None
+        if (
+            not isinstance(retained_effective_messages, list)
+            or any(
+                not isinstance(message, dict)
+                for message in retained_effective_messages
+            )
+        ):
+            raise ProviderContractError(
+                "run context retained_effective_messages must be a message array"
+            )
+        restored = copy.deepcopy(retained_effective_messages)
+        resume_facts = tuple(resume_retained_raw_fact_ids or ())
+        retained_facts = tuple(retained_raw_fact_ids or ())
+        if (
+            resume_retained_raw_fact_ids is not None
+            and retained_raw_fact_ids is not None
+            and resume_facts == retained_facts
+        ):
+            cached = session_state.provider_messages
+            if (
+                len(cached) < len(restored)
+                or cached[: len(restored)] != restored
+            ):
+                raise ProviderContractError(
+                    "resume messages diverge from retained Product context"
+                )
+            restored.extend(copy.deepcopy(cached[len(restored) :]))
+        with session_state.context_mutation():
+            session_state.messages = copy.deepcopy(restored)
+            session_state.provider_messages = restored
+        return any(message.get("role") == "system" for message in restored)
+
+    def _retain_ctree(self, session_state: SessionState, session_id: str) -> None:
+        self._retained_ctree_session_id = session_id
+        self._retained_ctree_events = copy.deepcopy(session_state.ctree_store.events)
+        self._retained_ctree_raw_fact_ids = session_state.retained_raw_fact_ids
+
+    def _persist_final_product_context(
+        self,
+        session_state: SessionState,
+        *,
+        had_retained_product_context: bool,
+    ) -> None:
+        if not session_state.can_persist_compaction():
+            return
+        if (
+            not had_retained_product_context
+            and not session_state.has_persisted_compaction()
+        ):
+            return
+        session_state.persist_compaction_snapshot(
+            session_state.final_provider_context()
+        )
 
     def request_stop(self) -> None:
         """Best-effort interrupt: stop the current run at the next safe boundary."""
@@ -5582,6 +5711,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         event_emitter: Optional[Callable[[str, Dict[str, Any], Optional[int]], None]] = None,
         event_queue: Optional[Any] = None,
         permission_queue: Optional[Any] = None,
+        event_ack_queue: Optional[Any] = None,
         control_queue: Optional[Any] = None,
         context: Optional[Dict[str, Any]] = None,
         kernel_emitter_run_dir: Optional[str] = None,
@@ -5598,12 +5728,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         # Initialize components
         emitter = event_emitter
         if emitter is None and event_queue is not None:
-            def queue_emitter(event_type: str, payload: Dict[str, Any], turn: Optional[int] = None) -> None:
-                try:
-                    event_queue.put((event_type, payload, turn))
-                except Exception:
-                    pass
-            emitter = queue_emitter
+            emitter = _queue_event_emitter(event_queue, event_ack_queue)
         self.todo_manager = None
         kernel_emitter = None
         if kernel_emitter_run_dir:
@@ -5655,11 +5780,37 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             raise ProviderContractError(
                 "run context input_media accepts only media blocks"
             )
+        retained_raw_fact_ids = context.get("retained_raw_fact_ids")
+        if retained_raw_fact_ids is not None and not isinstance(
+            retained_raw_fact_ids, (list, tuple)
+        ):
+            raise ProviderContractError(
+                "run context retained_raw_fact_ids must be an array"
+            )
+        retained_effective_messages = context.get(
+            "retained_effective_messages"
+        )
+        if (
+            retained_effective_messages is not None
+            and (
+                not isinstance(retained_effective_messages, list)
+                or any(
+                    not isinstance(message, dict)
+                    for message in retained_effective_messages
+                )
+            )
+        ):
+            raise ProviderContractError(
+                "run context retained_effective_messages must be a message array"
+            )
         session_state = SessionState(
             self.workspace,
             self.image,
             self.config,
             event_emitter=emitter,
+            product_compaction_owner=(
+                context.get("_product_compaction_owner") is True
+            ),
             kernel_emitter=kernel_emitter,
             episode_provider_profile=provider_profile,
         )
@@ -6273,21 +6424,61 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         }
         resume_snapshot = self._load_resume_snapshot()
         resume_has_system = False
+        resume_ctree_events: Any = None
+        resume_retained_raw_fact_ids: Any = None
         if isinstance(resume_snapshot, dict):
             seed_messages = resume_snapshot.get("messages")
             if isinstance(seed_messages, list):
                 cleaned = [msg for msg in seed_messages if isinstance(msg, dict)]
                 if cleaned:
-                    session_state.messages = list(cleaned)
-                    session_state.provider_messages = list(cleaned)
-                    resume_has_system = any(m.get("role") == "system" for m in cleaned if isinstance(m, dict))
+                    seed_provider_messages = resume_snapshot.get(
+                        "provider_messages", cleaned
+                    )
+                    provider_cleaned = (
+                        [
+                            msg
+                            for msg in seed_provider_messages
+                            if isinstance(msg, dict)
+                        ]
+                        if isinstance(seed_provider_messages, list)
+                        else cleaned
+                    )
+                    with session_state.context_mutation():
+                        session_state.messages = copy.deepcopy(cleaned)
+                        session_state.provider_messages = copy.deepcopy(
+                            provider_cleaned
+                        )
+                    resume_has_system = any(
+                        message.get("role") == "system"
+                        for message in provider_cleaned
+                    )
             seed_transcript = resume_snapshot.get("transcript")
             if isinstance(seed_transcript, list):
                 session_state.transcript = [entry for entry in seed_transcript if isinstance(entry, dict)]
             meta = resume_snapshot.get("provider_metadata")
             if isinstance(meta, dict):
                 session_state.provider_metadata.update(meta)
+            resume_ctree_events = resume_snapshot.get("ctree_events")
+            resume_retained_raw_fact_ids = resume_snapshot.get(
+                "retained_raw_fact_ids",
+                (),
+            )
             session_state.set_provider_metadata("resume_snapshot_applied", True)
+        product_context_has_system = self._restore_product_effective_messages(
+            session_state,
+            retained_effective_messages,
+            resume_retained_raw_fact_ids=resume_retained_raw_fact_ids,
+            retained_raw_fact_ids=retained_raw_fact_ids,
+        )
+        if product_context_has_system is not None:
+            resume_has_system = product_context_has_system
+        self._restore_turn_ctree(
+            session_state,
+            provider_session_id,
+            resume_ctree_events=resume_ctree_events,
+            resume_retained_raw_fact_ids=resume_retained_raw_fact_ids,
+            retained_raw_fact_ids=retained_raw_fact_ids,
+        )
         # Resume snapshots are subordinate to the owning product session.
         session_state.set_provider_metadata("session_id", provider_session_id)
         # Resume metadata is session-scoped, but these fields are turn-scoped.
@@ -6321,8 +6512,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         
         # Setup tool prompts and system messages
         local_tools_prompt = self._setup_tool_prompts(
-            tool_prompt_mode, tool_defs, active_dialect_names, 
+            tool_prompt_mode, tool_defs, active_dialect_names,
             session_state, markdown_logger, caller,
+            preserve_system_prompt=product_context_has_system is not None,
         )
         
         # Add enhanced descriptive fields to initial messages after tool setup
@@ -6536,6 +6728,11 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                         pass
                 finally:
                     session_state._episode_provider_client = None
+            self._persist_final_product_context(
+                session_state,
+                had_retained_product_context=retained_effective_messages is not None,
+            )
+            self._retain_ctree(session_state, provider_session_id)
             self._persist_final_workspace()
             try:
                 self._persist_multi_agent_log()

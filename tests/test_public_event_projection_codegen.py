@@ -35,7 +35,7 @@ def test_projection_owner_preserves_public_envelope() -> None:
     assert projected["schema_version"] == "bb.public_session_event.v1"
     assert projected["event_id"] == "session:session-1:3"
     assert projected["payload_schema_version"] == "bb.payload.message.assistant.v1"
-def test_projection_omits_internal_annotation_and_identity_only_fields() -> None:
+def test_projection_omits_internal_events_and_identity_only_fields() -> None:
     annotation = {
         "session_id": "session-1",
         "sequence": 4,
@@ -50,6 +50,13 @@ def test_projection_omits_internal_annotation_and_identity_only_fields() -> None
             "generation": "generation-a",
         },
     }
+    compaction = {
+        "session_id": "session-1",
+        "sequence": 5,
+        "kind": "context.compacted",
+        "occurred_at": "2026-09-02T00:00:00Z",
+        "payload": {},
+    }
     assistant = {
         "session_id": "session-1",
         "sequence": 3,
@@ -63,6 +70,7 @@ def test_projection_omits_internal_annotation_and_identity_only_fields() -> None
     }
 
     assert public_session_event(annotation) is None
+    assert public_session_event(compaction) is None
     assert public_session_event(assistant)["payload"] == {
         "metadata": {"has_content": True},
     }

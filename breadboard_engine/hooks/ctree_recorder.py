@@ -41,9 +41,10 @@ class CTreeRecorderHook:
             return HookResult(action="allow", reason="missing_kind")
 
         try:
-            node_id = session_state.ctree_store.record(str(kind), data, turn=record_turn)
-            node = session_state.ctree_store.nodes[-1] if session_state.ctree_store.nodes else None
-            snapshot = session_state.ctree_store.snapshot()
+            with session_state.context_mutation():
+                node_id = session_state.ctree_store.record(str(kind), data, turn=record_turn)
+                node = session_state.ctree_store.nodes[-1] if session_state.ctree_store.nodes else None
+                snapshot = session_state.ctree_store.snapshot()
         except Exception:
             return HookResult(action="allow", reason="ctree_record_failed")
 

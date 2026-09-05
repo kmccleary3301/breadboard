@@ -340,6 +340,7 @@ def get_model_response(
         append_text_block=conductor._append_text_block,
         current_native_tools=getattr(conductor, "current_native_tools", None),
     )
+    session_state.record_provider_request_surface(send_messages)
 
     try:
         if per_turn_written_text and conductor.logger_v2.run_dir:
@@ -367,16 +368,13 @@ def get_model_response(
         }
     )
 
-    try:
-        context_payload = conductor.context_guard.maybe_warn(
-            session_state, send_messages
+    context_payload = conductor.context_guard.maybe_compact(
+        session_state, send_messages
+    )
+    if context_payload:
+        session_state.set_provider_metadata(
+            "context_window_warning", context_payload
         )
-        if context_payload:
-            session_state.set_provider_metadata(
-                "context_window_warning", context_payload
-            )
-    except Exception:
-        pass
 
     provider_tools_cfg = getattr(conductor, "_provider_tools_effective", None) or dict(
         (conductor.config.get("provider_tools") or {})
@@ -984,6 +982,8 @@ def setup_tool_prompts(
     session_state,
     markdown_logger: MarkdownLogger,
     caller,
+    *,
+    preserve_system_prompt: bool = False,
 ) -> str:
     prompt_tool_defs = getattr(conductor, "current_text_based_tools", None) or tool_defs
     mode_cfg = None
@@ -1027,7 +1027,10 @@ def setup_tool_prompts(
                 active_tool_names.append(name)
     conductor._active_tool_names = active_tool_names
 
-    if tool_prompt_mode == "system_compiled_and_persistent_per_turn":
+    if (
+        tool_prompt_mode == "system_compiled_and_persistent_per_turn"
+        and not preserve_system_prompt
+    ):
         compiler = get_compiler()
 
         primary_prompt = session_state.messages[0].get("content", "")
@@ -1035,8 +1038,9 @@ def setup_tool_prompts(
             prompt_tool_defs, active_dialect_names, primary_prompt
         )
 
-        session_state.messages[0]["content"] = comprehensive_prompt
-        session_state.provider_messages[0]["content"] = comprehensive_prompt
+        with session_state.context_mutation():
+            session_state.messages[0]["content"] = comprehensive_prompt
+            session_state.provider_messages[0]["content"] = comprehensive_prompt
 
         local_tools_prompt = (
             "(using cached comprehensive system prompt with research-based preferences)"
@@ -1062,13 +1066,10 @@ def setup_tool_prompts(
             "Do NOT include extra prose.\nEND SYSTEM MESSAGE\n"
         )
 
-        if tool_prompt_mode in ("system_once", "system_and_per_turn"):
-            session_state.messages[0]["content"] = (
-                session_state.messages[0].get("content") or ""
-            ) + tool_directive_text
-            session_state.provider_messages[0]["content"] = session_state.messages[0][
-                "content"
-            ]
+        if tool_prompt_mode in ("system_once", "system_and_per_turn") and not preserve_system_prompt:
+            with session_state.context_mutation():
+                session_state.messages[0]["content"] = (session_state.messages[0].get("content") or "") + tool_directive_text
+                session_state.provider_messages[0]["content"] = session_state.messages[0]["content"]
             markdown_logger.log_tool_availability([t.name for t in tool_defs])
 
     return local_tools_prompt
