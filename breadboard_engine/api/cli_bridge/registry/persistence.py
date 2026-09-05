@@ -998,7 +998,7 @@ class PersistenceMixin:
         filename = hashlib.sha256(session_id.encode("utf-8")).hexdigest() + ".json"
         return self._state_root / filename
     def _tombstone_path(self, session_id: str) -> Path | None:
-        state_path = self._state_path(session_id)
+        state_path = self._state_path(session_id.casefold())
         if state_path is None:
             return None
         return state_path.with_suffix(".deleted")
@@ -1023,18 +1023,13 @@ class PersistenceMixin:
         if self._state_root is None:
             return
         for path in sorted(self._state_root.glob("*.json")):
-            marker = path.with_suffix(".deleted")
-            if marker.exists():
-                for session_id in tuple(self._records):
-                    if self._state_path(session_id) == path:
-                        self._records.pop(session_id, None)
-                continue
             try:
                 provisional = self._deserialize_record(
                     json.loads(path.read_text(encoding="utf-8"))
                 )
+                marker = self._tombstone_path(provisional.session_id)
                 async with self._record_file_lock(provisional.session_id):
-                    if marker.exists():
+                    if marker is not None and marker.exists():
                         self._records.pop(provisional.session_id, None)
                         continue
                     refreshed = self._deserialize_record(
@@ -1509,13 +1504,11 @@ class PersistenceMixin:
     def _load_retained_records(self) -> None:
         assert self._state_root is not None
         for path in sorted(self._state_root.glob("*.json")):
-            marker = path.with_suffix(".deleted")
-            if marker.exists():
-                continue
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
                 record = self._deserialize_record(payload)
-                if marker.exists():
+                marker = self._tombstone_path(record.session_id)
+                if marker is not None and marker.exists():
                     continue
             except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
                 continue

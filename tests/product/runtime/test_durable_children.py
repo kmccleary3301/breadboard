@@ -7884,3 +7884,37 @@ def test_explicit_id_create_rejects_disk_collision_without_overwriting_first_rec
     assert reloaded.status is SessionStatus.RUNNING
     assert reloaded.logging_dir == first.logging_dir
     assert reloaded.metadata == first.metadata
+
+
+def test_registry_deleted_identity_rejects_alias_and_stale_record_replay(tmp_path: Path) -> None:
+    from breadboard_engine.api.cli_bridge.models import SessionStatus
+    from breadboard_engine.api.cli_bridge.registry.persistence import SessionRecordDeletedError
+    from breadboard_engine.api.cli_bridge.registry.records import SessionRecord
+
+    async def scenario() -> None:
+        state_root = tmp_path / "registry"
+        owner = SessionRegistry(state_root=state_root)
+        record = SessionRecord("DeletedSession", status=SessionStatus.RUNNING)
+        await owner.create(record)
+        state_path = owner._state_path(record.session_id)
+        assert state_path is not None
+        accepted_bytes = state_path.read_bytes()
+        stale = SessionRegistry(state_root=state_root)
+        await owner.delete(record.session_id)
+
+        with pytest.raises(SessionRecordDeletedError):
+            await SessionRegistry(state_root=state_root).create(
+                SessionRecord("deletedsession", status=SessionStatus.RUNNING)
+            )
+
+        # A crash after the tombstone is durable may leave the old JSON record.
+        state_path.write_bytes(accepted_bytes)
+        restored = SessionRegistry(state_root=state_root)
+        assert await restored.records() == []
+        assert await stale.records() == []
+        assert await restored.get(record.session_id) is None
+        assert await restored.resolve_session_id("DELETEDSESSION") is None
+        with pytest.raises(SessionRecordDeletedError):
+            await stale.persist(record)
+
+    asyncio_run(scenario())
