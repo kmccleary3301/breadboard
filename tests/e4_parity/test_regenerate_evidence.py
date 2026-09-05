@@ -970,6 +970,60 @@ def test_promotion_preserves_logical_paths_for_symlinked_lane_outputs(
     assert all(not path.as_posix().startswith("tmp/e4_regen_capture/") for path in promoted)
 
 
+def test_regeneration_rejects_declared_workspace_parent_symlink_before_promotion(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    checkout = tmp_path / "checkout"
+    workspace = tmp_path / "workspace"
+    outside = tmp_path / "outside"
+    checkout.mkdir()
+    (workspace / "docs_tmp").mkdir(parents=True)
+    outside.mkdir()
+    outside_sentinel = outside / "sentinel.json"
+    outside_sentinel.write_bytes(b"outside-before\n")
+    phase_15 = workspace / "docs_tmp/phase_15"
+    phase_15.symlink_to(outside, target_is_directory=True)
+
+    probe = tmp_path / "candidate_write.py"
+    probe.write_text(
+        "import os\n"
+        "from pathlib import Path\n"
+        "workspace = Path(os.environ['BB_WORKSPACE_ROOT'])\n"
+        "destination = workspace / 'docs_tmp/phase_15/sentinel.json'\n"
+        "destination.parent.mkdir(parents=True, exist_ok=True)\n"
+        "destination.write_bytes(b'candidate\\n')\n",
+        encoding="utf-8",
+    )
+    candidate_stages = (
+        driver.Stage(
+            stage_id="candidate_write_set",
+            phase="lane_artifacts",
+            label="complete candidate write set",
+            argv=(driver.PYTHON, str(probe)),
+            writes=("../docs_tmp/phase_15/sentinel.json",),
+        ),
+    )
+
+    monkeypatch.setattr(driver, "ROOT", checkout)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(workspace))
+    monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
+
+    code, results = driver._run_regeneration_transaction(
+        candidate_stages,
+        (),
+        (),
+        python=sys.executable,
+    )
+
+    assert code != 0
+    assert [result.stage_id for result in results] == ["candidate_write_set"]
+    assert outside_sentinel.read_bytes() == b"outside-before\n"
+    assert outside_sentinel.is_file()
+    assert phase_15.is_symlink()
+    assert phase_15.resolve() == outside.resolve()
+
+
 def test_regeneration_transaction_validation_failure_preserves_accepted_write_set(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
