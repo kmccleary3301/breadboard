@@ -1111,7 +1111,12 @@ class PersistenceMixin:
         PersistenceMixin._replace_metadata(target, replacement_metadata)
         target.reward_summary = source.reward_summary
         target.event_seq = source.event_seq
-        target.replay_history_partial = source.replay_history_partial
+        # The disk loader lacks this process's live event buffer.
+        target.replay_history_partial = (
+            target.replay_history_partial
+            or source.replay_head_sequence != target.replay_head_sequence
+            or source.replay_head_event_id != target.replay_head_event_id
+        )
         target.replay_head_event_id = source.replay_head_event_id
         target.replay_head_sequence = source.replay_head_sequence
         target.terminal_event_envelopes[:] = source.terminal_event_envelopes
