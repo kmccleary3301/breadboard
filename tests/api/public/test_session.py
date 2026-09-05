@@ -9,6 +9,7 @@ from threading import Barrier, Lock, Thread
 from time import monotonic, sleep
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
@@ -377,7 +378,7 @@ def test_session_lifecycle_and_resumable_event_stream(
     assert client.get("/v1/sessions/session-fixture/artifacts").json()["ok"] is True
 
 
-def test_public_event_limit_fetches_visible_resume_after_hidden_annotation(
+def test_public_event_limit_counts_annotations_but_skips_compaction(
     client: TestClient,
     tmp_path: Path,
 ) -> None:
@@ -408,6 +409,9 @@ def test_public_event_limit_fetches_visible_resume_after_hidden_annotation(
     session.resume()
     session.compact(CompactionSnapshot(b"[]", ("ctn_000001",)))
     session.complete("done")
+    session.annotate(
+        AnnotationRecord("post-run", "message-a", "trajectory-a", "verified", "reviewer-2", "generation-a")
+    )
     session_store.create_session(tmp_path, session)
 
     response = client.get(
@@ -418,8 +422,10 @@ def test_public_event_limit_fetches_visible_resume_after_hidden_annotation(
     assert response.status_code == 200
     records = _stream_records(response)
     assert len(records) == 1
-    assert records[0]["kind"] == "session.resumed"
-    assert records[0]["seq"] == 5
+    assert records[0]["kind"] == "annotation"
+    assert records[0]["seq"] == 4
+    assert records[0]["payload"]["message_id"] == "message-a"
+    assert records[0]["visibility"]["model_visible"] is False
     resumed_after_compaction = client.get(
         f"/v1/sessions/{session_id}/events"
         "?resume_token=5&limit=1&follow=false"
@@ -430,9 +436,17 @@ def test_public_event_limit_fetches_visible_resume_after_hidden_annotation(
     assert len(after_compaction) == 1
     assert after_compaction[0]["kind"] == "session.completed"
     assert after_compaction[0]["seq"] == 7
+    snapshot = client.get(
+        f"/v1/sessions/{session_id}/events?follow=false"
+    )
+    assert snapshot.status_code == 200
+    settled_and_labeled = _stream_records(snapshot)[-2:]
+    assert [event["kind"] for event in settled_and_labeled] == ["session.completed", "annotation"]
+    assert [event["seq"] for event in settled_and_labeled] == [7, 8]
+    assert settled_and_labeled[1]["payload"]["annotation_id"] == "post-run"
 
 
-def test_live_event_limit_fetches_visible_row_after_hidden_annotation(
+def test_live_event_limit_returns_annotation_before_later_input(
     client: TestClient,
 ) -> None:
     lock_id = _locked_harness(client)
@@ -475,8 +489,78 @@ def test_live_event_limit_fetches_visible_row_after_hidden_annotation(
     assert response.status_code == 200
     records = _stream_records(response)
     assert len(records) == 1
-    assert records[0]["kind"] == "input.accepted"
-    assert records[0]["seq"] == 4
+    assert records[0]["kind"] == "annotation"
+    assert records[0]["seq"] == 3
+    assert records[0]["payload"]["trajectory_id"] == "trajectory-a"
+    assert records[0]["visibility"]["provider_visible"] is False
+
+
+def test_public_session_events_snapshot_excludes_annotation_appended_after_first_chunk(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    session_id = "snapshot-boundary"
+    lock = EffectiveHarnessLock._from_record(
+        {"graph_hash": "sha256:" + "a" * 64}
+    )
+    session = Session.start(lock, "snapshot boundary", session_id=session_id)
+    session.assistant_message(
+        "candidate",
+        message_id="message-a",
+        trajectory_id="trajectory-a",
+    )
+    session.complete()
+    session_store.create_session(tmp_path, session)
+    held_out = AnnotationRecord(
+        annotation_id="held-out",
+        message_id="message-a",
+        trajectory_id="trajectory-a",
+        label="preferred",
+        author="reviewer",
+        generation="generation-a",
+    )
+    appended = False
+
+    async def append_during_response(scope, receive, send):
+        async def send_chunk(message):
+            nonlocal appended
+            await send(message)
+            if (
+                message["type"] == "http.response.body"
+                and message.get("body")
+                and not appended
+            ):
+                appended = True
+                session_store.mutate_session(
+                    tmp_path,
+                    session_id,
+                    lambda current: current.annotate(held_out),
+                )
+
+        await client.app(scope, receive, send_chunk)
+
+    async def read_snapshot():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=append_during_response),
+            base_url="http://127.0.0.1",
+        ) as reader:
+            return await reader.get(f"/v1/sessions/{session_id}/events?follow=false")
+
+    response = client.portal.call(read_snapshot)
+    assert response.status_code == 200, response.text
+    assert [event["kind"] for event in _stream_records(response)] == [
+        "session.started",
+        "assistant_message",
+        "session.completed",
+    ]
+
+    fresh_snapshot = client.get(
+        f"/v1/sessions/{session_id}/events?follow=false"
+    )
+    assert fresh_snapshot.status_code == 200
+    fresh_records = _stream_records(fresh_snapshot)
+    assert fresh_records[-1]["kind"] == "annotation"
+    assert fresh_records[-1]["payload"]["annotation_id"] == "held-out"
 
 
 def test_public_session_events_snapshot_closes_without_live_follow(

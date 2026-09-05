@@ -13,7 +13,7 @@ import type {
   PublicSessionCancelRequest, PublicSessionDecision, PublicSessionInputRequest, PublicSessionStartRequest,
   SessionCommandRequest, SessionCommandResponse,
   SessionCreateRequest, SessionCreateResponse, SessionEvent, SessionFileContent, SessionFileInfo, SessionInputRequest,
-  SessionInputResponse, SessionKernelRecordList, SessionSummary, SkillCatalogResponse,
+  SessionInputResponse, SessionKernelRecordList, SessionListRow, SessionSummary, SkillCatalogResponse,
 } from "./types.js"
 import {
   PUBLIC_BINDINGS_BY_ACTION_ID,
@@ -145,7 +145,7 @@ export interface BreadboardClient {
   health(): Promise<HealthResponse>
   engineStatus(): Promise<EngineStatusResponse>
   createSession(payload: SessionCreateRequest): Promise<SessionCreateResponse>
-  listSessions(): Promise<SessionSummary[]>
+  listSessions(): Promise<SessionListRow[]>
   listSessionRecords(id: string, options?: { schemaVersion?: string; offset?: number; limit?: number }): Promise<SessionKernelRecordList>
   postInput(id: string, body: SessionInputRequest): Promise<SessionInputResponse>
   postCommand(id: string, body: SessionCommandRequest): Promise<SessionCommandResponse>
@@ -272,7 +272,7 @@ export const createBreadboardClient = (config: BreadboardClientConfig): Breadboa
     getSessionResult: (id: string) => action(config, "public.session.get", { session_id: id }),
     invokePublicAction: (id: PublicActionId, input?: Readonly<Record<string, unknown>>) => action(config, id, input),
     health: () => request<HealthResponse>(config, "/v1/health", "GET"), engineStatus: () => request<EngineStatusResponse>(config, "/v1/status", "GET"),
-    createSession: (body: SessionCreateRequest) => request<SessionCreateResponse>(config, "/v1/internal/sessions", "POST", { body }), listSessions: () => publicData<SessionSummary[]>(config, "/v1/sessions", "sessions"), getSession: (id: string) => publicData<SessionSummary>(config, `/v1/sessions/${encodeURIComponent(id)}`, "session"),
+    createSession: (body: SessionCreateRequest) => request<SessionCreateResponse>(config, "/v1/internal/sessions", "POST", { body }), listSessions: () => publicData<SessionListRow[]>(config, "/v1/sessions", "sessions"), getSession: (id: string) => publicData<SessionSummary>(config, `/v1/sessions/${encodeURIComponent(id)}`, "session"),
     listSessionRecords: (id: string, o?: { schemaVersion?: string; offset?: number; limit?: number }) => request<SessionKernelRecordList>(config, `/v1/internal/sessions/${encodeURIComponent(id)}/records`, "GET", { query: { schema_version: o?.schemaVersion, offset: o?.offset, limit: o?.limit } }), postInput: (id: string, body: SessionInputRequest) => request<SessionInputResponse>(config, `/v1/internal/sessions/${encodeURIComponent(id)}/input`, "POST", { body }), postCommand: (id: string, body: SessionCommandRequest) => request<SessionCommandResponse>(config, `/v1/internal/sessions/${encodeURIComponent(id)}/command`, "POST", { body }), deleteSession: (id: string) => request<void>(config, `/v1/internal/sessions/${encodeURIComponent(id)}`, "DELETE"),
     listSessionFiles: (id: string, path?: string) => request<SessionFileInfo[]>(config, `/v1/internal/sessions/${encodeURIComponent(id)}/files`, "GET", { query: path ? { path } : undefined }), readSessionFile: (id: string, path: string, o?: ReadSessionFileOptions) => request<SessionFileContent>(config, `/v1/internal/sessions/${encodeURIComponent(id)}/files/content`, "GET", { query: { path, mode: o?.mode ?? "cat", head_lines: o?.headLines, tail_lines: o?.tailLines, max_bytes: o?.maxBytes } }), getModelCatalog: (path: string) => request<ModelCatalogResponse>(config, "/v1/models", "GET", { query: { config_path: path } }), getSkillsCatalog: (id: string) => request<SkillCatalogResponse>(config, `/v1/internal/sessions/${encodeURIComponent(id)}/skills`, "GET"), getCtreeSnapshot: (id: string) => request<CTreeSnapshotResponse>(config, `/v1/internal/sessions/${encodeURIComponent(id)}/ctrees`, "GET"),
     getCtreeTree: (id: string, o?: { stage?: string; includePreviews?: boolean; source?: string }) => request<CTreeTreeResponse>(config, `/v1/internal/sessions/${encodeURIComponent(id)}/ctrees/tree`, "GET", { query: { stage: o?.stage, include_previews: o?.includePreviews, source: o?.source } }), getCtreeDisk: (id: string) => request<CTreeDiskArtifactsResponse>(config, `/v1/internal/sessions/${encodeURIComponent(id)}/ctrees/disk`, "GET"), getCtreeEvents: (id: string, o?: { source?: string; offset?: number; limit?: number }) => request<CTreeEventsResponse>(config, `/v1/internal/sessions/${encodeURIComponent(id)}/ctrees/events`, "GET", { query: { source: o?.source, offset: o?.offset, limit: o?.limit } }),

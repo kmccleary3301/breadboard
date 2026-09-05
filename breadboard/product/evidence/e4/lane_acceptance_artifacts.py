@@ -178,9 +178,9 @@ def _materialized_path(path: Path, output_root: Path | None) -> Path:
 
 def _materialize_candidate_validation_inputs(
     spec: Mapping[str, Any], output_root: Path | None
-) -> None:
+) -> Path | None:
     if output_root is None:
-        return
+        return None
     for logical_path in dict.fromkeys(
         [str(spec["config_path"]), *map(str, spec["source_paths"])]
     ):
@@ -198,6 +198,44 @@ def _materialize_candidate_validation_inputs(
         else:
             shutil.copy2(source, destination)
 
+    registry_source = resolve_declared_reference(
+        "conformance/comparators/registry.json",
+        checkout_root=ROOT,
+        namespace="repo",
+    )
+    candidate_root = output_root.resolve()
+    registry_destination = candidate_root / registry_source.relative_to(ROOT.resolve())
+    try:
+        registry_destination.parent.resolve().relative_to(candidate_root)
+        parent_parts = registry_destination.parent.relative_to(candidate_root).parts
+    except ValueError as exc:
+        raise ValueError(
+            "candidate comparator registry destination escapes the candidate root"
+        ) from exc
+    parent = candidate_root
+    for part in parent_parts:
+        parent /= part
+        if parent.is_symlink():
+            raise ValueError(
+                "candidate comparator registry destination must not use symlink parents"
+            )
+    if registry_destination.is_symlink():
+        raise ValueError(
+            "candidate comparator registry destination must not be a symlink"
+        )
+    if registry_destination.exists():
+        if not registry_destination.is_file():
+            raise ValueError(
+                "candidate comparator registry destination must be a regular file"
+            )
+        if registry_destination.read_bytes() != registry_source.read_bytes():
+            raise ValueError(
+                "candidate comparator registry differs from the canonical registry"
+            )
+    else:
+        registry_destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(registry_source, registry_destination)
+    return registry_destination
 
 def _write_json(path: Path, payload: Mapping[str, Any], output_root: Path | None) -> None:
     write_json(_materialized_path(path, output_root), payload)
@@ -707,16 +745,19 @@ def build_lane(spec: Mapping[str, Any], output_root: Path | None = None) -> dict
     }
     _write_json(manifest_path, manifest, output_root)
 
-    _materialize_candidate_validation_inputs(spec, output_root)
+    comparator_registry_path = _materialize_candidate_validation_inputs(spec, output_root)
     validation_root = ROOT if output_root is None else output_root
-    report = validate_c4_chain(
-        repo_root=validation_root,
-        freeze_manifest_path=_materialized_path(FREEZE_MANIFEST_PATH, output_root),
-        config_id=spec["config_id"],
-        support_claim_path=_materialized_path(support_path, output_root),
-        evidence_manifest_path=_materialized_path(manifest_path, output_root),
-        enforce_catalog_binding=False,
-    )
+    validation_kwargs: dict[str, Any] = {
+        "repo_root": validation_root,
+        "freeze_manifest_path": _materialized_path(FREEZE_MANIFEST_PATH, output_root),
+        "config_id": spec["config_id"],
+        "support_claim_path": _materialized_path(support_path, output_root),
+        "evidence_manifest_path": _materialized_path(manifest_path, output_root),
+        "enforce_catalog_binding": False,
+    }
+    if comparator_registry_path is not None:
+        validation_kwargs["comparator_registry_path"] = comparator_registry_path
+    report = validate_c4_chain(**validation_kwargs)
     _write_json(node_gate_path, report, output_root)
     return {"lane_id": spec["lane_id"], "config_id": spec["config_id"], "ok": bool(report.get("ok")), "errors": report.get("errors", []), "node_gate": display(node_gate_path)}
 

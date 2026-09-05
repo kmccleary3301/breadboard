@@ -1,3 +1,12 @@
+import type {
+  PublicSessionEventKind,
+  PublicSessionEventPayloadSchema,
+} from "./generated/session-event-bindings.js"
+export type {
+  PublicSessionEventKind,
+  PublicSessionEventPayloadSchema,
+} from "./generated/session-event-bindings.js"
+
 export interface Problem {
   readonly schema_version?: "bb.problem.v1"
   readonly error_code: string
@@ -66,7 +75,32 @@ export interface SessionEventVisibility {
   readonly redaction_state: "none" | "redacted"
 }
 
-export interface SessionEvent<TPayload extends Record<string, unknown> = Record<string, unknown>> {
+export type SessionEventLineage = {
+  readonly parent_session_id: string
+  readonly root_session_id: string
+  readonly parent_work_item_id: string
+  readonly child_work_item_id: string
+}
+
+export type SessionAnnotationPayload = {
+  readonly annotation_id: string
+  readonly message_id: string
+  readonly trajectory_id: string
+  readonly label: string
+  readonly author: string
+  readonly generation: string
+}
+
+export type WorldFieldMask = {
+  readonly schema_version: "bb.world_field_mask.v1"
+  readonly paths: readonly ["/occurred_at", "/timestamp"]
+}
+
+type SessionEventRecord<
+  TKind extends PublicSessionEventKind,
+  TPayload extends Record<string, unknown>,
+  TSchema extends PublicSessionEventPayloadSchema,
+> = {
   readonly schema_version: "bb.public_session_event.v1"
   readonly event_id: string
   readonly seq: number
@@ -77,27 +111,25 @@ export interface SessionEvent<TPayload extends Record<string, unknown> = Record<
   readonly session_id: string
   readonly span_id: string | null
   readonly visibility: SessionEventVisibility
-  readonly kind:
-    | "session.started"
-    | "input.accepted"
-    | "approval.requested"
-    | "approval.resolved"
-    | "session.reconfigured"
-    | "session.paused"
-    | "session.resumed"
-    | "session.completed"
-    | "session.failed"
-    | "session.canceled"
-    | "assistant_message"
-    | "tool_call"
-    | "tool_result"
+  readonly kind: TKind
   readonly payload: TPayload
-  readonly payload_schema_version:
-    | "bb.payload.product_session.lifecycle.v1"
-    | "bb.payload.message.assistant.v1"
-    | "bb.payload.tool.called.v1"
-    | "bb.payload.tool.completed.v1"
+  readonly payload_schema_version: TSchema
 }
+
+type NonAnnotationEventKind = Exclude<PublicSessionEventKind, "annotation">
+type NonAnnotationPayloadSchema = Exclude<
+  PublicSessionEventPayloadSchema,
+  "bb.payload.product_session.annotation.v1"
+>
+export type SessionEvent<
+  TPayload extends Record<string, unknown> = Record<string, unknown>,
+> =
+  | SessionEventRecord<
+    "annotation",
+    SessionAnnotationPayload,
+    "bb.payload.product_session.annotation.v1"
+  >
+  | SessionEventRecord<NonAnnotationEventKind, TPayload, NonAnnotationPayloadSchema>
 
 export interface AttachmentHandle {
   readonly filename: string
@@ -287,6 +319,12 @@ export interface SessionCreateResponse {
   readonly logging_dir?: string | null
 }
 
+export interface SessionListRow {
+  readonly session_id: string
+  readonly status: SessionStatus | string
+  readonly event_count: number
+}
+
 export interface SessionSummary {
   readonly session_id: string
   readonly status: SessionStatus | string
@@ -295,9 +333,12 @@ export interface SessionSummary {
   readonly event_count?: number
   readonly schema_version?: string
   readonly effective_lock_hash?: string
+  readonly generation_id: string
+  readonly trajectory_segment_id: string
   readonly task_hash?: string
   readonly pending_approval?: string | null
   readonly terminal_outcome?: Record<string, unknown> | null
+  readonly lineage: SessionEventLineage | null
   readonly model?: string | null
   readonly mode?: string | null
   readonly completion_summary?: Record<string, unknown> | null

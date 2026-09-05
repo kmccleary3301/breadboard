@@ -34,6 +34,7 @@ LANE_ROOT = ROOT / "config/e4_lanes"
 LANE_LOCK_SCHEMA_PATH = (
     ROOT / "contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json"
 )
+PUBLIC_SCHEMA_PREFIX = "https://breadboard.dev/contracts/public/schemas/"
 
 # Phase 20 plan §4, packets F1/F2/E1. SP3 (0fc11917, reviewed) canonicalized
 # schema $id values to full https://breadboard.dev URLs; both spellings name
@@ -59,6 +60,11 @@ ALLOWED_SCHEMA_IDS = {
     "https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v2.schema.json",  # F4
     "https://breadboard.dev/contracts/kernel/schemas/payloads/bb.payload.provider.exchange.v2.schema.json",  # F4
     "https://breadboard.dev/contracts/kernel/schemas/payloads/bb.payload.session.control.v1.schema.json",  # P30
+    "https://breadboard.dev/contracts/public/schemas/bb.session.v1.schema.json",  # AM27/AM28
+    "https://breadboard.dev/contracts/public/schemas/bb.public_session_event.v1.schema.json",  # AM26/AM27/AM28
+    "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json",  # AM28
+    "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.annotation.v1.schema.json",  # AM26
+    "https://breadboard.dev/contracts/public/schemas/bb.world_field_mask.v1.schema.json",  # AM29
 }
 
 # FREEZE_POLICY.md permits plan-required tightening of an existing schema only
@@ -100,6 +106,42 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
         "sha256": "f26e62a605c179e9eadc6df6d49838a5d9c44be44d7791e977b4547dfc171704",
         "class": "plan_mandated_evolution",
         "ref": "AM25",
+    },
+    "https://breadboard.dev/contracts/kernel/schemas/payloads/bb.payload.message.assistant.v1.schema.json": {
+        "packet": "DSH-W9",
+        "sha256": "a92a7284636a75320f20728cf2970cacdade7a44a0decf057a924748b673918a",
+        "class": "plan_mandated_evolution",
+        "ref": "AM27",
+    },
+    "https://breadboard.dev/contracts/public/schemas/bb.session.v1.schema.json": {
+        "packet": "DSH-W9",
+        "sha256": "eacba49cb26c8c37e45e9ad6bfa591579818c33ee37b94db898edf62f5548f16",
+        "class": "plan_mandated_evolution",
+        "ref": "AM27/AM28",
+    },
+    "https://breadboard.dev/contracts/public/schemas/bb.public_session_event.v1.schema.json": {
+        "packet": "DSH-W9",
+        "sha256": "0701e9d0e1976b4ea70e753806e75b048d57a69c79531407bd10a5aca346fc51",
+        "class": "plan_mandated_evolution",
+        "ref": "AM26/AM27/AM28",
+    },
+    "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json": {
+        "packet": "DSH-W9",
+        "sha256": "d1639ccd31931c7b82d02b57bd8ba29c6e85c145bccfe06dea3efa54b7c57328",
+        "class": "plan_mandated_evolution",
+        "ref": "AM28",
+    },
+    "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.annotation.v1.schema.json": {
+        "packet": "DSH-W9",
+        "sha256": "e176d2eb455c377271e49b0a5ad8d223924befaa272495be866fa79e020f1490",
+        "class": "plan_mandated_evolution",
+        "ref": "AM26",
+    },
+    "https://breadboard.dev/contracts/public/schemas/bb.world_field_mask.v1.schema.json": {
+        "packet": "DSH-W9",
+        "sha256": "9bac702c6ff4e7b8341032b298afa1b444c6e6008e959f5e7b325f7497bb538e",
+        "class": "plan_mandated_evolution",
+        "ref": "AM29",
     },
 }
 
@@ -157,11 +199,19 @@ def _schema_inventory(tracked_files: set[Path]) -> tuple[set[str], dict[str, str
     ids: set[str] = set()
     hashes: dict[str, str] = {}
     owners: dict[str, str] = {}
+    public_schema_paths = {
+        ROOT / schema_id.removeprefix("https://breadboard.dev/")
+        for schema_id in ALLOWED_SCHEMA_IDS
+        if schema_id.startswith(PUBLIC_SCHEMA_PREFIX)
+    }
     schema_paths = (
         path
         for path in tracked_files
         if path.suffix == ".json"
-        and any(path.is_relative_to(schema_root) for schema_root in SCHEMA_ROOTS)
+        and (
+            path in public_schema_paths
+            or any(path.is_relative_to(schema_root) for schema_root in SCHEMA_ROOTS)
+        )
     )
     for path in sorted(schema_paths):
         try:
@@ -416,6 +466,10 @@ def _validated_tightening_allowlist(tracked_files: set[Path]) -> dict[str, str]:
             raise AllowlistConfigError(
                 f"{schema_id}: class must be tightening or plan_mandated_evolution"
             )
+        if schema_id.startswith(PUBLIC_SCHEMA_PREFIX) and entry_class != "plan_mandated_evolution":
+            raise AllowlistConfigError(
+                f"{schema_id}: public evolution requires an amendment reference"
+            )
         if ref is not None and (not isinstance(ref, str) or not ref):
             raise AllowlistConfigError(f"{schema_id}: ref must be a non-empty string")
         if entry_class == "plan_mandated_evolution" and ref is None:
@@ -467,6 +521,15 @@ def _added_values(
             'for AM17a plan-mandated mixed evolution use class '
             '"plan_mandated_evolution" with a mandating-plan "ref")'
         )
+    for schema_id in ALLOWED_SCHEMA_IDS:
+        if not schema_id.startswith(PUBLIC_SCHEMA_PREFIX):
+            continue
+        expected_hash = tightening_hashes.get(schema_id)
+        if expected_hash is None or current_hashes.get(schema_id) != expected_hash:
+            schema_content_drift.add(
+                f"{schema_id} (public evolution requires tracked bytes matching "
+                "its amendment-referenced TIGHTENING_ALLOWLIST content pin)"
+            )
 
     package_additions = _package_set(current.get("sdk_packages"), "sdk_packages") - _package_set(
         baseline.get("sdk_packages"), "sdk_packages"

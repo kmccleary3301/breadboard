@@ -59,7 +59,8 @@
         "session.canceled",
         "assistant_message",
         "tool_call",
-        "tool_result"
+        "tool_result",
+        "annotation"
       ]
     },
     "payload": { "type": "object" },
@@ -68,11 +69,33 @@
         "bb.payload.product_session.lifecycle.v1",
         "bb.payload.message.assistant.v1",
         "bb.payload.tool.called.v1",
-        "bb.payload.tool.completed.v1"
+        "bb.payload.tool.completed.v1",
+        "bb.payload.product_session.annotation.v1"
       ]
     }
   },
   "allOf": [
+    {
+      "if": {
+        "properties": { "kind": { "const": "annotation" } },
+        "required": ["kind"]
+      },
+      "then": {
+        "properties": {
+          "payload_schema_version": { "const": "bb.payload.product_session.annotation.v1" },
+          "payload": {
+            "$ref": "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.annotation.v1.schema.json"
+          },
+          "visibility": {
+            "properties": {
+              "model_visible": { "const": false },
+              "provider_visible": { "const": false },
+              "host_visible": { "const": true }
+            }
+          }
+        }
+      }
+    },
     {
       "if": {
         "properties": {
@@ -192,6 +215,9 @@
         "properties": {
           "payload_schema_version": {
             "const": "bb.payload.message.assistant.v1"
+          },
+          "payload": {
+            "$ref": "https://breadboard.dev/contracts/kernel/schemas/payloads/bb.payload.message.assistant.v1.schema.json"
           }
         }
       }

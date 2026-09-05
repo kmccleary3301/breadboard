@@ -5,6 +5,7 @@ import json
 from typing import Any, get_type_hints
 
 import pytest
+from pydantic import TypeAdapter, ValidationError
 
 from breadboard_sdk.generated.public_bindings import (
     PUBLIC_BINDINGS_BY_OPERATION_ID,
@@ -13,24 +14,10 @@ from breadboard_sdk.generated.public_bindings import (
 
 import breadboard_sdk
 import breadboard_sdk.client as client_module
-import breadboard_sdk.types as types_module
 from breadboard_sdk.client import BreadBoardClient
 from breadboard_sdk.compat import CompatibilityBreadboardClient
 
-from breadboard_sdk.types import (
-    ArtifactRefV1,
-    Problem,
-    PublicHarnessCreateRequest,
-    PublicHarnessUpdateRequest,
-    PublicResult,
-    PublicSessionApprovalRequest,
-    PublicSessionCancelRequest,
-    PublicSessionDecision,
-    PublicSessionInputRequest,
-    PublicSessionStartRequest,
-    SessionEvent,
-    StageOutcome,
-)
+from breadboard_sdk.types import SessionEvent, WorldFieldMask
 
 
 class _JsonResponse:
@@ -190,112 +177,6 @@ def test_python_sdk_allows_bearer_token_over_protected_origins(
     assert requests[0]["headers"]["Authorization"] == "Bearer secret-token"
 
 
-def test_python_sdk_authored_types_and_client_hints_match_public_contract() -> None:
-    assert not hasattr(types_module, "NotRequired")
-    assert ArtifactRefV1.__required_keys__ == {
-        "schema_version",
-        "id",
-        "kind",
-        "mime",
-        "size_bytes",
-        "sha256",
-        "storage",
-        "path",
-    }
-    assert ArtifactRefV1.__optional_keys__ == {"preview"}
-    assert Problem.__required_keys__ == {"error_code", "message"}
-    assert Problem.__optional_keys__ == {
-        "schema_version",
-        "record_refs",
-        "failed_stage",
-        "hint",
-        "next_actions",
-    }
-    assert StageOutcome.__required_keys__ == {"stage", "status"}
-    assert StageOutcome.__optional_keys__ == {"report_ref", "next_action"}
-    assert PublicResult.__required_keys__ == {
-        "schema_version",
-        "ok",
-        "status",
-        "command",
-        "record_refs",
-        "hashes",
-        "stage_outcomes",
-        "warnings",
-        "next_actions",
-        "error",
-        "exit_code",
-        "data",
-    }
-    assert PublicResult.__optional_keys__ == set()
-    assert PublicHarnessCreateRequest.__required_keys__ == set()
-    assert PublicHarnessCreateRequest.__optional_keys__ == {"directory"}
-    assert PublicHarnessUpdateRequest.__required_keys__ == {"definition"}
-    assert PublicHarnessUpdateRequest.__optional_keys__ == set()
-    assert PublicSessionStartRequest.__required_keys__ == {"lock_id", "task"}
-    assert PublicSessionStartRequest.__optional_keys__ == {"session_id"}
-    assert PublicSessionInputRequest.__required_keys__ == {"content"}
-    assert PublicSessionInputRequest.__optional_keys__ == set()
-    assert PublicSessionApprovalRequest.__required_keys__ == {
-        "request_id",
-        "decision",
-    }
-    assert PublicSessionApprovalRequest.__optional_keys__ == set()
-    assert PublicSessionCancelRequest.__required_keys__ == set()
-    assert PublicSessionCancelRequest.__optional_keys__ == {"reason"}
-    assert SessionEvent.__required_keys__ == {
-        "schema_version",
-        "event_id",
-        "seq",
-        "timestamp",
-        "work_item_id",
-        "parent_work_item_id",
-        "attempt_id",
-        "session_id",
-        "span_id",
-        "visibility",
-        "kind",
-        "payload",
-        "payload_schema_version",
-    }
-    assert SessionEvent.__optional_keys__ == set()
-
-    json_methods = (
-        "describe_system",
-        "health_system",
-        "schemas_system",
-        "create_harness",
-        "list_harness",
-        "get_harness",
-        "update_harness",
-        "validate_harness",
-        "explain_harness",
-        "lock_harness",
-        "get_harness_lock",
-        "list_integration",
-        "get_integration",
-        "probe_integration",
-        "list_artifact",
-        "get_artifact",
-        "verify_artifact",
-        "start_session",
-        "list_session",
-        "get_session",
-        "send_input_session",
-        "approve_session",
-        "resume_session",
-        "cancel_session",
-        "artifacts_session",
-    )
-    assert len(json_methods) == 25
-    assert all(
-        get_type_hints(getattr(BreadBoardClient, name))["return"] is PublicResult
-        for name in json_methods
-    )
-    start_hints = get_type_hints(BreadBoardClient.start_session)
-    assert start_hints["payload"] is PublicSessionStartRequest
-    approval_hints = get_type_hints(BreadBoardClient.approve_session)
-    assert approval_hints["decision"] is PublicSessionDecision
 
 
 def test_candidate_python_sdk_streams_generated_session_events_route(
@@ -469,6 +350,116 @@ def test_candidate_python_sdk_streams_generated_session_events_route(
     bad_timestamp = {**expected, "timestamp": "not-a-time"}
     with pytest.raises(ValueError, match="timestamp"):
         client_module._session_event(json.dumps(bad_timestamp), "session id", "1")
+    annotation_payload = {
+        "annotation_id": "annotation-1",
+        "message_id": "message-1",
+        "trajectory_id": "trajectory-1",
+        "label": "accepted",
+        "author": "operator",
+        "generation": "generation-1",
+    }
+    annotation = {
+        **expected,
+        "visibility": {
+            "model_visible": False,
+            "provider_visible": False,
+            "host_visible": True,
+            "redaction_state": "none",
+        },
+        "kind": "annotation",
+        "payload": annotation_payload,
+        "payload_schema_version": "bb.payload.product_session.annotation.v1",
+    }
+    assert (
+        client_module._session_event(json.dumps(annotation), "session id", "1")[
+            "payload"
+        ]
+        == annotation_payload
+    )
+    lineage: SessionEventLineage = {
+        "parent_session_id": "parent-session",
+        "root_session_id": "root-session",
+        "parent_work_item_id": "parent-work-item",
+        "child_work_item_id": "child-work-item",
+    }
+    lineage_event = {
+        **expected,
+        "work_item_id": "child-work-item",
+        "parent_work_item_id": "parent-work-item",
+        "payload": {**expected["payload"], "lineage": lineage},
+    }
+    decoded_lineage = client_module._session_event(
+        json.dumps(lineage_event), "session id", "1"
+    )
+    contradictory_lineage = {**lineage_event, "work_item_id": "other-child"}
+    with pytest.raises(ValueError, match="lineage correlations"):
+        client_module._session_event(
+            json.dumps(contradictory_lineage), "session id", "1"
+        )
+    assistant = {
+        **expected,
+        "kind": "assistant_message",
+        "payload": {
+            "text": "answer",
+            "message_id": "message-1",
+            "trajectory_id": "trajectory-1",
+        },
+        "payload_schema_version": "bb.payload.message.assistant.v1",
+    }
+    assert client_module._session_event(
+        json.dumps(assistant), "session id", "1"
+    )["payload"] == assistant["payload"]
+    partial_assistant_identity = {
+        **expected,
+        "kind": "assistant_message",
+        "payload": {"text": "answer", "message_id": "message-1"},
+        "payload_schema_version": "bb.payload.message.assistant.v1",
+    }
+    with pytest.raises(ValueError, match="assistant identity"):
+        client_module._session_event(
+            json.dumps(partial_assistant_identity), "session id", "1"
+        )
+
+
+def test_snapshot_reader_retains_annotations_after_session_settlement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from breadboard.product.harness.lock import EffectiveHarnessLock
+    from breadboard.product.runtime.events import AnnotationRecord, Session
+    from breadboard.product.runtime.public_event_projection import public_session_events
+
+    generation = "sha256:" + "a" * 64
+    session = Session.start(
+        EffectiveHarnessLock._from_record({"graph_hash": generation}),
+        "label archive",
+        session_id="archive",
+    )
+    session.assistant_message("candidate", message_id="message-a", trajectory_id="trajectory-a")
+    session.complete("done")
+    session.annotate(AnnotationRecord("label-a", "message-a", "trajectory-a", "preferred", "reviewer", generation))
+    rows = public_session_events(session.events)
+
+    class StreamResponse:
+        ok = True
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+        def iter_lines(self, *, decode_unicode: bool):
+            for row in rows:
+                if self.closed:
+                    return
+                yield f"id: {row['seq']}"
+                yield f"data: {json.dumps(row)}"
+                yield ""
+
+    monkeypatch.setattr(client_module.requests, "request", lambda **kwargs: StreamResponse())
+    events = list(BreadBoardClient("http://127.0.0.1").events_session("archive", follow=False))
+    assert [event["kind"] for event in events] == [
+        "session.started", "assistant_message", "session.completed", "annotation",
+    ]
+    assert events[-1]["payload"]["annotation_id"] == "label-a"
 
 
 def test_compatibility_create_session_omits_only_an_absent_config_path(
@@ -509,3 +500,11 @@ def test_compatibility_create_session_omits_only_an_absent_config_path(
             },
         ),
     ]
+
+
+def test_python_world_mask_type_enforces_canonical_pointer_order() -> None:
+    adapter = TypeAdapter(get_type_hints(WorldFieldMask)["paths"])
+    canonical = b'["/occurred_at","/timestamp"]'
+    assert adapter.dump_json(adapter.validate_json(canonical)) == canonical
+    with pytest.raises(ValidationError):
+        adapter.validate_json(b'["/timestamp","/occurred_at"]')

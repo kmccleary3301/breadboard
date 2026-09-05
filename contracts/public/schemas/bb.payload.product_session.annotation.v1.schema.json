@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.annotation.v1.schema.json",
+  "title": "BreadBoard Product Session Annotation Payload V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["annotation_id", "message_id", "trajectory_id", "label", "author", "generation"],
+  "properties": {
+    "annotation_id": { "type": "string", "minLength": 1 },
+    "message_id": { "type": "string", "minLength": 1 },
+    "trajectory_id": { "type": "string", "minLength": 1 },
+    "label": { "type": "string", "minLength": 1 },
+    "author": { "type": "string", "minLength": 1 },
+    "generation": { "type": "string", "minLength": 1 }
+  }
+}

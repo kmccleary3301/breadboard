@@ -25,8 +25,11 @@ PROJECTION_MODULE_RELATIVE: Final = Path(
 EVENT_BINDINGS_RELATIVE: Final = Path(
     "sdk/ts/src/generated/session-event-bindings.ts"
 )
+PYTHON_EVENT_BINDINGS_RELATIVE: Final = Path(
+    "breadboard_sdk/generated/session_event_bindings.py"
+)
 GENERATOR_PATH: Final = "scripts/quality/generate_public_bindings.py"
-GENERATOR_VERSION: Final = "4"
+GENERATOR_VERSION: Final = "5"
 SCHEMA_VERSION: Final = "bb.public_client_binding_manifest.v1"
 GENERATED_FILE_MODE: Final = 0o644
 DOCUMENT_MARKER: Final = "<!-- GENERATED FILE - do not edit by hand. -->"
@@ -618,14 +621,53 @@ def _render_session_event_bindings(
     return "\n".join(out).encode("utf-8")
 
 
-def _event_bindings_output(
+def _render_python_session_event_bindings(
+    schemas: Mapping[str, str], projection_sha256: str
+) -> bytes:
+    out = [
+        "# GENERATED FILE - do not edit by hand.",
+        f"# generator: {GENERATOR_PATH}",
+        f"# generator-version: {GENERATOR_VERSION}",
+        f"# public-projection-sha256: {projection_sha256}",
+        "",
+        "from types import MappingProxyType",
+        "from typing import Final, Literal, Mapping",
+        "",
+        "PublicSessionEventKind = Literal[",
+        *(f"    {_py_string(kind)}," for kind in schemas),
+        "]",
+        "PublicSessionEventPayloadSchema = Literal[",
+        *(f"    {_py_string(schema)}," for schema in sorted(set(schemas.values()))),
+        "]",
+        "PublicSessionLifecycleEventKind = Literal[",
+        *(
+            f"    {_py_string(kind)},"
+            for kind, schema in schemas.items()
+            if schema == "bb.payload.product_session.lifecycle.v1"
+        ),
+        "]",
+        "",
+        "PUBLIC_SESSION_EVENT_PAYLOAD_SCHEMAS: Final[Mapping[str, str]] = MappingProxyType(",
+        "    {",
+        *(
+            f"        {_py_string(kind)}: {_py_string(schema)},"
+            for kind, schema in schemas.items()
+        ),
+        "    }",
+        ")",
+        "",
+    ]
+    return "\n".join(out).encode("utf-8")
+
+
+def _event_bindings_outputs(
     root: Path,
     catalog_id: str,
     catalog_sha256: str,
-) -> tuple[Path, bytes] | None:
+) -> dict[Path, bytes]:
     registry = _load_event_registry(root)
     if registry is None:
-        return None
+        return {}
     rows = list(_normalize_event_registry(registry))
     known = {str(row["event_type"]) for row in rows}
     for event_type, disposition in _EVENT_DECODER_CLASSIFICATIONS.items():
@@ -650,18 +692,20 @@ def _event_bindings_output(
         raise CatalogError(
             f"event registry requires projection module {PROJECTION_MODULE_RELATIVE}"
         )
-    projection_source = canonical_bytes(schemas)
-    return (
-        root / EVENT_BINDINGS_RELATIVE,
-        _render_session_event_bindings(
+    projection_sha256 = _sha256(canonical_bytes(schemas))
+    return {
+        root / EVENT_BINDINGS_RELATIVE: _render_session_event_bindings(
             rows,
             schemas,
             canonical_event_registry_sha256(registry),
-            _sha256(projection_source),
+            projection_sha256,
             catalog_id,
             catalog_sha256,
         ),
-    )
+        root / PYTHON_EVENT_BINDINGS_RELATIVE: _render_python_session_event_bindings(
+            schemas, projection_sha256
+        ),
+    }
 
 
 def _canonical_catalog_bytes(catalog: Any) -> bytes:
@@ -1212,10 +1256,7 @@ def build_outputs(root: Path | str | None = None) -> dict[Path, bytes]:
             rows, "tui", catalog_id, catalog_sha256
         ),
     }
-    event_output = _event_bindings_output(repo_root, catalog_id, catalog_sha256)
-    if event_output is not None:
-        event_path, event_content = event_output
-        outputs[event_path] = event_content
+    outputs.update(_event_bindings_outputs(repo_root, catalog_id, catalog_sha256))
     for row in rows:
         docs_path = repo_root / "docs/reference/public" / f"{row['docs_slug']}.md"
         outputs[docs_path] = _render_operation_document(row, catalog_id, catalog_sha256)

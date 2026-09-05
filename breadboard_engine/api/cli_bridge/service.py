@@ -1567,6 +1567,15 @@ class SessionService:
             for key in (request.overrides or {})
         )
         request_metadata = dict(request.metadata or {})
+        if not request.permission_mode:
+            metadata_permission_mode = request_metadata.get("permission_mode")
+            if (
+                isinstance(metadata_permission_mode, str)
+                and metadata_permission_mode.strip()
+            ):
+                request = request.model_copy(
+                    update={"permission_mode": metadata_permission_mode}
+                )
         role_document = request_metadata.pop(MODEL_ROLES_METADATA_KEY, None)
         if (
             role_document is None
@@ -1663,6 +1672,7 @@ class SessionService:
         runtime_graph = compile_runtime_effective_config_graph(
             session_id, persisted_runtime_config, request.config_path
         )
+        record.runtime_generation_source_ref = runtime_graph["source_layers"][0]["source_ref"]
         if role_lock is not None:
             runtime_graph = embed_model_role_lock(runtime_graph, role_lock)
             metadata["model_role_lock_hash"] = role_lock.lock_hash
@@ -1953,6 +1963,7 @@ class SessionService:
                 head_sequence=record.event_seq,
                 retained_history_partial=record.replay_history_partial,
                 persisted_head_event_id=record.replay_head_event_id,
+                retained_boundary=record.retained_replay_boundary,
             ),
             stable_cursor=False,
         )
@@ -2597,24 +2608,45 @@ class SessionService:
             runtime_overrides = metadata.get("runtime_overrides")
             request_overrides = retained_runtime_overrides(runtime_overrides)
             record.metadata = metadata
-            runner = SessionRunner(
-                session=record,
-                registry=self.registry,
-                request=SessionCreateRequest(
-                    config_path=config_path,
-                    task="",
-                    overrides=request_overrides,
-                    metadata=metadata,
-                    workspace=workspace,
-                    permission_mode=permission_mode,
-                ),
+
+            def build_runtime_candidate(
+                authored_permission_mode: str | None,
+            ) -> tuple[SessionRunner, dict[str, Any], str]:
+                runner = SessionRunner(
+                    session=record,
+                    registry=self.registry,
+                    request=SessionCreateRequest(
+                        config_path=config_path,
+                        task="",
+                        overrides=request_overrides,
+                        metadata=metadata,
+                        workspace=workspace,
+                        permission_mode=authored_permission_mode,
+                    ),
+                )
+                runtime_config = runner.prepare_runtime_config()
+                rebuilt_generation = self._runtime_lock(
+                    record.session_id,
+                    runtime_config,
+                    record.runtime_generation_source_ref or runner.request.config_path,
+                ).as_dict()["graph_hash"]
+                return runner, runtime_config, rebuilt_generation
+
+            authored_permission_mode = (
+                permission_mode
+                if permission_mode not in {"prompt", "ask", "interactive"}
+                else None
             )
-            runtime_config = runner.prepare_runtime_config()
-            rebuilt_generation = self._runtime_lock(
-                record.session_id,
-                runtime_config,
-                runner.request.config_path,
-            ).as_dict()["graph_hash"]
+            runner, runtime_config, rebuilt_generation = build_runtime_candidate(
+                authored_permission_mode
+            )
+            if (
+                rebuilt_generation != record.product_session.pinned_generation_id
+                and authored_permission_mode is None
+            ):
+                runner, runtime_config, rebuilt_generation = build_runtime_candidate(
+                    permission_mode
+                )
         except Exception as error:
             raise ReplayError(
                 "generation_unavailable",
@@ -2625,6 +2657,9 @@ class SessionService:
                 "generation_mismatch",
                 f"retained session {record.session_id!r} runtime generation does not match its durable journal",
             )
+        if record.runtime_generation_source_ref is None:
+            record.runtime_generation_source_ref = runner.request.config_path
+            await self.registry.persist(record)
         self._bind_restored_durable_product_session(
             record,
             runner,
@@ -2716,19 +2751,8 @@ class SessionService:
                 self._ensure_event_sequence(record)
                 events = list(record.event_log)
                 if from_id:
-                    start_index = self._resolve_start_index(events, from_id)
-                    if start_index is not None and not self._retained_replay_suffix_is_contiguous(
-                        record,
-                        events,
-                        start_index,
-                    ):
-                        start_index = None
-                    if start_index is None and self._is_retained_head_cursor(record, from_id):
-                        events = [
-                            event for event in events
-                            if event.seq is not None and event.seq > record.replay_head_sequence
-                        ]
-                    elif start_index is None:
+                    start_index = self._resolve_replay_start_index(record, events, from_id)
+                    if start_index is None:
                         if not validated:
                             raise HTTPException(
                                 status_code=status.HTTP_409_CONFLICT,
@@ -3000,14 +3024,8 @@ class SessionService:
                 return
             self._ensure_event_sequence(record)
             events = list(record.event_log)
-            start_index = self._resolve_start_index(events, from_id)
-            if start_index is not None and not self._retained_replay_suffix_is_contiguous(
-                record,
-                events,
-                start_index,
-            ):
-                start_index = None
-            if start_index is None and not self._is_retained_head_cursor(record, from_id):
+            start_index = self._resolve_replay_start_index(record, events, from_id)
+            if start_index is None:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail={
@@ -3029,38 +3047,47 @@ class SessionService:
             else:
                 seq = max(seq, int(event.seq))
         record.event_seq = seq
-    @staticmethod
-    def _is_retained_head_cursor(record: SessionRecord, from_id: str) -> bool:
-        return (
-            record.replay_head_sequence > 0
-            and record.replay_head_event_id is not None
-            and from_id
-            in {
-                record.replay_head_event_id,
-                str(record.replay_head_sequence),
-            }
-        )
 
-    @staticmethod
-    def _retained_replay_suffix_is_contiguous(
+    def _resolve_replay_start_index(
+        self,
         record: SessionRecord,
         events: list[SessionEvent],
-        start_index: int,
-    ) -> bool:
+        from_id: str,
+    ) -> int | None:
+        start_index = self._resolve_start_index(events, from_id)
+        if start_index is not None:
+            cursor_sequence = events[start_index - 1].seq
+        elif record.replay_head_event_id is not None and (
+            from_id == record.replay_head_event_id
+            or from_id == str(record.replay_head_sequence)
+        ):
+            cursor_sequence = record.replay_head_sequence
+        elif record.retained_replay_boundary is not None and (
+            from_id == record.retained_replay_boundary[1]
+            or from_id == str(record.retained_replay_boundary[0])
+        ):
+            cursor_sequence = record.retained_replay_boundary[0]
+        else:
+            return None
+        if cursor_sequence is None:
+            return None
+        if start_index is None:
+            start_index = 0
+            while start_index < len(events):
+                sequence = events[start_index].seq
+                if sequence is None or sequence > cursor_sequence:
+                    break
+                start_index += 1
         if not record.replay_history_partial:
-            return True
-        if start_index <= 0:
-            return False
-        cursor_sequence = events[start_index - 1].seq
-        replay_head = record.replay_head_sequence
-        if cursor_sequence is None or cursor_sequence > replay_head:
-            return False
+            return start_index
+        if cursor_sequence > record.replay_head_sequence:
+            return None
         expected_sequence = cursor_sequence + 1
-        for event in events[start_index:]:
-            if event.seq != expected_sequence or expected_sequence > replay_head:
-                return False
+        for index in range(start_index, len(events)):
+            if events[index].seq != expected_sequence:
+                return None
             expected_sequence += 1
-        return expected_sequence == replay_head + 1
+        return start_index if expected_sequence == record.replay_head_sequence + 1 else None
 
     def _resolve_start_index(
         self, events: list[SessionEvent], from_id: str
@@ -3500,7 +3527,9 @@ class SessionService:
                 else dict(runtime_config)
             )
             candidate_lock = self._runtime_lock(
-                session_id, candidate_config, runner.request.config_path
+                session_id,
+                candidate_config,
+                record.runtime_generation_source_ref or runner.request.config_path,
             )
             runner.transition_product_session(
                 "reconfigure",

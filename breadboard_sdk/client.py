@@ -11,6 +11,7 @@ from urllib.parse import quote, urlencode, urljoin, urlsplit
 import requests
 
 from .generated.public_bindings import PUBLIC_BINDINGS_BY_OPERATION_ID
+from .generated.session_event_bindings import PUBLIC_SESSION_EVENT_PAYLOAD_SCHEMAS
 from .types import (
     PublicResult,
     PublicSessionDecision,
@@ -119,22 +120,6 @@ _SESSION_EVENT_FIELDS = frozenset(
 _SESSION_EVENT_VISIBILITY_FIELDS = frozenset(
     {"model_visible", "provider_visible", "host_visible", "redaction_state"}
 )
-_LIFECYCLE_PAYLOAD_SCHEMA = "bb.payload.product_session.lifecycle.v1"
-_EVENT_PAYLOAD_SCHEMA = {
-    "session.started": _LIFECYCLE_PAYLOAD_SCHEMA,
-    "input.accepted": _LIFECYCLE_PAYLOAD_SCHEMA,
-    "approval.requested": _LIFECYCLE_PAYLOAD_SCHEMA,
-    "approval.resolved": _LIFECYCLE_PAYLOAD_SCHEMA,
-    "session.reconfigured": _LIFECYCLE_PAYLOAD_SCHEMA,
-    "session.paused": _LIFECYCLE_PAYLOAD_SCHEMA,
-    "session.resumed": _LIFECYCLE_PAYLOAD_SCHEMA,
-    "session.completed": _LIFECYCLE_PAYLOAD_SCHEMA,
-    "session.failed": _LIFECYCLE_PAYLOAD_SCHEMA,
-    "session.canceled": _LIFECYCLE_PAYLOAD_SCHEMA,
-    "assistant_message": "bb.payload.message.assistant.v1",
-    "tool_call": "bb.payload.tool.called.v1",
-    "tool_result": "bb.payload.tool.completed.v1",
-}
 _LIFECYCLE_PAYLOAD_FIELDS = {
     "session.started": frozenset({"effective_lock_hash", "task_hash"}),
     "input.accepted": frozenset({"content_hash", "attachments"}),
@@ -147,8 +132,37 @@ _LIFECYCLE_PAYLOAD_FIELDS = {
     "session.failed": frozenset({"outcome", "error", "detail"}),
     "session.canceled": frozenset({"outcome", "reason"}),
 }
+_LIFECYCLE_OPTIONAL_PAYLOAD_FIELDS = {
+    kind: frozenset({"lineage"})
+    for kind in (
+        "session.started",
+        "session.completed",
+        "session.failed",
+        "session.canceled",
+    )
+}
+_LINEAGE_FIELDS = frozenset(
+    {
+        "parent_session_id",
+        "root_session_id",
+        "parent_work_item_id",
+        "child_work_item_id",
+    }
+)
+_ANNOTATION_PAYLOAD_FIELDS = frozenset(
+    {
+        "annotation_id",
+        "message_id",
+        "trajectory_id",
+        "label",
+        "author",
+        "generation",
+    }
+)
 _KERNEL_PAYLOAD_FIELDS = {
-    "assistant_message": frozenset({"seq", "metadata", "message", "text", "source"}),
+    "assistant_message": frozenset(
+        {"seq", "metadata", "message", "text", "source", "message_id", "trajectory_id"}
+    ),
     "tool_call": frozenset(
         {"seq", "metadata", "call", "call_id", "tool", "tool_name", "state"}
     ),
@@ -175,6 +189,29 @@ def _sha256(value: Any) -> bool:
     return len(digest) == 64 and all(
         character in "0123456789abcdef" for character in digest
     )
+
+
+def _validate_lineage(value: Any) -> None:
+    if (
+        not isinstance(value, dict)
+        or value.keys() != _LINEAGE_FIELDS
+        or any(
+            not isinstance(value[field], str) or not value[field]
+            for field in _LINEAGE_FIELDS
+        )
+    ):
+        raise ValueError("invalid session event lineage")
+
+
+def _validate_annotation_payload(payload: dict[str, Any]) -> None:
+    if (
+        payload.keys() != _ANNOTATION_PAYLOAD_FIELDS
+        or any(
+            not isinstance(payload[field], str) or not payload[field]
+            for field in _ANNOTATION_PAYLOAD_FIELDS
+        )
+    ):
+        raise ValueError("invalid session event annotation payload")
 
 
 def _validate_kernel_payload(kind: str, payload: dict[str, Any]) -> None:
@@ -205,11 +242,23 @@ def _validate_kernel_payload(kind: str, payload: dict[str, Any]) -> None:
     for field in boolean_fields:
         if field in payload and type(payload[field]) is not bool:
             raise ValueError(f"invalid session event payload {field}")
-
+    identity_fields = {"message_id", "trajectory_id"}
+    present_identity_fields = payload.keys() & identity_fields
+    if present_identity_fields and present_identity_fields != identity_fields:
+        raise ValueError("invalid session event assistant identity fields")
+    for field in present_identity_fields:
+        if not isinstance(payload[field], str) or not payload[field]:
+            raise ValueError(f"invalid session event payload {field}")
 
 def _validate_lifecycle_payload(kind: str, payload: dict[str, Any]) -> None:
-    if payload.keys() != _LIFECYCLE_PAYLOAD_FIELDS[kind]:
+    required_fields = _LIFECYCLE_PAYLOAD_FIELDS[kind]
+    optional_fields = _LIFECYCLE_OPTIONAL_PAYLOAD_FIELDS.get(kind, frozenset())
+    if not required_fields <= payload.keys() or not payload.keys() <= (
+        required_fields | optional_fields
+    ):
         raise ValueError("invalid session event lifecycle payload fields")
+    if "lineage" in payload:
+        _validate_lineage(payload["lineage"])
     if kind == "session.started":
         valid = _sha256(payload["effective_lock_hash"]) and _sha256(
             payload["task_hash"]
@@ -267,13 +316,15 @@ def _validate_lifecycle_payload(kind: str, payload: dict[str, Any]) -> None:
 def _validate_event_payload(
     kind: str, schema_version: str, payload: dict[str, Any]
 ) -> None:
-    expected_schema = _EVENT_PAYLOAD_SCHEMA.get(kind)
+    expected_schema = PUBLIC_SESSION_EVENT_PAYLOAD_SCHEMAS.get(kind)
     if expected_schema is None:
         raise ValueError("invalid session event kind")
     if schema_version != expected_schema:
         raise ValueError("invalid session event payload_schema_version")
     if kind in _LIFECYCLE_PAYLOAD_FIELDS:
         _validate_lifecycle_payload(kind, payload)
+    elif kind == "annotation":
+        _validate_annotation_payload(payload)
     else:
         _validate_kernel_payload(kind, payload)
 
@@ -301,6 +352,7 @@ def _session_event(
     session_id = _required_text(value.get("session_id"), "session_id")
     if session_id != expected_session_id:
         raise ValueError("session event belongs to another session")
+    kind = _required_text(value.get("kind"), "kind")
     visibility = value.get("visibility")
     if not isinstance(visibility, dict):
         raise ValueError("invalid session event visibility")
@@ -311,14 +363,27 @@ def _session_event(
             raise ValueError(f"invalid session event visibility.{field}")
     if visibility.get("redaction_state") not in {"none", "redacted"}:
         raise ValueError("invalid session event visibility.redaction_state")
+    if kind == "annotation" and (
+        visibility["model_visible"] is not False
+        or visibility["provider_visible"] is not False
+        or visibility["host_visible"] is not True
+    ):
+        raise ValueError("invalid session event annotation visibility")
     event_payload = value.get("payload")
     if not isinstance(event_payload, dict):
         raise ValueError("invalid session event payload")
-    kind = _required_text(value.get("kind"), "kind")
     payload_schema_version = _required_text(
         value.get("payload_schema_version"), "payload_schema_version"
     )
     _validate_event_payload(kind, payload_schema_version, event_payload)
+    if kind in _LIFECYCLE_OPTIONAL_PAYLOAD_FIELDS and "lineage" in event_payload:
+        lineage = event_payload["lineage"]
+        if (
+            value.get("work_item_id") != lineage["child_work_item_id"]
+            or value.get("parent_work_item_id")
+            != lineage["parent_work_item_id"]
+        ):
+            raise ValueError("invalid session event lineage correlations")
     return {
         "schema_version": "bb.public_session_event.v1",
         "event_id": _required_text(value.get("event_id"), "event_id"),
@@ -617,6 +682,7 @@ class BreadBoardClient:
             "session.events",
             {"session_id": quote(session_id, safe="")},
             session_id=session_id,
+            follow=follow,
             last_event_id=str(last_event_id) if last_event_id is not None else None,
             query=query,
         )
@@ -627,6 +693,7 @@ class BreadBoardClient:
         path_params: Dict[str, str],
         *,
         session_id: str,
+        follow: bool,
         last_event_id: str | None = None,
         query: Dict[str, Any] | None = None,
     ) -> Generator[SessionEvent, None, int | None]:
@@ -675,7 +742,7 @@ class BreadBoardClient:
                         payload = "\n".join(data_lines)
                         data_lines = []
                         event = _session_event(payload, session_id, sse_id)
-                        terminal = event["kind"] in {
+                        terminal = follow and event["kind"] in {
                             "session.completed",
                             "session.failed",
                             "session.canceled",

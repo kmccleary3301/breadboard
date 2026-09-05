@@ -45,6 +45,7 @@ from breadboard.product.runtime.events import (
     IdSource,
     ProcessLock,
     Session,
+    SessionLineage,
     SystemClock,
     UUIDSource,
 )
@@ -1397,7 +1398,13 @@ class DurableChildFactory:
                 for artifact in created_artifacts:
                     self.artifacts.discard(artifact)
                 raise
-        product = Session.start(spec.lock, spec.task, session_id=child_session_id, clock=self.clock, ids=self.ids)
+        product = Session.start(
+            spec.lock, spec.task, session_id=child_session_id, clock=self.clock, ids=self.ids,
+            lineage=SessionLineage(
+                initial.parent_session_id, initial.root_session_id,
+                initial.parent_work_item_id, initial.child_work_item_id,
+            ),
+        )
         create_session(self.workspace, product)
         self._require_start_active(child_session_id)
         parent_product, _ = load_session(self.workspace, parent_session_id)
@@ -2386,7 +2393,13 @@ class DurableChildFactory:
             session, _ = load_session(self.workspace, state.child_session_id)
         except FileNotFoundError:
             spec = self._spec(state)
-            product = Session.start(spec.lock, spec.task, session_id=state.child_session_id, clock=self.clock, ids=self.ids)
+            product = Session.start(
+                spec.lock, spec.task, session_id=state.child_session_id, clock=self.clock, ids=self.ids,
+                lineage=SessionLineage(
+                    state.parent_session_id, state.root_session_id,
+                    state.parent_work_item_id, state.child_work_item_id,
+                ),
+            )
             create_session(self.workspace, product)
             session, _ = load_session(self.workspace, state.child_session_id)
         if session is not None:
@@ -2529,7 +2542,13 @@ class DurableChildFactory:
                 load_session(self.workspace, child_session_id)
             except FileNotFoundError:
                 spec = self._spec(state)
-                product = Session.start(spec.lock, spec.task, session_id=child_session_id, clock=self.clock, ids=self.ids)
+                product = Session.start(
+                    spec.lock, spec.task, session_id=child_session_id, clock=self.clock, ids=self.ids,
+                    lineage=SessionLineage(
+                        state.parent_session_id, state.root_session_id,
+                        state.parent_work_item_id, state.child_work_item_id,
+                    ),
+                )
                 create_session(self.workspace, product)
                 record = self._registry("get", child_session_id)
                 if record is not None:

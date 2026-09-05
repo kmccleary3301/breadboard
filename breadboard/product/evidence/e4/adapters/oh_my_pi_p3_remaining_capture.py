@@ -44,6 +44,39 @@ SCHEMA_BY_RECORD_KEY = p3_packet.SCHEMA_BY_RECORD_KEY
 SECRET_PATTERNS = p3_packet.SECRET_PATTERNS
 
 
+def _materialize_candidate_registry(validation_root: Path) -> Path:
+    registry_source = resolve_declared_reference(
+        "conformance/comparators/registry.json",
+        checkout_root=ROOT,
+        namespace="repo",
+    )
+    candidate_root = validation_root.resolve()
+    registry_destination = candidate_root / registry_source.relative_to(ROOT.resolve())
+    try:
+        registry_destination.parent.resolve().relative_to(candidate_root)
+        parent_parts = registry_destination.parent.relative_to(candidate_root).parts
+    except ValueError as exc:
+        raise ValueError(
+            "candidate comparator registry destination escapes the validation root"
+        ) from exc
+    parent = candidate_root
+    for part in parent_parts:
+        parent /= part
+        if parent.is_symlink():
+            raise ValueError(
+                "candidate comparator registry destination must not use symlink parents"
+            )
+    if registry_destination.is_symlink():
+        registry_destination.unlink()
+    elif registry_destination.exists() and not registry_destination.is_file():
+        raise ValueError(
+            "candidate comparator registry destination must be a regular file"
+        )
+    registry_destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(registry_source, registry_destination)
+    return registry_destination
+
+
 def validate_candidate_c4_chain(
     *,
     config_id: str,
@@ -56,6 +89,11 @@ def validate_candidate_c4_chain(
     temp_prefix: str,
 ) -> dict[str, Any]:
     """Validate a promoted packet or a scratch packet in an isolated repo view."""
+    registry_source = resolve_declared_reference(
+        "conformance/comparators/registry.json",
+        checkout_root=ROOT,
+        namespace="repo",
+    )
     if candidate_root is None:
         return validate_c4_chain(
             repo_root=ROOT,
@@ -64,7 +102,7 @@ def validate_candidate_c4_chain(
             support_claim_path=physical_support_claim_path,
             evidence_manifest_path=physical_evidence_manifest_path,
             rerun_comparators=True,
-            comparator_registry_path=ROOT / "conformance/comparators/registry.json",
+            comparator_registry_path=registry_source,
             enforce_catalog_binding=False,
         )
 
@@ -81,6 +119,7 @@ def validate_candidate_c4_chain(
             else:
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, destination)
+        registry_destination = _materialize_candidate_registry(validation_root)
         return validate_c4_chain(
             repo_root=validation_root,
             freeze_manifest_path=validation_root / FREEZE_MANIFEST_PATH.relative_to(ROOT),
@@ -88,7 +127,7 @@ def validate_candidate_c4_chain(
             support_claim_path=validation_root / logical_support_claim_path.relative_to(ROOT),
             evidence_manifest_path=validation_root / logical_evidence_manifest_path.relative_to(ROOT),
             rerun_comparators=True,
-            comparator_registry_path=ROOT / "conformance/comparators/registry.json",
+            comparator_registry_path=registry_destination,
             enforce_catalog_binding=False,
         )
 

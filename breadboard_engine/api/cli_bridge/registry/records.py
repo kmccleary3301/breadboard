@@ -218,6 +218,8 @@ class SessionRecord:
     replay_history_partial: bool = False
     replay_head_event_id: Optional[str] = None
     replay_head_sequence: int = 0
+    # A loaded cursor without its event body anchors the newly buffered suffix.
+    retained_replay_boundary: Optional[tuple[int, str]] = field(default=None, repr=False)
     terminal_event_envelopes: list[Dict[str, Any]] = field(default_factory=list, repr=False)
     subscribers: Dict["asyncio.Queue[Optional[SessionEvent]]", SubscriberState] = field(
         default_factory=dict,
@@ -241,6 +243,7 @@ class SessionRecord:
     admission_lock: "asyncio.Lock" = field(default_factory=asyncio.Lock, repr=False)
     loaded_from_retained_state: bool = field(default=False, repr=False)
     retained_turn_journal_digest: Optional[str] = field(default=None, repr=False)
+    runtime_generation_source_ref: Optional[str] = field(default=None, repr=False)
 
     def projected_status(self) -> SessionStatus:
         if self.product_session is None:
@@ -274,6 +277,7 @@ class SessionRecord:
             ),
             retained_history_partial=self.replay_history_partial,
             persisted_head_event_id=self.replay_head_event_id,
+            retained_boundary=self.retained_replay_boundary,
         )
         terminal_turns = [
             {

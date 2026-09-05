@@ -27,13 +27,13 @@ _PUBLIC_PAYLOAD_SCHEMAS: Final[Mapping[str, str]] = MappingProxyType(
         "assistant_message": "bb.payload.message.assistant.v1",
         "tool_call": "bb.payload.tool.called.v1",
         "tool_result": "bb.payload.tool.completed.v1",
+        "annotation": "bb.payload.product_session.annotation.v1",
     }
 )
 
 # Public name used by deterministic code generation and equivalence checks.
 PUBLIC_PAYLOAD_SCHEMAS: Final[Mapping[str, str]] = _PUBLIC_PAYLOAD_SCHEMAS
-_INTERNAL_EVENT_KINDS = frozenset({"annotation", "context.compacted"})
-_IDENTITY_ONLY_ASSISTANT_FIELDS = frozenset({"message_id", "trajectory_id"})
+_INTERNAL_EVENT_KINDS = frozenset({"context.compacted"})
 
 
 def public_session_event(
@@ -45,12 +45,7 @@ def public_session_event(
     if kind in _INTERNAL_EVENT_KINDS:
         return None
     payload = source["payload"]
-    if kind == "assistant_message":
-        payload = {
-            key: value
-            for key, value in payload.items()
-            if key not in _IDENTITY_ONLY_ASSISTANT_FIELDS
-        }
+    lineage = payload.get("lineage")
     session_id = str(source["session_id"])
     sequence = int(source["sequence"])
     return {
@@ -58,14 +53,14 @@ def public_session_event(
         "event_id": f"session:{session_id}:{sequence}",
         "seq": sequence,
         "timestamp": source["occurred_at"],
-        "work_item_id": None,
-        "parent_work_item_id": None,
+        "work_item_id": None if lineage is None else lineage["child_work_item_id"],
+        "parent_work_item_id": None if lineage is None else lineage["parent_work_item_id"],
         "attempt_id": None,
         "session_id": session_id,
         "span_id": None,
         "visibility": {
-            "model_visible": True,
-            "provider_visible": True,
+            "model_visible": kind != "annotation",
+            "provider_visible": kind != "annotation",
             "host_visible": True,
             "redaction_state": "none",
         },

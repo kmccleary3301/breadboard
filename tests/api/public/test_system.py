@@ -50,6 +50,7 @@ _PUBLIC_SCHEMAS = [
     "bb.lane_execution_report.v1.schema.json",
     "bb.operator_interaction.v1.schema.json",
     "bb.page.v1.schema.json",
+    "bb.payload.product_session.annotation.v1.schema.json",
     "bb.payload.product_session.lifecycle.v1.schema.json",
     "bb.problem.v1.schema.json",
     "bb.provider_exchange.v2.schema.json",
@@ -64,6 +65,7 @@ _PUBLIC_SCHEMAS = [
     "bb.replay_plan.v1.schema.json",
     "bb.session.v1.schema.json",
     "bb.stage_report.v1.schema.json",
+    "bb.world_field_mask.v1.schema.json",
 ]
 
 

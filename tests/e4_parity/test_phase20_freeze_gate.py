@@ -149,6 +149,15 @@ def freeze_repository(
     monkeypatch.setattr(check_phase20_freeze, "TIGHTENING_ALLOWLIST", {})
     monkeypatch.setattr(
         check_phase20_freeze,
+        "ALLOWED_SCHEMA_IDS",
+        {
+            schema_id
+            for schema_id in check_phase20_freeze.ALLOWED_SCHEMA_IDS
+            if not schema_id.startswith("https://breadboard.dev/contracts/public/schemas/")
+        },
+    )
+    monkeypatch.setattr(
+        check_phase20_freeze,
         "validate_contract_tiers",
         lambda *, tracked_files: [],
     )
@@ -159,6 +168,39 @@ def freeze_repository(
             URL_SCHEMA_ID: url_schema_path,
         }
     )
+
+
+def test_public_evolution_requires_pinned_tracked_bytes(
+    freeze_repository: FreezeRepository,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    schema_id = "https://breadboard.dev/contracts/public/schemas/bb.fixture.v1.schema.json"
+    path = tmp_path / "contracts/public/schemas/bb.fixture.v1.schema.json"
+    schema = {"$id": schema_id, "type": "object", "additionalProperties": False}
+    content = _write_json(path, schema)
+    monkeypatch.setattr(
+        check_phase20_freeze,
+        "ALLOWED_SCHEMA_IDS",
+        check_phase20_freeze.ALLOWED_SCHEMA_IDS | {schema_id},
+    )
+    monkeypatch.setattr(
+        check_phase20_freeze,
+        "TIGHTENING_ALLOWLIST",
+        {
+            schema_id: {
+                "packet": "public-fixture",
+                "sha256": hashlib.sha256(content).hexdigest(),
+                "class": "plan_mandated_evolution",
+                "ref": "AM17a",
+            }
+        },
+    )
+    assert check_phase20_freeze.main() == 1
+    subprocess.run(["git", "add", str(path)], cwd=tmp_path, check=True)
+    assert check_phase20_freeze.main() == 0
+    _write_json(path, {**schema, "additionalProperties": True})
+    assert check_phase20_freeze.main() == 1
 
 
 def test_clean_tracked_inventory_passes_freeze_gate(

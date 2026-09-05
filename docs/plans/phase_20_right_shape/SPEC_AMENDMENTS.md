@@ -382,3 +382,49 @@ GATE_L_DECISION.md, and bd comments on bb-c6n.4/bb-c6n.6.
 ## Amendment 25 — 2026-08-27 — D6 kernel event correlation repair
 
 **User authorization and evidence:** the accepted D6 runtime emits an optional `input_id` beside `turn_id` so admitted inputs remain correlated without numeric synthesis. Exact-head E4 regeneration rejected those emitted records because `bb.kernel_event.v2` had `additionalProperties: false` but omitted `input_id`. This amendment authorizes only the optional non-empty string property on the existing schema ID, pins the evolved schema hash in `scripts/check_phase20_freeze.py`, and adds no route, required field, generation default, or compatibility shim.
+
+## Amendment 26 - 2026-09-05 - DSH public annotation events
+
+**Authorization:** Kyle's `.omp/rules/no-ask-tool-standing-approval.md` grants standing approval for all decisions and prohibits the ask tool. The supervisor selects this amendment under that authority.
+
+**Consumer and evidence:** `public_session_event` currently omits durable annotations, so Python and TypeScript public Session readers cannot observe the immutable labels implemented in PR101. The existing hidden-annotation tests expose this deliberate gap.
+
+**Scope:** publish kind `annotation` in `bb.public_session_event.v1`, with payload schema `bb.payload.product_session.annotation.v1`. Its exact required nonempty string fields are `annotation_id`, `message_id`, `trajectory_id`, `label`, `author`, and `generation`. Preserve their durable values. Annotation visibility is host-only, never implicit model/provider input. No annotation CRUD operation, mutable message, new SDK package, or second annotation owner is authorized.
+
+**Snapshot contract:** `follow=false` drains the retained events at the selected source boundary, including annotations written after settlement. Live followers retain their terminal-stop behavior; post-run labels are read through a new snapshot.
+
+**Freeze mechanism:** AM26-AM29 public schemas use the existing exact-content, amendment-referenced evolution allowlist. The freeze checker checks those named public schemas in addition to its existing kernel inventory, without resetting the historical baseline. Each schema-changing commit updates its exact content pin and amendment reference.
+
+## Amendment 27 - 2026-09-05 - DSH public generation and trajectory identities
+
+**Authorization:** Kyle's standing-approval rule cited in AM26.
+
+**Consumer and evidence:** PR106 implemented `Session.pinned_generation_id`, `trajectory_segments`, and `adoption_history`, but public Session records omit the segment identity and the public projector strips canonical assistant message/trajectory identities. Installed comparison cannot demonstrate adoption through that reader.
+
+**Scope:** add required `generation_id` and `trajectory_segment_id` to `bb.session.v1`. Generation identity equals the effective Lock identity; segment identity follows the existing `session:segment:index:lock-digest` rule and changes on quiescent adoption. The Session event fold supplies both, including after restore and as-of projection. Version the changed Session projector. Preserve paired `message_id`/`trajectory_id` in public assistant observations; authorize those paired optional fields in the existing kernel `bb.payload.message.assistant.v1` schema through its AM27-referenced evolution pin. No client-owned generation, live code reload, implicit adoption, or reconfiguration policy change.
+
+## Amendment 28 - 2026-09-05 - DSH ordinary child Session lineage
+
+**Authorization:** Kyle's standing-approval rule cited in AM26.
+
+**Consumer and evidence:** PR104 proves durable child ownership, but lineage is retained only in the existing child/Work Item owners and is absent from the ordinary public Session event stream.
+
+**Scope:** an optional immutable `lineage` object on the child's durable `session.started` fact contains exactly `parent_session_id`, `root_session_id`, `parent_work_item_id`, and `child_work_item_id`, all nonempty strings. The ordinary terminal Session fact retains the same lineage. Publish these distinct start and settlement facts through the existing lifecycle event kinds and payload schema; publish nullable lineage on the Session record. Public Work Item envelope correlations come from the recorded lineage. Replay rejects contradictory lineage. All child creation/recovery paths use this same Session owner. No child-specific lifecycle journal, scheduler, duplicate terminal fact, or new public child operation.
+
+## Amendment 29 - 2026-09-05 - DSH predeclared execution-world mask
+
+**Authorization and mask acknowledgement:** Kyle's standing-approval rule cited in AM26; the supervisor retains the W5 predeclared mask without widening it.
+
+**Consumer and evidence:** PR108 implements local, OCI, Ray, and Slurm worlds; `W5_REMOTE.md` records the mask, but no public contract represents it for the installed comparison consumer.
+
+**Scope:** `bb.world_field_mask.v1` contains exactly `schema_version` and `paths`; the paths are exactly `["/occurred_at", "/timestamp"]`. Publish the schema and typed SDK representation. The comparison must reject a different mask before running and must not mask provider/request identity, status, output, side effects, ordering, or failure fields. This does not create another world driver or placement owner.
+
+## Amendment 30 - 2026-09-05 - DSH idempotent research comparison command
+
+**Authorization:** Kyle's standing-approval rule cited in AM26.
+
+**Consumer and evidence:** the product command registry and public operation catalog have no `research.compare`; therefore the decided `bb research compare --definition E --world W --generation G --projection P --compare E,E_PRIME` journey cannot run. PRs 94-109 contain its component implementations and research findings; component proofs do not prove composition.
+
+**Scope:** W10 implements the one `research.compare` operation and its CLI, HTTP, Python, and TypeScript bindings through the existing operation catalog and canonical generators. Inputs identify the Definition, world, generation, projection, and recorded comparison pair. The result exposes durable `run_id` and `report_id`; identical input bytes resume those identities without increasing the persistence owner's run count. Any comparison request/report schemas are confined to this operation. Definition-to-Lock-to-Session authority remains fixed; existing Session events, artifacts, projections, world drivers, children, workflow, and compaction owners perform the work. No E4/client/inventory truth, second scheduler, release, new SDK package, or unrelated public operation.
+
+**Activation:** W9 records this authorization; W10 adds the functional operation, schemas, generated bindings, and client dispatch together. W9 does not advertise an unimplemented operation. The final installed build and E4 checks must cover the resulting single contract revision.

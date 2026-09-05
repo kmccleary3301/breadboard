@@ -27,10 +27,10 @@ def test_malformed_persisted_events_cannot_rebuild(patch: dict[str, Any]) -> Non
 @pytest.mark.parametrize(("kind", "payload"), [("input.accepted", {"content_hash": HASH, "attachments": [{"digest": HASH, "size_bytes": True, "media_type": "text/plain"}]}), ("assistant_message", {"metadata": {"has_content": 1}}), ("assistant_message", {"metadata": {"has_content": True}, "content": "leak"}), ("tool_call", {"tool": ""}), ("tool_result", {"tool": "list_dir", "error": 0}), ("tool_result", {"error": False}), ("approval.requested", {"request_id": "", "operation": "write"}), ("approval.resolved", {"request_id": "r", "decision": "maybe"}), ("session.reconfigured", {"effective_lock_hash": HASH, "reason": 1}), ("session.paused", {"reason": None}), ("session.resumed", {"extra": True}), ("session.completed", {"outcome": "completed"}), ("session.failed", {"outcome": "completed", "error": "x", "detail": "y"}), ("session.canceled", {"outcome": "canceled", "reason": 1})])
 def test_event_specific_payloads_are_validated_on_reconstitution(kind: str, payload: dict[str, Any]) -> None: pytest.raises((TypeError, ValueError), KernelEvent, "s-1", 2, kind, "now", payload)
 def test_session_view_deeply_freezes_terminal_outcome() -> None:
-    outcome = {"outcome": "failed", "error": "code", "detail": "detail", "nested": {"code": 1}}; view = SessionView("s-1", "failed", HASH, HASH, 2, terminal_outcome=outcome); outcome["nested"]["code"] = 2
+    outcome = {"outcome": "failed", "error": "code", "detail": "detail", "nested": {"code": 1}}; view = SessionView("s-1", "failed", HASH, HASH, 2, "s-1:segment:0:" + "a" * 64, terminal_outcome=outcome); outcome["nested"]["code"] = 2
     with pytest.raises(TypeError): view.terminal_outcome["nested"]["code"] = 3  # type: ignore[index]
     assert view.as_dict()["terminal_outcome"]["nested"]["code"] == 1; Changing = type("Changing", (dict,), {"items": lambda self: {"outcome": "failed", "summary": 7}.items()})
-    with pytest.raises(ValueError): SessionView("s-1", "completed", HASH, HASH, 2, terminal_outcome=Changing(outcome="completed", summary="ok"))
+    with pytest.raises(ValueError): SessionView("s-1", "completed", HASH, HASH, 2, "s-1:segment:0:" + "a" * 64, terminal_outcome=Changing(outcome="completed", summary="ok"))
 _ACTIONS = {"input": lambda s: s.input("content"), "assistant": lambda s: s.assistant_message("content"), "tool_call": lambda s: s.tool_called("list_dir"), "tool_result": lambda s: s.tool_completed("list_dir", False), "compact": lambda s: s.compact(CompactionSnapshot(b"[]", ())), "request": lambda s: s.request_approval("r", "write"), "resolve": lambda s: s.resolve_approval("r", "allow"), "reconfigure": lambda s: s.reconfigure(_lock(OTHER_HASH), ""), "pause": lambda s: s.pause(""), "resume": lambda s: s.resume(), "cancel": lambda s: s.cancel(""), "complete": lambda s: s.complete(""), "fail": lambda s: s.fail("error", "detail")}
 _FACADE_ALLOWED = {"input": {"running"}, "assistant": {"running"}, "tool_call": {"running"}, "tool_result": {"running"}, "compact": {"running"}, "request": {"running"}, "resolve": {"awaiting_approval"}, "reconfigure": {"running", "awaiting_approval", "paused"}, "pause": {"running"}, "resume": {"paused"}, "cancel": {"running", "awaiting_approval", "paused"}, "complete": {"running"}, "fail": {"running", "awaiting_approval", "paused"}}
 def _session(status: str) -> Session:
@@ -415,6 +415,21 @@ def test_generation_identity_is_pinned_and_reconstructed_from_durable_order() ->
     restored = Session.restore(session.events)
     assert restored.generation_sequence == session.generation_sequence
     assert restored.trajectory_segments == session.trajectory_segments
+    assert restored.read_model.as_dict()["generation_id"] == OTHER_HASH
+    assert restored.read_model.as_dict()["trajectory_segment_id"] == session.adoption_history[0]["trajectory_segment_id"]
+
+@pytest.mark.parametrize("terminal_lineage", [None, {"parent_session_id": "wrong-parent", "root_session_id": "root", "parent_work_item_id": "parent-work", "child_work_item_id": "child-work"}])
+def test_replay_rejects_changed_or_missing_child_lineage(
+    terminal_lineage: dict[str, str] | None,
+) -> None:
+    lineage = {"parent_session_id": "parent", "root_session_id": "root", "parent_work_item_id": "parent-work", "child_work_item_id": "child-work"}
+    started = _event(payload={**_PAYLOADS["session.started"], "lineage": lineage})
+    terminal_payload = dict(_PAYLOADS["session.completed"])
+    if terminal_lineage is not None:
+        terminal_payload["lineage"] = terminal_lineage
+    completed = _event(2, "session.completed", terminal_payload)
+    with pytest.raises(ReplayError):
+        Session.restore((started, completed))
 
 @pytest.mark.parametrize("invalid_hash", ["not-a-digest", "sha256:short", "sha256:" + "A" * 64])
 def test_generation_adoption_rejects_incompatible_lock_as_typed_refusal(

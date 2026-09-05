@@ -41,6 +41,7 @@ from breadboard.product.runtime.children import (
     UnavailableChildAdapter,
 )
 from breadboard.product.runtime.events import Session
+from breadboard.product.runtime.public_event_projection import public_session_events
 from breadboard.product.runtime.session_store import (
     create_session,
     load_session,
@@ -635,6 +636,19 @@ def test_process_death_restarts_child_and_rejects_late_result(tmp_path: Path) ->
     assert (state.child_session_id, state.root_session_id, state.parent_work_item_id, state.recovery_ref) == (activation.child_session_id, activation.root_session_id, "parent-work", activation.recovery_ref)
     child, _ = load_session(workspace, activation.child_session_id)
     assert child.read_model.status == "failed"
+    expected_lineage = {
+        "parent_session_id": "parent-session",
+        "root_session_id": "parent-session",
+        "parent_work_item_id": "parent-work",
+        "child_work_item_id": activation.child_work_item_id,
+    }
+    assert child.read_model.as_dict()["lineage"] == expected_lineage
+    public_events = public_session_events(child.events)
+    assert [event["kind"] for event in public_events] == ["session.started", "session.failed"]
+    for event in public_events:
+        assert event["payload"]["lineage"] == expected_lineage
+        assert event["work_item_id"] == activation.child_work_item_id
+        assert event["parent_work_item_id"] == "parent-work"
     with pytest.raises(LateResultRejected):
         restarted.settle(activation.child_session_id, expected_revision=state.revision, outcome="completed", attempt_id=state.attempt_id)
     assert restarted.reconcile(activation.recovery_ref).terminal_count == 1

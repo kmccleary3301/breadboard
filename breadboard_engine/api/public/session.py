@@ -653,11 +653,11 @@ async def events(
                     "\n\n"
                 )
                 emitted += 1
-                if terminal or emitted >= limit:
+                if (follow and terminal) or emitted >= limit:
                     return
             if emitted >= limit:
                 return
-            if not follow and batch.source != "durable":
+            if not follow:
                 return
             batch = await runtime.read_session_event_batch(
                 session_operations.ListSessionEventsRequest(

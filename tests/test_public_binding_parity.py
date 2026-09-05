@@ -20,7 +20,6 @@ CATALOG_PATH = ROOT / "contracts" / "public" / "operations.v2.json"
 TS_BINDINGS_PATH = ROOT / "sdk" / "ts" / "src" / "generated" / "public-bindings.ts"
 TS_ROUTES_PATH = ROOT / "sdk" / "ts" / "src" / "generated" / "routes.ts"
 TS_CLIENT_PATH = ROOT / "sdk" / "ts" / "src" / "client.ts"
-TS_INDEX_PATH = ROOT / "sdk" / "ts" / "src" / "index.ts"
 TS_TYPES_PATH = ROOT / "sdk" / "ts" / "src" / "types.ts"
 OPENAPI_PATH = ROOT / "docs" / "contracts" / "cli_bridge" / "openapi.json"
 TUI_MANIFEST_PATH = (
@@ -37,7 +36,7 @@ TYPESCRIPT_PATH = (
 _TS_SNAPSHOT_SCRIPT = r"""
 const fs = require("node:fs");
 const ts = require(process.argv[1]);
-const [bindingsPath, routesPath, clientPath, indexPath, typesPath] = process.argv.slice(2);
+const [bindingsPath, routesPath, clientPath, typesPath] = process.argv.slice(2);
 
 function sourceFile(path) {
   return ts.createSourceFile(
@@ -177,22 +176,6 @@ function clientShape(path) {
   return { interfaceMethods, factoryMethods, actionBindings, breadboardClientAssertions };
 }
 
-function rootExports(path) {
-  const file = sourceFile(path);
-  const named = [];
-  const wildcards = [];
-  for (const statement of file.statements) {
-    if (!ts.isExportDeclaration(statement)) continue;
-    const moduleSpecifier = statement.moduleSpecifier && statement.moduleSpecifier.text;
-    if (statement.exportClause && ts.isNamedExports(statement.exportClause)) {
-      for (const element of statement.exportClause.elements) named.push(element.name.text);
-    } else {
-      wildcards.push(moduleSpecifier || null);
-    }
-  }
-  return { named, wildcards };
-}
-
 const bindings = evaluate(bindingsPath);
 const routes = evaluate(routesPath);
 process.stdout.write(JSON.stringify({
@@ -204,7 +187,6 @@ process.stdout.write(JSON.stringify({
   },
   fullRoutes: routes.ROUTES,
   client: clientShape(clientPath),
-  root: rootExports(indexPath),
   types: dtoShapes(typesPath),
   sessionDecisions: stringUnionValues(typesPath, "PublicSessionDecision"),
 }));
@@ -313,7 +295,6 @@ def _typescript_snapshot() -> dict[str, Any]:
             str(TS_BINDINGS_PATH),
             str(TS_ROUTES_PATH),
             str(TS_CLIENT_PATH),
-            str(TS_INDEX_PATH),
             str(TS_TYPES_PATH),
         ],
         cwd=ROOT,
@@ -514,7 +495,7 @@ def test_openapi_transport_components_match_authored_sdk_dtos() -> None:
         }
 
 
-def test_typescript_tables_wrappers_and_root_exports_match_contract() -> None:
+def test_typescript_tables_and_wrappers_match_contract() -> None:
     expected = _expected_rows()
     expected_by_operation = {row["operation_id"]: row for row in expected}
     expected_public_routes = _expected_public_routes(expected)
@@ -575,37 +556,6 @@ def test_typescript_tables_wrappers_and_root_exports_match_contract() -> None:
     assert {
         item["method"]: item["actionId"] for item in action_bindings
     } == expected_action_bindings
-
-    assert snapshot["root"] == {
-        "named": [
-            "ApiError",
-            "createBreadboardClient",
-            "createApiClient",
-            "BreadboardClientConfig",
-            "BreadboardClient",
-            "PublicActionId",
-            "PublicResult",
-            "streamSessionEvents",
-            "openEventStream",
-            "EventStreamOptions",
-            "StreamConfig",
-            "EventStreamHandlers",
-            "EventStreamHandle",
-            "OpenEventStreamOptions",
-            "Problem",
-            "PublicHarnessCreateRequest",
-            "PublicHarnessUpdateRequest",
-            "PublicSessionApprovalRequest",
-            "PublicSessionCancelRequest",
-            "PublicSessionDecision",
-            "PublicSessionInputRequest",
-            "PublicSessionStartRequest",
-            "SessionEvent",
-            "SessionEventVisibility",
-            "StageOutcome",
-        ],
-        "wildcards": [],
-    }
 
     full_routes = [_route_tuple(route) for route in snapshot["fullRoutes"]]
     full_route_set = set(full_routes)

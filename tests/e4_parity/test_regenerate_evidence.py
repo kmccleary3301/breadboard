@@ -944,7 +944,7 @@ def test_promotion_preserves_logical_paths_for_symlinked_lane_outputs(
     )
     assert all(not write.startswith("tmp/e4_regen_capture/") for write in stage.writes)
     monkeypatch.setattr(driver, "ROOT", accepted_root)
-    monkeypatch.setattr(driver, "WORKSPACE", accepted_workspace)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(accepted_workspace))
 
     applied = driver._promote_write_set(
         candidate_root,
@@ -968,6 +968,58 @@ def test_promotion_preserves_logical_paths_for_symlinked_lane_outputs(
     }
     assert Path("docs/conformance/e4_target_support/claude_code_north_star_capture_v1") in promoted
     assert all(not path.as_posix().startswith("tmp/e4_regen_capture/") for path in promoted)
+
+
+def test_regeneration_rejects_declared_workspace_parent_symlink_before_promotion(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    checkout = tmp_path / "checkout"
+    workspace = tmp_path / "workspace"
+    outside = tmp_path / "outside"
+    checkout.mkdir()
+    (workspace / "docs_tmp").mkdir(parents=True)
+    outside.mkdir()
+    outside_sentinel = outside / "sentinel.json"
+    outside_sentinel.write_bytes(b"outside-before\n")
+    phase_15 = workspace / "docs_tmp/phase_15"
+    phase_15.symlink_to(outside, target_is_directory=True)
+
+    probe = tmp_path / "candidate_write.py"
+    probe.write_text(
+        "import os\n"
+        "from pathlib import Path\n"
+        "workspace = Path(os.environ['BB_WORKSPACE_ROOT'])\n"
+        "destination = workspace / 'docs_tmp/phase_15/sentinel.json'\n"
+        "destination.parent.mkdir(parents=True, exist_ok=True)\n"
+        "destination.write_bytes(b'candidate\\n')\n",
+        encoding="utf-8",
+    )
+    candidate_stages = (
+        driver.Stage(
+            stage_id="candidate_write_set",
+            phase="lane_artifacts",
+            label="complete candidate write set",
+            argv=(driver.PYTHON, str(probe)),
+            writes=("../docs_tmp/phase_15/sentinel.json",),
+        ),
+    )
+
+    monkeypatch.setattr(driver, "ROOT", checkout)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(workspace))
+    monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
+
+    code, _ = driver._run_regeneration_transaction(
+        candidate_stages,
+        (),
+        (),
+        python=sys.executable,
+    )
+
+    assert code != 0
+    assert outside_sentinel.read_bytes() == b"outside-before\n"
+    assert phase_15.is_symlink()
+    assert phase_15.resolve() == outside.resolve()
 
 
 def test_regeneration_transaction_validation_failure_preserves_accepted_write_set(
@@ -1047,7 +1099,7 @@ def test_regeneration_transaction_validation_failure_preserves_accepted_write_se
     runner = getattr(driver, "_run_regeneration_transaction", None)
     assert runner is not None, "regeneration must expose one scratch-to-accepted transaction"
     monkeypatch.setattr(driver, "ROOT", tmp_path)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path.parent)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path.parent))
     monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
     monkeypatch.setattr(driver.subprocess, "run", fake_run)
 
@@ -1072,12 +1124,14 @@ def test_regeneration_transaction_rolls_back_all_paths_when_promotion_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """A failed multi-path promotion restores old files and removes newly created accepted destinations."""
+    """A failed promotion restores files and dangling links and removes new destinations."""
     accepted_a = tmp_path / "accepted" / "a.txt"
+    accepted_link = tmp_path / "accepted" / "dangling.txt"
     accepted_new = tmp_path / "accepted" / "new.txt"
     blocking_path = tmp_path / "accepted" / "zz_blocked"
     accepted_a.parent.mkdir()
     accepted_a.write_bytes(b"accepted-a\n")
+    accepted_link.symlink_to("missing.txt")
     blocking_path.write_bytes(b"accepted-blocker\n")
     candidate_stages = (
         driver.Stage(
@@ -1087,6 +1141,7 @@ def test_regeneration_transaction_rolls_back_all_paths_when_promotion_fails(
             argv=(driver.PYTHON, "candidate_write_set.py"),
             writes=(
                 "accepted/a.txt",
+                "accepted/dangling.txt",
                 "accepted/new.txt",
                 "accepted/zz_blocked/b.txt",
             ),
@@ -1118,16 +1173,15 @@ def test_regeneration_transaction_rolls_back_all_paths_when_promotion_fails(
             read_only=True,
         ),
     )
-    calls: list[str] = []
 
     def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         command = argv[-1]
-        calls.append(command)
         execution_root = Path(kwargs["cwd"])
         if command == "candidate_write_set.py":
             accepted_dir = execution_root / "accepted"
             accepted_dir.mkdir(parents=True, exist_ok=True)
             (accepted_dir / "a.txt").write_bytes(b"candidate-a\n")
+            (accepted_dir / "dangling.txt").write_bytes(b"candidate-link\n")
             (accepted_dir / "new.txt").write_bytes(b"candidate-new\n")
             scratch_blocker = accepted_dir / "zz_blocked"
             if scratch_blocker.is_file():
@@ -1136,14 +1190,12 @@ def test_regeneration_transaction_rolls_back_all_paths_when_promotion_fails(
             (scratch_blocker / "b.txt").write_bytes(b"candidate-b\n")
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
-    runner = getattr(driver, "_run_regeneration_transaction", None)
-    assert runner is not None, "regeneration must expose one scratch-to-accepted transaction"
     monkeypatch.setattr(driver, "ROOT", tmp_path)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path.parent)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path.parent))
     monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
     monkeypatch.setattr(driver.subprocess, "run", fake_run)
 
-    code, results = runner(
+    code, _ = driver._run_regeneration_transaction(
         candidate_stages,
         post_promotion_stages,
         final_c4_stages,
@@ -1151,107 +1203,82 @@ def test_regeneration_transaction_rolls_back_all_paths_when_promotion_fails(
     )
 
     assert code != 0
-    assert [result.stage_id for result in results] == [
-        "candidate_write_set",
-        "candidate_validate",
-    ]
-    assert calls == ["candidate_write_set.py", "candidate_validate.py"]
     assert accepted_a.read_bytes() == b"accepted-a\n"
+    assert accepted_link.readlink() == Path("missing.txt")
     assert not accepted_new.exists()
     assert blocking_path.read_bytes() == b"accepted-blocker\n"
 
 
-def test_regeneration_transaction_promotes_before_rebind_then_runs_final_c4(
+def test_regeneration_promotes_declared_workspace_before_rebind_and_final_validation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Validation sees a complete scratch candidate while rebind and final C4 see only the promoted write set."""
-    accepted_a = tmp_path / "accepted" / "a.txt"
-    accepted_b = tmp_path / "accepted" / "b.txt"
-    accepted_a.parent.mkdir()
-    accepted_a.write_bytes(b"accepted-a\n")
-    accepted_b.write_bytes(b"accepted-b\n")
-    candidate_stages = (
+    checkout = tmp_path / "checkout"
+    workspace = tmp_path / "declared-workspace"
+    checkout.mkdir()
+    old_entry = workspace / "docs_tmp/entries/old.json"
+    old_entry.parent.mkdir(parents=True)
+    old_entry.write_text("old entry\n")
+    sibling_decoy = tmp_path / "docs_tmp/single.txt"
+    sibling_decoy.parent.mkdir()
+    sibling_decoy.write_text("unrelated sibling\n")
+    probe = checkout / "probe.py"
+    probe.write_text(
+        "import os, sys\n"
+        "from pathlib import Path\n"
+        "root = Path.cwd()\n"
+        "workspace = Path(os.environ['BB_WORKSPACE_ROOT'])\n"
+        "outputs = {root / 'docs/local.txt': 'new local\\n', "
+        "workspace / 'docs_tmp/single.txt': 'new workspace\\n', "
+        "workspace / 'docs_tmp/entries/new.json': 'new entry\\n'}\n"
+        "if sys.argv[1] == 'write':\n"
+        "    for path, content in outputs.items():\n"
+        "        path.parent.mkdir(parents=True, exist_ok=True)\n"
+        "        path.write_text(content)\n"
+        "else:\n"
+        "    for path, content in outputs.items():\n"
+        "        assert path.read_text() == content\n"
+        f"    if root == Path({str(checkout)!r}):\n"
+        "        assert not (workspace / 'docs_tmp/entries/old.json').exists()\n"
+    )
+    subprocess.run(["git", "init", "-q"], cwd=checkout, check=True)
+    subprocess.run(["git", "add", "probe.py"], cwd=checkout, check=True)
+    stages = (
         driver.Stage(
-            stage_id="candidate_write_set",
-            phase="lane_artifacts",
-            label="complete candidate write set",
-            argv=(driver.PYTHON, "candidate_write_set.py"),
-            writes=("accepted/a.txt", "accepted/b.txt"),
+            stage_id="north_star_proof_packets",
+            phase="reports",
+            label="write candidate",
+            argv=(driver.PYTHON, "probe.py", "write", "--stage", "capture"),
+            writes=("docs/local.txt", "../docs_tmp/single.txt", "../docs_tmp/entries/*.json"),
         ),
         driver.Stage(
-            stage_id="candidate_validate",
+            stage_id="catalog_claim_binding_snapshot",
             phase="reports",
-            label="validate complete candidate",
-            argv=(driver.PYTHON, "candidate_validate.py"),
-            depends_on=("candidate_write_set",),
+            label="validate rebind inputs",
+            argv=(driver.PYTHON, "probe.py", "verify"),
+            depends_on=("north_star_proof_packets",),
             read_only=True,
         ),
-    )
-    post_promotion_stages = (
         driver.Stage(
-            stage_id="canonical_rebind",
-            phase="reports",
-            label="canonical rebind",
-            argv=(driver.PYTHON, "canonical_rebind.py"),
-            read_only=True,
-        ),
-    )
-    final_c4_stages = (
-        driver.Stage(
-            stage_id="final_c4_validate",
+            stage_id="validate_e4_closure",
             phase="validators",
-            label="final C4",
-            argv=(driver.PYTHON, "final_c4_validate.py"),
+            label="validate final inputs",
+            argv=(driver.PYTHON, "probe.py", "verify"),
+            depends_on=("catalog_claim_binding_snapshot",),
             read_only=True,
         ),
     )
-    observations: list[tuple[str, bytes, bytes]] = []
+    monkeypatch.setattr(driver, "ROOT", checkout)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(workspace))
 
-    def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        command = argv[-1]
-        execution_root = Path(kwargs["cwd"])
-        if command == "candidate_write_set.py":
-            candidate_dir = execution_root / "accepted"
-            candidate_dir.mkdir(parents=True, exist_ok=True)
-            (candidate_dir / "a.txt").write_bytes(b"candidate-a\n")
-            (candidate_dir / "b.txt").write_bytes(b"candidate-b\n")
-        elif command == "candidate_validate.py":
-            assert Path(kwargs["env"]["BB_WORKSPACE_ROOT"]) == execution_root.parent
-            assert (execution_root / "accepted" / "a.txt").read_bytes() == b"candidate-a\n"
-            assert (execution_root / "accepted" / "b.txt").read_bytes() == b"candidate-b\n"
-            observations.append((command, accepted_a.read_bytes(), accepted_b.read_bytes()))
-        else:
-            assert execution_root == tmp_path
-            observations.append((command, accepted_a.read_bytes(), accepted_b.read_bytes()))
-        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
-
-    runner = getattr(driver, "_run_regeneration_transaction", None)
-    assert runner is not None, "regeneration must expose one scratch-to-accepted transaction"
-    monkeypatch.setattr(driver, "ROOT", tmp_path)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path.parent)
-    monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
-    monkeypatch.setattr(driver.subprocess, "run", fake_run)
-
-    code, results = runner(
-        candidate_stages,
-        post_promotion_stages,
-        final_c4_stages,
-        python="PY",
-    )
+    code, _results = driver.run_pipeline(stages)
 
     assert code == 0
-    assert [result.stage_id for result in results] == [
-        "candidate_write_set",
-        "candidate_validate",
-        "canonical_rebind",
-        "final_c4_validate",
-    ]
-    assert observations == [
-        ("candidate_validate.py", b"accepted-a\n", b"accepted-b\n"),
-        ("canonical_rebind.py", b"candidate-a\n", b"candidate-b\n"),
-        ("final_c4_validate.py", b"candidate-a\n", b"candidate-b\n"),
-    ]
+    assert (checkout / "docs/local.txt").read_text() == "new local\n"
+    assert (workspace / "docs_tmp/single.txt").read_text() == "new workspace\n"
+    assert (workspace / "docs_tmp/entries/new.json").read_text() == "new entry\n"
+    assert not old_entry.exists()
+    assert sibling_decoy.read_text() == "unrelated sibling\n"
 
 
 def test_regeneration_transaction_rebind_failure_restores_accepted_write_set(
@@ -1320,7 +1347,7 @@ def test_regeneration_transaction_rebind_failure_restores_accepted_write_set(
     runner = getattr(driver, "_run_regeneration_transaction", None)
     assert runner is not None, "regeneration must expose one scratch-to-accepted transaction"
     monkeypatch.setattr(driver, "ROOT", tmp_path)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path.parent)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path.parent))
     monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
     monkeypatch.setattr(driver.subprocess, "run", fake_run)
 
@@ -1415,7 +1442,7 @@ def test_regeneration_transaction_final_c4_failure_restores_rebind_mutations(
     runner = getattr(driver, "_run_regeneration_transaction", None)
     assert runner is not None, "regeneration must expose one scratch-to-accepted transaction"
     monkeypatch.setattr(driver, "ROOT", tmp_path)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path.parent)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path.parent))
     monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
     monkeypatch.setattr(driver.subprocess, "run", fake_run)
 
@@ -1468,7 +1495,7 @@ def test_prepare_candidate_root_preserves_dangling_symlinks_and_excludes_untrack
 
     candidate_root = tmp_path / "candidate"
     monkeypatch.setattr(driver, "ROOT", source_root)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path))
 
     driver._prepare_candidate_root(candidate_root, ())
 
@@ -1519,7 +1546,7 @@ def test_prepare_candidate_root_provisions_bundle_and_ignores_live_declared_read
         workspace_input.write_text('{"source": "bundle"}\n')
 
     monkeypatch.setattr(driver, "ROOT", source_root)
-    monkeypatch.setattr(driver, "WORKSPACE", workspace)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(workspace))
     monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
     monkeypatch.setattr(driver, "provision_immutable_inputs", fake_provision)
 
@@ -1572,7 +1599,7 @@ def test_prepare_candidate_root_installs_ledger_bootstrap_in_candidate_workspace
         bootstrap.write_bytes(bootstrap_payload)
 
     monkeypatch.setattr(driver, "ROOT", source_root)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path))
     monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
     monkeypatch.setattr(driver, "provision_immutable_inputs", fake_provision)
 
@@ -1599,7 +1626,7 @@ def test_prepare_candidate_root_rejects_gitlink_without_copying_its_worktree(
     untracked_gitlink_file.write_text("must not enter candidate\n")
     candidate_root = tmp_path / "scratch" / "candidate"
     monkeypatch.setattr(driver, "ROOT", source_root)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path))
     monkeypatch.setattr(
         driver,
         "_tracked_checkout_paths",
@@ -1624,7 +1651,7 @@ def test_prepare_candidate_root_rejects_tracked_symlink_escaping_scratch_workspa
     subprocess.run(["git", "add", escaping_link.name], cwd=source_root, check=True)
     candidate_root = tmp_path / "scratch" / "candidate"
     monkeypatch.setattr(driver, "ROOT", source_root)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path))
 
     with pytest.raises(ValueError, match="candidate symlink escapes scratch workspace"):
         driver._prepare_candidate_root(candidate_root, ())
@@ -1652,7 +1679,7 @@ def test_prepare_candidate_root_materializes_index_content_when_checkout_file_de
 
     candidate_root = tmp_path / "scratch" / "candidate"
     monkeypatch.setattr(driver, "ROOT", source_root)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path))
 
     driver._prepare_candidate_root(candidate_root, ())
 
@@ -1679,7 +1706,7 @@ def test_prepare_candidate_root_ignores_untracked_directory_shadowing_tracked_fi
 
     candidate_root = tmp_path / "scratch" / "candidate"
     monkeypatch.setattr(driver, "ROOT", source_root)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path))
 
     driver._prepare_candidate_root(candidate_root, ())
 
@@ -1709,7 +1736,7 @@ def test_prepare_candidate_root_reads_index_not_symlinked_parent_traversal(
 
     candidate_root = tmp_path / "scratch" / "candidate"
     monkeypatch.setattr(driver, "ROOT", source_root)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path))
 
     driver._prepare_candidate_root(candidate_root, ())
 

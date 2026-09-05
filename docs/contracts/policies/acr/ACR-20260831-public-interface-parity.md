@@ -119,3 +119,39 @@ The accepted I6 public-interface work and J1 compiler-ownership cutover touch pr
 - Contracts reviewer: required on the exact PR head.
 - Ops reviewer: not required.
 - Final decision: owner approval required after CI and independent review; this ACR does not authorize merge.
+
+## W9 cutover — 2026-09-05
+
+AM26–AM29 supersede the original inventory counts above: public Session observations now include host-only immutable annotations, generation/trajectory identity, ordinary child lineage, and the exact predeclared world mask. AM30 reserves the later functional comparison operation; W9 does not advertise it.
+
+The existing Session/event projection owns these facts. Canonical generation feeds Python, TypeScript, and the skeleton manifest; the product TUI pins the SDK from the same engine revision. No new runtime owner, scheduler, provider input, or annotation CRUD route.
+
+Snapshot HTTP and SDK readers drain retained annotations after terminal events. Live readers keep terminal-stop behavior. Unknown kinds/schemas and malformed identity/lineage remain typed failures. The unpublished record cutover adds required Session fields; old public metadata is not silently accepted as the current record.
+
+Proof: durable child recovery through the ordinary public reader; full HTTP and SDK snapshots across settlement; strict decoder regressions; clean installed SDK consumer typing; canonical generation and freeze gates; installed TUI journey and E4 before W9 completion. The AST export-order assertion is removed: importability and annotation narrowing are checked by the installed consumer instead.
+
+Kyle's standing-approval rule authorizes AM26–AM30. Merge still requires green checks and the independent review corrections. Rollback remains a protected merge revert; preserve durable source events, with no destructive state migration.
+
+The client correction retains the existing permission-default and mode overrides
+used by the installed TUI and skeleton. Validated strings and lists retain their
+exact values, so persistence cannot change the pinned runtime generation.
+Unknown keys and structured secret-bearing values stay rejected; interpretation
+remains with the permission owner. No permission API or default policy changes.
+
+### W9 point-in-time snapshot correction
+
+`follow=false` stops after draining its captured batch, including durable post-terminal annotations already present at capture. It no longer rereads durable storage after yielding that batch. Events appended while the response is streaming appear only in a later snapshot. The ASGI regression appends a held-out annotation after the first response chunk and checks both responses. Live-follow behavior and public schemas are unchanged.
+
+### W9 exact Python world-mask type
+
+`WorldFieldMask.paths` is the fixed ordered tuple `("/occurred_at", "/timestamp")`, matching AM29, the canonical schema and the TypeScript tuple. The prior list annotation admitted incomplete, reordered and duplicated paths. A clean mypy consumer accepted an incomplete mask before correction and rejects it afterward; the valid tuple type-checks and serializes to the unchanged JSON array. No new operation, schema or runtime owner.
+
+### W9 live replay completeness
+
+Retained-state refresh no longer copies a cold loader's partial-history marker onto the live event buffer. An unchanged durable head preserves local completeness; a changed head marks a replay gap. A replacement registry still reports partial history when it lacks the stream. The registry consumer regression checks fresh reads, listing and a foreign head advance. The TUI's rejection of partial history without a cursor remains unchanged.
+
+### W9 retained replay boundary
+
+Cold recovery keeps its metadata-only head cursor as a private in-memory boundary while new dispatches advance the durable head. Subscription and preflight share one contiguous-suffix resolver, so an append between them is replayed rather than dropped. A foreign durable-head change replaces the boundary; unavailable history still fails the replay check. Summary and stream-open retention facts include the boundary when it precedes the buffered suffix.
+
+No nonterminal payload, public field, schema, generation input or client guard changes. The regression observes the advertised cursor and delivery of N+1 then N+2 across cold recovery. The obsolete helper assertion is removed; the existing ID/numeric subscription and gap-refusal checks remain. The installed journey supplies the process-replacement proof. Rollback is a protected revert with no persisted-state migration.

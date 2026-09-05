@@ -49,6 +49,7 @@ import {
   type PublicSessionInputRequest,
   type PublicSessionStartRequest,
   type SessionEvent,
+  type WorldFieldMask,
   type StageOutcome,
 } from "@breadboard/sdk"
 import type { AcquireOwnerInput } from "@breadboard/sdk/lifecycle"
@@ -56,6 +57,7 @@ import {
   type AuthCredentialView,
   createBreadboardClient as createEngineClient,
   type ReadSessionFileOptions,
+  type SessionListRow,
   type SessionSummary,
 } from "@breadboard/sdk/engine"
 const input: AcquireOwnerInput = { ownerCredential: "fixture", expectedOwnerGeneration: 1 }
@@ -106,7 +108,14 @@ const approved: Promise<PublicResult> = client.approveSession("session", approva
 const canceled: Promise<PublicResult> = client.cancelSession("session", cancel.reason)
 const listed: Promise<PublicResult> = client.listArtifact()
 const read: Promise<PublicResult> = client.getSessionResult("session")
+const listRows: Promise<SessionListRow[]> = engineClient.listSessions()
 const summary: Promise<SessionSummary> = engineClient.getSession("session")
+const fullIdentity: Promise<readonly [string, string]> = summary.then(({ generation_id, trajectory_segment_id }) => [generation_id, trajectory_segment_id] as const)
+const fullLineage: Promise<SessionSummary["lineage"]> = summary.then(({ lineage }) => lineage)
+function listRowGeneration(row: SessionListRow): string {
+  // @ts-expect-error compact list rows intentionally omit full-record identity
+  return row.generation_id
+}
 const events: AsyncGenerator<SessionEvent, void, void> = client.eventsSession("session")
 void create
 void catalog
@@ -119,7 +128,11 @@ void decision
 void result
 void listed
 void read
+void listRows
 void summary
+void fullIdentity
+void fullLineage
+void listRowGeneration
 void events
 const credential: AuthCredentialView = {
   account_id: "a",
@@ -156,6 +169,16 @@ const event: SessionEvent = {
   payload_schema_version: "bb.payload.product_session.lifecycle.v1",
 }
 void event
+function annotationAuthor(observation: SessionEvent): string | undefined {
+  if (observation.kind === "annotation") return observation.payload.author
+  return undefined
+}
+const mask: WorldFieldMask = {
+  schema_version: "bb.world_field_mask.v1",
+  paths: ["/occurred_at", "/timestamp"],
+}
+void annotationAuthor
+void mask
 `)
   writeFileSync(join(temp, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", strict: true, noEmit: true }, files: ["consumer.ts"] }, null, 2))
   writeFileSync(join(temp, "consumer.mjs"), `

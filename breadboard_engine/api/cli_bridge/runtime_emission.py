@@ -175,6 +175,12 @@ _RETAINED_RUNTIME_OVERRIDE_KEYS = frozenset(
     {
         "completion.natural_finish.idle_turn_limit",
         "mode",
+        "permissions.edit.default",
+        "permissions.options.default_response",
+        "permissions.options.mode",
+        "permissions.read.default",
+        "permissions.shell.default",
+        "permissions.webfetch.default",
         "providers.default_model",
         "skills.allowlist",
         "skills.blocklist",
@@ -199,29 +205,19 @@ def retained_runtime_overrides(
         name = str(key)
         if name not in _RETAINED_RUNTIME_OVERRIDE_KEYS:
             continue
-        if name in {
-            "mode",
-            "providers.default_model",
-            "skills.profile",
-            "workspace.root",
-        }:
-            if isinstance(item, str) and item.strip():
-                retained[name] = item.strip()
-            else:
-                invalid.append(name)
-        elif name in {"skills.allowlist", "skills.blocklist"}:
+        if name in {"skills.allowlist", "skills.blocklist"}:
             if isinstance(item, list) and all(
                 isinstance(entry, str) and entry.strip() for entry in item
             ):
-                retained[name] = [entry.strip() for entry in item]
+                retained[name] = list(item)
             else:
                 invalid.append(name)
-        elif (
-            name == "completion.natural_finish.idle_turn_limit"
-            and isinstance(item, int)
-            and not isinstance(item, bool)
-            and item > 0
-        ):
+        elif name == "completion.natural_finish.idle_turn_limit":
+            if isinstance(item, int) and not isinstance(item, bool) and item > 0:
+                retained[name] = item
+            else:
+                invalid.append(name)
+        elif isinstance(item, str) and item.strip():
             retained[name] = item
         else:
             invalid.append(name)

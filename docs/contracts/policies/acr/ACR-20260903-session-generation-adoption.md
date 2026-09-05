@@ -59,9 +59,26 @@ A Product Session must retain the exact effective Lock identity that governed ea
 - Artifact/state restoration steps: no schema or data migration exists; restore the preceding runtime package artifacts.
 - Post-rollback verification: rerun Product Session replay and model-role runtime tests.
 
+## Retained permission recovery — 2026-09-05
+
+Retained startup keeps `metadata.permission_mode` as the resolved public
+projection, not as a new authored directive. It first rebuilds the implicit
+request without feeding that projection back into permission defaults, then
+tries the bounded projected mode only when the pinned generation requires it.
+Generation mismatch refusal remains authoritative; no effective configuration
+or provider-specific exception is persisted.
+
 ## 8) Approvals
 
 - Kernel reviewer: independent exact-head review required.
 - Contracts reviewer: protected compatibility and danger-zone gates required.
 - Ops reviewer: protected branch checks required.
 - Final decision: protected branch checks and repository merge policy control merge.
+
+## W9 packaged-engine correction
+
+The runtime graph hash recipe remains unchanged. Private Session state retains the original generation source reference separately from the current configuration-loading path. Recovery and explicit generation adoption compile with that retained input, then require exact agreement with the durable generation. The retained absolute reference is a hash input, not a file opened during recovery.
+
+Older records without that input use the existing current-path reconstruction. The source reference is retained only after the full graph matches the pinned generation. Already-relocated historical records whose original source was never recorded still fail typed; no identity is guessed and no generation is silently adopted.
+
+The regression covers new state and the old absolute-source recipe with the new private field absent. It first recovers old state at the same path, removes the original package directory, recovers under a replacement root, adopts a model generation, and recovers again. Each recovered state is compared with the preceding durable owner's snapshot. Real configuration drift remains rejected. No public schema or SDK signature changes.

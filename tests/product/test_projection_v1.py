@@ -52,13 +52,12 @@ def test_session_snapshot_replay_and_live_projections_are_identical() -> None:
     snapshot = project_session_snapshot(session.read_model)
 
     assert replay == live == snapshot
-    assert replay.projector_version == "bb.session.projector.v1"
     assert replay.source.stream == "session:session-1"
     assert (replay.source.first_sequence, replay.source.last_sequence, replay.as_of) == (1, 2, 2)
     with pytest.raises(SessionProjectionAsOfError):
         project_session_replay(session.events, as_of=3)
     with pytest.raises(SessionProjectionVersionError):
-        project_session_replay(session.events, expected_projector_version="bb.session.projector.v2")
+        project_session_replay(session.events, expected_projector_version="bb.session.projector.v1")
 
 
 def test_work_item_snapshot_replay_and_live_projections_are_identical() -> None:

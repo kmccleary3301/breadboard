@@ -73,3 +73,48 @@ Current focused evidence:
 - Kernel/danger-zone review: required on the exact PR head.
 - Independent ownership review: required on the exact PR head.
 - Owner approval: granted for the campaign; merge still requires all exact-head CI and review gates to be green.
+
+## 9) Checkout-boundary correction — 2026-09-05
+
+E4 path resolution now uses the declared workspace root rather than assuming
+every engine checkout is its sibling. Candidate capture and regeneration use
+the same product-owned resolver. C4 scratch capture stays inside its candidate
+checkout instead of relying on an ambient repository registry.
+
+Candidate validation materializes the canonical comparator registry inside the
+validation checkout and rejects stale or symlinked registry destinations.
+Progress references resolve at the checker boundary and reject traversal,
+escaped symlinks, and derivative evidence aliases under pin-policy v2.
+Regeneration watches the declared workspace, while the read-only explain command
+does not require external evidence configuration.
+
+Promotion uses the same candidate-to-accepted mapping for literal and glob
+writes. Progress evidence retains its workspace-relative contract, including
+archived checkout paths; a checkout-relative decoy cannot replace those bytes.
+The shared resolver's explicit workspace namespace validates that authority and
+rejects absolute paths, traversal, and symlink escape without probing other roots.
+Strict pin policy matches derivative roots through any workspace prefix, for
+both the supplied reference and its resolved target. Archive names do not turn
+generated reports into primary evidence.
+
+The correction changes code and its boundary tests, not accepted evidence.
+Missing fixtures are recovered from the governed input bundle, the pinned source
+archive, and the retained integration checkout. Existing accepted bytes are not
+overwritten or invented. Full E4 and fixed-point CI remain the landing gates;
+missing or stale historical custody is classified separately from product reds.
+
+## 10) Promotion destination-parent boundary correction — 2026-09-05
+
+Promotion keeps candidate paths lexical so legitimate candidate symlinks can
+be dereferenced and accepted leaf symlinks can be replaced. Before staging any
+write, candidate-to-accepted mapping resolves the destination parent and requires
+containment within the intended checkout or declared workspace root, before
+discovery can traverse it. Each promotion and rollback operation rechecks that
+containment before mutating its destination.
+Rollback restores dangling leaf symlinks too: their directory entries are accepted
+state even when their targets do not exist.
+
+A nested destination-parent symlink that resolves outside its authorized root
+therefore fails closed before promotion side effects. This is a bounded
+non-hostile-filesystem guarantee; check-then-use validation does not claim
+race-free protection against an active hostile path swap.

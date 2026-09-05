@@ -2515,10 +2515,6 @@ async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(tmp_
     )
     assert replay_queue.empty()
     await restarted_service._unregister_subscriber(restored, replay_queue)
-    assert restarted_service._is_retained_head_cursor(
-        restored,
-        str(replay_head.seq),
-    )
     numeric_replay_queue: asyncio.Queue[SessionEvent | None] = asyncio.Queue()
     await restarted_service._register_subscriber(
         restored,

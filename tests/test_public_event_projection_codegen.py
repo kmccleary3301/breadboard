@@ -35,7 +35,7 @@ def test_projection_owner_preserves_public_envelope() -> None:
     assert projected["schema_version"] == "bb.public_session_event.v1"
     assert projected["event_id"] == "session:session-1:3"
     assert projected["payload_schema_version"] == "bb.payload.message.assistant.v1"
-def test_projection_omits_internal_events_and_identity_only_fields() -> None:
+def test_public_labels_preserve_canonical_targets_without_model_visibility() -> None:
     annotation = {
         "session_id": "session-1",
         "sequence": 4,
@@ -69,9 +69,9 @@ def test_projection_omits_internal_events_and_identity_only_fields() -> None:
         },
     }
 
-    assert public_session_event(annotation) is None
+    label = public_session_event(annotation)
+    assert label["payload_schema_version"] == "bb.payload.product_session.annotation.v1"
+    assert label["payload"]["message_id"] == public_session_event(assistant)["payload"]["message_id"] == "message-a"
+    assert label["payload"]["trajectory_id"] == public_session_event(assistant)["payload"]["trajectory_id"] == "trajectory-a"
+    assert label["visibility"] == {"model_visible": False, "provider_visible": False, "host_visible": True, "redaction_state": "none"}
     assert public_session_event(compaction) is None
-    assert public_session_event(assistant)["payload"] == {
-        "metadata": {"has_content": True},
-    }
-    assert assistant["payload"]["message_id"] == "message-a"

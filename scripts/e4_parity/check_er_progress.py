@@ -7,19 +7,27 @@ import sys
 from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any, Literal, Mapping
-
 from jsonschema import Draft202012Validator
 
 try:
+    from scripts.e4_parity.path_refs import (
+        ReferenceResolutionError,
+        resolve_declared_reference,
+        workspace_root_for_checkout,
+    )
     from scripts.e4_parity.validators.hash_utils import sha256_file
     from scripts.e4_parity.validators.gate_errors import apply_gate_error_envelope, gate_exit_code
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
+    from path_refs import (  # type: ignore[no-redef]
+        ReferenceResolutionError,
+        resolve_declared_reference,
+        workspace_root_for_checkout,
+    )
     from validators.hash_utils import sha256_file
     from validators.gate_errors import apply_gate_error_envelope, gate_exit_code
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKSPACE_ROOT = ROOT.parent
-DEFAULT_PROGRESS = WORKSPACE_ROOT / "docs_tmp" / "phase_16" / "BB_ER_PROGRESS.json"
+DEFAULT_PROGRESS = Path("docs_tmp") / "phase_16" / "BB_ER_PROGRESS.json"
 SCHEMA_PATH = ROOT / "contracts" / "kernel" / "schemas" / "bb.er.progress.v1.schema.json"
 DERIVATIVE_ROOTS_PATH = ROOT / "docs" / "contracts" / "e4_derivative_roots.json"
 PinPolicy = Literal["v1", "v2"]
@@ -35,18 +43,49 @@ def _format_error(error: Any) -> str:
     return f"{prefix}{error.message}"
 
 
-def _display(path: Path) -> str:
-    try:
-        return path.resolve().relative_to(WORKSPACE_ROOT.resolve()).as_posix()
-    except ValueError:
-        return path.as_posix()
+def _display(path: Path, *, workspace_root: Path | None = None) -> str:
+    resolved = path.resolve()
+    for boundary in (workspace_root, ROOT):
+        if boundary is None:
+            continue
+        try:
+            return resolved.relative_to(boundary.resolve()).as_posix()
+        except ValueError:
+            continue
+    return resolved.as_posix()
 
 
-def _resolve_evidence_path(raw_path: str, *, workspace_root: Path) -> Path:
-    path = Path(raw_path)
-    if path.is_absolute():
-        return path
-    return workspace_root / path
+def _resolve_evidence_path(raw_path: str, *, workspace_root: Path | None) -> Path:
+    return resolve_declared_reference(
+        raw_path,
+        checkout_root=ROOT,
+        namespace="workspace",
+        label="evidence reference",
+        workspace_root=workspace_root,
+        must_exist=False,
+    )
+
+
+def _resolve_progress_path(raw_path: str | Path, *, workspace_root: Path | None) -> Path:
+    raw = Path(raw_path)
+    if raw.is_absolute():
+        return raw
+    namespace = (
+        "workspace_evidence"
+        if raw.parts and raw.parts[0] in {"docs_tmp", ROOT.name}
+        else "repo"
+    )
+    declared_workspace_root = workspace_root
+    if namespace == "workspace_evidence" and declared_workspace_root is None:
+        declared_workspace_root = workspace_root_for_checkout(ROOT)
+    return resolve_declared_reference(
+        raw,
+        checkout_root=ROOT,
+        namespace=namespace,
+        label="progress path",
+        workspace_root=declared_workspace_root,
+        must_exist=False,
+    )
 
 
 def _load_derivative_globs() -> list[str]:
@@ -62,9 +101,10 @@ def _derivative_glob_for_path(raw_path: str, globs: list[str]) -> str | None:
     while normalized.startswith("./"):
         normalized = normalized[2:]
     for pattern in globs:
-        if fnmatchcase(normalized, pattern):
+        if fnmatchcase(normalized, pattern) or fnmatchcase(normalized, f"*/{pattern}"):
             return pattern
     return None
+
 
 def _validate_schema(progress: Mapping[str, Any]) -> list[str]:
     schema = _load_json(SCHEMA_PATH)
@@ -123,7 +163,7 @@ def _validate_arithmetic(progress: Mapping[str, Any]) -> list[str]:
     return errors
 
 
-def _validate_evidence(progress: Mapping[str, Any], *, workspace_root: Path, verify_hashes: bool, pin_policy: PinPolicy) -> list[str]:
+def _validate_evidence(progress: Mapping[str, Any], *, workspace_root: Path | None, verify_hashes: bool, pin_policy: PinPolicy) -> list[str]:
     errors: list[str] = []
     workstreams = progress.get("workstreams", [])
     if not isinstance(workstreams, list):
@@ -148,11 +188,29 @@ def _validate_evidence(progress: Mapping[str, Any], *, workspace_root: Path, ver
                 expected_sha = entry.get("sha256")
                 if not isinstance(raw_path, str) or not isinstance(expected_sha, str):
                     continue
-                if derivative_glob := _derivative_glob_for_path(raw_path, derivative_globs):
+                try:
+                    path = _resolve_evidence_path(raw_path, workspace_root=workspace_root)
+                except (OSError, ReferenceResolutionError, RuntimeError, ValueError) as exc:
+                    errors.append(
+                        f"{item_id}.evidence[{entry_index}]: invalid evidence path {raw_path!r}: {exc}"
+                    )
+                    continue
+                derivative_glob = _derivative_glob_for_path(
+                    raw_path, derivative_globs
+                ) or _derivative_glob_for_path(
+                    _display(path, workspace_root=workspace_root), derivative_globs
+                )
+                if derivative_glob:
                     errors.append(f"{item_id}.evidence[{entry_index}]: derivative evidence path {raw_path} matches pin-policy v2 deny glob {derivative_glob}")
-                path = _resolve_evidence_path(raw_path, workspace_root=workspace_root)
-                if not path.is_file():
-                    errors.append(f"{item_id}.evidence[{entry_index}]: missing evidence file {_display(path)}")
+                try:
+                    is_file = path.is_file()
+                except (OSError, RuntimeError, ValueError) as exc:
+                    errors.append(
+                        f"{item_id}.evidence[{entry_index}]: invalid evidence path {raw_path!r}: {exc}"
+                    )
+                    continue
+                if not is_file:
+                    errors.append(f"{item_id}.evidence[{entry_index}]: missing evidence file {_display(path, workspace_root=workspace_root)}")
                     continue
                 if verify_hashes:
                     actual_sha = sha256_file(path)
@@ -161,7 +219,8 @@ def _validate_evidence(progress: Mapping[str, Any], *, workspace_root: Path, ver
     return errors
 
 
-def check_progress(progress_path: Path = DEFAULT_PROGRESS, *, workspace_root: Path = WORKSPACE_ROOT, verify_hashes: bool = True, pin_policy: PinPolicy = "v1") -> dict[str, Any]:
+def check_progress(progress_path: Path = DEFAULT_PROGRESS, *, workspace_root: Path | None = None, verify_hashes: bool = True, pin_policy: PinPolicy = "v1") -> dict[str, Any]:
+    progress_path = _resolve_progress_path(progress_path, workspace_root=workspace_root)
     progress = _load_json(progress_path)
     if not isinstance(progress, Mapping):
         errors = ["progress JSON must be an object"]
@@ -172,7 +231,7 @@ def check_progress(progress_path: Path = DEFAULT_PROGRESS, *, workspace_root: Pa
         errors.extend(_validate_evidence(progress, workspace_root=workspace_root, verify_hashes=verify_hashes, pin_policy=pin_policy))
     report = {
         "schema_version": "bb.er.progress_check_report.v1",
-        "progress_path": _display(progress_path),
+        "progress_path": _display(progress_path, workspace_root=workspace_root),
         "schema_path": _display(SCHEMA_PATH),
         "verify_hashes": verify_hashes,
         "pin_policy": pin_policy,
@@ -192,26 +251,27 @@ def check_progress(progress_path: Path = DEFAULT_PROGRESS, *, workspace_root: Pa
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Validate BB_ER_PROGRESS schema, arithmetic, and evidence invariants.")
-    parser.add_argument("--progress", default=str(DEFAULT_PROGRESS))
+    parser.add_argument("--progress")
     parser.add_argument("progress_path", nargs="?", help="Progress JSON path; positional form is kept for the documented G-PROG gate.")
-    parser.add_argument("--workspace-root", default=str(WORKSPACE_ROOT))
+    parser.add_argument("--workspace-root")
     parser.add_argument("--json-out")
     parser.add_argument("--no-verify-hashes", action="store_true")
     parser.add_argument("--pin-policy", choices=("v1", "v2"), default="v1")
     args = parser.parse_args(argv)
+    progress_reference = args.progress_path or args.progress or str(DEFAULT_PROGRESS)
+    workspace_root = Path(args.workspace_root) if args.workspace_root else None
 
     try:
-        progress_path = Path(args.progress_path or args.progress)
         report = check_progress(
-            progress_path,
-            workspace_root=Path(args.workspace_root),
+            Path(progress_reference),
+            workspace_root=workspace_root,
             verify_hashes=not args.no_verify_hashes,
             pin_policy=args.pin_policy,
         )
     except Exception as exc:
         report = {
             "schema_version": "bb.er.progress_check_report.v1",
-            "progress_path": args.progress,
+            "progress_path": progress_reference,
             "schema_path": _display(SCHEMA_PATH),
             "verify_hashes": not args.no_verify_hashes,
             "pin_policy": args.pin_policy,
@@ -220,7 +280,6 @@ def main(argv: list[str] | None = None) -> int:
             "errors": [str(exc)],
         }
         apply_gate_error_envelope(report, "er_progress")
-
     text = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.json_out:
         output_path = Path(args.json_out)

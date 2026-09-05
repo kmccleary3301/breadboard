@@ -183,18 +183,31 @@ test("bearer tokens allow HTTPS and literal loopback HTTP", async () => {
   }
 })
 
-test("session readers preserve the established summary and expose an explicit raw envelope", async (t) => {
+test("session readers distinguish compact list rows from full records", async (t) => {
   const originalFetch = globalThis.fetch
   t.after(() => { globalThis.fetch = originalFetch })
-  const summary = { session_id: "session-1", status: "completed", event_count: 2 }
+  const listRow = { session_id: "session-1", status: "completed", event_count: 2 }
+  const summary = {
+    schema_version: "bb.session.v1",
+    session_id: "session-1",
+    status: "completed",
+    effective_lock_hash: "sha256:" + "a".repeat(64),
+    generation_id: "sha256:" + "a".repeat(64),
+    trajectory_segment_id: "session-1:segment:0:" + "a".repeat(64),
+    task_hash: "sha256:" + "b".repeat(64),
+    event_count: 2,
+    lineage: null,
+    pending_approval: null,
+    terminal_outcome: null,
+  }
   const envelope = (data) => ({ schema_version: "bb.cli.result.v1", ok: true, status: "ok", command: [], record_refs: [], hashes: {}, stage_outcomes: [], warnings: [], next_actions: [], error: null, exit_code: 0, data })
   globalThis.fetch = async (input) => {
     const path = new URL(String(input)).pathname
-    const data = path.endsWith("/session-1") ? { session: summary } : { sessions: [summary], count: 1 }
+    const data = path.endsWith("/session-1") ? { session: summary } : { sessions: [listRow], count: 1 }
     return new Response(JSON.stringify(envelope(data)), { headers: { "content-type": "application/json" } })
   }
   const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
-  assert.deepEqual(await client.listSessions(), [summary])
+  assert.deepEqual(await client.listSessions(), [listRow])
   assert.deepEqual(await client.getSession("session-1"), summary)
   assert.deepEqual(await client.getSessionResult("session-1"), envelope({ session: summary }))
 })

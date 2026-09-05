@@ -25,7 +25,12 @@ export type {
   PublicSessionDecision,
   PublicSessionInputRequest,
   PublicSessionStartRequest,
+  PublicSessionEventKind,
+  PublicSessionEventPayloadSchema,
+  SessionAnnotationPayload,
   SessionEvent,
+  SessionEventLineage,
   SessionEventVisibility,
   StageOutcome,
+  WorldFieldMask,
 } from "./types.js"

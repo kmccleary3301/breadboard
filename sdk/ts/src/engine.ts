@@ -9,5 +9,6 @@ export type {
   AuthCredentialView,
   AuthProviderView,
   ReadSessionFileOptions,
+  SessionListRow,
   SessionSummary,
 } from "./types.js"
