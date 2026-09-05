@@ -241,6 +241,7 @@ class SessionRecord:
     admission_lock: "asyncio.Lock" = field(default_factory=asyncio.Lock, repr=False)
     loaded_from_retained_state: bool = field(default=False, repr=False)
     retained_turn_journal_digest: Optional[str] = field(default=None, repr=False)
+    runtime_generation_source_ref: Optional[str] = field(default=None, repr=False)
 
     def projected_status(self) -> SessionStatus:
         if self.product_session is None:

@@ -1663,6 +1663,7 @@ class SessionService:
         runtime_graph = compile_runtime_effective_config_graph(
             session_id, persisted_runtime_config, request.config_path
         )
+        record.runtime_generation_source_ref = runtime_graph["source_layers"][0]["source_ref"]
         if role_lock is not None:
             runtime_graph = embed_model_role_lock(runtime_graph, role_lock)
             metadata["model_role_lock_hash"] = role_lock.lock_hash
@@ -2610,10 +2611,13 @@ class SessionService:
                 ),
             )
             runtime_config = runner.prepare_runtime_config()
+            generation_source_ref = (
+                record.runtime_generation_source_ref or runner.request.config_path
+            )
             rebuilt_generation = self._runtime_lock(
                 record.session_id,
                 runtime_config,
-                runner.request.config_path,
+                generation_source_ref,
             ).as_dict()["graph_hash"]
         except Exception as error:
             raise ReplayError(
@@ -2625,6 +2629,9 @@ class SessionService:
                 "generation_mismatch",
                 f"retained session {record.session_id!r} runtime generation does not match its durable journal",
             )
+        if record.runtime_generation_source_ref is None:
+            record.runtime_generation_source_ref = generation_source_ref
+            await self.registry.persist(record)
         self._bind_restored_durable_product_session(
             record,
             runner,
@@ -3500,7 +3507,9 @@ class SessionService:
                 else dict(runtime_config)
             )
             candidate_lock = self._runtime_lock(
-                session_id, candidate_config, runner.request.config_path
+                session_id,
+                candidate_config,
+                record.runtime_generation_source_ref or runner.request.config_path,
             )
             runner.transition_product_session(
                 "reconfigure",

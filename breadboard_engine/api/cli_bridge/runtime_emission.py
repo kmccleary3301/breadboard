@@ -236,15 +236,9 @@ def _config_path(repo_root: Path, config_path: str) -> Path:
     return candidate if candidate.exists() else raw.resolve()
 def compile_runtime_effective_config_graph(session_id: str, runtime_config: Mapping[str, Any], source_ref: str, *, repo_root: Path | None = None) -> dict[str, Any]:
     root = (repo_root or Path(__file__).resolve().parents[3]).resolve()
-    source_path = _config_path(root, source_ref).resolve()
-    # Bundle extraction directories are placement, not generation identity.
-    try:
-        source_ref = source_path.relative_to(root).as_posix()
-    except ValueError:
-        source_ref = str(source_path)
     return compile_effective_config_graph(graph_id=f"{session_id}_effective_config_graph", layers=[{
         "layer_id": "runtime:effective", "source_kind": "runtime", "scope": "session", "precedence": 0,
-        "source_ref": source_ref, "values": _sanitize_persisted_runtime_config(runtime_config),
+        "source_ref": str(_config_path(root, source_ref)), "values": _sanitize_persisted_runtime_config(runtime_config),
     }])
 def _tool_names(config: Mapping[str, Any]) -> list[str]:
     from ...conductor.components import initialize_yaml_tools
