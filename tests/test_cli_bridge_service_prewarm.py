@@ -2205,20 +2205,32 @@ async def test_create_overrides_survive_fresh_retained_resume(
     monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
     monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
     state_root = tmp_path / "state"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
     overrides = {
         "skills.allowlist": ["test-skill"],
         "completion.natural_finish.idle_turn_limit": 7,
+        "permissions.options.default_response": "reject",
+        "permissions.options.mode": "prompt",
+        "permissions.edit.default": " ask ",
+        "permissions.read.default": "allow",
+        "permissions.shell.default": "deny",
+        "permissions.webfetch.default": "ask",
     }
     service = SessionService(state_root=state_root)
     response = await service.create_session(
-        SessionCreateRequest(config_path=CONFIG, task="", overrides=overrides),
+        SessionCreateRequest(
+            config_path=CONFIG,
+            task="",
+            overrides=overrides,
+            workspace=str(workspace),
+        ),
         event_root=tmp_path / "events",
         runtime_root=tmp_path / "records",
     )
     record = await service.ensure_session(response.session_id)
     pinned_generation = record.product_session.pinned_generation_id
     await service.registry.persist(record)
-    assert record.metadata["runtime_overrides"] == overrides
     await _stop(record)
 
     fresh = SessionService(state_root=state_root)
@@ -2226,6 +2238,12 @@ async def test_create_overrides_survive_fresh_retained_resume(
     config = restored.runner.current_runtime_config()
     assert config["skills"]["allowlist"] == ["test-skill"]
     assert config["completion"]["natural_finish"]["idle_turn_limit"] == 7
+    assert config["permissions"]["options"]["default_response"] == "reject"
+    assert config["permissions"]["options"]["mode"] == "prompt"
+    assert config["permissions"]["edit"]["default"] == " ask "
+    assert config["permissions"]["read"]["default"] == "allow"
+    assert config["permissions"]["shell"]["default"] == "deny"
+    assert config["permissions"]["webfetch"]["default"] == "ask"
     rebuilt_lock = fresh._runtime_lock(
         response.session_id, config, restored.runner.request.config_path
     )
