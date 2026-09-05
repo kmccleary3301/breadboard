@@ -119,3 +119,15 @@ The accepted I6 public-interface work and J1 compiler-ownership cutover touch pr
 - Contracts reviewer: required on the exact PR head.
 - Ops reviewer: not required.
 - Final decision: owner approval required after CI and independent review; this ACR does not authorize merge.
+
+## W9 cutover — 2026-09-05
+
+AM26–AM29 supersede the original inventory counts above: public Session observations now include host-only immutable annotations, generation/trajectory identity, ordinary child lineage, and the exact predeclared world mask. AM30 reserves the later functional comparison operation; W9 does not advertise it.
+
+The existing Session/event projection owns these facts. Canonical generation feeds Python, TypeScript, and the skeleton manifest; the product TUI pins the SDK from the same engine revision. No new runtime owner, scheduler, provider input, or annotation CRUD route.
+
+Snapshot HTTP and SDK readers drain retained annotations after terminal events. Live readers keep terminal-stop behavior. Unknown kinds/schemas and malformed identity/lineage remain typed failures. The unpublished record cutover adds required Session fields; old public metadata is not silently accepted as the current record.
+
+Proof: durable child recovery through the ordinary public reader; full HTTP and SDK snapshots across settlement; strict decoder regressions; clean installed SDK consumer typing; canonical generation and freeze gates; installed TUI journey and E4 before W9 completion. The AST export-order assertion is removed: importability and annotation narrowing are checked by the installed consumer instead.
+
+Kyle's standing-approval rule authorizes AM26–AM30. Merge still requires green checks and the independent review corrections. Rollback remains a protected merge revert; preserve durable source events, with no destructive state migration.

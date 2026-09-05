@@ -49,6 +49,7 @@ import {
   type PublicSessionInputRequest,
   type PublicSessionStartRequest,
   type SessionEvent,
+  type WorldFieldMask,
   type StageOutcome,
 } from "@breadboard/sdk"
 import type { AcquireOwnerInput } from "@breadboard/sdk/lifecycle"
@@ -156,6 +157,16 @@ const event: SessionEvent = {
   payload_schema_version: "bb.payload.product_session.lifecycle.v1",
 }
 void event
+function annotationAuthor(observation: SessionEvent): string | undefined {
+  if (observation.kind === "annotation") return observation.payload.author
+  return undefined
+}
+const mask: WorldFieldMask = {
+  schema_version: "bb.world_field_mask.v1",
+  paths: ["/occurred_at", "/timestamp"],
+}
+void annotationAuthor
+void mask
 `)
   writeFileSync(join(temp, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", strict: true, noEmit: true }, files: ["consumer.ts"] }, null, 2))
   writeFileSync(join(temp, "consumer.mjs"), `

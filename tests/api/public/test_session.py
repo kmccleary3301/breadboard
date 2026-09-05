@@ -435,13 +435,14 @@ def test_public_event_limit_counts_annotations_but_skips_compaction(
     assert len(after_compaction) == 1
     assert after_compaction[0]["kind"] == "session.completed"
     assert after_compaction[0]["seq"] == 7
-    labels_after_settlement = client.get(
-        f"/v1/sessions/{session_id}/events?resume_token=7&limit=1&follow=false"
+    snapshot = client.get(
+        f"/v1/sessions/{session_id}/events?follow=false"
     )
-    assert labels_after_settlement.status_code == 200
-    label = _stream_records(labels_after_settlement)[0]
-    assert label["seq"] == 8
-    assert label["payload"]["annotation_id"] == "post-run"
+    assert snapshot.status_code == 200
+    settled_and_labeled = _stream_records(snapshot)[-2:]
+    assert [event["kind"] for event in settled_and_labeled] == ["session.completed", "annotation"]
+    assert [event["seq"] for event in settled_and_labeled] == [7, 8]
+    assert settled_and_labeled[1]["payload"]["annotation_id"] == "post-run"
 
 
 def test_live_event_limit_returns_annotation_before_later_input(

@@ -653,7 +653,7 @@ async def events(
                     "\n\n"
                 )
                 emitted += 1
-                if terminal or emitted >= limit:
+                if (follow and terminal) or emitted >= limit:
                     return
             if emitted >= limit:
                 return
