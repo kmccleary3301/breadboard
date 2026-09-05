@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Literal, Optional, TypedDict
+from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple, TypedDict
 
 from .generated.session_event_bindings import (
     PublicSessionEventKind,
@@ -34,7 +34,7 @@ class SessionAnnotationPayload(TypedDict):
 
 class WorldFieldMask(TypedDict):
     schema_version: Literal["bb.world_field_mask.v1"]
-    paths: List[Literal["/occurred_at", "/timestamp"]]
+    paths: Tuple[Literal["/occurred_at"], Literal["/timestamp"]]
 
 
 

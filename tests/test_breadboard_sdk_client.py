@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 
-from typing import Any
+from typing import Any, get_type_hints
 
 import pytest
+from pydantic import TypeAdapter, ValidationError
 
 from breadboard_sdk.generated.public_bindings import (
     PUBLIC_BINDINGS_BY_OPERATION_ID,
@@ -16,7 +17,7 @@ import breadboard_sdk.client as client_module
 from breadboard_sdk.client import BreadBoardClient
 from breadboard_sdk.compat import CompatibilityBreadboardClient
 
-from breadboard_sdk.types import SessionEvent
+from breadboard_sdk.types import SessionEvent, WorldFieldMask
 
 
 class _JsonResponse:
@@ -499,3 +500,11 @@ def test_compatibility_create_session_omits_only_an_absent_config_path(
             },
         ),
     ]
+
+
+def test_python_world_mask_type_enforces_canonical_pointer_order() -> None:
+    adapter = TypeAdapter(get_type_hints(WorldFieldMask)["paths"])
+    canonical = b'["/occurred_at","/timestamp"]'
+    assert adapter.dump_json(adapter.validate_json(canonical)) == canonical
+    with pytest.raises(ValidationError):
+        adapter.validate_json(b'["/timestamp","/occurred_at"]')
