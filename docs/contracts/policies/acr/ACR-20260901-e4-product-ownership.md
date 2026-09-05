@@ -93,6 +93,9 @@ writes. Progress evidence retains its workspace-relative contract, including
 archived checkout paths; a checkout-relative decoy cannot replace those bytes.
 The shared resolver's explicit workspace namespace validates that authority and
 rejects absolute paths, traversal, and symlink escape without probing other roots.
+Strict pin policy matches derivative roots through any workspace prefix, for
+both the supplied reference and its resolved target. Archive names do not turn
+generated reports into primary evidence.
 
 The correction changes code and its boundary tests, not accepted evidence.
 Missing fixtures are recovered from the governed input bundle, the pinned source

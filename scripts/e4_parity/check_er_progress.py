@@ -100,11 +100,8 @@ def _derivative_glob_for_path(raw_path: str, globs: list[str]) -> str | None:
     normalized = raw_path.replace("\\", "/")
     while normalized.startswith("./"):
         normalized = normalized[2:]
-    checkout_prefix = f"{ROOT.name}/"
-    if normalized.startswith(checkout_prefix):
-        normalized = normalized[len(checkout_prefix):]
     for pattern in globs:
-        if fnmatchcase(normalized, pattern):
+        if fnmatchcase(normalized, pattern) or fnmatchcase(normalized, f"*/{pattern}"):
             return pattern
     return None
 

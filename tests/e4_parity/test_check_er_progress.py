@@ -372,9 +372,21 @@ def test_check_er_progress_resolves_archived_evidence_from_declared_workspace(
     ]
     _write_json(progress_path, progress)
 
-    report = checker.check_progress(progress_path, workspace_root=workspace)
+    report = checker.check_progress(progress_path, workspace_root=workspace, pin_policy="v2")
 
     assert report["ok"] is True, report["errors"]
+
+
+def test_pin_policy_v2_rejects_archived_derivative_evidence(tmp_path: Path) -> None:
+    progress_path = _minimal_progress_with_evidence_path(
+        tmp_path,
+        "held-out/archived-checkout/docs/conformance/e4_artifact_catalog.json",
+    )
+
+    report = checker.check_progress(progress_path, workspace_root=tmp_path, pin_policy="v2")
+
+    _assert_gate_envelope(report, klass="semantic", exit_code=4)
+
 
 def test_live_bb_er_progress_passes_checker() -> None:
     workspace_root = workspace_root_for_checkout(ROOT)
