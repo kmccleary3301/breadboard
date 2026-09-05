@@ -14,7 +14,7 @@ const percentile = (values: number[], q: number): number => {
   return sorted[index] ?? sorted[sorted.length - 1] ?? 0
 }
 
-const benchmark = async (cached: boolean, samples: number): Promise<{ durations: number[]; hitRatio: number }> => {
+const benchmark = async (cached: boolean, samples: number): Promise<{ durations: number[]; hitRatio: number; coldMs: number }> => {
   __resetTaskFocusTailCacheForTests()
   let reads = 0
   const readFile = async (filePath: string) => {
@@ -27,7 +27,9 @@ const benchmark = async (cached: boolean, samples: number): Promise<{ durations:
     }
   }
   const durations: number[] = []
-  for (let index = 0; index < samples; index += 1) {
+  let coldMs = 0
+  // Report the cold miss separately from cache-hit latency.
+  for (let index = 0; index <= samples; index += 1) {
     const started = performance.now()
     await loadTaskFocusTail(
       {
@@ -42,14 +44,16 @@ const benchmark = async (cached: boolean, samples: number): Promise<{ durations:
         cacheTtlMs: 10_000,
         nowMs: 5_000 + index,
       },
-      readFile as any,
+      readFile,
     )
-    durations.push(performance.now() - started)
+    const duration = performance.now() - started
+    if (index === 0) coldMs = duration
+    else durations.push(duration)
   }
   const stats = getTaskFocusTailCacheStats()
   const requestCount = Math.max(1, stats.hits + stats.misses)
   const hitRatio = stats.hits / requestCount
-  return { durations, hitRatio }
+  return { durations, hitRatio, coldMs }
 }
 
 const main = async (): Promise<void> => {
@@ -71,12 +75,15 @@ const main = async (): Promise<void> => {
       cacheHitRatioHealthy: cached.hitRatio >= 0.75,
     },
     metrics: {
+      warmupCount: 1,
       sampleCount,
       uncached: {
+        coldMs: uncached.coldMs,
         p95Ms: p95Uncached,
         maxMs: maxUncached,
       },
       cached: {
+        coldMs: cached.coldMs,
         p95Ms: p95Cached,
         maxMs: maxCached,
         hitRatio: cached.hitRatio,
