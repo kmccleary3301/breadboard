@@ -84,11 +84,9 @@ def _minimal_progress(tmp_path: Path) -> tuple[Path, dict[str, object]]:
 def _minimal_progress_with_evidence_path(
     tmp_path: Path,
     relative_path: str,
-    *,
-    checkout_root: Path | None = None,
 ) -> Path:
     progress_path, progress = _minimal_progress(tmp_path)
-    evidence = (checkout_root or tmp_path) / relative_path
+    evidence = tmp_path / relative_path
     evidence.parent.mkdir(parents=True, exist_ok=True)
     evidence.write_text(f"fixture for {relative_path}\n", encoding="utf-8")
     progress["workstreams"][0]["items"][0]["evidence"] = [
@@ -194,7 +192,6 @@ def test_pin_policy_v1_allows_derivative_evidence_path(
     progress_path = _minimal_progress_with_evidence_path(
         tmp_path,
         derivative_path,
-        checkout_root=checkout,
     )
 
     report = checker.check_progress(progress_path, workspace_root=tmp_path, pin_policy="v1")
@@ -220,7 +217,6 @@ def test_pin_policy_v2_rejects_seed_derivative_evidence_roots(
     progress_path = _minimal_progress_with_evidence_path(
         tmp_path,
         derivative_path,
-        checkout_root=checkout,
     )
 
     report = checker.check_progress(progress_path, workspace_root=tmp_path, pin_policy="v2")
@@ -240,7 +236,6 @@ def test_pin_policy_v2_cli_rejects_derivative_evidence_path_and_writes_json(
     progress_path = _minimal_progress_with_evidence_path(
         tmp_path,
         derivative_path,
-        checkout_root=checkout,
     )
     report_path = tmp_path / "report.json"
 
@@ -360,22 +355,38 @@ def test_check_er_progress_rejects_symlink_escape_evidence_reference(tmp_path: P
     assert any("invalid evidence path" in error and "escapes" in error for error in report["errors"])
 
 
-def test_check_er_progress_resolves_repo_evidence_without_workspace_configuration(
+def test_check_er_progress_resolves_archived_evidence_from_declared_workspace(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("BB_WORKSPACE_ROOT", raising=False)
-    progress_path, progress = _minimal_progress(tmp_path)
-    repo_evidence = checker.ROOT / "scripts" / "e4_parity" / "check_er_progress.py"
+    workspace = tmp_path / "workspace"
+    checkout = tmp_path / "checkout"
+    progress_path, progress = _minimal_progress(workspace)
+    reference = "archived-checkout/source.json"
+    evidence = workspace / reference
+    _write_json(evidence, {"accepted": "held-out archive"})
+    _write_json(checkout / reference, {"decoy": "current checkout"})
+    monkeypatch.setattr(checker, "ROOT", checkout)
     progress["workstreams"][0]["items"][0]["evidence"] = [
-        {"path": "scripts/e4_parity/check_er_progress.py", "sha256": _sha256(repo_evidence)}
+        {"path": reference, "sha256": _sha256(evidence)}
     ]
     _write_json(progress_path, progress)
 
-    report = checker.check_progress(progress_path)
+    report = checker.check_progress(progress_path, workspace_root=workspace, pin_policy="v2")
 
-    assert report["ok"] is True
-    assert report["error_count"] == 0
+    assert report["ok"] is True, report["errors"]
+
+
+def test_pin_policy_v2_rejects_archived_derivative_evidence(tmp_path: Path) -> None:
+    progress_path = _minimal_progress_with_evidence_path(
+        tmp_path,
+        "held-out/archived-checkout/docs/conformance/e4_artifact_catalog.json",
+    )
+
+    report = checker.check_progress(progress_path, workspace_root=tmp_path, pin_policy="v2")
+
+    _assert_gate_envelope(report, klass="semantic", exit_code=4)
+
 
 def test_live_bb_er_progress_passes_checker() -> None:
     workspace_root = workspace_root_for_checkout(ROOT)

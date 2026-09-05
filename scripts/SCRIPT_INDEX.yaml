@@ -1130,9 +1130,9 @@ entries:
     callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/check_er_progress.py
-    class: live-wired
+    class: live-owned
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, tests/e4_parity/test_check_er_progress.py]
+    callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/compile_lane_lock.py
     class: live-wired
