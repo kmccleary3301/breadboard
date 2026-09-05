@@ -131,3 +131,9 @@ Snapshot HTTP and SDK readers drain retained annotations after terminal events. 
 Proof: durable child recovery through the ordinary public reader; full HTTP and SDK snapshots across settlement; strict decoder regressions; clean installed SDK consumer typing; canonical generation and freeze gates; installed TUI journey and E4 before W9 completion. The AST export-order assertion is removed: importability and annotation narrowing are checked by the installed consumer instead.
 
 Kyle's standing-approval rule authorizes AM26–AM30. Merge still requires green checks and the independent review corrections. Rollback remains a protected merge revert; preserve durable source events, with no destructive state migration.
+
+The installed-client correction retains the five existing permission-default
+overrides supplied by the TUI. They remain bounded nonempty strings, interpreted
+by the permission owner; unknown keys and structured secret-bearing values stay
+rejected. Fresh authority restoration preserves the requested policy and pinned
+generation. No permission API or default policy changes.
