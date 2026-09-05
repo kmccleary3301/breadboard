@@ -12,10 +12,10 @@ import hashlib
 import json
 import math
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
@@ -87,6 +87,13 @@ class _DarwinProcBsdInfo(ctypes.Structure):
 
 _TERMINAL = frozenset({"completed", "failed", "canceled"})
 _CHILD_SCHEMA = "bb.durable_child.v1"
+RESEARCH_WORLD_WORKER_COMMAND: tuple[str, ...] = ("@breadboard/research-world-worker/v1",)
+_RESEARCH_WORKER_TOKEN = RESEARCH_WORLD_WORKER_COMMAND[0]
+_RESEARCH_WORKER_BINDING_ENV = "BREADBOARD_RESEARCH_WORLD_WORKER"
+_RESEARCH_WORKER_MODE_ENV = "BREADBOARD_RESEARCH_WORLD_MODE"
+_RESEARCH_WORKER_CLOSURE_ENV = "BREADBOARD_VERIFIED_ENGINE_ROOT"
+_RESEARCH_WORKER_MAX_TASK_BYTES = 1024 * 1024
+_RESEARCH_WORKER_MAX_RESULT_BYTES = 4 * 1024 * 1024
 
 def _is_sha256(value: object) -> bool:
     return (
@@ -654,6 +661,28 @@ class DurableChildFactory:
                 artifact_binder(self.artifacts)
         if not self.adapters:
             raise ValueError("at least one child execution adapter is required")
+    @classmethod
+    def with_async_registry(
+        cls,
+        workspace: str | Path,
+        *,
+        registry: Any,
+        repository: WorkItemRepository,
+        adapters: Iterable[ChildExecutionAdapter],
+        artifact_store: ArtifactStore | None = None,
+        clock: Clock | None = None,
+        ids: IdSource | None = None,
+    ) -> "DurableChildFactory":
+        loop = asyncio.get_running_loop()
+        return cls(
+            workspace,
+            registry=_RegistryThreadBridge(registry, loop),
+            repository=repository,
+            adapters=adapters,
+            artifact_store=artifact_store,
+            clock=clock,
+            ids=ids,
+        )
     @classmethod
     def _owner_lock(cls, key: str) -> threading.RLock:
         with cls._owner_locks_guard:
@@ -2774,6 +2803,26 @@ class DurableChildFactory:
                 )
             except LateResultRejected:
                 return self._cancel_late_settlement(state)
+        if observed == "failed":
+            state = self._cas(state, execution_target=state.execution_target)
+            if not state.result_prepared:
+                state = self.prepare_result(
+                    child_session_id,
+                    expected_revision=state.revision,
+                    attempt_id=state.attempt_id,
+                    _allow_cancellation_intent=True,
+                )
+            try:
+                return self._settle_request(
+                    child_session_id,
+                    expected_revision=state.revision,
+                    outcome="failed",
+                    result_refs=state.result_refs,
+                    attempt_id=state.attempt_id,
+                    _allow_cancellation_intent=True,
+                )
+            except LateResultRejected:
+                return self._cancel_late_settlement(state)
         child = WorkItem.restore(self.repository, state.child_work_item_id, clock=self.clock, ids=self.ids)
         adapter = self.adapters[state.adapter_family]
         if observed == "absent":
@@ -2973,9 +3022,14 @@ class DurableChildReconciler:
             UnavailableChildAdapter(retained_family)
             for retained_family in sorted(retained_families - available_families)
         )
-        loop = asyncio.get_running_loop()
         artifact_store = ArtifactStore(Path(artifact_store_root)) if isinstance(artifact_store_root, str) else None
-        return DurableChildFactory(workspace, registry=_RegistryThreadBridge(self.registry, loop), repository=repository, adapters=adapters, artifact_store=artifact_store)
+        return DurableChildFactory.with_async_registry(
+            workspace,
+            registry=self.registry,
+            repository=repository,
+            adapters=adapters,
+            artifact_store=artifact_store,
+        )
     async def __call__(self, recovery_ref: str) -> ChildState:
         factory = await self._build_factory(recovery_ref)
         return await asyncio.to_thread(factory.reconcile, recovery_ref)
@@ -3769,12 +3823,6 @@ class RayJobAdapter:
                 return ArtifactRef(str(ref["digest"]), int(ref["size_bytes"]), str(ref["media_type"]))
             except (KeyError, TypeError, ValueError):
                 return None
-        result = payload.get("result")
-        if isinstance(result, str):
-            return result.encode()
-        if isinstance(result, Mapping):
-            return json.dumps(result, sort_keys=True).encode()
-        return None
 class ProcessExecutionAdapter:
     family = "execution-world-process"
     released_absence_is_terminal = True
@@ -3786,11 +3834,52 @@ class ProcessExecutionAdapter:
         self._processes: dict[str, subprocess.Popen[bytes]] = {}
         self._status_paths: dict[str, Path] = {}
         self._workspace: Path | None = None
+
     def retained_config(self) -> dict[str, Any]:
-        return {"command": list(self.command)}
+        command = (_RESEARCH_WORKER_TOKEN,) if self.command == (_RESEARCH_WORKER_TOKEN,) else self.command
+        return {"command": list(command)}
 
     def bind_workspace(self, workspace: Path) -> None:
         self._workspace = workspace
+
+    @staticmethod
+    def _worker_binding() -> Path:
+        binding = os.environ.get(_RESEARCH_WORKER_BINDING_ENV)
+        if not binding:
+            raise ChildError(f"{_RESEARCH_WORKER_BINDING_ENV} is required for the research worker")
+        mode = os.environ.get(_RESEARCH_WORKER_MODE_ENV)
+        if mode not in {"source", "frozen"}:
+            raise ChildError(f"{_RESEARCH_WORKER_MODE_ENV} must be explicitly set to source or frozen")
+        path = Path(binding).expanduser().resolve()
+        if not path.is_absolute() or not path.is_file() or not os.access(path, os.X_OK):
+            raise ChildError(f"{_RESEARCH_WORKER_BINDING_ENV} is not an executable file")
+        if mode == "frozen":
+            closure = os.environ.get(_RESEARCH_WORKER_CLOSURE_ENV)
+            if not closure:
+                raise ChildError(f"{_RESEARCH_WORKER_CLOSURE_ENV} is required in frozen mode")
+            root = Path(closure).expanduser().resolve()
+            try:
+                path.relative_to(root)
+            except ValueError as error:
+                raise ChildError("research worker binding is outside the verified engine closure") from error
+        return path
+
+    @staticmethod
+    def _is_worker_command(command: Sequence[str]) -> bool:
+        return tuple(command) == (_RESEARCH_WORKER_TOKEN,)
+
+    def _materialize_worker(self, source: Path, workspace: Path, target_ref: str) -> Path:
+        root = workspace / ".breadboard" / "process-children"
+        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        root.chmod(0o700)
+        name = hashlib.sha256(target_ref.encode("utf-8")).hexdigest() + ".worker"
+        destination = root / name
+        temporary = root / f".{name}.{os.urandom(8).hex()}.tmp"
+        shutil.copyfile(source, temporary)
+        temporary.chmod(0o700)
+        os.replace(temporary, destination)
+        AnchoredStorage.sync_directory(root)
+        return destination
 
     _TERM_TIMEOUT_SECONDS = 0.5
     _KILL_TIMEOUT_SECONDS = 0.5
@@ -3815,7 +3904,7 @@ class ProcessExecutionAdapter:
 
     def _wait_for_exit(self, target: Mapping[str, Any], timeout: float) -> bool:
         deadline = time.monotonic() + timeout
-        while self.observe(target) not in {"absent", "completed"}:
+        while self.observe(target) not in {"absent", "completed", "failed"}:
             if time.monotonic() >= deadline:
                 return False
             time.sleep(0.01)
@@ -3892,7 +3981,7 @@ class ProcessExecutionAdapter:
         self._write_control(self._known_control_path(target_ref, "release"), b"1")
 
     def _clear_handoff(self, target_ref: str) -> None:
-        for suffix in ("task", "release", "guard"):
+        for suffix in ("task", "release", "guard", "result", "worker"):
             try:
                 self._known_control_path(target_ref, suffix).unlink(missing_ok=True)
             except ChildError:
@@ -3916,6 +4005,31 @@ class ProcessExecutionAdapter:
         except ValueError:
             return None
         return False
+    def _worker_result_bytes(self, target_ref: str) -> bytes | None:
+        try:
+            value = self._known_control_path(target_ref, "result").read_bytes()
+        except (ChildError, OSError):
+            return None
+        if len(value) > _RESEARCH_WORKER_MAX_RESULT_BYTES:
+            return None
+        return value
+
+    def _worker_result_status(self, target_ref: str) -> str | None:
+        value = self._worker_result_bytes(target_ref)
+        if value is None:
+            return "failed"
+        try:
+            parsed = json.loads(value.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return "failed"
+        if not isinstance(parsed, Mapping):
+            return "failed"
+        status = parsed.get("status")
+        if status == "completed":
+            return "completed"
+        if status in {"failed", "unsupported"}:
+            return "failed"
+        return "failed"
 
     @staticmethod
     def _process_start_token(pid: int) -> str | int | None:
@@ -3991,29 +4105,35 @@ class ProcessExecutionAdapter:
         command = self.command
         if spec.adapter_config:
             adapter_config = spec.adapter_config
-            command_value = (
-                adapter_config.get("command")
-                if isinstance(adapter_config, Mapping)
-                else None
-            )
+            command_value = adapter_config.get("command") if isinstance(adapter_config, Mapping) else None
             if (
                 not isinstance(command_value, list)
                 or not command_value
-                or any(
-                    type(part) is not str or not part for part in command_value
-                )
+                or any(type(part) is not str or not part for part in command_value)
             ):
                 raise ChildError("durable process child command is malformed")
             command = tuple(command_value)
+        worker = self._is_worker_command(command)
+        materialized_worker: Path | None = None
+        if worker:
+            materialized_worker = self._materialize_worker(
+                self._worker_binding(), workspace, target_ref
+            )
+            command = (str(materialized_worker),)
         status_path = self._status_path(target_ref, workspace)
         task_path = self._control_path(target_ref, "task", workspace)
         release_path = self._control_path(target_ref, "release", workspace)
         guard_path = self._control_path(target_ref, "guard", workspace)
+        result_path = self._control_path(target_ref, "result", workspace)
         self._status_paths[target_ref] = status_path
-        for path in (status_path, task_path, release_path, guard_path):
+        for path in (status_path, task_path, release_path, guard_path, result_path):
             path.unlink(missing_ok=True)
-        self._write_control(task_path, spec.task.encode("utf-8"))
+        task_bytes = spec.task.encode("utf-8")
+        if worker and len(task_bytes) > _RESEARCH_WORKER_MAX_TASK_BYTES:
+            raise ChildError("research worker task exceeds the bounded input limit")
+        self._write_control(task_path, task_bytes)
         group_token = os.urandom(32).hex()
+        result_limit = str(_RESEARCH_WORKER_MAX_RESULT_BYTES if worker else 0)
         wrapper = (
             "import os,signal,subprocess,sys,time\n"
             "release=sys.argv[3]\n"
@@ -4021,11 +4141,27 @@ class ProcessExecutionAdapter:
             "task=open(sys.argv[4],'rb').read()\n"
             "status=sys.argv[5]\n"
             "guard=sys.argv[6]\n"
+            "result_path=sys.argv[7]\n"
+            "result_limit=int(sys.argv[8])\n"
             "guardian_code=\"import os,sys,time\\nwhile not os.path.exists(sys.argv[1]): time.sleep(0.01)\\n\"\n"
             "guardian=subprocess.Popen([sys.executable,'-c',guardian_code,guard,sys.argv[2]])\n"
             "signal.signal(signal.SIGTERM,signal.SIG_IGN)\n"
             "reset_term=lambda: signal.signal(signal.SIGTERM,signal.SIG_DFL)\n"
-            "result=subprocess.run(sys.argv[7:],input=task,preexec_fn=reset_term).returncode\n"
+            "if result_path:\n"
+            " child=subprocess.Popen(sys.argv[9:],stdin=subprocess.PIPE,stdout=subprocess.PIPE,start_new_session=True,preexec_fn=reset_term)\n"
+            " child.stdin.write(task); child.stdin.close()\n"
+            " output=child.stdout.read(result_limit+1)\n"
+            " if len(output)>result_limit:\n"
+            "  try: os.killpg(child.pid,9)\n"
+            "  except ProcessLookupError: pass\n"
+            "  child.wait(); result=1; output=b'{\"status\":\"failed\",\"exit_code\":null,\"stdout\":\"\",\"stderr\":\"\",\"problem\":{\"code\":\"worker_result_too_large\",\"message\":\"worker result exceeded bounded output\"}}'\n"
+            " else:\n"
+            "  result=child.wait()\n"
+            " temporary=f'{result_path}.{os.getpid()}.tmp'\n"
+            " with open(temporary,'wb') as stream: stream.write(output); stream.flush(); os.fsync(stream.fileno())\n"
+            " os.replace(temporary,result_path)\n"
+            "else:\n"
+            " result=subprocess.run(sys.argv[9:],input=task,preexec_fn=reset_term).returncode\n"
             "group=os.getpgrp()\n"
             "def descendants_alive():\n"
             " try: rows=subprocess.check_output(['ps','-axo','pid=,pgid=,stat='],text=True,start_new_session=True).splitlines()\n"
@@ -4036,26 +4172,17 @@ class ProcessExecutionAdapter:
             " return False\n"
             "while descendants_alive(): time.sleep(0.01)\n"
             "temporary=f'{status}.{os.getpid()}.tmp'\n"
-            "fd=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)\n"
-            "os.write(fd,str(result).encode('ascii'));os.fsync(fd);os.close(fd)\n"
+            "with open(temporary,'wb') as stream: stream.write(str(result).encode('ascii')); stream.flush(); os.fsync(stream.fileno())\n"
             "os.replace(temporary,status)\n"
             "fd=os.open(guard,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600);os.fsync(fd);os.close(fd)\n"
-            "directory=os.open(os.path.dirname(status),os.O_RDONLY)\n"
-            "os.fsync(directory);os.close(directory);guardian.wait()\n"
+            "directory=os.open(os.path.dirname(status),os.O_RDONLY);os.fsync(directory);os.close(directory);guardian.wait()\n"
             "os._exit(result)\n"
         )
         process = subprocess.Popen(
             (
-                sys.executable,
-                "-c",
-                wrapper,
-                target_ref,
-                group_token,
-                str(release_path),
-                str(task_path),
-                str(status_path),
-                str(guard_path),
-                *command,
+                sys.executable, "-c", wrapper, target_ref, group_token,
+                str(release_path), str(task_path), str(status_path),
+                str(guard_path), str(result_path), result_limit, *command,
             ),
             stdin=subprocess.DEVNULL,
             start_new_session=True,
@@ -4076,7 +4203,11 @@ class ProcessExecutionAdapter:
                 process.kill()
                 process.wait()
             raise
-        metadata: dict[str, Any] = {"launch_phase": "pending", "process_group_token": group_token}
+        metadata: dict[str, Any] = {
+            "launch_phase": "pending",
+            "process_group_token": group_token,
+            "research_world_worker": worker,
+        }
         target = ExecutionTarget(target_ref, process.pid, token, group, process, metadata)
         accepted = False
         try:
@@ -4127,6 +4258,12 @@ class ProcessExecutionAdapter:
                 return None
         def terminal_state() -> str:
             completed = self._completed_status(target_ref)
+            metadata = target.get("metadata")
+            worker = isinstance(metadata, Mapping) and metadata.get("research_world_worker") is True
+            if worker:
+                if completed is True:
+                    return self._worker_result_status(target_ref) or "failed"
+                return "failed" if self._worker_result_bytes(target_ref) is not None else "absent"
             return "completed" if completed is True else "absent"
 
 
@@ -4355,8 +4492,19 @@ class ProcessExecutionAdapter:
         return exited
 
     def prepare_result(self, target: Mapping[str, Any], spec: ChildSpec) -> bytes | None:
-        return None
-
+        metadata = target.get("metadata")
+        if not isinstance(metadata, Mapping) or metadata.get("research_world_worker") is not True:
+            return None
+        value = self._worker_result_bytes(str(target.get("ref", "")))
+        if value is None:
+            return None
+        try:
+            parsed = json.loads(value.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ChildError("research worker result is not valid JSON") from error
+        if not isinstance(parsed, Mapping) or parsed.get("status") not in {"completed", "failed", "unsupported"}:
+            raise ChildError("research worker result has an invalid status")
+        return value
 
     def cleanup_handoff(self, target: Mapping[str, Any]) -> None:
         self._clear_handoff(str(target.get("ref", "")))
@@ -4371,4 +4519,4 @@ class ProcessExecutionAdapter:
 
 
 
-__all__ = ["ChildActivation", "ChildError", "ChildExecutionAdapter", "ChildSpec", "ChildState", "DurableChildFactory", "DurableChildReconciler", "ExpectedRevisionConflict", "ExecutionTarget", "LateResultRejected", "PreparationRequired", "ProcessExecutionAdapter", "RayJobAdapter", "UnavailableChildAdapter"]
+__all__ = ["ChildActivation", "ChildError", "ChildExecutionAdapter", "ChildSpec", "ChildState", "DurableChildFactory", "DurableChildReconciler", "ExpectedRevisionConflict", "ExecutionTarget", "LateResultRejected", "PreparationRequired", "ProcessExecutionAdapter", "RayJobAdapter", "RESEARCH_WORLD_WORKER_COMMAND", "UnavailableChildAdapter"]
