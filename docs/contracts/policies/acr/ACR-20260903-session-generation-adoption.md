@@ -65,3 +65,9 @@ A Product Session must retain the exact effective Lock identity that governed ea
 - Contracts reviewer: protected compatibility and danger-zone gates required.
 - Ops reviewer: protected branch checks required.
 - Final decision: protected branch checks and repository merge policy control merge.
+
+## W9 packaged-engine correction
+
+Runtime generation compilation now identifies package-local configuration sources relative to the engine root. Temporary extraction directories no longer change an otherwise identical generation. External configuration sources retain their absolute identity. The recovery generation check remains intact.
+
+The retained Session regression copies the packaged profile into two engine roots and compares restored state with the durable owner's pre-replacement snapshot. The existing changed-configuration case still requires `generation_mismatch`. No public schema or SDK signature changes.

@@ -1,6 +1,8 @@
 from __future__ import annotations
 from types import SimpleNamespace; from pathlib import Path; import asyncio, hashlib, json, os, threading, pytest, yaml
 import copy
+import shutil
+from functools import partial
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from breadboard.product.harness import default_profile as harness_operations
@@ -12,6 +14,7 @@ from breadboard_engine.api.cli_bridge.models import SessionCommandRequest, Sessi
 from breadboard_engine.api.cli_bridge.events import EventType; from breadboard_engine.api.cli_bridge.service import SessionService
 from breadboard_engine.api.cli_bridge.session_runner import MAX_ATTACHMENT_BYTES
 from breadboard_engine.api.cli_bridge.runtime_emission import _tool_names
+from breadboard_engine.api.cli_bridge.runtime_emission import compile_runtime_effective_config_graph
 from breadboard_engine.auth.enforcer import apply_dotted_overrides; from breadboard_engine.compilation.v2_loader import load_agent_config
 from breadboard_engine.agent_llm_openai import OpenAIConductor
 from breadboard_engine.api.cli_bridge import session_artifacts
@@ -2284,6 +2287,63 @@ async def test_create_rejects_override_that_cannot_be_retained(
         )
 
     assert service.registry._records == {}
+
+
+@pytest.mark.asyncio
+async def test_default_session_survives_engine_package_relocation(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    profile = harness_operations.resolve_default_profile()
+    definition_ref = profile.public_identity()["definition_ref"]
+    roots = (tmp_path / "first-engine", tmp_path / "replacement-engine")
+    for root in roots:
+        shutil.copytree(profile.source_path.parent, (root / definition_ref).parent)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    state_root = tmp_path / "state"
+
+    monkeypatch.setattr(
+        harness_operations,
+        "daily_driver_template_path",
+        lambda: str(roots[0] / definition_ref),
+    )
+    harness_operations.resolve_default_profile.cache_clear()
+    monkeypatch.setattr(
+        SERVICE + "compile_runtime_effective_config_graph",
+        partial(compile_runtime_effective_config_graph, repo_root=roots[0]),
+    )
+    service = SessionService(state_root=state_root)
+    response = await service.create_session(
+        SessionCreateRequest(
+            task="",
+            workspace=str(workspace),
+            overrides={"providers.default_model": "cli_mock/reference"},
+            permission_mode="configured",
+        ),
+        event_root=tmp_path / "events",
+        runtime_root=tmp_path / "records",
+    )
+    record = await service.ensure_session(response.session_id)
+    durable_state = copy.deepcopy(record.product_session.read_model)
+    await service.registry.persist(record)
+    await _stop(record)
+
+    monkeypatch.setattr(
+        harness_operations,
+        "daily_driver_template_path",
+        lambda: str(roots[1] / definition_ref),
+    )
+    harness_operations.resolve_default_profile.cache_clear()
+    monkeypatch.setattr(
+        SERVICE + "compile_runtime_effective_config_graph",
+        partial(compile_runtime_effective_config_graph, repo_root=roots[1]),
+    )
+    replacement = SessionService(state_root=state_root)
+    restored = await replacement.ensure_session(response.session_id)
+    assert restored.product_session.read_model == durable_state
+    await _stop(restored)
 
 
 @pytest.mark.asyncio
