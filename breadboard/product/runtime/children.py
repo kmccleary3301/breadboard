@@ -3619,11 +3619,20 @@ class RayJobAdapter:
             return True
         actor = self._lookup_actor(job_id, self._target_workspace(target))
         if actor is None:
-            if has_recovery_metadata:
+            if has_recovery_metadata and not (
+                not self._actor_lookup_is_unavailable(job_id, workspace)
+                and isinstance(job_data, Mapping)
+                and job_data.get("seq") == 0
+            ):
                 return False
-            return (
-                self.orchestrator.mark_job_killed(manager_job_id) is not None
-            )
+            marked = self.orchestrator.mark_job_killed(manager_job_id)
+            if job is not None and marked is None:
+                return False
+            if isinstance(job_data, dict) and marked is not None:
+                job_data["state"] = "killed"
+                job_data["seq"] = marked.seq
+            self.release_terminal(target)
+            return marked is not None
         try:
             cancel = getattr(actor, "cancel", None)
             if cancel is None:

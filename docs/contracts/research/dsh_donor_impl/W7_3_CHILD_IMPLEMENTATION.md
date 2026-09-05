@@ -11,7 +11,9 @@ Status: implemented on the isolated W7 branch. Design A (Session-centered child 
 
 ## Adapter coverage
 
-`RayJobAdapter` adapts the existing `MultiAgentOrchestrator.spawn_subagent`/`JobManager` family. Job results are retained by the existing `JobRef` owner and the adapter normalizes accepted/running/completed/failed/killed observations, including completed result payloads. `ProcessExecutionAdapter` adapts an execution-world process and retains PID, start token and process-group identity; it validates those facts using an authenticated `ps` identity before observation or signaling, so a recycled PID cannot be treated as the child. Both use the same factory boundary and no fallback after activation.
+`RayJobAdapter` adapts the existing `MultiAgentOrchestrator.spawn_subagent`/`JobManager` family. Job results are retained by the existing `JobRef` owner and the adapter normalizes accepted/running/completed/failed/killed observations, including completed result payloads. `ProcessExecutionAdapter` adapts an execution-world process and retains PID, platform process-start token and process-group identity; it validates those facts before observation or signaling, so a recycled PID cannot be treated as the child. Both use the same factory boundary and no fallback after activation.
+
+The process adapter is a trusted POSIX process-group lifecycle boundary, not a sandbox or arbitrary OS-descendant containment boundary. Ordinary shell/background descendants in the authenticated group remain owned until they exit; a command that creates a detached session leaves that boundary and is not covered by cancellation or completion observations. `cancel_tree` traverses durable Session/WorkItem lineage, not arbitrary native process ancestry. A caller requiring containment must choose a world that provides it, rather than infer it from acceptance of an argv vector. The bounded detached-session probe observed group completion before the detached child exited naturally; no stronger guarantee is claimed.
 
 ## Ordering laws
 

@@ -4055,6 +4055,133 @@ def test_ray_cancel_after_restart_without_actor_remains_pending(
     restored = restarted.job_manager.get(spawned.job.job_id)
     assert restored is not None and restored.state == "accepted"
     assert target["metadata"]["job"]["state"] == "accepted"
+def test_ray_reserved_never_launched_cancel_replays_and_allows_parent_completion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
+
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    orchestrator = MultiAgentOrchestrator(TeamConfig("ray-reserved-never-launched"))
+    adapter = RayJobAdapter(orchestrator)
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+    spec = _spec(adapter.family, "ray reserved never launched")
+    child_session_id = "child-ray-reserved-never-launched"
+    child_work_item_id = "work-ray-reserved-never-launched"
+    attempt_id = "attempt-ray-reserved-never-launched"
+    target_ref = "job:ray-reserved-never-launched"
+    child_spec = {
+        **spec.retained(),
+        "task_artifact_ref": factory.artifacts.put(
+            spec.task.encode(), media_type="text/plain; charset=utf-8"
+        ).as_dict(),
+        "task_artifact_store": str(factory.artifacts._root),
+        "artifact_store_root": str(factory.artifacts._root),
+        "work_item_repository_path": str(factory._repository_path),
+    }
+    initial = ChildState(
+        child_session_id,
+        child_work_item_id,
+        "parent-session",
+        "parent-session",
+        parent.read_model.work_item_id,
+        attempt_id,
+        f"child://{child_session_id}/attempt/{attempt_id}",
+        target_ref,
+        adapter.family,
+        "starting",
+        0,
+        startup_phase="delegated",
+        child_spec=child_spec,
+        execution_target={"ref": target_ref},
+    )
+    initial = replace(
+        initial,
+        execution_target=factory._reserved_execution_target(initial, target_ref),
+    )
+    factory._create_record(initial)
+    child_product = Session.start(
+        spec.lock,
+        spec.task,
+        session_id=child_session_id,
+    )
+    create_session(workspace, child_product)
+    parent.delegate(
+        spec.title,
+        attempt_id="parent-attempt",
+        child_work_item_id=child_work_item_id,
+        cancellation_policy=spec.cancellation_policy,
+    )
+    monkeypatch.setattr(adapter, "_lookup_actor", lambda _job_id, _workspace: None)
+    monkeypatch.setattr(adapter, "_actor_lookup_is_unavailable", lambda _job_id, _workspace: True)
+    pending = factory.cancel(
+        child_session_id,
+        expected_revision=initial.revision,
+        reason="caller requested",
+    )
+    assert (pending.status, pending.terminal_outcome, pending.terminal_count) == (
+        "cancel_requested",
+        None,
+        0,
+    )
+    monkeypatch.setattr(adapter, "_actor_lookup_is_unavailable", lambda _job_id, _workspace: False)
+
+    canceled = factory.reconcile(initial.recovery_ref)
+    assert (
+        canceled.status,
+        canceled.terminal_outcome,
+        canceled.terminal_count,
+    ) == ("canceled", "canceled", 1)
+
+    restarted_adapter = RayJobAdapter(
+        MultiAgentOrchestrator(TeamConfig("ray-reserved-never-launched-replay"))
+    )
+    monkeypatch.setattr(
+        restarted_adapter,
+        "_lookup_actor",
+        lambda _job_id, _workspace: None,
+    )
+    restarted = DurableChildFactory(
+        workspace,
+        registry=SessionRegistry(state_root=tmp_path / "registry"),
+        repository=WorkItemRepository(tmp_path / "work-items.jsonl"),
+        adapters=[restarted_adapter],
+    )
+    replayed = restarted.reconcile(initial.recovery_ref)
+    replayed_again = restarted.reconcile(initial.recovery_ref)
+    assert (
+        replayed.status,
+        replayed.terminal_outcome,
+        replayed.terminal_count,
+    ) == ("canceled", "canceled", 1)
+    assert replayed_again == replayed
+    joined = [
+        event
+        for event in WorkItem.restore(repository, parent.read_model.work_item_id).events
+        if event.kind == "child.joined"
+        and event.payload["child_work_item_id"] == child_work_item_id
+    ]
+    assert len(joined) == 1
+
+    parent_after = WorkItem.restore(repository, parent.read_model.work_item_id)
+    parent_attempt = parent_after.read_model.current_attempt
+    assert parent_attempt is not None
+    parent_after.complete("parent completed", attempt_id=parent_attempt.attempt_id)
+    mutate_session(
+        workspace,
+        "parent-session",
+        lambda current: current.complete("parent completed"),
+    )
+    assert (
+        WorkItem.restore(repository, parent.read_model.work_item_id).read_model.status
+        == "completed"
+    )
+    assert load_session(workspace, "parent-session")[0].read_model.status == "completed"
 def test_ray_reserved_target_recovers_named_actor_without_duplicate_launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
 
