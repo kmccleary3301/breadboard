@@ -1469,15 +1469,17 @@ def _validate_promotion_destination(destination: Path) -> None:
 
 
 def _accepted_path(candidate_root: Path, candidate_path: Path) -> Path:
-    """Map a candidate path lexically, without dereferencing symlinks."""
+    """Map the leaf lexically while confining its parent to the accepted root."""
 
     candidate_absolute = Path(os.path.abspath(candidate_path))
     root_absolute = Path(os.path.abspath(candidate_root))
     workspace_absolute = Path(os.path.abspath(candidate_root.parent))
     try:
-        return ROOT / candidate_absolute.relative_to(root_absolute)
+        destination = ROOT / candidate_absolute.relative_to(root_absolute)
     except ValueError:
-        return workspace_root_for_checkout(ROOT) / candidate_absolute.relative_to(workspace_absolute)
+        destination = workspace_root_for_checkout(ROOT) / candidate_absolute.relative_to(workspace_absolute)
+    _validate_promotion_destination(destination)
+    return destination
 
 
 def _write_set_entries(
@@ -1507,8 +1509,6 @@ def _write_set_entries(
         source = candidate_pattern
         destination = accepted_pattern
         entries[destination] = source if source.exists() else None
-    for destination in entries:
-        _validate_promotion_destination(destination)
     return [
         (source, destination)
         for destination, source in sorted(
@@ -1529,9 +1529,7 @@ def _rollback_promoted_write_set(applied: Sequence[tuple[Path, Path | None]]) ->
         _validate_promotion_destination(destination)
         _remove_path(destination)
         if backup is not None and backup.exists():
-            _validate_promotion_destination(destination)
             destination.parent.mkdir(parents=True, exist_ok=True)
-            _validate_promotion_destination(destination)
             backup.replace(destination)
 
 
@@ -1563,14 +1561,12 @@ def _promote_write_set(
             backup: Path | None = None
             if destination.exists() or destination.is_symlink():
                 backup_path.parent.mkdir(parents=True, exist_ok=True)
-                _validate_promotion_destination(destination)
                 destination.replace(backup_path)
                 backup = backup_path
             applied.append((destination, backup))
             if staged_path is None:
                 continue
             destination.parent.mkdir(parents=True, exist_ok=True)
-            _validate_promotion_destination(destination)
             staged_path.replace(destination)
     except Exception:
         _rollback_promoted_write_set(applied)

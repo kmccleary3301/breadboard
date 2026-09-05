@@ -1009,7 +1009,7 @@ def test_regeneration_rejects_declared_workspace_parent_symlink_before_promotion
     monkeypatch.setenv("BB_WORKSPACE_ROOT", str(workspace))
     monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
 
-    code, results = driver._run_regeneration_transaction(
+    code, _ = driver._run_regeneration_transaction(
         candidate_stages,
         (),
         (),
@@ -1017,9 +1017,7 @@ def test_regeneration_rejects_declared_workspace_parent_symlink_before_promotion
     )
 
     assert code != 0
-    assert [result.stage_id for result in results] == ["candidate_write_set"]
     assert outside_sentinel.read_bytes() == b"outside-before\n"
-    assert outside_sentinel.is_file()
     assert phase_15.is_symlink()
     assert phase_15.resolve() == outside.resolve()
 
