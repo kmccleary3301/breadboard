@@ -34,8 +34,10 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
     )
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS
 
+from breadboard.product.evidence.e4.path_refs import workspace_root_for_checkout
+
 ROOT = Path(__file__).resolve().parents[2]
-WORKSPACE = ROOT.parent
+WORKSPACE = workspace_root_for_checkout(ROOT)
 PYTHON = "{python}"
 EXPECTED_POINTS = "{expected_points}"
 EXPECTED_CLAIMS = "{expected_claims}"

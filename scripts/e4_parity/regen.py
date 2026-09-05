@@ -47,7 +47,7 @@ def _snapshot_sha256_path(path: Path) -> str:
     payload = path.read_bytes()
     for prefix, marker in (
         (str(ROOT.resolve()).encode(), b"<repo-root>"),
-        (str(ROOT.parent.resolve()).encode(), b"<workspace-root>"),
+        (str(regen.WORKSPACE.resolve()).encode(), b"<workspace-root>"),
     ):
         payload = payload.replace(prefix, marker)
     return sha256_bytes(payload)
@@ -58,7 +58,7 @@ def _display_path(path: Path) -> str:
         return resolved.relative_to(ROOT.resolve()).as_posix()
     except ValueError:
         try:
-            return "../" + resolved.relative_to(ROOT.parent.resolve()).as_posix()
+            return "../" + resolved.relative_to(regen.WORKSPACE.resolve()).as_posix()
         except ValueError:
             return resolved.as_posix()
 

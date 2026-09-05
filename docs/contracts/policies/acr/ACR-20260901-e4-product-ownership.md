@@ -73,3 +73,16 @@ Current focused evidence:
 - Kernel/danger-zone review: required on the exact PR head.
 - Independent ownership review: required on the exact PR head.
 - Owner approval: granted for the campaign; merge still requires all exact-head CI and review gates to be green.
+
+## 9) Checkout-boundary correction — 2026-09-05
+
+E4 path resolution now uses the declared workspace root rather than assuming
+every engine checkout is its sibling. Candidate capture and regeneration use
+the same product-owned resolver. C4 scratch capture stays inside its candidate
+checkout instead of relying on an ambient repository registry.
+
+The correction changes code and its boundary tests, not accepted evidence.
+Missing fixtures are recovered from the governed input bundle, the pinned source
+archive, and the retained integration checkout. Existing accepted bytes are not
+overwritten or invented. Full E4 and fixed-point CI remain the landing gates;
+missing or stale historical custody is classified separately from product reds.

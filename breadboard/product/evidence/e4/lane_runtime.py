@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 from typing import Any, Literal, Mapping
 
+from breadboard.product.evidence.e4.path_refs import workspace_root_for_checkout
+
 try:
     from breadboard.product.evidence.e4.validators import hash_utils as _hash_utils
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
@@ -45,8 +47,9 @@ def display_path(path: Path, *, repo_root: Path) -> str:
     try:
         return resolved.relative_to(root).as_posix()
     except ValueError:
+        workspace = workspace_root_for_checkout(root)
         try:
-            return resolved.relative_to(root.parent).as_posix()
+            return resolved.relative_to(workspace).as_posix()
         except ValueError:
             return resolved.as_posix()
 
