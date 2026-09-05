@@ -496,15 +496,25 @@ def _assistant_payload(
     return payload
 class Session:
     """Lifecycle owner; adapters may add only validated, minimal runtime observations."""
-    def __init__(self, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None, task: str | None = None) -> None:
-        if task is not None and (not isinstance(task, str) or not task.strip()): raise ValueError("task must be non-empty when retained")
+    def __init__(
+        self,
+        events: Iterable[KernelEvent],
+        *,
+        clock: Clock | None = None,
+        sink: EventSink | None = None,
+        task: str | None = None,
+    ) -> None:
+        if task is not None and (not isinstance(task, str) or not task.strip()):
+            raise ValueError("task must be non-empty when retained")
         self._task = task
         self._transition_lock = RLock()
         self._appending = False
         self._events = list(events)
         self._clock = clock if clock is not None else SystemClock()
         self._sink = sink if sink is not None else NullEventSink()
-        self._terminal_annotation_commit: Callable[[AnnotationRecord], tuple[KernelEvent, ...]] | None = None
+        self._terminal_annotation_commit: Callable[
+            [AnnotationRecord], tuple[KernelEvent, ...]
+        ] | None = None
         self._view = rebuild(self._events)
         compaction = next(
             (row for row in reversed(self._events) if row.kind == "context.compacted"),
@@ -538,6 +548,14 @@ class Session:
     @property
     def read_model(self) -> SessionView:
         with self._transition_lock: return self._view
+    @property
+    def effective_context(self) -> bytes | None:
+        with self._transition_lock:
+            return self._effective_context
+    @property
+    def raw_fact_ids(self) -> tuple[str, ...]:
+        with self._transition_lock:
+            return self._raw_fact_ids
     @property
     def pinned_generation_id(self) -> str:
         """The immutable Lock identity pinned by this Session."""
@@ -596,14 +614,6 @@ class Session:
                     )
                 prior = generation
             return tuple(history)
-    @property
-    def effective_context(self) -> bytes | None:
-        with self._transition_lock:
-            return self._effective_context
-    @property
-    def raw_fact_ids(self) -> tuple[str, ...]:
-        with self._transition_lock:
-            return self._raw_fact_ids
     def projected_read_model(self, *, as_of: int | None = None, expected_projector_version: str | None = None) -> Projected[SessionView]:
         return project_session_live(self, as_of=as_of, expected_projector_version=expected_projector_version)
     def compact(self, snapshot: CompactionSnapshot) -> CompactionEvent:
