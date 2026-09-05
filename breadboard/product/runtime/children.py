@@ -1316,7 +1316,7 @@ class DurableChildFactory:
         reserved = _reserved_target_ref(spec.adapter_family, child_session_id)
         child_spec = spec.retained()
         config_fn = getattr(self.adapters[spec.adapter_family], "retained_config", None)
-        config = config_fn() if callable(config_fn) else {}
+        config = spec.adapter_config or (config_fn() if callable(config_fn) else {})
         if not isinstance(config, Mapping):
             raise ChildError("child adapter config is not durable")
         try:

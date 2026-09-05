@@ -6673,7 +6673,7 @@ def test_reconciler_relaunches_process_child_from_its_retained_command(
         workspace,
         registry=registry,
         repository=repository,
-        adapters=[ProcessExecutionAdapter(command=command_b)],
+        adapters=[ProcessExecutionAdapter(command=command_a)],
     )
     second = factory_b.start(
         parent_session_id="parent-session",
@@ -6686,6 +6686,7 @@ def test_reconciler_relaunches_process_child_from_its_retained_command(
             "child-worker",
             ProcessExecutionAdapter.family,
             retry_policy=RetryPolicy(2, True),
+            adapter_config={"command": list(command_b)},
         ),
     )
 
