@@ -5587,6 +5587,7 @@ test("canonical sandbox artifact resolution rejects shared-parent candidates", a
     await writeFile(join(parent, ref.slice("sha256:".length)), "attacker bytes", {
       mode: 0o600,
     })
+    assert.throws(() => canonicalSandboxArtifactUri(ref, parent))
     const nestedRoot = canonicalSandboxArtifactRoot(parent)
     await persistCanonicalSandboxArtifact(ref, content, nestedRoot)
 

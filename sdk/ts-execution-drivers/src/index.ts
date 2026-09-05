@@ -421,9 +421,10 @@ function verifiedSandboxArtifactUri(
       || !artifactStat.isFile()
       || artifactStat.isSymbolicLink()
       || (currentUid !== undefined
-        && (rootStat.uid !== currentUid || artifactStat.uid !== currentUid))
-      || (rootStat.mode & 0o077) !== 0
-      || (artifactStat.mode & 0o077) !== 0
+        && (rootStat.uid !== currentUid
+          || artifactStat.uid !== currentUid
+          || (rootStat.mode & 0o077) !== 0
+          || (artifactStat.mode & 0o077) !== 0))
     ) {
       return null
     }
@@ -462,7 +463,7 @@ export function canonicalSandboxArtifactUri(
       return legacyUri
     }
   }
-  return pathToFileURL(join(artifactRoot, artifactName)).href
+  throw new Error("sandbox artifact has no verified content at its declared root")
 }
 
 export async function persistCanonicalSandboxArtifact(
