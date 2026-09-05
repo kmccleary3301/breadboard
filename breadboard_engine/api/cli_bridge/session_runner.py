@@ -954,15 +954,13 @@ class SessionRunner:
         if isinstance(self._mode, str) and self._mode.strip():
             overrides["mode"] = self._mode.strip()
         base_cfg = self._load_base_config()
-        requested_permission_mode = (
-            (
-                self.request.permission_mode
-                or self.session.metadata.get("permission_mode")
-                or ""
-            )
-            .strip()
-            .lower()
-        )
+        requested_permission_mode = self.request.permission_mode
+        if (
+            not requested_permission_mode
+            and "permission_mode" not in self.request.model_fields_set
+        ):
+            requested_permission_mode = self.session.metadata.get("permission_mode")
+        requested_permission_mode = str(requested_permission_mode or "").strip().lower()
         permissions_cfg = (
             base_cfg.get("permissions")
             if isinstance(base_cfg.get("permissions"), dict)
