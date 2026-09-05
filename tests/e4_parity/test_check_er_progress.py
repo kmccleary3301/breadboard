@@ -207,6 +207,7 @@ def test_pin_policy_v1_allows_derivative_evidence_path(
 @pytest.mark.parametrize(
     ("derivative_path", "deny_glob"),
     PIN_POLICY_V2_DERIVATIVE_FIXTURES,
+)
 def test_pin_policy_v2_rejects_seed_derivative_evidence_roots(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -274,9 +275,11 @@ def test_pin_policy_v2_rejects_checkout_qualified_derivative_path(
     evidence = tmp_path / derivative_path
     evidence.parent.mkdir(parents=True, exist_ok=True)
     evidence.write_text("fixture\n", encoding="utf-8")
+    alias = checkout / "catalog-alias.json"
+    alias.symlink_to(evidence)
     progress_path, progress = _minimal_progress(tmp_path)
     progress["workstreams"][0]["items"][0]["evidence"] = [
-        {"path": derivative_path, "sha256": _sha256(evidence)}
+        {"path": f"{checkout.name}/{alias.name}", "sha256": _sha256(evidence)}
     ]
     _write_json(progress_path, progress)
 
@@ -292,6 +295,7 @@ def test_cli_default_progress_resolves_against_explicit_workspace_root(
 ) -> None:
     monkeypatch.chdir(checker.ROOT)
     _minimal_progress(tmp_path)
+    assert checker.check_progress(workspace_root=tmp_path)["points_total"] == 10
     report_path = tmp_path / "default-report.json"
 
     exit_code = checker.main(
@@ -341,7 +345,7 @@ def test_check_er_progress_rejects_parent_traversal_evidence_reference(tmp_path:
 
 def test_check_er_progress_rejects_symlink_escape_evidence_reference(tmp_path: Path) -> None:
     progress_path, progress = _minimal_progress(tmp_path)
-    outside = tmp_path / "outside-symlink-evidence.json"
+    outside = tmp_path.parent / "outside-symlink-evidence.json"
     outside.write_text('{"outside": true}\n', encoding="utf-8")
     escaped = tmp_path / "docs_tmp" / "phase_16" / "evidence" / "escaped.json"
     escaped.symlink_to(outside)

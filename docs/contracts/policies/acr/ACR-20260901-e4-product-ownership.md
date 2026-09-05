@@ -81,6 +81,13 @@ every engine checkout is its sibling. Candidate capture and regeneration use
 the same product-owned resolver. C4 scratch capture stays inside its candidate
 checkout instead of relying on an ambient repository registry.
 
+Candidate validation materializes the canonical comparator registry inside the
+validation checkout and rejects stale or symlinked registry destinations.
+Progress references resolve at the checker boundary and reject traversal,
+escaped symlinks, and derivative evidence aliases under pin-policy v2.
+Regeneration watches the declared workspace, while the read-only explain command
+does not require external evidence configuration.
+
 The correction changes code and its boundary tests, not accepted evidence.
 Missing fixtures are recovered from the governed input bundle, the pinned source
 archive, and the retained integration checkout. Existing accepted bytes are not

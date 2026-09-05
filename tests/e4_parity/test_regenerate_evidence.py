@@ -944,7 +944,7 @@ def test_promotion_preserves_logical_paths_for_symlinked_lane_outputs(
     )
     assert all(not write.startswith("tmp/e4_regen_capture/") for write in stage.writes)
     monkeypatch.setattr(driver, "ROOT", accepted_root)
-    monkeypatch.setattr(driver, "WORKSPACE", accepted_workspace)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(accepted_workspace))
 
     applied = driver._promote_write_set(
         candidate_root,
@@ -1047,7 +1047,7 @@ def test_regeneration_transaction_validation_failure_preserves_accepted_write_se
     runner = getattr(driver, "_run_regeneration_transaction", None)
     assert runner is not None, "regeneration must expose one scratch-to-accepted transaction"
     monkeypatch.setattr(driver, "ROOT", tmp_path)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path.parent)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path.parent))
     monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
     monkeypatch.setattr(driver.subprocess, "run", fake_run)
 
@@ -1139,7 +1139,7 @@ def test_regeneration_transaction_rolls_back_all_paths_when_promotion_fails(
     runner = getattr(driver, "_run_regeneration_transaction", None)
     assert runner is not None, "regeneration must expose one scratch-to-accepted transaction"
     monkeypatch.setattr(driver, "ROOT", tmp_path)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path.parent)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path.parent))
     monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
     monkeypatch.setattr(driver.subprocess, "run", fake_run)
 
@@ -1229,7 +1229,7 @@ def test_regeneration_transaction_promotes_before_rebind_then_runs_final_c4(
     runner = getattr(driver, "_run_regeneration_transaction", None)
     assert runner is not None, "regeneration must expose one scratch-to-accepted transaction"
     monkeypatch.setattr(driver, "ROOT", tmp_path)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path.parent)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path.parent))
     monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
     monkeypatch.setattr(driver.subprocess, "run", fake_run)
 
@@ -1320,7 +1320,7 @@ def test_regeneration_transaction_rebind_failure_restores_accepted_write_set(
     runner = getattr(driver, "_run_regeneration_transaction", None)
     assert runner is not None, "regeneration must expose one scratch-to-accepted transaction"
     monkeypatch.setattr(driver, "ROOT", tmp_path)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path.parent)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path.parent))
     monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
     monkeypatch.setattr(driver.subprocess, "run", fake_run)
 
@@ -1415,7 +1415,7 @@ def test_regeneration_transaction_final_c4_failure_restores_rebind_mutations(
     runner = getattr(driver, "_run_regeneration_transaction", None)
     assert runner is not None, "regeneration must expose one scratch-to-accepted transaction"
     monkeypatch.setattr(driver, "ROOT", tmp_path)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path.parent)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path.parent))
     monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
     monkeypatch.setattr(driver.subprocess, "run", fake_run)
 
@@ -1468,7 +1468,7 @@ def test_prepare_candidate_root_preserves_dangling_symlinks_and_excludes_untrack
 
     candidate_root = tmp_path / "candidate"
     monkeypatch.setattr(driver, "ROOT", source_root)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path))
 
     driver._prepare_candidate_root(candidate_root, ())
 
@@ -1519,7 +1519,7 @@ def test_prepare_candidate_root_provisions_bundle_and_ignores_live_declared_read
         workspace_input.write_text('{"source": "bundle"}\n')
 
     monkeypatch.setattr(driver, "ROOT", source_root)
-    monkeypatch.setattr(driver, "WORKSPACE", workspace)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(workspace))
     monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
     monkeypatch.setattr(driver, "provision_immutable_inputs", fake_provision)
 
@@ -1572,7 +1572,7 @@ def test_prepare_candidate_root_installs_ledger_bootstrap_in_candidate_workspace
         bootstrap.write_bytes(bootstrap_payload)
 
     monkeypatch.setattr(driver, "ROOT", source_root)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path))
     monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
     monkeypatch.setattr(driver, "provision_immutable_inputs", fake_provision)
 
@@ -1599,7 +1599,7 @@ def test_prepare_candidate_root_rejects_gitlink_without_copying_its_worktree(
     untracked_gitlink_file.write_text("must not enter candidate\n")
     candidate_root = tmp_path / "scratch" / "candidate"
     monkeypatch.setattr(driver, "ROOT", source_root)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path))
     monkeypatch.setattr(
         driver,
         "_tracked_checkout_paths",
@@ -1624,7 +1624,7 @@ def test_prepare_candidate_root_rejects_tracked_symlink_escaping_scratch_workspa
     subprocess.run(["git", "add", escaping_link.name], cwd=source_root, check=True)
     candidate_root = tmp_path / "scratch" / "candidate"
     monkeypatch.setattr(driver, "ROOT", source_root)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path))
 
     with pytest.raises(ValueError, match="candidate symlink escapes scratch workspace"):
         driver._prepare_candidate_root(candidate_root, ())
@@ -1652,7 +1652,7 @@ def test_prepare_candidate_root_materializes_index_content_when_checkout_file_de
 
     candidate_root = tmp_path / "scratch" / "candidate"
     monkeypatch.setattr(driver, "ROOT", source_root)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path))
 
     driver._prepare_candidate_root(candidate_root, ())
 
@@ -1679,7 +1679,7 @@ def test_prepare_candidate_root_ignores_untracked_directory_shadowing_tracked_fi
 
     candidate_root = tmp_path / "scratch" / "candidate"
     monkeypatch.setattr(driver, "ROOT", source_root)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path))
 
     driver._prepare_candidate_root(candidate_root, ())
 
@@ -1709,7 +1709,7 @@ def test_prepare_candidate_root_reads_index_not_symlinked_parent_traversal(
 
     candidate_root = tmp_path / "scratch" / "candidate"
     monkeypatch.setattr(driver, "ROOT", source_root)
-    monkeypatch.setattr(driver, "WORKSPACE", tmp_path)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path))
 
     driver._prepare_candidate_root(candidate_root, ())
 

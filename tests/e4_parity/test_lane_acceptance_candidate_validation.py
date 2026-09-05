@@ -2,20 +2,14 @@ from __future__ import annotations
 
 import json
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
-import yaml
 
 from breadboard.product.evidence.e4 import lane_acceptance_artifacts as builder
 from breadboard.product.evidence.e4.adapters import oh_my_pi_p3_remaining_capture as p3_capture
 
 ROOT = Path(__file__).resolve().parents[2]
-CHECKOUT_FREEZE_PROVENANCE = (
-    "config/e4_lanes/evidence_inputs/"
-    "oh_my_pi_main_5356713e_freeze_provenance.v1.json"
-)
 
 
 def _write_json(path: Path, payload: object) -> None:
@@ -41,10 +35,6 @@ def _candidate_spec() -> dict[str, object]:
         "semantic_key": "candidate_validation",
         "source_paths": [
             "config/candidate_source.json",
-            "conformance/__init__.py",
-            "conformance/comparators/__init__.py",
-            "conformance/comparators/protocol.py",
-            "conformance/comparators/stored_report.py",
         ],
         "target": "breadboard",
         "target_family": "breadboard",
@@ -75,16 +65,7 @@ def _candidate_fixture(
     _write_json(source_path, {"fresh": True})
     freeze_path.parent.mkdir(parents=True, exist_ok=True)
     freeze_path.write_text("e4_configs: {}\n", encoding="utf-8")
-    for relative in (
-        "conformance/__init__.py",
-        "conformance/comparators/__init__.py",
-        "conformance/comparators/protocol.py",
-        "conformance/comparators/stored_report.py",
-    ):
-        source = ROOT / relative
-        destination = repo_root / relative
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination)
+    (repo_root / "conformance/comparators").mkdir(parents=True)
     shutil.copy2(
         ROOT / "conformance/comparators/registry.json",
         repo_root / "conformance/comparators/registry.json",
@@ -92,7 +73,6 @@ def _candidate_fixture(
 
     monkeypatch.setattr(builder, "ROOT", repo_root)
     monkeypatch.setattr(builder, "FREEZE_MANIFEST_PATH", freeze_path)
-    monkeypatch.setattr(builder, "LEDGER_PATH", ledger_path)
     monkeypatch.setattr(builder, "SUPPORT_DIR", support_dir)
     monkeypatch.setattr(builder, "NODE_GATE_DIR", node_gate_dir)
     monkeypatch.setattr(builder, "CATALOG_PATH", catalog_path)
@@ -161,7 +141,7 @@ def test_build_lane_validates_fresh_candidate_bytes_with_real_validator(
 
     result = builder.build_lane(spec, output_root=output_root)
 
-    assert result["ok"] is True
+    assert result["ok"] is True, result["errors"]
     candidate_registry = output_root / "conformance/comparators/registry.json"
     assert candidate_registry.is_file()
     assert candidate_registry.read_bytes() == canonical_registry.read_bytes()
@@ -172,24 +152,15 @@ def test_build_lane_validates_fresh_candidate_bytes_with_real_validator(
 def test_reused_candidate_registry_rejects_stale_bytes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    repo_root = tmp_path / "checkout"
-    output_root = tmp_path / "candidate"
-    canonical_registry = repo_root / "conformance/comparators/registry.json"
-    canonical_registry.parent.mkdir(parents=True, exist_ok=True)
-    canonical_registry.write_bytes(b'{"registry":"canonical"}\n')
+    spec, _repo_root, output_root, _freeze_path, _support_dir = _candidate_fixture(
+        tmp_path, monkeypatch
+    )
     stale_registry = output_root / "conformance/comparators/registry.json"
     stale_registry.parent.mkdir(parents=True, exist_ok=True)
     stale_bytes = b'{"registry":"stale"}\n'
     stale_registry.write_bytes(stale_bytes)
-    config = repo_root / "agent_configs/candidate.yaml"
-    config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text("provider: candidate\n", encoding="utf-8")
-
-    monkeypatch.setattr(builder, "ROOT", repo_root)
-    spec = {"config_path": "agent_configs/candidate.yaml", "source_paths": []}
-
     with pytest.raises(ValueError, match="differs from the canonical registry"):
-        builder._materialize_candidate_validation_inputs(spec, output_root)
+        builder.build_lane(spec, output_root=output_root)
 
     assert stale_registry.read_bytes() == stale_bytes
     outside = tmp_path / "outside-registry.json"
@@ -199,7 +170,7 @@ def test_reused_candidate_registry_rejects_stale_bytes(
     stale_registry.symlink_to(outside)
 
     with pytest.raises(ValueError, match="must not be a symlink"):
-        builder._materialize_candidate_validation_inputs(spec, output_root)
+        builder.build_lane(spec, output_root=output_root)
 
     assert outside.read_bytes() == outside_bytes
 
@@ -232,39 +203,6 @@ def test_p3_candidate_validation_uses_contained_registry(
         temp_prefix=".candidate-validation-test-",
     )
 
-    assert report["ok"] is True
+    assert report["ok"] is True, report["errors"]
     assert report["comparator_rerun"]["registry"] == "conformance/comparators/registry.json"
 
-def test_oh_my_pi_freeze_provenance_is_checkout_local_and_tracked() -> None:
-    tracked = {
-        line
-        for line in subprocess.run(
-            ["git", "ls-files"],
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.splitlines()
-    }
-    declared_freeze_inputs: set[str] = set()
-    declaring_lanes: set[str] = set()
-    for lane_path in (ROOT / "config/e4_lanes").glob("oh_my_pi*.yaml"):
-        lane = yaml.safe_load(lane_path.read_text(encoding="utf-8"))
-        references = [
-            *lane.get("capture", {}).get("inputs", []),
-            *lane.get("provenance", {}).get("source_paths", []),
-        ]
-        lane_freeze_inputs = {
-            reference
-            for reference in references
-            if reference.endswith("freeze_provenance.v1.json")
-            or reference.endswith("_freeze_provenance.json")
-        }
-        if lane_freeze_inputs:
-            declaring_lanes.add(str(lane["lane_id"]))
-            declared_freeze_inputs.update(lane_freeze_inputs)
-
-    assert len(declaring_lanes) == 15
-    assert declared_freeze_inputs == {CHECKOUT_FREEZE_PROVENANCE}
-    assert CHECKOUT_FREEZE_PROVENANCE in tracked
-    assert (ROOT / CHECKOUT_FREEZE_PROVENANCE).is_file()

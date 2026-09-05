@@ -200,8 +200,6 @@ def _validate_evidence(progress: Mapping[str, Any], *, workspace_root: Path | No
                 expected_sha = entry.get("sha256")
                 if not isinstance(raw_path, str) or not isinstance(expected_sha, str):
                     continue
-                if derivative_glob := _derivative_glob_for_path(raw_path, derivative_globs):
-                    errors.append(f"{item_id}.evidence[{entry_index}]: derivative evidence path {raw_path} matches pin-policy v2 deny glob {derivative_glob}")
                 try:
                     path = _resolve_evidence_path(raw_path, workspace_root=workspace_root)
                 except (OSError, ReferenceResolutionError, RuntimeError, ValueError) as exc:
@@ -209,6 +207,13 @@ def _validate_evidence(progress: Mapping[str, Any], *, workspace_root: Path | No
                         f"{item_id}.evidence[{entry_index}]: invalid evidence path {raw_path!r}: {exc}"
                     )
                     continue
+                derivative_glob = _derivative_glob_for_path(
+                    raw_path, derivative_globs
+                ) or _derivative_glob_for_path(
+                    _display(path, workspace_root=workspace_root), derivative_globs
+                )
+                if derivative_glob:
+                    errors.append(f"{item_id}.evidence[{entry_index}]: derivative evidence path {raw_path} matches pin-policy v2 deny glob {derivative_glob}")
                 try:
                     is_file = path.is_file()
                 except (OSError, RuntimeError, ValueError) as exc:
@@ -227,6 +232,7 @@ def _validate_evidence(progress: Mapping[str, Any], *, workspace_root: Path | No
 
 
 def check_progress(progress_path: Path = DEFAULT_PROGRESS, *, workspace_root: Path | None = None, verify_hashes: bool = True, pin_policy: PinPolicy = "v1") -> dict[str, Any]:
+    progress_path = _resolve_progress_path(progress_path, workspace_root=workspace_root)
     progress = _load_json(progress_path)
     if not isinstance(progress, Mapping):
         errors = ["progress JSON must be an object"]
@@ -268,9 +274,8 @@ def main(argv: list[str] | None = None) -> int:
     workspace_root = Path(args.workspace_root) if args.workspace_root else None
 
     try:
-        progress_path = _resolve_progress_path(progress_reference, workspace_root=workspace_root)
         report = check_progress(
-            progress_path,
+            Path(progress_reference),
             workspace_root=workspace_root,
             verify_hashes=not args.no_verify_hashes,
             pin_policy=args.pin_policy,

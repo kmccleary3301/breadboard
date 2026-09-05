@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from breadboard.product.evidence.e4.path_refs import workspace_root_for_checkout  # noqa: E402
 from scripts.e4_parity import regenerate_evidence as regen  # noqa: E402
 from scripts.e4_parity.validators.hash_utils import sha256_bytes, sha256_file, sha256_json  # noqa: E402
 
@@ -47,7 +48,7 @@ def _snapshot_sha256_path(path: Path) -> str:
     payload = path.read_bytes()
     for prefix, marker in (
         (str(ROOT.resolve()).encode(), b"<repo-root>"),
-        (str(regen.WORKSPACE.resolve()).encode(), b"<workspace-root>"),
+        (str(workspace_root_for_checkout(ROOT)).encode(), b"<workspace-root>"),
     ):
         payload = payload.replace(prefix, marker)
     return sha256_bytes(payload)
@@ -58,7 +59,7 @@ def _display_path(path: Path) -> str:
         return resolved.relative_to(ROOT.resolve()).as_posix()
     except ValueError:
         try:
-            return "../" + resolved.relative_to(regen.WORKSPACE.resolve()).as_posix()
+            return "../" + resolved.relative_to(workspace_root_for_checkout(ROOT)).as_posix()
         except ValueError:
             return resolved.as_posix()
 
@@ -89,7 +90,7 @@ def _watch_set() -> list[Path]:
             if isinstance(artifacts_root, str):
                 declared.append(artifacts_root)
     for value in dict.fromkeys(declared):
-        base = ROOT.parent if value.startswith("../") else ROOT
+        base = workspace_root_for_checkout(ROOT) if value.startswith("../") else ROOT
         pattern = value[3:] if value.startswith("../") else value
         if _is_glob(value):
             for path in base.glob(pattern):
@@ -217,7 +218,7 @@ def _run(args: argparse.Namespace) -> int:
 
 def _explain(args: argparse.Namespace) -> int:
     try:
-        regen.validate_stage_graph(regen.STAGES)
+        regen.validate_stage_graph(regen.STAGES, expand_write_paths=False)
     except ValueError as exc:
         payload = {
             "schema_version": "bb.e4.regen_plan.v1",
