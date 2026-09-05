@@ -1247,6 +1247,17 @@ def test_two_existing_adapter_families_share_session_settlement_boundary(tmp_pat
         assert tuple(joined[-1].payload["result_refs"]) == settled.result_refs
         assert factory.settle(activation.child_session_id, expected_revision=0, outcome="completed", attempt_id=current.attempt_id) == settled
         assert factory.settle(activation.child_session_id, expected_revision=0, outcome="completed", result_refs=prepared.result_refs, attempt_id=current.attempt_id) == settled
+        if adapter is ray_adapter:
+            completions = [
+                event for event in ray_adapter.orchestrator.event_log.events
+                if event.type == "agent.job_completed"
+            ]
+            assert len(completions) == 1
+            replayed = MultiAgentOrchestrator(
+                TeamConfig("team"), event_log=ray_adapter.orchestrator.event_log
+            )
+            job = replayed.job_manager.get(completions[0].payload["job_id"])
+            assert job is not None and job.state == "completed"
         with pytest.raises(LateResultRejected):
             factory.settle(activation.child_session_id, expected_revision=0, outcome="completed", result_refs=("conflicting-ref",), attempt_id=current.attempt_id)
         with pytest.raises(LateResultRejected):
@@ -3372,7 +3383,10 @@ def test_reserved_empty_target_published_once(tmp_path: Path) -> None:
 
 
 
-def test_terminal_metadata_repairs_bridge_status_after_crash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("recovery", ["reconcile", "settle", "cancel_tree"])
+def test_terminal_metadata_repairs_bridge_status_after_crash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recovery: str
+) -> None:
     workspace, repository, parent, registry = _running_parent(tmp_path)
     adapter = RetryAdapter()
     factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[adapter])
@@ -3405,9 +3419,78 @@ def test_terminal_metadata_repairs_bridge_status_after_crash(tmp_path: Path, mon
         repository=repository,
         adapters=[adapter],
     )
-    repaired = restarted.reconcile(activation.recovery_ref)
+    if recovery == "reconcile":
+        repaired = restarted.reconcile(activation.recovery_ref)
+    elif recovery == "settle":
+        repaired = restarted.settle(
+            activation.child_session_id,
+            expected_revision=prepared.revision,
+            outcome="completed",
+            result_refs=prepared.result_refs,
+            attempt_id=current.attempt_id,
+        )
+    else:
+        restarted.cancel_tree(
+            parent_session_id="parent-session",
+            parent_work_item_id=parent.read_model.work_item_id,
+        )
+        repaired = restarted._record_state(activation.child_session_id)
     assert repaired.terminal_count == 1
     assert await_record(restarted.registry, activation.child_session_id).status.value == "completed"
+
+
+def test_terminal_owner_release_is_retried_before_idempotent_success(tmp_path: Path) -> None:
+    class RecoverableReleaseAdapter(RetryAdapter):
+        release_available = False
+        owns_execution = True
+
+        def release_terminal(self, target):
+            if not self.release_available:
+                return False
+            self.owns_execution = False
+            return True
+
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = RecoverableReleaseAdapter()
+    factory = DurableChildFactory(
+        workspace, registry=registry, repository=repository, adapters=[adapter]
+    )
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family, "retry terminal release"),
+    )
+    current = factory._record_state(activation.child_session_id)
+    prepared = factory.prepare_result(
+        activation.child_session_id,
+        expected_revision=current.revision,
+        result=b"done",
+        attempt_id=current.attempt_id,
+    )
+    for _ in range(2):
+        with pytest.raises(ChildError, match="release remains pending"):
+            factory.settle(
+                activation.child_session_id,
+                expected_revision=prepared.revision,
+                outcome="completed",
+                attempt_id=current.attempt_id,
+            )
+        assert adapter.owns_execution
+    adapter.release_available = True
+    settled = factory.settle(
+        activation.child_session_id,
+        expected_revision=prepared.revision,
+        outcome="completed",
+        attempt_id=current.attempt_id,
+    )
+    assert settled.terminal_count == 1
+    assert not adapter.owns_execution
+    joins = [
+        event for event in WorkItem.restore(repository, parent.read_model.work_item_id).events
+        if event.kind == "child.joined"
+    ]
+    assert len(joins) == 1
 
 
 def test_ray_dead_cached_actor_is_evicted_and_terminalized(
@@ -4476,6 +4559,7 @@ def test_shared_job_manager_scopes_ray_ids_by_workspace(
 
     assert adapter.observe(targets[0].retained()) == "completed"
     adapter.acknowledge_result(targets[0].retained())
+    adapter.release_terminal(targets[0].retained())
     assert (
         shared_manager.get(
             adapter._manager_job_id(provider_job_id, workspaces[0])
@@ -6212,7 +6296,7 @@ def test_terminal_cancel_adoption_persists_target_before_acknowledgement(
         def prepare_result(self, target, spec):
             return b"completed during cancellation"
 
-        def acknowledge_result(self, target):
+        def acknowledge_result(self, target, *, result_refs):
             retained = factory._record_state(activation.child_session_id)
             persisted_before_acknowledgement.append(
                 retained.execution_target["metadata"]["phase"] == "completed"

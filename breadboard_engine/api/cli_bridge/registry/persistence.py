@@ -1340,6 +1340,10 @@ class PersistenceMixin:
                     ] = session_status
             turns.append(serialized_turn)
         metadata = record.metadata if isinstance(record.metadata, dict) else {}
+        reward_summary = record.reward_summary
+        if reward_summary is not None and not isinstance(reward_summary, dict):
+            raise ValueError("retained reward summary is invalid")
+        reward_summary = dict(reward_summary) if reward_summary is not None else None
         role_lock = metadata.get("model_role_lock")
         if not isinstance(role_lock, dict):
             role_lock = None
@@ -1364,6 +1368,7 @@ class PersistenceMixin:
                 "created_at": record.created_at.isoformat(),
                 "last_activity_at": record.last_activity_at.isoformat(),
                 "logging_dir": record.logging_dir,
+                "reward_summary": reward_summary,
                 "event_seq": record.event_seq,
                 "replay_head_sequence": durable_head_sequence,
                 "event_head_id": durable_head_event_id,
@@ -1543,6 +1548,11 @@ class PersistenceMixin:
         ):
             raise ValueError("retained session logging directory is invalid")
         model = _retained_model_id(session.get("model"))
+        reward_summary = session.get("reward_summary")
+        if reward_summary is not None:
+            if not isinstance(reward_summary, dict):
+                raise ValueError("retained reward summary is invalid")
+            reward_summary = dict(reward_summary)
         metadata: Dict[str, Any] = {}
         durable_child = session.get("durable_child")
         if durable_child is not None:
@@ -1624,6 +1634,7 @@ class PersistenceMixin:
             created_at=datetime.fromisoformat(str(session["created_at"])),
             last_activity_at=datetime.fromisoformat(str(session["last_activity_at"])),
             logging_dir=logging_dir,
+            reward_summary=reward_summary,
             event_seq=persisted_event_seq,
             replay_history_partial=bool(persisted_event_seq),
             replay_head_event_id=persisted_head_event_id,

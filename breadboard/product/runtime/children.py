@@ -930,6 +930,8 @@ class DurableChildFactory:
         remaining_descendants: list[ChildState] = []
         for state in descendants:
             if state.terminal_count:
+                self._repair_terminal_owners(state)
+                self._status(state)
                 continue
             child_events = self.repository.read(state.child_work_item_id)
             if not child_events:
@@ -1858,6 +1860,8 @@ class DurableChildFactory:
             raise ExpectedRevisionConflict("stale child attempt")
         if state.terminal_count:
             if state.terminal_outcome == outcome and (result_refs is None or tuple(result_refs) == state.result_refs):
+                self._repair_terminal_owners(state)
+                self._status(state)
                 return state
             raise LateResultRejected("late child result cannot replace terminal outcome")
         if state.settlement is not None:
@@ -1948,10 +1952,6 @@ class DurableChildFactory:
         cleanup_handoff = getattr(adapter, "cleanup_handoff", None)
         if callable(cleanup_handoff):
             cleanup_handoff(state.execution_target)
-        if observed == "completed":
-            acknowledge = getattr(adapter, "acknowledge_result", None)
-            if callable(acknowledge):
-                acknowledge(state.execution_target)
         current = self._record_state(state.child_session_id)
         if observed == "completed" and not current.result_prepared:
             current = self.prepare_result(
@@ -2118,6 +2118,8 @@ class DurableChildFactory:
                     raise
         parent_work = WorkItem.restore(self.repository, state.parent_work_item_id, clock=self.clock, ids=self.ids)
         parent_work.join_child(state.child_work_item_id, state.child_session_id, outcome, result_refs)
+        if outcome == "completed":
+            self._acknowledge_prepared_result(state)
         state = self._cas(state, status=outcome, terminal_outcome=outcome, terminal_count=1, result_refs=tuple(result_refs), settlement=None, joined=True)
         self._status(state)
         release_terminal = getattr(
@@ -2333,6 +2335,13 @@ class DurableChildFactory:
             if target is not None:
                 return self._publish_target(state, target)
         return self._launch(state, activation, self._spec(state))
+    def _acknowledge_prepared_result(self, state: ChildState) -> None:
+        acknowledge = getattr(self.adapters[state.adapter_family], "acknowledge_result", None)
+        if callable(acknowledge):
+            store = self._artifact_store_for_state(state)
+            refs = tuple(artifact_store_ref(store._root, digest) for digest in state.result_refs)
+            acknowledge(state.execution_target, result_refs=refs)
+
     def _repair_terminal_owners(self, state: ChildState) -> None:
         outcome = state.terminal_outcome or state.status
         child_events = self.repository.read(state.child_work_item_id)
@@ -2401,6 +2410,8 @@ class DurableChildFactory:
         parent_work = WorkItem.restore(self.repository, state.parent_work_item_id, clock=self.clock, ids=self.ids)
         if state.child_work_item_id in parent_work.read_model.child_work_item_ids:
             parent_work.join_child(state.child_work_item_id, state.child_session_id, outcome, state.result_refs)
+        if outcome == "completed":
+            self._acknowledge_prepared_result(state)
         release_terminal = getattr(
             self.adapters[state.adapter_family],
             "release_terminal",
@@ -2703,9 +2714,6 @@ class DurableChildFactory:
             return state
         if observed == "completed":
             state = self._cas(state, execution_target=state.execution_target)
-            acknowledge = getattr(self.adapters[state.adapter_family], "acknowledge_result", None)
-            if callable(acknowledge):
-                acknowledge(state.execution_target)
             if not state.result_prepared:
                 state = self.prepare_result(child_session_id, expected_revision=state.revision, attempt_id=state.attempt_id)
             try:
@@ -3577,13 +3585,25 @@ class RayJobAdapter:
             self._mark_job_failed(target, job_id)
         return state
 
-    def acknowledge_result(self, target: Mapping[str, Any]) -> None:
+    def acknowledge_result(
+        self,
+        target: Mapping[str, Any],
+        *,
+        result_refs: Sequence[ArtifactRef] | None = None,
+    ) -> None:
         job_id = str(target.get("ref", "")).removeprefix("job:")
         workspace = self._target_workspace(target)
+        self._restore_job(target, job_id)
         manager_job_id = self._manager_job_id(job_id, workspace)
         metadata = target.get("metadata")
         job_data = metadata.get("job") if isinstance(metadata, Mapping) else None
         payload = job_data.get("result_payload") if isinstance(job_data, Mapping) else None
+        if result_refs is not None:
+            payload = (
+                {"artifact_ref": result_refs[0].as_dict()}
+                if len(result_refs) == 1
+                else {"artifact_refs": [ref.as_dict() for ref in result_refs]}
+            )
         job = self.orchestrator.job_manager.get(manager_job_id)
         if (not isinstance(payload, Mapping) or not payload) and job is not None:
             payload = getattr(job, "result_payload", None)
@@ -3601,7 +3621,6 @@ class RayJobAdapter:
             job_data["state"] = "completed"
             job_data["seq"] = marked.seq
             job_data["result_payload"] = dict(payload)
-        self.release_terminal(target)
     def cancel(self, target: Mapping[str, Any]) -> bool:
         job_id = str(target.get("ref", "")).removeprefix("job:")
         workspace = self._target_workspace(target)
@@ -3653,6 +3672,7 @@ class RayJobAdapter:
                     observed = self.observe(target)
                     if observed == "completed":
                         self.acknowledge_result(target)
+                        self.release_terminal(target)
                     return False
                 if cancellation_state != "killed":
                     return False
@@ -4283,7 +4303,12 @@ class ProcessExecutionAdapter:
     def cleanup_handoff(self, target: Mapping[str, Any]) -> None:
         self._clear_handoff(str(target.get("ref", "")))
 
-    def acknowledge_result(self, target: Mapping[str, Any]) -> None:
+    def acknowledge_result(
+        self,
+        target: Mapping[str, Any],
+        *,
+        result_refs: Sequence[ArtifactRef] | None = None,
+    ) -> None:
         self._clear_handoff(str(target.get("ref", "")))
 
 
