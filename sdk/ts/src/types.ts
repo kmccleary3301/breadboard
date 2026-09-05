@@ -319,6 +319,12 @@ export interface SessionCreateResponse {
   readonly logging_dir?: string | null
 }
 
+export interface SessionListRow {
+  readonly session_id: string
+  readonly status: SessionStatus | string
+  readonly event_count: number
+}
+
 export interface SessionSummary {
   readonly session_id: string
   readonly status: SessionStatus | string
