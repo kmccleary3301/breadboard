@@ -23,6 +23,7 @@ The process adapter is a trusted POSIX process-group lifecycle boundary, not a s
 4. Settlement reservation is CAS-committed on `SessionRecord` before Product Session or Work Item terminal mutation. Fresh `reconcile` completes that pending reservation and cannot append a second terminal outcome.
 5. Cancellation intent is CAS-committed before signaling the adapter. `cancel_tree` persists the parent Session intent and every retained descendant intent before invoking any descendant signal. A late non-canceled result loses the revision/intent race.
 6. Session terminal mutation, Work Item terminal mutation, and retained parent join/result reference are replayed through their existing owners. No private child lifecycle journal or parallel supervisor is introduced.
+7. Completed results are acknowledged at the adapter before the terminal child record is published; execution-owner release follows that durable publication. Reconciliation, repeated settlement, and parent cancellation repair terminal owners before reporting success or clearing cancellation intent. A transient release failure remains retryable without a second settlement or parent join.
 - **Retry behavior:** A retryable absent execution target closes the current Work Item attempt and allocates a new attempt and placement before relaunch; the child session and its recovery reference remain stable across attempts. Retry policy, not the adapter, decides whether retry occurs.
 
 ## Deletion / non-deletion decision
@@ -30,6 +31,7 @@ The process adapter is a trusted POSIX process-group lifecycle boundary, not a s
 - **Deleted:** the earlier private child event journal and parallel durable Work Item repository were removed. No duplicate child supervisor, provider-specific lifecycle policy, or direct parent-owned completion path remains in this boundary.
 - **Not deleted:** existing `Session`, `session_store`, `SessionRecord`, `SessionRegistry`, `WorkItem`, `WorkItemRepository`, `ArtifactStore`, `MultiAgentOrchestrator`, `JobManager`, and process execution foundations remain authoritative in their existing domains. No public registry/schema/generated path was changed.
 - **Owner-side additions:** `SessionRegistry.update_durable_child` is a small CAS operation on retained `SessionRecord` metadata, and persistence serializes/deserializes the whitelisted durable-child object. `WorkItemRepository` accepts an optional JSONL path while preserving its existing owner/reducer interface, so Work Item event replay survives process restart. `JobRef` retains the existing completion result payload for the Ray adapter; it is not a new team journal.
+- **Retained summaries:** reward summaries round-trip with Session records; ordinary reads and registry replacement preserve them.
 
 ## Exact verification
 
