@@ -1567,6 +1567,15 @@ class SessionService:
             for key in (request.overrides or {})
         )
         request_metadata = dict(request.metadata or {})
+        if not request.permission_mode:
+            metadata_permission_mode = request_metadata.get("permission_mode")
+            if (
+                isinstance(metadata_permission_mode, str)
+                and metadata_permission_mode.strip()
+            ):
+                request = request.model_copy(
+                    update={"permission_mode": metadata_permission_mode}
+                )
         role_document = request_metadata.pop(MODEL_ROLES_METADATA_KEY, None)
         if (
             role_document is None
@@ -2597,24 +2606,45 @@ class SessionService:
             runtime_overrides = metadata.get("runtime_overrides")
             request_overrides = retained_runtime_overrides(runtime_overrides)
             record.metadata = metadata
-            runner = SessionRunner(
-                session=record,
-                registry=self.registry,
-                request=SessionCreateRequest(
-                    config_path=config_path,
-                    task="",
-                    overrides=request_overrides,
-                    metadata=metadata,
-                    workspace=workspace,
-                    permission_mode=permission_mode,
-                ),
+
+            def build_runtime_candidate(
+                authored_permission_mode: str | None,
+            ) -> tuple[SessionRunner, dict[str, Any], str]:
+                runner = SessionRunner(
+                    session=record,
+                    registry=self.registry,
+                    request=SessionCreateRequest(
+                        config_path=config_path,
+                        task="",
+                        overrides=request_overrides,
+                        metadata=metadata,
+                        workspace=workspace,
+                        permission_mode=authored_permission_mode,
+                    ),
+                )
+                runtime_config = runner.prepare_runtime_config()
+                rebuilt_generation = self._runtime_lock(
+                    record.session_id,
+                    runtime_config,
+                    runner.request.config_path,
+                ).as_dict()["graph_hash"]
+                return runner, runtime_config, rebuilt_generation
+
+            authored_permission_mode = (
+                permission_mode
+                if permission_mode not in {"prompt", "ask", "interactive"}
+                else None
             )
-            runtime_config = runner.prepare_runtime_config()
-            rebuilt_generation = self._runtime_lock(
-                record.session_id,
-                runtime_config,
-                runner.request.config_path,
-            ).as_dict()["graph_hash"]
+            runner, runtime_config, rebuilt_generation = build_runtime_candidate(
+                authored_permission_mode
+            )
+            if (
+                rebuilt_generation != record.product_session.pinned_generation_id
+                and authored_permission_mode is None
+            ):
+                runner, runtime_config, rebuilt_generation = build_runtime_candidate(
+                    permission_mode
+                )
         except Exception as error:
             raise ReplayError(
                 "generation_unavailable",

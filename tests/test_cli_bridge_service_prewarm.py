@@ -109,6 +109,48 @@ async def test_default_session_create_uses_exact_profile_authority(
     assert str(resolution.source_path) not in json.dumps(skill_payload)
     await service.stop_session(response.session_id)
     await _stop(record)
+@pytest.mark.asyncio
+async def test_implicit_permission_policy_survives_fresh_retained_resume(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    state_root = tmp_path / "state"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    service = SessionService(state_root=state_root)
+    response = await service.create_session(
+        SessionCreateRequest(
+            task="",
+            workspace=str(workspace),
+            overrides={"providers.default_model": "cli_mock/reference"},
+        ),
+        event_root=tmp_path / "events",
+        runtime_root=tmp_path / "records",
+    )
+    record = await service.ensure_session(response.session_id)
+    expected_permissions = {
+        "options": {"mode": "prompt"},
+        "shell": {"default": "ask"},
+    }
+    initial_config = record.runner.current_runtime_config()
+    pinned_generation = record.product_session.pinned_generation_id
+    assert initial_config["permissions"] == expected_permissions
+    assert record.metadata["permission_mode"] == "prompt"
+    await service.registry.persist(record)
+    await _stop(record)
+
+    fresh = SessionService(state_root=state_root)
+    restored = await fresh.ensure_session(response.session_id)
+    assert restored.runner.current_runtime_config()["permissions"] == expected_permissions
+    assert restored.metadata["permission_mode"] == "prompt"
+    rebuilt_lock = fresh._runtime_lock(
+        response.session_id,
+        restored.runner.current_runtime_config(),
+        restored.runner.request.config_path,
+    )
+    assert rebuilt_lock["graph_hash"] == pinned_generation
+    await _stop(restored)
 
 @pytest.mark.asyncio
 async def test_create_strips_caller_internal_runtime_metadata(
