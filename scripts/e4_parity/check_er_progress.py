@@ -7,18 +7,19 @@ import sys
 from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any, Literal, Mapping
-
 from jsonschema import Draft202012Validator
 
 try:
+    from scripts.e4_parity.path_refs import workspace_root_for_checkout
     from scripts.e4_parity.validators.hash_utils import sha256_file
     from scripts.e4_parity.validators.gate_errors import apply_gate_error_envelope, gate_exit_code
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
+    from path_refs import workspace_root_for_checkout
     from validators.hash_utils import sha256_file
     from validators.gate_errors import apply_gate_error_envelope, gate_exit_code
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKSPACE_ROOT = ROOT.parent
+WORKSPACE_ROOT = workspace_root_for_checkout(ROOT)
 DEFAULT_PROGRESS = WORKSPACE_ROOT / "docs_tmp" / "phase_16" / "BB_ER_PROGRESS.json"
 SCHEMA_PATH = ROOT / "contracts" / "kernel" / "schemas" / "bb.er.progress.v1.schema.json"
 DERIVATIVE_ROOTS_PATH = ROOT / "docs" / "contracts" / "e4_derivative_roots.json"

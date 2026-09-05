@@ -9,9 +9,10 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from scripts.e4_parity import check_er_progress as checker
+from scripts.e4_parity.path_refs import workspace_root_for_checkout
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKSPACE_ROOT = ROOT.parent
+WORKSPACE_ROOT = workspace_root_for_checkout(ROOT)
 
 PIN_POLICY_V2_DERIVATIVE_FIXTURES = (
     ("docs/conformance/support_claims/claim.json", "docs/conformance/support_claims/**"),

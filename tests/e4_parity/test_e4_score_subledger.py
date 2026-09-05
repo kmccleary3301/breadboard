@@ -10,9 +10,11 @@ from typing import Any
 
 import pytest
 
+from scripts.e4_parity.path_refs import workspace_root_for_checkout
+
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKSPACE_ROOT = ROOT.parent
+WORKSPACE_ROOT = workspace_root_for_checkout(ROOT)
 FALLBACK_SCORE_SUBLEDGER_PATH = WORKSPACE_ROOT / "docs_tmp" / "phase_15" / "BB_E4_SCORE_SUBLEDGER.json"
 FALLBACK_ACCEPTED_CLAIM_REPORT_PATH = (
     WORKSPACE_ROOT

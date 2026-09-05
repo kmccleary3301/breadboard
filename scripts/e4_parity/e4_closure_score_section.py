@@ -8,15 +8,20 @@ from pathlib import Path
 from typing import Any, Mapping
 
 try:
+    from scripts.e4_parity.path_refs import (
+        ReferenceResolutionError,
+        resolve_declared_reference,
+        workspace_root_for_checkout,
+    )
     from scripts.e4_parity.validators import hash_utils as _hash_utils
     from scripts.e4_parity.validators.gate_errors import apply_gate_error_envelope, gate_exit_code
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
+    from path_refs import ReferenceResolutionError, resolve_declared_reference, workspace_root_for_checkout
     from validators import hash_utils as _hash_utils
     from validators.gate_errors import apply_gate_error_envelope, gate_exit_code
 
-
 ROOT = Path(__file__).resolve().parents[2]
-WORKSPACE_ROOT = ROOT.parent
+WORKSPACE_ROOT = workspace_root_for_checkout(ROOT)
 DEFAULT_SUBLEDGER = WORKSPACE_ROOT / "docs_tmp" / "phase_15" / "BB_E4_SCORE_SUBLEDGER.json"
 DEFAULT_ACCEPTED_REPORT = WORKSPACE_ROOT / "docs_tmp" / "phase_15" / "pro_requests" / "e4_breakthrough_20260629" / "execution" / "BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_REPORT.json"
 SCHEMA_VERSION = "bb.e4.score_subledger.v1"
@@ -56,15 +61,36 @@ def _ref_row_id(ref: str) -> str | None:
     return parts[1]
 
 
-def _resolve(repo_root: Path, ref: str) -> Path:
+def _resolve(repo_root: Path, ref: str, *, workspace_root: Path, label: str = "score subledger reference") -> Path:
     raw = _strip_ref_suffix(ref)
     path = Path(raw)
-    if path.is_absolute():
-        return path.resolve()
-    workspace = repo_root.parent
-    if raw.startswith("docs_tmp/") or raw.startswith(f"{repo_root.name}/"):
-        return (workspace / raw).resolve()
-    return (repo_root / raw).resolve()
+    namespace = (
+        "workspace_evidence"
+        if path.parts and path.parts[0] in {"docs_tmp", repo_root.name}
+        else "repo"
+    )
+    return resolve_declared_reference(
+        ref,
+        checkout_root=repo_root,
+        namespace=namespace,
+        label=label,
+        workspace_root=workspace_root,
+        must_exist=False,
+    )
+
+
+def _resolve_for_validation(
+    repo_root: Path,
+    workspace_root: Path,
+    label: str,
+    ref: str,
+    errors: list[str],
+) -> Path | None:
+    try:
+        return _resolve(repo_root, ref, workspace_root=workspace_root, label=label)
+    except ReferenceResolutionError as exc:
+        errors.append(f"{label}: {exc}")
+        return None
 
 
 def _as_mapping(value: Any, label: str, errors: list[str]) -> Mapping[str, Any]:
@@ -81,12 +107,20 @@ def _as_list(value: Any, label: str, errors: list[str]) -> list[Any]:
     return value
 
 
-def _validate_ref_hash(repo_root: Path, label: str, ref: str, errors: list[str]) -> None:
+def _validate_ref_hash(
+    repo_root: Path,
+    workspace_root: Path,
+    label: str,
+    ref: str,
+    errors: list[str],
+) -> None:
     expected = _ref_hash(ref)
     if expected is None:
         errors.append(f"{label}: missing sha256 hash")
         return
-    path = _resolve(repo_root, ref)
+    path = _resolve_for_validation(repo_root, workspace_root, label, ref, errors)
+    if path is None:
+        return
     if not path.exists():
         errors.append(f"{label}: missing path: {_strip_ref_suffix(ref)}")
         return
@@ -94,11 +128,21 @@ def _validate_ref_hash(repo_root: Path, label: str, ref: str, errors: list[str])
     if actual != expected:
         errors.append(f"{label}: hash mismatch for {_strip_ref_suffix(ref)}: expected {expected}, got {actual}")
 
-def _validate_path_hash(repo_root: Path, label: str, ref: str, expected_hash: Any, errors: list[str]) -> None:
+
+def _validate_path_hash(
+    repo_root: Path,
+    workspace_root: Path,
+    label: str,
+    ref: str,
+    expected_hash: Any,
+    errors: list[str],
+) -> None:
     if not isinstance(expected_hash, str) or not expected_hash.startswith("sha256:"):
         errors.append(f"{label}: expected sha256 hash is missing")
         return
-    path = _resolve(repo_root, ref)
+    path = _resolve_for_validation(repo_root, workspace_root, label, ref, errors)
+    if path is None:
+        return
     if not path.exists():
         errors.append(f"{label}: missing path: {_strip_ref_suffix(ref)}")
         return
@@ -107,11 +151,19 @@ def _validate_path_hash(repo_root: Path, label: str, ref: str, expected_hash: An
         errors.append(f"{label}: hash mismatch for {_strip_ref_suffix(ref)}: expected {expected_hash}, got {actual}")
 
 
-def _validate_ledger_row_ref(repo_root: Path, label: str, ref: Any, errors: list[str]) -> None:
+def _validate_ledger_row_ref(
+    repo_root: Path,
+    workspace_root: Path,
+    label: str,
+    ref: Any,
+    errors: list[str],
+) -> None:
     if not isinstance(ref, str) or not ref:
         errors.append(f"{label}: ledger row ref must be a non-empty string")
         return
-    path = _resolve(repo_root, ref)
+    path = _resolve_for_validation(repo_root, workspace_root, label, ref, errors)
+    if path is None:
+        return
     if not path.exists():
         errors.append(f"{label}: missing path: {_strip_ref_suffix(ref)}")
         return
@@ -148,6 +200,7 @@ def _is_c4_non_target_accounting_row(row: Mapping[str, Any]) -> bool:
 
 def _validate_evidence_backed_score_row(
     repo_root: Path,
+    workspace_root: Path,
     *,
     row: Mapping[str, Any],
     row_id: str,
@@ -166,6 +219,7 @@ def _validate_evidence_backed_score_row(
     if isinstance(support_claim_ref, str) and support_claim_ref:
         _validate_path_hash(
             repo_root,
+            workspace_root,
             f"{label}.support_claim_ref",
             support_claim_ref,
             row.get("support_claim_sha256"),
@@ -176,6 +230,7 @@ def _validate_evidence_backed_score_row(
     if isinstance(evidence_manifest_ref, str) and evidence_manifest_ref:
         _validate_path_hash(
             repo_root,
+            workspace_root,
             f"{label}.evidence_manifest_ref",
             evidence_manifest_ref,
             row.get("evidence_manifest_sha256"),
@@ -185,16 +240,16 @@ def _validate_evidence_backed_score_row(
         errors.append(f"{label}.evidence_manifest_ref: missing")
 
     for ledger_ref in _as_list(row.get("ledger_row_refs"), f"{label}.ledger_row_refs", errors):
-        _validate_ledger_row_ref(repo_root, f"{label}.ledger_row_refs", ledger_ref, errors)
+        _validate_ledger_row_ref(repo_root, workspace_root, f"{label}.ledger_row_refs", ledger_ref, errors)
     for field in ("phase", "target_family", "live_validator_ref"):
         if not row.get(field):
             errors.append(f"{label}.{field}: missing")
     if isinstance(row.get("live_validator_ref"), str):
-        _validate_ref_hash(repo_root, f"{label}.live_validator_ref", str(row["live_validator_ref"]), errors)
-
+        _validate_ref_hash(repo_root, workspace_root, f"{label}.live_validator_ref", str(row["live_validator_ref"]), errors)
 
 def _validate_accepted_claim(
     repo_root: Path,
+    workspace_root: Path,
     *,
     claim: Mapping[str, Any],
     index: int,
@@ -222,6 +277,7 @@ def _validate_accepted_claim(
         errors.append(f"{claim_list_label}[{index}].ledger_row_refs: missing")
     _validate_path_hash(
         repo_root,
+        workspace_root,
         f"{claim_list_label}[{index}].claim_ref",
         claim_ref,
         claim.get("claim_sha256"),
@@ -231,6 +287,7 @@ def _validate_accepted_claim(
     if isinstance(evidence_manifest_ref, str) and evidence_manifest_ref:
         _validate_path_hash(
             repo_root,
+            workspace_root,
             f"{claim_list_label}[{index}].evidence_manifest_ref",
             evidence_manifest_ref,
             claim.get("evidence_manifest_sha256"),
@@ -239,7 +296,13 @@ def _validate_accepted_claim(
     else:
         errors.append(f"{claim_list_label}[{index}].evidence_manifest_ref: missing")
     for ledger_ref in _as_list(claim.get("ledger_row_refs"), f"{claim_list_label}[{index}].ledger_row_refs", errors):
-        _validate_ledger_row_ref(repo_root, f"{claim_list_label}[{index}].ledger_row_refs", ledger_ref, errors)
+        _validate_ledger_row_ref(
+            repo_root,
+            workspace_root,
+            f"{claim_list_label}[{index}].ledger_row_refs",
+            ledger_ref,
+            errors,
+        )
 
     row = rows_by_claim_ref.get(claim_ref)
     if row is None:
@@ -268,7 +331,13 @@ def _validate_accepted_claim(
     if claim.get("ledger_row_refs") != row.get("ledger_row_refs"):
         errors.append(f"{claim_list_label}[{index}].ledger_row_refs does not match score row")
     if isinstance(claim.get("live_validator_ref"), str):
-        _validate_ref_hash(repo_root, f"{claim_list_label}[{index}].live_validator_ref", str(claim["live_validator_ref"]), errors)
+        _validate_ref_hash(
+            repo_root,
+            workspace_root,
+            f"{claim_list_label}[{index}].live_validator_ref",
+            str(claim["live_validator_ref"]),
+            errors,
+        )
 
 
 def _missing_claim_refs(rows_by_claim_ref: Mapping[str, Mapping[str, Any]], seen_claim_refs: set[str]) -> list[str]:
@@ -279,13 +348,16 @@ def collect_score_subledger_errors(
     subledger_path: Path | str = DEFAULT_SUBLEDGER,
     accepted_report_path: Path | str = DEFAULT_ACCEPTED_REPORT,
     repo_root: Path | str = ROOT,
+    workspace_root: Path | str = WORKSPACE_ROOT,
     subledger_data: Any | None = None,
     accepted_report_data: Any | None = None,
 ) -> list[str]:
     repo = Path(repo_root).resolve()
+    workspace = Path(workspace_root).resolve()
     subledger_file = Path(subledger_path).resolve()
     accepted_file = Path(accepted_report_path).resolve()
     errors: list[str] = []
+
 
     subledger = _as_mapping(
         _load_json(subledger_file) if subledger_data is None else subledger_data,
@@ -332,6 +404,7 @@ def collect_score_subledger_errors(
             target_support_points += points
             _validate_evidence_backed_score_row(
                 repo,
+                workspace,
                 row=row,
                 row_id=row_id,
                 label=f"subledger.score_rows[{row_id}]",
@@ -339,9 +412,11 @@ def collect_score_subledger_errors(
                 duplicate_label="support_claim_ref",
                 errors=errors,
             )
+
         elif _is_c4_non_target_accounting_row(row):
             _validate_evidence_backed_score_row(
                 repo,
+                workspace,
                 row=row,
                 row_id=row_id,
                 label=f"subledger.score_rows[{row_id}]",
@@ -384,6 +459,7 @@ def collect_score_subledger_errors(
     for index, raw_claim in enumerate(accepted_claims, start=1):
         _validate_accepted_claim(
             repo,
+            workspace,
             claim=_as_mapping(raw_claim, f"accepted_report.accepted_support_claims[{index}]", errors),
             index=index,
             claim_list_label="accepted_report.accepted_support_claims",
@@ -399,6 +475,7 @@ def collect_score_subledger_errors(
     for index, raw_claim in enumerate(accepted_non_target_claims, start=1):
         _validate_accepted_claim(
             repo,
+            workspace,
             claim=_as_mapping(raw_claim, f"accepted_report.accepted_non_target_claims[{index}]", errors),
             index=index,
             claim_list_label="accepted_report.accepted_non_target_claims",
