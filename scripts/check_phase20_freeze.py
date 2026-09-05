@@ -154,13 +154,13 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
     },
     "https://breadboard.dev/contracts/public/schemas/bb.research.compare.input.v1.schema.json": {
         "packet": "DSH-W10",
-        "sha256": "1b64d6e150fc0629cf10aaa09853dfd69e89b92632efc6638c49e675dfd0147e",
+        "sha256": "df54f82dd422640de2df6c24fc5a070d4637c069fc3b9db6adfc8034a5cf1b0b",
         "class": "plan_mandated_evolution",
         "ref": "AM30",
     },
     "https://breadboard.dev/contracts/public/schemas/bb.research.compare.result.v1.schema.json": {
         "packet": "DSH-W10",
-        "sha256": "4b8d48129870d6f7c82a22740f4931ecb40f90b1577a28475ff45f8829e7977a",
+        "sha256": "e358c5b60a21146e181979c57ad46fe4bda4c66e62efa6b89e26cc1f5c405229",
         "class": "plan_mandated_evolution",
         "ref": "AM30",
     },

@@ -4,6 +4,7 @@ The TypeScript worker owns the provider-neutral sandbox contract.  This module
 only owns the real Ray actor lifecycle behind that contract; it is intentionally
 not part of the public operation or SDK surface.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -30,21 +31,34 @@ def _request_payload(value: object) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise ValueError("Ray helper request must be an object")
     payload = dict(value)
-    for name in ("operation", "execution_id", "request_digest", "workspace", "ray_address", "ray_namespace"):
+    for name in (
+        "operation",
+        "execution_id",
+        "request_digest",
+        "workspace",
+        "ray_address",
+        "ray_namespace",
+    ):
         _required_text(payload.get(name), name)
     request = payload.get("request")
     if not isinstance(request, Mapping):
         raise ValueError("Ray helper request has no sandbox request")
     command = request.get("command")
-    if not isinstance(command, list) or not command or any(type(part) is not str or not part for part in command):
+    if (
+        not isinstance(command, list)
+        or not command
+        or any(type(part) is not str or not part for part in command)
+    ):
         raise ValueError("Ray helper sandbox command is invalid")
     max_output = payload.get("max_output_bytes")
-    if type(max_output) is not int or max_output < 1:
-        raise ValueError("max_output_bytes must be a positive integer")
+    if type(max_output) is not int or not 1 <= max_output <= _MAX_OUTPUT_BYTES:
+        raise ValueError("max_output_bytes must be between 1 and 4 MiB")
     return payload
 
 
-def _bounded_command(command: Sequence[str], workspace: str, max_output_bytes: int) -> dict[str, Any]:
+def _bounded_command(
+    command: Sequence[str], workspace: str, max_output_bytes: int
+) -> dict[str, Any]:
     child = subprocess.Popen(
         list(command),
         cwd=workspace,
@@ -83,13 +97,13 @@ def _bounded_command(command: Sequence[str], workspace: str, max_output_bytes: i
             "exit_code": exit_code,
             "stdout": "",
             "stderr": "ray command output exceeded bounded limit",
-            "status": "failed",
+            "state": "failed",
         }
     return {
         "exit_code": exit_code,
         "stdout": bytes(buffers["stdout"]).decode("utf-8", errors="strict"),
         "stderr": bytes(buffers["stderr"]).decode("utf-8", errors="strict"),
-        "status": "completed" if exit_code == 0 else "failed",
+        "state": "completed" if exit_code == 0 else "failed",
     }
 
 
@@ -104,22 +118,34 @@ def _ray_runtime(address: str, namespace: str) -> Any:
     except ImportError as error:
         raise RuntimeError("Ray is not installed for the requested world") from error
     if address == "local":
-        ray.init(namespace=namespace, ignore_reinit_error=True)
+        ray.init(
+            address="local",
+            namespace=namespace,
+            num_cpus=1,
+            include_dashboard=False,
+            log_to_driver=False,
+            logging_level="ERROR",
+        )
     else:
-        ray.init(address=address, namespace=namespace, ignore_reinit_error=True)
+        ray.init(
+            address=address,
+            namespace=namespace,
+            log_to_driver=False,
+            logging_level="ERROR",
+        )
     return ray
 
 
-def _run_operation(payload: dict[str, Any]) -> dict[str, Any]:
+def _run_operation(payload: dict[str, Any], ray: Any) -> dict[str, Any]:
     operation = str(payload["operation"])
     execution_id = str(payload["execution_id"])
     namespace = str(payload["ray_namespace"])
-    address = str(payload["ray_address"])
     name = _actor_name(namespace, execution_id)
-    ray = _ray_runtime(address, namespace)
 
     @ray.remote
-    def run(command: list[str], workspace: str, max_output_bytes: int) -> dict[str, Any]:
+    def run(
+        command: list[str], workspace: str, max_output_bytes: int
+    ) -> dict[str, Any]:
         return _bounded_command(command, workspace, max_output_bytes)
 
     @ray.remote
@@ -129,7 +155,23 @@ def _run_operation(payload: dict[str, Any]) -> dict[str, Any]:
             self.result_ref: Any | None = None
             self.cancelled = False
 
-        def start(self, request_digest: str, command: list[str], workspace: str, max_output_bytes: int) -> str:
+        def identity(self) -> dict[str, Any]:
+            context = ray.get_runtime_context()
+            return {
+                "request_digest": self.request_digest,
+                "evidence_refs": [
+                    f"ray://actors/{context.get_actor_id()}",
+                    f"ray://nodes/{context.get_node_id()}",
+                ],
+            }
+
+        def start(
+            self,
+            request_digest: str,
+            command: list[str],
+            workspace: str,
+            max_output_bytes: int,
+        ) -> str:
             if request_digest != self.request_digest:
                 raise RuntimeError("Ray request digest does not match retained actor")
             if self.result_ref is None and not self.cancelled:
@@ -156,47 +198,93 @@ def _run_operation(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         actor = ray.get_actor(name, namespace=namespace)
     except ValueError:
-        actor = ResearchWorldJob.options(name=name, namespace=namespace, lifetime="detached").remote(str(payload["request_digest"]))
-    try:
-        if operation == "submit":
-            request = dict(payload["request"])
-            ray.get(actor.start.remote(str(payload["request_digest"]), list(request["command"]), str(payload["workspace"]), int(payload["max_output_bytes"])))
-            return {"state": "accepted", "execution_id": execution_id}
-        if operation == "observe":
-            result = ray.get(actor.observe.remote())
-            result["execution_id"] = execution_id
-            return result
-        if operation == "cancel":
-            result = ray.get(actor.cancel.remote())
-            result["execution_id"] = execution_id
-            return result
         if operation == "release":
-            ray.kill(actor, no_restart=True)
-            return {"state": "completed", "execution_id": execution_id}
-        raise ValueError(f"unsupported Ray helper operation: {operation}")
-    finally:
-        ray.shutdown()
+            return {
+                "state": "completed",
+                "execution_id": execution_id,
+                "evidence_refs": [],
+            }
+        if operation != "submit":
+            raise RuntimeError("retained Ray execution is unavailable")
+        actor = ResearchWorldJob.options(
+            name=name, namespace=namespace, lifetime="detached"
+        ).remote(payload["request_digest"])
+    identity = ray.get(actor.identity.remote())
+    if identity["request_digest"] != payload["request_digest"]:
+        raise RuntimeError("Ray request digest does not match retained actor")
+    if operation == "submit":
+        request = payload["request"]
+        ray.get(
+            actor.start.remote(
+                payload["request_digest"],
+                request["command"],
+                payload["workspace"],
+                payload["max_output_bytes"],
+            )
+        )
+        return {
+            "state": "accepted",
+            "execution_id": execution_id,
+            "evidence_refs": identity["evidence_refs"],
+        }
+    if operation == "observe":
+        result = ray.get(actor.observe.remote())
+        result["execution_id"] = execution_id
+        result["evidence_refs"] = identity["evidence_refs"]
+        return result
+    if operation == "cancel":
+        result = ray.get(actor.cancel.remote())
+        result["execution_id"] = execution_id
+        result["evidence_refs"] = identity["evidence_refs"]
+        return result
+    if operation == "release":
+        ray.get(actor.cancel.remote())
+        ray.kill(actor, no_restart=True)
+        return {
+            "state": "completed",
+            "execution_id": execution_id,
+            "evidence_refs": identity["evidence_refs"],
+        }
+    raise ValueError(f"unsupported Ray helper operation: {operation}")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="breadboard research-world-helper")
-    parser.add_argument("--research-world-helper", action="store_true")
-    parser.add_argument("operation", choices=("submit", "observe", "cancel", "release"))
+    parser.add_argument("--research-world-helper", action="store_true", required=True)
     parser.parse_args(argv)
+    ray = None
+    identity = None
+
+    def terminate(_signal: int, _frame: object) -> None:
+        raise SystemExit(143)
+
+    signal.signal(signal.SIGTERM, terminate)
     try:
-        raw = sys.stdin.buffer.read(_MAX_INPUT_BYTES + 1)
-        if len(raw) > _MAX_INPUT_BYTES:
-            raise ValueError("Ray helper input exceeds bounded limit")
-        payload = _request_payload(json.loads(raw.decode("utf-8")))
-        result = _run_operation(payload)
-        encoded = json.dumps(result, separators=(",", ":")).encode("utf-8")
-        if len(encoded) > _MAX_OUTPUT_BYTES:
-            raise ValueError("Ray helper result exceeds bounded limit")
-        sys.stdout.buffer.write(encoded)
+        while raw := sys.stdin.buffer.readline(_MAX_INPUT_BYTES + 1):
+            if len(raw) > _MAX_INPUT_BYTES:
+                raise ValueError("Ray helper input exceeds bounded limit")
+            payload = _request_payload(json.loads(raw.decode("utf-8")))
+            selected = payload["ray_address"], payload["ray_namespace"]
+            if ray is None:
+                ray = _ray_runtime(*selected)
+                identity = selected
+            elif selected != identity:
+                raise ValueError("Ray helper cannot switch its cluster or namespace")
+            result = _run_operation(payload, ray)
+            encoded = json.dumps(result, separators=(",", ":")).encode("utf-8")
+            if len(encoded) > _MAX_OUTPUT_BYTES:
+                raise ValueError("Ray helper result exceeds bounded limit")
+            sys.stdout.buffer.write(encoded + b"\n")
+            sys.stdout.buffer.flush()
+            if payload["operation"] == "release":
+                break
         return 0
     except Exception as error:
         sys.stderr.write(f"{error}\n")
         return 1
+    finally:
+        if ray is not None:
+            ray.shutdown()
 
 
 if __name__ == "__main__":

@@ -1,8 +1,13 @@
+/// <reference lib="es2024.promise" />
 import { spawn } from "node:child_process"
+import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import { createHash } from "node:crypto"
-import { chmod, copyFile, mkdir, readFile, stat, unlink } from "node:fs/promises"
+import { readFile, stat } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
-import { dirname, join, relative, resolve } from "node:path"
+import { relative, resolve } from "node:path"
+import { createInterface } from "node:readline"
+import type { ExecutionWorldV1 } from "@breadboard/execution-drivers"
+import type { ScheduledExecutionEvidenceV1 } from "@breadboard/execution-driver-remote"
 
 import {
   assertValid,
@@ -21,21 +26,20 @@ import {
   makeSshSlurmBackend,
   type ScheduledExecutionBackendV1,
   type ScheduledExecutionDriverRegistrationV1,
+  type ScheduledExecutionHandleV1,
   type ScheduledExecutionObservationV1,
 } from "@breadboard/execution-driver-remote"
 import { createKernelExecutionWorld } from "./default-world.js"
 import { buildExecutionPlacement } from "./contracts.js"
 
-const WORKER_TOKEN = "@breadboard/research-world-worker/v1"
-const WORKER_BINDING_ENV = "BREADBOARD_RESEARCH_WORLD_WORKER"
 const WORKER_HELPER_ENV = "BREADBOARD_RESEARCH_WORLD_HELPER"
 const WORKER_MODE_ENV = "BREADBOARD_RESEARCH_WORLD_MODE"
 const VERIFIED_CLOSURE_ENV = "BREADBOARD_VERIFIED_ENGINE_ROOT"
 const MAX_TASK_BYTES = 1024 * 1024
 const MAX_RESULT_BYTES = 4 * 1024 * 1024
+const WORLD_DEADLINE_MS = 120_000
 const WORLD_MASK = ["/occurred_at", "/timestamp"] as const
 
-type WorldKind = "local" | "container" | "ray" | "slurm"
 type WorldFieldMask = readonly ["/occurred_at", "/timestamp"]
 
 type LocalWorld = {
@@ -85,6 +89,7 @@ type WorkerResult = {
   readonly stdout: string
   readonly stderr: string
   readonly problem: WorkerProblem | null
+  readonly execution_evidence: readonly ScheduledExecutionEvidenceV1[]
 }
 
 type HelperOperation = "submit" | "observe" | "cancel" | "release"
@@ -92,6 +97,7 @@ type HelperState = "accepted" | "running" | "completed" | "failed" | "cancelled"
 type HelperResponse = {
   readonly state: HelperState
   readonly execution_id?: string
+  readonly evidence_refs: readonly string[]
   readonly exit_code?: number | null
   readonly stdout?: string
   readonly stderr?: string
@@ -149,7 +155,7 @@ function parseFieldMask(value: unknown): WorldFieldMask {
 
 function parseWorld(value: unknown): ResearchWorld {
   const raw = requireRecord(value, "world")
-  const kind = requireText(raw.kind, "world.kind") as WorldKind
+  const kind = requireText(raw.kind, "world.kind")
   const field_mask = parseFieldMask(raw.field_mask)
   const python = requireSingleLineText(raw.python, "world.python")
   switch (kind) {
@@ -215,7 +221,7 @@ function problem(code: string, message: string): WorkerProblem {
 }
 
 function failure(code: string, message: string, stdout = "", stderr = ""): WorkerResult {
-  return { status: "failed", exit_code: null, stdout, stderr, problem: problem(code, message) }
+  return { status: "failed", exit_code: null, stdout, stderr, problem: problem(code, message), execution_evidence: [] }
 }
 
 function decodeUtf8(bytes: Buffer, label: string): string {
@@ -226,32 +232,11 @@ function decodeUtf8(bytes: Buffer, label: string): string {
   }
 }
 
-async function readBounded(stream: NodeJS.ReadableStream, limit: number): Promise<Buffer> {
-  const chunks: Buffer[] = []
-  let size = 0
-  return await new Promise<Buffer>((resolvePromise, rejectPromise) => {
-    stream.on("data", (chunk: Buffer | string) => {
-      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-      size += bytes.length
-      if (size > limit) {
-        rejectPromise(new Error("helper output exceeded the bounded result limit"))
-        return
-      }
-      chunks.push(bytes)
-    })
-    stream.on("end", () => resolvePromise(Buffer.concat(chunks)))
-    stream.on("error", rejectPromise)
-  })
-}
-
-function ensureExecutableBinding(rawPath: string, label: string): string {
-  if (!rawPath.startsWith("/")) throw new Error(`${label} must be an absolute path`)
-  const path = resolve(rawPath)
-  return path
-}
-
-async function verifyBinding(path: string, label: string, mode: "source" | "frozen"): Promise<string> {
-  const resolved = ensureExecutableBinding(path, label)
+async function verifyBinding(path: string, label: string): Promise<string> {
+  const mode = process.env[WORKER_MODE_ENV]
+  if (mode !== "source" && mode !== "frozen") throw new Error(`${WORKER_MODE_ENV} must be source or frozen`)
+  if (!path.startsWith("/")) throw new Error(`${label} must be an absolute path`)
+  const resolved = resolve(path)
   const info = await stat(resolved)
   if (!info.isFile()) throw new Error(`${label} must be a regular file`)
   if ((info.mode & 0o111) === 0) throw new Error(`${label} must be executable`)
@@ -267,35 +252,6 @@ async function verifyBinding(path: string, label: string, mode: "source" | "froz
   return resolved
 }
 
-async function workerMode(): Promise<"source" | "frozen"> {
-  const mode = process.env[WORKER_MODE_ENV]
-  if (mode !== "source" && mode !== "frozen") {
-    throw new Error(`${WORKER_MODE_ENV} must be explicitly set to source or frozen`)
-  }
-  return mode
-}
-
-async function bindWorkerExecutable(): Promise<string> {
-  const binding = process.env[WORKER_BINDING_ENV]
-  if (!binding) throw new Error(`${WORKER_BINDING_ENV} is required for the research worker`)
-  return verifyBinding(binding, WORKER_BINDING_ENV, await workerMode())
-}
-
-async function materializeHelper(path: string, workspace: string): Promise<{ path: string; cleanup: () => Promise<void> }> {
-  const source = await verifyBinding(path, WORKER_HELPER_ENV, await workerMode())
-  const root = join(workspace, ".breadboard", "research-world")
-  await mkdir(root, { recursive: true, mode: 0o700 })
-  const identity = createHash("sha256").update(source).digest("hex")
-  const destination = join(root, `helper-${identity}`)
-  await copyFile(source, destination)
-  await chmod(destination, 0o700)
-  return {
-    path: destination,
-    cleanup: async () => {
-      await unlink(destination).catch(() => {})
-    },
-  }
-}
 
 function helperState(value: unknown): HelperState {
   if (value === "accepted" || value === "running" || value === "completed" || value === "failed" || value === "cancelled" || value === "timed_out") return value
@@ -316,68 +272,82 @@ function helperResponse(value: unknown): HelperResponse {
       : typeof rawExitCode === "number" && Number.isSafeInteger(rawExitCode)
         ? rawExitCode
         : (() => { throw new Error("Ray helper exit_code must be a safe integer or null") })()
-  return { state, execution_id, stdout, stderr, error, exit_code }
-}
-
-async function invokeHelper(helperPath: string, operation: HelperOperation, payload: Record<string, unknown>, workspace: string): Promise<HelperResponse> {
-  const encoded = Buffer.from(JSON.stringify(payload), "utf8")
-  if (encoded.length > MAX_TASK_BYTES) throw new Error("Ray helper request exceeds the bounded task limit")
-  return await new Promise<HelperResponse>((resolvePromise, rejectPromise) => {
-    const child = spawn(helperPath, ["--research-world-helper", operation], {
-      cwd: workspace,
-      stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env },
-    })
-    let stdout = Buffer.alloc(0)
-    let stderr = Buffer.alloc(0)
-    let overflow = false
-    const collect = (chunk: Buffer, current: Buffer): Buffer => {
-      const next = Buffer.concat([current, chunk])
-      if (next.length > MAX_RESULT_BYTES) {
-        overflow = true
-        child.kill("SIGKILL")
-        return current
-      }
-      return next
-    }
-    child.stdout.on("data", (chunk: Buffer) => { stdout = collect(chunk, stdout) })
-    child.stderr.on("data", (chunk: Buffer) => { stderr = collect(chunk, stderr) })
-    child.on("error", (error) => rejectPromise(error))
-    child.on("close", (exitCode) => {
-      if (overflow) {
-        rejectPromise(new Error("Ray helper output exceeded the bounded result limit"))
-        return
-      }
-      if (exitCode !== 0) {
-        const detail = stderr.length > 0 ? decodeUtf8(stderr, "Ray helper stderr") : "Ray helper exited unsuccessfully"
-        rejectPromise(new Error(detail))
-        return
-      }
-      try {
-        resolvePromise(helperResponse(JSON.parse(decodeUtf8(stdout, "Ray helper stdout"))))
-      } catch (error) {
-        rejectPromise(error)
-      }
-    })
-    child.stdin.end(encoded)
-  })
-}
-
-function requestDigest(request: SandboxRequestV1): string {
-  return createHash("sha256").update(canonicalScheduledRequestKey(request)).digest("hex")
+  if (!Array.isArray(raw.evidence_refs)) throw new Error("Ray helper evidence_refs must be an array")
+  const evidence_refs = raw.evidence_refs.map((ref: unknown) => requireSingleLineText(ref, "Ray helper evidence reference"))
+  return { state, execution_id, stdout, stderr, error, exit_code, evidence_refs }
 }
 
 class RayHelperBackend implements ScheduledExecutionBackendV1 {
   readonly backendId = "ray-helper"
-  private readonly helperPath: string
-  private readonly workspace: string
-  private readonly world: RayWorld
+  private readonly child: ChildProcessWithoutNullStreams
+  private readonly responses: AsyncIterator<string>
+  private readonly exited: Promise<Error | null>
+  private queue: Promise<void> = Promise.resolve()
   private readonly requests = new Map<string, SandboxRequestV1>()
 
-  constructor(helperPath: string, workspace: string, world: RayWorld) {
-    this.helperPath = helperPath
-    this.workspace = workspace
-    this.world = world
+  constructor(helperPath: string, private readonly workspace: string, private readonly world: RayWorld) {
+    this.child = spawn(helperPath, ["--research-world-helper"], { cwd: workspace, stdio: ["pipe", "pipe", "pipe"] })
+    this.responses = createInterface({ input: this.child.stdout, crlfDelay: Infinity })[Symbol.asyncIterator]()
+    const stderr: Buffer[] = []
+    let stderrBytes = 0
+    let overflow = false
+    const deadline = setTimeout(() => this.child.kill("SIGTERM"), WORLD_DEADLINE_MS)
+    const force = setTimeout(() => this.child.kill("SIGKILL"), WORLD_DEADLINE_MS + 10_000)
+    const completion = Promise.withResolvers<Error | null>()
+    this.exited = completion.promise
+    this.child.stderr.on("data", (chunk: Buffer) => {
+      stderrBytes += chunk.length
+      if (stderrBytes > MAX_RESULT_BYTES) {
+        overflow = true
+        this.child.kill("SIGTERM")
+      } else {
+        stderr.push(chunk)
+      }
+    })
+    this.child.on("error", error => completion.resolve(error))
+    this.child.on("close", code => {
+      clearTimeout(deadline)
+      clearTimeout(force)
+      completion.resolve(overflow ? new Error("Ray helper output exceeded its bound") :
+        code === 0 ? null : new Error(decodeUtf8(Buffer.concat(stderr), "Ray helper stderr") || `Ray helper exited ${code}`))
+    })
+  }
+
+  private invoke(payload: Record<string, unknown>): Promise<HelperResponse> {
+    const operation = this.queue.then(async () => {
+      const encoded = JSON.stringify(payload) + "\n"
+      if (Buffer.byteLength(encoded) > MAX_TASK_BYTES) throw new Error("Ray helper request exceeds its bound")
+      const written = Promise.withResolvers<void>()
+      this.child.stdin.write(encoded, error => error ? written.reject(error) : written.resolve())
+      await written.promise
+      const response = await Promise.race([
+        this.responses.next(),
+        this.exited.then(error => { throw error ?? new Error("Ray helper closed before its response") }),
+      ])
+      if (response.done || Buffer.byteLength(response.value) > MAX_RESULT_BYTES) throw new Error("Ray helper response is absent or oversized")
+      return helperResponse(JSON.parse(response.value))
+    })
+    // Keep cleanup available after a failed RPC; the caller retains the rejection.
+    this.queue = operation.then(() => undefined, () => undefined)
+    return operation
+  }
+
+  async close(): Promise<void> {
+    const terminate = setTimeout(() => this.child.kill("SIGTERM"), 5000)
+    const force = setTimeout(() => this.child.kill("SIGKILL"), 10_000)
+    try {
+      for (const [executionId, request] of this.requests) {
+        await this.invoke(this.payload("release", request, executionId))
+      }
+      this.child.stdin.end()
+      const error = await this.exited
+      if (error) throw error
+    } finally {
+      this.child.stdin.end()
+      await this.exited
+      clearTimeout(terminate)
+      clearTimeout(force)
+    }
   }
 
   private payload(operation: HelperOperation, request: SandboxRequestV1, executionId: string): Record<string, unknown> {
@@ -385,7 +355,7 @@ class RayHelperBackend implements ScheduledExecutionBackendV1 {
       operation,
       execution_id: executionId,
       request,
-      request_digest: requestDigest(request),
+      request_digest: createHash("sha256").update(canonicalScheduledRequestKey(request)).digest("hex"),
       workspace: this.workspace,
       ray_address: this.world.ray_address,
       ray_namespace: this.world.ray_namespace,
@@ -393,20 +363,20 @@ class RayHelperBackend implements ScheduledExecutionBackendV1 {
     }
   }
 
-  async submit(request: SandboxRequestV1, _context: ExecutionDriverExecutionContextV1): Promise<{ executionId: string }> {
+  async submit(request: SandboxRequestV1, _context: ExecutionDriverExecutionContextV1): Promise<ScheduledExecutionHandleV1> {
     const executionId = `ray:${request.request_id}`
-    const response = await invokeHelper(this.helperPath, "submit", this.payload("submit", request, executionId), this.workspace)
+    this.requests.set(executionId, request)
+    const response = await this.invoke(this.payload("submit", request, executionId))
     if (response.execution_id !== undefined && response.execution_id !== executionId) throw new Error("Ray helper execution identity changed")
     if (response.state !== "accepted" && response.state !== "running") throw new Error("Ray helper did not accept execution")
-    this.requests.set(executionId, request)
-    return { executionId }
+    return { executionId, evidenceRefs: response.evidence_refs }
   }
 
   async observe(executionId: string): Promise<ScheduledExecutionObservationV1> {
     const request = this.requests.get(executionId)
     if (!request) throw new Error("Ray execution request is unavailable after worker restart")
-    const response = await invokeHelper(this.helperPath, "observe", this.payload("observe", request, executionId), this.workspace)
-    if (response.state === "accepted" || response.state === "running") return { state: response.state, evidenceRefs: [] }
+    const response = await this.invoke(this.payload("observe", request, executionId))
+    if (response.state === "accepted" || response.state === "running") return { state: response.state, evidenceRefs: response.evidence_refs }
     const status: SandboxResultV1["status"] = response.state === "completed" ? "completed" : response.state === "cancelled" ? "cancelled" : response.state === "timed_out" ? "timed_out" : "failed"
     const stdout = response.stdout ?? ""
     const stderr = response.stderr ?? ""
@@ -426,19 +396,20 @@ class RayHelperBackend implements ScheduledExecutionBackendV1 {
       ...evidence,
       error: status === "completed" ? null : { reason: response.error ?? `ray_${status}` },
     })
-    return { state: response.state, result, evidenceRefs: [] }
+    return { state: response.state, result, evidenceRefs: response.evidence_refs }
   }
 
   async cancel(executionId: string, _context: { readonly reason: "deadline" | "cancelled"; readonly signal: AbortSignal; readonly deadlineAtMs: number | null }): Promise<void> {
     const request = this.requests.get(executionId)
     if (!request) throw new Error("Ray execution request is unavailable for cancellation")
-    const response = await invokeHelper(this.helperPath, "cancel", this.payload("cancel", request, executionId), this.workspace)
+    const response = await this.invoke(this.payload("cancel", request, executionId))
     if (response.state !== "cancelled" && response.state !== "completed" && response.state !== "failed") throw new Error("Ray helper did not confirm cancellation")
   }
 }
 
-function makeWorld(task: ResearchWorldTask, helperPath: string | null): { world: ReturnType<typeof createKernelExecutionWorld>; capability: ExecutionCapabilityV1; placement: ExecutionPlacementV1; imageRef: string | null } {
-  const { world: config, command, request_id: requestId, workspace } = task
+function makeWorld(task: ResearchWorldTask, backend: RayHelperBackend | null, evidence: ScheduledExecutionEvidenceV1[]): { world: ExecutionWorldV1; capability: ExecutionCapabilityV1; placement: ExecutionPlacementV1; imageRef: string | null } {
+  const { world: config, command, request_id: requestId } = task
+  const workspace = config.kind === "slurm" ? config.remote_evidence_directory : task.workspace
   const isolationClass: ExecutionCapabilityV1["isolation_class"] = config.kind === "local" ? "process" : config.kind === "container" ? "oci" : "remote_service"
   const placementClass: ExecutionPlacementV1["placement_class"] = config.kind === "local" ? "local_process" : config.kind === "container" ? "local_oci" : config.kind === "ray" ? "delegated_python" : "remote_worker"
   const driverId = config.kind === "local" ? "local-process" : config.kind === "container" ? "oci" : config.kind
@@ -464,13 +435,12 @@ function makeWorld(task: ResearchWorldTask, helperPath: string | null): { world:
     metadata: { world_kind: config.kind, field_mask: [...WORLD_MASK] },
   })
   if (config.kind === "ray") {
-    if (!helperPath) throw new Error(`${WORKER_HELPER_ENV} is required for Ray worlds`)
-    const backend = new RayHelperBackend(helperPath, workspace, config)
+    if (!backend) throw new Error(`${WORKER_HELPER_ENV} is required for Ray worlds`)
     const ray: ScheduledExecutionDriverRegistrationV1 = {
       backend,
-      options: { pollIntervalMs: 50, cancellationObservationTimeoutMs: 5000, recordEvidence: () => {} },
+      options: { pollIntervalMs: 50, cancellationObservationTimeoutMs: 5000, recordEvidence: record => { evidence.push(record) } },
     }
-    return { world: createKernelExecutionWorld({ ray }), capability, placement, imageRef: null }
+    return { world: createKernelExecutionWorld({ ray, defaultDeadlineMs: WORLD_DEADLINE_MS }), capability, placement, imageRef: null }
   }
   if (config.kind === "slurm") {
     const backend = makeSshSlurmBackend({
@@ -482,19 +452,19 @@ function makeWorld(task: ResearchWorldTask, helperPath: string | null): { world:
     })
     const slurm: ScheduledExecutionDriverRegistrationV1 = {
       backend,
-      options: { pollIntervalMs: 500, cancellationObservationTimeoutMs: 5000, recordEvidence: () => {} },
+      options: { pollIntervalMs: 500, cancellationObservationTimeoutMs: 5000, recordEvidence: record => { evidence.push(record) } },
     }
-    return { world: createKernelExecutionWorld({ slurm }), capability, placement, imageRef: null }
+    return { world: createKernelExecutionWorld({ slurm, defaultDeadlineMs: WORLD_DEADLINE_MS }), capability, placement, imageRef: null }
   }
   if (config.kind === "container") {
     return {
-      world: createKernelExecutionWorld({ ociRuntimeCommand: config.runtime_command, ociWorkspaceMountTarget: config.workspace_mount_target }),
+      world: createKernelExecutionWorld({ ociRuntimeCommand: config.runtime_command, ociWorkspaceMountTarget: config.workspace_mount_target, defaultDeadlineMs: WORLD_DEADLINE_MS }),
       capability,
       placement,
       imageRef: config.image_ref,
     }
   }
-  return { world: createKernelExecutionWorld(), capability, placement, imageRef: null }
+  return { world: createKernelExecutionWorld({ defaultDeadlineMs: WORLD_DEADLINE_MS }), capability, placement, imageRef: null }
 }
 
 function exitCodeFromUsage(value: SandboxResultV1["usage"]): number | null {
@@ -515,24 +485,26 @@ async function executeTask(task: ResearchWorldTask): Promise<WorkerResult> {
   const info = await stat(task.workspace)
   if (!info.isDirectory()) throw new Error("task.workspace is not a directory")
   const helperRaw = process.env[WORKER_HELPER_ENV]
-  let helperMaterialization: { path: string; cleanup: () => Promise<void> } | null = null
+  let helper: RayHelperBackend | null = null
+  const evidence: ScheduledExecutionEvidenceV1[] = []
   try {
     if (task.world.kind === "ray") {
       if (!helperRaw) throw new Error(`${WORKER_HELPER_ENV} is required for Ray worlds`)
-      helperMaterialization = await materializeHelper(helperRaw, task.workspace)
+      helper = new RayHelperBackend(await verifyBinding(helperRaw, WORKER_HELPER_ENV), task.workspace, task.world)
     }
-    const configured = makeWorld(task, helperMaterialization?.path ?? null)
+    const configured = makeWorld(task, helper, evidence)
     const operation = await configured.world.execute({
       kind: "sandbox",
       requestId: task.request_id,
       capability: configured.capability,
       placement: configured.placement,
       command: [...task.command],
-      workspaceRef: task.workspace,
+      workspaceRef: task.world.kind === "slurm" ? task.world.remote_evidence_directory : task.workspace,
       imageRef: configured.imageRef,
       driverId: task.world.kind === "local" ? "local-process" : task.world.kind === "container" ? "oci" : task.world.kind,
       driverIdHint: task.world.kind === "local" ? "trusted_local" : task.world.kind === "container" ? "oci" : task.world.kind,
     })
+    if (operation.kind !== "sandbox") throw new Error("execution world returned a non-sandbox result")
     if (operation.sandboxResult === null) {
       const unsupported = operation.unsupportedCase
       return {
@@ -541,19 +513,20 @@ async function executeTask(task: ResearchWorldTask): Promise<WorkerResult> {
         stdout: "",
         stderr: "",
         problem: problem(unsupported?.reason_code ?? "unsupported_world", unsupported?.summary ?? "The requested execution world is unsupported"),
+        execution_evidence: evidence,
       }
     }
     const sandboxResult = operation.sandboxResult
     const stdout = await artifactText(sandboxResult.stdout_ref, "sandbox stdout")
     const stderr = await artifactText(sandboxResult.stderr_ref, "sandbox stderr")
     if (sandboxResult.status === "completed") {
-      return { status: "completed", exit_code: exitCodeFromUsage(sandboxResult.usage), stdout, stderr, problem: null }
+      return { status: "completed", exit_code: exitCodeFromUsage(sandboxResult.usage), stdout, stderr, problem: null, execution_evidence: evidence }
     }
     const reason = typeof sandboxResult.error?.reason === "string" ? sandboxResult.error.reason : `execution_${sandboxResult.status}`
     const message = typeof sandboxResult.error?.message === "string" ? sandboxResult.error.message : reason
-    return { status: "failed", exit_code: exitCodeFromUsage(sandboxResult.usage), stdout, stderr, problem: problem(reason, message) }
+    return { status: "failed", exit_code: exitCodeFromUsage(sandboxResult.usage), stdout, stderr, problem: problem(reason, message), execution_evidence: evidence }
   } finally {
-    await helperMaterialization?.cleanup()
+    await helper?.close()
   }
 }
 
@@ -576,7 +549,7 @@ function writeResult(value: WorkerResult): void {
   process.stdout.write(encoded)
 }
 
-export async function main(): Promise<number> {
+async function main(): Promise<number> {
   try {
     const task = parseTask(JSON.parse(decodeUtf8(await readStdinBounded(), "worker task")))
     writeResult(await executeTask(task))
@@ -593,6 +566,4 @@ export async function main(): Promise<number> {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  void main().then((exitCode) => { process.exitCode = exitCode })
-}
+void main().then((exitCode) => { process.exitCode = exitCode })

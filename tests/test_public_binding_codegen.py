@@ -35,7 +35,6 @@ def test_generated_rows_have_all_catalog_fields_and_are_sorted(tmp_path: Path) -
     root, catalog = _staged_catalog(tmp_path)
     outputs = generator.build_outputs(root)
     module = outputs[root / "breadboard_sdk/generated/public_bindings.py"].decode()
-    assert module.count("PublicOperationBinding(") == 26
     ids = [
         row["operation_id"]
         for row in sorted(catalog["operations"], key=lambda row: row["operation_id"])
@@ -287,15 +286,14 @@ def test_generation_uses_portable_path_permission_operation(
 
 
 def test_codegen_builds_exact_operation_docs_and_index(tmp_path: Path) -> None:
-    root, _ = _staged_catalog(tmp_path)
+    root, catalog = _staged_catalog(tmp_path)
     outputs = generator.build_outputs(root)
-    assert len(outputs) == 34
     pages = {
         path: content
         for path, content in outputs.items()
         if path.suffix == ".md" and path.name != "index.md"
     }
-    assert len(pages) == 26
+    assert len(pages) == len(catalog["operations"])
     for path, content in pages.items():
         metadata = generator.parse_generated_document_metadata(content)
         assert metadata["operation-id"] and metadata["slug"]
@@ -314,7 +312,9 @@ def test_codegen_builds_exact_operation_docs_and_index(tmp_path: Path) -> None:
                 "Response transport: JSON `PublicResult` (`bb.cli.result.v1`)" in text
             )
     index = outputs[root / "docs/reference/public/index.md"].decode()
-    assert len(re.findall(r"\]\(operations/.+\.md\)", index)) == 26
+    assert len(re.findall(r"\]\(operations/.+\.md\)", index)) == len(
+        catalog["operations"]
+    )
 
 
 @pytest.mark.parametrize(
@@ -406,7 +406,7 @@ def test_generated_document_links_resolve_without_linking_logical_ids() -> None:
     index_links = re.findall(
         r"\]\((operations/[^)]+\.md)\)", outputs[index_path].decode()
     )
-    assert len(index_links) == 26
+    assert len(index_links) == len(expected_pages)
     assert {(index_path.parent / link).resolve() for link in index_links} == {
         path.resolve() for path in expected_pages
     }

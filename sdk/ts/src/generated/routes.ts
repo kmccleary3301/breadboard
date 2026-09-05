@@ -1,6 +1,6 @@
 // GENERATED FILE - do not edit by hand.
 // generator: scripts/dev/generate_ts_sdk.py (deterministic, in-process, no network)
-// openapi-schema-sha256: 0de1588b3228595ef6a31b5f329ea8a774a2d2368f6cfca2fde88f50889eeb53
+// openapi-schema-sha256: 512f29a5384036639a726c355314bf613b10a90263d33ea9a402281ac7a4e5dc
 // app-source-sha256: c5a67f141fdc2ef626cb1184156df1c90bcb9325a2702bdd8be71992e6f48add
 
 export interface RouteEntry { path: string; method: string; operationId: string }
@@ -46,6 +46,7 @@ export const ROUTES: readonly RouteEntry[] = [
   { path: "/v1/integrations/{integration_id}/probe", method: "POST", operationId: "integration.probe" },
   { path: "/v1/model-roles/resolve", method: "POST", operationId: "resolve_model_roles_v1_model_roles_resolve_post" },
   { path: "/v1/models", method: "GET", operationId: "list_models_v1_models_get" },
+  { path: "/v1/research/compare", method: "POST", operationId: "research.compare" },
   { path: "/v1/schemas", method: "GET", operationId: "system.schemas" },
   { path: "/v1/sessions", method: "GET", operationId: "session.list" },
   { path: "/v1/sessions", method: "POST", operationId: "session.start" },

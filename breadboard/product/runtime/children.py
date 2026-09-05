@@ -16,6 +16,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+from breadboard.product.runtime.process_child import entry_command
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
@@ -3842,6 +3844,34 @@ class ProcessExecutionAdapter:
     def bind_workspace(self, workspace: Path) -> None:
         self._workspace = workspace
 
+    def _materialize_frozen_runtime(self, workspace: Path, target_ref: str) -> Path:
+        destination = self._control_path(target_ref, "runtime", workspace)
+        pending = self._control_path(target_ref, "runtime.pending", workspace)
+        if destination.is_symlink() or pending.is_symlink():
+            raise ChildError("process child runtime cannot be a symlink")
+        if destination.is_dir():
+            return destination
+        source = Path(sys.executable).resolve().parent
+        if os.environ.get(_RESEARCH_WORKER_CLOSURE_ENV) != str(source):
+            raise ChildError("frozen child requires the verified engine closure")
+        if pending.exists():
+            shutil.rmtree(pending)
+        pending.mkdir(mode=0o700)
+        try:
+            if sys.platform == "darwin":
+                subprocess.run(
+                    ("/bin/cp", "-cR", str(source) + "/.", str(pending)),
+                    check=True, stdin=subprocess.DEVNULL, capture_output=True,
+                )
+            else:
+                shutil.copytree(source, pending, dirs_exist_ok=True)
+            os.replace(pending, destination)
+            AnchoredStorage.sync_directory(destination.parent)
+        except BaseException:
+            shutil.rmtree(pending, ignore_errors=True)
+            raise
+        return destination
+
     @staticmethod
     def _worker_binding() -> Path:
         binding = os.environ.get(_RESEARCH_WORKER_BINDING_ENV)
@@ -3869,12 +3899,9 @@ class ProcessExecutionAdapter:
         return tuple(command) == (_RESEARCH_WORKER_TOKEN,)
 
     def _materialize_worker(self, source: Path, workspace: Path, target_ref: str) -> Path:
-        root = workspace / ".breadboard" / "process-children"
-        root.mkdir(parents=True, exist_ok=True, mode=0o700)
-        root.chmod(0o700)
-        name = hashlib.sha256(target_ref.encode("utf-8")).hexdigest() + ".worker"
-        destination = root / name
-        temporary = root / f".{name}.{os.urandom(8).hex()}.tmp"
+        destination = self._control_path(target_ref, "worker", workspace)
+        root = destination.parent
+        temporary = root / f".{destination.name}.{os.urandom(8).hex()}.tmp"
         shutil.copyfile(source, temporary)
         temporary.chmod(0o700)
         os.replace(temporary, destination)
@@ -3986,6 +4013,12 @@ class ProcessExecutionAdapter:
                 self._known_control_path(target_ref, suffix).unlink(missing_ok=True)
             except ChildError:
                 return
+        for suffix in ("runtime", "runtime.pending"):
+            path = self._known_control_path(target_ref, suffix)
+            if path.is_symlink():
+                raise ChildError("process child runtime cannot be a symlink")
+            if path.exists():
+                shutil.rmtree(path)
 
     def _completed_status(self, target_ref: str) -> bool | None:
         path = self._status_paths.get(target_ref)
@@ -4114,12 +4147,22 @@ class ProcessExecutionAdapter:
                 raise ChildError("durable process child command is malformed")
             command = tuple(command_value)
         worker = self._is_worker_command(command)
-        materialized_worker: Path | None = None
+        runtime = self._materialize_frozen_runtime(workspace, target_ref) if getattr(sys, "frozen", False) else None
+        environment = None
+        executable = sys.executable
+        if runtime is not None:
+            executable = str(runtime / Path(sys.executable).name)
+            environment = dict(os.environ)
+            environment[_RESEARCH_WORKER_CLOSURE_ENV] = str(runtime)
+            environment[_RESEARCH_WORKER_BINDING_ENV] = str(runtime / "breadboard-research-world")
+            environment["BREADBOARD_RESEARCH_WORLD_HELPER"] = executable
+            environment.pop("RAY_TMPDIR", None)
         if worker:
-            materialized_worker = self._materialize_worker(
-                self._worker_binding(), workspace, target_ref
-            )
-            command = (str(materialized_worker),)
+            source = self._worker_binding()
+            if runtime is not None:
+                command = (str(runtime / source.relative_to(Path(sys.executable).resolve().parent)),)
+            else:
+                command = (str(self._materialize_worker(source, workspace, target_ref)),)
         status_path = self._status_path(target_ref, workspace)
         task_path = self._control_path(target_ref, "task", workspace)
         release_path = self._control_path(target_ref, "release", workspace)
@@ -4134,59 +4177,16 @@ class ProcessExecutionAdapter:
         self._write_control(task_path, task_bytes)
         group_token = os.urandom(32).hex()
         result_limit = str(_RESEARCH_WORKER_MAX_RESULT_BYTES if worker else 0)
-        wrapper = (
-            "import os,signal,subprocess,sys,time\n"
-            "release=sys.argv[3]\n"
-            "while not os.path.exists(release): time.sleep(0.01)\n"
-            "task=open(sys.argv[4],'rb').read()\n"
-            "status=sys.argv[5]\n"
-            "guard=sys.argv[6]\n"
-            "result_path=sys.argv[7]\n"
-            "result_limit=int(sys.argv[8])\n"
-            "guardian_code=\"import os,sys,time\\nwhile not os.path.exists(sys.argv[1]): time.sleep(0.01)\\n\"\n"
-            "guardian=subprocess.Popen([sys.executable,'-c',guardian_code,guard,sys.argv[2]])\n"
-            "signal.signal(signal.SIGTERM,signal.SIG_IGN)\n"
-            "reset_term=lambda: signal.signal(signal.SIGTERM,signal.SIG_DFL)\n"
-            "if result_path:\n"
-            " child=subprocess.Popen(sys.argv[9:],stdin=subprocess.PIPE,stdout=subprocess.PIPE,start_new_session=True,preexec_fn=reset_term)\n"
-            " child.stdin.write(task); child.stdin.close()\n"
-            " output=child.stdout.read(result_limit+1)\n"
-            " if len(output)>result_limit:\n"
-            "  try: os.killpg(child.pid,9)\n"
-            "  except ProcessLookupError: pass\n"
-            "  child.wait(); result=1; output=b'{\"status\":\"failed\",\"exit_code\":null,\"stdout\":\"\",\"stderr\":\"\",\"problem\":{\"code\":\"worker_result_too_large\",\"message\":\"worker result exceeded bounded output\"}}'\n"
-            " else:\n"
-            "  result=child.wait()\n"
-            " temporary=f'{result_path}.{os.getpid()}.tmp'\n"
-            " with open(temporary,'wb') as stream: stream.write(output); stream.flush(); os.fsync(stream.fileno())\n"
-            " os.replace(temporary,result_path)\n"
-            "else:\n"
-            " result=subprocess.run(sys.argv[9:],input=task,preexec_fn=reset_term).returncode\n"
-            "group=os.getpgrp()\n"
-            "def descendants_alive():\n"
-            " try: rows=subprocess.check_output(['ps','-axo','pid=,pgid=,stat='],text=True,start_new_session=True).splitlines()\n"
-            " except (OSError,subprocess.CalledProcessError): return True\n"
-            " for row in rows:\n"
-            "  fields=row.strip().split()\n"
-            "  if len(fields)>=3 and int(fields[0]) not in {os.getpid(),guardian.pid} and int(fields[1])==group and not fields[2].startswith('Z'): return True\n"
-            " return False\n"
-            "while descendants_alive(): time.sleep(0.01)\n"
-            "temporary=f'{status}.{os.getpid()}.tmp'\n"
-            "with open(temporary,'wb') as stream: stream.write(str(result).encode('ascii')); stream.flush(); os.fsync(stream.fileno())\n"
-            "os.replace(temporary,status)\n"
-            "fd=os.open(guard,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600);os.fsync(fd);os.close(fd)\n"
-            "directory=os.open(os.path.dirname(status),os.O_RDONLY);os.fsync(directory);os.close(directory);guardian.wait()\n"
-            "os._exit(result)\n"
-        )
         process = subprocess.Popen(
             (
-                sys.executable, "-c", wrapper, target_ref, group_token,
+                *entry_command(executable), target_ref, group_token,
                 str(release_path), str(task_path), str(status_path),
-                str(guard_path), str(result_path), result_limit, *command,
+                str(guard_path), str(result_path) if worker else "", result_limit, *command,
             ),
             stdin=subprocess.DEVNULL,
             start_new_session=True,
             cwd=str(workspace),
+            env=environment,
         )
         self._processes[target_ref] = process
         try:

@@ -5,6 +5,7 @@ from breadboard.product.operation_catalog import product_operation_catalog
 from .artifact import router as artifact_router
 from .harness import router as harness_router
 from .integration import router as integration_router
+from .research import router as research_router
 from .session import router as session_router, runtime_setup_router
 from .system import router as system_router
 
@@ -16,6 +17,7 @@ def mount_public_routes(app: FastAPI) -> None:
         integration_router,
         artifact_router,
         session_router,
+        research_router,
     )
     expected = {
         operation["operation_id"]

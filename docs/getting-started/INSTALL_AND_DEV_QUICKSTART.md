@@ -346,3 +346,55 @@ make repair-cli
 source .venv/bin/activate
 breadboard --help
 ```
+
+## Compare recorded runs
+
+From the workspace containing the inputs, use the installed product:
+
+```bash
+bb research compare --definition EXPERIMENT.json --world WORLD.json \
+  --generation GENERATION.json --projection PROJECTION.json \
+  --compare E.json,E_PRIME.json
+```
+
+`EXPERIMENT.json` is an authored harness Definition. `GENERATION.json` is an
+effective Lock with the metadata sidecar produced by the harness lock operation.
+Each recording descriptor identifies an existing durable Session:
+
+```json
+{
+  "definition": "EXPERIMENT.json",
+  "workspace": "recordings/baseline",
+  "session_id": "recorded-session",
+  "request_ref": "sha256:<attached-provider-exchange-artifact>"
+}
+```
+
+All input paths are workspace-relative and must remain inside that workspace.
+The two Definitions must compile to the same Lock. The selected request must be
+an attached `bb.provider_exchange.v2` OpenAI Chat exchange from that Definition's
+initial generation; mismatched routes or generations fail rather than inventing
+request bytes.
+
+`PROJECTION.json` selects `{"projector_version":"bb.session.projector.v2"}`;
+an optional positive `as_of` selects the inclusive source sequence.
+Every world declares the same ordered `field_mask`:
+`["/occurred_at","/timestamp"]`. No other event field is ignored.
+
+| World `kind` | Required fields besides `field_mask` |
+| --- | --- |
+| `local` | `python`, the absolute interpreter path |
+| `container` | `python`, `image_ref`, `runtime_command`, `workspace_mount_target` |
+| `ray` | `python`, `ray_address`, `ray_namespace`, `max_output_bytes` |
+| `slurm` | `python`, `ssh_target`, `remote_evidence_directory`, `ssh_program`, `command_timeout_ms`, `max_output_bytes` |
+
+Container execution disables networking; pin `image_ref` to an immutable image.
+Ray accepts `ray_address: "local"` for a bounded local cluster. Slurm uses its
+remote evidence directory as the execution workspace. Its Python and SSH
+configuration must be valid on their respective hosts.
+
+The JSON result's `data` contains `run_id` and `report_id`. The report is an
+ordinary workspace artifact containing differences and reconstructed records.
+Identical inputs resume the retained run and return the same identities without
+another child or settlement. A failed world returns an error, not a comparison
+report.

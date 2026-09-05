@@ -45,7 +45,6 @@ def test_catalog_is_the_frozen_non_active_six_surface_candidate() -> None:
     value = catalog()
     validate_catalog(value)
     assert set(row["operation_id"] for row in value["operations"]) == frozen_operation_ids(load_frozen_surface())
-    assert len(value["operations"]) == 45
     assert value["status"] == "candidate"
     for row in value["operations"]:
         assert set(row["bindings"]) == set(SURFACES)
@@ -195,7 +194,7 @@ def test_inventory_is_a_checked_in_fixed_point_without_surface_gaps() -> None:
     assert first["parity_claimed"] is False
     assert first["candidate_status"] == "candidate"
     assert all(
-        summary == {"detected": 26, "gaps": 0, "total": 26}
+        summary["gaps"] == 0 and summary["detected"] == summary["total"]
         for summary in first["summary"].values()
     )
 def test_generated_binding_manifest_ignores_source_text(tmp_path) -> None:

@@ -96,9 +96,9 @@ function loadManifestSchema(): AnySchema {
 const Ajv2020Candidate: unknown =
   Ajv2020Module && typeof Ajv2020Module === "object" && "default" in Ajv2020Module ? Ajv2020Module.default : Ajv2020Module
 const Ajv2020 = Ajv2020Candidate as new (opts?: Ajv2020Options) => Ajv2020Instance
-const manifestAjv = new Ajv2020({ allErrors: true, validateFormats: false })
-const engineConformanceManifestSchema = loadManifestSchema()
-const engineConformanceManifestValidator = manifestAjv.compile(engineConformanceManifestSchema)
+let engineConformanceManifestSchema: AnySchema | undefined
+let engineConformanceManifestValidator: ValidateFunction | undefined
+
 
 const schemaKeyByValidatorName = {
   kernelEvent: "https://breadboard.dev/contracts/kernel/schemas/bb.kernel_event.v1.schema.json",
@@ -163,16 +163,25 @@ function generatedValidator(name: GeneratedValidatorName): ValidateFunction {
   return entry.validate
 }
 
-export const kernelValidators = Object.fromEntries(
-  (Object.keys(schemaKeyByValidatorName) as GeneratedValidatorName[]).map((name) => [name, generatedValidator(name)]),
-) as ValidatorMap
-kernelValidators.engineConformanceManifest = engineConformanceManifestValidator
+export const kernelValidators = {
+  ...Object.fromEntries(
+    (Object.keys(schemaKeyByValidatorName) as GeneratedValidatorName[]).map((name) => [name, generatedValidator(name)]),
+  ),
+  get engineConformanceManifest(): ValidateFunction {
+    return engineConformanceManifestValidator ??= new Ajv2020({
+      allErrors: true,
+      validateFormats: false,
+    }).compile(kernelSchemas.engineConformanceManifest)
+  },
+} as ValidatorMap
 
 export const kernelSchemas = {
   ...Object.fromEntries(
     (Object.keys(schemaKeyByValidatorName) as GeneratedValidatorName[]).map((name) => [name, GENERATED_SCHEMA_OBJECTS[schemaKeyByValidatorName[name]]]),
   ),
-  engineConformanceManifest: engineConformanceManifestSchema,
+  get engineConformanceManifest(): AnySchema {
+    return engineConformanceManifestSchema ??= loadManifestSchema()
+  },
 } as Record<KernelValidatorName, object | boolean>
 
 export function assertValid<T>(name: KernelValidatorName, value: unknown): T {
