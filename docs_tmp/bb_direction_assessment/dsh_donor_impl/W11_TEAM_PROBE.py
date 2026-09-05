@@ -40,6 +40,8 @@ def wait_until(predicate):
 
 
 def run(phase: str, root: Path) -> dict:
+    if not __debug__:
+        raise RuntimeError("T2 evidence requires Python optimization to be disabled")
     workspace = root / 'workspace'
     workspace.mkdir(parents=True, exist_ok=True)
     lock = EffectiveHarnessLock._from_record({'graph_hash': 'sha256:' + '1' * 64})

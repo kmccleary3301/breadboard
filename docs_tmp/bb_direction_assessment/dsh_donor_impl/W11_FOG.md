@@ -65,17 +65,27 @@ The fixture lives in this PR; its engine source is the published [W7 snapshot](h
 fixture="$PWD/docs_tmp/bb_direction_assessment/dsh_donor_impl/W11_TEAM_PROBE.py"
 source_root="$(mktemp -d)"
 run_root="$(mktemp -d)"
-git fetch https://github.com/kmccleary3301/breadboard.git e60620a532b76440d384039ccca9366d1d647d97
-git worktree add --detach "$source_root" e60620a532b76440d384039ccca9366d1d647d97
+git fetch https://github.com/kmccleary3301/breadboard.git e60620a532b76440d384039ccca9366d1d647d97 &&
+git worktree add --detach "$source_root" e60620a532b76440d384039ccca9366d1d647d97 &&
 (
-  cd "$source_root"
+  cd "$source_root" || exit 1
   export PYTHONPATH="$source_root"
-  uv run --no-project --python /opt/homebrew/bin/python3.11 --with pydantic --with pyyaml python "$fixture" start "$run_root"
-  uv run --no-project --python /opt/homebrew/bin/python3.11 --with pydantic --with pyyaml python "$fixture" resume "$run_root"
-  uv run --no-project --python /opt/homebrew/bin/python3.11 --with pydantic --with pyyaml python "$fixture" cleanup "$run_root"
+  status=0
+  uv run --no-project --python 3.11 --with pydantic --with pyyaml --with jsonschema python "$fixture" start "$run_root" >"$run_root/start.stdout" 2>"$run_root/start.stderr" || status=$?
+  if [ "$status" -eq 0 ]; then
+    uv run --no-project --python 3.11 --with pydantic --with pyyaml --with jsonschema python "$fixture" resume "$run_root" >"$run_root/resume.stdout" 2>"$run_root/resume.stderr" || status=$?
+  fi
+  cleanup_status=0
+  uv run --no-project --python 3.11 --with pydantic --with pyyaml --with jsonschema python "$fixture" cleanup "$run_root" >"$run_root/cleanup.stdout" 2>"$run_root/cleanup.stderr" || cleanup_status=$?
+  if [ "$status" -eq 0 ]; then
+    status="$cleanup_status"
+  fi
+  exit "$status"
 )
 ```
 
-If a phase fails, run `cleanup` with the same paths before removing either directory. After it reports `owned_process_groups_terminal: true`, remove the temporary source worktree with `git worktree remove "$source_root"` and remove the owned `run_root`. No developer-specific checkout or captured temporary path is required.
+The subshell preserves the first phase failure while always attempting authenticated cleanup; a cleanup failure also fails an otherwise successful run. Inspect the retained phase stdout/stderr files. Remove the temporary source worktree with `git worktree remove "$source_root"` and the owned `run_root` only after cleanup reports `owned_process_groups_terminal: true`. If cleanup fails, keep both paths for recovery. Python 3.11 is selected by version, not a machine-specific interpreter path. The probe rejects optimized Python before creating run state, so `-O` or `PYTHONOPTIMIZE` cannot silently disable its evidence checks.
 
 Automated runners must capture phase output to regular files rather than pipes: the surviving child inherits output descriptors after the `start` coordinator exits. The fetched-source reproduction passed with file-backed capture; both coordinators were distinct, replay matched, the parent joined twice and completed, and authenticated cleanup confirmed terminal process groups.
+
+Recipe verification: the version-selected Python 3.11 command passed from fetched source with coordinators 62355/62409, settlements `[1,1]`, two parent joins, replay equality, and terminal-group cleanup. A deliberately mismatched observation oracle made `resume` fail and the recipe exit 1 even though cleanup succeeded. Inherited `PYTHONOPTIMIZE=1` exited 1 before creating run state or emitting success output. The first portable invocation exposed an undeclared `jsonschema` import before launch; the recipe now declares that dependency explicitly.
