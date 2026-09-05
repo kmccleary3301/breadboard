@@ -56,3 +56,26 @@ Each route gets one bounded run after its named prerequisites. The run may close
 - **Run T2 retained evidence (supersedes the historical run for landing):** [`W11_TEAM_PROBE.py`](W11_TEAM_PROBE.py) is the executable fixture; [`W11_TEAM_OUTPUT.json`](W11_TEAM_OUTPUT.json) retains commands, raw stdout/stderr, complete observed child records, and Session/WorkItem events. Source: `https://github.com/kmccleary3301/breadboard.git` at `e60620a532b76440d384039ccca9366d1d647d97`. Coordinator PIDs `18197` and `18230` were distinct; child PIDs `18207` and `18211` both started running. One child settled before restart and one remained running; restart and read-only observation reproduced the decision and owner events. Final settlements were `[1, 1]`, parent joins `2`, parent completed, replay equal, and both owned process groups terminal. Each WorkItem had one lease, attempt, and completion.
 - **T2 harness correction and scope:** the first attempt completed a detached parent Session view rather than persisting through `mutate_session`; the retained parent therefore remained running. The fixture was corrected to use the existing durable owner, with no product change. Its failed output and authenticated cleanup are retained beside the successful rerun. Both temporary roots were removed after output retention. This provider-free fixture uses a synthetic immutable Lock and proves local team ownership/recovery only—not installed comparison behavior, full Definition parity, or detached-process containment.
 - **Disposition:** **ADOPT-LATER**. W7 already supplies the proved local durable-team semantics. Trigger: a named workflow requires coordinated placement across more than one W5 execution world and cannot express it as current durable children plus WorkItems. Preserve the same event-truth/replay oracle; do not add a second coordination state owner.
+
+### Replaying T2 from a fresh checkout
+
+The fixture lives in this PR; its engine source is the published [W7 snapshot](https://github.com/kmccleary3301/breadboard/commit/e60620a532b76440d384039ccca9366d1d647d97), not the W11 tree. A shallow W11 checkout must fetch that source. From the repository root:
+
+```sh
+fixture="$PWD/docs_tmp/bb_direction_assessment/dsh_donor_impl/W11_TEAM_PROBE.py"
+source_root="$(mktemp -d)"
+run_root="$(mktemp -d)"
+git fetch https://github.com/kmccleary3301/breadboard.git e60620a532b76440d384039ccca9366d1d647d97
+git worktree add --detach "$source_root" e60620a532b76440d384039ccca9366d1d647d97
+(
+  cd "$source_root"
+  export PYTHONPATH="$source_root"
+  uv run --no-project --python /opt/homebrew/bin/python3.11 --with pydantic --with pyyaml python "$fixture" start "$run_root"
+  uv run --no-project --python /opt/homebrew/bin/python3.11 --with pydantic --with pyyaml python "$fixture" resume "$run_root"
+  uv run --no-project --python /opt/homebrew/bin/python3.11 --with pydantic --with pyyaml python "$fixture" cleanup "$run_root"
+)
+```
+
+If a phase fails, run `cleanup` with the same paths before removing either directory. After it reports `owned_process_groups_terminal: true`, remove the temporary source worktree with `git worktree remove "$source_root"` and remove the owned `run_root`. No developer-specific checkout or captured temporary path is required.
+
+Automated runners must capture phase output to regular files rather than pipes: the surviving child inherits output descriptors after the `start` coordinator exits. The fetched-source reproduction passed with file-backed capture; both coordinators were distinct, replay matched, the parent joined twice and completed, and authenticated cleanup confirmed terminal process groups.

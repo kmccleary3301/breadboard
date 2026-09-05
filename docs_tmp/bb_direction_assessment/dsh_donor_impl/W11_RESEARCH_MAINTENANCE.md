@@ -3,6 +3,8 @@
 
 **M2 source snapshot:** current-source trace ran against HEAD `9e221936b251e425887fc1e84baf9b89b5410638`.
 
+Historical sibling source is published in the same ENGINE repository: [W7 snapshot](https://github.com/kmccleary3301/breadboard/commit/e60620a532b76440d384039ccca9366d1d647d97) and [W8 snapshot used by R15](https://github.com/kmccleary3301/breadboard/commit/2d1dd32f64e32e69a5ca189692a05563b19dc8e9). A shallow checkout can retrieve both with `git fetch https://github.com/kmccleary3301/breadboard.git e60620a532b76440d384039ccca9366d1d647d97 2d1dd32f64e32e69a5ca189692a05563b19dc8e9`; absence from its local object database does not establish absence from the published repository.
+
 **Historical pre-registration (Run M, superseded by M2):** Metric `active_requirement` was 1 only when a row's pinned ledger JSON named both a current owner and at least one current consumer; baseline was 0/9. Pass threshold was 1; kill threshold was 0. Cost cap was one JSONL ownership scan, <=30 seconds wall time, one run, no source/test execution. Run M parsed the nine 46-* and 47-* records and counted only `current_owner` and `consumers`.
 
 **Run M result (historical, superseded):** 0/9 rows had a named current owner and 0/9 had a named current consumer in the old arrays. That result is not current-source evidence and is not used for any M2 disposition. Existing test-evidence paths remain observations, not product consumers or authority owners.
