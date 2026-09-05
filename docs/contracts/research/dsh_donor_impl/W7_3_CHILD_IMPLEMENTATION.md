@@ -24,7 +24,8 @@ The process adapter is a trusted POSIX process-group lifecycle boundary, not a s
 5. Cancellation intent is CAS-committed before signaling the adapter. `cancel_tree` persists the parent Session intent and every retained descendant intent before invoking any descendant signal. A late non-canceled result loses the revision/intent race.
 6. Session terminal mutation, Work Item terminal mutation, and retained parent join/result reference are replayed through their existing owners. No private child lifecycle journal or parallel supervisor is introduced.
 7. Completed results are acknowledged at the adapter before the terminal child record is published; execution-owner release follows that durable publication. Reconciliation, repeated settlement, and parent cancellation repair terminal owners before reporting success or clearing cancellation intent. A transient release failure remains retryable without a second settlement or parent join.
-- **Retry behavior:** A retryable absent execution target closes the current Work Item attempt and allocates a new attempt and placement before relaunch; the child session and its recovery reference remain stable across attempts. Retry policy, not the adapter, decides whether retry occurs.
+8. Process-control directory entries and their ancestors are durable before user-command release, including after adapter reconstruction. A failed durability barrier prevents launch. Concurrent equal job completions publish one terminal event and preserve the same replayed outcome.
+- **Retry behavior:** A retryable absent execution target closes the current Work Item attempt and allocates a new attempt and placement before relaunch; the child Session identity remains stable across attempts while each attempt gets a new recovery reference. Retry policy, not the adapter, decides whether retry occurs.
 
 ## Deletion / non-deletion decision
 
@@ -43,15 +44,17 @@ uv run --no-project --with-requirements requirements.txt -- python -m pytest tes
 # pytest: 1 error during collection
 ```
 
-Focused green after implementation:
+Final provider-free green after review corrections:
 
 ```text
-uv run --no-project --with-requirements requirements.txt -- python -m pytest tests/product/runtime/test_durable_children.py tests/product/coordination/test_work_items.py -q
-# pytest: 56 passed, 9 warnings in 0.82s
+uv run --no-project --python 3.11 --with pytest --with pytest-asyncio --with pydantic --with pyyaml --with jsonschema --with fastapi --with httpx python -m pytest tests/product/runtime/test_durable_children.py tests/test_cli_bridge_managed_state.py -q
+# pytest: 242 passed, 11 warnings in 23.01s
 ```
 
-`py_compile` passed for the touched Python modules. The focused tests cover kill/restart with a fresh retained `SessionRegistry` and Work Item repository, stable lineage/recovery identities, authenticated absent-target settlement and late-result rejection; cancellation ordering; prepared artifact/result before join; exactly one terminal outcome; retry/new attempt/recovery identity; startup abort/resume; settlement/status crash repair; provider-owned process launch identity recovery; checksummed Work Item torn-tail recovery; Ray late-completion immutability; service restart routing through the durable-child reconciler; and both Ray/job and execution-world process adapter families.
+`py_compile` passed for the touched Python modules. The focused tests cover kill/restart with a fresh retained `SessionRegistry` and Work Item repository, stable child Session lineage and per-attempt recovery identities, authenticated absent-target settlement and late-result rejection; cancellation ordering; prepared artifact/result before join; exactly one terminal outcome; retry/new attempt/recovery identity; startup abort/resume; settlement/status crash repair; provider-owned process launch identity recovery; checksummed Work Item torn-tail recovery; Ray late-completion immutability; service restart routing through the durable-child reconciler; and both Ray/job and execution-world process adapter families.
+
+Against pre-fix source `52b624670f31035afae58d7ff1f29d54938fc1a4`, five retry/durability regressions fail and concurrent equal completion emits two events instead of one. The final gate covers recovery-token rotation across all retry branches, stale/malformed cancellation rejection, retained attempt/token consistency, fresh-adapter durability recovery, and atomic terminal publication. The initial full-dependency run stalled in live Ray invocation; an isolated unchanged-source diagnostic reproduced that Ray/uv environment failure. The command above deliberately exercises the provider-free component contract and does not claim a live Ray run.
 
 ## Remaining risks
 
-The focused fixture kills the activated target and reconstructs the `SessionRegistry`/factory; it does not inject an engine crash at every cross-owner boundary or exercise a live Ray actor across a fresh Ray cluster. Nested cancellation traversal is implemented, but it needs a dedicated multi-level process-death fixture before workflow work is admitted; W7.3 does not add a workflow service.
+The provider-free gate covers both logical adapter families, real POSIX process children, and Ray/job control semantics. It does not prove a live actor restart across a fresh Ray cluster; W5 owns measured execution-world acceptance. The trusted process-group boundary excludes detached descendants as stated above.

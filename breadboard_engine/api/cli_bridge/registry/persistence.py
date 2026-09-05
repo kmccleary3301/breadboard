@@ -880,13 +880,20 @@ class PersistenceMixin:
                     "parent_session_id",
                     "root_session_id",
                     "parent_work_item_id",
-                    "recovery_ref",
                     "adapter_family",
                 )
                 for field_name in immutable:
                     expected_value = session_id if field_name == "child_session_id" else current.get(field_name)
                     if child_state.get(field_name) != expected_value:
                         raise ValueError(f"durable child identity field is immutable: {field_name}")
+                attempt_id = child_state.get("attempt_id")
+                if (
+                    not isinstance(attempt_id, str)
+                    or not attempt_id.strip()
+                    or child_state.get("recovery_ref")
+                    != f"child://{session_id}/attempt/{attempt_id}"
+                ):
+                    raise ValueError("durable child recovery reference must match its attempt")
                 metadata["durable_child"] = dict(child_state)
                 previous = dict(record.metadata or {})
                 self._replace_metadata(record, metadata)

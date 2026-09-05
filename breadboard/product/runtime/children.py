@@ -35,6 +35,7 @@ from breadboard.product.coordination.work_items import (
 )
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime.artifacts import (
+    AnchoredStorage,
     ArtifactRef,
     ArtifactStore,
     artifact_store_ref,
@@ -158,6 +159,21 @@ class ChildError(RuntimeError):
 
 class ExpectedRevisionConflict(ChildError):
     pass
+
+def _recovery_parts(recovery_ref: object) -> tuple[str, str]:
+    if type(recovery_ref) is not str:
+        raise ExpectedRevisionConflict("malformed child recovery reference")
+    prefix = "child://"
+    marker = "/attempt/"
+    if not recovery_ref.startswith(prefix):
+        raise ExpectedRevisionConflict("malformed child recovery reference")
+    child_session_id, separator, attempt_id = recovery_ref[len(prefix) :].partition(
+        marker
+    )
+    if not separator or not child_session_id.strip() or not attempt_id.strip():
+        raise ExpectedRevisionConflict("malformed child recovery reference")
+    return child_session_id, attempt_id
+
 
 
 class PreparationRequired(ChildError):
@@ -364,12 +380,8 @@ class ChildState:
             raise ValueError("durable child identity is invalid")
         child_session_id = value["child_session_id"]
         attempt_id = value["attempt_id"]
-        recovery_prefix = f"child://{child_session_id}/attempt/"
         recovery_ref = value["recovery_ref"]
-        if (
-            not recovery_ref.startswith(recovery_prefix)
-            or not recovery_ref.removeprefix(recovery_prefix)
-        ):
+        if recovery_ref != f"child://{child_session_id}/attempt/{attempt_id}":
             raise ValueError("durable child recovery identity is invalid")
         revision = value.get("revision")
         if type(revision) is not int or revision < 0:
@@ -2200,7 +2212,13 @@ class DurableChildFactory:
             _allow_cancellation_intent=allow_cancellation_intent,
             _allow_parent_terminal=allow_parent_terminal,
         )
-    def _reserved_execution_target(self, state: ChildState, target_ref: str) -> dict[str, Any]:
+    def _reserved_execution_target(
+        self,
+        state: ChildState,
+        target_ref: str,
+        *,
+        recovery_ref: str | None = None,
+    ) -> dict[str, Any]:
         target: dict[str, Any] = {"ref": target_ref}
         if state.adapter_family == RayJobAdapter.family:
             target["metadata"] = {
@@ -2213,7 +2231,11 @@ class DurableChildFactory:
                     "seq": 0,
                     "task_descriptor": {
                         "child_session_id": state.child_session_id,
-                        "recovery_ref": state.recovery_ref,
+                        "recovery_ref": (
+                            state.recovery_ref
+                            if recovery_ref is None
+                            else recovery_ref
+                        ),
                         "task_hash": state.child_spec["task_hash"],
                     },
                     "workspace": str(self.workspace),
@@ -2287,7 +2309,7 @@ class DurableChildFactory:
             if placement is None:
                 child.attach_placement(WorkPlacement(self.ids.new_id(), state.child_work_item_id, next_attempt, state.child_spec["worker_id"], next_session_ref, reserved, self.clock.now()))
             next_recovery = f"child://{state.child_session_id}/attempt/{next_attempt}"
-            state = self._cas(state, attempt_id=next_attempt, recovery_ref=state.recovery_ref, execution_target_ref=reserved, execution_target=self._reserved_execution_target(state, reserved), status="running", launch_claimed=True, launch_claim_owner=self._owner_id, launch_claim_until=time.time() + 30.0, launch_published=False, result_prepared=False, result_refs=(), settlement=None)
+            state = self._cas(state, attempt_id=next_attempt, recovery_ref=next_recovery, execution_target_ref=reserved, execution_target=self._reserved_execution_target(state, reserved, recovery_ref=next_recovery), status="running", launch_claimed=True, launch_claim_owner=self._owner_id, launch_claim_until=time.time() + 30.0, launch_published=False, result_prepared=False, result_refs=(), settlement=None)
         elif attempt is not None:
             if not child.read_model.retry_policy.allows(reason) or len(child.read_model.attempts) >= child.read_model.retry_policy.max_attempts:
                 return self._settle(state, "failed", (), allow_unprepared=True)
@@ -2300,7 +2322,7 @@ class DurableChildFactory:
             reserved = _reserved_target_ref(state.adapter_family, f"{state.child_session_id}:{next_attempt}")
             child.attach_placement(WorkPlacement(self.ids.new_id(), state.child_work_item_id, next_attempt, state.child_spec["worker_id"], next_session_ref, reserved, self.clock.now()))
             next_recovery = f"child://{state.child_session_id}/attempt/{next_attempt}"
-            state = self._cas(state, attempt_id=next_attempt, recovery_ref=state.recovery_ref, execution_target_ref=reserved, execution_target=self._reserved_execution_target(state, reserved), status="running", launch_claimed=True, launch_claim_owner=self._owner_id, launch_claim_until=time.time() + 30.0, launch_published=False, result_prepared=False, result_refs=(), settlement=None)
+            state = self._cas(state, attempt_id=next_attempt, recovery_ref=next_recovery, execution_target_ref=reserved, execution_target=self._reserved_execution_target(state, reserved, recovery_ref=next_recovery), status="running", launch_claimed=True, launch_claim_owner=self._owner_id, launch_claim_until=time.time() + 30.0, launch_published=False, result_prepared=False, result_refs=(), settlement=None)
         elif snapshot.status in {"ready", "leased"}:
             next_attempt = self.ids.new_id()
             if snapshot.status == "ready":
@@ -2313,7 +2335,7 @@ class DurableChildFactory:
             reserved = _reserved_target_ref(state.adapter_family, f"{state.child_session_id}:{next_attempt}")
             child.attach_placement(WorkPlacement(self.ids.new_id(), state.child_work_item_id, next_attempt, state.child_spec["worker_id"], next_session_ref, reserved, self.clock.now()))
             next_recovery = f"child://{state.child_session_id}/attempt/{next_attempt}"
-            state = self._cas(state, attempt_id=next_attempt, recovery_ref=state.recovery_ref, execution_target_ref=reserved, execution_target=self._reserved_execution_target(state, reserved), status="running", launch_claimed=True, launch_claim_owner=self._owner_id, launch_claim_until=time.time() + 30.0, launch_published=False, result_prepared=False, result_refs=(), settlement=None)
+            state = self._cas(state, attempt_id=next_attempt, recovery_ref=next_recovery, execution_target_ref=reserved, execution_target=self._reserved_execution_target(state, reserved, recovery_ref=next_recovery), status="running", launch_claimed=True, launch_claim_owner=self._owner_id, launch_claim_until=time.time() + 30.0, launch_published=False, result_prepared=False, result_refs=(), settlement=None)
         self._status(state)
         activation = ChildActivation(
             state.parent_session_id,
@@ -2420,7 +2442,7 @@ class DurableChildFactory:
         if callable(release_terminal) and release_terminal(state.execution_target) is False:
             raise ChildError("terminal execution owner release remains pending")
     def reconcile(self, recovery_ref: str) -> ChildState:
-        child_session_id = recovery_ref.split("/attempt/", 1)[0].removeprefix("child://")
+        child_session_id, _ = _recovery_parts(recovery_ref)
         state = self._record_state(child_session_id)
         with (
             self._lifecycle_lock,
@@ -2444,7 +2466,7 @@ class DurableChildFactory:
                     )
                 return self._reconcile(recovery_ref)
     def _reconcile(self, recovery_ref: str) -> ChildState:
-        child_session_id = recovery_ref.split("/attempt/", 1)[0].removeprefix("child://")
+        child_session_id, _ = _recovery_parts(recovery_ref)
         state = self._record_state(child_session_id)
         if state.recovery_ref != recovery_ref:
             raise ExpectedRevisionConflict("stale child recovery reference")
@@ -2838,7 +2860,7 @@ class DurableChildReconciler:
         self._adapter_factories = tuple(adapter_factories)
 
     async def _build_factory(self, recovery_ref: str) -> DurableChildFactory:
-        child_session_id = recovery_ref.split("/attempt/", 1)[0].removeprefix("child://")
+        child_session_id, _ = _recovery_parts(recovery_ref)
         record = self.registry.get(child_session_id)
         if hasattr(record, "__await__"):
             record = await record
@@ -2933,10 +2955,17 @@ class DurableChildReconciler:
         return await asyncio.to_thread(factory.reconcile, recovery_ref)
 
     async def cancel(self, recovery_ref: str, *, reason: str = "operator request") -> ChildState:
+        child_session_id, attempt_id = _recovery_parts(recovery_ref)
         factory = await self._build_factory(recovery_ref)
-        child_session_id = recovery_ref.split("/attempt/", 1)[0].removeprefix("child://")
         state = await asyncio.to_thread(factory._record_state, child_session_id)
-        return await asyncio.to_thread(factory.cancel, child_session_id, expected_revision=state.revision, reason=reason)
+        if state.recovery_ref != recovery_ref or state.attempt_id != attempt_id:
+            raise ExpectedRevisionConflict("stale child recovery reference")
+        return await asyncio.to_thread(
+            factory.cancel,
+            child_session_id,
+            expected_revision=state.revision,
+            reason=reason,
+        )
     async def cancel_tree(
         self,
         parent_session_id: str,
@@ -3784,11 +3813,14 @@ class ProcessExecutionAdapter:
         root = workspace if workspace is not None else self._workspace
         if root is None:
             raise ChildError("process child adapter is not bound to a workspace")
-        status_root = root / ".breadboard" / "process-children"
+        breadboard_root = root / ".breadboard"
+        status_root = breadboard_root / "process-children"
         status_root.mkdir(parents=True, exist_ok=True, mode=0o700)
         if status_root.is_symlink() or not status_root.is_dir():
             raise ChildError("process child status root is not a directory")
         status_root.chmod(0o700)
+        AnchoredStorage.sync_directory(root)
+        AnchoredStorage.sync_directory(breadboard_root)
         identity = hashlib.sha256(target_ref.encode("utf-8")).hexdigest()
         return status_root / f"{identity}.{suffix}"
 

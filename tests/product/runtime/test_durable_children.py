@@ -24,7 +24,7 @@ from breadboard.product.coordination.work_items import (
 )
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import children as children_module
-from breadboard.product.runtime.artifacts import ArtifactRef, ArtifactStore
+from breadboard.product.runtime.artifacts import AnchoredStorage, ArtifactRef, ArtifactStore
 from breadboard.product.runtime.children import (
     ChildActivation,
     ChildError,
@@ -344,6 +344,53 @@ def test_process_release_is_committed_before_command_execution(tmp_path: Path) -
     assert phases == ["pending", "release_committed"]
     assert marker.exists() is False
     assert adapter._processes == {}
+
+
+def test_process_adapter_retries_after_control_parent_durability_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    marker = tmp_path / "command-ran"
+    adapter = ProcessExecutionAdapter(command=("/bin/sh", "-c", f"touch {marker}"))
+    activation = ChildActivation(
+        "parent-session",
+        "parent-session",
+        "parent-work",
+        "child-session",
+        "child-work",
+        "attempt",
+        "child://child-session/attempt/attempt",
+        "reserved:control-parent-fsync",
+        adapter.family,
+        str(tmp_path),
+    )
+    status_root = tmp_path / ".breadboard" / "process-children"
+    real_sync = AnchoredStorage.sync_directory
+
+    def fail_parent_sync(path: Path) -> None:
+        if path == status_root.parent:
+            assert status_root.is_dir()
+            raise OSError("simulated control parent fsync failure")
+        real_sync(path)
+
+    monkeypatch.setattr(
+        AnchoredStorage, "sync_directory", fail_parent_sync
+    )
+    spec = _spec(adapter.family, "control parent fsync")
+    with pytest.raises(OSError, match="simulated control parent fsync failure"):
+        adapter.start(activation, spec)
+    assert marker.exists() is False
+
+    adapter = ProcessExecutionAdapter(command=adapter.command)
+    with pytest.raises(OSError, match="simulated control parent fsync failure"):
+        adapter.start(activation, spec)
+    assert marker.exists() is False
+    monkeypatch.setattr(AnchoredStorage, "sync_directory", real_sync)
+
+    target = adapter.start(activation, spec)
+    process = adapter._processes[target.execution_target_ref]
+    assert process.wait(timeout=2) == 0
+    assert marker.exists()
+
 
 def test_process_release_survives_final_publication_failure(tmp_path: Path) -> None:
     marker = tmp_path / "accepted-command-ran"
@@ -1264,6 +1311,82 @@ def test_two_existing_adapter_families_share_session_settlement_boundary(tmp_pat
             factory.prepare_result(activation.child_session_id, expected_revision=prepared.revision, result=b"late", attempt_id=current.attempt_id)
     process_target = factory._record_state(activations[1].child_session_id).execution_target
     process_adapter.cancel(process_target)
+
+def test_concurrent_equal_job_completion_publishes_once_and_replays(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
+
+    orchestrator = MultiAgentOrchestrator(TeamConfig("ray-completion-race"))
+    spawned = orchestrator.spawn_subagent(
+        owner_agent="parent-session",
+        agent_id="child-session",
+        async_mode=True,
+    )
+    result_payload = {"result": "same"}
+    original_update = orchestrator.job_manager.update_state
+    transition_gate = threading.Barrier(2)
+
+    def simultaneous_update(job_id, state, *, result_payload=None):
+        transition_gate.wait(timeout=1)
+        return original_update(job_id, state, result_payload=result_payload)
+
+    monkeypatch.setattr(orchestrator.job_manager, "update_state", simultaneous_update)
+    start = threading.Barrier(3)
+    results = []
+    errors = []
+
+    def complete() -> None:
+        try:
+            start.wait(timeout=1)
+            results.append(
+                orchestrator.mark_job_completed(
+                    spawned.job.job_id,
+                    result_payload=result_payload,
+                )
+            )
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=complete) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    start.wait(timeout=1)
+    for thread in threads:
+        thread.join(timeout=1)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert errors == []
+    assert len(results) == 2
+    assert all(result is not None for result in results)
+    assert all(
+        (result.state, result.result_payload) == ("completed", result_payload)
+        for result in results
+    )
+
+    completion_events = [
+        event
+        for event in orchestrator.event_log.events
+        if event.type == "agent.job_completed"
+    ]
+    assert len(completion_events) == 1
+    assert orchestrator.mark_job_completed(
+        spawned.job.job_id,
+        result_payload=result_payload,
+    ) is results[0]
+    assert orchestrator.mark_job_completed(
+        spawned.job.job_id,
+        result_payload={"result": "conflict"},
+    ) is None
+    assert orchestrator.mark_job_failed(spawned.job.job_id) is None
+
+    replayed = MultiAgentOrchestrator(
+        TeamConfig("ray-completion-race"),
+        event_log=orchestrator.event_log,
+    )
+    restored = replayed.job_manager.get(spawned.job.job_id)
+    assert restored is not None
+    assert (restored.state, restored.result_payload) == ("completed", result_payload)
 
 
 
@@ -2706,12 +2829,59 @@ def test_released_absent_target_honors_retry_policy_with_new_attempt_and_recover
     state = factory.reconcile(activation.recovery_ref)
     assert state.status == "running"
     assert state.attempt_id != activation.attempt_id
-    assert state.recovery_ref == activation.recovery_ref
-    with pytest.raises(ExpectedRevisionConflict, match="stale child attempt"):
+    assert state.recovery_ref != activation.recovery_ref
+    assert state.recovery_ref == (
+        f"child://{activation.child_session_id}/attempt/{state.attempt_id}"
+    )
+    with pytest.raises(ExpectedRevisionConflict):
         factory.prepare_result(activation.child_session_id, expected_revision=state.revision, result=b"stale", attempt_id=activation.attempt_id)
     child_work = WorkItem.restore(repository, activation.child_work_item_id)
     assert [(attempt.number, attempt.status) for attempt in child_work.read_model.attempts] == [(1, "failed"), (2, "running")]
+    assert all(
+        attempt.session_ref == activation.child_session_id
+        for attempt in child_work.read_model.attempts
+    )
+    assert sum(
+        record.session_id == activation.child_session_id
+        for record in await_records(registry)
+    ) == 1
+    stale_refs = (
+        activation.recovery_ref,
+        f"child://{activation.child_session_id}/attempt/",
+    )
+    for stale_ref in stale_refs:
+        with pytest.raises(ExpectedRevisionConflict):
+            factory.reconcile(stale_ref)
+    assert factory._record_state(activation.child_session_id).status == "running"
+    reconciler = DurableChildReconciler(
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+    for stale_ref in stale_refs:
+        with pytest.raises(ExpectedRevisionConflict):
+            asyncio_run(reconciler.cancel(stale_ref))
+    assert factory._record_state(activation.child_session_id).status == "running"
     assert factory.reconcile(state.recovery_ref) == state
+    mismatched = state.retained()
+    mismatched["recovery_ref"] = activation.recovery_ref
+    with pytest.raises(ValueError):
+        ChildState.from_retained(mismatched)
+    with pytest.raises(ValueError):
+        asyncio_run(
+            registry.update_durable_child(
+                state.child_session_id,
+                expected_revision=state.revision,
+                child_state=mismatched,
+            )
+        )
+    assert factory.reconcile(state.recovery_ref) == state
+    canceled = asyncio_run(reconciler.cancel(state.recovery_ref))
+    assert (canceled.status, canceled.terminal_outcome, canceled.terminal_count) == (
+        "canceled",
+        "canceled",
+        1,
+    )
 
 def test_parent_retry_cancels_propagating_descendants_without_closing_admission(
     tmp_path: Path,
@@ -2819,7 +2989,10 @@ def test_absent_target_does_not_launch_nonlaunchable_work_item(
         "waiting" if transition == "wait" else "paused"
     )
 
-def test_retry_reconciles_after_work_item_failure_commit(tmp_path: Path) -> None:
+@pytest.mark.parametrize("transition", ["ready", "leased"])
+def test_retry_reconciles_after_work_item_failure_commit(
+    tmp_path: Path, transition: str
+) -> None:
     workspace, repository, parent, registry = _running_parent(tmp_path)
     adapter = RetryAdapter()
     factory = DurableChildFactory(workspace, registry=registry, repository=repository, adapters=[adapter])
@@ -2831,10 +3004,90 @@ def test_retry_reconciles_after_work_item_failure_commit(tmp_path: Path) -> None
     )
     child = WorkItem.restore(repository, activation.child_work_item_id)
     child.fail_attempt("execution target exited", attempt_id=activation.attempt_id, retryable=True)
+    if transition == "leased":
+        child.acquire_lease("child-worker", lease_id="leased-retry-lease")
+    assert child.read_model.status == transition
 
     recovered = factory.reconcile(activation.recovery_ref)
     assert recovered.status == "running"
     assert recovered.attempt_id != activation.attempt_id
+    assert recovered.recovery_ref != activation.recovery_ref
+    assert recovered.recovery_ref == (
+        f"child://{activation.child_session_id}/attempt/{recovered.attempt_id}"
+    )
+    child_work = WorkItem.restore(repository, activation.child_work_item_id)
+    assert [(attempt.number, attempt.status) for attempt in child_work.read_model.attempts] == [
+        (1, "failed"),
+        (2, "running"),
+    ]
+    assert all(
+        attempt.session_ref == activation.child_session_id
+        for attempt in child_work.read_model.attempts
+    )
+    with pytest.raises(ExpectedRevisionConflict, match="stale child recovery reference"):
+        factory.reconcile(activation.recovery_ref)
+    assert factory.reconcile(recovered.recovery_ref) == recovered
+
+
+def test_retry_reconciles_crash_recovered_attempt_with_new_recovery_ref(
+    tmp_path: Path,
+) -> None:
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = RetryAdapter()
+    factory = DurableChildFactory(
+        workspace, registry=registry, repository=repository, adapters=[adapter]
+    )
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=ChildSpec(
+            "retry crash boundary",
+            "retry crash boundary task",
+            _lock(),
+            "child-worker",
+            adapter.family,
+            retry_policy=RetryPolicy(2, True),
+        ),
+    )
+    child = WorkItem.restore(repository, activation.child_work_item_id)
+    child.fail_attempt(
+        "execution target exited",
+        attempt_id=activation.attempt_id,
+        retryable=True,
+    )
+    child.acquire_lease("child-worker", lease_id="recovered-retry-lease")
+    child.start_attempt(
+        activation.child_session_id,
+        lease_id="recovered-retry-lease",
+        attempt_id="recovered-retry-attempt",
+        reuse_session_ref=True,
+    )
+    assert child.read_model.status == "running"
+    assert child.read_model.current_attempt is not None
+    assert child.read_model.current_attempt.attempt_id == "recovered-retry-attempt"
+
+    recovered = factory.reconcile(activation.recovery_ref)
+
+    assert recovered.status == "running"
+    assert recovered.attempt_id == "recovered-retry-attempt"
+    assert recovered.recovery_ref != activation.recovery_ref
+    assert recovered.recovery_ref == (
+        f"child://{activation.child_session_id}/attempt/{recovered.attempt_id}"
+    )
+    with pytest.raises(ExpectedRevisionConflict, match="stale child recovery reference"):
+        factory.reconcile(activation.recovery_ref)
+    assert factory.reconcile(recovered.recovery_ref) == recovered
+    attempts = WorkItem.restore(
+        repository, activation.child_work_item_id
+    ).read_model.attempts
+    assert [(attempt.number, attempt.status) for attempt in attempts] == [
+        (1, "failed"),
+        (2, "running"),
+    ]
+    assert all(
+        attempt.session_ref == activation.child_session_id for attempt in attempts
+    )
 
 
 @pytest.mark.parametrize("outcome", ["completed", "failed"])

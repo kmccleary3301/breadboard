@@ -102,14 +102,13 @@ class MultiAgentOrchestrator:
 
     def mark_job_completed(self, job_id: str, *, result_payload: Optional[Dict[str, Any]] = None) -> Optional[JobRef]:
         payload = dict(result_payload or {})
-        existing = self.job_manager.get(job_id)
-        if existing is not None and existing.state in {"completed", "failed", "killed"}:
-            if existing.state == "completed" and existing.result_payload == payload:
-                return existing
-            return None
-        job = self.job_manager.update_state(job_id, "completed", result_payload=payload)
-        if job is None:
-            return None
+        job, transitioned = self.job_manager._transition_state(
+            job_id,
+            "completed",
+            result_payload=payload,
+        )
+        if job is None or not transitioned:
+            return job
         event_payload = dict(payload)
         event_payload.update(
             {
@@ -127,6 +126,7 @@ class MultiAgentOrchestrator:
             payload=event_payload,
         )
         return job
+
     def _mark_job_terminal(
         self,
         job_id: str,
@@ -136,12 +136,9 @@ class MultiAgentOrchestrator:
     ) -> Optional[JobRef]:
         if state not in {"failed", "killed"}:
             raise ValueError("terminal job state must be failed or killed")
-        existing = self.job_manager.get(job_id)
-        if existing is not None and existing.state in {"completed", "failed", "killed"}:
-            return existing if existing.state == state else None
-        job = self.job_manager.update_state(job_id, state)
-        if job is None:
-            return None
+        job, transitioned = self.job_manager._transition_state(job_id, state)
+        if job is None or not transitioned:
+            return job
         self.event_log.add(
             event_type,
             agent_id=job.agent_id,
