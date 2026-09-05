@@ -154,6 +154,6 @@ def run(phase: str, root: Path) -> dict:
 
 if __name__ == '__main__':
     output = run(sys.argv[1], Path(sys.argv[2]).resolve())
-    output['source_repository'] = subprocess.check_output(['git', 'remote', 'get-url', 'origin'], text=True).strip()
+    output['source_repository'] = 'https://github.com/kmccleary3301/breadboard.git'
     output['source_head'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
     print(json.dumps(output, sort_keys=True))
