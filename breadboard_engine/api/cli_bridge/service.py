@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 import asyncio
-import hashlib
 import inspect
+import hashlib
 import json
 import logging
 import os
@@ -24,11 +24,6 @@ from breadboard.product.runtime import (
     ReplayError,
     Session as ProductSession,
 )
-from breadboard.product.runtime.events import (
-    GenerationAdoptionError,
-    JsonlEventSink,
-    ProcessLock,
-)
 from breadboard.product.runtime.children import (
     DurableChildReconciler,
     ExpectedRevisionConflict,
@@ -38,11 +33,16 @@ from breadboard.product.runtime.children import (
     _parent_cancellation_requests,
 )
 from breadboard.product.coordination.work_items import WorkItem, WorkItemRepository
+from breadboard.product.runtime.events import (
+    GenerationAdoptionError,
+    JsonlEventSink,
+    ProcessLock,
+)
 from breadboard.product.runtime.session_store import (
-    authorize_session_artifact_manifest,
-    event_from_record,
     load_session,
     mutate_session,
+    authorize_session_artifact_manifest,
+    event_from_record,
     session_directory_identity,
     session_event_path,
 )
@@ -1867,7 +1867,7 @@ class SessionService:
                         session_id,
                     )
             try:
-                await runner.stop()
+                await runner.stop(terminalize_admitted_turns=published)
             except Exception:
                 logger.exception(
                     "Failed to stop session %s after setup failure", session_id

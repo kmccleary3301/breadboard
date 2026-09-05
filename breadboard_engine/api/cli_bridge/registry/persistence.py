@@ -17,9 +17,8 @@ from typing import (
     Optional,
 )
 
-from breadboard.product.runtime.artifacts import ArtifactRef
-
 from breadboard.product.runtime.events import ProcessLock
+from breadboard.product.runtime.artifacts import ArtifactRef
 from ..events import EventType, SessionEvent
 from ..models import (
     SessionStatus,
@@ -672,7 +671,7 @@ class PersistenceMixin:
                     record.logging_dir,
                     record.completion_summary,
                     record.reward_summary,
-                    record.metadata,
+                    dict(record.metadata or {}),
                     record.last_activity_at,
                 )
                 durable_child = (record.metadata or {}).get("durable_child")
@@ -712,9 +711,10 @@ class PersistenceMixin:
                         record.logging_dir,
                         record.completion_summary,
                         record.reward_summary,
-                        record.metadata,
+                        _,
                         record.last_activity_at,
                     ) = previous
+                    self._replace_metadata(record, previous[3])
                     raise
     async def compare_and_swap_durable_parent_cancellation(
         self,
@@ -849,13 +849,13 @@ class PersistenceMixin:
                     if child_state.get(field_name) != expected_value:
                         raise ValueError(f"durable child identity field is immutable: {field_name}")
                 metadata["durable_child"] = dict(child_state)
-                previous = record.metadata
-                record.metadata = metadata
+                previous = dict(record.metadata or {})
+                self._replace_metadata(record, metadata)
                 record.last_activity_at = _utcnow()
                 try:
                     self._persist_record_locked(record)
                 except Exception:
-                    record.metadata = previous
+                    self._replace_metadata(record, previous)
                     raise
 
     async def delete(self, session_id: str) -> None:
@@ -874,7 +874,6 @@ class PersistenceMixin:
                         os.fsync(marker.fileno())
                     _fsync_directory(tombstone.parent)
                 self._records.pop(session_id, None)
-                path = self._state_path(session_id)
                 if path is not None:
                     try:
                         path.unlink()
@@ -971,7 +970,13 @@ class PersistenceMixin:
         if state_path is None:
             yield
             return
-        lock_path = state_path.with_suffix(".lock")
+        lock_base = self._state_root.parent
+        if self._state_root.name == "session_state":
+            lock_base = lock_base.parent
+        lock_identity = hashlib.sha256(
+            f"{self._state_root.resolve()}\0{session_id}".encode("utf-8")
+        ).hexdigest()
+        lock_path = lock_base / ".breadboard-session-locks" / lock_identity
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         async with _process_lock(lock_path):
             yield
@@ -1054,14 +1059,15 @@ class PersistenceMixin:
         target.created_at = source.created_at
         target.last_activity_at = source.last_activity_at
         target.logging_dir = source.logging_dir
-        previous_metadata = target.metadata if isinstance(target.metadata, dict) else {}
-        target.metadata = dict(source.metadata or {})
+        previous_metadata = dict(target.metadata or {})
+        replacement_metadata = dict(source.metadata or {})
         for key, value in previous_metadata.items():
-            if key not in target.metadata and key not in {
+            if key not in replacement_metadata and key not in {
                 "durable_child",
                 "durable_parent_cancellation",
             }:
-                target.metadata[key] = value
+                replacement_metadata[key] = value
+        PersistenceMixin._replace_metadata(target, replacement_metadata)
         target.reward_summary = source.reward_summary
         target.event_seq = source.event_seq
         target.replay_history_partial = source.replay_history_partial
@@ -1355,14 +1361,14 @@ class PersistenceMixin:
                     in {"prompt", "ask", "interactive", "configured"}
                     else None
                 ),
+                **({"durable_child": durable_child} if durable_child is not None else {}),
+                **({"durable_parent_cancellation": parent_cancellation} if parent_cancellation is not None else {}),
                 "runtime_overrides": _retained_runtime_overrides(
                     metadata.get("runtime_overrides")
                 ),
                 "skills_selection": _retained_skills_selection(
                     metadata.get("skills_selection")
                 ),
-                **({"durable_child": durable_child} if durable_child is not None else {}),
-                **({"durable_parent_cancellation": parent_cancellation} if parent_cancellation is not None else {}),
             },
             "turns": turns,
             "submissions": submissions,

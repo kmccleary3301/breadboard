@@ -177,7 +177,7 @@ class WorkItemRepository:
         for row in rows:
             if not isinstance(row, dict):
                 raise TypeError("invalid Work Item event frame")
-            events.append(WorkItemEvent(row["work_item_id"], int(row["sequence"]), row["kind"], row["occurred_at"], row.get("payload", {})))
+            events.append(WorkItemEvent(row["work_item_id"], row["sequence"], row["kind"], row["occurred_at"], row.get("payload", {})))
         return tuple(events)
     @staticmethod
     def _fsync_parent_directory(path: Path) -> None:
@@ -227,7 +227,12 @@ class WorkItemRepository:
                 stream.flush()
                 os.fsync(stream.fileno())
         for events in streams.values():
-            rebuild_work_item(events)
+            try:
+                rebuild_work_item(events)
+            except (KeyError, TypeError, ValueError) as error:
+                raise WorkItemJournalCorruptionError(
+                    "corrupt Work Item journal semantic frame"
+                ) from error
         self._streams = streams
 
     def read(self, work_item_id: str) -> tuple[WorkItemEvent, ...]:

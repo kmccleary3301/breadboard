@@ -197,6 +197,24 @@ def test_journal_schema_corruption_is_typed_and_never_truncated(tmp_path: Path) 
     assert path.read_bytes() == corrupted
 
 
+@pytest.mark.parametrize("invalid_sequence", ["1", 1.5, True])
+def test_journal_sequence_schema_corruption_is_typed_and_never_truncated(
+    tmp_path: Path, invalid_sequence: object
+) -> None:
+    path = tmp_path / "work-items.jsonl"
+    repository = WorkItemRepository(path)
+    WorkItem.create("journal item", work_item_id="journal-item", repository=repository, clock=CLOCK)
+    record = json.loads(path.read_bytes())
+    record["payload"]["events"][0]["sequence"] = invalid_sequence
+    encoded = json.dumps(record["payload"], sort_keys=True, separators=(",", ":")).encode()
+    record["checksum"] = "sha256:" + hashlib.sha256(encoded).hexdigest()
+    path.write_bytes(json.dumps(record, sort_keys=True, separators=(",", ":")).encode() + b"\n")
+    corrupted = path.read_bytes()
+    with pytest.raises(WorkItemJournalCorruptionError, match="corrupt Work Item journal"):
+        WorkItemRepository(path)
+    assert path.read_bytes() == corrupted
+
+
 def test_journal_incomplete_tail_is_the_only_truncatable_corruption(tmp_path: Path) -> None:
     path = tmp_path / "work-items.jsonl"
     repository = WorkItemRepository(path)

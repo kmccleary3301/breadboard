@@ -360,7 +360,12 @@ class SessionRunner:
             advance_queue=False,
         )
 
-    async def stop(self, reason: str = "operator request") -> None:
+    async def stop(
+        self,
+        reason: str = "operator request",
+        *,
+        terminalize_admitted_turns: bool = True,
+    ) -> None:
         if self._closed:
             return
         async with self.session.admission_lock:
@@ -391,17 +396,18 @@ class SessionRunner:
                 "failed": "failed",
                 "canceled": "cancelled",
             }.get(product_state, "cancelled")
-            await self._terminalize_admitted_turns(
-                outcome=outcome,
-                reason=(
-                    "stop_requested"
-                    if outcome == "cancelled"
-                    else "runtime_failure"
-                    if outcome == "failed"
-                    else "completed"
-                ),
-                error_code=("runtime_failure" if outcome == "failed" else None),
-            )
+            if terminalize_admitted_turns:
+                await self._terminalize_admitted_turns(
+                    outcome=outcome,
+                    reason=(
+                        "stop_requested"
+                        if outcome == "cancelled"
+                        else "runtime_failure"
+                        if outcome == "failed"
+                        else "completed"
+                    ),
+                    error_code=("runtime_failure" if outcome == "failed" else None),
+                )
             final_status = {
                 "completed": SessionStatus.COMPLETED,
                 "failed": SessionStatus.FAILED,

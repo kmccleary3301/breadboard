@@ -685,7 +685,9 @@ def test_process_launch_crash_window_is_recovered_or_terminated(tmp_path: Path, 
         )
     retained_record = next(record for record in asyncio_run(registry.records()) if record.metadata.get("durable_child"))
     state = ChildState.from_retained(retained_record.metadata["durable_child"])
-    state = factory._cas(state, launch_claim_until=0.0)
+    assert state.launch_claim_until is not None and state.launch_claim_until > time.time()
+    assert adapter._processes == {}
+    assert adapter._pending_pid(state.execution_target_ref) is None
     restarted_adapter = ProcessExecutionAdapter(command=("/bin/sh", "-c", "sleep 30"))
     restarted = DurableChildFactory(
         workspace,
@@ -693,6 +695,9 @@ def test_process_launch_crash_window_is_recovered_or_terminated(tmp_path: Path, 
         repository=WorkItemRepository(tmp_path / "work-items.jsonl"),
         adapters=[restarted_adapter],
     )
+    assert restarted.reconcile(state.recovery_ref) == state
+    assert restarted_adapter._processes == {}
+    state = factory._cas(state, launch_claim_until=0.0)
     recovered = restarted.reconcile(state.recovery_ref)
     assert recovered.launch_published is True
     assert len(restarted_adapter._processes) == 1
@@ -1240,7 +1245,10 @@ def test_two_existing_adapter_families_share_session_settlement_boundary(tmp_pat
         assert (settled.status, settled.terminal_outcome, settled.terminal_count, settled.joined, settled.result_prepared) == ("completed", "completed", 1, True, True)
         joined = [event for event in WorkItem.restore(repository, parent.read_model.work_item_id).events if event.kind == "child.joined" and event.payload["child_work_item_id"] == activation.child_work_item_id]
         assert tuple(joined[-1].payload["result_refs"]) == settled.result_refs
+        assert factory.settle(activation.child_session_id, expected_revision=0, outcome="completed", attempt_id=current.attempt_id) == settled
         assert factory.settle(activation.child_session_id, expected_revision=0, outcome="completed", result_refs=prepared.result_refs, attempt_id=current.attempt_id) == settled
+        with pytest.raises(LateResultRejected):
+            factory.settle(activation.child_session_id, expected_revision=0, outcome="completed", result_refs=("conflicting-ref",), attempt_id=current.attempt_id)
         with pytest.raises(LateResultRejected):
             factory.prepare_result(activation.child_session_id, expected_revision=prepared.revision, result=b"late", attempt_id=current.attempt_id)
     process_target = factory._record_state(activations[1].child_session_id).execution_target
@@ -4372,6 +4380,7 @@ def test_shared_job_manager_scopes_ray_ids_by_workspace(
     } == adapter._released_actor_ids
 
 
+
 def test_ray_adapter_launches_named_runtime_with_locked_task(tmp_path: Path) -> None:
     from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
 
@@ -5040,7 +5049,6 @@ def test_registry_record_lock_uses_portable_process_lock(
             return None
 
     monkeypatch.setattr(persistence, "ProcessLock", FakeProcessLock)
-    monkeypatch.setattr(persistence.os, "name", "nt")
     mixin = object.__new__(persistence.PersistenceMixin)
     mixin._state_root = tmp_path
     async def acquire() -> None:

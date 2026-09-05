@@ -21,7 +21,7 @@ Status: implemented on the isolated W7 branch. Design A (Session-centered child 
 4. Settlement reservation is CAS-committed on `SessionRecord` before Product Session or Work Item terminal mutation. Fresh `reconcile` completes that pending reservation and cannot append a second terminal outcome.
 5. Cancellation intent is CAS-committed before signaling the adapter. `cancel_tree` persists the parent Session intent and every retained descendant intent before invoking any descendant signal. A late non-canceled result loses the revision/intent race.
 6. Session terminal mutation, Work Item terminal mutation, and retained parent join/result reference are replayed through their existing owners. No private child lifecycle journal or parallel supervisor is introduced.
-7. A retryable absent execution target closes the current Work Item attempt and allocates a new attempt, recovery reference and placement before relaunch; retry policy, not the adapter, decides whether retry occurs.
+- **Retry behavior:** A retryable absent execution target closes the current Work Item attempt and allocates a new attempt and placement before relaunch; the child session and its recovery reference remain stable across attempts. Retry policy, not the adapter, decides whether retry occurs.
 
 ## Deletion / non-deletion decision
 

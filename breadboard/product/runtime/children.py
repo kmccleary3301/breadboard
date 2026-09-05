@@ -1815,7 +1815,7 @@ class DurableChildFactory:
         *,
         expected_revision: int,
         outcome: str,
-        result_refs: Sequence[str] = (),
+        result_refs: Sequence[str] | None = None,
         attempt_id: str | None = None,
         _allow_cancellation_intent: bool = False,
     ) -> ChildState:
@@ -1857,7 +1857,7 @@ class DurableChildFactory:
         if attempt_id != state.attempt_id:
             raise ExpectedRevisionConflict("stale child attempt")
         if state.terminal_count:
-            if state.terminal_outcome == outcome and tuple(result_refs) == state.result_refs:
+            if state.terminal_outcome == outcome and (result_refs is None or tuple(result_refs) == state.result_refs):
                 return state
             raise LateResultRejected("late child result cannot replace terminal outcome")
         if state.settlement is not None:
@@ -3230,7 +3230,6 @@ class RayJobAdapter:
         from breadboard_engine.orchestration.agent_session import OpenCodeAgent
 
         name = self._actor_name(job_id)
-        created = False
         try:
             actor = ray.get_actor(
                 name,
@@ -3297,7 +3296,7 @@ class RayJobAdapter:
         job_data = metadata.get("job")
         if not isinstance(job_data, Mapping) or job_data.get("job_id") != job_id:
             return None
-        if actor is None and (job is None or job.state not in {"completed", "failed", "killed"}):
+        if invocation_missing or (actor is None and (job is None or job.state not in {"completed", "failed", "killed"})):
             return None
         return ExecutionTarget(str(target.get("ref") or ""), volatile_handle=actor, metadata=dict(metadata))
 
@@ -3429,6 +3428,7 @@ class RayJobAdapter:
             "child_session_id": activation.child_session_id,
             "recovery_ref": activation.recovery_ref,
             "task_hash": spec.retained()["task_hash"],
+            "invocation_id": invocation_id,
         }
         job = self.orchestrator.job_manager.get(manager_job_id)
         if job is None:
@@ -4013,6 +4013,14 @@ class ProcessExecutionAdapter:
                 os.killpg(group, 15)
             except ProcessLookupError:
                 pass
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(group, 9)
+                except ProcessLookupError:
+                    pass
+                process.wait()
             raise
         return target
 

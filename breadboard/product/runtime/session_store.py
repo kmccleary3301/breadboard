@@ -1704,10 +1704,17 @@ def mutate_session(
     workspace: str | Path,
     session_id: str,
     mutation: Callable[[Session], _T],
+    *,
+    expected_session_directory_identity: SessionDirectoryIdentity | None = None,
 ) -> tuple[_T, Path]:
     """Run one domain mutation while holding the durable session guard."""
     with _session_transition_guard(workspace, session_id):
-        return _mutate_session_locked(workspace, session_id, mutation)
+        return _mutate_session_locked(
+            workspace,
+            session_id,
+            mutation,
+            expected_session_directory_identity=expected_session_directory_identity,
+        )
 def create_session(
     workspace: str | Path,
     session: Session,
