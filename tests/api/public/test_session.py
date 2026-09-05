@@ -494,6 +494,67 @@ def test_live_event_limit_returns_annotation_before_later_input(
     assert records[0]["visibility"]["provider_visible"] is False
 
 
+def test_public_session_events_snapshot_excludes_annotation_appended_after_first_chunk(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    session_id = "snapshot-boundary"
+    lock = EffectiveHarnessLock._from_record(
+        {"graph_hash": "sha256:" + "a" * 64}
+    )
+    session = Session.start(lock, "snapshot boundary", session_id=session_id)
+    session.assistant_message(
+        "candidate",
+        message_id="message-a",
+        trajectory_id="trajectory-a",
+    )
+    session_store.create_session(tmp_path, session)
+
+    response = client.portal.call(
+        public_session_api.events,
+        session_id,
+        SimpleNamespace(app=client.app),
+        follow=False,
+    )
+    stream = response.body_iterator
+    first_chunk = client.portal.call(stream.__anext__)
+    assert "event: session.started\n" in first_chunk
+
+    held_out = AnnotationRecord(
+        annotation_id="held-out",
+        message_id="message-a",
+        trajectory_id="trajectory-a",
+        label="preferred",
+        author="reviewer",
+        generation="generation-a",
+    )
+    session_store.mutate_session(
+        tmp_path,
+        session_id,
+        lambda current: current.annotate(held_out),
+    )
+
+    chunks = [first_chunk]
+    while True:
+        try:
+            chunks.append(client.portal.call(stream.__anext__))
+        except StopAsyncIteration:
+            break
+    original_records = _stream_records(SimpleNamespace(text="".join(chunks)))
+    assert [event["kind"] for event in original_records] == [
+        "session.started",
+        "assistant_message",
+    ]
+
+    fresh_snapshot = client.get(
+        f"/v1/sessions/{session_id}/events?follow=false"
+    )
+    assert fresh_snapshot.status_code == 200
+    fresh_records = _stream_records(fresh_snapshot)
+    assert fresh_records[-1]["kind"] == "annotation"
+    assert fresh_records[-1]["payload"]["annotation_id"] == "held-out"
+
+
 def test_public_session_events_snapshot_closes_without_live_follow(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
