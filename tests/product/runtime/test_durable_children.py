@@ -7833,8 +7833,9 @@ def test_preexisting_registry_get_loads_record_created_by_another_owner(
     assert observed.metadata == record.metadata
 
 
+@pytest.mark.parametrize("duplicate_id", ["explicit-id-collision", "EXPLICIT-ID-COLLISION"])
 def test_explicit_id_create_rejects_disk_collision_without_overwriting_first_record(
-    tmp_path: Path,
+    tmp_path: Path, duplicate_id: str,
 ) -> None:
     from breadboard_engine.api.cli_bridge.models import SessionStatus
     from breadboard_engine.api.cli_bridge.registry.records import SessionRecord
@@ -7854,7 +7855,7 @@ def test_explicit_id_create_rejects_disk_collision_without_overwriting_first_rec
         },
     )
     duplicate = SessionRecord(
-        session_id,
+        duplicate_id,
         status=SessionStatus.FAILED,
         logging_dir=str(tmp_path / "duplicate-logs"),
         metadata={

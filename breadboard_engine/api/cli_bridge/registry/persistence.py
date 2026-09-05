@@ -354,10 +354,19 @@ class PersistenceMixin:
                         f"session {record.session_id} was permanently deleted"
                     )
                 state_path = self._state_path(record.session_id)
-                if record.session_id in self._records or (
+                folded_id = record.session_id.casefold()
+                if any(session_id.casefold() == folded_id for session_id in self._records) or (
                     state_path is not None and state_path.exists()
                 ):
                     raise ValueError(f"session already exists: {record.session_id}")
+                if self._state_root is not None:
+                    for path in self._state_root.glob("*.json"):
+                        try:
+                            retained = self._deserialize_record(json.loads(path.read_text(encoding="utf-8")))
+                        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+                            continue
+                        if retained.session_id.casefold() == folded_id and self._state_path(retained.session_id) == path:
+                            raise ValueError(f"session already exists: {retained.session_id}")
                 self._persist_record_locked(record)
                 self._records[record.session_id] = record
         return record
@@ -1004,7 +1013,7 @@ class PersistenceMixin:
         if self._state_root.name == "session_state":
             lock_base = lock_base.parent
         lock_identity = hashlib.sha256(
-            f"{self._state_root.resolve()}\0{session_id}".encode("utf-8")
+            f"{self._state_root.resolve()}\0{session_id.casefold()}".encode("utf-8")
         ).hexdigest()
         lock_path = lock_base / ".breadboard-session-locks" / lock_identity
         lock_path.parent.mkdir(parents=True, exist_ok=True)
