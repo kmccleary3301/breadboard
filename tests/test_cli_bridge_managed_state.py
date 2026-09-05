@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import stat
@@ -8,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from breadboard_engine.api.cli_bridge.events import EventType, SessionEvent
-from breadboard_engine.api.cli_bridge.models import SessionStatus
+from breadboard_engine.api.cli_bridge.models import SessionCreateRequest, SessionStatus
 from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry, TurnRecord
 from breadboard_engine.api.cli_bridge.runtime_emission import (
     ManagedStateRootError,
@@ -270,3 +271,83 @@ async def test_live_replay_survives_refresh_without_hiding_foreign_head(
     assert snapshot.head_sequence == 2
     assert snapshot.head_event_id == "event-2"
     assert snapshot.earliest_retained_sequence == 1
+
+
+@pytest.mark.asyncio
+async def test_retained_head_resume_keeps_events_published_before_subscription(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    root = _managed_root(tmp_path)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    monkeypatch.setenv("BREADBOARD_ENGINE_LAUNCH_ID", LAUNCH_ID)
+    monkeypatch.setenv("BREADBOARD_ENGINE_STATE_ROOT", str(root))
+    monkeypatch.setattr(
+        "breadboard_engine.api.cli_bridge.session_runner.SessionRunner.schedule_start",
+        lambda _runner: None,
+    )
+    monkeypatch.setattr(
+        "breadboard_engine.api.cli_bridge.session_runner.SessionRunner.authorize_start",
+        lambda _runner: None,
+    )
+    records: list[SessionRecord] = []
+    try:
+        original = SessionService()
+        response = await original.create_session(
+            SessionCreateRequest(
+                task="", workspace=str(workspace),
+                overrides={"providers.default_model": "cli_mock/reference"},
+            )
+        )
+        record = await original.ensure_session(response.session_id)
+        records.append(record)
+        boundary = SessionEvent(
+            EventType.WARNING, record.session_id, {"message": "before restart"},
+            event_id="before-restart",
+        )
+        await record.event_queue.put(boundary)
+        await record.event_queue.join()
+        boundary_sequence = boundary.seq
+        assert boundary_sequence is not None
+
+        restarted = SessionService()
+        await restarted.validate_event_stream(
+            record.session_id, from_id=boundary.event_id, replay=True
+        )
+        retained = await restarted.registry.get(record.session_id)
+        assert retained is not None
+        records.append(retained)
+        first_live = SessionEvent(
+            EventType.WARNING, record.session_id, {"message": "after restart"},
+            event_id="after-restart",
+        )
+        await retained.event_queue.put(first_live)
+        await retained.event_queue.join()
+
+        prepared = await restarted.prepare_event_stream(
+            record.session_id, replay=True, from_id=boundary.event_id
+        )
+        next_live = SessionEvent(
+            EventType.WARNING, record.session_id, {"message": "after subscription"},
+            event_id="after-subscription",
+        )
+        await retained.event_queue.put(next_live)
+        await retained.event_queue.put(None)
+        await retained.event_queue.join()
+        stream = restarted.prepared_event_stream(prepared)
+        stream_open = await anext(stream)
+        assert stream_open.payload["earliestRetainedSequence"] == boundary_sequence
+        assert stream_open.payload["earliestRetainedEventId"] == boundary.event_id
+        delivered = [event async for event in stream if event.stable_cursor]
+        assert [(event.event_id, event.seq) for event in delivered] == [
+            ("after-restart", boundary_sequence + 1),
+            ("after-subscription", boundary_sequence + 2),
+        ]
+    finally:
+        dispatchers = [
+            record.dispatcher_task for record in records
+            if record.dispatcher_task is not None
+        ]
+        for dispatcher in dispatchers:
+            dispatcher.cancel()
+        await asyncio.gather(*dispatchers, return_exceptions=True)

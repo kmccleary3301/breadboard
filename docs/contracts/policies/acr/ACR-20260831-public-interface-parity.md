@@ -149,3 +149,9 @@ remains with the permission owner. No permission API or default policy changes.
 ### W9 live replay completeness
 
 Retained-state refresh no longer copies a cold loader's partial-history marker onto the live event buffer. An unchanged durable head preserves local completeness; a changed head marks a replay gap. A replacement registry still reports partial history when it lacks the stream. The registry consumer regression checks fresh reads, listing and a foreign head advance. The TUI's rejection of partial history without a cursor remains unchanged.
+
+### W9 retained replay boundary
+
+Cold recovery keeps its metadata-only head cursor as a private in-memory boundary while new dispatches advance the durable head. Subscription and preflight share one contiguous-suffix resolver, so an append between them is replayed rather than dropped. A foreign durable-head change replaces the boundary; unavailable history still fails the replay check. Summary and stream-open retention facts include the boundary when it precedes the buffered suffix.
+
+No nonterminal payload, public field, schema, generation input or client guard changes. The regression observes the advertised cursor and delivery of N+1 then N+2 across cold recovery. The obsolete helper assertion is removed; the existing ID/numeric subscription and gap-refusal checks remain. The installed journey supplies the process-replacement proof. Rollback is a protected revert with no persisted-state migration.
