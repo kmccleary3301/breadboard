@@ -223,6 +223,8 @@ class ChildSpec:
             "resume_policy": self.resume_policy.as_dict(),
             "cancellation_policy": self.cancellation_policy.as_dict(),
         }
+        if self.adapter_config:
+            retained["adapter_config"] = dict(self.adapter_config)
         if self.workflow_id is not None:
             retained.update(
                 {

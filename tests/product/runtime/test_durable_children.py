@@ -6992,7 +6992,20 @@ def test_workflow_decision_replays_across_controller_restart(tmp_path: Path) -> 
     assert terminal.completed_step_ids == ("inspect", "verify")
 
 
-def test_workflow_rejects_definition_drift_after_child_start(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "changed_child",
+    (
+        _spec("workflow-adapter", "changed verify"),
+        replace(
+            _spec("workflow-adapter", "verify"),
+            adapter_config={"command": ["/bin/false"]},
+        ),
+    ),
+    ids=("title", "execution-config"),
+)
+def test_workflow_rejects_definition_drift_after_child_start(
+    tmp_path: Path, changed_child: ChildSpec,
+) -> None:
     workspace, repository, _parent, registry = _running_parent(tmp_path)
     factory = DurableChildFactory(
         workspace,
@@ -7008,6 +7021,7 @@ def test_workflow_rejects_definition_drift_after_child_start(tmp_path: Path) -> 
         parent_work_item_id="parent-work",
         definition=_workflow_definition(),
     ).advance()
+    definition = _workflow_definition()
 
     changed = ReplayableWorkflowController(
         factory,
@@ -7015,7 +7029,9 @@ def test_workflow_rejects_definition_drift_after_child_start(tmp_path: Path) -> 
         parent_session_id="parent-session",
         root_session_id="parent-session",
         parent_work_item_id="parent-work",
-        definition=_workflow_definition(verify_title="changed verify"),
+        definition=WorkflowDefinition(
+            (definition.steps[0], replace(definition.steps[1], child=changed_child))
+        ),
     )
     with pytest.raises(ChildError, match="definition does not match"):
         changed.decision()
