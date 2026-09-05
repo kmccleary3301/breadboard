@@ -1963,6 +1963,7 @@ class SessionService:
                 head_sequence=record.event_seq,
                 retained_history_partial=record.replay_history_partial,
                 persisted_head_event_id=record.replay_head_event_id,
+                retained_boundary=record.retained_replay_boundary,
             ),
             stable_cursor=False,
         )
@@ -2750,19 +2751,8 @@ class SessionService:
                 self._ensure_event_sequence(record)
                 events = list(record.event_log)
                 if from_id:
-                    start_index = self._resolve_start_index(events, from_id)
-                    if start_index is not None and not self._retained_replay_suffix_is_contiguous(
-                        record,
-                        events,
-                        start_index,
-                    ):
-                        start_index = None
-                    if start_index is None and self._is_retained_head_cursor(record, from_id):
-                        events = [
-                            event for event in events
-                            if event.seq is not None and event.seq > record.replay_head_sequence
-                        ]
-                    elif start_index is None:
+                    start_index = self._resolve_replay_start_index(record, events, from_id)
+                    if start_index is None:
                         if not validated:
                             raise HTTPException(
                                 status_code=status.HTTP_409_CONFLICT,
@@ -3034,14 +3024,8 @@ class SessionService:
                 return
             self._ensure_event_sequence(record)
             events = list(record.event_log)
-            start_index = self._resolve_start_index(events, from_id)
-            if start_index is not None and not self._retained_replay_suffix_is_contiguous(
-                record,
-                events,
-                start_index,
-            ):
-                start_index = None
-            if start_index is None and not self._is_retained_head_cursor(record, from_id):
+            start_index = self._resolve_replay_start_index(record, events, from_id)
+            if start_index is None:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail={
@@ -3063,38 +3047,47 @@ class SessionService:
             else:
                 seq = max(seq, int(event.seq))
         record.event_seq = seq
-    @staticmethod
-    def _is_retained_head_cursor(record: SessionRecord, from_id: str) -> bool:
-        return (
-            record.replay_head_sequence > 0
-            and record.replay_head_event_id is not None
-            and from_id
-            in {
-                record.replay_head_event_id,
-                str(record.replay_head_sequence),
-            }
-        )
 
-    @staticmethod
-    def _retained_replay_suffix_is_contiguous(
+    def _resolve_replay_start_index(
+        self,
         record: SessionRecord,
         events: list[SessionEvent],
-        start_index: int,
-    ) -> bool:
+        from_id: str,
+    ) -> int | None:
+        start_index = self._resolve_start_index(events, from_id)
+        if start_index is not None:
+            cursor_sequence = events[start_index - 1].seq
+        elif record.replay_head_event_id is not None and (
+            from_id == record.replay_head_event_id
+            or from_id == str(record.replay_head_sequence)
+        ):
+            cursor_sequence = record.replay_head_sequence
+        elif record.retained_replay_boundary is not None and (
+            from_id == record.retained_replay_boundary[1]
+            or from_id == str(record.retained_replay_boundary[0])
+        ):
+            cursor_sequence = record.retained_replay_boundary[0]
+        else:
+            return None
+        if cursor_sequence is None:
+            return None
+        if start_index is None:
+            start_index = 0
+            while start_index < len(events):
+                sequence = events[start_index].seq
+                if sequence is None or sequence > cursor_sequence:
+                    break
+                start_index += 1
         if not record.replay_history_partial:
-            return True
-        if start_index <= 0:
-            return False
-        cursor_sequence = events[start_index - 1].seq
-        replay_head = record.replay_head_sequence
-        if cursor_sequence is None or cursor_sequence > replay_head:
-            return False
+            return start_index
+        if cursor_sequence > record.replay_head_sequence:
+            return None
         expected_sequence = cursor_sequence + 1
-        for event in events[start_index:]:
-            if event.seq != expected_sequence or expected_sequence > replay_head:
-                return False
+        for index in range(start_index, len(events)):
+            if events[index].seq != expected_sequence:
+                return None
             expected_sequence += 1
-        return expected_sequence == replay_head + 1
+        return start_index if expected_sequence == record.replay_head_sequence + 1 else None
 
     def _resolve_start_index(
         self, events: list[SessionEvent], from_id: str

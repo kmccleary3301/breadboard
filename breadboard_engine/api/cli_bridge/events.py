@@ -42,6 +42,7 @@ def replay_retention_facts(
     head_sequence: int,
     retained_history_partial: bool,
     persisted_head_event_id: str | None = None,
+    retained_boundary: tuple[int, str] | None = None,
 ) -> Dict[str, Any]:
     retained = [event for event in events if event.stable_cursor and event.seq is not None]
     first = retained[0] if retained else None
@@ -50,19 +51,21 @@ def replay_retention_facts(
     retained_history = (
         "partial" if retained_history_partial or (head_sequence and first is None) else "complete"
     )
+    earliest_sequence = first.seq if first is not None else head_sequence if virtual_head_retained else None
+    earliest_event_id = first.event_id if first is not None else persisted_head_event_id if virtual_head_retained else None
+    if retained_boundary is not None and (
+        (first is None and retained_boundary[0] == head_sequence)
+        or (first is not None and first.seq == retained_boundary[0] + 1)
+    ):
+        earliest_sequence, earliest_event_id = retained_boundary
     facts: Dict[str, Any] = {
         "replayRetention": {
             "maxEvents": REPLAY_RETENTION_MAX_EVENTS,
             "maxAgeMs": REPLAY_RETENTION_MAX_AGE_MS,
             "configurationDigest": replay_configuration_digest(),
         },
-        "earliestRetainedSequence": (
-            first.seq if first is not None else head_sequence if virtual_head_retained else None
-        ),
-        "earliestRetainedEventId": (
-            first.event_id if first is not None
-            else persisted_head_event_id if virtual_head_retained else None
-        ),
+        "earliestRetainedSequence": earliest_sequence,
+        "earliestRetainedEventId": earliest_event_id,
         "headSequence": head_sequence,
         "headEventId": (
             head.event_id

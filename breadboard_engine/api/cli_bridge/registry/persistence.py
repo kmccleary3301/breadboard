@@ -1114,11 +1114,13 @@ class PersistenceMixin:
         target.reward_summary = source.reward_summary
         target.event_seq = source.event_seq
         # The disk loader lacks this process's live event buffer.
-        target.replay_history_partial = (
-            target.replay_history_partial
-            or source.replay_head_sequence != target.replay_head_sequence
+        head_changed = (
+            source.replay_head_sequence != target.replay_head_sequence
             or source.replay_head_event_id != target.replay_head_event_id
         )
+        target.replay_history_partial = target.replay_history_partial or head_changed
+        if head_changed:
+            target.retained_replay_boundary = source.retained_replay_boundary
         target.replay_head_event_id = source.replay_head_event_id
         target.replay_head_sequence = source.replay_head_sequence
         target.terminal_event_envelopes[:] = source.terminal_event_envelopes
@@ -1661,6 +1663,10 @@ class PersistenceMixin:
             replay_history_partial=bool(persisted_event_seq),
             replay_head_event_id=persisted_head_event_id,
             replay_head_sequence=persisted_replay_head_sequence,
+            retained_replay_boundary=(
+                (persisted_replay_head_sequence, persisted_head_event_id)
+                if persisted_head_event_id is not None else None
+            ),
             metadata=metadata,
             loaded_from_retained_state=True,
             runtime_generation_source_ref=runtime_generation_source_ref,
