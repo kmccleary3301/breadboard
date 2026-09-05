@@ -14,6 +14,7 @@ import type {
   PublicSessionDecision,
   PublicSessionInputRequest,
   PublicSessionStartRequest,
+  ResearchCompareBody,
   SessionEvent,
 } from "./types.js"
 
@@ -49,6 +50,7 @@ export interface BreadboardClient {
     body: PublicSessionStartRequest,
     idempotencyKey?: string,
   ): Promise<PublicResult>
+  compareResearch(body: ResearchCompareBody): Promise<PublicResult>
   listSession(): Promise<PublicResult>
   getSessionResult(id: string): Promise<PublicResult>
   sendInputSession(
@@ -99,6 +101,7 @@ export const createBreadboardClient = (
     getArtifact: full.getArtifact,
     verifyArtifact: full.verifyArtifact,
     startSession: full.startSession,
+    compareResearch: full.compareResearch,
     listSession: full.listSession,
     getSessionResult: full.getSessionResult,
     sendInputSession: full.sendInputSession,

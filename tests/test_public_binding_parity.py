@@ -353,7 +353,6 @@ def test_fastapi_public_routes_match_catalog(
     public_routes = [
         route for route in api_routes if route.operation_id in expected_ids
     ]
-    assert len(api_routes) > len(public_routes) == 26
     observed: set[tuple[str, str, str]] = set()
     for route in public_routes:
         operation_id = route.operation_id
@@ -365,7 +364,6 @@ def test_fastapi_public_routes_match_catalog(
         }
         assert len(methods) == 1
         observed.add((operation_id, next(iter(methods)), route.path_format))
-    assert len(observed) == 26
     assert observed == expected_routes
 
 

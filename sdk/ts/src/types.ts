@@ -53,6 +53,14 @@ export interface PublicSessionStartRequest {
   readonly session_id?: string | null
 }
 
+export interface ResearchCompareBody {
+  readonly definition: string
+  readonly world: string
+  readonly generation: string
+  readonly projection: string
+  readonly compare: readonly [string, string]
+}
+
 export interface PublicSessionInputRequest {
   readonly content: string
 }

@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
@@ -140,6 +140,18 @@ class PublicResult(BaseModel):
     error: Problem | None
     exit_code: int
     data: dict[str, Any]
+
+
+class ResearchCompareBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    definition: Annotated[str, Field(min_length=1)]
+    world: Annotated[str, Field(min_length=1)]
+    generation: Annotated[str, Field(min_length=1)]
+    projection: Annotated[str, Field(min_length=1)]
+    compare: tuple[
+        Annotated[str, Field(min_length=1)],
+        Annotated[str, Field(min_length=1)],
+    ]
 
 
 class HarnessCreateRequest(BaseModel):

@@ -2,7 +2,7 @@
 # generator: scripts/quality/generate_public_bindings.py
 # generator-version: 5
 # catalog-id: bb.public_operation_catalog.v2
-# catalog-sha256: sha256:23c3596e075e609539ede6ba64a005110ceb85935f046e0246ff36cd39b990f6
+# catalog-sha256: sha256:5b7eeb4e9c1f7eb01f4fc9906cc46f00b6d34d630da052f28a339178f679c51e
 
 from __future__ import annotations
 
@@ -270,6 +270,23 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         required_capabilities=("public.integration.execute",),
     ),
     PublicOperationBinding(
+        operation_id="research.compare",
+        status="candidate",
+        http_method="POST",
+        path="/v1/research/compare",
+        cli_command="bbh research compare",
+        python_client="BreadBoardClient",
+        python_method="compare_research",
+        typescript_client="BreadBoardClient",
+        typescript_method="compareResearch",
+        action_id="public.research.compare",
+        action_kind="action",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="capability_gated",
+        required_capabilities=("public.session.execute",),
+    ),
+    PublicOperationBinding(
         operation_id="session.approve",
         status="candidate",
         http_method="POST",
@@ -492,18 +509,19 @@ PUBLIC_BINDINGS_BY_OPERATION_ID: Final[Mapping[str, PublicOperationBinding]] = (
             "integration.get": PUBLIC_OPERATION_BINDINGS[11],
             "integration.list": PUBLIC_OPERATION_BINDINGS[12],
             "integration.probe": PUBLIC_OPERATION_BINDINGS[13],
-            "session.approve": PUBLIC_OPERATION_BINDINGS[14],
-            "session.artifacts": PUBLIC_OPERATION_BINDINGS[15],
-            "session.cancel": PUBLIC_OPERATION_BINDINGS[16],
-            "session.events": PUBLIC_OPERATION_BINDINGS[17],
-            "session.get": PUBLIC_OPERATION_BINDINGS[18],
-            "session.list": PUBLIC_OPERATION_BINDINGS[19],
-            "session.resume": PUBLIC_OPERATION_BINDINGS[20],
-            "session.send_input": PUBLIC_OPERATION_BINDINGS[21],
-            "session.start": PUBLIC_OPERATION_BINDINGS[22],
-            "system.describe": PUBLIC_OPERATION_BINDINGS[23],
-            "system.health": PUBLIC_OPERATION_BINDINGS[24],
-            "system.schemas": PUBLIC_OPERATION_BINDINGS[25],
+            "research.compare": PUBLIC_OPERATION_BINDINGS[14],
+            "session.approve": PUBLIC_OPERATION_BINDINGS[15],
+            "session.artifacts": PUBLIC_OPERATION_BINDINGS[16],
+            "session.cancel": PUBLIC_OPERATION_BINDINGS[17],
+            "session.events": PUBLIC_OPERATION_BINDINGS[18],
+            "session.get": PUBLIC_OPERATION_BINDINGS[19],
+            "session.list": PUBLIC_OPERATION_BINDINGS[20],
+            "session.resume": PUBLIC_OPERATION_BINDINGS[21],
+            "session.send_input": PUBLIC_OPERATION_BINDINGS[22],
+            "session.start": PUBLIC_OPERATION_BINDINGS[23],
+            "system.describe": PUBLIC_OPERATION_BINDINGS[24],
+            "system.health": PUBLIC_OPERATION_BINDINGS[25],
+            "system.schemas": PUBLIC_OPERATION_BINDINGS[26],
         }
     )
 )

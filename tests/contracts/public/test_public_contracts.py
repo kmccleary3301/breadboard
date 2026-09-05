@@ -34,9 +34,11 @@ def test_current_catalogs_partition_the_historical_authority() -> None:
     internal_ids = {row["operation_id"] for row in internal["operations"]}
     assert product["contract_id"] == "bb.public_operation_catalog.v2" and product["status"] == "current"
     assert internal["contract_id"] == "bb.internal_evidence_operation_catalog.v1" and internal["status"] == "current"
-    assert len(product_ids) == 26 and len(internal_ids) == 19 and product_ids.isdisjoint(internal_ids)
-    assert product_ids | internal_ids == frozen_operation_ids(load_frozen_surface())
-    assert {operation_id.split(".",1)[0] for operation_id in product_ids} == {"artifact","harness","harness_lock","integration","session","system"}
+    legacy_ids = frozen_operation_ids(load_frozen_surface())
+    assert (product_ids | internal_ids) - legacy_ids == {"research.compare"}
+    assert legacy_ids - (product_ids | internal_ids) == set()
+    assert product_ids.isdisjoint(internal_ids)
+    assert {operation_id.split(".",1)[0] for operation_id in product_ids} == {"artifact","harness","harness_lock","integration","research","session","system"}
     assert {operation_id.split(".",1)[0] for operation_id in internal_ids} == {"claim","lane","lane_execution","lane_lock"}
 
 def test_catalog_is_the_frozen_non_active_six_surface_candidate() -> None:

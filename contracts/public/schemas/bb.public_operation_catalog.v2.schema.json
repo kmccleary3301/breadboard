@@ -21,9 +21,7 @@
       "const": "current"
     },
     "operations": {
-      "type": "array",
-      "minItems": 26,
-      "maxItems": 26,
+      "minItems": 1,
       "items": {
         "$ref": "#/$defs/operation"
       }

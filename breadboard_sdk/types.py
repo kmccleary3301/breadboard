@@ -326,5 +326,13 @@ class PublicSessionCancelRequest(_PublicSessionCancelRequestDefaults):
     pass
 
 
+class ResearchCompareRequest(TypedDict):
+    definition: str
+    world: str
+    generation: str
+    projection: str
+    compare: Tuple[str, str]
+
+
 AttachmentFileTuple = tuple[str, bytes, str | None]
 AttachmentFileIterable = Iterable[AttachmentFileTuple]
