@@ -12,6 +12,8 @@ import pytest
 from fastapi import HTTPException
 
 from breadboard.product.runtime import ReplayError, session_store
+from breadboard.product.coordination.work_items import WorkItemRepository
+from breadboard.product.runtime.children import DurableChildReconciler
 from breadboard_engine.api.cli_bridge.events import EventType, SessionEvent
 from breadboard_engine.api.cli_bridge.models import (
     SessionCreateRequest,
@@ -60,21 +62,27 @@ def _seed_product_session_journal(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     session_id: str,
-) -> None:
-    from breadboard.product.harness.lock import EffectiveHarnessLock
+    *,
+    config_path: Path | None = None,
+) -> tuple[Path, dict[str, Any]]:
     from breadboard.product.runtime import Session as ProductSession
     from breadboard.product.runtime.events import JsonlEventSink
 
     event_root = tmp_path / "session-events"
     monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(event_root))
+    retained_config = config_path or tmp_path / f"{session_id}.yaml"
+    retained_config.write_text("{}\n", encoding="utf-8")
+    runtime_config = {"providers": {"default_model": "test/restart"}}
+    lock = SessionService(state_root=tmp_path / "seed-state")._runtime_lock(
+        session_id, runtime_config, str(retained_config)
+    )
     ProductSession.start(
-        EffectiveHarnessLock._from_record(
-            {"graph_hash": "sha256:" + "a" * 64}
-        ),
+        lock,
         "retained session",
         session_id=session_id,
         sink=JsonlEventSink(event_root / session_id / "session_events.jsonl"),
     )
+    return retained_config, runtime_config
 
 
 def test_completion_sentinel_scrubbing_is_recursive_and_text_scoped() -> None:
@@ -777,6 +785,111 @@ async def test_session_runner_can_defer_execution_until_after_admission_response
         "input_id": turn.input_id,
         "turn_id": turn.turn_id,
     }
+
+
+@pytest.mark.asyncio
+async def test_deferred_input_does_not_enqueue_after_parent_cancellation(
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "registry"
+    registry = SessionRegistry(state_root=state_root)
+    record = SessionRecord(
+        session_id="sess-deferred-cancel",
+        status=SessionStatus.RUNNING,
+        metadata={"workspace": str(tmp_path / "workspace")},
+    )
+
+    class Runner:
+        def __init__(self) -> None:
+            self.inputs: list[str] = []
+
+        def prepare_input_content(self, content: str) -> str:
+            return content
+
+        def validate_input_admission(self, *_args, **_kwargs) -> None:
+            return None
+
+        async def enqueue_input(
+            self,
+            content: str,
+            attachments: list[str],
+            *,
+            defer_execution: Any,
+            **_kwargs,
+        ) -> str:
+            async def execute() -> None:
+                self.inputs.append(content)
+
+            defer_execution(execute)
+            return content
+
+    runner = Runner()
+    record.runner = runner
+    await registry.create(record)
+    service = SessionService(registry=registry)
+    deferred: list[Any] = []
+    receipt = await service.send_input(
+        record.session_id,
+        SessionInputRequest(content="must not execute"),
+        defer_execution=deferred.append,
+    )
+
+    await registry.close_admission_for_parent_cancellation(
+        record.session_id,
+        work_item_id="work-parent",
+        reason="operator stop",
+        child_recovery_refs=[],
+    )
+    await deferred[0]()
+
+    cancelled = await registry.get(record.session_id)
+    assert cancelled is not None and cancelled.admission_closed is True
+    assert runner.inputs == []
+
+
+@pytest.mark.asyncio
+async def test_stale_registry_cannot_recreate_cross_process_deleted_session(
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "registry"
+    owner = SessionRegistry(state_root=state_root)
+    record = SessionRecord(
+        session_id="sess-cross-process-delete",
+        status=SessionStatus.RUNNING,
+    )
+    await owner.create(record)
+    deleter = SessionRegistry(state_root=state_root)
+    assert await deleter.get(record.session_id) is not None
+    await deleter.delete(record.session_id)
+
+    with pytest.raises(RuntimeError, match="deleted before persistence"):
+        await owner.persist(record)
+    with pytest.raises(RuntimeError, match="permanently deleted"):
+        await owner.create(
+            SessionRecord(
+                session_id=record.session_id,
+                status=SessionStatus.RUNNING,
+            )
+        )
+    assert await SessionRegistry(state_root=state_root).get(record.session_id) is None
+
+
+@pytest.mark.asyncio
+async def test_record_lock_wait_does_not_block_event_loop(tmp_path: Path) -> None:
+    state_root = tmp_path / "registry"
+    owner = SessionRegistry(state_root=state_root)
+    record = SessionRecord(
+        session_id="sess-record-lock-wait",
+        status=SessionStatus.RUNNING,
+    )
+    await owner.create(record)
+    waiter = SessionRegistry(state_root=state_root)
+
+    async with owner._record_file_lock(record.session_id):
+        waiting = asyncio.create_task(waiter.get(record.session_id))
+        await asyncio.wait_for(asyncio.sleep(0.05), timeout=0.5)
+        assert not waiting.done()
+    assert await asyncio.wait_for(waiting, timeout=2) is not None
 
 
 @pytest.mark.asyncio
@@ -1734,7 +1847,9 @@ async def test_retained_restart_terminalizes_interrupted_turn_and_resumes_runner
         status=SessionStatus.RUNNING,
         metadata={"permission_mode": "configured"},
     )
-    _seed_product_session_journal(monkeypatch, tmp_path, record.session_id)
+    replacement_profile, runtime_config = _seed_product_session_journal(
+        monkeypatch, tmp_path, record.session_id
+    )
     interrupted = TurnRecord(
         input_id="input-interrupted",
         turn_id="turn-interrupted",
@@ -1752,8 +1867,6 @@ async def test_retained_restart_terminalizes_interrupted_turn_and_resumes_runner
     record.replay_head_event_id = "event-before-process-death"
     await registry.persist(record)
 
-    replacement_profile = tmp_path / "replacement-session.yaml"
-    replacement_profile.write_text("{}\n", encoding="utf-8")
     monkeypatch.setattr(
         "breadboard_engine.api.cli_bridge.service.resolve_default_profile",
         lambda: SimpleNamespace(
@@ -1763,7 +1876,11 @@ async def test_retained_restart_terminalizes_interrupted_turn_and_resumes_runner
             },
         ),
     )
-    monkeypatch.setattr(SessionRunner, "prepare_runtime_config", lambda self: {})
+    monkeypatch.setattr(
+        SessionRunner,
+        "prepare_runtime_config",
+        lambda self: runtime_config,
+    )
 
     restarted = SessionRegistry(state_root=tmp_path)
     service = SessionService(registry=restarted)
@@ -1816,7 +1933,12 @@ async def test_retained_restart_preserves_explicit_config_and_workspace(
             "mode": "review",
         },
     )
-    _seed_product_session_journal(monkeypatch, tmp_path, record.session_id)
+    _, runtime_config = _seed_product_session_journal(
+        monkeypatch,
+        tmp_path,
+        record.session_id,
+        config_path=explicit_config,
+    )
     await registry.create(record)
 
     monkeypatch.setattr(
@@ -1829,7 +1951,7 @@ async def test_retained_restart_preserves_explicit_config_and_workspace(
     def capture_runtime_request(runner: SessionRunner) -> dict[str, Any]:
         prepared_requests.append(runner.request)
         prepared_modes.append(runner._mode)
-        return {}
+        return runtime_config
 
     monkeypatch.setattr(SessionRunner, "prepare_runtime_config", capture_runtime_request)
 
@@ -1921,7 +2043,12 @@ async def test_locked_operation_resumes_retained_session_without_deadlock(
             "permission_mode": "configured",
         },
     )
-    _seed_product_session_journal(monkeypatch, tmp_path, record.session_id)
+    _, runtime_config = _seed_product_session_journal(
+        monkeypatch,
+        tmp_path,
+        record.session_id,
+        config_path=config_path,
+    )
     await registry.create(record)
     monkeypatch.setattr(
         "breadboard_engine.api.cli_bridge.service.resolve_default_profile",
@@ -1932,7 +2059,11 @@ async def test_locked_operation_resumes_retained_session_without_deadlock(
             },
         ),
     )
-    monkeypatch.setattr(SessionRunner, "prepare_runtime_config", lambda self: {})
+    monkeypatch.setattr(
+        SessionRunner,
+        "prepare_runtime_config",
+        lambda self: runtime_config,
+    )
     service = SessionService(registry=SessionRegistry(state_root=state_root))
 
     if operation == "stop":
@@ -3355,12 +3486,17 @@ async def test_retained_registry_first_input_reconciles_journal_before_retry(
 
     state_root = tmp_path / "state"
     session_id = "session-restart-admission-gap"
-    _seed_product_session_journal(monkeypatch, tmp_path, session_id)
     event_root = tmp_path / "session-events"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     config_path = tmp_path / "config.yaml"
     config_path.write_text("{}\n", encoding="utf-8")
+    _, runtime_config = _seed_product_session_journal(
+        monkeypatch,
+        tmp_path,
+        session_id,
+        config_path=config_path,
+    )
 
     from breadboard_engine.api.cli_bridge.session_artifacts import SessionArtifactStore
 
@@ -3422,7 +3558,11 @@ async def test_retained_registry_first_input_reconciles_journal_before_retry(
     assert retained_turn_state["content_hash"] == turn.logical_input_content_hash
     assert retained_turn_state["attachments"] == [attachment_id]
 
-    monkeypatch.setattr(SessionRunner, "prepare_runtime_config", lambda self: {})
+    monkeypatch.setattr(
+        SessionRunner,
+        "prepare_runtime_config",
+        lambda self: runtime_config,
+    )
     restarted = SessionRegistry(state_root=state_root)
     service = SessionService(registry=restarted)
     restored = await service.ensure_session(session_id)
@@ -3669,7 +3809,6 @@ async def test_product_transition_after_registry_admission_aborts_input(
 ) -> None:
     import hashlib
 
-    from breadboard.product.harness.lock import EffectiveHarnessLock
     from breadboard.product.runtime import Session as ProductSession
     from breadboard.product.runtime.events import JsonlEventSink
 
@@ -3679,15 +3818,19 @@ async def test_product_transition_after_registry_admission_aborts_input(
     session_id = f"session-transition-race-{transition}"
     event_root = tmp_path / "events"
     event_path = event_root / session_id / "session_events.jsonl"
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("{}\n", encoding="utf-8")
+    runtime_config = {"providers": {"default_model": "test/restart"}}
+    registry = SessionRegistry(state_root=tmp_path / "state")
+    lock = SessionService(registry=registry)._runtime_lock(
+        session_id, runtime_config, str(config_path)
+    )
     product_session = ProductSession.start(
-        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "e" * 64}),
+        lock,
         "transition race",
         session_id=session_id,
         sink=JsonlEventSink(event_path),
     )
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text("{}\n", encoding="utf-8")
-    registry = SessionRegistry(state_root=tmp_path / "state")
     record = SessionRecord(
         session_id=session_id,
         status=SessionStatus.RUNNING,
@@ -3725,7 +3868,11 @@ async def test_product_transition_after_registry_admission_aborts_input(
             ),
         )
 
-    monkeypatch.setattr(SessionRunner, "prepare_runtime_config", lambda self: {})
+    monkeypatch.setattr(
+        SessionRunner,
+        "prepare_runtime_config",
+        lambda self: runtime_config,
+    )
     restarted = SessionRegistry(state_root=tmp_path / "state")
     recovered_service = SessionService(registry=restarted)
     recovered = await recovered_service.ensure_session(session_id)
@@ -3814,3 +3961,50 @@ def test_terminal_retained_turn_is_unchanged_by_later_lifecycle_event(
     runner.reconcile_retained_input_admissions()
 
     assert asdict(turn) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "field",
+    [
+        "cancellation_requested",
+        "execution_committed",
+        "terminal_resolution_committed",
+    ],
+)
+async def test_restart_rejects_non_boolean_retained_turn_flags(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id=f"sess-invalid-{field}",
+        status=SessionStatus.RUNNING,
+    )
+    turn = TurnRecord(
+        input_id="input-active",
+        turn_id="turn-active",
+        client_message_id="client-active",
+        content="active",
+        attachments=(),
+        original_disposition="started",
+        state="active",
+    )
+    record.turns_by_id[turn.turn_id] = turn
+    record.active_turn_id = turn.turn_id
+    await registry.create(record)
+    state_path = next(tmp_path.glob("*.json"))
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    payload["turns"][0][field] = "false"
+    state_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    restarted = SessionRegistry(state_root=tmp_path)
+
+    assert await restarted.get(record.session_id) is None
+
+
+def test_default_service_wires_durable_child_recovery(tmp_path: Path) -> None:
+    service = SessionService(state_root=tmp_path / "session-state")
+
+    assert isinstance(service._durable_child_repository, WorkItemRepository)
+    assert isinstance(service._durable_child_reconciler, DurableChildReconciler)

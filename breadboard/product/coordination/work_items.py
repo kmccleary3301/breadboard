@@ -1,8 +1,8 @@
 """Event-sourced Work Item lifecycle and policy owner."""
 from __future__ import annotations
-import json; from datetime import datetime; from collections.abc import Callable, Iterable, Mapping
+import hashlib; import json; import os; from datetime import datetime; from pathlib import Path; from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace; from threading import RLock; from types import MappingProxyType; from typing import Any
-from breadboard.product.runtime.events import Clock, IdSource, SystemClock, UUIDSource; from .placement import WorkPlacement
+from breadboard.product.runtime.events import Clock, IdSource, ProcessLock, SystemClock, UUIDSource; from .placement import WorkPlacement
 from breadboard.product.projection import Projected, ProjectionSource
 STATUSES = frozenset({"blocked", "ready", "leased", "running", "waiting", "paused", "completed", "failed", "canceled"}); TERMINAL_STATUSES = frozenset({"completed", "failed", "canceled"})
 _RULES = MappingProxyType({
@@ -14,8 +14,14 @@ _RULES = MappingProxyType({
     "work.woken": (("waiting",), {"attempt_id", "wake_ref"}, "latest"), "work.paused": (("running",), {"attempt_id", "reason"}, "active"),
     "work.resumed": (("paused",), {"approved", "attempt_id"}, "latest"), "attempt.failed": (("running",), {"attempt_id", "reason", "retryable", "will_retry"}, "active"), "attempt.expired": (("running",), {"attempt_id", "lease_id", "will_retry"}, "active"),
     "work.completed": (("running",), {"attempt_id", "summary"}, "active"),
+    "work.failed": (("blocked", "ready", "leased", "running", "waiting", "paused"), {"error_code", "reason"}, None),
     "work.canceled": (("blocked", "ready", "leased", "running", "waiting", "paused"), {"actor_id", "reason", "cleanup", "child_work_item_ids"}, None),
+    "child.joined": (("blocked", "ready", "leased", "running", "waiting", "paused", "completed", "failed", "canceled"), {"child_work_item_id", "child_session_id", "outcome", "result_refs"}, None),
 })
+class WorkItemJournalCorruptionError(ValueError):
+    """A complete Work Item journal frame failed integrity or schema validation."""
+
+
 def _required(value: Any, name: str) -> str:
     if type(value) is not str or not value.strip(): raise ValueError(f"{name} must be a non-empty string")
     return value
@@ -137,20 +143,203 @@ class WorkItemEvent:
         object.__setattr__(self, "payload", _freeze(self.payload))
     def as_dict(self) -> dict[str, Any]: return {"work_item_id": self.work_item_id, "sequence": self.sequence, "kind": self.kind, "occurred_at": self.occurred_at, "payload": _plain(self.payload)}
 class WorkItemRepository:
-    def __init__(self) -> None: self._lock, self._streams = RLock(), {}
+    """Existing Work Item owner with optional durable JSONL backing."""
+    def __init__(self, path: str | Path | None = None) -> None:
+        self._lock, self._streams, self._path = RLock(), {}, Path(path).resolve() if path is not None else None
+        self._poisoned: BaseException | None = None
+        if self._path is not None:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            with ProcessLock(self._path):
+                self._reload()
+
+    @staticmethod
+    def _frame(event: WorkItemEvent) -> bytes:
+        payload = json.dumps(event.as_dict(), sort_keys=True, separators=(",", ":")).encode()
+        checksum = "sha256:" + hashlib.sha256(payload).hexdigest()
+        return json.dumps({"checksum": checksum, "payload": json.loads(payload)}, sort_keys=True, separators=(",", ":")).encode() + b"\n"
+
+    @staticmethod
+    def _transaction_frame(events: tuple[WorkItemEvent, ...]) -> bytes:
+        payload = {"schema_version": "bb.work_item.transaction.v1", "events": [event.as_dict() for event in events]}
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        checksum = "sha256:" + hashlib.sha256(encoded).hexdigest()
+        return json.dumps({"checksum": checksum, "payload": payload}, sort_keys=True, separators=(",", ":")).encode() + b"\n"
+
+    @staticmethod
+    def _events_from_record(record: Any) -> tuple[WorkItemEvent, ...]:
+        if isinstance(record, dict) and record.get("schema_version") == "bb.work_item.transaction.v1":
+            rows = record.get("events")
+            if not isinstance(rows, list) or not rows:
+                raise ValueError("invalid Work Item transaction frame")
+        else:
+            rows = [record]
+        events = []
+        for row in rows:
+            if not isinstance(row, dict):
+                raise TypeError("invalid Work Item event frame")
+            events.append(WorkItemEvent(row["work_item_id"], row["sequence"], row["kind"], row["occurred_at"], row.get("payload", {})))
+        return tuple(events)
+    @staticmethod
+    def _fsync_parent_directory(path: Path) -> None:
+        if os.name == "nt":
+            return
+        directory_fd = os.open(
+            path.parent,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+        )
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+
+
+    def _reload(self) -> None:
+        if self._poisoned is not None:
+            raise RuntimeError("Work Item repository is poisoned") from self._poisoned
+        if self._path is None or not self._path.exists():
+            return
+        streams: dict[str, list[WorkItemEvent]] = {}
+        raw = self._path.read_bytes()
+        lines = raw.splitlines(keepends=True)
+        valid_end = 0
+        for index, line in enumerate(lines):
+            if not line.endswith(b"\n"):
+                break
+            body = line[:-1]
+            try:
+                record = json.loads(body)
+                if isinstance(record, dict) and "payload" in record and "checksum" in record:
+                    encoded = json.dumps(record["payload"], sort_keys=True, separators=(",", ":")).encode()
+                    expected = "sha256:" + hashlib.sha256(encoded).hexdigest()
+                    if record["checksum"] != expected:
+                        raise ValueError("Work Item journal checksum mismatch")
+                    record = record["payload"]
+                for event in self._events_from_record(record):
+                    streams.setdefault(event.work_item_id, []).append(event)
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+                raise WorkItemJournalCorruptionError(
+                    f"corrupt Work Item journal frame at line {index + 1}"
+                ) from error
+            valid_end += len(line)
+        if valid_end != len(raw):
+            with self._path.open("r+b") as stream:
+                stream.truncate(valid_end)
+                stream.flush()
+                os.fsync(stream.fileno())
+        for events in streams.values():
+            try:
+                rebuild_work_item(events)
+            except (KeyError, TypeError, ValueError) as error:
+                raise WorkItemJournalCorruptionError(
+                    "corrupt Work Item journal semantic frame"
+                ) from error
+        self._streams = streams
+
     def read(self, work_item_id: str) -> tuple[WorkItemEvent, ...]:
-        with self._lock: return tuple(self._streams.get(_required(work_item_id, "work_item_id"), ()))
-    def append(self, expected_revisions: Mapping[str, int], events: Iterable[WorkItemEvent]) -> None:
-        grouped: dict[str, list[WorkItemEvent]] = {}
-        for event in events: grouped.setdefault(event.work_item_id, []).append(event)
-        if not grouped: raise ValueError("append requires at least one event")
         with self._lock:
-            for work_item_id, rows in grouped.items():
-                current = self._streams.get(work_item_id, [])
-                if expected_revisions.get(work_item_id) != len(current): raise RuntimeError(f"stale Work Item revision for {work_item_id}")
-                if any(row.sequence != len(current) + offset for offset, row in enumerate(rows, 1)): raise ValueError("appended event sequence is not contiguous")
-                rebuild_work_item((*current, *rows))
-            for work_item_id, rows in grouped.items(): self._streams.setdefault(work_item_id, []).extend(rows)
+            if self._path is not None:
+                with ProcessLock(self._path):
+                    self._reload()
+            return tuple(self._streams.get(_required(work_item_id, "work_item_id"), ()))
+
+    def _append_locked(self, expected_revisions: Mapping[str, int], rows: tuple[WorkItemEvent, ...]) -> None:
+        grouped: dict[str, list[WorkItemEvent]] = {}
+        for event in rows:
+            grouped.setdefault(event.work_item_id, []).append(event)
+        for work_item_id, group in grouped.items():
+            current = self._streams.get(work_item_id, [])
+            if expected_revisions.get(work_item_id) != len(current): raise RuntimeError(f"stale Work Item revision for {work_item_id}")
+            if any(row.sequence != len(current) + offset for offset, row in enumerate(group, 1)): raise ValueError("appended event sequence is not contiguous")
+            rebuild_work_item((*current, *group))
+        if self._path is not None:
+            if self._poisoned is not None:
+                raise RuntimeError("Work Item repository is poisoned") from self._poisoned
+            created = not self._path.exists()
+            offset = self._path.stat().st_size if not created else 0
+            try:
+                with self._path.open("ab") as stream:
+                    stream.write(self._transaction_frame(rows))
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                if created:
+                    self._fsync_parent_directory(self._path)
+            except BaseException as error:
+                try:
+                    with self._path.open("r+b") as stream:
+                        stream.truncate(offset)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    if created:
+                        self._fsync_parent_directory(self._path)
+                except BaseException as rollback_error:
+                    self._poisoned = rollback_error
+                    raise RuntimeError(
+                        "Work Item journal append failed and rollback could not be confirmed"
+                    ) from error
+                raise
+        for work_item_id, group in grouped.items():
+            self._streams.setdefault(work_item_id, []).extend(group)
+
+    def append(self, expected_revisions: Mapping[str, int], events: Iterable[WorkItemEvent]) -> None:
+        rows = tuple(events)
+        if not rows: raise ValueError("append requires at least one event")
+        with self._lock:
+            if self._path is None:
+                self._append_locked(expected_revisions, rows)
+            else:
+                with ProcessLock(self._path):
+                    self._reload()
+                    self._append_locked(expected_revisions, rows)
+    def append_child_join(
+        self,
+        work_item_id: str,
+        child_work_item_id: str,
+        child_session_id: str,
+        outcome: str,
+        result_refs: tuple[str, ...],
+        occurred_at: str,
+    ) -> tuple[WorkItemEvent, ...]:
+        def append_locked() -> tuple[WorkItemEvent, ...]:
+            current = tuple(self._streams.get(work_item_id, ()))
+            for existing in current:
+                if (
+                    existing.kind != "child.joined"
+                    or existing.payload.get("child_work_item_id")
+                    != child_work_item_id
+                ):
+                    continue
+                same = (
+                    existing.payload.get("child_session_id") == child_session_id
+                    and existing.payload.get("outcome") == outcome
+                    and tuple(existing.payload.get("result_refs", ()))
+                    == result_refs
+                )
+                if not same:
+                    raise RuntimeError(
+                        "child join conflicts with an existing outcome"
+                    )
+                return current
+            event = WorkItemEvent(
+                work_item_id,
+                len(current) + 1,
+                "child.joined",
+                occurred_at,
+                {
+                    "child_work_item_id": child_work_item_id,
+                    "child_session_id": child_session_id,
+                    "outcome": outcome,
+                    "result_refs": list(result_refs),
+                },
+            )
+            self._append_locked({work_item_id: len(current)}, (event,))
+            return (*current, event)
+
+        with self._lock:
+            if self._path is None:
+                return append_locked()
+            with ProcessLock(self._path):
+                self._reload()
+                return append_locked()
 @dataclass(frozen=True, slots=True)
 class WorkItemSnapshot:
     work_item_id: str; title: str; status: str; parent_work_item_id: str | None
@@ -168,7 +357,8 @@ def _close_attempt(snapshot: WorkItemSnapshot, attempt: Attempt, status: str, ev
 def _require_event(snapshot: WorkItemSnapshot, event: WorkItemEvent) -> Attempt | None:
     states, fields, attempt_scope = _RULES[event.kind]
     _reject(snapshot.status not in states, f"invalid {event.kind} transition from {snapshot.status}")
-    _keys(event.payload, fields, event.kind)
+    expected_fields = fields | {"reuse_session_ref"} if event.kind == "attempt.started" and "reuse_session_ref" in event.payload else fields
+    _keys(event.payload, expected_fields, event.kind)
     if attempt_scope is None:
         return None
     attempt = snapshot.attempts[-1] if attempt_scope == "latest" and snapshot.attempts else snapshot.current_attempt
@@ -211,7 +401,10 @@ def _apply(snapshot: WorkItemSnapshot, event: WorkItemEvent) -> WorkItemSnapshot
         _reject(snapshot.active_lease is None or _required(payload["lease_id"], "lease_id") != snapshot.active_lease.lease_id, "attempt does not match the active lease")
         _reject(snapshot.active_lease is not None and snapshot.active_lease._expired_by(event.occurred_at), "attempt cannot start at or after lease expiry")
         attempt_id, session_ref = _required(payload["attempt_id"], "attempt_id"), _required(payload["session_ref"], "session_ref")
-        if any(row.attempt_id == attempt_id or row.session_ref == session_ref for row in snapshot.attempts): raise ValueError("attempt and session references must be unique")
+        reuse_session_ref = payload.get("reuse_session_ref", False)
+        if type(reuse_session_ref) is not bool:
+            raise TypeError("reuse_session_ref must be boolean")
+        if any(row.attempt_id == attempt_id or (row.session_ref == session_ref and not reuse_session_ref) for row in snapshot.attempts): raise ValueError("attempt and session references must be unique")
         started = Attempt(attempt_id, len(snapshot.attempts) + 1, session_ref, snapshot.active_lease.worker_id, "running", event.occurred_at)
         return replace(snapshot, status="running", attempts=(*snapshot.attempts, started))
     if kind == "placement.attached":
@@ -251,6 +444,19 @@ def _apply(snapshot: WorkItemSnapshot, event: WorkItemEvent) -> WorkItemSnapshot
         expected_retry = payload["retryable"] and snapshot.retry_policy.allows(reason) and len(snapshot.attempts) < snapshot.retry_policy.max_attempts and _budget_allows(snapshot.budget, snapshot.budget_usage)
         if payload["will_retry"] != expected_retry: raise ValueError("will_retry does not match Work Item retry policy")
         return replace(snapshot, status="ready" if expected_retry else "failed", active_lease=None, attempts=_close_attempt(snapshot, attempt, "failed", event, reason), terminal_reason=None if expected_retry else reason)
+    if kind == "work.failed":
+        _required(payload["error_code"], "error_code")
+        reason = _required(payload["reason"], "reason")
+        active = snapshot.current_attempt
+        attempts = _close_attempt(snapshot, active, "failed", event, reason) if active is not None else snapshot.attempts
+        return replace(snapshot, status="failed", active_lease=None, attempts=attempts, wake_refs=(), terminal_reason=reason)
+    if kind == "child.joined":
+        child_id = _required(payload["child_work_item_id"], "child_work_item_id")
+        _reject(child_id not in snapshot.child_work_item_ids, "joined child is not delegated")
+        _required(payload["child_session_id"], "child_session_id")
+        _reject(payload["outcome"] not in TERMINAL_STATUSES, "joined child outcome must be terminal")
+        _strings(payload["result_refs"], "result_refs")
+        return snapshot
     if kind == "work.completed":
         summary = _required(payload["summary"], "summary")
         return replace(snapshot, status="completed", active_lease=None, attempts=_close_attempt(snapshot, attempt, "completed", event, summary), terminal_reason=summary)
@@ -353,8 +559,8 @@ class WorkItem:
     def satisfy_dependency(self, dependency_ref: str) -> WorkItemSnapshot: return self._append("dependency.satisfied", lambda: {"dependency_ref": dependency_ref})
     def acquire_lease(self, worker_id: str, *, lease_id: str | None = None, expires_at: str | None = None) -> WorkItemSnapshot: return self._append("lease.acquired", lambda: {"lease_id": self._ids.new_id() if lease_id is None else lease_id, "worker_id": worker_id, "expires_at": expires_at})
     def release_lease(self, lease_id: str) -> WorkItemSnapshot: return self._append("lease.released", lambda: {"lease_id": lease_id}, fence="lease")
-    def start_attempt(self, session_ref: str, *, lease_id: str, attempt_id: str | None = None) -> WorkItemSnapshot:
-        return self._append("attempt.started", lambda: self._fence_payload(lease_id, {"attempt_id": self._ids.new_id() if attempt_id is None else attempt_id, "session_ref": session_ref}, lease=True), fence="lease")
+    def start_attempt(self, session_ref: str, *, lease_id: str, attempt_id: str | None = None, reuse_session_ref: bool = False) -> WorkItemSnapshot:
+        return self._append("attempt.started", lambda: self._fence_payload(lease_id, {"attempt_id": self._ids.new_id() if attempt_id is None else attempt_id, "session_ref": session_ref, "reuse_session_ref": reuse_session_ref}, lease=True), fence="lease")
     def attach_placement(self, placement: WorkPlacement) -> WorkItemSnapshot: return self._append("placement.attached", lambda: {"placement": placement.as_dict()}, fence="attempt")
     def consume_budget(self, *, attempt_id: str, tokens: int = 0, cost_microusd: int = 0, wall_time_ms: int = 0) -> WorkItemSnapshot: return self._append("budget.consumed", lambda: self._fence_payload(attempt_id, {"tokens": tokens, "cost_microusd": cost_microusd, "wall_time_ms": wall_time_ms}), fence="attempt")
     def checkpoint(self, checkpoint_ref: str, *, attempt_id: str) -> WorkItemSnapshot: return self._append("checkpoint.recorded", lambda: self._fence_payload(attempt_id, {"checkpoint_ref": checkpoint_ref}), fence="attempt")
@@ -367,6 +573,8 @@ class WorkItem:
             return self._fence_payload(attempt_id, {"reason": reason, "retryable": retryable, "will_retry": retryable and self._snapshot.retry_policy.allows(reason) and len(self._snapshot.attempts) < self._snapshot.retry_policy.max_attempts and _budget_allows(self._snapshot.budget, self._snapshot.budget_usage)})
         return self._append("attempt.failed", payload, fence="attempt")
     def complete(self, summary: str = "completed", *, attempt_id: str) -> WorkItemSnapshot: return self._append("work.completed", lambda: self._fence_payload(attempt_id, {"summary": summary}), fence="attempt")
+    def fail(self, error_code: str, reason: str) -> WorkItemSnapshot:
+        return self._append("work.failed", lambda: {"error_code": error_code, "reason": reason})
     def cancel(self, actor_id: str, reason: str = "operator request") -> WorkItemSnapshot:
         with self._lock:
             if self._appending: raise RuntimeError("cannot mutate Work Item while an append is in progress")
@@ -396,6 +604,22 @@ class WorkItem:
             self._repository.append({self._work_item_id: len(self._events), child_id: 0}, (child_event, parent_event))
             self._events.append(parent_event); self._snapshot = parent_snapshot; self._set_fences(parent_snapshot)
             return WorkItem((child_event,), repository=self._repository, clock=self._clock, ids=self._ids)
+    def join_child(self, child_work_item_id: str, child_session_id: str, outcome: str, result_refs: Iterable[str] = ()) -> WorkItemSnapshot:
+        refs = tuple(result_refs)
+        with self._lock:
+            events = self._repository.append_child_join(
+                self._work_item_id,
+                child_work_item_id,
+                child_session_id,
+                outcome,
+                refs,
+                self._clock.now(),
+            )
+            snapshot = rebuild_work_item(events)
+            self._events = list(events)
+            self._snapshot = snapshot
+            self._set_fences(snapshot)
+            return snapshot
     def _expiry_event(self, occurred_at: str) -> WorkItemEvent | None:
         lease = self._snapshot.active_lease
         if lease is None or not lease._expired_by(occurred_at): return None

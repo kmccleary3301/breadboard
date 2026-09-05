@@ -17,8 +17,9 @@ from starlette.formparsers import MultiPartParser
 
 from breadboard_engine.api.cli_bridge.app import create_app
 import breadboard_engine.api.cli_bridge.app as app_module
-from breadboard_engine.api.cli_bridge.models import SessionStatus
+from breadboard_engine.api.cli_bridge.models import SessionStatus, TurnAdmission
 from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry, TurnRecord
+from breadboard_engine.api.cli_bridge.registry.records import CancellationRecord
 from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
 from breadboard_engine.api.cli_bridge.service import SessionService
 from breadboard_engine.api.public import models as public_models
@@ -654,8 +655,12 @@ def test_public_session_restart_terminalizes_each_unfinished_turn(
 
     event_root = tmp_path / "session-events"
     monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(event_root))
-    lock = EffectiveHarnessLock._from_record(
-        {"graph_hash": "sha256:" + "a" * 64}
+    state_root = tmp_path / "session-state"
+    first_registry = SessionRegistry(state_root=state_root)
+    first_service = SessionService(registry=first_registry)
+    runtime_config = {"providers": {"default_model": "test/restart"}}
+    lock = first_service._runtime_lock(
+        session_id, runtime_config, str(config)
     )
     Session.start(
         lock,
@@ -663,8 +668,6 @@ def test_public_session_restart_terminalizes_each_unfinished_turn(
         session_id=session_id,
         sink=JsonlEventSink(event_root / session_id / "session_events.jsonl"),
     )
-    state_root = tmp_path / "session-state"
-    first_registry = SessionRegistry(state_root=state_root)
     record = SessionRecord(
         session_id=session_id,
         status=SessionStatus.RUNNING,
@@ -672,6 +675,7 @@ def test_public_session_restart_terminalizes_each_unfinished_turn(
             "config_path": str(config),
             "workspace": str(tmp_path),
             "permission_mode": "configured",
+            "session_event_root": str(event_root),
         },
     )
     failed_turn = TurnRecord(
@@ -699,16 +703,25 @@ def test_public_session_restart_terminalizes_each_unfinished_turn(
         cancelled_turn.turn_id: cancelled_turn,
     }
     record.active_turn_id = failed_turn.turn_id
+    record.turn_admission = TurnAdmission.ACTIVE
     record.event_seq = 10
     record.replay_head_sequence = 10
     record.replay_head_event_id = "event-before-restart"
-    first_service = SessionService(registry=first_registry)
     with TestClient(create_app(service=first_service, include_atp_routes=False)) as first:
         first.portal.call(first_registry.create, record)
 
-    monkeypatch.setattr(SessionRunner, "prepare_runtime_config", lambda self: {})
+    monkeypatch.setattr(
+        SessionRunner,
+        "prepare_runtime_config",
+        lambda self: runtime_config,
+    )
     monkeypatch.setattr(SessionRunner, "schedule_start", lambda self: None)
     monkeypatch.setattr(SessionRunner, "authorize_start", lambda self: None)
+    monkeypatch.setattr(
+        SessionService,
+        "_runtime_lock",
+        lambda self, session_id, runtime_config, config_path: lock,
+    )
     restarted_registry = SessionRegistry(state_root=state_root)
     restarted_service = SessionService(registry=restarted_registry)
     monkeypatch.setenv("BREADBOARD_PUBLIC_WORKSPACE", str(tmp_path))
@@ -2150,4 +2163,106 @@ def test_concurrent_case_variant_session_ids_share_one_identity(
     assert sum(isinstance(outcome, ValueError) for outcome in outcomes) == 1
     assert [name.casefold() for name in session_store.session_names(tmp_path)] == [
         "case-collision"
+    ]
+
+
+def test_retained_refresh_replaces_turn_and_idempotency_journals() -> None:
+    stale_turn = TurnRecord(
+        input_id="input-stale",
+        turn_id="turn-stale",
+        client_message_id="message-stale",
+        content="stale",
+        attachments=(),
+        original_disposition="accepted",
+        state="queued",
+    )
+    fresh_turn = TurnRecord(
+        input_id="input-fresh",
+        turn_id="turn-fresh",
+        client_message_id="message-fresh",
+        content="fresh",
+        attachments=(),
+        original_disposition="accepted",
+        state="active",
+    )
+    queued_turn = TurnRecord(
+        input_id="input-queued",
+        turn_id="turn-queued",
+        client_message_id="message-queued",
+        content="queued",
+        attachments=(),
+        original_disposition="queued",
+        state="queued",
+    )
+    fresh_cancellation = CancellationRecord(
+        cancellation_request_id="cancel-fresh",
+        cancellation_request_key="cancel-key",
+        turn_id=fresh_turn.turn_id,
+        input_id=fresh_turn.input_id,
+        reason="operator request",
+        original_disposition="accepted",
+    )
+    target = SessionRecord(
+        session_id="session-refresh",
+        status=SessionStatus.RUNNING,
+    )
+    target.active_turn_id = stale_turn.turn_id
+    target.queued_turn_ids.append(stale_turn.turn_id)
+    target.turns_by_id[stale_turn.turn_id] = stale_turn
+    target.submissions_by_key["stale-key"] = stale_turn
+    target.submissions_by_key_digest["sha256:stale"] = stale_turn
+    source = SessionRecord(
+        session_id=target.session_id,
+        status=SessionStatus.RUNNING,
+    )
+    source.active_turn_id = fresh_turn.turn_id
+    source.queued_turn_ids.append(queued_turn.turn_id)
+    source.turns_by_id[fresh_turn.turn_id] = fresh_turn
+    source.turns_by_id[queued_turn.turn_id] = queued_turn
+    source.turn_admission = TurnAdmission.ACTIVE
+    source.submissions_by_key_digest["sha256:fresh"] = fresh_turn
+    source.cancellations_by_key_digest["sha256:cancel"] = fresh_cancellation
+    source.admission_closed = True
+
+    SessionRegistry._apply_durable_fields(target, source)
+
+    assert target.active_turn_id == fresh_turn.turn_id
+    assert list(target.queued_turn_ids) == [queued_turn.turn_id]
+    assert target.turns_by_id == {
+        fresh_turn.turn_id: fresh_turn,
+        queued_turn.turn_id: queued_turn,
+    }
+    assert target.submissions_by_key == {}
+    assert target.turn_admission is TurnAdmission.ACTIVE
+    assert target.submissions_by_key_digest == {"sha256:fresh": fresh_turn}
+    assert target.cancellations_by_key == {}
+    assert target.cancellations_by_key_digest == {
+        "sha256:cancel": fresh_cancellation
+    }
+    assert target.admission_closed is True
+    retained = SessionRegistry()._deserialize_record(
+        SessionRegistry()._serialize_record(source)
+    )
+    assert retained.turn_admission is TurnAdmission.ACTIVE
+    assert retained.active_turn_id == fresh_turn.turn_id
+    assert list(retained.queued_turn_ids) == [queued_turn.turn_id]
+    assert retained.admission_closed is True
+    local_turn = TurnRecord(
+        input_id="input-local",
+        turn_id="turn-local",
+        client_message_id="message-local",
+        content="not-yet-persisted",
+        attachments=(),
+        original_disposition="queued",
+        state="queued",
+    )
+    target.turns_by_id[local_turn.turn_id] = local_turn
+    target.queued_turn_ids.append(local_turn.turn_id)
+
+    SessionRegistry._apply_durable_fields(target, source)
+
+    assert local_turn.turn_id in target.turns_by_id
+    assert list(target.queued_turn_ids) == [
+        queued_turn.turn_id,
+        local_turn.turn_id,
     ]

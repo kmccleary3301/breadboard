@@ -1,5 +1,5 @@
 import hashlib, json, pytest; from concurrent.futures import ThreadPoolExecutor; from dataclasses import asdict; from operator import setitem; from pathlib import Path; from threading import Barrier, Event, current_thread; from types import SimpleNamespace; from typing import Any
-from breadboard_engine.compilation.primitive_records import PrimitiveCompileError, finalize_record, get_spec, validate_record; from breadboard.product.coordination.placement import WorkPlacement; from breadboard.product.coordination.views import CoordinationProjector; from breadboard.product.coordination.work_items import Budget, CancellationPolicy, ResumePolicy, RetryPolicy, WorkItem, WorkItemEvent, WorkItemRepository, WorkItemSnapshot, rebuild_work_item
+from breadboard_engine.compilation.primitive_records import PrimitiveCompileError, finalize_record, get_spec, validate_record; from breadboard.product.coordination.placement import WorkPlacement; from breadboard.product.coordination.views import CoordinationProjector; from breadboard.product.coordination.work_items import Budget, CancellationPolicy, ResumePolicy, RetryPolicy, WorkItem, WorkItemEvent, WorkItemJournalCorruptionError, WorkItemRepository, WorkItemSnapshot, rebuild_work_item
 CLOCK = SimpleNamespace(now=lambda: "2026-07-17T00:00:04Z")
 def _new(**policies: Any) -> WorkItem: return WorkItem.create("ship packet", work_item_id="work-1", clock=CLOCK, **policies)
 def _run(item: WorkItem, number: int = 1) -> None: item.acquire_lease(f"worker-{number}", lease_id=f"lease-{number}"); item.start_attempt(f"session-{number}", lease_id=f"lease-{number}", attempt_id=f"attempt-{number}")
@@ -166,3 +166,138 @@ def test_policies_use_current_checkpoints_and_make_terminals_immutable() -> None
     final = limited.fail_attempt("retry", attempt_id="attempt-1", retryable=True)
     assert final.status == "failed" and final.budget_usage.tokens == 1
     before = limited.events; _fails(RuntimeError, lambda: limited.cancel("operator")); assert limited.events == before
+
+
+def test_journal_corruption_is_typed_and_never_truncated(tmp_path: Path) -> None:
+    path = tmp_path / "work-items.jsonl"
+    WorkItemRepository(path)
+    WorkItem.create("journal item", work_item_id="journal-item", repository=WorkItemRepository(path), clock=CLOCK)
+    original = path.read_bytes()
+    record = json.loads(original)
+    record["checksum"] = "sha256:" + ("0" * 64)
+    path.write_bytes(json.dumps(record, sort_keys=True, separators=(",", ":")).encode() + b"\n")
+    corrupted = path.read_bytes()
+    with pytest.raises(WorkItemJournalCorruptionError, match="corrupt Work Item journal"):
+        WorkItemRepository(path)
+    assert path.read_bytes() == corrupted
+
+
+def test_journal_schema_corruption_is_typed_and_never_truncated(tmp_path: Path) -> None:
+    path = tmp_path / "work-items.jsonl"
+    repository = WorkItemRepository(path)
+    WorkItem.create("journal item", work_item_id="journal-item", repository=repository, clock=CLOCK)
+    record = json.loads(path.read_bytes())
+    record["payload"]["schema_version"] = "bb.work_item.transaction.invalid"
+    encoded = json.dumps(record["payload"], sort_keys=True, separators=(",", ":")).encode()
+    record["checksum"] = "sha256:" + hashlib.sha256(encoded).hexdigest()
+    path.write_bytes(json.dumps(record, sort_keys=True, separators=(",", ":")).encode() + b"\n")
+    corrupted = path.read_bytes()
+    with pytest.raises(WorkItemJournalCorruptionError, match="corrupt Work Item journal"):
+        WorkItemRepository(path)
+    assert path.read_bytes() == corrupted
+
+
+@pytest.mark.parametrize("invalid_sequence", ["1", 1.5, True])
+def test_journal_sequence_schema_corruption_is_typed_and_never_truncated(
+    tmp_path: Path, invalid_sequence: object
+) -> None:
+    path = tmp_path / "work-items.jsonl"
+    repository = WorkItemRepository(path)
+    WorkItem.create("journal item", work_item_id="journal-item", repository=repository, clock=CLOCK)
+    record = json.loads(path.read_bytes())
+    record["payload"]["events"][0]["sequence"] = invalid_sequence
+    encoded = json.dumps(record["payload"], sort_keys=True, separators=(",", ":")).encode()
+    record["checksum"] = "sha256:" + hashlib.sha256(encoded).hexdigest()
+    path.write_bytes(json.dumps(record, sort_keys=True, separators=(",", ":")).encode() + b"\n")
+    corrupted = path.read_bytes()
+    with pytest.raises(WorkItemJournalCorruptionError, match="corrupt Work Item journal"):
+        WorkItemRepository(path)
+    assert path.read_bytes() == corrupted
+
+
+def test_journal_incomplete_tail_is_the_only_truncatable_corruption(tmp_path: Path) -> None:
+    path = tmp_path / "work-items.jsonl"
+    repository = WorkItemRepository(path)
+    WorkItem.create("journal item", work_item_id="journal-item", repository=repository, clock=CLOCK)
+    original = path.read_bytes()
+    path.write_bytes(original + b'{"checksum":"incomplete"')
+    WorkItemRepository(path)
+    assert path.read_bytes() == original
+
+
+def test_journal_semantic_corruption_is_typed_and_never_truncated(tmp_path: Path) -> None:
+    path = tmp_path / "work-items.jsonl"
+    repository = WorkItemRepository(path)
+    WorkItem.create("journal item", work_item_id="journal-item", repository=repository, clock=CLOCK)
+    original = path.read_bytes()
+    path.write_bytes(original + original)
+    corrupted = path.read_bytes()
+    with pytest.raises(WorkItemJournalCorruptionError, match="corrupt Work Item journal"):
+        WorkItemRepository(path)
+    assert path.read_bytes() == corrupted
+
+
+def test_first_journal_append_syncs_parent_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import os
+    import stat
+
+    if os.name == "nt":
+        pytest.skip("directory fsync is a POSIX durability operation")
+    path = tmp_path / "work-items.jsonl"
+    synced_directory_fds = 0
+    real_fsync = os.fsync
+
+    def capture_fsync(fd: int) -> None:
+        nonlocal synced_directory_fds
+        if stat.S_ISDIR(os.fstat(fd).st_mode):
+            synced_directory_fds += 1
+        real_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", capture_fsync)
+    repository = WorkItemRepository(path)
+    item = WorkItem.create(
+        "durable owner",
+        work_item_id="work-1",
+        repository=repository,
+        clock=CLOCK,
+    )
+    assert synced_directory_fds == 1
+
+    item.acquire_lease("worker", lease_id="lease-1")
+    assert synced_directory_fds == 1
+
+
+def test_failed_journal_sync_rolls_back_complete_frame(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import os
+
+    path = tmp_path / "work-items.jsonl"
+    repository = WorkItemRepository(path)
+    item = WorkItem.create(
+        "durable owner",
+        work_item_id="work-1",
+        repository=repository,
+        clock=CLOCK,
+    )
+    original = path.read_bytes()
+    real_fsync = os.fsync
+    failed = False
+
+    def fail_once(fd: int) -> None:
+        nonlocal failed
+        if not failed:
+            failed = True
+            raise OSError("injected journal sync failure")
+        real_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", fail_once)
+    with pytest.raises(OSError, match="injected journal sync failure"):
+        item.acquire_lease("worker", lease_id="lease-1")
+
+    assert path.read_bytes() == original
+    assert WorkItem.restore(WorkItemRepository(path), "work-1").read_model.status == "ready"

@@ -1,21 +1,24 @@
 {
   "scenario": "cp3_focus_cache_benchmark",
-  "generatedAt": "2026-02-13T19:51:20.501Z",
+  "generatedAt": "2026-09-05T07:51:30.196Z",
   "acceptanceChecks": {
     "cachedP95Improves": true,
     "cachedMaxBounded": true,
     "cacheHitRatioHealthy": true
   },
   "metrics": {
+    "warmupCount": 1,
     "sampleCount": 120,
     "uncached": {
-      "p95Ms": 1.1221259999999944,
-      "maxMs": 1.7475479999999948
+      "coldMs": 0.4967500000000058,
+      "p95Ms": 1.3013750000000073,
+      "maxMs": 1.5776249999999976
     },
     "cached": {
-      "p95Ms": 0.002394000000009555,
-      "maxMs": 1.1640600000000063,
-      "hitRatio": 0.9916666666666667
+      "coldMs": 1.3194589999999948,
+      "p95Ms": 0.0017080000000078144,
+      "maxMs": 0.005500000000012051,
+      "hitRatio": 0.9917355371900827
     }
   }
 }

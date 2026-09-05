@@ -1,20 +1,24 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
 import tempfile
+from contextlib import asynccontextmanager
+from functools import wraps
 from datetime import datetime
 from pathlib import Path
 from typing import (
     Any,
     Dict,
     Iterable,
+    Mapping,
     Optional,
 )
 
+from breadboard.product.runtime.events import ProcessLock
 from breadboard.product.runtime.artifacts import ArtifactRef
-
 from ..events import EventType, SessionEvent
 from ..models import (
     SessionStatus,
@@ -54,6 +58,91 @@ _PROVIDER_USAGE_FIELDS = {
     "reasoningTokens",
     "extensions",
 }
+
+def _parent_tree_lock_path(
+    registry: Any,
+    record: SessionRecord,
+    session_id: str,
+) -> Path | None:
+    metadata = record.metadata if isinstance(record.metadata, Mapping) else {}
+    retained_child = metadata.get("durable_child")
+    root_session_id = (
+        retained_child.get("root_session_id")
+        if isinstance(retained_child, Mapping)
+        else session_id
+    )
+    if not isinstance(root_session_id, str) or not root_session_id.strip():
+        raise RuntimeError("parent cancellation root Session identity is invalid")
+    workspace = metadata.get("workspace")
+    if isinstance(workspace, str) and workspace.strip():
+        lock_root = Path(workspace).expanduser().resolve() / ".breadboard"
+    elif registry._state_root is not None:
+        lock_root = registry._state_root.parent / ".breadboard-child-tree-locks"
+    else:
+        return None
+    return lock_root / (
+        "child-tree-"
+        + hashlib.sha256(root_session_id.encode()).hexdigest()
+        + ".lock"
+    )
+@asynccontextmanager
+async def _process_lock(lock_path: Path):
+    lock = ProcessLock(lock_path)
+    acquisition = asyncio.create_task(asyncio.to_thread(lock.__enter__))
+    try:
+        await asyncio.shield(acquisition)
+    except asyncio.CancelledError:
+        async def release_after_acquisition() -> None:
+            try:
+                await acquisition
+            except BaseException:
+                return
+            await asyncio.to_thread(lock.__exit__, None, None, None)
+
+        cleanup = asyncio.create_task(release_after_acquisition())
+        while not cleanup.done():
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                continue
+        cleanup.result()
+        raise
+    try:
+        yield
+    finally:
+        await asyncio.shield(asyncio.to_thread(lock.__exit__, None, None, None))
+
+def _fsync_directory(path: Path) -> None:
+    if os.name == "nt":
+        return
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+
+
+def _fence_parent_cancellation(method):
+    @wraps(method)
+    async def fenced(self, session_id: str, *args: Any, **kwargs: Any):
+        if kwargs.pop("_tree_lock_held", False):
+            return await method(self, session_id, *args, **kwargs)
+        record = await self.get(session_id)
+        if record is None:
+            raise RuntimeError(
+                "parent cancellation requires a retained parent SessionRecord"
+            )
+        lock_path = _parent_tree_lock_path(self, record, session_id)
+        if lock_path is None:
+            return await method(self, session_id, *args, **kwargs)
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        async with _process_lock(lock_path):
+            return await method(self, session_id, *args, **kwargs)
+
+    return fenced
+
 
 
 def _retained_skills_selection(value: Any) -> Dict[str, Any] | None:
@@ -209,24 +298,123 @@ def _retained_terminal_payload(event_type: EventType, value: Any) -> Dict[str, A
     return {"error": {"code": safe_code[:128]}}
 
 
+def _turn_journal_digest(record: SessionRecord) -> str:
+    turns = []
+    for turn_id in sorted(record.turns_by_id):
+        turn = record.turns_by_id[turn_id]
+        turns.append(
+            {
+                "turn_id": turn.turn_id,
+                "input_id": turn.input_id,
+                "state": turn.state,
+                "cancellation_requested": turn.cancellation_requested,
+                "cancellation_reason": turn.cancellation_reason,
+                "execution_committed": turn.execution_committed,
+                "terminal_outcome": turn.terminal_outcome,
+                "terminal_resolution_committed": turn.terminal_resolution_committed,
+                "body_digest": turn.body_digest
+                or submission_body_digest(turn.content, turn.attachments),
+            }
+        )
+    submission_digests = {
+        *(identity_digest(key) for key in record.submissions_by_key),
+        *record.submissions_by_key_digest,
+    }
+    cancellation_digests = {
+        *(identity_digest(key) for key in record.cancellations_by_key),
+        *record.cancellations_by_key_digest,
+    }
+    payload = {
+        "turn_admission": record.turn_admission.value,
+        "active_turn_id": record.active_turn_id,
+        "queued_turn_ids": list(record.queued_turn_ids),
+        "turns": turns,
+        "submission_digests": sorted(submission_digests),
+        "cancellation_digests": sorted(cancellation_digests),
+        "admission_closed": record.admission_closed,
+    }
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
 class PersistenceMixin:
     """Retained session persistence and basic record operations."""
 
     async def create(self, record: SessionRecord) -> SessionRecord:
         async with self._lock:
-            self._records[record.session_id] = record
-            self._persist_record_locked(record)
+            async with self._record_file_lock(record.session_id):
+                tombstone = self._tombstone_path(record.session_id)
+                if tombstone is not None and tombstone.exists():
+                    raise SessionRecordDeletedError(
+                        f"session {record.session_id} was permanently deleted"
+                    )
+                state_path = self._state_path(record.session_id)
+                folded_id = record.session_id.casefold()
+                if any(session_id.casefold() == folded_id for session_id in self._records) or (
+                    state_path is not None and state_path.exists()
+                ):
+                    raise ValueError(f"session already exists: {record.session_id}")
+                if self._state_root is not None:
+                    for path in self._state_root.glob("*.json"):
+                        try:
+                            retained = self._deserialize_record(json.loads(path.read_text(encoding="utf-8")))
+                        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+                            continue
+                        if retained.session_id.casefold() == folded_id and self._state_path(retained.session_id) == path:
+                            raise ValueError(f"session already exists: {retained.session_id}")
+                self._persist_record_locked(record)
+                self._records[record.session_id] = record
         return record
 
     async def get(self, session_id: str) -> Optional[SessionRecord]:
         async with self._lock:
-            return self._records.get(session_id)
+            record = self._records.get(session_id)
+            if self._state_root is None:
+                return record
+            try:
+                async with self._record_file_lock(session_id):
+                    if record is None:
+                        tombstone = self._tombstone_path(session_id)
+                        if tombstone is not None and tombstone.exists():
+                            return None
+                        path = self._state_path(session_id)
+                        if path is None or not path.exists():
+                            return None
+                        try:
+                            payload = json.loads(path.read_text(encoding="utf-8"))
+                            loaded = self._deserialize_record(payload)
+                        except (
+                            OSError,
+                            ValueError,
+                            TypeError,
+                            KeyError,
+                            json.JSONDecodeError,
+                        ):
+                            return None
+                        if (
+                            loaded.session_id != session_id
+                            or self._state_path(loaded.session_id) != path
+                        ):
+                            return None
+                        self._records[session_id] = loaded
+                        return loaded
+                    metadata = record.metadata if isinstance(record.metadata, dict) else {}
+                    require_disk = record.loaded_from_retained_state or isinstance(metadata.get("durable_child"), dict) or isinstance(metadata.get("durable_parent_cancellation"), dict)
+                    return self._refresh_record_from_disk_locked(session_id, record, require_disk=require_disk)
+            except SessionRecordDeletedError:
+                self._records.pop(session_id, None)
+                return None
 
     async def resolve_session_id(self, candidate: str) -> str | None:
         """Return the canonical stored id for a case-insensitive candidate."""
-
         folded = candidate.casefold()
         async with self._lock:
+            await self._refresh_records_from_disk_locked()
             return next(
                 (
                     session_id
@@ -239,26 +427,266 @@ class PersistenceMixin:
 
     async def records(self) -> list[SessionRecord]:
         async with self._lock:
+            await self._refresh_records_from_disk_locked()
             return list(self._records.values())
-
     async def list(self) -> Iterable[SessionSummary]:
         async with self._lock:
+            await self._refresh_records_from_disk_locked()
             return [record.to_summary() for record in self._records.values()]
+    @asynccontextmanager
+    async def fence_parent_turn_admission(self, session_id: str):
+        record = await self.get(session_id)
+        if record is None:
+            raise RuntimeError("turn admission requires a retained SessionRecord")
+        lock_path = _parent_tree_lock_path(self, record, session_id)
+        if lock_path is None:
+            yield
+            return
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        async with _process_lock(lock_path):
+            if await self.get(session_id) is None:
+                raise RuntimeError("turn admission SessionRecord disappeared")
+            yield
 
     async def update_status(self, session_id: str, status: SessionStatus) -> None:
         async with self._lock:
-            record = self._records.get(session_id)
-            if not record:
+            if session_id not in self._records:
                 return
-            if (
-                record.product_session is not None
-                and status is not record.projected_status()
-            ):
-                raise RuntimeError("bridge status disagrees with product Session")
-            record.status = status
-            record.last_activity_at = _utcnow()
-            self._persist_record_locked(record)
+            async with self._record_file_lock(session_id):
+                record = self._records.get(session_id)
+                if not record:
+                    return
+                metadata = record.metadata if isinstance(record.metadata, dict) else {}
+                require_disk = record.loaded_from_retained_state or isinstance(metadata.get("durable_child"), dict) or isinstance(metadata.get("durable_parent_cancellation"), dict)
+                record = self._refresh_record_from_disk_locked(session_id, record, require_disk=require_disk)
+                if (
+                    record.product_session is not None
+                    and status is not record.projected_status()
+                ):
+                    raise RuntimeError("bridge status disagrees with product Session")
+                record.status = status
+                record.last_activity_at = _utcnow()
+                self._persist_record_locked(record)
 
+    async def close_admission(
+        self,
+        session_id: str,
+        *,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        record = await self.get(session_id)
+        if record is None:
+            return
+        async with record.admission_lock:
+            async with self._lock:
+                async with self._record_file_lock(session_id):
+                    current = self._records.get(session_id)
+                    if current is not record:
+                        return
+                    current_metadata = (
+                        record.metadata if isinstance(record.metadata, dict) else {}
+                    )
+                    require_disk = (
+                        record.loaded_from_retained_state
+                        or isinstance(current_metadata.get("durable_child"), dict)
+                        or isinstance(
+                            current_metadata.get("durable_parent_cancellation"), dict
+                        )
+                    )
+                    record = self._refresh_record_from_disk_locked(
+                        session_id, record, require_disk=require_disk
+                    )
+                    previous_closed = record.admission_closed
+                    previous_metadata = dict(record.metadata or {})
+                    previous_activity = record.last_activity_at
+                    record.admission_closed = True
+                    if metadata is not None:
+                        replacement = dict(metadata)
+                        durable_child = (record.metadata or {}).get("durable_child")
+                        if isinstance(durable_child, dict):
+                            replacement["durable_child"] = dict(durable_child)
+                        self._replace_metadata(record, replacement)
+                    record.last_activity_at = _utcnow()
+                    try:
+                        self._persist_record_locked(record)
+                    except Exception:
+                        record.admission_closed = previous_closed
+                        self._replace_metadata(record, previous_metadata)
+                        record.last_activity_at = previous_activity
+                        raise
+    async def close_admission_for_parent_cancellation(
+        self,
+        session_id: str,
+        *,
+        work_item_id: str,
+        reason: str,
+        child_recovery_refs: Iterable[str],
+    ) -> None:
+        await self.close_admission_for_parent_cancellations(
+            session_id,
+            requests=(
+                {
+                    "work_item_id": work_item_id,
+                    "reason": reason,
+                    "child_recovery_refs": tuple(child_recovery_refs),
+                },
+            ),
+        )
+
+    @_fence_parent_cancellation
+    async def close_admission_for_parent_cancellations(
+        self,
+        session_id: str,
+        *,
+        requests: Iterable[Mapping[str, Any]],
+        expected_child_recovery_refs: Iterable[str] | None = None,
+        expected_child_owner: tuple[str, str, str] | None = None,
+    ) -> None:
+        normalized_requests: list[dict[str, Any]] = []
+        for request in requests:
+            work_item_id = request.get("work_item_id")
+            reason = request.get("reason")
+            child_recovery_refs = request.get("child_recovery_refs")
+            if not isinstance(work_item_id, str) or not work_item_id.strip():
+                raise ValueError("parent cancellation work_item_id must be non-empty")
+            if not isinstance(reason, str) or not reason.strip():
+                raise ValueError("parent cancellation reason must be non-empty")
+            if not isinstance(child_recovery_refs, Iterable) or isinstance(
+                child_recovery_refs, (str, bytes)
+            ):
+                raise ValueError("parent cancellation child references must be iterable")
+            normalized_refs = tuple(child_recovery_refs)
+            if any(
+                not isinstance(ref, str) or not ref.strip()
+                for ref in normalized_refs
+            ):
+                raise ValueError(
+                    "parent cancellation child references must be non-empty strings"
+                )
+            normalized_requests.append(
+                {
+                    "work_item_id": work_item_id,
+                    "reason": reason,
+                    "child_recovery_refs": sorted(set(normalized_refs)),
+                }
+            )
+        expected_refs = (
+            None
+            if expected_child_recovery_refs is None
+            else {
+                ref
+                for ref in expected_child_recovery_refs
+                if isinstance(ref, str) and ref.strip()
+            }
+        )
+        if not normalized_requests:
+            return
+        record = await self.get(session_id)
+        if record is None:
+            raise RuntimeError(
+                "parent cancellation requires a retained parent SessionRecord"
+            )
+        async with record.admission_lock:
+            async with self._lock:
+                await self._refresh_records_from_disk_locked()
+                current = self._records.get(session_id)
+                if current is not record:
+                    raise RuntimeError(
+                        "parent cancellation SessionRecord changed during admission closure"
+                    )
+                async with self._record_file_lock(session_id):
+                    record = self._refresh_record_from_disk_locked(
+                        session_id,
+                        record,
+                        require_disk=True,
+                    )
+                    descendant_session_ids = {session_id}
+                    retained_child_refs: set[str] = set()
+                    changed = True
+                    while changed:
+                        changed = False
+                        for candidate in self._records.values():
+                            candidate_metadata = (
+                                candidate.metadata
+                                if isinstance(candidate.metadata, Mapping)
+                                else {}
+                            )
+                            child_state = candidate_metadata.get("durable_child")
+                            if (
+                                not isinstance(child_state, Mapping)
+                                or child_state.get("parent_session_id")
+                                not in descendant_session_ids
+                                or candidate.session_id in descendant_session_ids
+                            ):
+                                continue
+                            if expected_child_owner is not None:
+                                (
+                                    expected_workspace,
+                                    expected_repository,
+                                    expected_root_session,
+                                ) = expected_child_owner
+                                child_spec = child_state.get("child_spec")
+                                if (
+                                    candidate_metadata.get("workspace")
+                                    != expected_workspace
+                                    or not isinstance(child_spec, Mapping)
+                                    or child_spec.get("work_item_repository_path")
+                                    != expected_repository
+                                    or child_state.get("root_session_id")
+                                    != expected_root_session
+                                ):
+                                    continue
+                            descendant_session_ids.add(candidate.session_id)
+                            recovery_ref = child_state.get("recovery_ref")
+                            if isinstance(recovery_ref, str) and recovery_ref.strip():
+                                retained_child_refs.add(recovery_ref)
+                            changed = True
+                    if (
+                        expected_refs is not None
+                        and retained_child_refs != expected_refs
+                    ):
+                        raise RuntimeError(
+                            "retained child set changed during parent cancellation"
+                        )
+                    previous_closed = record.admission_closed
+                    previous_metadata = dict(record.metadata or {})
+                    previous_activity = record.last_activity_at
+                    metadata = dict(previous_metadata)
+                    marker = metadata.get("durable_parent_cancellation")
+                    raw_requests = (
+                        marker.get("requests") if isinstance(marker, Mapping) else None
+                    )
+                    if raw_requests is None:
+                        candidates = [marker] if isinstance(marker, Mapping) else []
+                    elif isinstance(raw_requests, list):
+                        candidates = list(raw_requests)
+                    else:
+                        raise RuntimeError(
+                            "durable parent cancellation marker is invalid"
+                        )
+                    merged_requests = {
+                        str(candidate["work_item_id"]): dict(candidate)
+                        for candidate in candidates
+                        if isinstance(candidate, Mapping)
+                        and isinstance(candidate.get("work_item_id"), str)
+                    }
+                    for request in normalized_requests:
+                        merged_requests[request["work_item_id"]] = request
+                    metadata["durable_parent_cancellation"] = {
+                        "requests": [
+                            merged_requests[key] for key in sorted(merged_requests)
+                        ]
+                    }
+                    record.admission_closed = True
+                    self._replace_metadata(record, metadata)
+                    record.last_activity_at = _utcnow()
+                    try:
+                        self._persist_record_locked(record)
+                    except Exception:
+                        record.admission_closed = previous_closed
+                        self._replace_metadata(record, previous_metadata)
+                        record.last_activity_at = previous_activity
+                        raise
     async def update_metadata(
         self,
         session_id: str,
@@ -269,46 +697,235 @@ class PersistenceMixin:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         async with self._lock:
-            record = self._records.get(session_id)
-            if not record:
+            if session_id not in self._records:
                 return
-            previous = (
-                record.logging_dir,
-                record.completion_summary,
-                record.reward_summary,
-                record.metadata,
-                record.last_activity_at,
-            )
-            if logging_dir:
-                record.logging_dir = logging_dir
-            if completion_summary is not None:
-                record.completion_summary = completion_summary
-            if reward_summary is not None:
-                record.reward_summary = reward_summary
-            if metadata is not None:
-                record.metadata = metadata
-            record.last_activity_at = _utcnow()
-            try:
-                self._persist_record_locked(record)
-            except Exception:
-                (
+            async with self._record_file_lock(session_id):
+                record = self._records.get(session_id)
+                if not record:
+                    return
+                current_metadata = record.metadata if isinstance(record.metadata, dict) else {}
+                require_disk = record.loaded_from_retained_state or isinstance(current_metadata.get("durable_child"), dict) or isinstance(current_metadata.get("durable_parent_cancellation"), dict)
+                record = self._refresh_record_from_disk_locked(session_id, record, require_disk=require_disk)
+                previous = (
                     record.logging_dir,
                     record.completion_summary,
                     record.reward_summary,
-                    record.metadata,
+                    dict(record.metadata or {}),
                     record.last_activity_at,
-                ) = previous
-                raise
+                )
+                durable_child = (record.metadata or {}).get("durable_child")
+                durable_parent_cancellation = (record.metadata or {}).get(
+                    "durable_parent_cancellation"
+                )
+                if logging_dir:
+                    record.logging_dir = logging_dir
+                if completion_summary is not None:
+                    record.completion_summary = completion_summary
+                if reward_summary is not None:
+                    record.reward_summary = reward_summary
+                if metadata is not None:
+                    replacement_metadata = dict(metadata)
+                    if isinstance(durable_child, dict):
+                        replacement_metadata["durable_child"] = dict(durable_child)
+                    if isinstance(durable_parent_cancellation, dict):
+                        replacement_metadata["durable_parent_cancellation"] = dict(
+                            durable_parent_cancellation
+                        )
+                    elif record.admission_closed:
+                        replacement_metadata.pop(
+                            "durable_parent_cancellation", None
+                        )
+                    elif replacement_metadata.get(
+                        "durable_parent_cancellation"
+                    ) is None:
+                        replacement_metadata.pop(
+                            "durable_parent_cancellation", None
+                        )
+                    self._replace_metadata(record, replacement_metadata)
+                record.last_activity_at = _utcnow()
+                try:
+                    self._persist_record_locked(record)
+                except Exception:
+                    (
+                        record.logging_dir,
+                        record.completion_summary,
+                        record.reward_summary,
+                        _,
+                        record.last_activity_at,
+                    ) = previous
+                    self._replace_metadata(record, previous[3])
+                    raise
+    async def compare_and_swap_durable_parent_cancellation(
+        self,
+        session_id: str,
+        *,
+        expected: Mapping[str, Any],
+        replacement: Mapping[str, Any] | None = None,
+    ) -> bool:
+        async with self._lock:
+            record = self._records.get(session_id)
+            if record is None:
+                return False
+            async with self._record_file_lock(session_id):
+                record = self._refresh_record_from_disk_locked(
+                    session_id,
+                    record,
+                    require_disk=True,
+                )
+                metadata = dict(record.metadata or {})
+                current = metadata.get("durable_parent_cancellation")
+                if not isinstance(current, Mapping) or dict(current) != dict(expected):
+                    return False
+                previous_metadata = dict(metadata)
+                previous_activity = record.last_activity_at
+                if replacement is None:
+                    metadata.pop("durable_parent_cancellation", None)
+                else:
+                    metadata["durable_parent_cancellation"] = dict(replacement)
+                self._replace_metadata(record, metadata)
+                record.last_activity_at = _utcnow()
+                try:
+                    self._persist_record_locked(record)
+                except Exception:
+                    self._replace_metadata(record, previous_metadata)
+                    record.last_activity_at = previous_activity
+                    raise
+                return True
+
+    async def remove_durable_parent_cancellation_request(
+        self,
+        session_id: str,
+        *,
+        work_item_id: str,
+    ) -> None:
+        async with self._lock:
+            record = self._records.get(session_id)
+            if record is None:
+                return
+            async with self._record_file_lock(session_id):
+                record = self._refresh_record_from_disk_locked(
+                    session_id,
+                    record,
+                    require_disk=True,
+                )
+                metadata = dict(record.metadata or {})
+                marker = metadata.get("durable_parent_cancellation")
+                if not isinstance(marker, Mapping):
+                    return
+                raw_requests = marker.get("requests")
+                if raw_requests is None:
+                    candidates = [marker]
+                elif isinstance(raw_requests, list):
+                    candidates = list(raw_requests)
+                else:
+                    raise RuntimeError(
+                        "durable parent cancellation marker is invalid"
+                    )
+                requests: dict[str, dict[str, Any]] = {}
+                for candidate in candidates:
+                    if (
+                        not isinstance(candidate, Mapping)
+                        or type(candidate.get("work_item_id")) is not str
+                        or not candidate["work_item_id"]
+                    ):
+                        raise RuntimeError(
+                            "durable parent cancellation marker is invalid"
+                        )
+                    requests[candidate["work_item_id"]] = dict(candidate)
+                if requests.pop(work_item_id, None) is None:
+                    return
+                previous_metadata = dict(metadata)
+                previous_activity = record.last_activity_at
+                if requests:
+                    metadata["durable_parent_cancellation"] = {
+                        "requests": [requests[key] for key in sorted(requests)]
+                    }
+                else:
+                    metadata.pop("durable_parent_cancellation", None)
+                self._replace_metadata(record, metadata)
+                record.last_activity_at = _utcnow()
+                try:
+                    self._persist_record_locked(record)
+                except Exception:
+                    self._replace_metadata(record, previous_metadata)
+                    record.last_activity_at = previous_activity
+                    raise
+
+    async def update_durable_child(
+        self,
+        session_id: str,
+        *,
+        expected_revision: int,
+        child_state: Dict[str, Any],
+    ) -> None:
+        """CAS-update private child coordination retained on a SessionRecord."""
+        async with self._lock:
+            async with self._record_file_lock(session_id):
+                record = self._records.get(session_id)
+                if record is None:
+                    raise KeyError(f"session {session_id} is not retained")
+                record = self._refresh_record_from_disk_locked(session_id, record, require_disk=True)
+                metadata = dict(record.metadata or {})
+                current = metadata.get("durable_child")
+                if not isinstance(current, dict):
+                    raise RuntimeError("session has no retained durable child state")
+                actual_revision = int(current.get("revision", 0))
+                if actual_revision != expected_revision:
+                    raise RuntimeError(
+                        f"stale durable child revision: expected {expected_revision}, actual {actual_revision}"
+                    )
+                immutable = (
+                    "child_session_id",
+                    "child_work_item_id",
+                    "parent_session_id",
+                    "root_session_id",
+                    "parent_work_item_id",
+                    "adapter_family",
+                )
+                for field_name in immutable:
+                    expected_value = session_id if field_name == "child_session_id" else current.get(field_name)
+                    if child_state.get(field_name) != expected_value:
+                        raise ValueError(f"durable child identity field is immutable: {field_name}")
+                attempt_id = child_state.get("attempt_id")
+                if (
+                    not isinstance(attempt_id, str)
+                    or not attempt_id.strip()
+                    or child_state.get("recovery_ref")
+                    != f"child://{session_id}/attempt/{attempt_id}"
+                ):
+                    raise ValueError("durable child recovery reference must match its attempt")
+                metadata["durable_child"] = dict(child_state)
+                previous = dict(record.metadata or {})
+                self._replace_metadata(record, metadata)
+                record.last_activity_at = _utcnow()
+                try:
+                    self._persist_record_locked(record)
+                except Exception:
+                    self._replace_metadata(record, previous)
+                    raise
 
     async def delete(self, session_id: str) -> None:
         async with self._lock:
-            self._records.pop(session_id, None)
             path = self._state_path(session_id)
-            if path is not None:
-                try:
-                    path.unlink()
-                except FileNotFoundError:
-                    pass
+            if session_id not in self._records and (
+                path is None or not path.exists()
+            ):
+                return
+            async with self._record_file_lock(session_id):
+                tombstone = self._tombstone_path(session_id)
+                if tombstone is not None:
+                    tombstone.parent.mkdir(parents=True, exist_ok=True)
+                    with tombstone.open("wb") as marker:
+                        marker.flush()
+                        os.fsync(marker.fileno())
+                    _fsync_directory(tombstone.parent)
+                self._records.pop(session_id, None)
+                if path is not None:
+                    try:
+                        path.unlink()
+                    except FileNotFoundError:
+                        pass
+                    _fsync_directory(path.parent)
 
     async def persist(
         self,
@@ -318,69 +935,300 @@ class PersistenceMixin:
         cursor_event: SessionEvent | None = None,
     ) -> None:
         async with self._lock:
-            if self._records.get(record.session_id) is not record:
-                raise SessionRecordDeletedError(
-                    f"session {record.session_id} was deleted before persistence"
+            async with self._record_file_lock(record.session_id):
+                state_path = self._state_path(record.session_id)
+                metadata = record.metadata if isinstance(record.metadata, dict) else {}
+                disk_authority = (
+                    record.loaded_from_retained_state
+                    or isinstance(metadata.get("durable_child"), dict)
+                    or isinstance(metadata.get("durable_parent_cancellation"), dict)
                 )
-            if terminal_event is not None and self._state_root is None:
-                raise RuntimeError("durable terminal retention is unavailable")
-            head_event = terminal_event or cursor_event
-            resolution_turn: TurnRecord | None = None
-            resolution_was_committed = False
-            if terminal_event is not None and terminal_event.turn_id is not None:
-                resolution_turn = record.turns_by_id.get(terminal_event.turn_id)
-                if resolution_turn is None or resolution_turn.terminal_outcome is None:
-                    raise RuntimeError("terminal event does not resolve an admitted turn")
-                resolution_was_committed = resolution_turn.terminal_resolution_committed
-
-            previous_event_seq = record.event_seq
-            previous_event_seq_value = head_event.seq if head_event is not None else None
-            if head_event is not None:
-                if head_event.seq is None:
-                    record.event_seq += 1
-                    head_event.seq = record.event_seq
-                else:
-                    record.event_seq = max(record.event_seq, int(head_event.seq))
-            candidate = (
-                self._retained_terminal_envelope(terminal_event)
-                if terminal_event is not None
-                else None
-            )
-            retained: Dict[str, Any] | None = None
-            previous_replay_head_sequence = record.replay_head_sequence
-            previous_replay_head_event_id = record.replay_head_event_id
-            if head_event is not None:
-                record.replay_head_sequence = int(head_event.seq)
-                record.replay_head_event_id = head_event.event_id
-            if candidate is not None and not any(
-                item.get("id") == candidate.get("id")
-                for item in record.terminal_event_envelopes
-            ):
-                retained = candidate
-                record.terminal_event_envelopes.append(candidate)
-            if resolution_turn is not None:
-                resolution_turn.terminal_resolution_committed = True
-            try:
-                self._persist_record_locked(record)
-            except Exception:
-                record.event_seq = previous_event_seq
-                if head_event is not None:
-                    head_event.seq = previous_event_seq_value
-                record.replay_head_sequence = previous_replay_head_sequence
-                record.replay_head_event_id = previous_replay_head_event_id
-                if retained is not None:
-                    record.terminal_event_envelopes.remove(retained)
-                if resolution_turn is not None:
-                    resolution_turn.terminal_resolution_committed = (
-                        resolution_was_committed
+                tombstone = self._tombstone_path(record.session_id)
+                if (
+                    tombstone is not None
+                    and tombstone.exists()
+                ) or (
+                    self._state_root is not None
+                    and self._records.get(record.session_id) is not record
+                ):
+                    raise SessionRecordDeletedError(
+                        f"session {record.session_id} was deleted before persistence"
                     )
-                raise
+                self._merge_durable_child_from_disk_locked(record, require_disk=disk_authority)
+                if terminal_event is not None and self._state_root is None:
+                    raise RuntimeError("durable terminal retention is unavailable")
+                head_event = terminal_event or cursor_event
+                resolution_turn: TurnRecord | None = None
+                resolution_was_committed = False
+                if terminal_event is not None and terminal_event.turn_id is not None:
+                    resolution_turn = record.turns_by_id.get(terminal_event.turn_id)
+                    if resolution_turn is None or resolution_turn.terminal_outcome is None:
+                        raise RuntimeError("terminal event does not resolve an admitted turn")
+                    resolution_was_committed = resolution_turn.terminal_resolution_committed
+                previous_event_seq = record.event_seq
+                previous_event_seq_value = head_event.seq if head_event is not None else None
+                if head_event is not None:
+                    if head_event.seq is None:
+                        record.event_seq += 1
+                        head_event.seq = record.event_seq
+                    else:
+                        record.event_seq = max(record.event_seq, int(head_event.seq))
+                candidate = self._retained_terminal_envelope(terminal_event) if terminal_event is not None else None
+                retained: Dict[str, Any] | None = None
+                previous_replay_head_sequence = record.replay_head_sequence
+                previous_replay_head_event_id = record.replay_head_event_id
+                if head_event is not None:
+                    record.replay_head_sequence = int(head_event.seq)
+                    record.replay_head_event_id = head_event.event_id
+                if candidate is not None and not any(item.get("id") == candidate.get("id") for item in record.terminal_event_envelopes):
+                    retained = candidate
+                    record.terminal_event_envelopes.append(candidate)
+                if resolution_turn is not None:
+                    resolution_turn.terminal_resolution_committed = True
+                try:
+                    self._persist_record_locked(record)
+                except Exception:
+                    record.event_seq = previous_event_seq
+                    if head_event is not None:
+                        head_event.seq = previous_event_seq_value
+                    record.replay_head_sequence = previous_replay_head_sequence
+                    record.replay_head_event_id = previous_replay_head_event_id
+                    if retained is not None:
+                        record.terminal_event_envelopes.remove(retained)
+                    if resolution_turn is not None:
+                        resolution_turn.terminal_resolution_committed = resolution_was_committed
+                    raise
 
     def _state_path(self, session_id: str) -> Path | None:
         if self._state_root is None:
             return None
         filename = hashlib.sha256(session_id.encode("utf-8")).hexdigest() + ".json"
         return self._state_root / filename
+    def _tombstone_path(self, session_id: str) -> Path | None:
+        state_path = self._state_path(session_id.casefold())
+        if state_path is None:
+            return None
+        return state_path.with_suffix(".deleted")
+
+    @asynccontextmanager
+    async def _record_file_lock(self, session_id: str):
+        state_path = self._state_path(session_id)
+        if state_path is None:
+            yield
+            return
+        lock_base = self._state_root.parent
+        if self._state_root.name == "session_state":
+            lock_base = lock_base.parent
+        lock_identity = hashlib.sha256(
+            f"{self._state_root.resolve()}\0{session_id.casefold()}".encode("utf-8")
+        ).hexdigest()
+        lock_path = lock_base / ".breadboard-session-locks" / lock_identity
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        async with _process_lock(lock_path):
+            yield
+    async def _refresh_records_from_disk_locked(self) -> None:
+        if self._state_root is None:
+            return
+        for path in sorted(self._state_root.glob("*.json")):
+            try:
+                provisional = self._deserialize_record(
+                    json.loads(path.read_text(encoding="utf-8"))
+                )
+                marker = self._tombstone_path(provisional.session_id)
+                async with self._record_file_lock(provisional.session_id):
+                    if marker is not None and marker.exists():
+                        self._records.pop(provisional.session_id, None)
+                        continue
+                    refreshed = self._deserialize_record(
+                        json.loads(path.read_text(encoding="utf-8"))
+                    )
+                    if self._state_path(refreshed.session_id) != path:
+                        raise ValueError("retained session identity does not match its path")
+            except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+                continue
+            current = self._records.get(refreshed.session_id)
+            if current is not None:
+                self._apply_durable_fields(current, refreshed)
+            else:
+                self._records[refreshed.session_id] = refreshed
+        for session_id, record in tuple(self._records.items()):
+            path = self._state_path(session_id)
+            marker = self._tombstone_path(session_id)
+            if marker is not None and marker.exists():
+                self._records.pop(session_id, None)
+                continue
+            metadata = record.metadata if isinstance(record.metadata, dict) else {}
+            if not (
+                record.loaded_from_retained_state
+                or isinstance(metadata.get("durable_child"), dict)
+                or isinstance(metadata.get("durable_parent_cancellation"), dict)
+            ):
+                continue
+            if path is not None and not path.exists():
+                self._records.pop(session_id, None)
+
+    @staticmethod
+    def _replace_metadata(record: SessionRecord, replacement: Dict[str, Any]) -> None:
+        if isinstance(record.metadata, dict):
+            record.metadata.clear()
+            record.metadata.update(replacement)
+            return
+        record.metadata = dict(replacement)
+
+    @staticmethod
+    def _copy_turn_fields(target: TurnRecord, source: TurnRecord) -> None:
+        if (target.input_id, target.turn_id) != (source.input_id, source.turn_id):
+            raise ValueError("retained turn identity changed during refresh")
+        for field_name in (
+            "original_disposition",
+            "state",
+            "cancellation_requested",
+            "cancellation_reason",
+            "execution_committed",
+            "terminal_outcome",
+            "terminal_resolution_committed",
+            "body_digest",
+            "logical_event_count_before_admission",
+            "logical_input_content_hash",
+            "logical_input_session_status_before_admission",
+        ):
+            setattr(target, field_name, getattr(source, field_name))
+
+    @staticmethod
+    def _apply_durable_fields(target: SessionRecord, source: SessionRecord) -> None:
+        target.status = source.status
+        target.created_at = source.created_at
+        target.last_activity_at = source.last_activity_at
+        target.logging_dir = source.logging_dir
+        previous_metadata = dict(target.metadata or {})
+        replacement_metadata = dict(source.metadata or {})
+        for key, value in previous_metadata.items():
+            if key not in replacement_metadata and key not in {
+                "durable_child",
+                "durable_parent_cancellation",
+            }:
+                replacement_metadata[key] = value
+        PersistenceMixin._replace_metadata(target, replacement_metadata)
+        target.reward_summary = source.reward_summary
+        target.event_seq = source.event_seq
+        target.replay_history_partial = source.replay_history_partial
+        target.replay_head_event_id = source.replay_head_event_id
+        target.replay_head_sequence = source.replay_head_sequence
+        target.terminal_event_envelopes[:] = source.terminal_event_envelopes
+        target_journal_dirty = (
+            target.retained_turn_journal_digest is not None
+            and _turn_journal_digest(target)
+            != target.retained_turn_journal_digest
+        )
+        if not target.admission_lock.locked() and not target_journal_dirty:
+            target.turn_admission = source.turn_admission
+            target.active_turn_id = source.active_turn_id
+            target.queued_turn_ids.clear()
+            target.queued_turn_ids.extend(source.queued_turn_ids)
+            retained_turns: dict[str, TurnRecord] = {}
+            for turn_id, source_turn in source.turns_by_id.items():
+                retained_turn = target.turns_by_id.get(turn_id)
+                if retained_turn is None:
+                    retained_turn = source_turn
+                else:
+                    PersistenceMixin._copy_turn_fields(retained_turn, source_turn)
+                retained_turns[turn_id] = retained_turn
+            target.turns_by_id.clear()
+            target.turns_by_id.update(retained_turns)
+            target.submissions_by_key.clear()
+            target.submissions_by_key.update(
+                {
+                    key: retained_turns[turn.turn_id]
+                    for key, turn in source.submissions_by_key.items()
+                }
+            )
+            target.submissions_by_key_digest.clear()
+            target.submissions_by_key_digest.update(
+                {
+                    key: retained_turns[turn.turn_id]
+                    for key, turn in source.submissions_by_key_digest.items()
+                }
+            )
+            target.cancellations_by_key.clear()
+            target.cancellations_by_key.update(source.cancellations_by_key)
+            target.cancellations_by_key_digest.clear()
+            target.cancellations_by_key_digest.update(
+                source.cancellations_by_key_digest
+            )
+            target.admission_closed = source.admission_closed
+            target.retained_turn_journal_digest = (
+                source.retained_turn_journal_digest
+                or _turn_journal_digest(source)
+            )
+    def _merge_durable_child_from_disk_locked(
+        self,
+        record: SessionRecord,
+        *,
+        require_disk: bool = False,
+    ) -> None:
+        path = self._state_path(record.session_id)
+        if path is None:
+            return
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            disk_record = self._deserialize_record(payload)
+        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
+            if require_disk:
+                raise SessionRecordDeletedError(
+                    f"session {record.session_id} retained state is unreadable"
+                ) from error
+            return
+        metadata = dict(record.metadata or {})
+        disk_child = (disk_record.metadata or {}).get("durable_child")
+        local_child = metadata.get("durable_child")
+        disk_revision = int(disk_child.get("revision", -1)) if isinstance(disk_child, dict) else -1
+        local_revision = int(local_child.get("revision", -1)) if isinstance(local_child, dict) else -1
+        if isinstance(disk_child, dict) and disk_revision > local_revision:
+            metadata["durable_child"] = dict(disk_child)
+        disk_parent_cancellation = (disk_record.metadata or {}).get("durable_parent_cancellation")
+        if isinstance(disk_parent_cancellation, dict):
+            metadata["durable_parent_cancellation"] = dict(disk_parent_cancellation)
+        elif "durable_parent_cancellation" in metadata:
+            metadata.pop("durable_parent_cancellation", None)
+        record.admission_closed = (
+            record.admission_closed or disk_record.admission_closed
+        )
+        self._replace_metadata(record, metadata)
+
+
+    def _refresh_record_from_disk_locked(
+        self,
+        session_id: str,
+        record: SessionRecord,
+        *,
+        require_disk: bool = False,
+    ) -> SessionRecord:
+        path = self._state_path(session_id)
+        tombstone = self._tombstone_path(session_id)
+        if tombstone is not None and tombstone.exists():
+            raise SessionRecordDeletedError(
+                f"session {session_id} was deleted before persistence"
+            )
+        if path is None:
+            return record
+        if not path.exists():
+            if require_disk:
+                raise SessionRecordDeletedError(
+                    f"session {session_id} was deleted before persistence"
+                )
+            return record
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            refreshed = self._deserialize_record(payload)
+        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
+            if require_disk:
+                raise SessionRecordDeletedError(
+                    f"session {session_id} retained state is unreadable"
+                ) from error
+            return record
+        self._apply_durable_fields(record, refreshed)
+        self._records[session_id] = record
+        return record
 
     def _persist_record_locked(self, record: SessionRecord) -> None:
         path = self._state_path(record.session_id)
@@ -406,6 +1254,8 @@ class PersistenceMixin:
             os.fsync(handle.fileno())
         try:
             os.replace(temp_path, path)
+            _fsync_directory(path.parent)
+            record.retained_turn_journal_digest = _turn_journal_digest(record)
         finally:
             try:
                 temp_path.unlink()
@@ -497,10 +1347,25 @@ class PersistenceMixin:
                     ] = session_status
             turns.append(serialized_turn)
         metadata = record.metadata if isinstance(record.metadata, dict) else {}
+        reward_summary = record.reward_summary
+        if reward_summary is not None and not isinstance(reward_summary, dict):
+            raise ValueError("retained reward summary is invalid")
+        reward_summary = dict(reward_summary) if reward_summary is not None else None
         role_lock = metadata.get("model_role_lock")
         if not isinstance(role_lock, dict):
             role_lock = None
         active_role = metadata.get("active_model_role")
+        durable_child = metadata.get("durable_child")
+        if not isinstance(durable_child, dict):
+            durable_child = None
+        parent_cancellation = metadata.get("durable_parent_cancellation")
+        if not isinstance(parent_cancellation, dict):
+            parent_cancellation = None
+        retained_turn_admission = (
+            TurnAdmission.ACTIVE
+            if record.active_turn_id is not None
+            else record.turn_admission
+        )
         durable_head_sequence, durable_head_event_id = self._durable_replay_head(record)
         return {
             "schema_version": _STATE_SCHEMA_VERSION,
@@ -509,9 +1374,15 @@ class PersistenceMixin:
                 "status": record.status.value,
                 "created_at": record.created_at.isoformat(),
                 "last_activity_at": record.last_activity_at.isoformat(),
+                "logging_dir": record.logging_dir,
+                "reward_summary": reward_summary,
                 "event_seq": record.event_seq,
                 "replay_head_sequence": durable_head_sequence,
                 "event_head_id": durable_head_event_id,
+                "turn_admission": retained_turn_admission.value,
+                "active_turn_id": record.active_turn_id,
+                "queued_turn_ids": list(record.queued_turn_ids),
+                "admission_closed": record.admission_closed,
                 "model": _retained_model_id(metadata.get("model")),
                 "mode": (
                     str(metadata["mode"]).strip()
@@ -536,6 +1407,8 @@ class PersistenceMixin:
                     in {"prompt", "ask", "interactive", "configured"}
                     else None
                 ),
+                **({"durable_child": durable_child} if durable_child is not None else {}),
+                **({"durable_parent_cancellation": parent_cancellation} if parent_cancellation is not None else {}),
                 "runtime_overrides": _retained_runtime_overrides(
                     metadata.get("runtime_overrides")
                 ),
@@ -646,6 +1519,9 @@ class PersistenceMixin:
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
                 record = self._deserialize_record(payload)
+                marker = self._tombstone_path(record.session_id)
+                if marker is not None and marker.exists():
+                    continue
             except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
                 continue
             self._records[record.session_id] = record
@@ -673,8 +1549,28 @@ class PersistenceMixin:
             raise ValueError("empty retained replay has a head identity")
         if persisted_replay_head_sequence > 0 and persisted_head_event_id is None:
             raise ValueError("retained replay head has no identity")
+        logging_dir = session.get("logging_dir")
+        if logging_dir is not None and (
+            not isinstance(logging_dir, str) or not logging_dir
+        ):
+            raise ValueError("retained session logging directory is invalid")
         model = _retained_model_id(session.get("model"))
+        reward_summary = session.get("reward_summary")
+        if reward_summary is not None:
+            if not isinstance(reward_summary, dict):
+                raise ValueError("retained reward summary is invalid")
+            reward_summary = dict(reward_summary)
         metadata: Dict[str, Any] = {}
+        durable_child = session.get("durable_child")
+        if durable_child is not None:
+            if not isinstance(durable_child, dict):
+                raise ValueError("retained durable child metadata is invalid")
+            metadata["durable_child"] = dict(durable_child)
+        parent_cancellation = session.get("durable_parent_cancellation")
+        if parent_cancellation is not None:
+            if not isinstance(parent_cancellation, dict):
+                raise ValueError("retained parent cancellation metadata is invalid")
+            metadata["durable_parent_cancellation"] = dict(parent_cancellation)
         if model is not None:
             metadata["model"] = model
         mode = session.get("mode")
@@ -744,6 +1640,8 @@ class PersistenceMixin:
             status=SessionStatus(str(session["status"])),
             created_at=datetime.fromisoformat(str(session["created_at"])),
             last_activity_at=datetime.fromisoformat(str(session["last_activity_at"])),
+            logging_dir=logging_dir,
+            reward_summary=reward_summary,
             event_seq=persisted_event_seq,
             replay_history_partial=bool(persisted_event_seq),
             replay_head_event_id=persisted_head_event_id,
@@ -797,6 +1695,16 @@ class PersistenceMixin:
                 for attachment in attachments
             ):
                 raise ValueError("retained turn attachments are invalid")
+            retained_flags = {
+                field: item.get(field, False)
+                for field in (
+                    "cancellation_requested",
+                    "execution_committed",
+                    "terminal_resolution_committed",
+                )
+            }
+            if any(type(value) is not bool for value in retained_flags.values()):
+                raise ValueError("retained turn flags must be booleans")
             turn = TurnRecord(
                 input_id=str(item["input_id"]),
                 turn_id=str(item["turn_id"]),
@@ -805,13 +1713,13 @@ class PersistenceMixin:
                 attachments=tuple(attachments),
                 original_disposition=str(item["original_disposition"]),
                 state=str(item["state"]),
-                cancellation_requested=bool(item.get("cancellation_requested")),
+                cancellation_requested=retained_flags["cancellation_requested"],
                 cancellation_reason=item.get("cancellation_reason"),
-                execution_committed=bool(item.get("execution_committed")),
+                execution_committed=retained_flags["execution_committed"],
                 terminal_outcome=item.get("terminal_outcome"),
-                terminal_resolution_committed=bool(
-                    item.get("terminal_resolution_committed")
-                ),
+                terminal_resolution_committed=retained_flags[
+                    "terminal_resolution_committed"
+                ],
                 body_digest=str(item["body_digest"]),
                 logical_event_count_before_admission=marker,
                 logical_input_content_hash=content_hash,
@@ -872,6 +1780,40 @@ class PersistenceMixin:
             turn.terminal_resolution_committed = bool(
                 turn.terminal_outcome is not None and turn_id in committed_turn_ids
             )
-        record.turn_admission = TurnAdmission.IDLE
-        record.active_turn_id = None
+        turn_admission = session.get("turn_admission", TurnAdmission.IDLE.value)
+        try:
+            record.turn_admission = TurnAdmission(str(turn_admission))
+        except ValueError as error:
+            raise ValueError("retained turn admission is invalid") from error
+        active_turn_id = session.get("active_turn_id")
+        if active_turn_id is not None and (
+            not isinstance(active_turn_id, str)
+            or active_turn_id not in record.turns_by_id
+        ):
+            raise ValueError("retained active turn identity is invalid")
+        queued_turn_ids = session.get("queued_turn_ids", [])
+        if (
+            not isinstance(queued_turn_ids, list)
+            or any(
+                not isinstance(turn_id, str)
+                or turn_id not in record.turns_by_id
+                for turn_id in queued_turn_ids
+            )
+            or len(set(queued_turn_ids)) != len(queued_turn_ids)
+            or active_turn_id in queued_turn_ids
+        ):
+            raise ValueError("retained queued turn identities are invalid")
+        admission_closed = session.get("admission_closed", False)
+        if not isinstance(admission_closed, bool):
+            raise ValueError("retained admission closed state is invalid")
+        if record.turn_admission is TurnAdmission.IDLE and (
+            active_turn_id is not None or queued_turn_ids
+        ):
+            raise ValueError("idle retained admission has active turns")
+        if record.turn_admission is TurnAdmission.ACTIVE and active_turn_id is None:
+            raise ValueError("active retained admission has no active turn")
+        record.active_turn_id = active_turn_id
+        record.queued_turn_ids.extend(queued_turn_ids)
+        record.admission_closed = admission_closed
+        record.retained_turn_journal_digest = _turn_journal_digest(record)
         return record

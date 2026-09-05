@@ -77,7 +77,7 @@ class ArtifactStore:
     @property
     def _root(self) -> Path: return _descriptor_path(self._descriptor) if self._descriptor is not None else self._root_path
     def __init__(self, root: str | Path, *, descriptor: int | None = None) -> None:
-        self._root_path, self._descriptor, self._transaction_depth, self._transaction_stream, self._transaction_owner = Path(root), descriptor, 0, None, None
+        self._root_path, self._descriptor, self._transaction_depth, self._transaction_stream, self._transaction_owner = Path(root).resolve(), descriptor, 0, None, None
         if descriptor is None: self._root.mkdir(parents=True, exist_ok=True)
     @contextmanager
     def transaction(self) -> Iterator[None]:
@@ -207,26 +207,28 @@ class ArtifactStore:
         rows = [{"name": name, **ref.as_dict()} for name, ref in sorted(artifacts.items())]; body = {"schema_version": "bb.artifact_manifest.v1", "session_id": session_id, "artifacts": rows}
         canonical = json.dumps(body, sort_keys=True, separators=(",", ":")).encode(); body["manifest_id"] = "artifact_manifest:" + hashlib.sha256(canonical).hexdigest()
         return body
-def workspace_artifact_ref(workspace: str | Path, digest: str, *, media_type: str = "application/octet-stream") -> ArtifactRef:
-    value=_hexdigest(digest,"unsupported artifact digest"); workspace=Path(workspace); target=workspace/".breadboard"/"artifacts"/"sha256"/value[:2]/value; descriptor=None
+def artifact_store_ref(store_root: str | Path, digest: str, *, media_type: str = "application/octet-stream") -> ArtifactRef:
+    value=_hexdigest(digest,"unsupported artifact digest"); root=Path(store_root); target=root/"sha256"/value[:2]/value; descriptor=None
     if os.name=="nt":
         handles=[]
         try:
-            for path in (workspace,target.parent.parent.parent,target.parent.parent,target.parent):handles.append(_windows_handle(path,directory=True,create=False))
+            for path in (root,target.parent.parent,target.parent):handles.append(_windows_handle(path,directory=True,create=False))
             descriptor=_windows_file_descriptor(target,create=False); metadata=os.fstat(descriptor)
         finally:
             if descriptor is not None:os.close(descriptor)
             for handle in reversed(handles):_close_windows_handle(handle)
     else:
-        descriptors=[os.open(workspace,os.O_RDONLY|getattr(os,"O_DIRECTORY",0)|getattr(os,"O_NOFOLLOW",0))]
+        descriptors=[os.open(root,os.O_RDONLY|getattr(os,"O_DIRECTORY",0)|getattr(os,"O_NOFOLLOW",0))]
         try:
-            for name in (".breadboard","artifacts","sha256",value[:2]):descriptors.append(_open_directory(descriptors[-1],name,create=False))
+            for name in ("sha256",value[:2]):descriptors.append(_open_directory(descriptors[-1],name,create=False))
             descriptor=os.open(value,os.O_RDONLY|getattr(os,"O_NOFOLLOW",0),dir_fd=descriptors[-1]); metadata=os.fstat(descriptor)
         finally:
             if descriptor is not None:os.close(descriptor)
             for item in reversed(descriptors):os.close(item)
     if not stat.S_ISREG(metadata.st_mode):raise OSError("artifact digest does not identify a regular file")
     return ArtifactRef(digest,metadata.st_size,media_type)
+def workspace_artifact_ref(workspace: str | Path, digest: str, *, media_type: str = "application/octet-stream") -> ArtifactRef:
+    return artifact_store_ref(Path(workspace)/".breadboard"/"artifacts",digest,media_type=media_type)
 def list_workspace_artifacts(workspace: str | Path) -> list[ArtifactRef]:
     workspace=Path(workspace); sha=workspace/".breadboard"/"artifacts"/"sha256"; names:set[str]=set()
     try:
