@@ -137,3 +137,7 @@ used by the installed TUI and skeleton. Validated strings and lists retain their
 exact values, so persistence cannot change the pinned runtime generation.
 Unknown keys and structured secret-bearing values stay rejected; interpretation
 remains with the permission owner. No permission API or default policy changes.
+
+### W9 point-in-time snapshot correction
+
+`follow=false` stops after draining its captured batch, including durable post-terminal annotations already present at capture. It no longer rereads durable storage after yielding that batch. Events appended while the response is streaming appear only in a later snapshot. The ASGI regression appends a held-out annotation after the first response chunk and checks both responses. Live-follow behavior and public schemas are unchanged.
