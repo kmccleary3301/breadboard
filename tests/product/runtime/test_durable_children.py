@@ -7059,6 +7059,42 @@ def test_workflow_rule_table_terminal_outcome_precedence(
     assert decision.blocked_step_ids == ("verify",)
 
 
+def test_workflow_waits_while_parent_is_ready(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    create_session(
+        workspace,
+        Session.start(_lock(), "parent task", session_id="parent-session"),
+    )
+    repository = WorkItemRepository(tmp_path / "work-items.jsonl")
+    WorkItem.create(
+        "parent work",
+        work_item_id="parent-work",
+        repository=repository,
+    )
+    registry = SessionRegistry(state_root=tmp_path / "registry")
+    adapter = WorkflowAdapter()
+    controller = ReplayableWorkflowController(
+        DurableChildFactory(
+            workspace,
+            registry=registry,
+            repository=repository,
+            adapters=[adapter],
+        ),
+        workflow_id="ready-parent",
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id="parent-work",
+        definition=_workflow_definition(),
+    )
+
+    decision = controller.advance()
+
+    assert decision.action == "wait"
+    assert decision.ready_step_ids == ("inspect",)
+    assert adapter.started == []
+
+
 def test_workflow_concurrent_advance_starts_each_step_once(tmp_path: Path) -> None:
     workspace, repository, _parent, registry = _running_parent(tmp_path)
     adapter = WorkflowAdapter()

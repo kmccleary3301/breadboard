@@ -304,6 +304,8 @@ def project_workflow_decision(
         action = "cancel"
     elif parent.value.status == "completed":
         action = "complete"
+    elif parent.value.status != "running":
+        action = "wait"
     elif failed:
         action = "fail"
     elif canceled:
