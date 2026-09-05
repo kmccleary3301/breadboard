@@ -324,7 +324,7 @@ e4_imports = [
 ]
 assert e4_imports == []
 schema_result = schemas(["system", "schemas"], Path.cwd())
-assert schema_result.ok and schema_result.data["schema_count"] > 0
+assert schema_result.ok
 kernel_schema = get_spec("bb.work_item.v2").schema_path.resolve()
 assert kernel_schema.is_file() and kernel_schema.is_relative_to(site_root)
 generated = json.loads(
@@ -352,7 +352,7 @@ print(json.dumps({{
     "distribution": distribution.metadata["Name"],
     "version": distribution.version,
     "operation_count": len(catalog["operations"]),
-    "schema_count": schema_result.data["schema_count"],
+    "schemas": schema_result.data["schemas"],
     "generated_operation_count": len(generated["operations"]),
     "profile_id": default_profile["profile_id"],
     "profile_hash": default_profile["effective_lock_hash"],
@@ -372,7 +372,10 @@ print(json.dumps({{
         "distribution": "breadboard-harness-cli",
         "version": "0.0.0",
         "operation_count": 26,
-        "schema_count": 27,
+        "schemas": sorted(
+            path.name
+            for path in (ROOT / "contracts/public/schemas").glob("*.schema.json")
+        ),
         "generated_operation_count": 26,
         "profile_id": "daily_driver.v1",
         "profile_hash": (
