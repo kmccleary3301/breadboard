@@ -1250,9 +1250,9 @@ entries:
     callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/path_refs.py
-    class: live-owned
+    class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/build_e4_final_readiness_packet.py, scripts/e4_parity/validate_frozen_e4_evidence.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/build_e4_final_readiness_packet.py, scripts/e4_parity/check_er_progress.py, scripts/e4_parity/e4_closure_score_section.py, scripts/e4_parity/validate_frozen_e4_evidence.py, tests/e4_parity/test_check_er_progress.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/promote_lane_payload_source.py
     class: live-wired
@@ -1262,7 +1262,7 @@ entries:
   - path: scripts/e4_parity/provision_immutable_inputs.py
     class: live-wired
     owner: kmccleary3301
-    callers: [.github/workflows/ci.yml, .github/workflows/e4-battery.yml, scripts/SCRIPT_INDEX.yaml, tests/e4_parity/test_immutable_inputs.py, tests/e4_parity/test_regen_front_door.py]
+    callers: [.github/workflows/ci.yml, .github/workflows/e4-battery.yml, scripts/SCRIPT_INDEX.yaml, tests/e4_parity/test_immutable_inputs.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/refresh_lane_descriptor_pins.py
     class: live-owned
@@ -1272,7 +1272,7 @@ entries:
   - path: scripts/e4_parity/regen.py
     class: live-wired
     owner: kmccleary3301
-    callers: [.github/workflows/e4-battery.yml, scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/build_e4_final_readiness_packet.py, scripts/e4_parity/regenerate_evidence.py, tests/e4_parity/test_regen_front_door.py]
+    callers: [.github/workflows/e4-battery.yml, scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/build_e4_final_readiness_packet.py, scripts/e4_parity/regenerate_evidence.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/regenerate_evidence.py
     class: live-wired
@@ -1365,7 +1365,7 @@ entries:
     callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/check_er_progress.py, scripts/e4_parity/immutable_inputs.py, scripts/e4_parity/regen.py, tests/e4_parity/test_regenerate_evidence.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/validators/registries.py
-    class: live-owned
+    class: live-wired
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, scripts/authoring/validate_lane.py, scripts/build_python_reference_contract_fixtures.py, scripts/e4_parity/lane_promotion_artifacts.py, scripts/e4_parity/scaffold_e4_target_lane.py, scripts/e4_parity/validate_e4_coverage.py]
     expiry: none (durable tooling)

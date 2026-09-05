@@ -34,8 +34,9 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
     )
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS
 
+from breadboard.product.evidence.e4.path_refs import workspace_root_for_checkout
+
 ROOT = Path(__file__).resolve().parents[2]
-WORKSPACE = ROOT.parent
 PYTHON = "{python}"
 EXPECTED_POINTS = "{expected_points}"
 EXPECTED_CLAIMS = "{expected_claims}"
@@ -995,15 +996,19 @@ def _display_write_path(path: Path) -> str:
         return resolved.relative_to(ROOT.resolve()).as_posix()
     except ValueError:
         try:
-            return "../" + resolved.relative_to(WORKSPACE.resolve()).as_posix()
+            return "../" + resolved.relative_to(workspace_root_for_checkout(ROOT)).as_posix()
         except ValueError:
             return resolved.as_posix()
 
 
 @lru_cache(maxsize=None)
-def _expanded_write_targets(value: str) -> frozenset[str]:
+def _expanded_write_targets(
+    value: str, *, expand_write_paths: bool = True
+) -> frozenset[str]:
+    if not expand_write_paths:
+        return frozenset((value,))
     if value.startswith("../"):
-        base = WORKSPACE
+        base = workspace_root_for_checkout(ROOT)
         relative = value[3:]
     else:
         base = ROOT
@@ -1026,9 +1031,11 @@ def _expanded_write_targets(value: str) -> frozenset[str]:
     return frozenset((value,))
 
 
-def _write_patterns_overlap(left: str, right: str) -> bool:
-    left_targets = _expanded_write_targets(left)
-    right_targets = _expanded_write_targets(right)
+def _write_patterns_overlap(
+    left: str, right: str, *, expand_write_paths: bool = True
+) -> bool:
+    left_targets = _expanded_write_targets(left, expand_write_paths=expand_write_paths)
+    right_targets = _expanded_write_targets(right, expand_write_paths=expand_write_paths)
     if left_targets & right_targets:
         return True
     if not _is_glob(left) and not _is_glob(right):
@@ -1045,7 +1052,9 @@ def _lane_capture_outputs(stages: Sequence[Stage]) -> tuple[tuple[str, str], ...
     return tuple(outputs)
 
 
-def validate_stage_graph(stages: Sequence[Stage] = STAGES) -> None:
+def validate_stage_graph(
+    stages: Sequence[Stage] = STAGES, *, expand_write_paths: bool = True
+) -> None:
     seen: set[str] = set()
     for stage in stages:
         if stage.stage_id in seen:
@@ -1069,7 +1078,7 @@ def validate_stage_graph(stages: Sequence[Stage] = STAGES) -> None:
         for write in stage.writes:
             for owner, owned_write in write_owners:
                 if owner != stage.stage_id and _write_patterns_overlap(
-                    write, owned_write
+                    write, owned_write, expand_write_paths=expand_write_paths
                 ):
                     raise ValueError(
                         f"write path {write} is declared by both {owner} and {stage.stage_id}"
@@ -1080,7 +1089,10 @@ def validate_stage_graph(stages: Sequence[Stage] = STAGES) -> None:
             owners = {
                 stage.stage_id
                 for stage in stages
-                if any(_write_patterns_overlap(output, write) for write in stage.writes)
+                if any(
+                    _write_patterns_overlap(output, write, expand_write_paths=expand_write_paths)
+                    for write in stage.writes
+                )
             }
             if len(owners) != 1:
                 raise ValueError(
@@ -1145,7 +1157,6 @@ def plan_dict(
         "stage_count": len(stages),
         "invariants": _plan_invariants(),
         "repo_root": str(ROOT),
-        "workspace": str(WORKSPACE),
         "stages": [
             {
                 **asdict(stage),
@@ -1346,10 +1357,10 @@ def _copy_path(
 def _candidate_path(candidate_root: Path, accepted_path: Path) -> Path:
     accepted_absolute = Path(os.path.abspath(accepted_path))
     root_absolute = Path(os.path.abspath(ROOT))
-    workspace_absolute = Path(os.path.abspath(WORKSPACE))
     try:
         return candidate_root / accepted_absolute.relative_to(root_absolute)
     except ValueError:
+        workspace_absolute = Path(os.path.abspath(workspace_root_for_checkout(ROOT)))
         return candidate_root.parent / accepted_absolute.relative_to(workspace_absolute)
 
 
@@ -1437,7 +1448,7 @@ def _accepted_path(candidate_root: Path, candidate_path: Path) -> Path:
     try:
         return ROOT / candidate_absolute.relative_to(root_absolute)
     except ValueError:
-        return WORKSPACE / candidate_absolute.relative_to(workspace_absolute)
+        return workspace_root_for_checkout(ROOT) / candidate_absolute.relative_to(workspace_absolute)
 
 
 def _write_set_entries(
@@ -1449,7 +1460,7 @@ def _write_set_entries(
         value for stage in stages for value in _declared_stage_writes(stage)
     ):
         candidate_pattern = candidate_root / pattern
-        accepted_pattern = ROOT / pattern
+        accepted_pattern = _accepted_path(candidate_root, candidate_pattern)
         if _is_glob(pattern):
             candidate_matches = set(
                 candidate_pattern.parent.glob(candidate_pattern.name)
@@ -1538,8 +1549,9 @@ def _run_regeneration_transaction(
     python: str = sys.executable,
 ) -> tuple[int, list[StageResult]]:
     results: list[StageResult] = []
+    workspace = workspace_root_for_checkout(ROOT)
     with tempfile.TemporaryDirectory(
-        prefix=".e4-candidate-", dir=WORKSPACE
+        prefix=".e4-candidate-", dir=workspace
     ) as temp_name:
         candidate_root = Path(temp_name) / "repo"
         _prepare_candidate_root(candidate_root, candidate_stages)
@@ -1554,7 +1566,7 @@ def _run_regeneration_transaction(
             return candidate_code, results
 
         with tempfile.TemporaryDirectory(
-            prefix=".e4-promotion-", dir=WORKSPACE
+            prefix=".e4-promotion-", dir=workspace
         ) as promotion_name:
             try:
                 applied = _promote_write_set(
@@ -1571,6 +1583,7 @@ def _run_regeneration_transaction(
                     canonical_rebind_stages,
                     python=python,
                     execution_root=ROOT,
+                    workspace_root=workspace,
                 )
                 results.extend(rebind_results)
                 if rebind_code != 0:
@@ -1580,6 +1593,7 @@ def _run_regeneration_transaction(
                     final_c4_stages,
                     python=python,
                     execution_root=ROOT,
+                    workspace_root=workspace,
                 )
                 results.extend(final_results)
                 if final_code != 0:

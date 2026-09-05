@@ -9,9 +9,9 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from scripts.e4_parity import check_er_progress as checker
+from scripts.e4_parity.path_refs import workspace_root_for_checkout
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKSPACE_ROOT = ROOT.parent
 
 PIN_POLICY_V2_DERIVATIVE_FIXTURES = (
     ("docs/conformance/support_claims/claim.json", "docs/conformance/support_claims/**"),
@@ -81,7 +81,10 @@ def _minimal_progress(tmp_path: Path) -> tuple[Path, dict[str, object]]:
     return progress_path, progress
 
 
-def _minimal_progress_with_evidence_path(tmp_path: Path, relative_path: str) -> Path:
+def _minimal_progress_with_evidence_path(
+    tmp_path: Path,
+    relative_path: str,
+) -> Path:
     progress_path, progress = _minimal_progress(tmp_path)
     evidence = tmp_path / relative_path
     evidence.parent.mkdir(parents=True, exist_ok=True)
@@ -178,9 +181,18 @@ def test_check_er_progress_rejects_schema_invalid_status(tmp_path: Path) -> None
     assert any("schema.workstreams.0.items.0.status" in error for error in report["errors"])
 
 
-def test_pin_policy_v1_allows_derivative_evidence_path(tmp_path: Path) -> None:
+def test_pin_policy_v1_allows_derivative_evidence_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    monkeypatch.setattr(checker, "ROOT", checkout)
     derivative_path, _deny_glob = PIN_POLICY_V2_DERIVATIVE_FIXTURES[0]
-    progress_path = _minimal_progress_with_evidence_path(tmp_path, derivative_path)
+    progress_path = _minimal_progress_with_evidence_path(
+        tmp_path,
+        derivative_path,
+    )
 
     report = checker.check_progress(progress_path, workspace_root=tmp_path, pin_policy="v1")
 
@@ -192,21 +204,20 @@ def test_pin_policy_v1_allows_derivative_evidence_path(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("derivative_path", "deny_glob"),
     PIN_POLICY_V2_DERIVATIVE_FIXTURES,
-    ids=[
-        "support-claims",
-        "node-gate",
-        "artifact-catalog",
-        "ct-scenarios",
-        "matrix-sync",
-        "sync-summary",
-    ],
 )
 def test_pin_policy_v2_rejects_seed_derivative_evidence_roots(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     derivative_path: str,
     deny_glob: str,
 ) -> None:
-    progress_path = _minimal_progress_with_evidence_path(tmp_path, derivative_path)
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    monkeypatch.setattr(checker, "ROOT", checkout)
+    progress_path = _minimal_progress_with_evidence_path(
+        tmp_path,
+        derivative_path,
+    )
 
     report = checker.check_progress(progress_path, workspace_root=tmp_path, pin_policy="v2")
 
@@ -214,9 +225,18 @@ def test_pin_policy_v2_rejects_seed_derivative_evidence_roots(
     assert any(derivative_path in error and deny_glob in error for error in report["errors"])
 
 
-def test_pin_policy_v2_cli_rejects_derivative_evidence_path_and_writes_json(tmp_path: Path) -> None:
+def test_pin_policy_v2_cli_rejects_derivative_evidence_path_and_writes_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    monkeypatch.setattr(checker, "ROOT", checkout)
     derivative_path = "docs/conformance/e4_artifact_catalog.json"
-    progress_path = _minimal_progress_with_evidence_path(tmp_path, derivative_path)
+    progress_path = _minimal_progress_with_evidence_path(
+        tmp_path,
+        derivative_path,
+    )
     report_path = tmp_path / "report.json"
 
     exit_code = checker.main(
@@ -239,11 +259,142 @@ def test_pin_policy_v2_cli_rejects_derivative_evidence_path_and_writes_json(tmp_
     assert any(derivative_path in error for error in report["errors"])
 
 
-def test_live_bb_er_progress_passes_checker() -> None:
-    progress_path = WORKSPACE_ROOT / "docs_tmp" / "phase_16" / "BB_ER_PROGRESS.json"
+def test_pin_policy_v2_rejects_checkout_qualified_derivative_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    monkeypatch.setattr(checker, "ROOT", checkout)
+    derivative_path = f"{checkout.name}/docs/conformance/e4_artifact_catalog.json"
+    evidence = tmp_path / derivative_path
+    evidence.parent.mkdir(parents=True, exist_ok=True)
+    evidence.write_text("fixture\n", encoding="utf-8")
+    alias = checkout / "catalog-alias.json"
+    alias.symlink_to(evidence)
+    progress_path, progress = _minimal_progress(tmp_path)
+    progress["workstreams"][0]["items"][0]["evidence"] = [
+        {"path": f"{checkout.name}/{alias.name}", "sha256": _sha256(evidence)}
+    ]
+    _write_json(progress_path, progress)
 
-    report = checker.check_progress(progress_path, workspace_root=WORKSPACE_ROOT)
+    report = checker.check_progress(progress_path, workspace_root=tmp_path, pin_policy="v2")
+
+    _assert_gate_envelope(report, klass="semantic", exit_code=4)
+    assert any("docs/conformance/e4_artifact_catalog.json" in error for error in report["errors"])
+
+
+def test_cli_default_progress_resolves_against_explicit_workspace_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(checker.ROOT)
+    _minimal_progress(tmp_path)
+    assert checker.check_progress(workspace_root=tmp_path)["points_total"] == 10
+    report_path = tmp_path / "default-report.json"
+
+    exit_code = checker.main(
+        [
+            "--workspace-root",
+            str(tmp_path),
+            "--json-out",
+            str(report_path),
+        ]
+    )
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert report["ok"] is True
+    assert report["progress_path"] == "docs_tmp/phase_16/BB_ER_PROGRESS.json"
+
+
+def test_check_er_progress_rejects_absolute_outside_evidence_reference(tmp_path: Path) -> None:
+    progress_path, progress = _minimal_progress(tmp_path)
+    outside = tmp_path.parent / "outside-evidence.json"
+    outside.write_text('{"outside": true}\n', encoding="utf-8")
+    progress["workstreams"][0]["items"][0]["evidence"] = [
+        {"path": str(outside), "sha256": _sha256(outside)}
+    ]
+    _write_json(progress_path, progress)
+
+    report = checker.check_progress(progress_path, workspace_root=tmp_path)
+
+    _assert_gate_envelope(report, klass="semantic", exit_code=4)
+    assert any("invalid evidence path" in error and "must be relative" in error for error in report["errors"])
+
+
+def test_check_er_progress_rejects_parent_traversal_evidence_reference(tmp_path: Path) -> None:
+    progress_path, progress = _minimal_progress(tmp_path)
+    outside = tmp_path.parent / "outside-parent-evidence.json"
+    outside.write_text('{"outside": true}\n', encoding="utf-8")
+    progress["workstreams"][0]["items"][0]["evidence"] = [
+        {"path": "../outside-parent-evidence.json", "sha256": _sha256(outside)}
+    ]
+    _write_json(progress_path, progress)
+
+    report = checker.check_progress(progress_path, workspace_root=tmp_path)
+
+    _assert_gate_envelope(report, klass="semantic", exit_code=4)
+    assert any("invalid evidence path" in error and "../outside-parent-evidence.json" in error for error in report["errors"])
+
+
+def test_check_er_progress_rejects_symlink_escape_evidence_reference(tmp_path: Path) -> None:
+    progress_path, progress = _minimal_progress(tmp_path)
+    outside = tmp_path.parent / "outside-symlink-evidence.json"
+    outside.write_text('{"outside": true}\n', encoding="utf-8")
+    escaped = tmp_path / "docs_tmp" / "phase_16" / "evidence" / "escaped.json"
+    escaped.symlink_to(outside)
+    progress["workstreams"][0]["items"][0]["evidence"] = [
+        {"path": "docs_tmp/phase_16/evidence/escaped.json", "sha256": _sha256(outside)}
+    ]
+    _write_json(progress_path, progress)
+
+    report = checker.check_progress(progress_path, workspace_root=tmp_path)
+
+    _assert_gate_envelope(report, klass="semantic", exit_code=4)
+    assert any("invalid evidence path" in error and "escapes" in error for error in report["errors"])
+
+
+def test_check_er_progress_resolves_archived_evidence_from_declared_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    checkout = tmp_path / "checkout"
+    progress_path, progress = _minimal_progress(workspace)
+    reference = "archived-checkout/source.json"
+    evidence = workspace / reference
+    _write_json(evidence, {"accepted": "held-out archive"})
+    _write_json(checkout / reference, {"decoy": "current checkout"})
+    monkeypatch.setattr(checker, "ROOT", checkout)
+    progress["workstreams"][0]["items"][0]["evidence"] = [
+        {"path": reference, "sha256": _sha256(evidence)}
+    ]
+    _write_json(progress_path, progress)
+
+    report = checker.check_progress(progress_path, workspace_root=workspace, pin_policy="v2")
+
+    assert report["ok"] is True, report["errors"]
+
+
+def test_pin_policy_v2_rejects_archived_derivative_evidence(tmp_path: Path) -> None:
+    progress_path = _minimal_progress_with_evidence_path(
+        tmp_path,
+        "held-out/archived-checkout/docs/conformance/e4_artifact_catalog.json",
+    )
+
+    report = checker.check_progress(progress_path, workspace_root=tmp_path, pin_policy="v2")
+
+    _assert_gate_envelope(report, klass="semantic", exit_code=4)
+
+
+def test_live_bb_er_progress_passes_checker() -> None:
+    workspace_root = workspace_root_for_checkout(ROOT)
+    progress_path = workspace_root / "docs_tmp" / "phase_16" / "BB_ER_PROGRESS.json"
+
+    report = checker.check_progress(progress_path, workspace_root=workspace_root)
 
     assert report["ok"] is True
     assert report["points_total"] == 1000
     assert report["points_done"] >= 0
+

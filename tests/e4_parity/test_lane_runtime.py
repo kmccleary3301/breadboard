@@ -31,16 +31,18 @@ def test_generated_at_utc_uses_env_before_required_default(monkeypatch) -> None:
     assert lane_runtime.generated_at_utc(default="2026-07-03T07:30:00Z") == "2030-01-02T03:04:05Z"
 
 
-def test_display_path_matches_lane_builder_repo_and_workspace_semantics(tmp_path: Path) -> None:
+def test_display_path_matches_lane_builder_repo_and_workspace_semantics(tmp_path: Path, monkeypatch) -> None:
     repo_root = tmp_path / "repo"
+    workspace_root = tmp_path / "workspace"
     repo_file = repo_root / "docs" / "claim.json"
-    workspace_file = tmp_path / "docs_tmp" / "phase_15" / "ledger.json"
-    outside_file = tmp_path.parent / "outside-lane-runtime.txt"
+    workspace_file = workspace_root / "docs_tmp" / "phase_15" / "ledger.json"
+    outside_file = tmp_path / "outside-lane-runtime.txt"
     repo_file.parent.mkdir(parents=True)
     workspace_file.parent.mkdir(parents=True)
     repo_file.write_text("{}", encoding="utf-8")
     workspace_file.write_text("{}", encoding="utf-8")
     outside_file.write_text("x", encoding="utf-8")
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(workspace_root))
 
     try:
         assert lane_runtime.display_path(repo_file, repo_root=repo_root) == "docs/claim.json"

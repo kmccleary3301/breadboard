@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 
-ReferenceNamespace = Literal["repo", "workspace_evidence"]
+ReferenceNamespace = Literal["repo", "workspace", "workspace_evidence"]
 
 
 class ReferenceResolutionError(ValueError):
@@ -65,9 +65,9 @@ def resolve_declared_reference(
 ) -> Path:
     """Resolve a declared input without probing ancestor checkouts.
 
-    Repo inputs are always checkout-relative. Workspace evidence uses the
-    explicit checkout/workspace split: ``docs_tmp`` and checkout-qualified
-    references are workspace-relative; other relative references remain
+    Repo inputs are checkout-relative; workspace inputs are workspace-relative.
+    The workspace_evidence split keeps ``docs_tmp`` and
+    checkout-qualified references workspace-relative and other references
     checkout-relative.
     """
     raw = str(reference).split("#", 1)[0]
@@ -82,7 +82,7 @@ def resolve_declared_reference(
             )
         resolved = (checkout / path).resolve()
         boundary = checkout
-    elif namespace == "workspace_evidence":
+    elif namespace in {"workspace", "workspace_evidence"}:
         workspace = (
             _validated_workspace_root(
                 workspace_root,
@@ -95,11 +95,13 @@ def resolve_declared_reference(
             raise ReferenceResolutionError(
                 f"{label} must be relative to checkout/workspace: {reference}"
             )
-        if path.parts and path.parts[0] in {"docs_tmp", checkout.name}:
+        if namespace == "workspace" or (path.parts and path.parts[0] in {"docs_tmp", checkout.name}):
             resolved = (workspace / path).resolve()
         else:
             resolved = (checkout / path).resolve()
-        if resolved.is_relative_to(checkout):
+        if namespace == "workspace":
+            boundary = workspace
+        elif resolved.is_relative_to(checkout):
             boundary = checkout
         elif resolved.is_relative_to(workspace):
             boundary = workspace

@@ -10,11 +10,12 @@ from scripts.e4_parity import regenerate_evidence
 from breadboard.product.evidence.e4.lane_acceptance_artifacts import build_lane_from_definition
 from breadboard.product.evidence.e4.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
 from scripts.replay_session_from_records import replay_session_from_records
-from breadboard.product.evidence.e4.validators.registries import schema_generation_default
+from scripts.e4_parity.validators.registries import schema_generation_default
+from scripts.e4_parity.path_refs import workspace_root_for_checkout
 
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKSPACE = ROOT.parent
+WORKSPACE = workspace_root_for_checkout(ROOT)
 SUPPORT_CLAIMS_DIR = ROOT / "docs" / "conformance" / "support_claims"
 SUPPORT_CLAIM_SCHEMA_VERSION = schema_generation_default("support_claim")
 
