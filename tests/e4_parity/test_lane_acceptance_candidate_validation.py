@@ -41,6 +41,15 @@ def test_build_lane_validates_fresh_candidate_bytes_before_promotion(
     freeze_path.write_text("e4_configs: {}\n", encoding="utf-8")
     _write_json(ledger_path, {"rows": []})
     _write_json(catalog_path, {"schema_version": "bb.e4.artifact_catalog.v2"})
+    canonical_registry = repo_root / "conformance/comparators/registry.json"
+    _write_json(
+        canonical_registry,
+        {
+            "comparators": [],
+            "registry_id": "candidate_validation_registry",
+            "schema_version": "bb.e4.comparator_registry.v1",
+        },
+    )
 
     claim_id = "candidate_validation_v1_c4_support_claim"
     canonical_support = support_dir / f"{claim_id}.json"
@@ -98,19 +107,43 @@ def test_build_lane_validates_fresh_candidate_bytes_before_promotion(
         },
     )
 
-    def validate_candidate(**kwargs):
-        support_path = output_root / canonical_support.relative_to(repo_root)
-        manifest_path = output_root / canonical_manifest.relative_to(repo_root)
-        candidate_freeze = output_root / freeze_path.relative_to(repo_root)
-        if kwargs != {
-            "repo_root": output_root,
-            "freeze_manifest_path": candidate_freeze,
-            "config_id": "candidate_validation_v1",
-            "support_claim_path": support_path,
-            "evidence_manifest_path": manifest_path,
-            "enforce_catalog_binding": False,
-        }:
-            return {"ok": False, "errors": ["PIN_STALE: validation read canonical pre-capture bytes"]}
+    def validate_candidate(
+        *,
+        repo_root: Path,
+        freeze_manifest_path: Path,
+        config_id: str,
+        support_claim_path: Path,
+        evidence_manifest_path: Path,
+        enforce_catalog_binding: bool,
+        comparator_registry_path: Path | None = None,
+    ):
+        del config_id, enforce_catalog_binding
+        if comparator_registry_path is None:
+            return {
+                "ok": False,
+                "errors": ["C4 candidate validation omitted the candidate registry"],
+            }
+        candidate_paths = (
+            repo_root,
+            freeze_manifest_path,
+            support_claim_path,
+            evidence_manifest_path,
+            comparator_registry_path,
+        )
+        candidate_root = output_root.resolve()
+        if any(not path.resolve().is_relative_to(candidate_root) for path in candidate_paths):
+            return {
+                "ok": False,
+                "errors": ["C4 candidate validation escaped the scratch checkout"],
+            }
+        if comparator_registry_path.read_bytes() != canonical_registry.read_bytes():
+            return {
+                "ok": False,
+                "errors": ["C4 candidate comparator registry bytes changed"],
+            }
+        support_path = support_claim_path
+        manifest_path = evidence_manifest_path
+        candidate_freeze = freeze_manifest_path
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         support_artifact = next(
             item
@@ -134,7 +167,7 @@ def test_build_lane_validates_fresh_candidate_bytes_before_promotion(
             declared == actual for declared, actual in expected_hashes.items()
         )
         return {
-            "ok": current,
+            "ok": current and candidate_freeze.is_file(),
             "errors": [] if current else ["PIN_STALE"],
         }
 
