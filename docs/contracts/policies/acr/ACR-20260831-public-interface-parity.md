@@ -145,3 +145,7 @@ remains with the permission owner. No permission API or default policy changes.
 ### W9 exact Python world-mask type
 
 `WorldFieldMask.paths` is the fixed ordered tuple `("/occurred_at", "/timestamp")`, matching AM29, the canonical schema and the TypeScript tuple. The prior list annotation admitted incomplete, reordered and duplicated paths. A clean mypy consumer accepted an incomplete mask before correction and rejects it afterward; the valid tuple type-checks and serializes to the unchanged JSON array. No new operation, schema or runtime owner.
+
+### W9 live replay completeness
+
+Retained-state refresh no longer copies a cold loader's partial-history marker onto the live event buffer. An unchanged durable head preserves local completeness; a changed head marks a replay gap. A replacement registry still reports partial history when it lacks the stream. The registry consumer regression checks fresh reads, listing and a foreign head advance. The TUI's rejection of partial history without a cursor remains unchanged.

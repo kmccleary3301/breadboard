@@ -232,3 +232,41 @@ async def test_reward_summary_survives_refresh_and_registry_replacement(
     replaced = await replacement.get(session_id)
     assert replaced is not None
     assert replaced.to_summary().reward_summary == reward_summary
+
+
+@pytest.mark.asyncio
+async def test_live_replay_survives_refresh_without_hiding_foreign_head(
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "session-state"
+    registry = SessionRegistry(state_root)
+    record = await registry.create(
+        SessionRecord(session_id="live-replay", status=SessionStatus.RUNNING)
+    )
+    first = SessionEvent(
+        EventType.WARNING, record.session_id, {"message": "ready"}, event_id="event-1"
+    )
+    await registry.persist(record, cursor_event=first)
+    record.event_log.append(first)
+
+    refreshed = await registry.get(record.session_id)
+    assert refreshed is not None
+    assert refreshed.to_summary().retained_history == "complete"
+    assert (await registry.list())[0].retained_history == "complete"
+
+    replacement = SessionRegistry(state_root)
+    reloaded = await replacement.get(record.session_id)
+    assert reloaded is not None
+    assert reloaded.to_summary().retained_history == "partial"
+    second = SessionEvent(
+        EventType.WARNING, record.session_id, {"message": "remote"}, event_id="event-2"
+    )
+    await replacement.persist(reloaded, cursor_event=second)
+
+    refreshed = await registry.get(record.session_id)
+    assert refreshed is not None
+    snapshot = refreshed.to_summary()
+    assert snapshot.retained_history == "partial"
+    assert snapshot.head_sequence == 2
+    assert snapshot.head_event_id == "event-2"
+    assert snapshot.earliest_retained_sequence == 1
