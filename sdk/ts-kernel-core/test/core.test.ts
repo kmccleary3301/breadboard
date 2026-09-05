@@ -865,10 +865,32 @@ test("kernel core can execute a driver-mediated trusted-local tool turn", async 
   assert.equal(result.driverId, "local-process")
   assert.equal(result.executionPlacement.placement_class, "local_process")
   assert.equal(result.sandboxRequest.placement_class, "local_process")
+  assert.equal(result.sandboxRequest.network_policy, null)
   assert.equal(result.sandboxResult.status, "completed")
   assert.equal(result.evidenceExpectation.require_evidence_refs, true)
   assert.equal(result.sideEffectExpectation.filesystem_scope, "workspace_scoped")
   assert.equal(result.transcript.items[1]?.kind, "tool_result")
+})
+
+test("kernel core executes the default unrestricted local process path", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-driver-local-default-network",
+    entry_mode: "interactive",
+    task: "Run a local command without a network policy.",
+    workspace_root: "/tmp",
+  } as const
+
+  const result = await executeDriverMediatedToolTurn(request, {
+    sessionId: "sess-driver-local-default-network",
+    toolName: "node",
+    command: [process.execPath, "-e", "process.stdout.write('local default ok')"],
+    workspaceRef: "/tmp",
+    allowRunPrograms: [process.execPath],
+  })
+
+  assert.equal(result.sandboxRequest.network_policy, null)
+  assert.equal(result.sandboxResult.status, "completed")
 })
 
 test("kernel core can execute a driver-mediated OCI tool turn", async () => {
@@ -1455,6 +1477,44 @@ test("createKernelExecutionWorld with executeSandbox observes cancellation or de
   assert.equal(result.livenessEvidence.terminationObserved, true)
 })
 
+test("kernel override retains rejected execution until world termination cleanup", async () => {
+  let receivedSignal: AbortSignal | undefined
+  const world = createKernelExecutionWorld({
+    executeSandbox: async (_request, context) => {
+      receivedSignal = context.signal
+      throw new Error("override rejected after launch")
+    },
+  })
+
+  const result = await world.execute({
+    kind: "sandbox",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-override-rejected-after-launch",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place-override-rejected-after-launch",
+      placement_class: "local_process",
+      runtime_id: "local",
+      capability_id: "cap-override-rejected-after-launch",
+    },
+    requestId: "req-override-rejected-after-launch",
+    command: ["sleep", "60"],
+    terminationGraceMs: 50,
+  })
+
+  assert.equal(result.kind, "sandbox")
+  assert.equal(result.sandboxResult?.status, "failed")
+  assert.equal(receivedSignal?.aborted, true)
+  assert.equal(result.livenessEvidence.terminationRequested, true)
+  assert.equal(result.livenessEvidence.terminationObserved, true)
+})
+
 test("createKernelExecutionWorld with stubborn executeSandbox override marks terminationObserved false when override ignores signal", async () => {
   const world = createKernelExecutionWorld({
     executeSandbox: async () => {
@@ -1686,7 +1746,79 @@ test("createKernelExecutionWorld with executeSandbox override advertises and exe
   assert.ok(injectedCalled, "injected executeSandbox was called for remote placement")
   assert.equal(result.sandboxResult.status, "completed")
   assert.equal(result.driverId, "remote")
+  const fallback = await executeDriverMediatedToolTurn(
+    { ...request, request_id: "run-ray-hint-fallback-1" },
+    {
+      sessionId: "sess-ray-hint-fallback-1",
+      toolName: "remote_tool",
+      command: ["python", "-c", "print('remote fallback')"],
+      isolationClass: "remote_service",
+      securityTier: "multi_tenant",
+      driverIdHint: "ray",
+      executionWorld: world,
+    },
+  )
+  assert.equal(fallback.driverId, "remote")
+  assert.equal(
+    fallback.executionPlacement.runtime_id,
+    "breadboard.ts-execution-driver-remote",
+  )
 })
+
+
+test("createKernelExecutionWorld registers configured Ray and Slurm drivers", () => {
+  const capability = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap:scheduled-world",
+    security_tier: "multi_tenant",
+    isolation_class: "remote_service",
+    secret_mode: "ref_only",
+    evidence_mode: "replay_strict",
+  } as const
+  const backend = {
+    backendId: "configured-scheduler",
+    async submit() {
+      return { executionId: "configured-1" }
+    },
+    async observe() {
+      return { state: "running" as const }
+    },
+    async cancel() {},
+  }
+  const registration = {
+    backend,
+    options: {
+      recordEvidence() {},
+    },
+  }
+  const rayWorld = createKernelExecutionWorld({ ray: registration })
+  const slurmWorld = createKernelExecutionWorld({ slurm: registration })
+
+  assert.equal(rayWorld.select({
+    capability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place:ray:configured",
+      placement_class: "delegated_python",
+      runtime_id: "ray",
+      capability_id: capability.capability_id,
+    },
+    driverIdHint: "ray",
+  }).driverId, "ray")
+  assert.equal(slurmWorld.select({
+    capability,
+    placement: {
+      schema_version: "bb.execution_placement.v1",
+      placement_id: "place:slurm:configured",
+      placement_class: "remote_worker",
+      runtime_id: "slurm",
+      capability_id: capability.capability_id,
+    },
+    driverIdHint: "slurm",
+  }).driverId, "slurm")
+})
+
+
 
 test("executeDriverMediatedToolTurn preserves image_ref, workspace_ref, and observable refs in tool call, outcome, and render", async () => {
   const request = {

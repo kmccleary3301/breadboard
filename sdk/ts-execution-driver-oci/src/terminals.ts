@@ -19,6 +19,7 @@ import type {
   TerminalSessionStartInputV1,
   TerminalSessionStartResultV1,
 } from "@breadboard/execution-drivers"
+import { assertExecutionProgramAllowed } from "@breadboard/execution-drivers"
 
 export interface OciTerminalSessionAdapterStartInput {
   readonly descriptor: TerminalSessionDescriptorV1
@@ -108,6 +109,9 @@ export class OciTerminalSessionManager {
     private readonly terminationGraceMs: number = 2000,
   ) {}
   async startSession(input: TerminalSessionStartInputV1): Promise<TerminalSessionStartResultV1> {
+    if (input.capability) {
+      assertExecutionProgramAllowed(input.capability, input.command)
+    }
     if (typeof this.adapter.cleanupSessions !== "function") {
       throw new Error("OCI terminal adapter must support cleanupSessions before launching terminal sessions")
     }

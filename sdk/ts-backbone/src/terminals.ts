@@ -251,6 +251,7 @@ function createTerminalSessionView(options: {
 
 function buildTerminalCapability(input: {
   profileId: ExecutionProfileId
+  command?: string[]
   terminalSessionId: string
   workspace: Workspace
 }): ExecutionCapabilityV1 {
@@ -265,7 +266,7 @@ function buildTerminalCapability(input: {
       allow_read_paths: [],
       allow_write_paths: [],
       allow_net_hosts: [],
-      allow_run_programs: [],
+      allow_run_programs: input.command?.length ? [input.command[0]!] : [],
       allow_env_keys: [],
       secret_mode: "ref_only",
       tty_mode: "optional",
@@ -282,7 +283,7 @@ function buildTerminalCapability(input: {
       allow_read_paths: sharedPaths,
       allow_write_paths: sharedPaths,
       allow_net_hosts: [],
-      allow_run_programs: [],
+      allow_run_programs: input.command?.length ? [input.command[0]!] : [],
       allow_env_keys: [],
       secret_mode: "ref_only",
       tty_mode: "optional",
@@ -298,7 +299,7 @@ function buildTerminalCapability(input: {
     allow_read_paths: sharedPaths,
     allow_write_paths: sharedPaths,
     allow_net_hosts: [],
-    allow_run_programs: [],
+    allow_run_programs: input.command?.length ? [input.command[0]!] : [],
     allow_env_keys: [],
     secret_mode: "ref_only",
     tty_mode: "optional",
@@ -542,6 +543,7 @@ export function createBackboneTerminalApi(options: {
         workspace: options.workspace,
         profileId: executionProfileId,
         terminalSessionId,
+        command: input.command,
       })
       const placement = chooseTerminalPlacement(capability, executionProfileId)
       const startInput: TerminalSessionStartInputV1 = {

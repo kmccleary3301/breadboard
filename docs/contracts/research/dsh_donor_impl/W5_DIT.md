@@ -162,6 +162,8 @@ Design 2 (`@breadboard/execution-drivers` shared execution-world owner) is selec
   - Local process: `makeTrustedLocalExecutionDriver` (`@breadboard/execution-driver-local`)
   - OCI container: `makeConfiguredOciExecutionDriver` (`@breadboard/execution-driver-oci`)
   - Remote worker: `makeRemoteExecutionDriver` (`@breadboard/execution-driver-remote`)
+  - Ray actor: `makeRayExecutionDriver` over `ScheduledExecutionBackendV1` narrow host bridge (`@breadboard/execution-driver-remote`)
+  - Slurm: `makeSlurmExecutionDriver` + `makeSshSlurmBackend` with durable idempotent request receipts, direct `sbatch --parsable`, `squeue`/`sacct` observation, ambiguous-ack recovery, and `scancel` lifecycle (`@breadboard/execution-driver-remote`)
 - **Migrated Callers**:
   - `sdk/ts-kernel-core/src/turns.ts:executeDriverMediatedToolTurn`
   - `sdk/ts-kernel-core/src/default-world.ts:createKernelExecutionWorld`
@@ -183,10 +185,36 @@ Design 2 (`@breadboard/execution-drivers` shared execution-world owner) is selec
 - `sdk/ts-execution-driver-local/src/index.ts:94-172` and `src/terminals.ts:73-272` — real local execution and terminal adapter semantics.
 - `sdk/ts-execution-driver-oci/src/index.ts:66-211` and `src/terminals.ts:92-217` — real OCI request/runtime and terminal adapter semantics.
 - `sdk/ts-execution-driver-remote/src/index.ts:130-215` and `src/terminals.ts:87-292` — real remote HTTP timeout/error and terminal adapter semantics.
+- `sdk/ts-execution-driver-remote/src/scheduled.ts` — scheduled-backend lifecycle, Ray/Slurm registration, bounded polling, result validation, and confirmed cancellation.
+- `sdk/ts-execution-driver-remote/src/slurm.ts` — DSH-owned SSH Slurm submission, terminal scheduler observation, evidence references, and cancellation.
+- `docs/contracts/research/dsh_donor_impl/W5_REMOTE.md` — exact pre-registered world mask; only `/occurred_at` and `/timestamp` may differ.
 - `breadboard/product/cli/harness.py:89-237` — installed lock/session caller, ordered event consumption, and `OperationResult` failure boundaries.
 - `breadboard/product/runtime/events.py:28-95,143-237` — durable JSONL sink, event transition validation, Session read model, and lifecycle owner.
 - `breadboard/sandbox.py:34-75,310-475,698-738` — Ray local actor, timeout/process-group cleanup, and constructor/selector path.
 - `breadboard/sandbox_docker.py:28-86,340-509` — Ray Docker actor, network/image/mount policy, timeout, and `--rm` runtime invocation.
 - `breadboard/sandbox_driver.py:13-107` — explicit process/Docker actor selection and typed selector failures.
-- `breadboard/rl/phase3/scheduler.py:10-58` — Slurm spec, parsable submission receipt, and weak output-file collection contract.
-- `scripts/rl_phase5/run_f3_target_episode.py:3178-3285` — target Slurm identity checks and setup-failure evidence/cleanup boundaries.
+
+## W5.4 Four-world execution proof
+
+One fixed unrestricted `SandboxRequestV1`
+(`req:dsh:world:equivalence-v5`, `network_policy: null`) printed
+`breadboard-dsh-world-v1` through the actual local process,
+cached `python:3.11-alpine` OCI container, local Ray actor, and remote Slurm
+adapters. Explicit network policies take only backends that can enforce them;
+the Slurm backend rejects rather than silently weakening one. All four returned
+the same provider-neutral `SandboxResultV1`: completed status, exit code zero,
+stdout
+`sha256:c0041fd90663154e18cf02d322869f9c04d2014c1f9b3b165dbdb5c3a2b1c795`,
+empty stderr, and side-effect/evidence digest
+`sha256:9ff5cd6be759737fa1ba8d5918b62b3f942c38ad4485970af3a0b29e1cfea24a`.
+The user-specific local content-addressed store resolved the stdout and stderr
+digests after each run, so these references are retained artifacts rather than
+labels.
+
+Provider-specific proof stayed outside that result. The Ray callback recorded
+accepted, running, and completed observations for bridge process `75213`,
+actor `4e22ed7a696bdacf9608d90701000000`, and node
+`4fbaf175b1c0e652fe44839be508996df8e89bba0d3880ab6e07d2e2`. The Slurm
+callback recorded job `38510` completing on `cnode-183`, with its owner-only
+receipt, exact encoded submission command, launch log, stdout, and stderr
+retained under `/shared/breadboard-dsh-world`.

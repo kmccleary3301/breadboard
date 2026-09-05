@@ -7,7 +7,17 @@ Current scope:
 - remote sandbox-request construction
 - adapter-driven remote execution boundary
 - fetch-backed HTTP execution adapter for delegated sandbox requests
-- timeout/error-envelope handling for delegated HTTP execution
+- scheduled execution lifecycle (`submit`, `observe`, `cancel`) with bounded polling
+- Ray host-bridge driver registration
+- direct SSH Slurm submission with durable request receipts, `squeue`/`sacct`
+  observation, ambiguous-ack recovery, and `scancel` cleanup
+- configurable per-stream output bounds, enforced remotely before evidence reads
+- timeout/error-envelope handling for delegated execution
 - explicit non-claim of direct sandbox implementation
 
-This package exists so delegated execution remains behind the shared execution-driver contract rather than leaking backend-specific request shapes into the kernel.
+Provider IDs, scheduler state, and backend artifact locations are emitted only
+through the external evidence callback. Kernel and Product Session payloads
+receive content-addressed, provider-neutral `SandboxResultV1` data.
+
+This package exists so delegated execution remains behind the shared execution-driver
+contract rather than leaking backend-specific request shapes into the kernel.

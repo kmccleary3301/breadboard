@@ -1,8 +1,5 @@
-import { createHash } from "node:crypto"
-import { mkdtemp, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import { spawn } from "node:child_process"
+import { constants as osConstants } from "node:os"
 
 import type {
   ExecutionCapabilityV1,
@@ -11,7 +8,13 @@ import type {
   SandboxResultV1,
 } from "@breadboard/kernel-contracts"
 import type { TerminalSessionDriverV1 } from "@breadboard/execution-drivers"
-import { isPlacementCompatible } from "@breadboard/execution-drivers"
+import {
+  buildAndPersistCanonicalSandboxEvidence,
+  canonicalProcessExitCode,
+  assertExecutionProgramAllowed,
+  canonicalSandboxArtifactRoot,
+  isPlacementCompatible,
+} from "@breadboard/execution-drivers"
 import { LocalTerminalSessionManager, trustedLocalTerminalSessionDriver } from "./terminals.js"
 
 export function buildLocalProcessSandboxRequest(input: {
@@ -20,6 +23,7 @@ export function buildLocalProcessSandboxRequest(input: {
   command: string[]
   workspaceRef?: string | null
 }): SandboxRequestV1 {
+  assertExecutionProgramAllowed(input.capability, input.command)
   return {
     schema_version: "bb.sandbox_request.v1",
     request_id: input.requestId,
@@ -30,7 +34,9 @@ export function buildLocalProcessSandboxRequest(input: {
     image_ref: null,
     snapshot_ref: null,
     command: [input.command[0] ?? "", ...input.command.slice(1)],
-    network_policy: { allow: input.capability.allow_net_hosts ?? [] },
+    network_policy: input.capability.allow_net_hosts === undefined
+      ? null
+      : { allow: input.capability.allow_net_hosts },
     secret_refs: [],
     timeout_seconds: null,
     evidence_mode: input.capability.evidence_mode,
@@ -57,19 +63,20 @@ export function defaultLocalCommandExecutor(input: {
 }): Promise<LocalCommandExecutionResult> {
   return new Promise((resolve, reject) => {
     let killed = false
+    let spawnFailed = false
     const isPosix = process.platform !== "win32"
     const child = spawn(input.command[0]!, input.command.slice(1), {
       cwd: input.cwd ?? undefined,
       stdio: ["ignore", "pipe", "pipe"],
       detached: isPosix,
     })
-    let stdout = ""
-    let stderr = ""
-    child.stdout?.on("data", (chunk) => {
-      stdout += String(chunk)
+    const stdoutChunks: Buffer[] = []
+    const stderrChunks: Buffer[] = []
+    child.stdout?.on("data", (chunk: Buffer) => {
+      stdoutChunks.push(Buffer.from(chunk))
     })
-    child.stderr?.on("data", (chunk) => {
-      stderr += String(chunk)
+    child.stderr?.on("data", (chunk: Buffer) => {
+      stderrChunks.push(Buffer.from(chunk))
     })
     let abortListener: (() => void) | null = null
     const removeAbortListener = () => {
@@ -80,14 +87,19 @@ export function defaultLocalCommandExecutor(input: {
     }
     child.on("error", (err) => {
       removeAbortListener()
-      if (!killed) reject(err)
+      if (!killed) {
+        spawnFailed = true
+        reject(err)
+      }
     })
-    child.on("close", (exitCode) => {
+    child.on("close", (exitCode, signal) => {
+      if (spawnFailed) return
       removeAbortListener()
+      const signalNumber = signal === null ? null : osConstants.signals[signal]
       resolve({
-        exitCode: exitCode ?? 1,
-        stdout,
-        stderr,
+        exitCode: canonicalProcessExitCode(exitCode, signalNumber) ?? 1,
+        stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+        stderr: Buffer.concat(stderrChunks).toString("utf8"),
       })
     })
 
@@ -138,19 +150,6 @@ function isDeadlineAbort(signal?: AbortSignal): boolean {
       (reason.name === "TimeoutError" || reason.message.toLowerCase().includes("deadline")))
   )
 }
-function buildLocalSideEffectDigest(request: SandboxRequestV1, result: LocalCommandExecutionResult): string {
-  return `sha256:${createHash("sha256")
-    .update(
-      JSON.stringify({
-        request_id: request.request_id,
-        placement_class: request.placement_class,
-        command: request.command,
-        workspace_ref: request.workspace_ref,
-        exit_code: result.exitCode,
-      }),
-    )
-    .digest("hex")}`
-}
 export async function executeLocalProcessSandboxRequest(
   request: SandboxRequestV1,
   options: {
@@ -159,6 +158,11 @@ export async function executeLocalProcessSandboxRequest(
     signal?: AbortSignal
   } = {},
 ): Promise<SandboxResultV1> {
+  if (request.network_policy !== null && request.network_policy !== undefined) {
+    throw new Error(
+      "trusted local process cannot enforce the requested network policy",
+    )
+  }
   const executeCommand = options.commandExecutor ?? defaultLocalCommandExecutor
   const cwd = request.workspace_ref && request.workspace_ref.startsWith("/") ? request.workspace_ref : null
   const preAborted = options.signal?.aborted === true
@@ -176,11 +180,6 @@ export async function executeLocalProcessSandboxRequest(
       })
   const isAborted = preAborted || options.signal?.aborted === true
   const isDeadline = deadlineBeforeExecution || isDeadlineAbort(options.signal)
-  const captureDir = await mkdtemp(join(options.tempDirRoot ?? tmpdir(), "breadboard-local-exec-"))
-  const stdoutPath = join(captureDir, "stdout.log")
-  const stderrPath = join(captureDir, "stderr.log")
-  await writeFile(stdoutPath, result.stdout, "utf8")
-  await writeFile(stderrPath, result.stderr, "utf8")
   const status: SandboxResultV1["status"] = isAborted
     ? isDeadline
       ? "timed_out"
@@ -188,29 +187,28 @@ export async function executeLocalProcessSandboxRequest(
     : result.exitCode === 0
       ? "completed"
       : "failed"
+  const errorReason = status === "timed_out"
+    ? "execution_timed_out"
+    : status === "cancelled"
+      ? "execution_cancelled"
+      : "execution_failed"
+  const artifactRoot = options.tempDirRoot === undefined
+    ? undefined
+    : canonicalSandboxArtifactRoot(options.tempDirRoot)
+  const evidence = await buildAndPersistCanonicalSandboxEvidence({
+    command: request.command,
+    status,
+    exitCode: result.exitCode,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    evidenceMode: request.evidence_mode,
+  }, artifactRoot)
   return {
     schema_version: "bb.sandbox_result.v1",
     request_id: request.request_id,
     status,
-    placement_id: `local-process:${request.request_id}`,
-    stdout_ref: `file://${stdoutPath}`,
-    stderr_ref: `file://${stderrPath}`,
-    artifact_refs: [],
-    side_effect_digest: buildLocalSideEffectDigest(request, result),
-    usage: { exit_code: result.exitCode },
-    evidence_refs: [],
-    error: isAborted
-      ? {
-          message: isDeadline ? "Local process exceeded its deadline" : "Execution was cancelled",
-          reason: isDeadline ? "deadline_exceeded" : "execution_cancelled",
-          exit_code: result.exitCode,
-        }
-      : result.exitCode === 0
-        ? null
-        : {
-            message: `Local process exited with code ${result.exitCode}`,
-            exit_code: result.exitCode,
-          },
+    ...evidence,
+    error: status === "completed" ? null : { reason: errorReason },
   }
 }
 
@@ -219,6 +217,8 @@ export function makeTrustedLocalExecutionDriver(commandExecutor?: LocalCommandEx
   interface ActiveLocalExecution {
     controller: AbortController
     completion: Promise<SandboxResultV1>
+    cleanup: () => void
+    detach: () => void
   }
   const activeExecutions = new Map<string, ActiveLocalExecution>()
   return {
@@ -241,6 +241,11 @@ export function makeTrustedLocalExecutionDriver(commandExecutor?: LocalCommandEx
       })
     },
     execute(request, context) {
+      if (activeExecutions.has(request.request_id)) {
+        return Promise.reject(
+          new Error(`Local execution request '${request.request_id}' is already active`),
+        )
+      }
       const controller = new AbortController()
       const forwardAbort = () => controller.abort(context?.signal.reason)
       if (context?.signal) {
@@ -254,34 +259,46 @@ export function makeTrustedLocalExecutionDriver(commandExecutor?: LocalCommandEx
         commandExecutor,
         signal: controller.signal,
       })
+      const detach = () => context?.signal.removeEventListener("abort", forwardAbort)
+      const cleanup = () => {
+        if (activeExecutions.get(request.request_id)?.controller === controller) {
+          activeExecutions.delete(request.request_id)
+        }
+        detach()
+      }
       activeExecutions.set(request.request_id, {
         controller,
         completion: executionPromise,
+        cleanup,
+        detach,
       })
-      return executionPromise.finally(() => {
-        activeExecutions.delete(request.request_id)
-        context?.signal.removeEventListener("abort", forwardAbort)
+      return executionPromise.then((result) => {
+        cleanup()
+        return result
       })
     },
     async terminate(request, context) {
       const active = activeExecutions.get(request.request_id)
       if (!active) return
       active.controller.abort(context.reason)
+      active.detach()
       let timer: ReturnType<typeof setTimeout> | undefined
-      const timeout = new Promise<false>((resolve) => {
-        timer = setTimeout(() => resolve(false), 2000)
+      const timeout = new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), 2000)
       })
       try {
-        const terminationObserved = await Promise.race([
+        const settled = await Promise.race([
           active.completion.then(
-            () => true,
-            () => true,
+            (result) => ({ result }),
+            () => ({ result: undefined }),
           ),
           timeout,
         ])
-        if (!terminationObserved) {
+        if (settled === null) {
           throw new Error("Local process termination was not observed within 2000ms")
         }
+        active.cleanup()
+        return settled.result
       } finally {
         clearTimeout(timer)
       }

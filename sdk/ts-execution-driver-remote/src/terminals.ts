@@ -18,6 +18,7 @@ import type {
   TerminalSessionStartInputV1,
   TerminalSessionStartResultV1,
 } from "@breadboard/execution-drivers"
+import { assertExecutionProgramAllowed } from "@breadboard/execution-drivers"
 
 export interface RemoteTerminalExecutionHttpOptions {
   readonly endpointUrl: string
@@ -153,6 +154,9 @@ export class RemoteTerminalSessionManager {
   }
 
   async startSession(input: TerminalSessionStartInputV1): Promise<TerminalSessionStartResultV1> {
+    if (input.capability) {
+      assertExecutionProgramAllowed(input.capability, input.command)
+    }
     if (this.sessions.has(input.terminalSessionId)) {
       throw new Error(`Remote terminal session already active: ${input.terminalSessionId}`)
     }

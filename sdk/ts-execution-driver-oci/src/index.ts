@@ -1,8 +1,6 @@
 import { createHash } from "node:crypto"
-import { mkdtemp, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import { spawn } from "node:child_process"
+import { constants as osConstants } from "node:os"
 
 import type {
   ExecutionCapabilityV1,
@@ -11,7 +9,13 @@ import type {
   SandboxResultV1,
 } from "@breadboard/kernel-contracts"
 import type { TerminalSessionDriverV1 } from "@breadboard/execution-drivers"
-import { isPlacementCompatible } from "@breadboard/execution-drivers"
+import {
+  buildAndPersistCanonicalSandboxEvidence,
+  canonicalProcessExitCode,
+  assertExecutionProgramAllowed,
+  canonicalSandboxArtifactRoot,
+  isPlacementCompatible,
+} from "@breadboard/execution-drivers"
 import { makeOciTerminalSessionDriver, type OciTerminalSessionAdapter } from "./terminals.js"
 
 export function chooseOciPlacement(
@@ -34,6 +38,7 @@ export function buildOciSandboxRequest(input: {
   workspaceRef?: string | null
   imageRef: string
 }): SandboxRequestV1 {
+  assertExecutionProgramAllowed(input.capability, input.command)
   return {
     schema_version: "bb.sandbox_request.v1",
     request_id: input.requestId,
@@ -44,7 +49,9 @@ export function buildOciSandboxRequest(input: {
     image_ref: input.imageRef,
     snapshot_ref: null,
     command: [input.command[0] ?? "", ...input.command.slice(1)],
-    network_policy: { allow: input.capability.allow_net_hosts ?? [] },
+    network_policy: input.capability.allow_net_hosts === undefined
+      ? null
+      : { allow: input.capability.allow_net_hosts },
     secret_refs: [],
     timeout_seconds: null,
     evidence_mode: input.capability.evidence_mode,
@@ -88,6 +95,13 @@ export function buildOciRuntimeInvocation(
   } else if (request.placement_class === "local_oci_kata") {
     runtimeArgs.push("--runtime=io.containerd.kata.v2")
   }
+  if (request.network_policy !== null && request.network_policy !== undefined) {
+    const allowedHosts = request.network_policy["allow"]
+    if (!Array.isArray(allowedHosts) || allowedHosts.length !== 0) {
+      throw new Error("OCI backend cannot enforce a network host allowlist")
+    }
+    runtimeArgs.push("--network=none")
+  }
   const mountTarget = options.workspaceMountTarget ?? "/workspace"
   if (request.workspace_ref && request.workspace_ref.startsWith("/")) {
     runtimeArgs.push("-v", `${request.workspace_ref}:${mountTarget}`)
@@ -105,18 +119,19 @@ export function defaultOciCommandExecutor(input: {
 }): Promise<OciCommandExecutionResult> {
   return new Promise((resolve, reject) => {
     let killed = false
+    let spawnFailed = false
     const isPosix = process.platform !== "win32"
     const child = spawn(input.runtimeCommand, input.runtimeArgs, {
       stdio: ["ignore", "pipe", "pipe"],
       detached: isPosix,
     })
-    let stdout = ""
-    let stderr = ""
-    child.stdout?.on("data", (chunk) => {
-      stdout += String(chunk)
+    const stdoutChunks: Buffer[] = []
+    const stderrChunks: Buffer[] = []
+    child.stdout?.on("data", (chunk: Buffer) => {
+      stdoutChunks.push(Buffer.from(chunk))
     })
-    child.stderr?.on("data", (chunk) => {
-      stderr += String(chunk)
+    child.stderr?.on("data", (chunk: Buffer) => {
+      stderrChunks.push(Buffer.from(chunk))
     })
     let abortListener: (() => void) | null = null
     const removeAbortListener = () => {
@@ -127,14 +142,19 @@ export function defaultOciCommandExecutor(input: {
     }
     child.on("error", (err) => {
       removeAbortListener()
-      if (!killed) reject(err)
+      if (!killed) {
+        spawnFailed = true
+        reject(err)
+      }
     })
-    child.on("close", (exitCode) => {
+    child.on("close", (exitCode, signal) => {
+      if (spawnFailed) return
       removeAbortListener()
+      const signalNumber = signal === null ? null : osConstants.signals[signal]
       resolve({
-        exitCode: exitCode ?? 1,
-        stdout,
-        stderr,
+        exitCode: canonicalProcessExitCode(exitCode, signalNumber) ?? 1,
+        stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+        stderr: Buffer.concat(stderrChunks).toString("utf8"),
       })
     })
 
@@ -176,20 +196,6 @@ export function defaultOciCommandExecutor(input: {
   })
 }
 
-function buildOciSideEffectDigest(request: SandboxRequestV1, result: OciCommandExecutionResult): string {
-  return `sha256:${createHash("sha256")
-    .update(
-      JSON.stringify({
-        request_id: request.request_id,
-        placement_class: request.placement_class,
-        image_ref: request.image_ref,
-        command: request.command,
-        workspace_ref: request.workspace_ref,
-        exit_code: result.exitCode,
-      }),
-    )
-    .digest("hex")}`
-}
 
 function isDeadlineAbort(signal?: AbortSignal): boolean {
   if (!signal?.aborted) return false
@@ -232,11 +238,6 @@ export async function executeOciSandboxRequest(
         runtimeArgs: invocation.runtimeArgs,
         signal: options.signal,
       })
-  const captureDir = await mkdtemp(join(options.tempDirRoot ?? tmpdir(), "breadboard-oci-exec-"))
-  const stdoutPath = join(captureDir, "stdout.log")
-  const stderrPath = join(captureDir, "stderr.log")
-  await writeFile(stdoutPath, result.stdout, "utf8")
-  await writeFile(stderrPath, result.stderr, "utf8")
   const isAborted = preAborted || options.signal?.aborted === true
   const isDeadline = deadlineBeforeExecution || isDeadlineAbort(options.signal)
   const status: SandboxResultV1["status"] = isAborted
@@ -246,29 +247,28 @@ export async function executeOciSandboxRequest(
     : result.exitCode === 0
       ? "completed"
       : "failed"
+  const errorReason = status === "timed_out"
+    ? "execution_timed_out"
+    : status === "cancelled"
+      ? "execution_cancelled"
+      : "execution_failed"
+  const artifactRoot = options.tempDirRoot === undefined
+    ? undefined
+    : canonicalSandboxArtifactRoot(options.tempDirRoot)
+  const evidence = await buildAndPersistCanonicalSandboxEvidence({
+    command: request.command,
+    status,
+    exitCode: result.exitCode,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    evidenceMode: request.evidence_mode,
+  }, artifactRoot)
   return {
     schema_version: "bb.sandbox_result.v1",
     request_id: request.request_id,
     status,
-    placement_id: `oci:${request.request_id}`,
-    stdout_ref: `file://${stdoutPath}`,
-    stderr_ref: `file://${stderrPath}`,
-    artifact_refs: [],
-    side_effect_digest: buildOciSideEffectDigest(request, result),
-    usage: { exit_code: result.exitCode, runtime: invocation.runtimeCommand },
-    evidence_refs: [],
-    error: isAborted
-      ? {
-          message: isDeadline ? "OCI runtime exceeded its deadline" : "Execution was cancelled",
-          reason: isDeadline ? "deadline_exceeded" : "execution_cancelled",
-          exit_code: result.exitCode,
-        }
-      : result.exitCode === 0
-        ? null
-        : {
-            message: `OCI runtime exited with code ${result.exitCode}`,
-            exit_code: result.exitCode,
-          },
+    ...evidence,
+    error: status === "completed" ? null : { reason: errorReason },
   }
 }
 
@@ -317,6 +317,8 @@ function createOciExecutionDriver(options: {
     completion: Promise<SandboxResultV1>
     containerName: string
     runtimeCommand: string
+    cleanup: () => void
+    detach: () => void
   }
   const activeExecutions = new Map<string, ActiveOciExecution>()
   return {
@@ -335,6 +337,11 @@ function createOciExecutionDriver(options: {
       return buildOciSandboxRequest({ requestId, capability, command, workspaceRef, imageRef })
     },
     execute(request, context) {
+      if (activeExecutions.has(request.request_id)) {
+        return Promise.reject(
+          new Error(`OCI execution request '${request.request_id}' is already active`),
+        )
+      }
       const controller = new AbortController()
       const forwardAbort = () => controller.abort(context?.signal.reason)
       if (context?.signal) {
@@ -353,15 +360,24 @@ function createOciExecutionDriver(options: {
         containerName,
         signal: controller.signal,
       })
+      const detach = () => context?.signal.removeEventListener("abort", forwardAbort)
+      const cleanup = () => {
+        if (activeExecutions.get(request.request_id)?.controller === controller) {
+          activeExecutions.delete(request.request_id)
+        }
+        detach()
+      }
       activeExecutions.set(request.request_id, {
         controller,
         completion: executionPromise,
         containerName,
         runtimeCommand,
+        cleanup,
+        detach,
       })
-      return executionPromise.finally(() => {
-        activeExecutions.delete(request.request_id)
-        context?.signal.removeEventListener("abort", forwardAbort)
+      return executionPromise.then((result) => {
+        cleanup()
+        return result
       })
     },
     async terminate(request, context) {
@@ -369,6 +385,7 @@ function createOciExecutionDriver(options: {
       if (!active) return
       const executor = options.commandExecutor ?? defaultOciCommandExecutor
       active.controller.abort(context.reason)
+      active.detach()
 
       // Step 1: Attempt graceful stop with fresh bounded signal
       const stopResult = await runBoundedCleanupCommand(
@@ -397,19 +414,21 @@ function createOciExecutionDriver(options: {
       )
 
       let timer: ReturnType<typeof setTimeout> | undefined
-      const completionObserved = await Promise.race([
+      const settled = await Promise.race([
         active.completion.then(
-          () => true,
-          () => true,
+          (result) => ({ result }),
+          () => ({ result: undefined }),
         ),
-        new Promise<false>((resolve) => {
-          timer = setTimeout(() => resolve(false), 2000)
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), 2000)
         }),
       ])
       clearTimeout(timer)
-      if (!completionObserved) {
+      if (settled === null) {
         throw new Error("OCI termination was not observed within 2000ms")
       }
+      active.cleanup()
+      return settled.result
     },
     ...(terminalDriver
       ? {

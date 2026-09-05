@@ -58,7 +58,9 @@ export function buildExecutionCapabilityFromRunRequest(
     isolation_class: options.isolationClass ?? "none",
     allow_read_paths: options.allowReadPaths ?? (request.workspace_root ? [request.workspace_root] : []),
     allow_write_paths: options.allowWritePaths ?? (request.workspace_root ? [request.workspace_root] : []),
-    allow_net_hosts: options.allowNetHosts ?? [],
+    ...(options.allowNetHosts === undefined
+      ? {}
+      : { allow_net_hosts: options.allowNetHosts }),
     allow_run_programs: options.allowRunPrograms ?? [],
     allow_env_keys: [],
     secret_mode: options.secretMode ?? "ref_only",

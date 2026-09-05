@@ -1,3 +1,7 @@
+import { createHash } from "node:crypto"
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { homedir, tmpdir } from "node:os"
+import { join } from "node:path"
 import test from "node:test"
 import assert from "node:assert/strict"
 import type {
@@ -13,16 +17,33 @@ import { makeConfiguredOciExecutionDriver } from "../../ts-execution-driver-oci/
 
 import {
   buildExecutionDriverEvidenceExpectation,
+  buildAndPersistCanonicalSandboxEvidence,
+  buildCanonicalSandboxSideEffectDigest,
   buildExecutionDriverSideEffectExpectation,
   buildExecutionDriverUnsupportedCase,
   buildPlannedExecution,
   createExecutionWorld,
+  canonicalProcessExitCode,
+  canonicalSandboxArtifactRoot,
+  canonicalSandboxArtifactUri,
+  persistCanonicalSandboxArtifact,
   isPlacementCompatible,
   selectTerminalSessionDriver,
   type ExecutionDriverV1,
   type ExecutionLivenessEvidenceV1,
   type TerminalSessionDriverV1,
 } from "../src/index.js"
+
+test("canonical process exit codes normalize POSIX signals", () => {
+  assert.equal(canonicalProcessExitCode(0, 0), 0)
+  assert.equal(canonicalProcessExitCode(0, 9), 137)
+  assert.equal(canonicalProcessExitCode(null, 15), 143)
+  assert.equal(canonicalProcessExitCode(null, null), null)
+  assert.throws(
+    () => canonicalProcessExitCode(null, -1),
+    /non-negative safe integer/,
+  )
+})
 
 test("execution driver helpers classify placement compatibility", () => {
   assert.equal(
@@ -150,6 +171,41 @@ test("execution driver helpers can build a planned execution record", () => {
   assert.equal(plan?.evidenceExpectation.require_evidence_refs, true)
 })
 
+test("planned execution rejects programs outside the capability allowlist", () => {
+  const capability: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-program-policy",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+    allow_run_programs: ["python"],
+  }
+  assert.throws(
+    () =>
+      buildPlannedExecution({
+        capability,
+        placement: {
+          schema_version: "bb.execution_placement.v1",
+          placement_id: "place-program-policy",
+          placement_class: "local_process",
+          runtime_id: "local",
+          capability_id: capability.capability_id,
+        },
+        drivers: [
+          {
+            driverId: "local",
+            supportedPlacements: ["local_process"],
+            supportsCapability: () => true,
+          },
+        ],
+        requestId: "req-program-policy",
+        command: ["node", "worker.js"],
+      }),
+    /program "node" is not allowed by capability cap-program-policy/,
+  )
+})
+
 test("execution driver helpers can select a terminal-capable driver", () => {
   const capability: ExecutionCapabilityV1 = {
     schema_version: "bb.execution_capability.v1",
@@ -249,6 +305,241 @@ test("execution world selects one adapter and never falls back after execution s
   assert.deepEqual(calls, ["local-process"])
   assert.equal(result.livenessEvidence?.executionStarted, true)
 })
+
+test("execution world rejects duplicate active request IDs before a second launch", async () => {
+  const capability: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-world-duplicate",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const placement: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-world-duplicate",
+    placement_class: "local_process",
+    runtime_id: "local",
+    capability_id: capability.capability_id,
+  }
+  let executeCalls = 0
+  let terminateCalls = 0
+  let resolveExecution: ((result: SandboxResultV1) => void) | undefined
+  const driver: TerminalSessionDriverV1 = {
+    driverId: "local-process",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    buildSandboxRequest: ({ requestId, capability: requestedCapability, command }) => ({
+      schema_version: "bb.sandbox_request.v1",
+      request_id: requestId,
+      capability_id: requestedCapability.capability_id,
+      placement_class: "local_process",
+      workspace_ref: null,
+      rootfs_ref: null,
+      image_ref: null,
+      snapshot_ref: null,
+      command: [command[0] ?? "", ...command.slice(1)],
+      network_policy: { allow: [] },
+      secret_refs: [],
+      timeout_seconds: null,
+      evidence_mode: requestedCapability.evidence_mode,
+      metadata: {},
+    }),
+    execute: (request) => {
+      executeCalls += 1
+      return new Promise<SandboxResultV1>((resolve) => {
+        resolveExecution = resolve
+      })
+    },
+    terminate: async () => {
+      terminateCalls += 1
+    },
+  }
+  const world = createExecutionWorld({ drivers: [driver] })
+  const operation = {
+    kind: "sandbox" as const,
+    capability,
+    placement,
+    requestId: "req-world-duplicate",
+    command: ["printf", "done"],
+  }
+
+  const first = world.execute(operation)
+  await assert.rejects(() => world.execute(operation), /already active/)
+  assert.equal(executeCalls, 1)
+  assert.equal(terminateCalls, 0)
+  resolveExecution?.({
+    schema_version: "bb.sandbox_result.v1",
+    request_id: operation.requestId,
+    status: "completed",
+    placement_id: placement.placement_id,
+    stdout_ref: null,
+    stderr_ref: null,
+    artifact_refs: [],
+    side_effect_digest: null,
+    evidence_refs: [],
+    usage: null,
+    error: null,
+  })
+  const completed = await first
+  assert.equal(completed.kind, "sandbox")
+  assert.equal(completed.sandboxResult?.status, "completed")
+})
+
+test("execution world retains timed-out request ID until termination settles", async () => {
+  const capability: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-world-unobserved-termination",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const placement: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-world-unobserved-termination",
+    placement_class: "local_process",
+    runtime_id: "local",
+    capability_id: capability.capability_id,
+  }
+  let resolveTermination: (() => void) | undefined
+  const driver: TerminalSessionDriverV1 = {
+    driverId: "local-process",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    buildSandboxRequest: ({ requestId, capability: requestedCapability, command }) => ({
+      schema_version: "bb.sandbox_request.v1",
+      request_id: requestId,
+      capability_id: requestedCapability.capability_id,
+      placement_class: "local_process",
+      workspace_ref: null,
+      rootfs_ref: null,
+      image_ref: null,
+      snapshot_ref: null,
+      command: [command[0] ?? "", ...command.slice(1)],
+      network_policy: { allow: [] },
+      secret_refs: [],
+      timeout_seconds: null,
+      evidence_mode: requestedCapability.evidence_mode,
+      metadata: {},
+    }),
+    execute: () => new Promise<SandboxResultV1>(() => {}),
+    terminate: () =>
+      new Promise<void>((resolve) => {
+        resolveTermination = resolve
+      }),
+  }
+  const world = createExecutionWorld({
+    drivers: [driver],
+    terminationGraceMs: 1,
+  })
+  const operation = {
+    kind: "sandbox" as const,
+    capability,
+    placement,
+    requestId: "req-world-unobserved-termination",
+    command: ["sleep", "60"],
+    deadlineMs: 1,
+  }
+
+  const timedOut = await world.execute(operation)
+  assert.equal(timedOut.kind, "sandbox")
+  assert.equal(timedOut.livenessEvidence.terminationObserved, false)
+  await assert.rejects(() => world.execute(operation), /already active/)
+
+  resolveTermination?.()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const preAborted = new AbortController()
+  preAborted.abort("cancelled")
+  const retry = await world.execute({
+    ...operation,
+    signal: preAborted.signal,
+  })
+  assert.equal(retry.kind, "sandbox")
+  assert.equal(retry.livenessEvidence.executionStarted, false)
+})
+
+test("execution world retains a timed-out request until an unterminated execution settles", async () => {
+  const capability: ExecutionCapabilityV1 = {
+    schema_version: "bb.execution_capability.v1",
+    capability_id: "cap-world-no-termination",
+    security_tier: "trusted_dev",
+    isolation_class: "process",
+    secret_mode: "ref_only",
+    evidence_mode: "minimal",
+  }
+  const placement: ExecutionPlacementV1 = {
+    schema_version: "bb.execution_placement.v1",
+    placement_id: "place-world-no-termination",
+    placement_class: "local_process",
+    runtime_id: "local",
+    capability_id: capability.capability_id,
+  }
+  let resolveExecution: ((result: SandboxResultV1) => void) | undefined
+  const driver: ExecutionDriverV1 = {
+    driverId: "unterminated",
+    supportedPlacements: ["local_process"],
+    supportsCapability: () => true,
+    buildSandboxRequest: ({ requestId, capability: requestedCapability, command }) => ({
+      schema_version: "bb.sandbox_request.v1",
+      request_id: requestId,
+      capability_id: requestedCapability.capability_id,
+      placement_class: "local_process",
+      workspace_ref: null,
+      rootfs_ref: null,
+      image_ref: null,
+      snapshot_ref: null,
+      command: [command[0] ?? "", ...command.slice(1)],
+      network_policy: null,
+      secret_refs: [],
+      timeout_seconds: null,
+      evidence_mode: requestedCapability.evidence_mode,
+      metadata: {},
+    }),
+    execute: () =>
+      new Promise<SandboxResultV1>((resolve) => {
+        resolveExecution = resolve
+      }),
+  }
+  const world = createExecutionWorld({ drivers: [driver] })
+  const operation = {
+    kind: "sandbox" as const,
+    capability,
+    placement,
+    requestId: "req-world-no-termination",
+    command: ["sleep", "60"],
+    deadlineMs: 1,
+  }
+
+  const timedOut = await world.execute(operation)
+  assert.equal(timedOut.kind, "sandbox")
+  if (timedOut.kind !== "sandbox") throw new Error("expected sandbox result")
+  assert.equal(timedOut.sandboxResult?.status, "timed_out")
+  assert.equal(timedOut.livenessEvidence.terminationObserved, false)
+  await assert.rejects(() => world.execute(operation), /already active/)
+
+  resolveExecution?.({
+    schema_version: "bb.sandbox_result.v1",
+    request_id: operation.requestId,
+    status: "completed",
+    placement_id: placement.placement_id,
+    stdout_ref: null,
+    stderr_ref: null,
+    artifact_refs: [],
+    side_effect_digest: null,
+    evidence_refs: [],
+    usage: null,
+    error: null,
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const preAborted = new AbortController()
+  preAborted.abort("cancelled")
+  const retry = await world.execute({ ...operation, signal: preAborted.signal })
+  assert.equal(retry.kind, "sandbox")
+  if (retry.kind !== "sandbox") throw new Error("expected sandbox result")
+  assert.equal(retry.livenessEvidence.executionStarted, false)
+})
+
 
 test("execution world enforces timeout notification and bounded adapter termination", async () => {
   let timeoutNotified = false
@@ -478,10 +769,7 @@ test("execution world exercises real local and OCI adapter paths with provider-n
     return rest
   }
 
-  assert.equal(localResult.sandboxResult?.status, ociResult.sandboxResult?.status)
-  assert.equal(localResult.sandboxResult?.request_id, ociResult.sandboxResult?.request_id)
-  assert.equal(localResult.sandboxResult?.error, ociResult.sandboxResult?.error)
-  assert.equal(localResult.sandboxResult?.usage?.exit_code, ociResult.sandboxResult?.usage?.exit_code)
+  assert.deepEqual(localResult.sandboxResult, ociResult.sandboxResult)
 
   // External liveness evidence is captured but separate from product payload
   assert.deepEqual(maskVolatileTimestamps(localResult.livenessEvidence), maskVolatileTimestamps(ociResult.livenessEvidence))
@@ -498,7 +786,7 @@ test("execution world handles synchronously and asynchronously throwing terminat
     security_tier: "trusted_dev",
     isolation_class: "process",
     secret_mode: "ref_only",
-    evidence_mode: "minimal",
+    evidence_mode: "replay_strict",
   }
   const placement: ExecutionPlacementV1 = {
     schema_version: "bb.execution_placement.v1",
@@ -534,13 +822,33 @@ test("execution world handles synchronously and asynchronously throwing terminat
         })
       })
     },
-    terminate: (_request, _context) => {
+    terminate: (request, _context) => {
       if (throwMode === "sync") {
         throw new Error("synchronous terminate failure")
       } else if (throwMode === "async") {
         return Promise.reject(new Error("asynchronous terminate failure"))
       } else {
-        return Promise.resolve()
+        const stdoutRef = `sha256:${"0".repeat(64)}`
+        const stderrRef = `sha256:${"1".repeat(64)}`
+        const sideEffectDigest = buildCanonicalSandboxSideEffectDigest({
+          command: request.command,
+          status: "cancelled",
+          exitCode: 143,
+          stdoutRef,
+          stderrRef,
+        })
+        return Promise.resolve({
+          schema_version: "bb.sandbox_result.v1",
+          request_id: request.request_id,
+          status: "cancelled",
+          stdout_ref: stdoutRef,
+          stderr_ref: stderrRef,
+          artifact_refs: [stdoutRef, stderrRef],
+          side_effect_digest: sideEffectDigest,
+          usage: { exit_code: 143 },
+          evidence_refs: [sideEffectDigest],
+          error: { reason: "execution_cancelled" },
+        })
       }
     },
   })
@@ -595,6 +903,18 @@ test("execution world handles synchronously and asynchronously throwing terminat
   assert.equal(successResult.livenessEvidence.state, "timed_out")
   assert.equal(successResult.livenessEvidence.terminationRequested, true)
   assert.equal(successResult.livenessEvidence.terminationObserved, true)
+  const translated = successResult.sandboxResult
+  assert.ok(translated?.stdout_ref)
+  assert.ok(translated?.stderr_ref)
+  const translatedDigest = buildCanonicalSandboxSideEffectDigest({
+    command: ["sleep", "10"],
+    status: "timed_out",
+    exitCode: 143,
+    stdoutRef: translated.stdout_ref,
+    stderrRef: translated.stderr_ref,
+  })
+  assert.equal(translated.side_effect_digest, translatedDigest)
+  assert.deepEqual(translated.evidence_refs, [translatedDigest])
 })
 
 test("execution world correctly normalizes cancelled status with distinct execution_cancelled reason", async () => {
@@ -5151,6 +5471,7 @@ test("execution world does not retain a session ID after an empty-command start 
     isolation_class: "process",
     secret_mode: "ref_only",
     evidence_mode: "minimal",
+    allow_run_programs: ["sh"],
   }
   const placement: ExecutionPlacementV1 = {
     schema_version: "bb.execution_placement.v1",
@@ -5189,6 +5510,15 @@ test("execution world does not retain a session ID after an empty-command start 
     placement,
     input: { terminalSessionId: "term-prelaunch-validation", command: [] },
   })
+  const disallowed = await world.execute({
+    kind: "terminal_start",
+    capability,
+    placement,
+    input: {
+      terminalSessionId: "term-prelaunch-validation",
+      command: ["node"],
+    },
+  })
   const accepted = await world.execute({
     kind: "terminal_start",
     capability,
@@ -5202,7 +5532,122 @@ test("execution world does not retain a session ID after an empty-command start 
   assert.equal(rejected.kind, "terminal_start")
   assert.equal(rejected.result, null)
   assert.equal(rejected.unsupportedCase?.reason_code, "terminal_start_failed")
+  assert.equal(disallowed.kind, "terminal_start")
+  assert.equal(disallowed.result, null)
+  assert.match(
+    disallowed.unsupportedCase?.summary ?? "",
+    /program "node" is not allowed/,
+  )
   assert.equal(accepted.kind, "terminal_start")
   assert.equal(accepted.result?.descriptor.terminal_session_id, "term-prelaunch-validation")
   assert.equal(startCalls, 1)
+})
+
+test("default sandbox artifact root is anchored in the user home", () => {
+  assert.equal(
+    canonicalSandboxArtifactRoot().startsWith(`${join(homedir(), ".breadboard")}/`),
+    true,
+  )
+})
+
+
+test("canonical sandbox artifact roots are user-specific children", () => {
+  const parent = join(tmpdir(), "shared-parent")
+  const root = canonicalSandboxArtifactRoot(parent)
+
+  assert.equal(root.startsWith(`${parent}/`), true)
+  assert.match(root, /breadboard-sandbox-artifacts-(?:uid-\d+|current-user)$/)
+})
+
+test("canonical sandbox artifact resolution preserves safe legacy content", async () => {
+  const legacyRoot = join(tmpdir(), "breadboard-sandbox-artifacts")
+  const content = `legacy sandbox output ${process.pid} ${Date.now()}\n`
+  const ref = `sha256:${createHash("sha256").update(content).digest("hex")}`
+  const artifactName = ref.slice("sha256:".length)
+  try {
+    await mkdir(legacyRoot, { recursive: true, mode: 0o700 })
+    await chmod(legacyRoot, 0o700)
+    await writeFile(join(legacyRoot, artifactName), content, { mode: 0o600 })
+
+    const uri = canonicalSandboxArtifactUri(ref)
+
+    assert.equal(uri, new URL(`file://${join(legacyRoot, artifactName)}`).href)
+    assert.equal(await readFile(new URL(uri), "utf8"), content)
+  } finally {
+    await rm(join(legacyRoot, artifactName), { force: true })
+  }
+})
+
+test("canonical sandbox artifact resolution rejects shared-parent candidates", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "breadboard-cas-parent-test-"))
+  const content = "private sandbox output\n"
+  const ref = "sha256:1b196a8697e865cf57eb23b35220bd2b0434d8396d25be4254fa96986451c91a"
+  try {
+    await chmod(parent, 0o755)
+    await writeFile(join(parent, ref.slice("sha256:".length)), "attacker bytes", {
+      mode: 0o600,
+    })
+    assert.throws(() => canonicalSandboxArtifactUri(ref, parent))
+    const nestedRoot = canonicalSandboxArtifactRoot(parent)
+    await persistCanonicalSandboxArtifact(ref, content, nestedRoot)
+
+    const uri = canonicalSandboxArtifactUri(ref, parent)
+
+    assert.equal(await readFile(new URL(uri), "utf8"), content)
+    assert.equal(new URL(uri).pathname.startsWith(`${nestedRoot}/`), true)
+  } finally {
+    await rm(parent, { recursive: true, force: true })
+  }
+})
+
+test("canonical sandbox artifacts are owner-only and content-addressed", async () => {
+
+  const artifactRoot = await mkdtemp(join(tmpdir(), "breadboard-cas-test-"))
+  try {
+    await chmod(artifactRoot, 0o755)
+    const content = "private sandbox output\n"
+    const ref = "sha256:1b196a8697e865cf57eb23b35220bd2b0434d8396d25be4254fa96986451c91a"
+
+    const uri = await persistCanonicalSandboxArtifact(ref, content, artifactRoot)
+
+    assert.equal(uri, canonicalSandboxArtifactUri(ref, artifactRoot))
+    assert.equal(await readFile(new URL(uri), "utf8"), content)
+    if (process.getuid !== undefined) {
+      assert.equal((await stat(artifactRoot)).mode & 0o077, 0)
+      assert.equal((await stat(new URL(uri))).mode & 0o077, 0)
+    }
+  } finally {
+    await rm(artifactRoot, { recursive: true, force: true })
+  }
+})
+
+test("canonical sandbox evidence persists its advertised manifest", async () => {
+  const artifactRoot = await mkdtemp(join(tmpdir(), "breadboard-evidence-test-"))
+  try {
+    const evidence = await buildAndPersistCanonicalSandboxEvidence({
+      command: ["printf", "world"],
+      status: "completed",
+      exitCode: 0,
+      stdout: "world",
+      stderr: "",
+      evidenceMode: "replay_strict",
+    }, artifactRoot)
+
+    assert.deepEqual(evidence.evidence_refs, [evidence.side_effect_digest])
+    const manifest = JSON.parse(
+      await readFile(
+        new URL(canonicalSandboxArtifactUri(evidence.side_effect_digest, artifactRoot)),
+        "utf8",
+      ),
+    )
+    assert.deepEqual(manifest, {
+      command: ["printf", "world"],
+      exit_code: 0,
+      status: "completed",
+      stderr_ref: evidence.stderr_ref,
+      stdout_ref: evidence.stdout_ref,
+    })
+  } finally {
+    await rm(artifactRoot, { recursive: true, force: true })
+  }
 })

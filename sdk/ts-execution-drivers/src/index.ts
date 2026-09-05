@@ -1,3 +1,10 @@
+import { createHash, randomUUID } from "node:crypto"
+import { lstatSync, readFileSync } from "node:fs"
+import { chmod, lstat, mkdir, rename, rm, writeFile } from "node:fs/promises"
+import { homedir, tmpdir } from "node:os"
+import { join } from "node:path"
+import { pathToFileURL } from "node:url"
+
 import type {
   ExecutionCapabilityV1,
   ExecutionPlacementV1,
@@ -43,7 +50,7 @@ export interface ExecutionDriverV1 {
       signal: AbortSignal
       deadlineAtMs: number | null
     },
-  ): Promise<void> | void
+  ): Promise<SandboxResultV1 | void> | SandboxResultV1 | void
 }
 
 export interface TerminalSessionStartInputV1 {
@@ -151,6 +158,23 @@ export interface PlannedExecutionV1 {
   sideEffectExpectation: ExecutionDriverSideEffectExpectationV1
   evidenceExpectation: ExecutionDriverEvidenceExpectationV1
 }
+
+export function assertExecutionProgramAllowed(
+  capability: ExecutionCapabilityV1,
+  command: readonly string[],
+): void {
+  const program = command[0]
+  if (!program) {
+    throw new Error("Execution requires a non-empty command")
+  }
+  const allowedPrograms = capability.allow_run_programs
+  if (allowedPrograms !== undefined && !allowedPrograms.includes(program)) {
+    throw new Error(
+      `Execution program ${JSON.stringify(program)} is not allowed by capability ${capability.capability_id}`,
+    )
+  }
+}
+
 
 export function isPlacementCompatible(
   capability: ExecutionCapabilityV1,
@@ -261,6 +285,248 @@ export function buildExecutionDriverSideEffectExpectation(
   return mapping[placementClass]
 }
 
+export interface CanonicalSandboxEvidenceV1 {
+  readonly stdout_ref: string
+  readonly stderr_ref: string
+  readonly artifact_refs: string[]
+  readonly side_effect_digest: string
+  readonly usage: { readonly exit_code: number | null }
+  readonly evidence_refs: string[]
+}
+
+function canonicalSandboxDigest(value: string): string {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`
+}
+
+export function canonicalProcessExitCode(
+  exitCode: number | null,
+  signalNumber: number | null,
+): number | null {
+  if (signalNumber !== null) {
+    if (!Number.isSafeInteger(signalNumber) || signalNumber < 0) {
+      throw new Error("process signal number must be a non-negative safe integer")
+    }
+    if (signalNumber > 0) {
+      const signaledExitCode = 128 + signalNumber
+      if (!Number.isSafeInteger(signaledExitCode)) {
+        throw new Error("canonical signaled exit code exceeds safe integer range")
+      }
+      return signaledExitCode
+    }
+  }
+  if (
+    exitCode !== null
+    && (!Number.isSafeInteger(exitCode) || exitCode < 0)
+  ) {
+    throw new Error("process exit code must be a non-negative safe integer")
+  }
+  return exitCode
+}
+
+function buildCanonicalSandboxSideEffectManifest(input: {
+  command: readonly string[]
+  status: SandboxResultV1["status"]
+  exitCode: number | null
+  stdoutRef: string
+  stderrRef: string
+}): string {
+  return JSON.stringify({
+    command: input.command,
+    exit_code: input.exitCode,
+    status: input.status,
+    stderr_ref: input.stderrRef,
+    stdout_ref: input.stdoutRef,
+  })
+}
+
+export function buildCanonicalSandboxSideEffectDigest(input: {
+  command: readonly string[]
+  status: SandboxResultV1["status"]
+  exitCode: number | null
+  stdoutRef: string
+  stderrRef: string
+}): string {
+  return canonicalSandboxDigest(buildCanonicalSandboxSideEffectManifest(input))
+}
+
+function deriveCanonicalSandboxEvidence(input: {
+  command: readonly string[]
+  status: SandboxResultV1["status"]
+  exitCode: number | null
+  stdout: string
+  stderr: string
+  evidenceMode: SandboxRequestV1["evidence_mode"]
+}): {
+  evidence: CanonicalSandboxEvidenceV1
+  sideEffectManifest: string
+} {
+  const stdoutRef = canonicalSandboxDigest(input.stdout)
+  const stderrRef = canonicalSandboxDigest(input.stderr)
+  const sideEffectManifest = buildCanonicalSandboxSideEffectManifest({
+    command: input.command,
+    status: input.status,
+    exitCode: input.exitCode,
+    stdoutRef,
+    stderrRef,
+  })
+  const sideEffectDigest = canonicalSandboxDigest(sideEffectManifest)
+  return {
+    evidence: {
+      stdout_ref: stdoutRef,
+      stderr_ref: stderrRef,
+      artifact_refs: [stdoutRef, stderrRef],
+      side_effect_digest: sideEffectDigest,
+      usage: { exit_code: input.exitCode },
+      evidence_refs: input.evidenceMode === "minimal" ? [] : [sideEffectDigest],
+    },
+    sideEffectManifest,
+  }
+}
+
+export function buildCanonicalSandboxEvidence(input: {
+  command: readonly string[]
+  status: SandboxResultV1["status"]
+  exitCode: number | null
+  stdout: string
+  stderr: string
+  evidenceMode: SandboxRequestV1["evidence_mode"]
+}): CanonicalSandboxEvidenceV1 {
+  return deriveCanonicalSandboxEvidence(input).evidence
+}
+
+export function canonicalSandboxArtifactRoot(
+  parentRoot = join(homedir(), ".breadboard"),
+): string {
+  const userNamespace = process.getuid === undefined
+    ? "current-user"
+    : `uid-${process.getuid()}`
+  return join(parentRoot, `breadboard-sandbox-artifacts-${userNamespace}`)
+}
+
+const DEFAULT_SANDBOX_ARTIFACT_ROOT = canonicalSandboxArtifactRoot()
+const LEGACY_SANDBOX_ARTIFACT_ROOT = join(tmpdir(), "breadboard-sandbox-artifacts")
+
+function verifiedSandboxArtifactUri(
+  artifactRoot: string,
+  artifactName: string,
+): string | null {
+  try {
+    const rootStat = lstatSync(artifactRoot)
+    const destination = join(artifactRoot, artifactName)
+    const artifactStat = lstatSync(destination)
+    const currentUid = process.getuid?.()
+    if (
+      !rootStat.isDirectory()
+      || rootStat.isSymbolicLink()
+      || !artifactStat.isFile()
+      || artifactStat.isSymbolicLink()
+      || (currentUid !== undefined
+        && (rootStat.uid !== currentUid
+          || artifactStat.uid !== currentUid
+          || (rootStat.mode & 0o077) !== 0
+          || (artifactStat.mode & 0o077) !== 0))
+    ) {
+      return null
+    }
+    const digest = createHash("sha256").update(readFileSync(destination)).digest("hex")
+    return digest === artifactName ? pathToFileURL(destination).href : null
+  } catch {
+    return null
+  }
+}
+
+export function canonicalSandboxArtifactUri(
+  ref: string,
+  artifactRoot = DEFAULT_SANDBOX_ARTIFACT_ROOT,
+): string {
+  const match = /^sha256:([0-9a-f]{64})$/.exec(ref)
+  if (!match) throw new Error("sandbox artifact ref must be a sha256 digest")
+  const artifactName = match[1]!
+  const directUri = verifiedSandboxArtifactUri(artifactRoot, artifactName)
+  if (directUri !== null) {
+    return directUri
+  }
+  if (artifactRoot !== DEFAULT_SANDBOX_ARTIFACT_ROOT) {
+    const nestedUri = verifiedSandboxArtifactUri(
+      canonicalSandboxArtifactRoot(artifactRoot),
+      artifactName,
+    )
+    if (nestedUri !== null) {
+      return nestedUri
+    }
+  } else {
+    const legacyUri = verifiedSandboxArtifactUri(
+      LEGACY_SANDBOX_ARTIFACT_ROOT,
+      artifactName,
+    )
+    if (legacyUri !== null) {
+      return legacyUri
+    }
+  }
+  throw new Error("sandbox artifact has no verified content at its declared root")
+}
+
+export async function persistCanonicalSandboxArtifact(
+  ref: string,
+  content: string,
+  artifactRoot = DEFAULT_SANDBOX_ARTIFACT_ROOT,
+): Promise<string> {
+  const expectedRef = `sha256:${createHash("sha256").update(content).digest("hex")}`
+  if (ref !== expectedRef) {
+    throw new Error("sandbox artifact content does not match its digest ref")
+  }
+  await mkdir(artifactRoot, { recursive: true, mode: 0o700 })
+  const rootStat = await lstat(artifactRoot)
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+    throw new Error("sandbox artifact root must be a directory, not a symbolic link")
+  }
+  const currentUid = process.getuid?.()
+  if (currentUid !== undefined && rootStat.uid !== currentUid) {
+    throw new Error("sandbox artifact root must be owned by the current user")
+  }
+  if (currentUid !== undefined && (rootStat.mode & 0o077) !== 0) {
+    await chmod(artifactRoot, 0o700)
+    const securedRootStat = await lstat(artifactRoot)
+    if ((securedRootStat.mode & 0o077) !== 0) {
+      throw new Error("sandbox artifact root must be accessible only by its owner")
+    }
+  }
+  const destination = join(artifactRoot, ref.slice("sha256:".length))
+  const temporary = `${destination}.${process.pid}.${randomUUID()}.tmp`
+  try {
+    await writeFile(temporary, content, {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600,
+    })
+    await rename(temporary, destination)
+  } finally {
+    await rm(temporary, { force: true })
+  }
+  return canonicalSandboxArtifactUri(ref, artifactRoot)
+}
+
+export async function buildAndPersistCanonicalSandboxEvidence(input: {
+  command: readonly string[]
+  status: SandboxResultV1["status"]
+  exitCode: number | null
+  stdout: string
+  stderr: string
+  evidenceMode: SandboxRequestV1["evidence_mode"]
+}, artifactRoot = DEFAULT_SANDBOX_ARTIFACT_ROOT): Promise<CanonicalSandboxEvidenceV1> {
+  const { evidence, sideEffectManifest } = deriveCanonicalSandboxEvidence(input)
+  await Promise.all([
+    persistCanonicalSandboxArtifact(evidence.stdout_ref, input.stdout, artifactRoot),
+    persistCanonicalSandboxArtifact(evidence.stderr_ref, input.stderr, artifactRoot),
+    persistCanonicalSandboxArtifact(
+      evidence.side_effect_digest,
+      sideEffectManifest,
+      artifactRoot,
+    ),
+  ])
+  return evidence
+}
+
 export function buildExecutionDriverEvidenceExpectation(input: {
   capability: ExecutionCapabilityV1
   placementClass: ExecutionPlacementV1["placement_class"]
@@ -310,6 +576,9 @@ export function buildPlannedExecution(input: {
   })
   if (!driver) {
     return null
+  }
+  if (input.command) {
+    assertExecutionProgramAllowed(input.capability, input.command)
   }
   const sideEffectExpectation = buildExecutionDriverSideEffectExpectation(input.placement.placement_class)
   const evidenceExpectation = buildExecutionDriverEvidenceExpectation({

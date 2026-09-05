@@ -14,6 +14,8 @@ import {
 } from "@breadboard/kernel-contracts"
 import {
   buildExecutionDriverUnsupportedCase,
+  buildCanonicalSandboxSideEffectDigest,
+  assertExecutionProgramAllowed,
   buildPlannedExecution,
   selectExecutionDriver,
   selectTerminalSessionDriver,
@@ -27,7 +29,12 @@ import {
   type TerminalSessionStartResultV1,
 } from "./index.js"
 
-export type ExecutionDriverHintV1 = "trusted_local" | "oci" | "remote"
+export type ExecutionDriverHintV1 =
+  | "trusted_local"
+  | "oci"
+  | "remote"
+  | "ray"
+  | "slurm"
 
 export interface ExecutionDriverExecutionContextV1 {
   readonly signal: AbortSignal
@@ -196,9 +203,11 @@ export interface ExecutionWorldV1 {
 }
 
 const DRIVER_ORDER: Record<ExecutionDriverHintV1, string[]> = {
-  trusted_local: ["local-process", "oci", "remote"],
-  oci: ["oci", "local-process", "remote"],
-  remote: ["remote", "oci", "local-process"],
+  trusted_local: ["local-process", "oci", "remote", "ray", "slurm"],
+  oci: ["oci", "local-process", "remote", "ray", "slurm"],
+  remote: ["remote", "ray", "slurm", "oci", "local-process"],
+  ray: ["ray", "remote", "slurm", "oci", "local-process"],
+  slurm: ["slurm", "remote", "ray", "oci", "local-process"],
 }
 
 function orderDrivers<T extends ExecutionDriverV1>(drivers: readonly T[], hint?: ExecutionDriverHintV1): T[] {
@@ -319,19 +328,72 @@ function buildSandboxFailureResult(input: {
   reason: string
   previous?: SandboxResultV1 | null
 }): SandboxResultV1 {
+  const previous = input.previous
+    ? assertValid<SandboxResultV1>("sandboxResult", input.previous)
+    : null
+  const preservesCanonicalEvidence = previous?.status === input.status
+  const previousUsage = previous?.usage
+  let translatedSideEffectDigest: string | null = null
+  let translatedEvidenceRefs: string[] = []
+  if (
+    previous !== null
+    && !preservesCanonicalEvidence
+    && previous.request_id === input.request.request_id
+    && previous.stdout_ref !== null
+    && previous.stderr_ref !== null
+    && previous.artifact_refs?.length === 2
+    && previous.artifact_refs[0] === previous.stdout_ref
+    && previous.artifact_refs[1] === previous.stderr_ref
+    && previousUsage !== null
+    && previousUsage !== undefined
+    && Object.keys(previousUsage).length === 1
+    && "exit_code" in previousUsage
+    && (previousUsage.exit_code === null || typeof previousUsage.exit_code === "number")
+  ) {
+    const previousDigest = buildCanonicalSandboxSideEffectDigest({
+      command: input.request.command,
+      status: previous.status,
+      exitCode: previousUsage.exit_code,
+      stdoutRef: previous.stdout_ref,
+      stderrRef: previous.stderr_ref,
+    })
+    const previousEvidenceRefs = input.request.evidence_mode === "minimal"
+      ? []
+      : [previousDigest]
+    if (
+      previous.side_effect_digest === previousDigest
+      && previous.evidence_refs?.length === previousEvidenceRefs.length
+      && previousEvidenceRefs.every((ref) => previous.evidence_refs?.includes(ref))
+    ) {
+      translatedSideEffectDigest = buildCanonicalSandboxSideEffectDigest({
+        command: input.request.command,
+        status: input.status,
+        exitCode: previousUsage.exit_code,
+        stdoutRef: previous.stdout_ref,
+        stderrRef: previous.stderr_ref,
+      })
+      translatedEvidenceRefs = input.request.evidence_mode === "minimal"
+        ? []
+        : [translatedSideEffectDigest]
+    }
+  }
   return assertValid<SandboxResultV1>("sandboxResult", {
     schema_version: "bb.sandbox_result.v1",
     request_id: input.request.request_id,
     status: input.status,
-    placement_id: input.previous?.placement_id ?? null,
-    stdout_ref: input.previous?.stdout_ref ?? null,
-    stderr_ref: input.previous?.stderr_ref ?? null,
-    artifact_refs: input.previous?.artifact_refs ?? [],
-    side_effect_digest: input.previous?.side_effect_digest ?? null,
-    usage: input.previous?.usage ?? null,
-    evidence_refs: input.previous?.evidence_refs ?? [],
+    placement_id: previous?.placement_id ?? null,
+    stdout_ref: previous?.stdout_ref ?? null,
+    stderr_ref: previous?.stderr_ref ?? null,
+    artifact_refs: previous?.artifact_refs ?? [],
+    side_effect_digest: preservesCanonicalEvidence
+      ? previous?.side_effect_digest ?? null
+      : translatedSideEffectDigest,
+    usage: previous?.usage ?? null,
+    evidence_refs: preservesCanonicalEvidence
+      ? previous?.evidence_refs ?? []
+      : translatedEvidenceRefs,
     error: {
-      ...(input.previous?.error ?? {}),
+      ...(previous?.error ?? {}),
       message: input.message,
       reason: input.reason,
     },
@@ -421,6 +483,7 @@ export function createExecutionWorld(input: {
   const endedSessionOwners = new Map<string, TerminalSessionDriverV1>()
   const cleanedSessionOwners = new Map<string, string>()
   const startingSessionIds = new Set<string>()
+  const activeSandboxRequests = new Map<string, symbol>()
   function rememberEndedSessionOwner(sessionId: string, driver: TerminalSessionDriverV1): void {
     if (endedSessionOwners.has(sessionId)) {
       endedSessionOwners.delete(sessionId)
@@ -474,7 +537,34 @@ export function createExecutionWorld(input: {
     }
     return activeIds
   }
-  async function executeSandbox(operation: ExecutionWorldSandboxInputV1): Promise<ExecutionWorldSandboxResultV1> {
+  async function executeSandbox(
+    operation: ExecutionWorldSandboxInputV1,
+  ): Promise<ExecutionWorldSandboxResultV1> {
+    if (activeSandboxRequests.has(operation.requestId)) {
+      throw new Error(`Execution request '${operation.requestId}' is already active`)
+    }
+    const token = Symbol(operation.requestId)
+    let releaseDeferred = false
+    const release = () => {
+      if (activeSandboxRequests.get(operation.requestId) === token) {
+        activeSandboxRequests.delete(operation.requestId)
+      }
+    }
+    const deferRelease = (termination: Promise<unknown>) => {
+      releaseDeferred = true
+      void termination.finally(release).catch(() => {})
+    }
+    activeSandboxRequests.set(operation.requestId, token)
+    try {
+      return await executeSandboxOnce(operation, deferRelease)
+    } finally {
+      if (!releaseDeferred) release()
+    }
+  }
+  async function executeSandboxOnce(
+    operation: ExecutionWorldSandboxInputV1,
+    deferRelease: (termination: Promise<unknown>) => void,
+  ): Promise<ExecutionWorldSandboxResultV1> {
     const driver = selectWorldDriver(drivers, {
       capability: operation.capability,
       placement: operation.placement,
@@ -675,39 +765,57 @@ export function createExecutionWorld(input: {
       }
     }
 
+    const terminateExecution = async (
+      reason: "deadline" | "cancelled",
+    ): Promise<{ readonly observed: boolean; readonly result?: SandboxResultV1 }> => {
+      if (!driver.terminate) {
+        deferRelease(executePromise)
+        return { observed: false }
+      }
+      let termination: Promise<SandboxResultV1 | void>
+      try {
+        termination = Promise.resolve(
+          driver.terminate(request, {
+            reason,
+            signal: controller.signal,
+            deadlineAtMs,
+          }),
+        )
+      } catch {
+        deferRelease(executePromise)
+        return { observed: false }
+      }
+      const settled = await settleValueWithin(termination, terminationGraceMs)
+      if (!settled.settled) {
+        deferRelease(termination.catch(() => executePromise))
+        return { observed: false }
+      }
+      return settled.value
+        ? { observed: true, result: settled.value }
+        : { observed: true }
+    }
+
     const requestTermination = async (reason: "deadline" | "cancelled"): Promise<void> => {
       if (terminalized) return
       terminalized = true
       controller.abort(new Error(reason === "deadline" ? "execution deadline exceeded" : "execution cancelled"))
-      let terminationObserved = false
-      if (executionStarted && driver.terminate) {
-        let terminationPromise: Promise<unknown>
-        try {
-          terminationPromise = Promise.resolve(
-            driver.terminate(request, {
-              reason,
-              signal: controller.signal,
-              deadlineAtMs,
-            }),
-          )
-        } catch {
-          terminationPromise = Promise.reject(new Error("synchronous terminate failure"))
-        }
-        terminationObserved = await settleWithin(terminationPromise, terminationGraceMs)
-      }
+      const termination = executionStarted
+        ? await terminateExecution(reason)
+        : { observed: false }
       const liveness = buildLivenessEvidence({
         requestId: request.request_id,
         state: reason === "deadline" ? "timed_out" : "cancelled",
         executionStarted,
         terminationRequested: executionStarted,
-        terminationObserved,
+        terminationObserved: termination.observed,
       })
       if (reason === "deadline") notifyTimeout(liveness)
       resolveTerminal?.({
         status: reason === "deadline" ? "timed_out" : "cancelled",
+        result: termination.result,
         executionStarted,
         terminationRequested: executionStarted,
-        terminationObserved,
+        terminationObserved: termination.observed,
       })
     }
 
@@ -771,30 +879,25 @@ export function createExecutionWorld(input: {
             const isCancelled = signalAborted && !isTimeout
             if (isTimeout || isCancelled) {
               const reason = isTimeout ? "deadline" : "cancelled"
-              let terminationObserved = false
-              if (driver.terminate) {
-                try {
-                  const terminationPromise = Promise.resolve(
-                    driver.terminate(request, {
-                      reason,
-                      signal: controller.signal,
-                      deadlineAtMs,
-                    }),
-                  )
-                  terminationObserved = await settleWithin(terminationPromise, terminationGraceMs)
-                } catch {
-                  terminationObserved = false
-                }
-              }
+              const termination = await terminateExecution(reason)
               resolveTerminal?.({
                 status: isTimeout ? "timed_out" : "cancelled",
+                result: termination.result,
                 error,
                 executionStarted: true,
                 terminationRequested: true,
-                terminationObserved,
+                terminationObserved: termination.observed,
               })
             } else {
-              resolveTerminal?.({ status: "failed", error, executionStarted: true })
+              const termination = await terminateExecution("cancelled")
+              resolveTerminal?.({
+                status: "failed",
+                result: termination.result,
+                error,
+                executionStarted: true,
+                terminationRequested: Boolean(driver.terminate),
+                terminationObserved: termination.observed,
+              })
             }
           }
         },
@@ -829,42 +932,28 @@ export function createExecutionWorld(input: {
     const status = terminal.status
     let sandboxResult: SandboxResultV1
     try {
-      const candidate = terminal.result
-        ? status === "timed_out"
-          ? buildSandboxFailureResult({
+      const candidate =
+        terminal.result?.status === status
+          ? assertValid<SandboxResultV1>("sandboxResult", terminal.result)
+          : buildSandboxFailureResult({
               request,
-              status: "timed_out",
-              message: "Execution exceeded its deadline",
-              reason: "deadline_exceeded",
+              status,
+              message:
+                status === "timed_out"
+                  ? "Execution exceeded its deadline"
+                  : status === "cancelled"
+                    ? "Execution was cancelled"
+                    : terminal.error instanceof Error
+                      ? terminal.error.message
+                      : "Execution driver failed",
+              reason:
+                status === "timed_out"
+                  ? "deadline_exceeded"
+                  : status === "cancelled"
+                    ? "execution_cancelled"
+                    : "adapter_execution_failed",
               previous: terminal.result,
             })
-          : status === "cancelled"
-            ? buildSandboxFailureResult({
-                request,
-                status: "cancelled",
-                message: "Execution was cancelled",
-                reason: "execution_cancelled",
-                previous: terminal.result,
-              })
-            : assertValid<SandboxResultV1>("sandboxResult", terminal.result)
-        : buildSandboxFailureResult({
-            request,
-            status,
-            message:
-              status === "timed_out"
-                ? "Execution exceeded its deadline"
-                : status === "cancelled"
-                  ? "Execution was cancelled"
-                  : terminal.error instanceof Error
-                    ? terminal.error.message
-                    : "Execution driver failed",
-            reason:
-              status === "timed_out"
-                ? "deadline_exceeded"
-                : status === "cancelled"
-                  ? "execution_cancelled"
-                  : "adapter_execution_failed",
-          })
       sandboxResult = assertValid<SandboxResultV1>("sandboxResult", candidate)
       if (sandboxResult.request_id !== request.request_id) {
         throw new Error(
@@ -957,6 +1046,23 @@ export function createExecutionWorld(input: {
           operation.capability,
           operation.placement,
           "Terminal sessions require a non-empty command.",
+          "terminal_start_failed",
+        ),
+      }
+    }
+    try {
+      assertExecutionProgramAllowed(operation.capability, operation.input.command)
+    } catch (error) {
+      return {
+        kind: "terminal_start",
+        driverId: driver.driverId,
+        capability: operation.capability,
+        placement: operation.placement,
+        result: null,
+        unsupportedCase: buildTerminalUnsupportedCase(
+          operation.capability,
+          operation.placement,
+          error instanceof Error ? error.message : "Terminal program is not allowed.",
           "terminal_start_failed",
         ),
       }
@@ -1652,6 +1758,8 @@ export function chooseExecutionPlacementClass(
   capability: ExecutionCapabilityV1,
   driverIdHint?: ExecutionDriverHintV1,
 ): ExecutionPlacementV1["placement_class"] {
+  if (driverIdHint === "ray") return "delegated_python"
+  if (driverIdHint === "slurm") return "remote_worker"
   if (driverIdHint === "remote" || capability.isolation_class === "remote_service") {
     switch (capability.isolation_class) {
       case "remote_service":

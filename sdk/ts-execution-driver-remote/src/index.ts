@@ -11,7 +11,10 @@ import type {
   ExecutionDriverV1,
   TerminalSessionDriverV1,
 } from "@breadboard/execution-drivers"
-import { isPlacementCompatible } from "@breadboard/execution-drivers"
+import {
+  assertExecutionProgramAllowed,
+  isPlacementCompatible,
+} from "@breadboard/execution-drivers"
 import {
   makeRemoteTerminalSessionDriver,
   type RemoteTerminalExecutionHttpOptions,
@@ -62,6 +65,8 @@ export function chooseRemotePlacement(
   }
 }
 
+
+
 export function buildRemoteSandboxRequest(input: {
   requestId: string
   capability: ExecutionCapabilityV1
@@ -71,6 +76,7 @@ export function buildRemoteSandboxRequest(input: {
   placementClass?: ExecutionPlacementV1["placement_class"]
   metadata?: Record<string, unknown>
 }): SandboxRequestV1 {
+  assertExecutionProgramAllowed(input.capability, input.command)
   const placementClass = input.placementClass ?? chooseRemotePlacement(input.capability)
   return {
     schema_version: "bb.sandbox_request.v1",
@@ -82,7 +88,9 @@ export function buildRemoteSandboxRequest(input: {
     image_ref: input.imageRef ?? null,
     snapshot_ref: null,
     command: [input.command[0] ?? "", ...input.command.slice(1)],
-    network_policy: { allow: input.capability.allow_net_hosts ?? [] },
+    network_policy: input.capability.allow_net_hosts === undefined
+      ? null
+      : { allow: input.capability.allow_net_hosts },
     secret_refs: [],
     timeout_seconds: null,
     evidence_mode: input.capability.evidence_mode,
@@ -230,6 +238,8 @@ export function makeRemoteExecutionDriver(
   interface ActiveRemoteExecution {
     controller: AbortController
     completion: Promise<unknown>
+    cleanup: () => void
+    detach: () => void
   }
   const activeExecutions = new Map<string, ActiveRemoteExecution>()
   return {
@@ -256,6 +266,11 @@ export function makeRemoteExecutionDriver(
       })
     },
     execute(request, context) {
+      if (activeExecutions.has(request.request_id)) {
+        return Promise.reject(
+          new Error(`Remote execution request '${request.request_id}' is already active`),
+        )
+      }
       const controller = new AbortController()
       const forwardContextAbort = () => {
         if (!controller.signal.aborted) {
@@ -281,10 +296,15 @@ export function makeRemoteExecutionDriver(
           httpOptions.signal.addEventListener("abort", forwardHttpAbort, { once: true })
         }
       }
-      const cleanup = () => {
-        activeExecutions.delete(request.request_id)
+      const detach = () => {
         context?.signal?.removeEventListener("abort", forwardContextAbort)
         httpOptions?.signal?.removeEventListener("abort", forwardHttpAbort)
+      }
+      const cleanup = () => {
+        if (activeExecutions.get(request.request_id)?.controller === controller) {
+          activeExecutions.delete(request.request_id)
+        }
+        detach()
       }
       let executionPromise: Promise<SandboxResultV1>
       if (executor) {
@@ -296,8 +316,7 @@ export function makeRemoteExecutionDriver(
         try {
           executionPromise = Promise.resolve(executor(request, executionContext))
         } catch (error) {
-          cleanup()
-          return Promise.reject(error)
+          executionPromise = Promise.reject(error)
         }
       } else if (!httpOptions) {
         cleanup()
@@ -318,19 +337,29 @@ export function makeRemoteExecutionDriver(
       activeExecutions.set(request.request_id, {
         controller,
         completion: executionPromise,
+        cleanup,
+        detach,
       })
-      return executionPromise.finally(cleanup)
+      return executionPromise.then((result) => {
+        cleanup()
+        return result
+      })
     },
     async terminate(request, context) {
       const active = activeExecutions.get(request.request_id)
       if (!active) return
-      if (!active.controller.signal.aborted) {
-        const reason =
-          context?.signal?.reason ??
-          new Error(`Remote execution ${context?.reason ?? "cancelled"} termination requested`)
-        active.controller.abort(reason)
+      try {
+        if (!active.controller.signal.aborted) {
+          const reason =
+            context?.signal?.reason ??
+            new Error(`Remote execution ${context?.reason ?? "cancelled"} termination requested`)
+          active.controller.abort(reason)
+        }
+        active.detach()
+        await active.completion.catch(() => {})
+      } finally {
+        active.cleanup()
       }
-      await active.completion.catch(() => {})
     },
     ...(terminalDriver
       ? {
@@ -350,3 +379,5 @@ export const remoteExecutionDriver: ExecutionDriverV1 = makeRemoteExecutionDrive
 
 export type { RemoteTerminalExecutionHttpOptions }
 export * from "./terminals.js"
+export * from "./scheduled.js"
+export * from "./slurm.js"

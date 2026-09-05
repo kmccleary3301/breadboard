@@ -81,8 +81,15 @@ function buildDriverMediatedToolOutcome(input: {
   }
   if (input.sandboxResult.status !== "completed") {
     const rawError = input.sandboxResult.error as Record<string, unknown> | null | undefined
+    const normalizedMessage =
+      input.sandboxResult.status === "timed_out"
+        ? "Execution exceeded its deadline"
+        : input.sandboxResult.status === "cancelled"
+          ? "Execution was cancelled"
+          : (typeof rawError?.message === "string" ? rawError.message : undefined)
+            ?? `${input.toolName} ended with status ${input.sandboxResult.status}`
     outcome.error = {
-      message: (typeof rawError?.message === "string" ? rawError.message : undefined) ?? `${input.toolName} ended with status ${input.sandboxResult.status}`,
+      message: normalizedMessage,
       code: (typeof rawError?.code === "string" ? rawError.code : undefined) ?? input.sandboxResult.status,
       ...(typeof rawError?.retryable === "boolean" ? { retryable: rawError.retryable } : {}),
     }
@@ -122,6 +129,15 @@ function buildDriverMediatedToolRender(input: {
   })
 }
 
+function runtimeIdForDriver(driverId: string | null): string | null {
+  if (driverId === "local-process") return "breadboard.ts-execution-driver-local"
+  if (driverId === "oci") return "breadboard.ts-execution-driver-oci"
+  if (driverId === "remote") return "breadboard.ts-execution-driver-remote"
+  if (driverId === "ray") return "breadboard.ts-execution-driver-ray"
+  if (driverId === "slurm") return "breadboard.ts-execution-driver-slurm"
+  return null
+}
+
 export async function executeDriverMediatedToolTurn(
   requestInput: RunRequestV1,
   options: DriverMediatedToolTurnOptions,
@@ -134,12 +150,16 @@ export async function executeDriverMediatedToolTurn(
     evidenceMode: options.evidenceMode ?? "replay_strict",
     allowReadPaths: options.workspaceRef ? [options.workspaceRef] : request.workspace_root ? [request.workspace_root] : [],
     allowWritePaths: options.workspaceRef ? [options.workspaceRef] : request.workspace_root ? [request.workspace_root] : [],
-    allowRunPrograms: options.allowRunPrograms ?? [],
-    allowNetHosts: options.allowNetHosts ?? [],
+    allowRunPrograms:
+      options.allowRunPrograms
+      ?? [options.command[0] ?? ""].filter((program) => program.length > 0),
+    ...(options.allowNetHosts === undefined
+      ? {}
+      : { allowNetHosts: options.allowNetHosts }),
     ttyMode: "optional",
   })
   const placementClass = chooseExecutionPlacementClass(capability, options.driverIdHint)
-  const placement = buildExecutionPlacement(capability, {
+  const provisionalPlacement = buildExecutionPlacement(capability, {
     placementId: `${request.request_id}:placement:${placementClass}`,
     placementClass,
     runtimeId:
@@ -153,6 +173,19 @@ export async function executeDriverMediatedToolTurn(
           : "breadboard.ts-execution-driver-oci",
   })
   const world = options.executionWorld ?? createKernelExecutionWorld(options)
+  const selectedDriverId = world.select({
+    capability,
+    placement: provisionalPlacement,
+    driverIdHint: options.driverIdHint,
+  }).driverId
+  const selectedRuntimeId = runtimeIdForDriver(selectedDriverId)
+  const placement = selectedRuntimeId === null
+    ? provisionalPlacement
+    : buildExecutionPlacement(capability, {
+      placementId: provisionalPlacement.placement_id,
+      placementClass,
+      runtimeId: selectedRuntimeId,
+    })
   const worldResult = await world.execute({
     kind: "sandbox",
     capability,
@@ -190,7 +223,9 @@ export async function executeDriverMediatedToolTurn(
       image_ref: options.imageRef ?? null,
       snapshot_ref: null,
       command: [options.command[0] ?? "", ...options.command.slice(1)],
-      network_policy: { allow: capability.allow_net_hosts ?? [] },
+      network_policy: capability.allow_net_hosts === undefined
+        ? null
+        : { allow: capability.allow_net_hosts },
       secret_refs: [],
       timeout_seconds: null,
       evidence_mode: capability.evidence_mode,

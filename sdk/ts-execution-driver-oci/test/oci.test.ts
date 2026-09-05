@@ -1,7 +1,14 @@
+import fs from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import test from "node:test"
 import assert from "node:assert/strict"
 
 import type { ExecutionCapabilityV1, ExecutionPlacementV1 } from "@breadboard/kernel-contracts"
+import {
+  canonicalSandboxArtifactRoot,
+  canonicalSandboxArtifactUri,
+} from "@breadboard/execution-drivers"
 import {
   buildOciContainerName,
   buildOciRuntimeInvocation,
@@ -17,6 +24,37 @@ import {
   type OciCommandExecutor,
   type OciTerminalSessionAdapter,
 } from "../src/index.js"
+
+test("OCI command executor decodes UTF-8 after complete stream collection", async () => {
+  const result = await defaultOciCommandExecutor({
+    runtimeCommand: process.execPath,
+    runtimeArgs: [
+      "-e",
+      "process.stdout.write(Buffer.from([0xe2])); process.stderr.write(Buffer.from([0xf0,0x9f])); setTimeout(() => { process.stdout.write(Buffer.from([0x82,0xac])); process.stderr.write(Buffer.from([0x98,0x80])); }, 25)",
+    ],
+  })
+
+  assert.equal(result.exitCode, 0)
+  assert.equal(result.stdout, "€")
+  assert.equal(result.stderr, "😀")
+})
+
+test("OCI command executor canonicalizes a POSIX signal exit", async () => {
+  const abortController = new AbortController()
+  const execution = defaultOciCommandExecutor({
+    runtimeCommand: process.execPath,
+    runtimeArgs: ["-e", "setInterval(() => {}, 1000)"],
+    signal: abortController.signal,
+  })
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  abortController.abort(new Error("cancelled"))
+  const result = await execution
+  if (process.platform === "win32") {
+    assert.ok(result.exitCode !== 0)
+  } else {
+    assert.equal(result.exitCode, 143)
+  }
+})
 
 test("oci driver chooses placement from capability isolation class", () => {
   assert.equal(
@@ -52,6 +90,7 @@ test("oci driver can build an OCI sandbox request", () => {
       security_tier: "shared_host",
       isolation_class: "gvisor",
       allow_net_hosts: ["registry.example.com"],
+      allow_run_programs: ["node"],
       secret_mode: "ref_only",
       evidence_mode: "audit_full",
     },
@@ -83,6 +122,7 @@ test("oci driver can build an OCI sandbox request", () => {
       security_tier: "single_tenant",
       isolation_class: "oci",
       allow_net_hosts: [],
+      allow_run_programs: ["ruff"],
       secret_mode: "ref_only",
       evidence_mode: "replay_strict",
     },
@@ -98,6 +138,27 @@ test("oci driver can build an OCI sandbox request", () => {
     imageRef: "docker://breadboard/base:latest",
   })
   assert.equal(built?.placement_class, "local_oci")
+})
+
+test("OCI driver rejects programs outside the capability allowlist", () => {
+  assert.throws(
+    () =>
+      buildOciSandboxRequest({
+        requestId: "oci-disallowed",
+        capability: {
+          schema_version: "bb.execution_capability.v1",
+          capability_id: "cap-oci-program-policy",
+          security_tier: "single_tenant",
+          isolation_class: "oci",
+          allow_run_programs: ["python"],
+          secret_mode: "ref_only",
+          evidence_mode: "minimal",
+        },
+        command: ["node", "worker.js"],
+        imageRef: "docker://breadboard/base:latest",
+      }),
+    /program "node" is not allowed by capability cap-oci-program-policy/,
+  )
 })
 
 
@@ -129,7 +190,7 @@ test("oci direct execution rejects a pre-aborted request before invoking the run
 
   assert.equal(executorCalls, 0)
   assert.equal(result.status, "timed_out")
-  assert.equal(result.error?.reason, "deadline_exceeded")
+  assert.equal(result.error?.reason, "execution_timed_out")
 })
 
 
@@ -161,7 +222,7 @@ test("oci direct execution classifies standard timeout abort reasons", async () 
 
   assert.equal(executorCalls, 0)
   assert.equal(result.status, "timed_out")
-  assert.equal(result.error?.reason, "deadline_exceeded")
+  assert.equal(result.error?.reason, "execution_timed_out")
 })
 
 
@@ -185,7 +246,30 @@ test("oci driver can build a concrete runtime invocation", () => {
   const invocation = buildOciRuntimeInvocation(request)
   assert.equal(invocation.runtimeCommand, "docker")
   assert.ok(invocation.runtimeArgs.includes("--runtime=runsc"))
+  assert.ok(invocation.runtimeArgs.includes("--network=none"))
   assert.ok(invocation.runtimeArgs.includes("ghcr.io/example/lint:latest"))
+})
+
+test("OCI runtime rejects network host allowlists it cannot enforce", () => {
+  const request = buildOciSandboxRequest({
+    requestId: "oci-network-allowlist",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-oci-network-allowlist",
+      security_tier: "single_tenant",
+      isolation_class: "oci",
+      allow_net_hosts: ["api.example.com"],
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["true"],
+    imageRef: "alpine:latest",
+  })
+
+  assert.throws(
+    () => buildOciRuntimeInvocation(request),
+    /cannot enforce a network host allowlist/,
+  )
 })
 
 test("oci driver can execute through an injected runtime adapter", async () => {
@@ -204,15 +288,34 @@ test("oci driver can execute through an injected runtime adapter", async () => {
     workspaceRef: "/tmp/workspace",
     imageRef: "ghcr.io/example/ruff:latest",
   })
+  const artifactRoot = fs.mkdtempSync(join(tmpdir(), "bb-oci-artifacts-"))
+  fs.chmodSync(artifactRoot, 0o755)
   const result = await executeOciSandboxRequest(request, {
     commandExecutor: async ({ runtimeCommand, runtimeArgs }) => ({
       exitCode: runtimeCommand === "docker" && runtimeArgs.includes("ghcr.io/example/ruff:latest") ? 0 : 1,
       stdout: "oci ok",
       stderr: "",
     }),
+    tempDirRoot: artifactRoot,
   })
   assert.equal(result.status, "completed")
-  assert.ok(result.stdout_ref?.startsWith("file://"))
+  if (!result.stdout_ref) assert.fail("OCI execution must return stdout evidence")
+  assert.match(result.stdout_ref, /^sha256:/)
+  assert.equal(
+    fs.readFileSync(
+      new URL(canonicalSandboxArtifactUri(
+        result.stdout_ref,
+        artifactRoot,
+      )),
+      "utf8",
+    ),
+    "oci ok",
+  )
+  assert.equal(fs.statSync(artifactRoot).mode & 0o077, 0o055)
+  assert.equal(
+    fs.statSync(canonicalSandboxArtifactRoot(artifactRoot)).mode & 0o077,
+    0,
+  )
   assert.ok(result.side_effect_digest?.startsWith("sha256:"))
 })
 
@@ -586,14 +689,16 @@ test("oci driver terminate triggers signal and awaits runtime exit", async () =>
   })
   const execPromise = driver.execute!(request)
   assert.equal(runtimeExited, false)
-  await driver.terminate!(request, {
+  const terminationResult = await driver.terminate!(request, {
     reason: "deadline",
     signal: new AbortController().signal,
     deadlineAtMs: Date.now(),
   })
   assert.equal(runtimeExited, true)
   const result = await execPromise
+  assert.deepEqual(terminationResult, result)
   assert.equal(result.status, "timed_out")
+  assert.ok(result.stderr_ref)
   assert.ok(issuedCommands.some((c) => c.runtimeArgs.includes("--name") && c.runtimeArgs.some((a) => a.startsWith("bb-oci-req-oci-term-verify"))))
   assert.ok(issuedCommands.some((c) => c.runtimeArgs[0] === "stop" && c.runtimeArgs.some((a) => a.startsWith("bb-oci-req-oci-term-verify"))))
 })
@@ -1152,6 +1257,45 @@ test("OCI driver termination rejects boundedly when execution and cleanup never 
   assert.ok(invokedCommands.includes("stop"), "stop was invoked")
   assert.ok(invokedCommands.includes("kill"), "kill was invoked after stop timed out")
   assert.ok(invokedCommands.includes("rm"), "rm was invoked")
+})
+
+test("OCI driver retains rejected execution until termination cleanup", async () => {
+  const invokedCommands: string[] = []
+  let runSignal: AbortSignal | undefined
+  const executor: OciCommandExecutor = ({ runtimeArgs, signal }) => {
+    invokedCommands.push(runtimeArgs[0] ?? "")
+    if (runtimeArgs[0] === "run") {
+      runSignal = signal
+      return Promise.reject(new Error("runtime rejected after launch"))
+    }
+    return Promise.resolve({ exitCode: 0, stdout: "", stderr: "" })
+  }
+  const driver = makeConfiguredOciExecutionDriver({ commandExecutor: executor })
+  const request = buildOciSandboxRequest({
+    requestId: "req-oci-rejected-after-launch",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-oci-rejected-after-launch",
+      security_tier: "single_tenant",
+      isolation_class: "oci",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["sleep", "100"],
+    imageRef: "docker://breadboard/base:latest",
+  })
+
+  await assert.rejects(() => driver.execute!(request), /rejected after launch/)
+  await assert.rejects(() => driver.execute!(request), /already active/)
+  assert.deepEqual(invokedCommands, ["run"])
+  assert.equal(runSignal?.aborted, false)
+  await driver.terminate!(request, {
+    reason: "cancelled",
+    signal: new AbortController().signal,
+    deadlineAtMs: null,
+  })
+  assert.equal(runSignal?.aborted, true)
+  assert.deepEqual(invokedCommands, ["run", "stop", "rm"])
 })
 
 test("OCI driver termination continues to kill/rm when commandExecutor throws synchronously during stop", async () => {

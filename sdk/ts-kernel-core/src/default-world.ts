@@ -17,9 +17,12 @@ import {
   type OciTerminalSessionAdapter,
 } from "@breadboard/execution-driver-oci"
 import {
+  makeRayExecutionDriver,
   makeRemoteExecutionDriver,
+  makeSlurmExecutionDriver,
   type RemoteExecutionHttpOptions,
   type RemoteSandboxExecutor,
+  type ScheduledExecutionDriverRegistrationV1,
 } from "@breadboard/execution-driver-remote"
 
 export interface KernelExecutionWorldOptions {
@@ -41,6 +44,8 @@ export interface KernelExecutionWorldOptions {
   readonly ociTerminalAdapter?: OciTerminalSessionAdapter
   readonly remoteExecutor?: RemoteSandboxExecutor
   readonly remoteHttp?: RemoteExecutionHttpOptions
+  readonly ray?: ScheduledExecutionDriverRegistrationV1
+  readonly slurm?: ScheduledExecutionDriverRegistrationV1
   readonly defaultDeadlineMs?: number | null
   readonly terminationGraceMs?: number
 }
@@ -49,7 +54,15 @@ function withSandboxOverride(
   driver: TerminalSessionDriverV1,
   executeSandbox: NonNullable<KernelExecutionWorldOptions["executeSandbox"]>,
 ): TerminalSessionDriverV1 {
-  const activeOverrides = new Map<string, { promise: Promise<unknown>; controller: AbortController }>()
+  const activeOverrides = new Map<
+    string,
+    {
+      promise: Promise<unknown>
+      controller: AbortController
+      cleanup: () => void
+      detach: () => void
+    }
+  >()
   return {
     ...driver,
     supportsCapability(capability, placementClass) {
@@ -80,6 +93,11 @@ function withSandboxOverride(
           },
         })
       }
+      if (activeOverrides.has(request.request_id)) {
+        return Promise.reject(
+          new Error(`Kernel override request '${request.request_id}' is already active`),
+        )
+      }
       const controller = new AbortController()
       const forwardAbort = () => {
         if (!controller.signal.aborted) {
@@ -100,13 +118,23 @@ function withSandboxOverride(
         }),
       )
 
-      activeOverrides.set(request.request_id, { promise: sandboxPromise, controller })
+      const detach = () => context?.signal?.removeEventListener("abort", forwardAbort)
       const cleanup = () => {
-        activeOverrides.delete(request.request_id)
-        context?.signal?.removeEventListener("abort", forwardAbort)
+        if (activeOverrides.get(request.request_id)?.controller === controller) {
+          activeOverrides.delete(request.request_id)
+        }
+        detach()
       }
-
-      return sandboxPromise.finally(cleanup)
+      activeOverrides.set(request.request_id, {
+        promise: sandboxPromise,
+        controller,
+        cleanup,
+        detach,
+      })
+      return sandboxPromise.then((result) => {
+        cleanup()
+        return result
+      })
     },
     async terminate(request, context) {
       const active = activeOverrides.get(request.request_id)
@@ -116,11 +144,16 @@ function withSandboxOverride(
         }
         return
       }
-      const reason = context?.signal?.reason ?? new Error(`Execution ${context?.reason ?? "cancelled"}`)
-      if (!active.controller.signal.aborted) {
-        active.controller.abort(reason)
+      try {
+        const reason = context?.signal?.reason ?? new Error(`Execution ${context?.reason ?? "cancelled"}`)
+        if (!active.controller.signal.aborted) {
+          active.controller.abort(reason)
+        }
+        active.detach()
+        await active.promise.catch(() => {})
+      } finally {
+        active.cleanup()
       }
-      await active.promise.catch(() => {})
     },
   }
 }
@@ -160,7 +193,17 @@ export function createKernelExecutionWorld(options: KernelExecutionWorldOptions 
     terminalAdapter: options.ociTerminalAdapter,
   })
   const remoteDriver = makeRemoteExecutionDriver(options.remoteExecutor, options.remoteHttp)
-  const baseDrivers = [localDriver, ociDriver, remoteDriver]
+  const baseDrivers: TerminalSessionDriverV1[] = [
+    localDriver,
+    ociDriver,
+    remoteDriver,
+    ...(options.ray
+      ? [makeRayExecutionDriver(options.ray.backend, options.ray.options)]
+      : []),
+    ...(options.slurm
+      ? [makeSlurmExecutionDriver(options.slurm.backend, options.slurm.options)]
+      : []),
+  ]
   const drivers = options.executeSandbox
     ? baseDrivers.map((driver) => withSandboxOverride(driver, options.executeSandbox!))
     : baseDrivers

@@ -1,8 +1,14 @@
 import fs from "node:fs"
 import { spawn } from "node:child_process"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import test from "node:test"
 import assert from "node:assert/strict"
 import { setTimeout as sleep } from "node:timers/promises"
+import {
+  canonicalSandboxArtifactRoot,
+  canonicalSandboxArtifactUri,
+} from "@breadboard/execution-drivers"
 import {
   buildLocalProcessSandboxRequest,
   chooseTrustedLocalPlacement,
@@ -13,6 +19,20 @@ import {
   trustedLocalExecutionDriver,
   type LocalCommandExecutor,
 } from "../src/index.js"
+
+test("local command executor decodes UTF-8 after complete stream collection", async () => {
+  const result = await defaultLocalCommandExecutor({
+    command: [
+      process.execPath,
+      "-e",
+      "process.stdout.write(Buffer.from([0xe2])); process.stderr.write(Buffer.from([0xf0,0x9f])); setTimeout(() => { process.stdout.write(Buffer.from([0x82,0xac])); process.stderr.write(Buffer.from([0x98,0x80])); }, 25)",
+    ],
+  })
+
+  assert.equal(result.exitCode, 0)
+  assert.equal(result.stdout, "€")
+  assert.equal(result.stderr, "😀")
+})
 
 test("trusted local driver chooses inline vs local process cleanly", () => {
   assert.equal(
@@ -48,6 +68,7 @@ test("trusted local driver can build a local-process sandbox request", () => {
       security_tier: "trusted_dev",
       isolation_class: "process",
       allow_net_hosts: ["api.openai.com"],
+      allow_run_programs: ["bash"],
       secret_mode: "ref_only",
       evidence_mode: "replay_strict",
     },
@@ -72,6 +93,7 @@ test("trusted local driver can build a local-process sandbox request", () => {
       security_tier: "trusted_dev",
       isolation_class: "process",
       allow_net_hosts: [],
+      allow_run_programs: ["node"],
       secret_mode: "ref_only",
       evidence_mode: "replay_strict",
     },
@@ -88,6 +110,26 @@ test("trusted local driver can build a local-process sandbox request", () => {
   assert.equal(built?.placement_class, "local_process")
 })
 
+test("trusted local driver rejects programs outside the capability allowlist", () => {
+  assert.throws(
+    () =>
+      buildLocalProcessSandboxRequest({
+        requestId: "sandbox-disallowed",
+        capability: {
+          schema_version: "bb.execution_capability.v1",
+          capability_id: "cap-local-program-policy",
+          security_tier: "trusted_dev",
+          isolation_class: "process",
+          allow_run_programs: ["python"],
+          secret_mode: "ref_only",
+          evidence_mode: "minimal",
+        },
+        command: ["node", "worker.js"],
+      }),
+    /program "node" is not allowed by capability cap-local-program-policy/,
+  )
+})
+
 test("trusted local driver can execute a local-process sandbox request", async () => {
   const request = buildLocalProcessSandboxRequest({
     requestId: "sandbox-exec-1",
@@ -96,17 +138,57 @@ test("trusted local driver can execute a local-process sandbox request", async (
       capability_id: "cap-exec-1",
       security_tier: "trusted_dev",
       isolation_class: "process",
-      allow_net_hosts: [],
       secret_mode: "ref_only",
       evidence_mode: "replay_strict",
     },
     command: ["node", "-e", "process.stdout.write('local ok')"],
     workspaceRef: "/tmp",
   })
-  const result = await executeLocalProcessSandboxRequest(request)
+  const artifactRoot = fs.mkdtempSync(join(tmpdir(), "bb-local-artifacts-"))
+  fs.chmodSync(artifactRoot, 0o755)
+  const result = await executeLocalProcessSandboxRequest(request, {
+    tempDirRoot: artifactRoot,
+  })
   assert.equal(result.status, "completed")
-  assert.ok(result.stdout_ref?.startsWith("file://"))
+  if (!result.stdout_ref) assert.fail("local execution must return stdout evidence")
+  assert.match(result.stdout_ref, /^sha256:/)
+  assert.equal(
+    fs.readFileSync(
+      new URL(canonicalSandboxArtifactUri(
+        result.stdout_ref,
+        artifactRoot,
+      )),
+      "utf8",
+    ),
+    "local ok",
+  )
+  assert.equal(fs.statSync(artifactRoot).mode & 0o077, 0o055)
+  assert.equal(
+    fs.statSync(canonicalSandboxArtifactRoot(artifactRoot)).mode & 0o077,
+    0,
+  )
   assert.ok(result.side_effect_digest?.startsWith("sha256:"))
+})
+
+test("trusted local execution rejects unenforceable network policy", async () => {
+  const request = buildLocalProcessSandboxRequest({
+    requestId: "sandbox-network-policy",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-network-policy",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      allow_net_hosts: [],
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["node", "-e", "process.stdout.write('blocked')"],
+  })
+
+  await assert.rejects(
+    () => executeLocalProcessSandboxRequest(request),
+    /cannot enforce the requested network policy/,
+  )
 })
 
 test("trusted local direct execution classifies an ordinary abort as cancelled", async () => {
@@ -162,9 +244,9 @@ test("trusted local direct execution classifies an already-deadline-aborted requ
     },
   })
   assert.equal(result.status, "timed_out")
-  assert.equal(result.error?.reason, "deadline_exceeded")
-  assert.ok(result.stdout_ref?.startsWith("file://"))
-  assert.ok(result.stderr_ref?.startsWith("file://"))
+  assert.equal(result.error?.reason, "execution_timed_out")
+  assert.ok(result.stdout_ref?.startsWith("sha256:"))
+  assert.ok(result.stderr_ref?.startsWith("sha256:"))
   assert.ok(result.side_effect_digest?.startsWith("sha256:"))
   assert.equal(executorCalls, 0)
 })
@@ -385,14 +467,16 @@ test("trusted local driver terminate triggers signal and awaits process exit", a
   })
   const execPromise = driver.execute!(request)
   assert.equal(processExited, false)
-  await driver.terminate!(request, {
+  const terminationResult = await driver.terminate!(request, {
     reason: "deadline",
     signal: new AbortController().signal,
     deadlineAtMs: Date.now(),
   })
   assert.equal(processExited, true)
   const result = await execPromise
+  assert.deepEqual(terminationResult, result)
   assert.equal(result.status, "timed_out")
+  assert.ok(result.stderr_ref)
 })
 
 test("defaultLocalCommandExecutor terminates isolated process group including shell descendants on abort", async () => {
@@ -411,7 +495,11 @@ test("defaultLocalCommandExecutor terminates isolated process group including sh
   await sleep(100)
   abortController.abort(new Error("aborted"))
   const result = await execPromise
-  assert.ok(result.exitCode !== 0)
+  if (process.platform === "win32") {
+    assert.ok(result.exitCode !== 0)
+  } else {
+    assert.equal(result.exitCode, 143)
+  }
   const descendantPid = parseInt(result.stdout.trim(), 10)
   if (!isNaN(descendantPid) && descendantPid > 0 && process.platform !== "win32") {
     // Wait briefly and verify descendant process is gone (sending signal 0 will throw ESRCH)
@@ -583,6 +671,39 @@ test("trusted local driver terminate bounds settlement when executor ignores abo
   )
   const durationMs = Date.now() - startMs
   assert.ok(durationMs >= 1900 && durationMs < 3000, `terminate timed out in ${durationMs}ms`)
+})
+
+test("trusted local driver retains rejected execution until termination cleanup", async () => {
+  let receivedSignal: AbortSignal | undefined
+  let launches = 0
+  const driver = makeTrustedLocalExecutionDriver(({ signal }) => {
+    launches += 1
+    receivedSignal = signal
+    return Promise.reject(new Error("executor rejected after launch"))
+  })
+  const request = buildLocalProcessSandboxRequest({
+    requestId: "req-local-rejected-after-launch",
+    capability: {
+      schema_version: "bb.execution_capability.v1",
+      capability_id: "cap-local-rejected-after-launch",
+      security_tier: "trusted_dev",
+      isolation_class: "process",
+      secret_mode: "ref_only",
+      evidence_mode: "minimal",
+    },
+    command: ["sleep", "100"],
+  })
+
+  await assert.rejects(() => driver.execute!(request), /rejected after launch/)
+  await assert.rejects(() => driver.execute!(request), /already active/)
+  assert.equal(launches, 1)
+  assert.equal(receivedSignal?.aborted, false)
+  await driver.terminate!(request, {
+    reason: "cancelled",
+    signal: new AbortController().signal,
+    deadlineAtMs: null,
+  })
+  assert.equal(receivedSignal?.aborted, true)
 })
 
 test("trusted local driver cleanup terminates live descendants in process group when parent process exited first", async () => {
