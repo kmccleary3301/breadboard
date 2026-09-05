@@ -1100,6 +1100,8 @@ class PersistenceMixin:
         target.created_at = source.created_at
         target.last_activity_at = source.last_activity_at
         target.logging_dir = source.logging_dir
+        if source.runtime_generation_source_ref is not None:
+            target.runtime_generation_source_ref = source.runtime_generation_source_ref
         previous_metadata = dict(target.metadata or {})
         replacement_metadata = dict(source.metadata or {})
         for key, value in previous_metadata.items():
@@ -1396,6 +1398,7 @@ class PersistenceMixin:
                     else None
                 ),
                 "config_path": str(metadata.get("config_path") or ""),
+                "runtime_generation_source_ref": record.runtime_generation_source_ref,
                 "workspace": str(metadata.get("workspace") or ""),
                 "session_event_root": str(metadata.get("session_event_root") or ""),
                 "durable_product_workspace": str(
@@ -1559,6 +1562,13 @@ class PersistenceMixin:
             not isinstance(logging_dir, str) or not logging_dir
         ):
             raise ValueError("retained session logging directory is invalid")
+        runtime_generation_source_ref = session.get("runtime_generation_source_ref")
+        if runtime_generation_source_ref is not None and (
+            not isinstance(runtime_generation_source_ref, str)
+            or not runtime_generation_source_ref
+            or not Path(runtime_generation_source_ref).is_absolute()
+        ):
+            raise ValueError("retained runtime generation source reference is invalid")
         model = _retained_model_id(session.get("model"))
         reward_summary = session.get("reward_summary")
         if reward_summary is not None:
@@ -1653,6 +1663,7 @@ class PersistenceMixin:
             replay_head_sequence=persisted_replay_head_sequence,
             metadata=metadata,
             loaded_from_retained_state=True,
+            runtime_generation_source_ref=runtime_generation_source_ref,
         )
         for item in payload.get("turns") or []:
             marker = item.get("logical_event_count_before_admission")

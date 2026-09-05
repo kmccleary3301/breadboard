@@ -1,6 +1,8 @@
 from __future__ import annotations
 from types import SimpleNamespace; from pathlib import Path; import asyncio, hashlib, json, os, threading, pytest, yaml
 import copy
+import shutil
+from functools import partial
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from breadboard.product.harness import default_profile as harness_operations
@@ -12,6 +14,8 @@ from breadboard_engine.api.cli_bridge.models import SessionCommandRequest, Sessi
 from breadboard_engine.api.cli_bridge.events import EventType; from breadboard_engine.api.cli_bridge.service import SessionService
 from breadboard_engine.api.cli_bridge.session_runner import MAX_ATTACHMENT_BYTES
 from breadboard_engine.api.cli_bridge.runtime_emission import _tool_names
+from breadboard_engine.api.cli_bridge.runtime_emission import compile_runtime_effective_config_graph
+from breadboard_engine.compilation import compile_effective_config_graph
 from breadboard_engine.auth.enforcer import apply_dotted_overrides; from breadboard_engine.compilation.v2_loader import load_agent_config
 from breadboard_engine.agent_llm_openai import OpenAIConductor
 from breadboard_engine.api.cli_bridge import session_artifacts
@@ -2185,9 +2189,11 @@ async def test_runtime_reconfigure_survives_fresh_retained_resume(
     monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
     monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
     state_root = tmp_path / "state"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
     service = SessionService(state_root=state_root)
     response = await service.create_session(
-        SessionCreateRequest(config_path=CONFIG, task=""),
+        SessionCreateRequest(config_path=CONFIG, task="", workspace=str(workspace)),
         event_root=tmp_path / "events",
         runtime_root=tmp_path / "records",
     )
@@ -2326,6 +2332,107 @@ async def test_create_rejects_override_that_cannot_be_retained(
         )
 
     assert service.registry._records == {}
+
+
+@pytest.mark.parametrize("legacy_state", [False, True])
+@pytest.mark.asyncio
+async def test_default_session_survives_engine_package_relocation(
+    monkeypatch, tmp_path, legacy_state
+) -> None:
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    profile = harness_operations.resolve_default_profile()
+    definition_ref = profile.public_identity()["definition_ref"]
+    roots = (tmp_path / "first-engine", tmp_path / "replacement-engine")
+    for root in roots:
+        shutil.copytree(profile.source_path.parent, (root / definition_ref).parent)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    state_root = tmp_path / "state"
+
+    def legacy_runtime_graph(session_id, runtime_config, _source_ref):
+        # The pre-change generation recipe used this absolute source layer.
+        return compile_effective_config_graph(
+            graph_id=f"{session_id}_effective_config_graph",
+            layers=[{
+                "layer_id": "runtime:effective",
+                "source_kind": "runtime",
+                "scope": "session",
+                "precedence": 0,
+                "source_ref": str(roots[0] / definition_ref),
+                "values": runtime_config,
+            }],
+        )
+
+    monkeypatch.setattr(
+        harness_operations,
+        "daily_driver_template_path",
+        lambda: str(roots[0] / definition_ref),
+    )
+    harness_operations.resolve_default_profile.cache_clear()
+    monkeypatch.setattr(
+        SERVICE + "compile_runtime_effective_config_graph",
+        legacy_runtime_graph if legacy_state else partial(
+            compile_runtime_effective_config_graph, repo_root=roots[0]
+        ),
+    )
+    service = SessionService(state_root=state_root)
+    response = await service.create_session(
+        SessionCreateRequest(
+            task="",
+            workspace=str(workspace),
+            overrides={"providers.default_model": "cli_mock/reference"},
+            permission_mode="configured",
+        ),
+        event_root=tmp_path / "events",
+        runtime_root=tmp_path / "records",
+    )
+    record = await service.ensure_session(response.session_id)
+    durable_state = copy.deepcopy(record.product_session.read_model)
+    await service.registry.persist(record)
+    await _stop(record)
+    if legacy_state:
+        state_path = next(state_root.glob("*.json"))
+        saved_state = json.loads(state_path.read_text())
+        saved_state["session"].pop("runtime_generation_source_ref", None)
+        state_path.write_text(json.dumps(saved_state), encoding="utf-8")
+        monkeypatch.setattr(
+            SERVICE + "compile_runtime_effective_config_graph",
+            partial(compile_runtime_effective_config_graph, repo_root=roots[0]),
+        )
+        upgraded = SessionService(state_root=state_root)
+        same_path = await upgraded.ensure_session(response.session_id)
+        assert same_path.product_session.read_model == durable_state
+        await _stop(same_path)
+    shutil.rmtree(roots[0])
+
+    monkeypatch.setattr(
+        harness_operations,
+        "daily_driver_template_path",
+        lambda: str(roots[1] / definition_ref),
+    )
+    harness_operations.resolve_default_profile.cache_clear()
+    monkeypatch.setattr(
+        SERVICE + "compile_runtime_effective_config_graph",
+        partial(compile_runtime_effective_config_graph, repo_root=roots[1]),
+    )
+    replacement = SessionService(state_root=state_root)
+    restored = await replacement.ensure_session(response.session_id)
+    assert restored.product_session.read_model == durable_state
+    await replacement.execute_command(
+        response.session_id,
+        SessionCommandRequest(
+            command="set_model", payload={"model": "mock/reference"}
+        ),
+    )
+    adopted_state = copy.deepcopy(restored.product_session.read_model)
+    assert adopted_state.effective_lock_hash != durable_state.effective_lock_hash
+    await replacement.registry.persist(restored)
+    await _stop(restored)
+    after_adoption = SessionService(state_root=state_root)
+    resumed = await after_adoption.ensure_session(response.session_id)
+    assert resumed.product_session.read_model == adopted_state
+    await _stop(resumed)
 
 
 @pytest.mark.asyncio
