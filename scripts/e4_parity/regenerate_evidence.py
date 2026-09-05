@@ -1528,7 +1528,7 @@ def _rollback_promoted_write_set(applied: Sequence[tuple[Path, Path | None]]) ->
     for destination, backup in reversed(applied):
         _validate_promotion_destination(destination)
         _remove_path(destination)
-        if backup is not None and backup.exists():
+        if backup is not None and (backup.exists() or backup.is_symlink()):
             destination.parent.mkdir(parents=True, exist_ok=True)
             backup.replace(destination)
 

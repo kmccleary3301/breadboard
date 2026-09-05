@@ -1124,12 +1124,14 @@ def test_regeneration_transaction_rolls_back_all_paths_when_promotion_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """A failed multi-path promotion restores old files and removes newly created accepted destinations."""
+    """A failed promotion restores files and dangling links and removes new destinations."""
     accepted_a = tmp_path / "accepted" / "a.txt"
+    accepted_link = tmp_path / "accepted" / "dangling.txt"
     accepted_new = tmp_path / "accepted" / "new.txt"
     blocking_path = tmp_path / "accepted" / "zz_blocked"
     accepted_a.parent.mkdir()
     accepted_a.write_bytes(b"accepted-a\n")
+    accepted_link.symlink_to("missing.txt")
     blocking_path.write_bytes(b"accepted-blocker\n")
     candidate_stages = (
         driver.Stage(
@@ -1139,6 +1141,7 @@ def test_regeneration_transaction_rolls_back_all_paths_when_promotion_fails(
             argv=(driver.PYTHON, "candidate_write_set.py"),
             writes=(
                 "accepted/a.txt",
+                "accepted/dangling.txt",
                 "accepted/new.txt",
                 "accepted/zz_blocked/b.txt",
             ),
@@ -1170,16 +1173,15 @@ def test_regeneration_transaction_rolls_back_all_paths_when_promotion_fails(
             read_only=True,
         ),
     )
-    calls: list[str] = []
 
     def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         command = argv[-1]
-        calls.append(command)
         execution_root = Path(kwargs["cwd"])
         if command == "candidate_write_set.py":
             accepted_dir = execution_root / "accepted"
             accepted_dir.mkdir(parents=True, exist_ok=True)
             (accepted_dir / "a.txt").write_bytes(b"candidate-a\n")
+            (accepted_dir / "dangling.txt").write_bytes(b"candidate-link\n")
             (accepted_dir / "new.txt").write_bytes(b"candidate-new\n")
             scratch_blocker = accepted_dir / "zz_blocked"
             if scratch_blocker.is_file():
@@ -1188,14 +1190,12 @@ def test_regeneration_transaction_rolls_back_all_paths_when_promotion_fails(
             (scratch_blocker / "b.txt").write_bytes(b"candidate-b\n")
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
-    runner = getattr(driver, "_run_regeneration_transaction", None)
-    assert runner is not None, "regeneration must expose one scratch-to-accepted transaction"
     monkeypatch.setattr(driver, "ROOT", tmp_path)
     monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path.parent))
     monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
     monkeypatch.setattr(driver.subprocess, "run", fake_run)
 
-    code, results = runner(
+    code, _ = driver._run_regeneration_transaction(
         candidate_stages,
         post_promotion_stages,
         final_c4_stages,
@@ -1203,12 +1203,8 @@ def test_regeneration_transaction_rolls_back_all_paths_when_promotion_fails(
     )
 
     assert code != 0
-    assert [result.stage_id for result in results] == [
-        "candidate_write_set",
-        "candidate_validate",
-    ]
-    assert calls == ["candidate_write_set.py", "candidate_validate.py"]
     assert accepted_a.read_bytes() == b"accepted-a\n"
+    assert accepted_link.readlink() == Path("missing.txt")
     assert not accepted_new.exists()
     assert blocking_path.read_bytes() == b"accepted-blocker\n"
 

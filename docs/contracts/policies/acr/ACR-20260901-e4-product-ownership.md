@@ -111,6 +111,8 @@ write, candidate-to-accepted mapping resolves the destination parent and require
 containment within the intended checkout or declared workspace root, before
 discovery can traverse it. Each promotion and rollback operation rechecks that
 containment before mutating its destination.
+Rollback restores dangling leaf symlinks too: their directory entries are accepted
+state even when their targets do not exist.
 
 A nested destination-parent symlink that resolves outside its authorized root
 therefore fails closed before promotion side effects. This is a bounded
