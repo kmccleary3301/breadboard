@@ -1460,7 +1460,7 @@ def _write_set_entries(
         value for stage in stages for value in _declared_stage_writes(stage)
     ):
         candidate_pattern = candidate_root / pattern
-        accepted_pattern = ROOT / pattern
+        accepted_pattern = _accepted_path(candidate_root, candidate_pattern)
         if _is_glob(pattern):
             candidate_matches = set(
                 candidate_pattern.parent.glob(candidate_pattern.name)

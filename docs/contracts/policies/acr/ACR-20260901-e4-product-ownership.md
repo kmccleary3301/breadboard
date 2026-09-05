@@ -88,6 +88,12 @@ escaped symlinks, and derivative evidence aliases under pin-policy v2.
 Regeneration watches the declared workspace, while the read-only explain command
 does not require external evidence configuration.
 
+Promotion uses the same candidate-to-accepted mapping for literal and glob
+writes. Progress evidence retains its workspace-relative contract, including
+archived checkout paths; a checkout-relative decoy cannot replace those bytes.
+The shared resolver's explicit workspace namespace validates that authority and
+rejects absolute paths, traversal, and symlink escape without probing other roots.
+
 The correction changes code and its boundary tests, not accepted evidence.
 Missing fixtures are recovered from the governed input bundle, the pinned source
 archive, and the retained integration checkout. Existing accepted bytes are not

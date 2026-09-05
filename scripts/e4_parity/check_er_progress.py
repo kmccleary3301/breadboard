@@ -56,21 +56,12 @@ def _display(path: Path, *, workspace_root: Path | None = None) -> str:
 
 
 def _resolve_evidence_path(raw_path: str, *, workspace_root: Path | None) -> Path:
-    raw = Path(raw_path.split("#", 1)[0])
-    namespace = (
-        "workspace_evidence"
-        if raw.is_absolute() or (raw.parts and raw.parts[0] in {"docs_tmp", ROOT.name})
-        else "repo"
-    )
-    declared_workspace_root = workspace_root
-    if namespace == "workspace_evidence" and declared_workspace_root is None:
-        declared_workspace_root = workspace_root_for_checkout(ROOT)
     return resolve_declared_reference(
         raw_path,
         checkout_root=ROOT,
-        namespace=namespace,
+        namespace="workspace",
         label="evidence reference",
-        workspace_root=declared_workspace_root,
+        workspace_root=workspace_root,
         must_exist=False,
     )
 
