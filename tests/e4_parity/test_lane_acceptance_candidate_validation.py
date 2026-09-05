@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-import hashlib
 import json
+import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
 import yaml
 
 from breadboard.product.evidence.e4 import lane_acceptance_artifacts as builder
+from breadboard.product.evidence.e4.adapters import oh_my_pi_p3_remaining_capture as p3_capture
 
 ROOT = Path(__file__).resolve().parents[2]
 CHECKOUT_FREEZE_PROVENANCE = (
@@ -20,9 +23,42 @@ def _write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def test_build_lane_validates_fresh_candidate_bytes_before_promotion(
-    tmp_path: Path, monkeypatch
-) -> None:
+def _candidate_spec() -> dict[str, object]:
+    return {
+        "assertions": [("candidate_bytes_current", "candidate bytes are current")],
+        "behavior_family": "candidate_validation",
+        "claim_id": "candidate_validation_v1_c4_support_claim",
+        "config_id": "candidate_validation_v1",
+        "config_path": "agent_configs/candidate_validation.yaml",
+        "ct_id": "ct_candidate_validation",
+        "lane_id": "breadboard_self_runtime_records_v1",
+        "lane_status": "accepted",
+        "package_ref": "config/candidate_source.json",
+        "primitive": "candidate_validation",
+        "provider_model": "none",
+        "run_id": "candidate-validation-run",
+        "sandbox_mode": "read-only",
+        "semantic_key": "candidate_validation",
+        "source_paths": [
+            "config/candidate_source.json",
+            "conformance/__init__.py",
+            "conformance/comparators/__init__.py",
+            "conformance/comparators/protocol.py",
+            "conformance/comparators/stored_report.py",
+        ],
+        "target": "breadboard",
+        "target_family": "breadboard",
+        "target_version": "candidate",
+        "upstream_commit": "a" * 40,
+        "upstream_commit_date": "2026-07-11T00:00:00Z",
+        "upstream_release_label": "candidate",
+        "upstream_repo": "https://example.invalid/candidate",
+    }
+
+
+def _candidate_fixture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[dict[str, object], Path, Path, Path, Path]:
     repo_root = tmp_path / "checkout"
     output_root = tmp_path / "candidate"
     workspace = tmp_path / "workspace"
@@ -39,35 +75,33 @@ def test_build_lane_validates_fresh_candidate_bytes_before_promotion(
     _write_json(source_path, {"fresh": True})
     freeze_path.parent.mkdir(parents=True, exist_ok=True)
     freeze_path.write_text("e4_configs: {}\n", encoding="utf-8")
-    _write_json(ledger_path, {"rows": []})
-    _write_json(catalog_path, {"schema_version": "bb.e4.artifact_catalog.v2"})
-    canonical_registry = repo_root / "conformance/comparators/registry.json"
-    _write_json(
-        canonical_registry,
-        {
-            "comparators": [],
-            "registry_id": "candidate_validation_registry",
-            "schema_version": "bb.e4.comparator_registry.v1",
-        },
+    for relative in (
+        "conformance/__init__.py",
+        "conformance/comparators/__init__.py",
+        "conformance/comparators/protocol.py",
+        "conformance/comparators/stored_report.py",
+    ):
+        source = ROOT / relative
+        destination = repo_root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+    shutil.copy2(
+        ROOT / "conformance/comparators/registry.json",
+        repo_root / "conformance/comparators/registry.json",
     )
 
-    claim_id = "candidate_validation_v1_c4_support_claim"
-    canonical_support = support_dir / f"{claim_id}.json"
-    canonical_manifest = support_dir / "candidate_validation_v1_c4_evidence_manifest.json"
-    _write_json(canonical_support, {"schema_version": "bb.e4.support_claim.v2", "stale": True})
-    _write_json(canonical_manifest, {"schema_version": "bb.e4.evidence_manifest.v1", "stale": True})
-
     monkeypatch.setattr(builder, "ROOT", repo_root)
-    monkeypatch.setattr(builder, "WORKSPACE", workspace)
     monkeypatch.setattr(builder, "FREEZE_MANIFEST_PATH", freeze_path)
     monkeypatch.setattr(builder, "LEDGER_PATH", ledger_path)
     monkeypatch.setattr(builder, "SUPPORT_DIR", support_dir)
     monkeypatch.setattr(builder, "NODE_GATE_DIR", node_gate_dir)
     monkeypatch.setattr(builder, "CATALOG_PATH", catalog_path)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(workspace))
+
     runtime_relpaths = (
-        "docs/conformance/e4_target_support/candidate_validation/runtime_records/manifest.json",
-        "docs/conformance/e4_target_support/candidate_validation/runtime_records/records/bb.kernel_event.v2.jsonl",
-        "docs/conformance/e4_target_support/candidate_validation/runtime_records/records/bb.session_transcript.v2.jsonl",
+        "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/manifest.json",
+        "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.kernel_event.v2.jsonl",
+        "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.session_transcript.v2.jsonl",
     )
 
     def emit_candidate_runtime_records(
@@ -75,8 +109,9 @@ def test_build_lane_validates_fresh_candidate_bytes_before_promotion(
         spec: object,
         logical_lane_dir: Path,
     ) -> list[str]:
+        del physical_lane_dir
         assert spec
-        assert logical_lane_dir == repo_root / "docs/conformance/e4_target_support/candidate_validation"
+        assert logical_lane_dir == repo_root / "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1"
         for index, relative in enumerate(runtime_relpaths):
             path = output_root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -94,7 +129,6 @@ def test_build_lane_validates_fresh_candidate_bytes_before_promotion(
         "replay_session_from_records",
         lambda _runtime_dir: {"ok": True},
     )
-    monkeypatch.setattr(builder, "ledger_row_ref", lambda spec: "ledger.json#feat#sha256:" + "0" * 64)
     monkeypatch.setattr(
         builder,
         "catalog_binding",
@@ -107,102 +141,99 @@ def test_build_lane_validates_fresh_candidate_bytes_before_promotion(
         },
     )
 
-    def validate_candidate(
-        *,
-        repo_root: Path,
-        freeze_manifest_path: Path,
-        config_id: str,
-        support_claim_path: Path,
-        evidence_manifest_path: Path,
-        enforce_catalog_binding: bool,
-        comparator_registry_path: Path | None = None,
-    ):
-        del config_id, enforce_catalog_binding
-        if comparator_registry_path is None:
-            return {
-                "ok": False,
-                "errors": ["C4 candidate validation omitted the candidate registry"],
-            }
-        candidate_paths = (
-            repo_root,
-            freeze_manifest_path,
-            support_claim_path,
-            evidence_manifest_path,
-            comparator_registry_path,
-        )
-        candidate_root = output_root.resolve()
-        if any(not path.resolve().is_relative_to(candidate_root) for path in candidate_paths):
-            return {
-                "ok": False,
-                "errors": ["C4 candidate validation escaped the scratch checkout"],
-            }
-        if comparator_registry_path.read_bytes() != canonical_registry.read_bytes():
-            return {
-                "ok": False,
-                "errors": ["C4 candidate comparator registry bytes changed"],
-            }
-        support_path = support_claim_path
-        manifest_path = evidence_manifest_path
-        candidate_freeze = freeze_manifest_path
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        support_artifact = next(
-            item
-            for item in manifest["artifacts"]
-            if item["role"] == "support_claim_ref"
-        )
-        session_artifact = next(
-            item
-            for item in manifest["artifacts"]
-            if item["role"] == "session_transcript"
-        )
-        expected_hashes = {
-            support_artifact["sha256"]: "sha256:"
-            + hashlib.sha256(support_path.read_bytes()).hexdigest(),
-            session_artifact["sha256"]: "sha256:"
-            + hashlib.sha256(
-                (output_root / session_artifact["path"]).read_bytes()
-            ).hexdigest(),
-        }
-        current = all(
-            declared == actual for declared, actual in expected_hashes.items()
-        )
-        return {
-            "ok": current and candidate_freeze.is_file(),
-            "errors": [] if current else ["PIN_STALE"],
-        }
+    spec = _candidate_spec()
+    ledger_row = {"feature_id": builder.feature_id(spec)}
+    _write_json(ledger_path, {"rows": [ledger_row]})
+    return spec, repo_root, output_root, freeze_path, support_dir
 
-    monkeypatch.setattr(builder, "validate_c4_chain", validate_candidate)
-    spec = {
-        "assertions": [("candidate_bytes_current", "candidate bytes are current")],
-        "behavior_family": "candidate_validation",
-        "claim_id": claim_id,
-        "config_id": "candidate_validation_v1",
-        "config_path": "agent_configs/candidate_validation.yaml",
-        "ct_id": "ct_candidate_validation",
-        "lane_id": "candidate_validation",
-        "lane_status": "accepted",
-        "package_ref": "config/candidate_source.json",
-        "primitive": "candidate_validation",
-        "provider_model": "none",
-        "run_id": "candidate-validation-run",
-        "sandbox_mode": "read-only",
-        "semantic_key": "candidate_validation",
-        "source_paths": ["config/candidate_source.json"],
-        "target": "breadboard",
-        "target_family": "breadboard",
-        "target_version": "candidate",
-        "upstream_commit": "a" * 40,
-        "upstream_commit_date": "2026-07-11T00:00:00Z",
-        "upstream_release_label": "candidate",
-        "upstream_repo": "https://example.invalid/candidate",
-    }
+
+def test_build_lane_validates_fresh_candidate_bytes_with_real_validator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spec, repo_root, output_root, _freeze_path, support_dir = _candidate_fixture(
+        tmp_path, monkeypatch
+    )
+    canonical_registry = repo_root / "conformance/comparators/registry.json"
+    canonical_support = support_dir / f"{spec['claim_id']}.json"
+    canonical_manifest = support_dir / "candidate_validation_v1_c4_evidence_manifest.json"
+    _write_json(canonical_support, {"schema_version": "bb.e4.support_claim.v2", "stale": True})
+    _write_json(canonical_manifest, {"schema_version": "bb.e4.evidence_manifest.v1", "stale": True})
 
     result = builder.build_lane(spec, output_root=output_root)
 
     assert result["ok"] is True
+    candidate_registry = output_root / "conformance/comparators/registry.json"
+    assert candidate_registry.is_file()
+    assert candidate_registry.read_bytes() == canonical_registry.read_bytes()
     assert canonical_support.read_text(encoding="utf-8").find('"stale": true') >= 0
     assert canonical_manifest.read_text(encoding="utf-8").find('"stale": true') >= 0
 
+
+def test_reused_candidate_registry_rejects_stale_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo_root = tmp_path / "checkout"
+    output_root = tmp_path / "candidate"
+    canonical_registry = repo_root / "conformance/comparators/registry.json"
+    canonical_registry.parent.mkdir(parents=True, exist_ok=True)
+    canonical_registry.write_bytes(b'{"registry":"canonical"}\n')
+    stale_registry = output_root / "conformance/comparators/registry.json"
+    stale_registry.parent.mkdir(parents=True, exist_ok=True)
+    stale_bytes = b'{"registry":"stale"}\n'
+    stale_registry.write_bytes(stale_bytes)
+    config = repo_root / "agent_configs/candidate.yaml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text("provider: candidate\n", encoding="utf-8")
+
+    monkeypatch.setattr(builder, "ROOT", repo_root)
+    spec = {"config_path": "agent_configs/candidate.yaml", "source_paths": []}
+
+    with pytest.raises(ValueError, match="differs from the canonical registry"):
+        builder._materialize_candidate_validation_inputs(spec, output_root)
+
+    assert stale_registry.read_bytes() == stale_bytes
+    outside = tmp_path / "outside-registry.json"
+    outside_bytes = b'{"registry":"outside"}\n'
+    outside.write_bytes(outside_bytes)
+    stale_registry.unlink()
+    stale_registry.symlink_to(outside)
+
+    with pytest.raises(ValueError, match="must not be a symlink"):
+        builder._materialize_candidate_validation_inputs(spec, output_root)
+
+    assert outside.read_bytes() == outside_bytes
+
+
+def test_p3_candidate_validation_uses_contained_registry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spec, repo_root, output_root, freeze_path, support_dir = _candidate_fixture(
+        tmp_path, monkeypatch
+    )
+    builder.build_lane(spec, output_root=output_root)
+    candidate_registry = output_root / "conformance/comparators/registry.json"
+    candidate_registry.write_text('{"comparators":[]}\n', encoding="utf-8")
+
+    monkeypatch.setattr(p3_capture, "ROOT", repo_root)
+    monkeypatch.setattr(p3_capture, "FREEZE_MANIFEST_PATH", freeze_path)
+    support_path = output_root / "docs/conformance/support_claims" / f"{spec['claim_id']}.json"
+    manifest_path = output_root / "docs/conformance/support_claims/candidate_validation_v1_c4_evidence_manifest.json"
+    logical_support_path = support_dir / f"{spec['claim_id']}.json"
+    logical_manifest_path = support_dir / "candidate_validation_v1_c4_evidence_manifest.json"
+
+    report = p3_capture.validate_candidate_c4_chain(
+        config_id=str(spec["config_id"]),
+        physical_support_claim_path=support_path,
+        physical_evidence_manifest_path=manifest_path,
+        logical_support_claim_path=logical_support_path,
+        logical_evidence_manifest_path=logical_manifest_path,
+        candidate_root=output_root,
+        materialized_sources=(),
+        temp_prefix=".candidate-validation-test-",
+    )
+
+    assert report["ok"] is True
+    assert report["comparator_rerun"]["registry"] == "conformance/comparators/registry.json"
 
 def test_oh_my_pi_freeze_provenance_is_checkout_local_and_tracked() -> None:
     tracked = {

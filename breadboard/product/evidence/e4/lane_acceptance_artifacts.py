@@ -203,8 +203,36 @@ def _materialize_candidate_validation_inputs(
         checkout_root=ROOT,
         namespace="repo",
     )
-    registry_destination = output_root / "conformance/comparators/registry.json"
-    if not registry_destination.exists():
+    candidate_root = output_root.resolve()
+    registry_destination = candidate_root / registry_source.relative_to(ROOT.resolve())
+    try:
+        registry_destination.parent.resolve().relative_to(candidate_root)
+        parent_parts = registry_destination.parent.relative_to(candidate_root).parts
+    except ValueError as exc:
+        raise ValueError(
+            "candidate comparator registry destination escapes the candidate root"
+        ) from exc
+    parent = candidate_root
+    for part in parent_parts:
+        parent /= part
+        if parent.is_symlink():
+            raise ValueError(
+                "candidate comparator registry destination must not use symlink parents"
+            )
+    if registry_destination.is_symlink():
+        raise ValueError(
+            "candidate comparator registry destination must not be a symlink"
+        )
+    if registry_destination.exists():
+        if not registry_destination.is_file():
+            raise ValueError(
+                "candidate comparator registry destination must be a regular file"
+            )
+        if registry_destination.read_bytes() != registry_source.read_bytes():
+            raise ValueError(
+                "candidate comparator registry differs from the canonical registry"
+            )
+    else:
         registry_destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(registry_source, registry_destination)
     return registry_destination
