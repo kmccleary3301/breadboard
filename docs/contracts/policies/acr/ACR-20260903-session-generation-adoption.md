@@ -59,6 +59,15 @@ A Product Session must retain the exact effective Lock identity that governed ea
 - Artifact/state restoration steps: no schema or data migration exists; restore the preceding runtime package artifacts.
 - Post-rollback verification: rerun Product Session replay and model-role runtime tests.
 
+## Retained permission recovery — 2026-09-05
+
+Retained startup keeps `metadata.permission_mode` as the resolved public
+projection, not as a new authored directive. It first rebuilds the implicit
+request without feeding that projection back into permission defaults, then
+tries the bounded projected mode only when the pinned generation requires it.
+Generation mismatch refusal remains authoritative; no effective configuration
+or provider-specific exception is persisted.
+
 ## 8) Approvals
 
 - Kernel reviewer: independent exact-head review required.
