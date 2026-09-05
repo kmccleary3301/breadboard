@@ -12,7 +12,7 @@
 | R06 | `DSH-SCHEMA-49-008` | schema | CLOSE |
 | R07 | `DSH-SCHEMA-49-013` | schema | CLOSE |
 | R08 | `DSH-DONOR-46-008` | maintenance | CLOSE |
-| R09 | `DSH-DONOR-46-011` | maintenance | CLOSE |
+| R09 | `DSH-DONOR-46-011` | maintenance | ADOPT-LATER |
 | R10 | `DSH-DONOR-46-013` | maintenance | ADOPT-LATER |
 | R11 | `DSH-DONOR-46-019` | maintenance | ADOPT-LATER |
 | R12 | `DSH-DONOR-46-025` | maintenance | CLOSE |
@@ -20,7 +20,7 @@
 | R14 | `DSH-DONOR-47-008` | maintenance | CLOSE |
 | R15 | `DSH-DONOR-47-009` | maintenance | ADOPT-LATER |
 | R16 | `DSH-DONOR-47-011` | maintenance | CLOSE |
-| R17 | `DSH-DONOR-26-017` | surfaces | ADOPT-LATER |
+| R17 | `DSH-DONOR-26-017` | surfaces | CLOSE |
 | R18 | `DSH-DONOR-29-026` | surfaces | CLOSE |
 | R19 | `DSH-LAW-10-006` | surfaces | ADOPT-LATER |
 | R20 | `DSH-DONOR-42-002` | surfaces | CLOSE |
@@ -31,7 +31,7 @@
 | R25 | `DSH-CLOSURE-X-012` | surfaces | CLOSE |
 | R26 | `DSH-CLOSURE-X-015` | surfaces | CLOSE |
 | R27 | `DSH-CLOSURE-X-016` | surfaces | CLOSE |
-| R28 | `DSH-CLOSURE-X-032` | surfaces | ADOPT-LATER |
+| R28 | `DSH-CLOSURE-X-032` | surfaces | CLOSE |
 | R29 | `DSH-CLOSURE-X-048` | surfaces | CLOSE |
 
 ## Bounded disposition
