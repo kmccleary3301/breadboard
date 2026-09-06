@@ -15,6 +15,7 @@ import selectors
 import signal
 import subprocess
 import sys
+from tempfile import TemporaryDirectory
 from typing import Any, Mapping, Sequence
 
 _MAX_INPUT_BYTES = 1024 * 1024
@@ -35,7 +36,6 @@ def _request_payload(value: object) -> dict[str, Any]:
         "operation",
         "execution_id",
         "request_digest",
-        "workspace",
         "ray_address",
         "ray_namespace",
     ):
@@ -143,10 +143,9 @@ def _run_operation(payload: dict[str, Any], ray: Any) -> dict[str, Any]:
     name = _actor_name(namespace, execution_id)
 
     @ray.remote
-    def run(
-        command: list[str], workspace: str, max_output_bytes: int
-    ) -> dict[str, Any]:
-        return _bounded_command(command, workspace, max_output_bytes)
+    def run(command: list[str], max_output_bytes: int) -> dict[str, Any]:
+        with TemporaryDirectory(prefix="breadboard-research-world-") as workspace:
+            return _bounded_command(command, workspace, max_output_bytes)
 
     @ray.remote
     class ResearchWorldJob:
@@ -169,13 +168,12 @@ def _run_operation(payload: dict[str, Any], ray: Any) -> dict[str, Any]:
             self,
             request_digest: str,
             command: list[str],
-            workspace: str,
             max_output_bytes: int,
         ) -> str:
             if request_digest != self.request_digest:
                 raise RuntimeError("Ray request digest does not match retained actor")
             if self.result_ref is None and not self.cancelled:
-                self.result_ref = run.remote(command, workspace, max_output_bytes)
+                self.result_ref = run.remote(command, max_output_bytes)
             return "running"
 
         def observe(self) -> dict[str, Any]:
@@ -218,7 +216,6 @@ def _run_operation(payload: dict[str, Any], ray: Any) -> dict[str, Any]:
             actor.start.remote(
                 payload["request_digest"],
                 request["command"],
-                payload["workspace"],
                 payload["max_output_bytes"],
             )
         )

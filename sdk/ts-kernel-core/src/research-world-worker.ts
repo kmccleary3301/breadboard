@@ -285,7 +285,7 @@ class RayHelperBackend implements ScheduledExecutionBackendV1 {
   private queue: Promise<void> = Promise.resolve()
   private readonly requests = new Map<string, SandboxRequestV1>()
 
-  constructor(helperPath: string, private readonly workspace: string, private readonly world: RayWorld) {
+  constructor(helperPath: string, workspace: string, private readonly world: RayWorld) {
     this.child = spawn(helperPath, ["--research-world-helper"], { cwd: workspace, stdio: ["pipe", "pipe", "pipe"] })
     this.responses = createInterface({ input: this.child.stdout, crlfDelay: Infinity })[Symbol.asyncIterator]()
     const stderr: Buffer[] = []
@@ -356,7 +356,6 @@ class RayHelperBackend implements ScheduledExecutionBackendV1 {
       execution_id: executionId,
       request,
       request_digest: createHash("sha256").update(canonicalScheduledRequestKey(request)).digest("hex"),
-      workspace: this.workspace,
       ray_address: this.world.ray_address,
       ray_namespace: this.world.ray_namespace,
       max_output_bytes: this.world.max_output_bytes,
