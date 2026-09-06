@@ -2,7 +2,7 @@
 # generator: scripts/quality/generate_public_bindings.py
 # generator-version: 5
 # catalog-id: bb.public_operation_catalog.v2
-# catalog-sha256: sha256:5b7eeb4e9c1f7eb01f4fc9906cc46f00b6d34d630da052f28a339178f679c51e
+# catalog-sha256: sha256:627448eb95b9e12c1f951c1b5d5fd30a4fc870cb57c520f23bb3d8c4338394ec
 
 from __future__ import annotations
 
@@ -284,7 +284,7 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         lifecycle="sync",
         idempotency_mode="idempotent",
         auth_mode="capability_gated",
-        required_capabilities=("public.session.execute",),
+        required_capabilities=("public.session.execute", "public.session.read"),
     ),
     PublicOperationBinding(
         operation_id="session.approve",

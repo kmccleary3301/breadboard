@@ -2,7 +2,7 @@
 // generator: scripts/quality/generate_public_bindings.py
 // generator-version: 5
 // catalog-id: bb.public_operation_catalog.v2
-// catalog-sha256: sha256:5b7eeb4e9c1f7eb01f4fc9906cc46f00b6d34d630da052f28a339178f679c51e
+// catalog-sha256: sha256:627448eb95b9e12c1f951c1b5d5fd30a4fc870cb57c520f23bb3d8c4338394ec
 
 export type HttpMethod = "GET" | "POST" | "PUT";
 export type PublicOperationId = "artifact.get" | "artifact.list" | "artifact.verify" | "harness.create" | "harness.explain" | "harness.get" | "harness.list" | "harness.lock" | "harness.update" | "harness.validate" | "harness_lock.get" | "integration.get" | "integration.list" | "integration.probe" | "research.compare" | "session.approve" | "session.artifacts" | "session.cancel" | "session.events" | "session.get" | "session.list" | "session.resume" | "session.send_input" | "session.start" | "system.describe" | "system.health" | "system.schemas";
@@ -280,7 +280,7 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     lifecycle: "sync",
     idempotencyMode: "idempotent",
     authMode: "capability_gated",
-    requiredCapabilities: ["public.session.execute"],
+    requiredCapabilities: ["public.session.execute", "public.session.read"],
   },
   {
     operationId: "session.approve",
