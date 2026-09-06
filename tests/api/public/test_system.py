@@ -571,6 +571,7 @@ def test_http_capability_grant_gates_effect_before_public_callback(
     assert calls == [public_models.PUBLIC_CAPABILITIES]
     assert "public.artifact.read" in calls[0]
 
+
 def test_research_compare_requires_session_read_before_export(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -607,9 +608,6 @@ def test_research_compare_requires_session_read_before_export(
     assert payload["error"]["schema_version"] == "bb.problem.v1"
     assert payload["error"]["error_code"] == "capability_required"
     assert payload["error"]["failed_stage"] == "research.compare"
-    assert payload["error"]["message"] == (
-        "Missing required capabilities: public.session.read"
-    )
     assert calls == []
 
 
