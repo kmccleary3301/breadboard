@@ -123,7 +123,7 @@ class _PreparedComparison:
     generation: EffectiveHarnessLock
     task: str
     run_id: str
-    report: str
+    report: bytes
 
 
 # This program runs inside the selected world. It depends only on Python's
@@ -483,14 +483,11 @@ def _validate_world(world: Any) -> str:
     return python
 
 
-def _admit_payload(payload: bytes, world: dict[str, Any]) -> str:
+def _admit_payload(payload: bytes, world: dict[str, Any]) -> bytes:
     if len(payload) > _MAX_WORKER_RESULT_BYTES:
         raise ValueError("recorded comparison exceeds the worker result bound")
     value = json.loads(payload)
-    records = value["records"]
-    report_records = json.loads(
-        json.dumps(records, allow_nan=False, ensure_ascii=False, separators=(",", ":"))
-    )
+    report_records = value["records"]
     for record in report_records:
         for event in record["events"]:
             event.pop("occurred_at", None)
@@ -530,7 +527,8 @@ def _admit_payload(payload: bytes, world: dict[str, Any]) -> str:
     if len(envelope) + 64 * 1024 > _MAX_WORKER_RESULT_BYTES:
         raise ValueError("comparison report exceeds the worker result envelope bound")
 
-    return report_body.decode("utf-8")
+    return report_body
+
 
 def _prepare_snapshot(
     request: CompareResearchRequest,
@@ -615,6 +613,7 @@ def _result(run_id: str, report: ArtifactRef) -> OperationResult:
         stage=_STAGE,
     )
 
+
 def _fail_comparison(
     workspace: Path,
     work: WorkItem,
@@ -653,7 +652,6 @@ def _retained_prepared(
         "definition",
         "generation",
         "task",
-        "report",
     }:
         raise ValueError("retained comparison input is invalid")
     definition = EffectiveHarnessLock._from_record(capsule["definition"])
@@ -661,9 +659,6 @@ def _retained_prepared(
     task = capsule["task"]
     if type(task) is not str:
         raise ValueError("retained comparison task is not text")
-    report = capsule["report"]
-    if type(report) is not str:
-        raise ValueError("retained comparison report is not text")
     worker_input = json.loads(task)
     if (
         not isinstance(worker_input, dict)
@@ -672,6 +667,16 @@ def _retained_prepared(
         or parent.generation_sequence[0] != definition["graph_hash"]
     ):
         raise ValueError("retained comparison input belongs to another run")
+    compressed = base64.b64decode(worker_input["command"][3], validate=True)
+    decoder = zlib.decompressobj()
+    payload = decoder.decompress(compressed, _MAX_WORKER_RESULT_BYTES + 1)
+    if (
+        len(payload) > _MAX_WORKER_RESULT_BYTES
+        or not decoder.eof
+        or decoder.unused_data
+    ):
+        raise ValueError("retained comparison payload is invalid or oversized")
+    report = _admit_payload(payload, worker_input["world"])
     return _PreparedComparison(definition, generation, task, run_id, report)
 
 
@@ -694,7 +699,6 @@ def _run_comparison(
                     "definition": prepared.definition.as_dict(),
                     "generation": prepared.generation.as_dict(),
                     "task": prepared.task,
-                    "report": prepared.report,
                 }
             )
             ref = put_workspace_artifact(
@@ -804,7 +808,7 @@ def _run_comparison(
         report_body = result.stdout.encode("utf-8")
         if (
             len(report_body) > _MAX_WORKER_RESULT_BYTES
-            or result.stdout != prepared.report
+            or report_body != prepared.report
         ):
             return _fail_comparison(
                 context.workspace,
