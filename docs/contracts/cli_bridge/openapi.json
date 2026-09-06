@@ -2582,6 +2582,56 @@
         "title": "PutApiKeyRequest",
         "type": "object"
       },
+      "ResearchCompareBody": {
+        "additionalProperties": false,
+        "properties": {
+          "compare": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "minLength": 1,
+                "type": "string"
+              }
+            ],
+            "title": "Compare",
+            "type": "array"
+          },
+          "definition": {
+            "minLength": 1,
+            "title": "Definition",
+            "type": "string"
+          },
+          "generation": {
+            "minLength": 1,
+            "title": "Generation",
+            "type": "string"
+          },
+          "projection": {
+            "minLength": 1,
+            "title": "Projection",
+            "type": "string"
+          },
+          "world": {
+            "minLength": 1,
+            "title": "World",
+            "type": "string"
+          }
+        },
+        "required": [
+          "definition",
+          "world",
+          "generation",
+          "projection",
+          "compare"
+        ],
+        "title": "ResearchCompareBody",
+        "type": "object"
+      },
       "SessionApprovalRequest": {
         "additionalProperties": false,
         "properties": {
@@ -4838,6 +4888,47 @@
           }
         },
         "summary": "List Models"
+      }
+    },
+    "/v1/research/compare": {
+      "post": {
+        "operationId": "research.compare",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResearchCompareBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Compare",
+        "tags": [
+          "public-research"
+        ]
       }
     },
     "/v1/schemas": {

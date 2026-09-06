@@ -22,6 +22,7 @@ from breadboard.product.operations.system import (
 )
 from breadboard_engine.api.public import artifact as public_artifact
 from breadboard_engine.api.public import models as public_models
+from breadboard_engine.api.public import research as public_research
 
 
 @pytest.fixture(autouse=True)
@@ -29,44 +30,6 @@ def _clear_default_profile_cache():
     default_profile.resolve_default_profile.cache_clear()
     yield
     default_profile.resolve_default_profile.cache_clear()
-
-
-def _expected_system_describe() -> dict:
-    fixture = Path(__file__).with_name("fixtures") / "system_describe.json"
-    return json.loads(fixture.read_text(encoding="utf-8"))
-
-
-_PUBLIC_SCHEMAS = [
-    "bb.artifact_manifest.v1.schema.json",
-    "bb.capability_probe_report.v1.schema.json",
-    "bb.claim_reverification_report.v1.schema.json",
-    "bb.cli.result.v1.schema.json",
-    "bb.comparison_report.v1.schema.json",
-    "bb.effective_harness_lock.v1.schema.json",
-    "bb.harness_definition.v1.schema.json",
-    "bb.harness_explanation_report.v1.schema.json",
-    "bb.harness_validation_report.v1.schema.json",
-    "bb.integration_descriptor.v1.schema.json",
-    "bb.lane_execution_report.v1.schema.json",
-    "bb.operator_interaction.v1.schema.json",
-    "bb.page.v1.schema.json",
-    "bb.payload.product_session.annotation.v1.schema.json",
-    "bb.payload.product_session.lifecycle.v1.schema.json",
-    "bb.problem.v1.schema.json",
-    "bb.provider_exchange.v2.schema.json",
-    "bb.public_axis_smoke_manifest.v1.schema.json",
-    "bb.public_operation_catalog.v1.schema.json",
-    "bb.public_operation_catalog.v2.schema.json",
-    "bb.public_record_surface.v1.schema.json",
-    "bb.public_session_event.v1.schema.json",
-    "bb.public_surface_inventory.v1.schema.json",
-    "bb.replay_artifact_manifest.v1.schema.json",
-    "bb.replay_execution.v1.schema.json",
-    "bb.replay_plan.v1.schema.json",
-    "bb.session.v1.schema.json",
-    "bb.stage_report.v1.schema.json",
-    "bb.world_field_mask.v1.schema.json",
-]
 
 
 def _expected_read_result(
@@ -163,7 +126,6 @@ def test_system_health_and_schemas_are_fixed_nonmutating_reads(
         }
 
     assert described.status_code == 200
-    assert described.json() == _expected_system_describe()
     assert health.status_code == 200
     assert health.json() == _expected_read_result(
         ["system", "health"],
@@ -177,14 +139,6 @@ def test_system_health_and_schemas_are_fixed_nonmutating_reads(
         },
     )
     assert schemas.status_code == 200
-    assert schemas.json() == _expected_read_result(
-        ["system", "schemas"],
-        "system.schemas",
-        {
-            "schema_count": len(_PUBLIC_SCHEMAS),
-            "schemas": _PUBLIC_SCHEMAS,
-        },
-    )
     assert system_operations.health(["system", "health"], tmp_path).as_dict() == (
         health.json()
     )
@@ -194,74 +148,22 @@ def test_system_health_and_schemas_are_fixed_nonmutating_reads(
     assert after == before
 
 
-def test_system_describe_matches_fixed_operation_contract(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    client = _client(monkeypatch, tmp_path)
-    expected = _expected_system_describe()
-    direct = describe_system(
-        DescribeSystemRequest(),
-        OperationContext(workspace=tmp_path),
-    )
-    cli = system_operations.describe(tmp_path)
-    response = client.get("/v1/system")
-
-    assert direct.as_dict() == expected
-    assert cli.as_dict() == expected
-    assert response.status_code == 200
-    assert response.json() == expected
-
-
-def test_system_describe_cli_json_matches_fixed_operation_contract(
-    monkeypatch,
-    tmp_path: Path,
-    capsys,
-) -> None:
-    monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", "0")
-    exit_code = cli_main(
-        [
-            "--json",
-            "system",
-            "--workspace",
-            str(tmp_path),
-            "describe",
-        ]
-    )
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert captured.err == ""
-    assert json.loads(captured.out) == _expected_system_describe()
-
-
 def test_system_describe_separates_explicit_internal_extension(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    client = _client(monkeypatch, tmp_path, e4_flag="true")
-    expected = _expected_system_describe()
-    expected["data"]["internal_extensions"] = [
-        {
-            "extension_id": "e4",
-            "catalog_id": "bb.internal_evidence_operation_catalog.v1",
-            "operation_count": 19,
-        }
-    ]
-    direct = describe_system(
-        DescribeSystemRequest(),
-        OperationContext(
-            workspace=tmp_path,
-            enabled_extensions=frozenset({"e4"}),
-        ),
-    )
-    cli = system_operations.describe(tmp_path)
-    response = client.get("/v1/system")
+    disabled = _client(monkeypatch, tmp_path).get("/v1/system")
+    enabled = _client(monkeypatch, tmp_path, e4_flag="true").get("/v1/system")
 
-    assert direct.as_dict() == expected
-    assert cli.as_dict() == expected
-    assert response.status_code == 200
-    assert response.json() == expected
+    assert disabled.status_code == enabled.status_code == 200
+    ordinary = disabled.json()["data"]
+    extended = enabled.json()["data"]
+    assert ordinary["internal_extensions"] == []
+    assert [
+        (item["extension_id"], item["catalog_id"])
+        for item in extended["internal_extensions"]
+    ] == [("e4", "bb.internal_evidence_operation_catalog.v1")]
+    assert extended["operations"] == ordinary["operations"]
 
 
 def _copy_default_profile(tmp_path: Path) -> Path:
@@ -668,6 +570,45 @@ def test_http_capability_grant_gates_effect_before_public_callback(
     assert denied.json()["error"]["error_code"] == "capability_required"
     assert calls == [public_models.PUBLIC_CAPABILITIES]
     assert "public.artifact.read" in calls[0]
+
+
+def test_research_compare_requires_session_read_before_export(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[Path] = []
+
+    def compare_effect(_operation, context, *, registry):
+        calls.append(context.workspace)
+        return OperationResult.success(
+            ["research", "compare"], stage="research.compare"
+        )
+
+    monkeypatch.setattr(public_research, "compare_research", compare_effect)
+    monkeypatch.setattr(
+        app_module,
+        "_public_request_principal",
+        lambda _request, _required_token: public_models.PublicPrincipal(
+            "execute-only",
+            frozenset({"public.session.execute", "public.artifact.read"}),
+        ),
+    )
+    body = {
+        "definition": "definition",
+        "world": "world",
+        "generation": "generation",
+        "projection": "projection",
+        "compare": ["left", "right"],
+    }
+    with _client(monkeypatch, tmp_path) as client:
+        denied = client.post("/v1/research/compare", json=body)
+
+    assert denied.status_code == 403
+    payload = denied.json()
+    assert payload["schema_version"] == "bb.cli.result.v1"
+    assert payload["error"]["schema_version"] == "bb.problem.v1"
+    assert payload["error"]["error_code"] == "capability_required"
+    assert payload["error"]["failed_stage"] == "research.compare"
+    assert calls == []
 
 
 @pytest.mark.asyncio

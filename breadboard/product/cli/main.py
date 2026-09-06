@@ -60,8 +60,24 @@ def _system(ns):
     p=ns.add_parser("system",help="inspect installed product"); _common(p);s=p.add_subparsers(dest="command",required=True)
     s.add_parser("describe").set_defaults(handler=lambda a:system.describe(_w(a)))
     for n,fn in (("health",system.health),("schemas",system.schemas)):s.add_parser(n).set_defaults(handler=lambda a,n=n,fn=fn:fn(["system",n],_w(a)))
+def _research_compare(arguments):
+    import asyncio
+    from breadboard.product.operations.model import OperationContext
+    from breadboard.product.operations.research import CompareResearchRequest, compare_research
+    pair = tuple(arguments.compare.split(","))
+    request = CompareResearchRequest(arguments.definition, arguments.world, arguments.generation, arguments.projection, pair)
+    return asyncio.run(compare_research(request, OperationContext(workspace=_w(arguments).resolve(), reference_root=Path.cwd())))
+def _research(ns):
+    parser = ns.add_parser("research", help="compare recorded Sessions")
+    _common(parser)
+    commands = parser.add_subparsers(dest="command", required=True)
+    compare = commands.add_parser("compare")
+    for name in ("definition", "world", "generation", "projection", "compare"):
+        compare.add_argument("--" + name, required=True)
+    compare.set_defaults(handler=_research_compare)
 def build_parser():
     p=argparse.ArgumentParser(prog="breadboard",description="BreadBoard product system, harness, session, integration, and artifact CLI.");p.add_argument("--json",action="store_true",help="emit bb.cli.result.v1 JSON");p.add_argument("--quiet",action="store_true");ns=p.add_subparsers(dest="namespace",required=True);_system(ns);_harness(ns);_harness_lock(ns);_session(ns);_integration(ns);_artifact(ns)
+    _research(ns)
     if _enabled("BREADBOARD_ENABLE_E4_API"):
         from . import e4
         e4.register(ns)

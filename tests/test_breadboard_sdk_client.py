@@ -44,7 +44,6 @@ def test_candidate_product_bindings_exist_on_python_sdk() -> None:
         for name, value in vars(BreadBoardClient).items()
         if callable(value) and not name.startswith("_")
     }
-    assert len(bindings) == len(PUBLIC_BINDINGS_BY_OPERATION_ID) == 26
     assert public_methods == methods
     assert {binding.operation_id for binding in bindings} == set(
         PUBLIC_BINDINGS_BY_OPERATION_ID

@@ -65,6 +65,9 @@ ALLOWED_SCHEMA_IDS = {
     "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json",  # AM28
     "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.annotation.v1.schema.json",  # AM26
     "https://breadboard.dev/contracts/public/schemas/bb.world_field_mask.v1.schema.json",  # AM29
+    "https://breadboard.dev/contracts/public/schemas/bb.public_operation_catalog.v2.schema.json",  # AM30
+    "https://breadboard.dev/contracts/public/schemas/bb.research.compare.input.v1.schema.json",  # AM30
+    "https://breadboard.dev/contracts/public/schemas/bb.research.compare.result.v1.schema.json",  # AM30
 }
 
 # FREEZE_POLICY.md permits plan-required tightening of an existing schema only
@@ -142,6 +145,30 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
         "sha256": "9bac702c6ff4e7b8341032b298afa1b444c6e6008e959f5e7b325f7497bb538e",
         "class": "plan_mandated_evolution",
         "ref": "AM29",
+    },
+    "https://breadboard.dev/contracts/public/schemas/bb.public_operation_catalog.v2.schema.json": {
+        "packet": "DSH-W10",
+        "sha256": "ad40ec89670acf021c9c5b23e94dcfe5853ea9caedda4a21e591a37abceb6506",
+        "class": "plan_mandated_evolution",
+        "ref": "AM30",
+    },
+    "https://breadboard.dev/contracts/public/schemas/bb.research.compare.input.v1.schema.json": {
+        "packet": "DSH-W10",
+        "sha256": "df54f82dd422640de2df6c24fc5a070d4637c069fc3b9db6adfc8034a5cf1b0b",
+        "class": "plan_mandated_evolution",
+        "ref": "AM30",
+    },
+    "https://breadboard.dev/contracts/public/schemas/bb.research.compare.result.v1.schema.json": {
+        "packet": "DSH-W10",
+        "sha256": "e358c5b60a21146e181979c57ad46fe4bda4c66e62efa6b89e26cc1f5c405229",
+        "class": "plan_mandated_evolution",
+        "ref": "AM30",
+    },
+    "https://breadboard.dev/contracts/public/schemas/bb.public_surface_inventory.v1.schema.json": {
+        "packet": "DSH-W10",
+        "sha256": "d5cb5fb733d654c20f6ccfcc9e5c9ecc5b431fd6ef8c8f564b9ebced2a56b41e",
+        "class": "plan_mandated_evolution",
+        "ref": "AM30",
     },
 }
 

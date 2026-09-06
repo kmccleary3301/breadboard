@@ -2,7 +2,7 @@
 <!-- generator: scripts/quality/generate_public_bindings.py -->
 <!-- generator-version: 5 -->
 <!-- catalog-id: bb.public_operation_catalog.v2 -->
-<!-- catalog-sha256: sha256:23c3596e075e609539ede6ba64a005110ceb85935f046e0246ff36cd39b990f6 -->
+<!-- catalog-sha256: sha256:627448eb95b9e12c1f951c1b5d5fd30a4fc870cb57c520f23bb3d8c4338394ec -->
 <!-- document-kind: operation-index -->
 
 # Public operation reference
@@ -25,6 +25,7 @@ Candidate documentation generated from the public operation catalog.
 - [`integration.get`](operations/integration/get.md) — get integration
 - [`integration.list`](operations/integration/list.md) — list integration
 - [`integration.probe`](operations/integration/probe.md) — probe integration
+- [`research.compare`](operations/research/compare.md) — compare research
 - [`session.approve`](operations/session/approve.md) — approve session
 - [`session.artifacts`](operations/session/artifacts.md) — artifacts session
 - [`session.cancel`](operations/session/cancel.md) — cancel session

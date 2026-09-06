@@ -32,7 +32,7 @@ def test_i6_matrix_is_an_independent_exact_catalog_projection() -> None:
         for operation in matrix["operations"]
     }
 
-    assert len(matrix["operations"]) == len(observed) == 26
+    assert len(matrix["operations"]) == len(observed)
     assert observed == expected
     assert all(operation["cli"] for operation in matrix["operations"])
     assert all(

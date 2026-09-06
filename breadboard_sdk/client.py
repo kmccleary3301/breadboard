@@ -16,6 +16,7 @@ from .types import (
     PublicResult,
     PublicSessionDecision,
     PublicSessionStartRequest,
+    ResearchCompareRequest,
     SessionEvent,
 )
 
@@ -600,6 +601,12 @@ class BreadBoardClient:
             "session.start",
             body=payload,
             headers=self._idempotency(idempotency_key),
+        )
+
+    def compare_research(self, payload: ResearchCompareRequest) -> PublicResult:
+        return self._request_operation(
+            "research.compare",
+            body=payload,
         )
 
     def list_session(self) -> PublicResult:

@@ -15,6 +15,7 @@ PUBLIC_DIR = ROOT / "contracts" / "public"
 SCHEMA_DIR = PUBLIC_DIR / "schemas"
 KERNEL_SCHEMA_DIR = ROOT / "contracts" / "kernel" / "schemas"
 SURFACES = ("bbh", "openapi", "python_sdk", "typescript_sdk", "tui", "docs")
+AUTHORIZED_CURRENT_OPERATION_ADDITIONS = frozenset({"research.compare"})
 FROZEN_SHA256 = "sha256:72817b7b1bc5e5d10f752acb48157491aaeb3eb268337461a4fd6f0bd10cbfe0"
 AXIS_MANIFEST_SHA256 = "sha256:dff057633730b1bbb28ebd4fceff3060227f5532b6caabb0f3ed2a325d437db0"
 RECORD_ROLE_PROJECTION_SHA256 = "sha256:f25e6b92c7f2ac57bc9599989f928a763bcb7f6d61c8ecb983cfdf848587fa94"
@@ -169,16 +170,40 @@ def validate_current_catalogs(public_dir: Path = PUBLIC_DIR, internal_dir: Path 
     if product_ids & internal_ids:
         raise ContractValidationError(f"product/internal operation catalogs overlap: {sorted(product_ids & internal_ids)}")
     legacy_ids = frozen_operation_ids(load_frozen_surface(public_dir))
-    if product_ids | internal_ids != legacy_ids:
+    expected_ids = legacy_ids | AUTHORIZED_CURRENT_OPERATION_ADDITIONS
+    if product_ids | internal_ids != expected_ids:
         raise ContractValidationError(
-            f"catalog split does not partition the historical authority; missing={sorted(legacy_ids-product_ids-internal_ids)}, extra={sorted((product_ids|internal_ids)-legacy_ids)}"
+            "catalog split does not partition the historical authority plus authorized "
+            f"amendments; missing={sorted(expected_ids-product_ids-internal_ids)}, "
+            f"extra={sorted((product_ids|internal_ids)-expected_ids)}"
         )
-    expected_product = {"artifact": 3, "harness": 7, "harness_lock": 1, "integration": 3, "session": 9, "system": 3}
-    expected_internal = {"claim": 4, "lane": 12, "lane_execution": 2, "lane_lock": 1}
-    for label, rows, expected in (("product", product["operations"], expected_product), ("internal", internal["operations"], expected_internal)):
-        counts = {family: sum(row["operation_id"].startswith(f"{family}.") for row in rows) for family in expected}
-        if counts != expected:
-            raise ContractValidationError(f"{label} operation family mismatch: expected={expected}, actual={counts}")
+    if AUTHORIZED_CURRENT_OPERATION_ADDITIONS - product_ids:
+        raise ContractValidationError(
+            "authorized current operation amendments must remain in the product catalog: "
+            f"{sorted(AUTHORIZED_CURRENT_OPERATION_ADDITIONS-product_ids)}"
+        )
+    expected_product_families = {
+        "artifact",
+        "harness",
+        "harness_lock",
+        "integration",
+        "research",
+        "session",
+        "system",
+    }
+    expected_internal_families = {"claim", "lane", "lane_execution", "lane_lock"}
+    product_families = {operation_id.split(".", 1)[0] for operation_id in product_ids}
+    internal_families = {operation_id.split(".", 1)[0] for operation_id in internal_ids}
+    if product_families != expected_product_families:
+        raise ContractValidationError(
+            f"product operation families mismatch: expected={sorted(expected_product_families)}, "
+            f"actual={sorted(product_families)}"
+        )
+    if internal_families != expected_internal_families:
+        raise ContractValidationError(
+            f"internal operation families mismatch: expected={sorted(expected_internal_families)}, "
+            f"actual={sorted(internal_families)}"
+        )
 
 _DUAL_NAMESPACE_SCHEMA_IDENTITIES = frozenset(
     {

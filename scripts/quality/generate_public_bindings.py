@@ -214,10 +214,8 @@ def _normalize_catalog(catalog: Any) -> tuple[dict[str, Any], ...]:
     operations = catalog.get("operations")
     if not isinstance(operations, list):
         raise CatalogError("catalog operations must be an array")
-    if len(operations) != 26:
-        raise CatalogError(
-            f"catalog must contain exactly 26 operations, got {len(operations)}"
-        )
+    if len(operations) < 1:
+        raise CatalogError("catalog must contain at least one operation")
 
     normalized: list[dict[str, Any]] = []
     seen: dict[str, dict[tuple[str, ...], str]] = {

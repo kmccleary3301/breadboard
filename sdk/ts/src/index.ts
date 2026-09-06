@@ -25,6 +25,7 @@ export type {
   PublicSessionDecision,
   PublicSessionInputRequest,
   PublicSessionStartRequest,
+  ResearchCompareBody,
   PublicSessionEventKind,
   PublicSessionEventPayloadSchema,
   SessionAnnotationPayload,

@@ -11,6 +11,7 @@ import type {
   RLRunCancelRequest, RLRunReplayResponse, RLRunStatusResponse, RLRunSubmitRequest, RLRunSubmitResponse,
   Problem, PublicHarnessCreateRequest, PublicHarnessUpdateRequest, PublicResult, PublicSessionApprovalRequest,
   PublicSessionCancelRequest, PublicSessionDecision, PublicSessionInputRequest, PublicSessionStartRequest,
+  ResearchCompareBody,
   SessionCommandRequest, SessionCommandResponse,
   SessionCreateRequest, SessionCreateResponse, SessionEvent, SessionFileContent, SessionFileInfo, SessionInputRequest,
   SessionInputResponse, SessionKernelRecordList, SessionListRow, SessionSummary, SkillCatalogResponse,
@@ -132,6 +133,7 @@ export interface BreadboardClient {
   getArtifact(id: string): Promise<PublicResult>
   verifyArtifact(id: string): Promise<PublicResult>
   startSession(body: PublicSessionStartRequest, idempotencyKey?: string): Promise<PublicResult>
+  compareResearch(body: ResearchCompareBody): Promise<PublicResult>
   listSession(): Promise<PublicResult>
   getSession(id: string): Promise<SessionSummary>
   getSessionResult(id: string): Promise<PublicResult>
@@ -232,6 +234,7 @@ function action(
       delete body.idempotency_key
       return r({}, { body, headers: input.idempotency_key ? { "Idempotency-Key": String(input.idempotency_key) } : undefined })
     }
+    case "public.research.compare": return r({}, { body: { definition: input.definition, world: input.world, generation: input.generation, projection: input.projection, compare: input.compare } })
     case "public.session.list": return r()
     case "public.session.get": return r({ session_id: identifier(String(input.session_id ?? ""), "session_id") })
     case "public.session.send_input": return r({ session_id: identifier(String(input.session_id ?? ""), "session_id") }, { body: { content: input.content }, headers: input.idempotency_key ? { "Idempotency-Key": String(input.idempotency_key) } : undefined })
@@ -268,6 +271,7 @@ const publicData = async <T>(config: BreadboardClientConfig, route: string, key:
 }
 export const createBreadboardClient = (config: BreadboardClientConfig): BreadboardClient => {
   const c = {
+    compareResearch: (body: ResearchCompareBody) => action(config, "public.research.compare", { definition: body.definition, world: body.world, generation: body.generation, projection: body.projection, compare: body.compare }),
     describeSystem: () => action(config, "public.system.describe"), healthSystem: () => action(config, "public.system.health"), schemasSystem: () => action(config, "public.system.schemas"), createHarness: (directory = ".") => action(config, "public.harness.create", { directory }), listHarness: () => action(config, "public.harness.list"), getHarness: (id: string) => action(config, "public.harness.get", { harness_id: id }), updateHarness: (id: string, definition: PublicHarnessUpdateRequest["definition"]) => action(config, "public.harness.update", { harness_id: id, definition }), validateHarness: (id: string) => action(config, "public.harness.validate", { harness_id: id }), explainHarness: (id: string) => action(config, "public.harness.explain", { harness_id: id }), lockHarness: (id: string) => action(config, "public.harness.lock", { harness_id: id }), getHarnessLock: (id: string) => action(config, "public.harness_lock.get", { lock_id: id }), listIntegration: () => action(config, "public.integration.list"), getIntegration: (id: string) => action(config, "public.integration.get", { integration_id: id }), probeIntegration: (id: string, key?: string) => action(config, "public.integration.probe", { integration_id: id, idempotency_key: key }), listArtifact: () => action(config, "public.artifact.list"), getArtifact: (id: string) => action(config, "public.artifact.get", { artifact_id: id }), verifyArtifact: (id: string) => action(config, "public.artifact.verify", { artifact_id: id }), startSession: (body: PublicSessionStartRequest, key?: string) => action(config, "public.session.start", { ...body, idempotency_key: key }), listSession: () => action(config, "public.session.list"), sendInputSession: (id: string, content: string, key?: string) => action(config, "public.session.send_input", { session_id: id, content, idempotency_key: key }), approveSession: (id: string, request: string, decision: PublicSessionDecision, key?: string) => action(config, "public.session.approve", { session_id: id, request_id: request, decision, idempotency_key: key }), resumeSession: (id: string, key?: string) => action(config, "public.session.resume", { session_id: id, idempotency_key: key }), cancelSession: (id: string, reason?: string, key?: string) => action(config, "public.session.cancel", { session_id: id, reason, idempotency_key: key }), artifactsSession: (id: string) => action(config, "public.session.artifacts", { session_id: id }),
     getSessionResult: (id: string) => action(config, "public.session.get", { session_id: id }),
     invokePublicAction: (id: PublicActionId, input?: Readonly<Record<string, unknown>>) => action(config, id, input),

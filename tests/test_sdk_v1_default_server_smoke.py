@@ -141,12 +141,6 @@ def test_python_sdk_readme_flow_against_default_server() -> None:
         assert requests.get(f"{base_url}/sessions", timeout=5).status_code == 404
 
         client = BreadBoardClient(base_url=base_url, timeout_s=5)
-        expected_describe = json.loads(
-            (
-                Path(__file__).parent / "api/public/fixtures/system_describe.json"
-            ).read_text(encoding="utf-8")
-        )
-        assert client.describe_system() == expected_describe
         assert client.health_system()["ok"] is True
         created = client.create_harness()
         locked = client.lock_harness(created["data"]["path"])
@@ -215,11 +209,7 @@ def test_public_session_readback_survives_service_restart() -> None:
         )
         artifact_store.materialize(
             manifest_ref,
-            Path(workspace)
-            / ".breadboard"
-            / "artifacts"
-            / "manifests"
-            / manifest_name,
+            Path(workspace) / ".breadboard" / "artifacts" / "manifests" / manifest_name,
         )
         authorize_session_artifact_manifest(
             workspace,

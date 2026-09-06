@@ -24,7 +24,12 @@ from breadboard.product.coordination.work_items import (
 )
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import children as children_module
-from breadboard.product.runtime.artifacts import AnchoredStorage, ArtifactRef, ArtifactStore
+from breadboard.product.runtime.artifacts import (
+    AnchoredStorage,
+    ArtifactRef,
+    ArtifactStore,
+    artifact_store_ref,
+)
 from breadboard.product.runtime.children import (
     ChildActivation,
     ChildError,
@@ -314,8 +319,6 @@ def test_process_adapter_cancels_verified_group_after_leader_loss(
     assert restarted.observe(target.retained()) == "absent"
 
 
-
-
 def test_process_release_is_committed_before_command_execution(tmp_path: Path) -> None:
     marker = tmp_path / "command-ran"
     phases: list[str] = []
@@ -576,6 +579,80 @@ def test_successful_process_child_reconciles_as_completed(
     assert adapter._control_path(activation.execution_target_ref, "task").exists() is False
     assert adapter._control_path(activation.execution_target_ref, "release").exists() is False
 
+
+def test_failed_process_child_retains_result_and_releases_handoff_after_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class InterruptedRelease(ProcessExecutionAdapter):
+        def release_terminal(self, target):
+            raise OSError("terminal cleanup interrupted")
+
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    result = b'{"status":"failed","reason":"bounded worker failure"}'
+    worker = tmp_path / "worker"
+    worker.write_text(
+        "#!/bin/sh\n"
+        'printf "%s" "$0" > worker-path.txt\n'
+        "cat >/dev/null\n"
+        f"printf '%s' '{result.decode()}'\n",
+        encoding="utf-8",
+    )
+    worker.chmod(0o700)
+    monkeypatch.setenv("BREADBOARD_RESEARCH_WORLD_WORKER", str(worker))
+    monkeypatch.setenv("BREADBOARD_RESEARCH_WORLD_MODE", "source")
+    adapter = InterruptedRelease(command=children_module.RESEARCH_WORLD_WORKER_COMMAND)
+    store = ArtifactStore(tmp_path / "results")
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+        artifact_store=store,
+    )
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=_spec(adapter.family),
+    )
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            factory.reconcile(activation.recovery_ref)
+        except OSError as error:
+            assert str(error) == "terminal cleanup interrupted"
+            break
+        if time.monotonic() >= deadline:
+            pytest.fail("failed worker did not reach terminal release")
+        time.sleep(0.01)
+
+    copied_worker = Path((workspace / "worker-path.txt").read_text())
+    retained_handoff = tuple(copied_worker.parent.iterdir())
+    assert copied_worker.is_file()
+    restarted = DurableChildFactory(
+        workspace,
+        registry=SessionRegistry(state_root=tmp_path / "registry"),
+        repository=repository,
+        adapters=[ProcessExecutionAdapter()],
+    )
+    state = restarted.reconcile(activation.recovery_ref)
+    assert (state.status, state.terminal_outcome, state.terminal_count) == (
+        "failed",
+        "failed",
+        1,
+    )
+    assert state.joined and state.settlement is None
+    assert len(state.result_refs) == 1
+    assert (
+        store.read(artifact_store_ref(tmp_path / "results", state.result_refs[0]))
+        == result
+    )
+    child, _ = load_session(workspace, activation.child_session_id)
+    assert child.read_model.status == "failed"
+    for path in retained_handoff:
+        if path.suffix != ".status":
+            assert not path.exists(), path
+    assert restarted.reconcile(activation.recovery_ref) == state
 
 
 def test_process_adapter_hands_off_large_tasks_without_blocking_start(
@@ -1438,7 +1515,6 @@ def test_concurrent_equal_job_completion_publishes_once_and_replays(
     assert (restored.state, restored.result_payload) == ("completed", result_payload)
 
 
-
 def test_parent_cancellation_marker_blocks_late_child_settlement(tmp_path: Path) -> None:
     workspace, repository, parent, registry = _running_parent(tmp_path)
     adapter = RetryAdapter()
@@ -1668,7 +1744,6 @@ def test_direct_nonleaf_cancel_waits_for_descendant_settlement(
         grandchild.execution_target_ref,
         child.execution_target_ref,
     ]
-
 
 
 def test_child_completion_waits_for_every_delegated_child_settlement(
@@ -1966,7 +2041,6 @@ def test_cancel_tree_adopts_each_child_from_its_retained_artifact_store(
     assert adopted.result_refs == second_state.result_refs
 
 
-
 def test_cancel_tree_prepares_adopted_sibling_result_in_retained_store(
     tmp_path: Path,
 ) -> None:
@@ -2062,8 +2136,6 @@ def test_cancel_tree_adopts_completed_child_after_parent_completion(
         load_session(workspace, activation.child_session_id)[0].read_model.status
         == "completed"
     )
-
-
 
 
 def test_cancel_tree_skips_authorization_for_terminal_never_child(
@@ -2687,7 +2759,6 @@ def test_cancellation_intent_precedes_signal_and_late_completion_loses(tmp_path:
         factory.settle(activation.child_session_id, expected_revision=canceled.revision, outcome="completed", attempt_id=canceled.attempt_id)
 
 
-
 def test_cancel_cannot_overwrite_inflight_settlement_reservation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     workspace, repository, parent, registry = _running_parent(tmp_path)
     adapter = RetryAdapter()
@@ -2779,8 +2850,6 @@ def test_reconcile_resumes_reserved_settlement_after_work_item_terminal(
     ) == ("completed", "completed", 1, None, True)
 
 
-
-
 def test_work_item_journal_truncates_torn_last_frame(tmp_path: Path) -> None:
     path = tmp_path / "work-items.jsonl"
     repository = WorkItemRepository(path)
@@ -2824,7 +2893,6 @@ def test_work_item_delegate_torn_transaction_discards_both_events(tmp_path: Path
     assert path.read_bytes() == prefix
 
 
-
 def test_job_completion_replay_preserves_inline_result_payload() -> None:
     from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
 
@@ -2849,7 +2917,6 @@ def test_job_completion_replay_preserves_inline_result_payload() -> None:
     restored = rebuilt.job_manager.get(spawned.job.job_id)
     assert restored is not None
     assert restored.result_payload == result_payload
-
 
 
 def test_released_absent_target_honors_retry_policy_with_new_attempt_and_recovery_ref(
@@ -2932,6 +2999,76 @@ def test_released_absent_target_honors_retry_policy_with_new_attempt_and_recover
         1,
     )
 
+def test_failed_target_honors_retry_policy_and_settles_once(tmp_path: Path) -> None:
+    class FailedTargetRetryAdapter(RetryAdapter):
+        def observe(self, target):
+            return "failed" if self.starts == 1 else "completed"
+
+        def prepare_result(self, target, spec):
+            return b"retried result"
+
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = FailedTargetRetryAdapter()
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+    spec = ChildSpec(
+        "failed target retry",
+        "retry task",
+        _lock(),
+        "child-worker",
+        adapter.family,
+        retry_policy=RetryPolicy(2, True),
+    )
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=spec,
+    )
+
+    retried = factory.reconcile(activation.recovery_ref)
+
+    assert retried.status == "running"
+    assert retried.attempt_id != activation.attempt_id
+    attempts = WorkItem.restore(
+        repository, activation.child_work_item_id
+    ).read_model.attempts
+    assert [(attempt.number, attempt.status) for attempt in attempts] == [
+        (1, "failed"),
+        (2, "running"),
+    ]
+
+    settled = factory.reconcile(retried.recovery_ref)
+
+    assert (settled.status, settled.terminal_outcome, settled.terminal_count) == (
+        "completed",
+        "completed",
+        1,
+    )
+    attempts = WorkItem.restore(
+        repository, activation.child_work_item_id
+    ).read_model.attempts
+    assert [(attempt.number, attempt.status) for attempt in attempts] == [
+        (1, "failed"),
+        (2, "completed"),
+    ]
+    child_session, _ = load_session(workspace, activation.child_session_id)
+    assert child_session.read_model.status == "completed"
+    joins = [
+        event
+        for event in parent.events
+        if event.kind == "child.joined"
+        and event.payload["child_work_item_id"] == activation.child_work_item_id
+    ]
+    assert len(joins) == 1
+    assert factory.reconcile(retried.recovery_ref) == settled
+
+
+
 def test_parent_retry_cancels_propagating_descendants_without_closing_admission(
     tmp_path: Path,
 ) -> None:
@@ -2999,7 +3136,6 @@ def test_parent_retry_cancels_propagating_descendants_without_closing_admission(
         (1, "failed"),
         (2, "running"),
     ]
-
 
 
 @pytest.mark.parametrize("transition", ["wait", "pause"])
@@ -3684,7 +3820,6 @@ def test_reserved_empty_target_published_once(tmp_path: Path) -> None:
     assert adapter.starts == 1
 
 
-
 @pytest.mark.parametrize("recovery", ["reconcile", "settle", "cancel_tree"])
 def test_terminal_metadata_repairs_bridge_status_after_crash(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recovery: str
@@ -3867,7 +4002,6 @@ def test_process_identity_is_retained_before_restart_without_private_journal(tmp
         restarted_adapter.cancel(recovered.execution_target)
     finally:
         process.wait(timeout=2)
-
 
 
 def await_records(registry):
@@ -4232,7 +4366,6 @@ def test_ray_completed_result_uses_custom_artifact_store(tmp_path: Path) -> None
         str(artifact_payload["media_type"]),
     )
     assert custom_store.read(artifact) == b"custom ray actor output"
-
 
 
 def test_ray_cancel_signal_failure_retains_recovery_state(tmp_path: Path) -> None:
@@ -4893,7 +5026,6 @@ def test_shared_job_manager_scopes_ray_ids_by_workspace(
     } == adapter._released_actor_ids
 
 
-
 def test_ray_adapter_launches_named_runtime_with_locked_task(tmp_path: Path) -> None:
     from breadboard_engine.orchestration import MultiAgentOrchestrator, TeamConfig
 
@@ -5097,7 +5229,6 @@ def test_ray_malformed_artifact_reference_fails_once(tmp_path: Path) -> None:
     )
 
 
-
 def test_ray_retained_completed_payload_is_validated_before_adoption(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -5234,7 +5365,6 @@ def test_job_completion_replay_preserves_artifact_reference() -> None:
     )
     assert rebuilt.job_manager.get(failed.job_id).state == "failed"
     assert rebuilt.job_manager.get(killed.job_id).state == "killed"
-
 
 
 def test_default_service_stops_and_deletes_ordinary_sessions_without_workspace(
@@ -5613,7 +5743,6 @@ def test_process_lock_releases_after_cancelled_acquisition(
 
     asyncio_run(scenario())
     assert released.is_set()
-
 
 
 def test_work_item_cancel_torn_transaction_does_not_orphan_descendant(tmp_path: Path) -> None:
@@ -6422,8 +6551,6 @@ def test_cross_registry_cancellation_does_not_block_event_loop(
     asyncio_run(scenario())
 
 
-
-
 def test_generic_metadata_update_preserves_newer_parent_cancellation(
     tmp_path: Path,
 ) -> None:
@@ -6473,7 +6600,6 @@ def test_generic_metadata_update_preserves_newer_parent_cancellation(
         "work-a",
         "work-b",
     ]
-
 
 
 def test_cancel_tree_persists_marker_before_parent_reconciliation(
@@ -6574,7 +6700,6 @@ def test_cancel_tree_clears_uncommitted_child_settlement_after_parent_terminal(
     assert len(settled) == 1
     assert settled[0].status == "canceled"
     assert settled[0].settlement is None
-
 
 
 def test_terminal_cancel_adoption_persists_target_before_acknowledgement(
@@ -6963,7 +7088,6 @@ def test_parent_cancellation_fences_concurrent_child_start(
     assert factory.child_states(
         parent_work_item_id=parent_work.read_model.work_item_id
     ) == ()
-
 
 
 def test_reconciler_persists_complete_nested_intent_before_signaling(
@@ -8064,7 +8188,6 @@ def test_parent_stop_honors_pending_authoritative_tree_result(
         asyncio_run(service.stop_session(parent.session_id))
 
     assert await_record(registry, parent.session_id).status is SessionStatus.RUNNING
-
 
 
 def test_reconciler_skips_process_factory_for_nonprocess_child(

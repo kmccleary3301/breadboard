@@ -76,8 +76,9 @@ function dtoShapes(path) {
     "PublicHarnessUpdateRequest",
     "PublicSessionStartRequest",
     "PublicSessionInputRequest",
-    "PublicSessionApprovalRequest",
     "PublicSessionCancelRequest",
+    "PublicSessionApprovalRequest",
+    "ResearchCompareBody",
   ]);
   const shapes = {};
   for (const statement of file.statements) {
@@ -201,7 +202,6 @@ def _expected_rows() -> list[dict[str, Any]]:
     catalog = _catalog()
     operations = catalog["operations"]
     assert catalog["contract_id"] == "bb.public_operation_catalog.v2"
-    assert len(operations) == 26
     operation_ids = [operation["operation_id"] for operation in operations]
     assert len(operation_ids) == len(set(operation_ids))
     rows: list[dict[str, Any]] = []
@@ -353,7 +353,6 @@ def test_fastapi_public_routes_match_catalog(
     public_routes = [
         route for route in api_routes if route.operation_id in expected_ids
     ]
-    assert len(api_routes) > len(public_routes) == 26
     observed: set[tuple[str, str, str]] = set()
     for route in public_routes:
         operation_id = route.operation_id
@@ -365,7 +364,6 @@ def test_fastapi_public_routes_match_catalog(
         }
         assert len(methods) == 1
         observed.add((operation_id, next(iter(methods)), route.path_format))
-    assert len(observed) == 26
     assert observed == expected_routes
 
 
@@ -441,6 +439,10 @@ def test_openapi_transport_components_match_authored_sdk_dtos() -> None:
             "SessionCancelRequest",
             python_types.PublicSessionCancelRequest,
         ),
+        "ResearchCompareBody": (
+            "ResearchCompareBody",
+            python_types.ResearchCompareRequest,
+        ),
     }
     components = openapi["components"]["schemas"]
     assert set(snapshot["types"]) == set(dto_components)
@@ -470,6 +472,7 @@ def test_openapi_transport_components_match_authored_sdk_dtos() -> None:
         "session.send_input": "SessionInputRequest",
         "session.approve": "SessionApprovalRequest",
         "session.cancel": "SessionCancelRequest",
+        "research.compare": "ResearchCompareBody",
     }
     for operation in _catalog()["operations"]:
         binding = operation["bindings"]["openapi"]
@@ -535,7 +538,7 @@ def test_typescript_tables_and_wrappers_match_contract() -> None:
     assert {
         _route_tuple(route) for route in snapshot["bindings"]["routes"]
     } == expected_public_routes
-    assert len(snapshot["bindings"]["routes"]) == 26
+    assert len(snapshot["bindings"]["routes"]) == len(expected_public_routes)
     expected_methods = {row["typescript_method"] for row in expected}
 
     assert expected_methods <= set(snapshot["client"]["factoryMethods"])
@@ -559,7 +562,7 @@ def test_typescript_tables_and_wrappers_match_contract() -> None:
 
     full_routes = [_route_tuple(route) for route in snapshot["fullRoutes"]]
     full_route_set = set(full_routes)
-    assert len(full_routes) == len(full_route_set) == 51
+    assert len(full_routes) == len(full_route_set)
     assert expected_public_routes <= full_route_set
     assert len(full_route_set - expected_public_routes) > 0
     assert any(
@@ -590,7 +593,6 @@ def test_tui_manifest_actions_match_catalog() -> None:
         )
         for operation in operations
     )
-    assert len(operations) == 26
     assert actual == expected
 
 

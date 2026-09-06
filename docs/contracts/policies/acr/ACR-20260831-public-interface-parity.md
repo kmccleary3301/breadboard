@@ -122,9 +122,9 @@ The accepted I6 public-interface work and J1 compiler-ownership cutover touch pr
 
 ## W9 cutover — 2026-09-05
 
-AM26–AM29 supersede the original inventory counts above: public Session observations now include host-only immutable annotations, generation/trajectory identity, ordinary child lineage, and the exact predeclared world mask. AM30 reserves the later functional comparison operation; W9 does not advertise it.
+AM26–AM29 supersede the original inventory counts above. AM30 is now activated for exactly one `research.compare` operation: its strict five-reference input, durable `run_id`/`report_id` result data, existing `public.session.execute` capability, idempotent catalog row, generated bindings/docs, and Python/TypeScript SDK dispatch. The W10 public-contract owner freezes that scope; Main owns the functional CLI/HTTP/router integration and installed proof. No extra research operation or unfinished public surface is advertised.
 
-The existing Session/event projection owns these facts. Canonical generation feeds Python, TypeScript, and the skeleton manifest; the product TUI pins the SDK from the same engine revision. No new runtime owner, scheduler, provider input, or annotation CRUD route.
+The existing Session/event projection owns the W9 facts. Canonical generation feeds Python, TypeScript, and the skeleton manifest; the product TUI pins the SDK from the same engine revision. The comparison route adds no runtime owner, scheduler, provider input, or annotation CRUD route.
 
 Snapshot HTTP and SDK readers drain retained annotations after terminal events. Live readers keep terminal-stop behavior. Unknown kinds/schemas and malformed identity/lineage remain typed failures. The unpublished record cutover adds required Session fields; old public metadata is not silently accepted as the current record.
 
