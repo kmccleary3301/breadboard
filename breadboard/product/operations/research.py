@@ -123,6 +123,7 @@ class _PreparedComparison:
     generation: EffectiveHarnessLock
     task: str
     run_id: str
+    report: bytes
 
 
 # This program runs inside the selected world. It depends only on Python's
@@ -482,14 +483,11 @@ def _validate_world(world: Any) -> str:
     return python
 
 
-def _admit_payload(payload: bytes, world: dict[str, Any]) -> None:
+def _admit_payload(payload: bytes, world: dict[str, Any]) -> bytes:
     if len(payload) > _MAX_WORKER_RESULT_BYTES:
         raise ValueError("recorded comparison exceeds the worker result bound")
     value = json.loads(payload)
-    records = value["records"]
-    report_records = json.loads(
-        json.dumps(records, allow_nan=False, ensure_ascii=False, separators=(",", ":"))
-    )
+    report_records = value["records"]
     for record in report_records:
         for event in record["events"]:
             event.pop("occurred_at", None)
@@ -529,6 +527,8 @@ def _admit_payload(payload: bytes, world: dict[str, Any]) -> None:
     if len(envelope) + 64 * 1024 > _MAX_WORKER_RESULT_BYTES:
         raise ValueError("comparison report exceeds the worker result envelope bound")
 
+    return report_body
+
 
 def _prepare_snapshot(
     request: CompareResearchRequest,
@@ -554,7 +554,7 @@ def _prepare_snapshot(
     payload = canonical_json(
         {"field_mask": _MASK, "projection": projection.model_dump(), "records": records}
     ).encode()
-    _admit_payload(payload, world)
+    report = _admit_payload(payload, world)
     encoded = base64.b64encode(zlib.compress(payload)).decode("ascii")
     if len(encoded) > _MAX_COMMAND_BYTES:
         raise ValueError("compressed comparison exceeds the 64 KiB command bound")
@@ -570,7 +570,7 @@ def _prepare_snapshot(
         raise ValueError("comparison task exceeds the worker's 1 MiB input bound")
     if _request_identity(request, context) != identity:
         raise ValueError("research inputs changed during admission")
-    return _PreparedComparison(definition.lock, generation, task, run_id)
+    return _PreparedComparison(definition.lock, generation, task, run_id, report)
 
 
 def _parent_work(
@@ -614,6 +614,25 @@ def _result(run_id: str, report: ArtifactRef) -> OperationResult:
     )
 
 
+def _fail_comparison(
+    workspace: Path,
+    work: WorkItem,
+    run_id: str,
+    code: str,
+    message: str,
+) -> OperationResult:
+    def fail(session: Session) -> None:
+        if session.read_model.status not in {"completed", "failed", "canceled"}:
+            session.fail(code, message)
+
+    mutate_session(workspace, run_id, fail)
+    if work.read_model.status not in {"completed", "failed", "canceled"}:
+        work.fail(code, message)
+    return OperationResult.failure(
+        _COMMAND, 4, code, message, _STAGE, data={"run_id": run_id}
+    )
+
+
 def _retained_prepared(
     parent: Session, context: OperationContext, run_id: str
 ) -> _PreparedComparison:
@@ -648,7 +667,17 @@ def _retained_prepared(
         or parent.generation_sequence[0] != definition["graph_hash"]
     ):
         raise ValueError("retained comparison input belongs to another run")
-    return _PreparedComparison(definition, generation, task, run_id)
+    compressed = base64.b64decode(worker_input["command"][3], validate=True)
+    decoder = zlib.decompressobj()
+    payload = decoder.decompress(compressed, _MAX_WORKER_RESULT_BYTES + 1)
+    if (
+        len(payload) > _MAX_WORKER_RESULT_BYTES
+        or not decoder.eof
+        or decoder.unused_data
+    ):
+        raise ValueError("retained comparison payload is invalid or oversized")
+    report = _admit_payload(payload, worker_input["world"])
+    return _PreparedComparison(definition, generation, task, run_id, report)
 
 
 def _run_comparison(
@@ -746,13 +775,12 @@ def _run_comparison(
             raise ValueError("research workflow has no unique settled child")
         state = children[0]
         if len(state.result_refs) != 1:
-            return OperationResult.failure(
-                _COMMAND,
-                4,
+            return _fail_comparison(
+                context.workspace,
+                work,
+                prepared.run_id,
                 "research_world_result_unavailable",
                 "the world child settled without one durable result",
-                _STAGE,
-                data={"run_id": prepared.run_id},
             )
         retained = workspace_artifact_ref(context.workspace, state.result_refs[0])
         result = _WorldResult.model_validate_json(
@@ -774,30 +802,22 @@ def _run_comparison(
                 else "the selected world did not complete the comparison"
             )
 
-            def fail(session: Session) -> None:
-                if session.read_model.status not in {"completed", "failed", "canceled"}:
-                    session.fail(code, message)
-
-            mutate_session(context.workspace, prepared.run_id, fail)
-            if work.read_model.status not in {"completed", "failed", "canceled"}:
-                work.fail(code, message)
-            return OperationResult.failure(
-                _COMMAND, 4, code, message, _STAGE, data={"run_id": prepared.run_id}
+            return _fail_comparison(
+                context.workspace, work, prepared.run_id, code, message
             )
         report_body = result.stdout.encode("utf-8")
-        if len(report_body) > _MAX_WORKER_RESULT_BYTES:
-            raise ValueError("world returned a report over the worker result bound")
-        report_value = json.loads(report_body)
         if (
-            not isinstance(report_value, dict)
-            or set(report_value)
-            != {"equivalent", "differences", "projection", "records"}
-            or type(report_value["equivalent"]) is not bool
-            or not isinstance(report_value["differences"], list)
-            or not isinstance(report_value["records"], list)
-            or len(report_value["records"]) != 2
+            len(report_body) > _MAX_WORKER_RESULT_BYTES
+            or report_body != prepared.report
         ):
-            raise ValueError("world returned an invalid comparison report")
+            return _fail_comparison(
+                context.workspace,
+                work,
+                prepared.run_id,
+                "research_world_report_invalid",
+                "the world returned an invalid comparison report",
+            )
+        report_value = json.loads(report_body)
         report = put_workspace_artifact(
             context.workspace, report_body, media_type="application/json"
         )

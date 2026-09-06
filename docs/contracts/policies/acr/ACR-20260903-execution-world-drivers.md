@@ -48,6 +48,7 @@ Local process, OCI container, Ray actor, and Slurm job execution need one determ
   - Slurm submission receipts retain the raw acknowledgement, and lost acknowledgements reconcile by durable request identity before cleanup.
   - The W10 Ray comparison bridge creates and removes its working directory inside the remote command task. Controller filesystem paths remain local helper-launch details, never remote execution prerequisites.
   - A real Ray command with a nonexistent controller-only path distinguishes this correction: execution succeeds in node-local scratch, and the scratch is absent after completion.
+  - The W10 comparison bridge accepts a world report only when every field matches the canonical report admitted from the frozen payload; a settled child without a result or with a rejected report durably fails its parent Session and Work Item before returning with the stable run identity.
 
 ## 6) Rollout Plan
 
