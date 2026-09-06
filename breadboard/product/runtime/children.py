@@ -3844,6 +3844,18 @@ class ProcessExecutionAdapter:
     def bind_workspace(self, workspace: Path) -> None:
         self._workspace = workspace
 
+    @staticmethod
+    def _remove_runtime_tree(path: Path) -> None:
+        if path.is_symlink():
+            raise ChildError("process child runtime cannot be a symlink")
+        if not path.exists():
+            return
+        # Frozen closures stay sealed until their execution owner releases them.
+        # Grant deletion access through directory descriptors, never symlink paths.
+        for _, _, _, directory in os.fwalk(path, follow_symlinks=False):
+            os.fchmod(directory, 0o700)
+        shutil.rmtree(path)
+
     def _materialize_frozen_runtime(self, workspace: Path, target_ref: str) -> Path:
         destination = self._control_path(target_ref, "runtime", workspace)
         pending = self._control_path(target_ref, "runtime.pending", workspace)
@@ -3854,8 +3866,7 @@ class ProcessExecutionAdapter:
         source = Path(sys.executable).resolve().parent
         if os.environ.get(_RESEARCH_WORKER_CLOSURE_ENV) != str(source):
             raise ChildError("frozen child requires the verified engine closure")
-        if pending.exists():
-            shutil.rmtree(pending)
+        self._remove_runtime_tree(pending)
         pending.mkdir(mode=0o700)
         try:
             if sys.platform == "darwin":
@@ -3868,7 +3879,7 @@ class ProcessExecutionAdapter:
             os.replace(pending, destination)
             AnchoredStorage.sync_directory(destination.parent)
         except BaseException:
-            shutil.rmtree(pending, ignore_errors=True)
+            self._remove_runtime_tree(pending)
             raise
         return destination
 
@@ -4014,11 +4025,7 @@ class ProcessExecutionAdapter:
             except ChildError:
                 return
         for suffix in ("runtime", "runtime.pending"):
-            path = self._known_control_path(target_ref, suffix)
-            if path.is_symlink():
-                raise ChildError("process child runtime cannot be a symlink")
-            if path.exists():
-                shutil.rmtree(path)
+            self._remove_runtime_tree(self._known_control_path(target_ref, suffix))
 
     def _completed_status(self, target_ref: str) -> bool | None:
         path = self._status_paths.get(target_ref)
