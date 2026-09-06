@@ -2314,7 +2314,13 @@ class DurableChildFactory:
             adapter.cancel(target.retained())
             raise
 
-    def _retry(self, state: ChildState, child: WorkItem) -> ChildState:
+    def _retry(
+        self,
+        state: ChildState,
+        child: WorkItem,
+        *,
+        failed_target: bool = False,
+    ) -> ChildState:
         if self._has_propagating_descendants(state):
             descendants = self._cancel_propagating_descendants(
                 state,
@@ -2338,8 +2344,15 @@ class DurableChildFactory:
             raise ChildError(f"cannot relaunch child Work Item from {snapshot.status}")
         attempt = snapshot.current_attempt
         reason = "execution target exited"
+        cleanup_handoff = (
+            getattr(self.adapters[state.adapter_family], "cleanup_handoff", None)
+            if failed_target
+            else None
+        )
         existing_attempt = attempt is not None and attempt.attempt_id != state.attempt_id
         if existing_attempt:
+            if callable(cleanup_handoff):
+                cleanup_handoff(state.execution_target)
             next_attempt = attempt.attempt_id  # type: ignore[union-attr]
             if attempt.session_ref != state.child_session_id:  # type: ignore[union-attr]
                 raise ChildError("retained retry attempt session reference disagrees with child session")
@@ -2352,7 +2365,28 @@ class DurableChildFactory:
             state = self._cas(state, attempt_id=next_attempt, recovery_ref=next_recovery, execution_target_ref=reserved, execution_target=self._reserved_execution_target(state, reserved, recovery_ref=next_recovery), status="running", launch_claimed=True, launch_claim_owner=self._owner_id, launch_claim_until=time.time() + 30.0, launch_published=False, result_prepared=False, result_refs=(), settlement=None)
         elif attempt is not None:
             if not child.read_model.retry_policy.allows(reason) or len(child.read_model.attempts) >= child.read_model.retry_policy.max_attempts:
+                if failed_target and not state.result_prepared:
+                    state = self.prepare_result(
+                        state.child_session_id,
+                        expected_revision=state.revision,
+                        attempt_id=state.attempt_id,
+                        _allow_cancellation_intent=True,
+                    )
+                if failed_target:
+                    try:
+                        return self._settle_request(
+                            state.child_session_id,
+                            expected_revision=state.revision,
+                            outcome="failed",
+                            result_refs=state.result_refs,
+                            attempt_id=state.attempt_id,
+                            _allow_cancellation_intent=True,
+                        )
+                    except LateResultRejected:
+                        return self._cancel_late_settlement(state)
                 return self._settle(state, "failed", (), allow_unprepared=True)
+            if callable(cleanup_handoff):
+                cleanup_handoff(state.execution_target)
             child.fail_attempt(reason, attempt_id=attempt.attempt_id, retryable=True)
             next_attempt = self.ids.new_id()
             lease_id = self.ids.new_id()
@@ -2364,6 +2398,8 @@ class DurableChildFactory:
             next_recovery = f"child://{state.child_session_id}/attempt/{next_attempt}"
             state = self._cas(state, attempt_id=next_attempt, recovery_ref=next_recovery, execution_target_ref=reserved, execution_target=self._reserved_execution_target(state, reserved, recovery_ref=next_recovery), status="running", launch_claimed=True, launch_claim_owner=self._owner_id, launch_claim_until=time.time() + 30.0, launch_published=False, result_prepared=False, result_refs=(), settlement=None)
         elif snapshot.status in {"ready", "leased"}:
+            if callable(cleanup_handoff):
+                cleanup_handoff(state.execution_target)
             next_attempt = self.ids.new_id()
             if snapshot.status == "ready":
                 lease_id = self.ids.new_id()
@@ -2802,32 +2838,11 @@ class DurableChildFactory:
                 )
             except LateResultRejected:
                 return self._cancel_late_settlement(state)
-        if observed == "failed":
-            state = self._cas(state, execution_target=state.execution_target)
-            if not state.result_prepared:
-                state = self.prepare_result(
-                    child_session_id,
-                    expected_revision=state.revision,
-                    attempt_id=state.attempt_id,
-                    _allow_cancellation_intent=True,
-                )
-            try:
-                return self._settle_request(
-                    child_session_id,
-                    expected_revision=state.revision,
-                    outcome="failed",
-                    result_refs=state.result_refs,
-                    attempt_id=state.attempt_id,
-                    _allow_cancellation_intent=True,
-                )
-            except LateResultRejected:
-                return self._cancel_late_settlement(state)
         child = WorkItem.restore(self.repository, state.child_work_item_id, clock=self.clock, ids=self.ids)
         adapter = self.adapters[state.adapter_family]
-        if observed == "absent":
-            cleanup_handoff = getattr(adapter, "cleanup_handoff", None)
-            if callable(cleanup_handoff):
-                cleanup_handoff(state.execution_target)
+        if observed == "failed":
+            state = self._cas(state, execution_target=state.execution_target)
+            return self._retry(state, child, failed_target=True)
         if observed == "absent" and getattr(
             adapter, "released_absence_is_terminal", False
         ):

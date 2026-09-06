@@ -12,7 +12,7 @@ Local process, OCI container, Ray actor, and Slurm job execution need one determ
 
 ## 2) Scope and Surfaces
 
-- Kernel modules touched: TypeScript execution-driver registry, local/OCI/remote drivers, host bridges, Backbone integration, and terminal-session ownership.
+- Kernel modules touched: TypeScript execution-driver registry, local/OCI/remote drivers, host bridges, Backbone integration, terminal-session ownership, and the private Python research-world helper.
 - Extension modules touched: existing execution-driver packages only.
 - Contract surfaces touched: internal driver capabilities, ordered selection, explicit pins, terminal leases, canonical sandbox results, content-addressed evidence, and driver error taxonomy.
 - Is this a **kernel danger-zone** change? `yes`
@@ -46,12 +46,14 @@ Local process, OCI container, Ray actor, and Slurm job execution need one determ
   - The four execution worlds publish the same provider-neutral result and content-addressed output identity for the fixed request.
   - Scheduled evidence is serialized, required, retried in order, and contains no provider-specific fields.
   - Slurm submission receipts retain the raw acknowledgement, and lost acknowledgements reconcile by durable request identity before cleanup.
+  - The W10 Ray comparison bridge creates and removes its working directory inside the remote command task. Controller filesystem paths remain local helper-launch details, never remote execution prerequisites.
+  - A real Ray command with a nonexistent controller-only path distinguishes this correction: execution succeeds in node-local scratch, and the scratch is absent after completion.
 
 ## 6) Rollout Plan
 
 - Rollout phases: merge shared ownership, canonical evidence, and all four world adapters through protected checks; compose those drivers behind the installed comparison command in W10.
 - Flags/toggles: none.
-- Blast radius constraints: TypeScript execution-driver, host-bridge, and Backbone packages only.
+- Blast radius constraints: TypeScript execution-driver, host-bridge, and Backbone packages plus the private research-world helper.
 - Monitoring hooks: focused driver conformance tests plus retained actual-world evidence in the W5 DIT.
 
 ## 7) Rollback Plan

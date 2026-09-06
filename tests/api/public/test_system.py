@@ -22,6 +22,7 @@ from breadboard.product.operations.system import (
 )
 from breadboard_engine.api.public import artifact as public_artifact
 from breadboard_engine.api.public import models as public_models
+from breadboard_engine.api.public import research as public_research
 
 
 @pytest.fixture(autouse=True)
@@ -569,6 +570,45 @@ def test_http_capability_grant_gates_effect_before_public_callback(
     assert denied.json()["error"]["error_code"] == "capability_required"
     assert calls == [public_models.PUBLIC_CAPABILITIES]
     assert "public.artifact.read" in calls[0]
+
+
+def test_research_compare_requires_session_read_before_export(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[Path] = []
+
+    def compare_effect(_operation, context, *, registry):
+        calls.append(context.workspace)
+        return OperationResult.success(
+            ["research", "compare"], stage="research.compare"
+        )
+
+    monkeypatch.setattr(public_research, "compare_research", compare_effect)
+    monkeypatch.setattr(
+        app_module,
+        "_public_request_principal",
+        lambda _request, _required_token: public_models.PublicPrincipal(
+            "execute-only",
+            frozenset({"public.session.execute", "public.artifact.read"}),
+        ),
+    )
+    body = {
+        "definition": "definition",
+        "world": "world",
+        "generation": "generation",
+        "projection": "projection",
+        "compare": ["left", "right"],
+    }
+    with _client(monkeypatch, tmp_path) as client:
+        denied = client.post("/v1/research/compare", json=body)
+
+    assert denied.status_code == 403
+    payload = denied.json()
+    assert payload["schema_version"] == "bb.cli.result.v1"
+    assert payload["error"]["schema_version"] == "bb.problem.v1"
+    assert payload["error"]["error_code"] == "capability_required"
+    assert payload["error"]["failed_stage"] == "research.compare"
+    assert calls == []
 
 
 @pytest.mark.asyncio
