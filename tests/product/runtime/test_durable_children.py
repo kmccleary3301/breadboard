@@ -2999,6 +2999,76 @@ def test_released_absent_target_honors_retry_policy_with_new_attempt_and_recover
         1,
     )
 
+def test_failed_target_honors_retry_policy_and_settles_once(tmp_path: Path) -> None:
+    class FailedTargetRetryAdapter(RetryAdapter):
+        def observe(self, target):
+            return "failed" if self.starts == 1 else "completed"
+
+        def prepare_result(self, target, spec):
+            return b"retried result"
+
+    workspace, repository, parent, registry = _running_parent(tmp_path)
+    adapter = FailedTargetRetryAdapter()
+    factory = DurableChildFactory(
+        workspace,
+        registry=registry,
+        repository=repository,
+        adapters=[adapter],
+    )
+    spec = ChildSpec(
+        "failed target retry",
+        "retry task",
+        _lock(),
+        "child-worker",
+        adapter.family,
+        retry_policy=RetryPolicy(2, True),
+    )
+    activation = factory.start(
+        parent_session_id="parent-session",
+        root_session_id="parent-session",
+        parent_work_item_id=parent.read_model.work_item_id,
+        spec=spec,
+    )
+
+    retried = factory.reconcile(activation.recovery_ref)
+
+    assert retried.status == "running"
+    assert retried.attempt_id != activation.attempt_id
+    attempts = WorkItem.restore(
+        repository, activation.child_work_item_id
+    ).read_model.attempts
+    assert [(attempt.number, attempt.status) for attempt in attempts] == [
+        (1, "failed"),
+        (2, "running"),
+    ]
+
+    settled = factory.reconcile(retried.recovery_ref)
+
+    assert (settled.status, settled.terminal_outcome, settled.terminal_count) == (
+        "completed",
+        "completed",
+        1,
+    )
+    attempts = WorkItem.restore(
+        repository, activation.child_work_item_id
+    ).read_model.attempts
+    assert [(attempt.number, attempt.status) for attempt in attempts] == [
+        (1, "failed"),
+        (2, "completed"),
+    ]
+    child_session, _ = load_session(workspace, activation.child_session_id)
+    assert child_session.read_model.status == "completed"
+    joins = [
+        event
+        for event in parent.events
+        if event.kind == "child.joined"
+        and event.payload["child_work_item_id"] == activation.child_work_item_id
+    ]
+    assert len(joins) == 1
+    assert factory.reconcile(retried.recovery_ref) == settled
+
+
+
 def test_parent_retry_cancels_propagating_descendants_without_closing_admission(
     tmp_path: Path,
 ) -> None:
