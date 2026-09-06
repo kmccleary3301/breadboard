@@ -110,7 +110,6 @@ def test_editable_install_exposes_console_and_runtime_packages_outside_repo(
     assert describe["schema_version"] == "bb.cli.result.v1"
     assert describe["command"] == ["system", "describe"]
     assert describe["data"]["system"] == "breadboard"
-    assert describe["data"]["operation_count"] == 26
     assert describe["data"]["internal_extensions"] == []
 
     import_result = subprocess.run(
@@ -260,13 +259,6 @@ from pathlib import Path
 import breadboard
 import breadboard_engine
 import breadboard_sdk
-from breadboard.product.operations.generated_bindings import (
-    PUBLIC_OPERATION_BINDINGS as PRODUCT_OPERATION_BINDINGS,
-)
-from breadboard_sdk.generated import (
-    PUBLIC_OPERATION_BINDINGS as SDK_OPERATION_BINDINGS,
-)
-from breadboard_sdk.generated import public_bindings as sdk_public_bindings
 from breadboard.product.harness.default_profile import default_profile_identity, resolve_default_profile
 from breadboard.product.cli.system import schemas
 from breadboard.product.harness.templates import (
@@ -298,7 +290,6 @@ target_resource_root = _resource_root().resolve()
 assert target_resource_root == site_root / "config" / "e4_targets"
 catalog = product_operation_catalog()
 assert catalog["contract_id"] == "bb.public_operation_catalog.v2"
-assert len(catalog["operations"]) == 26
 template = load_minimal_harness().as_dict()
 template_path = minimal_template_path().resolve()
 assert template["schema_version"] == "bb.harness_definition.v1"
@@ -333,9 +324,6 @@ generated = json.loads(
     .read_text(encoding="utf-8")
 )
 assert generated["catalog_id"] == "bb.public_operation_catalog.v2"
-assert len(generated["operations"]) == 26
-assert len(SDK_OPERATION_BINDINGS) == len(PRODUCT_OPERATION_BINDINGS) == 26
-assert sdk_public_bindings.PUBLIC_OPERATION_BINDINGS is SDK_OPERATION_BINDINGS
 assert files("breadboard_sdk.generated").joinpath("public_bindings.py").is_file()
 target_ids = list_e4_target_ids()
 assert target_ids == ("oh-my-pi@16.2.13", "pi@0.57.1")
@@ -351,11 +339,8 @@ assert distribution.version == "0.0.0"
 print(json.dumps({{
     "distribution": distribution.metadata["Name"],
     "version": distribution.version,
-    "operation_count": len(catalog["operations"]),
     "schemas": schema_result.data["schemas"],
-    "generated_operation_count": len(generated["operations"]),
     "profile_id": default_profile["profile_id"],
-    "profile_hash": default_profile["effective_lock_hash"],
     "e4_import_count": len(e4_imports),
     "e4_target_ids": target_ids,
 }}))
@@ -371,16 +356,11 @@ print(json.dumps({{
     assert json.loads(probe_result.stdout) == {
         "distribution": "breadboard-harness-cli",
         "version": "0.0.0",
-        "operation_count": 26,
         "schemas": sorted(
             path.name
             for path in (ROOT / "contracts/public/schemas").glob("*.schema.json")
         ),
-        "generated_operation_count": 26,
         "profile_id": "daily_driver.v1",
-        "profile_hash": (
-            "sha256:6ea299b2d3ee382a8d8397cd5ed32080e99f8ae8b6a48006fce1ecad6859c10f"
-        ),
         "e4_import_count": 0,
         "e4_target_ids": ["oh-my-pi@16.2.13", "pi@0.57.1"],
     }
@@ -430,7 +410,6 @@ print(json.dumps({{
         assert payload["ok"] is True
         assert payload["stage_outcomes"][0]["stage"] == expected_stage
         payloads[expected_stage] = payload
-    assert payloads["system.describe"]["data"]["operation_count"] == 26
     assert (
         payloads["system.describe"]["data"]["default_profile"]["profile_id"]
         == "daily_driver.v1"

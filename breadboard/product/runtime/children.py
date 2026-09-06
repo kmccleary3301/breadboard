@@ -2004,9 +2004,6 @@ class DurableChildFactory:
             return self._record_state(state.child_session_id)
         outcome = "completed" if observed == "completed" else "canceled"
         state = self._cas(state, execution_target=state.execution_target)
-        cleanup_handoff = getattr(adapter, "cleanup_handoff", None)
-        if callable(cleanup_handoff):
-            cleanup_handoff(state.execution_target)
         current = self._record_state(state.child_session_id)
         if observed == "completed" and not current.result_prepared:
             current = self.prepare_result(
@@ -4516,13 +4513,9 @@ class ProcessExecutionAdapter:
     def cleanup_handoff(self, target: Mapping[str, Any]) -> None:
         self._clear_handoff(str(target.get("ref", "")))
 
-    def acknowledge_result(
-        self,
-        target: Mapping[str, Any],
-        *,
-        result_refs: Sequence[ArtifactRef] | None = None,
-    ) -> None:
+    def release_terminal(self, target: Mapping[str, Any]) -> bool:
         self._clear_handoff(str(target.get("ref", "")))
+        return True
 
 
 

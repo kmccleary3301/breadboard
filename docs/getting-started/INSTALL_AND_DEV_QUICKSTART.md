@@ -349,7 +349,10 @@ breadboard --help
 
 ## Compare recorded runs
 
-From the workspace containing the inputs, use the installed product:
+Use the installed `bb` built from the companion BreadBoard TUI repository, not
+the Python package's `breadboard` entrypoint. Its verified engine distribution
+includes the research-world worker and configures that private launch dependency.
+Run from the workspace containing the inputs:
 
 ```bash
 bb research compare --definition EXPERIMENT.json --world WORLD.json \
@@ -366,15 +369,18 @@ Each recording descriptor identifies an existing durable Session:
   "definition": "EXPERIMENT.json",
   "workspace": "recordings/baseline",
   "session_id": "recorded-session",
-  "request_ref": "sha256:<attached-provider-exchange-artifact>"
+  "request_ref": "sha256:<attached-provider-exchange-artifact>",
+  "adapter_config": {"stream": false}
 }
 ```
 
 All input paths are workspace-relative and must remain inside that workspace.
 The two Definitions must compile to the same Lock. The selected request must be
 an attached `bb.provider_exchange.v2` OpenAI Chat exchange from that Definition's
-initial generation; mismatched routes or generations fail rather than inventing
-request bytes.
+initial generation. Its metadata identifies the request; recorded input artifacts,
+context, Definition and explicit adapter configuration rebuild the body. Exchange
+request dumps are not reconstruction inputs. Unsupported history or tool registries,
+mismatched routes and generations fail rather than inventing request bytes.
 
 `PROJECTION.json` selects `{"projector_version":"bb.session.projector.v2"}`;
 an optional positive `as_of` selects the inclusive source sequence.

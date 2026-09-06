@@ -8,6 +8,7 @@ import hashlib
 import json
 import time
 import zlib
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
@@ -53,7 +54,10 @@ from breadboard.product.runtime.workflows import (
     WorkflowStep,
 )
 from breadboard_engine.api.cli_bridge.registry.registry_impl import SessionRegistry
-from breadboard_engine.provider.contract_exchange import ProviderExchangeV2
+from breadboard_engine.provider.contract_messages import (
+    ProviderCorrelation,
+    ProviderIdentity,
+)
 from breadboard_engine.provider.contract_runtime import ProviderRuntimeContext
 from breadboard_engine.provider.contract_wire import canonical_json
 from breadboard_engine.provider.routing import provider_router
@@ -64,6 +68,7 @@ _COMMAND = ("research", "compare")
 _STAGE = "research.compare"
 _MASK = ["/occurred_at", "/timestamp"]
 _MAX_INPUT_BYTES = 8 * 1024 * 1024
+_MAX_WORKER_RESULT_BYTES = 4 * 1024 * 1024
 _MAX_COMMAND_BYTES = 64 * 1024
 
 
@@ -76,12 +81,18 @@ class CompareResearchRequest:
     compare: tuple[str, str]
 
 
+class _AdapterConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    stream: bool
+
+
 class _Recording(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     definition: str = Field(min_length=1)
     workspace: str = Field(min_length=1)
     session_id: str = Field(min_length=1)
     request_ref: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    adapter_config: _AdapterConfig
 
 
 class _Projection(BaseModel):
@@ -110,11 +121,8 @@ class _WorldResult(BaseModel):
 class _PreparedComparison:
     definition: EffectiveHarnessLock
     generation: EffectiveHarnessLock
-    world: dict[str, Any]
     task: str
-    task_hash: str
     run_id: str
-    command: tuple[str, ...]
 
 
 # This program runs inside the selected world. It depends only on Python's
@@ -167,6 +175,38 @@ def _read_input(path: Path) -> bytes:
     return content
 
 
+def _file_identity(reference: str, context: OperationContext) -> dict[str, Any]:
+    content = _read_input(context.resolve_path(reference))
+    return {
+        "reference": reference,
+        "sha256": "sha256:" + hashlib.sha256(content).hexdigest(),
+        "size_bytes": len(content),
+    }
+
+
+def _request_identity(
+    request: CompareResearchRequest, context: OperationContext
+) -> dict[str, Any]:
+    if len(request.compare) != 2 or any(
+        type(ref) is not str or not ref for ref in request.compare
+    ):
+        raise ValueError("compare requires an ordered pair of recorded-run references")
+    return {
+        "definition": _file_identity(request.definition, context),
+        "world": _file_identity(request.world, context),
+        "generation": _file_identity(request.generation, context),
+        "projection": _file_identity(request.projection, context),
+        "compare": [
+            _file_identity(reference, context) for reference in request.compare
+        ],
+    }
+
+
+def _request_run_id(identity: Mapping[str, Any]) -> str:
+    digest = hashlib.sha256(canonical_json(dict(identity)).encode()).hexdigest()
+    return "research-" + digest
+
+
 def _generation(reference: str, context: OperationContext) -> EffectiveHarnessLock:
     path = context.resolve_path(reference)
     lock, metadata_path = load_lock(path, context.workspace, explicit=True)
@@ -189,6 +229,107 @@ def _generation(reference: str, context: OperationContext) -> EffectiveHarnessLo
     if not checked.ok:
         raise ValueError("generation Lock differs from its authored source")
     return lock
+
+
+def _exchange_metadata(
+    workspace: Path, request_ref: ArtifactRef
+) -> tuple[ProviderCorrelation, ProviderIdentity]:
+    value = json.loads(read_workspace_artifact(workspace, request_ref))
+    if not isinstance(value, Mapping) or set(value) != {
+        "schema_version",
+        "exchange_id",
+        "correlation",
+        "provider",
+        "request",
+        "events",
+        "terminal",
+    }:
+        raise ValueError("provider exchange has an invalid wire envelope")
+    if value["schema_version"] != "bb.provider_exchange.v2":
+        raise ValueError("provider exchange has an unsupported schema")
+    if type(value["exchange_id"]) is not str or not value["exchange_id"]:
+        raise ValueError("provider exchange has no exchange identity")
+    try:
+        return ProviderCorrelation(**value["correlation"]), ProviderIdentity(
+            **value["provider"]
+        )
+    except TypeError as error:
+        raise ValueError("provider exchange metadata is invalid") from error
+
+
+def _context_messages(events: list[Any], input_index: int) -> list[dict[str, Any]]:
+    prior_semantic_events = {
+        "input.accepted",
+        "assistant_message",
+        "tool_call",
+        "tool_result",
+    }
+    for event in reversed(events[:input_index]):
+        if event.kind in prior_semantic_events:
+            raise ValueError(
+                "recorded Session lacks a current logical context before its input"
+            )
+        if event.kind != "context.compacted":
+            continue
+        encoded = event.payload.get("effective_context")
+        if type(encoded) is not str or not encoded:
+            raise ValueError("recorded context.compacted event has no context artifact")
+        try:
+            context_bytes = base64.b64decode(encoded, validate=True)
+            value = json.loads(context_bytes.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError("recorded context artifact is invalid") from error
+        if not isinstance(value, list) or any(
+            not isinstance(message, Mapping) for message in value
+        ):
+            raise ValueError("recorded context artifact has invalid messages")
+        return [dict(message) for message in value]
+    return []
+
+
+def _recorded_messages(
+    selected_events: list[Any],
+    input_index: int,
+    workspace: Path,
+    content_hash: str,
+) -> list[dict[str, Any]]:
+    if type(content_hash) is not str or not content_hash.startswith("sha256:"):
+        raise ValueError("recorded input has no content artifact identity")
+    try:
+        input_ref = workspace_artifact_ref(
+            workspace, content_hash, media_type="text/plain; charset=utf-8"
+        )
+        text = read_workspace_artifact(workspace, input_ref).decode("utf-8")
+    except (OSError, UnicodeDecodeError, ValueError) as error:
+        raise ValueError("recorded input text artifact is unavailable") from error
+    if not text:
+        raise ValueError("recorded input text artifact is empty")
+    return [
+        *_context_messages(selected_events, input_index),
+        {
+            "role": "user",
+            "content": [{"type": "text", "text": text}],
+        },
+    ]
+
+
+def _recorded_tools(effective: Mapping[str, Any]) -> list[dict[str, Any]]:
+    tools = effective.get("tools")
+    if tools is None:
+        return []
+    if not isinstance(tools, Mapping):
+        raise ValueError("recorded Definition has invalid tool configuration")
+    registry = tools.get("registry")
+    if registry is None:
+        return []
+    if not isinstance(registry, Mapping):
+        raise ValueError("recorded Definition has invalid tool registry")
+    declared = registry.get("paths", registry.get("include", ()))
+    if declared:
+        raise ValueError(
+            "recorded tool definitions are not retained in immutable source artifacts"
+        )
+    return []
 
 
 def _recording_snapshot(
@@ -226,25 +367,31 @@ def _recording_snapshot(
     if request_ref.size_bytes > _MAX_INPUT_BYTES:
         raise ValueError("recorded provider exchange exceeds 8 MiB")
     request_generation = session.generation_sequence[0]
-    attached = False
-    for event in selected_events:
+    input_index: int | None = None
+    content_hash: str | None = None
+    for index, event in enumerate(selected_events):
         if event.kind == "session.reconfigured":
             request_generation = event.payload["effective_lock_hash"]
         if event.kind == "input.accepted" and any(
             row["digest"] == request_ref.digest for row in event.payload["attachments"]
         ):
-            attached = True
+            input_index = index
+            content_hash = event.payload["content_hash"]
+            attachments = event.payload["attachments"]
+            if any(
+                row["digest"] not in {request_ref.digest, content_hash}
+                for row in attachments
+            ):
+                raise ValueError("recorded input has unsupported media attachments")
             break
-    if not attached:
+    if input_index is None or content_hash is None:
         raise ValueError(
             "provider exchange is not attached to the selected Session prefix"
         )
     if request_generation != definition.lock["graph_hash"]:
         raise ValueError("recorded request requires its governing Definition")
-    exchange = ProviderExchangeV2.from_dict(
-        json.loads(read_workspace_artifact(workspace, request_ref))
-    )
-    if exchange.correlation.session_id != recording.session_id:
+    correlation, provider = _exchange_metadata(workspace, request_ref)
+    if correlation.session_id != recording.session_id:
         raise ValueError("provider exchange belongs to a different Session")
     effective = definition.as_dict()
     descriptor, model = provider_router.get_runtime_descriptor(
@@ -252,26 +399,28 @@ def _recording_snapshot(
     )
     if (
         descriptor.runtime_id != "openai_chat"
-        or exchange.provider.runtime_id != descriptor.runtime_id
-        or exchange.provider.provider_id != descriptor.provider_id
-        or exchange.provider.model != model
+        or provider.runtime_id != descriptor.runtime_id
+        or provider.provider_id != descriptor.provider_id
+        or provider.model != model
+        or provider.route_id != effective["providers"]["default_model"]
     ):
         raise ValueError(
             "recorded provider route has no matching exact request projector"
         )
+    messages = _recorded_messages(selected_events, input_index, workspace, content_hash)
     runtime_context = ProviderRuntimeContext(
         session_state=SessionState(str(workspace), "", effective),
         agent_config=effective,
-        stream=exchange.request.stream,
+        stream=recording.adapter_config.stream,
         session_id=recording.session_id,
-        input_id=exchange.correlation.input_id,
-        turn_id=exchange.correlation.turn_id,
+        input_id=correlation.input_id,
+        turn_id=correlation.turn_id,
     )
     body = OpenAIChatRuntime(descriptor).project_request_body(
         model=model,
-        messages=exchange.request.messages,
-        tools=exchange.request.tools,
-        stream=exchange.request.stream,
+        messages=messages,
+        tools=_recorded_tools(effective),
+        stream=recording.adapter_config.stream,
         context=runtime_context,
     )
     return {
@@ -296,13 +445,99 @@ def _recording_snapshot(
     }
 
 
-def _prepare(
-    request: CompareResearchRequest, context: OperationContext
+def _comparison_differences(left: Any, right: Any) -> list[str]:
+    differences: list[str] = []
+
+    def compare(first: Any, second: Any, path: str = "") -> None:
+        if type(first) is not type(second):
+            differences.append(path or "/")
+        elif isinstance(first, dict):
+            for key in sorted(first.keys() | second.keys()):
+                child = path + "/" + key.replace("~", "~0").replace("/", "~1")
+                if key not in first or key not in second:
+                    differences.append(child)
+                else:
+                    compare(first[key], second[key], child)
+        elif isinstance(first, list):
+            if len(first) != len(second):
+                differences.append(path)
+            for index, (first_item, second_item) in enumerate(zip(first, second)):
+                compare(first_item, second_item, path + "/" + str(index))
+        elif first != second:
+            differences.append(path or "/")
+
+    compare(left, right)
+    return differences
+
+
+def _validate_world(world: Any) -> str:
+    if not isinstance(world, dict) or world.get("field_mask") != _MASK:
+        raise ValueError("world must declare the exact occurred_at/timestamp mask")
+    python = world.get("python")
+    if type(python) is not str or not python:
+        raise ValueError("world must declare its Python executable")
+    max_output = world.get("max_output_bytes", _MAX_WORKER_RESULT_BYTES)
+    if type(max_output) is not int or not 1 <= max_output <= _MAX_WORKER_RESULT_BYTES:
+        raise ValueError("world max_output_bytes must be between 1 and 4 MiB")
+    return python
+
+
+def _admit_payload(payload: bytes, world: dict[str, Any]) -> None:
+    if len(payload) > _MAX_WORKER_RESULT_BYTES:
+        raise ValueError("recorded comparison exceeds the worker result bound")
+    value = json.loads(payload)
+    records = value["records"]
+    report_records = json.loads(
+        json.dumps(records, allow_nan=False, ensure_ascii=False, separators=(",", ":"))
+    )
+    for record in report_records:
+        for event in record["events"]:
+            event.pop("occurred_at", None)
+            event.pop("timestamp", None)
+    differences = _comparison_differences(report_records[0], report_records[1])
+    report_body = (
+        json.dumps(
+            {
+                "equivalent": not differences,
+                "differences": differences,
+                "projection": value["projection"],
+                "records": report_records,
+            },
+            allow_nan=False,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        + b"\n"
+    )
+    max_output = world.get("max_output_bytes", _MAX_WORKER_RESULT_BYTES)
+    if len(report_body) > max_output:
+        raise ValueError("comparison report exceeds the world's output bound")
+    envelope = json.dumps(
+        {
+            "status": "completed",
+            "exit_code": 0,
+            "stdout": report_body.decode("utf-8"),
+            "stderr": "",
+            "problem": None,
+            "execution_evidence": [],
+        },
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    if len(envelope) + 64 * 1024 > _MAX_WORKER_RESULT_BYTES:
+        raise ValueError("comparison report exceeds the worker result envelope bound")
+
+
+def _prepare_snapshot(
+    request: CompareResearchRequest,
+    context: OperationContext,
+    identity: dict[str, Any],
+    run_id: str,
 ) -> _PreparedComparison:
-    if len(request.compare) != 2 or any(
-        type(ref) is not str or not ref for ref in request.compare
-    ):
-        raise ValueError("compare requires an ordered pair of recorded-run references")
+    if _request_identity(request, context) != identity:
+        raise ValueError("research inputs changed during admission")
     source = context.resolve_path(request.definition)
     definition = compile_harness_source(source, context.workspace, context.contained)
     generation = _generation(request.generation, context)
@@ -310,11 +545,7 @@ def _prepare(
         _read_input(context.resolve_path(request.projection))
     )
     world = json.loads(_read_input(context.resolve_path(request.world)))
-    if not isinstance(world, dict) or world.get("field_mask") != _MASK:
-        raise ValueError("world must declare the exact occurred_at/timestamp mask")
-    python = world.get("python")
-    if type(python) is not str or not python:
-        raise ValueError("world must declare its Python executable")
+    python = _validate_world(world)
     compilations = {source: definition}
     records = [
         _recording_snapshot(reference, context, definition, projection, compilations)
@@ -323,29 +554,23 @@ def _prepare(
     payload = canonical_json(
         {"field_mask": _MASK, "projection": projection.model_dump(), "records": records}
     ).encode()
-    if len(payload) > _MAX_INPUT_BYTES:
-        raise ValueError("recorded comparison exceeds 8 MiB")
+    _admit_payload(payload, world)
     encoded = base64.b64encode(zlib.compress(payload)).decode("ascii")
     if len(encoded) > _MAX_COMMAND_BYTES:
         raise ValueError("compressed comparison exceeds the 64 KiB command bound")
     task = canonical_json(
         {
-            "definition": definition.lock["graph_hash"],
-            "generation": generation["graph_hash"],
             "world": world,
-            "comparison": json.loads(payload),
+            "request_id": run_id,
+            "workspace": str(context.workspace),
+            "command": [python, "-c", _COMPARE_PROGRAM, encoded],
         }
     )
-    digest = hashlib.sha256(task.encode()).hexdigest()
-    return _PreparedComparison(
-        definition=definition.lock,
-        generation=generation,
-        world=world,
-        task=task,
-        task_hash="sha256:" + digest,
-        run_id="research-" + digest,
-        command=(python, "-c", _COMPARE_PROGRAM, encoded),
-    )
+    if len(task.encode()) > 1024 * 1024:
+        raise ValueError("comparison task exceeds the worker's 1 MiB input bound")
+    if _request_identity(request, context) != identity:
+        raise ValueError("research inputs changed during admission")
+    return _PreparedComparison(definition.lock, generation, task, run_id)
 
 
 def _parent_work(
@@ -389,29 +614,74 @@ def _result(run_id: str, report: ArtifactRef) -> OperationResult:
     )
 
 
+def _retained_prepared(
+    parent: Session, context: OperationContext, run_id: str
+) -> _PreparedComparison:
+    admissions = [event for event in parent.events if event.kind == "input.accepted"]
+    if len(admissions) != 1:
+        raise ValueError("retained comparison has no unique frozen input")
+    admitted = admissions[0].payload
+    if (
+        admitted["content_hash"] != parent.read_model.task_hash
+        or len(admitted["attachments"]) != 1
+        or admitted["attachments"][0]["digest"] != admitted["content_hash"]
+    ):
+        raise ValueError("retained comparison input identity changed")
+    ref = ArtifactRef(**dict(admitted["attachments"][0]))
+    capsule = json.loads(read_workspace_artifact(context.workspace, ref))
+    if not isinstance(capsule, dict) or set(capsule) != {
+        "definition",
+        "generation",
+        "task",
+    }:
+        raise ValueError("retained comparison input is invalid")
+    definition = EffectiveHarnessLock._from_record(capsule["definition"])
+    generation = EffectiveHarnessLock._from_record(capsule["generation"])
+    task = capsule["task"]
+    if type(task) is not str:
+        raise ValueError("retained comparison task is not text")
+    worker_input = json.loads(task)
+    if (
+        not isinstance(worker_input, dict)
+        or worker_input.get("request_id") != run_id
+        or worker_input.get("workspace") != str(context.workspace)
+        or parent.generation_sequence[0] != definition["graph_hash"]
+    ):
+        raise ValueError("retained comparison input belongs to another run")
+    return _PreparedComparison(definition, generation, task, run_id)
+
+
 def _run_comparison(
-    prepared: _PreparedComparison,
+    request: CompareResearchRequest,
     context: OperationContext,
     factory: DurableChildFactory,
+    identity: dict[str, Any],
 ) -> OperationResult:
+    run_id = _request_run_id(identity)
     internal = replace(context, path_policy="contained-public")
-    lock_path = internal.resolve_path(f".breadboard/{prepared.run_id}.lock")
+    lock_path = internal.resolve_path(f".breadboard/{run_id}.lock")
     with ProcessLock(lock_path):
         try:
-            parent, _ = load_session(context.workspace, prepared.run_id)
+            parent, _ = load_session(context.workspace, run_id)
         except FileNotFoundError:
-            parent, _ = create_session(
-                context.workspace,
-                Session.start(
-                    prepared.definition, prepared.task, session_id=prepared.run_id
-                ),
+            prepared = _prepare_snapshot(request, context, identity, run_id)
+            capsule = canonical_json(
+                {
+                    "definition": prepared.definition.as_dict(),
+                    "generation": prepared.generation.as_dict(),
+                    "task": prepared.task,
+                }
             )
-        if parent.read_model.task_hash != prepared.task_hash:
-            raise ValueError("research run identity conflicts with its retained task")
+            ref = put_workspace_artifact(
+                context.workspace, capsule.encode(), media_type="application/json"
+            )
+            parent = Session.start(prepared.definition, capsule, session_id=run_id)
+            parent.input(capsule, (ref,))
+            parent, _ = create_session(context.workspace, parent)
+        else:
+            prepared = _retained_prepared(parent, context, run_id)
         work = _parent_work(
-            factory.repository,
-            prepared.run_id,
-            create=parent.read_model.status == "running",
+            factory.repository, run_id, create=parent.read_model.status == "running"
         )
         if parent.read_model.status == "completed":
             report = _completed_report(context.workspace, parent)
@@ -443,14 +713,6 @@ def _run_comparison(
                 )
 
         mutate_session(context.workspace, prepared.run_id, prepare_parent)
-        task = canonical_json(
-            {
-                "world": prepared.world,
-                "request_id": prepared.run_id,
-                "workspace": str(context.workspace),
-                "command": list(prepared.command),
-            }
-        )
         controller = ReplayableWorkflowController(
             factory,
             workflow_id=prepared.run_id + ":workflow",
@@ -463,7 +725,7 @@ def _run_comparison(
                         "compare",
                         ChildSpec(
                             "compare recorded Sessions",
-                            task,
+                            prepared.task,
                             prepared.generation,
                             "research.compare",
                             ProcessExecutionAdapter.family,
@@ -523,6 +785,8 @@ def _run_comparison(
                 _COMMAND, 4, code, message, _STAGE, data={"run_id": prepared.run_id}
             )
         report_body = result.stdout.encode("utf-8")
+        if len(report_body) > _MAX_WORKER_RESULT_BYTES:
+            raise ValueError("world returned a report over the worker result bound")
         report_value = json.loads(report_body)
         if (
             not isinstance(report_value, dict)
@@ -570,7 +834,7 @@ async def compare_research(
     registry: SessionRegistry | None = None,
 ) -> OperationResult:
     try:
-        prepared = await asyncio.to_thread(_prepare, request, context)
+        identity = await asyncio.to_thread(_request_identity, request, context)
         internal = replace(context, path_policy="contained-public")
         repository = WorkItemRepository(
             internal.resolve_path(".breadboard/work_items.jsonl")
@@ -588,6 +852,8 @@ async def compare_research(
             repository=repository,
             adapters=(ProcessExecutionAdapter(command=RESEARCH_WORLD_WORKER_COMMAND),),
         )
-        return await asyncio.to_thread(_run_comparison, prepared, context, factory)
+        return await asyncio.to_thread(
+            _run_comparison, request, context, factory, identity
+        )
     except Exception as error:
         return from_exception(_COMMAND, error, _STAGE)
