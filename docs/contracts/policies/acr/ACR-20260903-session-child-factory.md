@@ -45,6 +45,8 @@ Child work must start, settle, cancel, and recover under one Session-centered au
   - Complete corrupt journal frames fail typed and are never truncated.
   - Settlement is idempotent while conflicting explicit references fail typed.
   - Tree cancellation routes through the Session factory and survives restart.
+  - Explicit failed targets honor the existing RetryPolicy before settlement. Retry cleans the old attempt's handoff; exhausted or disallowed retry retains the final failed result.
+  - The W10 correction is covered by an explicit-failure-then-success case at DurableChildFactory: two attempts, one completed child, one parent join, and no duplicate terminal settlement.
 
 ## 6) Rollout Plan
 
