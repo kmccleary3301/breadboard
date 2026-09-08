@@ -152,11 +152,6 @@ class WorkItemRepository:
             with ProcessLock(self._path):
                 self._reload()
 
-    @staticmethod
-    def _frame(event: WorkItemEvent) -> bytes:
-        payload = json.dumps(event.as_dict(), sort_keys=True, separators=(",", ":")).encode()
-        checksum = "sha256:" + hashlib.sha256(payload).hexdigest()
-        return json.dumps({"checksum": checksum, "payload": json.loads(payload)}, sort_keys=True, separators=(",", ":")).encode() + b"\n"
 
     @staticmethod
     def _transaction_frame(events: tuple[WorkItemEvent, ...]) -> bytes:

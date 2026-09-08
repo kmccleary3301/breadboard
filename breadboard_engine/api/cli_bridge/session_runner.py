@@ -48,7 +48,6 @@ from .registry import (
 )
 from .runtime_event_projector import (
     RuntimeEventProjector,
-    TranslatedRuntimeEvent,
     _safe_runtime_error_code,
 )
 from .session_control import SessionControlController
@@ -56,7 +55,7 @@ from .task_execution import TaskExecutionOwner
 from .session_lifecycle import SessionLifecycleOwner
 from breadboard.product.runtime.events import GenerationAdoptionError
 
-from .session_artifacts import MAX_ATTACHMENT_BYTES, SessionArtifactStore
+from .session_artifacts import SessionArtifactStore
 
 _ADMISSION_BLOCKING_PRODUCT_EVENTS = frozenset(
     {
@@ -110,7 +109,6 @@ class SessionRunner:
         self._checkpoint_manager: Optional[CheckpointManager] = None
         self._closed = False
         self._admission_lock_owner: Optional[asyncio.Task[Any]] = None
-        self._attachment_store: Dict[str, Dict[str, Any]] = {}
         self._active_attachment_capabilities: Dict[str, Dict[str, Any]] = {}
         self._active_input_media: List[Dict[str, str]] = []
         self._permission_queue: Any = None
@@ -353,7 +351,7 @@ class SessionRunner:
             return True
 
     async def finish_queued_turn_cancellation(self, turn: TurnRecord, reason: str) -> None:
-        await self._finish_turn(
+        await self._task_execution.finish_turn(
             turn,
             "cancelled",
             reason=reason,
@@ -761,27 +759,6 @@ class SessionRunner:
             )
         return canonical if canonical in allowed else None
 
-    def _tool_completion_fingerprint(
-        self,
-        tool: str,
-        payload: Dict[str, Any],
-    ) -> Optional[str]:
-        return self._runtime_event_projector._tool_completion_fingerprint(tool, payload)
-
-    def _record_product_observation(
-        self,
-        family: Optional[str],
-        payload: Dict[str, Any],
-        *,
-        message_projection: bool = False,
-        trajectory_id: str | None = None,
-    ) -> None:
-        return self._runtime_event_projector._record_product_observation(
-            family,
-            payload,
-            message_projection=message_projection,
-            trajectory_id=trajectory_id,
-        )
 
     def prepare_input_content(self, content: str) -> str:
         with self._product_session_lock:
@@ -839,22 +816,6 @@ class SessionRunner:
         self._record_input_boundary_repair(str(content or ""), normalized)
         return normalized
 
-    def _upsert_permission_rule(
-        self,
-        workspace_dir: Path | str,
-        *,
-        category: str,
-        pattern: str,
-        decision: str,
-        scope: str,
-    ) -> bool:
-        return self.permission_authority.update_rule(
-            workspace_dir,
-            category=category,
-            pattern=pattern,
-            decision=decision,
-            scope=scope,
-        )
 
     def _fail_control_transition(self, code: str, detail: str) -> None:
         try:
@@ -1055,15 +1016,7 @@ class SessionRunner:
         except Exception:
             return None
 
-    def _parse_replay_path(self, task_text: str) -> Optional[Path]:
-        return self._task_execution.parse_replay_path(task_text)
 
-    async def _maybe_publish_todo_snapshot(
-        self, workspace_dir: Optional[Path], *, call_id: str
-    ) -> None:
-        return await self._task_execution.maybe_publish_todo_snapshot(
-            workspace_dir, call_id=call_id
-        )
 
     async def _ensure_agent_initialized(self) -> None:
         if self._agent is not None:
@@ -1102,7 +1055,7 @@ class SessionRunner:
                 self.session.metadata if isinstance(self.session.metadata, dict) else {}
             )
             if not isinstance(meta.get("todo_last_update"), dict):
-                await self._maybe_publish_todo_snapshot(
+                await self._task_execution.maybe_publish_todo_snapshot(
                     workspace_dir, call_id="todo:snapshot:init"
                 )
         try:
@@ -1112,29 +1065,11 @@ class SessionRunner:
         except Exception:
             self._checkpoint_manager = None
 
-    def _require_execution_correlation(
-        self, input_id: Optional[str], turn_id: Optional[str]
-    ) -> Dict[str, str]:
-        return self._task_execution.require_execution_correlation(input_id, turn_id)
 
-    async def _execute_replay_task(
-        self,
-        task_text: str,
-        *,
-        input_id: Optional[str] = None,
-        turn_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        return await self._task_execution.execute_replay_task(
-            task_text, input_id=input_id, turn_id=turn_id
-        )
 
     async def _run(self) -> None:
         await self._lifecycle_owner.run()
 
-    def _load_todo_envelope_from_disk(
-        self, workspace_dir: Path
-    ) -> Optional[Dict[str, Any]]:
-        return self._task_execution.load_todo_envelope_from_disk(workspace_dir)
 
     async def _terminalize_admitted_turns(
         self,
@@ -1223,79 +1158,9 @@ class SessionRunner:
         except Exception:
             pass
 
-    def _debug_permissions_enabled(self) -> bool:
-        return self._control_controller.debug_permissions_enabled()
-
-    async def _emit_debug_permission_request(
-        self, payload: Optional[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        return await self._control_controller.emit_debug_permission_request(payload)
-
-    def _pending_permission_key(self, entry: Dict[str, Any]) -> tuple[str, str, str]:
-        return self._control_controller.pending_permission_key(entry)
-
-    def _infer_permission_category(self, request_id: str) -> Optional[str]:
-        return self._control_controller.infer_permission_category(request_id)
-
-    def _update_pending_permissions(
-        self,
-        kind: str,
-        info: Dict[str, Any],
-        *,
-        source: str = "session",
-        task_session_id: Optional[str] = None,
-        subagent_type: Optional[str] = None,
-        consume_fifo: bool = False,
-    ) -> Optional[List[Dict[str, Any]]]:
-        return self._control_controller.update_pending_permissions(
-            kind,
-            info,
-            source=source,
-            task_session_id=task_session_id,
-            subagent_type=subagent_type,
-            consume_fifo=consume_fifo,
-        )
-
-    def _discard_undeliverable_permission(self, request_id: str) -> None:
-        return self._control_controller.discard_undeliverable_permission(request_id)
-
-    def _rehydrate_pending_permissions(
-        self, event_type: str, payload: Dict[str, Any]
-    ) -> Optional[List[Dict[str, Any]]]:
-        return self._control_controller.rehydrate_pending_permissions(
-            event_type, payload
-        )
-
-    def _execute_task(
-        self,
-        task_text: str,
-        *,
-        input_id: Optional[str] = None,
-        turn_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        return self._task_execution.execute_task(
-            task_text, input_id=input_id, turn_id=turn_id
-        )
 
 
-    async def _finish_turn(
-        self,
-        turn: TurnRecord,
-        outcome: str,
-        *,
-        reason: Optional[str] = None,
-        error_code: Optional[str] = None,
-        completed_payload: Optional[Dict[str, Any]] = None,
-        advance_queue: bool = True,
-    ) -> bool:
-        return await self._task_execution.finish_turn(
-            turn,
-            outcome,
-            reason=reason,
-            error_code=error_code,
-            completed_payload=completed_payload,
-            advance_queue=advance_queue,
-        )
+
 
     async def publish_event_async(
         self,
@@ -1392,33 +1257,6 @@ class SessionRunner:
         except Exception:
             pass
 
-    def _start_queue_pump(
-        self,
-        event_queue: Any,
-        handle_event: Callable[[str, Dict[str, Any], Optional[int]], None],
-        *,
-        acknowledgement_queue: Any = None,
-        errors: Optional[List[BaseException]] = None,
-    ) -> tuple[Any, Any]:
-        return self._task_execution.start_queue_pump(
-            event_queue,
-            handle_event,
-            acknowledgement_queue=acknowledgement_queue,
-            errors=errors,
-        )
-
-    def _drain_event_queue(
-        self,
-        event_queue: Any,
-        handle_event: Callable[[str, Dict[str, Any], Optional[int]], None],
-        *,
-        acknowledgement_queue: Any = None,
-    ) -> None:
-        return self._task_execution.drain_event_queue(
-            event_queue,
-            handle_event,
-            acknowledgement_queue=acknowledgement_queue,
-        )
 
     def get_workspace_dir(self) -> Optional[Path]:
         if self._workspace_path:
@@ -1441,62 +1279,7 @@ class SessionRunner:
         self._active_input_media = media
         return helper
 
-    def _load_run_summary(self, logging_dir: Optional[str]) -> Optional[Dict[str, Any]]:
-        return self._task_execution.load_run_summary(logging_dir)
 
-    def _normalize_usage_payload(
-        self, usage: Dict[str, Any], *, latency_ms: Optional[int] = None
-    ) -> Dict[str, Any]:
-        return self._task_execution.normalize_usage_payload(
-            usage, latency_ms=latency_ms
-        )
-
-    def _usage_from_run_summary(self, summary: Dict[str, Any]) -> Dict[str, Any]:
-        return self._task_execution.usage_from_run_summary(summary)
-
-    def _extract_usage_metrics(
-        self,
-        result: Dict[str, Any],
-        logging_dir: Optional[str],
-        *,
-        elapsed_ms: Optional[int] = None,
-    ) -> Dict[str, Any]:
-        return self._task_execution.extract_usage_metrics(
-            result, logging_dir, elapsed_ms=elapsed_ms
-        )
-
-    def _normalize_tool_call_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        return self._runtime_event_projector._normalize_tool_call_payload(payload)
-
-    def _normalize_tool_result_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        return self._runtime_event_projector._normalize_tool_result_payload(payload)
-
-    def _extract_artifact_ref(
-        self, payload: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
-        return self._runtime_event_projector._extract_artifact_ref(payload)
-
-    def _normalize_artifact_ref(
-        self, payload: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
-        return self._runtime_event_projector._normalize_artifact_ref(payload)
-
-    def _normalize_permission_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        return self._runtime_event_projector._normalize_permission_request(payload)
-
-    def _normalize_permission_response(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        return self._runtime_event_projector._normalize_permission_response(payload)
-
-    def _normalize_task_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        return self._runtime_event_projector._normalize_task_event(payload)
-
-    def _translate_runtime_event(
-        self,
-        event_type: str,
-        payload: Dict[str, Any],
-        turn: Optional[int],
-    ) -> Optional[TranslatedRuntimeEvent]:
-        return self._runtime_event_projector.translate(event_type, payload, turn)
 
     def _resolve_skill_catalog(self) -> Dict[str, Any]:
         config = self.current_runtime_config()

@@ -663,7 +663,6 @@ class RuntimeEventProjector:
             call_id = (
                 normalized.get("call_id")
                 or message.get("tool_call_id")
-                or message.get("tool_call_id")
                 or message.get("call_id")
             )
             content = message.get("content")

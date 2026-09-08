@@ -1328,11 +1328,9 @@ def test_session_runner_translates_runtime_events() -> None:
 
     runner = SessionRunner(session=record, registry=registry, request=request)
     event_registry = SessionState.event_family_registry()
-    translated = runner._translate_runtime_event(
-        "assistant_message",
-        {"message": {"role": "assistant", "content": "hi"}},
-        turn=3,
-    )
+    translated = runner._runtime_event_projector.translate("assistant_message",
+    {"message": {"role": "assistant", "content": "hi"}},
+    turn=3,)
     assert translated is not None
     evt_type, payload, turn, contract = translated
     assert evt_type is EventType.ASSISTANT_MESSAGE
@@ -1343,11 +1341,9 @@ def test_session_runner_translates_runtime_events() -> None:
     assert turn == 3
     assert contract == event_registry["assistant_message"]
 
-    translated_none = runner._translate_runtime_event(
-        "assistant_message",
-        {"message": {"role": "assistant", "content": None}},
-        turn=3,
-    )
+    translated_none = runner._runtime_event_projector.translate("assistant_message",
+    {"message": {"role": "assistant", "content": None}},
+    turn=3,)
     assert translated_none is not None
     evt_type, payload, turn, contract = translated_none
     assert evt_type is EventType.ASSISTANT_MESSAGE
@@ -1355,11 +1351,9 @@ def test_session_runner_translates_runtime_events() -> None:
     assert turn == 3
     assert contract == event_registry["assistant_message"]
 
-    delta_translated = runner._translate_runtime_event(
-        "assistant_delta",
-        {"text": "chunk", "message_id": "m1"},
-        turn=3,
-    )
+    delta_translated = runner._runtime_event_projector.translate("assistant_delta",
+    {"text": "chunk", "message_id": "m1"},
+    turn=3,)
     assert delta_translated is not None
     evt_type, payload, turn, contract = delta_translated
     assert evt_type is EventType.ASSISTANT_DELTA
@@ -1373,24 +1367,20 @@ def test_session_runner_translates_runtime_events() -> None:
         ("assistant.message.delta", {"message_id": "m1", "delta": "chunk"}),
         ("assistant.message.end", {"message_id": "m1", "text": "chunk"}),
     ):
-        stream_translation = runner._translate_runtime_event(
-            stream_event,
-            stream_payload,
-            turn=3,
-        )
+        stream_translation = runner._runtime_event_projector.translate(stream_event,
+        stream_payload,
+        turn=3,)
         assert stream_translation is not None
         assert stream_translation[3]["family"] == "message.assistant.stream"
 
-    tool_delta_translated = runner._translate_runtime_event(
-        "assistant.tool_call.delta",
-        {
-            "index": 0,
-            "call_id": "call-1",
-            "tool": "read",
-            "arguments_delta": '{"path":',
-        },
-        turn=3,
-    )
+    tool_delta_translated = runner._runtime_event_projector.translate("assistant.tool_call.delta",
+    {
+        "index": 0,
+        "call_id": "call-1",
+        "tool": "read",
+        "arguments_delta": '{"path":',
+    },
+    turn=3,)
     assert tool_delta_translated is not None
     evt_type, payload, turn, contract = tool_delta_translated
     assert evt_type is EventType.ASSISTANT_TOOL_CALL_DELTA
@@ -1400,18 +1390,16 @@ def test_session_runner_translates_runtime_events() -> None:
     assert contract["visibility"] == "tool"
 
     with pytest.raises(RuntimeProtocolError):
-        runner._translate_runtime_event("unknown", {}, turn=None)
+        runner._runtime_event_projector.translate("unknown", {}, turn=None)
 
-    tool_call_translated = runner._translate_runtime_event(
-        "tool_call",
-        {
-            "call": {
-                "id": "call-1",
-                "function": {"name": "run_shell", "arguments": {"command": "pwd"}},
-            }
-        },
-        turn=3,
-    )
+    tool_call_translated = runner._runtime_event_projector.translate("tool_call",
+    {
+        "call": {
+            "id": "call-1",
+            "function": {"name": "run_shell", "arguments": {"command": "pwd"}},
+        }
+    },
+    turn=3,)
     assert tool_call_translated is not None
     evt_type, payload, turn, contract = tool_call_translated
     assert evt_type is EventType.TOOL_CALL
@@ -1420,18 +1408,16 @@ def test_session_runner_translates_runtime_events() -> None:
     assert turn == 3
     assert contract == event_registry["tool_call"]
 
-    tool_result_translated = runner._translate_runtime_event(
-        "tool_result",
-        {
-            "message": {
-                "role": "tool",
-                "name": "run_shell",
-                "tool_call_id": "call-1",
-                "content": "ok",
-            }
-        },
-        turn=3,
-    )
+    tool_result_translated = runner._runtime_event_projector.translate("tool_result",
+    {
+        "message": {
+            "role": "tool",
+            "name": "run_shell",
+            "tool_call_id": "call-1",
+            "content": "ok",
+        }
+    },
+    turn=3,)
     assert tool_result_translated is not None
     evt_type, payload, turn, contract = tool_result_translated
     assert evt_type is EventType.TOOL_RESULT
@@ -1441,14 +1427,12 @@ def test_session_runner_translates_runtime_events() -> None:
     assert turn == 3
     assert contract == event_registry["tool_result"]
 
-    todo_translated = runner._translate_runtime_event(
-        "todo_event",
-        {
-            "call_id": "todo:1",
-            "todo": {"op": "replace", "revision": 1, "scopeKey": "main", "items": []},
-        },
-        turn=3,
-    )
+    todo_translated = runner._runtime_event_projector.translate("todo_event",
+    {
+        "call_id": "todo:1",
+        "todo": {"op": "replace", "revision": 1, "scopeKey": "main", "items": []},
+    },
+    turn=3,)
     assert todo_translated is not None
     evt_type, payload, turn, contract = todo_translated
     assert evt_type is EventType.TOOL_RESULT
@@ -1498,7 +1482,7 @@ def test_session_runner_recognizes_replay_after_injected_system_reminder(
         f"replay:{fixture}\n\n"
         "Trailing compiled system prompt."
     )
-    assert runner._parse_replay_path(prompt) == fixture.resolve()
+    assert runner._task_execution.parse_replay_path(prompt) == fixture.resolve()
 
 
 @pytest.mark.asyncio
@@ -2443,7 +2427,7 @@ async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(tmp_
         request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
     )
 
-    assert await runner._finish_turn(first, "completed") is True
+    assert await runner._task_execution.finish_turn(first, "completed") is True
     await asyncio.sleep(0)
 
     assert first.terminal_resolution_committed is True
@@ -2900,11 +2884,9 @@ async def test_finish_turn_rejects_unknown_provider_completion_semantics(
     )
 
     with pytest.raises(RuntimeError, match="turn_terminal_persistence_failed"):
-        await runner._finish_turn(
-            turn,
-            "completed",
-            completed_payload={"usage": {"unknown_provider_counter": 1}},
-        )
+        await runner._task_execution.finish_turn(turn,
+        "completed",
+        completed_payload={"usage": {"unknown_provider_counter": 1}},)
 
     assert turn.terminal_outcome is None
     assert turn.terminal_resolution_committed is False
@@ -2949,12 +2931,10 @@ async def test_replay_events_preserve_active_turn_correlation(tmp_path) -> None:
         published.append((event_type, kwargs))
 
     runner.publish_event_async = capture  # type: ignore[method-assign]
-    await runner._execute_replay_task(
-        "<system-reminder>\ncontext\n</system-reminder>\n"
-        f"replay:{fixture}\n\ncompiled prompt",
-        input_id=turn.input_id,
-        turn_id=turn.turn_id,
-    )
+    await runner._task_execution.execute_replay_task("<system-reminder>\ncontext\n</system-reminder>\n"
+    f"replay:{fixture}\n\ncompiled prompt",
+    input_id=turn.input_id,
+    turn_id=turn.turn_id,)
     assistant = next(
         kwargs
         for event_type, kwargs in published
@@ -3012,11 +2992,9 @@ async def test_replay_completion_strips_nested_control_sentinels(tmp_path) -> No
         published.append((event_type, payload))
 
     runner.publish_event_async = capture  # type: ignore[method-assign]
-    result = await runner._execute_replay_task(
-        f"replay:{fixture}",
-        input_id=turn.input_id,
-        turn_id=turn.turn_id,
-    )
+    result = await runner._task_execution.execute_replay_task(f"replay:{fixture}",
+    input_id=turn.input_id,
+    turn_id=turn.turn_id,)
 
     assert published == []
     completion = next(
@@ -3108,11 +3086,9 @@ async def test_replay_rejects_entire_fixture_before_publication(
 
     runner.publish_event_async = capture  # type: ignore[method-assign]
     with pytest.raises(RuntimeProtocolError, match="runtime_protocol_error"):
-        await runner._execute_replay_task(
-            f"replay:{fixture}",
-            input_id=turn.input_id,
-            turn_id=turn.turn_id,
-        )
+        await runner._task_execution.execute_replay_task(f"replay:{fixture}",
+        input_id=turn.input_id,
+        turn_id=turn.turn_id,)
 
     assert published == []
     assert record.metadata["preserved"] is True
@@ -3173,11 +3149,9 @@ def test_execute_task_withholds_success_terminals_until_exchange_validates() -> 
 
     runner.publish_event = capture  # type: ignore[method-assign]
     with pytest.raises(RuntimeProtocolError, match="runtime_protocol_error"):
-        runner._execute_task(
-            "run",
-            input_id=turn.input_id,
-            turn_id=turn.turn_id,
-        )
+        runner._task_execution.execute_task("run",
+        input_id=turn.input_id,
+        turn_id=turn.turn_id,)
 
     assert EventType.COMPLETION not in published
     assert EventType.RUN_FINISHED not in published
@@ -3558,12 +3532,12 @@ def test_session_runner_queue_pump_processes_events() -> None:
             return self._queue.get_nowait()
 
     fake_queue = FakeQueue()
-    stop_event, thread = runner._start_queue_pump(fake_queue, capture)
+    stop_event, thread = runner._task_execution.start_queue_pump(fake_queue, capture)
     fake_queue.put(("assistant_message", {"message": {"content": "stream"}}, 5))
     fake_queue.put((None, None, None))
     stop_event.set()
     thread.join(timeout=1)
-    runner._drain_event_queue(fake_queue, capture)
+    runner._task_execution.drain_event_queue(fake_queue, capture)
 
     assert captured
     assert captured[0][0] == "assistant_message"
@@ -3663,7 +3637,7 @@ def test_remote_observation_sink_failure_prevents_task_success(
         RuntimeError,
         match="runtime event persistence failed",
     ) as failure:
-        runner._execute_task("task", input_id=turn.input_id, turn_id=turn.turn_id)
+        runner._task_execution.execute_task("task", input_id=turn.input_id, turn_id=turn.turn_id)
     assert isinstance(failure.value.__cause__, OSError)
     assert product_session.read_model.status == "running"
     assert product_session.read_model.event_count == 1
@@ -3770,7 +3744,7 @@ def test_remote_nonstreaming_compaction_reaches_product_session(
     monkeypatch.setattr(ray_queue, "Queue", FakeQueue)
     monkeypatch.delenv("BREADBOARD_ENABLE_REMOTE_STREAM", raising=False)
 
-    runner._execute_task("task", input_id=turn.input_id, turn_id=turn.turn_id)
+    runner._task_execution.execute_task("task", input_id=turn.input_id, turn_id=turn.turn_id)
 
     assert product_session.effective_context == effective_context
     assert product_session.raw_fact_ids == ("ctn_000001", "ctn_000002")
@@ -3896,20 +3870,16 @@ def test_session_runner_unknown_runtime_event_fails_closed_and_strips_sentinel()
     )
 
     with pytest.raises(RuntimeProtocolError):
-        runner._translate_runtime_event("unknown.normative.event", {}, turn=3)
+        runner._runtime_event_projector.translate("unknown.normative.event", {}, turn=3)
 
-    translated = runner._translate_runtime_event(
-        "assistant_message",
-        {"message": {"role": "assistant", "content": "answer\n\n>>>>>> END RESPONSE"}},
-        turn=3,
-    )
+    translated = runner._runtime_event_projector.translate("assistant_message",
+    {"message": {"role": "assistant", "content": "answer\n\n>>>>>> END RESPONSE"}},
+    turn=3,)
     assert translated is not None
     assert translated[1]["text"] == "answer"
     assert translated[1]["message"]["content"] == "answer"
 
-    session_scoped = runner._translate_runtime_event(
-        "stream.gap", {"reason": "overflow"}, turn=3
-    )
+    session_scoped = runner._runtime_event_projector.translate("stream.gap", {"reason": "overflow"}, turn=3)
     assert session_scoped is not None
     assert session_scoped[2] is None
 

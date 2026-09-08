@@ -124,25 +124,14 @@ SECRET_PATTERNS = [
 ]
 
 
-def _json_bytes(value: Any) -> bytes:
-    return lane_runtime.canonical_json(value, separators_style="default").encode("utf-8")
-
-
 def _read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(_json_bytes(value))
+    path.write_bytes(lane_runtime.canonical_json(value, separators_style="default").encode("utf-8"))
 
-
-def _sha256_file(path: Path) -> str:
-    return lane_runtime.sha256_file(path)
-
-
-def _sha256_bytes(data: bytes) -> str:
-    return hash_utils.sha256_bytes(data)
 
 
 def _display(path: Path, *, logical_root: Path | None = None) -> str:
@@ -247,7 +236,7 @@ def _projection_input(path_text: str, path: Path) -> dict[str, Any]:
     return {
         "bytes": path.stat().st_size,
         "path": path_text,
-        "sha256": _sha256_file(path),
+        "sha256": lane_runtime.sha256_file(path),
         "value": _decode_projection_input(path),
         "verbatim": True,
     }
@@ -266,7 +255,7 @@ def _add_projection_input(inputs: dict[str, dict[str, Any]], path_text: str) -> 
             inputs[child_key] = item
         inputs[path_text] = {
             "path": path_text,
-            "sha256": _sha256_bytes(_json_bytes(child_hashes)),
+            "sha256": hash_utils.sha256_bytes(lane_runtime.canonical_json(child_hashes, separators_style="default").encode("utf-8")),
             "value": child_values,
             "verbatim": True,
         }
@@ -304,11 +293,11 @@ def _load_projection_inputs(lane_def: Mapping[str, Any]) -> dict[str, dict[str, 
             raise ValueError("runtime payload input paths must be non-empty strings")
         if path_text == physical_ledger_path and path_text in inputs:
             continue
-        data = _json_bytes(value)
+        data = lane_runtime.canonical_json(value, separators_style="default").encode("utf-8")
         inputs[path_text] = {
             "bytes": len(data),
             "path": path_text,
-            "sha256": _sha256_bytes(data),
+            "sha256": hash_utils.sha256_bytes(data),
             "value": value,
         }
     for path_text in record_builder_source_roles(
@@ -504,8 +493,8 @@ def _capture_projection_packet(
     ledger_role = "atomic_feature_ledger"
     ledger_path = "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
     ledger_value = _read_json(_ledger_path())
-    ledger_bytes = _json_bytes(ledger_value)
-    ledger_digest = _sha256_bytes(ledger_bytes)
+    ledger_bytes = lane_runtime.canonical_json(ledger_value, separators_style="default").encode("utf-8")
+    ledger_digest = hash_utils.sha256_bytes(ledger_bytes)
     source_role_hashes[ledger_role] = ledger_digest
     source_input_refs[ledger_role] = f"{ledger_path}#{ledger_digest}"
     source_payloads = {
@@ -570,7 +559,7 @@ def _capture_projection_packet(
 
 def _ref(path: Path, *, logical_path: Path | None = None, logical_root: Path | None = None) -> str:
     visible = logical_path or path
-    return f"{_display(visible, logical_root=logical_root)}#{_sha256_file(path)}"
+    return f"{_display(visible, logical_root=logical_root)}#{lane_runtime.sha256_file(path)}"
 
 
 def _support_claim_schema_version(lane_def: Mapping[str, Any], canonical_claim_path: Path) -> str:
@@ -629,7 +618,7 @@ def _catalog_binding(
 def _source_hashes(paths: list[tuple[Path, Path | None]]) -> dict[str, str]:
     hashes: dict[str, str] = {}
     for physical, logical in paths:
-        hashes[_display(logical or physical)] = _sha256_file(physical)
+        hashes[_display(logical or physical)] = lane_runtime.sha256_file(physical)
     return hashes
 
 
@@ -727,7 +716,7 @@ def _write_projection(
         path.parent.mkdir(parents=True, exist_ok=True)
         before = path.read_bytes() if path.exists() else None
         path.write_bytes(payloads[name])
-        writes.append({"path": _display(CANONICAL_PROJECTION_DIR / name), "sha256": _sha256_bytes(payloads[name]), "status": "unchanged" if before == payloads[name] else "written"})
+        writes.append({"path": _display(CANONICAL_PROJECTION_DIR / name), "sha256": hash_utils.sha256_bytes(payloads[name]), "status": "unchanged" if before == payloads[name] else "written"})
     return {**report, "outputs": writes}
 
 
@@ -880,7 +869,7 @@ def capture(
         "accepted_as_capture_ref": True,
         "capture_class": "derived_capture",
         "captured_artifacts": [
-            {"path": _display(logical_path or physical), "role": role, "sha256": _sha256_file(physical)}
+            {"path": _display(logical_path or physical), "role": role, "sha256": lane_runtime.sha256_file(physical)}
             for (physical, logical_path), role in [
                 (raw_sources[0], "source_l1_raw_capture"),
                 (raw_sources[1], "source_l1_target_probe"),
@@ -1009,7 +998,7 @@ def capture(
         ("compiler_tests_present", HELPER_TEST_PATH, None),
     ]
     prevalidation_payload = {
-        "checks": [{"name": name, "passed": physical.exists(), "path": _display(logical_path or physical), "sha256": _sha256_file(physical)} for name, physical, logical_path in prevalidation_checks],
+        "checks": [{"name": name, "passed": physical.exists(), "path": _display(logical_path or physical), "sha256": lane_runtime.sha256_file(physical)} for name, physical, logical_path in prevalidation_checks],
         "config_id": config_id,
         "generated_at_utc": GENERATED_AT_UTC,
         "lane_id": lane_id,
@@ -1103,17 +1092,17 @@ def capture(
 
     artifacts = [
         {"path": _display(FREEZE_MANIFEST_PATH), "role": "freeze_manifest", "sha256": _freeze_row_hash(config_id)},
-        {"path": _display(logical_raw_capture_path), "role": "capture_ref", "sha256": _sha256_file(raw_capture_path)},
-        {"derived_from": [_ref(raw_capture_path, logical_path=logical_raw_capture_path), _ref(graph_path, logical_path=logical_graph_path)], "path": _display(logical_replay_path), "role": "replay_ref", "sha256": _sha256_file(replay_path)},
-        {"derived_from": [_ref(raw_capture_path, logical_path=logical_raw_capture_path), _ref(replay_path, logical_path=logical_replay_path), _ref(graph_path, logical_path=logical_graph_path)], "path": _display(logical_comparator_path), "role": "comparator_ref", "sha256": _sha256_file(comparator_path)},
-        {"path": _display(logical_support_claim_path), "role": "support_claim_ref", "sha256": _sha256_file(support_claim_path)},
-        {"derived_from": [_ref(comparator_path, logical_path=logical_comparator_path)], "path": _display(logical_parity_path), "role": "parity_results", "sha256": _sha256_file(parity_path)},
-        {"path": _display(logical_secret_scan_path), "role": "secret_scan_report", "sha256": _sha256_file(secret_scan_path)},
-        {"path": _display(logical_prevalidation_path), "role": "validator_output", "sha256": _sha256_file(prevalidation_path)},
-        {"path": _display(logical_graph_path), "role": "effective_config_graph", "sha256": _sha256_file(graph_path)},
-        {"path": _display(logical_projection_manifest_path), "role": "primitive_projection_manifest", "sha256": _sha256_file(projection_manifest_path)},
-        {"path": _display(logical["agent_config"]), "role": "agent_config", "sha256": _sha256_file(paths["agent_config"])},
-        {"path": _display(SOURCE_FREEZE_PATH), "role": "source_freeze", "sha256": _sha256_file(SOURCE_FREEZE_PATH)},
+        {"path": _display(logical_raw_capture_path), "role": "capture_ref", "sha256": lane_runtime.sha256_file(raw_capture_path)},
+        {"derived_from": [_ref(raw_capture_path, logical_path=logical_raw_capture_path), _ref(graph_path, logical_path=logical_graph_path)], "path": _display(logical_replay_path), "role": "replay_ref", "sha256": lane_runtime.sha256_file(replay_path)},
+        {"derived_from": [_ref(raw_capture_path, logical_path=logical_raw_capture_path), _ref(replay_path, logical_path=logical_replay_path), _ref(graph_path, logical_path=logical_graph_path)], "path": _display(logical_comparator_path), "role": "comparator_ref", "sha256": lane_runtime.sha256_file(comparator_path)},
+        {"path": _display(logical_support_claim_path), "role": "support_claim_ref", "sha256": lane_runtime.sha256_file(support_claim_path)},
+        {"derived_from": [_ref(comparator_path, logical_path=logical_comparator_path)], "path": _display(logical_parity_path), "role": "parity_results", "sha256": lane_runtime.sha256_file(parity_path)},
+        {"path": _display(logical_secret_scan_path), "role": "secret_scan_report", "sha256": lane_runtime.sha256_file(secret_scan_path)},
+        {"path": _display(logical_prevalidation_path), "role": "validator_output", "sha256": lane_runtime.sha256_file(prevalidation_path)},
+        {"path": _display(logical_graph_path), "role": "effective_config_graph", "sha256": lane_runtime.sha256_file(graph_path)},
+        {"path": _display(logical_projection_manifest_path), "role": "primitive_projection_manifest", "sha256": lane_runtime.sha256_file(projection_manifest_path)},
+        {"path": _display(logical["agent_config"]), "role": "agent_config", "sha256": lane_runtime.sha256_file(paths["agent_config"])},
+        {"path": _display(SOURCE_FREEZE_PATH), "role": "source_freeze", "sha256": lane_runtime.sha256_file(SOURCE_FREEZE_PATH)},
     ]
     evidence_manifest_payload = {
         "artifacts": artifacts,

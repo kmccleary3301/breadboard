@@ -125,6 +125,9 @@ def test_replay_differential_uses_durable_projection_as_expected_side() -> None:
         "session_id": "replay-differential",
         "status": "completed",
         "effective_lock_hash": "sha256:" + "c" * 64,
+        "generation_id": "sha256:" + "c" * 64,
+        "trajectory_segment_id": "replay-differential:segment:1:" + "c" * 64,
+        "lineage": None,
         "task_hash": "sha256:"
         + hashlib.sha256(b"replay task").hexdigest(),
         "event_count": 11,
@@ -338,8 +341,17 @@ def test_session_lifecycle_and_resumable_event_stream(
             / "contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json"
         ).read_text(encoding="utf-8")
     )
-    event_registry = Registry().with_resource(
-        lifecycle_schema["$id"], Resource.from_contents(lifecycle_schema)
+    assistant_schema = json.loads(
+        (
+            contract_root
+            / "contracts/kernel/schemas/payloads/bb.payload.message.assistant.v1.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    event_registry = Registry().with_resources(
+        (
+            (lifecycle_schema["$id"], Resource.from_contents(lifecycle_schema)),
+            (assistant_schema["$id"], Resource.from_contents(assistant_schema)),
+        )
     )
     event_validator = Draft202012Validator(event_schema, registry=event_registry)
     payload_roots = {
@@ -941,11 +953,11 @@ def test_c4_daily_driver_completes_with_stable_observations_and_restart(
     ]
     assert assistant_events
     assert any(
-        event["payload"] == {"metadata": {"has_content": True}}
+        event["payload"]["metadata"]["has_content"] is True
         for event in assistant_events
     )
     assert all(
-        set(event["payload"]) == {"metadata"}
+        set(event["payload"]) == {"metadata", "message_id", "trajectory_id"}
         and set(event["payload"]["metadata"]) == {"has_content"}
         and type(event["payload"]["metadata"]["has_content"]) is bool
         for event in assistant_events

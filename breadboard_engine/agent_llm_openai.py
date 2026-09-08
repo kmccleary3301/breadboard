@@ -8,7 +8,6 @@ import json
 import math
 import os
 from contextlib import contextmanager
-import random
 import shlex
 import subprocess
 import sys
@@ -23,25 +22,15 @@ from dataclasses import asdict, dataclass, field
 
 import ray
 
-from adaptive_iter import decode_adaptive_iterable
 
-from breadboard.sandbox import DevSandboxV2
 from breadboard.product.runtime.artifacts import ArtifactRef, read_workspace_artifact
-from breadboard.opencode_patch import (
-    PatchParseError, parse_opencode_patch, to_unified_diff,
-)
-from breadboard.sandbox_factory import SandboxFactory, DeploymentMode
 from .core.core import ToolDefinition, ToolParameter
 from .execution.composite import CompositeToolCaller
-from .dialects.bash_block import BashBlockDialect
-from .execution.dialect_manager import DialectManager
-from .execution.agent_executor import AgentToolExecutor
 from .compilation.system_prompt_compiler import get_compiler
 from .compilation.v2_loader import load_agent_config
 from .compilation.tool_registry import registry_from_config
-from .provider.ir import IRFinish, IRDeltaEvent
+from .provider.ir import IRFinish
 from .provider.routing import provider_router
-from .provider import provider_adapter_manager
 from .provider.runtime import (
     provider_registry,
     ProviderRuntimeContext,
@@ -55,24 +44,14 @@ from .provider.contracts import (
     normalize_content,
     strip_provider_exchange_completion_sentinels,
 )
-from .provider import ReplayRuntime
-from .provider.capability_probe import ProviderCapabilityProbeRunner
 from .state.session_state import SessionState
 from .state.completion_detector import CompletionDetector
-from .messaging.message_formatter import MessageFormatter
 from .messaging.markdown_logger import MarkdownLogger
 from .error_handling.error_handler import ErrorHandler, public_error_projection
 from .monitoring.telemetry import TelemetryLogger
 from .monitoring.reward_metrics import (
     RewardMetricsSQLiteWriter, TodoMetricsSQLiteWriter,
 )
-from .run_logging import LoggerV2Manager
-from .run_logging.api_recorder import APIRequestRecorder
-from .run_logging.prompt_logger import PromptArtifactLogger
-from .run_logging.markdown_transcript import MarkdownTranscriptWriter
-from .run_logging.provider_native_logger import ProviderNativeLogger
-from .run_logging.request_recorder import StructuredRequestRecorder
-from .utils.local_ray import LocalActorProxy, identity_get
 from .security import (
     WorkspaceFilesystem,
     WorkspacePathError,
@@ -85,11 +64,6 @@ from .security import (
     redaction,
     validate_workspace_credential_boundary,
 )
-from .provider.health import RouteHealthManager
-from .provider import normalize_provider_result
-from .provider.metrics import ProviderMetricsCollector
-from .guardrails import GuardrailCoordinator
-from .guardrails.orchestrator import GuardrailOrchestrator
 from .conductor.components import (
     apply_capability_tool_overrides,
     apply_streaming_policy_for_turn,
@@ -97,11 +71,6 @@ from .conductor.components import (
     capture_turn_diagnostics,
     get_capability_probe_result,
     get_model_routing_preferences,
-    get_prompt_cache_control,
-    initialize_config_validator,
-    initialize_enhanced_executor,
-    initialize_guardrail_config,
-    initialize_yaml_tools,
     log_routing_event,
     should_require_workspace_tool_usage,
     write_env_fingerprint,
@@ -133,19 +102,12 @@ from .conductor.patching import retry_diff_with_aider
 from .conductor.bootstrap import bootstrap_conductor, prepare_workspace
 from .conductor.facade_methods import OpenAIConductorFacadeMethods
 from .todo import TodoManager, TodoStore
-from .todo.store import TODO_OPEN_STATUSES
-from .replay import ReplaySession, load_replay_session
+from .replay import ReplaySession
 from .model_roles import (
     credential_origin_matches_binding,
     select_role_target,
 )
 from .permissions import PermissionAuthority, PolicyPack
-from .conductor.loop_detection import LoopDetectionService
-from .conductor.context_window_guard import ContextWindowGuard
-from .conductor.streaming_policy import StreamingPolicy
-from .provider import ProviderInvoker
-from .conductor.prompt_planner import ToolPromptPlanner
-from .turns import TurnContext, TurnRelayer
 from .orchestration import TeamConfig, MultiAgentOrchestrator
 from .runtime.context import get_current_session_state
 from .longrun import (
@@ -7098,34 +7060,6 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             client = runtime.create_client_from_config(cfg)
             yield client
 
-    def _invoke_runtime_with_streaming(
-        self,
-        runtime,
-        client,
-        model: str,
-        send_messages: List[Dict[str, Any]],
-        tools_schema: Optional[List[Dict[str, Any]]],
-        stream_responses: bool,
-        runtime_context: ProviderRuntimeContext,
-        session_state: SessionState,
-        markdown_logger: MarkdownLogger,
-        turn_index: int,
-    ) -> Tuple[ProviderResult, bool]:
-        """Invoke provider runtime, falling back to non-streaming on failure."""
-
-        return self.provider_invoker.invoke(
-            runtime=runtime,
-            client=client,
-            model=model,
-            send_messages=send_messages,
-            tools_schema=tools_schema,
-            stream_responses=stream_responses,
-            runtime_context=runtime_context,
-            session_state=session_state,
-            markdown_logger=markdown_logger,
-            turn_index=turn_index,
-            route_id=getattr(self, "_current_route_id", None),
-        )
 
     def _retry_diff_with_aider(self, patch_text: str) -> Optional[Dict[str, Any]]:
         payload = retry_diff_with_aider(patch_text)

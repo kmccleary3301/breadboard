@@ -47,7 +47,7 @@ loop:
     runner._permission_queue = queue.Queue()
     runner._workspace_path = workspace
 
-    runner._update_pending_permissions(
+    runner._control_controller.update_pending_permissions(
         "permission_request",
         {
             "request_id": "permission_1",

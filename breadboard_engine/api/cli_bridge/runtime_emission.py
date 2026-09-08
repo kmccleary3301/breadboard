@@ -140,9 +140,6 @@ def _managed_output_root(output_root: Path | None, paths: ManagedStatePaths) -> 
 def primitive_emission_enabled() -> bool:
     return os.environ.get("BREADBOARD_EMIT_PRIMITIVES", "").strip().lower() in {"1", "true", "yes", "on"}
 
-def config_plane_dialects() -> set[str]:
-    value = (os.environ.get("BREADBOARD_CONFIG_PLANE_DIALECT") or "v2").strip().lower()
-    return {"v2", "v3"} if value == "both" else {value} if value in {"v2", "v3"} else {"v2"}
 def default_runtime_record_root(repo_root: Path | None = None) -> Path:
     managed = managed_state_paths()
     if managed is not None:

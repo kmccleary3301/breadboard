@@ -400,19 +400,6 @@ function buildSandboxFailureResult(input: {
   })
 }
 
-
-async function settleWithin(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<false>((resolve) => {
-    timer = setTimeout(() => resolve(false), Math.max(0, timeoutMs))
-  })
-  try {
-    return await Promise.race([promise.then(() => true, () => false), timeout])
-  } finally {
-    if (timer !== undefined) clearTimeout(timer)
-  }
-}
-
 async function settleValueWithin<T>(
   promise: Promise<T>,
   timeoutMs: number,

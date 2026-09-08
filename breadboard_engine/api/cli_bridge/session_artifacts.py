@@ -384,13 +384,7 @@ class SessionArtifactStore:
             ):
                 raise ValueError("invalid retained attachment manifest reference")
             retained_digest = digest.removeprefix("sha256:")
-        manifest_names = [
-            name
-            for name in self._manifest_names(workspace)
-            if name.startswith(prefix) and name.endswith(".json")
-        ]
-        if len(manifest_names) > _MAX_ARTIFACT_MANIFESTS:
-            raise ValueError("too many retained attachment manifests")
+        manifest_names = self._manifest_names(workspace)
         manifest_refs: list[tuple[str, ArtifactRef]] = []
         aggregate_size = 0
         for name in manifest_names:

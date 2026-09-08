@@ -1,52 +1,22 @@
 from __future__ import annotations
 
-import json
-import os
-import random
 import re
-import shlex
-import signal
-import subprocess
-import time
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from ..core.core import ToolDefinition
 from .context import ConductorContext
 from ..messaging.markdown_logger import MarkdownLogger
-from ..provider import provider_adapter_manager
-from ..provider.routing import provider_router
-from ..provider.contracts import (
-    ProviderMessage,
-    ProviderRuntimeContext,
-    ProviderRuntimeError,
-    ProviderResult,
-)
-from ..provider.registry import provider_registry
 from ..replay import resolve_todo_placeholders
-from ..orchestration.coordination import (
-    build_completion_signal_proposal,
-    build_tool_completion_signal_proposal,
-    is_accepted_signal,
-    validate_signal_proposal,
-)
 from ..state.session_state import SessionState
-from ..turns import TurnContext
-from ..utils.assistant_progress import assistant_is_progress_update
 from ..checkpointing.checkpoint_manager import CheckpointManager
 from ..hooks.model import HookResult
-from .components import latest_real_user_prompt, session_requires_workspace_tool_usage
 
-from .execution_records import (build_tool_execution_outcome_record, build_tool_model_render_record, classify_tool_terminal_state, legacy_message_view)
 from .implementation_receipts import (
     _async_result_retrieval_tool_for_activity, _async_result_task_id_from_activity,
     _command_tunnels_apply_patch, _latest_implementation_prompt, _latest_prompt_forbidden_direct_commands,
     _latest_prompt_requests_file_deletion, _path_is_user_facing_write_target, _requested_write_matches,
-    _requested_write_targets, _required_final_answer_marker, _required_final_answer_reminder,
-    _shell_command_delete_targets, _shell_command_write_targets, _tool_call_delete_targets,
+    _requested_write_targets, _required_final_answer_marker, _shell_command_delete_targets, _shell_command_write_targets, _tool_call_delete_targets,
     _tool_call_write_targets,
 )
 def _inject_async_result_retrieval(
@@ -252,34 +222,14 @@ def build_exec_func(conductor: ConductorContext, session_state: SessionState) ->
                 return override, hook_result
         return result, hook_result
 
-    if not session_state.get_provider_metadata("replay_mode"):
-        def _exec_logged(call: Dict[str, Any]) -> Dict[str, Any]:
-            call_to_use, pre_hook = _apply_pre_tool_hooks(call)
-            if pre_hook is not None and getattr(pre_hook, "action", "") == "deny":
-                error_text = pre_hook.reason or "blocked_by_hook"
-                result = {"error": error_text}
-                _emit_tool_lifecycle(call_to_use, "started")
-                _emit_tool_lifecycle(call_to_use, "finished", result=result)
-                return result
-            _emit_tool_lifecycle(call_to_use, "started")
-            result: Dict[str, Any] = {}
-            try:
-                result = conductor._exec_raw(call_to_use)
-                result, _ = _apply_post_tool_hooks(call_to_use, result)
-                return result
-            finally:
-                if isinstance(result, dict):
-                    _emit_tool_lifecycle(call_to_use, "finished", result=result)
-                else:
-                    _emit_tool_lifecycle(call_to_use, "finished", result={"error": "non-dict result"})
-        return _exec_logged
+    workspace_path: Optional[Path] = None
+    if session_state.get_provider_metadata("replay_mode"):
+        try:
+            workspace_path = Path(conductor.workspace)
+        except Exception:
+            workspace_path = Path(str(conductor.workspace))
 
-    try:
-        workspace_path = Path(conductor.workspace)
-    except Exception:
-        workspace_path = Path(str(conductor.workspace))
-
-    def _exec_with_replay(call: Dict[str, Any]) -> Dict[str, Any]:
+    def _exec_logged(call: Dict[str, Any]) -> Dict[str, Any]:
         call_to_use, pre_hook = _apply_pre_tool_hooks(call)
         if pre_hook is not None and getattr(pre_hook, "action", "") == "deny":
             error_text = pre_hook.reason or "blocked_by_hook"
@@ -288,14 +238,15 @@ def build_exec_func(conductor: ConductorContext, session_state: SessionState) ->
             _emit_tool_lifecycle(call_to_use, "finished", result=result)
             return result
         _emit_tool_lifecycle(call_to_use, "started")
-        args = call_to_use.get("arguments")
-        if isinstance(args, dict):
-            try:
-                resolved = resolve_todo_placeholders(dict(args), workspace_path)
-                call_to_use = dict(call_to_use)
-                call_to_use["arguments"] = resolved
-            except Exception:
-                pass
+        if workspace_path is not None:
+            args = call_to_use.get("arguments")
+            if isinstance(args, dict):
+                try:
+                    resolved = resolve_todo_placeholders(dict(args), workspace_path)
+                    call_to_use = dict(call_to_use)
+                    call_to_use["arguments"] = resolved
+                except Exception:
+                    pass
         result: Dict[str, Any] = {}
         try:
             result = conductor._exec_raw(call_to_use)
@@ -307,7 +258,7 @@ def build_exec_func(conductor: ConductorContext, session_state: SessionState) ->
             else:
                 _emit_tool_lifecycle(call_to_use, "finished", result={"error": "non-dict result"})
 
-    return _exec_with_replay
+    return _exec_logged
 
 def resolve_replay_todo_placeholders(conductor: ConductorContext, session_state: SessionState, parsed_call: Any) -> None:
     if not session_state.get_provider_metadata("replay_mode"):

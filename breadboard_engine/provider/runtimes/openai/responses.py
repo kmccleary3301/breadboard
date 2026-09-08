@@ -24,6 +24,21 @@ from .chat import OpenAIChatRuntime
 class OpenAIResponsesRuntime(OpenAIChatRuntime):
     """Runtime for OpenAI Responses API."""
 
+    def _provider_config(self, context: ProviderRuntimeContext) -> Dict[str, Any]:
+        provider_tools_cfg = context.agent_config.get("provider_tools") or {}
+        if not isinstance(provider_tools_cfg, dict):
+            return {}
+        provider_specific = provider_tools_cfg.get(self.descriptor.provider_id)
+        if isinstance(provider_specific, dict):
+            return provider_specific
+        openai_specific = provider_tools_cfg.get("openai")
+        if (
+            isinstance(openai_specific, dict)
+            and self.descriptor.provider_id in ("openai", "openrouter")
+        ):
+            return openai_specific
+        return provider_tools_cfg
+
     def _split_messages_for_responses(
         self,
         messages: List[Dict[str, Any]],
@@ -46,21 +61,10 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             else:
                 non_system.append(msg)
 
-        provider_tools_cfg = context.agent_config.get("provider_tools") or {}
-        provider_cfg: Dict[str, Any] = {}
-        if isinstance(provider_tools_cfg, dict):
-            provider_specific = provider_tools_cfg.get(self.descriptor.provider_id)
-            if isinstance(provider_specific, dict):
-                provider_cfg = provider_specific
-            else:
-                openai_specific = provider_tools_cfg.get("openai")
-                if isinstance(openai_specific, dict) and self.descriptor.provider_id in ("openai", "openrouter"):
-                    provider_cfg = openai_specific
-                else:
-                    provider_cfg = provider_tools_cfg
+        provider_cfg = self._provider_config(context)
         use_developer = bool(provider_cfg.get("responses_use_developer_role"))
         responses_stateful = True
-        if isinstance(provider_cfg, dict) and "responses_stateful" in provider_cfg:
+        if "responses_stateful" in provider_cfg:
             responses_stateful = bool(provider_cfg.get("responses_stateful"))
 
         # Build instructions from system messages (if any)
@@ -1000,20 +1004,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         instructions, input_messages = self._split_messages_for_responses(
             messages, context
         )
-        provider_tools_cfg = context.agent_config.get("provider_tools") or {}
-        provider_cfg: Dict[str, Any] = {}
-        if isinstance(provider_tools_cfg, dict):
-            provider_specific = provider_tools_cfg.get(self.descriptor.provider_id)
-            if isinstance(provider_specific, dict):
-                provider_cfg = provider_specific
-            else:
-                openai_specific = provider_tools_cfg.get("openai")
-                if isinstance(
-                    openai_specific, dict
-                ) and self.descriptor.provider_id in ("openai", "openrouter"):
-                    provider_cfg = openai_specific
-                else:
-                    provider_cfg = provider_tools_cfg
+        provider_cfg = self._provider_config(context)
         responses_stateful = bool(provider_cfg.get("responses_stateful", True))
         has_state_reference = bool(
             context.session_state.get_provider_metadata("conversation_id")

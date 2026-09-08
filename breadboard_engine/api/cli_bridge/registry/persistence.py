@@ -344,6 +344,15 @@ def _turn_journal_digest(record: SessionRecord) -> str:
 
 class PersistenceMixin:
     """Retained session persistence and basic record operations."""
+    @staticmethod
+    def _requires_disk_refresh(record: SessionRecord) -> bool:
+        metadata = record.metadata if isinstance(record.metadata, dict) else {}
+        return (
+            record.loaded_from_retained_state
+            or isinstance(metadata.get("durable_child"), dict)
+            or isinstance(metadata.get("durable_parent_cancellation"), dict)
+        )
+
 
     async def create(self, record: SessionRecord) -> SessionRecord:
         async with self._lock:
@@ -403,9 +412,10 @@ class PersistenceMixin:
                             return None
                         self._records[session_id] = loaded
                         return loaded
-                    metadata = record.metadata if isinstance(record.metadata, dict) else {}
-                    require_disk = record.loaded_from_retained_state or isinstance(metadata.get("durable_child"), dict) or isinstance(metadata.get("durable_parent_cancellation"), dict)
-                    return self._refresh_record_from_disk_locked(session_id, record, require_disk=require_disk)
+                    require_disk = self._requires_disk_refresh(record)
+                    return self._refresh_record_from_disk_locked(
+                        session_id, record, require_disk=require_disk
+                    )
             except SessionRecordDeletedError:
                 self._records.pop(session_id, None)
                 return None
@@ -456,9 +466,10 @@ class PersistenceMixin:
                 record = self._records.get(session_id)
                 if not record:
                     return
-                metadata = record.metadata if isinstance(record.metadata, dict) else {}
-                require_disk = record.loaded_from_retained_state or isinstance(metadata.get("durable_child"), dict) or isinstance(metadata.get("durable_parent_cancellation"), dict)
-                record = self._refresh_record_from_disk_locked(session_id, record, require_disk=require_disk)
+                require_disk = self._requires_disk_refresh(record)
+                record = self._refresh_record_from_disk_locked(
+                    session_id, record, require_disk=require_disk
+                )
                 if (
                     record.product_session is not None
                     and status is not record.projected_status()
@@ -483,16 +494,7 @@ class PersistenceMixin:
                     current = self._records.get(session_id)
                     if current is not record:
                         return
-                    current_metadata = (
-                        record.metadata if isinstance(record.metadata, dict) else {}
-                    )
-                    require_disk = (
-                        record.loaded_from_retained_state
-                        or isinstance(current_metadata.get("durable_child"), dict)
-                        or isinstance(
-                            current_metadata.get("durable_parent_cancellation"), dict
-                        )
-                    )
+                    require_disk = self._requires_disk_refresh(record)
                     record = self._refresh_record_from_disk_locked(
                         session_id, record, require_disk=require_disk
                     )
@@ -703,9 +705,10 @@ class PersistenceMixin:
                 record = self._records.get(session_id)
                 if not record:
                     return
-                current_metadata = record.metadata if isinstance(record.metadata, dict) else {}
-                require_disk = record.loaded_from_retained_state or isinstance(current_metadata.get("durable_child"), dict) or isinstance(current_metadata.get("durable_parent_cancellation"), dict)
-                record = self._refresh_record_from_disk_locked(session_id, record, require_disk=require_disk)
+                require_disk = self._requires_disk_refresh(record)
+                record = self._refresh_record_from_disk_locked(
+                    session_id, record, require_disk=require_disk
+                )
                 previous = (
                     record.logging_dir,
                     record.completion_summary,

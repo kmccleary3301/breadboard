@@ -9,7 +9,6 @@ This test verifies that:
 
 import pytest
 import ray
-import shutil
 import os
 from pathlib import Path
 
@@ -130,16 +129,14 @@ def test_persist_final_workspace_skips_nondisposable_workspace(ray_cluster, tmp_
     workspace = tmp_path / "user_workspace"
     workspace.mkdir(parents=True, exist_ok=True)
     (workspace / "hello.txt").write_text("hello\n", encoding="utf-8")
-    run_dir = tmp_path / "run"
-    run_dir.mkdir(parents=True, exist_ok=True)
 
     conductor = ConductorClass(
         workspace=str(workspace),
         image="python-dev:latest",
-        config={},
+        config={"logging": {"root_dir": str(tmp_path / "logging")}},
         local_mode=True,
     )
-    conductor.logger_v2.run_dir = str(run_dir)
+    run_dir = Path(conductor.logger_v2.run_dir)
 
     conductor._persist_final_workspace()
 
@@ -155,18 +152,16 @@ def test_persist_final_workspace_copies_disposable_workspace(ray_cluster, tmp_pa
     workspace = tmp_path / "persistable_workspace"
     workspace.mkdir(parents=True, exist_ok=True)
     (workspace / "hello.txt").write_text("hello\n", encoding="utf-8")
-    run_dir = tmp_path / "run"
-    run_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         os.environ["BREADBOARD_PERSIST_FINAL_WORKSPACE"] = "1"
         conductor = ConductorClass(
             workspace=str(workspace),
             image="python-dev:latest",
-            config={},
+            config={"logging": {"root_dir": str(tmp_path / "logging")}},
             local_mode=True,
         )
-        conductor.logger_v2.run_dir = str(run_dir)
+        run_dir = Path(conductor.logger_v2.run_dir)
 
         conductor._persist_final_workspace()
 

@@ -36,7 +36,7 @@ async def test_sse_endpoint_streams_events_in_order() -> None:
         task = asyncio.create_task(producer())
         events: List[dict] = []
         current_id: str | None = None
-        async with client.stream("GET", "/sessions/sess-sse/events") as response:
+        async with client.stream("GET", "/v1/internal/sessions/sess-sse/events") as response:
             async for line in response.aiter_lines():
                 if line.startswith("id: "):
                     current_id = line.removeprefix("id: ").strip()
@@ -87,7 +87,7 @@ async def test_sse_endpoint_handles_completion_event() -> None:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         task = asyncio.create_task(producer())
-        async with client.stream("GET", "/sessions/sess-complete/events") as response:
+        async with client.stream("GET", "/v1/internal/sessions/sess-complete/events") as response:
             events: List[dict] = []
             current_id: str | None = None
             async for line in response.aiter_lines():
@@ -158,12 +158,12 @@ async def test_sse_resume_missing_event_id_returns_error() -> None:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         response = await client.get(
-            "/sessions/sess-resume/events",
+            "/v1/internal/sessions/sess-resume/events",
             headers={"Last-Event-ID": "9999"},
         )
         assert response.status_code == 409
         payload = response.json()
-        assert payload["detail"]["code"] == "resume_window_exceeded"
+        assert payload["error"] == "resume_window_exceeded"
     if record.dispatcher_task:
         await record.event_queue.put(None)
         await record.dispatcher_task

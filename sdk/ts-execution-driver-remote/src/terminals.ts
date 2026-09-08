@@ -46,10 +46,6 @@ interface RemoteTerminalSessionRecord {
   readonly descriptor: TerminalSessionDescriptorV1
 }
 
-function normalizeSignal(signal?: string | null): string {
-  return signal ?? "SIGTERM"
-}
-
 function buildDescriptor(input: TerminalSessionStartInputV1): TerminalSessionDescriptorV1 {
   return assertValid<TerminalSessionDescriptorV1>("terminalSessionDescriptor", {
     schema_version: "bb.terminal_session_descriptor.v1",
@@ -81,7 +77,7 @@ function buildInteraction(
     causing_call_id: input.causingCallId ?? null,
     interaction_kind: input.interactionKind,
     input_b64: input.interactionKind === "stdin" ? input.inputB64 ?? null : null,
-    signal: input.interactionKind === "signal" ? normalizeSignal(input.signal) : null,
+    signal: input.interactionKind === "signal" ? input.signal ?? "SIGTERM" : null,
   })
 }
 
@@ -297,7 +293,7 @@ export class RemoteTerminalSessionManager {
     const response = await executeRemoteTerminalRequest(this.httpOptions, {
       schema_version: "bb.remote_terminal_request.v1",
       action: "cleanup",
-      payload: { session_ids: targetIds, signal: normalizeSignal(input.signal) },
+      payload: { session_ids: targetIds, signal: input.signal ?? "SIGTERM" },
       metadata: this.httpOptions.metadata ?? {},
     })
     const rawCleaned = response.payload.cleaned_session_ids
@@ -349,7 +345,7 @@ export class RemoteTerminalSessionManager {
       scope: input.scope,
       cleaned_session_ids: cleanedSessionIds,
       failed_session_ids: finalFailed,
-      metadata: { signal: normalizeSignal(input.signal) },
+      metadata: { signal: input.signal ?? "SIGTERM" },
     })
   }
 }

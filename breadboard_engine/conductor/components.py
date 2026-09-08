@@ -18,7 +18,6 @@ from ..run_logging.workspace_manifest import build_workspace_manifest
 from ..provider.metrics import ProviderMetricsCollector
 from ..provider.ir import IRDeltaEvent
 from ..utils.safe_delete import is_disposable_workspace_path
-from ..utils.assistant_progress import assistant_is_progress_update
 from .streaming_policy import StreamingPolicy
 from ..guardrails import build_guardrail_manager
 from ..core.core import ToolDefinition, ToolParameter
@@ -618,35 +617,10 @@ def tool_defs_from_yaml(conductor: Any) -> Optional[List[ToolDefinition]]:
         if not getattr(conductor, "yaml_tools", None):
             return None
 
-        tools_cfg = (conductor.config.get("tools", {}) or {})
-        registry_cfg = (tools_cfg.get("registry", {}) or {})
-        include_list_raw = list(registry_cfg.get("include") or [])
-        include_list = []
-        include_has_wildcard = False
-        for entry in include_list_raw:
-            if entry is None:
-                continue
-            name = str(entry).strip()
-            if not name:
-                continue
-            if name in {"*", "*.*", "all"}:
-                include_has_wildcard = True
-            include_list.append(name)
-        legacy_enabled = (tools_cfg.get("enabled", {}) or {})
-
-        def _is_included(name: str) -> bool:
-            if include_list:
-                if include_has_wildcard:
-                    return True
-                return name in include_list
-            if legacy_enabled:
-                return bool(legacy_enabled.get(name, False))
-            return True
-
         converted: List[ToolDefinition] = []
         for t in conductor.yaml_tools:
             name = getattr(t, "name", None)
-            if not name or not _is_included(name):
+            if not name:
                 continue
             params = []
             for p in getattr(t, "parameters", []) or []:

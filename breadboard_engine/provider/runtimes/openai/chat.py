@@ -303,7 +303,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                     kind="configuration",
                     details={"code": "profile_model_mismatch"},
                 )
-            profile_request = profile.chat_request(request_messages, request_tools)
+            profile_request = dict(profile_request)
             profile_request.pop("model")
             profile_request.pop("messages")
             profile_request.pop("stream")

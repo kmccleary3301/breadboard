@@ -68,10 +68,6 @@ function buildTerminalEnd(input: {
   })
 }
 
-function normalizeSignal(signal?: string | null): NodeJS.Signals {
-  return (signal ?? "SIGTERM") as NodeJS.Signals
-}
-
 function isGroupAlive(pgid: number | null | undefined): boolean {
   if (pgid == null) return false
   if (process.platform === "win32") {
@@ -446,7 +442,7 @@ export class LocalTerminalSessionManager {
     if (input.interactionKind === "stdin") {
       record.child.stdin.write(decodeChunk(input))
     } else if (input.interactionKind === "signal") {
-      killProcessTree(record.child, record.pgid ?? record.child.pid, normalizeSignal(input.signal))
+      killProcessTree(record.child, record.pgid ?? record.child.pid, (input.signal ?? "SIGTERM") as NodeJS.Signals)
     }
 
     if ((input.settleMs ?? 0) > 0) {
@@ -499,7 +495,7 @@ export class LocalTerminalSessionManager {
       const record = this.sessions.get(sessionId)
       const pgid = record?.pgid ?? this.endedSessionPgids.get(sessionId) ?? null
       const child = record?.child
-      const initialSignal = normalizeSignal(input.signal)
+      const initialSignal = (input.signal ?? "SIGTERM") as NodeJS.Signals
 
       if (record) {
         const isLeaderAlive = this.probeProcessAlive(record.identity.leaderPid)
@@ -610,7 +606,7 @@ export class LocalTerminalSessionManager {
       scope: input.scope,
       cleaned_session_ids: cleaned,
       failed_session_ids: failed,
-      metadata: { signal: normalizeSignal(input.signal) },
+      metadata: { signal: input.signal ?? "SIGTERM" },
     })
   }
 }

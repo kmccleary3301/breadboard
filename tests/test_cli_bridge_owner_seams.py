@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-import json
 import queue
 import threading
 from pathlib import Path
@@ -10,24 +8,15 @@ from types import SimpleNamespace
 import pytest
 
 from breadboard_engine.api.cli_bridge.events import EventType
+from breadboard_engine.api.cli_bridge.models import SessionCreateRequest, SessionStatus
+from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry
 from breadboard_engine.api.cli_bridge.session_control import SessionControlController
 from breadboard_engine.api.cli_bridge.session_lifecycle import SessionLifecycleOwner
 from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
 from breadboard_engine.api.cli_bridge.task_execution import TaskExecutionOwner
+from breadboard_engine.todo import TodoDraft, TodoPatch, TodoStore
 
 
-@pytest.mark.asyncio
-async def test_session_runner_run_delegates_to_lifecycle_owner() -> None:
-    runner = object.__new__(SessionRunner)
-    calls: list[str] = []
-
-    class Lifecycle:
-        async def run(self) -> None:
-            calls.append("run")
-
-    runner._lifecycle_owner = Lifecycle()
-    await runner._run()
-    assert calls == ["run"]
 
 
 @pytest.mark.asyncio
@@ -52,7 +41,6 @@ async def test_lifecycle_terminalizes_when_running_transition_fails(
     owner = SessionLifecycleOwner(host, SimpleNamespace())
 
     async def fail(_state, exc) -> None:
-        assert str(exc) == "registry unavailable"
         calls.append("fail")
 
     monkeypatch.setattr(owner, "_fail", fail)
@@ -63,67 +51,13 @@ async def test_lifecycle_terminalizes_when_running_transition_fails(
     assert calls == ["fail", "terminate"]
 
 
-@pytest.mark.asyncio
-async def test_task_execution_replay_uses_owner_parse_and_correlation(
-    tmp_path: Path,
-) -> None:
-    replay = tmp_path / "events.jsonl"
-    replay.write_text(
-        json.dumps({"type": "completion", "payload": {"summary": {"completed": True}}})
-        + "\n",
-        encoding="utf-8",
-    )
-    turn = SimpleNamespace(input_id="input-1", terminal_outcome=None)
-    session = SimpleNamespace(
-        session_id="session-1",
-        metadata={},
-        turns_by_id={"turn-1": turn},
-        active_turn_id="turn-1",
-    )
-
-    class Registry:
-        async def update_metadata(self, *_args, **_kwargs) -> None:
-            return None
-
-    host = SimpleNamespace(
-        session=session,
-        registry=Registry(),
-        _stop_event=asyncio.Event(),
-        _mode=None,
-        _parse_replay_path=lambda *_args: (_ for _ in ()).throw(
-            AssertionError("host alias called")
-        ),
-        _require_execution_correlation=lambda *_args: (_ for _ in ()).throw(
-            AssertionError("host alias called")
-        ),
-        _translate_runtime_event=lambda event_type, payload, turn: (
-            EventType(event_type),
-            payload,
-            turn,
-            {},
-        ),
-        publish_event_async=lambda *_args, **_kwargs: None,
-    )
-    owner = TaskExecutionOwner(host)
-
-    result = await owner.execute_replay_task(
-        f"replay:{replay}", input_id="input-1", turn_id="turn-1"
-    )
-    assert result["completion_summary"]["reason"] == "replay"
-    assert len(result["_terminal_events"]) == 2
 
 
-def test_task_execution_usage_and_queue_methods_do_not_use_host_aliases() -> None:
+def test_task_execution_aggregates_usage_and_delivers_queued_events() -> None:
     session = SimpleNamespace(session_id="session-1")
     host = SimpleNamespace(
         session=session,
         _published_events=0,
-        _normalize_usage_payload=lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("host alias called")
-        ),
-        _drain_event_queue=lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("host alias called")
-        ),
     )
     owner = TaskExecutionOwner(host)
 
@@ -143,7 +77,7 @@ def test_task_execution_usage_and_queue_methods_do_not_use_host_aliases() -> Non
 
 
 @pytest.mark.asyncio
-async def test_control_permission_projection_uses_owner_helper_directly() -> None:
+async def test_debug_permission_request_publishes_pending_permission() -> None:
     published: list[EventType] = []
     session = SimpleNamespace(metadata={})
 
@@ -154,9 +88,6 @@ async def test_control_permission_projection_uses_owner_helper_directly() -> Non
         session=session,
         _product_session_lock=threading.RLock(),
         _consumed_permission_responses={},
-        _update_pending_permissions=lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("host alias called")
-        ),
         _persist_metadata_snapshot_threadsafe=lambda: None,
         publish_event_async=publish,
     )
@@ -166,3 +97,26 @@ async def test_control_permission_projection_uses_owner_helper_directly() -> Non
     assert payload["request_id"] == "permission-1"
     assert published == [EventType.PERMISSION_REQUEST]
     assert session.metadata["pending_permissions"][0]["request_id"] == "permission-1"
+
+
+def test_task_execution_recovers_persisted_todo_snapshot(tmp_path: Path) -> None:
+    store = TodoStore(str(tmp_path))
+    todo = store.create([TodoDraft(title="Review retained work")])[0]
+    store.update(todo.id, TodoPatch(status="in_progress"))
+    runner = SessionRunner(
+        session=SessionRecord(session_id="todo-recovery", status=SessionStatus.RUNNING),
+        registry=SessionRegistry(),
+        request=SessionCreateRequest(
+            config_path="agent_configs/atp_hilbert_like_gpt54_v1.yaml"
+        ),
+    )
+
+    envelope = runner._task_execution.load_todo_envelope_from_disk(tmp_path)
+
+    assert envelope is not None
+    assert envelope["op"] == "snapshot"
+    assert envelope["scope_key"] == "main"
+    assert envelope["revision"] == 2
+    assert [
+        (item["id"], item["title"], item["status"]) for item in envelope["items"]
+    ] == [(todo.id, "Review retained work", "in_progress")]

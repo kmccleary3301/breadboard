@@ -1,4 +1,3 @@
-import pytest
 
 from breadboard_engine.agent_llm_openai import OpenAIConductor
 
@@ -76,7 +75,7 @@ def test_preference_sets_native_hint_and_yaml_priority():
     avail = ["opencode_patch", "yaml_command", "unified_diff", "bash_block"]
     ordered = conductor._apply_v2_dialect_selection(avail, "openrouter/openai/gpt-5-nano", [])
     assert ordered[0] == "yaml_command"
-    native_hint = conductor._get_native_preference_hint()
+    native_hint = conductor._native_preference_hint
     assert native_hint is True
 
 
@@ -98,5 +97,5 @@ def test_preference_can_disable_native_hint():
     avail = ["opencode_patch", "unified_diff", "bash_block"]
     ordered = conductor._apply_v2_dialect_selection(avail, "openrouter/openai/gpt-5-nano", [])
     assert ordered[0] in ("unified_diff", "opencode_patch")
-    native_hint = conductor._get_native_preference_hint()
+    native_hint = conductor._native_preference_hint
     assert native_hint is False

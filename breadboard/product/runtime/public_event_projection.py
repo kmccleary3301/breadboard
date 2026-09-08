@@ -12,18 +12,24 @@ PUBLIC_SESSION_EVENT_SCHEMA_VERSION: Final = "bb.public_session_event.v1"
 # This is the one product-owned mapping from durable event kinds to public
 # payload schemas. The binding generator consumes it when producing the SDK
 # projection metadata, so Python and TypeScript cannot silently drift.
+_LIFECYCLE_EVENT_KINDS: Final[tuple[str, ...]] = (
+    "session.started",
+    "input.accepted",
+    "approval.requested",
+    "approval.resolved",
+    "session.reconfigured",
+    "session.paused",
+    "session.resumed",
+    "session.completed",
+    "session.failed",
+    "session.canceled",
+)
 _PUBLIC_PAYLOAD_SCHEMAS: Final[Mapping[str, str]] = MappingProxyType(
-    {
-        "session.started": "bb.payload.product_session.lifecycle.v1",
-        "input.accepted": "bb.payload.product_session.lifecycle.v1",
-        "approval.requested": "bb.payload.product_session.lifecycle.v1",
-        "approval.resolved": "bb.payload.product_session.lifecycle.v1",
-        "session.reconfigured": "bb.payload.product_session.lifecycle.v1",
-        "session.paused": "bb.payload.product_session.lifecycle.v1",
-        "session.resumed": "bb.payload.product_session.lifecycle.v1",
-        "session.completed": "bb.payload.product_session.lifecycle.v1",
-        "session.failed": "bb.payload.product_session.lifecycle.v1",
-        "session.canceled": "bb.payload.product_session.lifecycle.v1",
+    dict.fromkeys(
+        _LIFECYCLE_EVENT_KINDS,
+        "bb.payload.product_session.lifecycle.v1",
+    )
+    | {
         "assistant_message": "bb.payload.message.assistant.v1",
         "tool_call": "bb.payload.tool.called.v1",
         "tool_result": "bb.payload.tool.completed.v1",

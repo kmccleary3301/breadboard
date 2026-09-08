@@ -45,16 +45,6 @@ ENGINE_BOOTSTRAP_FD_ENV = "BREADBOARD_LIFECYCLE_BOOTSTRAP_FD"
 _ENGINE_SOURCE_ROOT = Path(__file__).resolve().parents[2]
 _OPAQUE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}$")
 
-P30_REQUIRED_SESSION_ROUTES: frozenset[tuple[str, str]] = frozenset(
-    {
-        ("POST", "/v1/internal/sessions"),
-        ("GET", "/v1/internal/sessions/{session_id}"),
-        ("POST", "/v1/internal/sessions/{session_id}/input"),
-        ("POST", "/v1/internal/sessions/{session_id}/turns/{turn_id}/cancel"),
-        ("GET", "/v1/internal/sessions/{session_id}/events"),
-        ("DELETE", "/v1/internal/sessions/{session_id}"),
-    }
-)
 
 P30_SESSION_ROUTE_BINDINGS: tuple[tuple[str, str, str, str], ...] = (
     ("POST", "/v1/internal/sessions", "create_session", "create_session"),
@@ -75,15 +65,6 @@ P30_SESSION_ROUTE_BINDINGS: tuple[tuple[str, str, str, str], ...] = (
     ("DELETE", "/v1/internal/sessions/{session_id}", "delete_session", "stop_session"),
 )
 
-P30_REQUIRED_SESSION_SERVICE_METHODS: tuple[str, ...] = (
-    "create_session",
-    "ensure_session",
-    "send_input",
-    "cancel_turn",
-    "prepare_event_stream",
-    "prepared_event_stream",
-    "stop_session",
-)
 
 
 class EngineIdentityConfigError(RuntimeError):

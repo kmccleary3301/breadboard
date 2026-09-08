@@ -12,14 +12,13 @@ from breadboard.product.runtime import session_store
 from breadboard_engine.api.cli_bridge.app import create_app
 from breadboard_engine.api.cli_bridge.models import SessionCommandRequest, SessionCreateRequest, SessionInputRequest, SessionStatus
 from breadboard_engine.api.cli_bridge.events import EventType; from breadboard_engine.api.cli_bridge.service import SessionService
-from breadboard_engine.api.cli_bridge.session_runner import MAX_ATTACHMENT_BYTES
 from breadboard_engine.api.cli_bridge.runtime_emission import _tool_names
 from breadboard_engine.api.cli_bridge.runtime_emission import compile_runtime_effective_config_graph
 from breadboard_engine.compilation import compile_effective_config_graph
 from breadboard_engine.auth.enforcer import apply_dotted_overrides; from breadboard_engine.compilation.v2_loader import load_agent_config
 from breadboard_engine.agent_llm_openai import OpenAIConductor
 from breadboard_engine.api.cli_bridge import session_artifacts
-from breadboard_engine.api.cli_bridge.session_artifacts import SessionArtifactStore
+from breadboard_engine.api.cli_bridge.session_artifacts import MAX_ATTACHMENT_BYTES, SessionArtifactStore
 from breadboard.product.harness.default_profile import DefaultProfileInvalidError, DefaultProfileUnavailableError
 CONFIG = "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml"
 RUNNER = "breadboard_engine.api.cli_bridge.session_runner.SessionRunner."
@@ -45,10 +44,14 @@ async def _create(monkeypatch, tmp_path, *, service=None, task="Say hi", **field
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("content", "error"), [(None, FileNotFoundError), ("[", yaml.YAMLError)])
 async def test_invalid_config_fails_before_session_publication(monkeypatch, tmp_path, content, error) -> None:
-    config, records, events = tmp_path / "invalid.yaml", tmp_path / "records", tmp_path / "events"; config.write_text(content, encoding="utf-8") if content is not None else None
+    config, records, events, session_id = tmp_path / "invalid.yaml", tmp_path / "records", tmp_path / "events", "invalid-config"
+    config.write_text(content, encoding="utf-8") if content is not None else None
     monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(records)); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(events)); service = SessionService()
-    with pytest.raises(error): await service.create_session(SessionCreateRequest(config_path=str(config), task="task"))
-    assert service.registry._records == {} and not records.exists() and not events.exists()
+    with pytest.raises(error): await service.create_session(SessionCreateRequest(config_path=str(config), task="task"), session_id=session_id)
+    assert await service.registry.get(session_id) is None
+    fresh = SessionService(); assert await fresh.registry.get(session_id) is None
+    with pytest.raises(HTTPException) as not_found: await fresh.ensure_session(session_id)
+    assert not_found.value.status_code == 404
 
 
 def test_session_create_rejects_empty_config_path() -> None:
@@ -773,9 +776,7 @@ async def test_recovered_admission_is_present_in_logical_session_journal(
         defer_execution=initial_scheduled.append,
     )
     await initial_scheduled[0]()
-    await initial.runner._finish_turn(
-        initial.turns_by_id[initial_receipt.turn_id], "completed"
-    )
+    await initial.runner._task_execution.finish_turn(initial.turns_by_id[initial_receipt.turn_id], "completed")
     await _stop(initial)
 
     recovered_service = SessionService(state_root=state_root)
@@ -1474,7 +1475,7 @@ async def test_input_and_approval_are_durable_before_delivery(monkeypatch, tmp_p
     service, response, record = await _create(monkeypatch, tmp_path); sink, record.product_session._sink = record.product_session._sink, _Failing()
     with pytest.raises(OSError, match="sink unavailable"): await service.send_input(response.session_id, SessionInputRequest(content="next"))
     assert record.runner._input_queue.empty(); assert [event.kind for event in record.product_session.events] == ["session.started"]
-    record.product_session._sink = sink; record.runner._rehydrate_pending_permissions("permission_request", {"request_id": "perm-1", "category": "shell"}); record.runner._permission_queue = _Failing(); persisted = []
+    record.product_session._sink = sink; record.runner._control_controller.rehydrate_pending_permissions("permission_request", {"request_id": "perm-1", "category": "shell"}); record.runner._permission_queue = _Failing(); persisted = []
     monkeypatch.setattr(record.runner.permission_authority, "update_rule", lambda *_args, **_kwargs: persisted.append(True) or True); request = SessionCommandRequest(command="permission_decision", payload={"request_id": "perm-1", "decision": "always", "rule": "*.sh"})
     with pytest.raises(HTTPException) as error: await service.execute_command(response.session_id, request)
     assert error.value.status_code == 409; assert [event.kind for event in record.product_session.events][-2:] == ["approval.resolved", "session.failed"]; assert record.status.value == "failed"
@@ -1688,7 +1689,10 @@ async def test_scheduling_failure_publishes_no_start_authority(monkeypatch, tmp_
     monkeypatch.setattr(RUNNER + "schedule_start", fail); monkeypatch.setattr(SERVICE + "primitive_emission_enabled", lambda: True); monkeypatch.setattr(SERVICE + "uuid.uuid4", lambda: "schedule-failure")
     monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(records_root)); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(events_root)); service = SessionService()
     with pytest.raises(RuntimeError, match="runner scheduling exploded"): await service.create_session(SessionCreateRequest(config_path=CONFIG, task="task"))
-    assert await service.registry.get("schedule-failure") is None and all(not root.exists() or not any(root.iterdir()) for root in (records_root, events_root))
+    assert await service.registry.get("schedule-failure") is None
+    fresh = SessionService(); assert await fresh.registry.get("schedule-failure") is None
+    with pytest.raises(HTTPException) as not_found: await fresh.ensure_session("schedule-failure")
+    assert not_found.value.status_code == 404
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", [OSError, asyncio.CancelledError])
 async def test_initial_durable_start_failure_has_no_published_lifecycle(monkeypatch, tmp_path, failure) -> None:
@@ -1700,11 +1704,16 @@ async def test_initial_durable_start_failure_has_no_published_lifecycle(monkeypa
     def owner_write(path, *args, **kwargs): return (_ for _ in ()).throw(OSError("owner write failed")) if path.name == ".start.owner" and (owners.__setitem__(0, owners[0] + 1) or owners[0] == 2) else real_write(path, *args, **kwargs)  # type: ignore[no-untyped-def]
     monkeypatch.setattr(Path, "write_text", owner_write)
     with pytest.raises(OSError, match="owner write failed"): await service.create_session(request)
-    assert all(not root.exists() or not any(root.iterdir()) for root in (records_root, events_root)); monkeypatch.setattr(Path, "write_text", real_write)
+    monkeypatch.setattr(Path, "write_text", real_write)
+    fresh = SessionService(); assert await fresh.registry.get("durable-start-failure") is None
+    with pytest.raises(HTTPException) as not_found: await fresh.ensure_session("durable-start-failure")
+    assert not_found.value.status_code == 404
     pending = asyncio.create_task(asyncio.to_thread(lambda: asyncio.run(service.create_session(request))))
-    assert await asyncio.to_thread(entered.wait, 2); assert await service.registry.get("durable-start-failure") is None; assert not (records_root / "durable-start-failure").exists() and not (events_root / "durable-start-failure").exists(); released.set()
+    assert await asyncio.to_thread(entered.wait, 2); assert await service.registry.get("durable-start-failure") is None; released.set()
     with pytest.raises(failure, match="initial append failed"): await pending
-    assert await service.registry.get("durable-start-failure") is None and started == []; assert not any(records_root.iterdir()) and not any(events_root.iterdir())
+    fresh = SessionService(); assert await fresh.registry.get("durable-start-failure") is None and started == []
+    with pytest.raises(HTTPException) as not_found: await fresh.ensure_session("durable-start-failure")
+    assert not_found.value.status_code == 404
 @pytest.mark.asyncio
 @pytest.mark.parametrize("boundary", ["records", "events", "commit", "authority"])
 @pytest.mark.parametrize("shared_root", [False, True])
@@ -1720,22 +1729,27 @@ async def test_start_publication_boundaries_are_invisible_and_retryable(monkeypa
         order.append(name)
         if armed and name == boundary: entered.set(); assert released.wait(2); armed = False; raise OSError(f"{name} publication failed")
     monkeypatch.setattr(service, "_publication_boundary", failpoint); request = SessionCreateRequest(config_path=CONFIG, task="task")
-    pending = asyncio.create_task(asyncio.to_thread(lambda: asyncio.run(service.create_session(request)))); assert await asyncio.to_thread(entered.wait, 2); session_id = "publication-failure"; authority = (records_root if primitives else events_root) / session_id; assert session_id not in service.registry._records
-    active_paths = [path for path in (records_root / f".{session_id}.records.starting", events_root / f".{session_id}.events.starting", authority) if path.exists()]; SessionService(); assert active_paths and all(path.exists() for path in active_paths)
-    if boundary == "authority":
-        hidden_event = events_root / f".{session_id}.events.starting" / "session_events.jsonl"; assert (authority / ".start.committed").is_file() and ((events_root / session_id / "session_events.jsonl").is_file() or hidden_event.is_file())
-    else: assert not (records_root / session_id).exists() and not (events_root / session_id).exists() and not (records_root / session_id / "records" / "config_plane.jsonl").exists()
+    pending = asyncio.create_task(asyncio.to_thread(lambda: asyncio.run(service.create_session(request)))); assert await asyncio.to_thread(entered.wait, 2); session_id = "publication-failure"
     released.set()
     with pytest.raises(OSError, match=f"{boundary} publication failed"): await pending
     if boundary == "authority":
-        SessionService(); event_log = (events_root / session_id / "session_events.jsonl"); assert (authority / ".start.committed").is_file() and event_log.is_file() and "session.failed" in event_log.read_text(); return
-    assert all(not root.exists() or not any(root.iterdir()) for root in {records_root, events_root}); response = await service.create_session(request); record = await service.ensure_session(response.session_id); authority = (records_root if primitives else events_root) / response.session_id; assert (authority / ".start.committed").is_file() and (events_root / response.session_id / "session_events.jsonl").is_file() and (primitives or shared_root or not records_root.exists()); await _stop(record)
+        from breadboard_engine.api.cli_bridge.service import _restore_product_session
+        fresh = SessionService(); restored = _restore_product_session(session_id, event_root=events_root); assert restored.read_model.status == "failed" and restored.events[-1].kind == "session.failed" and await fresh.registry.get(session_id) is None
+        with pytest.raises(HTTPException) as not_found: await fresh.ensure_session(session_id)
+        assert not_found.value.status_code == 404
+        return
+    fresh = SessionService(); assert await fresh.registry.get(session_id) is None
+    with pytest.raises(HTTPException) as not_found: await fresh.ensure_session(session_id)
+    assert not_found.value.status_code == 404
+    monkeypatch.setattr(fresh, "_publication_boundary", failpoint)
+    response = await fresh.create_session(request); record = await fresh.ensure_session(response.session_id); assert record.product_session.read_model.status == "running" and record.product_session.events[0].kind == "session.started"; await _stop(record)
 @pytest.mark.parametrize("shared_root", [False, True])
 def test_startup_removes_incomplete_and_recovers_committed_projection(monkeypatch, tmp_path, shared_root) -> None:
     records_root = tmp_path / "records"; events_root = records_root if shared_root else tmp_path / "events"; monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(records_root)); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(events_root))
-    for path in (records_root / "incomplete", events_root / "incomplete", records_root / ".staged.records.starting", events_root / "staged", records_root / "..crash.records.starting.dead.start-owner", events_root / "..crash.events.starting.dead.start-owner", records_root / ".committed.records.starting", records_root / "committed", events_root / "committed", events_root / ".other.events.starting", records_root / "recoverable", events_root / ".recoverable.events.starting"): path.mkdir(parents=True, exist_ok=True)
+    stale_paths = (records_root / "incomplete", events_root / "incomplete", records_root / ".staged.records.starting", events_root / ".staged.events.starting", records_root / "..crash.records.starting.dead.start-owner", events_root / "..crash.events.starting.dead.start-owner", records_root / ".committed.records.starting", events_root / ".other.events.starting", events_root / ".recoverable.events.starting")
+    for path in (*stale_paths, records_root / "committed", events_root / "committed", records_root / "recoverable"): path.mkdir(parents=True, exist_ok=True)
     (records_root / "incomplete" / ".start.pending").write_text("incomplete\n"); (records_root / "committed" / ".start.pending").write_text("committed\n"); (records_root / "committed" / ".start.committed").write_text("committed\n"); (events_root / "committed" / "session_events.jsonl").write_text("{}\n"); (records_root / "recoverable" / ".start.committed").write_text("recoverable\n"); (events_root / ".recoverable.events.starting" / "session_events.jsonl").write_text('{"kind":"session.started"}\n'); SessionService()
-    assert {path.name for path in records_root.iterdir()} == {"committed", "recoverable"} and {path.name for path in events_root.iterdir()} == {"committed", "recoverable"} and (records_root / "committed" / ".start.committed").is_file() and (events_root / "recoverable" / "session_events.jsonl").is_file()
+    assert all(not path.exists() for path in stale_paths) and (records_root / "committed" / ".start.committed").is_file() and (events_root / "committed" / "session_events.jsonl").is_file() and (records_root / "recoverable" / ".start.committed").is_file() and (events_root / "recoverable" / "session_events.jsonl").is_file()
 @pytest.mark.asyncio
 async def test_attachment_manifest_survives_delete_and_unknown_ids_are_rejected(monkeypatch, tmp_path) -> None:
     Upload = _Upload
@@ -3233,22 +3247,14 @@ async def test_restored_event_sink_anchors_open_file_across_path_swap(
 def test_retained_manifest_history_rejects_excess_count_before_reads(
     monkeypatch, tmp_path
 ) -> None:
+    workspace = tmp_path / "workspace"; manifest_root = workspace / ".breadboard" / "artifacts" / "manifests"; manifest_root.mkdir(parents=True)
     owner = SessionArtifactStore(session_id="bounded-history", metadata={})
-    names = [
-        f"bounded-history.{index:064x}.json"
-        for index in range(257)
-    ]
+    names = [f"bounded-history.{index:064x}.json" for index in range(257)]
+    for name in names: (manifest_root / name).write_text("{}\n", encoding="utf-8")
     reads: list[ArtifactRef] = []
-    monkeypatch.setattr(owner, "_manifest_names", lambda _workspace: names)
-    monkeypatch.setattr(
-        owner,
-        "_read_manifest",
-        lambda _workspace, ref: reads.append(ref),
-    )
-
+    monkeypatch.setattr(owner, "_read_manifest", lambda _ref, _store: reads.append(_ref))
     with pytest.raises(ValueError, match="too many retained attachment manifests"):
-        owner.restore_manifest(tmp_path)
-
+        owner.restore_manifest(workspace)
     assert reads == []
 
 

@@ -20,7 +20,6 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Optional, P
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import (
     AnchoredStorage,
-    ArtifactStore,
     ReplayError,
     Session as ProductSession,
 )
@@ -41,7 +40,6 @@ from breadboard.product.runtime.events import (
 from breadboard.product.runtime.session_store import (
     load_session,
     mutate_session,
-    authorize_session_artifact_manifest,
     event_from_record,
     session_directory_identity,
     session_event_path,
@@ -2678,14 +2676,14 @@ class SessionService:
             if turn.terminal_outcome is not None:
                 continue
             if turn.cancellation_requested:
-                await runner._finish_turn(
+                await runner._task_execution.finish_turn(
                     turn,
                     "cancelled",
                     reason=turn.cancellation_reason,
                     advance_queue=False,
                 )
             else:
-                await runner._finish_turn(
+                await runner._task_execution.finish_turn(
                     turn,
                     "failed",
                     error_code="runtime_failure",
@@ -3465,7 +3463,7 @@ class SessionService:
                             turn.state == "active"
                             and record.active_turn_id == turn.turn_id
                         )
-                        await runner._finish_turn(
+                        await runner._task_execution.finish_turn(
                             turn,
                             "failed",
                             error_code="runtime_failure",

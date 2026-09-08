@@ -2243,7 +2243,7 @@ async def test_paused_terminal_publish_remains_unresolved_for_drain(
         await original_persist(*args, **kwargs)
 
     registry.persist = paused_persist  # type: ignore[method-assign]
-    finish_task = asyncio.create_task(runner._finish_turn(turn, "completed"))
+    finish_task = asyncio.create_task(runner._task_execution.finish_turn(turn, "completed"))
     await persist_entered.wait()
     assert turn.terminal_outcome == "completed"
     assert turn.terminal_resolution_committed is False
@@ -2285,7 +2285,7 @@ async def test_no_state_root_terminal_dispatch_stays_unresolved_and_blocks_drain
     )
     await service._ensure_dispatcher(record)
     with pytest.raises(RuntimeError, match="turn_terminal_persistence_failed"):
-        await runner._finish_turn(turn, "completed")
+        await runner._task_execution.finish_turn(turn, "completed")
     dispatcher = record.dispatcher_task
     assert dispatcher is not None
     await dispatcher
