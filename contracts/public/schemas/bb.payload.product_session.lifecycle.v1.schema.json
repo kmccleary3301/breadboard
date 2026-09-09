@@ -26,34 +26,80 @@
         "child_work_item_id": { "type": "string", "minLength": 1 }
       }
     },
-    "sessionStarted": {
+    "moduleInput": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["effective_lock_hash", "task_hash"],
+      "required": ["schema_id", "body", "final"],
       "properties": {
-        "effective_lock_hash": { "$ref": "#/$defs/sha256" },
-        "task_hash": { "$ref": "#/$defs/sha256" },
-        "lineage": { "$ref": "#/$defs/lineage" }
+        "schema_id": { "type": "string", "minLength": 1 },
+        "body": { "type": "string" },
+        "final": { "type": "boolean" }
       }
     },
-    "inputAccepted": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["content_hash", "attachments"],
-      "properties": {
-        "content_hash": { "$ref": "#/$defs/sha256" },
-        "attachments": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["digest", "size_bytes", "media_type"],
-            "properties": {
-              "digest": { "$ref": "#/$defs/sha256" },
-              "size_bytes": { "type": "integer", "minimum": 0 },
-              "media_type": { "type": "string", "minLength": 1 }
-            }
+    "sessionStarted": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["effective_lock_hash", "task_hash"],
+          "properties": {
+            "effective_lock_hash": { "$ref": "#/$defs/sha256" },
+            "task_hash": { "$ref": "#/$defs/sha256" },
+            "lineage": { "$ref": "#/$defs/lineage" }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "effective_lock_hash",
+            "task_hash",
+            "module_input",
+            "module_input_sequence"
+          ],
+          "properties": {
+            "effective_lock_hash": { "$ref": "#/$defs/sha256" },
+            "task_hash": { "$ref": "#/$defs/sha256" },
+            "module_input": { "$ref": "#/$defs/moduleInput" },
+            "module_input_sequence": { "type": "integer", "minimum": 0 },
+            "lineage": { "$ref": "#/$defs/lineage" }
+          }
+        }
+      ]
+    },
+    "inputAccepted": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["content_hash", "attachments"],
+          "properties": {
+            "content_hash": { "$ref": "#/$defs/sha256" },
+            "attachments": { "$ref": "#/$defs/attachments" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["module_input", "module_input_sequence", "attachments"],
+          "properties": {
+            "module_input": { "$ref": "#/$defs/moduleInput" },
+            "module_input_sequence": { "type": "integer", "minimum": 0 },
+            "attachments": { "$ref": "#/$defs/attachments" }
+          }
+        }
+      ]
+    },
+    "attachments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["digest", "size_bytes", "media_type"],
+        "properties": {
+          "digest": { "$ref": "#/$defs/sha256" },
+          "size_bytes": { "type": "integer", "minimum": 0 },
+          "media_type": { "type": "string", "minLength": 1 }
         }
       }
     },

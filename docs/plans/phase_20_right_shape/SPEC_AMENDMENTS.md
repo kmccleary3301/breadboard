@@ -456,3 +456,32 @@ distinguishes `dependency_id` and `contract_id`; treating a contract ID as a
 unique field prevented this required composition. The unpublished manifest
 candidate is corrected in place, without an alias or alternate resolver.
 The affected compiler and installed package proof must be refreshed.
+
+Packet B adds explicit schema-bound `module_input` to ordinary Session start
+and input, mutually exclusive with their existing text fields. Admission
+assigns input sequence and execution identity; callers supply neither.
+Module outputs retain their schema, bytes and owner-stamped attribution in
+the existing Session event stream. These implement the accepted author
+contract rather than encode typed documents in ambiguous task text.
+The existing operation catalog, generators and event projection own this
+propagation. No separate author admission operation or event journal is added.
+
+Session start also accepts explicit caller `module_authority`, distinct from
+package requests. Admission mints the grant identity and epoch and retains the
+grant with the typed input before dispatch. Neither a package declaration nor
+discovery supplies a grant. Provider callers submit the existing canonical
+provider identity and request aggregate; the owner stamps exchange correlation
+and execution attribution. Request messages, replay, metadata and provider
+events keep their complete v2 representations. No alternate provider policy
+or generic effect journal is introduced.
+
+The unpublished worker candidate uses `bind_dependencies(DependencyBindings)`
+to construct the package's `SharedT` before `open_instance`. This keeps typed
+dependency construction in the package without pretending a union of domain
+ports is its aggregate. Each dependency handle exchanges a schema-bound
+`ModuleInput` for an `OutputEnvelope`; provider/tool/context/child interfaces
+remain separate. Child start and subsequent input also take `ModuleInput`,
+with the child owner assigning sequence. The SDK captures its worker command
+into the immutable runtime declaration; authors do not write bootstrap or
+transport loops. These corrections require B's installed journey, not another
+planning prototype.

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Literal, Mapping, Protocol, Sequence
 
 from breadboard.artifacts.cas import FilesystemCAS
+from breadboard.modules import AuthorityDeclaration, ModuleInput
 from breadboard.product.harness.lock import EffectiveHarnessLock, LOCK_SCHEMA_VERSION, load_lock, materialize_lock
 from breadboard.product.operations.model import (
     EXIT_BLOCKED,
@@ -54,17 +55,33 @@ class SessionMutationError(RuntimeError):
         self.next_actions = tuple(next_actions)
 
 
+def _validate_input(text: str | None, module_input: ModuleInput | None) -> None:
+    if (text is None) == (module_input is None):
+        raise ValueError("supply exactly one text input or module_input")
+    if module_input is not None:
+        if not isinstance(module_input, ModuleInput):
+            raise TypeError("module_input must be a ModuleInput")
+        return
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("text input must not be empty")
+
+
 @dataclass(frozen=True, slots=True)
 class StartSessionRequest:
     lock_id: str
-    task: str
+    task: str | None = None
     session_id: str | None = None
+    module_input: ModuleInput | None = None
+    module_authority: AuthorityDeclaration | None = None
+
 
 
 @dataclass(frozen=True, slots=True)
 class SendSessionInputRequest:
     session_id: str
-    content: str
+    content: str | None = None
+    module_input: ModuleInput | None = None
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -490,6 +507,12 @@ class SessionRuntime:
         command = ["session", "start"]
         stage = "session.start"
         try:
+            _validate_input(request.task, request.module_input)
+            if request.module_authority is not None:
+                if not isinstance(request.module_authority, AuthorityDeclaration):
+                    raise TypeError("module_authority must be an AuthorityDeclaration")
+                if request.module_input is None:
+                    raise ValueError("module_authority requires module_input")
             if request.session_id is not None:
                 validate_session_id(request.session_id)
             effective_lock, source_path, checked = await asyncio.to_thread(
@@ -509,6 +532,8 @@ class SessionRuntime:
                     refs=checked.record_refs,
                     next_actions=checked.next_actions,
                 )
+            if (effective_lock["modules"] is not None) != (request.module_input is not None):
+                raise ValueError("executable Locks require module_input; data Locks require task")
             outcome = await self._require_mutation_port().start(
                 request,
                 self.context,
@@ -529,6 +554,7 @@ class SessionRuntime:
         stage = "session.send-input"
         try:
             validate_session_id(request.session_id)
+            _validate_input(request.content, request.module_input)
             return _mutation_result(
                 command,
                 stage,
@@ -655,16 +681,11 @@ def _resolve_start_lock(
     lock_path = context.resolve_path(request.lock_id)
     lock, metadata_path = load_lock(lock_path, context.workspace, explicit=True)
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    if (
-        metadata.get("schema_version") != "bb.harness_lock_metadata.v2"
-        or metadata.get("lock_id") != lock.generation_id
-        or metadata.get("graph_hash") != lock.configuration_graph["graph_hash"]
-    ):
-        raise ValueError("lock metadata does not match retained Lock identity")
+    materialized = None
     if lock["schema_version"] == LOCK_SCHEMA_VERSION:
         cas = FilesystemCAS(context.workspace / ".breadboard" / "module-artifacts")
         try:
-            materialize_lock(lock, cas=cas)
+            materialized = materialize_lock(lock, cas=cas)
         finally:
             cas.close()
     source_ref = metadata.get("source_ref")
@@ -674,6 +695,21 @@ def _resolve_start_lock(
     if not context.contained and not Path(source_ref).is_absolute():
         source_reference = context.workspace / source_ref
     source_path = context.resolve_path(source_reference)
+    if materialized is not None:
+        retained = materialized.source_bytes.get(str(source_ref))
+        if isinstance(retained, bytes) and source_path.read_bytes() != retained:
+            return (
+                None,
+                source_path,
+                OperationResult.failure(
+                    ["session", "start"],
+                    6,
+                    "lock_drift",
+                    "harness source no longer matches the retained Lock",
+                    failed_stage="session.lock",
+                    refs=[portable_ref(lock_path, context.workspace)],
+                ),
+            )
     return lock, source_path, OperationResult.success(
         ["session", "start"],
         refs=[portable_ref(lock_path, context.workspace)],

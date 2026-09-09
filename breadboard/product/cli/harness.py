@@ -33,6 +33,7 @@ from breadboard.product.operations.model import (
     portable_ref,
 )
 from breadboard_engine.api.local_server import local_server
+from .session import load_module_authority, load_module_input
 
 
 def _w(a):
@@ -168,7 +169,26 @@ def _server(a):
     try:
         import breadboard_sdk
 
-        task = str(getattr(a, "task", None) or "List files")
+        module_input_path = getattr(a, "module_input", None)
+        module_input = (
+            load_module_input(str(module_input_path))
+            if module_input_path is not None
+            else None
+        )
+        task = None if module_input is not None else str(getattr(a, "task", None) or "List files")
+        authority_path = getattr(a, "module_authority", None)
+        module_authority = (
+            load_module_authority(str(authority_path))
+            if authority_path is not None
+            else None
+        )
+        payload = {"lock_id": a._lock_id}
+        if module_input is not None:
+            payload["module_input"] = module_input.to_dict()
+        else:
+            payload["task"] = task
+        if module_authority is not None:
+            payload["module_authority"] = module_authority.to_dict()
         auth_token = os.environ.get("BREADBOARD_API_TOKEN")
         if auth_token:
             c = breadboard_sdk.BreadBoardClient(
@@ -177,9 +197,14 @@ def _server(a):
         else:
             c = breadboard_sdk.BreadBoardClient(a.server, timeout_s=120)
         started = c.start_session(
-            {"lock_id": a._lock_id, "task": task},
+            payload,
             idempotency_key=sha256_json(
-                {"lock_id": a._effective_lock.generation_id, "task": task}
+                {
+                    "lock_id": a._effective_lock.generation_id,
+                    "task": task,
+                    "module_input": payload.get("module_input"),
+                    "module_authority": payload.get("module_authority"),
+                }
             ),
         )
         if not isinstance(started, dict) or not started.get("ok"):

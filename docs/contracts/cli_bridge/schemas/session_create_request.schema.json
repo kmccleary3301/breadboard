@@ -1,4 +1,178 @@
 {
+  "$defs": {
+    "AuthorityDeclaration": {
+      "description": "Requested rights. A manifest containing these values grants nothing.",
+      "properties": {
+        "child": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChildAuthority"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "credential_disclosures": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CredentialDisclosure"
+          },
+          "title": "Credential Disclosures",
+          "type": "array"
+        },
+        "network": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NetworkAuthority"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "project": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectAuthority"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "provider_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Provider Ids",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "tool_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Tool Ids",
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "title": "AuthorityDeclaration",
+      "type": "object"
+    },
+    "ChildAuthority": {
+      "properties": {
+        "allowed_module_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Module Ids",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "max_depth": {
+          "title": "Max Depth",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "allowed_module_ids",
+        "max_depth"
+      ],
+      "title": "ChildAuthority",
+      "type": "object"
+    },
+    "CredentialDisclosure": {
+      "properties": {
+        "purpose": {
+          "title": "Purpose",
+          "type": "string"
+        },
+        "secret_name": {
+          "title": "Secret Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "secret_name",
+        "purpose"
+      ],
+      "title": "CredentialDisclosure",
+      "type": "object"
+    },
+    "NetworkAuthority": {
+      "properties": {
+        "destinations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Destinations",
+          "type": "array"
+        },
+        "operations": {
+          "items": {
+            "$ref": "#/$defs/NetworkOperation"
+          },
+          "title": "Operations",
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "destinations",
+        "operations"
+      ],
+      "title": "NetworkAuthority",
+      "type": "object"
+    },
+    "NetworkOperation": {
+      "enum": [
+        "connect",
+        "resolve"
+      ],
+      "title": "NetworkOperation",
+      "type": "string"
+    },
+    "ProjectAuthority": {
+      "properties": {
+        "operations": {
+          "items": {
+            "$ref": "#/$defs/ProjectOperation"
+          },
+          "title": "Operations",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "roots": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Roots",
+          "type": "array"
+        }
+      },
+      "required": [
+        "roots",
+        "operations"
+      ],
+      "title": "ProjectAuthority",
+      "type": "object"
+    },
+    "ProjectOperation": {
+      "enum": [
+        "read",
+        "write"
+      ],
+      "title": "ProjectOperation",
+      "type": "string"
+    }
+  },
   "description": "Incoming payload for POST /sessions.",
   "properties": {
     "config_path": {
@@ -40,6 +214,50 @@
       "default": null,
       "description": "Opaque metadata for UX features.",
       "title": "Metadata"
+    },
+    "module_authority": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AuthorityDeclaration"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "module_input": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "body": {
+              "title": "Body",
+              "type": "string"
+            },
+            "final": {
+              "title": "Final",
+              "type": "boolean"
+            },
+            "schema_id": {
+              "minLength": 1,
+              "title": "Schema Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "schema_id",
+            "body",
+            "final"
+          ],
+          "title": "ModuleInputRequest",
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "overrides": {
       "anyOf": [

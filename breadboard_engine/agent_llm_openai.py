@@ -355,6 +355,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         local_mode: bool = False,
         prompt_base_dirs: Optional[List[Path]] = None,
         protected_paths: Optional[Sequence[str]] = None,
+        admitted_workspace: Path | None = None,
     ) -> None:
         """Initialize conductor with workspace, image, and configuration."""
         captured_protected_paths = tuple(
@@ -379,6 +380,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             zero_tool_warn_message=ZERO_TOOL_WARN_MESSAGE,
             zero_tool_abort_message=ZERO_TOOL_ABORT_MESSAGE,
             completion_guard_abort_threshold=COMPLETION_GUARD_ABORT_THRESHOLD,
+            admitted_workspace=admitted_workspace,
         )
         self.permission_authority: PermissionAuthority = self.permission_broker
         self._model_role_lock = (

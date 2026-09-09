@@ -144,6 +144,22 @@ class SessionLifecycleOwner:
                     "turn_id": initial_turn.turn_id,
                 }
             )
+        initial_module_input = host.request.module_input
+        if initial_module_input is not None:
+            module_turn = host.session.turns_by_id.get(
+                host.session.active_turn_id or ""
+            )
+            if module_turn is None or module_turn.module_input is None:
+                raise RuntimeProtocolError("runtime_protocol_error")
+            host._input_queue.put_nowait(
+                {
+                    "module_input": module_turn.module_input,
+                    "module_input_sequence": module_turn.module_input_sequence,
+                    "input_id": module_turn.input_id,
+                    "turn_id": module_turn.turn_id,
+                    "task_input_id": None,
+                }
+            )
 
     async def _process_inputs(self, state: _LifecycleRunState) -> None:
         host = self._host
@@ -182,7 +198,19 @@ class SessionLifecycleOwner:
             ):
                 raise RuntimeError("turn queue correlation mismatch")
             task_received_at = time.monotonic()
-            if execution.parse_replay_path(task_text) is not None:
+            module_input = (
+                task_turn.module_input if task_turn is not None else None
+            )
+            if module_input is not None:
+                result = await asyncio.to_thread(
+                    host.execute_module_turn,
+                    module_input,
+                    task_turn.module_input_sequence,
+                    task_input_id if isinstance(task_input_id, str) else None,
+                    task_turn_id if isinstance(task_turn_id, str) else None,
+                )
+                after_execute_task_at = time.monotonic()
+            elif execution.parse_replay_path(task_text) is not None:
                 result = await execution.execute_replay_task(
                     task_text,
                     input_id=(

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.module_output.v1.schema.json",
+  "title": "BreadBoard Product Session Module Output Payload V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "module_output",
+    "output_sequence",
+    "module_id",
+    "worker_session_id",
+    "request_id",
+    "generation_id",
+    "instance_id",
+    "work_id",
+    "attempt_id",
+    "authority_epoch"
+  ],
+  "properties": {
+    "module_output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_id", "body", "final"],
+      "properties": {
+        "schema_id": { "type": "string", "minLength": 1 },
+        "body": { "type": "string" },
+        "final": { "type": "boolean" }
+      }
+    },
+    "output_sequence": { "type": "integer", "minimum": 0 },
+    "module_id": { "type": "string", "minLength": 1 },
+    "worker_session_id": { "type": "string", "minLength": 1 },
+    "request_id": { "type": "string", "minLength": 1 },
+    "generation_id": { "type": "string", "minLength": 1 },
+    "instance_id": { "type": "string", "minLength": 1 },
+    "work_id": { "type": "string", "minLength": 1 },
+    "attempt_id": { "type": "string", "minLength": 1 },
+    "authority_epoch": { "type": "integer", "minimum": 0 }
+  }
+}

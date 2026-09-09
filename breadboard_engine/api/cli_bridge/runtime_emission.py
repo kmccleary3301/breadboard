@@ -17,6 +17,7 @@ from breadboard.artifacts.cas import FilesystemCAS
 from breadboard.product.harness.compile import compile_harness_definition
 from breadboard.product.harness.lock import (
     EffectiveHarnessLock,
+    LockMaterialization,
     _copy,
     make_effective_harness_lock,
     materialize_lock,
@@ -188,9 +189,10 @@ class CapturedRuntimeConfig:
     config: Mapping[str, Any]
     config_path: Path
     resource_root: Path
+    materialization: LockMaterialization
 
     def cleanup(self) -> None:
-        shutil.rmtree(self.resource_root)
+        shutil.rmtree(self.resource_root, ignore_errors=True)
 
 
 
@@ -214,15 +216,9 @@ def materialize_lock_runtime_config(
     *,
     cas: FilesystemCAS,
 ) -> CapturedRuntimeConfig:
-    """Load a data Lock's configuration from its captured CAS closure.
-
-    This deliberately refuses executable module composition until the worker
-    protocol owns that execution path. No author path is consulted.
-    """
+    """Restore verified configuration and executable packages from captured bytes."""
 
     materialized = materialize_lock(lock, cas=cas)
-    if lock["modules"] is not None:
-        raise ValueError("executable module runtime is not available in packet A")
 
     graph = materialized.configuration_graph
     documents = {
@@ -256,6 +252,7 @@ def materialize_lock_runtime_config(
         source_ref=root_ref,
         load_ref=load_ref,
         resource_inputs=materialized.resource_bytes,
+        packages=materialized.packages,
     )
     rebuilt = make_effective_harness_lock(
         compilation.lock.configuration_graph,
@@ -303,12 +300,13 @@ def materialize_lock_runtime_config(
             encoding="utf-8",
         )
     except BaseException:
-        shutil.rmtree(resource_root)
+        shutil.rmtree(resource_root, ignore_errors=True)
         raise
     return CapturedRuntimeConfig(
         config=runtime_config,
         config_path=config_path,
         resource_root=resource_root,
+        materialization=materialized,
     )
 
 

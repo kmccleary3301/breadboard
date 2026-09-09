@@ -9,11 +9,14 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from breadboard.artifacts.cas import FilesystemCAS
 from breadboard.artifacts.references import ArtifactRef
 from breadboard.product.operations.model import portable_ref
+
+if TYPE_CHECKING:
+    from .packages import ModulePackage
 
 
 _SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -183,6 +186,7 @@ class LockMaterialization:
     source_bytes: Mapping[str, bytes]
     resource_bytes: Mapping[str, bytes]
     package_bytes: Mapping[str, bytes]
+    packages: Mapping[str, ModulePackage]
 
 
 def materialize_lock(
@@ -240,7 +244,7 @@ def materialize_lock(
                 raise ValueError(f"locked configuration failed verification: {source_ref}")
             sources[source_ref] = payload
     packages: dict[str, bytes] = {}
-    verified_packages = {}
+    verified_packages: dict[str, ModulePackage] = {}
     modules = lock["modules"]
     if modules is not None:
         if set(modules) != {"root", "bindings"} or not isinstance(modules["bindings"], Mapping):
@@ -279,6 +283,7 @@ def materialize_lock(
         source_bytes=MappingProxyType(sources),
         resource_bytes=MappingProxyType(resources),
         package_bytes=MappingProxyType(packages),
+        packages=MappingProxyType(verified_packages),
     )
 
 

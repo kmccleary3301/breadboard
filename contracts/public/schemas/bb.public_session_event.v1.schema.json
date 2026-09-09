@@ -47,6 +47,7 @@
     },
     "kind": {
       "enum": [
+        "module_output",
         "session.started",
         "input.accepted",
         "approval.requested",
@@ -67,6 +68,7 @@
     "payload_schema_version": {
       "enum": [
         "bb.payload.product_session.lifecycle.v1",
+        "bb.payload.product_session.module_output.v1",
         "bb.payload.message.assistant.v1",
         "bb.payload.tool.called.v1",
         "bb.payload.tool.completed.v1",
@@ -204,6 +206,22 @@
             }
           }
         ]
+      }
+    },
+    {
+      "if": {
+        "properties": { "kind": { "const": "module_output" } },
+        "required": ["kind"]
+      },
+      "then": {
+        "properties": {
+          "payload_schema_version": {
+            "const": "bb.payload.product_session.module_output.v1"
+          },
+          "payload": {
+            "$ref": "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.module_output.v1.schema.json"
+          }
+        }
       }
     },
     {

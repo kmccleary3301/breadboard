@@ -138,7 +138,7 @@ export interface BreadboardClient {
   listSession(): Promise<PublicResult>
   getSession(id: string): Promise<SessionSummary>
   getSessionResult(id: string): Promise<PublicResult>
-  sendInputSession(id: string, content: PublicSessionInputRequest["content"], idempotencyKey?: string): Promise<PublicResult>
+  sendInputSession(id: string, input: PublicSessionInputRequest, idempotencyKey?: string): Promise<PublicResult>
   approveSession(id: string, requestId: PublicSessionApprovalRequest["request_id"], decision: PublicSessionDecision, idempotencyKey?: string): Promise<PublicResult>
   resumeSession(id: string, idempotencyKey?: string): Promise<PublicResult>
   cancelSession(id: string, reason?: PublicSessionCancelRequest["reason"], idempotencyKey?: string): Promise<PublicResult>
@@ -231,6 +231,12 @@ function action(
     case "public.artifact.get": return r({ artifact_id: identifier(String(input.artifact_id ?? ""), "artifact_id") })
     case "public.artifact.verify": return r({ artifact_id: identifier(String(input.artifact_id ?? ""), "artifact_id") })
     case "public.session.start": {
+      const hasTask = input.task !== undefined && input.task !== null
+      const hasModuleInput = input.module_input !== undefined && input.module_input !== null
+      if (hasTask === hasModuleInput) throw new Error("supply exactly one task or module_input")
+      if (input.module_authority !== undefined && input.module_authority !== null && !hasModuleInput) {
+        throw new Error("module_authority requires module_input")
+      }
       const body = { ...input }
       delete body.idempotency_key
       return r({}, { body, headers: input.idempotency_key ? { "Idempotency-Key": String(input.idempotency_key) } : undefined })
@@ -238,7 +244,13 @@ function action(
     case "public.research.compare": return r({}, { body: { definition: input.definition, world: input.world, generation: input.generation, projection: input.projection, compare: input.compare } })
     case "public.session.list": return r()
     case "public.session.get": return r({ session_id: identifier(String(input.session_id ?? ""), "session_id") })
-    case "public.session.send_input": return r({ session_id: identifier(String(input.session_id ?? ""), "session_id") }, { body: { content: input.content }, headers: input.idempotency_key ? { "Idempotency-Key": String(input.idempotency_key) } : undefined })
+    case "public.session.send_input": {
+      const hasContent = input.content !== undefined
+      const hasModuleInput = input.module_input !== undefined
+      if (hasContent === hasModuleInput) throw new Error("supply exactly one content or module_input")
+      const body = hasContent ? { content: input.content } : { module_input: input.module_input }
+      return r({ session_id: identifier(String(input.session_id ?? ""), "session_id") }, { body, headers: input.idempotency_key ? { "Idempotency-Key": String(input.idempotency_key) } : undefined })
+    }
     case "public.session.approve": return r({ session_id: identifier(String(input.session_id ?? ""), "session_id") }, { body: { request_id: input.request_id, decision: input.decision }, headers: input.idempotency_key ? { "Idempotency-Key": String(input.idempotency_key) } : undefined })
     case "public.session.resume": return r({ session_id: identifier(String(input.session_id ?? ""), "session_id") }, { headers: input.idempotency_key ? { "Idempotency-Key": String(input.idempotency_key) } : undefined })
     case "public.session.cancel": return r({ session_id: identifier(String(input.session_id ?? ""), "session_id") }, { body: { reason: input.reason ?? "operator request" }, headers: input.idempotency_key ? { "Idempotency-Key": String(input.idempotency_key) } : undefined })
@@ -299,7 +311,11 @@ export const createBreadboardClient = (config: BreadboardClientConfig): Breadboa
     uploadAttachments: async (id: string, attachments: ReadonlyArray<AttachmentUploadPayload>) => { if (!attachments.length) return []; const form = new FormData(); attachments.forEach((a, i) => { const bytes = Uint8Array.from(atob(a.base64), (char) => char.charCodeAt(0)); form.append("files", new Blob([bytes], { type: a.mime || "application/octet-stream" }), a.filename ?? `attachment-${i + 1}.bin`) }); form.append("metadata", JSON.stringify({ source: "clipboard" })); const token = await valueToken(config); const response = await (config.fetch ?? globalThis.fetch)(buildUrl(config.baseUrl, `/v1/internal/sessions/${encodeURIComponent(id)}/attachments`), { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : undefined, body: form }); const content = response.headers.get("content-type") ?? ""; const payload = content.includes("json") ? await response.json() : undefined; if (!response.ok) throw new ApiError(`Attachment upload failed with status ${response.status}`, response.status, payload); return (payload as { attachments?: AttachmentHandle[] } | undefined)?.attachments ?? [] },
     eventsSession: (id: string, options: Omit<EventStreamOptions, "config"> = {}) => streamSessionEvents(id, { ...options, config: config as StreamConfig }),
   }
-  const client: BreadboardClient = c
+  const client: BreadboardClient = {
+    ...c,
+    sendInputSession: (id: string, input: PublicSessionInputRequest, key?: string) =>
+      action(config, "public.session.send_input", { session_id: id, ...input, idempotency_key: key }),
+  }
   return client
 }
 export const createApiClient = createBreadboardClient

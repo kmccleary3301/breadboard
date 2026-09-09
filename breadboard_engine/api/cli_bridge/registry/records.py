@@ -41,12 +41,20 @@ from ..models import (
     SessionSummary,
     TurnAdmission,
 )
+from breadboard.modules.author import ModuleInput
+from breadboard.modules.authority import AdmissionGrant
+from breadboard_engine.execution.author_worker import (
+    AuthorWorkerCleanupResult,
+    AuthorWorkerResourceReceipt,
+)
+
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
-_STATE_SCHEMA_VERSION = "bb.cli_bridge.session_state.v1"
+_STATE_SCHEMA_VERSION_V1 = "bb.cli_bridge.session_state.v1"
+_STATE_SCHEMA_VERSION = "bb.cli_bridge.session_state.v2"
 CONTROL_REQUEST_ID_CAPACITY = 4096
 _TERMINAL_EVENT_TYPES = {
     EventType.TURN_COMPLETED,
@@ -75,8 +83,25 @@ def identity_digest(value: str) -> str:
     return _digest_payload({"identity": str(value)})
 
 
-def submission_body_digest(content: str, attachments: Tuple[str, ...]) -> str:
-    return _digest_payload({"content": content, "attachments": list(attachments)})
+def submission_body_digest(
+    content: str | None,
+    attachments: Tuple[str, ...],
+    module_input: ModuleInput | None = None,
+) -> str:
+    if module_input is None:
+        if content is None:
+            raise ValueError("text submission content is required")
+        return _digest_payload({"content": content, "attachments": list(attachments)})
+    if content is not None:
+        raise ValueError("typed module input cannot have text content")
+    if not isinstance(module_input, ModuleInput):
+        raise TypeError("module_input must be a ModuleInput")
+    return _digest_payload(
+        {
+            "module_input": module_input.to_dict(),
+            "attachments": list(attachments),
+        }
+    )
 
 
 def cancellation_body_digest(turn_id: str, reason: str) -> str:
@@ -152,6 +177,30 @@ class _DrainState:
     hard_signal_attempt_committed: bool = False
     hard_signal_authorization_owner_generation: int | None = None
     hard_signal_outcome: str | None = None
+@dataclass
+class ModuleWorkerOwnership:
+    binding: str
+    instance_id: str
+    worker_session_id: str
+    owner_ref: str
+    execution_id: str
+    execution_token: str = field(repr=False)
+    staging_root: str
+    staging_owner_ref: str
+    next_input_sequence: int = 0
+    resource_id: str | None = None
+    container_name: str | None = None
+    receipt: AuthorWorkerResourceReceipt | None = None
+    cleanup: AuthorWorkerCleanupResult | None = None
+
+
+@dataclass
+class ModuleExecutionRecord:
+    generation_id: str
+    root_binding: str
+    work_item_id: str
+    attempt_id: str
+    workers: tuple[ModuleWorkerOwnership, ...] = ()
 
 
 _T = TypeVar("_T")
@@ -162,7 +211,7 @@ class TurnRecord:
     input_id: str
     turn_id: str
     client_message_id: str
-    content: str
+    content: str | None
     attachments: Tuple[str, ...]
     original_disposition: str
     state: str
@@ -175,6 +224,8 @@ class TurnRecord:
     logical_event_count_before_admission: Optional[int] = None
     logical_input_content_hash: Optional[str] = None
     logical_input_session_status_before_admission: Optional[str] = None
+    module_input: ModuleInput | None = None
+    module_input_sequence: int | None = None
 
 
 @dataclass(frozen=True)
@@ -243,7 +294,10 @@ class SessionRecord:
     admission_lock: "asyncio.Lock" = field(default_factory=asyncio.Lock, repr=False)
     loaded_from_retained_state: bool = field(default=False, repr=False)
     retained_turn_journal_digest: Optional[str] = field(default=None, repr=False)
-    runtime_generation_source_ref: Optional[str] = field(default=None, repr=False)
+    runtime_generation_source_ref: Optional[str] = None
+    next_module_input_sequence: int = 0
+    module_grant: AdmissionGrant | None = None
+    module_execution: ModuleExecutionRecord | None = None
 
     def projected_status(self) -> SessionStatus:
         if self.product_session is None:

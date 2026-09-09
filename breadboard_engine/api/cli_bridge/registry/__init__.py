@@ -4,6 +4,8 @@ from .records import (
     CONTROL_REQUEST_ID_CAPACITY,
     CancellationRecord,
     LifecycleAuthorityError,
+    ModuleExecutionRecord,
+    ModuleWorkerOwnership,
     SessionRecord,
     SessionRecordDeletedError,
     SubscriberState,
@@ -12,12 +14,15 @@ from .records import (
     identity_digest,
     submission_body_digest,
 )
+
 from .registry_impl import SessionRegistry
 
 __all__ = [
     "CONTROL_REQUEST_ID_CAPACITY",
     "CancellationRecord",
     "LifecycleAuthorityError",
+    "ModuleExecutionRecord",
+    "ModuleWorkerOwnership",
     "SessionRecord",
     "SessionRecordDeletedError",
     "SessionRegistry",

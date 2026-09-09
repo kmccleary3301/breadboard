@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, List, Mapping, Optional, Tuple
+from typing import Any, Callable, List, Mapping, Optional, Tuple
 
 from .contract_wire import (
     ProviderContractError,
@@ -40,7 +40,9 @@ class ProviderExchangeRecorder:
     request: ProviderRequest
     exchange_id: str = field(default_factory=lambda: f"px_{uuid.uuid4().hex}")
     events: List[ProviderEvent] = field(default_factory=list)
-
+    event_observer: Optional[Callable[[ProviderEvent], None]] = field(
+        default=None, repr=False, compare=False
+    )
     @property
     def output_emitted(self) -> bool:
         return any(event.kind in _OUTPUT_EVENT_KINDS for event in self.events)
@@ -214,6 +216,8 @@ class ProviderExchangeRecorder:
                 f"malformed {kind} provider event"
             ) from None
         self.events.append(event)
+        if self.event_observer is not None:
+            self.event_observer(event)
 
     def build(
         self, terminal: ProviderDone | ProviderErrorTerminal | ProviderCancelled

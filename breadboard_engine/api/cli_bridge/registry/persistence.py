@@ -29,10 +29,13 @@ from ..runtime_emission import retained_runtime_overrides as _retained_runtime_o
 
 from .records import (
     _STATE_SCHEMA_VERSION,
+    _STATE_SCHEMA_VERSION_V1,
     _TERMINAL_EVENT_TYPES,
     _retained_model_id,
     _utcnow,
     CancellationRecord,
+    ModuleExecutionRecord,
+    ModuleWorkerOwnership,
     SessionRecord,
     SessionRecordDeletedError,
     TurnRecord,
@@ -40,7 +43,12 @@ from .records import (
     identity_digest,
     submission_body_digest,
 )
-
+from breadboard.modules.author import ModuleInput
+from breadboard.modules.authority import AdmissionGrant
+from breadboard_engine.execution.author_worker import (
+    AuthorWorkerCleanupResult,
+    AuthorWorkerResourceReceipt,
+)
 _TURN_COMPLETED_FIELDS = {
     "exchange_ref",
     "finish_reason",
@@ -296,9 +304,303 @@ def _retained_terminal_payload(event_type: EventType, value: Any) -> Dict[str, A
     if not safe_code.replace("_", "").replace("-", "").replace(".", "").isalnum():
         safe_code = "turn_execution_failed"
     return {"error": {"code": safe_code[:128]}}
+_RECEIPT_FIELDS = {
+    "resource_id",
+    "owner_ref",
+    "execution_id",
+    "container_id",
+    "container_name",
+    "image_id",
+    "image_ref",
+    "platform",
+    "receiver_identity",
+    "state",
+}
+_CLEANUP_FIELDS = {
+    "status",
+    "resource_id",
+    "container_id",
+    "owner_ref",
+    "reason",
+    "evidence",
+}
+
+
+def _serialize_worker_receipt(
+    receipt: AuthorWorkerResourceReceipt,
+) -> Dict[str, Any]:
+    if not isinstance(receipt, AuthorWorkerResourceReceipt):
+        raise ValueError("module worker receipt is invalid")
+    return {
+        field_name: getattr(receipt, field_name)
+        for field_name in _RECEIPT_FIELDS
+    }
+
+
+def _serialize_worker_cleanup(
+    cleanup: AuthorWorkerCleanupResult,
+) -> Dict[str, Any]:
+    if not isinstance(cleanup, AuthorWorkerCleanupResult):
+        raise ValueError("module worker cleanup is invalid")
+    return {
+        field_name: getattr(cleanup, field_name)
+        for field_name in _CLEANUP_FIELDS
+    }
+
+
+def _serialize_module_execution(
+    execution: ModuleExecutionRecord | None,
+) -> Dict[str, Any] | None:
+    if execution is None:
+        return None
+    if not isinstance(execution, ModuleExecutionRecord):
+        raise ValueError("module execution is invalid")
+    for field_name in ("generation_id", "root_binding", "work_item_id", "attempt_id"):
+        value = getattr(execution, field_name)
+        if not isinstance(value, str) or not value:
+            raise ValueError("module execution identity is invalid")
+    if not isinstance(execution.workers, tuple):
+        raise ValueError("module execution workers must be a tuple")
+    workers = []
+    worker_identities: set[tuple[str, str, str]] = set()
+    for worker in execution.workers:
+        if not isinstance(worker, ModuleWorkerOwnership):
+            raise ValueError("module worker ownership is invalid")
+        worker_identity = (
+            worker.binding,
+            worker.instance_id,
+            worker.worker_session_id,
+        )
+        if worker_identity in worker_identities:
+            raise ValueError("module execution contains duplicate workers")
+        worker_identities.add(worker_identity)
+        for field_name in (
+            "binding",
+            "instance_id",
+            "worker_session_id",
+            "owner_ref",
+            "execution_id",
+            "execution_token",
+            "staging_root",
+            "staging_owner_ref",
+        ):
+            value = getattr(worker, field_name)
+            if not isinstance(value, str) or not value:
+                raise ValueError("module worker identity is invalid")
+        if type(worker.next_input_sequence) is not int or worker.next_input_sequence < 0:
+            raise ValueError("module worker input sequence is invalid")
+        for field_name in ("resource_id", "container_name"):
+            value = getattr(worker, field_name)
+            if value is not None and (not isinstance(value, str) or not value):
+                raise ValueError("module worker resource identity is invalid")
+        workers.append(
+            {
+                "binding": worker.binding,
+                "instance_id": worker.instance_id,
+                "worker_session_id": worker.worker_session_id,
+                "owner_ref": worker.owner_ref,
+                "execution_id": worker.execution_id,
+                "execution_token": worker.execution_token,
+                "staging_root": worker.staging_root,
+                "staging_owner_ref": worker.staging_owner_ref,
+                "next_input_sequence": worker.next_input_sequence,
+                "resource_id": worker.resource_id,
+                "container_name": worker.container_name,
+                "receipt": (
+                    _serialize_worker_receipt(worker.receipt)
+                    if worker.receipt is not None
+                    else None
+                ),
+                "cleanup": (
+                    _serialize_worker_cleanup(worker.cleanup)
+                    if worker.cleanup is not None
+                    else None
+                ),
+            }
+        )
+    return {
+        "generation_id": execution.generation_id,
+        "root_binding": execution.root_binding,
+        "work_item_id": execution.work_item_id,
+        "attempt_id": execution.attempt_id,
+        "workers": workers,
+    }
+
+
+def _deserialize_worker_receipt(value: Any) -> AuthorWorkerResourceReceipt:
+    if not isinstance(value, dict) or set(value) != _RECEIPT_FIELDS:
+        raise ValueError("retained module worker receipt is invalid")
+    if any(not isinstance(value[field_name], str) or not value[field_name] for field_name in _RECEIPT_FIELDS):
+        raise ValueError("retained module worker receipt fields are invalid")
+    return AuthorWorkerResourceReceipt(**value)
+
+
+def _deserialize_worker_cleanup(value: Any) -> AuthorWorkerCleanupResult:
+    if not isinstance(value, dict) or set(value) != _CLEANUP_FIELDS:
+        raise ValueError("retained module worker cleanup is invalid")
+    if value["status"] not in {"confirmed_absent", "unknown"}:
+        raise ValueError("retained module worker cleanup status is invalid")
+    evidence = value["evidence"]
+    if not isinstance(evidence, list) or any(
+        not isinstance(item, str) for item in evidence
+    ):
+        raise ValueError("retained module worker cleanup evidence is invalid")
+    for field_name in _CLEANUP_FIELDS - {"status", "evidence"}:
+        if not isinstance(value[field_name], str) or not value[field_name]:
+            raise ValueError("retained module worker cleanup fields are invalid")
+    return AuthorWorkerCleanupResult(
+        status=value["status"],
+        resource_id=value["resource_id"],
+        container_id=value["container_id"],
+        owner_ref=value["owner_ref"],
+        reason=value["reason"],
+        evidence=tuple(evidence),
+    )
+
+
+def _deserialize_module_execution(value: Any) -> ModuleExecutionRecord | None:
+    if value is None:
+        return None
+    fields = {"generation_id", "root_binding", "work_item_id", "attempt_id", "workers"}
+    if not isinstance(value, dict) or set(value) != fields:
+        raise ValueError("retained module execution is invalid")
+    for field_name in fields - {"workers"}:
+        if not isinstance(value[field_name], str) or not value[field_name]:
+            raise ValueError("retained module execution identity is invalid")
+    workers_value = value["workers"]
+    if not isinstance(workers_value, list):
+        raise ValueError("retained module execution workers are invalid")
+    workers = []
+    worker_identities: set[tuple[str, str, str]] = set()
+    for item in workers_value:
+        fields = {
+            "binding",
+            "instance_id",
+            "worker_session_id",
+            "owner_ref",
+            "execution_id",
+            "execution_token",
+            "staging_root",
+            "staging_owner_ref",
+            "next_input_sequence",
+            "resource_id",
+            "container_name",
+            "receipt",
+            "cleanup",
+        }
+        if not isinstance(item, dict) or set(item) != fields:
+            raise ValueError("retained module worker ownership is invalid")
+        worker_identity = (
+            item["binding"],
+            item["instance_id"],
+            item["worker_session_id"],
+        )
+        if worker_identity in worker_identities:
+            raise ValueError("retained module execution contains duplicate workers")
+        worker_identities.add(worker_identity)
+        if type(item["next_input_sequence"]) is not int or item["next_input_sequence"] < 0:
+            raise ValueError("retained module worker input sequence is invalid")
+        for field_name in fields - {
+            "next_input_sequence",
+            "resource_id",
+            "container_name",
+            "receipt",
+            "cleanup",
+        }:
+            if not isinstance(item[field_name], str) or not item[field_name]:
+                raise ValueError("retained module worker identity is invalid")
+        for field_name in ("resource_id", "container_name"):
+            if item[field_name] is not None and (
+                not isinstance(item[field_name], str) or not item[field_name]
+            ):
+                raise ValueError("retained module worker resource identity is invalid")
+        receipt = (
+            _deserialize_worker_receipt(item["receipt"])
+            if item["receipt"] is not None
+            else None
+        )
+        cleanup = (
+            _deserialize_worker_cleanup(item["cleanup"])
+            if item["cleanup"] is not None
+            else None
+        )
+        workers.append(
+            ModuleWorkerOwnership(
+                binding=item["binding"],
+                instance_id=item["instance_id"],
+                worker_session_id=item["worker_session_id"],
+                owner_ref=item["owner_ref"],
+                execution_id=item["execution_id"],
+                execution_token=item["execution_token"],
+                staging_root=item["staging_root"],
+                staging_owner_ref=item["staging_owner_ref"],
+                next_input_sequence=item["next_input_sequence"],
+                resource_id=item["resource_id"],
+                container_name=item["container_name"],
+                receipt=receipt,
+                cleanup=cleanup,
+            )
+        )
+    return ModuleExecutionRecord(
+        generation_id=value["generation_id"],
+        root_binding=value["root_binding"],
+        work_item_id=value["work_item_id"],
+        attempt_id=value["attempt_id"],
+        workers=tuple(workers),
+    )
+
+
+def _valid_sha256_digest(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 71
+        and value.startswith("sha256:")
+        and all(character in "0123456789abcdef" for character in value[7:])
+    )
+
+
+def _validate_module_admission_state(record: SessionRecord) -> None:
+    if (
+        type(record.next_module_input_sequence) is not int
+        or record.next_module_input_sequence < 0
+    ):
+        raise ValueError("retained next module input sequence is invalid")
+    if record.module_grant is not None and not isinstance(record.module_grant, AdmissionGrant):
+        raise ValueError("retained module grant is invalid")
+    _serialize_module_execution(record.module_execution)
+    typed_sequences: list[int] = []
+    for turn in record.turns_by_id.values():
+        module_input = turn.module_input
+        if module_input is None:
+            if turn.module_input_sequence is not None:
+                raise ValueError("text turn has a module input sequence")
+            if turn.content is None:
+                raise ValueError("turn content is required without module input")
+            continue
+        if not isinstance(module_input, ModuleInput):
+            raise ValueError("turn module input is invalid")
+        if turn.content is not None:
+            raise ValueError("typed turn cannot retain text content")
+        sequence = turn.module_input_sequence
+        if type(sequence) is not int or sequence < 0:
+            raise ValueError("typed turn module input sequence is invalid")
+        typed_sequences.append(sequence)
+        expected_digest = submission_body_digest(
+            None,
+            tuple(turn.attachments),
+            module_input,
+        )
+        if turn.body_digest is not None and turn.body_digest != expected_digest:
+            raise ValueError("typed turn body digest does not match its input")
+    typed_sequences.sort()
+    if typed_sequences != list(range(len(typed_sequences))):
+        raise ValueError("typed turn module input sequences are not consecutive")
+    if record.next_module_input_sequence != len(typed_sequences):
+        raise ValueError("next module input sequence does not match retained turns")
 
 
 def _turn_journal_digest(record: SessionRecord) -> str:
+    _validate_module_admission_state(record)
     turns = []
     for turn_id in sorted(record.turns_by_id):
         turn = record.turns_by_id[turn_id]
@@ -313,7 +615,17 @@ def _turn_journal_digest(record: SessionRecord) -> str:
                 "terminal_outcome": turn.terminal_outcome,
                 "terminal_resolution_committed": turn.terminal_resolution_committed,
                 "body_digest": turn.body_digest
-                or submission_body_digest(turn.content, turn.attachments),
+                or submission_body_digest(
+                    turn.content,
+                    turn.attachments,
+                    turn.module_input,
+                ),
+                "module_input": (
+                    turn.module_input.to_dict()
+                    if turn.module_input is not None
+                    else None
+                ),
+                "module_input_sequence": turn.module_input_sequence,
             }
         )
     submission_digests = {
@@ -332,6 +644,13 @@ def _turn_journal_digest(record: SessionRecord) -> str:
         "submission_digests": sorted(submission_digests),
         "cancellation_digests": sorted(cancellation_digests),
         "admission_closed": record.admission_closed,
+        "next_module_input_sequence": record.next_module_input_sequence,
+        "module_grant": (
+            record.module_grant.to_dict()
+            if record.module_grant is not None
+            else None
+        ),
+        "module_execution": _serialize_module_execution(record.module_execution),
     }
     encoded = json.dumps(
         payload,
@@ -340,6 +659,73 @@ def _turn_journal_digest(record: SessionRecord) -> str:
         ensure_ascii=True,
     ).encode("utf-8")
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def _merge_module_execution(
+    target: ModuleExecutionRecord | None,
+    source: ModuleExecutionRecord | None,
+) -> ModuleExecutionRecord | None:
+    if target is None:
+        return source
+    if source is None:
+        return target
+    if (
+        target.generation_id,
+        target.root_binding,
+        target.work_item_id,
+        target.attempt_id,
+    ) != (
+        source.generation_id,
+        source.root_binding,
+        source.work_item_id,
+        source.attempt_id,
+    ):
+        raise ValueError("retained module execution identity changed during refresh")
+    merged = list(target.workers)
+    by_identity = {
+        (worker.binding, worker.instance_id, worker.worker_session_id): worker
+        for worker in merged
+    }
+    for source_worker in source.workers:
+        identity = (
+            source_worker.binding,
+            source_worker.instance_id,
+            source_worker.worker_session_id,
+        )
+        target_worker = by_identity.get(identity)
+        if target_worker is None:
+            merged.append(source_worker)
+            by_identity[identity] = source_worker
+            continue
+        for field_name in (
+            "binding",
+            "instance_id",
+            "worker_session_id",
+            "owner_ref",
+            "execution_id",
+            "execution_token",
+            "staging_root",
+            "staging_owner_ref",
+        ):
+            if getattr(target_worker, field_name) != getattr(source_worker, field_name):
+                raise ValueError("retained module worker identity changed during refresh")
+        target_worker.next_input_sequence = max(
+            target_worker.next_input_sequence,
+            source_worker.next_input_sequence,
+        )
+        for field_name in ("resource_id", "container_name", "receipt", "cleanup"):
+            target_value = getattr(target_worker, field_name)
+            source_value = getattr(source_worker, field_name)
+            if (
+                target_value is not None
+                and source_value is not None
+                and target_value != source_value
+            ):
+                raise ValueError("retained module worker state changed during refresh")
+            if target_value is None and source_value is not None:
+                setattr(target_worker, field_name, source_value)
+    target.workers = tuple(merged)
+    return target
 
 
 class PersistenceMixin:
@@ -1082,6 +1468,16 @@ class PersistenceMixin:
     def _copy_turn_fields(target: TurnRecord, source: TurnRecord) -> None:
         if (target.input_id, target.turn_id) != (source.input_id, source.turn_id):
             raise ValueError("retained turn identity changed during refresh")
+        if (
+            target.module_input != source.module_input
+            or target.module_input_sequence != source.module_input_sequence
+        ):
+            raise ValueError("retained typed turn identity changed during refresh")
+        if (
+            target.module_input is not None
+            and tuple(target.attachments) != tuple(source.attachments)
+        ):
+            raise ValueError("retained typed turn attachments changed during refresh")
         for field_name in (
             "original_disposition",
             "state",
@@ -1098,7 +1494,32 @@ class PersistenceMixin:
             setattr(target, field_name, getattr(source, field_name))
 
     @staticmethod
+    def _merge_module_admission_state(
+        target: SessionRecord,
+        source: SessionRecord,
+    ) -> None:
+        _validate_module_admission_state(target)
+        _validate_module_admission_state(source)
+        if (
+            target.module_grant is not None
+            and source.module_grant is not None
+            and target.module_grant != source.module_grant
+        ):
+            raise ValueError("retained module grant identity changed during refresh")
+        target.next_module_input_sequence = max(
+            target.next_module_input_sequence,
+            source.next_module_input_sequence,
+        )
+        if target.module_grant is None and source.module_grant is not None:
+            target.module_grant = source.module_grant
+        target.module_execution = _merge_module_execution(
+            target.module_execution,
+            source.module_execution,
+        )
+
+    @staticmethod
     def _apply_durable_fields(target: SessionRecord, source: SessionRecord) -> None:
+        PersistenceMixin._merge_module_admission_state(target, source)
         target.status = source.status
         target.created_at = source.created_at
         target.last_activity_at = source.last_activity_at
@@ -1190,6 +1611,22 @@ class PersistenceMixin:
                     f"session {record.session_id} retained state is unreadable"
                 ) from error
             return
+        self._merge_module_admission_state(record, disk_record)
+        for turn_id, disk_turn in disk_record.turns_by_id.items():
+            if disk_turn.module_input is None:
+                continue
+            local_turn = record.turns_by_id.get(turn_id)
+            if local_turn is None:
+                record.turns_by_id[turn_id] = disk_turn
+                local_turn = disk_turn
+            else:
+                self._copy_turn_fields(local_turn, disk_turn)
+            for key_digest, mapped_turn in disk_record.submissions_by_key_digest.items():
+                if mapped_turn.turn_id == turn_id:
+                    record.submissions_by_key_digest.setdefault(
+                        key_digest,
+                        local_turn,
+                    )
         metadata = dict(record.metadata or {})
         disk_child = (disk_record.metadata or {}).get("durable_child")
         local_child = metadata.get("durable_child")
@@ -1292,6 +1729,7 @@ class PersistenceMixin:
         return 0, None
 
     def _serialize_record(self, record: SessionRecord) -> Dict[str, Any]:
+        _validate_module_admission_state(record)
         submissions = []
         for key, turn in record.submissions_by_key.items():
             submissions.append(self._serialize_submission(identity_digest(key), turn))
@@ -1314,6 +1752,11 @@ class PersistenceMixin:
 
         turns = []
         for turn in record.turns_by_id.values():
+            body_digest = turn.body_digest or submission_body_digest(
+                turn.content,
+                turn.attachments,
+                turn.module_input,
+            )
             serialized_turn = {
                 "input_id": turn.input_id,
                 "turn_id": turn.turn_id,
@@ -1324,20 +1767,25 @@ class PersistenceMixin:
                 "execution_committed": turn.execution_committed,
                 "terminal_outcome": turn.terminal_outcome,
                 "terminal_resolution_committed": turn.terminal_resolution_committed,
-                "body_digest": turn.body_digest
-                or submission_body_digest(turn.content, turn.attachments),
+                "body_digest": body_digest,
             }
-            if turn.logical_event_count_before_admission is not None:
-                content_hash = turn.logical_input_content_hash
-                if (
-                    not isinstance(content_hash, str)
-                    or len(content_hash) != 71
-                    or not content_hash.startswith("sha256:")
-                    or any(character not in "0123456789abcdef" for character in content_hash[7:])
+            if turn.module_input is not None:
+                if body_digest != submission_body_digest(
+                    None,
+                    tuple(turn.attachments),
+                    turn.module_input,
                 ):
+                    raise ValueError("typed turn body digest does not match its input")
+                serialized_turn["module_input"] = turn.module_input.to_dict()
+                serialized_turn["module_input_sequence"] = turn.module_input_sequence
+                serialized_turn["attachments"] = list(turn.attachments)
+            elif turn.logical_event_count_before_admission is not None:
+                content_hash = turn.logical_input_content_hash
+                if not _valid_sha256_digest(content_hash):
                     raise ValueError("retained turn content hash is invalid")
                 serialized_turn["content_hash"] = content_hash
                 serialized_turn["attachments"] = list(turn.attachments)
+            if turn.logical_event_count_before_admission is not None:
                 serialized_turn["logical_event_count_before_admission"] = (
                     turn.logical_event_count_before_admission
                 )
@@ -1395,6 +1843,13 @@ class PersistenceMixin:
                 "active_turn_id": record.active_turn_id,
                 "queued_turn_ids": list(record.queued_turn_ids),
                 "admission_closed": record.admission_closed,
+                "next_module_input_sequence": record.next_module_input_sequence,
+                "module_grant": (
+                    record.module_grant.to_dict()
+                    if record.module_grant is not None
+                    else None
+                ),
+                "module_execution": _serialize_module_execution(record.module_execution),
                 "model": _retained_model_id(metadata.get("model")),
                 "mode": (
                     str(metadata["mode"]).strip()
@@ -1437,10 +1892,20 @@ class PersistenceMixin:
 
     @staticmethod
     def _serialize_submission(key_digest: str, turn: TurnRecord) -> Dict[str, Any]:
+        body_digest = turn.body_digest or submission_body_digest(
+            turn.content,
+            turn.attachments,
+            turn.module_input,
+        )
+        if turn.module_input is not None and body_digest != submission_body_digest(
+            None,
+            tuple(turn.attachments),
+            turn.module_input,
+        ):
+            raise ValueError("typed submission body digest does not match its input")
         return {
             "key_digest": key_digest,
-            "body_digest": turn.body_digest
-            or submission_body_digest(turn.content, turn.attachments),
+            "body_digest": body_digest,
             "input_id": turn.input_id,
             "turn_id": turn.turn_id,
             "original_disposition": turn.original_disposition,
@@ -1540,10 +2005,51 @@ class PersistenceMixin:
             self._records[record.session_id] = record
 
     def _deserialize_record(self, payload: Dict[str, Any]) -> SessionRecord:
-        if payload.get("schema_version") != _STATE_SCHEMA_VERSION:
+        if not isinstance(payload, dict):
+            raise ValueError("retained session state must be an object")
+        schema_version = payload.get("schema_version")
+        if schema_version not in {_STATE_SCHEMA_VERSION_V1, _STATE_SCHEMA_VERSION}:
             raise ValueError("unsupported session-state schema")
-        session = payload["session"]
-        session_id = str(session["session_id"])
+        legacy_schema = schema_version == _STATE_SCHEMA_VERSION_V1
+        session = payload.get("session")
+        if not isinstance(session, dict):
+            raise ValueError("retained session state has no session object")
+        session_id = session.get("session_id")
+        if not isinstance(session_id, str) or not session_id:
+            raise ValueError("retained session identity is invalid")
+        next_module_input_sequence = session.get("next_module_input_sequence", 0)
+        if (
+            type(next_module_input_sequence) is not int
+            or next_module_input_sequence < 0
+        ):
+            raise ValueError("retained next module input sequence is invalid")
+        grant_value = session.get("module_grant")
+        if legacy_schema and (
+            "module_grant" in session
+            or "next_module_input_sequence" in session
+            or any(
+                isinstance(item, dict)
+                and (
+                    "module_input" in item
+                    or "module_input_sequence" in item
+                )
+                for item in (payload.get("turns") or [])
+            )
+        ):
+            raise ValueError("v1 session state contains v2 module admission data")
+        module_grant = None
+        if grant_value is not None:
+            try:
+                module_grant = AdmissionGrant.from_dict(grant_value)
+            except (TypeError, ValueError) as error:
+                raise ValueError("retained module grant is invalid") from error
+        module_execution_value = session.get("module_execution")
+        if legacy_schema and "module_execution" in session:
+            raise ValueError("v1 session state contains module execution data")
+        try:
+            module_execution = _deserialize_module_execution(module_execution_value)
+        except (TypeError, ValueError) as error:
+            raise ValueError("retained module execution is invalid") from error
         persisted_event_seq = int(session.get("event_seq") or 0)
         persisted_replay_head_sequence = int(
             session.get("replay_head_sequence", persisted_event_seq) or 0
@@ -1626,6 +2132,7 @@ class PersistenceMixin:
         runtime_overrides = _retained_runtime_overrides(
             session.get("runtime_overrides")
         )
+
         if runtime_overrides:
             metadata["runtime_overrides"] = runtime_overrides
         skills_selection = _retained_skills_selection(
@@ -1656,12 +2163,15 @@ class PersistenceMixin:
             metadata["active_model_role"] = active_role
             metadata["model"] = str(active_target["route_id"])
         record = SessionRecord(
+            module_execution=module_execution,
             session_id=session_id,
             status=SessionStatus(str(session["status"])),
             created_at=datetime.fromisoformat(str(session["created_at"])),
             last_activity_at=datetime.fromisoformat(str(session["last_activity_at"])),
             logging_dir=logging_dir,
             reward_summary=reward_summary,
+            next_module_input_sequence=next_module_input_sequence,
+            module_grant=module_grant,
             event_seq=persisted_event_seq,
             replay_history_partial=bool(persisted_event_seq),
             replay_head_event_id=persisted_head_event_id,
@@ -1674,7 +2184,38 @@ class PersistenceMixin:
             loaded_from_retained_state=True,
             runtime_generation_source_ref=runtime_generation_source_ref,
         )
-        for item in payload.get("turns") or []:
+        turns_payload = payload.get("turns", [])
+        if not isinstance(turns_payload, list):
+            raise ValueError("retained turns must be an array")
+        for item in turns_payload:
+            if not isinstance(item, dict):
+                raise ValueError("retained turn must be an object")
+            has_module_input = "module_input" in item
+            has_module_sequence = "module_input_sequence" in item
+            if legacy_schema and (has_module_input or has_module_sequence):
+                raise ValueError("v1 turn contains v2 module admission data")
+            if has_module_input:
+                module_input_value = item.get("module_input")
+                if module_input_value is None:
+                    raise ValueError("retained typed turn has no module input")
+                try:
+                    module_input = ModuleInput.from_dict(module_input_value)
+                except (TypeError, ValueError) as error:
+                    raise ValueError("retained turn module input is invalid") from error
+                sequence = item.get("module_input_sequence")
+                if type(sequence) is not int or sequence < 0:
+                    raise ValueError("retained turn module input sequence is invalid")
+                if "attachments" not in item:
+                    raise ValueError("retained typed turn attachments are missing")
+                content: str | None = None
+                if "content" in item and item["content"] is not None:
+                    raise ValueError("typed turn contains text content")
+            else:
+                module_input = None
+                sequence = None
+                content = ""
+                if "content" in item and item["content"] is None:
+                    raise ValueError("untyped turn has null content")
             marker = item.get("logical_event_count_before_admission")
             if marker is not None and (
                 type(marker) is not int or marker < 1
@@ -1696,30 +2237,32 @@ class PersistenceMixin:
                 }
             ):
                 raise ValueError("retained turn session status is invalid")
-            if marker is not None and (
+            if module_input is None and marker is not None and (
                 "content_hash" not in item or "attachments" not in item
             ):
                 raise ValueError("retained turn admission payload is incomplete")
             content_hash = item.get("content_hash")
-            if marker is not None and (
-                not isinstance(content_hash, str)
-                or len(content_hash) != 71
-                or not content_hash.startswith("sha256:")
-                or any(
-                    character not in "0123456789abcdef"
-                    for character in content_hash[7:]
-                )
-            ):
+            if module_input is None and marker is not None and not _valid_sha256_digest(content_hash):
                 raise ValueError("retained turn content hash is invalid")
-            content = ""
             attachments = item.get("attachments", [])
-            if marker is None:
-                content_hash = None
             if not isinstance(attachments, list) or any(
                 not isinstance(attachment, str) or not attachment.strip()
                 for attachment in attachments
             ):
                 raise ValueError("retained turn attachments are invalid")
+            body_digest = item.get("body_digest")
+            if not _valid_sha256_digest(body_digest):
+                raise ValueError("retained turn body digest is invalid")
+            if module_input is not None:
+                expected_digest = submission_body_digest(
+                    None,
+                    tuple(attachments),
+                    module_input,
+                )
+                if body_digest != expected_digest:
+                    raise ValueError("retained typed turn body digest is contradictory")
+            if marker is None:
+                content_hash = None
             retained_flags = {
                 field: item.get(field, False)
                 for field in (
@@ -1730,9 +2273,20 @@ class PersistenceMixin:
             }
             if any(type(value) is not bool for value in retained_flags.values()):
                 raise ValueError("retained turn flags must be booleans")
+            input_id = item.get("input_id")
+            turn_id = item.get("turn_id")
+            if (
+                not isinstance(input_id, str)
+                or not input_id
+                or not isinstance(turn_id, str)
+                or not turn_id
+            ):
+                raise ValueError("retained turn identity is invalid")
+            if turn_id in record.turns_by_id:
+                raise ValueError("retained turn identity is duplicated")
             turn = TurnRecord(
-                input_id=str(item["input_id"]),
-                turn_id=str(item["turn_id"]),
+                input_id=input_id,
+                turn_id=turn_id,
                 client_message_id="",
                 content=content,
                 attachments=tuple(attachments),
@@ -1745,15 +2299,37 @@ class PersistenceMixin:
                 terminal_resolution_committed=retained_flags[
                     "terminal_resolution_committed"
                 ],
-                body_digest=str(item["body_digest"]),
+                body_digest=body_digest,
                 logical_event_count_before_admission=marker,
                 logical_input_content_hash=content_hash,
                 logical_input_session_status_before_admission=session_status,
+                module_input=module_input,
+                module_input_sequence=sequence,
             )
             record.turns_by_id[turn.turn_id] = turn
-        for item in payload.get("submissions") or []:
-            turn = record.turns_by_id[str(item["turn_id"])]
-            record.submissions_by_key_digest[str(item["key_digest"])] = turn
+        _validate_module_admission_state(record)
+        submissions_payload = payload.get("submissions", [])
+        if not isinstance(submissions_payload, list):
+            raise ValueError("retained submissions must be an array")
+        for item in submissions_payload:
+            if not isinstance(item, dict):
+                raise ValueError("retained submission must be an object")
+            key_digest = item.get("key_digest")
+            turn_id = item.get("turn_id")
+            if not isinstance(key_digest, str) or not key_digest:
+                raise ValueError("retained submission key identity is invalid")
+            if not isinstance(turn_id, str) or turn_id not in record.turns_by_id:
+                raise ValueError("retained submission turn identity is invalid")
+            if key_digest in record.submissions_by_key_digest:
+                raise ValueError("retained submission identity is duplicated")
+            turn = record.turns_by_id[turn_id]
+            if (
+                item.get("input_id") != turn.input_id
+                or item.get("original_disposition") != turn.original_disposition
+                or item.get("body_digest") != turn.body_digest
+            ):
+                raise ValueError("retained submission identity is contradictory")
+            record.submissions_by_key_digest[key_digest] = turn
         for item in payload.get("cancellations") or []:
             cancellation = CancellationRecord(
                 cancellation_request_id=str(item["cancellation_request_id"]),

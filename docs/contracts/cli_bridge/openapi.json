@@ -489,6 +489,69 @@
         "title": "AuthProviderView",
         "type": "object"
       },
+      "AuthorityDeclaration": {
+        "description": "Requested rights. A manifest containing these values grants nothing.",
+        "properties": {
+          "child": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChildAuthority"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "credential_disclosures": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CredentialDisclosure"
+            },
+            "title": "Credential Disclosures",
+            "type": "array"
+          },
+          "network": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NetworkAuthority"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "project": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectAuthority"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Provider Ids",
+            "type": "array",
+            "uniqueItems": true
+          },
+          "tool_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Tool Ids",
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "title": "AuthorityDeclaration",
+        "type": "object"
+      },
       "BeginAuthLoginRequest": {
         "properties": {
           "auth_scheme_id": {
@@ -685,6 +748,28 @@
           "expires_at_unix"
         ],
         "title": "BootstrapChallengeResponse",
+        "type": "object"
+      },
+      "ChildAuthority": {
+        "properties": {
+          "allowed_module_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Module Ids",
+            "type": "array",
+            "uniqueItems": true
+          },
+          "max_depth": {
+            "title": "Max Depth",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "allowed_module_ids",
+          "max_depth"
+        ],
+        "title": "ChildAuthority",
         "type": "object"
       },
       "ClientLeaseRequest": {
@@ -960,6 +1045,24 @@
           }
         },
         "title": "CompleteAuthLoginRequest",
+        "type": "object"
+      },
+      "CredentialDisclosure": {
+        "properties": {
+          "purpose": {
+            "title": "Purpose",
+            "type": "string"
+          },
+          "secret_name": {
+            "title": "Secret Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret_name",
+          "purpose"
+        ],
+        "title": "CredentialDisclosure",
         "type": "object"
       },
       "DrainControlRequest": {
@@ -2173,6 +2276,64 @@
         "title": "ModelRolesResolveResponse",
         "type": "object"
       },
+      "ModuleInputRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "final": {
+            "title": "Final",
+            "type": "boolean"
+          },
+          "schema_id": {
+            "minLength": 1,
+            "title": "Schema Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_id",
+          "body",
+          "final"
+        ],
+        "title": "ModuleInputRequest",
+        "type": "object"
+      },
+      "NetworkAuthority": {
+        "properties": {
+          "destinations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Destinations",
+            "type": "array"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/NetworkOperation"
+            },
+            "title": "Operations",
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "destinations",
+          "operations"
+        ],
+        "title": "NetworkAuthority",
+        "type": "object"
+      },
+      "NetworkOperation": {
+        "enum": [
+          "connect",
+          "resolve"
+        ],
+        "title": "NetworkOperation",
+        "type": "string"
+      },
       "OwnerAcquireRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2417,6 +2578,39 @@
         ],
         "title": "Problem",
         "type": "object"
+      },
+      "ProjectAuthority": {
+        "properties": {
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectOperation"
+            },
+            "title": "Operations",
+            "type": "array",
+            "uniqueItems": true
+          },
+          "roots": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "roots",
+          "operations"
+        ],
+        "title": "ProjectAuthority",
+        "type": "object"
+      },
+      "ProjectOperation": {
+        "enum": [
+          "read",
+          "write"
+        ],
+        "title": "ProjectOperation",
+        "type": "string"
       },
       "PublicResult": {
         "additionalProperties": false,
@@ -2697,14 +2891,28 @@
         "additionalProperties": false,
         "properties": {
           "content": {
-            "minLength": 1,
-            "title": "Content",
-            "type": "string"
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "module_input": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModuleInputRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
-        "required": [
-          "content"
-        ],
         "title": "SessionInputRequest",
         "type": "object"
       },
@@ -2715,6 +2923,26 @@
             "minLength": 1,
             "title": "Lock Id",
             "type": "string"
+          },
+          "module_authority": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuthorityDeclaration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "module_input": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModuleInputRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "session_id": {
             "anyOf": [
@@ -2729,14 +2957,20 @@
             "title": "Session Id"
           },
           "task": {
-            "minLength": 1,
-            "title": "Task",
-            "type": "string"
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task"
           }
         },
         "required": [
-          "lock_id",
-          "task"
+          "lock_id"
         ],
         "title": "SessionStartRequest",
         "type": "object"

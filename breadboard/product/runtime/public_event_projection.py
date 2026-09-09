@@ -30,6 +30,7 @@ _PUBLIC_PAYLOAD_SCHEMAS: Final[Mapping[str, str]] = MappingProxyType(
         "bb.payload.product_session.lifecycle.v1",
     )
     | {
+        "module_output": "bb.payload.product_session.module_output.v1",
         "assistant_message": "bb.payload.message.assistant.v1",
         "tool_call": "bb.payload.tool.called.v1",
         "tool_result": "bb.payload.tool.completed.v1",

@@ -15,7 +15,9 @@ from .generated.session_event_bindings import PUBLIC_SESSION_EVENT_PAYLOAD_SCHEM
 from .types import (
     PublicResult,
     PublicSessionDecision,
+    PublicSessionInputRequest,
     PublicSessionStartRequest,
+    ModuleInputRequest,
     ResearchCompareRequest,
     SessionEvent,
 )
@@ -602,6 +604,12 @@ class BreadBoardClient:
     def start_session(
         self, payload: PublicSessionStartRequest, *, idempotency_key: str | None = None
     ) -> PublicResult:
+        has_task = payload.get("task") is not None
+        has_module_input = payload.get("module_input") is not None
+        if has_task == has_module_input:
+            raise ValueError("supply exactly one task or module_input")
+        if payload.get("module_authority") is not None and not has_module_input:
+            raise ValueError("module_authority requires module_input")
         return self._request_operation(
             "session.start",
             body=payload,
@@ -624,12 +632,35 @@ class BreadBoardClient:
         )
 
     def send_input_session(
-        self, session_id: str, content: str, *, idempotency_key: str | None = None
+        self,
+        session_id: str,
+        content: str | PublicSessionInputRequest | None = None,
+        *,
+        module_input: ModuleInputRequest | None = None,
+        idempotency_key: str | None = None,
     ) -> PublicResult:
+        if isinstance(content, dict):
+            if module_input is not None:
+                raise ValueError("supply exactly one content or module_input")
+            has_content = content.get("content") is not None
+            has_module_input = content.get("module_input") is not None
+            if has_content == has_module_input:
+                raise ValueError("supply exactly one content or module_input")
+            body = content
+        else:
+            has_content = content is not None
+            has_module_input = module_input is not None
+            if has_content == has_module_input:
+                raise ValueError("supply exactly one content or module_input")
+            body = (
+                {"content": content}
+                if content is not None
+                else {"module_input": module_input}
+            )
         return self._request_operation(
             "session.send_input",
             path_params={"session_id": quote(session_id, safe="")},
-            body={"content": content},
+            body=body,
             headers=self._idempotency(idempotency_key),
         )
 

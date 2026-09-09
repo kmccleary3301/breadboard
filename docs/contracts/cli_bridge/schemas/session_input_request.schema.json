@@ -30,14 +30,52 @@
       "title": "Client Message Id"
     },
     "content": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
       "description": "User supplied input text.",
-      "title": "Content",
-      "type": "string"
+      "title": "Content"
+    },
+    "module_input": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "body": {
+              "title": "Body",
+              "type": "string"
+            },
+            "final": {
+              "title": "Final",
+              "type": "boolean"
+            },
+            "schema_id": {
+              "minLength": 1,
+              "title": "Schema Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "schema_id",
+            "body",
+            "final"
+          ],
+          "title": "ModuleInputRequest",
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     }
   },
-  "required": [
-    "content"
-  ],
   "title": "SessionInputRequest",
   "type": "object"
 }

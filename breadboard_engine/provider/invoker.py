@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import re
 import time
+import uuid
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 if TYPE_CHECKING:
@@ -71,6 +72,8 @@ class ProviderInvoker:
         markdown_logger: MarkdownLogger,
         turn_index: int,
         route_id: Optional[str],
+        exchange_id: Optional[str] = None,
+        event_observer: Optional[Callable[[Any], None]] = None,
     ) -> Tuple[ProviderResult, bool]:
         fallback_stream_reason: Optional[str] = None
         result: Optional[ProviderResult] = None
@@ -94,7 +97,11 @@ class ProviderInvoker:
             tools=list(tools_schema or []),
         )
         recorder = ProviderExchangeRecorder(
-            correlation=correlation, provider=provider, request=request
+            correlation=correlation,
+            provider=provider,
+            request=request,
+            exchange_id=exchange_id or f"px_{uuid.uuid4().hex}",
+            event_observer=event_observer,
         )
         runtime_context.exchange_recorder = recorder
         runtime_context.session_id = correlation.session_id
@@ -103,6 +110,7 @@ class ProviderInvoker:
         cache_observation_recorded = False
         pending_success_metric: Optional[Tuple[str, bool, float]] = None
         runtime_context.extra.pop("cache_observation", None)
+        runtime_context.extra.pop("provider_exchange", None)
         try:
             session_state.provider_metadata.pop("last_cache_observation", None)
         except Exception:
@@ -164,7 +172,8 @@ class ProviderInvoker:
                     retryable=exc.replay_safe and not recorder.output_emitted,
                     http_status=http_status,
                 )
-            self._persist_exchange(session_state, recorder, terminal)
+            exchange = self._persist_exchange(session_state, recorder, terminal)
+            runtime_context.extra["provider_exchange"] = exchange
 
         def _adopt_result_provider(result_value: ProviderResult) -> None:
             identity = (
@@ -245,6 +254,7 @@ class ProviderInvoker:
                     session_state, recorder, terminal, result=result_value
                 )
                 result_value.metadata["provider_exchange"] = exchange
+                runtime_context.extra["provider_exchange"] = exchange
                 cache_observation = _observe_success(result_value)
                 if success_metric is not None:
                     metric_model, metric_stream, metric_elapsed = success_metric
@@ -256,7 +266,7 @@ class ProviderInvoker:
                         details={"cache_observation": cache_observation},
                     )
                     pending_success_metric = None
-            except Exception:
+            except Exception as exc:
                 if success_metric is not None:
                     metric_model, metric_stream, metric_elapsed = success_metric
                     self.provider_metrics.add_call(
@@ -957,6 +967,14 @@ class ProviderInvoker:
                 raise ProviderContractError(
                     "provider_exchange_history must be an array"
                 )
+            history = [
+                item
+                for item in history
+                if not (
+                    isinstance(item, dict)
+                    and item.get("exchange_id") == exchange["exchange_id"]
+                )
+            ]
             session_state.set_provider_metadata(
                 "provider_exchange_history", [*history, exchange]
             )

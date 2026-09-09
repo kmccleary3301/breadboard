@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64, hashlib, json, os, re
 from collections.abc import Callable, Iterable, Mapping; from dataclasses import dataclass; from datetime import datetime, timezone; from pathlib import Path; from threading import RLock; from types import MappingProxyType; from typing import Any, Protocol; from uuid import uuid4
 from breadboard.product.harness.lock import EffectiveHarnessLock
+from breadboard.modules import ModuleInput, OutputEnvelope, RequestKey
 from .artifacts import ArtifactRef
 from breadboard.product.projection import Projected, ProjectionSource
 def _sync(stream: Any) -> None: stream.flush(); os.fsync(stream.fileno())
@@ -109,8 +110,8 @@ class JsonlEventSink:
 class NullEventSink:
     def append(self, event: object) -> None: return None
 _OBSERVATION_EVENT_KINDS = frozenset({"assistant_message", "tool_call", "tool_result"})
-_EVENT_KINDS = frozenset({"session.started", "input.accepted", "annotation", "context.compacted", "approval.requested", "approval.resolved", "session.reconfigured", "session.paused", "session.resumed", "session.completed", "session.failed", "session.canceled"}) | _OBSERVATION_EVENT_KINDS
-_ALLOWED = MappingProxyType({"input.accepted": ("running",), "assistant_message": ("running",), "tool_call": ("running",), "tool_result": ("running",), "annotation": ("running", "awaiting_approval", "paused", "completed", "failed", "canceled"), "context.compacted": ("running",), "approval.requested": ("running",), "approval.resolved": ("awaiting_approval",), "session.paused": ("running",), "session.reconfigured": ("running", "awaiting_approval", "paused"), "session.resumed": ("paused",), "session.completed": ("running",), "session.failed": ("running", "awaiting_approval", "paused"), "session.canceled": ("running", "awaiting_approval", "paused")})
+_EVENT_KINDS = frozenset({"session.started", "input.accepted", "module_output", "annotation", "context.compacted", "approval.requested", "approval.resolved", "session.reconfigured", "session.paused", "session.resumed", "session.completed", "session.failed", "session.canceled"}) | _OBSERVATION_EVENT_KINDS
+_ALLOWED = MappingProxyType({"input.accepted": ("running",), "module_output": ("running",), "assistant_message": ("running",), "tool_call": ("running",), "tool_result": ("running",), "annotation": ("running", "awaiting_approval", "paused", "completed", "failed", "canceled"), "context.compacted": ("running",), "approval.requested": ("running",), "approval.resolved": ("awaiting_approval",), "session.paused": ("running",), "session.reconfigured": ("running", "awaiting_approval", "paused"), "session.resumed": ("paused",), "session.completed": ("running",), "session.failed": ("running", "awaiting_approval", "paused"), "session.canceled": ("running", "awaiting_approval", "paused")})
 _STATUSES, _DECISIONS = frozenset({"running", "awaiting_approval", "paused", "completed", "failed", "canceled"}), frozenset({"allow", "deny", "once", "always", "reject"})
 _TERMINAL = {"session.completed": ("completed", ("summary",)), "session.failed": ("failed", ("error", "detail")), "session.canceled": ("canceled", ("reason",))}
 def _string(value: Any, name: str, populated: bool = True) -> str:
@@ -200,12 +201,115 @@ def _validate_compaction_payload(payload: Mapping[str, Any]) -> None:
         raise ValueError("shadowed_raw_fact_ids must cite retained raw facts")
     _sha256(payload.get("context_sha256"), "context_sha256")
     _decode_compaction_context(payload)
+def _decode_event_body(value: Any, name: str) -> bytes:
+    if type(value) is not str:
+        raise ValueError(f"{name} must be a base64 string")
+    try:
+        body = base64.b64decode(value.encode("ascii"), validate=True)
+    except (UnicodeEncodeError, ValueError) as error:
+        raise ValueError(f"{name} must be canonical base64") from error
+    if base64.b64encode(body).decode("ascii") != value:
+        raise ValueError(f"{name} must be canonical base64")
+    return body
+
+
+def _module_input_from_event(value: Any) -> ModuleInput:
+    if not isinstance(value, Mapping) or set(value) != {"schema_id", "body", "final"}:
+        raise ValueError("module_input must contain exactly schema_id, body, and final")
+    schema_id = _string(value.get("schema_id"), "module input schema_id")
+    final = value.get("final")
+    if type(final) is not bool:
+        raise ValueError("module input final must be boolean")
+    return ModuleInput(schema_id, _decode_event_body(value.get("body"), "module input body"), final)
+
+
+def _output_from_event(value: Any) -> OutputEnvelope:
+    if not isinstance(value, Mapping) or set(value) != {"schema_id", "body", "final"}:
+        raise ValueError("module_output must contain exactly schema_id, body, and final")
+    final = value.get("final")
+    if type(final) is not bool:
+        raise ValueError("module output final must be boolean")
+    return OutputEnvelope(
+        _string(value.get("schema_id"), "output schema_id"),
+        _decode_event_body(value.get("body"), "module output body"),
+    )
+
+
+def _typed_input_hash(value: ModuleInput) -> str:
+    encoded = json.dumps(
+        value.to_dict(),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    ).encode("utf-8")
+    return _hash_bytes(encoded)
+
+
+def _request_key_from_event(payload: Mapping[str, Any]) -> RequestKey:
+    try:
+        return RequestKey.from_dict(
+            {
+                field: payload[field]
+                for field in (
+                    "worker_session_id",
+                    "request_id",
+                    "generation_id",
+                    "instance_id",
+                    "work_id",
+                    "attempt_id",
+                    "authority_epoch",
+                )
+            }
+        )
+    except (KeyError, TypeError, ValueError, RuntimeError) as error:
+        raise ValueError("module_output key attribution is invalid") from error
+
+
+def _validate_attachments(payload: Mapping[str, Any]) -> None:
+    attachments = payload.get("attachments")
+    if not isinstance(attachments, (list, tuple)):
+        raise ValueError("attachments must be an array")
+    for ref in attachments:
+        if not isinstance(ref, Mapping) or set(ref) != {"digest", "size_bytes", "media_type"}:
+            raise ValueError("attachments must contain artifact references")
+        _sha256(ref.get("digest"), "digest")
+        _string(ref.get("media_type"), "media_type")
+        if type(ref.get("size_bytes")) is not int or ref["size_bytes"] < 0:
+            raise ValueError("size_bytes must be a nonnegative integer")
+
+
+def _validate_module_input_sequence(value: Any, *, expected: int | None = None) -> None:
+    if type(value) is not int or value < 0:
+        raise ValueError("module_input_sequence must be a nonnegative integer")
+    if expected is not None and value != expected:
+        raise ValueError("module_input_sequence must be contiguous")
+
+
+def _validate_output_sequence(value: Any) -> None:
+    if type(value) is not int or value < 0:
+        raise ValueError("output_sequence must be a nonnegative integer")
+
 def _validate_payload(kind: str, payload: Mapping[str, Any]) -> None:
     if "lineage" in payload:
         if kind != "session.started" and kind not in _TERMINAL:
             raise ValueError("lineage belongs only to Session start and settlement")
         SessionLineage.from_dict(payload["lineage"])
-    if kind == "session.started": _sha256(payload.get("effective_lock_hash"), "effective_lock_hash"); _sha256(payload.get("task_hash"), "task_hash")
+    core = set(payload) - {"lineage"}
+    if kind == "session.started":
+        _sha256(payload.get("effective_lock_hash"), "effective_lock_hash")
+        if "module_input" in payload:
+            expected = {"effective_lock_hash", "task_hash", "module_input", "module_input_sequence"}
+            if core != expected:
+                raise ValueError("typed session.started payload has invalid fields")
+            module_input = _module_input_from_event(payload["module_input"])
+            _validate_module_input_sequence(payload["module_input_sequence"], expected=0)
+            if payload["task_hash"] != _typed_input_hash(module_input):
+                raise ValueError("typed session.started task_hash does not match module_input")
+        else:
+            if core != {"effective_lock_hash", "task_hash"}:
+                raise ValueError("session.started payload has invalid fields")
+            _sha256(payload.get("task_hash"), "task_hash")
     elif kind == "assistant_message":
         metadata = payload.get("metadata")
         if not isinstance(metadata, Mapping) or set(metadata) != {"has_content"} or type(metadata.get("has_content")) is not bool:
@@ -227,12 +331,38 @@ def _validate_payload(kind: str, payload: Mapping[str, Any]) -> None:
     elif kind == "context.compacted":
         _validate_compaction_payload(payload)
     elif kind == "input.accepted":
-        _sha256(payload.get("content_hash"), "content_hash"); attachments = payload.get("attachments")
-        if not isinstance(attachments, (list, tuple)): raise ValueError("attachments must be an array")
-        for ref in attachments:
-            if not isinstance(ref, Mapping) or set(ref) != {"digest", "size_bytes", "media_type"}: raise ValueError("attachments must contain artifact references")
-            _sha256(ref.get("digest"), "digest"); _string(ref.get("media_type"), "media_type")
-            if type(ref.get("size_bytes")) is not int or ref["size_bytes"] < 0: raise ValueError("size_bytes must be a nonnegative integer")
+        _validate_attachments(payload)
+        if "module_input" in payload:
+            if core != {"module_input", "module_input_sequence", "attachments"}:
+                raise ValueError("typed input.accepted payload has invalid fields")
+            _module_input_from_event(payload["module_input"])
+            _validate_module_input_sequence(payload["module_input_sequence"])
+        else:
+            if core != {"content_hash", "attachments"}:
+                raise ValueError("input.accepted payload has invalid fields")
+            _sha256(payload.get("content_hash"), "content_hash")
+    elif kind == "module_output":
+        required = {
+            "module_output",
+            "output_sequence",
+            "module_id",
+            "worker_session_id",
+            "request_id",
+            "generation_id",
+            "instance_id",
+            "work_id",
+            "attempt_id",
+            "authority_epoch",
+        }
+        if core != required:
+            raise ValueError("module_output payload has invalid fields")
+        module_output = payload["module_output"]
+        if not isinstance(module_output, Mapping) or set(module_output) != {"schema_id", "body", "final"}:
+            raise ValueError("module_output must contain exactly schema_id, body, and final")
+        _output_from_event(module_output)
+        _validate_output_sequence(payload["output_sequence"])
+        _string(payload.get("module_id"), "module_id")
+        _request_key_from_event(payload)
     elif kind == "approval.requested": _string(payload.get("request_id"), "request_id"); _string(payload.get("operation"), "operation")
     elif kind == "approval.resolved":
         _string(payload.get("request_id"), "request_id"); decision = _string(payload.get("decision"), "decision")
@@ -260,6 +390,10 @@ class CompactionSnapshot:
 
     effective_context: bytes
     raw_fact_ids: tuple[str, ...]
+    expected_context_sha256: str | None = None
+    expected_context_sequence: int | None = None
+    expected_source_sequence_end: int | None = None
+    expected_raw_fact_ids: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         if type(self.effective_context) is not bytes:
@@ -267,6 +401,23 @@ class CompactionSnapshot:
         _validate_effective_context(self.effective_context)
         facts = validate_raw_fact_ids(self.raw_fact_ids)
         object.__setattr__(self, "raw_fact_ids", facts)
+        for value, name in (
+            (self.expected_context_sha256, "expected_context_sha256"),
+        ):
+            if value is not None:
+                _sha256(value, name)
+        for value, name in (
+            (self.expected_context_sequence, "expected_context_sequence"),
+            (self.expected_source_sequence_end, "expected_source_sequence_end"),
+        ):
+            if value is not None and (type(value) is not int or value < 1):
+                raise ValueError(f"{name} must be a positive integer")
+        if self.expected_raw_fact_ids is not None:
+            object.__setattr__(
+                self,
+                "expected_raw_fact_ids",
+                validate_raw_fact_ids(self.expected_raw_fact_ids, "expected_raw_fact_ids"),
+            )
 @dataclass(frozen=True, slots=True)
 class SessionLineage:
     """Immutable parent and Work Item identities carried by a child Session."""
@@ -393,6 +544,14 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
     lineage = None if lineage_payload is None else SessionLineage.from_dict(lineage_payload)
     if lineage is not None and start.session_id in (lineage.parent_session_id, lineage.root_session_id):
         raise ValueError("child Session cannot be its own parent or root")
+    typed_input_next = 0
+    typed_input_closed = False
+    if "module_input" in start.payload:
+        initial_input = _module_input_from_event(start.payload["module_input"])
+        _validate_module_input_sequence(start.payload["module_input_sequence"], expected=0)
+        typed_input_next = 1
+        typed_input_closed = initial_input.final
+    output_frontiers: dict[tuple[str, ...], tuple[int, bool]] = {}
     message_targets: dict[str, str] = {}
     annotation_ids: set[str] = set()
     compaction_count = 0
@@ -408,6 +567,37 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
             raise ValueError(f"invalid {event.kind} transition from {status}")
         if event.kind in _TERMINAL and event.payload.get("lineage") != lineage_payload:
             raise ValueError("Session settlement lineage differs from its start")
+        if event.kind == "input.accepted" and "module_input" in event.payload:
+            if typed_input_closed:
+                raise ValueError("typed input follows a final module input")
+            _validate_module_input_sequence(
+                event.payload["module_input_sequence"],
+                expected=typed_input_next,
+            )
+            typed_input_next += 1
+            typed_input_closed = _module_input_from_event(event.payload["module_input"]).final
+        elif event.kind == "module_output":
+            identity = (
+                event.payload["module_id"],
+                event.payload["worker_session_id"],
+                event.payload["request_id"],
+                event.payload["generation_id"],
+                event.payload["instance_id"],
+                event.payload["work_id"],
+                event.payload["attempt_id"],
+                str(event.payload["authority_epoch"]),
+            )
+            prior = output_frontiers.get(identity)
+            if prior is not None and prior[1]:
+                raise ValueError("module output follows a final output")
+            expected_output_sequence = 0 if prior is None else prior[0]
+            _validate_output_sequence(event.payload["output_sequence"])
+            if event.payload["output_sequence"] != expected_output_sequence:
+                raise ValueError("module output sequences must be contiguous per owner")
+            output_frontiers[identity] = (
+                expected_output_sequence + 1,
+                event.payload["module_output"]["final"],
+            )
         if event.kind == "assistant_message" and "message_id" in event.payload:
             message_id = event.payload["message_id"]
             trajectory_id = event.payload["trajectory_id"]
@@ -439,8 +629,7 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
             expected_shadowed = (
                 retained_raw_fact_order
                 if last_compaction_context_hash is not None
-                and event.payload["context_sha256"]
-                != last_compaction_context_hash
+                and event.payload["context_sha256"] != last_compaction_context_hash
                 else ()
             )
             if tuple(event.payload["shadowed_raw_fact_ids"]) != expected_shadowed:
@@ -503,7 +692,14 @@ def project_session_snapshot(view: SessionView, *, as_of: int | None = None, exp
     if as_of is not None and (type(as_of) is not int or as_of != view.event_count):
         raise SessionProjectionAsOfError(as_of, view.event_count)
     return Projected(view, SESSION_PROJECTOR_VERSION, ProjectionSource(f"session:{view.session_id}", 1, view.event_count), view.event_count)
-_SESSION_ACTIONS = MappingProxyType({"accept input": ("running",), "observe assistant": ("running",), "observe tool call": ("running",), "observe tool result": ("running",), "annotate": ("running", "awaiting_approval", "paused", "completed", "failed", "canceled"), "compact": ("running",), "request approval": ("running",), "resolve approval": ("awaiting_approval",), "reconfigure": ("running", "awaiting_approval", "paused"), "pause": ("running",), "resume": ("paused",), "cancel": ("running", "awaiting_approval", "paused"), "complete": ("running",), "fail": ("running", "awaiting_approval", "paused")})
+class ContextCASConflict(RuntimeError):
+    """A context operation observed a stale Session context frontier."""
+
+    def __init__(self, code: str, detail: str) -> None:
+        self.code, self.detail = code, detail
+        super().__init__(f"{code}: {detail}")
+
+_SESSION_ACTIONS = MappingProxyType({"accept input": ("running",), "emit module output": ("running",), "observe assistant": ("running",), "observe tool call": ("running",), "observe tool result": ("running",), "annotate": ("running", "awaiting_approval", "paused", "completed", "failed", "canceled"), "compact": ("running",), "request approval": ("running",), "resolve approval": ("awaiting_approval",), "reconfigure": ("running", "awaiting_approval", "paused"), "pause": ("running",), "resume": ("paused",), "cancel": ("running", "awaiting_approval", "paused"), "complete": ("running",), "fail": ("running", "awaiting_approval", "paused")})
 def _generation_id(lock: EffectiveHarnessLock) -> str:
     return lock.generation_id
 def _hash(value: str) -> str: return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
@@ -575,9 +771,30 @@ class Session:
             () if compaction is None else tuple(compaction.payload["raw_fact_ids"])
         )
     @classmethod
-    def start(cls, lock: EffectiveHarnessLock, task: str, *, session_id: str | None = None, clock: Clock | None = None, ids: IdSource | None = None, sink: EventSink | None = None, lineage: SessionLineage | None = None) -> "Session":
-        if not isinstance(lock, EffectiveHarnessLock): raise TypeError("Session.start requires an EffectiveHarnessLock")
-        if not isinstance(task, str) or not task.strip(): raise ValueError("task must be non-empty")
+    def start(
+        cls,
+        lock: EffectiveHarnessLock,
+        task: str | None = None,
+        *,
+        module_input: ModuleInput | None = None,
+        module_input_sequence: int | None = None,
+        session_id: str | None = None,
+        clock: Clock | None = None,
+        ids: IdSource | None = None,
+        sink: EventSink | None = None,
+        lineage: SessionLineage | None = None,
+    ) -> "Session":
+        if not isinstance(lock, EffectiveHarnessLock):
+            raise TypeError("Session.start requires an EffectiveHarnessLock")
+        if (task is None) == (module_input is None):
+            raise ValueError("supply exactly one task or module_input")
+        if module_input is None:
+            if not isinstance(task, str) or not task.strip():
+                raise ValueError("task must be non-empty")
+        else:
+            if not isinstance(module_input, ModuleInput):
+                raise TypeError("module_input must be a ModuleInput")
+            _validate_module_input_sequence(module_input_sequence, expected=0)
         active_clock, active_ids = (
             clock if clock is not None else SystemClock(),
             ids if ids is not None else UUIDSource(),
@@ -586,17 +803,32 @@ class Session:
         active_session_id = (
             session_id if session_id is not None else active_ids.new_id()
         )
-        payload: dict[str, Any] = {
-            "effective_lock_hash": generation_id,
-            "task_hash": _hash(task),
-        }
+        payload: dict[str, Any] = {"effective_lock_hash": generation_id}
+        if module_input is None:
+            payload["task_hash"] = _hash(task)
+        else:
+            payload.update(
+                {
+                    "task_hash": _typed_input_hash(module_input),
+                    "module_input": module_input.to_dict(),
+                    "module_input_sequence": module_input_sequence,
+                }
+            )
         if lineage is not None:
             if not isinstance(lineage, SessionLineage):
                 raise TypeError("lineage must be a SessionLineage")
             if active_session_id in (lineage.parent_session_id, lineage.root_session_id):
                 raise ValueError("child Session cannot be its own parent or root")
             payload["lineage"] = lineage.as_dict()
-        event = KernelEvent.create(active_session_id, 1, "session.started", active_clock.now(), payload); active_sink = sink if sink is not None else NullEventSink(); active_sink.append(event)
+        event = KernelEvent.create(
+            active_session_id,
+            1,
+            "session.started",
+            active_clock.now(),
+            payload,
+        )
+        active_sink = sink if sink is not None else NullEventSink()
+        active_sink.append(event)
         return cls((event,), clock=active_clock, sink=active_sink, task=task)
     @classmethod
     def restore(cls, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None, task: str | None = None) -> "Session":
@@ -681,10 +913,227 @@ class Session:
             return tuple(history)
     def projected_read_model(self, *, as_of: int | None = None, expected_projector_version: str | None = None) -> Projected[SessionView]:
         return project_session_live(self, as_of=as_of, expected_projector_version=expected_projector_version)
+    def context_snapshot(self):
+        """Return the current context and its exact durable Session frontier."""
+        from breadboard.modules.author import (
+            ContextSnapshot,
+            ContextSourceProvenance,
+            EffectiveContextDocument,
+        )
+
+        with self._transition_lock:
+            compaction = next(
+                (row for row in reversed(self._events) if row.kind == "context.compacted"),
+                None,
+            )
+            effective = self._effective_context or b"[]"
+            context_sha256 = _hash_bytes(effective)
+            compaction_index = (
+                0 if compaction is None else int(compaction.payload["compaction_index"])
+            )
+            source_start = (
+                1
+                if compaction is None
+                else int(compaction.payload["source_sequence_start"])
+            )
+            source_end = (
+                len(self._events)
+                if compaction is None
+                else int(compaction.payload["source_sequence_end"])
+            )
+            raw_fact_ids = tuple(self._raw_fact_ids)
+            shadowed = (
+                ()
+                if compaction is None
+                else tuple(compaction.payload["shadowed_raw_fact_ids"])
+            )
+            return ContextSnapshot(
+                session_id=self._view.session_id,
+                context_id=(
+                    f"{self._view.session_id}:context:{compaction_index}:"
+                    f"{context_sha256.removeprefix('sha256:')}"
+                ),
+                session_event_sequence=len(self._events),
+                effective_context=EffectiveContextDocument(
+                    encoding="utf-8-json",
+                    body=effective,
+                    context_sha256=context_sha256,
+                ),
+                raw_fact_ids=raw_fact_ids,
+                shadowed_raw_fact_ids=shadowed,
+                source=ContextSourceProvenance(
+                    session_id=self._view.session_id,
+                    trajectory_segment_id=self._view.trajectory_segment_id,
+                    source_sequence_start=source_start,
+                    source_sequence_end=source_end,
+                ),
+                compaction_index=compaction_index,
+                turn_index=None,
+            )
+
+    def propose_turn_policy(self, decision):
+        """Atomically apply a typed turn decision or return a CAS refusal."""
+        from breadboard.modules.author import (
+            CompactionProposal,
+            TurnPolicyDecision,
+            TurnPolicyReceipt,
+        )
+
+        if not isinstance(decision, TurnPolicyDecision):
+            raise TypeError("turn policy requires a TurnPolicyDecision")
+        with self._transition_lock:
+            current = self.context_snapshot()
+            applied_hash = current.effective_context.context_sha256
+            proposal_id = (
+                f"{current.session_id}:turn:{current.session_event_sequence}:"
+                f"{decision.kind}"
+            )
+            if decision.expected_context_sha256 != applied_hash:
+                return TurnPolicyReceipt(
+                    proposal_id,
+                    False,
+                    current.session_event_sequence,
+                    applied_hash,
+                    "context_hash_mismatch",
+                )
+            if decision.expected_context_sequence != current.session_event_sequence:
+                return TurnPolicyReceipt(
+                    proposal_id,
+                    False,
+                    current.session_event_sequence,
+                    applied_hash,
+                    "context_sequence_mismatch",
+                )
+            if decision.kind == "compact":
+                proposal = decision.compaction
+                if not isinstance(proposal, CompactionProposal):
+                    return TurnPolicyReceipt(
+                        proposal_id,
+                        False,
+                        current.session_event_sequence,
+                        applied_hash,
+                        "compaction_missing",
+                    )
+                prior_compaction = next(
+                    (row for row in reversed(self._events) if row.kind == "context.compacted"),
+                    None,
+                )
+                expected_source_start = (
+                    1 if prior_compaction is None else int(prior_compaction.sequence)
+                )
+                if (
+                    proposal.expected_context_sha256 != applied_hash
+                    or proposal.effective_context.context_sha256
+                    != _hash_bytes(proposal.effective_context.body)
+                    or proposal.source_sequence_end != current.session_event_sequence
+                    or proposal.source_sequence_start != expected_source_start
+                    or proposal.compaction_index != current.compaction_index + 1
+                    or tuple(proposal.raw_fact_ids[: len(current.raw_fact_ids)])
+                    != current.raw_fact_ids
+                ):
+                    return TurnPolicyReceipt(
+                        proposal_id,
+                        False,
+                        current.session_event_sequence,
+                        applied_hash,
+                        "context_frontier_mismatch",
+                    )
+                try:
+                    snapshot = CompactionSnapshot(
+                        effective_context=proposal.effective_context.body,
+                        raw_fact_ids=proposal.raw_fact_ids,
+                        expected_context_sha256=decision.expected_context_sha256,
+                        expected_context_sequence=decision.expected_context_sequence,
+                        expected_source_sequence_end=proposal.source_sequence_end,
+                        expected_raw_fact_ids=current.raw_fact_ids,
+                    )
+                except (TypeError, ValueError):
+                    return TurnPolicyReceipt(
+                        proposal_id,
+                        False,
+                        current.session_event_sequence,
+                        applied_hash,
+                        "compaction_invalid",
+                    )
+                try:
+                    self.compact(snapshot)
+                except ContextCASConflict as error:
+                    return TurnPolicyReceipt(
+                        proposal_id,
+                        False,
+                        current.session_event_sequence,
+                        applied_hash,
+                        error.code,
+                    )
+            elif decision.kind in {"pause", "complete"}:
+                try:
+                    if decision.kind == "pause":
+                        self.pause(decision.reason)
+                    else:
+                        self.complete(decision.reason)
+                except (RuntimeError, ValueError):
+                    return TurnPolicyReceipt(
+                        proposal_id,
+                        False,
+                        current.session_event_sequence,
+                        applied_hash,
+                        "turn_policy_refused",
+                    )
+            elif decision.kind != "continue":
+                return TurnPolicyReceipt(
+                    proposal_id,
+                    False,
+                    current.session_event_sequence,
+                    applied_hash,
+                    "turn_policy_kind_unknown",
+                )
+            updated = self.context_snapshot()
+            return TurnPolicyReceipt(
+                proposal_id,
+                True,
+                updated.session_event_sequence,
+                updated.effective_context.context_sha256,
+                None,
+            )
+
     def compact(self, snapshot: CompactionSnapshot) -> CompactionEvent:
         if not isinstance(snapshot, CompactionSnapshot):
             raise TypeError("compact requires a CompactionSnapshot")
         with self._transition_lock:
+            current_hash = _hash_bytes(self._effective_context or b"[]")
+            current_sequence = len(self._events)
+            if (
+                snapshot.expected_context_sha256 is not None
+                and snapshot.expected_context_sha256 != current_hash
+            ):
+                raise ContextCASConflict(
+                    "context_hash_mismatch",
+                    "effective context changed since the proposal was observed",
+                )
+            if (
+                snapshot.expected_context_sequence is not None
+                and snapshot.expected_context_sequence != current_sequence
+            ):
+                raise ContextCASConflict(
+                    "context_sequence_mismatch",
+                    "Session event frontier changed since the proposal was observed",
+                )
+            if (
+                snapshot.expected_source_sequence_end is not None
+                and snapshot.expected_source_sequence_end != current_sequence
+            ):
+                raise ContextCASConflict(
+                    "context_frontier_mismatch",
+                    "compaction source frontier no longer matches Session",
+                )
+            if (
+                snapshot.expected_raw_fact_ids is not None
+                and snapshot.expected_raw_fact_ids != self._raw_fact_ids
+            ):
+                raise ContextCASConflict(
+                    "raw_fact_frontier_mismatch",
+                    "retained raw-fact frontier changed since the proposal was observed",
+                )
             event, _ = self._append_event(
                 "compact",
                 "context.compacted",
@@ -720,7 +1169,52 @@ class Session:
             "raw_fact_ids": list(snapshot.raw_fact_ids),
             "shadowed_raw_fact_ids": shadowed_raw_fact_ids,
         }
-    def input(self, content: str, attachments: Iterable[ArtifactRef] = ()) -> SessionView: return self._append("accept input", "input.accepted", lambda: (_check(isinstance(content, str) and bool(content.strip()), ValueError, "input must be non-empty"), {"content_hash": _hash(content), "attachments": [ref.as_dict() for ref in attachments]})[1])
+    def _typed_input_frontier(self) -> tuple[int, bool]:
+        typed = [
+            event.payload["module_input"]
+            for event in self._events
+            if event.kind == "session.started" and "module_input" in event.payload
+            or event.kind == "input.accepted" and "module_input" in event.payload
+        ]
+        return len(typed), bool(typed and typed[-1]["final"])
+
+    def input(
+        self,
+        content: str | None = None,
+        attachments: Iterable[ArtifactRef] = (),
+        *,
+        module_input: ModuleInput | None = None,
+        module_input_sequence: int | None = None,
+    ) -> SessionView:
+        def payload() -> dict[str, Any]:
+            if (content is None) == (module_input is None):
+                raise ValueError("supply exactly one content or module_input")
+            if module_input is None:
+                _check(
+                    isinstance(content, str) and bool(content.strip()),
+                    ValueError,
+                    "input must be non-empty",
+                )
+                return {
+                    "content_hash": _hash(content),
+                    "attachments": [ref.as_dict() for ref in attachments],
+                }
+            if not isinstance(module_input, ModuleInput):
+                raise TypeError("module_input must be a ModuleInput")
+            next_sequence, closed = self._typed_input_frontier()
+            _validate_module_input_sequence(
+                module_input_sequence,
+                expected=next_sequence,
+            )
+            if closed:
+                raise ValueError("typed input follows a final module input")
+            return {
+                "module_input": module_input.to_dict(),
+                "module_input_sequence": module_input_sequence,
+                "attachments": [ref.as_dict() for ref in attachments],
+            }
+
+        return self._append("accept input", "input.accepted", payload)
     def input_digest(
         self, content_hash: str, attachments: Iterable[ArtifactRef] = ()
     ) -> SessionView:
@@ -736,6 +1230,75 @@ class Session:
                 },
             )[1],
         )
+    def _module_output_frontier(
+        self,
+        module_id: str,
+        key: RequestKey,
+    ) -> tuple[int, bool]:
+        identity = (
+            module_id,
+            key.worker_session_id,
+            key.request_id,
+            key.generation_id,
+            key.instance_id,
+            key.work_id,
+            key.attempt_id,
+            str(key.authority_epoch),
+        )
+        prior = [
+            event.payload
+            for event in self._events
+            if event.kind == "module_output"
+            and (
+                event.payload["module_id"],
+                event.payload["worker_session_id"],
+                event.payload["request_id"],
+                event.payload["generation_id"],
+                event.payload["instance_id"],
+                event.payload["work_id"],
+                event.payload["attempt_id"],
+                str(event.payload["authority_epoch"]),
+            )
+            == identity
+        ]
+        return len(prior), bool(prior and prior[-1]["module_output"]["final"])
+
+    def module_output(
+        self,
+        output: OutputEnvelope,
+        *,
+        key: RequestKey,
+        module_id: str,
+        output_sequence: int,
+        final: bool,
+    ) -> SessionView:
+        def payload() -> dict[str, Any]:
+            if not isinstance(output, OutputEnvelope):
+                raise TypeError("module_output requires an OutputEnvelope")
+            if not isinstance(key, RequestKey):
+                raise TypeError("module_output key requires a RequestKey")
+            _string(module_id, "module_id")
+            _validate_output_sequence(output_sequence)
+            if type(final) is not bool:
+                raise TypeError("module output final must be boolean")
+            expected_sequence, closed = self._module_output_frontier(module_id, key)
+            if closed:
+                raise ValueError("module output follows a final output")
+            if output_sequence != expected_sequence:
+                raise ValueError("module output sequences must be contiguous per owner")
+            return {
+                "module_output": {
+                    "schema_id": output.schema_id,
+                    "body": base64.b64encode(output.body).decode("ascii"),
+                    "final": final,
+                },
+                "output_sequence": output_sequence,
+                "module_id": module_id,
+                **key.as_dict(),
+            }
+
+        return self._append("emit module output", "module_output", payload)
+
     def assistant_message(self, content: str, *, message_id: str | None = None, trajectory_id: str | None = None) -> SessionView: return self._append("observe assistant", "assistant_message", lambda: self._assistant_event_payload(content, message_id, trajectory_id))
     def _assistant_event_payload(self, content: str, message_id: str | None, trajectory_id: str | None) -> dict[str, Any]:
         payload = _assistant_payload(content, message_id, trajectory_id)

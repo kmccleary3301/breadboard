@@ -18,6 +18,9 @@ from types import SimpleNamespace
 from threading import RLock
 from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Optional, Protocol, Sequence
 from breadboard.artifacts.cas import FilesystemCAS
+from breadboard.modules import AdmissionGrant, AuthorityDeclaration
+from .model_catalog import build_model_catalog
+from .registry import ModuleExecutionRecord
 from breadboard.product.harness.lock import (
     LOCK_SCHEMA_VERSION,
     EffectiveHarnessLock,
@@ -1155,6 +1158,7 @@ class SessionService:
                 or os.environ.get("BREADBOARD_SESSION_STATE_ROOT")
                 or (default_runtime_record_root() / "session_state")
             )
+        self._state_root = Path(configured_state_root)
         create_default_child_runtime = (
             registry is None
             and durable_child_reconciler is None
@@ -1553,6 +1557,9 @@ class SessionService:
             and effective_lock["schema_version"] != LOCK_SCHEMA_VERSION
         ):
             raise ValueError("historical Lock records cannot start new execution")
+        executable = effective_lock is not None and effective_lock["modules"] is not None
+        if executable != (request.module_input is not None):
+            raise ValueError("executable Locks require module_input; data Locks require text input")
         await self.registry.ensure_session_admission_open()
         session_id = session_id or str(uuid.uuid4())
         if await self.registry.get(session_id) is not None:
@@ -1637,21 +1644,50 @@ class SessionService:
         if self._bridge_chaos:
             metadata.setdefault("bridgeChaos", self._bridge_chaos)
         session_title = (
-            request.task if request.task.strip() else DEFAULT_INTERACTIVE_SESSION_TITLE
+            request.module_input.schema_id
+            if request.module_input is not None
+            else request.task if request.task and request.task.strip()
+            else DEFAULT_INTERACTIVE_SESSION_TITLE
         )
         record = SessionRecord(
             session_id=session_id, status=SessionStatus.STARTING, metadata=metadata
         )
+        if request.module_input is not None:
+            record.module_grant = AdmissionGrant(
+                grant_id=f"grant-{uuid.uuid4().hex}",
+                authority_epoch=1,
+                declaration=request.module_authority or AuthorityDeclaration(),
+            )
+            record.module_execution = ModuleExecutionRecord(
+                generation_id=effective_lock.generation_id,
+                root_binding=effective_lock["modules"]["root"],
+                work_item_id=session_id,
+                attempt_id=f"{session_id}.attempt",
+            )
         captured_runtime = (
             self._captured_runtime_for_lock(effective_lock, request)
             if effective_lock is not None
             else None
         )
+        if request.module_input is not None:
+            root_package = captured_runtime.materialization.packages[record.module_execution.root_binding]
+            if request.module_input.schema_id not in root_package.manifest.input_schema_ids:
+                captured_runtime.cleanup()
+                raise ValueError("module_input schema is not accepted by the root package")
+        module_storage_root: Path | None = None
+        module_repository = self._durable_child_repository
+        if request.module_input is not None:
+            module_storage_root = self._state_root / "module_runtime" / session_id
+            module_repository = module_repository or WorkItemRepository(
+                self._state_root.parent / "work_items.jsonl"
+            )
         runner = SessionRunner(
             session=record,
             registry=self.registry,
             request=request,
             captured_runtime=captured_runtime,
+            storage_root=module_storage_root,
+            repository=module_repository,
         )
         runtime_config = runner.prepare_runtime_config()
         if retained_request_overrides:
@@ -1716,15 +1752,27 @@ class SessionService:
             if effective_lock is not None
             else runtime_graph["source_layers"][0]["source_ref"]
         )
+        if role_lock is not None and effective_lock is None:
+            runtime_graph = embed_model_role_lock(runtime_graph, role_lock)
         if role_lock is not None:
-            if effective_lock is None:
-                runtime_graph = embed_model_role_lock(runtime_graph, role_lock)
             metadata["model_role_lock_hash"] = role_lock.lock_hash
             metadata["model_role_lock"] = role_lock.as_dict()
             metadata["active_model_role"] = role_lock["defaults"]["role"]
             metadata["model_role_default"] = role_lock["defaults"]["role"]
-        if effective_lock is not None:
+        if effective_lock is not None and role_lock is None:
             runtime_lock = effective_lock
+        elif effective_lock is not None and role_lock is not None:
+            # v2 contract: configuration_graph forbids normative additions
+            # (model_role_lock), so session identity must come from a
+            # session-scoped runtime graph, not an embed into the pinned
+            # graph. Module/artifact authorities carry over unchanged.
+            runtime_lock = make_effective_harness_lock(
+                compile_runtime_effective_config_graph(
+                    session_id, persisted_runtime_config, request.config_path
+                ),
+                effective_lock["modules"],
+                effective_lock["configuration_artifacts"],
+            )
         elif (
             default_profile is not None
             and not default_profile_overridden
@@ -1796,7 +1844,12 @@ class SessionService:
                 max_bytes=_MAX_RETAINED_EVENT_JOURNAL_BYTES,
             )
             product_session = ProductSession.start(
-                runtime_lock, session_title, session_id=session_id, sink=event_sink
+                runtime_lock,
+                session_title if request.module_input is None else None,
+                module_input=request.module_input,
+                module_input_sequence=0 if request.module_input is not None else None,
+                session_id=session_id,
+                sink=event_sink,
             )
             initial_event_journal_size = (
                 staged_event_dir / "session_events.jsonl"
@@ -1848,7 +1901,8 @@ class SessionService:
                     ),
                 )
             await self._ensure_dispatcher(record)
-            await self._maybe_prewarm_request_runtime(request, metadata, runtime_config)
+            if request.module_input is None:
+                await self._maybe_prewarm_request_runtime(request, metadata, runtime_config)
             final_event_path = event_dir / "session_events.jsonl"
             final_lock_path = _retained_event_lock_path(event_base, session_id)
             for _ in range(2):
@@ -3347,7 +3401,7 @@ class SessionService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=str(exc),
             ) from exc
-        body_digest = submission_body_digest(payload.content, attachments)
+        body_digest = submission_body_digest(payload.content, attachments, payload.module_input)
         key_digest = identity_digest(client_message_id)
         scheduled_after_admission: list[Callable[[], Awaitable[None]]] = []
 
@@ -3377,7 +3431,8 @@ class SessionService:
                         status_code=status.HTTP_409_CONFLICT,
                         detail="session admission is closed",
                     )
-                accepted_content = runner.prepare_input_content(payload.content)
+                accepted_content = runner.prepare_input_content(payload.content, payload.module_input)
+                module_sequence = record.next_module_input_sequence if payload.module_input is not None else None
                 disposition = "started" if record.active_turn_id is None else "queued"
                 product_session = getattr(record, "product_session", None)
                 event_count = (
@@ -3396,7 +3451,7 @@ class SessionService:
                 content_hash = (
                     "sha256:"
                     + hashlib.sha256(accepted_content.encode("utf-8")).hexdigest()
-                    if event_count_is_valid
+                    if event_count_is_valid and accepted_content is not None
                     else None
                 )
                 turn = TurnRecord(
@@ -3408,6 +3463,8 @@ class SessionService:
                     original_disposition=disposition,
                     state="active" if disposition == "started" else "queued",
                     body_digest=body_digest,
+                    module_input=payload.module_input,
+                    module_input_sequence=module_sequence,
                     logical_input_content_hash=content_hash,
                     logical_event_count_before_admission=(
                         event_count if event_count_is_valid else None
@@ -3416,6 +3473,8 @@ class SessionService:
                         session_status if event_count_is_valid else None
                     ),
                 )
+                if module_sequence is not None:
+                    record.next_module_input_sequence = module_sequence + 1
                 record.turns_by_id[turn.turn_id] = turn
                 record.submissions_by_key[client_message_id] = turn
                 record.submissions_by_key_digest[key_digest] = turn
@@ -3433,6 +3492,8 @@ class SessionService:
                         attachments,
                         input_id=turn.input_id,
                         turn_id=turn.turn_id,
+                        module_input=turn.module_input,
+                        module_input_sequence=turn.module_input_sequence,
                     )
                     await self.registry.persist(record)
                     admission_persisted = True
@@ -3441,19 +3502,23 @@ class SessionService:
                         attachments=list(attachments),
                         input_id=turn.input_id,
                         turn_id=turn.turn_id,
+                        module_input=turn.module_input,
+                        module_input_sequence=turn.module_input_sequence,
                         defer_execution=scheduled_operations.append,
                     )
                     logical_input_committed = True
                     if len(scheduled_operations) != 1:
                         raise RuntimeError("input execution was not scheduled exactly once")
                     turn.content = accepted_content
-                    if payload.content != accepted_content:
+                    if payload.module_input is None and payload.content != accepted_content:
                         runner.record_input_boundary_repair(
                             payload.content,
                             accepted_content,
                         )
                 except Exception as exc:
-                    if not logical_input_committed:
+                    if not logical_input_committed and (payload.module_input is None or not admission_persisted):
+                        if module_sequence is not None:
+                            record.next_module_input_sequence = module_sequence
                         record.turns_by_id.pop(turn.turn_id, None)
                         record.submissions_by_key.pop(client_message_id, None)
                         record.submissions_by_key_digest.pop(key_digest, None)

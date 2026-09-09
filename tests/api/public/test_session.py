@@ -276,7 +276,7 @@ def test_session_lifecycle_and_resumable_event_stream(
         started.json()["hashes"]["lock"]
         == record.product_session.read_model.effective_lock_hash
     )
-    assert started.json()["hashes"]["lock"] != lock["graph_hash"]
+    assert started.json()["hashes"]["lock"] != lock["configuration_graph"]["graph_hash"]
     assert record.metadata["active_model_role"] == "default"
     assert set(record.metadata["model_role_lock"]["roles"]) == {
         "default",
@@ -1045,10 +1045,13 @@ def test_c4_daily_driver_completes_with_stable_observations_and_restart(
             != profile["effective_lock_hash"]
         )
 
-        lock_path = tmp_path / lock_id
-        corrupt_lock = json.loads(lock_path.read_text(encoding="utf-8"))
-        corrupt_lock["graph_hash"] = "sha256:" + "0" * 64
-        lock_path.write_text(json.dumps(corrupt_lock), encoding="utf-8")
+        harness = tmp_path / "daily_driver.v1.yaml"
+        original = harness.read_text()
+        changed = original.replace("name: coding", "name: changed", 1).replace(
+            "mode: coding", "mode: changed", 1
+        )
+        assert changed != original
+        harness.write_text(changed)
         rejected = restarted_service.post(
             "/v1/sessions",
             json={

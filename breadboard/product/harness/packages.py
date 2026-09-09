@@ -8,6 +8,8 @@ anything from a package.
 
 from __future__ import annotations
 
+import re
+
 import io
 import os
 import tempfile
@@ -45,6 +47,9 @@ _PACKAGE_MEDIA_TYPE: Final = "application/zip"
 _PACKAGE_ENTRYPOINT: Final = "manifest"
 _PACKAGE_MANIFEST_PATH: Final = "module.json"
 _MAX_SAFE_INTEGER: Final = 9_007_199_254_740_991
+_OCI_CONFIG_ID: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
+_OCI_REGISTRY_REF: Final = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
+
 _MANIFEST_FIELDS: Final = frozenset(
     {
         "accepted_checkpoint_schema_ids",
@@ -363,15 +368,16 @@ class RuntimeDescriptor:
             raise ModulePackageValidationError("runtime entrypoint must not be empty")
         object.__setattr__(self, "entrypoint", commands)
         if self.kind == "oci":
-            marker = "@sha256:"
-            if marker not in self.ref:
+            if _OCI_CONFIG_ID.fullmatch(self.ref) is None and _OCI_REGISTRY_REF.fullmatch(self.ref) is None:
                 raise ModulePackageValidationError(
-                    "OCI runtime ref must contain a pinned @sha256 digest"
+                    "OCI runtime ref must be a pinned @sha256 digest or exact local "
+                    "sha256 config ID"
                 )
+            digest = self.ref if _OCI_CONFIG_ID.fullmatch(self.ref) is not None else (
+                "sha256:" + self.ref.rsplit("@sha256:", 1)[1]
+            )
             try:
-                require_sha256(
-                    "sha256:" + self.ref.rsplit(marker, 1)[1], "runtime ref"
-                )
+                require_sha256(digest, "runtime ref")
             except BundleValidationError as exc:
                 raise ModulePackageValidationError(str(exc)) from exc
         else:

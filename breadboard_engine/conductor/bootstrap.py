@@ -309,6 +309,7 @@ def bootstrap_conductor(
     zero_tool_warn_message: str,
     zero_tool_abort_message: str,
     completion_guard_abort_threshold: int,
+    admitted_workspace: Path | None = None,
 ) -> None:
     """
     Bootstrap conductor initialization.
@@ -324,7 +325,15 @@ def bootstrap_conductor(
     8. Orchestration component initialization
     """
     # Resolve workspace
-    effective_ws = resolve_workspace(workspace, config)
+    if admitted_workspace is None:
+        effective_ws = resolve_workspace(workspace, config)
+    else:
+        # An admitted Session already owns its workspace. Preparing a tool
+        # owner must neither re-resolve it from config nor clear its contents.
+        path = admitted_workspace.resolve(strict=True)
+        if not path.is_dir():
+            raise ValueError("admitted workspace must be an existing directory")
+        effective_ws = str(validate_workspace_path(path, repo_root=_REPO_ROOT))
     
     # Setup sandbox
     setup_sandbox(

@@ -297,18 +297,55 @@ class PublicHarnessUpdateRequest(TypedDict):
     definition: Dict[str, Any]
 
 
-class _PublicSessionStartRequestDefaults(TypedDict, total=False):
-    session_id: Optional[str]
+class ModuleInputRequest(TypedDict):
+    schema_id: str
+    body: str
+    final: bool
 
 
-class PublicSessionStartRequest(_PublicSessionStartRequestDefaults):
+class ProjectAuthorityRequest(TypedDict):
+    roots: List[str]
+    operations: List[Literal["read", "write"]]
+
+
+class NetworkAuthorityRequest(TypedDict):
+    destinations: List[str]
+    operations: List[Literal["connect", "resolve"]]
+
+
+class ChildAuthorityRequest(TypedDict):
+    allowed_module_ids: List[str]
+    max_depth: int
+
+
+class CredentialDisclosureRequest(TypedDict):
+    secret_name: str
+    purpose: str
+
+
+class AuthorityDeclarationRequest(TypedDict):
+    project: Optional[ProjectAuthorityRequest]
+    network: Optional[NetworkAuthorityRequest]
+    child: Optional[ChildAuthorityRequest]
+    provider_ids: List[str]
+    tool_ids: List[str]
+    credential_disclosures: List[CredentialDisclosureRequest]
+
+
+class _PublicSessionStartRequestOptional(TypedDict, total=False):
+    task: str | None
+    module_input: ModuleInputRequest | None
+    module_authority: AuthorityDeclarationRequest | None
+    session_id: str | None
+
+
+class PublicSessionStartRequest(_PublicSessionStartRequestOptional):
     lock_id: str
-    task: str
 
 
-class PublicSessionInputRequest(TypedDict):
-    content: str
-
+class PublicSessionInputRequest(TypedDict, total=False):
+    content: str | None
+    module_input: ModuleInputRequest | None
 
 PublicSessionDecision = Literal["allow", "deny", "once", "always", "reject"]
 

@@ -19,9 +19,21 @@ _PAYLOADS = {
     "session.completed": {"outcome": "completed", "summary": ""}, "session.failed": {"outcome": "failed", "error": "error", "detail": "detail"}, "session.canceled": {"outcome": "canceled", "reason": ""}}
 def _event(sequence: int = 1, kind: str = "session.started", payload: dict[str, Any] | None = None, session_id: str = "s-1") -> KernelEvent: return KernelEvent.create(session_id, sequence, kind, "2026-07-16T00:00:00Z", _PAYLOADS[kind] if payload is None else payload)
 def test_nested_event_payload_is_immutable_and_replayable() -> None:
-    payload = {**_PAYLOADS["session.started"], "nested": [{"value": 1}]}; event = _event(payload=payload); payload["nested"][0]["value"] = 2; serialized = event.as_dict(); assert serialized["payload"]["nested"] == [{"value": 1}]
-    with pytest.raises(TypeError): event.payload["nested"][0]["value"] = 3
-    assert rebuild([KernelEvent(**serialized)]).as_dict() == rebuild([event]).as_dict()
+    attachment = {"digest": HASH, "size_bytes": 1, "media_type": "text/plain"}
+    payload = {**_PAYLOADS["input.accepted"], "attachments": [attachment]}
+    event = _event(sequence=2, kind="input.accepted", payload=payload)
+    attachment["size_bytes"] = 2
+    serialized = event.as_dict()
+    assert serialized["payload"]["attachments"] == [
+        {"digest": HASH, "size_bytes": 1, "media_type": "text/plain"}
+    ]
+    with pytest.raises(TypeError):
+        event.payload["attachments"][0]["size_bytes"] = 3
+    stream = [_event(), event]
+    assert (
+        rebuild([KernelEvent(**row.as_dict()) for row in stream]).as_dict()
+        == rebuild(stream).as_dict()
+    )
 @pytest.mark.parametrize("patch", [{"schema_version": "bb.session_event.v2"}, {"session_id": 1}, {"sequence": True}, {"kind": 1}, {"kind": "test"}, {"occurred_at": []}, {"payload": {1: "coerced"}}, {"payload": {"effective_lock_hash": "sha256:" + "A" * 64, "task_hash": HASH}}, {"payload": {"effective_lock_hash": HASH + "\n", "task_hash": HASH}}, {"payload": {"effective_lock_hash": HASH, "task_hash": HASH + "\n"}}])
 def test_malformed_persisted_events_cannot_rebuild(patch: dict[str, Any]) -> None: pytest.raises((TypeError, ValueError), lambda: rebuild([KernelEvent(**{**_event().as_dict(), **patch})]))  # type: ignore[arg-type]
 @pytest.mark.parametrize(("kind", "payload"), [("input.accepted", {"content_hash": HASH, "attachments": [{"digest": HASH, "size_bytes": True, "media_type": "text/plain"}]}), ("assistant_message", {"metadata": {"has_content": 1}}), ("assistant_message", {"metadata": {"has_content": True}, "content": "leak"}), ("tool_call", {"tool": ""}), ("tool_result", {"tool": "list_dir", "error": 0}), ("tool_result", {"error": False}), ("approval.requested", {"request_id": "", "operation": "write"}), ("approval.resolved", {"request_id": "r", "decision": "maybe"}), ("session.reconfigured", {"effective_lock_hash": HASH, "reason": 1}), ("session.paused", {"reason": None}), ("session.resumed", {"extra": True}), ("session.completed", {"outcome": "completed"}), ("session.failed", {"outcome": "completed", "error": "x", "detail": "y"}), ("session.canceled", {"outcome": "canceled", "reason": 1})])

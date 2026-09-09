@@ -47,9 +47,59 @@ export interface PublicHarnessUpdateRequest {
   readonly definition: Readonly<Record<string, unknown>>
 }
 
-export interface PublicSessionStartRequest {
+export interface ModuleInput {
+  readonly schema_id: string
+  readonly body: string
+  readonly final: boolean
+}
+
+export interface ProjectAuthority {
+  readonly roots: readonly string[]
+  readonly operations: readonly ("read" | "write")[]
+}
+
+export interface NetworkAuthority {
+  readonly destinations: readonly string[]
+  readonly operations: readonly ("connect" | "resolve")[]
+}
+
+export interface ChildAuthority {
+  readonly allowed_module_ids: readonly string[]
+  readonly max_depth: number
+}
+
+export interface CredentialDisclosure {
+  readonly secret_name: string
+  readonly purpose: string
+}
+
+export interface AuthorityDeclaration {
+  readonly project: ProjectAuthority | null
+  readonly network: NetworkAuthority | null
+  readonly child: ChildAuthority | null
+  readonly provider_ids: readonly string[]
+  readonly tool_ids: readonly string[]
+  readonly credential_disclosures: readonly CredentialDisclosure[]
+}
+
+export interface PublicSessionStartTextRequest {
   readonly lock_id: string
   readonly task: string
+  readonly session_id?: string | null
+}
+
+export interface PublicSessionStartModuleRequest {
+  readonly lock_id: string
+  readonly module_input: ModuleInput
+  readonly module_authority?: AuthorityDeclaration
+  readonly session_id?: string | null
+}
+
+export interface PublicSessionStartRequest {
+  readonly lock_id: string
+  readonly task?: string | null
+  readonly module_input?: ModuleInput | null
+  readonly module_authority?: AuthorityDeclaration | null
   readonly session_id?: string | null
 }
 
@@ -62,7 +112,8 @@ export interface ResearchCompareBody {
 }
 
 export interface PublicSessionInputRequest {
-  readonly content: string
+  readonly content?: string | null
+  readonly module_input?: ModuleInput | null
 }
 
 export type PublicSessionDecision = "allow" | "deny" | "once" | "always" | "reject"

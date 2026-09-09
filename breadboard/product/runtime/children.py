@@ -18,7 +18,17 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 
-
+from breadboard.modules.author import (
+    ChildFailed,
+    ChildHandle,
+    ChildOutput,
+    ChildSucceeded,
+    ChildTarget,
+    ChildUnknown,
+    InputEnvelope,
+    ModuleInput,
+    OutputEnvelope,
+)
 from breadboard.product.coordination.placement import WorkPlacement
 from breadboard.product.coordination.work_items import (
     CancellationPolicy,
@@ -54,12 +64,17 @@ from breadboard.product.runtime._child_process_adapter import (
     ProcessExecutionAdapter,
 )
 from breadboard.product.runtime._child_ray_adapter import RayJobAdapter
+from breadboard.product.runtime._child_stream_adapter import (
+    AuthorChildBackend,
+    AuthorChildStreamAdapter,
+)
 from breadboard.product.runtime._child_state import (
     ChildActivation,
     ChildError,
     ChildExecutionAdapter,
     ChildSpec,
     ChildState,
+    ChildStreamingExecutionAdapter,
     ExecutionTarget,
     ExpectedRevisionConflict,
     LateResultRejected,
@@ -848,6 +863,42 @@ class DurableChildFactory:
         self._registry("update_status", state.child_session_id, status=value)
 
 
+    @staticmethod
+    def _input_envelope(
+        value: ModuleInput | InputEnvelope,
+        *,
+        sequence: int,
+    ) -> InputEnvelope:
+        if isinstance(value, ModuleInput):
+            return InputEnvelope(value.schema_id, sequence, value.body, value.final)
+        if isinstance(value, InputEnvelope):
+            if value.sequence != sequence:
+                raise ExpectedRevisionConflict(
+                    "child input sequence is not the next owner sequence"
+                )
+            return value
+        raise TypeError("child input must be ModuleInput or InputEnvelope")
+
+    @staticmethod
+    def _child_handle(state: ChildState, spec: ChildSpec) -> ChildHandle:
+        return ChildHandle(
+            child_work_id=state.child_work_item_id,
+            child_generation_id=str(state.child_spec.get("lock_hash", spec.lock.generation_id)),
+            child_instance_id=state.child_session_id,
+            child_attempt_id=state.attempt_id,
+            parent_work_id=state.parent_work_item_id,
+            child_label=str(state.child_spec.get("title", spec.title)),
+        )
+
+    @staticmethod
+    def _stream_adapter(
+        adapter: ChildExecutionAdapter,
+    ) -> ChildStreamingExecutionAdapter:
+        if not isinstance(adapter, ChildStreamingExecutionAdapter):
+            raise ChildError(
+                f"child adapter family does not support streaming: {adapter.family}"
+            )
+        return adapter
     def _abort_startup(self, state: ChildState) -> ChildState:
         failed = self._cas(state, status="failed", terminal_outcome="failed", terminal_count=1, settlement=None, joined=True)
         self._repair_terminal_owners(failed)
@@ -862,15 +913,53 @@ class DurableChildFactory:
         self._repair_terminal_owners(state)
         self._status(state)
         return state
-    def start(self, *, parent_session_id: str, root_session_id: str, parent_work_item_id: str, spec: ChildSpec) -> ChildActivation:
+    def start(
+        self,
+        *,
+        parent_session_id: str,
+        root_session_id: str,
+        parent_work_item_id: str,
+        spec: ChildSpec,
+        initial_input: ModuleInput | InputEnvelope | None = None,
+        target_binding: ChildTarget | None = None,
+        scope_fence: Callable[[], None] | None = None,
+    ) -> ChildActivation:
         if type(root_session_id) is not str or not root_session_id.strip():
             raise ValueError("root_session_id must be a non-empty string")
+        if target_binding is None and isinstance(
+            self.adapters.get(spec.adapter_family), AuthorChildStreamAdapter
+        ):
+            raise ChildError("author child start requires a compiler-resolved target")
+        if isinstance(self.adapters.get(spec.adapter_family), AuthorChildStreamAdapter):
+            binding_name = spec.adapter_config.get("module_binding")
+            if type(binding_name) is not str or not binding_name.strip():
+                raise ChildError(
+                    "author child adapter config requires module_binding"
+                )
         with self._lifecycle_lock, self._owner_lock(parent_work_item_id), self._owner_process_lock(parent_work_item_id), self._tree_process_lock(root_session_id):
             canonical_root_session_id = self._tree_root_session_id(parent_session_id)
             if root_session_id != canonical_root_session_id:
                 raise ChildError("root Session does not match retained parent lineage")
-            return self._start(parent_session_id=parent_session_id, root_session_id=canonical_root_session_id, parent_work_item_id=parent_work_item_id, spec=spec)
-    def _start(self, *, parent_session_id: str, root_session_id: str, parent_work_item_id: str, spec: ChildSpec) -> ChildActivation:
+            return self._start(
+                parent_session_id=parent_session_id,
+                root_session_id=canonical_root_session_id,
+                parent_work_item_id=parent_work_item_id,
+                spec=spec,
+                initial_input=initial_input,
+                target_binding=target_binding,
+                scope_fence=scope_fence,
+            )
+    def _start(
+        self,
+        *,
+        parent_session_id: str,
+        root_session_id: str,
+        parent_work_item_id: str,
+        spec: ChildSpec,
+        initial_input: ModuleInput | InputEnvelope | None = None,
+        target_binding: ChildTarget | None = None,
+        scope_fence: Callable[[], None] | None = None,
+    ) -> ChildActivation:
         if spec.adapter_family not in self.adapters:
             raise ChildError(f"child adapter family is not registered: {spec.adapter_family}")
         parent_product, _ = load_session(self.workspace, parent_session_id)
@@ -1054,6 +1143,11 @@ class DurableChildFactory:
                         signal=False,
                     )
                 raise
+            activation_initial = (
+                self._input_envelope(initial_input, sequence=0)
+                if initial_input is not None
+                else None
+            )
             activation = ChildActivation(
                 parent_session_id,
                 root_session_id,
@@ -1066,21 +1160,206 @@ class DurableChildFactory:
                 spec.adapter_family,
                 str(self.workspace),
                 artifact_store_root=str(self.artifacts._root),
+                target_binding=target_binding,
+                initial_input=activation_initial,
+                child_handle=self._child_handle(state, spec),
+                scope_fence=scope_fence,
             )
             state = self._launch(state, activation, spec)
-            return ChildActivation(
-                parent_session_id,
-                root_session_id,
-                parent_work_item_id,
-                child_session_id,
-                child_work_item_id,
-                attempt_id,
-                state.recovery_ref,
-                state.execution_target_ref,
-                spec.adapter_family,
-                str(self.workspace),
-                artifact_store_root=str(self.artifacts._root),
+            return replace(
+                activation,
+                recovery_ref=state.recovery_ref,
+                execution_target_ref=state.execution_target_ref,
             )
+    def _stream_state(self, handle: ChildHandle) -> ChildState:
+        state = self._record_state(str(handle.child_instance_id))
+        expected = self._child_handle(state, self._spec(state))
+        if handle != expected:
+            raise ChildError("foreign child handle")
+        if state.terminal_count:
+            return state
+        return state
+
+    @staticmethod
+    def _stream_identity_matches(
+        state: ChildState,
+        item: ChildOutput | ChildSucceeded | ChildFailed | ChildUnknown,
+    ) -> bool:
+        return (
+            item.child_work_id == state.child_work_item_id
+            and item.child_attempt_id == state.attempt_id
+        )
+
+    def _stream_terminal_item(self, state: ChildState) -> ChildFailed | ChildSucceeded:
+        outcome = state.stream_outcome
+        if isinstance(outcome, Mapping) and outcome.get("kind") == "succeeded":
+            artifact = outcome.get("artifact_ref")
+            schema_id = outcome.get("schema_id")
+            if isinstance(artifact, Mapping) and type(schema_id) is str:
+                store = self._artifact_store_for_state(state)
+                ref = ArtifactRef(
+                    str(artifact["digest"]),
+                    int(artifact["size_bytes"]),
+                    str(artifact["media_type"]),
+                )
+                return ChildSucceeded(
+                    state.child_work_item_id,
+                    state.attempt_id,
+                    OutputEnvelope(schema_id, store.read(ref)),
+                )
+        if isinstance(outcome, Mapping):
+            return ChildFailed(
+                state.child_work_item_id,
+                state.attempt_id,
+                str(outcome.get("code") or "child_failed"),
+                str(outcome.get("detail") or "child execution failed"),
+            )
+        return ChildFailed(
+            state.child_work_item_id,
+            state.attempt_id,
+            "child_terminal",
+            str(state.terminal_outcome or "child execution terminated"),
+        )
+
+    def submit_input(
+        self,
+        handle: ChildHandle,
+        value: ModuleInput | InputEnvelope,
+        *,
+        expected_revision: int | None = None,
+        scope_fence: Callable[[], None] | None = None,
+    ) -> None:
+        state = self._stream_state(handle)
+        if state.terminal_count:
+            raise LateResultRejected("child input cannot follow terminal settlement")
+        if expected_revision is not None and state.revision != expected_revision:
+            raise ExpectedRevisionConflict("stale child revision")
+        adapter = self._stream_adapter(self.adapters[state.adapter_family])
+        if scope_fence is not None:
+            scope_fence()
+        envelope = self._input_envelope(value, sequence=state.input_sequence)
+        with self._lifecycle_lock, self._owner_lock(state.parent_work_item_id):
+            current = self._stream_state(handle)
+            if expected_revision is not None and current.revision != expected_revision:
+                raise ExpectedRevisionConflict("stale child revision")
+            current, envelope = self._admit_stream_input(current, envelope)
+        if scope_fence is not None:
+            scope_fence()
+        adapter.submit_input(
+            current.execution_target,
+            envelope,
+            scope_fence=scope_fence,
+        )
+
+    def next_output(
+        self,
+        handle: ChildHandle,
+        *,
+        expected_revision: int | None = None,
+        scope_fence: Callable[[], None] | None = None,
+    ) -> ChildOutput | ChildSucceeded | ChildFailed | ChildUnknown:
+        state = self._stream_state(handle)
+        if expected_revision is not None and state.revision != expected_revision:
+            raise ExpectedRevisionConflict("stale child revision")
+        if state.terminal_count:
+            return self._stream_terminal_item(state)
+        adapter = self._stream_adapter(self.adapters[state.adapter_family])
+        if scope_fence is not None:
+            scope_fence()
+        item = adapter.next_output(
+            state.execution_target,
+            scope_fence=scope_fence,
+        )
+        if not self._stream_identity_matches(state, item):
+            raise ExpectedRevisionConflict("stream item belongs to a different child attempt")
+        with self._lifecycle_lock, self._owner_lock(state.parent_work_item_id):
+            state = self._stream_state(handle)
+            if state.terminal_count:
+                return self._stream_terminal_item(state)
+            if isinstance(item, ChildOutput):
+                sequence = int(item.sequence)
+                store = self._artifact_store_for_state(state)
+                ref = store.put(item.output.body)
+                record = {
+                    "sequence": sequence,
+                    "schema_id": item.output.schema_id,
+                    "child_work_id": state.child_work_item_id,
+                    "child_attempt_id": state.attempt_id,
+                    "artifact_ref": ref.as_dict(),
+                }
+                if sequence != state.output_sequence:
+                    prior = next(
+                        (row for row in state.output_history if row.get("sequence") == sequence),
+                        None,
+                    )
+                    if prior is None:
+                        raise ExpectedRevisionConflict("child output sequence is not the next owner sequence")
+                    prior_ref = prior.get("artifact_ref")
+                    if not isinstance(prior_ref, Mapping) or prior_ref.get("digest") != ref.digest:
+                        raise ExpectedRevisionConflict("conflicting duplicate child output sequence")
+                    return item
+                self._cas(
+                    state,
+                    output_sequence=state.output_sequence + 1,
+                    output_history=(*state.output_history, record),
+                )
+                return item
+            if isinstance(item, ChildUnknown):
+                return item
+            if isinstance(item, ChildSucceeded):
+                store = self._artifact_store_for_state(state)
+                ref = store.put(item.output.body)
+                state = self._cas(
+                    state,
+                    result_prepared=True,
+                    result_refs=(ref.digest,),
+                    stream_outcome={
+                        "kind": "succeeded",
+                        "schema_id": item.output.schema_id,
+                        "artifact_ref": ref.as_dict(),
+                    },
+                )
+                self.settle(
+                    state.child_session_id,
+                    expected_revision=state.revision,
+                    outcome="completed",
+                    result_refs=state.result_refs,
+                    attempt_id=state.attempt_id,
+                )
+                return item
+            state = self._cas(
+                state,
+                stream_outcome={
+                    "kind": "failed",
+                    "code": item.code,
+                    "detail": item.detail,
+                },
+            )
+            self.settle(
+                state.child_session_id,
+                expected_revision=state.revision,
+                outcome="failed",
+                result_refs=(),
+                attempt_id=state.attempt_id,
+            )
+            return item
+
+    def join(
+        self,
+        handles: tuple[ChildHandle, ...],
+        *,
+        scope_fence: Callable[[], None] | None = None,
+    ) -> tuple[ChildSucceeded | ChildFailed | ChildUnknown, ...]:
+        outcomes: list[ChildSucceeded | ChildFailed | ChildUnknown] = []
+        for handle in handles:
+            while True:
+                item = self.next_output(handle, scope_fence=scope_fence)
+                if isinstance(item, ChildOutput):
+                    continue
+                outcomes.append(item)
+                break
+        return tuple(outcomes)
+
 
     def prepare_result(
         self,
@@ -1820,11 +2099,53 @@ class DurableChildFactory:
             raise ExpectedRevisionConflict(str(error)) from error
         return next_state
 
-    def _launch(self, state: ChildState, activation: ChildActivation, spec: ChildSpec) -> ChildState:
+    def _admit_stream_input(
+        self,
+        state: ChildState,
+        envelope: InputEnvelope,
+    ) -> tuple[ChildState, InputEnvelope]:
+        if state.input_closed:
+            raise LateResultRejected("final child input has already been admitted")
+        if envelope.sequence != state.input_sequence:
+            raise ExpectedRevisionConflict("child input sequence is not the next owner sequence")
+        store = self._artifact_store_for_state(state)
+        ref = store.put(envelope.body)
+        record = {
+            "sequence": envelope.sequence,
+            "schema_id": envelope.schema_id,
+            "final": envelope.final,
+            "child_work_id": state.child_work_item_id,
+            "child_attempt_id": state.attempt_id,
+            "artifact_ref": ref.as_dict(),
+        }
+        next_state = self._cas(
+            state,
+            input_sequence=state.input_sequence + 1,
+            input_closed=envelope.final,
+            input_history=(*state.input_history, record),
+        )
+        return next_state, envelope
+
+    def _launch(
+        self, state: ChildState, activation: ChildActivation, spec: ChildSpec
+    ) -> ChildState:
         state = self._final_launch_fence(state)
         if state.terminal_count:
             return state
         adapter = self.adapters[state.adapter_family]
+        if activation.initial_input is not None:
+            self._stream_adapter(adapter)
+            activation = replace(
+                activation,
+                initial_input=self._input_envelope(
+                    activation.initial_input,
+                    sequence=state.input_sequence,
+                ),
+            )
+            state, initial_input = self._admit_stream_input(
+                state, activation.initial_input
+            )
+            activation = replace(activation, initial_input=initial_input)
         published: list[ChildState] = []
         published_state = state
 
@@ -1832,6 +2153,7 @@ class DurableChildFactory:
             nonlocal published_state
             published_state = self._publish_target(published_state, target)
             published.append(published_state)
+
         target = adapter.start(replace(activation, publish_target=publish), spec)
         if published:
             return published[-1]

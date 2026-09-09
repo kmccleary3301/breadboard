@@ -6,6 +6,7 @@ import enum
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
+from breadboard_engine.api.module_models import ModuleAuthorityRequest, ModuleInputValue
 from pydantic import BaseModel, ConfigDict, Field, model_validator, validator
 
 from .events import replay_configuration_digest
@@ -30,7 +31,9 @@ class TurnAdmission(str, enum.Enum):
 
 class SessionCreateRequest(BaseModel):
     """Incoming payload for POST /sessions."""
-
+    task: str | None = Field(default="", description="Initial user instruction. Empty initializes an interactive text Session.")
+    module_input: ModuleInputValue | None = None
+    module_authority: ModuleAuthorityRequest | None = None
     config_path: Optional[str] = Field(
         default=None,
         description="Path to agent config YAML/JSON; omit to use the packaged default profile.",
@@ -48,6 +51,14 @@ class SessionCreateRequest(BaseModel):
         if value is not None and not value.strip():
             raise ValueError("config_path must not be empty")
         return value
+
+    @model_validator(mode="after")
+    def _validate_module_admission(self) -> SessionCreateRequest:
+        if self.module_input is not None and self.task not in (None, ""):
+            raise ValueError("supply task or module_input, not both")
+        if self.module_authority is not None and self.module_input is None:
+            raise ValueError("module_authority requires module_input")
+        return self
 
 
 class SessionCreateResponse(BaseModel):
@@ -425,15 +436,22 @@ class AttachmentUploadResponse(BaseModel):
 
 
 class SessionInputRequest(BaseModel):
-    content: str = Field(..., description="User supplied input text.")
+    content: str | None = Field(default=None, description="User supplied input text.")
+    module_input: ModuleInputValue | None = None
     attachments: Optional[List[str]] = Field(default=None, description="Attachment IDs returned by /attachments.")
     client_message_id: Optional[str] = Field(default=None, description="Stable client submission identity.")
 
     @validator("content")
-    def _validate_content(cls, value: str) -> str:
-        if not value or not value.strip():
+    def _validate_content(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
             raise ValueError("content must not be empty")
         return value
+
+    @model_validator(mode="after")
+    def _validate_input_choice(self) -> SessionInputRequest:
+        if (self.content is None) == (self.module_input is None):
+            raise ValueError("supply exactly one content or module_input")
+        return self
 
     @validator("attachments", each_item=True)
     def _validate_attachment_id(cls, value: str) -> str:

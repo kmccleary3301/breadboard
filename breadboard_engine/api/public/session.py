@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
 from fastapi import (
@@ -59,6 +60,26 @@ _PAYLOAD_LITERAL_FIELDS = {
     "session.completed": ("outcome",),
     "session.failed": ("outcome",),
     "session.canceled": ("outcome",),
+}
+_PAYLOAD_TYPED_RECORD_FIELDS = {
+    "session.started": ("module_input",),
+    "input.accepted": ("module_input",),
+    "module_output": ("module_output",),
+}
+_PAYLOAD_TYPED_LITERAL_FIELDS = {
+    "session.started": ("module_input_sequence",),
+    "input.accepted": ("module_input_sequence",),
+    "module_output": (
+        "output_sequence",
+        "module_id",
+        "worker_session_id",
+        "request_id",
+        "generation_id",
+        "instance_id",
+        "work_id",
+        "attempt_id",
+        "authority_epoch",
+    ),
 }
 
 
@@ -182,8 +203,12 @@ class _LiveSessionMutationAdapter:
         source_path: Path,
     ) -> session_operations.StartSessionOutcome:
         metadata = {
-            "non_interactive_cli_session": True,
-            "cli_session_kind": "oneshot",
+            "non_interactive_cli_session": request.module_input is None or request.module_input.final,
+            "cli_session_kind": (
+                "interactive"
+                if request.module_input is not None and not request.module_input.final
+                else "oneshot"
+            ),
         }
         role_document = None
         if (
@@ -214,6 +239,8 @@ class _LiveSessionMutationAdapter:
                 BridgeSessionCreateRequest(
                     config_path=str(source_path),
                     task=request.task,
+                    module_input=request.module_input,
+                    module_authority=request.module_authority,
                     workspace=str(context.workspace),
                     metadata=metadata,
                 ),
@@ -249,7 +276,10 @@ class _LiveSessionMutationAdapter:
             )
             await self._service.send_input(
                 request.session_id,
-                BridgeSessionInputRequest(content=request.content),
+                BridgeSessionInputRequest(
+                    content=request.content,
+                    module_input=request.module_input,
+                ),
             )
             _, session = await _product_session(
                 self._service,
@@ -335,8 +365,6 @@ class _LiveSessionMutationAdapter:
             raise _mutation_error(error) from error
 
 
-
-
 def _scrub_event_payload(kind, payload, workspace):
     public_payload = scrub_public(payload, workspace)
     for field in _PAYLOAD_SHA256_FIELDS.get(kind, ()):
@@ -344,6 +372,13 @@ def _scrub_event_payload(kind, payload, workspace):
             public_payload[field] = _REDACTED_SHA256
     for field in _PAYLOAD_LITERAL_FIELDS.get(kind, ()):
         public_payload[field] = payload[field]
+    for field in _PAYLOAD_TYPED_RECORD_FIELDS.get(kind, ()):
+        record = payload.get(field)
+        if isinstance(record, Mapping):
+            public_payload[field] = {key: record[key] for key in record}
+    for field in _PAYLOAD_TYPED_LITERAL_FIELDS.get(kind, ()):
+        if field in payload:
+            public_payload[field] = payload[field]
     if kind == "input.accepted":
         for source, public in zip(
             payload["attachments"],
@@ -371,6 +406,8 @@ async def start(
         lock_id=request.lock_id,
         task=request.task,
         session_id=request.session_id,
+        module_input=request.module_input.decoded if request.module_input is not None else None,
+        module_authority=request.module_authority,
     )
     return await invoke_idempotent_async(
         "session.start",
@@ -410,6 +447,7 @@ async def send_input(
     neutral_request = session_operations.SendSessionInputRequest(
         session_id=session_id,
         content=request.content,
+        module_input=request.module_input.decoded if request.module_input is not None else None,
     )
     return await invoke_idempotent_async(
         "session.send_input",

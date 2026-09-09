@@ -7,8 +7,16 @@ import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
+from breadboard.modules.author import (
+    ChildFailed,
+    ChildHandle,
+    ChildOutput,
+    ChildSucceeded,
+    ChildUnknown,
+    InputEnvelope,
+)
 from breadboard.product.coordination.work_items import CancellationPolicy, ResumePolicy, RetryPolicy
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime.artifacts import ArtifactRef
@@ -54,12 +62,17 @@ class ChildSpec:
     workflow_id: str | None = None
     workflow_step_id: str | None = None
     workflow_definition_hash: str | None = None
-
     adapter_config: Mapping[str, Any] = field(default_factory=dict, compare=False)
+
     def __post_init__(self) -> None:
         if not isinstance(self.lock, EffectiveHarnessLock):
             raise TypeError("child lock must be an EffectiveHarnessLock")
-        for value, name in ((self.title, "title"), (self.task, "task"), (self.worker_id, "worker_id"), (self.adapter_family, "adapter_family")):
+        for value, name in (
+            (self.title, "title"),
+            (self.task, "task"),
+            (self.worker_id, "worker_id"),
+            (self.adapter_family, "adapter_family"),
+        ):
             if type(value) is not str or not value.strip():
                 raise ValueError(f"child {name} must be non-empty")
         if not isinstance(self.adapter_config, Mapping):
@@ -129,7 +142,12 @@ class ExecutionTarget:
             raise TypeError("execution target metadata must be a mapping")
 
     def retained(self) -> dict[str, Any]:
-        value = {"ref": self.execution_target_ref, "pid": self.pid, "start_token": self.start_token, "process_group_id": self.process_group_id}
+        value = {
+            "ref": self.execution_target_ref,
+            "pid": self.pid,
+            "start_token": self.start_token,
+            "process_group_id": self.process_group_id,
+        }
         if self.metadata:
             value["metadata"] = dict(self.metadata)
         return value
@@ -149,6 +167,10 @@ class ChildActivation:
     workspace: str | None = None
     publish_target: Callable[[ExecutionTarget], None] | None = field(default=None, compare=False, repr=False)
     artifact_store_root: str | None = None
+    target_binding: ChildTarget | None = field(default=None, compare=False)
+    initial_input: InputEnvelope | None = field(default=None, compare=False, repr=False)
+    child_handle: ChildHandle | None = field(default=None, compare=False, repr=False)
+    scope_fence: Callable[[], None] | None = field(default=None, compare=False, repr=False)
 @dataclass(frozen=True, slots=True)
 class ChildState:
     child_session_id: str
@@ -177,6 +199,12 @@ class ChildState:
     settlement: Mapping[str, Any] | None = None
     child_spec: Mapping[str, Any] = field(default_factory=dict)
     execution_target: Mapping[str, Any] = field(default_factory=dict)
+    input_sequence: int = 0
+    input_closed: bool = False
+    input_history: tuple[Mapping[str, Any], ...] = ()
+    output_sequence: int = 0
+    output_history: tuple[Mapping[str, Any], ...] = ()
+    stream_outcome: Mapping[str, Any] | None = None
 
     @property
     def outcome(self) -> str | None:
@@ -211,6 +239,14 @@ class ChildState:
             "settlement": dict(self.settlement) if self.settlement is not None else None,
             "child_spec": dict(self.child_spec),
             "execution_target": dict(self.execution_target),
+            "input_sequence": self.input_sequence,
+            "input_closed": self.input_closed,
+            "input_history": [dict(record) for record in self.input_history],
+            "output_sequence": self.output_sequence,
+            "output_history": [dict(record) for record in self.output_history],
+            "stream_outcome": (
+                dict(self.stream_outcome) if self.stream_outcome is not None else None
+            ),
         }
 
     @classmethod
@@ -406,6 +442,65 @@ class ChildState:
                 or not Path(path_value).is_absolute()
             ):
                 raise ValueError("durable child specification path is invalid")
+        input_sequence = value.get("input_sequence", 0)
+        output_sequence = value.get("output_sequence", 0)
+        input_closed = value.get("input_closed", False)
+        if (
+            type(input_sequence) is not int
+            or input_sequence < 0
+            or type(output_sequence) is not int
+            or output_sequence < 0
+            or type(input_closed) is not bool
+        ):
+            raise ValueError("durable child stream counters are invalid")
+
+        def _stream_records(raw: object) -> tuple[Mapping[str, Any], ...]:
+            if not isinstance(raw, (list, tuple)):
+                raise ValueError("durable child stream history is invalid")
+            records: list[Mapping[str, Any]] = []
+            expected = 0
+            seen: set[int] = set()
+            for candidate in raw:
+                if not isinstance(candidate, Mapping):
+                    raise ValueError("durable child stream record is invalid")
+                sequence = candidate.get("sequence")
+                if type(sequence) is not int or sequence < 0 or sequence in seen:
+                    raise ValueError("durable child stream sequence is invalid")
+                if sequence != expected:
+                    raise ValueError("durable child stream sequence is not contiguous")
+                seen.add(sequence)
+                record = dict(candidate)
+                if (
+                    record.get("child_work_id") != value["child_work_item_id"]
+                    or record.get("child_attempt_id") != attempt_id
+                    or type(record.get("schema_id")) is not str
+                    or not record["schema_id"].strip()
+                ):
+                    raise ValueError("durable child stream identity is invalid")
+                artifact = record.get("artifact_ref")
+                if not isinstance(artifact, Mapping):
+                    raise ValueError("durable child stream artifact is invalid")
+                try:
+                    ArtifactRef(
+                        str(artifact["digest"]),
+                        int(artifact["size_bytes"]),
+                        str(artifact["media_type"]),
+                    )
+                except (KeyError, TypeError, ValueError) as error:
+                    raise ValueError("durable child stream artifact is invalid") from error
+                records.append(record)
+                expected += 1
+            return tuple(records)
+
+        input_history = _stream_records(value.get("input_history", ()))
+        output_history = _stream_records(value.get("output_history", ()))
+        if input_sequence != len(input_history) or output_sequence != len(output_history):
+            raise ValueError("durable child stream counter does not match history")
+        if input_closed and (not input_history or input_history[-1].get("final") is not True):
+            raise ValueError("closed durable child input has no final input")
+        stream_outcome = value.get("stream_outcome")
+        if stream_outcome is not None and not isinstance(stream_outcome, Mapping):
+            raise ValueError("durable child stream outcome is invalid")
         return cls(
             child_session_id=child_session_id,
             child_work_item_id=value["child_work_item_id"],
@@ -437,7 +532,15 @@ class ChildState:
             settlement=settlement,
             child_spec=child_spec,
             execution_target=execution_target,
+            input_sequence=input_sequence,
+            input_closed=input_closed,
+            input_history=input_history,
+            output_sequence=output_sequence,
+            output_history=output_history,
+            stream_outcome=stream_outcome,
         )
+
+
 
 
 class ChildExecutionAdapter(Protocol):
@@ -446,3 +549,23 @@ class ChildExecutionAdapter(Protocol):
     def observe(self, target: Mapping[str, Any]) -> str: ...
     def cancel(self, target: Mapping[str, Any]) -> bool | None: ...
     def prepare_result(self, target: Mapping[str, Any], spec: ChildSpec) -> bytes | ArtifactRef | None: ...
+@runtime_checkable
+class ChildStreamingExecutionAdapter(ChildExecutionAdapter, Protocol):
+    """Typed extension for adapters backed by an author-module child stream."""
+
+    def submit_input(
+        self,
+        target: Mapping[str, Any],
+        envelope: InputEnvelope,
+        *,
+        scope_fence: Callable[[], None] | None = None,
+    ) -> None:
+        ...
+
+    def next_output(
+        self,
+        target: Mapping[str, Any],
+        *,
+        scope_fence: Callable[[], None] | None = None,
+    ) -> ChildOutput | ChildSucceeded | ChildFailed | ChildUnknown:
+        ...

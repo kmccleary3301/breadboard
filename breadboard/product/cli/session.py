@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import uuid
 from collections.abc import Callable, Coroutine
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, TypeVar
 
+from breadboard.modules import AuthorityDeclaration, ModuleInput
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.operations import session as session_operations
 from breadboard.product.operations.model import (
@@ -19,6 +22,7 @@ from breadboard.product.operations.model import (
 from breadboard.product.runtime import session_store
 from breadboard.product.runtime.events import Session, SessionView
 
+
 _MutationOutcome = TypeVar(
     "_MutationOutcome",
     session_operations.StartSessionOutcome,
@@ -27,6 +31,28 @@ _MutationOutcome = TypeVar(
     session_operations.ResumeSessionOutcome,
     session_operations.CancelSessionOutcome,
 )
+
+
+def _load_document(path_value: str, parser: Callable[[object], Any], label: str) -> Any:
+    path = Path(path_value).expanduser()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise PermissionError(f"{label} source is unavailable") from error
+    except JSONDecodeError as error:
+        raise ValueError(f"{label} source contains invalid JSON") from error
+    try:
+        return parser(raw)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{label} source is invalid: {error}") from error
+
+
+def load_module_input(path_value: str) -> ModuleInput:
+    return _load_document(path_value, ModuleInput.from_dict, "module input")
+
+
+def load_module_authority(path_value: str) -> AuthorityDeclaration:
+    return _load_document(path_value, AuthorityDeclaration.from_dict, "module authority")
 
 
 def _workspace(arguments: object | None = None, workspace: Path | None = None) -> Path:
@@ -490,6 +516,14 @@ class _DurableSessionMutationAdapter:
         effective_lock: EffectiveHarnessLock,
         _source_path: Path,
     ) -> session_operations.StartSessionOutcome:
+        if request.module_input is not None:
+            raise session_operations.SessionMutationError(
+                session_operations.EXIT_BLOCKED,
+                "module_execution_requires_server",
+                "module-input Session execution requires --server",
+                hint="use the installed server and pass --server",
+            )
+
         def create() -> session_operations.StartSessionOutcome:
             session = Session.start(
                 effective_lock,
@@ -514,6 +548,13 @@ class _DurableSessionMutationAdapter:
         request: session_operations.SendSessionInputRequest,
         context: OperationContext,
     ) -> session_operations.SendSessionInputOutcome:
+        if request.module_input is not None:
+            raise session_operations.SessionMutationError(
+                session_operations.EXIT_BLOCKED,
+                "module_execution_requires_server",
+                "module-input Session execution requires --server",
+                hint="use the installed server and pass --server",
+            )
         return await asyncio.to_thread(
             self._mutate,
             context.workspace,
@@ -521,6 +562,7 @@ class _DurableSessionMutationAdapter:
             lambda session: session.input(request.content),
             session_operations.SendSessionInputOutcome,
         )
+
 
     async def approve(
         self,
@@ -566,12 +608,25 @@ class _DurableSessionMutationAdapter:
 
 
 def start(arguments: object) -> OperationResult:
+    module_input_path = getattr(arguments, "module_input", None)
+    task = getattr(arguments, "task", None)
+    if module_input_path is not None and task is not None:
+        raise ValueError("supply exactly one --task or --module-input")
+    module_input = (
+        load_module_input(str(module_input_path)) if module_input_path is not None else None
+    )
+    authority_path = getattr(arguments, "module_authority", None)
+    module_authority = (
+        load_module_authority(str(authority_path)) if authority_path is not None else None
+    )
     request = session_operations.StartSessionRequest(
         lock_id=str(
             getattr(arguments, "lock_id", None) or getattr(arguments, "LOCK_ID")
         ),
-        task=str(getattr(arguments, "task", None) or getattr(arguments, "TASK")),
+        task=None if task is None else str(task),
         session_id=getattr(arguments, "session_id", None),
+        module_input=module_input,
+        module_authority=module_authority,
     )
     runtime = session_operations.SessionRuntime(
         _context(arguments),
@@ -581,10 +636,20 @@ def start(arguments: object) -> OperationResult:
 
 
 def send_input(arguments: object) -> OperationResult:
+    content_option = getattr(arguments, "content", None)
+    text_argument = getattr(arguments, "TEXT", None)
+    module_input_path = getattr(arguments, "module_input", None)
+    if module_input_path is not None and (
+        content_option is not None or text_argument is not None
+    ):
+        raise ValueError("supply exactly one text input or --module-input")
+    if content_option is not None and text_argument is not None:
+        raise ValueError("supply exactly one positional text or --content")
+    module_input = (
+        load_module_input(str(module_input_path)) if module_input_path is not None else None
+    )
     content = (
-        arguments.content
-        if getattr(arguments, "content", None) is not None
-        else arguments.TEXT
+        content_option if content_option is not None else text_argument
     )
     client = _remote_client(arguments)
     if client is not None:
@@ -595,6 +660,7 @@ def send_input(arguments: object) -> OperationResult:
                 client.send_input_session(
                     arguments.SESSION_ID,
                     content,
+                    module_input=None if module_input is None else module_input.to_dict(),
                     idempotency_key=_idempotency_key(arguments),
                 )
             ),
@@ -608,6 +674,7 @@ def send_input(arguments: object) -> OperationResult:
             session_operations.SendSessionInputRequest(
                 session_id=arguments.SESSION_ID,
                 content=content,
+                module_input=module_input,
             )
         )
     )

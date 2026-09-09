@@ -27,7 +27,7 @@ def _harness(ns):
         if n=="update":x.add_argument("--from",dest="source")
         if n=="explain":x.add_argument("--strict",action="store_true")
         if n=="lock":x.add_argument("--out");x.add_argument("--check",action="store_true")
-        if n=="run":t=x.add_mutually_exclusive_group(required=True);t.add_argument("--server");t.add_argument("--local",action="store_true");x.add_argument("--task");x.add_argument("--lock")
+        if n=="run":t=x.add_mutually_exclusive_group(required=True);t.add_argument("--server");t.add_argument("--local",action="store_true");i=x.add_mutually_exclusive_group();i.add_argument("--task");i.add_argument("--module-input",metavar="PATH");x.add_argument("--module-authority",metavar="PATH");x.add_argument("--lock")
         x.set_defaults(handler=_harness_handler(n))
 def _harness_lock(ns):
     p=ns.add_parser("harness-lock",help="inspect effective harness locks");_common(p);s=p.add_subparsers(dest="command",required=True);x=s.add_parser("get");x.add_argument("PATH");x.set_defaults(handler=_harness_handler("get_lock"))
@@ -40,9 +40,9 @@ def _session(ns):
         x=s.add_parser("show");x.add_argument("SESSION_ID");x.set_defaults(handler=lambda a:session.get(a,"show"))
     for n in ("events","artifacts"):
         x=s.add_parser(n);x.add_argument("SESSION_ID");x.set_defaults(handler=getattr(session,n))
-    x=s.add_parser("send-input");x.add_argument("SESSION_ID");x.add_argument("TEXT",nargs="?");x.add_argument("--content");x.add_argument("--idempotency-key");x.set_defaults(handler=session.send_input)
+    x=s.add_parser("send-input");x.add_argument("SESSION_ID");x.add_argument("TEXT",nargs="?");i=x.add_mutually_exclusive_group();i.add_argument("--content");i.add_argument("--module-input",metavar="PATH");x.add_argument("--idempotency-key");x.set_defaults(handler=session.send_input)
     if _enabled("BREADBOARD_LEGACY_ROUTES"):
-        x=s.add_parser("send");x.add_argument("SESSION_ID");x.add_argument("TEXT",nargs="?");x.add_argument("--content");x.add_argument("--idempotency-key");x.set_defaults(handler=session.send_input)
+        x=s.add_parser("send");x.add_argument("SESSION_ID");x.add_argument("TEXT",nargs="?");i=x.add_mutually_exclusive_group();i.add_argument("--content");i.add_argument("--module-input",metavar="PATH");x.add_argument("--idempotency-key");x.set_defaults(handler=session.send_input)
     x=s.add_parser("approve");x.add_argument("SESSION_ID");x.add_argument("request_id");x.add_argument("decision");x.add_argument("--idempotency-key");x.set_defaults(handler=session.approve)
     for n in ("resume","cancel"):
         x=s.add_parser(n);x.add_argument("SESSION_ID");x.add_argument("--idempotency-key")
