@@ -138,7 +138,7 @@ export interface BreadboardClient {
   listSession(): Promise<PublicResult>
   getSession(id: string): Promise<SessionSummary>
   getSessionResult(id: string): Promise<PublicResult>
-  sendInputSession(id: string, input: PublicSessionInputRequest, idempotencyKey?: string): Promise<PublicResult>
+  sendInputSession(id: string, input: string | PublicSessionInputRequest, idempotencyKey?: string): Promise<PublicResult>
   approveSession(id: string, requestId: PublicSessionApprovalRequest["request_id"], decision: PublicSessionDecision, idempotencyKey?: string): Promise<PublicResult>
   resumeSession(id: string, idempotencyKey?: string): Promise<PublicResult>
   cancelSession(id: string, reason?: PublicSessionCancelRequest["reason"], idempotencyKey?: string): Promise<PublicResult>
@@ -223,6 +223,7 @@ function action(
     case "public.harness.validate": return r({ harness_id: resource(String(input.harness_id ?? ""), "harness_id") })
     case "public.harness.explain": return r({ harness_id: resource(String(input.harness_id ?? ""), "harness_id") })
     case "public.harness.lock": return r({ harness_id: resource(String(input.harness_id ?? ""), "harness_id") })
+    case "public.harness.package": return r({}, { body: { source: input.source, out: input.out } })
     case "public.harness_lock.get": return r({ lock_id: resource(String(input.lock_id ?? ""), "lock_id") })
     case "public.integration.list": return r()
     case "public.integration.get": return r({ integration_id: identifier(String(input.integration_id ?? ""), "integration_id") })
@@ -313,8 +314,12 @@ export const createBreadboardClient = (config: BreadboardClientConfig): Breadboa
   }
   const client: BreadboardClient = {
     ...c,
-    sendInputSession: (id: string, input: PublicSessionInputRequest, key?: string) =>
-      action(config, "public.session.send_input", { session_id: id, ...input, idempotency_key: key }),
+    sendInputSession: (id: string, input: string | PublicSessionInputRequest, key?: string) =>
+      action(config, "public.session.send_input", {
+        session_id: id,
+        ...(typeof input === "string" ? { content: input } : input),
+        idempotency_key: key,
+      }),
   }
   return client
 }

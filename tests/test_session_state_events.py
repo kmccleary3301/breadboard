@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pytest
 from fastapi import HTTPException
 
+from breadboard.modules import ModuleInput
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import ReplayError, session_store
 from breadboard.product.coordination.work_items import WorkItemRepository
@@ -1549,7 +1550,13 @@ async def test_deferred_input_does_not_enqueue_after_parent_cancellation(
         def __init__(self) -> None:
             self.inputs: list[str] = []
 
-        def prepare_input_content(self, content: str) -> str:
+        def prepare_input_content(
+            self,
+            content: str | None,
+            module_input: ModuleInput | None,
+        ) -> str:
+            assert content is not None
+            assert module_input is None
             return content
 
         def validate_input_admission(self, *_args, **_kwargs) -> None:
@@ -1651,8 +1658,15 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
                 tuple[str, list[str], str | None, str | None, str | None]
             ] = []
 
-        def prepare_input_content(self, content: str) -> str:
+        def prepare_input_content(
+            self,
+            content: str | None,
+            module_input: ModuleInput | None,
+        ) -> str:
+            assert content is not None
+            assert module_input is None
             return content
+
         def validate_input_admission(
             self,
             _content: str,
@@ -1660,9 +1674,13 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
             *,
             input_id: str,
             turn_id: str,
+            module_input: ModuleInput | None,
+            module_input_sequence: int | None,
         ) -> None:
             assert input_id
             assert turn_id
+            assert module_input is None
+            assert module_input_sequence is None
 
         async def enqueue_input(
             self,
@@ -1672,7 +1690,12 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
             input_id: str | None = None,
             turn_id: str | None = None,
             defer_execution: Any = None,
+            module_input: ModuleInput | None = None,
+            module_input_sequence: int | None = None,
         ) -> str:
+            assert module_input is None
+            assert module_input_sequence is None
+
             async def execute() -> None:
                 self.inputs.append(
                     (content, attachments, input_id, turn_id, record.active_turn_id)
@@ -2471,6 +2494,7 @@ async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(tmp_
     restored = await restarted.get(record.session_id)
     assert restored is not None
     summary = restored.to_summary()
+
     assert summary.head_sequence == replay_head.seq
     assert summary.head_event_id == replay_head.event_id
     assert summary.terminal_event_envelopes == [terminal_envelope]
@@ -2511,6 +2535,46 @@ async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(tmp_
         restored,
         numeric_replay_queue,
     )
+
+@pytest.mark.asyncio
+async def test_typed_turn_terminal_persist_does_not_regress_to_disk_snapshot(
+    tmp_path: Path,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="typed-terminal-persist",
+        status=SessionStatus.RUNNING,
+        next_module_input_sequence=1,
+    )
+    turn = TurnRecord(
+        input_id="input-typed",
+        turn_id="turn-typed",
+        client_message_id="client-typed",
+        content=None,
+        attachments=(),
+        original_disposition="started",
+        state="active",
+        module_input=ModuleInput("bb.demo.input.v1", b"{}", True),
+        module_input_sequence=0,
+    )
+    record.turns_by_id[turn.turn_id] = turn
+    record.active_turn_id = turn.turn_id
+    await registry.create(record)
+    turn.state = "completed"
+    turn.terminal_outcome = "completed"
+    terminal = SessionEvent(
+        EventType.TURN_COMPLETED,
+        record.session_id,
+        {},
+        input_id=turn.input_id,
+        turn_id=turn.turn_id,
+    )
+
+    await registry.persist(record, terminal_event=terminal)
+
+    assert turn.state == "completed"
+    assert turn.terminal_outcome == "completed"
+    assert turn.terminal_resolution_committed is True
 
 @pytest.mark.asyncio
 async def test_dispatcher_failure_drains_queue_and_rejects_future_events(

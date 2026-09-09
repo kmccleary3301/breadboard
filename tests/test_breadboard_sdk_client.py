@@ -201,6 +201,12 @@ def test_candidate_python_sdk_streams_generated_session_events_route(
         "payload": {
             "effective_lock_hash": "sha256:" + "a" * 64,
             "task_hash": "sha256:" + "b" * 64,
+            "module_input": {
+                "schema_id": "bb.demo.input.v1",
+                "body": "e30=",
+                "final": False,
+            },
+            "module_input_sequence": 0,
         },
         "payload_schema_version": "bb.payload.product_session.lifecycle.v1",
     }
@@ -419,6 +425,75 @@ def test_candidate_python_sdk_streams_generated_session_events_route(
             json.dumps(partial_assistant_identity), "session id", "1"
         )
 
+
+@pytest.mark.parametrize(
+    ("kind", "payload_schema_version", "payload"),
+    [
+        (
+            "input.accepted",
+            "bb.payload.product_session.lifecycle.v1",
+            {
+                "attachments": [],
+                "module_input": {
+                    "schema_id": "bb.demo.input.v1",
+                    "body": "e30=",
+                    "final": True,
+                },
+                "module_input_sequence": 1,
+            },
+        ),
+        (
+            "module_output",
+            "bb.payload.product_session.module_output.v1",
+            {
+                "module_output": {
+                    "schema_id": "bb.demo.output.v1",
+                    "body": "e30=",
+                    "final": True,
+                },
+                "output_sequence": 0,
+                "module_id": "demo.root",
+                "worker_session_id": "worker-1",
+                "request_id": "request-1",
+                "generation_id": "sha256:" + "a" * 64,
+                "instance_id": "instance-1",
+                "work_id": "work-1",
+                "attempt_id": "attempt-1",
+                "authority_epoch": 1,
+            },
+        ),
+    ],
+)
+def test_candidate_python_sdk_accepts_typed_module_events(
+    kind: str,
+    payload_schema_version: str,
+    payload: dict[str, Any],
+) -> None:
+    event = {
+        "schema_version": "bb.public_session_event.v1",
+        "event_id": "session:session-1:2",
+        "seq": 2,
+        "timestamp": "2026-09-09T00:00:00Z",
+        "work_item_id": None,
+        "parent_work_item_id": None,
+        "attempt_id": None,
+        "session_id": "session-1",
+        "span_id": None,
+        "visibility": {
+            "model_visible": True,
+            "provider_visible": True,
+            "host_visible": True,
+            "redaction_state": "none",
+        },
+        "kind": kind,
+        "payload": payload,
+        "payload_schema_version": payload_schema_version,
+    }
+
+    decoded = client_module._session_event(json.dumps(event), "session-1", "2")
+
+    assert decoded["kind"] == kind
+    assert decoded["payload"] == payload
 
 def test_snapshot_reader_retains_annotations_after_session_settlement(
     monkeypatch: pytest.MonkeyPatch,

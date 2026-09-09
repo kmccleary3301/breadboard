@@ -5,6 +5,7 @@ import { openEventStream, streamSessionEvents } from "../dist/stream.js"
 import { ApiError } from "../dist/client.js"
 const payloadSchemaVersion = (kind) => ({
   annotation: "bb.payload.product_session.annotation.v1",
+  module_output: "bb.payload.product_session.module_output.v1",
   assistant_message: "bb.payload.message.assistant.v1",
   tool_call: "bb.payload.tool.called.v1",
   tool_result: "bb.payload.tool.completed.v1",
@@ -73,6 +74,73 @@ test("streamSessionEvents uses the public endpoint and parses the SSE envelope",
     "http://breadboard.test:9099/v1/sessions/session-123/events?limit=1",
   )
   assert.deepEqual(events, [expected])
+})
+
+test("streamSessionEvents accepts typed module lifecycle events", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => {
+    globalThis.fetch = originalFetch
+  })
+  const sessionId = "module-session"
+  const events = [
+    eventEnvelope(sessionId, 1, "session.started", {
+      effective_lock_hash: "sha256:" + "a".repeat(64),
+      task_hash: "sha256:" + "b".repeat(64),
+      module_input: {
+        schema_id: "bb.demo.input.v1",
+        body: "e30=",
+        final: false,
+      },
+      module_input_sequence: 0,
+    }),
+    eventEnvelope(sessionId, 2, "input.accepted", {
+      attachments: [],
+      module_input: {
+        schema_id: "bb.demo.input.v1",
+        body: "e30=",
+        final: true,
+      },
+      module_input_sequence: 1,
+    }),
+    eventEnvelope(sessionId, 3, "module_output", {
+      module_output: {
+        schema_id: "bb.demo.output.v1",
+        body: "e30=",
+        final: true,
+      },
+      output_sequence: 0,
+      module_id: "demo.root",
+      worker_session_id: "worker-1",
+      request_id: "request-1",
+      generation_id: "sha256:" + "c".repeat(64),
+      instance_id: "instance-1",
+      work_id: "work-1",
+      attempt_id: "attempt-1",
+      authority_epoch: 1,
+    }),
+  ]
+  const encoded = new TextEncoder().encode(
+    events.map((event) =>
+      `id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`).join(""),
+  )
+  globalThis.fetch = async () => new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoded)
+        controller.close()
+      },
+    }),
+    { headers: { "content-type": "text/event-stream" } },
+  )
+
+  const received = []
+  for await (const event of streamSessionEvents(sessionId, {
+    config: { baseUrl: "http://breadboard.test:9099" },
+  })) {
+    received.push(event)
+  }
+
+  assert.deepEqual(received, events)
 })
 
 test("streamSessionEvents accepts RFC3339 case and leap-second variants", async (t) => {

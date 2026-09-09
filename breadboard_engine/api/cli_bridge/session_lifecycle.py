@@ -283,6 +283,7 @@ class SessionLifecycleOwner:
                 or "turn_execution_failed"
             )
             execution_completed = bool(completion_summary.get("completed"))
+            terminal_execution = one_shot or completion_reason == "final_output"
             failure_code = _safe_runtime_error_code(
                 completion_reason,
                 default="runtime_failure",
@@ -294,19 +295,19 @@ class SessionLifecycleOwner:
                 product_session = getattr(host.session, "product_session", None)
                 if product_session is None:
                     durable_success = execution_completed or (
-                        turn_was_cancelled and not one_shot
+                        turn_was_cancelled and not terminal_execution
                     )
                 else:
                     product_state = product_session.read_model.status
                     if turn_was_cancelled:
-                        if one_shot and product_state == "running":
+                        if terminal_execution and product_state == "running":
                             host.transition_product_session(
                                 "cancel",
                                 task_turn.cancellation_reason or "user_requested",
                             )
                     elif product_state == "running" and not host._stop_event.is_set():
                         if execution_completed:
-                            if one_shot:
+                            if terminal_execution:
                                 host.transition_product_session("complete")
                         else:
                             host.transition_product_session(
@@ -317,7 +318,7 @@ class SessionLifecycleOwner:
                     product_state = product_session.read_model.status
                     durable_success = (
                         product_state not in {"failed", "canceled"}
-                        if not one_shot
+                        if not terminal_execution
                         else product_state == "completed"
                     )
             if durable_success:
@@ -366,7 +367,7 @@ class SessionLifecycleOwner:
                         reason=completion_reason,
                         error_code=failure_code,
                     )
-            if one_shot:
+            if terminal_execution:
                 if turn_was_cancelled:
                     await self.terminalize_admitted_turns(
                         outcome="cancelled",
@@ -387,7 +388,7 @@ class SessionLifecycleOwner:
                         reason=completion_reason,
                         error_code=failure_code,
                     )
-            if not one_shot and not durable_success:
+            if not terminal_execution and not durable_success:
                 if host._stop_event.is_set():
                     await self.terminalize_admitted_turns(
                         outcome="cancelled",
@@ -426,7 +427,7 @@ class SessionLifecycleOwner:
                     )
             host._input_queue.task_done()
             state.input_inflight = False
-            if one_shot or not durable_success:
+            if terminal_execution or not durable_success:
                 if host._stop_event.is_set() or turn_was_cancelled:
                     state.terminal_status = SessionStatus.STOPPED
                 elif execution_completed:
@@ -484,7 +485,10 @@ class SessionLifecycleOwner:
             host._input_queue.task_done()
             state.input_inflight = False
         logger.error(
-            "Session %s failed with code=%s", host.session.session_id, error_code
+            "Session %s failed with code=%s",
+            host.session.session_id,
+            error_code,
+            exc_info=exc,
         )
         try:
             await self.terminalize_admitted_turns(

@@ -59,7 +59,7 @@ from breadboard.modules.transport import encode_bytes
 
 from .session_artifacts import SessionArtifactStore
 from .runtime_emission import CapturedRuntimeConfig
-from .author_runtime import ModuleDisposal, ModuleRuntime
+from .author_runtime import ModuleDisposal, ModuleExecutionError, ModuleRuntime
 
 _ADMISSION_BLOCKING_PRODUCT_EVENTS = frozenset(
     {
@@ -288,13 +288,30 @@ class SessionRunner:
                 envelope, input_id=input_identity, turn_id=turn
             )
         except ModuleExecutionError as error:
+            logger.error(
+                "Module execution failed in session %s with code=%s",
+                self.session.session_id,
+                error.code,
+            )
             return {
                 "completion_summary": {"completed": False, "reason": error.code},
                 "reward_metrics": {},
                 "module_error_detail": error.detail,
             }
+        except Exception:
+            logger.exception(
+                "Module execution crashed in session %s", self.session.session_id
+            )
+            return {
+                "completion_summary": {
+                    "completed": False,
+                    "reason": "worker_crash",
+                },
+                "reward_metrics": {},
+            }
         if output is not None:
-            completed, reason = True, "final_output"
+            completed = True
+            reason = "final_output" if module_input.final else "module_output"
         else:
             completed, reason = True, "module_continuation"
         return {

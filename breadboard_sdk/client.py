@@ -125,7 +125,7 @@ _SESSION_EVENT_VISIBILITY_FIELDS = frozenset(
 )
 _LIFECYCLE_PAYLOAD_FIELDS = {
     "session.started": frozenset({"effective_lock_hash", "task_hash"}),
-    "input.accepted": frozenset({"content_hash", "attachments"}),
+    "input.accepted": frozenset({"attachments"}),
     "approval.requested": frozenset({"request_id", "operation"}),
     "approval.resolved": frozenset({"request_id", "decision"}),
     "session.reconfigured": frozenset({"effective_lock_hash", "reason"}),
@@ -136,13 +136,15 @@ _LIFECYCLE_PAYLOAD_FIELDS = {
     "session.canceled": frozenset({"outcome", "reason"}),
 }
 _LIFECYCLE_OPTIONAL_PAYLOAD_FIELDS = {
-    kind: frozenset({"lineage"})
-    for kind in (
-        "session.started",
-        "session.completed",
-        "session.failed",
-        "session.canceled",
-    )
+    "session.started": frozenset(
+        {"lineage", "module_input", "module_input_sequence"}
+    ),
+    "input.accepted": frozenset(
+        {"content_hash", "module_input", "module_input_sequence"}
+    ),
+    "session.completed": frozenset({"lineage"}),
+    "session.failed": frozenset({"lineage"}),
+    "session.canceled": frozenset({"lineage"}),
 }
 _LINEAGE_FIELDS = frozenset(
     {
@@ -193,6 +195,56 @@ def _sha256(value: Any) -> bool:
         character in "0123456789abcdef" for character in digest
     )
 
+
+def _valid_module_input(value: Any) -> bool:
+    return (
+        isinstance(value, dict)
+        and value.keys() == {"schema_id", "body", "final"}
+        and isinstance(value["schema_id"], str)
+        and bool(value["schema_id"])
+        and isinstance(value["body"], str)
+        and type(value["final"]) is bool
+    )
+
+_MODULE_OUTPUT_FIELDS = frozenset(
+    {
+        "module_output",
+        "output_sequence",
+        "module_id",
+        "worker_session_id",
+        "request_id",
+        "generation_id",
+        "instance_id",
+        "work_id",
+        "attempt_id",
+        "authority_epoch",
+    }
+)
+
+
+def _validate_module_output_payload(payload: dict[str, Any]) -> None:
+    text_fields = (
+        "module_id",
+        "worker_session_id",
+        "request_id",
+        "instance_id",
+        "work_id",
+        "attempt_id",
+    )
+    if (
+        payload.keys() != _MODULE_OUTPUT_FIELDS
+        or not _valid_module_input(payload["module_output"])
+        or not _sha256(payload["generation_id"])
+        or type(payload["output_sequence"]) is not int
+        or payload["output_sequence"] < 0
+        or type(payload["authority_epoch"]) is not int
+        or payload["authority_epoch"] < 0
+        or any(
+            not isinstance(payload[field], str) or not payload[field]
+            for field in text_fields
+        )
+    ):
+        raise ValueError("invalid session event module output payload")
 
 def _validate_lineage(value: Any) -> None:
     if (
@@ -266,14 +318,42 @@ def _validate_lifecycle_payload(kind: str, payload: dict[str, Any]) -> None:
         valid = _sha256(payload["effective_lock_hash"]) and _sha256(
             payload["task_hash"]
         )
+        module_input_present = "module_input" in payload
+        module_sequence_present = "module_input_sequence" in payload
+        valid = valid and module_input_present == module_sequence_present
+        if valid and module_input_present:
+            sequence = payload["module_input_sequence"]
+            valid = (
+                _valid_module_input(payload["module_input"])
+                and type(sequence) is int
+                and sequence >= 0
+            )
     elif kind == "input.accepted":
         attachments = payload["attachments"]
-        valid = _sha256(payload["content_hash"]) and isinstance(attachments, list)
+        content_hash_present = "content_hash" in payload
+        module_input_present = "module_input" in payload
+        module_sequence_present = "module_input_sequence" in payload
+        valid = (
+            isinstance(attachments, list)
+            and content_hash_present
+            != (module_input_present and module_sequence_present)
+            and module_input_present == module_sequence_present
+        )
+        if valid and content_hash_present:
+            valid = _sha256(payload["content_hash"])
+        elif valid:
+            sequence = payload["module_input_sequence"]
+            valid = (
+                _valid_module_input(payload["module_input"])
+                and type(sequence) is int
+                and sequence >= 0
+            )
         if valid:
             for attachment in attachments:
                 if (
                     not isinstance(attachment, dict)
-                    or attachment.keys() != {"digest", "size_bytes", "media_type"}
+                    or attachment.keys()
+                    != {"digest", "size_bytes", "media_type"}
                     or not _sha256(attachment["digest"])
                     or type(attachment["size_bytes"]) is not int
                     or attachment["size_bytes"] < 0
@@ -326,6 +406,8 @@ def _validate_event_payload(
         raise ValueError("invalid session event payload_schema_version")
     if kind in _LIFECYCLE_PAYLOAD_FIELDS:
         _validate_lifecycle_payload(kind, payload)
+    elif kind == "module_output":
+        _validate_module_output_payload(payload)
     elif kind == "annotation":
         _validate_annotation_payload(payload)
     else:

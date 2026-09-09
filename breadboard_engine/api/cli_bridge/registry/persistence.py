@@ -1620,7 +1620,32 @@ class PersistenceMixin:
                 record.turns_by_id[turn_id] = disk_turn
                 local_turn = disk_turn
             else:
+                local_state = local_turn.state
+                local_cancellation_requested = local_turn.cancellation_requested
+                local_cancellation_reason = local_turn.cancellation_reason
+                local_execution_committed = local_turn.execution_committed
+                local_terminal_outcome = local_turn.terminal_outcome
+                local_terminal_resolution_committed = (
+                    local_turn.terminal_resolution_committed
+                )
                 self._copy_turn_fields(local_turn, disk_turn)
+                if local_cancellation_requested:
+                    local_turn.cancellation_requested = True
+                    local_turn.cancellation_reason = local_cancellation_reason
+                if local_execution_committed:
+                    local_turn.execution_committed = True
+                if local_terminal_outcome is not None:
+                    if (
+                        disk_turn.terminal_outcome is not None
+                        and disk_turn.terminal_outcome != local_terminal_outcome
+                    ):
+                        raise ValueError(
+                            "retained turn terminal outcome changed during refresh"
+                        )
+                    local_turn.state = local_state
+                    local_turn.terminal_outcome = local_terminal_outcome
+                if local_terminal_resolution_committed:
+                    local_turn.terminal_resolution_committed = True
             for key_digest, mapped_turn in disk_record.submissions_by_key_digest.items():
                 if mapped_turn.turn_id == turn_id:
                     record.submissions_by_key_digest.setdefault(

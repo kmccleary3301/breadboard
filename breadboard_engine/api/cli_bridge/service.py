@@ -2946,6 +2946,11 @@ class SessionService:
                         else:
                             await self.registry.persist(record, cursor_event=event)
                     except Exception:
+                        logger.exception(
+                            "Session %s event persistence failed for %s",
+                            record.session_id,
+                            event.type.value,
+                        )
                         record.event_seq = previous_event_seq
                         event.seq = previous_event_seq_value
                         # Never expose an event cursor that is not durably resumable.

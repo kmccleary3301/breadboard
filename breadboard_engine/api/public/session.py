@@ -368,7 +368,7 @@ class _LiveSessionMutationAdapter:
 def _scrub_event_payload(kind, payload, workspace):
     public_payload = scrub_public(payload, workspace)
     for field in _PAYLOAD_SHA256_FIELDS.get(kind, ()):
-        if public_payload[field] != payload[field]:
+        if field in payload and public_payload.get(field) != payload[field]:
             public_payload[field] = _REDACTED_SHA256
     for field in _PAYLOAD_LITERAL_FIELDS.get(kind, ()):
         public_payload[field] = payload[field]

@@ -282,6 +282,7 @@ class ProviderAccess:
 
     @classmethod
     def from_runtime_preparer(
+        cls,
         *,
         preparer: ProviderRuntimePreparer,
         worker_key: RequestKey,

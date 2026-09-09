@@ -15,6 +15,7 @@ match an edge the admitted graph already pins.
 from __future__ import annotations
 
 import asyncio
+import logging
 import queue
 import threading
 import time
@@ -40,6 +41,8 @@ from breadboard.product.runtime._child_stream_adapter import (
 from breadboard.product.runtime.children import DurableChildFactory
 
 from .author_runtime import ModuleExecutionError
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard
     from .author_runtime import ModuleRuntime, _ModuleWorker
@@ -196,6 +199,10 @@ class _ChildRun:
                 envelope = self.inputs.get()
                 sequence += 1
         except BaseException as error:  # noqa: BLE001 - the stream owns failure reporting
+            logger.exception(
+                "Author child runtime failed for child Work Item %s",
+                self.handle.child_work_id,
+            )
             self.items.put(ChildFailed(
                 child_work_id=self.handle.child_work_id,
                 child_attempt_id=self.handle.child_attempt_id,
@@ -257,15 +264,27 @@ class _Backend:
             authority_epoch=owner.grant.authority_epoch,
             declaration=owner.grant.declaration,
         )
+        run: _ChildRun | None = None
+
+        def emit_output(
+            output: OutputEnvelope,
+            key: Any,
+            module_id: str,
+            output_sequence: int,
+            final: bool,
+        ) -> None:
+            assert run is not None
+            run.emit_output(output, key, module_id, output_sequence, final)
+
+        runtime = self.children._child_runtime(
+            record, emit_output=emit_output, parent_fence=scope_fence
+        )
         run = _ChildRun(
-            runtime=self.children._child_runtime(
-                record, emit_output=None, parent_fence=scope_fence,
-            ),
+            runtime=runtime,
             handle=handle,
             execution_target_ref=execution_target_ref,
             initial_input=initial_input,
         )
-        run.runtime._emit_output = run.emit_output
         with self._runs_lock:
             self._runs[execution_target_ref] = run
         run.thread.start()
@@ -454,6 +473,10 @@ class AuthorChildren:
                     scope_fence=self.owner.require_live,
                 )
             except Exception as error:
+                logger.exception(
+                    "Author child start failed for parent session %s",
+                    self.owner.record.session_id,
+                )
                 raise ModuleExecutionError("child_failed", str(error)) from error
             self._started_children += 1
         return {"handle": asdict(activation.child_handle)}

@@ -1,7 +1,7 @@
 # GENERATED FILE - do not edit by hand.
 # generator: scripts/quality/generate_public_bindings.py
 # generator-version: 6
-# public-projection-sha256: sha256:2cb18c5cd23e7c17f4e506323b4f8f5d9ebcb1b5484ef157d17cc2d414263a7d
+# public-projection-sha256: sha256:3f207c6ff2608695aba89c615b174a8ff9145da2c89f1fb9b60d63d6c2f7cf80
 
 from types import MappingProxyType
 from typing import Final, Literal, Mapping
@@ -12,6 +12,7 @@ PublicSessionEventKind = Literal[
     "approval.resolved",
     "assistant_message",
     "input.accepted",
+    "module_output",
     "session.canceled",
     "session.completed",
     "session.failed",
@@ -26,6 +27,7 @@ PublicSessionEventPayloadSchema = Literal[
     "bb.payload.message.assistant.v1",
     "bb.payload.product_session.annotation.v1",
     "bb.payload.product_session.lifecycle.v1",
+    "bb.payload.product_session.module_output.v1",
     "bb.payload.tool.called.v1",
     "bb.payload.tool.completed.v1",
 ]
@@ -49,6 +51,7 @@ PUBLIC_SESSION_EVENT_PAYLOAD_SCHEMAS: Final[Mapping[str, str]] = MappingProxyTyp
         "approval.resolved": "bb.payload.product_session.lifecycle.v1",
         "assistant_message": "bb.payload.message.assistant.v1",
         "input.accepted": "bb.payload.product_session.lifecycle.v1",
+        "module_output": "bb.payload.product_session.module_output.v1",
         "session.canceled": "bb.payload.product_session.lifecycle.v1",
         "session.completed": "bb.payload.product_session.lifecycle.v1",
         "session.failed": "bb.payload.product_session.lifecycle.v1",

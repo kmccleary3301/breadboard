@@ -291,7 +291,7 @@ class DurableChildFactory:
         admission_preclosed: bool = False,
     ) -> tuple[ChildState, ...]:
         """Persist parent intent and every descendant intent before signaling."""
-        parent, _ = load_session(self.workspace, parent_session_id)
+        parent = self._owner_session(parent_session_id)
         parent_work = WorkItem.restore(self.repository, parent_work_item_id, clock=self.clock, ids=self.ids)
         parent_attempt = (
             parent_work.read_model.current_attempt
@@ -507,7 +507,7 @@ class DurableChildFactory:
                 raise ChildError(
                     "Work Item terminal outcome cannot reconcile Product Session"
                 ) from error
-            parent, _ = load_session(self.workspace, parent_session_id)
+            parent = self._owner_session(parent_session_id)
         adopted: list[ChildState] = []
         remaining_descendants: list[ChildState] = []
         for state in descendants:
@@ -585,8 +585,9 @@ class DurableChildFactory:
         if parent_work.read_model.status not in _TERMINAL:
             parent_work.cancel("operator", reason)
         if parent.read_model.status not in _TERMINAL:
-            _mutate_session_locked(self.workspace, parent_session_id, lambda current: current.cancel(reason))
-            parent, _ = load_session(self.workspace, parent_session_id)
+            parent = self._mutate_owner_session(
+                parent_session_id, lambda current: current.cancel(reason)
+            )
         settled = list(adopted)
         record = self._registry("get", parent_session_id)
         if record is not None:
@@ -649,6 +650,28 @@ class DurableChildFactory:
         except RuntimeError:
             return asyncio.run(result)
         raise RuntimeError("synchronous child API cannot run inside an event loop")
+
+    def _owner_session(self, session_id: str) -> Session:
+        record = self._registry("get", session_id)
+        product = getattr(record, "product_session", None)
+        metadata = getattr(record, "metadata", None)
+        retained = metadata.get("durable_child") if isinstance(metadata, Mapping) else None
+        if isinstance(product, Session) and not isinstance(retained, Mapping):
+            return product
+        return load_session(self.workspace, session_id)[0]
+
+    def _mutate_owner_session(
+        self, session_id: str, mutation: Callable[[Session], Any]
+    ) -> Session:
+        record = self._registry("get", session_id)
+        product = getattr(record, "product_session", None)
+        metadata = getattr(record, "metadata", None)
+        retained = metadata.get("durable_child") if isinstance(metadata, Mapping) else None
+        if isinstance(product, Session) and not isinstance(retained, Mapping):
+            mutation(product)
+            return product
+        _mutate_session_locked(self.workspace, session_id, mutation)
+        return load_session(self.workspace, session_id)[0]
 
     def _tree_root_session_id(self, session_id: str) -> str:
         record = self._registry("get", session_id)
@@ -824,13 +847,13 @@ class DurableChildFactory:
                 )
             ):
                 raise ChildError(f"{label} Product Session cancellation is pending")
-        parent_product, _ = load_session(self.workspace, parent_session_id)
+        parent_product = self._owner_session(parent_session_id)
         if parent_product.read_model.status != "running":
             raise ChildError(
                 "parent Product Session became terminal during child startup"
             )
         if root_session_id != parent_session_id:
-            root_product, _ = load_session(self.workspace, root_session_id)
+            root_product = self._owner_session(root_session_id)
             if root_product.read_model.status != "running":
                 raise ChildError(
                     "root Product Session became terminal during child startup"
@@ -962,11 +985,11 @@ class DurableChildFactory:
     ) -> ChildActivation:
         if spec.adapter_family not in self.adapters:
             raise ChildError(f"child adapter family is not registered: {spec.adapter_family}")
-        parent_product, _ = load_session(self.workspace, parent_session_id)
+        parent_product = self._owner_session(parent_session_id)
         if parent_product.read_model.status != "running":
             raise ChildError("parent Product Session is not running")
         if root_session_id != parent_session_id:
-            root_product, _ = load_session(self.workspace, root_session_id)
+            root_product = self._owner_session(root_session_id)
             if root_product.read_model.status != "running":
                 raise ChildError("root Product Session is not running")
         self._require_parent_start_active(parent_session_id, root_session_id)
@@ -1054,7 +1077,7 @@ class DurableChildFactory:
         )
         create_session(self.workspace, product)
         self._require_start_active(child_session_id)
-        parent_product, _ = load_session(self.workspace, parent_session_id)
+        parent_product = self._owner_session(parent_session_id)
         parent = WorkItem.restore(self.repository, parent_work_item_id, clock=self.clock, ids=self.ids)
         if (
             parent_product.read_model.status != "running"
@@ -1076,7 +1099,7 @@ class DurableChildFactory:
             cancellation_policy=spec.cancellation_policy,
         )
         state = self._cas(initial, startup_phase="delegated")
-        parent_product, _ = load_session(self.workspace, parent_session_id)
+        parent_product = self._owner_session(parent_session_id)
         parent = WorkItem.restore(self.repository, parent_work_item_id, clock=self.clock, ids=self.ids)
         if (
             parent_product.read_model.status != "running"
@@ -1859,9 +1882,7 @@ class DurableChildFactory:
                 f"child {outcome} settlement requires every delegated child to settle"
             )
         if outcome != "canceled" and not allow_parent_terminal:
-            parent_product, _ = load_session(
-                self.workspace, state.parent_session_id
-            )
+            parent_product = self._owner_session(state.parent_session_id)
             parent_work = WorkItem.restore(
                 self.repository,
                 state.parent_work_item_id,

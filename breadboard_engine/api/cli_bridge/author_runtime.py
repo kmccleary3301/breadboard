@@ -248,10 +248,16 @@ class ModuleRuntime:
             output = worker.step(envelope, turn_id)
             if envelope.final:
                 if output is None:
-                    raise ModuleExecutionError("input_exhausted", "policy requested continuation after final input")
+                    raise ModuleExecutionError(
+                        "input_exhausted",
+                        "policy requested continuation after final input",
+                    )
                 disposal = self.close(reason="final_output")
                 if disposal.status != "confirmed_absent":
-                    raise ModuleExecutionError("cleanup_unknown", "module output exists but owned operations have not settled")
+                    raise ModuleExecutionError(
+                        "cleanup_unknown",
+                        "module output exists but owned operations have not settled",
+                    )
                 work = WorkItem.restore(self.repository, self.work_id)
                 if self.owns_work_lifecycle and work.read_model.status == "running":
                     work.complete("module final output", attempt_id=self.attempt_id)

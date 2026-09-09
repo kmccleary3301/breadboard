@@ -78,7 +78,7 @@ const SESSION_EVENT_VISIBILITY_FIELDS = {
 } satisfies FieldSet
 const LIFECYCLE_PAYLOAD_FIELDS = {
   "session.started": { effective_lock_hash: true, task_hash: true },
-  "input.accepted": { content_hash: true, attachments: true },
+  "input.accepted": { attachments: true },
   "approval.requested": { request_id: true, operation: true },
   "approval.resolved": { request_id: true, decision: true },
   "session.reconfigured": { effective_lock_hash: true, reason: true },
@@ -88,9 +88,18 @@ const LIFECYCLE_PAYLOAD_FIELDS = {
   "session.failed": { outcome: true, error: true, detail: true },
   "session.canceled": { outcome: true, reason: true },
 } satisfies Readonly<Record<string, FieldSet>>
-const LIFECYCLE_LINEAGE_KINDS = {
-  "session.started": true, "session.completed": true, "session.failed": true, "session.canceled": true,
-} satisfies FieldSet
+const LIFECYCLE_OPTIONAL_FIELDS = {
+  "session.started": { lineage: true, module_input: true, module_input_sequence: true },
+  "input.accepted": { content_hash: true, module_input: true, module_input_sequence: true },
+  "approval.requested": EMPTY_FIELDS,
+  "approval.resolved": EMPTY_FIELDS,
+  "session.reconfigured": EMPTY_FIELDS,
+  "session.paused": EMPTY_FIELDS,
+  "session.resumed": EMPTY_FIELDS,
+  "session.completed": { lineage: true },
+  "session.failed": { lineage: true },
+  "session.canceled": { lineage: true },
+} satisfies Readonly<Record<keyof typeof LIFECYCLE_PAYLOAD_FIELDS, FieldSet>>
 const LINEAGE_FIELDS = {
   parent_session_id: true, root_session_id: true, parent_work_item_id: true, child_work_item_id: true,
 } satisfies FieldSet
@@ -102,8 +111,20 @@ const KERNEL_PAYLOAD_FIELDS = {
   tool_call: { seq: true, metadata: true, call: true, call_id: true, tool: true, tool_name: true, state: true },
   tool_result: { seq: true, metadata: true, message: true, tool: true, success: true, status: true, error: true, call_id: true, todo: true },
 } satisfies Readonly<Record<string, FieldSet>>
-const LINEAGE_OPTIONAL_FIELDS = { lineage: true } satisfies FieldSet
 const ATTACHMENT_FIELDS = { digest: true, size_bytes: true, media_type: true } satisfies FieldSet
+const MODULE_INPUT_FIELDS = { schema_id: true, body: true, final: true } satisfies FieldSet
+const MODULE_OUTPUT_FIELDS = {
+  module_output: true,
+  output_sequence: true,
+  module_id: true,
+  worker_session_id: true,
+  request_id: true,
+  generation_id: true,
+  instance_id: true,
+  work_id: true,
+  attempt_id: true,
+  authority_epoch: true,
+} satisfies FieldSet
 
 const hasRequiredFields = (
   value: Record<string, unknown>,
@@ -274,6 +295,37 @@ const validateAttachments = (value: unknown): boolean =>
     && typeof attachment.media_type === "string"
     && attachment.media_type.length > 0)
 
+const validateModuleInput = (value: unknown): boolean =>
+  record(value)
+  && hasExactFields(value, MODULE_INPUT_FIELDS)
+  && typeof value.schema_id === "string"
+  && value.schema_id.length > 0
+  && typeof value.body === "string"
+  && typeof value.final === "boolean"
+
+const validateModuleOutputPayload = (payload: Record<string, unknown>): void => {
+  const textFields = [
+    "module_id",
+    "worker_session_id",
+    "request_id",
+    "instance_id",
+    "work_id",
+    "attempt_id",
+  ] as const
+  const valid = hasExactFields(payload, MODULE_OUTPUT_FIELDS)
+    && validateModuleInput(payload.module_output)
+    && sha256(payload.generation_id)
+    && typeof payload.output_sequence === "number"
+    && Number.isSafeInteger(payload.output_sequence)
+    && payload.output_sequence >= 0
+    && typeof payload.authority_epoch === "number"
+    && Number.isSafeInteger(payload.authority_epoch)
+    && payload.authority_epoch >= 0
+    && textFields.every((field) =>
+      typeof payload[field] === "string" && payload[field].length > 0)
+  if (!valid) throw new Error("Invalid session event module output payload")
+}
+
 const validateAnnotationPayload = (payload: Record<string, unknown>): void => {
   if (!hasExactFields(payload, ANNOTATION_PAYLOAD_FIELDS)) {
     throw new Error("Invalid session event annotation payload fields")
@@ -288,9 +340,7 @@ const validateLifecyclePayload = (
   payload: Record<string, unknown>,
 ): void => {
   const fields = LIFECYCLE_PAYLOAD_FIELDS[kind]
-  const optionalFields = Object.hasOwn(LIFECYCLE_LINEAGE_KINDS, kind)
-    ? LINEAGE_OPTIONAL_FIELDS
-    : EMPTY_FIELDS
+  const optionalFields = LIFECYCLE_OPTIONAL_FIELDS[kind]
   if (!fields || !hasRequiredFields(payload, fields, optionalFields)) {
     throw new Error("Invalid session event lifecycle payload fields")
   }
@@ -299,12 +349,39 @@ const validateLifecyclePayload = (
   }
   let valid = false
   switch (kind) {
-    case "session.started":
-      valid = sha256(payload.effective_lock_hash) && sha256(payload.task_hash)
+    case "session.started": {
+      const hasModuleInput = Object.hasOwn(payload, "module_input")
+      const hasModuleSequence = Object.hasOwn(payload, "module_input_sequence")
+      valid = sha256(payload.effective_lock_hash)
+        && sha256(payload.task_hash)
+        && hasModuleInput === hasModuleSequence
+        && (!hasModuleInput || (
+          validateModuleInput(payload.module_input)
+          && typeof payload.module_input_sequence === "number"
+          && Number.isSafeInteger(payload.module_input_sequence)
+          && payload.module_input_sequence >= 0
+        ))
       break
-    case "input.accepted":
-      valid = sha256(payload.content_hash) && validateAttachments(payload.attachments)
+    }
+    case "input.accepted": {
+      const hasContentHash = Object.hasOwn(payload, "content_hash")
+      const hasModuleInput = Object.hasOwn(payload, "module_input")
+      const hasModuleSequence = Object.hasOwn(payload, "module_input_sequence")
+      valid = validateAttachments(payload.attachments)
+        && hasModuleInput === hasModuleSequence
+        && hasContentHash !== (hasModuleInput && hasModuleSequence)
+        && (
+          (hasContentHash && sha256(payload.content_hash))
+          || (
+            hasModuleInput
+            && validateModuleInput(payload.module_input)
+            && typeof payload.module_input_sequence === "number"
+            && Number.isSafeInteger(payload.module_input_sequence)
+            && payload.module_input_sequence >= 0
+          )
+        )
       break
+    }
     case "approval.requested":
       valid = typeof payload.request_id === "string" && payload.request_id.length > 0
         && typeof payload.operation === "string" && payload.operation.length > 0
@@ -352,6 +429,7 @@ const validateEventPayload = (
     throw new Error("Invalid session event payload_schema_version")
   }
   if (kind === "annotation") validateAnnotationPayload(payload)
+  else if (kind === "module_output") validateModuleOutputPayload(payload)
   else if (kind === "assistant_message" || kind === "tool_call" || kind === "tool_result") {
     validateKernelPayload(kind, payload)
   } else validateLifecyclePayload(kind, payload)
@@ -400,7 +478,7 @@ function validateSessionEvent(
   }
   const workItemId = nullableString(raw.work_item_id, "work_item_id")
   const parentWorkItemId = nullableString(raw.parent_work_item_id, "parent_work_item_id")
-  if (Object.hasOwn(LIFECYCLE_LINEAGE_KINDS, kind) && "lineage" in raw.payload) {
+  if ("lineage" in raw.payload) {
     const lineage = raw.payload.lineage
     if (!record(lineage)) throw new Error("Invalid session event lifecycle payload lineage")
     const childWorkItemId = requiredString(lineage.child_work_item_id, "payload.lineage.child_work_item_id")
