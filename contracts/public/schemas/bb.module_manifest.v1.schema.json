@@ -1,0 +1,133 @@
+{
+  "$id": "https://breadboard.dev/contracts/public/schemas/bb.module_manifest.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BreadBoard Module Manifest V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "logical_package",
+    "package_version",
+    "entrypoint",
+    "execution_tier",
+    "worker_protocol",
+    "input_schema_ids",
+    "output_schema_ids",
+    "checkpoint_schema_id",
+    "accepted_checkpoint_schema_ids",
+    "dependency_contract_ids",
+    "child_targets",
+    "requested_authority",
+    "resource_budget",
+    "source_members",
+    "import_members",
+    "runtime"
+  ],
+  "properties": {
+    "schema_version": {"const": "bb.module_manifest.v1"},
+    "logical_package": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+    "package_version": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+    "entrypoint": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+    "execution_tier": {"enum": ["trusted_native", "enforced_isolated"]},
+    "worker_protocol": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+    "input_schema_ids": {"$ref": "#/$defs/stringArray"},
+    "output_schema_ids": {"$ref": "#/$defs/stringArray"},
+    "checkpoint_schema_id": {"type": ["string", "null"], "minLength": 1},
+    "accepted_checkpoint_schema_ids": {"$ref": "#/$defs/stringArray"},
+    "dependency_contract_ids": {"$ref": "#/$defs/stringArray"},
+    "child_targets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "target"],
+        "properties": {
+          "label": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+          "target": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"}
+        }
+      },
+      "uniqueItems": true
+    },
+    "requested_authority": {"$ref": "#/$defs/jsonObject"},
+    "resource_budget": {"$ref": "#/$defs/jsonObject"},
+    "source_members": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/sourceMember"},
+      "uniqueItems": true
+    },
+    "import_members": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/importMember"},
+      "uniqueItems": true
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "ref", "platform", "entrypoint"],
+      "properties": {
+        "kind": {"enum": ["oci", "native"]},
+        "ref": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+        "platform": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+        "entrypoint": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"}
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "oci"}}, "required": ["kind"]},
+          "then": {"properties": {"ref": {"pattern": ".+@sha256:[0-9a-f]{64}$"}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "native"}}, "required": ["kind"]},
+          "then": {"properties": {"ref": {"pattern": "^sha256:[0-9a-f]{64}$"}}}
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "stringArray": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+      "uniqueItems": true
+    },
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*//)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*\\\\)(?!.*%[0-9A-Fa-f]{2})(?!.*[\\u0000-\\u001f\\u007f]).+$"
+    },
+    "sourceMember": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "size_bytes"],
+      "properties": {
+        "path": {"allOf": [{"$ref": "#/$defs/path"}, {"not": {"const": "module.json"}}]},
+        "sha256": {"$ref": "#/$defs/digest"},
+        "size_bytes": {"type": "integer", "minimum": 0}
+      }
+    },
+    "importMember": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["module", "path", "sha256", "size_bytes"],
+      "properties": {
+        "module": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+        "path": {"allOf": [{"$ref": "#/$defs/path"}, {"not": {"const": "module.json"}}]},
+        "sha256": {"$ref": "#/$defs/digest"},
+        "size_bytes": {"type": "integer", "minimum": 0}
+      }
+    },
+    "jsonObject": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/jsonValue"}
+    },
+    "jsonValue": {
+      "type": ["null", "boolean", "integer", "number", "string", "array", "object"],
+      "items": {"$ref": "#/$defs/jsonValue"},
+      "additionalProperties": {"$ref": "#/$defs/jsonValue"}
+    }
+  }
+}
