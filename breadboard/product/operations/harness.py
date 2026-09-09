@@ -213,8 +213,8 @@ def create_harness(
     request: CreateHarnessRequest,
     context: OperationContext,
 ) -> OperationResult:
-    command = ["harness", "init"]
-    stage = "harness.init"
+    command = ["harness", "create"]
+    stage = "harness.create"
     try:
         directory = context.resolve_path(request.directory)
         paths = daily_driver_bundle_paths(directory)
