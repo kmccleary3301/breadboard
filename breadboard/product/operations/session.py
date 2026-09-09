@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Mapping, Protocol, Sequence
 
-from breadboard.product.harness.lock import EffectiveHarnessLock, load_lock
-from breadboard.product.operations.harness import LockHarnessRequest, lock_harness
+from breadboard.artifacts.cas import FilesystemCAS
+from breadboard.product.harness.lock import EffectiveHarnessLock, LOCK_SCHEMA_VERSION, load_lock, materialize_lock
 from breadboard.product.operations.model import (
     EXIT_BLOCKED,
     OperationContext,
@@ -655,6 +655,18 @@ def _resolve_start_lock(
     lock_path = context.resolve_path(request.lock_id)
     lock, metadata_path = load_lock(lock_path, context.workspace, explicit=True)
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    if (
+        metadata.get("schema_version") != "bb.harness_lock_metadata.v2"
+        or metadata.get("lock_id") != lock.generation_id
+        or metadata.get("graph_hash") != lock.configuration_graph["graph_hash"]
+    ):
+        raise ValueError("lock metadata does not match retained Lock identity")
+    if lock["schema_version"] == LOCK_SCHEMA_VERSION:
+        cas = FilesystemCAS(context.workspace / ".breadboard" / "module-artifacts")
+        try:
+            materialize_lock(lock, cas=cas)
+        finally:
+            cas.close()
     source_ref = metadata.get("source_ref")
     if not isinstance(source_ref, str) or not source_ref:
         raise ValueError("lock metadata source_ref is missing")
@@ -662,16 +674,12 @@ def _resolve_start_lock(
     if not context.contained and not Path(source_ref).is_absolute():
         source_reference = context.workspace / source_ref
     source_path = context.resolve_path(source_reference)
-    lock_request_path: str | Path = source_ref if context.contained else source_path
-    lock_request_out: str | Path = (
-        lock_path.relative_to(context.workspace) if context.contained else lock_path
+    return lock, source_path, OperationResult.success(
+        ["session", "start"],
+        refs=[portable_ref(lock_path, context.workspace)],
+        hashes={
+            "lock": lock.generation_id,
+            "graph": lock.configuration_graph["graph_hash"],
+        },
+        stage="session.lock",
     )
-    checked = lock_harness(
-        LockHarnessRequest(
-            path=lock_request_path,
-            out=lock_request_out,
-            check=True,
-        ),
-        context,
-    )
-    return lock, source_path, checked

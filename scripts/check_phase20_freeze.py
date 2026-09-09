@@ -68,11 +68,22 @@ ALLOWED_SCHEMA_IDS = {
     "https://breadboard.dev/contracts/public/schemas/bb.public_operation_catalog.v2.schema.json",  # AM30
     "https://breadboard.dev/contracts/public/schemas/bb.research.compare.input.v1.schema.json",  # AM30
     "https://breadboard.dev/contracts/public/schemas/bb.research.compare.result.v1.schema.json",  # AM30
+    "https://breadboard.dev/contracts/public/schemas/bb.module_manifest.v1.schema.json",  # AM31
+    "https://breadboard.dev/contracts/public/schemas/bb.harness_definition.v2.schema.json",  # AM31
+    "https://breadboard.dev/contracts/public/schemas/bb.effective_harness_lock.v2.schema.json",  # AM31
+    "https://breadboard.dev/contracts/public/schemas/bb.harness.package.input.v1.schema.json",  # AM31
+    "https://breadboard.dev/contracts/public/schemas/bb.harness.package.result.v1.schema.json",  # AM31
 }
 
 # FREEZE_POLICY.md permits plan-required tightening of an existing schema only
 # when the same commit pins the expected post-change content hash and owning packet.
 TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
+    "https://breadboard.dev/contracts/kernel/schemas/bb.config_explanation.v1.schema.json": {
+        "packet": "bb-xh49.1",
+        "sha256": "310cc59d44e6ec7af9e37c346fe3ce0fc323c1c80c1de0b68e94147ef3e656f2",
+        "class": "plan_mandated_evolution",
+        "ref": "AM31",
+    },
     "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json": {
         "packet": "I2",
         "sha256": "fbb7d1492c4f98ac8b38b2923d971b3faa51c921f70cee012d3903fcc29491ad",
@@ -147,10 +158,10 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
         "ref": "AM29",
     },
     "https://breadboard.dev/contracts/public/schemas/bb.public_operation_catalog.v2.schema.json": {
-        "packet": "DSH-W10",
-        "sha256": "ad40ec89670acf021c9c5b23e94dcfe5853ea9caedda4a21e591a37abceb6506",
+        "packet": "bb-xh49.1",
+        "sha256": "94a9b5651540f36dbaba239bb4c93f7a713e9c0897ab91f169a6bb52ed28e215",
         "class": "plan_mandated_evolution",
-        "ref": "AM30",
+        "ref": "AM31",
     },
     "https://breadboard.dev/contracts/public/schemas/bb.research.compare.input.v1.schema.json": {
         "packet": "DSH-W10",
@@ -169,6 +180,36 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
         "sha256": "d5cb5fb733d654c20f6ccfcc9e5c9ecc5b431fd6ef8c8f564b9ebced2a56b41e",
         "class": "plan_mandated_evolution",
         "ref": "AM30",
+    },
+    "https://breadboard.dev/contracts/public/schemas/bb.module_manifest.v1.schema.json": {
+        "packet": "bb-xh49.1",
+        "sha256": "767d802adfa83f38483f205aa7e06bd7e256919ca3c600eb77a48880c284abcd",
+        "class": "plan_mandated_evolution",
+        "ref": "AM31",
+    },
+    "https://breadboard.dev/contracts/public/schemas/bb.harness_definition.v2.schema.json": {
+        "packet": "bb-xh49.1",
+        "sha256": "9c546dc1cfee4f1ddfd9de11b985eea1047688181c20e1e75831608b2551d7a9",
+        "class": "plan_mandated_evolution",
+        "ref": "AM31",
+    },
+    "https://breadboard.dev/contracts/public/schemas/bb.effective_harness_lock.v2.schema.json": {
+        "packet": "bb-xh49.1",
+        "sha256": "1a9a8dad10125021a02cf46a0b41a11e1fe8da93bd0fc45b6b6dd876863fde96",
+        "class": "plan_mandated_evolution",
+        "ref": "AM31",
+    },
+    "https://breadboard.dev/contracts/public/schemas/bb.harness.package.input.v1.schema.json": {
+        "packet": "bb-xh49.1",
+        "sha256": "20d1d90e047144ea4653a3784e10ae14673ae4a2e63d50d3e0ae9622b566aa2f",
+        "class": "plan_mandated_evolution",
+        "ref": "AM31",
+    },
+    "https://breadboard.dev/contracts/public/schemas/bb.harness.package.result.v1.schema.json": {
+        "packet": "bb-xh49.1",
+        "sha256": "5cee7e8b2e4f0a898942a2b53c1e718cfc25edb581bd6d3814f4884378ed8636",
+        "class": "plan_mandated_evolution",
+        "ref": "AM31",
     },
 }
 

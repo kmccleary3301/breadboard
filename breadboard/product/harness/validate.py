@@ -72,8 +72,11 @@ _MappingDraft202012Validator = validators.extend(
 @lru_cache(maxsize=1)
 def _schema_validators() -> dict[tuple[str, int], Validator]:
     schemas = {pair: _load_schema(path) for pair, path in _SCHEMA_PATHS.items()}
+    module_schema = _load_schema(
+        Path("contracts/public/schemas/bb.module_manifest.v1.schema.json")
+    )
     resources = []
-    for schema in schemas.values():
+    for schema in (*schemas.values(), module_schema):
         Draft202012Validator.check_schema(schema)
         schema_id = schema.get("$id")
         if not isinstance(schema_id, str):

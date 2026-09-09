@@ -1,8 +1,8 @@
 <!-- GENERATED FILE - do not edit by hand. -->
 <!-- generator: scripts/quality/generate_public_bindings.py -->
-<!-- generator-version: 5 -->
+<!-- generator-version: 6 -->
 <!-- catalog-id: bb.public_operation_catalog.v2 -->
-<!-- catalog-sha256: sha256:627448eb95b9e12c1f951c1b5d5fd30a4fc870cb57c520f23bb3d8c4338394ec -->
+<!-- catalog-sha256: sha256:8288cc7cd5f032ceec82963798984daed187e18c83478228085b057fbae52b85 -->
 <!-- document-kind: operation-reference -->
 <!-- operation-id: session.resume -->
 <!-- slug: operations/session/resume -->
@@ -17,7 +17,7 @@ Candidate public operation reference for `session.resume`.
 | --- | --- |
 | Status | `candidate` |
 | HTTP | `POST /v1/sessions/{session_id}/resume` |
-| CLI | `bbh session resume` |
+| CLI | `breadboard session resume` |
 | Lifecycle | `async` |
 | Effects | `execute` |
 | Stability | `experimental` |
@@ -31,7 +31,7 @@ Candidate public operation reference for `session.resume`.
 - Python: `BreadBoardClient.resume_session`
 - TypeScript: `BreadBoardClient.resumeSession`
 - TUI: `public.session.resume` (`action`)
-- CLI: `bbh session resume`
+- CLI: `breadboard session resume`
 - Documentation: `product-docs owner` (`candidate`)
 
 ## Schemas

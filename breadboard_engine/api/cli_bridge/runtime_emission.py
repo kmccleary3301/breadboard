@@ -3,12 +3,25 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import posixpath
+import shutil
 import stat
+import tempfile
 from datetime import datetime, timezone
 from dataclasses import asdict, dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 from typing import Any, Mapping
+
+from breadboard.artifacts.cas import FilesystemCAS
+from breadboard.product.harness.compile import compile_harness_definition
+from breadboard.product.harness.lock import (
+    EffectiveHarnessLock,
+    _copy,
+    make_effective_harness_lock,
+    materialize_lock,
+)
+from breadboard.product.harness.resolution import load_harness_document_bytes
 from breadboard.product.runtime.artifacts import ArtifactStore
 from breadboard.product.coordination.work_items import (
     Budget,
@@ -165,8 +178,139 @@ def _json_safe_runtime_config(value: Any) -> Any:
     return value
 
 
+
 def _sanitize_persisted_runtime_config(value: Any) -> Any:
     return _json_safe_runtime_config(redaction.strip_provider_auth_runtime(value))
+@dataclass(frozen=True, slots=True)
+class CapturedRuntimeConfig:
+    """Runtime configuration reconstructed solely from a verified complete Lock."""
+
+    config: Mapping[str, Any]
+    config_path: Path
+    resource_root: Path
+
+    def cleanup(self) -> None:
+        shutil.rmtree(self.resource_root)
+
+
+
+
+def _captured_reference(
+    documents: Mapping[str, Mapping[str, Any]],
+    parent: str,
+    declared: str,
+) -> str:
+    resolved = posixpath.normpath(
+        declared if PurePosixPath(declared).is_absolute() else
+        posixpath.join(PurePosixPath(parent).parent.as_posix(), declared)
+    )
+    if resolved not in documents:
+        raise KeyError(f"captured configuration reference is unavailable: {resolved}")
+    return resolved
+
+
+def materialize_lock_runtime_config(
+    lock: EffectiveHarnessLock,
+    *,
+    cas: FilesystemCAS,
+) -> CapturedRuntimeConfig:
+    """Load a data Lock's configuration from its captured CAS closure.
+
+    This deliberately refuses executable module composition until the worker
+    protocol owns that execution path. No author path is consulted.
+    """
+
+    materialized = materialize_lock(lock, cas=cas)
+    if lock["modules"] is not None:
+        raise ValueError("executable module runtime is not available in packet A")
+
+    graph = materialized.configuration_graph
+    documents = {
+        source_ref: load_harness_document_bytes(payload)
+        for source_ref, payload in materialized.source_bytes.items()
+    }
+    source_layers = [
+        layer
+        for layer in graph["source_layers"]
+        if layer.get("scope") != "resource"
+        and isinstance(layer.get("source_ref"), str)
+        and layer["source_ref"] in documents
+    ]
+    if not source_layers:
+        raise ValueError("complete Lock has no captured configuration source")
+    root_layer = max(
+        source_layers,
+        key=lambda layer: (
+            int(layer.get("precedence", 0)),
+            str(layer.get("source_ref", "")),
+        ),
+    )
+    root_ref = str(root_layer["source_ref"])
+
+    def load_ref(parent: str, declared: str) -> tuple[str, Mapping[str, Any]]:
+        resolved = _captured_reference(documents, parent, declared)
+        return resolved, documents[resolved]
+
+    compilation = compile_harness_definition(
+        documents[root_ref],
+        source_ref=root_ref,
+        load_ref=load_ref,
+        resource_inputs=materialized.resource_bytes,
+    )
+    rebuilt = make_effective_harness_lock(
+        compilation.lock.configuration_graph,
+        compilation.lock["modules"],
+        lock["configuration_artifacts"],
+    )
+    if rebuilt.as_dict() != lock.as_dict():
+        raise ValueError("captured configuration does not reproduce retained Lock identity")
+
+    runtime_config = compilation.as_dict()
+    resource_root = Path(tempfile.mkdtemp(prefix="breadboard-retained-lock-"))
+    try:
+        sources = {layer["layer_id"]: layer["source_ref"] for layer in graph["source_layers"]}
+        replacements: dict[tuple[str, str], str] = {}
+        captured_paths: dict[str, Path] = {}
+        for row in graph["effective_values"]:
+            if not row["path"].startswith("prompts.packs.") or not isinstance(row["value"], str):
+                continue
+            reference = f"{sources[row['source_layer_id']]}::{row['value']}"
+            if reference not in captured_paths:
+                captured_path = resource_root / (
+                    hashlib.sha256(reference.encode("utf-8")).hexdigest() + ".resource"
+                )
+                captured_path.write_bytes(materialized.resource_bytes[reference])
+                captured_paths[reference] = captured_path
+            replacements[(row["path"], row["value"])] = str(captured_paths[reference])
+        pending = [("", runtime_config)]
+        while pending:
+            prefix, values = pending.pop()
+            for name, value in values.items():
+                path = f"{prefix}.{name}" if prefix else name
+                if isinstance(value, dict):
+                    pending.append((path, value))
+                elif isinstance(value, str) and (path, value) in replacements:
+                    values[name] = replacements.pop((path, value))
+        if replacements:
+            raise ValueError("captured prompt bindings do not match retained configuration")
+        config_path = resource_root / "captured_runtime_config.json"
+        config_path.write_text(
+            json.dumps(
+                _sanitize_persisted_runtime_config(runtime_config),
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+    except BaseException:
+        shutil.rmtree(resource_root)
+        raise
+    return CapturedRuntimeConfig(
+        config=runtime_config,
+        config_path=config_path,
+        resource_root=resource_root,
+    )
+
 
 _RETAINED_RUNTIME_OVERRIDE_KEYS = frozenset(
     {
@@ -336,6 +480,7 @@ def emit_session_start_records(
     output_root: Path | None = None,
     effective_runtime_config: Mapping[str, Any] | None = None,
     model_role_lock: Any | None = None,
+    effective_lock: EffectiveHarnessLock | None = None,
 ) -> dict[str, str]:
     """Emit validating session-start records, failing before partial evidence is written."""
     managed = prepare_managed_state()
@@ -345,10 +490,19 @@ def emit_session_start_records(
     if effective_runtime_config is None:
         base_config = load_agent_config(str(config_path))
         base_config = dict(base_config) if isinstance(base_config, Mapping) else {}
-        config = _sanitize_persisted_runtime_config(apply_dotted_overrides(base_config, dict(request.overrides or {})))
-    else: config = _sanitize_persisted_runtime_config(effective_runtime_config)
-    graph = compile_runtime_effective_config_graph(session_id, config, str(config_path), repo_root=root)
-    if model_role_lock is not None:
+        config = _sanitize_persisted_runtime_config(
+            apply_dotted_overrides(base_config, dict(request.overrides or {}))
+        )
+    else:
+        config = _sanitize_persisted_runtime_config(effective_runtime_config)
+    graph = (
+        _copy(effective_lock.configuration_graph, freeze=False)
+        if effective_lock is not None
+        else compile_runtime_effective_config_graph(
+            session_id, config, str(config_path), repo_root=root
+        )
+    )
+    if model_role_lock is not None and effective_lock is None:
         from ...model_roles import embed_model_role_lock
 
         graph = embed_model_role_lock(graph, model_role_lock)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -29,6 +31,28 @@ class ArtifactRef:
             "media_type": self.media_type,
             "metadata": dict(self.metadata),
         }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, object]) -> ArtifactRef:
+        expected = {"artifact_id", "sha256", "size_bytes", "media_type", "metadata"}
+        if set(value) != expected:
+            raise ValueError("artifact reference fields are incomplete or unknown")
+        artifact_id = value["artifact_id"]
+        digest = value["sha256"]
+        size = value["size_bytes"]
+        media_type = value["media_type"]
+        metadata = value["metadata"]
+        if not isinstance(artifact_id, str) or not artifact_id:
+            raise ValueError("artifact_id must be a non-empty string")
+        if not isinstance(digest, str) or re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None:
+            raise ValueError("artifact sha256 must be a complete digest")
+        if type(size) is not int or size < 0:
+            raise ValueError("artifact size_bytes must be a non-negative integer")
+        if not isinstance(media_type, str) or not media_type:
+            raise ValueError("artifact media_type must be a non-empty string")
+        if not isinstance(metadata, Mapping) or any(not isinstance(key, str) for key in metadata):
+            raise ValueError("artifact metadata must be an object")
+        return cls(artifact_id, digest, size, media_type, dict(metadata))
 
 
 @dataclass(frozen=True)

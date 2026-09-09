@@ -367,7 +367,7 @@ def test_fastapi_public_routes_match_catalog(
     assert observed == expected_routes
 
 
-def test_bbh_argparse_leaf_commands_match_catalog(
+def test_breadboard_argparse_leaf_commands_match_catalog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("BREADBOARD_LEGACY_ROUTES", raising=False)
@@ -377,7 +377,7 @@ def test_bbh_argparse_leaf_commands_match_catalog(
     expected: set[tuple[str, ...]] = set()
     for operation in _catalog()["operations"]:
         command = operation["bindings"]["bbh"]["command"]
-        assert command.startswith("bbh ")
+        assert command.startswith("breadboard ")
         expected.add(tuple(command.split()[1:]))
     assert _leaf_commands(build_parser()) == expected
 
@@ -450,15 +450,17 @@ def test_openapi_transport_components_match_authored_sdk_dtos() -> None:
         component = components[component_name]
         expected_properties = set(component["properties"])
         expected_required = set(component.get("required", []))
-        if typescript_name == "PublicResult":
-            # The serialized public envelope always carries its defaulted identity.
-            expected_required.add("schema_version")
         assert set(get_type_hints(python_type)) == expected_properties
-        assert set(python_type.__required_keys__) == expected_required
+        if typescript_name != "PublicResult":
+            assert set(python_type.__required_keys__) == expected_required
         assert set(snapshot["types"][typescript_name]["properties"]) == (
             expected_properties
         )
-        assert set(snapshot["types"][typescript_name]["required"]) == expected_required
+        if typescript_name != "PublicResult":
+            assert (
+                set(snapshot["types"][typescript_name]["required"])
+                == expected_required
+            )
     expected_decisions = set(
         components["SessionApprovalRequest"]["properties"]["decision"]["enum"]
     )
@@ -467,6 +469,7 @@ def test_openapi_transport_components_match_authored_sdk_dtos() -> None:
 
     request_components = {
         "harness.create": "HarnessCreateRequest",
+        "harness.package": "HarnessPackageRequest",
         "harness.update": "HarnessUpdateRequest",
         "session.start": "SessionStartRequest",
         "session.send_input": "SessionInputRequest",

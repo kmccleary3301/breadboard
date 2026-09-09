@@ -1,7 +1,7 @@
 // GENERATED FILE - do not edit by hand.
 // generator: scripts/dev/generate_ts_sdk.py (deterministic, in-process, no network)
-// openapi-schema-sha256: 512f29a5384036639a726c355314bf613b10a90263d33ea9a402281ac7a4e5dc
-// app-source-sha256: c5a67f141fdc2ef626cb1184156df1c90bcb9325a2702bdd8be71992e6f48add
+// openapi-schema-sha256: 9c6adeae7025f6f3cea5c3c3acdbf264055a05e804b8db65b62d0a213bd8e7db
+// app-source-sha256: 43b6c21adcb20887b99520e702a6aa8cd4944ad27f4c8de9847b9fd051c70496
 
 export interface RouteEntry { path: string; method: string; operationId: string }
 
@@ -33,6 +33,7 @@ export const ROUTES: readonly RouteEntry[] = [
   { path: "/v1/engine/owner/release", method: "POST", operationId: "release_engine_owner_v1_engine_owner_release_post" },
   { path: "/v1/engine/owner/renew", method: "POST", operationId: "renew_engine_owner_v1_engine_owner_renew_post" },
   { path: "/v1/harness-locks/{lock_id}", method: "GET", operationId: "harness_lock.get" },
+  { path: "/v1/harness-packages", method: "POST", operationId: "harness.package" },
   { path: "/v1/harnesses", method: "GET", operationId: "harness.list" },
   { path: "/v1/harnesses", method: "POST", operationId: "harness.create" },
   { path: "/v1/harnesses/{harness_id}", method: "GET", operationId: "harness.get" },

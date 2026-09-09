@@ -19,6 +19,7 @@ def _harness(ns):
     if _enabled("BREADBOARD_LEGACY_ROUTES"):
         x=s.add_parser("init");x.add_argument("--out");x.set_defaults(handler=_harness_handler("init"))
     x=s.add_parser("list");x.add_argument("--directory");x.set_defaults(handler=_harness_handler("list_harnesses"))
+    x=s.add_parser("package",help="capture an immutable module package without executing it");x.add_argument("PATH");x.add_argument("--out",required=True);x.set_defaults(handler=_harness_handler("package"))
     commands=("get","update","validate","explain","lock","run")
     if _enabled("BREADBOARD_LEGACY_ROUTES"):commands=("show",)+commands
     for n in commands:
@@ -82,14 +83,8 @@ def build_parser():
         from . import e4
         e4.register(ns)
     return p
-def _legacy_explain(a):
-    try:
-        from breadboard.product.harness.config_explanation import main as f
-        return f(["--config",a.PATH]+(["--strict"] if a.strict else []))
-    except Exception as e:return emit(from_exception(["harness","explain"],e,"harness.explain"),False,bool(a.quiet))
 def main(argv:Sequence[str]|None=None):
     a=build_parser().parse_args(argv)
-    if a.namespace=="harness" and a.command=="explain" and not a.json:return _legacy_explain(a)
     try:r=a.handler(a)
     except Exception as e:return emit(from_exception([a.namespace,a.command],e),bool(a.json),bool(a.quiet))
     return r if isinstance(r,int) else emit(r,bool(a.json),bool(a.quiet))

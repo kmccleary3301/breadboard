@@ -29,7 +29,7 @@ PYTHON_EVENT_BINDINGS_RELATIVE: Final = Path(
     "breadboard_sdk/generated/session_event_bindings.py"
 )
 GENERATOR_PATH: Final = "scripts/quality/generate_public_bindings.py"
-GENERATOR_VERSION: Final = "5"
+GENERATOR_VERSION: Final = "6"
 SCHEMA_VERSION: Final = "bb.public_client_binding_manifest.v1"
 GENERATED_FILE_MODE: Final = 0o644
 DOCUMENT_MARKER: Final = "<!-- GENERATED FILE - do not edit by hand. -->"
@@ -49,6 +49,8 @@ INDEX_DOCUMENT_KIND: Final = "operation-index"
 APPROVED_SCHEMA_LINK_TARGETS: Final = {
     "bb.problem.v1": "contracts/public/schemas/bb.problem.v1.schema.json",
     "bb.public_session_event.v1": "contracts/public/schemas/bb.public_session_event.v1.schema.json",
+    "bb.harness.package.input.v1": "contracts/public/schemas/bb.harness.package.input.v1.schema.json",
+    "bb.harness.package.result.v1": "contracts/public/schemas/bb.harness.package.result.v1.schema.json",
 }
 _DOC_SLUG_SEGMENT = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _VALID_LIFECYCLES = frozenset({"sync", "async"})
@@ -321,7 +323,7 @@ def _normalize_catalog(catalog: Any) -> tuple[dict[str, Any], ...]:
 
         bbh = _binding(row, "bbh", operation_id)
         cli_command = _require_string(bbh.get("command"), "bbh.command", operation_id)
-        if not cli_command.startswith("bbh "):
+        if not cli_command.startswith("breadboard "):
             raise CatalogError(f"{operation_id}: malformed CLI command {cli_command!r}")
 
         python = _binding(row, "python_sdk", operation_id)

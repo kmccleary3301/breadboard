@@ -17,10 +17,12 @@
     "accepted_checkpoint_schema_ids",
     "dependency_contract_ids",
     "child_targets",
+    "contracts",
     "requested_authority",
     "resource_budget",
     "source_members",
     "import_members",
+    "schema_members",
     "runtime"
   ],
   "properties": {
@@ -40,14 +42,17 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["label", "target"],
+        "required": ["label", "target", "contract_id"],
         "properties": {
           "label": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
-          "target": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"}
+          "target": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+          "contract_id": {"type": "string", "minLength": 1}
         }
       },
       "uniqueItems": true
     },
+    "contracts": {"type": "array", "items": {"$ref": "#/$defs/moduleContract"}, "uniqueItems": true},
+    "schema_members": {"type": "object", "additionalProperties": {"$ref": "#/$defs/path"}},
     "requested_authority": {"$ref": "#/$defs/jsonObject"},
     "resource_budget": {"$ref": "#/$defs/jsonObject"},
     "source_members": {
@@ -87,7 +92,55 @@
       ]
     }
   },
+  "allOf": [{
+    "if": {"properties": {"execution_tier": {"const": "enforced_isolated"}}},
+    "then": {"properties": {"runtime": {"properties": {"kind": {"const": "oci"}}}}}
+  }],
   "$defs": {
+    "moduleContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_id", "input_schema_ids", "output_schema_ids"],
+      "properties": {
+        "contract_id": {"type": "string", "minLength": 1},
+        "input_schema_ids": {"$ref": "#/$defs/stringArray"},
+        "output_schema_ids": {"$ref": "#/$defs/stringArray"}
+      }
+    },
+    "package_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_ref", "import_members", "manifest", "package_digest", "runtime_key"],
+      "properties": {
+        "artifact_ref": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["artifact_id", "sha256", "size_bytes", "media_type", "metadata"],
+          "properties": {
+            "artifact_id": {"$ref": "#/$defs/digest"},
+            "sha256": {"$ref": "#/$defs/digest"},
+            "size_bytes": {"type": "integer", "minimum": 0},
+            "media_type": {"const": "application/zip"},
+            "metadata": {"type": "object", "maxProperties": 0}
+          }
+        },
+        "import_members": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["module", "path"],
+            "properties": {
+              "module": {"type": "string", "minLength": 1},
+              "path": {"$ref": "#/$defs/path"}
+            }
+          }
+        },
+        "manifest": {"$ref": "#"},
+        "package_digest": {"$ref": "#/$defs/digest"},
+        "runtime_key": {"$ref": "#/$defs/digest"}
+      }
+    },
     "stringArray": {
       "type": "array",
       "items": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},

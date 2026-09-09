@@ -6,11 +6,20 @@ import shlex
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 import yaml
 
-from breadboard.product.harness.lock import lock_metadata_path, lock_path, sha256_json
+from breadboard.artifacts.cas import FilesystemCAS
+from breadboard.product.harness.compile import HarnessCompilation
+from breadboard.product.harness.lock import (
+    EffectiveHarnessLock,
+    lock_metadata_path,
+    lock_path,
+    sha256_json,
+)
+from breadboard.product.harness.packages import build_module_package
 from breadboard.product.harness.resolution import (
     compile_harness_source,
     load_harness_document,
@@ -39,6 +48,12 @@ from breadboard.product.operations.model import (
 @dataclass(frozen=True, slots=True)
 class CreateHarnessRequest:
     directory: str | Path = "."
+
+
+@dataclass(frozen=True, slots=True)
+class PackageHarnessRequest:
+    source: str | Path
+    out: str | Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +96,18 @@ class GetHarnessLockRequest:
 
 
 _MUTATION_LOCK = threading.RLock()
+
+
+def _preview_compilation(path: Path, context: OperationContext) -> HarnessCompilation:
+    """Resolve exact bytes without retaining artifacts from a read operation."""
+    with TemporaryDirectory(prefix="breadboard-harness-preview-") as temporary:
+        cas = FilesystemCAS(Path(temporary))
+        try:
+            return compile_harness_source(
+                path, context.workspace, context.contained, cas=cas
+            )
+        finally:
+            cas.close()
 
 
 def _is_harness_path(path: Path, context: OperationContext) -> bool:
@@ -314,6 +341,42 @@ def _lock_target(
     return target
 
 
+def package_harness(
+    request: PackageHarnessRequest,
+    context: OperationContext,
+) -> OperationResult:
+    command = ["harness", "package"]
+    stage = "harness.package"
+    try:
+        source = context.resolve_path(request.source)
+        target = context.resolve_path(request.out)
+        _validate_output_path(target, context)
+        cas = FilesystemCAS(context.workspace / ".breadboard" / "module-artifacts")
+        try:
+            package = build_module_package(source, target, cas=cas)
+        finally:
+            cas.close()
+        reference = portable_ref(target, context.workspace)
+        return OperationResult.success(
+            command,
+            {"path": reference, "package": package.lock_record()},
+            refs=[reference],
+            hashes={"package": package.package_digest},
+            stage=stage,
+        )
+    except ValueError as error:
+        return OperationResult.failure(
+            command,
+            EXIT_VALIDATION_FAILURE,
+            "invalid_module_package",
+            str(error),
+            stage,
+            "Correct the named module.json declaration or package member before retrying.",
+        )
+    except Exception as error:
+        return from_exception(command, error, stage)
+
+
 def lock_harness(
     request: LockHarnessRequest,
     context: OperationContext,
@@ -324,14 +387,17 @@ def lock_harness(
         source = context.resolve_path(request.path)
         with _MUTATION_LOCK:
             target = _lock_target(request, source, context)
-            compilation = compile_harness_source(
-                source, context.workspace, context.contained
+            compilation = (
+                _preview_compilation(source, context)
+                if request.check else
+                compile_harness_source(source, context.workspace, context.contained)
             )
             metadata = {
-                "schema_version": "bb.harness_lock_metadata.v1",
+                "schema_version": "bb.harness_lock_metadata.v2",
                 "source_ref": portable_ref(source, context.workspace),
                 "source_sha256": sha256_json(compilation.resolved_author_dict()),
-                "graph_hash": compilation.lock["graph_hash"],
+                "lock_id": compilation.lock.generation_id,
+                "graph_hash": compilation.lock.configuration_graph["graph_hash"],
             }
             metadata_path = lock_metadata_path(target)
             if request.check:
@@ -362,11 +428,12 @@ def lock_harness(
                     command,
                     {
                         "path": portable_ref(target, context.workspace),
+                        "lock_id": compilation.lock.generation_id,
                         "graph_hash": graph_hash,
                         "checked": True,
                     },
                     [portable_ref(target, context.workspace)],
-                    {"graph": graph_hash},
+                    {"lock": compilation.lock.generation_id, "graph": graph_hash},
                     stage=stage,
                 )
 
@@ -384,10 +451,12 @@ def lock_harness(
                 command,
                 {
                     "path": portable_ref(target, context.workspace),
+                    "lock_id": compilation.lock.generation_id,
                     "graph_hash": graph_hash,
                 },
                 [portable_ref(target, context.workspace)],
                 {
+                    "lock": compilation.lock.generation_id,
                     "graph": graph_hash,
                     "source": str(metadata["source_sha256"]),
                 },
@@ -429,7 +498,7 @@ def update_harness(
                 )
             temporary = path.with_name(f".{path.name}.{os.urandom(8).hex()}.tmp")
             temporary.write_text(yaml.safe_dump(document, sort_keys=False))
-            compile_harness_source(temporary, context.workspace, context.contained)
+            _preview_compilation(temporary, context)
             os.replace(temporary, path)
             return validate_harness(
                 ValidateHarnessRequest(request.path),
@@ -504,10 +573,15 @@ def validate_harness(
     try:
         path = context.resolve_path(request.path)
         reference = portable_ref(path, context.workspace)
-        definition = load_harness_definition(path)
+        compilation = _preview_compilation(path, context)
+        definition = compilation.resolved_author_dict()
         return OperationResult.success(
             command,
-            {"path": reference, "schema_version": definition["schema_version"]},
+            {
+                "path": reference,
+                "schema_version": definition["schema_version"],
+                "lock_id": compilation.lock.generation_id,
+            },
             [reference],
             stage=stage,
         )
@@ -534,11 +608,7 @@ def explain_harness(
     try:
         path = context.resolve_path(request.path)
         reference = portable_ref(path, context.workspace)
-        explanation = compile_harness_source(
-            path,
-            context.workspace,
-            context.contained,
-        ).explanation.as_dict()
+        explanation = _preview_compilation(path, context).explanation.as_dict()
         explanation["config_path"] = reference
         return OperationResult.success(
             command,
@@ -560,13 +630,16 @@ def get_harness_lock(
     try:
         path = context.resolve_path(request.path)
         target = path if path.name.endswith(".lock.json") else lock_path(path)
-        lock = json.loads(target.read_text())
+        lock = EffectiveHarnessLock._from_record(json.loads(target.read_text()))
         reference = portable_ref(target, context.workspace)
         return OperationResult.success(
             command,
-            {"path": reference, "lock": lock},
+            {"path": reference, "lock": lock.as_dict()},
             [reference],
-            {"graph": str(lock.get("graph_hash", ""))},
+            {
+                "lock": lock.generation_id,
+                "graph": str(lock.configuration_graph["graph_hash"]),
+            },
             stage=stage,
         )
     except Exception as error:

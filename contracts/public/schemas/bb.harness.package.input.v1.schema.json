@@ -1,0 +1,1 @@
+{"$id":"https://breadboard.dev/contracts/public/schemas/bb.harness.package.input.v1.schema.json","$schema":"https://json-schema.org/draft/2020-12/schema","title":"Harness package input","type":"object","additionalProperties":false,"required":["source","out"],"properties":{"source":{"type":"string","minLength":1},"out":{"type":"string","minLength":1}}}

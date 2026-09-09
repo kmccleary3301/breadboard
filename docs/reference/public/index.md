@@ -1,8 +1,8 @@
 <!-- GENERATED FILE - do not edit by hand. -->
 <!-- generator: scripts/quality/generate_public_bindings.py -->
-<!-- generator-version: 5 -->
+<!-- generator-version: 6 -->
 <!-- catalog-id: bb.public_operation_catalog.v2 -->
-<!-- catalog-sha256: sha256:627448eb95b9e12c1f951c1b5d5fd30a4fc870cb57c520f23bb3d8c4338394ec -->
+<!-- catalog-sha256: sha256:8288cc7cd5f032ceec82963798984daed187e18c83478228085b057fbae52b85 -->
 <!-- document-kind: operation-index -->
 
 # Public operation reference
@@ -19,6 +19,7 @@ Candidate documentation generated from the public operation catalog.
 - [`harness.get`](operations/harness/get.md) — get harness
 - [`harness.list`](operations/harness/list.md) — list harness
 - [`harness.lock`](operations/harness/lock.md) — lock harness
+- [`harness.package`](operations/harness/package.md) — Capture an immutable author module package without executing package code.
 - [`harness.update`](operations/harness/update.md) — update harness
 - [`harness.validate`](operations/harness/validate.md) — validate harness
 - [`harness_lock.get`](operations/harness-lock/get.md) — get harness lock

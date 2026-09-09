@@ -7,6 +7,8 @@ from typing import Any
 import yaml
 
 from breadboard.artifacts.cas import FilesystemCAS
+from breadboard.product.harness.compile import HarnessCompilation, HarnessCompileError, compile_harness_definition
+from breadboard.product.harness.lock import configuration_artifact_id, sha256_bytes
 from breadboard.product.harness.templates import (
     DAILY_DRIVER_MODEL_ROLES_NAME,
     DAILY_DRIVER_TEMPLATE_NAME,
@@ -313,7 +315,10 @@ def compile_harness_source(
                 for name, binding in bindings.items():
                     if isinstance(name, str) and isinstance(binding, Mapping):
                         module_declarations[name] = (binding, paths[reference].parent)
-    collect_modules(document, source_ref, (source_ref,))
+    try:
+        collect_modules(document, source_ref, (source_ref,))
+    except HarnessContainmentError as error:
+        raise HarnessCompileError(str(error)) from error
 
     owns_cas = False
     active_cas = cas
@@ -390,6 +395,7 @@ def compile_harness_source(
             contained,
         )
         resources.update(roles)
+        compilation = compilation.with_resource_inputs(resources)
         artifact_refs = _publish_configuration_artifacts(
             compilation,
             source_bytes,

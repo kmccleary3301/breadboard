@@ -71,7 +71,7 @@
             },
             "command": {
               "type": "string",
-              "pattern": "^bbh "
+              "pattern": "^breadboard "
             }
           }
         }

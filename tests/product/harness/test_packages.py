@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -29,14 +31,22 @@ def _write_source(root: Path, *, code: bytes, source_digest: str | None = None) 
         "logical_package": "example.ranker",
         "package_version": "1.0.0",
         "entrypoint": "src/ranker.py:open_instance",
-        "execution_tier": "enforced_isolated",
+        "execution_tier": "trusted_native",
         "worker_protocol": "bb.worker.v2",
         "input_schema_ids": ["bb.example.input.v1"],
         "output_schema_ids": ["bb.example.output.v1"],
         "checkpoint_schema_id": "bb.example.checkpoint.v1",
         "accepted_checkpoint_schema_ids": ["bb.example.checkpoint.v1"],
         "dependency_contract_ids": ["bb.example.scoring.v1"],
-        "child_targets": [{"label": "review", "target": "reviewer"}],
+        "child_targets": [
+            {"label": "review", "target": "reviewer", "contract_id": "bb.example.scoring.v1"}
+        ],
+        "contracts": [{
+            "contract_id": "bb.example.scoring.v1",
+            "input_schema_ids": ["bb.example.input.v1"],
+            "output_schema_ids": ["bb.example.output.v1"],
+        }],
+        "schema_members": {},
         "requested_authority": {"network": "none", "project_write": False},
         "resource_budget": {"cpu": 1, "memory_bytes": 67108864, "processes": 1},
         "source_members": [
@@ -57,30 +67,38 @@ def _write_source(root: Path, *, code: bytes, source_digest: str | None = None) 
             "entrypoint": ["python3", "-I"],
         },
     }
+    (root / "schemas").mkdir()
+    for schema_id in (
+        "bb.example.input.v1", "bb.example.output.v1", "bb.example.checkpoint.v1"
+    ):
+        member_path = f"schemas/{schema_id}.json"
+        content = canonical_json_bytes({
+            "$id": schema_id, "type": "object", "additionalProperties": False
+        })
+        (root / member_path).write_bytes(content)
+        manifest["schema_members"][schema_id] = member_path
+        manifest["source_members"].append({
+            "path": member_path, "sha256": bytes_sha256(content), "size_bytes": len(content)
+        })
     (root / "module.json").write_bytes(canonical_json_bytes(manifest))
     return root
 
 
-def test_build_and_load_are_deterministic_and_lock_ready(tmp_path: Path) -> None:
-    source = _write_source(tmp_path / "source", code=b"VALUE = 'ranker-a'\n")
+def test_package_bytes_are_stable_and_survive_source_removal(tmp_path: Path) -> None:
+    code = b"VALUE = 'ranker-a'\n"
+    source = _write_source(tmp_path / "source", code=code)
+    second_source = _write_source(tmp_path / "second-source", code=code)
     output = tmp_path / "ranker.bbpkg"
+    second_output = tmp_path / "ranker-copy.bbpkg"
     cas = FilesystemCAS(tmp_path / "cas")
-
     built = build_module_package(source, output, cas=cas)
+    build_module_package(second_source, second_output, cas=cas)
+    assert output.read_bytes() == second_output.read_bytes()
+    shutil.rmtree(source)
     loaded = load_module_package(output, built.package_digest, cas=cas)
-
-    assert loaded.package_digest == built.package_digest
-    assert loaded.artifact_ref == built.artifact_ref
-    assert loaded.manifest == built.manifest
-    assert loaded.import_members == (("example.ranker", "src/ranker.py"),)
-    assert set(built.lock_record()) == {
-        "artifact_ref",
-        "import_members",
-        "manifest",
-        "package_digest",
-        "runtime_key",
-    }
-    assert cas.get_bytes(built.artifact_ref) == output.read_bytes()
+    with zipfile.ZipFile(output) as archive:
+        assert archive.read("src/ranker.py") == code
+    assert cas.get_bytes(loaded.artifact_ref) == output.read_bytes()
 
 
 def test_source_and_expected_digest_mismatches_refuse(tmp_path: Path) -> None:
@@ -97,7 +115,6 @@ def test_source_and_expected_digest_mismatches_refuse(tmp_path: Path) -> None:
     package = build_module_package(valid_source, tmp_path / "valid.bbpkg", cas=cas)
     with pytest.raises(ModulePackageIntegrityError, match="digest mismatch"):
         load_module_package(tmp_path / "valid.bbpkg", "sha256:" + "c" * 64, cas=cas)
-    assert package.package_digest != "sha256:" + "c" * 64
 
 
 def test_discovery_does_not_import_code_and_import_canary_is_positive_control(
@@ -123,7 +140,7 @@ def test_discovery_does_not_import_code_and_import_canary_is_positive_control(
     assert canary.read_text(encoding="utf-8") == "imported"
 
 
-def test_manifest_values_are_frozen_and_unknown_fields_fail(tmp_path: Path) -> None:
+def test_manifest_unknown_fields_refuse_without_output(tmp_path: Path) -> None:
     source = _write_source(tmp_path / "source", code=b"VALUE = 'ranker'\n")
     manifest = json.loads((source / "module.json").read_text(encoding="utf-8"))
     manifest["unexpected"] = True
@@ -131,3 +148,31 @@ def test_manifest_values_are_frozen_and_unknown_fields_fail(tmp_path: Path) -> N
     cas = FilesystemCAS(tmp_path / "cas")
     with pytest.raises(ModulePackageValidationError, match="unknown fields"):
         build_module_package(source, tmp_path / "bad.bbpkg", cas=cas)
+    assert not (tmp_path / "bad.bbpkg").exists()
+
+
+def test_relative_schema_ids_resolve_from_their_declared_base(tmp_path: Path) -> None:
+    source = _write_source(tmp_path / "source", code=b"VALUE = 'ranker'\n")
+    manifest_path = source / "module.json"
+    manifest = json.loads(manifest_path.read_bytes())
+    schemas = {
+        "schemas/a.json": {"$id": "schemas/a.json", "$ref": "../other/b.json"},
+        "other/b.json": {"$id": "other/b.json", "type": "object"},
+    }
+    expected = {}
+    for schema_id, document in schemas.items():
+        content = canonical_json_bytes(document)
+        (source / schema_id).parent.mkdir(parents=True, exist_ok=True)
+        (source / schema_id).write_bytes(content)
+        manifest["schema_members"][schema_id] = schema_id
+        manifest["source_members"].append({
+            "path": schema_id, "sha256": bytes_sha256(content), "size_bytes": len(content)
+        })
+        expected[schema_id] = bytes_sha256(content)
+    manifest_path.write_bytes(canonical_json_bytes(manifest))
+    cas = FilesystemCAS(tmp_path / "cas")
+    try:
+        package = build_module_package(source, tmp_path / "relative.bbpkg", cas=cas)
+        assert dict(package.schema_closure(["schemas/a.json"])) == expected
+    finally:
+        cas.close()

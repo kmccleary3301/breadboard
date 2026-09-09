@@ -17,7 +17,12 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from threading import RLock
 from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Optional, Protocol, Sequence
-from breadboard.product.harness.lock import EffectiveHarnessLock
+from breadboard.artifacts.cas import FilesystemCAS
+from breadboard.product.harness.lock import (
+    LOCK_SCHEMA_VERSION,
+    EffectiveHarnessLock,
+    make_effective_harness_lock,
+)
 from breadboard.product.runtime import (
     AnchoredStorage,
     ReplayError,
@@ -117,9 +122,9 @@ from .engine_identity_config import (
 )
 from .session_runner import SessionRunner
 from .tail_index import _TAIL_LINE_INDEX_CACHE
-from .model_catalog import build_model_catalog
 from .runtime_emission import (
     DEFAULT_INTERACTIVE_SESSION_TITLE,
+    CapturedRuntimeConfig,
     _sanitize_persisted_runtime_config,
     ManagedStatePaths,
     ManagedStateRootError,
@@ -127,6 +132,7 @@ from .runtime_emission import (
     default_runtime_record_root,
     emit_session_start_records,
     managed_state_paths,
+    materialize_lock_runtime_config,
     prepare_managed_state,
     retained_runtime_overrides,
     primitive_emission_enabled,
@@ -1226,7 +1232,23 @@ class SessionService:
                     session_id=session_id,
                 ),
             )
-        return EffectiveHarnessLock._from_record(graph)
+        return make_effective_harness_lock(graph, None)
+    @staticmethod
+    def _captured_runtime_for_lock(
+        lock: EffectiveHarnessLock,
+        request: SessionCreateRequest,
+    ) -> CapturedRuntimeConfig:
+        workspace = (
+            Path(request.workspace).expanduser().resolve()
+            if request.workspace
+            else Path(str(request.config_path)).expanduser().resolve().parent
+        )
+        cas = FilesystemCAS(workspace / ".breadboard" / "module-artifacts")
+        try:
+            return materialize_lock_runtime_config(lock, cas=cas)
+        finally:
+            cas.close()
+
 
     @staticmethod
     def _configured_model_catalog(
@@ -1526,6 +1548,11 @@ class SessionService:
             effective_lock, EffectiveHarnessLock
         ):
             raise TypeError("effective_lock must be an EffectiveHarnessLock")
+        if (
+            effective_lock is not None
+            and effective_lock["schema_version"] != LOCK_SCHEMA_VERSION
+        ):
+            raise ValueError("historical Lock records cannot start new execution")
         await self.registry.ensure_session_admission_open()
         session_id = session_id or str(uuid.uuid4())
         if await self.registry.get(session_id) is not None:
@@ -1615,7 +1642,17 @@ class SessionService:
         record = SessionRecord(
             session_id=session_id, status=SessionStatus.STARTING, metadata=metadata
         )
-        runner = SessionRunner(session=record, registry=self.registry, request=request)
+        captured_runtime = (
+            self._captured_runtime_for_lock(effective_lock, request)
+            if effective_lock is not None
+            else None
+        )
+        runner = SessionRunner(
+            session=record,
+            registry=self.registry,
+            request=request,
+            captured_runtime=captured_runtime,
+        )
         runtime_config = runner.prepare_runtime_config()
         if retained_request_overrides:
             metadata["runtime_overrides"] = retained_request_overrides
@@ -1667,29 +1704,35 @@ class SessionService:
             persisted_runtime_config = _sanitize_persisted_runtime_config(
                 runtime_config
             )
-        runtime_graph = compile_runtime_effective_config_graph(
-            session_id, persisted_runtime_config, request.config_path
+        runtime_graph = (
+            dict(effective_lock.configuration_graph)
+            if effective_lock is not None
+            else compile_runtime_effective_config_graph(
+                session_id, persisted_runtime_config, request.config_path
+            )
         )
-        record.runtime_generation_source_ref = runtime_graph["source_layers"][0]["source_ref"]
+        record.runtime_generation_source_ref = (
+            None
+            if effective_lock is not None
+            else runtime_graph["source_layers"][0]["source_ref"]
+        )
         if role_lock is not None:
-            runtime_graph = embed_model_role_lock(runtime_graph, role_lock)
+            if effective_lock is None:
+                runtime_graph = embed_model_role_lock(runtime_graph, role_lock)
             metadata["model_role_lock_hash"] = role_lock.lock_hash
             metadata["model_role_lock"] = role_lock.as_dict()
             metadata["active_model_role"] = role_lock["defaults"]["role"]
             metadata["model_role_default"] = role_lock["defaults"]["role"]
-        if (
+        if effective_lock is not None:
+            runtime_lock = effective_lock
+        elif (
             default_profile is not None
             and not default_profile_overridden
             and role_lock is None
         ):
             runtime_lock = default_profile.compilation.lock
-        elif effective_lock is not None:
-            selected_graph = effective_lock.as_dict()
-            if role_lock is not None:
-                selected_graph = embed_model_role_lock(selected_graph, role_lock)
-            runtime_lock = EffectiveHarnessLock._from_record(selected_graph)
         else:
-            runtime_lock = EffectiveHarnessLock._from_record(runtime_graph)
+            runtime_lock = make_effective_harness_lock(runtime_graph, None)
         emit_primitives = primitive_emission_enabled()
         if self._managed_state_paths is not None:
             runtime_base = self._managed_state_paths.runtime_records
@@ -1736,6 +1779,7 @@ class SessionService:
                     output_root=staging_record_root,
                     effective_runtime_config=runtime_config,
                     model_role_lock=role_lock,
+                    effective_lock=effective_lock,
                 )
                 metadata.setdefault(
                     "runtime_records",
@@ -2627,7 +2671,7 @@ class SessionService:
                     record.session_id,
                     runtime_config,
                     record.runtime_generation_source_ref or runner.request.config_path,
-                ).as_dict()["graph_hash"]
+                ).generation_id
                 return runner, runtime_config, rebuilt_generation
 
             authored_permission_mode = (

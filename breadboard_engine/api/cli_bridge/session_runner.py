@@ -56,6 +56,7 @@ from .session_lifecycle import SessionLifecycleOwner
 from breadboard.product.runtime.events import GenerationAdoptionError
 
 from .session_artifacts import SessionArtifactStore
+from .runtime_emission import CapturedRuntimeConfig
 
 _ADMISSION_BLOCKING_PRODUCT_EVENTS = frozenset(
     {
@@ -75,7 +76,6 @@ AgentFactory = Callable[[str, Optional[str], Optional[Dict[str, Any]]], Any]
 
 class SessionRunner:
     """Coordinates agent execution, user inputs, and command handling for a session."""
-
     def __init__(
         self,
         *,
@@ -84,9 +84,11 @@ class SessionRunner:
         request: SessionCreateRequest,
         agent_factory: AgentFactory | None = None,
         permission_authority: PermissionAuthority | None = None,
+        captured_runtime: CapturedRuntimeConfig | None = None,
     ) -> None:
         self.session = session
         self.registry = registry
+        self._captured_runtime = captured_runtime
         self.request = request
         self.agent_factory = agent_factory or self._default_factory
         self._task: Optional[asyncio.Task[None]] = None
@@ -414,6 +416,8 @@ class SessionRunner:
             await self.registry.update_status(self.session.session_id, final_status)
             self._closed = True
             await self._enqueue_termination()
+            if self._captured_runtime is not None:
+                self._captured_runtime.cleanup()
     @staticmethod
     def canonicalize_input_attachments(
         attachments: Optional[Sequence[str]],
@@ -895,12 +899,14 @@ class SessionRunner:
         prepared["providers"]["default_model"] = route
         self._prepared_runtime_config = prepared
         return dict(prepared)
-
     def _load_base_config(self) -> Dict[str, Any]:
         if isinstance(self._base_config_cache, dict):
             return dict(self._base_config_cache)
-        cfg = load_agent_config(self.request.config_path)
-        if not isinstance(cfg, dict):
+        if self._captured_runtime is not None:
+            cfg = self._captured_runtime.config
+        else:
+            cfg = load_agent_config(self.request.config_path)
+        if not isinstance(cfg, Mapping):
             raise TypeError("agent config loader must return a mapping")
         self._base_config_cache = dict(cfg)
         return dict(self._base_config_cache)
@@ -1041,7 +1047,11 @@ class SessionRunner:
                 snapshot, self.request.workspace, overrides or None
             )
             if hasattr(self._agent, "config_path"):
-                self._agent.config_path = self.request.config_path
+                self._agent.config_path = str(
+                    self._captured_runtime.config_path
+                    if self._captured_runtime is not None
+                    else self.request.config_path
+                )
             await asyncio.to_thread(self._agent.initialize)
         finally:
             Path(snapshot).unlink(missing_ok=True)

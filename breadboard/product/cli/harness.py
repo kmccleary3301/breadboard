@@ -13,6 +13,7 @@ from breadboard.product.operations.harness import (
     GetHarnessRequest,
     ListHarnessesRequest,
     LockHarnessRequest,
+    PackageHarnessRequest,
     UpdateHarnessRequest,
     ValidateHarnessRequest,
     create_harness,
@@ -21,6 +22,7 @@ from breadboard.product.operations.harness import (
     get_harness_lock,
     list_harnesses as list_harnesses_operation,
     lock_harness,
+    package_harness,
     update_harness,
     validate_harness,
 )
@@ -56,6 +58,13 @@ def _operation_context(a):
 def init(a):
     return create_harness(
         CreateHarnessRequest(getattr(a, "out", None) or "."),
+        _operation_context(a),
+    )
+
+
+def package(a):
+    return package_harness(
+        PackageHarnessRequest(a.PATH, a.out),
         _operation_context(a),
     )
 
@@ -98,25 +107,38 @@ def run(a):
             if lock_argument or requested_lock_path.name.endswith(".lock.json")
             else lock_path(requested_lock_path)
         )
-        lock, mp = load_lock(requested_lock_path, w, explicit=bool(lock_argument))
-        c = compile_harness_source(p, w, getattr(a, "contained", False))
+        explicit = bool(lock_argument or p.name.endswith(".lock.json"))
+        lock, mp = load_lock(requested_lock_path, w, explicit=explicit)
         m = json.loads(mp.read_text())
-        lock_action = f"breadboard harness lock {shlex.quote(str(p))}"
-        if lock_argument:
-            lock_action += f" --out {shlex.quote(str(requested_lock_path))}"
         if (
-            m.get("source_sha256") != sha256_json(c.resolved_author_dict())
-            or m.get("graph_hash") != lock["graph_hash"]
-            or c.lock.as_dict() != lock.as_dict()
+            m.get("schema_version") != "bb.harness_lock_metadata.v2"
+            or m.get("lock_id") != lock.generation_id
+            or m.get("graph_hash") != lock.configuration_graph["graph_hash"]
         ):
             return OperationResult.failure(
                 ["harness", "run"],
                 5,
-                "lock_drift",
-                "mutable harness definition cannot run without a fresh lock",
+                "lock_identity_mismatch",
+                "the retained Lock lacks matching complete-identity metadata",
                 "harness.run",
-                next_actions=[lock_action],
             )
+        lock_action = f"breadboard harness lock {shlex.quote(str(p))}"
+        if lock_argument:
+            lock_action += f" --out {shlex.quote(str(requested_lock_path))}"
+        if not explicit:
+            c = compile_harness_source(p, w, getattr(a, "contained", False))
+            if (
+                m.get("source_sha256") != sha256_json(c.resolved_author_dict())
+                or c.lock.generation_id != lock.generation_id
+            ):
+                return OperationResult.failure(
+                    ["harness", "run"],
+                    5,
+                    "lock_drift",
+                    "mutable harness definition cannot run without a fresh lock",
+                    "harness.run",
+                    next_actions=[lock_action],
+                )
         a._effective_lock = lock
         a._workspace = w
         a._lock_id = _ref(effective_lock_path, w)
@@ -156,7 +178,9 @@ def _server(a):
             c = breadboard_sdk.BreadBoardClient(a.server, timeout_s=120)
         started = c.start_session(
             {"lock_id": a._lock_id, "task": task},
-            idempotency_key=sha256_json({"lock_id": a._lock_id, "task": task}),
+            idempotency_key=sha256_json(
+                {"lock_id": a._effective_lock.generation_id, "task": task}
+            ),
         )
         if not isinstance(started, dict) or not started.get("ok"):
             raise RuntimeError(f"session.start failed: {started!r}")

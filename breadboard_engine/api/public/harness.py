@@ -10,6 +10,7 @@ from breadboard.product.operations.harness import (
     GetHarnessRequest,
     ListHarnessesRequest,
     LockHarnessRequest,
+    PackageHarnessRequest,
     UpdateHarnessRequest as UpdateHarnessOperationRequest,
     ValidateHarnessRequest,
     create_harness,
@@ -18,12 +19,14 @@ from breadboard.product.operations.harness import (
     get_harness_lock,
     list_harnesses,
     lock_harness,
+    package_harness,
     update_harness,
     validate_harness,
 )
 
 from .models import (
     HarnessCreateRequest,
+    HarnessPackageRequest,
     HarnessUpdateRequest,
     PublicResult,
     invoke,
@@ -64,6 +67,21 @@ def _update(
 )
 def create(request: HarnessCreateRequest):
     return invoke("harness.create", lambda workspace: _create(request, workspace))
+
+
+@router.post(
+    "/v1/harness-packages",
+    operation_id="harness.package",
+    response_model=PublicResult,
+)
+def package(request: HarnessPackageRequest):
+    return invoke(
+        "harness.package",
+        lambda workspace: package_harness(
+            PackageHarnessRequest(request.source, request.out),
+            public_operation_context(workspace),
+        ),
+    )
 
 
 @router.get("/v1/harnesses", operation_id="harness.list", response_model=PublicResult)

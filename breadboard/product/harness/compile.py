@@ -9,7 +9,6 @@ from .explain import HarnessExplanation
 from .lock import (
     EffectiveHarnessLock,
     _copy,
-    configuration_artifact_id,
     graph_content_hash,
     make_effective_harness_lock,
     sha256_bytes,
@@ -53,8 +52,6 @@ class HarnessCompilation:
     def with_resource_inputs(
         self,
         resource_inputs: Mapping[str, bytes] | None,
-        *,
-        cas: Any | None = None,
     ) -> HarnessCompilation:
         """Bind resource bytes to this compilation's resolved source snapshot."""
         graph = self.lock.configuration_graph
@@ -69,24 +66,11 @@ class HarnessCompilation:
             for layer in graph["source_layers"]
         ):
             raise HarnessCompileError("resource inputs are already bound")
-        artifact_refs = dict(self.lock.get("configuration_artifacts", {}))
-        if cas is not None and resource_inputs is not None:
-            for source_ref, content in sorted(resource_inputs.items()):
-                digest = sha256_bytes(content)
-                artifact = cas.put_bytes(
-                    content,
-                    artifact_id=configuration_artifact_id(source_ref, digest),
-                    media_type="application/octet-stream",
-                    metadata={"layer_hash": digest, "source_ref": source_ref},
-                )
-                artifact_refs[source_ref] = artifact.to_dict()
         graph_copy = _copy(graph, freeze=False)
         graph_copy["source_layers"].extend(additions)
         graph_copy["graph_hash"] = graph_content_hash(graph_copy)
         lock = make_effective_harness_lock(
-            graph_copy,
-            self.lock["modules"] if self.lock["schema_version"] == "bb.effective_harness_lock.v2" else None,
-            artifact_refs,
+            graph_copy, self.lock["modules"], self.lock["configuration_artifacts"]
         )
         instance = object.__new__(type(self))
         object.__setattr__(instance, "lock", lock)
@@ -101,7 +85,7 @@ class HarnessCompilation:
         """Bind immutable CAS references for the source/resource snapshot."""
         lock = make_effective_harness_lock(
             self.lock.configuration_graph,
-            self.lock["modules"] if self.lock["schema_version"] == "bb.effective_harness_lock.v2" else None,
+            self.lock["modules"],
             configuration_artifacts,
         )
         instance = object.__new__(type(self))
@@ -260,6 +244,30 @@ def _compile_module_bindings(
         extra = sorted(set(packages) - names)
         detail = f"missing {missing[0]!r}" if missing else f"undeclared {extra[0]!r}"
         raise HarnessCompileError(f"verified ModulePackage set differs from bindings: {detail}")
+    contracts = {
+        name: {contract.contract_id: contract for contract in package.manifest.contracts}
+        for name, package in packages.items()
+    }
+
+    def require_contract(caller: str, receiver: str, contract_id: str) -> None:
+        expected = contracts[caller][contract_id]
+        if contracts[receiver].get(contract_id) != expected:
+            raise HarnessCompileError(
+                f"binding {receiver!r} does not implement contract {contract_id!r}"
+            )
+        target = packages[receiver].manifest
+        if (
+            not set(expected.input_schema_ids) <= set(target.input_schema_ids)
+            or not set(expected.output_schema_ids) <= set(target.output_schema_ids)
+        ):
+            raise HarnessCompileError(
+                f"binding {receiver!r} input/output does not implement {contract_id!r}"
+            )
+        schema_ids = (*expected.input_schema_ids, *expected.output_schema_ids)
+        if packages[caller].schema_closure(schema_ids) != packages[receiver].schema_closure(schema_ids):
+            raise HarnessCompileError(
+                f"contract {contract_id!r} binds different transitive schema bytes"
+            )
 
     records: dict[str, dict[str, Any]] = {}
     environment_runtime: dict[str, str] = {}
@@ -332,11 +340,22 @@ def _compile_module_bindings(
                 raise HarnessCompileError(
                     f"module binding {name!r} {edge_kind} target is unknown: {unknown[0]!r}"
                 )
+        for contract_id, receiver in dependencies.items():
+            require_contract(name, receiver, contract_id)
+        for child in manifest.child_targets:
+            receiver = children[child.label]
+            if packages[receiver].manifest.logical_package != child.target:
+                raise HarnessCompileError(
+                    f"child {child.label!r} requires logical package {child.target!r}"
+                )
+            require_contract(name, receiver, child.contract_id)
 
         runtime_key = package.runtime_key
         authority_key = sha256_json(
             {
                 "requested_authority": manifest.requested_authority,
+                "execution_tier": manifest.execution_tier,
+                "worker_protocol": manifest.worker_protocol,
                 "resource_budget": manifest.resource_budget,
             }
         )
@@ -554,15 +573,38 @@ def compile_harness_definition(
         "bb.harness_definition.v2",
     }:
         surface = "bb.agent_config_surface.v1"
+    fields = [{"classification": "operational", "consumer_ref": None,
+               "path": path, "source_layer": source}
+              for path, _, source, _ in rows]
+    if modules_record is not None:
+        module_sources = dict(_source_rows(author_sources))
+        for name, binding in modules_record["bindings"].items():
+            path = f"modules.bindings.{name}"
+            source = module_sources[f"{path}.package.digest"]
+            package = binding["package"]
+            manifest = package["manifest"]
+            fields.append({
+                "classification": "operational",
+                "consumer_ref": package["artifact_ref"]["artifact_id"],
+                "path": path, "source_layer": source,
+            })
+            diagnostics.append({
+                "severity": "info", "class": "other", "path": path,
+                "message": (
+                    f"effect=selected; source={source}; "
+                    f"package={manifest['logical_package']}@{manifest['package_version']}; "
+                    f"digest={package['package_digest']}; environment={binding['environment']}; "
+                    f"dependencies={binding['dependencies']}; children={binding['children']}; "
+                    f"requested_authority={sorted(manifest['requested_authority'])}"
+                ),
+            })
     explanation_record = {
         "schema_version": "bb.config_explanation.v1",
         "explanation_id": "harness_explanation:" + sha256_json(source_ref)[7:23],
         "config_path": source_ref, "config_sha256": sha256_json(author),
         "generated_at_utc": "1970-01-01T00:00:00Z",
         "surface_schema_version": surface, "resolved_summary": _summary(effective, extends_chain),
-        "fields": [{"classification": "operational", "consumer_ref": None,
-                    "path": path, "source_layer": source}
-                   for path, _, source, _ in rows],
+        "fields": fields,
         "diagnostics": sorted(diagnostics, key=lambda item: (item["path"], item["message"])),
         "ok": True,
     }

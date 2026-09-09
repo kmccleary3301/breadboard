@@ -1808,6 +1808,27 @@
         "title": "HarnessCreateRequest",
         "type": "object"
       },
+      "HarnessPackageRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "out": {
+            "minLength": 1,
+            "title": "Out",
+            "type": "string"
+          },
+          "source": {
+            "minLength": 1,
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "out"
+        ],
+        "title": "HarnessPackageRequest",
+        "type": "object"
+      },
       "HarnessUpdateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -4375,6 +4396,47 @@
           }
         },
         "summary": "Get Lock",
+        "tags": [
+          "public-harness"
+        ]
+      }
+    },
+    "/v1/harness-packages": {
+      "post": {
+        "operationId": "harness.package",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HarnessPackageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Package",
         "tags": [
           "public-harness"
         ]

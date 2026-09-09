@@ -1,6 +1,6 @@
 # GENERATED FILE - do not edit by hand.
 # generator: scripts/quality/generate_public_bindings.py
-# generator-version: 5
+# generator-version: 6
 # public-projection-sha256: sha256:2cb18c5cd23e7c17f4e506323b4f8f5d9ebcb1b5484ef157d17cc2d414263a7d
 
 from types import MappingProxyType

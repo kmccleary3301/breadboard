@@ -519,6 +519,11 @@ class BreadBoardClient:
     def create_harness(self, directory: str = ".") -> PublicResult:
         return self._request_operation("harness.create", body={"directory": directory})
 
+    def package_harness(self, source: str, out: str) -> PublicResult:
+        return self._request_operation(
+            "harness.package", body={"source": source, "out": out}
+        )
+
     def list_harness(self) -> PublicResult:
         return self._request_operation("harness.list")
 

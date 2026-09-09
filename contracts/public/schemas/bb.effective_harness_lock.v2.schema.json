@@ -30,35 +30,12 @@
         "metadata": {"type": "object"}
       }
     },
-    "package": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["package_digest", "artifact_ref", "manifest", "runtime_key", "import_members"],
-      "properties": {
-        "package_digest": {"$ref": "#/$defs/sha256"},
-        "artifact_ref": {"$ref": "#/$defs/artifact_ref"},
-        "manifest": {"type": "object"},
-        "runtime_key": {"$ref": "#/$defs/sha256"},
-        "import_members": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["module", "path"],
-            "properties": {
-              "module": {"type": "string", "minLength": 1},
-              "path": {"type": "string", "minLength": 1}
-            }
-          }
-        }
-      }
-    },
     "binding": {
       "type": "object",
       "additionalProperties": false,
       "required": ["package", "environment", "dependencies", "children", "config"],
       "properties": {
-        "package": {"$ref": "#/$defs/package"},
+        "package": {"$ref": "bb.module_manifest.v1.schema.json#/$defs/package_record"},
         "environment": {"type": "string", "minLength": 1},
         "dependencies": {
           "type": "object",

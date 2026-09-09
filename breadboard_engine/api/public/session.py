@@ -24,9 +24,6 @@ from breadboard_engine.api.cli_bridge.models import (
     SessionCreateRequest as BridgeSessionCreateRequest,
     SessionInputRequest as BridgeSessionInputRequest,
 )
-from breadboard.product.harness.resolution import (
-    daily_driver_model_roles_for_harness,
-)
 from breadboard.product.operations import session as session_operations
 from breadboard.product.runtime import session_store
 from breadboard.product.runtime.public_event_projection import public_session_event
@@ -188,11 +185,27 @@ class _LiveSessionMutationAdapter:
             "non_interactive_cli_session": True,
             "cli_session_kind": "oneshot",
         }
-        role_document = daily_driver_model_roles_for_harness(
-            source_path,
-            context.workspace,
-            contained=True,
-        )
+        role_document = None
+        if (
+            effective_lock is not None
+            and effective_lock["schema_version"] == "bb.effective_harness_lock.v2"
+        ):
+            from breadboard.artifacts.cas import FilesystemCAS
+            from breadboard.product.harness.lock import materialize_lock
+            from breadboard.product.harness.templates import (
+                DAILY_DRIVER_MODEL_ROLES_NAME,
+                load_daily_driver_model_roles_bytes,
+            )
+
+            cas = FilesystemCAS(context.workspace / ".breadboard" / "module-artifacts")
+            try:
+                materialized = materialize_lock(effective_lock, cas=cas)
+            finally:
+                cas.close()
+            for source_ref, payload in materialized.resource_bytes.items():
+                if str(source_ref).endswith(f"::{DAILY_DRIVER_MODEL_ROLES_NAME}"):
+                    role_document = load_daily_driver_model_roles_bytes(payload)
+                    break
         if role_document is not None:
             metadata["bb.model_roles.v1"] = role_document
 

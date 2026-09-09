@@ -11,6 +11,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
+from breadboard.artifacts.cas import FilesystemCAS
+from breadboard.artifacts.references import ArtifactRef
 from breadboard.product.operations.model import portable_ref
 
 
@@ -61,20 +63,10 @@ def sha256_json(value: Any) -> str:
 
 
 def graph_content_hash(record: Mapping[str, Any]) -> str:
-    """Hash only a configuration graph using its legacy ``graph_hash`` preimage.
-
-    A v2 Lock is accepted as a convenience for retained callers, but the
-    resulting value is always the nested configuration graph identity and
-    never the complete Lock identity.
-    """
-
-    value = record
-    if record.get("schema_version") == LOCK_SCHEMA_VERSION:
-        nested = record.get("configuration_graph")
-        if not isinstance(nested, Mapping):
-            raise ValueError("v2 Lock has no configuration_graph")
-        value = nested
-    preimage = _copy(value, freeze=False)
+    """Hash a configuration graph, never a complete Harness Lock."""
+    if record.get("schema_version") != GRAPH_SCHEMA_VERSION:
+        raise ValueError("graph_content_hash requires a configuration graph")
+    preimage = _copy(record, freeze=False)
     preimage["graph_hash"] = None
     return sha256_json(preimage)
 
@@ -88,42 +80,17 @@ def lock_content_hash(record: Mapping[str, Any]) -> str:
 
 
 def _validate_v2_record(record: Mapping[str, Any]) -> None:
-    required = {
-        "schema_version",
-        "lock_id",
-        "configuration_graph",
-        "configuration_artifacts",
-        "modules",
-    }
-    unknown = sorted(set(record) - required)
-    missing = sorted(required - set(record))
-    if unknown:
-        raise ValueError("v2 Lock contains unknown fields: " + ", ".join(unknown))
-    if missing:
-        raise ValueError("v2 Lock is missing required fields: " + ", ".join(missing))
-    if record.get("schema_version") != LOCK_SCHEMA_VERSION:
-        raise ValueError("unsupported Harness Lock schema version")
-    lock_id = record.get("lock_id")
-    if not isinstance(lock_id, str) or _SHA256_RE.fullmatch(lock_id) is None:
-        raise ValueError("v2 Lock lock_id must be a full sha256 digest")
-    graph = record.get("configuration_graph")
-    if not isinstance(graph, Mapping):
-        raise ValueError("v2 Lock configuration_graph must be a mapping")
-    artifacts = record.get("configuration_artifacts")
-    if not isinstance(artifacts, Mapping):
-        raise ValueError("v2 Lock configuration_artifacts must be an object")
-    artifact_fields = {"artifact_id", "sha256", "size_bytes", "media_type", "metadata"}
-    for source_ref, artifact in artifacts.items():
-        if not isinstance(source_ref, str) or not isinstance(artifact, Mapping):
-            raise ValueError("v2 Lock configuration artifact is invalid")
-        if set(artifact) != artifact_fields:
-            raise ValueError(f"v2 Lock configuration artifact is invalid: {source_ref}")
-    if graph.get("schema_version") != GRAPH_SCHEMA_VERSION:
-        raise ValueError("v2 Lock configuration_graph must be bb.effective_config_graph.v1")
-    modules = record.get("modules")
-    if modules is not None and not isinstance(modules, Mapping):
-        raise ValueError("v2 Lock modules must be an object or null")
-    if lock_content_hash(record) != lock_id:
+    from .validate import validate_effective_harness_lock
+
+    findings = validate_effective_harness_lock(record)
+    if findings:
+        raise ValueError("; ".join(
+            f"{item.pointer} [{item.code}]: {item.message}" for item in findings
+        ))
+    graph = record["configuration_graph"]
+    if graph.get("graph_hash") != graph_content_hash(graph):
+        raise ValueError("v2 Lock configuration graph identity does not match its contents")
+    if lock_content_hash(record) != record["lock_id"]:
         raise ValueError("v2 Lock lock_id does not match its canonical contents")
 
 
@@ -221,105 +188,100 @@ class LockMaterialization:
 def materialize_lock(
     lock: EffectiveHarnessLock,
     *,
-    cas: Any,
+    cas: FilesystemCAS,
 ) -> LockMaterialization:
-    """Read the exact compiler-owned bytes bound to a complete Lock."""
+    """Restore and verify captured inputs without reading any author path."""
+    import yaml
 
-    if not isinstance(lock, EffectiveHarnessLock):
-        raise TypeError("materialize_lock requires an EffectiveHarnessLock")
+    from .compile import _compile_module_bindings, _runtime_values
+    from .packages import load_module_package
+    from .validate import parse_harness_definition
+
     if lock["schema_version"] != LOCK_SCHEMA_VERSION:
         raise ValueError("only v2 Locks can be materialized")
     graph = lock.configuration_graph
+    layers_by_ref = {}
+    for layer in graph["source_layers"]:
+        source_ref = layer["source_ref"]
+        if not isinstance(source_ref, str):
+            raise ValueError("Lock configuration source references must be strings")
+        previous = layers_by_ref.setdefault(source_ref, layer)
+        if (previous["scope"], previous["layer_hash"]) != (layer["scope"], layer["layer_hash"]):
+            raise ValueError(f"Lock configuration source is inconsistent: {source_ref}")
+    artifacts = lock["configuration_artifacts"]
+    if set(artifacts) != set(layers_by_ref):
+        raise ValueError("Lock configuration artifacts do not match graph sources")
     sources: dict[str, bytes] = {}
     resources: dict[str, bytes] = {}
-    from breadboard.artifacts.references import ArtifactRef
-
-    layers_by_ref = {
-        layer["source_ref"]: layer
-        for layer in graph.get("source_layers", ())
-        if isinstance(layer, Mapping) and isinstance(layer.get("source_ref"), str)
-    }
-    artifacts = lock["configuration_artifacts"]
-    if not isinstance(artifacts, Mapping):
-        raise ValueError("v2 Lock configuration_artifacts must be an object")
-    if set(artifacts) != set(layers_by_ref):
-        raise ValueError("v2 Lock configuration artifacts do not match graph sources")
     for source_ref, artifact in artifacts.items():
-        if not isinstance(source_ref, str) or not isinstance(artifact, Mapping):
-            raise ValueError("v2 Lock configuration artifact is invalid")
         layer = layers_by_ref[source_ref]
-        layer_hash = layer["layer_hash"]
-        try:
-            reference = ArtifactRef(
-                artifact_id=str(artifact["artifact_id"]),
-                sha256=str(artifact["sha256"]),
-                size_bytes=int(artifact["size_bytes"]),
-                media_type=str(artifact["media_type"]),
-                metadata=dict(artifact.get("metadata", {})),
-            )
-            payload = cas.get_bytes(reference, max_bytes=reference.size_bytes)
-        except (KeyError, TypeError, ValueError) as error:
-            raise ValueError(
-                f"v2 Lock configuration artifact is invalid: {source_ref}"
-            ) from error
-        if layer.get("scope") == "resource":
-            if sha256_bytes(payload) != layer_hash:
+        reference = ArtifactRef.from_dict(artifact)
+        if (
+            reference.artifact_id != configuration_artifact_id(source_ref, reference.sha256)
+            or reference.media_type != "application/octet-stream"
+            or reference.metadata != {
+                "source_ref": source_ref,
+                "layer_hash": layer["layer_hash"],
+                "content_sha256": reference.sha256,
+            }
+        ):
+            raise ValueError(f"configuration artifact was rebound: {source_ref}")
+        payload = cas.get_bytes(reference, max_bytes=reference.size_bytes)
+        if layer["scope"] == "resource":
+            if sha256_bytes(payload) != layer["layer_hash"]:
                 raise ValueError(f"locked resource bytes failed verification: {source_ref}")
             resources[source_ref] = payload
         else:
-            try:
-                import yaml
-
-                parsed = yaml.safe_load(payload.decode("utf-8"))
-                from .compile import _runtime_values
-
-                if not isinstance(parsed, Mapping) or sha256_json(
-                    _runtime_values(parsed)
-                ) != layer_hash:
-                    raise ValueError("source layer digest mismatch")
-            except (UnicodeDecodeError, ValueError, TypeError, yaml.YAMLError) as error:
-                raise ValueError(
-                    f"locked configuration source failed verification: {source_ref}"
-                ) from error
+            parsed = yaml.safe_load(payload.decode("utf-8"))
+            if (
+                not isinstance(parsed, Mapping)
+                or sha256_json(_runtime_values(parsed)) != layer["layer_hash"]
+            ):
+                raise ValueError(f"locked configuration failed verification: {source_ref}")
             sources[source_ref] = payload
     packages: dict[str, bytes] = {}
-    modules = lock.get("modules")
-    if isinstance(modules, Mapping):
-        bindings = modules.get("bindings")
-        if isinstance(bindings, Mapping):
-            from breadboard.artifacts.references import ArtifactRef
-
-            for name, binding in bindings.items():
-                if not isinstance(name, str) or not isinstance(binding, Mapping):
-                    raise ValueError("v2 Lock module binding is invalid")
-                package = binding.get("package")
-                if not isinstance(package, Mapping):
-                    raise ValueError(f"v2 Lock package record is invalid: {name}")
-                artifact = package.get("artifact_ref")
-                if not isinstance(artifact, Mapping):
-                    raise ValueError(f"v2 Lock package artifact is invalid: {name}")
-                try:
-                    reference = ArtifactRef(
-                        artifact_id=str(artifact["artifact_id"]),
-                        sha256=str(artifact["sha256"]),
-                        size_bytes=int(artifact["size_bytes"]),
-                        media_type=str(artifact["media_type"]),
-                        metadata=dict(artifact.get("metadata", {})),
-                    )
-                    payload = cas.get_bytes(reference, max_bytes=reference.size_bytes)
-                    expected_digest = package.get("package_digest")
-                    if not isinstance(expected_digest, str) or sha256_bytes(payload) != expected_digest:
-                        raise ValueError(f"v2 Lock package digest mismatch: {name}")
-                    packages[name] = payload
-                except (KeyError, TypeError, ValueError) as error:
-                    raise ValueError(f"v2 Lock package artifact is invalid: {name}") from error
+    verified_packages = {}
+    modules = lock["modules"]
+    if modules is not None:
+        if set(modules) != {"root", "bindings"} or not isinstance(modules["bindings"], Mapping):
+            raise ValueError("Lock module composition is invalid")
+        declaration = {"root": modules["root"], "bindings": {}}
+        for name, binding in modules["bindings"].items():
+            if not isinstance(binding, Mapping) or set(binding) != {
+                "package", "environment", "dependencies", "children", "config"
+            }:
+                raise ValueError(f"Lock module binding is invalid: {name}")
+            package_record = binding["package"]
+            reference = ArtifactRef.from_dict(package_record["artifact_ref"])
+            payload = cas.get_bytes(reference, max_bytes=reference.size_bytes)
+            package = load_module_package(payload, package_record["package_digest"], cas=cas)
+            if package.lock_record() != _copy(package_record, freeze=False):
+                raise ValueError(f"Lock package declaration does not match captured bytes: {name}")
+            packages[name] = payload
+            verified_packages[name] = package
+            declaration["bindings"][name] = {
+                "package": {"source": f"{name}.bbpkg", "digest": package.package_digest},
+                "environment": binding["environment"],
+                "dependencies": _copy(binding["dependencies"], freeze=False),
+                "children": _copy(binding["children"], freeze=False),
+                "config": _copy(binding["config"], freeze=False),
+            }
+        parse_harness_definition({
+            "schema_version": "bb.harness_definition.v2",
+            "version": 2,
+            "modules": declaration,
+        })
+        if _compile_module_bindings(declaration, verified_packages) != _copy(modules, freeze=False):
+            raise ValueError("Lock composition does not match its captured inputs")
     return LockMaterialization(
         lock=lock,
-        configuration_graph=_copy(graph, freeze=True),
+        configuration_graph=graph,
         source_bytes=MappingProxyType(sources),
         resource_bytes=MappingProxyType(resources),
         package_bytes=MappingProxyType(packages),
     )
+
+
 def make_effective_harness_lock(
     configuration_graph: Mapping[str, Any],
     modules: Mapping[str, Any] | None,

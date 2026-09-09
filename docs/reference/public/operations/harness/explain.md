@@ -1,8 +1,8 @@
 <!-- GENERATED FILE - do not edit by hand. -->
 <!-- generator: scripts/quality/generate_public_bindings.py -->
-<!-- generator-version: 5 -->
+<!-- generator-version: 6 -->
 <!-- catalog-id: bb.public_operation_catalog.v2 -->
-<!-- catalog-sha256: sha256:627448eb95b9e12c1f951c1b5d5fd30a4fc870cb57c520f23bb3d8c4338394ec -->
+<!-- catalog-sha256: sha256:8288cc7cd5f032ceec82963798984daed187e18c83478228085b057fbae52b85 -->
 <!-- document-kind: operation-reference -->
 <!-- operation-id: harness.explain -->
 <!-- slug: operations/harness/explain -->
@@ -17,7 +17,7 @@ Candidate public operation reference for `harness.explain`.
 | --- | --- |
 | Status | `candidate` |
 | HTTP | `POST /v1/harnesses/{harness_id}/explain` |
-| CLI | `bbh harness explain` |
+| CLI | `breadboard harness explain` |
 | Lifecycle | `sync` |
 | Effects | `read` |
 | Stability | `experimental` |
@@ -31,7 +31,7 @@ Candidate public operation reference for `harness.explain`.
 - Python: `BreadBoardClient.explain_harness`
 - TypeScript: `BreadBoardClient.explainHarness`
 - TUI: `public.harness.explain` (`view`)
-- CLI: `bbh harness explain`
+- CLI: `breadboard harness explain`
 - Documentation: `product-docs owner` (`candidate`)
 
 ## Schemas

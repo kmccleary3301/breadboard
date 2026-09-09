@@ -15,10 +15,11 @@ PUBLIC_DIR = ROOT / "contracts" / "public"
 SCHEMA_DIR = PUBLIC_DIR / "schemas"
 KERNEL_SCHEMA_DIR = ROOT / "contracts" / "kernel" / "schemas"
 SURFACES = ("bbh", "openapi", "python_sdk", "typescript_sdk", "tui", "docs")
-AUTHORIZED_CURRENT_OPERATION_ADDITIONS = frozenset({"research.compare"})
+AUTHORIZED_CURRENT_OPERATION_ADDITIONS = frozenset({"research.compare", "harness.package"})
 FROZEN_SHA256 = "sha256:72817b7b1bc5e5d10f752acb48157491aaeb3eb268337461a4fd6f0bd10cbfe0"
 AXIS_MANIFEST_SHA256 = "sha256:dff057633730b1bbb28ebd4fceff3060227f5532b6caabb0f3ed2a325d437db0"
-RECORD_ROLE_PROJECTION_SHA256 = "sha256:f25e6b92c7f2ac57bc9599989f928a763bcb7f6d61c8ecb983cfdf848587fa94"
+# AM31 advances current Definition/Lock roles; retained schemas remain readable.
+RECORD_ROLE_PROJECTION_SHA256 = "sha256:c4cc64e9bf87433d11193a0943346664dde9a0366ec993c7232fc0ec8ca60ce3"
 class ContractValidationError(ValueError):
     """A candidate public contract violates its frozen contract."""
 def load_json(path: Path) -> dict[str, Any]:

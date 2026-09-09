@@ -18,9 +18,15 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Final, TypeAlias
 
+from jsonschema import Draft202012Validator, SchemaError
+from referencing import Registry, Resource
+from referencing.exceptions import Unresolvable
+from referencing.jsonschema import DRAFT202012
+from urllib.parse import urljoin
+
 from breadboard.artifacts.cas import ArtifactStoreError, FilesystemCAS
 from breadboard.artifacts.references import ArtifactRef
-from breadboard_engine.compilation.bundle import ingest_bundle
+from breadboard_engine.compilation.bundle import ingest_bundle, read_bundle_archive
 from breadboard_engine.compilation.contracts import (
     BundleEntry,
     BundleError,
@@ -44,6 +50,7 @@ _MANIFEST_FIELDS: Final = frozenset(
         "accepted_checkpoint_schema_ids",
         "checkpoint_schema_id",
         "child_targets",
+        "contracts",
         "dependency_contract_ids",
         "entrypoint",
         "execution_tier",
@@ -56,6 +63,7 @@ _MANIFEST_FIELDS: Final = frozenset(
         "resource_budget",
         "runtime",
         "schema_version",
+        "schema_members",
         "source_members",
         "worker_protocol",
     }
@@ -175,15 +183,17 @@ class ChildTarget:
 
     label: str
     target: str
+    contract_id: str
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "label", _text(self.label, "child target label"))
         object.__setattr__(self, "target", _text(self.target, "child target"))
+        object.__setattr__(self, "contract_id", _text(self.contract_id, "child contract_id"))
 
     @classmethod
     def from_dict(cls, value: object) -> ChildTarget:
         raw = _object(value, "ChildTarget")
-        expected = {"label", "target"}
+        expected = {"label", "target", "contract_id"}
         unknown = set(raw) - expected
         missing = expected - set(raw)
         if unknown:
@@ -194,10 +204,42 @@ class ChildTarget:
             raise ModulePackageValidationError(
                 "ChildTarget is missing fields: " + ", ".join(sorted(missing))
             )
-        return cls(label=raw["label"], target=raw["target"])
+        return cls(label=raw["label"], target=raw["target"], contract_id=raw["contract_id"])
 
     def as_dict(self) -> dict[str, str]:
-        return {"label": self.label, "target": self.target}
+        return {"label": self.label, "target": self.target, "contract_id": self.contract_id}
+
+
+@dataclass(frozen=True, slots=True)
+class ModuleContract:
+    """One package-owned input/output interface, independent of implementation."""
+
+    contract_id: str
+    input_schema_ids: tuple[str, ...]
+    output_schema_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "contract_id", _text(self.contract_id, "contract_id"))
+        for name in ("input_schema_ids", "output_schema_ids"):
+            object.__setattr__(self, name, _text_array(getattr(self, name), name))
+
+    @classmethod
+    def from_dict(cls, value: object) -> ModuleContract:
+        raw = _object(value, "ModuleContract")
+        if set(raw) != {"contract_id", "input_schema_ids", "output_schema_ids"}:
+            raise ModulePackageValidationError("ModuleContract requires its id and input/output schemas")
+        return cls(
+            contract_id=raw["contract_id"],
+            input_schema_ids=_text_array(raw["input_schema_ids"], "input_schema_ids"),
+            output_schema_ids=_text_array(raw["output_schema_ids"], "output_schema_ids"),
+        )
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "contract_id": self.contract_id,
+            "input_schema_ids": list(self.input_schema_ids),
+            "output_schema_ids": list(self.output_schema_ids),
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -382,10 +424,12 @@ class ModuleManifest:
     accepted_checkpoint_schema_ids: tuple[str, ...]
     dependency_contract_ids: tuple[str, ...]
     child_targets: tuple[ChildTarget, ...]
+    contracts: tuple[ModuleContract, ...]
     requested_authority: Mapping[str, FrozenJsonValue]
     resource_budget: Mapping[str, FrozenJsonValue]
     source_members: tuple[SourceMember, ...]
     import_members: tuple[ImportMember, ...]
+    schema_members: Mapping[str, str]
     runtime: RuntimeDescriptor
     schema_version: str = MODULE_MANIFEST_SCHEMA
 
@@ -460,8 +504,44 @@ class ModuleManifest:
             "import_members",
             tuple(sorted(imports, key=lambda item: (item.module, item.path))),
         )
+        contracts = tuple(self.contracts)
+        if any(not isinstance(item, ModuleContract) for item in contracts):
+            raise ModulePackageValidationError("contracts must contain ModuleContract values")
+        contract_ids = {item.contract_id for item in contracts}
+        if len(contract_ids) != len(contracts):
+            raise ModulePackageValidationError("contract ids must be unique")
+        required_contracts = set(self.dependency_contract_ids) | {
+            child.contract_id for child in children
+        }
+        if not required_contracts <= contract_ids:
+            raise ModulePackageValidationError("every dependency and child needs a captured contract")
+        object.__setattr__(
+            self, "contracts", tuple(sorted(contracts, key=lambda item: item.contract_id))
+        )
+        schema_members = {
+            _text(schema_id, "schema id"): _text(path, "schema member path")
+            for schema_id, path in _object(self.schema_members, "schema_members").items()
+        }
+        source_paths = {item.path for item in sources}
+        if not set(schema_members.values()) <= source_paths:
+            raise ModulePackageValidationError("schema members must name captured source members")
+        required_schemas = (
+            set(self.input_schema_ids)
+            | set(self.output_schema_ids)
+            | set(self.accepted_checkpoint_schema_ids)
+        )
+        if self.checkpoint_schema_id is not None:
+            required_schemas.add(self.checkpoint_schema_id)
+        for contract in contracts:
+            required_schemas.update(contract.input_schema_ids)
+            required_schemas.update(contract.output_schema_ids)
+        if not required_schemas <= set(schema_members):
+            raise ModulePackageValidationError("every schema id must resolve to captured package bytes")
+        object.__setattr__(self, "schema_members", MappingProxyType(dict(sorted(schema_members.items()))))
         if not isinstance(self.runtime, RuntimeDescriptor):
             raise ModulePackageValidationError("runtime must be a RuntimeDescriptor")
+        if self.execution_tier == "enforced_isolated" and self.runtime.kind != "oci":
+            raise ModulePackageValidationError("enforced isolation requires an OCI runtime")
 
     @classmethod
     def from_dict(cls, value: object) -> ModuleManifest:
@@ -500,6 +580,10 @@ class ModuleManifest:
                 ChildTarget.from_dict(item)
                 for item in _array(raw["child_targets"], "child_targets")
             ),
+            contracts=tuple(
+                ModuleContract.from_dict(item)
+                for item in _array(raw["contracts"], "contracts")
+            ),
             requested_authority=_frozen_object(
                 _object(raw["requested_authority"], "requested_authority"),
                 "requested_authority",
@@ -516,6 +600,7 @@ class ModuleManifest:
                 ImportMember.from_dict(item)
                 for item in _array(raw["import_members"], "import_members")
             ),
+            schema_members=_object(raw["schema_members"], "schema_members"),
             runtime=RuntimeDescriptor.from_dict(raw["runtime"]),
         )
 
@@ -532,6 +617,7 @@ class ModuleManifest:
             "accepted_checkpoint_schema_ids": list(self.accepted_checkpoint_schema_ids),
             "checkpoint_schema_id": self.checkpoint_schema_id,
             "child_targets": [item.as_dict() for item in self.child_targets],
+            "contracts": [item.as_dict() for item in self.contracts],
             "dependency_contract_ids": list(self.dependency_contract_ids),
             "entrypoint": self.entrypoint,
             "execution_tier": self.execution_tier,
@@ -544,6 +630,7 @@ class ModuleManifest:
             "resource_budget": _thaw_json(self.resource_budget),
             "runtime": self.runtime.as_dict(),
             "schema_version": self.schema_version,
+            "schema_members": dict(self.schema_members),
             "source_members": [item.as_dict() for item in self.source_members],
             "worker_protocol": self.worker_protocol,
         }
@@ -564,6 +651,8 @@ class ModulePackage:
     manifest: ModuleManifest
     runtime_key: str
     import_members: tuple[tuple[str, str], ...]
+    schema_documents: Mapping[str, Mapping[str, FrozenJsonValue]]
+    schema_dependencies: Mapping[str, tuple[str, ...]]
 
     def __post_init__(self) -> None:
         try:
@@ -596,6 +685,39 @@ class ModulePackage:
                 "import member accessor does not match manifest declarations"
             )
         object.__setattr__(self, "import_members", members)
+        documents = {
+            schema_id: _frozen_object(
+                _object(document, "schema document"), "schema document"
+            )
+            for schema_id, document in self.schema_documents.items()
+        }
+        if set(documents) != set(self.manifest.schema_members):
+            raise ModulePackageIntegrityError("schema documents do not match the manifest")
+        object.__setattr__(self, "schema_documents", MappingProxyType(documents))
+        dependencies = {
+            schema_id: _text_array(values, "schema dependencies")
+            for schema_id, values in self.schema_dependencies.items()
+        }
+        if set(dependencies) != set(documents) or any(
+            not set(values) <= set(documents) for values in dependencies.values()
+        ):
+            raise ModulePackageIntegrityError("schema dependency closure is incomplete")
+        object.__setattr__(self, "schema_dependencies", MappingProxyType(dependencies))
+
+    def schema_closure(self, schema_ids: Sequence[str]) -> tuple[tuple[str, str], ...]:
+        """Identify every captured document reachable through an interface."""
+        pending = list(schema_ids)
+        visited: set[str] = set()
+        while pending:
+            schema_id = pending.pop()
+            if schema_id not in visited:
+                visited.add(schema_id)
+                pending.extend(self.schema_dependencies[schema_id])
+        members = {member.path: member for member in self.manifest.source_members}
+        return tuple(
+            (schema_id, members[self.manifest.schema_members[schema_id]].sha256)
+            for schema_id in sorted(visited)
+        )
 
     def lock_record(self) -> dict[str, object]:
         """Return a detached canonical package record for Lock compilation."""
@@ -692,6 +814,71 @@ def _validate_declared_members(
             )
     return payloads
 
+def _schema_documents(
+    payloads: Mapping[str, bytes], manifest: ModuleManifest
+) -> tuple[dict[str, Mapping[str, object]], dict[str, tuple[str, ...]]]:
+    documents: dict[str, Mapping[str, object]] = {}
+    dependencies: dict[str, set[str]] = {}
+    try:
+        for schema_id, path in manifest.schema_members.items():
+            document = _object(canonical_json_loads(payloads[path]), "schema document")
+            if document.get("$id") != schema_id:
+                raise ModulePackageValidationError(f"schema member id mismatch: {schema_id}")
+            if document.get("$schema", Draft202012Validator.META_SCHEMA["$id"]) != Draft202012Validator.META_SCHEMA["$id"]:
+                raise ModulePackageValidationError("module schemas must use JSON Schema 2020-12")
+            Draft202012Validator.check_schema(document)
+            documents[schema_id] = document
+            dependencies[schema_id] = set()
+        # Give relative root IDs an absolute evaluation base before Registry
+        # crawls them; otherwise it joins a root ID to itself and creates aliases.
+        resources = {
+            schema_id: Resource.from_contents(
+                {**document, "$id": urljoin("https://breadboard.invalid/module-schema/", schema_id)},
+                default_specification=DRAFT202012,
+            )
+            for schema_id, document in documents.items()
+        }
+        registry = Registry().with_resources(
+            (resource.id(), resource) for resource in resources.values()
+        ).crawl()
+        owners: dict[str, str] = {}
+        references: list[tuple[str, str]] = []
+        pending = [
+            (resource, "", schema_id)
+            for schema_id, resource in resources.items()
+        ]
+        while pending:
+            resource, base_uri, owner = pending.pop()
+            identifier = resource.id()
+            if identifier is not None:
+                base_uri = urljoin(base_uri, identifier).rstrip("#")
+                if base_uri in owners:
+                    raise ModulePackageValidationError(f"duplicate schema resource id: {base_uri}")
+                owners[base_uri] = owner
+            contents = resource.contents
+            if isinstance(contents, Mapping):
+                resolver = registry.resolver(base_uri=base_uri)
+                for keyword in ("$ref", "$dynamicRef"):
+                    if keyword in contents:
+                        reference = contents[keyword]
+                        resolver.lookup(reference)
+                        target_uri = (
+                            base_uri if reference.startswith("#")
+                            else urljoin(base_uri, reference).partition("#")[0]
+                        )
+                        references.append((owner, target_uri.rstrip("#")))
+            pending.extend(
+                (child, base_uri, owner) for child in resource.subresources()
+            )
+        for owner, target_uri in references:
+            dependencies[owner].add(owners[target_uri])
+    except (BundleError, SchemaError, Unresolvable) as error:
+        raise ModulePackageValidationError(f"module schema closure is invalid: {error}") from error
+    return documents, {
+        schema_id: tuple(sorted(values)) for schema_id, values in dependencies.items()
+    }
+
+
 
 def _zip_bytes(payloads: Mapping[str, bytes]) -> bytes:
     output = io.BytesIO()
@@ -777,6 +964,7 @@ def _package_from_archive(
         )
     manifest, canonical_manifest = _manifest_from_bundle(bundle_entries, cas)
     payloads = _validate_declared_members(bundle_entries, manifest, cas)
+    schema_documents, schema_dependencies = _schema_documents(payloads, manifest)
     if payloads[_PACKAGE_MANIFEST_PATH] != canonical_manifest:
         raise ModulePackageIntegrityError("module.json changed during package validation")
     reference = _publish_package(archive_bytes, actual_digest, cas)
@@ -786,6 +974,8 @@ def _package_from_archive(
         manifest=manifest,
         runtime_key=canonical_sha256(manifest.runtime.as_dict()),
         import_members=tuple((item.module, item.path) for item in manifest.import_members),
+        schema_documents=schema_documents,
+        schema_dependencies=schema_dependencies,
     )
 
 
@@ -811,6 +1001,7 @@ def build_module_package(
         entries, cas, require_canonical=False
     )
     payloads = _validate_declared_members(entries, manifest, cas)
+    schema_documents, schema_dependencies = _schema_documents(payloads, manifest)
     payloads[_PACKAGE_MANIFEST_PATH] = canonical_manifest
     archive_bytes = _zip_bytes(payloads)
     digest = bytes_sha256(archive_bytes)
@@ -822,11 +1013,13 @@ def build_module_package(
         manifest=manifest,
         runtime_key=canonical_sha256(manifest.runtime.as_dict()),
         import_members=tuple((item.module, item.path) for item in manifest.import_members),
+        schema_documents=schema_documents,
+        schema_dependencies=schema_dependencies,
     )
 
 
 def load_module_package(
-    source: Path, expected_digest: str, *, cas: FilesystemCAS
+    source: Path | bytes, expected_digest: str, *, cas: FilesystemCAS
 ) -> ModulePackage:
     """Load a byte-pinned package through the hardened ZIP/bundle boundary."""
 
@@ -834,14 +1027,17 @@ def load_module_package(
         expected = require_sha256(expected_digest, "expected_digest")
     except BundleValidationError as exc:
         raise ModulePackageValidationError(str(exc)) from exc
-    source_path = Path(source).expanduser()
+    source_value = source if isinstance(source, bytes) else Path(source).expanduser()
     try:
+        archive_bytes = read_bundle_archive(
+            source_value, BundleLimits().max_archive_bytes
+        )
         bundle = ingest_bundle(
-            source_path,
+            archive_bytes,
             cas,
             entrypoints={_PACKAGE_ENTRYPOINT: _PACKAGE_MANIFEST_PATH},
             archive_format="zip",
-            source_label=str(source_path),
+            source_label=f"module-package:{expected}",
         )
     except (BundleError, OSError) as exc:
         raise ModulePackageSecurityError(f"module package archive rejected: {exc}") from exc
@@ -850,14 +1046,6 @@ def load_module_package(
         raise ModulePackageIntegrityError(
             f"module package digest mismatch: expected {expected}, got {actual}"
         )
-    try:
-        archive_bytes = source_path.read_bytes()
-    except OSError as exc:
-        raise ModulePackageSecurityError("module package archive cannot be read") from exc
-    if len(archive_bytes) > BundleLimits().max_archive_bytes:
-        raise ModulePackageValidationError("module package archive exceeds the byte limit")
-    if bytes_sha256(archive_bytes) != actual:
-        raise ModulePackageIntegrityError("module package changed while being loaded")
     entries = {entry.logical_path: entry for entry in bundle.entries}
     return _package_from_archive(
         archive_bytes,
@@ -876,6 +1064,7 @@ __all__ = [
     "ModulePackageIntegrityError",
     "ModulePackageSecurityError",
     "ModulePackageValidationError",
+    "ModuleContract",
     "RuntimeDescriptor",
     "SourceMember",
     "build_module_package",

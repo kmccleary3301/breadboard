@@ -159,6 +159,12 @@ class HarnessCreateRequest(BaseModel):
     directory: str = "."
 
 
+class HarnessPackageRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source: str = Field(min_length=1)
+    out: str = Field(min_length=1)
+
+
 class HarnessUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     definition: dict[str, Any]
