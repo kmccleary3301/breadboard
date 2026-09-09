@@ -2417,7 +2417,7 @@ class DurableChildFactory:
         return ChildSpec(
             str(value["title"]),
             task,
-            EffectiveHarnessLock._from_record({"graph_hash": str(value["lock_hash"])}),
+            EffectiveHarnessLock._from_record({"generation_id": str(value["lock_hash"])}),
             str(value["worker_id"]),
             str(value["adapter_family"]),
             RetryPolicy.from_dict(value["retry_policy"]),

@@ -82,14 +82,12 @@ class ChildSpec:
 
     def retained(self) -> dict[str, Any]:
         task_hash = "sha256:" + hashlib.sha256(self.task.encode()).hexdigest()
-        lock_hash = self.lock.as_dict().get("graph_hash")
-        if type(lock_hash) is not str:
-            raise ValueError("child lock has no graph hash")
+        generation_id = self.lock.generation_id
         retained = {
             "title": self.title,
             "task_hash": task_hash,
             "task_ref": "child-task://" + task_hash,
-            "lock_hash": lock_hash,
+            "lock_hash": generation_id,
             "worker_id": self.worker_id,
             "adapter_family": self.adapter_family,
             "retry_policy": self.retry_policy.as_dict(),
@@ -382,7 +380,7 @@ class ChildState:
             ResumePolicy.from_dict(child_spec["resume_policy"])
             CancellationPolicy.from_dict(child_spec["cancellation_policy"])
             EffectiveHarnessLock._from_record(
-                {"graph_hash": child_spec["lock_hash"]}
+                {"generation_id": child_spec["lock_hash"]}
             )
             task_artifact = child_spec.get("task_artifact_ref")
             if task_artifact is not None:

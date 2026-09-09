@@ -20,13 +20,21 @@ if TYPE_CHECKING:
     from .model import HarnessDefinition
 
 _CANONICAL = ("bb.harness_definition.v1", 1)
+_CANONICAL_V2 = ("bb.harness_definition.v2", 2)
 _LEGACY = ("bb.agent_config_surface.v2", 2)
+_GRAPH = ("bb.effective_config_graph.v1", 0)
+_LOCK_V2 = ("bb.effective_harness_lock.v2", 2)
 _SCHEMA_PATHS = {
     _CANONICAL: Path("contracts/public/schemas/bb.harness_definition.v1.schema.json"),
+    _CANONICAL_V2: Path("contracts/public/schemas/bb.harness_definition.v2.schema.json"),
     _LEGACY: Path("contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json"),
+    _GRAPH: Path("contracts/kernel/schemas/bb.effective_config_graph.v1.schema.json"),
+    _LOCK_V2: Path("contracts/public/schemas/bb.effective_harness_lock.v2.schema.json"),
 }
+_SOURCE_SCHEMA_PAIRS = {_CANONICAL, _CANONICAL_V2, _LEGACY}
 _KNOWN_VERSIONS = {
     _CANONICAL[0]: _CANONICAL[1],
+    _CANONICAL_V2[0]: _CANONICAL_V2[1],
     _LEGACY[0]: _LEGACY[1],
 }
 _MAX_JSON_INTEGER = 10**640 - 1
@@ -69,7 +77,7 @@ def _schema_validators() -> dict[tuple[str, int], Validator]:
         Draft202012Validator.check_schema(schema)
         schema_id = schema.get("$id")
         if not isinstance(schema_id, str):
-            raise RuntimeError("Harness definition schemas must have canonical $id values")
+            raise RuntimeError("Harness schemas must have canonical $id values")
         resources.append((schema_id, Resource.from_contents(schema)))
     registry = Registry().with_resources(resources)
     return {
@@ -248,6 +256,35 @@ def validate_harness_definition(
         for finding in _schema_error_findings(error)
     ]
     return tuple(sorted(set(findings)))
+
+
+def validate_effective_harness_lock(
+    document: object,
+) -> tuple[ValidationFinding, ...]:
+    """Validate a complete v2 Lock projection without accepting aliases."""
+
+    if findings := _json_findings(document):
+        return tuple(sorted(set(findings)))
+    if not isinstance(document, Mapping):
+        return (ValidationFinding("/", "type", "Harness Lock must be a mapping"),)
+    if document.get("schema_version") != _LOCK_V2[0]:
+        return (
+            ValidationFinding(
+                "/schema_version",
+                "unsupported_schema_version",
+                f"Unsupported schema_version; expected {_LOCK_V2[0]!r}",
+            ),
+        )
+    validator = _schema_validators()[_LOCK_V2]
+    return tuple(
+        sorted(
+            {
+                finding
+                for error in validator.iter_errors(document)
+                for finding in _schema_error_findings(error)
+            }
+        )
+    )
 
 def parse_harness_definition(document: Mapping[str, object]) -> HarnessDefinition:
     from .model import HarnessDefinition

@@ -109,8 +109,9 @@ def _default_profile_identity(
     compilation: HarnessCompilation,
 ) -> dict[str, object]:
     lock = compilation.lock
+    graph = lock.configuration_graph
     resources = []
-    for layer in lock["source_layers"]:
+    for layer in graph["source_layers"]:
         if layer["scope"] != "resource":
             continue
         _, separator, declared = str(layer["source_ref"]).partition("::")
@@ -142,7 +143,7 @@ def _default_profile_identity(
         "schema_version": str(definition["schema_version"]),
         "source_sha256": str(explanation["config_sha256"]),
         "effective_lock_schema_version": str(lock["schema_version"]),
-        "effective_lock_hash": str(lock["graph_hash"]),
+        "effective_lock_hash": lock.generation_id,
         "resources": sorted(resources, key=lambda row: row["ref"]),
     }
 

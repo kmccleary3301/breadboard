@@ -504,8 +504,8 @@ def project_session_snapshot(view: SessionView, *, as_of: int | None = None, exp
         raise SessionProjectionAsOfError(as_of, view.event_count)
     return Projected(view, SESSION_PROJECTOR_VERSION, ProjectionSource(f"session:{view.session_id}", 1, view.event_count), view.event_count)
 _SESSION_ACTIONS = MappingProxyType({"accept input": ("running",), "observe assistant": ("running",), "observe tool call": ("running",), "observe tool result": ("running",), "annotate": ("running", "awaiting_approval", "paused", "completed", "failed", "canceled"), "compact": ("running",), "request approval": ("running",), "resolve approval": ("awaiting_approval",), "reconfigure": ("running", "awaiting_approval", "paused"), "pause": ("running",), "resume": ("paused",), "cancel": ("running", "awaiting_approval", "paused"), "complete": ("running",), "fail": ("running", "awaiting_approval", "paused")})
-def _graph_hash(lock: EffectiveHarnessLock) -> str:
-    return _sha256(lock.as_dict().get("graph_hash"), "graph_hash")
+def _generation_id(lock: EffectiveHarnessLock) -> str:
+    return lock.generation_id
 def _hash(value: str) -> str: return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
 def _hash_bytes(value: bytes) -> str: return "sha256:" + hashlib.sha256(value).hexdigest()
 class ReplayError(ValueError):
@@ -578,8 +578,18 @@ class Session:
     def start(cls, lock: EffectiveHarnessLock, task: str, *, session_id: str | None = None, clock: Clock | None = None, ids: IdSource | None = None, sink: EventSink | None = None, lineage: SessionLineage | None = None) -> "Session":
         if not isinstance(lock, EffectiveHarnessLock): raise TypeError("Session.start requires an EffectiveHarnessLock")
         if not isinstance(task, str) or not task.strip(): raise ValueError("task must be non-empty")
-        active_clock, active_ids = clock if clock is not None else SystemClock(), ids if ids is not None else UUIDSource(); graph_hash, active_session_id = _graph_hash(lock), session_id if session_id is not None else active_ids.new_id()
-        payload: dict[str, Any] = {"effective_lock_hash": graph_hash, "task_hash": _hash(task)}
+        active_clock, active_ids = (
+            clock if clock is not None else SystemClock(),
+            ids if ids is not None else UUIDSource(),
+        )
+        generation_id = _generation_id(lock)
+        active_session_id = (
+            session_id if session_id is not None else active_ids.new_id()
+        )
+        payload: dict[str, Any] = {
+            "effective_lock_hash": generation_id,
+            "task_hash": _hash(task),
+        }
         if lineage is not None:
             if not isinstance(lineage, SessionLineage):
                 raise TypeError("lineage must be a SessionLineage")
@@ -772,7 +782,7 @@ class Session:
         if not isinstance(reason, str):
             raise GenerationAdoptionError("incompatible", "adoption reason must be a string")
         try:
-            generation_id = _graph_hash(lock)
+            generation_id = _generation_id(lock)
         except (TypeError, ValueError) as error:
             raise GenerationAdoptionError(
                 "incompatible", "generation Lock has no canonical identity"
