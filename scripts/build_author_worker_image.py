@@ -177,7 +177,8 @@ def _build_context(
     dependencies: Sequence[Path],
     base_image: str,
 ) -> None:
-    wheel_target = context / "breadboard.whl"
+    wheel_name = breadboard_wheel.name
+    wheel_target = context / wheel_name
     shutil.copyfile(breadboard_wheel, wheel_target)
     wheelhouse_target = context / "wheelhouse"
     wheelhouse_target.mkdir()
@@ -187,10 +188,10 @@ def _build_context(
         "\n".join(
             (
                 f"FROM {base_image}",
-                "COPY breadboard.whl /opt/breadboard-wheel/",
+                f"COPY {wheel_name} /opt/breadboard-wheel/",
                 "COPY wheelhouse/ /opt/breadboard-wheelhouse/",
                 "RUN python3 -m pip install --no-cache-dir --no-index --only-binary=:all: "
-                "--find-links=/opt/breadboard-wheelhouse /opt/breadboard-wheel/breadboard.whl",
+                f"--find-links=/opt/breadboard-wheelhouse /opt/breadboard-wheel/{wheel_name}",
                 "RUN rm -rf /opt/breadboard-wheel /opt/breadboard-wheelhouse",
                 'ENTRYPOINT ["python3", "-I", "-m", "breadboard.modules.worker"]',
                 "",

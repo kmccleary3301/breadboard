@@ -38,7 +38,6 @@ class SessionCreateRequest(BaseModel):
         default=None,
         description="Path to agent config YAML/JSON; omit to use the packaged default profile.",
     )
-    task: str = Field(default="", description="Optional initial task; omit for an idle session.")
     overrides: Dict[str, Any] | None = Field(default=None, description="Dotted-key override map.")
     metadata: Dict[str, Any] | None = Field(default=None, description="Opaque metadata for UX features.")
     workspace: Optional[str] = Field(default=None, description="Optional explicit workspace root.")
