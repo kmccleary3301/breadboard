@@ -51,7 +51,7 @@ _MANIFEST_FIELDS: Final = frozenset(
         "checkpoint_schema_id",
         "child_targets",
         "contracts",
-        "dependency_contract_ids",
+        "dependency_contracts",
         "entrypoint",
         "execution_tier",
         "import_members",
@@ -422,7 +422,7 @@ class ModuleManifest:
     output_schema_ids: tuple[str, ...]
     checkpoint_schema_id: str | None
     accepted_checkpoint_schema_ids: tuple[str, ...]
-    dependency_contract_ids: tuple[str, ...]
+    dependency_contracts: Mapping[str, str]
     child_targets: tuple[ChildTarget, ...]
     contracts: tuple[ModuleContract, ...]
     requested_authority: Mapping[str, FrozenJsonValue]
@@ -461,13 +461,19 @@ class ModuleManifest:
             "input_schema_ids",
             "output_schema_ids",
             "accepted_checkpoint_schema_ids",
-            "dependency_contract_ids",
         ):
             object.__setattr__(
                 self,
                 field_name,
                 _text_array(getattr(self, field_name), field_name),
             )
+        dependency_contracts = {
+            _text(name, "dependency field"): _text(contract, "dependency contract")
+            for name, contract in _object(self.dependency_contracts, "dependency_contracts").items()
+        }
+        object.__setattr__(
+            self, "dependency_contracts", MappingProxyType(dict(sorted(dependency_contracts.items())))
+        )
         children = tuple(self.child_targets)
         if any(not isinstance(item, ChildTarget) for item in children):
             raise ModulePackageValidationError("child_targets must contain ChildTarget values")
@@ -510,7 +516,7 @@ class ModuleManifest:
         contract_ids = {item.contract_id for item in contracts}
         if len(contract_ids) != len(contracts):
             raise ModulePackageValidationError("contract ids must be unique")
-        required_contracts = set(self.dependency_contract_ids) | {
+        required_contracts = set(self.dependency_contracts.values()) | {
             child.contract_id for child in children
         }
         if not required_contracts <= contract_ids:
@@ -573,9 +579,7 @@ class ModuleManifest:
                 raw["accepted_checkpoint_schema_ids"],
                 "accepted_checkpoint_schema_ids",
             ),
-            dependency_contract_ids=_text_array(
-                raw["dependency_contract_ids"], "dependency_contract_ids"
-            ),
+            dependency_contracts=_object(raw["dependency_contracts"], "dependency_contracts"),
             child_targets=tuple(
                 ChildTarget.from_dict(item)
                 for item in _array(raw["child_targets"], "child_targets")
@@ -618,7 +622,7 @@ class ModuleManifest:
             "checkpoint_schema_id": self.checkpoint_schema_id,
             "child_targets": [item.as_dict() for item in self.child_targets],
             "contracts": [item.as_dict() for item in self.contracts],
-            "dependency_contract_ids": list(self.dependency_contract_ids),
+            "dependency_contracts": dict(self.dependency_contracts),
             "entrypoint": self.entrypoint,
             "execution_tier": self.execution_tier,
             "import_members": [item.as_dict() for item in self.import_members],

@@ -15,7 +15,7 @@
     "output_schema_ids",
     "checkpoint_schema_id",
     "accepted_checkpoint_schema_ids",
-    "dependency_contract_ids",
+    "dependency_contracts",
     "child_targets",
     "contracts",
     "requested_authority",
@@ -36,7 +36,11 @@
     "output_schema_ids": {"$ref": "#/$defs/stringArray"},
     "checkpoint_schema_id": {"type": ["string", "null"], "minLength": 1},
     "accepted_checkpoint_schema_ids": {"$ref": "#/$defs/stringArray"},
-    "dependency_contract_ids": {"$ref": "#/$defs/stringArray"},
+    "dependency_contracts": {
+      "type": "object",
+      "propertyNames": {"minLength": 1},
+      "additionalProperties": {"type": "string", "minLength": 1}
+    },
     "child_targets": {
       "type": "array",
       "items": {

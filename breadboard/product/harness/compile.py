@@ -266,7 +266,7 @@ def _compile_module_bindings(
         schema_ids = (*expected.input_schema_ids, *expected.output_schema_ids)
         if packages[caller].schema_closure(schema_ids) != packages[receiver].schema_closure(schema_ids):
             raise HarnessCompileError(
-                f"contract {contract_id!r} binds different transitive schema bytes"
+                f"bindings {caller!r} and {receiver!r} use different transitive schema bytes for contract {contract_id!r}"
             )
 
     records: dict[str, dict[str, Any]] = {}
@@ -320,8 +320,7 @@ def _compile_module_bindings(
                 f"module binding {name!r} package record digest is invalid"
             )
         manifest = package.manifest
-        declared_dependencies = tuple(manifest.dependency_contract_ids)
-        if set(dependencies) != set(declared_dependencies):
+        if set(dependencies) != set(manifest.dependency_contracts):
             raise HarnessCompileError(
                 f"module binding {name!r} dependency bindings must match its manifest"
             )
@@ -340,8 +339,8 @@ def _compile_module_bindings(
                 raise HarnessCompileError(
                     f"module binding {name!r} {edge_kind} target is unknown: {unknown[0]!r}"
                 )
-        for contract_id, receiver in dependencies.items():
-            require_contract(name, receiver, contract_id)
+        for field_name, receiver in dependencies.items():
+            require_contract(name, receiver, manifest.dependency_contracts[field_name])
         for child in manifest.child_targets:
             receiver = children[child.label]
             if packages[receiver].manifest.logical_package != child.target:

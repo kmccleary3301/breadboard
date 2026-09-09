@@ -447,3 +447,12 @@ Packet A advances the current Definition and Lock schema IDs in the existing
 record-role catalog and its exact projection pin. The catalog wire format and
 required roles do not change. Historical schema readers and the frozen
 public-surface authority remain intact.
+
+Packet A's implementation correction separates dependency field names from
+contract IDs: `dependency_contracts` maps each manifest field to its contract,
+while Definition bindings map that field to its selected package binding.
+Two fields may use the same contract. The selected author declaration already
+distinguishes `dependency_id` and `contract_id`; treating a contract ID as a
+unique field prevented this required composition. The unpublished manifest
+candidate is corrected in place, without an alias or alternate resolver.
+The affected compiler and installed package proof must be refreshed.

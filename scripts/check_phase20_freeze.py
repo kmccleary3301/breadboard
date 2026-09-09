@@ -183,7 +183,7 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
     },
     "https://breadboard.dev/contracts/public/schemas/bb.module_manifest.v1.schema.json": {
         "packet": "bb-xh49.1",
-        "sha256": "767d802adfa83f38483f205aa7e06bd7e256919ca3c600eb77a48880c284abcd",
+        "sha256": "5d8e51e7e68ebe80e89629565910dea14c5b2f4f4b970844fde1bb861575bcc7",
         "class": "plan_mandated_evolution",
         "ref": "AM31",
     },

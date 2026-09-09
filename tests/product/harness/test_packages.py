@@ -10,6 +10,7 @@ import pytest
 
 from breadboard.artifacts.cas import FilesystemCAS
 from breadboard_engine.compilation.contracts import bytes_sha256, canonical_json_bytes
+from breadboard.product.harness.resolution import compile_harness_source
 from breadboard.product.harness.packages import (
     ModulePackageIntegrityError,
     ModulePackageValidationError,
@@ -37,7 +38,7 @@ def _write_source(root: Path, *, code: bytes, source_digest: str | None = None) 
         "output_schema_ids": ["bb.example.output.v1"],
         "checkpoint_schema_id": "bb.example.checkpoint.v1",
         "accepted_checkpoint_schema_ids": ["bb.example.checkpoint.v1"],
-        "dependency_contract_ids": ["bb.example.scoring.v1"],
+        "dependency_contracts": {"scoring": "bb.example.scoring.v1"},
         "child_targets": [
             {"label": "review", "target": "reviewer", "contract_id": "bb.example.scoring.v1"}
         ],
@@ -174,5 +175,43 @@ def test_relative_schema_ids_resolve_from_their_declared_base(tmp_path: Path) ->
     try:
         package = build_module_package(source, tmp_path / "relative.bbpkg", cas=cas)
         assert dict(package.schema_closure(["schemas/a.json"])) == expected
+    finally:
+        cas.close()
+
+
+def test_distinct_dependency_slots_can_share_a_contract(tmp_path: Path) -> None:
+    contract_id = "bb.example.scoring.v1"
+    cas = FilesystemCAS(tmp_path / "cas")
+    try:
+        packages = {}
+        for name, slots in (("root", {"left": contract_id, "right": contract_id}), ("leaf", {})):
+            source = _write_source(tmp_path / name, code=b"VALUE = 'ranker'\n")
+            manifest_path = source / "module.json"
+            manifest = json.loads(manifest_path.read_bytes())
+            manifest["dependency_contracts"] = slots
+            manifest["child_targets"] = []
+            manifest_path.write_bytes(canonical_json_bytes(manifest))
+            package = build_module_package(source, tmp_path / f"{name}.bbpkg", cas=cas)
+            packages[name] = {"source": f"{name}.bbpkg", "digest": package.package_digest}
+        edges = {"left": "first", "right": "second"}
+        definition = {
+            "schema_version": "bb.harness_definition.v2", "version": 2,
+            "modules": {"root": "root", "bindings": {
+                "root": {"package": packages["root"], "environment": "root",
+                         "dependencies": edges, "children": {}, "config": {}},
+                "first": {"package": packages["leaf"], "environment": "leaf",
+                          "dependencies": {}, "children": {}, "config": {"offset": 1}},
+                "second": {"package": packages["leaf"], "environment": "leaf",
+                           "dependencies": {}, "children": {}, "config": {"offset": 2}},
+            }},
+        }
+        source_path = tmp_path / "composition.json"
+        source_path.write_bytes(canonical_json_bytes(definition))
+        first = compile_harness_source(source_path, tmp_path, cas=cas)
+        edges.update(left="second", right="first")
+        source_path.write_bytes(canonical_json_bytes(definition))
+        swapped = compile_harness_source(source_path, tmp_path, cas=cas)
+        assert first.lock.generation_id != swapped.lock.generation_id
+        assert first.lock.configuration_graph_hash == swapped.lock.configuration_graph_hash
     finally:
         cas.close()
