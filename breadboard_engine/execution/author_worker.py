@@ -217,11 +217,114 @@ def _stop(process: subprocess.Popen[bytes], deadline: float) -> None:
                 pass
 
 
+def _docker_command(
+    runtime: str,
+    arguments: list[str],
+    deadline: float,
+) -> subprocess.CompletedProcess[bytes]:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("author cleanup deadline expired")
+    result = subprocess.run(
+        [runtime, *arguments],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=min(2.0, remaining),
+        check=False,
+        env={key: os.environ[key] for key in _MANAGEMENT_ENV if key in os.environ},
+    )
+    if len(result.stdout) + len(result.stderr) > _STDERR_LIMIT:
+        raise ValueError("author cleanup management output exceeded its limit")
+    return result
+
+
+def _authenticated_cleanup_fallback(
+    spec: AuthorWorkerSpec,
+    receipt: AuthorWorkerResourceReceipt,
+    reason: str,
+    deadline: float,
+) -> AuthorWorkerCleanupResult:
+    def result(
+        status: Literal["confirmed_absent", "unknown"],
+        evidence: tuple[str, ...],
+    ) -> AuthorWorkerCleanupResult:
+        return AuthorWorkerCleanupResult(
+            status=status,
+            resource_id=receipt.resource_id,
+            container_id=receipt.container_id,
+            owner_ref=receipt.owner_ref,
+            reason=reason,
+            evidence=evidence,
+        )
+
+    def inspect_container() -> Mapping[str, object] | None:
+        observed = _docker_command(
+            spec.runtime,
+            ["container", "inspect", receipt.container_id],
+            deadline,
+        )
+        if observed.returncode != 0:
+            if b"No such container:" in observed.stderr:
+                return None
+            raise RuntimeError("container presence could not be established")
+        decoded = json.loads(observed.stdout)
+        if not isinstance(decoded, list) or len(decoded) != 1:
+            raise ValueError("Docker returned an invalid container inspection")
+        record = decoded[0]
+        if not isinstance(record, Mapping):
+            raise ValueError("Docker returned an invalid container record")
+        return record
+
+    try:
+        observed = inspect_container()
+        if observed is None:
+            return result("confirmed_absent", ("container_absence_observed",))
+        config = observed.get("Config")
+        labels = config.get("Labels") if isinstance(config, Mapping) else None
+        if (
+            observed.get("Id") != receipt.container_id
+            or observed.get("Image") != receipt.image_id
+            or not isinstance(labels, Mapping)
+            or labels.get("dev.breadboard.author.owner") != receipt.owner_ref
+            or labels.get("dev.breadboard.author.execution") != spec.execution_id
+            or labels.get("dev.breadboard.author.token") != spec.execution_token
+        ):
+            return result("unknown", ("container_ownership_mismatch",))
+        removed = _docker_command(
+            spec.runtime,
+            ["rm", "--force", "--volumes", receipt.container_id],
+            deadline,
+        )
+        if removed.returncode != 0:
+            return result("unknown", ("container_removal_failed",))
+        if inspect_container() is not None:
+            return result("unknown", ("container_still_present",))
+        return result(
+            "confirmed_absent",
+            (
+                "fallback_authenticated_owned_container_removed",
+                "container_absence_observed",
+            ),
+        )
+    except (OSError, subprocess.SubprocessError, ValueError, RuntimeError):
+        return result("unknown", ("authenticated_cleanup_fallback_failed",))
+
+
 class AuthorWorker:
-    def __init__(self, process: subprocess.Popen[bytes], receipt: AuthorWorkerResourceReceipt, notices: _ManagementNotices) -> None:
+    def __init__(
+        self,
+        process: subprocess.Popen[bytes],
+        receipt: AuthorWorkerResourceReceipt,
+        notices: _ManagementNotices,
+        fallback_cleanup: (
+            Callable[[str, float], AuthorWorkerCleanupResult] | None
+        ) = None,
+    ) -> None:
         self._process = process
         self.receipt = receipt
         self._notices = notices
+        self._fallback_cleanup = fallback_cleanup
         self._cleanup: AuthorWorkerCleanupResult | None = None
         self._incoming = bytearray()
         self._read_lock = threading.Lock()
@@ -286,20 +389,29 @@ class AuthorWorker:
                     stream.close()
             try:
                 self._process.wait(
-                    timeout=max(0.0, deadline - time.monotonic() - 1.0)
+                    timeout=min(8.0, max(0.0, deadline - time.monotonic() - 5.0))
                 )
             except subprocess.TimeoutExpired:
-                _stop(self._process, deadline)
-            self._notices.thread.join(timeout=max(0.0, deadline - time.monotonic()))
+                _stop(
+                    self._process,
+                    min(deadline - 3.0, time.monotonic() + 2.0),
+                )
+            self._notices.thread.join(
+                timeout=min(1.0, max(0.0, deadline - time.monotonic()))
+            )
             observed = self._notices.cleanup
-            if (
-                observed is not None and self._process.poll() is not None
+            authenticated = (
+                observed is not None
+                and self._process.poll() is not None
                 and self._notices.error is None
                 and observed.resource_id == self.receipt.resource_id
                 and observed.container_id == self.receipt.container_id
                 and observed.owner_ref == self.receipt.owner_ref
-            ):
+            )
+            if authenticated and observed.status == "confirmed_absent":
                 self._cleanup = observed
+            elif self._fallback_cleanup is not None:
+                self._cleanup = self._fallback_cleanup(reason, deadline)
             else:
                 self._cleanup = AuthorWorkerCleanupResult(
                     status="unknown", resource_id=self.receipt.resource_id,
@@ -382,7 +494,17 @@ def open_author_worker(
                     raise ValueError("observed author receiver differs from admitted execution")
                 on_receipt(receipt)
                 _send(process, b"receipt_committed", deadline=deadline, cancel_requested=cancel_requested)
-                return AuthorWorker(process, receipt, notices)
+                return AuthorWorker(
+                    process,
+                    receipt,
+                    notices,
+                    lambda reason, cleanup_deadline: _authenticated_cleanup_fallback(
+                        spec,
+                        receipt,
+                        reason,
+                        cleanup_deadline,
+                    ),
+                )
     except BaseException as error:
         _stop(process, time.monotonic() + 15.0)
         notices.thread.join(timeout=1.0)
