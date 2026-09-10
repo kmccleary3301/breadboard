@@ -491,7 +491,43 @@
         "harness",
         "package"
       ],
-      "success_status": 202
+      "success_status": 200
+    },
+    {
+      "operation_id": "harness.publish",
+      "http_method": "POST",
+      "path": "/v1/harness-publications/{target}",
+      "python_method": "publish_harness",
+      "typescript_action": "public.harness.publish",
+      "cli": [
+        "harness",
+        "publish"
+      ],
+      "success_status": 200
+    },
+    {
+      "operation_id": "session.checkpoint",
+      "http_method": "POST",
+      "path": "/v1/sessions/{session_id}/checkpoints",
+      "python_method": "checkpoint_session",
+      "typescript_action": "public.session.checkpoint",
+      "cli": [
+        "session",
+        "checkpoint"
+      ],
+      "success_status": 200
+    },
+    {
+      "operation_id": "session.adopt",
+      "http_method": "POST",
+      "path": "/v1/sessions/{session_id}/adoptions",
+      "python_method": "adopt_session",
+      "typescript_action": "public.session.adopt",
+      "cli": [
+        "session",
+        "adopt"
+      ],
+      "success_status": 200
     },
     {
       "operation_id": "research.compare",

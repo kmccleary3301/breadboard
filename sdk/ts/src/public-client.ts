@@ -33,6 +33,7 @@ export interface BreadboardClient {
   healthSystem(): Promise<PublicResult>
   schemasSystem(): Promise<PublicResult>
   createHarness(directory?: PublicHarnessCreateRequest["directory"]): Promise<PublicResult>
+  packageHarness(source: string, out: string): Promise<PublicResult>
   listHarness(): Promise<PublicResult>
   getHarness(id: string): Promise<PublicResult>
   updateHarness(
@@ -96,6 +97,7 @@ export const createBreadboardClient = (
     healthSystem: full.healthSystem,
     schemasSystem: full.schemasSystem,
     createHarness: full.createHarness,
+    packageHarness: full.packageHarness,
     listHarness: full.listHarness,
     getHarness: full.getHarness,
     updateHarness: full.updateHarness,

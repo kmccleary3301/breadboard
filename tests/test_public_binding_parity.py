@@ -421,6 +421,9 @@ def test_breadboard_argparse_leaf_commands_match_catalog(
         assert command.startswith("breadboard ")
         expected.add(tuple(command.split()[1:]))
     assert _leaf_commands(build_parser()) == expected
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
+    monkeypatch.setenv("BREADBOARD_ENABLE_LOCAL_MIGRATIONS", "1")
+    assert _leaf_commands(build_parser()) == expected
 
 
 def test_python_sdk_explicit_methods_match_catalog() -> None:

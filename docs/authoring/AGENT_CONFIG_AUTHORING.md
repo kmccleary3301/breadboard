@@ -1,6 +1,6 @@
 # Agent config authoring
 
-Use `agent_configs/templates/minimal_harness.v2.yaml` when you need a new v2 config that can be explained, smoke-booted, and promoted into an E4 lane. Start there, copy it, then change one field at a time.
+Use `breadboard harness create` for a canonical Definition v2 starting point. The older `agent_configs/templates/minimal_harness.v2.yaml` remains a compact compatibility example for data-only local runs.
 
 ## Layer model
 
@@ -34,17 +34,17 @@ Every template line has an inline comment explaining why it exists. Keep those c
 
 ## Start and validate a config
 
-Create a working copy of the minimal config and its prompt:
+Create a working Definition and its referenced prompt and model-role files:
 
 ```bash
-bbh harness init --out docs_tmp/phase_20/scratch/minimal_harness
+breadboard harness create --out docs_tmp/phase_20/scratch/minimal_harness
 ```
 
-Validate the config, then inspect the resolved fields and references:
+Validate the Definition, then inspect resolved bindings, source provenance, authority requests, and lifecycle state:
 
 ```bash
-bbh harness validate docs_tmp/phase_20/scratch/minimal_harness/minimal_harness.v2.yaml
-bbh harness explain docs_tmp/phase_20/scratch/minimal_harness/minimal_harness.v2.yaml --strict
+breadboard harness validate docs_tmp/phase_20/scratch/minimal_harness/daily_driver.v1.yaml
+breadboard harness explain docs_tmp/phase_20/scratch/minimal_harness/daily_driver.v1.yaml --strict
 ```
 
 Strict explanation returns a nonzero exit when warnings remain. Fix missing prompt files, unknown tools, and schema errors before creating an E4 lane.
@@ -54,38 +54,71 @@ Strict explanation returns a nonzero exit when warnings remain. Fix missing prom
 Run the config locally with the offline mock provider:
 
 ```bash
-bbh harness run agent_configs/templates/minimal_harness.v2.yaml --local --task "List files"
+breadboard harness run agent_configs/templates/minimal_harness.v2.yaml --local --task "List files"
 ```
 
 The command starts the CLI bridge in-process, creates a session through the Python SDK, posts the task, reads the session records, and consumes the replayed event stream. It prints the session ID and record count before exiting.
+
+## Package, publish, and adopt executable work
+
+An executable module directory contains `module.json` plus every declared source, import, schema, and dependency file. Package it without importing or executing its code:
+
+```bash
+breadboard harness package ./ranker --out ./dist/ranker.bbmodule.zip
+breadboard harness package ./revisiting-policy --out ./dist/revisiting-policy.bbmodule.zip
+```
+
+Reference those immutable artifacts from one Definition v2, bind named dependencies and child edges there, then validate, explain, and lock the complete composition:
+
+```bash
+breadboard harness validate ./composition.yaml
+breadboard harness explain ./composition.yaml
+breadboard harness lock ./composition.yaml
+```
+
+Explicit Lock execution never follows later publications. Target execution atomically pins the current published revision:
+
+```bash
+breadboard harness publish main --lock ./composition.lock.json --expected-revision 0 --request-id publish-main-1
+breadboard harness run --server http://127.0.0.1:8000 --target main --module-input ./input.json
+```
+
+Existing work stays on its admitted generation. To replace it, checkpoint at a quiescent frontier and ask the Session owner to adopt an exact compatible Lock:
+
+```bash
+breadboard session --server http://127.0.0.1:8000 checkpoint SESSION_ID --reason "ranker replacement" --request-id checkpoint-1
+breadboard session --server http://127.0.0.1:8000 adopt SESSION_ID --checkpoint CHECKPOINT_ID --lock ./replacement.lock.json --request-id adopt-1
+```
+
+Use `breadboard session get/events/artifacts` and `breadboard harness get/explain` for generation, publication, checkpoint, pending-effect, and retirement/cleanup projections. Refusals use `bb.problem.v1`; follow `failed_stage`, `error_code`, safe record references, and `next_actions` rather than private service routes.
 
 ## Author and capture an E4 lane
 
 Create a lane-manifest skeleton:
 
 ```bash
-bbh lane init --out docs_tmp/phase_20/scratch/minimal_harness_lane
-bbh lane validate docs_tmp/phase_20/scratch/minimal_harness_lane/lane.manifest.yaml
+breadboard lane init --out docs_tmp/phase_20/scratch/minimal_harness_lane
+breadboard lane validate docs_tmp/phase_20/scratch/minimal_harness_lane/lane.manifest.yaml
 ```
 
 Fill in the target, capture inputs, assertions, claim scope, and source-freeze reference before compiling a lock. The migrated P6.6 pilot shows the complete manifest-to-capture flow:
 
 ```bash
-bbh lane validate config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.manifest.yaml
-bbh lane lock config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.manifest.yaml --check
-bbh lane capture config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.manifest.yaml --out docs_tmp/phase_20/scratch/p6_6_capture
+breadboard lane validate config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.manifest.yaml
+breadboard lane lock config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.manifest.yaml --check
+breadboard lane capture config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.manifest.yaml --out docs_tmp/phase_20/scratch/p6_6_capture
 ```
 
 Keep capture output under `docs_tmp/`. Promotion into `docs/conformance/` still requires accepted artifacts and fresh hashes.
 
 ## Maintainer script entrypoints
 
-`bbh` is the authoring front door. These scripts remain available for maintenance and debugging:
+`breadboard` is the installed authoring front door. These scripts remain available for maintenance and debugging:
 
-- `breadboard/product/harness/config_explanation.py` backs `bbh harness explain`.
-- `scripts/authoring/validate_lane.py` backs `bbh lane validate`.
-- `scripts/e4_parity/compile_lane_lock.py` backs `bbh lane lock`.
-- `scripts/e4_parity/run_lane.py` backs `bbh lane capture`.
+- `breadboard/product/harness/config_explanation.py` backs `breadboard harness explain`.
+- `scripts/authoring/validate_lane.py` backs `breadboard lane validate`.
+- `scripts/e4_parity/compile_lane_lock.py` backs `breadboard lane lock`.
+- `scripts/e4_parity/run_lane.py` backs `breadboard lane capture`.
 - `scripts/e4_parity/scaffold_e4_target_lane.py` creates the older full lane-def scaffold.
 - `scripts/authoring/render_field_table.py` regenerates the field registry table below.
 

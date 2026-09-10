@@ -69,17 +69,22 @@ class UnknownCleanupPreparer(SentinelPreparer):
         self.unknown.add(resource_ref)
         return "unknown"
 
+
 def _lock(name: str):
     return compile_harness_definition({"name": name}, source_ref=f"{name}.yaml").lock
 
 
-def test_publication_admission_fence_retains_old_generation_and_rejects_stale_owner(tmp_path):
+def test_publication_admission_fence_retains_old_generation_and_rejects_stale_owner(
+    tmp_path,
+):
     preparer = SentinelPreparer(tmp_path / "resources")
     preparer.root.mkdir()
     lifecycle = GenerationLifecycle(tmp_path, preparer)
     lock_a, lock_b, lock_c = (_lock("a"), _lock("b"), _lock("c"))
 
-    publication_a = lifecycle.prepare_and_publish("main", lock_a, "a.yaml", 0, "publish-a")
+    publication_a = lifecycle.prepare_and_publish(
+        "main", lock_a, "a.yaml", 0, "publish-a"
+    )
     admission_a = lifecycle.reserve_target_admission("main", "session-a", "input-a")
     replay = lifecycle.reserve_target_admission("main", "session-a", "input-a")
     assert replay == admission_a
@@ -98,8 +103,20 @@ def test_publication_admission_fence_retains_old_generation_and_rejects_stale_ow
         admission_a.grant_epoch,
     )
 
+    projection = lifecycle.inspect_generation(lock_a.generation_id)
+    assert projection["publications"] == []
+    assert projection["admissions"][0]["session_id"] == "session-a"
+    assert projection["retirement"] == {
+        "known": True,
+        "pinned_session_count": 1,
+        "cleanup_states": ["owned"],
+        "retired": False,
+    }
+    assert "resource_ref" not in projection["preparations"][0]
     with pytest.raises(GenerationLifecycleError) as pressure:
-        lifecycle.prepare_and_publish("main", lock_c, "c.yaml", publication_b.revision, "publish-c")
+        lifecycle.prepare_and_publish(
+            "main", lock_c, "c.yaml", publication_b.revision, "publish-c"
+        )
     assert pressure.value.code == "capacity_pressure"
     assert (preparer.root / f"{lock_c.generation_id}.sentinel").exists() is False
 
@@ -122,6 +139,7 @@ def test_publication_admission_fence_retains_old_generation_and_rejects_stale_ow
             admission_a.grant_epoch,
         )
     assert stale.value.code == "stale_dispatch"
+
 
 def test_adoption_reservation_keeps_old_session_admission_live(tmp_path):
     lifecycle = GenerationLifecycle(tmp_path)
@@ -162,7 +180,6 @@ def test_adoption_reservation_keeps_old_session_admission_live(tmp_path):
     )
 
 
-
 def test_failed_prepare_keeps_previous_route_and_cleans_external_sentinel(tmp_path):
     preparer = SentinelPreparer(tmp_path / "resources")
     preparer.root.mkdir()
@@ -172,7 +189,9 @@ def test_failed_prepare_keeps_previous_route_and_cleans_external_sentinel(tmp_pa
     preparer.failed.add("b.yaml")
 
     with pytest.raises(GenerationLifecycleError) as failed:
-        lifecycle.prepare_and_publish("main", lock_b, "b.yaml", published.revision, "publish-b")
+        lifecycle.prepare_and_publish(
+            "main", lock_b, "b.yaml", published.revision, "publish-b"
+        )
     assert failed.value.code == "prepare_failed"
     assert lifecycle.current("main") == published
     assert (preparer.root / f"{lock_b.generation_id}.sentinel").exists() is False
@@ -185,7 +204,10 @@ def test_request_replay_and_competing_cas_are_durable_and_idempotent(tmp_path):
     lock_a, lock_b, lock_c = _lock("a"), _lock("b"), _lock("c")
     committed = first.prepare_and_publish("main", lock_a, "a.yaml", 0, "publish-a")
     recreated = GenerationLifecycle(tmp_path, preparer)
-    assert recreated.prepare_and_publish("main", lock_a, "a.yaml", 0, "publish-a") == committed
+    assert (
+        recreated.prepare_and_publish("main", lock_a, "a.yaml", 0, "publish-a")
+        == committed
+    )
 
     barrier = Barrier(2)
     outcomes: list[object] = []
@@ -193,16 +215,26 @@ def test_request_replay_and_competing_cas_are_durable_and_idempotent(tmp_path):
     def publish(lock, request_id):
         barrier.wait()
         try:
-            outcomes.append(recreated.prepare_and_publish("main", lock, f"{request_id}.yaml", 1, request_id))
+            outcomes.append(
+                recreated.prepare_and_publish(
+                    "main", lock, f"{request_id}.yaml", 1, request_id
+                )
+            )
         except GenerationLifecycleError as exc:
             outcomes.append(exc)
 
-    threads = [Thread(target=publish, args=(lock_b, "publish-b")), Thread(target=publish, args=(lock_c, "publish-c"))]
+    threads = [
+        Thread(target=publish, args=(lock_b, "publish-b")),
+        Thread(target=publish, args=(lock_c, "publish-c")),
+    ]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
-    assert sum(not isinstance(outcome, GenerationLifecycleError) for outcome in outcomes) == 1
+    assert (
+        sum(not isinstance(outcome, GenerationLifecycleError) for outcome in outcomes)
+        == 1
+    )
     assert recreated.current("main").revision == 2
 
 
@@ -229,9 +261,12 @@ def test_reconcile_converges_crashes_before_and_after_resource_identity(tmp_path
     assert (preparer.root / f"{lock_b.generation_id}.sentinel").is_file()
     reconciled = {item.request_id: item for item in lifecycle.reconcile()}
     assert reconciled["publish-b"].status == "ready"
-    assert lifecycle.prepare_and_publish(
-        "main", lock_b, "b.yaml", 0, "publish-b"
-    ).generation_id == lock_b.generation_id
+    assert (
+        lifecycle.prepare_and_publish(
+            "main", lock_b, "b.yaml", 0, "publish-b"
+        ).generation_id
+        == lock_b.generation_id
+    )
 
 
 def test_unknown_cleanup_retains_capacity_pin(tmp_path):
@@ -243,9 +278,7 @@ def test_unknown_cleanup_retains_capacity_pin(tmp_path):
         "main", lock_a, "a.yaml", 0, "publish-a"
     )
     admission_a = lifecycle.mark_materialized(
-        lifecycle.reserve_target_admission(
-            "main", "session-a", "input-a"
-        ).admission_id
+        lifecycle.reserve_target_admission("main", "session-a", "input-a").admission_id
     )
     publication_b = lifecycle.prepare_and_publish(
         "main", lock_b, "b.yaml", publication_a.revision, "publish-b"

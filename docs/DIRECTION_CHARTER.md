@@ -9,16 +9,17 @@ the SDK/TUI/CLI clients over it. **E4 is the internal conformance backend** that
 claims trustworthy; its records, lanes, catalogs, ledgers, and regeneration machinery are not part
 of the ordinary harness-builder experience and are not public API.
 
-**Falsifiable thesis.** An outsider, using only published docs and the `bbh` front door, can clone a
+**Falsifiable thesis.** An outsider, using only published docs and the `breadboard` front door, can clone a
 bounded harness profile in one working day: hand-authored manifest ≤ 150 lines and adapter code
 ≤ 300 lines, producing a session-running harness and an accepted-scope conformance claim.
 The flagship demo protocol (docs/plans/phase_20_right_shape/FLAGSHIP_DEMO_PROTOCOL.md) measures this;
 measured numbers replace aspirations here after each run. Measured reality (run 1, 2026-07-11,
 G-J FAIL): the run failed after 0.15h (525s) of its 8h budget with the critical path incomplete. The
 authoring stages that did complete stayed within line budgets (manifest 103/150, adapter 182/300)
-and a session ran through `bbh`, but lock, capture, claim, and claim-reverify never completed:
-`bbh` exposes no adapter-registration, claim, or claim-reverify front door (backlog: bb-72h,
-bb-9c8, bb-ys7). The one-day thesis is unproven until those front doors exist and a rerun passes.
+and a session ran through the then-named `bbh` front door, but lock, capture, claim, and
+claim-reverify never completed: that front door exposed no adapter-registration, claim, or
+claim-reverify operation (backlog: bb-72h, bb-9c8, bb-ys7). The one-day thesis remains unproven
+until the current `breadboard` front door passes the complete rerun.
 
 **Contract tiers.** Published schemas carry tiers in contracts/kernel/registries/contract_tiers.v1.json:
 runtime_protocol / config_algebra / host_protocol / evidence / frozen_legacy. "Minimal" refers to the

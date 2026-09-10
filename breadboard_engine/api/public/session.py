@@ -153,6 +153,59 @@ class _LiveSessionAdapter:
             return []
         return runner.artifacts.list_rows()
 
+    async def get_live_diagnostics(self, session_id: str):
+        try:
+            record, _ = await _product_session(self._service, session_id)
+        except _ProductSessionUnavailable:
+            return None
+        except HTTPException as error:
+            if error.status_code == 404:
+                return None
+            raise
+        admission = getattr(record, "generation_admission", None)
+        admission_projection = None
+        if admission is not None:
+            admission_projection = {
+                "admission_id": admission.admission_id,
+                "target": admission.target,
+                "publication_revision": admission.publication_revision,
+                "generation_id": admission.generation_id,
+                "work_id": admission.work_id,
+                "attempt_id": admission.attempt_id,
+                "status": admission.status,
+            }
+        metadata = record.metadata if isinstance(record.metadata, Mapping) else {}
+        cleanup = metadata.get("generation_adoption_cleanup")
+        cleanup_projection = None
+        pending_effect_refs: list[str] = []
+        if isinstance(cleanup, Mapping):
+            refs = cleanup.get("pending_domain_refs")
+            if isinstance(refs, (list, tuple)):
+                pending_effect_refs = [
+                    value for value in refs if isinstance(value, str)
+                ]
+            cleanup_projection = {
+                "source_admission_id": cleanup.get("source_admission_id"),
+                "status": cleanup.get("status"),
+                "pending_domain_refs": pending_effect_refs,
+            }
+        pending_turns = sorted(
+            turn.turn_id
+            for turn in record.turns_by_id.values()
+            if turn.terminal_outcome is None
+        )
+        return {
+            "generation_admission": admission_projection,
+            "pending": {
+                "turn_ids": pending_turns,
+                "effects": {
+                    "status": ("pending" if pending_effect_refs else "none_observed"),
+                    "references": pending_effect_refs,
+                },
+            },
+            "retirement_cleanup": cleanup_projection,
+        }
+
 
 async def _require_live_product_session(
     service,
@@ -215,6 +268,7 @@ def _generation_mutation_error(
         error.message,
     )
 
+
 class _LiveSessionMutationAdapter:
     def __init__(self, service) -> None:
         self._service = service
@@ -227,7 +281,8 @@ class _LiveSessionMutationAdapter:
         source_path: Path | None,
     ) -> session_operations.StartSessionOutcome:
         metadata = {
-            "non_interactive_cli_session": request.module_input is None or request.module_input.final,
+            "non_interactive_cli_session": request.module_input is None
+            or request.module_input.final,
             "cli_session_kind": (
                 "interactive"
                 if request.module_input is not None and not request.module_input.final
@@ -474,7 +529,9 @@ async def start(
         publication_target=request.publication_target,
         task=request.task,
         session_id=request.session_id,
-        module_input=request.module_input.decoded if request.module_input is not None else None,
+        module_input=request.module_input.decoded
+        if request.module_input is not None
+        else None,
         module_authority=request.module_authority,
     )
     return await invoke_idempotent_async(
@@ -486,6 +543,8 @@ async def start(
             mutation_port=_LiveSessionMutationAdapter(_service(context)),
         ).start(neutral_request),
     )
+
+
 @router.post(
     "/v1/sessions/{session_id}/checkpoints",
     operation_id="session.checkpoint",
@@ -535,8 +594,6 @@ async def adopt(
     )
 
 
-
-
 @router.get("/v1/sessions", operation_id="session.list", response_model=PublicResult)
 async def list_sessions(request: Request):
     return await invoke_async(
@@ -564,7 +621,9 @@ async def send_input(
     neutral_request = session_operations.SendSessionInputRequest(
         session_id=session_id,
         content=request.content,
-        module_input=request.module_input.decoded if request.module_input is not None else None,
+        module_input=request.module_input.decoded
+        if request.module_input is not None
+        else None,
     )
     return await invoke_idempotent_async(
         "session.send_input",
@@ -836,6 +895,7 @@ async def events(
             )
             if batch.error is not None:
                 return
+
     return StreamingResponse(
         bounded_stream(),
         media_type="text/event-stream",

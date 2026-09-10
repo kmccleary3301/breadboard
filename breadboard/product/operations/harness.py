@@ -67,6 +67,7 @@ class LockHarnessRequest:
     out: str | Path | None = None
     check: bool = False
 
+
 @dataclass(frozen=True, slots=True)
 class PublishHarnessRequest:
     target: str
@@ -92,7 +93,6 @@ class GenerationPublicationPort(Protocol):
         effective_lock: EffectiveHarnessLock,
         source_path: Path,
     ) -> PublishHarnessOutcome: ...
-
 
 
 @dataclass(frozen=True, slots=True)
@@ -428,6 +428,7 @@ def publish_harness(
         )
     except Exception as error:
         from breadboard.product.runtime.generations import GenerationLifecycleError
+
         if isinstance(error, GenerationLifecycleError):
             error_code = str(error.code)
             if error_code in {
@@ -516,8 +517,10 @@ def lock_harness(
             target = _lock_target(request, source, context)
             compilation = (
                 _preview_compilation(source, context)
-                if request.check else
-                compile_harness_source(source, context.workspace, context.contained)
+                if request.check
+                else compile_harness_source(
+                    source, context.workspace, context.contained
+                )
             )
             metadata = {
                 "schema_version": "bb.harness_lock_metadata.v2",
@@ -678,9 +681,40 @@ def get_harness(
     try:
         path = context.resolve_path(request.path)
         reference = portable_ref(path, context.workspace)
+        definition = load_harness_document(path)
+        lifecycle: dict[str, Any]
+        try:
+            from breadboard.product.runtime.generations import GenerationLifecycle
+
+            current_generation_id = _preview_compilation(
+                path, context
+            ).lock.generation_id
+            retained_generation_id = None
+            if lock_path(path).exists():
+                retained_lock, _ = load_lock(path, context.workspace)
+                retained_generation_id = retained_lock.generation_id
+            lifecycle_generation_id = retained_generation_id or current_generation_id
+            lifecycle = GenerationLifecycle(context.workspace).inspect_generation(
+                lifecycle_generation_id
+            )
+            lifecycle.update(
+                {
+                    "source_generation_id": current_generation_id,
+                    "retained_generation_id": retained_generation_id,
+                }
+            )
+        except Exception:
+            lifecycle = {
+                "generation_id": None,
+                "status": "definition_not_lockable",
+            }
         return OperationResult.success(
             command,
-            {"path": reference, "definition": load_harness_document(path)},
+            {
+                "path": reference,
+                "definition": definition,
+                "lifecycle": lifecycle,
+            },
             [reference],
             stage=stage,
         )
@@ -735,8 +769,14 @@ def explain_harness(
     try:
         path = context.resolve_path(request.path)
         reference = portable_ref(path, context.workspace)
-        explanation = _preview_compilation(path, context).explanation.as_dict()
+        compilation = _preview_compilation(path, context)
+        explanation = compilation.explanation.as_dict()
         explanation["config_path"] = reference
+        from breadboard.product.runtime.generations import GenerationLifecycle
+
+        explanation["lifecycle"] = GenerationLifecycle(
+            context.workspace
+        ).inspect_generation(compilation.lock.generation_id)
         return OperationResult.success(
             command,
             explanation,

@@ -8,7 +8,12 @@ from typing import Any, Literal, Mapping, Protocol, Sequence
 
 from breadboard.artifacts.cas import FilesystemCAS
 from breadboard.modules import AuthorityDeclaration, ModuleInput
-from breadboard.product.harness.lock import EffectiveHarnessLock, LOCK_SCHEMA_VERSION, load_lock, materialize_lock
+from breadboard.product.harness.lock import (
+    EffectiveHarnessLock,
+    LOCK_SCHEMA_VERSION,
+    load_lock,
+    materialize_lock,
+)
 from breadboard.product.operations.model import (
     EXIT_BLOCKED,
     OperationContext,
@@ -65,6 +70,7 @@ def _validate_input(text: str | None, module_input: ModuleInput | None) -> None:
     if not isinstance(text, str) or not text.strip():
         raise ValueError("text input must not be empty")
 
+
 def _validate_required_text(value: str, field: str) -> None:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field} must not be empty")
@@ -80,15 +86,11 @@ class StartSessionRequest:
     module_authority: AuthorityDeclaration | None = None
 
 
-
-
-
 @dataclass(frozen=True, slots=True)
 class SendSessionInputRequest:
     session_id: str
     content: str | None = None
     module_input: ModuleInput | None = None
-
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +109,7 @@ class ResumeSessionRequest:
 class CancelSessionRequest:
     session_id: str
     reason: str = "operator request"
+
 
 @dataclass(frozen=True, slots=True)
 class CheckpointSessionRequest:
@@ -216,6 +219,11 @@ class LiveSessionReadPort(Protocol):
         session_id: str,
     ) -> list[dict[str, object]] | None: ...
 
+    async def get_live_diagnostics(
+        self,
+        session_id: str,
+    ) -> Mapping[str, Any] | None: ...
+
 
 @dataclass(frozen=True, slots=True)
 class ListSessionsRequest:
@@ -265,11 +273,15 @@ def _session_result(
     command_name: str,
     *,
     refs: Sequence[str] = (),
+    live_diagnostics: Mapping[str, Any] | None = None,
 ) -> OperationResult:
     view = session.read_model
+    lifecycle = session.lifecycle_projection()
+    if live_diagnostics is not None:
+        lifecycle["runtime"] = dict(live_diagnostics)
     return OperationResult.success(
         ["session", command_name],
-        {"session": view.as_dict()},
+        {"session": view.as_dict(), "lifecycle": lifecycle},
         refs,
         {"lock": view.effective_lock_hash, "task": view.task_hash},
         stage=f"session.{command_name}",
@@ -341,10 +353,7 @@ class SessionRuntime:
                         "status": view.status,
                         "event_count": view.event_count,
                     }
-                rows = [
-                    rows_by_id[session_id]
-                    for session_id in sorted(rows_by_id)
-                ]
+                rows = [rows_by_id[session_id] for session_id in sorted(rows_by_id)]
             return OperationResult.success(
                 ["session", "list"],
                 {"sessions": rows, "count": len(rows)},
@@ -360,13 +369,14 @@ class SessionRuntime:
     ) -> OperationResult:
         try:
             if self.live_port is not None:
-                live_session = await self.live_port.get_live_session(
-                    request.session_id
-                )
+                live_session = await self.live_port.get_live_session(request.session_id)
                 if live_session is not None:
                     return _session_result(
                         live_session,
                         request.command_name,
+                        live_diagnostics=await self.live_port.get_live_diagnostics(
+                            request.session_id
+                        ),
                     )
             session, event_path = await asyncio.to_thread(
                 load_session,
@@ -402,9 +412,7 @@ class SessionRuntime:
     ) -> OperationResult:
         try:
             if self.live_port is not None:
-                live_rows = await self.live_port.get_live_artifacts(
-                    request.session_id
-                )
+                live_rows = await self.live_port.get_live_artifacts(request.session_id)
                 if live_rows is not None:
                     return OperationResult.success(
                         ["session", "artifacts"],
@@ -452,9 +460,7 @@ class SessionRuntime:
             source: Literal["live", "durable"] = "durable"
             session = None
             if self.live_port is not None:
-                session = await self.live_port.get_live_session(
-                    request.session_id
-                )
+                session = await self.live_port.get_live_session(request.session_id)
                 if session is not None:
                     source = "live"
             record_ref = None
@@ -487,11 +493,7 @@ class SessionRuntime:
             )
             if request.limit is not None:
                 events = events[: request.limit]
-            cursor = (
-                events[-1].sequence
-                if events
-                else request.after_sequence
-            )
+            cursor = events[-1].sequence if events else request.after_sequence
             return SessionEventBatch(
                 events=events,
                 cursor=cursor,
@@ -544,9 +546,7 @@ class SessionRuntime:
         try:
             _validate_input(request.task, request.module_input)
             if (request.lock_id is None) == (request.publication_target is None):
-                raise ValueError(
-                    "supply exactly one lock_id or publication_target"
-                )
+                raise ValueError("supply exactly one lock_id or publication_target")
             if request.module_authority is not None:
                 if not isinstance(request.module_authority, AuthorityDeclaration):
                     raise TypeError("module_authority must be an AuthorityDeclaration")
@@ -574,11 +574,9 @@ class SessionRuntime:
                         refs=checked.record_refs,
                         next_actions=checked.next_actions,
                     )
-                if (
-                    effective_lock is not None
-                    and (effective_lock["modules"] is not None)
-                    != (request.module_input is not None)
-                ):
+                if effective_lock is not None and (
+                    effective_lock["modules"] is not None
+                ) != (request.module_input is not None):
                     raise ValueError(
                         "executable Locks require module_input; data Locks require task"
                     )
@@ -822,12 +820,16 @@ def _resolve_start_lock(
                     refs=[portable_ref(lock_path, context.workspace)],
                 ),
             )
-    return lock, source_path, OperationResult.success(
-        ["session", "start"],
-        refs=[portable_ref(lock_path, context.workspace)],
-        hashes={
-            "lock": lock.generation_id,
-            "graph": lock.configuration_graph["graph_hash"],
-        },
-        stage="session.lock",
+    return (
+        lock,
+        source_path,
+        OperationResult.success(
+            ["session", "start"],
+            refs=[portable_ref(lock_path, context.workspace)],
+            hashes={
+                "lock": lock.generation_id,
+                "graph": lock.configuration_graph["graph_hash"],
+            },
+            stage="session.lock",
+        ),
     )

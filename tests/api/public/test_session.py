@@ -26,7 +26,11 @@ from breadboard_engine.api.cli_bridge.models import (
     SessionStatus,
     TurnAdmission,
 )
-from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry, TurnRecord
+from breadboard_engine.api.cli_bridge.registry import (
+    SessionRecord,
+    SessionRegistry,
+    TurnRecord,
+)
 from breadboard_engine.api.cli_bridge.registry.records import CancellationRecord
 from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
 from breadboard_engine.api.cli_bridge.service import SessionService
@@ -37,7 +41,13 @@ from breadboard_engine.provider.runtimes.testing import MockRuntime
 from breadboard.product.cli import session as session_operations
 from breadboard.product.runtime import session_store
 from breadboard.product.harness.lock import EffectiveHarnessLock
-from breadboard.product.runtime.events import AnnotationRecord, CompactionSnapshot, KernelEvent, ReplayError, Session
+from breadboard.product.runtime.events import (
+    AnnotationRecord,
+    CompactionSnapshot,
+    KernelEvent,
+    ReplayError,
+    Session,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -72,6 +82,7 @@ def _locked_harness(client: TestClient) -> str:
     result = client.post("/v1/harnesses/daily_driver.v1.yaml/lock").json()
     assert result["ok"] is True
     return result["data"]["path"]
+
 
 def test_published_target_pins_exact_admission(
     client: TestClient,
@@ -111,6 +122,19 @@ def test_published_target_pins_exact_admission(
     assert admission.publication_revision == publication["revision"]
     assert admission.generation_id == publication["generation_id"]
     assert admission.status == "materialized"
+    harness_projection = client.get("/v1/harnesses/daily_driver.v1.yaml").json()[
+        "data"
+    ]["lifecycle"]
+    assert harness_projection["publications"] == [
+        {
+            "target": "main",
+            "revision": publication["revision"],
+            "generation_id": publication["generation_id"],
+            "preparation_id": publication["preparation_id"],
+            "request_id": "publish-main-a",
+        }
+    ]
+    assert harness_projection["retirement"]["pinned_session_count"] == 1
     assert record.product_session.pinned_generation_id == publication["generation_id"]
 
     retained_path = client.app.state.session_service.registry._state_path(
@@ -123,7 +147,6 @@ def test_published_target_pins_exact_admission(
     assert retained["attempt_id"] == admission.attempt_id
     assert retained["controller_epoch"] == admission.controller_epoch
     assert retained["grant_epoch"] == admission.grant_epoch
-
 
     with pytest.raises(HTTPException) as reconfigure:
         client.portal.call(
@@ -147,6 +170,7 @@ def test_published_target_pins_exact_admission(
         (tmp_path / ".breadboard" / "generations" / "state.json").read_text()
     )
     assert lifecycle_state["admissions"][admission.admission_id]["status"] == "released"
+
 
 def test_unknown_publication_target_refuses_start(client: TestClient) -> None:
     refused = client.post(
@@ -242,9 +266,7 @@ def test_session_restore_raises_typed_replay_error_for_invalid_history() -> None
 
 
 def test_replay_differential_uses_durable_projection_as_expected_side() -> None:
-    lock = EffectiveHarnessLock._from_record(
-        {"graph_hash": "sha256:" + "b" * 64}
-    )
+    lock = EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "b" * 64})
     session = Session.start(lock, "replay task", session_id="replay-differential")
     session.input("next")
     session.assistant_message("answer")
@@ -253,9 +275,7 @@ def test_replay_differential_uses_durable_projection_as_expected_side() -> None:
     session.request_approval("approval-1", "run command")
     session.resolve_approval("approval-1", "allow")
     session.reconfigure(
-        EffectiveHarnessLock._from_record(
-            {"graph_hash": "sha256:" + "c" * 64}
-        ),
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "c" * 64}),
         "operator update",
     )
     session.pause("checkpoint")
@@ -269,8 +289,7 @@ def test_replay_differential_uses_durable_projection_as_expected_side() -> None:
         "generation_id": "sha256:" + "c" * 64,
         "trajectory_segment_id": "replay-differential:segment:1:" + "c" * 64,
         "lineage": None,
-        "task_hash": "sha256:"
-        + hashlib.sha256(b"replay task").hexdigest(),
+        "task_hash": "sha256:" + hashlib.sha256(b"replay task").hexdigest(),
         "event_count": 11,
         "pending_approval": None,
         "terminal_outcome": {"outcome": "completed", "summary": "done"},
@@ -524,10 +543,20 @@ def test_session_lifecycle_and_resumable_event_stream(
         )
     )
     assert resumed == [first[-1]]
+    current = client.get("/v1/sessions/session-fixture").json()["data"]
+    assert current["session"]["status"] == "canceled"
+    assert current["lifecycle"]["schema_version"] == "bb.session_lifecycle.v1"
+    assert current["lifecycle"]["generation_sequence"] == [
+        current["session"]["generation_id"]
+    ]
     assert (
-        client.get("/v1/sessions/session-fixture").json()["data"]["session"]["status"]
-        == "canceled"
+        current["lifecycle"]["runtime"]["generation_admission"]["generation_id"]
+        == record.generation_admission.generation_id
     )
+    assert current["lifecycle"]["runtime"]["pending"]["effects"] == {
+        "status": "none_observed",
+        "references": [],
+    }
     assert client.get("/v1/sessions/session-fixture/artifacts").json()["ok"] is True
 
 
@@ -537,9 +566,7 @@ def test_public_event_limit_counts_annotations_but_skips_compaction(
 ) -> None:
     session_id = "annotation-limit"
     session = Session.start(
-        EffectiveHarnessLock._from_record(
-            {"graph_hash": "sha256:" + "a" * 64}
-        ),
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64}),
         "annotation limit",
         session_id=session_id,
     )
@@ -563,13 +590,19 @@ def test_public_event_limit_counts_annotations_but_skips_compaction(
     session.compact(CompactionSnapshot(b"[]", ("ctn_000001",)))
     session.complete("done")
     session.annotate(
-        AnnotationRecord("post-run", "message-a", "trajectory-a", "verified", "reviewer-2", "generation-a")
+        AnnotationRecord(
+            "post-run",
+            "message-a",
+            "trajectory-a",
+            "verified",
+            "reviewer-2",
+            "generation-a",
+        )
     )
     session_store.create_session(tmp_path, session)
 
     response = client.get(
-        f"/v1/sessions/{session_id}/events"
-        "?resume_token=3&limit=1&follow=false"
+        f"/v1/sessions/{session_id}/events?resume_token=3&limit=1&follow=false"
     )
 
     assert response.status_code == 200
@@ -580,8 +613,7 @@ def test_public_event_limit_counts_annotations_but_skips_compaction(
     assert records[0]["payload"]["message_id"] == "message-a"
     assert records[0]["visibility"]["model_visible"] is False
     resumed_after_compaction = client.get(
-        f"/v1/sessions/{session_id}/events"
-        "?resume_token=5&limit=1&follow=false"
+        f"/v1/sessions/{session_id}/events?resume_token=5&limit=1&follow=false"
     )
     assert resumed_after_compaction.status_code == 200
     assert "id: 6\n\n" in resumed_after_compaction.text
@@ -589,12 +621,13 @@ def test_public_event_limit_counts_annotations_but_skips_compaction(
     assert len(after_compaction) == 1
     assert after_compaction[0]["kind"] == "session.completed"
     assert after_compaction[0]["seq"] == 7
-    snapshot = client.get(
-        f"/v1/sessions/{session_id}/events?follow=false"
-    )
+    snapshot = client.get(f"/v1/sessions/{session_id}/events?follow=false")
     assert snapshot.status_code == 200
     settled_and_labeled = _stream_records(snapshot)[-2:]
-    assert [event["kind"] for event in settled_and_labeled] == ["session.completed", "annotation"]
+    assert [event["kind"] for event in settled_and_labeled] == [
+        "session.completed",
+        "annotation",
+    ]
     assert [event["seq"] for event in settled_and_labeled] == [7, 8]
     assert settled_and_labeled[1]["payload"]["annotation_id"] == "post-run"
 
@@ -635,8 +668,7 @@ def test_live_event_limit_returns_annotation_before_later_input(
     record.product_session.input("visible after annotation")
 
     response = client.get(
-        "/v1/sessions/snapshot-fixture/events"
-        "?resume_token=2&limit=1&follow=false"
+        "/v1/sessions/snapshot-fixture/events?resume_token=2&limit=1&follow=false"
     )
 
     assert response.status_code == 200
@@ -653,9 +685,7 @@ def test_public_session_events_snapshot_excludes_annotation_appended_after_first
     tmp_path: Path,
 ) -> None:
     session_id = "snapshot-boundary"
-    lock = EffectiveHarnessLock._from_record(
-        {"graph_hash": "sha256:" + "a" * 64}
-    )
+    lock = EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64})
     session = Session.start(lock, "snapshot boundary", session_id=session_id)
     session.assistant_message(
         "candidate",
@@ -707,9 +737,7 @@ def test_public_session_events_snapshot_excludes_annotation_appended_after_first
         "session.completed",
     ]
 
-    fresh_snapshot = client.get(
-        f"/v1/sessions/{session_id}/events?follow=false"
-    )
+    fresh_snapshot = client.get(f"/v1/sessions/{session_id}/events?follow=false")
     assert fresh_snapshot.status_code == 200
     fresh_records = _stream_records(fresh_snapshot)
     assert fresh_records[-1]["kind"] == "annotation"
@@ -844,7 +872,13 @@ def test_managed_state_terminal_public_session_survives_restart(
         assert paused.status_code == 202, paused.text
         uploaded = first.post(
             "/v1/sessions/managed-session/attachments",
-            files={"files": ("restart-proof.txt", b"restart artifact bytes\n", "text/plain")},
+            files={
+                "files": (
+                    "restart-proof.txt",
+                    b"restart artifact bytes\n",
+                    "text/plain",
+                )
+            },
         )
         assert uploaded.status_code == 200, uploaded.text
         artifact_before = first.get("/v1/sessions/managed-session/artifacts")
@@ -891,6 +925,8 @@ def test_managed_state_terminal_public_session_survives_restart(
         assert restored_bytes.json()["data"]["bytes"] == len(
             b"restart artifact bytes\n"
         )
+
+
 def test_public_session_restart_terminalizes_each_unfinished_turn(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -907,9 +943,7 @@ def test_public_session_restart_terminalizes_each_unfinished_turn(
     first_registry = SessionRegistry(state_root=state_root)
     first_service = SessionService(registry=first_registry)
     runtime_config = {"providers": {"default_model": "test/restart"}}
-    lock = first_service._runtime_lock(
-        session_id, runtime_config, str(config)
-    )
+    lock = first_service._runtime_lock(session_id, runtime_config, str(config))
     Session.start(
         lock,
         "durability test",
@@ -955,7 +989,9 @@ def test_public_session_restart_terminalizes_each_unfinished_turn(
     record.event_seq = 10
     record.replay_head_sequence = 10
     record.replay_head_event_id = "event-before-restart"
-    with TestClient(create_app(service=first_service, include_atp_routes=False)) as first:
+    with TestClient(
+        create_app(service=first_service, include_atp_routes=False)
+    ) as first:
         first.portal.call(first_registry.create, record)
 
     monkeypatch.setattr(
@@ -990,10 +1026,7 @@ def test_public_session_restart_terminalizes_each_unfinished_turn(
         assert recovered is not None
         assert recovered.active_turn_id is None
         assert recovered.turns_by_id["turn-cancelled"].state == "cancelled"
-        assert (
-            recovered.turns_by_id["turn-cancelled"].terminal_outcome
-            == "cancelled"
-        )
+        assert recovered.turns_by_id["turn-cancelled"].terminal_outcome == "cancelled"
         assert recovered.turns_by_id["turn-failed"].state == "failed"
         assert recovered.turns_by_id["turn-failed"].terminal_outcome == "failed"
 
@@ -2487,9 +2520,7 @@ def test_retained_refresh_replaces_turn_and_idempotency_journals() -> None:
     assert target.turn_admission is TurnAdmission.ACTIVE
     assert target.submissions_by_key_digest == {"sha256:fresh": fresh_turn}
     assert target.cancellations_by_key == {}
-    assert target.cancellations_by_key_digest == {
-        "sha256:cancel": fresh_cancellation
-    }
+    assert target.cancellations_by_key_digest == {"sha256:cancel": fresh_cancellation}
     assert target.admission_closed is True
     retained = SessionRegistry()._deserialize_record(
         SessionRegistry()._serialize_record(source)

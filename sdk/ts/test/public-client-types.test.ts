@@ -4,9 +4,9 @@ import test from "node:test"
 import { createBreadboardClient } from "../dist/index.js"
 
 const catalogMethods = [
-  "describeSystem", "healthSystem", "schemasSystem", "createHarness", "listHarness",
-  "getHarness", "updateHarness", "validateHarness", "explainHarness", "lockHarness",
-  "publishHarness", "getHarnessLock", "listIntegration", "getIntegration", "probeIntegration", "listArtifact",
+  "describeSystem", "healthSystem", "schemasSystem", "createHarness", "packageHarness",
+  "listHarness", "getHarness", "updateHarness", "validateHarness", "explainHarness",
+  "lockHarness", "publishHarness", "getHarnessLock", "listIntegration", "getIntegration", "probeIntegration", "listArtifact",
   "getArtifact", "verifyArtifact", "startSession", "checkpointSession", "adoptSession", "compareResearch", "listSession", "getSessionResult",
   "sendInputSession", "approveSession", "resumeSession", "cancelSession", "eventsSession",
   "artifactsSession",

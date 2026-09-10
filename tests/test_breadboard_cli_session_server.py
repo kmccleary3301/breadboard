@@ -67,8 +67,9 @@ class _Client:
     def send_input_session(
         self,
         session_id: str,
-        content: str,
+        content: str | None,
         *,
+        module_input: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         self.calls.append(("send-input", session_id, content, idempotency_key))
@@ -144,11 +145,9 @@ def test_session_cli_routes_every_public_operation_through_selected_server(
     _Client.calls = []
     monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", _Client)
     monkeypatch.setenv("BREADBOARD_API_TOKEN", "cli-auth-token")
-    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
     invocations = [
         (["list"], ("list",)),
         (["get", "s"], ("get", "s")),
-        (["show", "s"], ("get", "s")),
         (
             ["send-input", "s", "continue", "--idempotency-key", "input-key"],
             ("send-input", "s", "continue", "input-key"),
@@ -204,9 +203,7 @@ def test_session_cli_routes_every_public_operation_through_selected_server(
 
         assert output["command"] == ["session", arguments[0]]
         if arguments[0] in {"get", "show"}:
-            assert output["stage_outcomes"][0]["stage"] == (
-                f"session.{arguments[0]}"
-            )
+            assert output["stage_outcomes"][0]["stage"] == (f"session.{arguments[0]}")
     clients = [call for call in _Client.calls if call[0] == "client"]
     assert clients == [
         ("client", "http://breadboard.test", "cli-auth-token", 120)
@@ -376,9 +373,7 @@ def test_session_cli_accepts_hidden_internal_sequence_gap(
         @staticmethod
         def get_session(session_id: str) -> dict[str, Any]:
             result = _result(["session", "get"])
-            result["data"] = {
-                "session": {"session_id": session_id, "event_count": 3}
-            }
+            result["data"] = {"session": {"session_id": session_id, "event_count": 3}}
             return result
 
         @staticmethod
@@ -413,7 +408,6 @@ def test_session_cli_accepts_hidden_internal_sequence_gap(
     assert [event["seq"] for event in output["data"]["events"]] == [1, 3]
 
 
-
 def test_session_cli_accepts_running_snapshot_ending_in_hidden_compaction(
     monkeypatch, tmp_path, capsys
 ) -> None:
@@ -426,9 +420,7 @@ def test_session_cli_accepts_running_snapshot_ending_in_hidden_compaction(
         @staticmethod
         def get_session(session_id: str) -> dict[str, Any]:
             result = _result(["session", "get"])
-            result["data"] = {
-                "session": {"session_id": session_id, "event_count": 2}
-            }
+            result["data"] = {"session": {"session_id": session_id, "event_count": 2}}
             return result
 
         @staticmethod
@@ -476,9 +468,7 @@ def test_session_cli_stops_before_event_appended_after_initial_bound(
         @staticmethod
         def get_session(session_id: str) -> dict[str, Any]:
             result = _result(["session", "get"])
-            result["data"] = {
-                "session": {"session_id": session_id, "event_count": 2}
-            }
+            result["data"] = {"session": {"session_id": session_id, "event_count": 2}}
             return result
 
         @staticmethod
@@ -493,9 +483,7 @@ def test_session_cli_stops_before_event_appended_after_initial_bound(
             yield {"seq": 1, "kind": "session.started"}
             yield {"seq": 3, "kind": "assistant_message"}
 
-    monkeypatch.setattr(
-        breadboard_sdk, "BreadBoardClient", ConcurrentAppendClient
-    )
+    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", ConcurrentAppendClient)
     assert (
         main(
             [

@@ -41,6 +41,7 @@ import {
   type BreadboardClient,
   type Problem,
   type PublicHarnessCreateRequest,
+  type PublicHarnessPublishRequest,
   type PublicHarnessUpdateRequest,
   type PublicResult,
   type PublicSessionApprovalRequest,
@@ -94,23 +95,37 @@ const result: PublicResult = {
 }
 type CatalogMethod =
   | "describeSystem" | "healthSystem" | "schemasSystem"
-  | "createHarness" | "listHarness" | "getHarness" | "updateHarness"
+  | "createHarness" | "packageHarness" | "listHarness" | "getHarness" | "updateHarness"
   | "validateHarness" | "explainHarness" | "lockHarness" | "publishHarness" | "getHarnessLock"
   | "listIntegration" | "getIntegration" | "probeIntegration"
   | "listArtifact" | "getArtifact" | "verifyArtifact"
   | "startSession" | "listSession" | "getSessionResult" | "sendInputSession"
-  | "approveSession" | "resumeSession" | "cancelSession" | "eventsSession" | "artifactsSession"
+  | "approveSession" | "resumeSession" | "cancelSession" | "checkpointSession" | "adoptSession"
+  | "eventsSession" | "artifactsSession"
 const catalog: Pick<BreadboardClient, CatalogMethod> = client
 const started: Promise<PublicResult> = client.startSession(start)
 const updated: Promise<PublicResult> = client.updateHarness("harness", update.definition)
-const published: Promise<PublicResult> = client.publishHarness("main", {
+const packaged: Promise<PublicResult> = client.packageHarness("package", "bundle.zip")
+const publish: PublicHarnessPublishRequest = {
   lock_id: "harness.lock.json",
   expected_revision: 0,
   request_id: "publish-main",
+}
+const published: Promise<PublicResult> = client.publishHarness("main", {
+  ...publish,
 })
-const sent: Promise<PublicResult> = client.sendInputSession("session", sessionInput.content)
+const sent: Promise<PublicResult> = client.sendInputSession("session", sessionInput)
 const approved: Promise<PublicResult> = client.approveSession("session", approval.request_id, approval.decision)
 const canceled: Promise<PublicResult> = client.cancelSession("session", cancel.reason)
+const checkpointed: Promise<PublicResult> = client.checkpointSession("session", {
+  reason: "replace",
+  request_id: "checkpoint-session",
+})
+const adopted: Promise<PublicResult> = client.adoptSession("session", {
+  checkpoint_id: "checkpoint",
+  lock_id: "harness.lock.json",
+  request_id: "adopt-session",
+})
 const listed: Promise<PublicResult> = client.listArtifact()
 const read: Promise<PublicResult> = client.getSessionResult("session")
 const listRows: Promise<SessionListRow[]> = engineClient.listSessions()
@@ -129,6 +144,10 @@ void updated
 void sent
 void approved
 void canceled
+void checkpointed
+void adopted
+void packaged
+void published
 void decision
 void result
 void listed
