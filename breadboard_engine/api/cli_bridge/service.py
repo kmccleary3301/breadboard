@@ -1811,6 +1811,7 @@ class SessionService:
                     await runner.prepare_adopted_module_checkpoints(
                         captured_runtime=captured_target,
                         module_execution=target_execution,
+                        module_grant=target_grant,
                         source_dependencies=source_dependencies,
                         source_checkpoints=source_checkpoints,
                     )
