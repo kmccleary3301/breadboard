@@ -168,9 +168,10 @@ valid `resource_budget` keys.
 
 Use `execution_tier: enforced_isolated` with `runtime.kind: oci` for the
 installed local authoring journey. The image reference must be an immutable OCI
-digest for the declared platform. A `bb.worker.v2` OCI image owns the worker
-executable; set `runtime.entrypoint` to exactly `["--stdio"]`, the argument
-appended to that image entrypoint. Do not repeat the executable name.
+digest for the declared platform. The host overrides the OCI image entrypoint
+with the complete declared command; for `bb.worker.v2`, set
+`runtime.entrypoint` to exactly
+`["python3", "-I", "-m", "breadboard.modules.worker", "--stdio"]`.
 `trusted_native` is an operator-controlled tier: a Session refuses it with
 `native_approval_required` unless the deployment supplies native-execution
 approval; `harness run --local` does not grant that approval.

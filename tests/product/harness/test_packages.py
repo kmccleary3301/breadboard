@@ -214,6 +214,21 @@ def test_package_refuses_oci_worker_entrypoint_override(tmp_path: Path) -> None:
         )
     assert not (tmp_path / "bad.bbpkg").exists()
 
+    manifest["runtime"]["entrypoint"] = [
+        "python3",
+        "-I",
+        "-m",
+        "breadboard.modules.worker",
+        "--stdio",
+    ]
+    (source / "module.json").write_bytes(canonical_json_bytes(manifest))
+    package = build_module_package(
+        source, tmp_path / "valid.bbpkg", cas=FilesystemCAS(tmp_path / "valid-cas")
+    )
+    assert package.manifest.runtime.entrypoint == tuple(
+        manifest["runtime"]["entrypoint"]
+    )
+
 
 def test_package_refuses_entrypoints_the_worker_cannot_load(tmp_path: Path) -> None:
     invalid = {

@@ -88,7 +88,7 @@
       "allOf": [
         {
           "if": {"properties": {"kind": {"const": "oci"}}, "required": ["kind"]},
-          "then": {"properties": {"ref": {"pattern": "^(?:sha256:[0-9a-f]{64}|[^\\s@]+@sha256:[0-9a-f]{64})$"}, "entrypoint": {"const": ["--stdio"]}}}
+          "then": {"properties": {"ref": {"pattern": "^(?:sha256:[0-9a-f]{64}|[^\\s@]+@sha256:[0-9a-f]{64})$"}, "entrypoint": {"const": ["python3", "-I", "-m", "breadboard.modules.worker", "--stdio"]}}}
         },
         {
           "if": {"properties": {"kind": {"const": "native"}}, "required": ["kind"]},

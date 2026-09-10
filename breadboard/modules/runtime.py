@@ -29,7 +29,7 @@ def oci_worker_runtime(image_ref: str, platform: str) -> Mapping[str, _RUNTIME_V
             "kind": "oci",
             "ref": image_ref,
             "platform": platform,
-            "entrypoint": ("python3", "-I", "-m", WORKER_MODULE),
+            "entrypoint": ("python3", "-I", "-m", WORKER_MODULE, "--stdio"),
         }
     )
 
