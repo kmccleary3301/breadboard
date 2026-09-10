@@ -31,7 +31,7 @@
     "package_version": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
     "entrypoint": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
     "execution_tier": {"enum": ["trusted_native", "enforced_isolated"]},
-    "worker_protocol": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+    "worker_protocol": {"const": "bb.worker.v2"},
     "input_schema_ids": {"$ref": "#/$defs/stringArray"},
     "output_schema_ids": {"$ref": "#/$defs/stringArray"},
     "checkpoint_schema_id": {"type": ["string", "null"], "minLength": 1},
@@ -57,8 +57,8 @@
     },
     "contracts": {"type": "array", "items": {"$ref": "#/$defs/moduleContract"}, "uniqueItems": true},
     "schema_members": {"type": "object", "additionalProperties": {"$ref": "#/$defs/path"}},
-    "requested_authority": {"$ref": "#/$defs/jsonObject"},
-    "resource_budget": {"$ref": "#/$defs/jsonObject"},
+    "requested_authority": {"$ref": "#/$defs/authority"},
+    "resource_budget": {"$ref": "#/$defs/resourceBudget"},
     "source_members": {
       "type": "array",
       "minItems": 1,
@@ -101,6 +101,89 @@
     "then": {"properties": {"runtime": {"properties": {"kind": {"const": "oci"}}}}}
   }],
   "$defs": {
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project", "network", "child", "provider_ids", "tool_ids", "credential_disclosures"],
+      "properties": {
+        "project": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["roots", "operations"],
+              "properties": {
+                "roots": {"$ref": "#/$defs/stringArray"},
+                "operations": {
+                  "type": "array",
+                  "items": {"enum": ["read", "write"]},
+                  "uniqueItems": true
+                }
+              }
+            }
+          ]
+        },
+        "network": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["destinations", "operations"],
+              "properties": {
+                "destinations": {"$ref": "#/$defs/stringArray"},
+                "operations": {
+                  "type": "array",
+                  "items": {"enum": ["connect", "resolve"]},
+                  "uniqueItems": true
+                }
+              }
+            }
+          ]
+        },
+        "child": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["allowed_module_ids", "max_depth"],
+              "properties": {
+                "allowed_module_ids": {"$ref": "#/$defs/stringArray"},
+                "max_depth": {"type": "integer", "minimum": 0}
+              }
+            }
+          ]
+        },
+        "provider_ids": {"$ref": "#/$defs/stringArray"},
+        "tool_ids": {"$ref": "#/$defs/stringArray"},
+        "credential_disclosures": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["secret_name", "purpose"],
+            "properties": {
+              "secret_name": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+              "purpose": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"}
+            }
+          }
+        }
+      }
+    },
+    "resourceBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_children", "max_message_bytes", "max_checkpoint_bytes", "deadline_ms"],
+      "properties": {
+        "max_children": {"type": "integer", "minimum": 0},
+        "max_message_bytes": {"type": "integer", "minimum": 1, "maximum": 262144},
+        "max_checkpoint_bytes": {"type": "integer", "minimum": 1, "maximum": 1048576},
+        "deadline_ms": {"type": "integer", "minimum": 1}
+      }
+    },
     "moduleContract": {
       "type": "object",
       "additionalProperties": false,
@@ -176,15 +259,6 @@
         "sha256": {"$ref": "#/$defs/digest"},
         "size_bytes": {"type": "integer", "minimum": 0}
       }
-    },
-    "jsonObject": {
-      "type": "object",
-      "additionalProperties": {"$ref": "#/$defs/jsonValue"}
-    },
-    "jsonValue": {
-      "type": ["null", "boolean", "integer", "number", "string", "array", "object"],
-      "items": {"$ref": "#/$defs/jsonValue"},
-      "additionalProperties": {"$ref": "#/$defs/jsonValue"}
     }
   }
 }

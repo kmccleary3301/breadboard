@@ -63,6 +63,42 @@ The command starts the CLI bridge in-process, creates a session through the Pyth
 
 An executable module directory contains `module.json` plus every declared source, import, schema, and dependency file. Package it without importing or executing its code:
 
+`module.json` is a strict public contract. Use `worker_protocol: bb.worker.v2`.
+`requested_authority` and `resource_budget` have exact fields; the packager
+rejects missing, extra, or runtime-inoperable values:
+
+```json
+{
+  "worker_protocol": "bb.worker.v2",
+  "requested_authority": {
+    "project": null,
+    "network": null,
+    "child": null,
+    "provider_ids": [],
+    "tool_ids": [],
+    "credential_disclosures": []
+  },
+  "resource_budget": {
+    "max_children": 0,
+    "max_message_bytes": 262144,
+    "max_checkpoint_bytes": 1048576,
+    "deadline_ms": 10000
+  }
+}
+```
+
+Set `child` to `{"allowed_module_ids": ["logical.child"], "max_depth": 1}`
+only when the package declares and starts that child. Project operations are
+`read` or `write`; network operations are `connect` or `resolve`. A manifest
+requests authority but never grants it. Session admission separately intersects
+the request with operator policy.
+
+`max_message_bytes` cannot exceed 262144 and `max_checkpoint_bytes` cannot
+exceed 1048576. `max_children` is a non-negative integer; `deadline_ms` is a
+positive integer. These are the executable worker-profile fields. CPU, memory,
+process, and scratch limits belong to the selected execution world and are not
+valid `resource_budget` keys.
+
 ```bash
 breadboard harness package ./ranker --out ./dist/ranker.bbmodule.zip
 breadboard harness package ./revisiting-policy --out ./dist/revisiting-policy.bbmodule.zip

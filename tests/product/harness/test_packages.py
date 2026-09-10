@@ -40,16 +40,34 @@ def _write_source(root: Path, *, code: bytes, source_digest: str | None = None) 
         "accepted_checkpoint_schema_ids": ["bb.example.checkpoint.v1"],
         "dependency_contracts": {"scoring": "bb.example.scoring.v1"},
         "child_targets": [
-            {"label": "review", "target": "reviewer", "contract_id": "bb.example.scoring.v1"}
+            {
+                "label": "review",
+                "target": "reviewer",
+                "contract_id": "bb.example.scoring.v1",
+            }
         ],
-        "contracts": [{
-            "contract_id": "bb.example.scoring.v1",
-            "input_schema_ids": ["bb.example.input.v1"],
-            "output_schema_ids": ["bb.example.output.v1"],
-        }],
+        "contracts": [
+            {
+                "contract_id": "bb.example.scoring.v1",
+                "input_schema_ids": ["bb.example.input.v1"],
+                "output_schema_ids": ["bb.example.output.v1"],
+            }
+        ],
         "schema_members": {},
-        "requested_authority": {"network": "none", "project_write": False},
-        "resource_budget": {"cpu": 1, "memory_bytes": 67108864, "processes": 1},
+        "requested_authority": {
+            "project": None,
+            "network": None,
+            "child": None,
+            "provider_ids": [],
+            "tool_ids": [],
+            "credential_disclosures": [],
+        },
+        "resource_budget": {
+            "max_children": 0,
+            "max_message_bytes": 262144,
+            "max_checkpoint_bytes": 1048576,
+            "deadline_ms": 10000,
+        },
         "source_members": [
             {"path": "src/ranker.py", "sha256": digest, "size_bytes": len(code)}
         ],
@@ -70,17 +88,23 @@ def _write_source(root: Path, *, code: bytes, source_digest: str | None = None) 
     }
     (root / "schemas").mkdir()
     for schema_id in (
-        "bb.example.input.v1", "bb.example.output.v1", "bb.example.checkpoint.v1"
+        "bb.example.input.v1",
+        "bb.example.output.v1",
+        "bb.example.checkpoint.v1",
     ):
         member_path = f"schemas/{schema_id}.json"
-        content = canonical_json_bytes({
-            "$id": schema_id, "type": "object", "additionalProperties": False
-        })
+        content = canonical_json_bytes(
+            {"$id": schema_id, "type": "object", "additionalProperties": False}
+        )
         (root / member_path).write_bytes(content)
         manifest["schema_members"][schema_id] = member_path
-        manifest["source_members"].append({
-            "path": member_path, "sha256": bytes_sha256(content), "size_bytes": len(content)
-        })
+        manifest["source_members"].append(
+            {
+                "path": member_path,
+                "sha256": bytes_sha256(content),
+                "size_bytes": len(content),
+            }
+        )
     (root / "module.json").write_bytes(canonical_json_bytes(manifest))
     return root
 
@@ -134,7 +158,9 @@ def test_discovery_does_not_import_code_and_import_canary_is_positive_control(
     load_module_package(output, package.package_digest, cas=cas)
     assert not canary.exists()
 
-    spec = importlib.util.spec_from_file_location("positive_import_control", source / "src" / "ranker.py")
+    spec = importlib.util.spec_from_file_location(
+        "positive_import_control", source / "src" / "ranker.py"
+    )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -152,6 +178,51 @@ def test_manifest_unknown_fields_refuse_without_output(tmp_path: Path) -> None:
     assert not (tmp_path / "bad.bbpkg").exists()
 
 
+def test_package_refuses_unsupported_worker_protocol(tmp_path: Path) -> None:
+    source = _write_source(tmp_path / "source", code=b"VALUE = 'ranker'\n")
+    manifest = json.loads((source / "module.json").read_text(encoding="utf-8"))
+    manifest["worker_protocol"] = "breadboard.modules.worker.v2"
+    (source / "module.json").write_bytes(canonical_json_bytes(manifest))
+
+    with pytest.raises(
+        ModulePackageValidationError, match="worker_protocol must be bb.worker.v2"
+    ):
+        build_module_package(
+            source, tmp_path / "bad.bbpkg", cas=FilesystemCAS(tmp_path / "cas")
+        )
+    assert not (tmp_path / "bad.bbpkg").exists()
+
+
+def test_package_refuses_runtime_inoperable_authority_and_budget(
+    tmp_path: Path,
+) -> None:
+    invalid = {
+        "authority": (
+            "requested_authority",
+            {"network": "none", "project_write": False},
+            "requested_authority has unknown fields",
+        ),
+        "budget": (
+            "resource_budget",
+            {"cpu": 1, "memory_bytes": 67108864, "processes": 1},
+            "resource_budget has unknown fields",
+        ),
+    }
+    for label, (field, value, message) in invalid.items():
+        source = _write_source(tmp_path / label / "source", code=b"VALUE = 'ranker'\n")
+        manifest = json.loads((source / "module.json").read_text(encoding="utf-8"))
+        manifest[field] = value
+        (source / "module.json").write_bytes(canonical_json_bytes(manifest))
+
+        with pytest.raises(ModulePackageValidationError, match=message):
+            build_module_package(
+                source,
+                tmp_path / label / "bad.bbpkg",
+                cas=FilesystemCAS(tmp_path / label / "cas"),
+            )
+        assert not (tmp_path / label / "bad.bbpkg").exists()
+
+
 def test_relative_schema_ids_resolve_from_their_declared_base(tmp_path: Path) -> None:
     source = _write_source(tmp_path / "source", code=b"VALUE = 'ranker'\n")
     manifest_path = source / "module.json"
@@ -166,9 +237,13 @@ def test_relative_schema_ids_resolve_from_their_declared_base(tmp_path: Path) ->
         (source / schema_id).parent.mkdir(parents=True, exist_ok=True)
         (source / schema_id).write_bytes(content)
         manifest["schema_members"][schema_id] = schema_id
-        manifest["source_members"].append({
-            "path": schema_id, "sha256": bytes_sha256(content), "size_bytes": len(content)
-        })
+        manifest["source_members"].append(
+            {
+                "path": schema_id,
+                "sha256": bytes_sha256(content),
+                "size_bytes": len(content),
+            }
+        )
         expected[schema_id] = bytes_sha256(content)
     manifest_path.write_bytes(canonical_json_bytes(manifest))
     cas = FilesystemCAS(tmp_path / "cas")
@@ -184,7 +259,10 @@ def test_distinct_dependency_slots_can_share_a_contract(tmp_path: Path) -> None:
     cas = FilesystemCAS(tmp_path / "cas")
     try:
         packages = {}
-        for name, slots in (("root", {"left": contract_id, "right": contract_id}), ("leaf", {})):
+        for name, slots in (
+            ("root", {"left": contract_id, "right": contract_id}),
+            ("leaf", {}),
+        ):
             source = _write_source(tmp_path / name, code=b"VALUE = 'ranker'\n")
             manifest_path = source / "module.json"
             manifest = json.loads(manifest_path.read_bytes())
@@ -192,18 +270,40 @@ def test_distinct_dependency_slots_can_share_a_contract(tmp_path: Path) -> None:
             manifest["child_targets"] = []
             manifest_path.write_bytes(canonical_json_bytes(manifest))
             package = build_module_package(source, tmp_path / f"{name}.bbpkg", cas=cas)
-            packages[name] = {"source": f"{name}.bbpkg", "digest": package.package_digest}
+            packages[name] = {
+                "source": f"{name}.bbpkg",
+                "digest": package.package_digest,
+            }
         edges = {"left": "first", "right": "second"}
         definition = {
-            "schema_version": "bb.harness_definition.v2", "version": 2,
-            "modules": {"root": "root", "bindings": {
-                "root": {"package": packages["root"], "environment": "root",
-                         "dependencies": edges, "children": {}, "config": {}},
-                "first": {"package": packages["leaf"], "environment": "leaf",
-                          "dependencies": {}, "children": {}, "config": {"offset": 1}},
-                "second": {"package": packages["leaf"], "environment": "leaf",
-                           "dependencies": {}, "children": {}, "config": {"offset": 2}},
-            }},
+            "schema_version": "bb.harness_definition.v2",
+            "version": 2,
+            "modules": {
+                "root": "root",
+                "bindings": {
+                    "root": {
+                        "package": packages["root"],
+                        "environment": "root",
+                        "dependencies": edges,
+                        "children": {},
+                        "config": {},
+                    },
+                    "first": {
+                        "package": packages["leaf"],
+                        "environment": "leaf",
+                        "dependencies": {},
+                        "children": {},
+                        "config": {"offset": 1},
+                    },
+                    "second": {
+                        "package": packages["leaf"],
+                        "environment": "leaf",
+                        "dependencies": {},
+                        "children": {},
+                        "config": {"offset": 2},
+                    },
+                },
+            },
         }
         source_path = tmp_path / "composition.json"
         source_path.write_bytes(canonical_json_bytes(definition))
@@ -212,6 +312,8 @@ def test_distinct_dependency_slots_can_share_a_contract(tmp_path: Path) -> None:
         source_path.write_bytes(canonical_json_bytes(definition))
         swapped = compile_harness_source(source_path, tmp_path, cas=cas)
         assert first.lock.generation_id != swapped.lock.generation_id
-        assert first.lock.configuration_graph_hash == swapped.lock.configuration_graph_hash
+        assert (
+            first.lock.configuration_graph_hash == swapped.lock.configuration_graph_hash
+        )
     finally:
         cas.close()

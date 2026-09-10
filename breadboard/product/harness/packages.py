@@ -27,6 +27,11 @@ from referencing.jsonschema import DRAFT202012
 from urllib.parse import urljoin
 
 from breadboard.artifacts.cas import ArtifactStoreError, FilesystemCAS
+from breadboard.modules import (
+    MAX_CHECKPOINT_BYTES,
+    MAX_FRAME_BYTES,
+    AuthorityDeclaration,
+)
 from breadboard.artifacts.references import ArtifactRef
 from breadboard_engine.compilation.bundle import ingest_bundle, read_bundle_archive
 from breadboard_engine.compilation.contracts import (
@@ -49,6 +54,20 @@ _PACKAGE_MANIFEST_PATH: Final = "module.json"
 _MAX_SAFE_INTEGER: Final = 9_007_199_254_740_991
 _OCI_CONFIG_ID: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
 _OCI_REGISTRY_REF: Final = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
+_WORKER_PROTOCOL: Final = "bb.worker.v2"
+_AUTHORITY_FIELDS: Final = frozenset(
+    {
+        "project",
+        "network",
+        "child",
+        "provider_ids",
+        "tool_ids",
+        "credential_disclosures",
+    }
+)
+_RESOURCE_BUDGET_FIELDS: Final = frozenset(
+    {"max_children", "max_message_bytes", "max_checkpoint_bytes", "deadline_ms"}
+)
 
 _MANIFEST_FIELDS: Final = frozenset(
     {
@@ -172,13 +191,82 @@ def _frozen_object(
     return frozen
 
 
+def _manifest_authority(
+    value: Mapping[str, object],
+) -> Mapping[str, FrozenJsonValue]:
+    unknown = set(value) - _AUTHORITY_FIELDS
+    missing = _AUTHORITY_FIELDS - set(value)
+    if unknown or missing:
+        detail = []
+        if unknown:
+            detail.append("unknown fields: " + ", ".join(sorted(unknown)))
+        if missing:
+            detail.append("missing fields: " + ", ".join(sorted(missing)))
+        raise ModulePackageValidationError(
+            "requested_authority has " + "; ".join(detail)
+        )
+    try:
+        canonical = AuthorityDeclaration.from_dict(value).to_dict()
+    except (TypeError, ValueError) as exc:
+        raise ModulePackageValidationError(
+            f"requested_authority is invalid: {exc}"
+        ) from exc
+    return _frozen_object(canonical, "requested_authority")
+
+
+def _manifest_resource_budget(
+    value: Mapping[str, object],
+) -> Mapping[str, FrozenJsonValue]:
+    unknown = set(value) - _RESOURCE_BUDGET_FIELDS
+    missing = _RESOURCE_BUDGET_FIELDS - set(value)
+    if unknown or missing:
+        detail = []
+        if unknown:
+            detail.append("unknown fields: " + ", ".join(sorted(unknown)))
+        if missing:
+            detail.append("missing fields: " + ", ".join(sorted(missing)))
+        raise ModulePackageValidationError("resource_budget has " + "; ".join(detail))
+    max_children = _size(value["max_children"], "resource_budget.max_children")
+    max_message_bytes = _size(
+        value["max_message_bytes"], "resource_budget.max_message_bytes"
+    )
+    max_checkpoint_bytes = _size(
+        value["max_checkpoint_bytes"], "resource_budget.max_checkpoint_bytes"
+    )
+    deadline_ms = _size(value["deadline_ms"], "resource_budget.deadline_ms")
+    if max_message_bytes < 1 or max_message_bytes > MAX_FRAME_BYTES:
+        raise ModulePackageValidationError(
+            f"resource_budget.max_message_bytes must be between 1 and {MAX_FRAME_BYTES}"
+        )
+    if max_checkpoint_bytes < 1 or max_checkpoint_bytes > MAX_CHECKPOINT_BYTES:
+        raise ModulePackageValidationError(
+            "resource_budget.max_checkpoint_bytes must be between "
+            f"1 and {MAX_CHECKPOINT_BYTES}"
+        )
+    if deadline_ms < 1:
+        raise ModulePackageValidationError(
+            "resource_budget.deadline_ms must be a positive integer"
+        )
+    return _frozen_object(
+        {
+            "max_children": max_children,
+            "max_message_bytes": max_message_bytes,
+            "max_checkpoint_bytes": max_checkpoint_bytes,
+            "deadline_ms": deadline_ms,
+        },
+        "resource_budget",
+    )
+
+
 def _size(value: object, field_name: str) -> int:
     if type(value) is not int or value < 0:
         raise ModulePackageValidationError(
             f"{field_name} must be a non-negative integer"
         )
     if value > _MAX_SAFE_INTEGER:
-        raise ModulePackageValidationError(f"{field_name} exceeds the safe integer range")
+        raise ModulePackageValidationError(
+            f"{field_name} exceeds the safe integer range"
+        )
     return value
 
 
@@ -193,7 +281,9 @@ class ChildTarget:
     def __post_init__(self) -> None:
         object.__setattr__(self, "label", _text(self.label, "child target label"))
         object.__setattr__(self, "target", _text(self.target, "child target"))
-        object.__setattr__(self, "contract_id", _text(self.contract_id, "child contract_id"))
+        object.__setattr__(
+            self, "contract_id", _text(self.contract_id, "child contract_id")
+        )
 
     @classmethod
     def from_dict(cls, value: object) -> ChildTarget:
@@ -209,10 +299,16 @@ class ChildTarget:
             raise ModulePackageValidationError(
                 "ChildTarget is missing fields: " + ", ".join(sorted(missing))
             )
-        return cls(label=raw["label"], target=raw["target"], contract_id=raw["contract_id"])
+        return cls(
+            label=raw["label"], target=raw["target"], contract_id=raw["contract_id"]
+        )
 
     def as_dict(self) -> dict[str, str]:
-        return {"label": self.label, "target": self.target, "contract_id": self.contract_id}
+        return {
+            "label": self.label,
+            "target": self.target,
+            "contract_id": self.contract_id,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,11 +328,15 @@ class ModuleContract:
     def from_dict(cls, value: object) -> ModuleContract:
         raw = _object(value, "ModuleContract")
         if set(raw) != {"contract_id", "input_schema_ids", "output_schema_ids"}:
-            raise ModulePackageValidationError("ModuleContract requires its id and input/output schemas")
+            raise ModulePackageValidationError(
+                "ModuleContract requires its id and input/output schemas"
+            )
         return cls(
             contract_id=raw["contract_id"],
             input_schema_ids=_text_array(raw["input_schema_ids"], "input_schema_ids"),
-            output_schema_ids=_text_array(raw["output_schema_ids"], "output_schema_ids"),
+            output_schema_ids=_text_array(
+                raw["output_schema_ids"], "output_schema_ids"
+            ),
         )
 
     def as_dict(self) -> dict[str, object]:
@@ -282,9 +382,7 @@ class SourceMember:
             raise ModulePackageValidationError(
                 "SourceMember requires exactly path, sha256, and size_bytes"
             )
-        return cls(
-            path=raw["path"], sha256=raw["sha256"], size_bytes=raw["size_bytes"]
-        )
+        return cls(path=raw["path"], sha256=raw["sha256"], size_bytes=raw["size_bytes"])
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -363,18 +461,25 @@ class RuntimeDescriptor:
         object.__setattr__(self, "kind", kind)
         object.__setattr__(self, "ref", _text(self.ref, "runtime ref"))
         object.__setattr__(self, "platform", _text(self.platform, "runtime platform"))
-        commands = tuple(_text(item, "runtime entrypoint[]") for item in self.entrypoint)
+        commands = tuple(
+            _text(item, "runtime entrypoint[]") for item in self.entrypoint
+        )
         if not commands:
             raise ModulePackageValidationError("runtime entrypoint must not be empty")
         object.__setattr__(self, "entrypoint", commands)
         if self.kind == "oci":
-            if _OCI_CONFIG_ID.fullmatch(self.ref) is None and _OCI_REGISTRY_REF.fullmatch(self.ref) is None:
+            if (
+                _OCI_CONFIG_ID.fullmatch(self.ref) is None
+                and _OCI_REGISTRY_REF.fullmatch(self.ref) is None
+            ):
                 raise ModulePackageValidationError(
                     "OCI runtime ref must be a pinned @sha256 digest or exact local "
                     "sha256 config ID"
                 )
-            digest = self.ref if _OCI_CONFIG_ID.fullmatch(self.ref) is not None else (
-                "sha256:" + self.ref.rsplit("@sha256:", 1)[1]
+            digest = (
+                self.ref
+                if _OCI_CONFIG_ID.fullmatch(self.ref) is not None
+                else ("sha256:" + self.ref.rsplit("@sha256:", 1)[1])
             )
             try:
                 require_sha256(digest, "runtime ref")
@@ -450,7 +555,13 @@ class ModuleManifest:
             "entrypoint",
             "worker_protocol",
         ):
-            object.__setattr__(self, field_name, _text(getattr(self, field_name), field_name))
+            object.__setattr__(
+                self, field_name, _text(getattr(self, field_name), field_name)
+            )
+        if self.worker_protocol != _WORKER_PROTOCOL:
+            raise ModulePackageValidationError(
+                f"worker_protocol must be {_WORKER_PROTOCOL}"
+            )
         execution_tier = _text(self.execution_tier, "execution_tier")
         if execution_tier not in {"trusted_native", "enforced_isolated"}:
             raise ModulePackageValidationError(
@@ -475,25 +586,31 @@ class ModuleManifest:
             )
         dependency_contracts = {
             _text(name, "dependency field"): _text(contract, "dependency contract")
-            for name, contract in _object(self.dependency_contracts, "dependency_contracts").items()
+            for name, contract in _object(
+                self.dependency_contracts, "dependency_contracts"
+            ).items()
         }
         object.__setattr__(
-            self, "dependency_contracts", MappingProxyType(dict(sorted(dependency_contracts.items())))
+            self,
+            "dependency_contracts",
+            MappingProxyType(dict(sorted(dependency_contracts.items()))),
         )
         children = tuple(self.child_targets)
         if any(not isinstance(item, ChildTarget) for item in children):
-            raise ModulePackageValidationError("child_targets must contain ChildTarget values")
+            raise ModulePackageValidationError(
+                "child_targets must contain ChildTarget values"
+            )
         if len({item.label for item in children}) != len(children):
             raise ModulePackageValidationError("child target labels must be unique")
         object.__setattr__(
             self, "child_targets", tuple(sorted(children, key=lambda item: item.label))
         )
-        authority = _freeze_json(self.requested_authority)
-        budget = _freeze_json(self.resource_budget)
-        if not isinstance(authority, Mapping) or not isinstance(budget, Mapping):
-            raise ModulePackageValidationError(
-                "requested_authority and resource_budget must be objects"
-            )
+        authority = _manifest_authority(
+            _object(self.requested_authority, "requested_authority")
+        )
+        budget = _manifest_resource_budget(
+            _object(self.resource_budget, "resource_budget")
+        )
         object.__setattr__(self, "requested_authority", authority)
         object.__setattr__(self, "resource_budget", budget)
         sources = tuple(self.source_members)
@@ -501,9 +618,13 @@ class ModuleManifest:
         if not sources:
             raise ModulePackageValidationError("source_members must not be empty")
         if any(not isinstance(item, SourceMember) for item in sources):
-            raise ModulePackageValidationError("source_members must contain SourceMember values")
+            raise ModulePackageValidationError(
+                "source_members must contain SourceMember values"
+            )
         if any(not isinstance(item, ImportMember) for item in imports):
-            raise ModulePackageValidationError("import_members must contain ImportMember values")
+            raise ModulePackageValidationError(
+                "import_members must contain ImportMember values"
+            )
         if len({item.path for item in sources}) != len(sources):
             raise ModulePackageValidationError("source member paths must be unique")
         if len({(item.module, item.path) for item in imports}) != len(imports):
@@ -518,7 +639,9 @@ class ModuleManifest:
         )
         contracts = tuple(self.contracts)
         if any(not isinstance(item, ModuleContract) for item in contracts):
-            raise ModulePackageValidationError("contracts must contain ModuleContract values")
+            raise ModulePackageValidationError(
+                "contracts must contain ModuleContract values"
+            )
         contract_ids = {item.contract_id for item in contracts}
         if len(contract_ids) != len(contracts):
             raise ModulePackageValidationError("contract ids must be unique")
@@ -526,17 +649,25 @@ class ModuleManifest:
             child.contract_id for child in children
         }
         if not required_contracts <= contract_ids:
-            raise ModulePackageValidationError("every dependency and child needs a captured contract")
+            raise ModulePackageValidationError(
+                "every dependency and child needs a captured contract"
+            )
         object.__setattr__(
-            self, "contracts", tuple(sorted(contracts, key=lambda item: item.contract_id))
+            self,
+            "contracts",
+            tuple(sorted(contracts, key=lambda item: item.contract_id)),
         )
         schema_members = {
             _text(schema_id, "schema id"): _text(path, "schema member path")
-            for schema_id, path in _object(self.schema_members, "schema_members").items()
+            for schema_id, path in _object(
+                self.schema_members, "schema_members"
+            ).items()
         }
         source_paths = {item.path for item in sources}
         if not set(schema_members.values()) <= source_paths:
-            raise ModulePackageValidationError("schema members must name captured source members")
+            raise ModulePackageValidationError(
+                "schema members must name captured source members"
+            )
         required_schemas = (
             set(self.input_schema_ids)
             | set(self.output_schema_ids)
@@ -548,12 +679,20 @@ class ModuleManifest:
             required_schemas.update(contract.input_schema_ids)
             required_schemas.update(contract.output_schema_ids)
         if not required_schemas <= set(schema_members):
-            raise ModulePackageValidationError("every schema id must resolve to captured package bytes")
-        object.__setattr__(self, "schema_members", MappingProxyType(dict(sorted(schema_members.items()))))
+            raise ModulePackageValidationError(
+                "every schema id must resolve to captured package bytes"
+            )
+        object.__setattr__(
+            self,
+            "schema_members",
+            MappingProxyType(dict(sorted(schema_members.items()))),
+        )
         if not isinstance(self.runtime, RuntimeDescriptor):
             raise ModulePackageValidationError("runtime must be a RuntimeDescriptor")
         if self.execution_tier == "enforced_isolated" and self.runtime.kind != "oci":
-            raise ModulePackageValidationError("enforced isolation requires an OCI runtime")
+            raise ModulePackageValidationError(
+                "enforced isolation requires an OCI runtime"
+            )
 
     @classmethod
     def from_dict(cls, value: object) -> ModuleManifest:
@@ -579,13 +718,17 @@ class ModuleManifest:
             execution_tier=raw["execution_tier"],
             worker_protocol=raw["worker_protocol"],
             input_schema_ids=_text_array(raw["input_schema_ids"], "input_schema_ids"),
-            output_schema_ids=_text_array(raw["output_schema_ids"], "output_schema_ids"),
+            output_schema_ids=_text_array(
+                raw["output_schema_ids"], "output_schema_ids"
+            ),
             checkpoint_schema_id=checkpoint,
             accepted_checkpoint_schema_ids=_text_array(
                 raw["accepted_checkpoint_schema_ids"],
                 "accepted_checkpoint_schema_ids",
             ),
-            dependency_contracts=_object(raw["dependency_contracts"], "dependency_contracts"),
+            dependency_contracts=_object(
+                raw["dependency_contracts"], "dependency_contracts"
+            ),
             child_targets=tuple(
                 ChildTarget.from_dict(item)
                 for item in _array(raw["child_targets"], "child_targets")
@@ -649,7 +792,9 @@ class ModuleManifest:
         try:
             return canonical_json_bytes(self.as_dict()).decode("utf-8")
         except BundleError as exc:
-            raise ModulePackageValidationError("manifest cannot be encoded canonically") from exc
+            raise ModulePackageValidationError(
+                "manifest cannot be encoded canonically"
+            ) from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -685,7 +830,9 @@ class ModulePackage:
             raise ModulePackageValidationError("manifest must be a ModuleManifest")
         expected_runtime_key = canonical_sha256(self.manifest.runtime.as_dict())
         if self.runtime_key != expected_runtime_key:
-            raise ModulePackageIntegrityError("runtime key does not match manifest runtime")
+            raise ModulePackageIntegrityError(
+                "runtime key does not match manifest runtime"
+            )
         members = tuple(self.import_members)
         expected_members = tuple(
             (item.module, item.path) for item in self.manifest.import_members
@@ -702,7 +849,9 @@ class ModulePackage:
             for schema_id, document in self.schema_documents.items()
         }
         if set(documents) != set(self.manifest.schema_members):
-            raise ModulePackageIntegrityError("schema documents do not match the manifest")
+            raise ModulePackageIntegrityError(
+                "schema documents do not match the manifest"
+            )
         object.__setattr__(self, "schema_documents", MappingProxyType(documents))
         dependencies = {
             schema_id: _text_array(values, "schema dependencies")
@@ -743,7 +892,9 @@ class ModulePackage:
         try:
             canonical_json_bytes(record)
         except BundleError as exc:
-            raise ModulePackageIntegrityError("package lock record is not canonical JSON") from exc
+            raise ModulePackageIntegrityError(
+                "package lock record is not canonical JSON"
+            ) from exc
         return record
 
 
@@ -761,7 +912,9 @@ def _bundle_member_payload(
             f"captured package member cannot be read: {path}"
         ) from exc
     if len(payload) != entry.size_bytes or bytes_sha256(payload) != entry.blob_digest:
-        raise ModulePackageIntegrityError(f"captured package member digest mismatch: {path}")
+        raise ModulePackageIntegrityError(
+            f"captured package member digest mismatch: {path}"
+        )
     return payload
 
 
@@ -778,16 +931,22 @@ def _manifest_from_bundle(
         decoded = canonical_json_loads(payload)
         canonical = canonical_json_bytes(decoded)
     except BundleError as exc:
-        raise ModulePackageValidationError("module.json is not valid canonical JSON") from exc
+        raise ModulePackageValidationError(
+            "module.json is not valid canonical JSON"
+        ) from exc
     if not isinstance(decoded, Mapping):
         raise ModulePackageValidationError("module.json must contain an object")
     if require_canonical and canonical != payload:
-        raise ModulePackageValidationError("module.json must use canonical JSON encoding")
+        raise ModulePackageValidationError(
+            "module.json must use canonical JSON encoding"
+        )
     return ModuleManifest.from_dict(decoded), canonical
 
 
 def _validate_declared_members(
-    bundle_entries: Mapping[str, BundleEntry], manifest: ModuleManifest, cas: FilesystemCAS
+    bundle_entries: Mapping[str, BundleEntry],
+    manifest: ModuleManifest,
+    cas: FilesystemCAS,
 ) -> dict[str, bytes]:
     expected_paths = {_PACKAGE_MANIFEST_PATH}
     declarations: dict[str, tuple[str, int]] = {}
@@ -824,6 +983,7 @@ def _validate_declared_members(
             )
     return payloads
 
+
 def _schema_documents(
     payloads: Mapping[str, bytes], manifest: ModuleManifest
 ) -> tuple[dict[str, Mapping[str, object]], dict[str, tuple[str, ...]]]:
@@ -833,9 +993,16 @@ def _schema_documents(
         for schema_id, path in manifest.schema_members.items():
             document = _object(canonical_json_loads(payloads[path]), "schema document")
             if document.get("$id") != schema_id:
-                raise ModulePackageValidationError(f"schema member id mismatch: {schema_id}")
-            if document.get("$schema", Draft202012Validator.META_SCHEMA["$id"]) != Draft202012Validator.META_SCHEMA["$id"]:
-                raise ModulePackageValidationError("module schemas must use JSON Schema 2020-12")
+                raise ModulePackageValidationError(
+                    f"schema member id mismatch: {schema_id}"
+                )
+            if (
+                document.get("$schema", Draft202012Validator.META_SCHEMA["$id"])
+                != Draft202012Validator.META_SCHEMA["$id"]
+            ):
+                raise ModulePackageValidationError(
+                    "module schemas must use JSON Schema 2020-12"
+                )
             Draft202012Validator.check_schema(document)
             documents[schema_id] = document
             dependencies[schema_id] = set()
@@ -843,19 +1010,27 @@ def _schema_documents(
         # crawls them; otherwise it joins a root ID to itself and creates aliases.
         resources = {
             schema_id: Resource.from_contents(
-                {**document, "$id": urljoin("https://breadboard.invalid/module-schema/", schema_id)},
+                {
+                    **document,
+                    "$id": urljoin(
+                        "https://breadboard.invalid/module-schema/", schema_id
+                    ),
+                },
                 default_specification=DRAFT202012,
             )
             for schema_id, document in documents.items()
         }
-        registry = Registry().with_resources(
-            (resource.id(), resource) for resource in resources.values()
-        ).crawl()
+        registry = (
+            Registry()
+            .with_resources(
+                (resource.id(), resource) for resource in resources.values()
+            )
+            .crawl()
+        )
         owners: dict[str, str] = {}
         references: list[tuple[str, str]] = []
         pending = [
-            (resource, "", schema_id)
-            for schema_id, resource in resources.items()
+            (resource, "", schema_id) for schema_id, resource in resources.items()
         ]
         while pending:
             resource, base_uri, owner = pending.pop()
@@ -863,7 +1038,9 @@ def _schema_documents(
             if identifier is not None:
                 base_uri = urljoin(base_uri, identifier).rstrip("#")
                 if base_uri in owners:
-                    raise ModulePackageValidationError(f"duplicate schema resource id: {base_uri}")
+                    raise ModulePackageValidationError(
+                        f"duplicate schema resource id: {base_uri}"
+                    )
                 owners[base_uri] = owner
             contents = resource.contents
             if isinstance(contents, Mapping):
@@ -873,7 +1050,8 @@ def _schema_documents(
                         reference = contents[keyword]
                         resolver.lookup(reference)
                         target_uri = (
-                            base_uri if reference.startswith("#")
+                            base_uri
+                            if reference.startswith("#")
                             else urljoin(base_uri, reference).partition("#")[0]
                         )
                         references.append((owner, target_uri.rstrip("#")))
@@ -883,17 +1061,20 @@ def _schema_documents(
         for owner, target_uri in references:
             dependencies[owner].add(owners[target_uri])
     except (BundleError, SchemaError, Unresolvable) as error:
-        raise ModulePackageValidationError(f"module schema closure is invalid: {error}") from error
+        raise ModulePackageValidationError(
+            f"module schema closure is invalid: {error}"
+        ) from error
     return documents, {
         schema_id: tuple(sorted(values)) for schema_id, values in dependencies.items()
     }
 
 
-
 def _zip_bytes(payloads: Mapping[str, bytes]) -> bytes:
     output = io.BytesIO()
     try:
-        with zipfile.ZipFile(output, mode="w", compression=zipfile.ZIP_STORED) as archive:
+        with zipfile.ZipFile(
+            output, mode="w", compression=zipfile.ZIP_STORED
+        ) as archive:
             for path in sorted(payloads):
                 info = zipfile.ZipInfo(path, date_time=(1980, 1, 1, 0, 0, 0))
                 info.create_system = 3
@@ -904,10 +1085,14 @@ def _zip_bytes(payloads: Mapping[str, bytes]) -> bytes:
                 info.external_attr = 0o100444 << 16
                 archive.writestr(info, payloads[path])
     except (OSError, ValueError, zipfile.BadZipFile) as exc:
-        raise ModulePackageSecurityError("module package ZIP cannot be created") from exc
+        raise ModulePackageSecurityError(
+            "module package ZIP cannot be created"
+        ) from exc
     archive_bytes = output.getvalue()
     if len(archive_bytes) > BundleLimits().max_archive_bytes:
-        raise ModulePackageValidationError("module package archive exceeds the byte limit")
+        raise ModulePackageValidationError(
+            "module package archive exceeds the byte limit"
+        )
     return archive_bytes
 
 
@@ -935,7 +1120,9 @@ def _write_output(path: Path, payload: bytes) -> None:
             except FileNotFoundError:
                 pass
     except OSError as exc:
-        raise ModulePackageSecurityError("module package output cannot be published") from exc
+        raise ModulePackageSecurityError(
+            "module package output cannot be published"
+        ) from exc
 
 
 def _publish_package(payload: bytes, digest: str, cas: FilesystemCAS) -> ArtifactRef:
@@ -956,7 +1143,9 @@ def _publish_package(payload: bytes, digest: str, cas: FilesystemCAS) -> Artifac
         or reference.media_type != _PACKAGE_MEDIA_TYPE
         or reference.metadata
     ):
-        raise ModulePackageIntegrityError("CAS returned a rebound module package reference")
+        raise ModulePackageIntegrityError(
+            "CAS returned a rebound module package reference"
+        )
     return reference
 
 
@@ -976,14 +1165,18 @@ def _package_from_archive(
     payloads = _validate_declared_members(bundle_entries, manifest, cas)
     schema_documents, schema_dependencies = _schema_documents(payloads, manifest)
     if payloads[_PACKAGE_MANIFEST_PATH] != canonical_manifest:
-        raise ModulePackageIntegrityError("module.json changed during package validation")
+        raise ModulePackageIntegrityError(
+            "module.json changed during package validation"
+        )
     reference = _publish_package(archive_bytes, actual_digest, cas)
     return ModulePackage(
         package_digest=actual_digest,
         artifact_ref=reference,
         manifest=manifest,
         runtime_key=canonical_sha256(manifest.runtime.as_dict()),
-        import_members=tuple((item.module, item.path) for item in manifest.import_members),
+        import_members=tuple(
+            (item.module, item.path) for item in manifest.import_members
+        ),
         schema_documents=schema_documents,
         schema_dependencies=schema_dependencies,
     )
@@ -1005,7 +1198,9 @@ def build_module_package(
             source_label=str(source_path),
         )
     except (BundleError, OSError) as exc:
-        raise ModulePackageSecurityError(f"module package source rejected: {exc}") from exc
+        raise ModulePackageSecurityError(
+            f"module package source rejected: {exc}"
+        ) from exc
     entries = {entry.logical_path: entry for entry in bundle.entries}
     manifest, canonical_manifest = _manifest_from_bundle(
         entries, cas, require_canonical=False
@@ -1022,7 +1217,9 @@ def build_module_package(
         artifact_ref=reference,
         manifest=manifest,
         runtime_key=canonical_sha256(manifest.runtime.as_dict()),
-        import_members=tuple((item.module, item.path) for item in manifest.import_members),
+        import_members=tuple(
+            (item.module, item.path) for item in manifest.import_members
+        ),
         schema_documents=schema_documents,
         schema_dependencies=schema_dependencies,
     )
@@ -1050,7 +1247,9 @@ def load_module_package(
             source_label=f"module-package:{expected}",
         )
     except (BundleError, OSError) as exc:
-        raise ModulePackageSecurityError(f"module package archive rejected: {exc}") from exc
+        raise ModulePackageSecurityError(
+            f"module package archive rejected: {exc}"
+        ) from exc
     actual = bundle.provenance.raw_source_digest
     if actual != expected:
         raise ModulePackageIntegrityError(
