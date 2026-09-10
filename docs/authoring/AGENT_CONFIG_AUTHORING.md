@@ -124,6 +124,13 @@ positive integer. These are the executable worker-profile fields. CPU, memory,
 process, and scratch limits belong to the selected execution world and are not
 valid `resource_budget` keys.
 
+Use `execution_tier: enforced_isolated` with `runtime.kind: oci` for the
+installed local authoring journey. The image reference must be an immutable OCI
+digest for the declared platform. `trusted_native` is an operator-controlled
+tier: a Session refuses it with `native_approval_required` unless the deployment
+supplies native-execution approval; `harness run --local` does not grant that
+approval.
+
 ```bash
 breadboard harness package ./ranker --out ./dist/ranker.bbmodule.zip
 breadboard harness package ./revisiting-policy --out ./dist/revisiting-policy.bbmodule.zip
