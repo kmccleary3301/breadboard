@@ -212,7 +212,7 @@ class ModuleRuntime:
             raise ModuleExecutionError("owner_closed", "Session is no longer running")
 
     def _persist(self) -> None:
-        self.registry_call("persist", self.record)
+        self.persist_session()
 
     def _replace_worker(self, worker: _ModuleWorker, **changes: Any) -> None:
         with self._mutation_lock:
