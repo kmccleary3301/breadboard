@@ -80,9 +80,12 @@ class _RunClient:
         self.calls.append(("start", payload, idempotency_key))
         return {"ok": True, "data": {"session": {"session_id": "session-g3"}}}
 
-    def events_session(self, session_id: str) -> Iterator[dict[str, Any]]:
+    def events_session(
+        self, session_id: str, *, follow: bool = False
+    ) -> Iterator[dict[str, Any]]:
         assert session_id == "session-g3"
-        self.calls.append(("events", session_id))
+        assert follow is True
+        self.calls.append(("events", session_id, follow))
         yield {"kind": "assistant.message", "payload": {"content": "working"}}
         yield {"kind": "session.completed", "payload": {"status": "completed"}}
         raise AssertionError("the CLI must stop consuming events after completion")
@@ -104,9 +107,12 @@ class _RunClient:
 
 
 class _EofClient(_RunClient):
-    def events_session(self, session_id: str) -> Iterator[dict[str, Any]]:
+    def events_session(
+        self, session_id: str, *, follow: bool = False
+    ) -> Iterator[dict[str, Any]]:
         assert session_id == "session-g3"
-        self.calls.append(("events", session_id))
+        assert follow is True
+        self.calls.append(("events", session_id, follow))
         yield {"kind": "assistant.message", "payload": {"content": "still working"}}
 
 
@@ -244,7 +250,7 @@ def test_harness_run_submits_task_once_and_reports_completed_session(
                 }
             ),
         ),
-        ("events", "session-g3"),
+        ("events", "session-g3", True),
         ("get", "session-g3"),
     ]
 

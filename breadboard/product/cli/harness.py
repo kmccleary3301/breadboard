@@ -267,7 +267,7 @@ def _server(a):
         if not sid:
             raise RuntimeError("session.start returned no session identity")
         terminal = False
-        for event in c.events_session(sid):
+        for event in c.events_session(sid, follow=True):
             kind = (
                 str(event.get("kind") or event.get("type") or "")
                 if isinstance(event, dict)
