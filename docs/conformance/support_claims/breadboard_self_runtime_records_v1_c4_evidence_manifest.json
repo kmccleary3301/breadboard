@@ -6,7 +6,7 @@
       "sha256": "sha256:0012ab5d22f6d66e293487126246d97207fd0f47759c78d4a7b58df4ae8c3987"
     },
     {
-      "path": "agent_configs/atp_hilbert_like_gpt54_v1.yaml",
+      "path": "agent_configs/deprecated/2026-03-10/research/atp_hilbert_like_gpt54_v1.yaml",
       "role": "target_config",
       "sha256": "sha256:210358b767fae2ba93f7c22100980b4335c99456b8d29fe2fabbf665972fc470"
     },
@@ -17,7 +17,7 @@
     },
     {
       "derived_from": [
-        "agent_configs/atp_hilbert_like_gpt54_v1.yaml#sha256:210358b767fae2ba93f7c22100980b4335c99456b8d29fe2fabbf665972fc470",
+        "agent_configs/deprecated/2026-03-10/research/atp_hilbert_like_gpt54_v1.yaml#sha256:210358b767fae2ba93f7c22100980b4335c99456b8d29fe2fabbf665972fc470",
         "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/target_probe_output.json#sha256:f34dabaa89bf4f7e0bba61b2fb7c436a224d947073018b215379df5f994e70ca",
         "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/manifest.json#sha256:691e22260f4a083e88469c155658afa0e4681a83b2e2f68f199abca8147c7548",
         "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.kernel_event.v2.jsonl#sha256:3fa1a973be3c8fe8f0fcc148f052180389df8ab844ff9b915889391594c67b95",
