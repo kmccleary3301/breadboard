@@ -23,7 +23,7 @@
       "behavior_family": "replay_capture",
       "claim_id": "claude_code_haiku45_north_star_capture_v1_c4_support_claim",
       "config_id": "claude_code_haiku45_north_star_capture_v1",
-      "config_path": "agent_configs/deprecated/2026-03-06/claude_code_2-1-63_e4_3-6-2026.yaml",
+      "config_path": "agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml",
       "ct_id": "ct_north_star_claude_code_capture_c4_chain",
       "lane_id": "claude_code_north_star_capture_v1",
       "package_ref": "config/e4_targets/claude_code/2.1.63",
@@ -33,7 +33,7 @@
       "sandbox_mode": "read-only static package capture",
       "semantic_key": "north_star_claude_code_package_capture",
       "source_paths": [
-        "agent_configs/deprecated/2026-03-06/claude_code_2-1-63_e4_3-6-2026.yaml",
+        "agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml",
         "config/e4_targets/claude_code/2.1.63/haiku45_harness.yaml",
         "config/e4_targets/claude_code/2.1.63/README.md",
         "config/e4_targets/claude_code/2.1.63/prompts/system-vendor-logged.prompt.md",
@@ -69,7 +69,7 @@
       "behavior_family": "replay_capture",
       "claim_id": "opencode_gpt51mini_north_star_capture_v1_c4_support_claim",
       "config_id": "opencode_gpt51mini_north_star_capture_v1",
-      "config_path": "agent_configs/deprecated/2026-03-06/opencode_1-2-17_e4_3-6-2026.yaml",
+      "config_path": "agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
       "ct_id": "ct_north_star_opencode_capture_c4_chain",
       "lane_id": "opencode_north_star_capture_v1",
       "package_ref": "config/e4_targets/opencode/1.2.17",
@@ -79,7 +79,7 @@
       "sandbox_mode": "read-only static package capture",
       "semantic_key": "north_star_opencode_package_capture",
       "source_paths": [
-        "agent_configs/deprecated/2026-03-06/opencode_1-2-17_e4_3-6-2026.yaml",
+        "agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
         "config/e4_targets/opencode/1.2.17/codexmini_responses_harness.yaml",
         "config/e4_targets/opencode/1.2.17/README.md",
         "config/e4_targets/opencode/1.2.17/prompts/system.md",
@@ -123,7 +123,7 @@
       "behavior_family": "runtime_records",
       "claim_id": "breadboard_self_runtime_records_v1_c4_support_claim",
       "config_id": "breadboard_self_runtime_records_v1",
-      "config_path": "agent_configs/research/atp_hilbert_like_gpt54_v1.yaml",
+      "config_path": "agent_configs/atp_hilbert_like_gpt54_v1.yaml",
       "ct_id": "ct_north_star_breadboard_self_runtime_records_c4_chain",
       "lane_id": "breadboard_self_runtime_records_v1",
       "package_ref": "docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json",
@@ -133,7 +133,7 @@
       "sandbox_mode": "strict runtime_records self-capture",
       "semantic_key": "north_star_breadboard_runtime_records_self_capture",
       "source_paths": [
-        "agent_configs/research/atp_hilbert_like_gpt54_v1.yaml",
+        "agent_configs/atp_hilbert_like_gpt54_v1.yaml",
         "docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json"
       ],
       "target": "breadboard",

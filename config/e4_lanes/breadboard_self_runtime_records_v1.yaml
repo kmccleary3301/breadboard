@@ -11,7 +11,7 @@ capture:
   strategy: runtime_records
   argv: null
   inputs:
-    - agent_configs/research/atp_hilbert_like_gpt54_v1.yaml
+    - agent_configs/atp_hilbert_like_gpt54_v1.yaml
     - docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json
   workspace_template: null
 normalize:
@@ -67,7 +67,7 @@ provenance:
   upstream_commit_date: "2026-07-07T00:00:00Z"
   upstream_release_label: breadboard-runtime-records-self-capture
   source_paths:
-    - agent_configs/research/atp_hilbert_like_gpt54_v1.yaml
+    - agent_configs/atp_hilbert_like_gpt54_v1.yaml
     - docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json
 acceptance:
   behavior_family: runtime_records

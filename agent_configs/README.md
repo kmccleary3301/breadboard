@@ -46,5 +46,5 @@ Canonical target packages live under `config/e4_targets/`. Historical frozen dos
 - A current filename does not make an old capture current upstream behavior.
 - `config/e4_targets/codex/0.107.0/` remains the historical GPT-5.1 package. The accepted Codex 0.139.0 probe uses the separately tracked 0.139.0 prompt asset.
 - Oh My Pi and Pi package descriptors are the machine authority. Their top-level files expose the package config for readers but do not replace `target.json` or `config/e4_targets/index.json`.
-- Immutable evidence may retain historical logical paths and hashes. Live manifests and commands use the current or archived paths documented here.
+- Frozen evidence and declarations retain their original logical paths and hashes. `deprecated/manifest.json` maps relocated inputs to byte-identical archives for E4 readers; active commands use current profiles.
 - The LongRun parity audit checks active agent profiles, excludes `deprecated/`, and reports target-config projections separately as non-applicable.

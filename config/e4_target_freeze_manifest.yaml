@@ -1,5 +1,5 @@
 schema_version: e4_target_freeze_manifest_v1
-manifest_updated_utc: '2026-09-10T00:00:00Z'
+manifest_updated_utc: '2026-07-01T18:37:08Z'
 notes:
 - This manifest pins each E4 BreadBoard config to the exact upstream harness snapshot it was calibrated against.
 - When upstream harness behavior changes, add a new snapshot row and update the mapped config intentionally.
@@ -7,7 +7,7 @@ notes:
 - Rows whose config files are no longer shipped are pruned during manifest maintenance.
 e4_configs:
   codex_cli_gpt51mini_e4_live:
-    config_path: agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml
+    config_path: agent_configs/codex_0-107-0_e4_3-6-2026.yaml
     harness:
       family: codex_cli
       upstream_repo: https://github.com/openai/codex
@@ -25,7 +25,7 @@ e4_configs:
       - docs_tmp/tmux_captures/scenarios/nightly_provider/codex_e2e_compact_semantic_v1/20260304-040559/scenario_manifest.json
       - docs_tmp/tmux_captures/scenarios/nightly_provider/codex_e2e_compact_semantic_v1/20260304-040559/run_summary.json
   claude_code_haiku45_e4_replay:
-    config_path: agent_configs/deprecated/2026-03-06/claude_code_2-1-63_e4_3-6-2026.yaml
+    config_path: agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml
     harness:
       family: claude_code
       upstream_repo: https://github.com/anthropics/claude-code.git
@@ -43,7 +43,7 @@ e4_configs:
       - docs_tmp/tmux_captures/scenarios/nightly_provider/claude_e2e_compact_semantic_v1/20260304-041108/scenario_manifest.json
       - docs_tmp/tmux_captures/scenarios/nightly_provider/claude_e2e_compact_semantic_v1/20260304-041108/run_summary.json
   opencode_e4_mvi_replay:
-    config_path: agent_configs/deprecated/2026-03-06/opencode_1-2-17_e4_3-6-2026.yaml
+    config_path: agent_configs/opencode_1-2-17_e4_3-6-2026.yaml
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
@@ -148,7 +148,7 @@ e4_configs:
       - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260304_3/opencode_protofs_gpt5nano_toolio_replay_result.json
       - docs/conformance/e4_recalibration_evidence/e4_batchA_serial_20260304_3/parity_summary.json
   oh_my_opencode_e4_phase8_async_subagents_v1_replay:
-    config_path: agent_configs/deprecated/2026-03-06/oh_my_opencode_3-10-0_e4_3-6-2026.yaml
+    config_path: agent_configs/oh_my_opencode_3-10-0_e4_3-6-2026.yaml
     harness:
       family: oh_my_opencode
       upstream_repo: https://github.com/code-yeongyu/oh-my-opencode
@@ -500,7 +500,7 @@ e4_configs:
     snapshot_source_entry: oh_my_opencode_e4_phase8_async_subagents_v1_replay
     snapshot_tag: codex0_1070_claude2_1_63_opencode1_2_17_ohmyopencode3_10_0_20260305
   codex_cli_gpt55_e4_capture_probe_v1:
-    config_path: agent_configs/deprecated/2026-06-30/codex_cli_gpt55_e4_capture_probe_v1.yaml
+    config_path: agent_configs/misc/codex_cli_gpt55_e4_capture_probe_v1.yaml
     harness:
       family: codex_cli
       upstream_repo: https://github.com/openai/codex
@@ -1012,7 +1012,7 @@ e4_configs:
     snapshot_source_entry: pi_p5_l2_extension_session_residual_v1
     snapshot_tag: pi_0_57_1_p5_l2_extension_session_residual_20260703
   claude_code_haiku45_north_star_capture_v1:
-    config_path: agent_configs/deprecated/2026-03-06/claude_code_2-1-63_e4_3-6-2026.yaml
+    config_path: agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml
     harness:
       family: claude_code
       upstream_repo: https://github.com/anthropics/claude-code.git
@@ -1036,7 +1036,7 @@ e4_configs:
       - docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_evidence_manifest.json
       - artifacts/conformance/node_gate/ct_north_star_claude_code_capture_c4_chain.json
   opencode_gpt51mini_north_star_capture_v1:
-    config_path: agent_configs/deprecated/2026-03-06/opencode_1-2-17_e4_3-6-2026.yaml
+    config_path: agent_configs/opencode_1-2-17_e4_3-6-2026.yaml
     harness:
       family: opencode
       upstream_repo: https://github.com/anomalyco/opencode
@@ -1060,7 +1060,7 @@ e4_configs:
       - docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_evidence_manifest.json
       - artifacts/conformance/node_gate/ct_north_star_opencode_capture_c4_chain.json
   breadboard_self_runtime_records_v1:
-    config_path: agent_configs/research/atp_hilbert_like_gpt54_v1.yaml
+    config_path: agent_configs/atp_hilbert_like_gpt54_v1.yaml
     harness:
       family: breadboard
       upstream_repo: local://breadboard

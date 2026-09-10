@@ -21,6 +21,7 @@ from breadboard_engine.compilation.primitive_records import (  # noqa: E402
     sha256_ref,
 )
 from breadboard_engine.conformance.catalog_binding import catalog_segments, stable_entries_hash  # noqa: E402
+from breadboard.product.evidence.e4.path_refs import resolve_declared_reference  # noqa: E402
 
 DEFAULT_INVENTORY_PATH = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"
 DEFAULT_REPORT_ROLES_PATH = ROOT / "docs" / "conformance" / "e4_report_roles.json"
@@ -126,12 +127,17 @@ def resolve_registered_path(ref: str | Path) -> Path:
     text = _split_ref(str(ref))
     path = Path(text)
     if path.is_absolute():
-        return path.resolve()
-    if text.startswith(CHECKOUT_PREFIX):
-        return (WORKSPACE / text).resolve()
-    if text.startswith("docs_tmp/"):
-        return (WORKSPACE / text).resolve()
-    return (ROOT / text).resolve()
+        resolved = path.resolve()
+    elif text.startswith(CHECKOUT_PREFIX) or text.startswith("docs_tmp/"):
+        resolved = (WORKSPACE / text).resolve()
+    else:
+        resolved = (ROOT / text).resolve()
+    if resolved.is_relative_to(ROOT.resolve()):
+        return resolve_declared_reference(
+            resolved.relative_to(ROOT.resolve()), checkout_root=ROOT,
+            namespace="repo", must_exist=False, label="registered catalog reference",
+        )
+    return resolved
 
 
 

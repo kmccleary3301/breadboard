@@ -1,0 +1,53 @@
+{
+  "artifacts": {
+    "agent_configs/atp_hilbert_like_gpt54_v1.yaml": {
+      "path": "agent_configs/deprecated/2026-03-10/research/atp_hilbert_like_gpt54_v1.yaml",
+      "sha256": "sha256:210358b767fae2ba93f7c22100980b4335c99456b8d29fe2fabbf665972fc470"
+    },
+    "agent_configs/atp_hilbert_like_gpt54_v2.yaml": {
+      "path": "agent_configs/deprecated/2026-03-10/research/atp_hilbert_like_gpt54_v2.yaml",
+      "sha256": "sha256:2a746de7104923d034c43a8899ad4a255f1fc40191395661045f4a6a5faa0507"
+    },
+    "agent_configs/atp_hilbert_shell_gpt54_v1.yaml": {
+      "path": "agent_configs/deprecated/2026-03-10/research/atp_hilbert_shell_gpt54_v1.yaml",
+      "sha256": "sha256:9e5a7f5eeeb655d8064735efadb3a5aec781a4ec5c1df22e4ca7a4b8071d1957"
+    },
+    "agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml": {
+      "path": "agent_configs/deprecated/2026-03-06/claude_code_2-1-63_e4_3-6-2026.yaml",
+      "sha256": "sha256:d940ce0063528bad25c0692970a9ab567300a9ff39d056f46a5c70966997f072"
+    },
+    "agent_configs/codex_0-107-0_e4_3-6-2026.yaml": {
+      "path": "agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
+      "sha256": "sha256:2e2ba957f396b8dbc7d5adb4b35d6ccaccf322d21b792bafe1d996ec0d661768"
+    },
+    "agent_configs/misc/codex_cli_gpt55_e4_capture_probe_v1.yaml": {
+      "path": "agent_configs/deprecated/2026-06-30/codex_cli_gpt55_e4_capture_probe_v1.yaml",
+      "sha256": "sha256:db884c20e447d5e24de98fe3c2a62d4bbf937be349d18bd376c7c4d6b4e2b5c1"
+    },
+    "agent_configs/oh_my_opencode_3-10-0_e4_3-6-2026.yaml": {
+      "path": "agent_configs/deprecated/2026-03-06/oh_my_opencode_3-10-0_e4_3-6-2026.yaml",
+      "sha256": "sha256:70b2095d04b4a5ae81491ef2cfe5b0ebc3445b51c643d6a9d972cac347bb5a47"
+    },
+    "agent_configs/opencode_1-2-17_e4_3-6-2026.yaml": {
+      "path": "agent_configs/deprecated/2026-03-06/opencode_1-2-17_e4_3-6-2026.yaml",
+      "sha256": "sha256:0ddc16b9d3567a4be4e4dfe8a16f75f31d2a24c2abab3344692a508e3f224ff2"
+    },
+    "agent_configs/v2/claude_code_2-1-63_e4_3-6-2026.yaml": {
+      "path": "agent_configs/deprecated/2026-03-06/v2/claude_code_2-1-63_e4_3-6-2026.yaml",
+      "sha256": "sha256:c52fcfb0b0db141d461a868849aa8bfe25e2578d95c2cb86b4921101326f8b13"
+    },
+    "agent_configs/v2/codex_0-107-0_e4_3-6-2026.yaml": {
+      "path": "agent_configs/deprecated/2026-03-06/v2/codex_0-107-0_e4_3-6-2026.yaml",
+      "sha256": "sha256:6b87ade84909372f8df8aca5fc6a825f7bbdaa4a8e618ae55adb140d87d42710"
+    },
+    "agent_configs/v2/oh_my_opencode_3-10-0_e4_3-6-2026.yaml": {
+      "path": "agent_configs/deprecated/2026-03-06/v2/oh_my_opencode_3-10-0_e4_3-6-2026.yaml",
+      "sha256": "sha256:f62fa3cacefe24063b4507ec077d71d218f6dce978e8ae0fc9bb69bce2b0367c"
+    },
+    "agent_configs/v2/opencode_1-2-17_e4_3-6-2026.yaml": {
+      "path": "agent_configs/deprecated/2026-03-06/v2/opencode_1-2-17_e4_3-6-2026.yaml",
+      "sha256": "sha256:1d540d0d19657da6b11127d4377b59351e7f6000d577ba18db8b5048a9253d39"
+    }
+  },
+  "schema_version": "bb.e4.config_archive.v1"
+}
