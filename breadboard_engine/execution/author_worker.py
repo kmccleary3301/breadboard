@@ -280,7 +280,16 @@ class AuthorWorker:
             if self._cleanup is not None:
                 return self._cleanup
             deadline = time.monotonic() + 15.0
-            _stop(self._process, deadline)
+            with self._write_lock:
+                stream = self._process.stdin
+                if stream is not None and not stream.closed:
+                    stream.close()
+            try:
+                self._process.wait(
+                    timeout=max(0.0, deadline - time.monotonic() - 1.0)
+                )
+            except subprocess.TimeoutExpired:
+                _stop(self._process, deadline)
             self._notices.thread.join(timeout=max(0.0, deadline - time.monotonic()))
             observed = self._notices.cleanup
             if (
