@@ -67,11 +67,8 @@ from breadboard.modules import (
     CheckpointRefusal,
     InputEnvelope,
     ModuleInput,
-    OutputEnvelope,
-    RequestKey,
 )
 from breadboard.product.harness.lock import EffectiveHarnessLock
-from breadboard.modules.transport import encode_bytes
 from breadboard.product.runtime.generations import GenerationAdmission
 
 from .session_artifacts import SessionArtifactStore
@@ -116,6 +113,7 @@ class SessionRunner:
         self._module_storage_root = (
             storage_root.expanduser().resolve() if storage_root is not None else None
         )
+        self._durable_child_repository = repository
         self._resume_checkpoints = dict(
             session.module_resume_checkpoints
             if resume_checkpoints is None
@@ -240,20 +238,28 @@ class SessionRunner:
         if loop is None or not loop.is_running():
             return
         asyncio.run_coroutine_threadsafe(
-            self.registry.persist(self.session), loop,
+            self.registry.persist(self.session),
+            loop,
         ).result(timeout=30)
 
     def _emit_module_output(
-        self, output: Any, key: Any, module_id: str,
-        output_sequence: int, final: bool,
+        self,
+        output: Any,
+        key: Any,
+        module_id: str,
+        output_sequence: int,
+        final: bool,
     ) -> None:
         with self._product_session_lock:
             product_session = getattr(self.session, "product_session", None)
             if product_session is None:
                 return
             product_session.module_output(
-                output, key=key, module_id=module_id,
-                output_sequence=output_sequence, final=final,
+                output,
+                key=key,
+                module_id=module_id,
+                output_sequence=output_sequence,
+                final=final,
             )
 
     def _ensure_module_runtime(self) -> ModuleRuntime:
@@ -271,7 +277,9 @@ class SessionRunner:
         if captured is None or execution is None:
             raise RuntimeError("module session has no retained execution binding")
         if self._module_storage_root is None or self._durable_child_repository is None:
-            raise RuntimeError("module session lacks its storage root or work item repository")
+            raise RuntimeError(
+                "module session lacks its storage root or work item repository"
+            )
         workspace = self._workspace_path
         if workspace is None:
             workspace = self._module_storage_root / "workspace"
@@ -312,9 +320,7 @@ class SessionRunner:
         input_identity = input_id or f"input-{uuid.uuid4()}"
         turn = turn_id or f"turn-{uuid.uuid4()}"
         try:
-            output = runtime.execute(
-                envelope, input_id=input_identity, turn_id=turn
-            )
+            output = runtime.execute(envelope, input_id=input_identity, turn_id=turn)
         except ModuleExecutionError as error:
             logger.error(
                 "Module execution failed in session %s with code=%s",
@@ -453,8 +459,7 @@ class SessionRunner:
             record=candidate_record,
             registry=self.registry,
             captured=captured_runtime,
-            workspace=self._workspace_path
-            or self._module_storage_root / "workspace",
+            workspace=self._workspace_path or self._module_storage_root / "workspace",
             storage_root=self._module_storage_root,
             repository=self._durable_child_repository,
             loop=self._loop,
@@ -647,7 +652,6 @@ class SessionRunner:
                 )
         return disposal
 
-
     async def _close_module_resources(self, reason: str) -> ModuleDisposal:
         async with self._module_close_lock:
             disposal = self._module_disposal
@@ -733,8 +737,13 @@ class SessionRunner:
             module_input_sequence=0 if initial_module_input is not None else None,
         )
         if initial_module_input is not None:
-            if self.session.module_grant is None or self.session.next_module_input_sequence != 0:
-                raise RuntimeError("initial module admission lacks its grant or sequence")
+            if (
+                self.session.module_grant is None
+                or self.session.next_module_input_sequence != 0
+            ):
+                raise RuntimeError(
+                    "initial module admission lacks its grant or sequence"
+                )
             self.session.next_module_input_sequence = 1
         self.session.turns_by_id[turn_id] = turn
         self.session.submissions_by_key[client_message_id] = turn
@@ -753,7 +762,9 @@ class SessionRunner:
         await self._run()
 
     async def start(self) -> None:
-        if ((self.request.task or "").strip() or self.request.module_input is not None) and self.session.active_turn_id is None:
+        if (
+            (self.request.task or "").strip() or self.request.module_input is not None
+        ) and self.session.active_turn_id is None:
             await self.prepare_start()
         self.schedule_start()
         self.authorize_start()
@@ -822,7 +833,11 @@ class SessionRunner:
 
     def _active_turn_cancellation_requested(self) -> bool:
         turn = self.session.turns_by_id.get(self.session.active_turn_id or "")
-        return bool(turn is not None and turn.cancellation_requested and turn.terminal_outcome is None)
+        return bool(
+            turn is not None
+            and turn.cancellation_requested
+            and turn.terminal_outcome is None
+        )
 
     def request_turn_cancellation(self, turn_id: str) -> bool:
         with self._product_session_lock:
@@ -837,7 +852,9 @@ class SessionRunner:
             self._signal_control("stop")
             return True
 
-    async def finish_queued_turn_cancellation(self, turn: TurnRecord, reason: str) -> None:
+    async def finish_queued_turn_cancellation(
+        self, turn: TurnRecord, reason: str
+    ) -> None:
         await self._task_execution.finish_turn(
             turn,
             "cancelled",
@@ -905,6 +922,7 @@ class SessionRunner:
             await self.registry.update_status(self.session.session_id, final_status)
             self._closed = True
             await self._enqueue_termination()
+
     @staticmethod
     def canonicalize_input_attachments(
         attachments: Optional[Sequence[str]],
@@ -937,8 +955,14 @@ class SessionRunner:
                 raise ValueError("input content must not be empty")
             if module_input_sequence is not None:
                 raise ValueError("text input cannot have a module sequence")
-        elif content is not None or type(module_input_sequence) is not int or module_input_sequence < 0:
-            raise ValueError("typed input requires only its document and owner sequence")
+        elif (
+            content is not None
+            or type(module_input_sequence) is not int
+            or module_input_sequence < 0
+        ):
+            raise ValueError(
+                "typed input requires only its document and owner sequence"
+            )
         if (input_id is None) != (turn_id is None):
             raise ValueError("input and turn IDs must be supplied together")
         canonical_attachments = self.canonicalize_input_attachments(attachments)
@@ -964,7 +988,10 @@ class SessionRunner:
                 raise RuntimeError("turn is not active or queued for execution")
             if admitted_turn.content != content:
                 raise RuntimeError("input content does not match the admitted turn")
-            if admitted_turn.module_input != module_input or admitted_turn.module_input_sequence != module_input_sequence:
+            if (
+                admitted_turn.module_input != module_input
+                or admitted_turn.module_input_sequence != module_input_sequence
+            ):
                 raise RuntimeError("module input does not match the admitted turn")
             if admitted_turn.attachments != tuple(canonical_attachments):
                 raise RuntimeError("attachments do not match the admitted turn")
@@ -996,8 +1023,7 @@ class SessionRunner:
                 return
             events = product_session.events
             markers = [
-                turn.logical_event_count_before_admission
-                for turn in retained_turns
+                turn.logical_event_count_before_admission for turn in retained_turns
             ]
             if any(
                 current is None
@@ -1040,15 +1066,15 @@ class SessionRunner:
                     expected_payload["content_hash"] = content_hash
                 else:
                     expected_payload["module_input"] = turn.module_input.to_dict()
-                    expected_payload["module_input_sequence"] = turn.module_input_sequence
+                    expected_payload["module_input_sequence"] = (
+                        turn.module_input_sequence
+                    )
                 if before > len(events):
                     raise ReplayError(
                         "admission_journal_mismatch",
                         "retained input admission journal position is missing",
                     )
-                next_before = (
-                    markers[index + 1] if index + 1 < len(markers) else None
-                )
+                next_before = markers[index + 1] if index + 1 < len(markers) else None
                 upper_bound = (
                     min(next_before, len(events))
                     if next_before is not None
@@ -1079,9 +1105,7 @@ class SessionRunner:
                         "admission_journal_mismatch",
                         "retained input admission has duplicate journal events",
                     )
-                before_status = (
-                    turn.logical_input_session_status_before_admission
-                )
+                before_status = turn.logical_input_session_status_before_admission
                 if matches:
                     match_position = matches[0]
                     if before_status not in {None, "running"} or any(
@@ -1132,7 +1156,9 @@ class SessionRunner:
         turn_id: Optional[str] = None,
         module_input: ModuleInput | None = None,
         module_input_sequence: int | None = None,
-        defer_execution: Optional[Callable[[Callable[[], Awaitable[None]]], None]] = None,
+        defer_execution: Optional[
+            Callable[[Callable[[], Awaitable[None]]], None]
+        ] = None,
     ) -> str | None:
         if self._closed:
             raise RuntimeError("session is closed")
@@ -1165,7 +1191,10 @@ class SessionRunner:
         attachment_ids = self.canonicalize_input_attachments(attachments)
         if admitted_turn.content != content:
             raise RuntimeError("input content does not match the admitted turn")
-        if admitted_turn.module_input != module_input or admitted_turn.module_input_sequence != module_input_sequence:
+        if (
+            admitted_turn.module_input != module_input
+            or admitted_turn.module_input_sequence != module_input_sequence
+        ):
             raise RuntimeError("module input does not match the admitted turn")
         if admitted_turn.attachments != tuple(attachment_ids):
             raise RuntimeError("attachments do not match the admitted turn")
@@ -1187,7 +1216,8 @@ class SessionRunner:
                     product_session.input(content, selected_artifacts)
                 else:
                     product_session.input(
-                        None, selected_artifacts,
+                        None,
+                        selected_artifacts,
                         module_input=module_input,
                         module_input_sequence=module_input_sequence,
                     )
@@ -1198,6 +1228,7 @@ class SessionRunner:
             if defer_execution is None:
                 deliver_input()
             else:
+
                 async def enqueue_after_response() -> None:
                     deliver_input()
 
@@ -1210,7 +1241,10 @@ class SessionRunner:
             if product_session is None:
                 return
             if transition == "reconfigure":
-                if self.session.active_turn_id is not None or self.session.queued_turn_ids:
+                if (
+                    self.session.active_turn_id is not None
+                    or self.session.queued_turn_ids
+                ):
                     raise GenerationAdoptionError(
                         "non_quiescent",
                         "generation adoption requires a quiescent turn boundary",
@@ -1222,12 +1256,19 @@ class SessionRunner:
                     )
                 product_session.adopt_generation(*args)
             else:
-                if transition in {"complete", "fail", "cancel"} and product_session.read_model.status in {"completed", "failed", "canceled"}:
+                if transition in {
+                    "complete",
+                    "fail",
+                    "cancel",
+                } and product_session.read_model.status in {
+                    "completed",
+                    "failed",
+                    "canceled",
+                }:
                     return
                 getattr(product_session, transition)(*args)
             if transition in {"complete", "fail", "cancel"}:
                 self._commit_terminal_product_session_locked()
-
 
     # Provider-supplied names are not public identities until they resolve into
     # the active, configured tool surface.
@@ -1285,16 +1326,20 @@ class SessionRunner:
             )
         return canonical if canonical in allowed else None
 
-
     def prepare_input_content(
         self, content: str | None, module_input: ModuleInput | None = None
     ) -> str | None:
         if (self.request.module_input is None) != (module_input is None):
-            raise ValueError("input must match the Session's admitted text or module kind")
+            raise ValueError(
+                "input must match the Session's admitted text or module kind"
+            )
         if module_input is not None:
             if content is not None:
                 raise ValueError("typed input cannot have text content")
-            if any(turn.module_input is not None and turn.module_input.final for turn in self.session.turns_by_id.values()):
+            if any(
+                turn.module_input is not None and turn.module_input.final
+                for turn in self.session.turns_by_id.values()
+            ):
                 raise ValueError("module input stream is already final")
             retained = self._captured_runtime
             execution = self.session.module_execution
@@ -1302,7 +1347,9 @@ class SessionRunner:
                 raise RuntimeError("module Session has no retained execution binding")
             package = retained.materialization.packages[execution.root_binding]
             if module_input.schema_id not in package.manifest.input_schema_ids:
-                raise ValueError("module input schema is not accepted by the root package")
+                raise ValueError(
+                    "module input schema is not accepted by the root package"
+                )
             return None
         if not isinstance(content, str):
             raise ValueError("text input is required")
@@ -1324,9 +1371,7 @@ class SessionRunner:
             len(prior),
             len(raw) - len(prior),
         )
-        meta = (
-            self.session.metadata if isinstance(self.session.metadata, dict) else {}
-        )
+        meta = self.session.metadata if isinstance(self.session.metadata, dict) else {}
         repairs = (
             list(meta.get("input_boundary_repairs") or [])
             if isinstance(meta.get("input_boundary_repairs"), list)
@@ -1360,7 +1405,6 @@ class SessionRunner:
         normalized, _ = self._input_boundary_repair(content)
         self._record_input_boundary_repair(str(content or ""), normalized)
         return normalized
-
 
     def _fail_control_transition(self, code: str, detail: str) -> None:
         try:
@@ -1440,6 +1484,7 @@ class SessionRunner:
         prepared["providers"]["default_model"] = route
         self._prepared_runtime_config = prepared
         return dict(prepared)
+
     def _load_base_config(self) -> Dict[str, Any]:
         if isinstance(self._base_config_cache, dict):
             return dict(self._base_config_cache)
@@ -1563,8 +1608,6 @@ class SessionRunner:
         except Exception:
             return None
 
-
-
     async def _ensure_agent_initialized(self) -> None:
         if self._agent is not None:
             return
@@ -1616,8 +1659,6 @@ class SessionRunner:
         except Exception:
             self._checkpoint_manager = None
 
-
-
     async def _release_generation_admission(self) -> None:
         admission = self.session.generation_admission
         if admission is None or admission.status == "released":
@@ -1630,8 +1671,7 @@ class SessionRunner:
             return
         execution = self.session.module_execution
         cleanup_confirmed = execution is None or all(
-            worker.cleanup is not None
-            and worker.cleanup.status == "confirmed_absent"
+            worker.cleanup is not None and worker.cleanup.status == "confirmed_absent"
             for worker in execution.workers
         )
         released = await asyncio.to_thread(
@@ -1645,14 +1685,12 @@ class SessionRunner:
         except SessionRecordDeletedError:
             return
 
-
     async def _run(self) -> None:
         try:
             await self._lifecycle_owner.run()
         finally:
             await self._close_module_resources("session_terminal")
             await self._release_generation_admission()
-
 
     async def _terminalize_admitted_turns(
         self,
@@ -1740,10 +1778,6 @@ class SessionRunner:
             )
         except Exception:
             pass
-
-
-
-
 
     async def publish_event_async(
         self,
@@ -1840,7 +1874,6 @@ class SessionRunner:
         except Exception:
             pass
 
-
     def get_workspace_dir(self) -> Optional[Path]:
         if self._workspace_path:
             self._workspace_path.mkdir(parents=True, exist_ok=True)
@@ -1855,14 +1888,11 @@ class SessionRunner:
             return path
         return None
 
-
     def _format_attachment_helper(self, attachment_ids: Sequence[str]) -> str:
         helper, capabilities, media = self.artifacts.format_helper(attachment_ids)
         self._active_attachment_capabilities = capabilities
         self._active_input_media = media
         return helper
-
-
 
     def _resolve_skill_catalog(self) -> Dict[str, Any]:
         config = self.current_runtime_config()

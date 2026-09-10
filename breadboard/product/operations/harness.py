@@ -682,32 +682,23 @@ def get_harness(
         path = context.resolve_path(request.path)
         reference = portable_ref(path, context.workspace)
         definition = load_harness_document(path)
-        lifecycle: dict[str, Any]
-        try:
-            from breadboard.product.runtime.generations import GenerationLifecycle
+        from breadboard.product.runtime.generations import GenerationLifecycle
 
-            current_generation_id = _preview_compilation(
-                path, context
-            ).lock.generation_id
-            retained_generation_id = None
-            if lock_path(path).exists():
-                retained_lock, _ = load_lock(path, context.workspace)
-                retained_generation_id = retained_lock.generation_id
-            lifecycle_generation_id = retained_generation_id or current_generation_id
-            lifecycle = GenerationLifecycle(context.workspace).inspect_generation(
-                lifecycle_generation_id
-            )
-            lifecycle.update(
-                {
-                    "source_generation_id": current_generation_id,
-                    "retained_generation_id": retained_generation_id,
-                }
-            )
-        except Exception:
-            lifecycle = {
-                "generation_id": None,
-                "status": "definition_not_lockable",
+        current_generation_id = _preview_compilation(path, context).lock.generation_id
+        retained_generation_id = None
+        if lock_path(path).exists():
+            retained_lock, _ = load_lock(path, context.workspace)
+            retained_generation_id = retained_lock.generation_id
+        lifecycle_generation_id = retained_generation_id or current_generation_id
+        lifecycle = GenerationLifecycle(context.workspace).inspect_generation(
+            lifecycle_generation_id
+        )
+        lifecycle.update(
+            {
+                "source_generation_id": current_generation_id,
+                "retained_generation_id": retained_generation_id,
             }
+        )
         return OperationResult.success(
             command,
             {
