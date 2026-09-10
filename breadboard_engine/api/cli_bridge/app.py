@@ -736,7 +736,7 @@ def create_app(
     async def _shutdown_session_service() -> None:
         await _service.shutdown_runtime_owners()
 
-    app.add_event_handler("shutdown", _shutdown_session_service)
+    app.router.add_event_handler("shutdown", _shutdown_session_service)
 
     @app.exception_handler(LifecycleAuthorityError)
     async def _lifecycle_authority_error_handler(
