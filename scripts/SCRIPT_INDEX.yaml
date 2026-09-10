@@ -177,12 +177,12 @@ entries:
   - path: scripts/build_author_worker_helper.py
     class: campaign
     owner: kmccleary3301
-    callers: []  # operator-invoked; purpose documented by module docstring
+    callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: archive-when-campaign-closes
   - path: scripts/build_author_worker_image.py
     class: campaign
     owner: kmccleary3301
-    callers: []  # operator-invoked; purpose documented by module docstring
+    callers: [scripts/SCRIPT_INDEX.yaml]
     expiry: archive-when-campaign-closes
   - path: scripts/build_darwin_bootstrap_rollup_v0.py
     class: live-wired
@@ -2187,7 +2187,7 @@ entries:
   - path: scripts/run_bb_formal_pack_v1.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, scripts/backfill_atp_hilbert_bb_spend_v1.py, tests/test_run_bb_formal_pack_v1.py]
+    callers: [agent_configs/research/README.md, scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, scripts/backfill_atp_hilbert_bb_spend_v1.py, tests/test_run_bb_formal_pack_v1.py]
     expiry: none (durable tooling)
   - path: scripts/run_claude_code_logged.sh
     class: live-wired
