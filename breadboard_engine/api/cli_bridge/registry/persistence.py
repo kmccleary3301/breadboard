@@ -1473,6 +1473,61 @@ class PersistenceMixin:
                     _generation_admission_exact_identity(record.generation_admission)
                 )
 
+    async def persist_confirmed_checkpoint_cleanup(
+        self,
+        record: SessionRecord,
+        *,
+        expected_execution: ModuleExecutionRecord,
+    ) -> None:
+        """Atomically retire retained workers after authenticated cleanup."""
+        if not expected_execution.workers or not all(
+            worker.cleanup is not None
+            and worker.cleanup.status == "confirmed_absent"
+            for worker in expected_execution.workers
+        ):
+            raise ValueError("checkpoint cleanup is not confirmed")
+        replacement = record.module_execution
+        if (
+            replacement is None
+            or replacement.workers
+            or (
+                replacement.generation_id,
+                replacement.root_binding,
+                replacement.work_item_id,
+                replacement.attempt_id,
+            )
+            != (
+                expected_execution.generation_id,
+                expected_execution.root_binding,
+                expected_execution.work_item_id,
+                expected_execution.attempt_id,
+            )
+            or not record.module_resume_checkpoints
+        ):
+            raise ValueError("checkpoint cleanup cutover is incomplete")
+        async with self._lock:
+            async with self._record_file_lock(record.session_id):
+                path = self._state_path(record.session_id)
+                tombstone = self._tombstone_path(record.session_id)
+                if (
+                    path is None
+                    or not path.is_file()
+                    or tombstone is not None
+                    and tombstone.exists()
+                    or self._records.get(record.session_id) is not record
+                ):
+                    raise SessionRecordDeletedError(
+                        f"session {record.session_id} was deleted before checkpoint cleanup"
+                    )
+                persisted = self._deserialize_record(
+                    json.loads(path.read_text(encoding="utf-8"))
+                )
+                if persisted.module_execution != expected_execution:
+                    raise ValueError(
+                        "retained module execution changed before checkpoint cleanup"
+                    )
+                self._persist_record_locked(record)
+
     async def persist(
         self,
         record: SessionRecord,
@@ -1482,7 +1537,6 @@ class PersistenceMixin:
     ) -> None:
         async with self._lock:
             async with self._record_file_lock(record.session_id):
-                state_path = self._state_path(record.session_id)
                 metadata = record.metadata if isinstance(record.metadata, dict) else {}
                 disk_authority = (
                     record.loaded_from_retained_state

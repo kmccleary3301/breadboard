@@ -38,6 +38,7 @@ from breadboard_engine.api.cli_bridge.registry import (
     identity_digest,
     submission_body_digest,
 )
+from breadboard_engine.api.cli_bridge.registry.records import ModuleWorkerOwnership
 from breadboard_engine.api.cli_bridge.service import SessionService
 from breadboard_engine.api.cli_bridge.runtime_event_projector import (
     BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES,
@@ -48,6 +49,7 @@ from breadboard_engine.api.cli_bridge.runtime_event_projector import (
     _strip_completion_sentinels,
 )
 from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
+from breadboard_engine.execution.author_worker import AuthorWorkerCleanupResult
 from breadboard_engine.provider.contracts import (
     ProviderContractError,
     strip_public_completion_sentinel_tree,
@@ -1626,6 +1628,75 @@ async def test_registry_round_trips_adopted_module_resume_checkpoint(
 
     assert restored is not None
     assert restored.module_resume_checkpoints == {"root": envelope}
+
+
+@pytest.mark.asyncio
+async def test_registry_atomically_retires_confirmed_checkpoint_worker(
+    tmp_path: Path,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    generation = "sha256:" + "b" * 64
+    cleanup = AuthorWorkerCleanupResult(
+        status="confirmed_absent",
+        resource_id="docker:worker-1",
+        container_id="container-1",
+        owner_ref="module:sess-checkpoint-cleanup:worker-1",
+        reason="server_shutdown",
+        evidence=("container_absence_observed",),
+    )
+    retained_execution = ModuleExecutionRecord(
+        generation_id=generation,
+        root_binding="root",
+        work_item_id="work-1",
+        attempt_id="attempt-1",
+        workers=(
+            ModuleWorkerOwnership(
+                binding="root",
+                instance_id="instance-1",
+                worker_session_id="worker-1",
+                owner_ref=cleanup.owner_ref,
+                execution_id="execution-1",
+                execution_token="token-1",
+                staging_root=str(tmp_path / "staging"),
+                staging_owner_ref="module-staging:worker-1",
+                cleanup=cleanup,
+            ),
+        ),
+    )
+    envelope = CheckpointEnvelope(
+        source_generation_id=generation,
+        source_module_id="module.example",
+        source_instance_id="instance-1",
+        source_work_id="work-1",
+        source_attempt_id="attempt-1",
+        schema_id="state.v1",
+        body=b'{"count":1}',
+    )
+    record = SessionRecord(
+        session_id="sess-checkpoint-cleanup",
+        status=SessionStatus.RUNNING,
+        module_execution=retained_execution,
+    )
+    await registry.create(record)
+    record.module_execution = ModuleExecutionRecord(
+        generation_id=generation,
+        root_binding="root",
+        work_item_id="work-1",
+        attempt_id="attempt-1",
+    )
+    record.module_resume_checkpoints = {"root": envelope}
+
+    await registry.persist_confirmed_checkpoint_cleanup(
+        record,
+        expected_execution=retained_execution,
+    )
+
+    restored = await SessionRegistry(state_root=tmp_path).get(record.session_id)
+    assert restored is not None
+    assert restored.module_execution is not None
+    assert restored.module_execution.workers == ()
+    assert restored.module_resume_checkpoints == {"root": envelope}
+
 @pytest.mark.asyncio
 async def test_stale_registry_cannot_recreate_cross_process_deleted_session(
     tmp_path: Path,

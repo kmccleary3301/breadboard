@@ -2004,6 +2004,7 @@ class SessionService:
         if checkpoint is None:
             return
         _, source_checkpoints = _decode_graph_checkpoint(checkpoint)
+        retained_execution = execution
         record.module_execution = ModuleExecutionRecord(
             generation_id=execution.generation_id,
             root_binding=execution.root_binding,
@@ -2011,7 +2012,10 @@ class SessionService:
             attempt_id=execution.attempt_id,
         )
         record.module_resume_checkpoints = source_checkpoints
-        await self.registry.persist(record)
+        await self.registry.persist_confirmed_checkpoint_cleanup(
+            record,
+            expected_execution=retained_execution,
+        )
 
     async def _reconcile_committed_checkpoint_adoption(
         self,
