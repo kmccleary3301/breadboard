@@ -16,7 +16,16 @@ from pathlib import Path
 from dataclasses import dataclass
 from types import SimpleNamespace
 from threading import RLock
-from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Optional, Protocol, Sequence
+from typing import (
+    Any,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Mapping,
+    Optional,
+    Protocol,
+    Sequence,
+)
 from breadboard.artifacts.cas import FilesystemCAS
 from breadboard.modules import (
     AdmissionGrant,
@@ -25,7 +34,11 @@ from breadboard.modules import (
     CheckpointProposal,
     CheckpointRefusal,
 )
-from breadboard.modules.transport import MAX_CHECKPOINT_BYTES, decode_bytes, encode_bytes
+from breadboard.modules.transport import (
+    MAX_CHECKPOINT_BYTES,
+    decode_bytes,
+    encode_bytes,
+)
 from .model_catalog import build_model_catalog
 from .registry import ModuleExecutionRecord
 from breadboard.product.harness.lock import (
@@ -189,6 +202,7 @@ def _load_bridge_chaos_metadata() -> dict[str, float] | None:
 def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
+
 _MODULE_GRAPH_CHECKPOINT_SCHEMA = "bb.module_graph_checkpoint.v1"
 
 
@@ -301,7 +315,9 @@ def _decode_graph_checkpoint(
         "bindings",
         "operation_frontier",
     }
-    operation_frontier = payload.get("operation_frontier") if isinstance(payload, dict) else None
+    operation_frontier = (
+        payload.get("operation_frontier") if isinstance(payload, dict) else None
+    )
     if (
         not isinstance(payload, dict)
         or set(payload) != fields
@@ -404,8 +420,7 @@ def _checkpoint_public_result(
             {
                 "owner": binding,
                 "schema": envelope.schema_id,
-                "state_digest": "sha256:"
-                + hashlib.sha256(envelope.body).hexdigest(),
+                "state_digest": "sha256:" + hashlib.sha256(envelope.body).hexdigest(),
                 "size": len(envelope.body),
             }
             for binding, envelope in sorted(envelopes.items())
@@ -431,13 +446,12 @@ def _read_bounded_event_journal(stream: Any, size: int) -> bytes:
         raise OSError("retained event journal exceeds byte limit")
     return payload
 
+
 def _validate_retained_event_journal_stat(file_stat: os.stat_result) -> None:
     if not stat.S_ISREG(file_stat.st_mode):
         raise OSError("retained event journal is not a regular file")
     if file_stat.st_nlink != 1:
         raise OSError("retained event journal must have exactly one hard link")
-
-
 
 
 def _event_root(state_paths: ManagedStatePaths | None = None) -> Path:
@@ -450,6 +464,7 @@ def _event_root(state_paths: ManagedStatePaths | None = None) -> Path:
             Path.home() / ".breadboard" / "session_events",
         )
     ).resolve()
+
 
 def _read_retained_event_journal(
     event_root: Path,
@@ -491,9 +506,7 @@ def _read_retained_event_journal(
     else:
         root_descriptor = os.open(
             event_root,
-            os.O_RDONLY
-            | getattr(os, "O_DIRECTORY", 0)
-            | getattr(os, "O_NOFOLLOW", 0),
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
         )
         session_descriptor: int | None = None
         event_descriptor: int | None = None
@@ -527,6 +540,7 @@ def _read_retained_event_journal(
         (directory_stat.st_dev, directory_stat.st_ino),
         (file_stat.st_dev, file_stat.st_ino),
     )
+
 
 def _retained_event_journal_identity(
     event_root: Path,
@@ -566,9 +580,7 @@ def _retained_event_journal_identity(
     else:
         root_descriptor = os.open(
             event_root,
-            os.O_RDONLY
-            | getattr(os, "O_DIRECTORY", 0)
-            | getattr(os, "O_NOFOLLOW", 0),
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
         )
         session_descriptor: int | None = None
         event_descriptor: int | None = None
@@ -598,9 +610,10 @@ def _retained_event_journal_identity(
         (directory_stat.st_dev, directory_stat.st_ino),
         (file_stat.st_dev, file_stat.st_ino),
     )
+
+
 def _retained_event_lock_path(event_root: Path, session_id: str) -> Path:
     return event_root / f".{session_id}.session_events.lock"
-
 
 
 class _RetainedProcessLock:
@@ -785,9 +798,7 @@ class _RetainedEventSink:
         ).encode()
         root_descriptor = os.open(
             self._event_root,
-            os.O_RDONLY
-            | getattr(os, "O_DIRECTORY", 0)
-            | getattr(os, "O_NOFOLLOW", 0),
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
         )
         session_descriptor: int | None = None
         event_descriptor: int | None = None
@@ -847,10 +858,7 @@ class _RetainedEventSink:
                 raise RuntimeError("retained event journal exceeds byte limit")
             transaction_descriptor = os.open(
                 temporary_name,
-                os.O_WRONLY
-                | os.O_CREAT
-                | os.O_EXCL
-                | getattr(os, "O_NOFOLLOW", 0),
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
                 0o600,
                 dir_fd=session_descriptor,
             )
@@ -915,9 +923,7 @@ class _RetainedEventSink:
             os.close(root_descriptor)
 
     def recover(self) -> bytes | None:
-        event_path = (
-            self._event_root / self._session_id / "session_events.jsonl"
-        )
+        event_path = self._event_root / self._session_id / "session_events.jsonl"
         if os.name == "nt":
             handles: list[int] = []
             try:
@@ -976,9 +982,7 @@ class _RetainedEventSink:
 
         root_descriptor = os.open(
             self._event_root,
-            os.O_RDONLY
-            | getattr(os, "O_DIRECTORY", 0)
-            | getattr(os, "O_NOFOLLOW", 0),
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
         )
         session_descriptor: int | None = None
         event_descriptor: int | None = None
@@ -991,9 +995,7 @@ class _RetainedEventSink:
             )
             process_lock_descriptor = os.open(
                 ".session_events.jsonl.lock",
-                os.O_RDWR
-                | os.O_CREAT
-                | getattr(os, "O_NOFOLLOW", 0),
+                os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0),
                 0o600,
                 dir_fd=session_descriptor,
             )
@@ -1005,9 +1007,7 @@ class _RetainedEventSink:
             fcntl.flock(process_lock_descriptor, fcntl.LOCK_EX)
             event_descriptor = os.open(
                 "session_events.jsonl",
-                os.O_RDWR
-                | getattr(os, "O_NONBLOCK", 0)
-                | getattr(os, "O_NOFOLLOW", 0),
+                os.O_RDWR | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0),
                 dir_fd=session_descriptor,
             )
             self._verify_identity(
@@ -1054,9 +1054,7 @@ class _RetainedEventSink:
             os.close(root_descriptor)
 
     def _append_windows(self, event: object) -> None:
-        event_path = (
-            self._event_root / self._session_id / "session_events.jsonl"
-        )
+        event_path = self._event_root / self._session_id / "session_events.jsonl"
         handles: list[int] = []
         try:
             handles.append(
@@ -1102,9 +1100,7 @@ class _RetainedEventSink:
                         "retained event journal advanced since session recovery"
                     )
                 self._delegate._append_with_process_lock(event)
-                self._expected_size = event_path.stat(
-                    follow_symlinks=False
-                ).st_size
+                self._expected_size = event_path.stat(follow_symlinks=False).st_size
         finally:
             for handle in reversed(handles):
                 AnchoredStorage.close_windows_handle(handle)
@@ -1120,8 +1116,9 @@ class _RetainedEventSink:
             raise RuntimeError("retained event journal identity changed") from exc
 
 
-
-def _unsafe_retained_journal(session_id: str, cause: OSError | None = None) -> ReplayError:
+def _unsafe_retained_journal(
+    session_id: str, cause: OSError | None = None
+) -> ReplayError:
     error = ReplayError(
         "unsafe_event_journal",
         f"retained session {session_id!r} has an unsafe logical event journal",
@@ -1129,8 +1126,6 @@ def _unsafe_retained_journal(session_id: str, cause: OSError | None = None) -> R
     if cause is not None:
         error.__cause__ = cause
     return error
-
-
 
 
 def _restore_product_session(
@@ -1203,7 +1198,13 @@ def _restore_product_session(
             "invalid_event_record",
             f"retained session {session_id!r} has an invalid logical event journal",
         ) from exc
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError, OverflowError) as exc:
+    except (
+        json.JSONDecodeError,
+        KeyError,
+        TypeError,
+        ValueError,
+        OverflowError,
+    ) as exc:
         raise ReplayError(
             "invalid_event_record",
             f"retained session {session_id!r} has an invalid logical event journal",
@@ -1227,8 +1228,6 @@ def _sync_tree(root: Path) -> None:
         reverse=True,
     ):
         AnchoredStorage.sync_directory(path)
-
-
 
 
 def _start_active(path: Path) -> bool:
@@ -1417,7 +1416,9 @@ class SessionService:
                 Path(configured_state_root).parent / "work_items.jsonl"
             )
         if durable_child_reconciler is None and child_repository is not None:
-            child_orchestrator = MultiAgentOrchestrator(TeamConfig("durable-child-runtime"))
+            child_orchestrator = MultiAgentOrchestrator(
+                TeamConfig("durable-child-runtime")
+            )
             durable_child_reconciler = DurableChildReconciler(
                 registry=self.registry,
                 repository=child_repository,
@@ -1449,9 +1450,9 @@ class SessionService:
         self._session_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
             weakref.WeakValueDictionary()
         )
-        self._workspace_upload_locks: weakref.WeakValueDictionary[
-            str, asyncio.Lock
-        ] = weakref.WeakValueDictionary()
+        self._workspace_upload_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
+            weakref.WeakValueDictionary()
+        )
         self._generation_lifecycles: dict[Path, GenerationLifecycle] = {}
         _cleanup_incomplete_starts(state_paths=self._managed_state_paths)
 
@@ -1514,6 +1515,7 @@ class SessionService:
             modules,
             configuration_artifacts,
         )
+
     @staticmethod
     def _captured_runtime_for_lock(
         lock: EffectiveHarnessLock,
@@ -1529,7 +1531,6 @@ class SessionService:
             return materialize_lock_runtime_config(lock, cas=cas)
         finally:
             cas.close()
-
 
     async def create_generation_checkpoint(
         self,
@@ -1639,9 +1640,13 @@ class SessionService:
         request_id: str,
     ) -> dict[str, Any]:
         if not isinstance(effective_lock, EffectiveHarnessLock):
-            raise HTTPException(status_code=422, detail="adoption requires an exact Lock")
+            raise HTTPException(
+                status_code=422, detail="adoption requires an exact Lock"
+            )
         if not isinstance(checkpoint_id, str) or not checkpoint_id.strip():
-            raise HTTPException(status_code=422, detail="checkpoint_id must be non-empty")
+            raise HTTPException(
+                status_code=422, detail="checkpoint_id must be non-empty"
+            )
         if not isinstance(request_id, str) or not request_id.strip():
             raise HTTPException(status_code=422, detail="request_id must be non-empty")
         record = await self.ensure_session(session_id)
@@ -1738,21 +1743,18 @@ class SessionService:
                     )
                 source_modules = runner.module_checkpoint_modules()
                 retained_workers = {
-                    worker.binding: worker
-                    for worker in old_execution.workers
+                    worker.binding: worker for worker in old_execution.workers
                 }
                 if (
                     old_admission.generation_id != old_execution.generation_id
                     or old_admission.work_id != old_execution.work_item_id
                     or old_admission.attempt_id != old_execution.attempt_id
-                    or graph_checkpoint["root_binding"]
-                    != old_execution.root_binding
+                    or graph_checkpoint["root_binding"] != old_execution.root_binding
                     or any(
                         envelope.source_generation_id != old_execution.generation_id
                         or envelope.source_work_id != old_execution.work_item_id
                         or envelope.source_attempt_id != old_execution.attempt_id
-                        or source_modules.get(binding)
-                        != envelope.source_module_id
+                        or source_modules.get(binding) != envelope.source_module_id
                         or (
                             binding in retained_workers
                             and retained_workers[binding].instance_id
@@ -1807,14 +1809,15 @@ class SessionService:
                     runner.request,
                 )
                 candidate_cleanup_confirmed = False
-                resume_checkpoints, migration_decisions = (
-                    await runner.prepare_adopted_module_checkpoints(
-                        captured_runtime=captured_target,
-                        module_execution=target_execution,
-                        module_grant=target_grant,
-                        source_dependencies=source_dependencies,
-                        source_checkpoints=source_checkpoints,
-                    )
+                (
+                    resume_checkpoints,
+                    migration_decisions,
+                ) = await runner.prepare_adopted_module_checkpoints(
+                    captured_runtime=captured_target,
+                    module_execution=target_execution,
+                    module_grant=target_grant,
+                    source_dependencies=source_dependencies,
+                    source_checkpoints=source_checkpoints,
                 )
                 candidate_cleanup_confirmed = True
                 candidate_admission = await asyncio.to_thread(
@@ -1897,7 +1900,10 @@ class SessionService:
                     "pending_domain_refs": list(disposal.pending_domain_refs),
                 }
                 record.metadata = cleanup_metadata
-                await self.registry.persist(record)
+                await self.registry.persist_generation_adoption(
+                    record,
+                    expected_admission_id=old_admission.admission_id,
+                )
                 if disposal.status == "confirmed_absent":
                     await asyncio.to_thread(
                         lifecycle.release,
@@ -1932,7 +1938,6 @@ class SessionService:
                 detail={"code": error.code, "detail": error.detail},
             ) from error
         finally:
-
             if captured_target is not None:
                 await asyncio.to_thread(captured_target.cleanup)
             if (
@@ -1945,6 +1950,7 @@ class SessionService:
                     candidate_admission.admission_id,
                     candidate_cleanup_confirmed,
                 )
+
     def _settle_adopted_source_work(self, payload: Mapping[str, Any]) -> None:
         repository = self._durable_child_repository
         if repository is None:
@@ -2106,7 +2112,9 @@ class SessionService:
             or admission.generation_id != payload["target_generation_id"]
             or target_lock["modules"]["root"] not in resumes
         ):
-            raise RuntimeError("committed checkpoint adoption recovery fence is invalid")
+            raise RuntimeError(
+                "committed checkpoint adoption recovery fence is invalid"
+            )
         if not already_restored:
             record.generation_admission = admission
             record.module_execution = ModuleExecutionRecord(
@@ -2126,9 +2134,10 @@ class SessionService:
         metadata = dict(record.metadata or {})
         cleanup = metadata.get("generation_adoption_cleanup")
         if isinstance(source_admission_id, str) and source_admission_id:
-            if not isinstance(cleanup, Mapping) or cleanup.get(
-                "source_admission_id"
-            ) != source_admission_id:
+            if (
+                not isinstance(cleanup, Mapping)
+                or cleanup.get("source_admission_id") != source_admission_id
+            ):
                 cleanup_confirmed = (
                     previous_admission is not None
                     and previous_admission.admission_id == source_admission_id
@@ -2143,9 +2152,7 @@ class SessionService:
                 )
                 cleanup = {
                     "source_admission_id": source_admission_id,
-                    "status": (
-                        "confirmed_absent" if cleanup_confirmed else "unknown"
-                    ),
+                    "status": ("confirmed_absent" if cleanup_confirmed else "unknown"),
                     "resource_refs": [],
                     "pending_domain_refs": [],
                 }
@@ -2162,7 +2169,9 @@ class SessionService:
             and workspace_value
         ):
             await asyncio.to_thread(
-                self.generation_lifecycle(Path(workspace_value).expanduser().resolve()).release,
+                self.generation_lifecycle(
+                    Path(workspace_value).expanduser().resolve()
+                ).release,
                 source_admission_id,
                 True,
             )
@@ -2490,7 +2499,9 @@ class SessionService:
                     raise ValueError("generation source must stay within its workspace")
                 request = request.model_copy(update={"config_path": str(source)})
             elif publication_target is not None or effective_lock_source is not None:
-                raise ValueError("generation_workspace is required for generation selectors")
+                raise ValueError(
+                    "generation_workspace is required for generation selectors"
+                )
             try:
                 return await self._create_session(
                     request,
@@ -2508,9 +2519,7 @@ class SessionService:
                     owned_record is not None and owned_record.runner is not None
                 )
                 if owned_record is not None:
-                    await asyncio.shield(
-                        self.registry.discard_starting(owned_record)
-                    )
+                    await asyncio.shield(self.registry.discard_starting(owned_record))
                 if (
                     lifecycle is not None
                     and admission is not None
@@ -2525,7 +2534,6 @@ class SessionService:
                         )
                     )
                 raise
-
 
     async def _create_session(
         self,
@@ -2548,9 +2556,13 @@ class SessionService:
             and effective_lock["schema_version"] != LOCK_SCHEMA_VERSION
         ):
             raise ValueError("historical Lock records cannot start new execution")
-        executable = effective_lock is not None and effective_lock["modules"] is not None
+        executable = (
+            effective_lock is not None and effective_lock["modules"] is not None
+        )
         if executable != (request.module_input is not None):
-            raise ValueError("executable Locks require module_input; data Locks require text input")
+            raise ValueError(
+                "executable Locks require module_input; data Locks require text input"
+            )
         await self.registry.ensure_session_admission_open()
         session_id = session_id or str(uuid.uuid4())
         if await self.registry.get(session_id) is not None:
@@ -2637,7 +2649,8 @@ class SessionService:
         session_title = (
             request.module_input.schema_id
             if request.module_input is not None
-            else request.task if request.task and request.task.strip()
+            else request.task
+            if request.task and request.task.strip()
             else DEFAULT_INTERACTIVE_SESSION_TITLE
         )
         record = SessionRecord(
@@ -2685,10 +2698,17 @@ class SessionService:
             else None
         )
         if request.module_input is not None:
-            root_package = captured_runtime.materialization.packages[record.module_execution.root_binding]
-            if request.module_input.schema_id not in root_package.manifest.input_schema_ids:
+            root_package = captured_runtime.materialization.packages[
+                record.module_execution.root_binding
+            ]
+            if (
+                request.module_input.schema_id
+                not in root_package.manifest.input_schema_ids
+            ):
                 captured_runtime.cleanup()
-                raise ValueError("module_input schema is not accepted by the root package")
+                raise ValueError(
+                    "module_input schema is not accepted by the root package"
+                )
         module_storage_root: Path | None = None
         module_repository = self._durable_child_repository
         if request.module_input is not None:
@@ -2714,9 +2734,9 @@ class SessionService:
         if runner.request.workspace is not None:
             candidate_workspace = Path(runner.request.workspace).expanduser().resolve()
             requested_event_root = (event_root or _event_root()).expanduser().resolve()
-            durable_event_root = (
-                session_event_path(candidate_workspace, session_id).parent.parent.resolve()
-            )
+            durable_event_root = session_event_path(
+                candidate_workspace, session_id
+            ).parent.parent.resolve()
             if requested_event_root == durable_event_root:
                 durable_product_workspace = candidate_workspace
                 metadata[_SESSION_DURABLE_PRODUCT_WORKSPACE_METADATA_KEY] = str(
@@ -2880,8 +2900,10 @@ class SessionService:
                 sink=event_sink,
             )
             initial_event_journal_size = (
-                staged_event_dir / "session_events.jsonl"
-            ).stat(follow_symlinks=False).st_size
+                (staged_event_dir / "session_events.jsonl")
+                .stat(follow_symlinks=False)
+                .st_size
+            )
             record.product_session = product_session
             async with self.registry.publish_session(record, runner):
                 with _RetainedProcessLock(
@@ -2912,9 +2934,10 @@ class SessionService:
                         ),
                     )
                     live_sink._expected_size = initial_event_journal_size
-                    if event_sink.path.stat(
-                        follow_symlinks=False
-                    ).st_size != initial_event_journal_size:
+                    if (
+                        event_sink.path.stat(follow_symlinks=False).st_size
+                        != initial_event_journal_size
+                    ):
                         raise RuntimeError(
                             "retained event journal advanced before live sink binding"
                         )
@@ -2930,7 +2953,9 @@ class SessionService:
                 )
             await self._ensure_dispatcher(record)
             if request.module_input is None:
-                await self._maybe_prewarm_request_runtime(request, metadata, runtime_config)
+                await self._maybe_prewarm_request_runtime(
+                    request, metadata, runtime_config
+                )
             final_event_path = event_dir / "session_events.jsonl"
             final_lock_path = _retained_event_lock_path(event_base, session_id)
             for _ in range(2):
@@ -2949,9 +2974,7 @@ class SessionService:
                         session_id,
                     )
                     expected_size = getattr(bound_sink, "_expected_size", None)
-                    current_size = final_event_path.stat(
-                        follow_symlinks=False
-                    ).st_size
+                    current_size = final_event_path.stat(follow_symlinks=False).st_size
                     if (
                         expected_identity == current_identity
                         and expected_size == current_size
@@ -3144,9 +3167,10 @@ class SessionService:
         turn: TurnRecord | None = None
         cancellation: CancellationRecord | None = None
         disposition: str | None = None
-        async with self.registry.fence_parent_turn_admission(
-            session_id
-        ), record.admission_lock:
+        async with (
+            self.registry.fence_parent_turn_admission(session_id),
+            record.admission_lock,
+        ):
             existing = record.cancellations_by_key.get(key)
             if existing is None:
                 existing = record.cancellations_by_key_digest.get(key_digest)
@@ -3282,6 +3306,7 @@ class SessionService:
         if record.loaded_from_retained_state:
             await self._resume_retained_session(record)
         return record
+
     @staticmethod
     def _bind_restored_durable_product_session(
         record: SessionRecord,
@@ -3308,9 +3333,7 @@ class SessionService:
         workspace_value = record.metadata.get("workspace")
         if not isinstance(workspace_value, str) or not workspace_value.strip():
             return
-        runner.artifacts.restore_manifest(
-            Path(workspace_value).expanduser().resolve()
-        )
+        runner.artifacts.restore_manifest(Path(workspace_value).expanduser().resolve())
 
     async def _resume_retained_session(self, record: SessionRecord) -> None:
         metadata = dict(record.metadata or {})
@@ -3319,9 +3342,13 @@ class SessionService:
             recovery_ref = str(durable_child.get("recovery_ref") or "").strip()
             reconciler = self._durable_child_reconciler
             if not recovery_ref:
-                raise RuntimeError("durable child retained state has no recovery reference")
+                raise RuntimeError(
+                    "durable child retained state has no recovery reference"
+                )
             if not callable(reconciler):
-                raise RuntimeError("durable child recovery requires an authoritative reconciler")
+                raise RuntimeError(
+                    "durable child recovery requires an authoritative reconciler"
+                )
             reconciled = reconciler(recovery_ref)
             if inspect.isawaitable(reconciled):
                 reconciled = await reconciled
@@ -3361,7 +3388,10 @@ class SessionService:
             record.loaded_from_retained_state = False
             return
         repository = self._durable_child_repository
-        if isinstance(parent_cancellation, Mapping) and self._durable_child_repository is None:
+        if (
+            isinstance(parent_cancellation, Mapping)
+            and self._durable_child_repository is None
+        ):
             raise RuntimeError(
                 "durable parent cancellation requires an authoritative WorkItemRepository"
             )
@@ -3383,20 +3413,12 @@ class SessionService:
             workspace = str(metadata.get("workspace") or "").strip()
             if not workspace:
                 raise RuntimeError("durable parent cancellation has no workspace")
-            cancel_child = getattr(
-                self._durable_child_reconciler, "cancel", None
-            )
-            reconcile_child = getattr(
-                self._durable_child_reconciler, "__call__", None
-            )
+            cancel_child = getattr(self._durable_child_reconciler, "cancel", None)
+            reconcile_child = getattr(self._durable_child_reconciler, "__call__", None)
             child_reasons: dict[str, str] = {}
             for cancellation_request in cancellation_requests:
-                for child_ref in cancellation_request[
-                    "child_recovery_refs"
-                ]:
-                    child_reasons.setdefault(
-                        child_ref, cancellation_request["reason"]
-                    )
+                for child_ref in cancellation_request["child_recovery_refs"]:
+                    child_reasons.setdefault(child_ref, cancellation_request["reason"])
             for child_ref, reason in child_reasons.items():
                 if not callable(cancel_child):
                     if not callable(reconcile_child):
@@ -3511,26 +3533,18 @@ class SessionService:
                     raise RuntimeError(
                         "durable parent cancellation cannot reconcile owners"
                     ) from error
-                parent_product, _ = load_session(
-                    workspace, record.session_id
-                )
-                parent_works.append(
-                    WorkItem.restore(repository, work_item_id)
-                )
-            if (
-                parent_product.read_model.status
-                not in {"canceled", "completed", "failed"}
-                or any(
-                    parent_work.read_model.status
-                    not in {"canceled", "completed", "failed"}
-                    or parent_work.read_model.status
-                    != parent_product.read_model.status
-                    for parent_work in parent_works
-                )
+                parent_product, _ = load_session(workspace, record.session_id)
+                parent_works.append(WorkItem.restore(repository, work_item_id))
+            if parent_product.read_model.status not in {
+                "canceled",
+                "completed",
+                "failed",
+            } or any(
+                parent_work.read_model.status not in {"canceled", "completed", "failed"}
+                or parent_work.read_model.status != parent_product.read_model.status
+                for parent_work in parent_works
             ):
-                raise RuntimeError(
-                    "durable parent cancellation did not settle owners"
-                )
+                raise RuntimeError("durable parent cancellation did not settle owners")
             bridge_status = {
                 "completed": SessionStatus.COMPLETED,
                 "failed": SessionStatus.FAILED,
@@ -3605,8 +3619,7 @@ class SessionService:
         )
         discovered_workspace_journal = False
         if (
-            not isinstance(recorded_event_root, str)
-            or not recorded_event_root.strip()
+            not isinstance(recorded_event_root, str) or not recorded_event_root.strip()
         ) and retained_workspace is not None:
             managed_event_root = _event_root(self._managed_state_paths)
             workspace_event_root = session_event_path(
@@ -3614,9 +3627,7 @@ class SessionService:
                 record.session_id,
             ).parent.parent
             workspace_event_journal = (
-                workspace_event_root
-                / record.session_id
-                / "session_events.jsonl"
+                workspace_event_root / record.session_id / "session_events.jsonl"
             )
             if (
                 workspace_event_journal.is_file()
@@ -3633,8 +3644,7 @@ class SessionService:
         else:
             retained_event_root = (
                 Path(recorded_event_root).expanduser().absolute()
-                if isinstance(recorded_event_root, str)
-                and recorded_event_root.strip()
+                if isinstance(recorded_event_root, str) and recorded_event_root.strip()
                 else _event_root(self._managed_state_paths)
             )
         if discovered_workspace_journal and not (
@@ -3666,7 +3676,9 @@ class SessionService:
             terminal_runner = SessionRunner(
                 session=record,
                 registry=self.registry,
-                request=SessionCreateRequest(task="", metadata=dict(record.metadata or {})),
+                request=SessionCreateRequest(
+                    task="", metadata=dict(record.metadata or {})
+                ),
             )
             self._bind_restored_durable_product_session(
                 record,
@@ -3716,13 +3728,12 @@ class SessionService:
             recorded_workspace = metadata.get("workspace")
             workspace = (
                 str(recorded_workspace).strip()
-                if isinstance(recorded_workspace, str)
-                and recorded_workspace.strip()
+                if isinstance(recorded_workspace, str) and recorded_workspace.strip()
                 else None
             )
-            permission_mode = str(
-                metadata.get("permission_mode") or "configured"
-            ).strip().lower()
+            permission_mode = (
+                str(metadata.get("permission_mode") or "configured").strip().lower()
+            )
             if permission_mode not in {
                 "prompt",
                 "ask",
@@ -3861,6 +3872,7 @@ class SessionService:
         runner.schedule_start()
         runner.authorize_start()
         record.loaded_from_retained_state = False
+
     async def event_stream(
         self,
         session_id: str,
@@ -3914,7 +3926,9 @@ class SessionService:
                 self._ensure_event_sequence(record)
                 events = list(record.event_log)
                 if from_id:
-                    start_index = self._resolve_replay_start_index(record, events, from_id)
+                    start_index = self._resolve_replay_start_index(
+                        record, events, from_id
+                    )
                     if start_index is None:
                         if not validated:
                             raise HTTPException(
@@ -4255,7 +4269,11 @@ class SessionService:
             if events[index].seq != expected_sequence:
                 return None
             expected_sequence += 1
-        return start_index if expected_sequence == record.replay_head_sequence + 1 else None
+        return (
+            start_index
+            if expected_sequence == record.replay_head_sequence + 1
+            else None
+        )
 
     def _resolve_start_index(
         self, events: list[SessionEvent], from_id: str
@@ -4291,7 +4309,9 @@ class SessionService:
         if isinstance(initial_metadata.get("durable_child"), Mapping) and not callable(
             getattr(self._durable_child_reconciler, "cancel", None)
         ):
-            raise RuntimeError("durable child cancellation requires an authoritative reconciler")
+            raise RuntimeError(
+                "durable child cancellation requires an authoritative reconciler"
+            )
         cancel_tree = getattr(self._durable_child_reconciler, "cancel_tree", None)
         records = await self.registry.records()
         retained_children = []
@@ -4324,17 +4344,28 @@ class SessionService:
         canceled_tree = None
         if should_cancel_tree and callable(cancel_tree):
             try:
-                canceled_tree = cancel_tree(session_id, reason=reason or "operator request")
+                canceled_tree = cancel_tree(
+                    session_id, reason=reason or "operator request"
+                )
                 if inspect.isawaitable(canceled_tree):
                     canceled_tree = await canceled_tree
             except (ExpectedRevisionConflict, LateResultRejected):
-                reconcile_child = getattr(self._durable_child_reconciler, "__call__", None)
+                reconcile_child = getattr(
+                    self._durable_child_reconciler, "__call__", None
+                )
                 if callable(reconcile_child):
                     records = await self.registry.records()
                     for child_record in records:
-                        child_metadata = child_record.metadata if isinstance(child_record.metadata, Mapping) else {}
+                        child_metadata = (
+                            child_record.metadata
+                            if isinstance(child_record.metadata, Mapping)
+                            else {}
+                        )
                         child_state = child_metadata.get("durable_child")
-                        if not isinstance(child_state, Mapping) or child_state.get("parent_session_id") != session_id:
+                        if (
+                            not isinstance(child_state, Mapping)
+                            or child_state.get("parent_session_id") != session_id
+                        ):
                             continue
                         child_ref = str(child_state.get("recovery_ref") or "").strip()
                         if not child_ref:
@@ -4345,7 +4376,9 @@ class SessionService:
                                 await repaired
                         except (ExpectedRevisionConflict, LateResultRejected):
                             continue
-                    canceled_tree = cancel_tree(session_id, reason=reason or "operator request")
+                    canceled_tree = cancel_tree(
+                        session_id, reason=reason or "operator request"
+                    )
                     if inspect.isawaitable(canceled_tree):
                         canceled_tree = await canceled_tree
         if canceled_tree is not None and any(
@@ -4373,9 +4406,7 @@ class SessionService:
                         "retained durable child terminal_count must be exactly 0 or 1"
                     )
                 if terminal_count == 0:
-                    raise RuntimeError(
-                        "durable child cancellation remains pending"
-                    )
+                    raise RuntimeError("durable child cancellation remains pending")
         record = await self._ensure_session_locked(session_id)
         metadata = dict(record.metadata or {})
         durable_child = metadata.get("durable_child")
@@ -4450,6 +4481,7 @@ class SessionService:
             except ReplayError:
                 pass
             await self.registry.delete(session_id)
+
     async def send_input(
         self,
         session_id: str,
@@ -4473,7 +4505,9 @@ class SessionService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=str(exc),
             ) from exc
-        body_digest = submission_body_digest(payload.content, attachments, payload.module_input)
+        body_digest = submission_body_digest(
+            payload.content, attachments, payload.module_input
+        )
         key_digest = identity_digest(client_message_id)
         scheduled_after_admission: list[Callable[[], Awaitable[None]]] = []
 
@@ -4503,8 +4537,14 @@ class SessionService:
                         status_code=status.HTTP_409_CONFLICT,
                         detail="session admission is closed",
                     )
-                accepted_content = runner.prepare_input_content(payload.content, payload.module_input)
-                module_sequence = record.next_module_input_sequence if payload.module_input is not None else None
+                accepted_content = runner.prepare_input_content(
+                    payload.content, payload.module_input
+                )
+                module_sequence = (
+                    record.next_module_input_sequence
+                    if payload.module_input is not None
+                    else None
+                )
                 disposition = "started" if record.active_turn_id is None else "queued"
                 product_session = getattr(record, "product_session", None)
                 event_count = (
@@ -4580,15 +4620,22 @@ class SessionService:
                     )
                     logical_input_committed = True
                     if len(scheduled_operations) != 1:
-                        raise RuntimeError("input execution was not scheduled exactly once")
+                        raise RuntimeError(
+                            "input execution was not scheduled exactly once"
+                        )
                     turn.content = accepted_content
-                    if payload.module_input is None and payload.content != accepted_content:
+                    if (
+                        payload.module_input is None
+                        and payload.content != accepted_content
+                    ):
                         runner.record_input_boundary_repair(
                             payload.content,
                             accepted_content,
                         )
                 except Exception as exc:
-                    if not logical_input_committed and (payload.module_input is None or not admission_persisted):
+                    if not logical_input_committed and (
+                        payload.module_input is None or not admission_persisted
+                    ):
                         if module_sequence is not None:
                             record.next_module_input_sequence = module_sequence
                         record.turns_by_id.pop(turn.turn_id, None)
@@ -4807,6 +4854,7 @@ class SessionService:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT, detail="workspace not ready"
                 )
+
             async def persist_upload() -> None:
                 await self.registry.persist(record)
 
@@ -4817,7 +4865,6 @@ class SessionService:
                     metadata=metadata,
                     persist=persist_upload,
                 )
-
 
     @staticmethod
     def _resolve_workspace_path(workspace_dir: Path, requested_path: str) -> Path:
@@ -4977,7 +5024,9 @@ class SessionService:
     async def list_models(self, config_path: str) -> ModelCatalogResponse:
         requested_path = str(config_path).strip()
         if not requested_path:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="config_path required")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="config_path required"
+            )
         default_profile = resolve_default_profile()
         default_identity = default_profile.public_identity()
         resolved_path = (
@@ -5333,4 +5382,3 @@ class SessionService:
         if tail_list:
             parts.extend(tail_list)
         return "\n".join(parts), len(head_raw) + len(tail_raw)
-

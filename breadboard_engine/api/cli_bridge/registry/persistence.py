@@ -33,6 +33,7 @@ from .records import (
     _TERMINAL_EVENT_TYPES,
     _deserialize_generation_admission,
     _generation_admission_identity,
+    _generation_admission_exact_identity,
     _retained_model_id,
     _serialize_generation_admission,
     _utcnow,
@@ -48,11 +49,16 @@ from .records import (
 )
 from breadboard.modules.author import CheckpointEnvelope, ModuleInput
 from breadboard.modules.authority import AdmissionGrant
-from breadboard.modules.transport import MAX_CHECKPOINT_BYTES, decode_bytes, encode_bytes
+from breadboard.modules.transport import (
+    MAX_CHECKPOINT_BYTES,
+    decode_bytes,
+    encode_bytes,
+)
 from breadboard_engine.execution.author_worker import (
     AuthorWorkerCleanupResult,
     AuthorWorkerResourceReceipt,
 )
+
 _TURN_COMPLETED_FIELDS = {
     "exchange_ref",
     "finish_reason",
@@ -70,6 +76,7 @@ _PROVIDER_USAGE_FIELDS = {
     "reasoningTokens",
     "extensions",
 }
+
 
 def _parent_tree_lock_path(
     registry: Any,
@@ -93,10 +100,10 @@ def _parent_tree_lock_path(
     else:
         return None
     return lock_root / (
-        "child-tree-"
-        + hashlib.sha256(root_session_id.encode()).hexdigest()
-        + ".lock"
+        "child-tree-" + hashlib.sha256(root_session_id.encode()).hexdigest() + ".lock"
     )
+
+
 @asynccontextmanager
 async def _process_lock(lock_path: Path):
     lock = ProcessLock(lock_path)
@@ -104,6 +111,7 @@ async def _process_lock(lock_path: Path):
     try:
         await asyncio.shield(acquisition)
     except asyncio.CancelledError:
+
         async def release_after_acquisition() -> None:
             try:
                 await acquisition
@@ -124,6 +132,7 @@ async def _process_lock(lock_path: Path):
     finally:
         await asyncio.shield(asyncio.to_thread(lock.__exit__, None, None, None))
 
+
 def _fsync_directory(path: Path) -> None:
     if os.name == "nt":
         return
@@ -132,8 +141,6 @@ def _fsync_directory(path: Path) -> None:
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
-
-
 
 
 def _fence_parent_cancellation(method):
@@ -156,7 +163,6 @@ def _fence_parent_cancellation(method):
     return fenced
 
 
-
 def _retained_skills_selection(value: Any) -> Dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
@@ -174,9 +180,7 @@ def _retained_skills_selection(value: Any) -> Dict[str, Any] | None:
         isinstance(item, str) and item.strip() for item in blocklist
     ):
         return None
-    if profile is not None and (
-        not isinstance(profile, str) or not profile.strip()
-    ):
+    if profile is not None and (not isinstance(profile, str) or not profile.strip()):
         return None
     return {
         "mode": mode,
@@ -308,6 +312,8 @@ def _retained_terminal_payload(event_type: EventType, value: Any) -> Dict[str, A
     if not safe_code.replace("_", "").replace("-", "").replace(".", "").isalnum():
         safe_code = "turn_execution_failed"
     return {"error": {"code": safe_code[:128]}}
+
+
 _RECEIPT_FIELDS = {
     "resource_id",
     "owner_ref",
@@ -335,10 +341,7 @@ def _serialize_worker_receipt(
 ) -> Dict[str, Any]:
     if not isinstance(receipt, AuthorWorkerResourceReceipt):
         raise ValueError("module worker receipt is invalid")
-    return {
-        field_name: getattr(receipt, field_name)
-        for field_name in _RECEIPT_FIELDS
-    }
+    return {field_name: getattr(receipt, field_name) for field_name in _RECEIPT_FIELDS}
 
 
 def _serialize_worker_cleanup(
@@ -346,10 +349,7 @@ def _serialize_worker_cleanup(
 ) -> Dict[str, Any]:
     if not isinstance(cleanup, AuthorWorkerCleanupResult):
         raise ValueError("module worker cleanup is invalid")
-    return {
-        field_name: getattr(cleanup, field_name)
-        for field_name in _CLEANUP_FIELDS
-    }
+    return {field_name: getattr(cleanup, field_name) for field_name in _CLEANUP_FIELDS}
 
 
 def _serialize_resume_checkpoints(
@@ -359,8 +359,10 @@ def _serialize_resume_checkpoints(
         raise ValueError("module resume checkpoints are invalid")
     result: Dict[str, Dict[str, Any]] = {}
     for binding, envelope in checkpoints.items():
-        if not isinstance(binding, str) or not binding or not isinstance(
-            envelope, CheckpointEnvelope
+        if (
+            not isinstance(binding, str)
+            or not binding
+            or not isinstance(envelope, CheckpointEnvelope)
         ):
             raise ValueError("module resume checkpoint entry is invalid")
         result[binding] = {
@@ -449,7 +451,10 @@ def _serialize_module_execution(
             value = getattr(worker, field_name)
             if not isinstance(value, str) or not value:
                 raise ValueError("module worker identity is invalid")
-        if type(worker.next_input_sequence) is not int or worker.next_input_sequence < 0:
+        if (
+            type(worker.next_input_sequence) is not int
+            or worker.next_input_sequence < 0
+        ):
             raise ValueError("module worker input sequence is invalid")
         for field_name in ("resource_id", "container_name"):
             value = getattr(worker, field_name)
@@ -492,7 +497,10 @@ def _serialize_module_execution(
 def _deserialize_worker_receipt(value: Any) -> AuthorWorkerResourceReceipt:
     if not isinstance(value, dict) or set(value) != _RECEIPT_FIELDS:
         raise ValueError("retained module worker receipt is invalid")
-    if any(not isinstance(value[field_name], str) or not value[field_name] for field_name in _RECEIPT_FIELDS):
+    if any(
+        not isinstance(value[field_name], str) or not value[field_name]
+        for field_name in _RECEIPT_FIELDS
+    ):
         raise ValueError("retained module worker receipt fields are invalid")
     return AuthorWorkerResourceReceipt(**value)
 
@@ -560,7 +568,10 @@ def _deserialize_module_execution(value: Any) -> ModuleExecutionRecord | None:
         if worker_identity in worker_identities:
             raise ValueError("retained module execution contains duplicate workers")
         worker_identities.add(worker_identity)
-        if type(item["next_input_sequence"]) is not int or item["next_input_sequence"] < 0:
+        if (
+            type(item["next_input_sequence"]) is not int
+            or item["next_input_sequence"] < 0
+        ):
             raise ValueError("retained module worker input sequence is invalid")
         for field_name in fields - {
             "next_input_sequence",
@@ -627,7 +638,9 @@ def _validate_module_admission_state(record: SessionRecord) -> None:
         or record.next_module_input_sequence < 0
     ):
         raise ValueError("retained next module input sequence is invalid")
-    if record.module_grant is not None and not isinstance(record.module_grant, AdmissionGrant):
+    if record.module_grant is not None and not isinstance(
+        record.module_grant, AdmissionGrant
+    ):
         raise ValueError("retained module grant is invalid")
     _serialize_module_execution(record.module_execution)
     typed_sequences: list[int] = []
@@ -708,9 +721,7 @@ def _turn_journal_digest(record: SessionRecord) -> str:
         "admission_closed": record.admission_closed,
         "next_module_input_sequence": record.next_module_input_sequence,
         "module_grant": (
-            record.module_grant.to_dict()
-            if record.module_grant is not None
-            else None
+            record.module_grant.to_dict() if record.module_grant is not None else None
         ),
         "module_execution": _serialize_module_execution(record.module_execution),
     }
@@ -770,7 +781,9 @@ def _merge_module_execution(
             "staging_owner_ref",
         ):
             if getattr(target_worker, field_name) != getattr(source_worker, field_name):
-                raise ValueError("retained module worker identity changed during refresh")
+                raise ValueError(
+                    "retained module worker identity changed during refresh"
+                )
         target_worker.next_input_sequence = max(
             target_worker.next_input_sequence,
             source_worker.next_input_sequence,
@@ -803,7 +816,6 @@ class PersistenceMixin:
             or isinstance(metadata.get("durable_parent_cancellation"), dict)
         )
 
-
     async def create(self, record: SessionRecord) -> SessionRecord:
         async with self._lock:
             async with self._record_file_lock(record.session_id):
@@ -814,18 +826,31 @@ class PersistenceMixin:
                     )
                 state_path = self._state_path(record.session_id)
                 folded_id = record.session_id.casefold()
-                if any(session_id.casefold() == folded_id for session_id in self._records) or (
-                    state_path is not None and state_path.exists()
-                ):
+                if any(
+                    session_id.casefold() == folded_id for session_id in self._records
+                ) or (state_path is not None and state_path.exists()):
                     raise ValueError(f"session already exists: {record.session_id}")
                 if self._state_root is not None:
                     for path in self._state_root.glob("*.json"):
                         try:
-                            retained = self._deserialize_record(json.loads(path.read_text(encoding="utf-8")))
-                        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+                            retained = self._deserialize_record(
+                                json.loads(path.read_text(encoding="utf-8"))
+                            )
+                        except (
+                            OSError,
+                            ValueError,
+                            TypeError,
+                            KeyError,
+                            json.JSONDecodeError,
+                        ):
                             continue
-                        if retained.session_id.casefold() == folded_id and self._state_path(retained.session_id) == path:
-                            raise ValueError(f"session already exists: {retained.session_id}")
+                        if (
+                            retained.session_id.casefold() == folded_id
+                            and self._state_path(retained.session_id) == path
+                        ):
+                            raise ValueError(
+                                f"session already exists: {retained.session_id}"
+                            )
                 self._persist_record_locked(record)
                 self._records[record.session_id] = record
         return record
@@ -884,15 +909,16 @@ class PersistenceMixin:
                 None,
             )
 
-
     async def records(self) -> list[SessionRecord]:
         async with self._lock:
             await self._refresh_records_from_disk_locked()
             return list(self._records.values())
+
     async def list(self) -> Iterable[SessionSummary]:
         async with self._lock:
             await self._refresh_records_from_disk_locked()
             return [record.to_summary() for record in self._records.values()]
+
     @asynccontextmanager
     async def fence_parent_turn_admission(self, session_id: str):
         record = await self.get(session_id)
@@ -966,6 +992,7 @@ class PersistenceMixin:
                         self._replace_metadata(record, previous_metadata)
                         record.last_activity_at = previous_activity
                         raise
+
     async def close_admission_for_parent_cancellation(
         self,
         session_id: str,
@@ -1006,11 +1033,12 @@ class PersistenceMixin:
             if not isinstance(child_recovery_refs, Iterable) or isinstance(
                 child_recovery_refs, (str, bytes)
             ):
-                raise ValueError("parent cancellation child references must be iterable")
+                raise ValueError(
+                    "parent cancellation child references must be iterable"
+                )
             normalized_refs = tuple(child_recovery_refs)
             if any(
-                not isinstance(ref, str) or not ref.strip()
-                for ref in normalized_refs
+                not isinstance(ref, str) or not ref.strip() for ref in normalized_refs
             ):
                 raise ValueError(
                     "parent cancellation child references must be non-empty strings"
@@ -1139,6 +1167,7 @@ class PersistenceMixin:
                         self._replace_metadata(record, previous_metadata)
                         record.last_activity_at = previous_activity
                         raise
+
     async def update_metadata(
         self,
         session_id: str,
@@ -1185,15 +1214,11 @@ class PersistenceMixin:
                             durable_parent_cancellation
                         )
                     elif record.admission_closed:
-                        replacement_metadata.pop(
-                            "durable_parent_cancellation", None
-                        )
-                    elif replacement_metadata.get(
-                        "durable_parent_cancellation"
-                    ) is None:
-                        replacement_metadata.pop(
-                            "durable_parent_cancellation", None
-                        )
+                        replacement_metadata.pop("durable_parent_cancellation", None)
+                    elif (
+                        replacement_metadata.get("durable_parent_cancellation") is None
+                    ):
+                        replacement_metadata.pop("durable_parent_cancellation", None)
                     self._replace_metadata(record, replacement_metadata)
                 record.last_activity_at = _utcnow()
                 try:
@@ -1208,6 +1233,7 @@ class PersistenceMixin:
                     ) = previous
                     self._replace_metadata(record, previous[3])
                     raise
+
     async def compare_and_swap_durable_parent_cancellation(
         self,
         session_id: str,
@@ -1271,9 +1297,7 @@ class PersistenceMixin:
                 elif isinstance(raw_requests, list):
                     candidates = list(raw_requests)
                 else:
-                    raise RuntimeError(
-                        "durable parent cancellation marker is invalid"
-                    )
+                    raise RuntimeError("durable parent cancellation marker is invalid")
                 requests: dict[str, dict[str, Any]] = {}
                 for candidate in candidates:
                     if (
@@ -1317,7 +1341,9 @@ class PersistenceMixin:
                 record = self._records.get(session_id)
                 if record is None:
                     raise KeyError(f"session {session_id} is not retained")
-                record = self._refresh_record_from_disk_locked(session_id, record, require_disk=True)
+                record = self._refresh_record_from_disk_locked(
+                    session_id, record, require_disk=True
+                )
                 metadata = dict(record.metadata or {})
                 current = metadata.get("durable_child")
                 if not isinstance(current, dict):
@@ -1336,9 +1362,15 @@ class PersistenceMixin:
                     "adapter_family",
                 )
                 for field_name in immutable:
-                    expected_value = session_id if field_name == "child_session_id" else current.get(field_name)
+                    expected_value = (
+                        session_id
+                        if field_name == "child_session_id"
+                        else current.get(field_name)
+                    )
                     if child_state.get(field_name) != expected_value:
-                        raise ValueError(f"durable child identity field is immutable: {field_name}")
+                        raise ValueError(
+                            f"durable child identity field is immutable: {field_name}"
+                        )
                 attempt_id = child_state.get("attempt_id")
                 if (
                     not isinstance(attempt_id, str)
@@ -1346,7 +1378,9 @@ class PersistenceMixin:
                     or child_state.get("recovery_ref")
                     != f"child://{session_id}/attempt/{attempt_id}"
                 ):
-                    raise ValueError("durable child recovery reference must match its attempt")
+                    raise ValueError(
+                        "durable child recovery reference must match its attempt"
+                    )
                 metadata["durable_child"] = dict(child_state)
                 previous = dict(record.metadata or {})
                 self._replace_metadata(record, metadata)
@@ -1374,9 +1408,7 @@ class PersistenceMixin:
     async def delete(self, session_id: str) -> None:
         async with self._lock:
             path = self._state_path(session_id)
-            if session_id not in self._records and (
-                path is None or not path.exists()
-            ):
+            if session_id not in self._records and (path is None or not path.exists()):
                 return
             async with self._record_file_lock(session_id):
                 tombstone = self._tombstone_path(session_id)
@@ -1395,6 +1427,52 @@ class PersistenceMixin:
                         pass
                     _fsync_directory(path.parent)
 
+    async def persist_generation_adoption(
+        self,
+        record: SessionRecord,
+        *,
+        expected_admission_id: str,
+    ) -> None:
+        """Atomically replace the retained generation after a committed adoption."""
+        if not record.admission_lock.locked():
+            raise RuntimeError(
+                "generation adoption persistence requires admission authority"
+            )
+        target = _serialize_generation_admission(record.generation_admission)
+        if (
+            target is None
+            or target["admission_id"] == expected_admission_id
+            or record.module_execution is None
+            or record.module_execution.generation_id != target["generation_id"]
+        ):
+            raise ValueError("generation adoption cutover is incomplete")
+        async with self._lock:
+            async with self._record_file_lock(record.session_id):
+                path = self._state_path(record.session_id)
+                tombstone = self._tombstone_path(record.session_id)
+                if (
+                    path is None
+                    or not path.is_file()
+                    or tombstone is not None
+                    and tombstone.exists()
+                    or self._records.get(record.session_id) is not record
+                ):
+                    raise SessionRecordDeletedError(
+                        f"session {record.session_id} was deleted before adoption"
+                    )
+                persisted = self._deserialize_record(
+                    json.loads(path.read_text(encoding="utf-8"))
+                )
+                source = _serialize_generation_admission(persisted.generation_admission)
+                if source is None or source["admission_id"] != expected_admission_id:
+                    raise ValueError(
+                        "retained generation changed before adoption commit"
+                    )
+                self._persist_record_locked(record)
+                self._session_reservation_identities[record.session_id] = (
+                    _generation_admission_exact_identity(record.generation_admission)
+                )
+
     async def persist(
         self,
         record: SessionRecord,
@@ -1412,17 +1490,16 @@ class PersistenceMixin:
                     or isinstance(metadata.get("durable_parent_cancellation"), dict)
                 )
                 tombstone = self._tombstone_path(record.session_id)
-                if (
-                    tombstone is not None
-                    and tombstone.exists()
-                ) or (
+                if (tombstone is not None and tombstone.exists()) or (
                     self._state_root is not None
                     and self._records.get(record.session_id) is not record
                 ):
                     raise SessionRecordDeletedError(
                         f"session {record.session_id} was deleted before persistence"
                     )
-                self._merge_durable_child_from_disk_locked(record, require_disk=disk_authority)
+                self._merge_durable_child_from_disk_locked(
+                    record, require_disk=disk_authority
+                )
                 if terminal_event is not None and self._state_root is None:
                     raise RuntimeError("durable terminal retention is unavailable")
                 head_event = terminal_event or cursor_event
@@ -1430,25 +1507,41 @@ class PersistenceMixin:
                 resolution_was_committed = False
                 if terminal_event is not None and terminal_event.turn_id is not None:
                     resolution_turn = record.turns_by_id.get(terminal_event.turn_id)
-                    if resolution_turn is None or resolution_turn.terminal_outcome is None:
-                        raise RuntimeError("terminal event does not resolve an admitted turn")
-                    resolution_was_committed = resolution_turn.terminal_resolution_committed
+                    if (
+                        resolution_turn is None
+                        or resolution_turn.terminal_outcome is None
+                    ):
+                        raise RuntimeError(
+                            "terminal event does not resolve an admitted turn"
+                        )
+                    resolution_was_committed = (
+                        resolution_turn.terminal_resolution_committed
+                    )
                 previous_event_seq = record.event_seq
-                previous_event_seq_value = head_event.seq if head_event is not None else None
+                previous_event_seq_value = (
+                    head_event.seq if head_event is not None else None
+                )
                 if head_event is not None:
                     if head_event.seq is None:
                         record.event_seq += 1
                         head_event.seq = record.event_seq
                     else:
                         record.event_seq = max(record.event_seq, int(head_event.seq))
-                candidate = self._retained_terminal_envelope(terminal_event) if terminal_event is not None else None
+                candidate = (
+                    self._retained_terminal_envelope(terminal_event)
+                    if terminal_event is not None
+                    else None
+                )
                 retained: Dict[str, Any] | None = None
                 previous_replay_head_sequence = record.replay_head_sequence
                 previous_replay_head_event_id = record.replay_head_event_id
                 if head_event is not None:
                     record.replay_head_sequence = int(head_event.seq)
                     record.replay_head_event_id = head_event.event_id
-                if candidate is not None and not any(item.get("id") == candidate.get("id") for item in record.terminal_event_envelopes):
+                if candidate is not None and not any(
+                    item.get("id") == candidate.get("id")
+                    for item in record.terminal_event_envelopes
+                ):
                     retained = candidate
                     record.terminal_event_envelopes.append(candidate)
                 if resolution_turn is not None:
@@ -1464,7 +1557,9 @@ class PersistenceMixin:
                     if retained is not None:
                         record.terminal_event_envelopes.remove(retained)
                     if resolution_turn is not None:
-                        resolution_turn.terminal_resolution_committed = resolution_was_committed
+                        resolution_turn.terminal_resolution_committed = (
+                            resolution_was_committed
+                        )
                     raise
 
     def _state_path(self, session_id: str) -> Path | None:
@@ -1472,6 +1567,7 @@ class PersistenceMixin:
             return None
         filename = hashlib.sha256(session_id.encode("utf-8")).hexdigest() + ".json"
         return self._state_root / filename
+
     def _tombstone_path(self, session_id: str) -> Path | None:
         state_path = self._state_path(session_id.casefold())
         if state_path is None:
@@ -1494,6 +1590,7 @@ class PersistenceMixin:
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         async with _process_lock(lock_path):
             yield
+
     async def _refresh_records_from_disk_locked(self) -> None:
         if self._state_root is None:
             return
@@ -1511,7 +1608,9 @@ class PersistenceMixin:
                         json.loads(path.read_text(encoding="utf-8"))
                     )
                     if self._state_path(refreshed.session_id) != path:
-                        raise ValueError("retained session identity does not match its path")
+                        raise ValueError(
+                            "retained session identity does not match its path"
+                        )
             except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
                 continue
             current = self._records.get(refreshed.session_id)
@@ -1552,9 +1651,8 @@ class PersistenceMixin:
             or target.module_input_sequence != source.module_input_sequence
         ):
             raise ValueError("retained typed turn identity changed during refresh")
-        if (
-            target.module_input is not None
-            and tuple(target.attachments) != tuple(source.attachments)
+        if target.module_input is not None and tuple(target.attachments) != tuple(
+            source.attachments
         ):
             raise ValueError("retained typed turn attachments changed during refresh")
         for field_name in (
@@ -1595,34 +1693,32 @@ class PersistenceMixin:
             target.module_execution,
             source.module_execution,
         )
+
     @staticmethod
     def _merge_generation_admission_state(
         target: SessionRecord,
         source: SessionRecord,
     ) -> None:
-        target_projection = _serialize_generation_admission(
-            target.generation_admission
-        )
-        source_projection = _serialize_generation_admission(
-            source.generation_admission
-        )
+        target_projection = _serialize_generation_admission(target.generation_admission)
+        source_projection = _serialize_generation_admission(source.generation_admission)
         if target_projection is None:
             if source_projection is not None:
                 target.generation_admission = source.generation_admission
             return
         if source_projection is None:
             return
-        if _generation_admission_identity(target_projection) != _generation_admission_identity(
-            source_projection
-        ):
-            raise ValueError("retained generation admission identity changed during refresh")
+        if _generation_admission_identity(
+            target_projection
+        ) != _generation_admission_identity(source_projection):
+            raise ValueError(
+                "retained generation admission identity changed during refresh"
+            )
         status_order = {"reserved": 0, "materialized": 1, "released": 2}
-        if status_order[source_projection["status"]] >= status_order[
-            target_projection["status"]
-        ]:
+        if (
+            status_order[source_projection["status"]]
+            >= status_order[target_projection["status"]]
+        ):
             target.generation_admission = source.generation_admission
-
-
 
     @staticmethod
     def _apply_durable_fields(target: SessionRecord, source: SessionRecord) -> None:
@@ -1659,8 +1755,7 @@ class PersistenceMixin:
         target.terminal_event_envelopes[:] = source.terminal_event_envelopes
         target_journal_dirty = (
             target.retained_turn_journal_digest is not None
-            and _turn_journal_digest(target)
-            != target.retained_turn_journal_digest
+            and _turn_journal_digest(target) != target.retained_turn_journal_digest
         )
         if not target.admission_lock.locked() and not target_journal_dirty:
             target.turn_admission = source.turn_admission
@@ -1699,9 +1794,9 @@ class PersistenceMixin:
             )
             target.admission_closed = source.admission_closed
             target.retained_turn_journal_digest = (
-                source.retained_turn_journal_digest
-                or _turn_journal_digest(source)
+                source.retained_turn_journal_digest or _turn_journal_digest(source)
             )
+
     def _merge_durable_child_from_disk_locked(
         self,
         record: SessionRecord,
@@ -1714,7 +1809,13 @@ class PersistenceMixin:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
             disk_record = self._deserialize_record(payload)
-        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            json.JSONDecodeError,
+        ) as error:
             if require_disk:
                 raise SessionRecordDeletedError(
                     f"session {record.session_id} retained state is unreadable"
@@ -1756,7 +1857,10 @@ class PersistenceMixin:
                     local_turn.terminal_outcome = local_terminal_outcome
                 if local_terminal_resolution_committed:
                     local_turn.terminal_resolution_committed = True
-            for key_digest, mapped_turn in disk_record.submissions_by_key_digest.items():
+            for (
+                key_digest,
+                mapped_turn,
+            ) in disk_record.submissions_by_key_digest.items():
                 if mapped_turn.turn_id == turn_id:
                     record.submissions_by_key_digest.setdefault(
                         key_digest,
@@ -1765,11 +1869,19 @@ class PersistenceMixin:
         metadata = dict(record.metadata or {})
         disk_child = (disk_record.metadata or {}).get("durable_child")
         local_child = metadata.get("durable_child")
-        disk_revision = int(disk_child.get("revision", -1)) if isinstance(disk_child, dict) else -1
-        local_revision = int(local_child.get("revision", -1)) if isinstance(local_child, dict) else -1
+        disk_revision = (
+            int(disk_child.get("revision", -1)) if isinstance(disk_child, dict) else -1
+        )
+        local_revision = (
+            int(local_child.get("revision", -1))
+            if isinstance(local_child, dict)
+            else -1
+        )
         if isinstance(disk_child, dict) and disk_revision > local_revision:
             metadata["durable_child"] = dict(disk_child)
-        disk_parent_cancellation = (disk_record.metadata or {}).get("durable_parent_cancellation")
+        disk_parent_cancellation = (disk_record.metadata or {}).get(
+            "durable_parent_cancellation"
+        )
         if isinstance(disk_parent_cancellation, dict):
             metadata["durable_parent_cancellation"] = dict(disk_parent_cancellation)
         elif "durable_parent_cancellation" in metadata:
@@ -1778,7 +1890,6 @@ class PersistenceMixin:
             record.admission_closed or disk_record.admission_closed
         )
         self._replace_metadata(record, metadata)
-
 
     def _refresh_record_from_disk_locked(
         self,
@@ -1804,7 +1915,13 @@ class PersistenceMixin:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
             refreshed = self._deserialize_record(payload)
-        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            json.JSONDecodeError,
+        ) as error:
             if require_disk:
                 raise SessionRecordDeletedError(
                     f"session {session_id} retained state is unreadable"
@@ -1924,9 +2041,7 @@ class PersistenceMixin:
                 serialized_turn["logical_event_count_before_admission"] = (
                     turn.logical_event_count_before_admission
                 )
-                session_status = (
-                    turn.logical_input_session_status_before_admission
-                )
+                session_status = turn.logical_input_session_status_before_admission
                 if session_status is not None:
                     if session_status not in {
                         "running",
@@ -1937,9 +2052,9 @@ class PersistenceMixin:
                         "canceled",
                     }:
                         raise ValueError("retained turn session status is invalid")
-                    serialized_turn[
-                        "logical_input_session_status_before_admission"
-                    ] = session_status
+                    serialized_turn["logical_input_session_status_before_admission"] = (
+                        session_status
+                    )
             turns.append(serialized_turn)
         metadata = record.metadata if isinstance(record.metadata, dict) else {}
         reward_summary = record.reward_summary
@@ -1988,7 +2103,9 @@ class PersistenceMixin:
                     else None
                 ),
                 "generation_admission": generation_admission,
-                "module_execution": _serialize_module_execution(record.module_execution),
+                "module_execution": _serialize_module_execution(
+                    record.module_execution
+                ),
                 **(
                     {
                         "module_resume_checkpoints": _serialize_resume_checkpoints(
@@ -2023,8 +2140,16 @@ class PersistenceMixin:
                     in {"prompt", "ask", "interactive", "configured"}
                     else None
                 ),
-                **({"durable_child": durable_child} if durable_child is not None else {}),
-                **({"durable_parent_cancellation": parent_cancellation} if parent_cancellation is not None else {}),
+                **(
+                    {"durable_child": durable_child}
+                    if durable_child is not None
+                    else {}
+                ),
+                **(
+                    {"durable_parent_cancellation": parent_cancellation}
+                    if parent_cancellation is not None
+                    else {}
+                ),
                 "runtime_overrides": _retained_runtime_overrides(
                     metadata.get("runtime_overrides")
                 ),
@@ -2186,10 +2311,7 @@ class PersistenceMixin:
             or "next_module_input_sequence" in session
             or any(
                 isinstance(item, dict)
-                and (
-                    "module_input" in item
-                    or "module_input_sequence" in item
-                )
+                and ("module_input" in item or "module_input_sequence" in item)
                 for item in (payload.get("turns") or [])
             )
         ):
@@ -2212,7 +2334,9 @@ class PersistenceMixin:
                 session.get("module_resume_checkpoints")
             )
         except (TypeError, ValueError) as error:
-            raise ValueError("retained module resume checkpoints are invalid") from error
+            raise ValueError(
+                "retained module resume checkpoints are invalid"
+            ) from error
         persisted_event_seq = int(session.get("event_seq") or 0)
         persisted_replay_head_sequence = int(
             session.get("replay_head_sequence", persisted_event_seq) or 0
@@ -2298,9 +2422,7 @@ class PersistenceMixin:
 
         if runtime_overrides:
             metadata["runtime_overrides"] = runtime_overrides
-        skills_selection = _retained_skills_selection(
-            session.get("skills_selection")
-        )
+        skills_selection = _retained_skills_selection(session.get("skills_selection"))
         if skills_selection is not None:
             metadata["skills_selection"] = skills_selection
         role_lock = session.get("model_role_lock")
@@ -2343,7 +2465,8 @@ class PersistenceMixin:
             replay_head_sequence=persisted_replay_head_sequence,
             retained_replay_boundary=(
                 (persisted_replay_head_sequence, persisted_head_event_id)
-                if persisted_head_event_id is not None else None
+                if persisted_head_event_id is not None
+                else None
             ),
             metadata=metadata,
             loaded_from_retained_state=True,
@@ -2382,13 +2505,9 @@ class PersistenceMixin:
                 if "content" in item and item["content"] is None:
                     raise ValueError("untyped turn has null content")
             marker = item.get("logical_event_count_before_admission")
-            if marker is not None and (
-                type(marker) is not int or marker < 1
-            ):
+            if marker is not None and (type(marker) is not int or marker < 1):
                 raise ValueError("retained turn journal position is invalid")
-            session_status = item.get(
-                "logical_input_session_status_before_admission"
-            )
+            session_status = item.get("logical_input_session_status_before_admission")
             if session_status is not None and (
                 not isinstance(session_status, str)
                 or session_status
@@ -2402,12 +2521,18 @@ class PersistenceMixin:
                 }
             ):
                 raise ValueError("retained turn session status is invalid")
-            if module_input is None and marker is not None and (
-                "content_hash" not in item or "attachments" not in item
+            if (
+                module_input is None
+                and marker is not None
+                and ("content_hash" not in item or "attachments" not in item)
             ):
                 raise ValueError("retained turn admission payload is incomplete")
             content_hash = item.get("content_hash")
-            if module_input is None and marker is not None and not _valid_sha256_digest(content_hash):
+            if (
+                module_input is None
+                and marker is not None
+                and not _valid_sha256_digest(content_hash)
+            ):
                 raise ValueError("retained turn content hash is invalid")
             attachments = item.get("attachments", [])
             if not isinstance(attachments, list) or any(
@@ -2561,8 +2686,7 @@ class PersistenceMixin:
         if (
             not isinstance(queued_turn_ids, list)
             or any(
-                not isinstance(turn_id, str)
-                or turn_id not in record.turns_by_id
+                not isinstance(turn_id, str) or turn_id not in record.turns_by_id
                 for turn_id in queued_turn_ids
             )
             or len(set(queued_turn_ids)) != len(queued_turn_ids)
