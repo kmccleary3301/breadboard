@@ -193,6 +193,41 @@ def test_package_refuses_unsupported_worker_protocol(tmp_path: Path) -> None:
     assert not (tmp_path / "bad.bbpkg").exists()
 
 
+def test_package_refuses_entrypoints_the_worker_cannot_load(tmp_path: Path) -> None:
+    invalid = {
+        "missing-symbol-separator": (
+            "src/ranker.py",
+            None,
+            "entrypoint must be path:symbol",
+        ),
+        "unbound-path": (
+            "missing.py:open_instance",
+            None,
+            "entrypoint path must have exactly one import member binding",
+        ),
+        "missing-import": (
+            "src/ranker.py:open_instance",
+            [],
+            "entrypoint path must have exactly one import member binding",
+        ),
+    }
+    for label, (entrypoint, import_members, message) in invalid.items():
+        source = _write_source(tmp_path / label / "source", code=b"VALUE = 'ranker'\n")
+        manifest = json.loads((source / "module.json").read_text(encoding="utf-8"))
+        manifest["entrypoint"] = entrypoint
+        if import_members is not None:
+            manifest["import_members"] = import_members
+        (source / "module.json").write_bytes(canonical_json_bytes(manifest))
+
+        with pytest.raises(ModulePackageValidationError, match=message):
+            build_module_package(
+                source,
+                tmp_path / label / "bad.bbpkg",
+                cas=FilesystemCAS(tmp_path / label / "cas"),
+            )
+        assert not (tmp_path / label / "bad.bbpkg").exists()
+
+
 def test_package_refuses_runtime_inoperable_authority_and_budget(
     tmp_path: Path,
 ) -> None:

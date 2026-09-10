@@ -668,6 +668,15 @@ class ModuleManifest:
             raise ModulePackageValidationError(
                 "schema members must name captured source members"
             )
+        if self.entrypoint.count(":") != 1:
+            raise ModulePackageValidationError("entrypoint must be path:symbol")
+        entry_path, entry_symbol = self.entrypoint.split(":", 1)
+        _text(entry_path, "entrypoint path")
+        _text(entry_symbol, "entrypoint symbol")
+        if len([item for item in imports if item.path == entry_path]) != 1:
+            raise ModulePackageValidationError(
+                "entrypoint path must have exactly one import member binding"
+            )
         required_schemas = (
             set(self.input_schema_ids)
             | set(self.output_schema_ids)

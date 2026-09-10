@@ -63,6 +63,31 @@ The command starts the CLI bridge in-process, creates a session through the Pyth
 
 An executable module directory contains `module.json` plus every declared source, import, schema, and dependency file. Package it without importing or executing its code:
 
+`entrypoint` is `<captured-source-path>:<callable-symbol>`, not a Python module
+name. Exactly one `import_members` record must bind that same captured path.
+The import record repeats the source member's exact digest and size:
+
+```json
+{
+  "entrypoint": "module.py:module",
+  "source_members": [
+    {
+      "path": "module.py",
+      "sha256": "sha256:<64 lowercase hexadecimal characters>",
+      "size_bytes": 1234
+    }
+  ],
+  "import_members": [
+    {
+      "module": "authored_module",
+      "path": "module.py",
+      "sha256": "sha256:<same digest>",
+      "size_bytes": 1234
+    }
+  ]
+}
+```
+
 `module.json` is a strict public contract. Use `worker_protocol: bb.worker.v2`.
 `requested_authority` and `resource_budget` have exact fields; the packager
 rejects missing, extra, or runtime-inoperable values:

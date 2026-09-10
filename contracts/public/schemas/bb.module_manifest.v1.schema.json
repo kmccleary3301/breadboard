@@ -29,7 +29,7 @@
     "schema_version": {"const": "bb.module_manifest.v1"},
     "logical_package": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
     "package_version": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
-    "entrypoint": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+    "entrypoint": {"type": "string", "pattern": "^[^:\\s]+:[A-Za-z_][A-Za-z0-9_]*$"},
     "execution_tier": {"enum": ["trusted_native", "enforced_isolated"]},
     "worker_protocol": {"const": "bb.worker.v2"},
     "input_schema_ids": {"$ref": "#/$defs/stringArray"},
@@ -67,6 +67,7 @@
     },
     "import_members": {
       "type": "array",
+      "minItems": 1,
       "items": {"$ref": "#/$defs/importMember"},
       "uniqueItems": true
     },
