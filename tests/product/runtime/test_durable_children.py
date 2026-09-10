@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import multiprocessing
@@ -24,6 +25,7 @@ from breadboard.product.coordination.work_items import (
 )
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import children as children_module
+from breadboard.product.runtime import research_world as research_world_module
 from breadboard.product.runtime.artifacts import (
     AnchoredStorage,
     ArtifactRef,
@@ -146,6 +148,26 @@ def _running_parent(tmp_path: Path, repository: WorkItemRepository | None = None
 
 def _spec(adapter_family: str, title: str = "child work") -> ChildSpec:
     return ChildSpec(title, "child task", _lock(), "child-worker", adapter_family)
+
+
+def test_research_world_authenticates_typescript_canonical_request_bytes() -> None:
+    request_bytes = b'{"command":["/bin/true"],"metadata":{"ratio":1e-7}}'
+    payload = {
+        "operation": "submit",
+        "execution_id": "ray:test-exact-bytes",
+        "request_digest": hashlib.sha256(request_bytes).hexdigest(),
+        "request_bytes": base64.b64encode(request_bytes).decode("ascii"),
+        "ray_address": "ray://test",
+        "ray_namespace": "breadboard-test",
+        "max_output_bytes": 1024,
+    }
+    parsed = research_world_module._request_payload(payload)
+    assert parsed["_request_bytes"] == request_bytes
+    assert parsed["request"]["metadata"]["ratio"] == 1e-7
+    with pytest.raises(ValueError, match="digest does not match"):
+        research_world_module._request_payload(
+            {**payload, "request_digest": "0" * 64}
+        )
 
 
 def test_unknown_adapter_is_rejected_before_owner_mutation(tmp_path: Path) -> None:

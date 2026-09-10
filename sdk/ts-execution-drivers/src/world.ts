@@ -251,25 +251,17 @@ export interface ExecutionWorldV1 {
     reason?: string,
   ): Promise<ExecutionWorldAuthorWorkerCloseResultV1>
 }
-const DRIVER_ORDER: Record<ExecutionDriverHintV1, string[]> = {
-  trusted_local: ["local-process", "oci", "remote", "ray", "slurm"],
-  oci: ["oci", "local-process", "remote", "ray", "slurm"],
-  remote: ["remote", "ray", "slurm", "oci", "local-process"],
-  ray: ["ray", "remote", "slurm", "oci", "local-process"],
-  slurm: ["slurm", "remote", "ray", "oci", "local-process"],
+function hintedDriverId(hint: ExecutionDriverHintV1): string {
+  return hint === "trusted_local" ? "local-process" : hint
 }
 
-function orderDrivers<T extends ExecutionDriverV1>(drivers: readonly T[], hint?: ExecutionDriverHintV1): T[] {
-  const preferred = DRIVER_ORDER[hint ?? "trusted_local"]
-  const rank = new Map(preferred.map((driverId, index) => [driverId, index]))
-  return drivers
-    .map((driver, index) => ({ driver, index }))
-    .sort((left, right) => {
-      const leftRank = rank.get(left.driver.driverId) ?? preferred.length + left.index
-      const rightRank = rank.get(right.driver.driverId) ?? preferred.length + right.index
-      return leftRank - rightRank || left.index - right.index
-    })
-    .map(({ driver }) => driver)
+function driversForHint(
+  drivers: readonly TerminalSessionDriverV1[],
+  hint?: ExecutionDriverHintV1,
+): TerminalSessionDriverV1[] {
+  if (hint === undefined) return [...drivers]
+  const driverId = hintedDriverId(hint)
+  return drivers.filter((driver) => driver.driverId === driverId)
 }
 
 function selectWorldDriver(
@@ -285,6 +277,12 @@ function selectWorldDriver(
 ): TerminalSessionDriverV1 | null {
   if (input.driverId) {
     const directMatch = drivers.find((d) => d.driverId === input.driverId)
+    if (
+      input.driverIdHint !== undefined
+      && input.driverId !== hintedDriverId(input.driverIdHint)
+    ) {
+      return null
+    }
     if (!directMatch) {
       return null
     }
@@ -325,9 +323,9 @@ function selectWorldDriver(
     }
     return directMatch
   }
-  const orderedDrivers = orderDrivers(drivers, input.driverIdHint)
+  const constrainedDrivers = driversForHint(drivers, input.driverIdHint)
   if (input.terminal) {
-    const eligibleDrivers = orderedDrivers.filter((d) => {
+    const eligibleDrivers = constrainedDrivers.filter((d) => {
       if (input.terminalOperation === "start") return typeof d.startTerminalSession === "function"
       if (input.terminalOperation === "interact") return typeof d.interactTerminalSession === "function"
       if (input.terminalOperation === "snapshot") return typeof d.snapshotTerminalRegistry === "function"
@@ -348,7 +346,7 @@ function selectWorldDriver(
   return (selectExecutionDriver({
     capability: input.capability,
     placement: input.placement,
-    drivers: orderedDrivers,
+    drivers: constrainedDrivers,
   }) as TerminalSessionDriverV1 | null)
 }
 
@@ -361,10 +359,10 @@ function selectAuthorWorkerDriver(
     readonly driverIdHint?: ExecutionDriverHintV1
   },
 ): TerminalSessionDriverV1 | null {
-  const ordered = orderDrivers(drivers, input.driverIdHint)
+  const constrainedDrivers = driversForHint(drivers, input.driverIdHint)
   const candidates = input.driverId
-    ? ordered.filter((driver) => driver.driverId === input.driverId)
-    : ordered
+    ? constrainedDrivers.filter((driver) => driver.driverId === input.driverId)
+    : constrainedDrivers
   for (const driver of candidates) {
     if (!driver.supportedPlacements.includes(input.placement.placement_class)) continue
     if (!driver.supportsCapability(input.capability, input.placement.placement_class)) continue
@@ -1260,20 +1258,37 @@ export function createExecutionWorld(input: {
 
   async function executeTerminalInteract(operation: ExecutionWorldTerminalInteractionOperationV1): Promise<ExecutionWorldTerminalInteractionResultV1> {
     const selected = sessions.get(operation.input.terminalSessionId) ?? endedSessionOwners.get(operation.input.terminalSessionId)
-    if (selected && operation.driverId && selected.driverId !== operation.driverId) {
+    const selectedDriverId = selected?.driverId ?? null
+    const hintedPinnedDriverId =
+      operation.driverIdHint === undefined
+        ? null
+        : hintedDriverId(operation.driverIdHint)
+    const pinsContradict =
+      operation.driverId !== undefined
+      && operation.driverId !== null
+      && hintedPinnedDriverId !== null
+      && operation.driverId !== hintedPinnedDriverId
+    const pinnedDriverId = operation.driverId ?? hintedPinnedDriverId
+    if (
+      pinsContradict
+      || (selectedDriverId !== null && pinnedDriverId && selectedDriverId !== pinnedDriverId)
+    ) {
       return {
         kind: "terminal_interact",
-        driverId: selected.driverId,
+        driverId: selectedDriverId,
         result: null,
         unsupportedCase: buildTerminalUnsupportedCase(
           operation.capability,
           operation.placement,
-          `Terminal session '${operation.input.terminalSessionId}' is owned by '${selected.driverId}', not pinned driver '${operation.driverId}'.`,
+          pinsContradict
+            ? `Pinned driver '${operation.driverId}' contradicts driver hint '${hintedPinnedDriverId}'.`
+            : `Terminal session '${operation.input.terminalSessionId}' is owned by '${selectedDriverId}', not pinned driver '${pinnedDriverId}'.`,
           "unsupported_terminal_driver",
           {
             terminal_session_id: operation.input.terminalSessionId,
-            owner_driver_id: selected.driverId,
-            pinned_driver_id: operation.driverId,
+            owner_driver_id: selectedDriverId,
+            pinned_driver_id: pinnedDriverId,
+            hinted_driver_id: hintedPinnedDriverId,
           },
         ),
       }
@@ -1671,11 +1686,16 @@ export function createExecutionWorld(input: {
     const reportedCleanedSet = new Set<string>()
     const reportedFailedSet = new Set<string>()
     let primaryDriverId: string | null = operation.driverId ?? defaultDriver?.driverId ?? null
+    const requestedDriverId =
+      operation.driverId
+      ?? (operation.driverIdHint === undefined
+        ? null
+        : hintedDriverId(operation.driverIdHint))
     // Group requested session IDs by owning driver, routing ended owners through driver cleanup
     const driverToSessions = new Map<TerminalSessionDriverV1, string[]>()
     for (const sessionId of requestedIds) {
       const knownOwner = sessions.get(sessionId) ?? endedSessionOwners.get(sessionId)
-      if (pinnedTerminalDriver && knownOwner && knownOwner.driverId !== pinnedTerminalDriver.driverId) {
+      if (knownOwner && requestedDriverId && knownOwner.driverId !== requestedDriverId) {
         pendingFailedSet.add(sessionId)
         continue
       }

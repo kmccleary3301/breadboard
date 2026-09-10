@@ -38,6 +38,41 @@ export interface SshSlurmBackendOptionsV1 {
   readonly runCommand?: CommandRunnerV1
   readonly commandTimeoutMs?: number
   readonly maxOutputBytes?: number
+  readonly resourceProfile?: Partial<SlurmResourceProfileV1>
+}
+
+export interface SlurmResourceProfileV1 {
+  readonly cpuCount: number
+  readonly memoryBytes: number
+  readonly timeSeconds: number
+  readonly gpuCount: 0
+}
+
+const DEFAULT_RESOURCE_PROFILE: SlurmResourceProfileV1 = {
+  cpuCount: 1,
+  memoryBytes: 128 * 1024 * 1024,
+  timeSeconds: 120,
+  gpuCount: 0,
+}
+
+function resourceProfile(
+  value: Partial<SlurmResourceProfileV1> | undefined,
+): SlurmResourceProfileV1 {
+  if (Object.keys(value ?? {}).some((key) => !["cpuCount", "memoryBytes", "timeSeconds", "gpuCount"].includes(key))) {
+    throw new Error("Slurm resource profile contains an unsupported field")
+  }
+  const profile = { ...DEFAULT_RESOURCE_PROFILE, ...(value ?? {}) }
+  if (!Number.isSafeInteger(profile.cpuCount) || profile.cpuCount < 1 || profile.cpuCount > 2) {
+    throw new Error("Slurm cpuCount must be between 1 and 2")
+  }
+  if (!Number.isSafeInteger(profile.memoryBytes) || profile.memoryBytes < 30 * 1024 * 1024 || profile.memoryBytes > 256 * 1024 * 1024) {
+    throw new Error("Slurm memoryBytes must be between 30 and 256 MiB")
+  }
+  if (!Number.isSafeInteger(profile.timeSeconds) || profile.timeSeconds < 1 || profile.timeSeconds > 120) {
+    throw new Error("Slurm timeSeconds must be between 1 and 120")
+  }
+  if (profile.gpuCount !== 0) throw new Error("Slurm gpuCount must be zero")
+  return profile
 }
 
 interface SubmittedSlurmExecution {
@@ -46,6 +81,9 @@ interface SubmittedSlurmExecution {
   readonly requestDigest: string
   observedRunning?: boolean
   readonly stderrPath: string
+  readonly resourceProfile: SlurmResourceProfileV1
+  readonly attemptIdentity: string
+  restartCount?: number
 }
 
 const execFileAsync = promisify(execFile)
@@ -85,6 +123,53 @@ function uriPath(path: string): string {
 
 function sha256(value: string): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`
+}
+
+function slurmTimeLimit(seconds: number): string {
+  const minutes = Math.floor(seconds / 60)
+  const remainder = seconds % 60
+  return `00:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`
+}
+
+function memoryBytes(value: string): number | null {
+  const match = /^(\d+)([KMGTP]?)$/i.exec(value)
+  if (!match) return null
+  const amount = Number.parseInt(match[1]!, 10)
+  const power = "KMGTP".indexOf((match[2] ?? "").toUpperCase()) + 1
+  return Number.isSafeInteger(amount) ? amount * 1024 ** power : null
+}
+
+function slurmDurationSeconds(value: string): number | null {
+  const match = /^(?:(\d+)-)?(\d{1,2}):(\d{2}):(\d{2})$/.exec(value)
+  if (!match) return null
+  const days = Number.parseInt(match[1] ?? "0", 10)
+  const hours = Number.parseInt(match[2]!, 10)
+  const minutes = Number.parseInt(match[3]!, 10)
+  const seconds = Number.parseInt(match[4]!, 10)
+  const total = days * 86_400 + hours * 3_600 + minutes * 60 + seconds
+  return Number.isSafeInteger(total) ? total : null
+}
+
+function gpuResourcesAreZero(
+  requestedTres: string,
+  allocatedTres: string,
+  schedulerRecord: string,
+): boolean {
+  for (const token of `${requestedTres},${allocatedTres}`.split(",")) {
+    if (!/gpu/i.test(token)) continue
+    const countMatch = /=(\d+)$/.exec(token)
+    const count = countMatch ? Number.parseInt(countMatch[1]!, 10) : null
+    if (count === null || !Number.isSafeInteger(count) || count !== 0) return false
+  }
+  const gres = /\bGres=([^\s]+)/i.exec(schedulerRecord)?.[1]
+  if (!gres || /^(?:\(null\)|N\/A|None)$/i.test(gres)) return true
+  for (const token of gres.split(",")) {
+    if (!/gpu/i.test(token)) continue
+    const countMatch = /:(\d+)$/.exec(token)
+    const count = countMatch ? Number.parseInt(countMatch[1]!, 10) : null
+    if (count === null || !Number.isSafeInteger(count) || count !== 0) return false
+  }
+  return true
 }
 
 function slurmJobName(
@@ -127,8 +212,17 @@ function parseExecutionHandle(value: string): {
 }
 
 
-function retainedSubmission(request: SandboxRequestV1): string {
-  return JSON.stringify({ request, requestDigest: requestDigest(request) })
+function retainedSubmission(
+  request: SandboxRequestV1,
+  profile: SlurmResourceProfileV1,
+  attemptIdentity: string,
+): string {
+  return JSON.stringify({
+    request,
+    requestDigest: requestDigest(request),
+    resourceProfile: profile,
+    attemptIdentity,
+  })
 }
 
 function genericFailureReason(status: SandboxResultV1["status"]): string {
@@ -195,6 +289,9 @@ function schedulerEvidenceRefs(
     ...(nodeList && nodeList !== "(null)"
       ? [`slurm://job/${durableId}/node/${encodeURIComponent(nodeList)}`]
       : []),
+    ...(execution.attemptIdentity === "legacy"
+      ? []
+      : [`slurm://job/${durableId}/attempt/${encodeURIComponent(execution.attemptIdentity)}/restart/${execution.restartCount ?? 0}`]),
     `ssh://${sshTarget}${uriPath(execution.stdoutPath)}`,
     `ssh://${sshTarget}${uriPath(execution.stderrPath)}`,
   ]
@@ -213,7 +310,12 @@ function parseExecution(
   }
   const retained = typeof parsed === "object" && parsed !== null
     && "request" in parsed && "requestDigest" in parsed
-    ? parsed as { readonly request: unknown; readonly requestDigest: unknown }
+    ? parsed as {
+      readonly request: unknown
+      readonly requestDigest: unknown
+      readonly resourceProfile?: Partial<SlurmResourceProfileV1>
+      readonly attemptIdentity?: unknown
+    }
     : null
   let request: SandboxRequestV1
   try {
@@ -228,9 +330,26 @@ function parseExecution(
   if (retained !== null && retained.requestDigest !== digest) {
     throw new Error("Slurm submission metadata digest is invalid")
   }
+  const profile = resourceProfile(retained?.resourceProfile)
+  const retainedAttemptIdentity = retained?.attemptIdentity
+  if (
+    retainedAttemptIdentity !== undefined
+    && (
+      typeof retainedAttemptIdentity !== "string"
+      || (
+        retainedAttemptIdentity !== "legacy"
+        && !/^[0-9a-f]{32}$/.test(retainedAttemptIdentity)
+      )
+    )
+  ) {
+    throw new Error("Slurm submission attempt identity is invalid")
+  }
+  const attemptIdentity = retainedAttemptIdentity ?? "legacy"
   return {
     request,
     requestDigest: digest,
+    resourceProfile: profile,
+    attemptIdentity,
     stdoutPath: remotePath(evidenceDirectory, `${slurmArtifactStem(executionId, digest)}.out`),
     stderrPath: remotePath(evidenceDirectory, `${slurmArtifactStem(executionId, digest)}.err`),
   }
@@ -255,6 +374,8 @@ export function makeSshSlurmBackend(
   if (evidenceDirectory === "/") {
     throw new Error("remoteEvidenceDirectory must not be the filesystem root")
   }
+  const admittedProfile = resourceProfile(options.resourceProfile)
+  const enforceResourceProfile = options.resourceProfile !== undefined
   const sshProgram = options.sshProgram ?? "ssh"
   const runCommand = options.runCommand ?? defaultRunCommand
   const maxOutputBytes = options.maxOutputBytes ?? 4 * 1024 * 1024
@@ -291,6 +412,176 @@ export function makeSshSlurmBackend(
         signal,
       },
     )
+  }
+  async function verifySlurmAllocation(
+    jobId: string,
+    profile: SlurmResourceProfileV1,
+    releaseHeld: boolean,
+    signal?: AbortSignal,
+  ): Promise<number> {
+    const output = (await ssh(
+      `scontrol show job -o ${shellQuote(jobId)}`,
+      commandTimeoutMs,
+      signal,
+    )).stdout.trim()
+    const allocatedCpuMatch = /\bNumCPUs=(\d+)\b/.exec(output)
+    const requestedTresMatch = /\bReqTRES=([^\s]+)/.exec(output)
+    const allocatedTresMatch = /\bAllocTRES=([^\s]+)/.exec(output)
+    const requestedTres = requestedTresMatch?.[1] ?? ""
+    const allocatedTres = allocatedTresMatch?.[1] ?? ""
+    const requestedCpuMatch = /(?:^|,)cpu=(\d+)(?:,|$)/.exec(requestedTres)
+    const nodeMemoryMatch = /\bMinMemoryNode=(\d+[KMGTP]?)\b/i.exec(output)
+    const cpuMemoryMatch = /\bMinMemoryCPU=(\d+[KMGTP]?)\b/i.exec(output)
+    const timeMatch = /\bTimeLimit=([0-9:-]+)\b/.exec(output)
+    const restartMatch = /\bRestarts=(\d+)\b/.exec(output)
+    const requeueMatch = /\bRequeue=(\d+)\b/.exec(output)
+    const stateMatch = /\bJobState=([A-Z_]+)\b/.exec(output)
+    const reasonMatch = /\bReason=([A-Za-z0-9_]+)\b/.exec(output)
+    const allocatedCpus = allocatedCpuMatch ? Number.parseInt(allocatedCpuMatch[1]!, 10) : null
+    const requestedCpus = requestedCpuMatch ? Number.parseInt(requestedCpuMatch[1]!, 10) : null
+    const perNode = nodeMemoryMatch ? memoryBytes(nodeMemoryMatch[1]!) : null
+    const perCpu = cpuMemoryMatch ? memoryBytes(cpuMemoryMatch[1]!) : null
+    const allocatedMemory = perNode ?? (perCpu === null || allocatedCpus === null ? null : perCpu * allocatedCpus)
+    const requestedMemory = Math.ceil(profile.memoryBytes / (1024 * 1024)) * 1024 * 1024
+    const timeLimitSeconds = timeMatch ? slurmDurationSeconds(timeMatch[1]!) : null
+    const restartCount = restartMatch
+      ? Number.parseInt(restartMatch[1]!, 10)
+      : null
+    const gpuAllocated = !gpuResourcesAreZero(
+      requestedTres,
+      allocatedTres,
+      output,
+    )
+    if (
+      requestedTresMatch === null
+      || allocatedTresMatch === null
+      || requestedCpus !== profile.cpuCount
+      || allocatedCpus === null
+      || allocatedCpus < profile.cpuCount
+      || allocatedCpus > 2
+      || allocatedMemory === null
+      || allocatedMemory < requestedMemory
+      || allocatedMemory > 256 * 1024 * 1024
+      || timeLimitSeconds === null
+      || timeLimitSeconds < profile.timeSeconds
+      || timeLimitSeconds > 120
+      || restartCount === null
+      || !Number.isSafeInteger(restartCount)
+      || gpuAllocated
+      || requeueMatch?.[1] !== "1"
+      || (releaseHeld && stateMatch?.[1] !== "PENDING")
+      || (releaseHeld && reasonMatch?.[1] !== "JobHeldUser")
+    ) {
+      throw new Error("Slurm scheduler allocation does not match the admitted resource profile")
+    }
+    if (releaseHeld) {
+      await ssh(`scontrol release ${shellQuote(jobId)}`, commandTimeoutMs, signal)
+    }
+    return restartCount
+  }
+
+  function assertConfiguredResourceProfile(
+    execution: SubmittedSlurmExecution,
+  ): void {
+    if (!enforceResourceProfile) return
+    if (
+      execution.attemptIdentity === "legacy"
+      || execution.resourceProfile.cpuCount !== admittedProfile.cpuCount
+      || execution.resourceProfile.memoryBytes !== admittedProfile.memoryBytes
+      || execution.resourceProfile.timeSeconds !== admittedProfile.timeSeconds
+      || execution.resourceProfile.gpuCount !== admittedProfile.gpuCount
+    ) {
+      throw new Error("Slurm retained submission does not match the configured resource profile")
+    }
+  }
+
+  function recordRestartCount(
+    execution: SubmittedSlurmExecution,
+    restartCount: number,
+  ): void {
+    if (
+      !Number.isSafeInteger(restartCount)
+      || restartCount < 0
+      || restartCount < (execution.restartCount ?? 0)
+    ) {
+      throw new Error("Slurm restart count is invalid or moved backwards")
+    }
+    execution.restartCount = restartCount
+  }
+
+  function verifySlurmAccounting(
+    profile: SlurmResourceProfileV1,
+    schedulerState: string,
+    observedRunning: boolean,
+    allocatedCpuText: string,
+    requestedMemoryText: string,
+    timeLimitText: string,
+    restartText: string,
+    requestedTres: string,
+    allocatedTres: string,
+  ): number {
+    const allocatedCpus = /^\d+$/.test(allocatedCpuText)
+      ? Number.parseInt(allocatedCpuText, 10)
+      : null
+    const requestedCpuMatch = /(?:^|,)cpu=(\d+)(?:,|$)/.exec(requestedTres)
+    const requestedCpus = requestedCpuMatch
+      ? Number.parseInt(requestedCpuMatch[1]!, 10)
+      : null
+    const memoryMatch = /^(\d+[KMGTP]?)([cn]?)$/i.exec(requestedMemoryText)
+    const memoryUnitBytes = memoryMatch ? memoryBytes(memoryMatch[1]!) : null
+    const requestedReservationMemory =
+      memoryUnitBytes === null || requestedCpus === null
+        ? null
+        : memoryMatch?.[2]?.toLowerCase() === "c"
+          ? memoryUnitBytes * requestedCpus
+          : memoryUnitBytes
+    const allocatedTresHasMemory = /(?:^|,)mem=/.test(allocatedTres)
+    const allocatedTresMemoryMatch =
+      /(?:^|,)mem=(\d+[KMGTP]?)(?:,|$)/i.exec(allocatedTres)
+    const allocatedTresMemory = allocatedTresMemoryMatch
+      ? memoryBytes(allocatedTresMemoryMatch[1]!)
+      : null
+    const allocatedMemory =
+      allocatedTresMemory ?? requestedReservationMemory
+    const requestedMemory =
+      Math.ceil(profile.memoryBytes / (1024 * 1024)) * 1024 * 1024
+    const timeLimitSeconds = slurmDurationSeconds(timeLimitText)
+    const restartCount = /^\d+$/.test(restartText)
+      ? Number.parseInt(restartText, 10)
+      : null
+    const hasAllocation =
+      allocatedCpus !== null
+      && Number.isSafeInteger(allocatedCpus)
+      && allocatedCpus > 0
+    const allocationIsValid = hasAllocation
+      ? allocatedCpus >= profile.cpuCount
+        && allocatedCpus <= 2
+        && allocatedTres.length > 0
+        && !(allocatedTresHasMemory && allocatedTresMemory === null)
+        && allocatedMemory !== null
+        && Number.isSafeInteger(allocatedMemory)
+        && allocatedMemory >= requestedMemory
+        && allocatedMemory <= 256 * 1024 * 1024
+        && gpuResourcesAreZero("", allocatedTres, "")
+      : allocatedCpus === 0
+        && !observedRunning
+        && /^(?:CANCELLED|DEADLINE)/.test(schedulerState)
+        && gpuResourcesAreZero("", allocatedTres, "")
+    if (
+      requestedCpus !== profile.cpuCount
+      || requestedReservationMemory === null
+      || !Number.isSafeInteger(requestedReservationMemory)
+      || requestedReservationMemory !== requestedMemory
+      || timeLimitSeconds !== profile.timeSeconds
+      || restartCount === null
+      || !Number.isSafeInteger(restartCount)
+      || !requestedTres
+      || !gpuResourcesAreZero(requestedTres, "", "")
+      || !allocationIsValid
+    ) {
+      throw new Error("Slurm accounting does not match the admitted resource profile")
+    }
+    return restartCount
   }
 
   async function loadExecution(
@@ -372,20 +663,51 @@ export function makeSshSlurmBackend(
         evidenceDirectory,
         `submission-${submissionKey}.command.b64`,
       )
-      const encodedRequest = Buffer.from(retainedSubmission(request), "utf8").toString("base64")
+      const encodedRequest = Buffer.from(
+        retainedSubmission(
+          request,
+          admittedProfile,
+          enforceResourceProfile ? submissionAttemptToken : "legacy",
+        ),
+        "utf8",
+      ).toString("base64")
       if (Buffer.byteLength(encodedRequest, "utf8") + 1 > metadataOutputMaxBytes) {
         throw new Error("Slurm retained request metadata exceeds the transport limit")
       }
+      const metadataDigest = sha256(`${encodedRequest}\n`).slice("sha256:".length)
       const command = request.command.map(shellQuote).join(" ")
+      const runtimeMetadataPrefix = remotePath(
+        evidenceDirectory,
+        `slurm-${expectedRequestDigest.slice("sha256:".length)}-`,
+      )
+      const verifiedCommand = (
+        enforceResourceProfile
+          ? [
+            `metadata=${shellQuote(runtimeMetadataPrefix)}"$SLURM_JOB_ID"${shellQuote(".request.b64")}`,
+            `actual=$(sha256sum "$metadata"); actual=\${actual%% *}`,
+            `[ "$actual" = ${shellQuote(metadataDigest)} ] || exit 78`,
+            `exec ${command}`,
+          ]
+          : [`exec ${command}`]
+      ).join("; ")
       const submissionCommand = [
         `timeout ${commandTimeoutSeconds}s sbatch --parsable`,
+        ...(enforceResourceProfile
+          ? [
+            "--hold",
+            "--requeue",
+            `--cpus-per-task=${admittedProfile.cpuCount}`,
+            `--mem=${Math.ceil(admittedProfile.memoryBytes / (1024 * 1024))}M`,
+            `--time=${slurmTimeLimit(admittedProfile.timeSeconds)}`,
+          ]
+          : []),
         `--job-name=${shellQuote(jobName)}`,
         `--output=${shellQuote(remotePath(evidenceDirectory, `${slurmArtifactStem("%j", expectedRequestDigest)}.out`))}`,
         ...(request.workspace_ref
           ? [`--chdir=${shellQuote(request.workspace_ref)}`]
           : []),
         `--error=${shellQuote(remotePath(evidenceDirectory, `${slurmArtifactStem("%j", expectedRequestDigest)}.err`))}`,
-        `--wrap=${shellQuote(command)}`,
+        `--wrap=${shellQuote(verifiedCommand)}`,
       ].join(" ")
       const encodedSubmissionCommand = Buffer.from(
         submissionCommand,
@@ -546,6 +868,8 @@ export function makeSshSlurmBackend(
         execution = {
           request,
           requestDigest: expectedRequestDigest,
+          resourceProfile: admittedProfile,
+          attemptIdentity: enforceResourceProfile ? submissionAttemptToken : "legacy",
           stdoutPath: remotePath(
             evidenceDirectory,
             `${slurmArtifactStem(executionId, expectedRequestDigest)}.out`,
@@ -562,10 +886,39 @@ export function makeSshSlurmBackend(
           "Slurm request_id collision; existing execution remains owned by its original request",
         )
       }
+      if (
+        enforceResourceProfile
+        && execution.attemptIdentity !== receiptAttemptToken
+      ) {
+        throw new Error("Slurm retained submission identity does not match its receipt")
+      }
+      assertConfiguredResourceProfile(execution)
+      if (enforceResourceProfile) {
+        try {
+          recordRestartCount(
+            execution,
+            await verifySlurmAllocation(
+              executionId,
+              admittedProfile,
+              true,
+              context.signal,
+            ),
+          )
+        } catch (error: unknown) {
+          await ssh(
+            `scancel ${shellQuote(executionId)} 2>/dev/null || true`,
+            context.terminationGraceMs,
+          ).catch(() => undefined)
+          throw error
+        }
+      }
       return {
         executionId: durableExecutionHandle(executionId, execution.requestDigest),
         evidenceRefs: [
           `slurm://job/${durableExecutionHandle(executionId, execution.requestDigest)}/submitted`,
+          ...(execution.attemptIdentity === "legacy"
+            ? []
+            : [`slurm://job/${durableExecutionHandle(executionId, execution.requestDigest)}/attempt/${encodeURIComponent(execution.attemptIdentity)}/restart/${execution.restartCount}`]),
           `ssh://${sshTarget}${uriPath(receiptPath)}`,
           `ssh://${sshTarget}${uriPath(submissionCommandPath)}`,
           `ssh://${sshTarget}${uriPath(launchLogPath)}`,
@@ -575,6 +928,7 @@ export function makeSshSlurmBackend(
     async observe(executionId) {
       const identity = parseExecutionHandle(executionId)
       const execution = await loadExecution(executionId)
+      assertConfiguredResourceProfile(execution)
       const expectedJobName = slurmJobName(
         sshTarget,
         evidenceDirectory,
@@ -593,6 +947,16 @@ export function makeSshSlurmBackend(
       }
       if (activeState) {
         const state = classifyState(activeState)
+        if (enforceResourceProfile) {
+          recordRestartCount(
+            execution,
+            await verifySlurmAllocation(
+              identity.jobId,
+              admittedProfile,
+              false,
+            ),
+          )
+        }
         if (schedulerStateProvesExecution(activeState)) {
           execution.observedRunning = true
         }
@@ -609,8 +973,11 @@ export function makeSshSlurmBackend(
           }
         }
       }
+      const accountingFormat = enforceResourceProfile
+        ? "JobName,State,ExitCode,NodeList,AllocCPUS,ReqMem,Timelimit,Restarts,ReqTRES,AllocTRES"
+        : "JobName,State,ExitCode,NodeList"
       const result = await ssh(
-        `sacct -X -j ${shellQuote(identity.jobId)} --noheader --parsable2 --format=JobName,State,ExitCode,NodeList`,
+        `sacct -X -j ${shellQuote(identity.jobId)} --noheader --parsable2 --format=${accountingFormat}`,
       )
       const records = result.stdout
         .split("\n")
@@ -624,9 +991,31 @@ export function makeSshSlurmBackend(
         schedulerState = "UNKNOWN",
         exitCode = "",
         nodeList = "",
+        allocatedCpus = "",
+        requestedMemory = "",
+        timeLimit = "",
+        restartCount = "",
+        requestedTres = "",
+        allocatedTres = "",
       ] = records[0]!.split("|")
       if (accountingJobName !== expectedJobName) {
         throw new Error("Slurm execution handle no longer owns the scheduler job id")
+      }
+      if (enforceResourceProfile) {
+        recordRestartCount(
+          execution,
+          verifySlurmAccounting(
+            admittedProfile,
+            schedulerState,
+            execution.observedRunning === true,
+            allocatedCpus,
+            requestedMemory,
+            timeLimit,
+            restartCount,
+            requestedTres,
+            allocatedTres,
+          ),
+        )
       }
       const state = classifyState(schedulerState)
       if (schedulerStateProvesExecution(schedulerState)) {
