@@ -401,6 +401,19 @@ class SessionRunner:
             reason=reason,
         )
 
+    async def quiesce_module_runtime_for_shutdown(self) -> ModuleDisposal:
+        with self._product_session_lock:
+            runtime = self._module_runtime
+            prior = self._module_disposal
+        if runtime is None:
+            return prior or ModuleDisposal("confirmed_absent", (), ())
+        disposal = await asyncio.to_thread(runtime.close, "server_shutdown")
+        with self._product_session_lock:
+            if self._module_runtime is runtime:
+                self._module_runtime = None
+                self._module_disposal = disposal
+        return disposal
+
     def module_checkpoint_dependencies(self) -> dict[str, tuple[str, ...]]:
         captured = self._captured_runtime
         if captured is None:

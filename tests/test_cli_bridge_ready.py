@@ -2,9 +2,31 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from fastapi.testclient import TestClient
 
 from breadboard_engine.api.cli_bridge.app import create_app
 from breadboard_engine.api.cli_bridge.service import SessionService
+
+
+def test_app_shutdown_quiesces_runtime_owners(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = SessionService(state_root=tmp_path)
+    calls: list[str] = []
+
+    async def shutdown_runtime_owners() -> None:
+        calls.append("shutdown")
+
+    monkeypatch.setattr(
+        service,
+        "shutdown_runtime_owners",
+        shutdown_runtime_owners,
+    )
+
+    with TestClient(create_app(service)):
+        pass
+
+    assert calls == ["shutdown"]
 
 
 @pytest.mark.asyncio

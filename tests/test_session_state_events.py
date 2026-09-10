@@ -2647,6 +2647,36 @@ def test_module_input_kind_uses_durable_execution_after_runner_reconstruction() 
     ):
         runner.prepare_input_content("text")
 
+
+@pytest.mark.asyncio
+async def test_module_runtime_quiesces_on_server_shutdown() -> None:
+    record = SessionRecord(
+        session_id="retained-module-shutdown",
+        status=SessionStatus.RUNNING,
+    )
+    runner = SessionRunner(
+        session=record,
+        registry=SessionRegistry(),
+        request=SessionCreateRequest(task=""),
+    )
+    close_reasons: list[str] = []
+    disposal = SimpleNamespace(
+        status="confirmed_absent",
+        resource_refs=(),
+        pending_domain_refs=(),
+    )
+    runtime = SimpleNamespace(
+        close=lambda reason: close_reasons.append(reason) or disposal,
+    )
+    runner._module_runtime = runtime
+
+    result = await runner.quiesce_module_runtime_for_shutdown()
+
+    assert result is disposal
+    assert close_reasons == ["server_shutdown"]
+    assert runner._module_runtime is None
+    assert runner._module_disposal is disposal
+
 @pytest.mark.asyncio
 async def test_dispatcher_failure_drains_queue_and_rejects_future_events(
     tmp_path: Path,

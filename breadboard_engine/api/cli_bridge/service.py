@@ -4078,6 +4078,26 @@ class SessionService:
     async def list_sessions(self):
         return await self.registry.list()
 
+    async def shutdown_runtime_owners(self) -> None:
+        for record in await self.registry.records():
+            runner: SessionRunner | None = getattr(record, "runner", None)
+            if runner is None:
+                continue
+            try:
+                disposal = await runner.quiesce_module_runtime_for_shutdown()
+            except Exception:
+                logger.exception(
+                    "Failed to quiesce module runtime for Session %s",
+                    record.session_id,
+                )
+                continue
+            if disposal.status != "confirmed_absent":
+                logger.warning(
+                    "Module runtime cleanup remains unknown for Session %s: %s",
+                    record.session_id,
+                    disposal.resource_refs,
+                )
+
     async def list_session_records(
         self,
         session_id: str,
