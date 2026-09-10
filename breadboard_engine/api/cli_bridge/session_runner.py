@@ -668,13 +668,16 @@ class SessionRunner:
                 await asyncio.to_thread(captured.cleanup)
                 self._captured_runtime = None
             if disposal.status != "confirmed_absent":
+                metadata = dict(self.session.metadata or {})
+                metadata["module_cleanup"] = {
+                    "status": disposal.status,
+                    "resource_refs": list(disposal.resource_refs),
+                    "pending_domain_refs": list(disposal.pending_domain_refs),
+                }
+                self.session.metadata = metadata
                 await self.registry.update_metadata(
                     self.session.session_id,
-                    module_cleanup={
-                        "status": disposal.status,
-                        "resource_refs": list(disposal.resource_refs),
-                        "pending_domain_refs": list(disposal.pending_domain_refs),
-                    },
+                    metadata=metadata,
                 )
             return disposal
 
