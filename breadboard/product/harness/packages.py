@@ -467,6 +467,10 @@ class RuntimeDescriptor:
         if not commands:
             raise ModulePackageValidationError("runtime entrypoint must not be empty")
         object.__setattr__(self, "entrypoint", commands)
+        if self.kind == "oci" and commands != ("--stdio",):
+            raise ModulePackageValidationError(
+                "OCI bb.worker.v2 runtime entrypoint must be exactly ['--stdio']"
+            )
         if self.kind == "oci":
             if (
                 _OCI_CONFIG_ID.fullmatch(self.ref) is None

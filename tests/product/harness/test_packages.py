@@ -193,6 +193,28 @@ def test_package_refuses_unsupported_worker_protocol(tmp_path: Path) -> None:
     assert not (tmp_path / "bad.bbpkg").exists()
 
 
+def test_package_refuses_oci_worker_entrypoint_override(tmp_path: Path) -> None:
+    source = _write_source(tmp_path / "source", code=b"VALUE = 'ranker'\n")
+    manifest = json.loads((source / "module.json").read_text(encoding="utf-8"))
+    manifest["execution_tier"] = "enforced_isolated"
+    manifest["runtime"] = {
+        "kind": "oci",
+        "ref": _RUNTIME_REF,
+        "platform": "linux/arm64",
+        "entrypoint": ["breadboard-worker"],
+    }
+    (source / "module.json").write_bytes(canonical_json_bytes(manifest))
+
+    with pytest.raises(
+        ModulePackageValidationError,
+        match=r"OCI bb\.worker\.v2 runtime entrypoint must be exactly",
+    ):
+        build_module_package(
+            source, tmp_path / "bad.bbpkg", cas=FilesystemCAS(tmp_path / "cas")
+        )
+    assert not (tmp_path / "bad.bbpkg").exists()
+
+
 def test_package_refuses_entrypoints_the_worker_cannot_load(tmp_path: Path) -> None:
     invalid = {
         "missing-symbol-separator": (
