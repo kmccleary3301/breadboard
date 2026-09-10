@@ -107,7 +107,7 @@ def test_task_execution_recovers_persisted_todo_snapshot(tmp_path: Path) -> None
         session=SessionRecord(session_id="todo-recovery", status=SessionStatus.RUNNING),
         registry=SessionRegistry(),
         request=SessionCreateRequest(
-            config_path="agent_configs/atp_hilbert_like_gpt54_v1.yaml"
+            config_path="agent_configs/research/atp_hilbert_like_gpt54_v1.yaml"
         ),
     )
 

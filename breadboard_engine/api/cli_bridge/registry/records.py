@@ -42,7 +42,7 @@ from ..models import (
     SessionSummary,
     TurnAdmission,
 )
-from breadboard.modules.author import CheckpointEnvelope, ModuleInput
+from breadboard.modules.author import CheckpointProposal, ModuleInput
 from breadboard.modules.authority import AdmissionGrant
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime.generations import GenerationAdmission
@@ -430,7 +430,7 @@ class SessionRecord:
     module_grant: AdmissionGrant | None = None
     module_execution: ModuleExecutionRecord | None = None
     generation_admission: GenerationAdmission | None = None
-    module_resume_checkpoints: Dict[str, CheckpointEnvelope] = field(
+    module_resume_checkpoints: Dict[str, CheckpointProposal] = field(
         default_factory=dict,
         repr=False,
     )

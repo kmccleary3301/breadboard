@@ -82,7 +82,7 @@ def _valid_v2_lane() -> dict[str, Any]:
             "upstream_commit": "9582ad480f687bbeaf0025852ac4f020b07f20bb",
             "upstream_commit_date": "2026-03-05T00:25:31Z",
             "upstream_release_label": "claude-code@snapshot-2026-03-04",
-            "source_paths": ["agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml"],
+            "source_paths": ["agent_configs/deprecated/2026-03-06/claude_code_2-1-63_e4_3-6-2026.yaml"],
         },
         "acceptance": {
             "behavior_family": "replay_capture",
@@ -205,7 +205,7 @@ def _v1_lane() -> dict[str, Any]:
                 "upstream_commit": "9582ad480f687bbeaf0025852ac4f020b07f20bb",
                 "upstream_commit_date": "2026-03-05T00:25:31Z",
                 "upstream_release_label": "claude-code@snapshot-2026-03-04",
-                "source_paths": ["agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml"],
+                "source_paths": ["agent_configs/deprecated/2026-03-06/claude_code_2-1-63_e4_3-6-2026.yaml"],
                 "assertions": [{"id": "target_config_present", "description": "target config is present"}],
             },
         },

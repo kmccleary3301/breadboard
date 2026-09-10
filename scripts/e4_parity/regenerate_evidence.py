@@ -283,8 +283,8 @@ STAGES: tuple[Stage, ...] = (
         depends_on=("source_index",),
         reads=(
             # Workspace-level tool defs consumed by the self-capture session's agent
-            # config (agent_configs/atp_hilbert_like_gpt54_v1.yaml resolves
-            # ../implementations/tools/defs against the execution root). Without this
+            # config (agent_configs/research/atp_hilbert_like_gpt54_v1.yaml resolves
+            # ../../implementations/tools/defs against the execution root). Without this
             # seed the candidate session silently falls back to the full built-in tool
             # registry, changing rendered prompt bytes and staling kernel-event pins.
             "../implementations/tools/defs",

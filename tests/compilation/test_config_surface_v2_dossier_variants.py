@@ -12,34 +12,28 @@ from breadboard_engine.compilation import v2_loader
 ROOT = Path(__file__).resolve().parents[2]
 DOSSIER_ONLY_TOP_LEVEL = {"profile", "tool_packs", "tool_bindings", "terminal_sessions"}
 ORIGINAL_HASHES = {
-    "agent_configs/codex_0-107-0_e4_3-6-2026.yaml": "sha256:2e2ba957f396b8dbc7d5adb4b35d6ccaccf322d21b792bafe1d996ec0d661768",
-    "agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml": "sha256:d940ce0063528bad25c0692970a9ab567300a9ff39d056f46a5c70966997f072",
-    "agent_configs/opencode_1-2-17_e4_3-6-2026.yaml": "sha256:0ddc16b9d3567a4be4e4dfe8a16f75f31d2a24c2abab3344692a508e3f224ff2",
-    "agent_configs/oh_my_opencode_3-10-0_e4_3-6-2026.yaml": "sha256:70b2095d04b4a5ae81491ef2cfe5b0ebc3445b51c643d6a9d972cac347bb5a47",
+    "agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml": "sha256:2e2ba957f396b8dbc7d5adb4b35d6ccaccf322d21b792bafe1d996ec0d661768",
+    "agent_configs/deprecated/2026-03-06/claude_code_2-1-63_e4_3-6-2026.yaml": "sha256:d940ce0063528bad25c0692970a9ab567300a9ff39d056f46a5c70966997f072",
+    "agent_configs/deprecated/2026-03-06/opencode_1-2-17_e4_3-6-2026.yaml": "sha256:0ddc16b9d3567a4be4e4dfe8a16f75f31d2a24c2abab3344692a508e3f224ff2",
+    "agent_configs/deprecated/2026-03-06/oh_my_opencode_3-10-0_e4_3-6-2026.yaml": "sha256:70b2095d04b4a5ae81491ef2cfe5b0ebc3445b51c643d6a9d972cac347bb5a47",
 }
 VARIANT_PAIRS = [
     (
-        "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
-        "agent_configs/v2/codex_0-107-0_e4_3-6-2026.yaml",
+        "agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
+        "agent_configs/deprecated/2026-03-06/v2/codex_0-107-0_e4_3-6-2026.yaml",
     ),
     (
-        "agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml",
-        "agent_configs/v2/claude_code_2-1-63_e4_3-6-2026.yaml",
+        "agent_configs/deprecated/2026-03-06/claude_code_2-1-63_e4_3-6-2026.yaml",
+        "agent_configs/deprecated/2026-03-06/v2/claude_code_2-1-63_e4_3-6-2026.yaml",
     ),
     (
-        "agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
-        "agent_configs/v2/opencode_1-2-17_e4_3-6-2026.yaml",
+        "agent_configs/deprecated/2026-03-06/opencode_1-2-17_e4_3-6-2026.yaml",
+        "agent_configs/deprecated/2026-03-06/v2/opencode_1-2-17_e4_3-6-2026.yaml",
     ),
     (
-        "agent_configs/oh_my_opencode_3-10-0_e4_3-6-2026.yaml",
-        "agent_configs/v2/oh_my_opencode_3-10-0_e4_3-6-2026.yaml",
+        "agent_configs/deprecated/2026-03-06/oh_my_opencode_3-10-0_e4_3-6-2026.yaml",
+        "agent_configs/deprecated/2026-03-06/v2/oh_my_opencode_3-10-0_e4_3-6-2026.yaml",
     ),
-]
-OLD_ROOT_VARIANTS = [
-    "agent_configs/codex_0-107-0_e4_3-6-2026_v2.yaml",
-    "agent_configs/claude_code_2-1-63_e4_3-6-2026_v2.yaml",
-    "agent_configs/opencode_1-2-17_e4_3-6-2026_v2.yaml",
-    "agent_configs/oh_my_opencode_3-10-0_e4_3-6-2026_v2.yaml",
 ]
 
 
@@ -81,6 +75,3 @@ def test_v2_dossier_variant_keeps_original_public_dossier_byte_frozen(original: 
     assert (ROOT / variant).is_file()
 
 
-@pytest.mark.parametrize("old_root_variant", OLD_ROOT_VARIANTS)
-def test_v2_dossier_variant_removes_old_root_level_duplicate(old_root_variant: str) -> None:
-    assert not (ROOT / old_root_variant).exists()

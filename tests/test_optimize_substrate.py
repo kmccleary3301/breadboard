@@ -20,7 +20,7 @@ def _build_target() -> OptimizationTarget:
         target_id="target.codex_dossier",
         target_kind="agent_config_overlay",
         baseline_artifact_refs=[
-            ArtifactRef(ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml", media_type="text/yaml")
+            ArtifactRef(ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml", media_type="text/yaml")
         ],
         mutable_loci=[
             MutableLocus(

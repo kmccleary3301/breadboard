@@ -791,11 +791,10 @@ def _resolve_start_lock(
     lock_path = context.resolve_path(request.lock_id)
     lock, metadata_path = load_lock(lock_path, context.workspace, explicit=True)
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    materialized = None
     if lock["schema_version"] == LOCK_SCHEMA_VERSION:
         cas = FilesystemCAS(context.workspace / ".breadboard" / "module-artifacts")
         try:
-            materialized = materialize_lock(lock, cas=cas)
+            materialize_lock(lock, cas=cas)
         finally:
             cas.close()
     source_ref = metadata.get("source_ref")
@@ -805,21 +804,6 @@ def _resolve_start_lock(
     if not context.contained and not Path(source_ref).is_absolute():
         source_reference = context.workspace / source_ref
     source_path = context.resolve_path(source_reference)
-    if materialized is not None:
-        retained = materialized.source_bytes.get(str(source_ref))
-        if isinstance(retained, bytes) and source_path.read_bytes() != retained:
-            return (
-                None,
-                source_path,
-                OperationResult.failure(
-                    ["session", "start"],
-                    6,
-                    "lock_drift",
-                    "harness source no longer matches the retained Lock",
-                    failed_stage="session.lock",
-                    refs=[portable_ref(lock_path, context.workspace)],
-                ),
-            )
     return (
         lock,
         source_path,

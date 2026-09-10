@@ -289,11 +289,11 @@ def default_request_body_cases() -> Iterable[Dict[str, Any]]:
         },
         {
             "id": "codex_cli",
-            "config_path": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+            "config_path": "agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml",
         },
         {
             "id": "codex_cli_multiline",
-            "config_path": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+            "config_path": "agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml",
             "user_prompt": "Hello from compat harness.\n\nPlease keep responses brief.",
         },
         {

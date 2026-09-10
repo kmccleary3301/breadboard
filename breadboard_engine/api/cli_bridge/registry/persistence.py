@@ -47,7 +47,7 @@ from .records import (
     identity_digest,
     submission_body_digest,
 )
-from breadboard.modules.author import CheckpointEnvelope, ModuleInput
+from breadboard.modules.author import CheckpointEnvelope, CheckpointProposal, ModuleInput
 from breadboard.modules.authority import AdmissionGrant
 from breadboard.modules.transport import (
     MAX_CHECKPOINT_BYTES,
@@ -353,19 +353,21 @@ def _serialize_worker_cleanup(
 
 
 def _serialize_resume_checkpoints(
-    checkpoints: Mapping[str, CheckpointEnvelope],
+    checkpoints: Mapping[str, CheckpointProposal],
 ) -> Dict[str, Dict[str, Any]]:
     if not isinstance(checkpoints, Mapping) or len(checkpoints) > 64:
         raise ValueError("module resume checkpoints are invalid")
     result: Dict[str, Dict[str, Any]] = {}
-    for binding, envelope in checkpoints.items():
+    for binding, proposal in checkpoints.items():
         if (
             not isinstance(binding, str)
             or not binding
-            or not isinstance(envelope, CheckpointEnvelope)
+            or not isinstance(proposal, CheckpointProposal)
         ):
             raise ValueError("module resume checkpoint entry is invalid")
+        envelope = proposal.payload
         result[binding] = {
+            "declared_at_sequence": proposal.declared_at_sequence,
             "source_generation_id": envelope.source_generation_id,
             "source_module_id": envelope.source_module_id,
             "source_instance_id": envelope.source_instance_id,
@@ -377,12 +379,13 @@ def _serialize_resume_checkpoints(
     return result
 
 
-def _deserialize_resume_checkpoints(value: Any) -> Dict[str, CheckpointEnvelope]:
+def _deserialize_resume_checkpoints(value: Any) -> Dict[str, CheckpointProposal]:
     if value is None:
         return {}
     if not isinstance(value, dict) or len(value) > 64:
         raise ValueError("retained module resume checkpoints are invalid")
     fields = {
+        "declared_at_sequence",
         "source_generation_id",
         "source_module_id",
         "source_instance_id",
@@ -391,7 +394,7 @@ def _deserialize_resume_checkpoints(value: Any) -> Dict[str, CheckpointEnvelope]
         "schema_id",
         "body",
     }
-    result: Dict[str, CheckpointEnvelope] = {}
+    result: Dict[str, CheckpointProposal] = {}
     for binding, item in value.items():
         if (
             not isinstance(binding, str)
@@ -400,14 +403,17 @@ def _deserialize_resume_checkpoints(value: Any) -> Dict[str, CheckpointEnvelope]
             or set(item) != fields
         ):
             raise ValueError("retained module resume checkpoint entry is invalid")
-        result[binding] = CheckpointEnvelope(
-            source_generation_id=item["source_generation_id"],
-            source_module_id=item["source_module_id"],
-            source_instance_id=item["source_instance_id"],
-            source_work_id=item["source_work_id"],
-            source_attempt_id=item["source_attempt_id"],
-            schema_id=item["schema_id"],
-            body=decode_bytes(item["body"], maximum=MAX_CHECKPOINT_BYTES),
+        result[binding] = CheckpointProposal(
+            CheckpointEnvelope(
+                source_generation_id=item["source_generation_id"],
+                source_module_id=item["source_module_id"],
+                source_instance_id=item["source_instance_id"],
+                source_work_id=item["source_work_id"],
+                source_attempt_id=item["source_attempt_id"],
+                schema_id=item["schema_id"],
+                body=decode_bytes(item["body"], maximum=MAX_CHECKPOINT_BYTES),
+            ),
+            declared_at_sequence=item["declared_at_sequence"],
         )
     return result
 

@@ -134,16 +134,16 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
         "ref": "AM27/AM28",
     },
     "https://breadboard.dev/contracts/public/schemas/bb.public_session_event.v1.schema.json": {
-        "packet": "DSH-W9",
-        "sha256": "0701e9d0e1976b4ea70e753806e75b048d57a69c79531407bd10a5aca346fc51",
+        "packet": "bb-lrmt",
+        "sha256": "05337b45813fce0ab46a6153ef52d355dbfef6d5ff48081c06c478fef0ef99ae",
         "class": "plan_mandated_evolution",
-        "ref": "AM26/AM27/AM28",
+        "ref": "AM26/AM27/AM28/AM31",
     },
     "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json": {
-        "packet": "DSH-W9",
-        "sha256": "d1639ccd31931c7b82d02b57bd8ba29c6e85c145bccfe06dea3efa54b7c57328",
+        "packet": "bb-lrmt",
+        "sha256": "512790b2cd64e085c78051f9b44eb3eb35d21295df80f83db2371de215b5183a",
         "class": "plan_mandated_evolution",
-        "ref": "AM28",
+        "ref": "AM28/AM31",
     },
     "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.annotation.v1.schema.json": {
         "packet": "DSH-W9",
@@ -182,8 +182,8 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
         "ref": "AM30",
     },
     "https://breadboard.dev/contracts/public/schemas/bb.module_manifest.v1.schema.json": {
-        "packet": "bb-xh49.1",
-        "sha256": "5d8e51e7e68ebe80e89629565910dea14c5b2f4f4b970844fde1bb861575bcc7",
+        "packet": "bb-lrmt",
+        "sha256": "b9d5a6a68a9128ddc73b07ca389ba056aa179a3573219e2056af995794467f0e",
         "class": "plan_mandated_evolution",
         "ref": "AM31",
     },

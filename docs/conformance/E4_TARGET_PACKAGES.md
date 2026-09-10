@@ -1,41 +1,43 @@
-# E4 Target Packages
+# E4 target packages
 
-BreadBoard's versioned E4 snapshot configs are now expected to point at tracked target packages
-under `config/e4_targets/`.
+BreadBoard publishes six current E4 family entries at the top level of
+`agent_configs/`. The `2026-09-10` filename date records the catalog refresh, not the
+upstream capture date. Exact source versions and claim limits remain explicit in each
+file and in `agent_configs/README.md`.
 
-Why this exists:
+## Current sources
 
-- A tiny overlay file is good for freezing a replay lane, but bad for understanding a target harness.
-- The target package is the human-readable dossier: prompts, reference material, common policies,
-  and the shared runtime/tool substrate for a particular upstream harness version.
-- The versioned `agent_configs/*__<snapshot>.yaml` files remain the machine-facing frozen lanes.
+| Family | Accepted source | Package or source asset |
+|---|---|---|
+| Codex CLI | 0.139.0 with `gpt-5.5`; read-only capture probe | `config/e4_targets/codex/0.139.0/` |
+| Claude Code | 2.1.63 static-package/replay capture | `config/e4_targets/claude_code/2.1.63/` |
+| OpenCode | 1.2.17 static-package/replay capture | `config/e4_targets/opencode/1.2.17/` |
+| oh-my-opencode | 3.10.0, commit `5137df72d8fab3fec609c82f91387db8e3b13825` | `config/e4_targets/oh_my_opencode/3.10.0/` |
+| Oh My Pi | `@oh-my-pi/pi-coding-agent@16.2.13`, commit `5356713eae60e67ee64d9b02e3b5e377d248ee7f` | `config/e4_targets/oh_my_pi/16.2.13/` |
+| Pi | `@mariozechner/pi-coding-agent@0.57.1` | `config/e4_targets/pi/0.57.1/` |
 
-As of the March 6, 2026 reorg, the top-level `agent_configs/` surface is reserved for the
-latest public standalone dossiers for the big four harnesses. Those files should be readable
-front doors, heavily commented, and should not rely on `extends`.
+The Codex labels identify different evidence scopes. The 0.107.0 directory is the
+historical GPT-5.1 package snapshot; 0.110.0 collaboration fixtures are historical
+replay evidence; 0.139.0 with GPT-5.5 is the accepted read-only capture lane. None may
+be relabeled as another.
 
-Current packaged targets:
+## Package forms
 
-- `config/e4_targets/codex/0.107.0/` — package snapshot for the GPT-5.1 Codex Mini lane family; newer Codex evidence keeps its own version label instead of renaming this directory.
-- `config/e4_targets/claude_code/2.1.63/`
-- `config/e4_targets/opencode/1.2.17/`
-- `config/e4_targets/oh_my_opencode/3.10.0/`
+Oh My Pi and Pi are installed target packages. Their `target.json` files use
+`bb.e4.target.v1`; their `harness.yaml` files use `bb.e4.target_config.v1`. Load them
+through `breadboard_engine.e4_targets.load_e4_target`. Their top-level catalog files
+are readable target-config projections, not BreadBoard agent-config CLI inputs.
 
-Codex version labels:
+Codex, Claude Code, OpenCode, and oh-my-opencode use standalone BreadBoard agent
+configs backed by tracked prompt/reference packages. The Codex 0.139.0 package
+intentionally contains only the exact prompt source needed by the accepted probe; it
+does not fabricate an installed-target descriptor or a broad parity profile.
 
-- package snapshot: `config/e4_targets/codex/0.107.0/`
-- collaboration replay evidence: Codex CLI 0.110.0 fixtures under
-  `docs/conformance/e4_recalibration_evidence/codex_subagent_*_20260306_v0110/`
-- accepted C4 lane pin: Codex CLI 0.139.0 with model `gpt-5.5`, recorded in
-  `docs/conformance/e4_lane_inventory.json` and `config/e4_target_freeze_manifest.yaml`
+## Rules
 
-Design rules:
-
-1. Keep package assets tracked in-repo; do not rely on gitignored `industry_coder_refs/` paths.
-2. Keep scenario-specific replay assertions in the versioned overlay config.
-3. Keep the package YAML explicit enough that a reader can inspect the core harness substrate
-   without chasing hidden defaults.
-4. When upstream harnesses move, mint a new package version instead of mutating the old one.
-5. Public top-level dossiers should follow
-   [E4_DOSSIER_STYLE_GUIDE_V1.md](/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo/docs/conformance/E4_DOSSIER_STYLE_GUIDE_V1.md)
-   and remain explanatory, not just executable.
+1. Keep package assets tracked in-repo; do not rely on ignored source trees.
+2. Preserve historical dossiers byte-for-byte under `agent_configs/deprecated/`.
+3. Keep scenario-specific replay assertions in overlays under `agent_configs/misc/`.
+4. Mint a new package version when upstream source changes.
+5. State capture-only, replay-only, and unsupported surfaces without broadening them.
+6. Follow [the dossier style guide](E4_DOSSIER_STYLE_GUIDE_V1.md) for public files.

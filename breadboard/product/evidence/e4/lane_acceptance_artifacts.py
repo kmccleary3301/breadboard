@@ -439,7 +439,7 @@ def emit_self_runtime_records(
             tempfile.TemporaryDirectory(prefix="bb-self-capture-workspace-", dir=workspace_parent) as workspace_tmp,
         ):
             agent = AgenticCoder(
-                "agent_configs/atp_hilbert_like_gpt54_v1.yaml",
+                "agent_configs/research/atp_hilbert_like_gpt54_v1.yaml",
                 workspace_tmp,
                 {
                     "providers.default_model": "mock/no_tool",

@@ -158,92 +158,6 @@ def test_checkpoint_refuses_unsettled_owned_operation() -> None:
 
 
 @pytest.mark.asyncio
-async def test_adoption_preparation_carries_the_owning_product_session(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path,
-) -> None:
-    source_generation = "sha256:" + "a" * 64
-    target_generation = "sha256:" + "b" * 64
-    product_session = Session.start(
-        EffectiveHarnessLock._from_record({"graph_hash": source_generation}),
-        "checkpoint adoption",
-        session_id="session-1",
-    )
-    record = SessionRecord(
-        session_id="session-1",
-        status=SessionStatus.RUNNING,
-        module_execution=ModuleExecutionRecord(
-            target_generation,
-            "root",
-            "work-b",
-            "attempt-b",
-        ),
-        module_grant=AdmissionGrant("grant-b", 2, AuthorityDeclaration()),
-        product_session=product_session,
-    )
-
-    class TargetLock:
-        generation_id = target_generation
-
-        def __getitem__(self, key):
-            assert key == "modules"
-            return {"bindings": {"root": "target.module"}}
-
-    captured = SimpleNamespace(
-        materialization=SimpleNamespace(lock=TargetLock(), packages={})
-    )
-    runner = SessionRunner.__new__(SessionRunner)
-    runner.session = record
-    runner.registry = SimpleNamespace()
-    runner._module_storage_root = tmp_path / "modules"
-    runner._durable_child_repository = SimpleNamespace()
-    runner._workspace_path = tmp_path
-    runner._loop = asyncio.get_running_loop()
-    runner._product_session_lock = threading.RLock()
-    source_checkpoint = CheckpointEnvelope(
-        source_generation,
-        "source.module",
-        "instance-a",
-        "work-a",
-        "attempt-a",
-        "state.v1",
-        b"state",
-    )
-
-    def prepare(candidate, checkpoints, dependencies):
-        assert candidate.record.product_session is product_session
-        assert checkpoints == {"root": source_checkpoint}
-        assert dependencies == {"root": ("source.contract",)}
-        return {"root": source_checkpoint}, (
-            {
-                "binding": "root",
-                "disposition": "compatible",
-                "source_schema_id": "state.v1",
-                "target_schema_id": "state.v1",
-                "reason": "",
-            },
-        )
-
-    monkeypatch.setattr(ModuleRuntime, "prepare_checkpoint_adoption", prepare)
-    monkeypatch.setattr(
-        ModuleRuntime,
-        "close",
-        lambda *_args, **_kwargs: ModuleDisposal("confirmed_absent", (), ()),
-    )
-
-    resumed, decisions = await runner.prepare_adopted_module_checkpoints(
-        captured_runtime=captured,
-        module_execution=record.module_execution,
-        module_grant=record.module_grant,
-        source_checkpoints={"root": source_checkpoint},
-        source_dependencies={"root": ("source.contract",)},
-    )
-
-    assert resumed == {"root": source_checkpoint}
-    assert decisions[0]["disposition"] == "compatible"
-
-
-@pytest.mark.asyncio
 async def test_source_runtime_is_confirmed_absent_before_adoption_commit() -> None:
     generation = "sha256:" + "a" * 64
     product_session = Session.start(
@@ -293,16 +207,17 @@ async def test_source_runtime_is_confirmed_absent_before_adoption_commit() -> No
         "state.v1",
         b"state",
     )
+    proposal = CheckpointProposal(checkpoint, 0)
 
     disposal = await runner.dispose_source_runtime_for_adoption(
-        {"root": checkpoint}
+        {"root": proposal}
     )
 
     assert disposal.status == "confirmed_absent"
     assert runner._module_runtime is None
     assert record.module_execution is not None
     assert record.module_execution.workers == ()
-    assert record.module_resume_checkpoints == {"root": checkpoint}
+    assert record.module_resume_checkpoints == {"root": proposal}
     assert persisted
 
 
@@ -346,9 +261,9 @@ def test_graph_checkpoint_retains_dependency_and_owner_frontier(tmp_path) -> Non
         checkpoint_id="checkpoint-1",
     )
 
-    payload, envelopes = _decode_graph_checkpoint(checkpoint)
+    payload, proposals = _decode_graph_checkpoint(checkpoint)
 
-    assert envelopes == {"root": root}
+    assert proposals == {"root": CheckpointProposal(root, 0)}
     assert payload["bindings"][0]["dependencies"] == ["ranking.contract.v1"]
     assert payload["operation_frontier"] == {
         "children": [],

@@ -14,6 +14,9 @@ from importlib import resources
 from pathlib import Path
 from typing import Callable, Literal, Mapping
 
+from breadboard.modules.transport import WireMessage, iter_message_frames
+
+
 AUTHOR_FRAME_MAX_BYTES = 262_144
 _STDERR_LIMIT = 64 * 1024
 _NOTICE_PREFIX = b"BREADBOARD_AUTHOR_"
@@ -335,11 +338,17 @@ class AuthorWorker:
     def diagnostics(self) -> str:
         return "\n".join(self._notices.diagnostics)
 
-    def send_frame(self, body: bytes) -> None:
+    def send_message(
+        self,
+        message: WireMessage,
+        *,
+        max_bytes: int = AUTHOR_FRAME_MAX_BYTES,
+    ) -> None:
         with self._write_lock:
             if self._cleanup is not None:
                 raise RuntimeError("author channel is closed")
-            _send(self._process, body)
+            for frame in iter_message_frames(message, max_bytes=max_bytes):
+                _send(self._process, frame)
 
     def receive_frame(self, timeout_seconds: float | None = None) -> bytes | None:
         if timeout_seconds is not None and (not math.isfinite(timeout_seconds) or timeout_seconds < 0):

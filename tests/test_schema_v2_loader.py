@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import pytest
@@ -50,7 +49,7 @@ long_running:
     )
 
     monkeypatch.setenv("AGENT_SCHEMA_V2_ENABLED", "1")
-    os.chdir(tmp_path)
+    monkeypatch.chdir(tmp_path)
     conf = load_agent_config(str(child))
     assert conf["version"] == 2
     assert conf["tools"]["registry"]["paths"] == ["implementations/tools/defs"]
@@ -62,7 +61,7 @@ long_running:
 @pytest.mark.parametrize(
     ("config_relpath", "expected_tool"),
     (
-        ("agent_configs/codex_0-107-0_e4_3-6-2026.yaml", "shell_command"),
+        ("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml", "shell_command"),
         ("agent_configs/misc/claude_code_haiku45_c_fs_v2.yaml", "Bash"),
     ),
 )

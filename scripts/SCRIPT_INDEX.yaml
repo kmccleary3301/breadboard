@@ -137,7 +137,7 @@ entries:
   - path: scripts/breadboard_cli.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/quality/build_surface_inventory.py, scripts/quality/run_i6_installed_differential.py, tests/test_breadboard_cli_g2.py, tests/test_public_binding_parity.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/quality/build_surface_inventory.py, tests/test_public_binding_parity.py]
     expiry: none (durable tooling)
   - path: scripts/build_atp_hilbert_arm_audit_v1.py
     class: live-wired
@@ -174,6 +174,16 @@ entries:
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, tests/test_build_atp_invalid_extract_ledger_v1.py]
     expiry: none (durable tooling)
+  - path: scripts/build_author_worker_helper.py
+    class: campaign
+    owner: kmccleary3301
+    callers: []  # operator-invoked; purpose documented by module docstring
+    expiry: archive-when-campaign-closes
+  - path: scripts/build_author_worker_image.py
+    class: campaign
+    owner: kmccleary3301
+    callers: []  # operator-invoked; purpose documented by module docstring
+    expiry: archive-when-campaign-closes
   - path: scripts/build_darwin_bootstrap_rollup_v0.py
     class: live-wired
     owner: kmccleary3301

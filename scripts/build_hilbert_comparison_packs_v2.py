@@ -293,7 +293,7 @@ def _build_manifest(pack_name: str, tasks: List[Dict[str, Any]]) -> Dict[str, An
             "cost_cap_usd": 10.0,
         },
         "systems": [
-            {"system_id": "bb_hilbert_like", "config_ref": "agent_configs/atp_hilbert_like_gpt54_v2.yaml"},
+            {"system_id": "bb_hilbert_like", "config_ref": "agent_configs/research/atp_hilbert_like_gpt54_v2.yaml"},
             {"system_id": "hilbert_roselab", "config_ref": "other_harness_refs/ml-hilbert"},
         ],
         "acceptance": {

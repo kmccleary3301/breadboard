@@ -189,7 +189,7 @@ breadboard harness explain ./composition.yaml
 breadboard harness lock ./composition.yaml
 ```
 
-Explicit Lock execution never follows later publications. Target execution atomically pins the current published revision:
+Explicit Lock execution uses captured bytes, even if the original Definition has changed or been removed. Run a Lock path directly, or select it with `--lock`; running a mutable Definition without `--lock` still refuses drift. Each `harness run` invocation creates a new admission request. Target execution atomically pins the current published revision:
 
 ```bash
 breadboard harness publish main --lock ./composition.lock.json --expected-revision 0 --request-id publish-main-1

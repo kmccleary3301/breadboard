@@ -62,7 +62,6 @@ from breadboard.product.runtime import (
 from breadboard.product.runtime.events import GenerationAdoptionError
 from breadboard.modules import (
     AdmissionGrant,
-    CheckpointEnvelope,
     CheckpointProposal,
     CheckpointRefusal,
     InputEnvelope,
@@ -105,7 +104,7 @@ class SessionRunner:
         captured_runtime: CapturedRuntimeConfig | None = None,
         storage_root: Path | None = None,
         repository: Any | None = None,
-        resume_checkpoints: Mapping[str, CheckpointEnvelope] | None = None,
+        resume_checkpoints: Mapping[str, CheckpointProposal] | None = None,
     ) -> None:
         self.session = session
         self.registry = registry
@@ -474,9 +473,9 @@ class SessionRunner:
         captured_runtime: CapturedRuntimeConfig,
         module_execution: ModuleExecutionRecord,
         module_grant: AdmissionGrant,
-        source_checkpoints: Mapping[str, CheckpointEnvelope],
+        source_checkpoints: Mapping[str, CheckpointProposal],
         source_dependencies: Mapping[str, tuple[str, ...]],
-    ) -> tuple[dict[str, CheckpointEnvelope], tuple[dict[str, str], ...]]:
+    ) -> tuple[dict[str, CheckpointProposal], tuple[dict[str, str], ...]]:
         if self._module_storage_root is None or self._durable_child_repository is None:
             raise ModuleExecutionError(
                 "checkpoint_unavailable",
@@ -549,7 +548,7 @@ class SessionRunner:
 
     async def dispose_source_runtime_for_adoption(
         self,
-        source_checkpoints: Mapping[str, CheckpointEnvelope],
+        source_checkpoints: Mapping[str, CheckpointProposal],
     ) -> ModuleDisposal:
         with self._product_session_lock:
             runtime = self._module_runtime
@@ -634,7 +633,7 @@ class SessionRunner:
         module_execution: ModuleExecutionRecord,
         module_grant: AdmissionGrant,
         generation_admission: GenerationAdmission,
-        resume_checkpoints: Mapping[str, CheckpointEnvelope],
+        resume_checkpoints: Mapping[str, CheckpointProposal],
     ) -> ModuleDisposal:
         with self._product_session_lock:
             previous_runtime = self._module_runtime

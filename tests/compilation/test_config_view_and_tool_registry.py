@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 from breadboard_engine.compilation import v2_loader
 from breadboard_engine.compilation.tool_registry import guardrail_names_for, load_tool_registry
@@ -24,9 +25,21 @@ CONFIG_PARITY_CASES = [
     ),
 ]
 
+
+def _is_active_agent_config(path: Path) -> bool:
+    if "deprecated" in path.relative_to(ROOT / "agent_configs").parts:
+        return False
+    document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return not (
+        isinstance(document, dict)
+        and document.get("schema_version") == "bb.e4.target_config.v1"
+    )
+
+
 ALL_AGENT_CONFIGS = [
     pytest.param(path, id=str(path.relative_to(ROOT)))
     for path in sorted((ROOT / "agent_configs").glob("**/*.yaml"))
+    if _is_active_agent_config(path)
 ]
 
 

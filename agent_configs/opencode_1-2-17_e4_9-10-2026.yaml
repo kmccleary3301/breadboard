@@ -1,0 +1,308 @@
+# OpenCode E4 reference config
+# Captured against OpenCode 1.2.17 and calibrated using the canonical MVI replay lane.
+# Catalog refreshed 2026-09-10; the profile name below retains the capture-era date.
+# This file is fully standalone by design: no `extends`, no hidden prompt refs, and no gitignored assets.
+# Scenario-specific OpenCode replay lanes remain available under `agent_configs/misc/`.
+# Local reference material lives under `../config/e4_targets/opencode/1.2.17/`.
+#
+# +------------------------ OpenCode dossier map --------------------------+
+# | tracked OpenCode prompt pack                                           |
+# |   -> provider-native Responses tools                                   |
+# |   -> enhanced BB validation / diff policy / permissions                |
+# |   -> scenario-specific replay lanes remain in agent_configs/misc       |
+# +------------------------------------------------------------------------+
+#
+# Reading guide:
+# - This is the public top-level OpenCode dossier.
+# - It is deliberately broader than a single tiny replay overlay, but narrower than the
+#   entire OpenCode feature matrix; specialized replay lanes still live in `agent_configs/misc/`.
+# - OpenCode is especially interesting because so much of its product feel comes from policy:
+#   diff splitting, environment formatting, validation posture, and shell permissions.
+# - Those are treated below as first-class harness semantics rather than hidden defaults.
+
+version: 2
+profile:
+  name: opencode-1.2.17-e4-2026-03-06
+workspace:
+  # The public OpenCode lane is still a direct-workspace harness even though BreadBoard can
+  # support mirrors and other indirection. That directness is part of the product feel.
+  root: agent_ws_opencode
+  mirror:
+    enabled: false
+    mode: development
+providers:
+  # This public dossier shows the canonical "OpenCode on OpenAI Responses" lane.
+  # The important insight is that OpenCode is not merely model + prompts; it is also the
+  # choice of Responses-native tooling and developer-role request shaping.
+  default_model: openai/gpt-5.1-codex-mini
+  models:
+  - id: openai/gpt-5.1-codex-mini
+    adapter: openai_responses
+    params:
+      temperature: 0.2
+      top_p: 0.9
+  stream_responses: true
+prompts:
+  # OpenCode relies on a persistent compiled system prompt plus environment context.
+  #
+  # This matters because the OpenCode prompt model is "one durable system envelope
+  # plus environment scaffolding", not repeated ad hoc tool catalogs every turn.
+  tool_prompt_mode: system_compiled_and_persistent_per_turn
+  packs:
+    base:
+      system: ../config/e4_targets/opencode/1.2.17/prompts/system.md
+      plan: ../config/e4_targets/opencode/1.2.17/prompts/plan.md
+      builder: ../config/e4_targets/opencode/1.2.17/prompts/builder.md
+  environment:
+    enabled: true
+    format: opencode
+    file_limit: 200
+    # The environment format is a real part of the harness identity. Readers should interpret
+    # this as "how the world is rendered to the model", not as an incidental SDK setting.
+  tool_prompt_synthesis:
+    enabled: false
+  injection:
+    system_order:
+    - '@pack(base).system'
+    per_turn_order: []
+    # OpenCode's public style is "single durable system envelope". That is why this block stays
+    # sparse: if it were full of per-turn prompt fragments, it would stop reading like OpenCode.
+provider_tools:
+  # OpenCode's public harness is strongly native-tool-oriented and uses
+  # developer-role prompts on the Responses API.
+  #
+  # This is the closest thing to OpenCode's "spine":
+  # - native tools
+  # - Responses API
+  # - developer-role shaping
+  # - prompt suppression because the harness already has its own compiled surface
+  use_native: true
+  suppress_prompts: true
+  api_variant: responses
+  responses_use_developer_role: true
+  tool_choice: auto
+features:
+  # This top-level dossier is intentionally not a todo/taskboard showcase lane.
+  # More specialized replay configs under `misc/` can freeze those narrower surfaces.
+  plan: false
+  todos:
+    enabled: false
+    strict: false
+    reset_streak_on_todo: true
+completion:
+  # OpenCode is comfortable with content-only completion. The public dossier keeps that visible
+  # so a reader can see this harness is less "must call finish tool" and more "end naturally".
+  allow_zero_tool_completion: true
+  build_guard:
+    require_run_shell: false
+    require_successful_tests: false
+loop:
+  # The top-level dossier keeps the visible loop minimal:
+  #
+  # +-------------------+
+  # | plan (light)      |
+  # +-------------------+
+  #           |
+  #           v
+  # +-------------------+
+  # | build             |
+  # +-------------------+
+  #
+  # The richer replay personalities live in the specialized misc configs, but the public
+  # OpenCode door should still expose the general two-stage shape.
+  #
+  # That is a deliberate tradeoff:
+  # - top-level file = substrate and public identity
+  # - misc replay lane = individual narrow equivalence trophies
+  sequence:
+  - mode: plan
+  - mode: build
+modes:
+- name: plan
+  prompt: ''
+  tools_enabled:
+  - read_file
+  - list_dir
+  tools_disabled: []
+- name: build
+  prompt: ''
+  tools_enabled:
+  - '*'
+  tools_disabled: []
+tools:
+  registry:
+    # This path points at the tracked OpenCode-compatible tool-definition catalog.
+    # The file keeps the public surface explicit through `include` while avoiding
+    # inlining every schema blob.
+    paths:
+    - ../implementations/tools/defs_oc
+    include:
+    - bash
+    - write
+    #
+    # This top-level OpenCode dossier intentionally stays narrow at the visible-tool layer.
+    # The wider replay lanes in `misc/` add scenario-specific tools as needed, but this file
+    # keeps the public front door interpretable.
+    #
+    # A reader should infer:
+    # - `defs_oc` is the wider OpenCode-compatible schema catalog
+    # - this top-level dossier is not claiming every single OpenCode tool at once
+    # - the specialized replay lanes are where those narrower surfaces are frozen
+enhanced_tools:
+  # This is where the "BreadBoard plus polish" layer becomes visible:
+  # validation, patch splitting, and LSP integration are explicit instead of
+  # hiding in runtime code.
+  #
+  # If someone asks "what makes BreadBoard's OpenCode surface powerful?", the answer is largely
+  # here: these are the implementation policies that turn a plain tool catalog into a product.
+  enabled: true
+  validation:
+    enabled: false
+    rules: []
+    rule_config:
+      one_bash_per_turn:
+        turn_window_seconds: 120
+      read_before_edit:
+        mode: relaxed
+        require_fresh_read: false
+        max_age_seconds: 1800
+  diff_policy:
+    patch_splitting:
+      policy: auto_split
+      max_files_per_patch: 1
+      validation_message: '<VALIDATION_ERROR>
+
+        Multi-file patches are disabled in this configuration. Submit exactly one
+        apply_unified_patch per file.
+
+        </VALIDATION_ERROR>
+
+        '
+      on_violation: warn_and_split
+      # This is one of the clearest examples of BreadBoard exposing the "how" of a harness:
+      # you can see exactly why a multi-file patch would be split instead of guessing.
+  lsp_integration:
+    enabled: true
+    # OpenCode's polished coding UX depends heavily on these enriched editor/runtime behaviors.
+guardrails:
+  # Guardrails are composed from tracked baseline files plus OpenCode-specific overrides.
+  #
+  # The OpenCode family is a good example of why these dossiers matter: users can actually read
+  # the shell-write policy, workspace-context behavior, and bootstrap strategy instead of having
+  # to infer them from CLI behavior.
+  include:
+  - ../implementations/guardrails/base_workspace.yaml
+  - ../implementations/guardrails/execution_baseline.yaml
+  overrides:
+    zero_tool_watchdog:
+      parameters:
+        warn_after_turns: 8
+        abort_after_turns: 20
+    shell_write_block:
+      templates:
+        validation: ../config/e4_targets/opencode/1.2.17/prompts/shell_write_block_opencode.prompt.md
+      parameters:
+        enabled: false
+    todo_rate_limit:
+      parameters:
+        todo_updates_before_progress: 1
+    completion_guard:
+      parameters:
+        warnings_before_abort: 6
+    workspace_context:
+      parameters:
+        require_exploration_before_edit: false
+        require_read_before_edit: false
+        require_progress_before_todo_updates: false
+    plan_bootstrap:
+      strategy: never
+  plan_bootstrap:
+    strategy: soft
+    max_turns: 2
+    warmup_turns: 1
+    seed_file: ../implementations/system_prompts/opencode/plan_bootstrap_protofs.yaml
+    # The bootstrap seed is explicit because it is part of the harness teaching style:
+    # how the model is nudged into useful early behavior before the user has done much.
+permissions:
+  # The permission block is intentionally long because it is the public x-ray into
+  # the shell policy rather than incidental implementation detail.
+  #
+  # Read this block as "how the harness decides what feels safe or frictionful", not just
+  # as an ACL dump.
+  shell:
+    default: allow
+    allow:
+    - ls*
+    - pwd
+    - cat*
+    - head
+    - tail
+    - tree
+    - git*
+    - rg*
+    - grep*
+    - sed
+    - awk
+    - find
+    - python*
+    - pytest*
+    - python*
+    - pytest*
+    - make
+    - cmake*
+    - npm run*
+    - yarn run*
+    - pnpm run*
+    - go test*
+    - cargo test*
+    - uv run*
+    - bash
+    - sh
+    - zsh
+    ask:
+    - npm install*
+    - yarn add*
+    - pnpm add*
+    - pip install*
+    - curl*
+    - wget*
+    - apt-get*
+    - brew install*
+    - uv pip install*
+    - go install*
+    - cargo install*
+    - npm update*
+    - yarn upgrade*
+    deny:
+    - rm -rf*
+    # The allow/ask/deny split is the public x-ray of OpenCode's shell posture:
+    # permissive for normal engineering work, but visibly escalatory around installs,
+    # downloads, and destructive actions.
+    - sudo*
+    - chmod 777*
+    - :(){:|:&};: null
+    - shutdown*
+    - reboot*
+    - poweroff*
+    - mkfs*
+    - dd if=*
+    - kill -9*
+    - useradd*
+    - groupadd*
+    - chown*
+  edit:
+    default: allow
+replay:
+  # The top-level OpenCode dossier is a reference lane; the more specialized replay
+  # lanes still live in `agent_configs/misc/` and share this substrate.
+  #
+  # That split is intentional:
+  # - this file explains the core OpenCode substrate
+  # - the misc replay lanes pin individual behaviors like grep/glob, patch-todo, webfetch, etc.
+  #
+  # This means the top-level file is best read as "the trunk of the harness tree", not as the
+  # complete set of every E4 replay artifact.
+  preserve_tool_names: true
+  compare_tool_outputs:
+  - bash
+  - write

@@ -67,7 +67,10 @@ from .transport import (
     FrameEOF,
     FrameLimitError,
     MAX_CHECKPOINT_BYTES,
+    MAX_CHECKPOINT_CHUNK_BYTES,
+    MAX_CHECKPOINT_CHUNKS,
     MAX_FRAME_BYTES,
+    PROTOCOL_VERSION,
     RequestKey,
     WireHeader,
     WireMessage,
@@ -81,7 +84,6 @@ from .transport import (
 
 _CAPTURED_ROOT = Path(os.environ.get("BREADBOARD_CAPTURED_ROOT", "/breadboard-captured"))
 _MAX_PACKAGE_BYTES: Final = 48 * 1024 * 1024
-_MAX_CHUNK_BYTES: Final = 160 * 1024
 _DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 JsonValue: TypeAlias = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
@@ -354,11 +356,170 @@ class _WorkerIO:
         message = read_message(self.reader)
         if message is None:
             raise FrameEOF("host closed worker channel")
+        if message.header.kind == "checkpoint_chunk":
+            message = self._checkpoint_transfer(message)
         self.validate_identity(message)
         if message.header.sequence != self._in_sequence:
             raise WorkerError("stale_reply", "wire sequence is not the next owner sequence")
         self._in_sequence += 1
         return message
+
+    def _checkpoint_transfer(self, first: WireMessage) -> WireMessage:
+        chunks: list[bytes] = []
+        metadata: Mapping[str, object] | None = None
+        message = first
+        while True:
+            self.validate_identity(message)
+            if (
+                message.header.kind != "checkpoint_chunk"
+                or message.header.key != first.header.key
+                or message.header.sequence != self._in_sequence
+            ):
+                raise WorkerError(
+                    "stale_reply",
+                    "checkpoint transfer escaped its owner scope or sequence",
+                )
+            body = message.body
+            phase = body.get("phase")
+            if phase not in {"resume", "source"}:
+                raise WorkerError(
+                    "malformed_frame",
+                    "checkpoint transfer phase is invalid",
+                )
+            context_name = "start" if phase == "resume" else "prepare"
+            fields = {
+                "phase",
+                "chunk_index",
+                "chunk_count",
+                "total_bytes",
+                context_name,
+                "source_generation_id",
+                "source_module_id",
+                "source_instance_id",
+                "source_work_id",
+                "source_attempt_id",
+                "schema_id",
+                "body",
+            }
+            _exact(body, fields, "checkpoint transfer")
+            context = _mapping(
+                body[context_name],
+                f"checkpoint transfer {context_name}",
+            )
+            if phase == "resume":
+                _exact(
+                    context,
+                    {
+                        "package_path",
+                        "package_digest",
+                        "module_id",
+                        "instance_id",
+                        "generation_id",
+                        "instance_label",
+                        "input_schemas",
+                        "output_schemas",
+                        "checkpoint_schemas",
+                        "dependencies",
+                        "child_targets",
+                        "initial_input",
+                        "next_input_sequence",
+                    },
+                    "checkpoint transfer start",
+                )
+            else:
+                _exact(
+                    context,
+                    {
+                        "source_dependencies",
+                        "target_dependencies",
+                        "declared_at_sequence",
+                    },
+                    "checkpoint transfer prepare",
+                )
+            index = _integer(body["chunk_index"], "checkpoint chunk index")
+            count = _integer(
+                body["chunk_count"],
+                "checkpoint chunk count",
+                minimum=1,
+            )
+            total = _integer(body["total_bytes"], "checkpoint total bytes")
+            expected_count = max(
+                1,
+                (
+                    total
+                    + MAX_CHECKPOINT_CHUNK_BYTES
+                    - 1
+                )
+                // MAX_CHECKPOINT_CHUNK_BYTES,
+            )
+            if (
+                index != len(chunks)
+                or count != expected_count
+                or count > MAX_CHECKPOINT_CHUNKS
+                or total > MAX_CHECKPOINT_BYTES
+            ):
+                raise WorkerError(
+                    "malformed_frame",
+                    "checkpoint transfer has an invalid bound or sequence",
+                )
+            current_metadata = {
+                name: value
+                for name, value in body.items()
+                if name not in {"body", "chunk_index"}
+            }
+            if metadata is not None and metadata != current_metadata:
+                raise WorkerError(
+                    "malformed_frame",
+                    "checkpoint transfer metadata changed between chunks",
+                )
+            metadata = current_metadata
+            chunk = decode_bytes(
+                body["body"],
+                maximum=MAX_CHECKPOINT_CHUNK_BYTES,
+            )
+            expected_bytes = min(
+                MAX_CHECKPOINT_CHUNK_BYTES,
+                total - index * MAX_CHECKPOINT_CHUNK_BYTES,
+            )
+            if len(chunk) != expected_bytes:
+                raise WorkerError(
+                    "malformed_frame",
+                    "checkpoint chunk length differs from its declaration",
+                )
+            chunks.append(chunk)
+            if len(chunks) == count:
+                break
+            message = read_message(self.reader)
+            if message is None:
+                raise FrameEOF("host closed during checkpoint transfer")
+        assert metadata is not None
+        checkpoint = {
+            name: metadata[name]
+            for name in (
+                "source_generation_id",
+                "source_module_id",
+                "source_instance_id",
+                "source_work_id",
+                "source_attempt_id",
+                "schema_id",
+            )
+        }
+        checkpoint["body"] = encode_bytes(
+            b"".join(chunks),
+            maximum=MAX_CHECKPOINT_BYTES,
+        )
+        logical_body = dict(metadata[context_name])
+        logical_body["resume" if phase == "resume" else "source"] = checkpoint
+        kind = "start" if phase == "resume" else "checkpoint_prepare"
+        return WireMessage(
+            WireHeader(
+                PROTOCOL_VERSION,
+                kind,
+                first.header.key,
+                first.header.sequence,
+            ),
+            logical_body,
+        )
 
     def emit(self, kind: str, key: RequestKey, body: Mapping[str, object]) -> None:
         header = WireHeader(2, kind, key, self._out_sequence)
@@ -979,10 +1140,19 @@ class _Worker:
         envelope = proposal.payload
         if len(envelope.body) > MAX_CHECKPOINT_BYTES:
             raise WorkerError("serialization_limit", "checkpoint exceeds maximum size")
-        chunk_count = max(1, (len(envelope.body) + _MAX_CHUNK_BYTES - 1) // _MAX_CHUNK_BYTES)
+        chunk_count = max(
+            1,
+            (
+                len(envelope.body)
+                + MAX_CHECKPOINT_CHUNK_BYTES
+                - 1
+            )
+            // MAX_CHECKPOINT_CHUNK_BYTES,
+        )
         for index in range(chunk_count):
-            chunk = envelope.body[index * _MAX_CHUNK_BYTES : (index + 1) * _MAX_CHUNK_BYTES]
-            self.io.emit("checkpoint", key, {"phase": "proposal", "chunk_index": index, "chunk_count": chunk_count, "total_bytes": len(envelope.body), "schema_id": envelope.schema_id, "source_generation_id": envelope.source_generation_id, "source_module_id": envelope.source_module_id, "source_instance_id": envelope.source_instance_id, "source_work_id": envelope.source_work_id, "source_attempt_id": envelope.source_attempt_id, "declared_at_sequence": proposal.declared_at_sequence, "body": encode_bytes(chunk, maximum=_MAX_CHUNK_BYTES)})
+            start = index * MAX_CHECKPOINT_CHUNK_BYTES
+            chunk = envelope.body[start : start + MAX_CHECKPOINT_CHUNK_BYTES]
+            self.io.emit("checkpoint", key, {"phase": "proposal", "chunk_index": index, "chunk_count": chunk_count, "total_bytes": len(envelope.body), "schema_id": envelope.schema_id, "source_generation_id": envelope.source_generation_id, "source_module_id": envelope.source_module_id, "source_instance_id": envelope.source_instance_id, "source_work_id": envelope.source_work_id, "source_attempt_id": envelope.source_attempt_id, "declared_at_sequence": proposal.declared_at_sequence, "body": encode_bytes(chunk, maximum=MAX_CHECKPOINT_CHUNK_BYTES)})
 
     def _validate_input(self, envelope: InputEnvelope) -> None:
         if envelope.schema_id not in self.input_schemas:

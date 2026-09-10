@@ -287,13 +287,13 @@ def _graph_checkpoint_proposal(
     )
     return CheckpointProposal(
         envelope,
-        max(item.declared_at_sequence for item in proposals.values()),
+        proposals[root_binding].declared_at_sequence,
     )
 
 
 def _decode_graph_checkpoint(
     checkpoint: SessionGenerationCheckpoint,
-) -> tuple[dict[str, Any], dict[str, CheckpointEnvelope]]:
+) -> tuple[dict[str, Any], dict[str, CheckpointProposal]]:
     if checkpoint.schema_id != _MODULE_GRAPH_CHECKPOINT_SCHEMA:
         raise GenerationAdoptionError(
             "checkpoint_incompatible",
@@ -349,7 +349,7 @@ def _decode_graph_checkpoint(
         "dependencies",
         "body",
     }
-    envelopes: dict[str, CheckpointEnvelope] = {}
+    proposals: dict[str, CheckpointProposal] = {}
     try:
         for row in payload["bindings"]:
             if (
@@ -357,11 +357,14 @@ def _decode_graph_checkpoint(
                 or set(row) != row_fields
                 or not isinstance(row["binding"], str)
                 or not row["binding"]
-                or row["binding"] in envelopes
+                or row["binding"] in proposals
                 or type(row["declared_at_sequence"]) is not int
                 or row["declared_at_sequence"] < 0
-                or row["declared_at_sequence"]
-                > checkpoint.frontier.typed_input_sequence
+                or (
+                    row["binding"] == payload["root_binding"]
+                    and row["declared_at_sequence"]
+                    > checkpoint.frontier.typed_input_sequence
+                )
                 or not isinstance(row["dependencies"], list)
                 or any(
                     not isinstance(item, str) or not item
@@ -370,26 +373,29 @@ def _decode_graph_checkpoint(
                 or len(set(row["dependencies"])) != len(row["dependencies"])
             ):
                 raise ValueError("invalid graph checkpoint binding")
-            envelopes[row["binding"]] = CheckpointEnvelope(
-                source_generation_id=row["source_generation_id"],
-                source_module_id=row["source_module_id"],
-                source_instance_id=row["source_instance_id"],
-                source_work_id=row["source_work_id"],
-                source_attempt_id=row["source_attempt_id"],
-                schema_id=row["schema_id"],
-                body=decode_bytes(row["body"], maximum=MAX_CHECKPOINT_BYTES),
+            proposals[row["binding"]] = CheckpointProposal(
+                CheckpointEnvelope(
+                    source_generation_id=row["source_generation_id"],
+                    source_module_id=row["source_module_id"],
+                    source_instance_id=row["source_instance_id"],
+                    source_work_id=row["source_work_id"],
+                    source_attempt_id=row["source_attempt_id"],
+                    schema_id=row["schema_id"],
+                    body=decode_bytes(row["body"], maximum=MAX_CHECKPOINT_BYTES),
+                ),
+                declared_at_sequence=row["declared_at_sequence"],
             )
     except (KeyError, TypeError, ValueError) as error:
         raise GenerationAdoptionError(
             "checkpoint_corrupt",
             "checkpoint contains an invalid module state envelope",
         ) from error
-    if payload["root_binding"] not in envelopes:
+    if payload["root_binding"] not in proposals:
         raise GenerationAdoptionError(
             "checkpoint_corrupt",
             "checkpoint body omits its root binding",
         )
-    root = envelopes[payload["root_binding"]]
+    root = proposals[payload["root_binding"]].payload
     if (
         root.source_generation_id != checkpoint.source_generation_id
         or root.source_module_id != checkpoint.source_module_id
@@ -401,13 +407,13 @@ def _decode_graph_checkpoint(
             "checkpoint_corrupt",
             "checkpoint graph root attribution differs from its owner envelope",
         )
-    return payload, envelopes
+    return payload, proposals
 
 
 def _checkpoint_public_result(
     checkpoint: SessionGenerationCheckpoint,
 ) -> dict[str, Any]:
-    payload, envelopes = _decode_graph_checkpoint(checkpoint)
+    payload, proposals = _decode_graph_checkpoint(checkpoint)
     return {
         "checkpoint_id": checkpoint.checkpoint_id,
         "request_id": payload["request_id"],
@@ -419,11 +425,11 @@ def _checkpoint_public_result(
         "bindings": [
             {
                 "owner": binding,
-                "schema": envelope.schema_id,
-                "state_digest": "sha256:" + hashlib.sha256(envelope.body).hexdigest(),
-                "size": len(envelope.body),
+                "schema": proposal.payload.schema_id,
+                "state_digest": "sha256:" + hashlib.sha256(proposal.payload.body).hexdigest(),
+                "size": len(proposal.payload.body),
             }
-            for binding, envelope in sorted(envelopes.items())
+            for binding, proposal in sorted(proposals.items())
         ],
     }
 
@@ -1731,7 +1737,10 @@ class SessionService:
                         "adoption checkpoint does not exist",
                     )
                 product_session.validate_checkpoint_frontier(checkpoint.frontier)
-                graph_checkpoint, source_checkpoints = _decode_graph_checkpoint(
+                (
+                    graph_checkpoint,
+                    source_proposals,
+                ) = _decode_graph_checkpoint(
                     checkpoint
                 )
                 source_dependencies = {
@@ -1756,18 +1765,22 @@ class SessionService:
                     or old_admission.attempt_id != old_execution.attempt_id
                     or graph_checkpoint["root_binding"] != old_execution.root_binding
                     or any(
-                        envelope.source_generation_id != old_execution.generation_id
-                        or envelope.source_work_id != old_execution.work_item_id
-                        or envelope.source_attempt_id != old_execution.attempt_id
-                        or source_modules.get(binding) != envelope.source_module_id
+                        proposal.payload.source_generation_id
+                        != old_execution.generation_id
+                        or proposal.payload.source_work_id
+                        != old_execution.work_item_id
+                        or proposal.payload.source_attempt_id
+                        != old_execution.attempt_id
+                        or source_modules.get(binding)
+                        != proposal.payload.source_module_id
                         or (
                             binding in retained_workers
                             and retained_workers[binding].instance_id
-                            != envelope.source_instance_id
+                            != proposal.payload.source_instance_id
                         )
-                        for binding, envelope in source_checkpoints.items()
+                        for binding, proposal in source_proposals.items()
                     )
-                    or not set(retained_workers) <= set(source_checkpoints)
+                    or not set(retained_workers) <= set(source_proposals)
                 ):
                     raise GenerationAdoptionError(
                         "checkpoint_conflict",
@@ -1822,7 +1835,7 @@ class SessionService:
                     module_execution=target_execution,
                     module_grant=target_grant,
                     source_dependencies=source_dependencies,
-                    source_checkpoints=source_checkpoints,
+                    source_checkpoints=source_proposals,
                 )
                 candidate_cleanup_confirmed = True
                 candidate_admission = await asyncio.to_thread(
@@ -1830,7 +1843,7 @@ class SessionService:
                     candidate_admission.admission_id,
                 )
                 source_disposal = await runner.dispose_source_runtime_for_adoption(
-                    source_checkpoints
+                    source_proposals
                 )
                 if source_disposal.status != "confirmed_absent":
                     raise ModuleExecutionError(
@@ -1841,26 +1854,29 @@ class SessionService:
                     {
                         **decision,
                         "resume": {
+                            "declared_at_sequence": resume_checkpoints[
+                                decision["binding"]
+                            ].declared_at_sequence,
                             "source_generation_id": resume_checkpoints[
                                 decision["binding"]
-                            ].source_generation_id,
+                            ].payload.source_generation_id,
                             "source_module_id": resume_checkpoints[
                                 decision["binding"]
-                            ].source_module_id,
+                            ].payload.source_module_id,
                             "source_instance_id": resume_checkpoints[
                                 decision["binding"]
-                            ].source_instance_id,
+                            ].payload.source_instance_id,
                             "source_work_id": resume_checkpoints[
                                 decision["binding"]
-                            ].source_work_id,
+                            ].payload.source_work_id,
                             "source_attempt_id": resume_checkpoints[
                                 decision["binding"]
-                            ].source_attempt_id,
+                            ].payload.source_attempt_id,
                             "schema_id": resume_checkpoints[
                                 decision["binding"]
-                            ].schema_id,
+                            ].payload.schema_id,
                             "body": encode_bytes(
-                                resume_checkpoints[decision["binding"]].body,
+                                resume_checkpoints[decision["binding"]].payload.body,
                                 maximum=MAX_CHECKPOINT_BYTES,
                             ),
                         },
@@ -2068,7 +2084,7 @@ class SessionService:
         try:
             admission = GenerationAdmission(**dict(admission_value))
             target_lock = EffectiveHarnessLock._from_record(target_lock_value)
-            resumes: dict[str, CheckpointEnvelope] = {}
+            resumes: dict[str, CheckpointProposal] = {}
             for item in migration_value:
                 if not isinstance(item, Mapping):
                     raise ValueError("migration item is not an object")
@@ -2082,6 +2098,7 @@ class SessionService:
                 ):
                     raise ValueError("migration resume identity is invalid")
                 required = {
+                    "declared_at_sequence",
                     "source_generation_id",
                     "source_module_id",
                     "source_instance_id",
@@ -2092,17 +2109,20 @@ class SessionService:
                 }
                 if set(resume) != required:
                     raise ValueError("migration resume envelope is invalid")
-                resumes[binding] = CheckpointEnvelope(
-                    source_generation_id=resume["source_generation_id"],
-                    source_module_id=resume["source_module_id"],
-                    source_instance_id=resume["source_instance_id"],
-                    source_work_id=resume["source_work_id"],
-                    source_attempt_id=resume["source_attempt_id"],
-                    schema_id=resume["schema_id"],
-                    body=decode_bytes(
-                        resume["body"],
-                        maximum=MAX_CHECKPOINT_BYTES,
+                resumes[binding] = CheckpointProposal(
+                    CheckpointEnvelope(
+                        source_generation_id=resume["source_generation_id"],
+                        source_module_id=resume["source_module_id"],
+                        source_instance_id=resume["source_instance_id"],
+                        source_work_id=resume["source_work_id"],
+                        source_attempt_id=resume["source_attempt_id"],
+                        schema_id=resume["schema_id"],
+                        body=decode_bytes(
+                            resume["body"],
+                            maximum=MAX_CHECKPOINT_BYTES,
+                        ),
                     ),
+                    declared_at_sequence=resume["declared_at_sequence"],
                 )
         except (TypeError, ValueError) as error:
             raise RuntimeError(
@@ -3580,7 +3600,7 @@ class SessionService:
                     else None
                 ),
             )
-            terminal_runner._commit_terminal_product_session_locked()
+            terminal_runner._persist_product_session_locked()
             await self.registry.update_status(record.session_id, bridge_status)
             async with record.dispatch_lock:
                 setattr(record, "_dispatcher_complete", True)
@@ -3720,7 +3740,7 @@ class SessionService:
                     else None
                 ),
             )
-            terminal_runner._commit_terminal_product_session_locked()
+            terminal_runner._persist_product_session_locked()
             await self.registry.update_status(record.session_id, restored_status)
             async with record.dispatch_lock:
                 setattr(record, "_dispatcher_complete", True)

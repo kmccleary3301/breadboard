@@ -18,6 +18,9 @@ from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 from starlette.formparsers import MultiPartParser
 
+import breadboard_sdk
+from breadboard.product.cli import harness as harness_operations
+
 from breadboard_engine.api.cli_bridge.app import create_app
 import breadboard_engine.api.cli_bridge.app as app_module
 from breadboard_engine.api.cli_bridge.models import (
@@ -1219,25 +1222,6 @@ def test_c4_daily_driver_completes_with_stable_observations_and_restart(
             != profile["effective_lock_hash"]
         )
 
-        harness = tmp_path / "daily_driver.v1.yaml"
-        original = harness.read_text()
-        changed = original.replace("name: coding", "name: changed", 1).replace(
-            "mode: coding", "mode: changed", 1
-        )
-        assert changed != original
-        harness.write_text(changed)
-        rejected = restarted_service.post(
-            "/v1/sessions",
-            json={
-                "lock_id": lock_id,
-                "task": "must reject corrupt lock",
-                "session_id": "c4-corrupt-lock",
-            },
-            headers={"Idempotency-Key": "c4-corrupt"},
-        )
-        assert rejected.status_code == 409
-        assert rejected.json()["error"]["error_code"] == "lock_drift"
-
     persisted = (
         tmp_path / ".breadboard" / "sessions" / session_id / "session_events.jsonl"
     ).read_text(encoding="utf-8")
@@ -1506,25 +1490,96 @@ def test_durable_session_fallback_rejects_symlinked_event_file(
     assert external.read_bytes() == original_external
 
 
-def test_session_start_preserves_lock_drift_error(
-    client: TestClient, tmp_path: Path
+def test_cli_target_runs_admit_new_sessions_after_publication(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class PublicClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start_session(self, payload, *, idempotency_key):
+            return client.post(
+                "/v1/sessions",
+                json=payload,
+                headers={"Idempotency-Key": idempotency_key},
+            ).json()
+
+        def events_session(self, session_id, *, follow):
+            response = client.post(
+                f"/v1/sessions/{session_id}/input",
+                json={"content": "Continue deterministically."},
+                headers={"Idempotency-Key": f"finish-{session_id}"},
+            )
+            assert response.status_code == 202, response.text
+            yield from _stream_records(client.get(f"/v1/sessions/{session_id}/events"))
+
+        def get_session(self, session_id):
+            return client.get(f"/v1/sessions/{session_id}").json()
+
+    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", PublicClient)
+    lock_id = _locked_harness(client)
+    runs = []
+    publications = []
+    for revision in range(2):
+        if revision:
+            harness = tmp_path / "daily_driver.v1.yaml"
+            harness.write_text(harness.read_text() + "\n# replacement implementation input\n")
+            locked = client.post("/v1/harnesses/daily_driver.v1.yaml/lock").json()
+            assert locked["ok"], locked
+        published = client.post(
+            "/v1/harness-publications/catalog",
+            json={
+                "lock_id": lock_id,
+                "expected_revision": revision,
+                "request_id": f"publish-{revision}",
+            },
+        ).json()
+        assert published["ok"], published
+        publications.append(published["data"]["generation_id"])
+        result = harness_operations.run(
+            SimpleNamespace(
+                target="catalog",
+                PATH=None,
+                server="http://testserver",
+                workspace=str(tmp_path),
+                task="Inspect this workspace using a tool, then finish.",
+            )
+        )
+        assert result.ok, result.as_dict()
+        runs.append(result)
+    assert runs[0].data["session_id"] != runs[1].data["session_id"]
+    assert publications[0] != publications[1]
+    assert [run.hashes["lock"] for run in runs] == publications
+
+
+@pytest.mark.parametrize("source_change", ["replace", "delete"])
+def test_explicit_lock_start_uses_retained_source(
+    client: TestClient, tmp_path: Path, source_change: str
 ) -> None:
     lock_id = _locked_harness(client)
     harness = tmp_path / "daily_driver.v1.yaml"
-    original = harness.read_text()
-    changed = original.replace("name: coding", "name: changed", 1).replace(
-        "mode: coding", "mode: changed", 1
-    )
-    assert changed != original
-    harness.write_text(changed)
+    if source_change == "replace":
+        harness.write_text("not: the admitted harness\n")
+    else:
+        harness.unlink()
     response = client.post(
         "/v1/sessions",
-        json={"lock_id": lock_id, "task": "must reject drift"},
-        headers={"Idempotency-Key": "drifted-start"},
+        json={
+            "lock_id": lock_id,
+            "task": "run the retained harness",
+            "session_id": "retained-lock-session",
+        },
+        headers={"Idempotency-Key": "retained-lock-start"},
     )
-    assert response.status_code == 409
-    assert response.json()["command"] == ["session", "start"]
-    assert response.json()["error"]["error_code"] == "lock_drift"
+    assert response.status_code == 202, response.text
+    events = _stream_records(client.get("/v1/sessions/retained-lock-session/events"))
+    assert events[0]["kind"] == "session.started"
+    cancelled = client.post(
+        "/v1/sessions/retained-lock-session/cancel",
+        json={},
+        headers={"Idempotency-Key": "retained-lock-cancel"},
+    )
+    assert cancelled.status_code == 202
 
 
 def test_session_start_dispatches_task_to_execution_service(client: TestClient) -> None:

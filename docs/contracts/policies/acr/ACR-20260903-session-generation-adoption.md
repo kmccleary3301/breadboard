@@ -28,7 +28,7 @@ A Product Session must retain the exact effective Lock identity that governed ea
 
 ## 4) Change Classification
 
-- Classification: `internal`, non-breaking.
+- Classification: `breaking` for the live-evolution integration below; the original internal change was non-breaking.
 - Compatibility window: clean cutover; no public wire contract changes.
 - Required schema/version bumps: none.
 - Design decision: Kyle declined the proposed shared Generation seam. `GEN-ACTIVATION` is `NOT-TAKEN`.
@@ -82,3 +82,44 @@ The runtime graph hash recipe remains unchanged. Private Session state retains t
 Older records without that input use the existing current-path reconstruction. The source reference is retained only after the full graph matches the pinned generation. Already-relocated historical records whose original source was never recorded still fail typed; no identity is guessed and no generation is silently adopted.
 
 The regression covers new state and the old absolute-source recipe with the new private field absent. It first recovers old state at the same path, removes the original package directory, recovers under a replacement root, adopts a model generation, and recovers again. Each recovered state is compared with the preceding durable owner's snapshot. Real configuration drift remains rejected. No public schema or SDK signature changes.
+
+## Live-evolution integration, 2026-09-10
+
+AM31 in `docs/plans/phase_20_right_shape/SPEC_AMENDMENTS.md` supersedes the
+original internal-only scope above. The accepted live-evolution campaign adds
+compiler-owned executable packages and complete v2 Locks, durable publication
+and admission, and public checkpoint/adoption operations. Sessions retain
+history and adoption authority; domain and execution-world owners retain
+effects and disposal. Python/TypeScript clients are generated from the public
+operation catalog.
+
+Kyle authorized review, PR creation and merge on 2026-09-10. This integration
+also relocates old top-level harness profiles under `agent_configs/deprecated/`
+and publishes a dated catalog. This is a versioned contract and config-path
+cutover, not a non-breaking rename. Historical capture dates and support scopes
+must not change merely because the catalog date changes.
+
+Pre-merge review identified retained-Lock admission incorrectly consulting
+mutable source, and separate CLI invocations sharing an admission request.
+Explicit Lock execution now relies on verified captured bytes; implicit
+Definition execution still refuses drift. Each CLI run has a fresh request
+identity, while retries within that SDK request retain it.
+
+Checkpoint transfers preserve the 256 KiB physical-frame bound and 1 MiB state
+bound. Each binding retains its own input frontier through migration, durable
+storage and resume; only the root binding is compared with the Session's input
+frontier. Missing or malformed retained frontiers are refused, not inferred.
+Compatibility reasons may be empty text. Terminal recovery uses the existing
+durable Session persistence owner; raw terminal journals do not acquire private
+authority merely by being replayed.
+
+Required validation extends the existing campaign evidence with public
+admission regressions, worker checkpoint roundtrips, binding-local frontier
+recovery, config loading, generated-contract parity and protected PR checks.
+The pre-fix checkout is the regression oracle; passing source-only construction
+does not establish a successful transition.
+
+The original no-migration rollback instructions do not apply to v2 records.
+Preserve recorded history and executable closures. A rollback binary must
+understand records already written; otherwise fix forward. Do not downgrade
+Session storage or force-push main.

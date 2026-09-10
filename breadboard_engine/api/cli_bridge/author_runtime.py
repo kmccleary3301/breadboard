@@ -151,7 +151,7 @@ class ModuleRuntime:
         parent_fence: Callable[[], None] | None = None,
         depth: int = 0,
         owns_work_lifecycle: bool = True,
-        resume_checkpoints: Mapping[str, CheckpointEnvelope] | None = None,
+        resume_checkpoints: Mapping[str, CheckpointProposal] | None = None,
     ) -> None:
         execution, grant = record.module_execution, record.module_grant
         if execution is None or grant is None or record.product_session is None:
@@ -170,10 +170,20 @@ class ModuleRuntime:
         self.bindings = captured.materialization.lock["modules"]["bindings"]
         self.packages = captured.materialization.packages
         self.resume_checkpoints = dict(resume_checkpoints or {})
-        if not set(self.resume_checkpoints) <= set(self.bindings):
+        if (
+            not set(self.resume_checkpoints) <= set(self.bindings)
+            or any(
+                not isinstance(proposal, CheckpointProposal)
+                for proposal in self.resume_checkpoints.values()
+            )
+            or (
+                self.resume_checkpoints
+                and self.root_binding not in self.resume_checkpoints
+            )
+        ):
             raise ModuleExecutionError(
                 "checkpoint_incompatible",
-                "resume checkpoints name a binding outside the target graph",
+                "resume checkpoints do not contain a complete valid root binding",
             )
         self.stopped = threading.Event()
         self._stop_reason = "owner_scope_closed"
@@ -347,16 +357,16 @@ class ModuleRuntime:
 
     def prepare_checkpoint_adoption(
         self,
-        source_checkpoints: Mapping[str, CheckpointEnvelope],
+        source_checkpoints: Mapping[str, CheckpointProposal],
         source_dependencies: Mapping[str, tuple[str, ...]],
-    ) -> tuple[dict[str, CheckpointEnvelope], tuple[dict[str, str], ...]]:
+    ) -> tuple[dict[str, CheckpointProposal], tuple[dict[str, str], ...]]:
         self.require_live()
         if self.root_binding not in source_checkpoints:
             raise ModuleExecutionError(
                 "checkpoint_incompatible",
                 "source checkpoint does not contain the root module binding",
             )
-        resumed: dict[str, CheckpointEnvelope] = {}
+        resumed: dict[str, CheckpointProposal] = {}
         decisions: list[dict[str, str]] = []
         for binding, source in sorted(source_checkpoints.items()):
             if binding not in self.bindings:
@@ -377,12 +387,12 @@ class ModuleRuntime:
                     "checkpoint_incompatible",
                     reason or f"target binding {binding!r} refused the checkpoint",
                 )
-            resumed[binding] = proposal.payload
+            resumed[binding] = proposal
             decisions.append(
                 {
                     "binding": binding,
                     "disposition": disposition,
-                    "source_schema_id": source.schema_id,
+                    "source_schema_id": source.payload.schema_id,
                     "target_schema_id": target_schema_id,
                     "reason": reason,
                 }
@@ -492,7 +502,7 @@ class _ModuleWorker:
             staging_root=str(owner.storage_root / worker_id / "captured"),
             staging_owner_ref=f"module-staging:{worker_id}",
             next_input_sequence=(
-                max(0, owner.record.next_module_input_sequence - 1)
+                owner.resume_checkpoints[binding].declared_at_sequence
                 if binding in owner.resume_checkpoints
                 else 0
             ),
@@ -548,7 +558,9 @@ class _ModuleWorker:
             "next_input_sequence": self.ownership.next_input_sequence,
             "initial_input": None,
             "resume": (
-                _checkpoint_to_wire(self.owner.resume_checkpoints[self.binding])
+                _checkpoint_to_wire(
+                    self.owner.resume_checkpoints[self.binding].payload
+                )
                 if self.binding in self.owner.resume_checkpoints
                 else None
             ),
@@ -624,7 +636,7 @@ class _ModuleWorker:
         if self.channel is None:
             raise ModuleExecutionError("worker_unavailable", "worker channel is not prepared")
         frame = WireMessage(WireHeader(PROTOCOL_VERSION, kind, key, self._sent), body)
-        self.channel.send_frame(frame.encode(max_bytes=self.limits.max_message_bytes))
+        self.channel.send_message(frame, max_bytes=self.limits.max_message_bytes)
         self._sent += 1
 
     def _receive(self, timeout: float | None = None) -> WireMessage:
@@ -801,7 +813,7 @@ class _ModuleWorker:
 
     def prepare_checkpoint(
         self,
-        source: CheckpointEnvelope,
+        source: CheckpointProposal,
         source_dependencies: tuple[str, ...],
         target_dependencies: tuple[str, ...],
     ) -> tuple[str, str, str, CheckpointProposal | None]:
@@ -819,10 +831,10 @@ class _ModuleWorker:
                 "checkpoint_prepare",
                 key,
                 {
-                    "source": _checkpoint_to_wire(source),
+                    "source": _checkpoint_to_wire(source.payload),
                     "source_dependencies": list(source_dependencies),
                     "target_dependencies": list(target_dependencies),
-                    "declared_at_sequence": 0,
+                    "declared_at_sequence": source.declared_at_sequence,
                 },
             )
             deadline = time.monotonic() + 30.0
@@ -852,9 +864,11 @@ class _ModuleWorker:
                         )
                     chunks = _CheckpointChunks(
                         self,
-                        0,
+                        source.declared_at_sequence,
                         expected_envelope=(
-                            source if disposition == "compatible" else None
+                            source.payload
+                            if disposition == "compatible"
+                            else None
                         ),
                     )
                     for chunk_message in chunk_messages:
@@ -862,16 +876,17 @@ class _ModuleWorker:
                     proposal = (
                         chunks.finish() if disposition != "incompatible" else None
                     )
-                    if disposition == "compatible" and (
-                        proposal is None or proposal.payload != source
-                    ):
+                    if disposition == "compatible" and proposal != source:
                         raise WireProtocolError(
                             "compatible checkpoint response changed source state"
                         )
+                    reason = body["reason"]
+                    if not isinstance(reason, str):
+                        raise WireProtocolError("checkpoint compatibility reason must be text")
                     return (
                         disposition,
                         _text(body["target_schema_id"], "target checkpoint schema"),
-                        _text(body["reason"], "checkpoint compatibility reason"),
+                        reason,
                         proposal,
                     )
                 if message.header.kind == "failure":

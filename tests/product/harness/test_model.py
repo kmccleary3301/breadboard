@@ -16,7 +16,7 @@ from breadboard.product.harness.validate import (
 ROOT = Path(__file__).parents[3]
 CONFIGS = (
     ROOT / "agent_configs/templates/minimal_harness.v2.yaml",
-    ROOT / "agent_configs/v2/codex_0-107-0_e4_3-6-2026.yaml",
+    ROOT / "agent_configs/deprecated/2026-03-06/v2/codex_0-107-0_e4_3-6-2026.yaml",
 )
 
 

@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pytest
 from fastapi import HTTPException
 
-from breadboard.modules import CheckpointEnvelope, ModuleInput
+from breadboard.modules import CheckpointEnvelope, CheckpointProposal, ModuleInput
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import ReplayError, session_store
 from breadboard.product.coordination.work_items import WorkItemRepository
@@ -1617,17 +1617,25 @@ async def test_registry_round_trips_adopted_module_resume_checkpoint(
         schema_id="state.v2",
         body=b'{"count":2}',
     )
+    proposal = CheckpointProposal(envelope, 2)
     record = SessionRecord(
         session_id="sess-adopted-resume",
         status=SessionStatus.RUNNING,
-        module_resume_checkpoints={"root": envelope},
+        module_resume_checkpoints={"root": proposal},
     )
     await registry.create(record)
 
     restored = await SessionRegistry(state_root=tmp_path).get(record.session_id)
 
     assert restored is not None
-    assert restored.module_resume_checkpoints == {"root": envelope}
+    assert restored.module_resume_checkpoints == {"root": proposal}
+
+    retained = registry._serialize_record(record)
+    del retained["session"]["module_resume_checkpoints"]["root"][
+        "declared_at_sequence"
+    ]
+    with pytest.raises(ValueError):
+        registry._deserialize_record(retained)
 
 
 @pytest.mark.asyncio
@@ -1684,13 +1692,14 @@ async def test_registry_atomically_retires_confirmed_checkpoint_worker(
         schema_id="state.v1",
         body=b'{"count":1}',
     )
+    proposal = CheckpointProposal(envelope, 1)
     stale_record.module_execution = ModuleExecutionRecord(
         generation_id=generation,
         root_binding="root",
         work_item_id="work-1",
         attempt_id="attempt-1",
     )
-    stale_record.module_resume_checkpoints = {"root": envelope}
+    stale_record.module_resume_checkpoints = {"root": proposal}
 
     retired = await stale_registry.persist_confirmed_checkpoint_cleanup(stale_record)
 
@@ -1699,7 +1708,7 @@ async def test_registry_atomically_retires_confirmed_checkpoint_worker(
     assert restored is not None
     assert restored.module_execution is not None
     assert restored.module_execution.workers == ()
-    assert restored.module_resume_checkpoints == {"root": envelope}
+    assert restored.module_resume_checkpoints == {"root": proposal}
 
 @pytest.mark.asyncio
 async def test_stale_registry_cannot_recreate_cross_process_deleted_session(
@@ -3185,76 +3194,11 @@ async def test_replay_events_preserve_active_turn_correlation(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_replay_completion_strips_nested_control_sentinels(tmp_path) -> None:
-    fixture = tmp_path / "completion-fixture.jsonl"
-    fixture.write_text(
-        json.dumps(
-            {
-                "type": "completion",
-                "payload": {
-                    "summary": {
-                        "final_message": "answer\nTASK COMPLETE\n",
-                        "nested": {"opaque": ">>>>>> END RESPONSE"},
-                    }
-                },
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    record = SessionRecord(
-        session_id="sess-replay-completion",
-        status=SessionStatus.RUNNING,
-    )
-    turn = TurnRecord(
-        input_id="input-1",
-        turn_id="turn-1",
-        client_message_id="message-1",
-        content="replay",
-        attachments=(),
-        original_disposition="started",
-        state="active",
-    )
-    record.active_turn_id = turn.turn_id
-    record.turns_by_id[turn.turn_id] = turn
-    runner = SessionRunner(
-        session=record,
-        registry=SessionRegistry(),
-        request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
-    )
-    published: list[tuple[EventType, dict[str, Any]]] = []
-
-    async def capture(
-        event_type: EventType,
-        payload: Dict[str, Any],
-        **_kwargs: Any,
-    ) -> None:
-        published.append((event_type, payload))
-
-    runner.publish_event_async = capture  # type: ignore[method-assign]
-    result = await runner._task_execution.execute_replay_task(f"replay:{fixture}",
-    input_id=turn.input_id,
-    turn_id=turn.turn_id,)
-
-    assert published == []
-    completion = next(
-        payload
-        for event_type, payload, _turn, _contract in result["_terminal_events"]
-        if event_type is EventType.COMPLETION
-    )
-    assert completion == {
-        "summary": {
-            "final_message": "answer",
-            "nested": {"opaque": ""},
-        }
-    }
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "invalid_entries",
     [
         [{"type": "session_control", "payload": {"action": "stop"}}],
+        [{"type": "completion", "payload": {"summary": {"final_message": "done"}}}],
         [
             {
                 "type": "assistant_message",
@@ -4689,7 +4633,7 @@ async def test_retained_registry_first_input_reconciles_journal_before_retry(
 
 
 @pytest.mark.asyncio
-async def test_legacy_workspace_journal_binds_before_terminal_publication(
+async def test_untrusted_legacy_terminal_journal_is_not_promoted(
     tmp_path: Path,
 ) -> None:
     from breadboard.product.harness.lock import EffectiveHarnessLock
@@ -4719,12 +4663,13 @@ async def test_legacy_workspace_journal_binds_before_terminal_publication(
 
     restarted = SessionRegistry(state_root=state_root)
     service = SessionService(registry=restarted)
-    restored = await service.ensure_session(session_id)
-
-    assert restored.metadata["durable_product_workspace"] == str(workspace)
-    projection, _ = session_store.load_session(workspace, session_id)
-    assert projection.read_model.status == "completed"
-    assert projection.read_model.session_id == session_id
+    original_events = event_path.read_bytes()
+    with pytest.raises(ReplayError) as error:
+        await service.ensure_session(session_id)
+    assert error.value.code == "missing_projection_authority"
+    assert event_path.read_bytes() == original_events
+    with pytest.raises(FileNotFoundError):
+        session_store.load_session(workspace, session_id)
 
 
 def test_retained_admission_reconciliation_accepts_interleaved_observations() -> None:

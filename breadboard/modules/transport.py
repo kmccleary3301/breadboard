@@ -9,7 +9,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from io import BufferedIOBase
 from typing import Final, Literal, TypeAlias
@@ -17,20 +17,26 @@ from typing import Final, Literal, TypeAlias
 
 MAX_FRAME_BYTES: Final = 262_144
 MAX_CHECKPOINT_BYTES: Final = 1_048_576
+MAX_CHECKPOINT_CHUNK_BYTES: Final = 160 * 1024
+MAX_CHECKPOINT_CHUNKS: Final = (
+    MAX_CHECKPOINT_BYTES + MAX_CHECKPOINT_CHUNK_BYTES - 1
+) // MAX_CHECKPOINT_CHUNK_BYTES
 PROTOCOL_VERSION: Final = 2
 
 WireKind: TypeAlias = Literal[
     "start", "input", "output", "service_result", "checkpoint_request",
-    "checkpoint_prepare", "checkpoint_compatibility", "checkpoint", "result",
-    "cancel", "close", "ready", "failure", "provider_request", "tool_request",
-    "context_request", "child_request", "dependency_request",
+    "checkpoint_prepare", "checkpoint_compatibility", "checkpoint",
+    "checkpoint_chunk", "result", "cancel", "close", "ready", "failure",
+    "provider_request", "tool_request", "context_request", "child_request",
+    "dependency_request",
 ]
 WIRE_KINDS: Final[frozenset[str]] = frozenset(
     {
         "start", "input", "output", "service_result", "checkpoint_request",
-        "checkpoint_prepare", "checkpoint_compatibility", "checkpoint", "result",
-        "cancel", "close", "ready", "failure", "provider_request",
-        "tool_request", "context_request", "child_request", "dependency_request",
+        "checkpoint_prepare", "checkpoint_compatibility", "checkpoint",
+        "checkpoint_chunk", "result", "cancel", "close", "ready", "failure",
+        "provider_request", "tool_request", "context_request", "child_request",
+        "dependency_request",
     }
 )
 
@@ -260,6 +266,75 @@ class WireHeader:
         }
 
 
+_CHECKPOINT_FIELDS: Final = frozenset(
+    {
+        "source_generation_id",
+        "source_module_id",
+        "source_instance_id",
+        "source_work_id",
+        "source_attempt_id",
+        "schema_id",
+        "body",
+    }
+)
+
+
+def iter_message_frames(
+    message: WireMessage,
+    *,
+    max_bytes: int = MAX_FRAME_BYTES,
+) -> Iterator[bytes]:
+    """Encode a logical message without weakening the physical frame bound."""
+    try:
+        frame = message.encode(max_bytes=max_bytes)
+    except FrameLimitError:
+        if message.header.kind == "start":
+            phase, field, context_name = "resume", "resume", "start"
+        elif message.header.kind == "checkpoint_prepare":
+            phase, field, context_name = "source", "source", "prepare"
+        else:
+            raise
+        checkpoint = message.body.get(field)
+        if not isinstance(checkpoint, Mapping):
+            raise
+        _exact(checkpoint, _CHECKPOINT_FIELDS, f"{phase} checkpoint")
+        checkpoint_body = decode_bytes(
+            checkpoint["body"], maximum=MAX_CHECKPOINT_BYTES
+        )
+        message_body = dict(message.body)
+        del message_body[field]
+        checkpoint_metadata = dict(checkpoint)
+        del checkpoint_metadata["body"]
+    else:
+        yield frame
+        return
+    count = max(
+        1,
+        (len(checkpoint_body) + MAX_CHECKPOINT_CHUNK_BYTES - 1)
+        // MAX_CHECKPOINT_CHUNK_BYTES,
+    )
+    for index in range(count):
+        start = index * MAX_CHECKPOINT_CHUNK_BYTES
+        chunk = checkpoint_body[start : start + MAX_CHECKPOINT_CHUNK_BYTES]
+        yield WireMessage(
+            WireHeader(
+                message.header.protocol_version,
+                "checkpoint_chunk",
+                message.header.key,
+                message.header.sequence,
+            ),
+            {
+                "phase": phase,
+                "chunk_index": index,
+                "chunk_count": count,
+                "total_bytes": len(checkpoint_body),
+                context_name: message_body,
+                **checkpoint_metadata,
+                "body": encode_bytes(chunk, maximum=MAX_CHECKPOINT_CHUNK_BYTES),
+            },
+        ).encode(max_bytes=max_bytes)
+
+
 @dataclass(frozen=True, slots=True)
 class WireMessage:
     header: WireHeader
@@ -298,8 +373,10 @@ def write_message(stream: BufferedIOBase, message: WireMessage, *, max_bytes: in
 
 
 __all__ = [
-    "FrameEOF", "FrameLimitError", "MAX_CHECKPOINT_BYTES", "MAX_FRAME_BYTES",
+    "FrameEOF", "FrameLimitError", "MAX_CHECKPOINT_BYTES",
+    "MAX_CHECKPOINT_CHUNK_BYTES", "MAX_CHECKPOINT_CHUNKS", "MAX_FRAME_BYTES",
     "PROTOCOL_VERSION", "RequestKey", "TransportError", "WIRE_KINDS", "WireHeader",
     "WireKind", "WireMessage", "WireProtocolError", "decode_bytes", "encode_bytes",
-    "read_frame", "read_message", "write_frame", "write_message",
+    "iter_message_frames", "read_frame", "read_message", "write_frame",
+    "write_message",
 ]

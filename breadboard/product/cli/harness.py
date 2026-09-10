@@ -2,6 +2,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import uuid
 from pathlib import Path
 
 from breadboard.product.harness.lock import load_lock, lock_path, sha256_json
@@ -180,7 +181,7 @@ def run(a):
             lock_action = f"breadboard harness lock {shlex.quote(str(p))}"
             if lock_argument:
                 lock_action += f" --out {shlex.quote(str(requested_lock_path))}"
-            if not p.name.endswith(".lock.json"):
+            if not explicit:
                 c = compile_harness_source(p, w, getattr(a, "contained", False))
                 if (
                     m.get("source_sha256") != sha256_json(c.resolved_author_dict())
@@ -258,7 +259,7 @@ def _server(a):
             c = breadboard_sdk.BreadBoardClient(a.server, timeout_s=120)
         started = c.start_session(
             payload,
-            idempotency_key=sha256_json(payload),
+            idempotency_key=uuid.uuid4().hex,
         )
         if not isinstance(started, dict) or not started.get("ok"):
             raise RuntimeError(f"session.start failed: {started!r}")

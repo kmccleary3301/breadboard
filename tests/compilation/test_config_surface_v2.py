@@ -12,30 +12,30 @@ from breadboard_engine.compilation import v2_loader
 
 ROOT = Path(__file__).resolve().parents[2]
 V2_SCHEMA_PATH = ROOT / "contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json"
-PUBLIC_V1_DOSSIER_CONFIG = ROOT / "agent_configs/atp_hilbert_like_gpt54_v1.yaml"
+PUBLIC_V1_DOSSIER_CONFIG = ROOT / "agent_configs/research/atp_hilbert_like_gpt54_v1.yaml"
 PUBLIC_V2_OPERATIONAL_SHAPES = [
-    pytest.param(ROOT / "agent_configs/v2/claude_code_2-1-63_e4_3-6-2026.yaml", id="anthropic-cache-control"),
-    pytest.param(ROOT / "agent_configs/v2/codex_0-107-0_e4_3-6-2026.yaml", id="codex-team"),
-    pytest.param(ROOT / "agent_configs/v2/oh_my_opencode_3-10-0_e4_3-6-2026.yaml", id="rule-config-and-team"),
+    pytest.param(ROOT / "agent_configs/deprecated/2026-03-06/v2/claude_code_2-1-63_e4_3-6-2026.yaml", id="anthropic-cache-control"),
+    pytest.param(ROOT / "agent_configs/deprecated/2026-03-06/v2/codex_0-107-0_e4_3-6-2026.yaml", id="codex-team"),
+    pytest.param(ROOT / "agent_configs/deprecated/2026-03-06/v2/oh_my_opencode_3-10-0_e4_3-6-2026.yaml", id="rule-config-and-team"),
 ]
 TYPED_SPINE_UNKNOWN_KEYS = [
     pytest.param(
-        ROOT / "agent_configs/v2/oh_my_opencode_3-10-0_e4_3-6-2026.yaml",
+        ROOT / "agent_configs/deprecated/2026-03-06/v2/oh_my_opencode_3-10-0_e4_3-6-2026.yaml",
         ("enhanced_tools", "validation", "rule_config", "one_bash_per_turn"),
         id="one-bash-per-turn-rule",
     ),
     pytest.param(
-        ROOT / "agent_configs/v2/oh_my_opencode_3-10-0_e4_3-6-2026.yaml",
+        ROOT / "agent_configs/deprecated/2026-03-06/v2/oh_my_opencode_3-10-0_e4_3-6-2026.yaml",
         ("enhanced_tools", "validation", "rule_config", "read_before_edit"),
         id="read-before-edit-rule",
     ),
     pytest.param(
-        ROOT / "agent_configs/v2/codex_0-107-0_e4_3-6-2026.yaml",
+        ROOT / "agent_configs/deprecated/2026-03-06/v2/codex_0-107-0_e4_3-6-2026.yaml",
         ("multi_agent", "team_config", "team", "agents", "main"),
         id="dynamic-team-agent",
     ),
     pytest.param(
-        ROOT / "agent_configs/v2/claude_code_2-1-63_e4_3-6-2026.yaml",
+        ROOT / "agent_configs/deprecated/2026-03-06/v2/claude_code_2-1-63_e4_3-6-2026.yaml",
         ("provider_tools", "anthropic", "prompt_cache", "cache_control"),
         id="cache-control-object",
     ),

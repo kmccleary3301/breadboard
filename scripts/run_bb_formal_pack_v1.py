@@ -1108,7 +1108,7 @@ def main() -> int:
     parser.add_argument("--proof-output-dir", required=True)
     parser.add_argument("--raw-output-dir", required=True)
     parser.add_argument("--verifier-url", default="http://127.0.0.1:18001/")
-    parser.add_argument("--config", default="agent_configs/atp_hilbert_like_gpt54_v2.yaml")
+    parser.add_argument("--config", default="agent_configs/research/atp_hilbert_like_gpt54_v2.yaml")
     parser.add_argument("--max-iterations", type=int, default=8)
     parser.add_argument("--repair-seed-proof-dir")
     parser.add_argument("--repair-seed-raw-dir")
