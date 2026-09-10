@@ -127,6 +127,34 @@ def _candidate_fixture(
     return spec, repo_root, output_root, freeze_path, support_dir
 
 
+def test_candidate_validation_resolves_archived_config_without_rebinding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spec, repo_root, output_root, _freeze_path, _support_dir = _candidate_fixture(
+        tmp_path, monkeypatch
+    )
+    logical = str(spec["config_path"])
+    archive_relative = "agent_configs/deprecated/candidate_validation.yaml"
+    archive = repo_root / archive_relative
+    archive.parent.mkdir(parents=True)
+    (repo_root / logical).rename(archive)
+    _write_json(
+        archive.parent / "manifest.json",
+        {
+            "schema_version": "bb.e4.config_archive.v1",
+            "artifacts": {
+                logical: {"path": archive_relative, "sha256": builder.sha256_path(archive)}
+            },
+        },
+    )
+
+    result = builder.build_lane(spec, output_root=output_root)
+
+    assert result["ok"] is True, result["errors"]
+    assert not (repo_root / logical).exists()
+    assert not (output_root / logical).exists()
+
+
 def test_build_lane_validates_fresh_candidate_bytes_with_real_validator(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
