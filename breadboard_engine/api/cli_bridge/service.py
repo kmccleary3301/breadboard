@@ -1133,6 +1133,7 @@ def _restore_product_session(
     state_paths: ManagedStatePaths | None = None,
     *,
     event_root: Path | None = None,
+    checkpoints: Sequence[SessionGenerationCheckpoint] = (),
 ) -> ProductSession:
     selected_event_root = (
         event_root if event_root is not None else _event_root(state_paths)
@@ -1182,7 +1183,11 @@ def _restore_product_session(
             if line.strip()
             for record in (json.loads(line),)
         ]
-        restored = ProductSession.restore(events, sink=protected_sink)
+        restored = ProductSession.restore(
+            events,
+            checkpoints=checkpoints,
+            sink=protected_sink,
+        )
     except ReplayError:
         raise
     except FileNotFoundError as exc:
@@ -3658,10 +3663,29 @@ class SessionService:
                 retained_workspace
             )
             record.metadata = metadata
+        durable_checkpoints: Sequence[SessionGenerationCheckpoint] = ()
+        durable_workspace_value = metadata.get(
+            _SESSION_DURABLE_PRODUCT_WORKSPACE_METADATA_KEY
+        )
+        if (
+            isinstance(durable_workspace_value, str)
+            and durable_workspace_value.strip()
+        ):
+            try:
+                durable_product_session, _ = load_session(
+                    Path(durable_workspace_value).expanduser().resolve(),
+                    record.session_id,
+                    allow_untrusted_running=True,
+                )
+            except FileNotFoundError:
+                pass
+            else:
+                durable_checkpoints = durable_product_session.checkpoints
         record.product_session = _restore_product_session(
             record.session_id,
             self._managed_state_paths,
             event_root=retained_event_root,
+            checkpoints=durable_checkpoints,
         )
         await self._reconcile_committed_checkpoint_adoption(record)
         await self._reconcile_confirmed_checkpoint_cleanup(record)

@@ -895,6 +895,46 @@ def test_restore_wraps_invalid_event_transaction_as_typed_replay_error(tmp_path)
     assert raised.value.code == "invalid_event_record"
 
 
+def test_restore_product_session_preserves_durable_checkpoints(tmp_path) -> None:
+    from breadboard.modules import CheckpointEnvelope, CheckpointProposal
+    from breadboard.product.runtime import Session as ProductSession
+    from breadboard.product.runtime.events import JsonlEventSink
+    from breadboard_engine.api.cli_bridge.service import _restore_product_session
+
+    generation = "sha256:" + "a" * 64
+    session_id = "checkpointed-session"
+    event_root = tmp_path / "events"
+    session = ProductSession.start(
+        EffectiveHarnessLock._from_record({"graph_hash": generation}),
+        "checkpoint restore",
+        session_id=session_id,
+        sink=JsonlEventSink(event_root / session_id / "session_events.jsonl"),
+    )
+    checkpoint = session.stamp_checkpoint(
+        CheckpointProposal(
+            CheckpointEnvelope(
+                generation,
+                "source.module",
+                "instance-a",
+                "work-a",
+                "attempt-a",
+                "state.v1",
+                b"state",
+            ),
+            declared_at_sequence=0,
+        ),
+        checkpoint_id="checkpoint-a",
+    )
+
+    restored = _restore_product_session(
+        session_id,
+        event_root=event_root,
+        checkpoints=session.checkpoints,
+    )
+
+    assert restored.checkpoints == (checkpoint,)
+
+
 
 @pytest.mark.asyncio
 async def test_restore_accepts_identity_stable_event_transaction_recovery(
