@@ -88,6 +88,48 @@ The import record repeats the source member's exact digest and size:
 }
 ```
 
+### Author entrypoint protocol
+
+The packaged worker process already speaks `bb.worker.v2`. Do not write a frame
+loop or a `module(request)` handler. The symbol named by `entrypoint` must be a
+`breadboard.modules.PolicyModule` object or a zero-argument factory returning
+one. It implements these eight methods:
+
+- `bind_dependencies(bindings)`
+- `decode_input(envelope)` and `decode_output(envelope)`
+- `decode_checkpoint(envelope)` and `encode_checkpoint(state, **owner_fields)`
+- `encode_output(value)`
+- `assess_checkpoint(context)`
+- `open_instance(...)`
+
+`open_instance` returns a `PolicyInstance` with `step(value)` and
+`checkpoint(request)`. `step` returns `ContinueResult`, `OutputResult`, or
+`FailureResult`; output and checkpoint payloads use `OutputEnvelope` and
+`CheckpointEnvelope`. `InputEnvelope.body` and `OutputEnvelope.body` are already
+bytes inside the author API. Base64 appears only in external JSON
+`ModuleInput`/Session records.
+
+`bind_dependencies` receives `DependencyBindings`; resolve a declared dependency
+with `bindings.dependency(name, contract_id)`. `open_instance` receives the
+instance identity and the scoped child, context, provider, and tool facades.
+Retain those handles and issue effects from `step`, not while binding or opening
+the instance. Use `DependencyAccess.exchange`, `ChildWorkAccess.start` /
+`next_output` / `join`, `TurnContextAccess.snapshot` / `propose`, and
+`ProviderAccess.start` / `next_event` only when the manifest and Session grant
+the corresponding authority.
+
+The installed author contract is inspectable without Engine source:
+
+```bash
+python -m pydoc breadboard.modules.author
+python -m pydoc breadboard.modules.provider
+```
+
+For stateful replacement, `PolicyInstance.checkpoint` returns a
+`CheckpointCapture`; `encode_checkpoint` attaches the supplied owner fields and
+declared input sequence. The replacement's `assess_checkpoint` returns
+`CheckpointCompatibility`, and `decode_checkpoint` restores the admitted state.
+
 `module.json` is a strict public contract. Use `worker_protocol: bb.worker.v2`.
 `requested_authority` and `resource_budget` have exact fields; the packager
 rejects missing, extra, or runtime-inoperable values:
