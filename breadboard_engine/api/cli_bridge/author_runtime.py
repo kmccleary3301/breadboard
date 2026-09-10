@@ -492,7 +492,7 @@ class _ModuleWorker:
             staging_root=str(owner.storage_root / worker_id / "captured"),
             staging_owner_ref=f"module-staging:{worker_id}",
             next_input_sequence=(
-                owner.record.next_module_input_sequence
+                max(0, owner.record.next_module_input_sequence - 1)
                 if binding in owner.resume_checkpoints
                 else 0
             ),
