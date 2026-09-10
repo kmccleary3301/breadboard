@@ -491,6 +491,11 @@ class _ModuleWorker:
             execution_id=str(uuid4()), execution_token=secrets.token_hex(32),
             staging_root=str(owner.storage_root / worker_id / "captured"),
             staging_owner_ref=f"module-staging:{worker_id}",
+            next_input_sequence=(
+                owner.record.next_module_input_sequence
+                if binding in owner.resume_checkpoints
+                else 0
+            ),
         )
         self.key = RequestKey(
             worker_id, f"prepare:{worker_id}", owner.generation_id,
