@@ -370,7 +370,6 @@ class SessionRunner:
                 proposal,
                 checkpoint_id=checkpoint_id,
             )
-            self._commit_terminal_product_session_locked()
             return checkpoint
 
     def commit_generation_checkpoint_adoption(
@@ -386,7 +385,6 @@ class SessionRunner:
                     "session product state is unavailable",
                 )
             product_session.commit_checkpoint_adoption(lock, adoption_record)
-            self._commit_terminal_product_session_locked()
 
     async def capture_module_checkpoints(
         self,
