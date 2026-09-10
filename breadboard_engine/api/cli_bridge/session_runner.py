@@ -1330,7 +1330,7 @@ class SessionRunner:
     def prepare_input_content(
         self, content: str | None, module_input: ModuleInput | None = None
     ) -> str | None:
-        if (self.request.module_input is None) != (module_input is None):
+        if (self.session.module_execution is None) != (module_input is None):
             raise ValueError(
                 "input must match the Session's admitted text or module kind"
             )

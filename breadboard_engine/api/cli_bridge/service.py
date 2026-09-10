@@ -3770,11 +3770,24 @@ class SessionService:
                     if generation_lock is not None
                     else None
                 )
+                module_storage_root = (
+                    self._state_root / "module_runtime" / record.session_id
+                    if record.module_execution is not None
+                    else None
+                )
+                module_repository = (
+                    self._durable_child_repository
+                    or WorkItemRepository(self._state_root.parent / "work_items.jsonl")
+                    if record.module_execution is not None
+                    else None
+                )
                 runner = SessionRunner(
                     session=record,
                     registry=self.registry,
                     request=retained_request,
                     captured_runtime=captured_runtime,
+                    storage_root=module_storage_root,
+                    repository=module_repository,
                 )
                 runtime_config = runner.prepare_runtime_config()
                 if generation_lock is not None and not isinstance(

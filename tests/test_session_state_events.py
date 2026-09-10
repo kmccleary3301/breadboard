@@ -31,6 +31,7 @@ from breadboard_engine.api.cli_bridge.models import (
     SessionTurnCancelRequest,
 )
 from breadboard_engine.api.cli_bridge.registry import (
+    ModuleExecutionRecord,
     SessionRecord,
     SessionRegistry,
     TurnRecord,
@@ -2602,6 +2603,49 @@ async def test_typed_turn_terminal_persist_does_not_regress_to_disk_snapshot(
     assert turn.state == "completed"
     assert turn.terminal_outcome == "completed"
     assert turn.terminal_resolution_committed is True
+
+
+def test_module_input_kind_uses_durable_execution_after_runner_reconstruction() -> None:
+    record = SessionRecord(
+        session_id="retained-module-kind",
+        status=SessionStatus.RUNNING,
+        module_execution=ModuleExecutionRecord(
+            generation_id="sha256:" + "a" * 64,
+            root_binding="root",
+            work_item_id="work-retained",
+            attempt_id="attempt-retained",
+        ),
+    )
+    captured = SimpleNamespace(
+        materialization=SimpleNamespace(
+            packages={
+                "root": SimpleNamespace(
+                    manifest=SimpleNamespace(
+                        input_schema_ids=("bb.demo.input.v1",),
+                    )
+                )
+            }
+        )
+    )
+    runner = SessionRunner(
+        session=record,
+        registry=SessionRegistry(),
+        request=SessionCreateRequest(task=""),
+        captured_runtime=captured,
+    )
+
+    assert (
+        runner.prepare_input_content(
+            None,
+            ModuleInput("bb.demo.input.v1", b"{}", False),
+        )
+        is None
+    )
+    with pytest.raises(
+        ValueError,
+        match="input must match the Session's admitted text or module kind",
+    ):
+        runner.prepare_input_content("text")
 
 @pytest.mark.asyncio
 async def test_dispatcher_failure_drains_queue_and_rejects_future_events(
