@@ -414,7 +414,7 @@ def test_fixed_digest_is_exact_and_excludes_lifecycle_operations(tmp_path: Path)
         ("DELETE", "/v1/internal/sessions/{session_id}"),
     ]
     assert p30_session_schema_sha256(contract) == (
-        "sha256:979bff06137b659c0110c0f9324703b955e22da85a7aac93bee7f639290475a9"
+        "sha256:49ceaca16dc878316c204fdb67a2ec11dd6d480a25d177e02a63775ba5072e86"
     )
     assert p30_session_schema_sha256(contract) == P30_SESSION_SCHEMA_SHA256
     assert contract["event_stream"]["envelope_schema"]["properties"]["payload"] == {

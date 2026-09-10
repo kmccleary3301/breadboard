@@ -3138,7 +3138,7 @@ def test_http_contract_is_typed_secret_safe_and_accepts_no_pid_authority(caplog:
     registration_body = registration_response.json()
     assert registration_body["first_slice_contract_id"] == "p30-e4-session-v1"
     assert registration_body["first_slice_schema_sha256"] == (
-        "sha256:979bff06137b659c0110c0f9324703b955e22da85a7aac93bee7f639290475a9"
+        "sha256:49ceaca16dc878316c204fdb67a2ec11dd6d480a25d177e02a63775ba5072e86"
     )
     assert registration_body["workspace_id"] == WORKSPACE_A
 

@@ -137,8 +137,8 @@ def _surface_schema_version(doc: Mapping[str, Any]) -> str:
         return "bb.agent_config_surface.v1"
     if schema_version == "bb.agent_config_surface.v2":
         return "bb.agent_config_surface.v2"
-    if schema_version == "bb.harness_definition.v1":
-        return "bb.harness_definition.v1"
+    if schema_version in ("bb.harness_definition.v1", "bb.harness_definition.v2"):
+        return str(schema_version)
     raise ValueError(f"unsupported agent config surface schema_version: {schema_version}")
 
 def _has_agent_config_version_2(doc: Mapping[str, Any]) -> bool:

@@ -500,10 +500,6 @@ def emit_session_start_records(
             session_id, config, str(config_path), repo_root=root
         )
     )
-    if model_role_lock is not None and effective_lock is None:
-        from ...model_roles import embed_model_role_lock
-
-        graph = embed_model_role_lock(graph, model_role_lock)
     registry = compile_capability_registry(
         registry_id=f"{session_id}_capability_registry", run_id=session_id,
         environment_id="cli_bridge_runtime",

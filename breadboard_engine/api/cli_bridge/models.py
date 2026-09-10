@@ -163,8 +163,8 @@ class EngineProtocolIdentity(_StrictEngineIdentityModel):
 class EngineSessionContractIdentity(_StrictEngineIdentityModel):
     contract_id: Literal["p30-e4-session-v1"] = "p30-e4-session-v1"
     schema_sha256: Literal[
-        "sha256:979bff06137b659c0110c0f9324703b955e22da85a7aac93bee7f639290475a9"
-    ] = "sha256:979bff06137b659c0110c0f9324703b955e22da85a7aac93bee7f639290475a9"
+        "sha256:49ceaca16dc878316c204fdb67a2ec11dd6d480a25d177e02a63775ba5072e86"
+    ] = "sha256:49ceaca16dc878316c204fdb67a2ec11dd6d480a25d177e02a63775ba5072e86"
     session_replay_contract_digest: str = Field(
         ...,
         alias="sessionReplayContractDigest",
@@ -272,8 +272,8 @@ class ClientRegisterRequest(_StrictLifecycleModel):
     lifecycle_mode: Literal["local-owned", "local-external", "remote", "off"]
     first_slice_contract_id: Literal["p30-e4-session-v1"] = "p30-e4-session-v1"
     first_slice_schema_sha256: Literal[
-        "sha256:979bff06137b659c0110c0f9324703b955e22da85a7aac93bee7f639290475a9"
-    ] = "sha256:979bff06137b659c0110c0f9324703b955e22da85a7aac93bee7f639290475a9"
+        "sha256:49ceaca16dc878316c204fdb67a2ec11dd6d480a25d177e02a63775ba5072e86"
+    ] = "sha256:49ceaca16dc878316c204fdb67a2ec11dd6d480a25d177e02a63775ba5072e86"
 
 
 class ClientLeaseRequest(_StrictLifecycleModel):
@@ -294,8 +294,8 @@ class ClientRegistrationResponse(_StrictLifecycleModel):
     lifecycle_mode: Literal["local-owned", "local-external", "remote"]
     first_slice_contract_id: Literal["p30-e4-session-v1"] = "p30-e4-session-v1"
     first_slice_schema_sha256: Literal[
-        "sha256:979bff06137b659c0110c0f9324703b955e22da85a7aac93bee7f639290475a9"
-    ] = "sha256:979bff06137b659c0110c0f9324703b955e22da85a7aac93bee7f639290475a9"
+        "sha256:49ceaca16dc878316c204fdb67a2ec11dd6d480a25d177e02a63775ba5072e86"
+    ] = "sha256:49ceaca16dc878316c204fdb67a2ec11dd6d480a25d177e02a63775ba5072e86"
     registered_at_unix: float = Field(..., ge=0)
     expires_at_unix: float | None = Field(default=None, ge=0)
     admission_epoch: int = Field(..., ge=0)

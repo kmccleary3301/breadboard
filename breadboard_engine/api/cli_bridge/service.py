@@ -2787,8 +2787,6 @@ class SessionService:
             if effective_lock is not None
             else runtime_graph["source_layers"][0]["source_ref"]
         )
-        if role_lock is not None and effective_lock is None:
-            runtime_graph = embed_model_role_lock(runtime_graph, role_lock)
         if role_lock is not None:
             metadata["model_role_lock_hash"] = role_lock.lock_hash
             metadata["model_role_lock"] = role_lock.as_dict()
