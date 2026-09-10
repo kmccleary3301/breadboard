@@ -25,11 +25,16 @@ from breadboard.product.harness.lock import (
     LOCK_SCHEMA_VERSION,
     EffectiveHarnessLock,
     make_effective_harness_lock,
+    sha256_json,
 )
 from breadboard.product.runtime import (
     AnchoredStorage,
     ReplayError,
     Session as ProductSession,
+)
+from breadboard.product.runtime.generations import (
+    GenerationAdmission,
+    GenerationLifecycle,
 )
 from breadboard.product.runtime.children import (
     DurableChildReconciler,
@@ -1113,6 +1118,11 @@ class PreparedEventStream:
     queue: "asyncio.Queue[Optional[SessionEvent]]"
 
 
+@dataclass
+class _SessionStartReservation:
+    record: SessionRecord | None = None
+
+
 class DurableChildReconcilerProtocol(Protocol):
     """Cancellation-capable restart boundary for retained child sessions."""
 
@@ -1210,6 +1220,7 @@ class SessionService:
         self._workspace_upload_locks: weakref.WeakValueDictionary[
             str, asyncio.Lock
         ] = weakref.WeakValueDictionary()
+        self._generation_lifecycles: dict[Path, GenerationLifecycle] = {}
         _cleanup_incomplete_starts(state_paths=self._managed_state_paths)
 
     def _session_lock(self, session_id: str) -> asyncio.Lock:
@@ -1219,9 +1230,39 @@ class SessionService:
         key = os.path.normcase(str(workspace_dir.resolve()))
         return self._workspace_upload_locks.setdefault(key, asyncio.Lock())
 
+    def generation_lifecycle(self, workspace: str | Path) -> GenerationLifecycle:
+        root = Path(workspace).expanduser().resolve()
+        lifecycle = self._generation_lifecycles.get(root)
+        if lifecycle is None:
+            lifecycle = GenerationLifecycle(root)
+            self._generation_lifecycles[root] = lifecycle
+        return lifecycle
+
+    @staticmethod
+    def _session_input_digest(request: SessionCreateRequest) -> str:
+        return sha256_json(
+            {
+                "task": request.task,
+                "module_input": (
+                    request.module_input.to_dict()
+                    if request.module_input is not None
+                    else None
+                ),
+                "module_authority": (
+                    request.module_authority.to_dict()
+                    if request.module_authority is not None
+                    else None
+                ),
+            }
+        )
+
     @staticmethod
     def _runtime_lock(
-        session_id: str, runtime_config: dict[str, Any], source_ref: str
+        session_id: str,
+        runtime_config: dict[str, Any],
+        source_ref: str,
+        modules: Mapping[str, Any] | None = None,
+        configuration_artifacts: Mapping[str, Any] | None = None,
     ) -> EffectiveHarnessLock:
         graph = compile_runtime_effective_config_graph(
             session_id, runtime_config, source_ref
@@ -1236,7 +1277,11 @@ class SessionService:
                     session_id=session_id,
                 ),
             )
-        return make_effective_harness_lock(graph, None)
+        return make_effective_harness_lock(
+            graph,
+            modules,
+            configuration_artifacts,
+        )
     @staticmethod
     def _captured_runtime_for_lock(
         lock: EffectiveHarnessLock,
@@ -1523,30 +1568,105 @@ class SessionService:
         session_id: str | None = None,
         event_root: Path | None = None,
         runtime_root: Path | None = None,
+        generation_workspace: str | Path | None = None,
+        publication_target: str | None = None,
         effective_lock: EffectiveHarnessLock | None = None,
+        effective_lock_source: Path | None = None,
     ) -> SessionCreateResponse:
         selected_session_id = session_id or str(uuid.uuid4())
         async with self._session_lock(selected_session_id):
             collision = await self.registry.resolve_session_id(selected_session_id)
             if collision is not None:
                 raise ValueError(f"session already exists: {selected_session_id}")
-            return await self._create_session(
-                request,
-                session_id=selected_session_id,
-                event_root=event_root,
-                runtime_root=runtime_root,
-                effective_lock=effective_lock,
-            )
+            lifecycle: GenerationLifecycle | None = None
+            admission: GenerationAdmission | None = None
+            reservation = _SessionStartReservation()
+            if generation_workspace is not None:
+                lifecycle = self.generation_lifecycle(generation_workspace)
+                input_digest = self._session_input_digest(request)
+                if publication_target is not None:
+                    if effective_lock is not None or effective_lock_source is not None:
+                        raise ValueError(
+                            "publication_target cannot be combined with an explicit Lock"
+                        )
+                    admission = await asyncio.to_thread(
+                        lifecycle.reserve_target_admission,
+                        publication_target,
+                        selected_session_id,
+                        input_digest,
+                    )
+                    effective_lock = EffectiveHarnessLock._from_record(
+                        admission.lock_record
+                    )
+                    effective_lock_source = Path(admission.source_ref)
+                else:
+                    if effective_lock is None or effective_lock_source is None:
+                        raise ValueError(
+                            "supply exactly one publication_target or explicit Lock"
+                        )
+                    admission = await asyncio.to_thread(
+                        lifecycle.reserve_explicit_admission,
+                        effective_lock,
+                        str(effective_lock_source),
+                        selected_session_id,
+                        input_digest,
+                    )
+                source = effective_lock_source
+                if source is not None and not source.is_absolute():
+                    source = lifecycle.workspace / source
+                source = source.resolve() if source is not None else None
+                if source is None or not source.is_relative_to(lifecycle.workspace):
+                    raise ValueError("generation source must stay within its workspace")
+                request = request.model_copy(update={"config_path": str(source)})
+            elif publication_target is not None or effective_lock_source is not None:
+                raise ValueError("generation_workspace is required for generation selectors")
+            try:
+                return await self._create_session(
+                    request,
+                    session_id=selected_session_id,
+                    event_root=event_root,
+                    runtime_root=runtime_root,
+                    effective_lock=effective_lock,
+                    generation_lifecycle=lifecycle,
+                    generation_admission=admission,
+                    reservation=reservation,
+                )
+            except BaseException:
+                owned_record = reservation.record
+                runner_bound = (
+                    owned_record is not None and owned_record.runner is not None
+                )
+                if owned_record is not None:
+                    await asyncio.shield(
+                        self.registry.discard_starting(owned_record)
+                    )
+                if (
+                    lifecycle is not None
+                    and admission is not None
+                    and owned_record is not None
+                    and not runner_bound
+                ):
+                    await asyncio.shield(
+                        asyncio.to_thread(
+                            lifecycle.release,
+                            admission.admission_id,
+                            True,
+                        )
+                    )
+                raise
 
 
     async def _create_session(
         self,
         request: SessionCreateRequest,
         *,
+        reservation: _SessionStartReservation,
         session_id: str | None = None,
         event_root: Path | None = None,
         runtime_root: Path | None = None,
         effective_lock: EffectiveHarnessLock | None = None,
+        generation_lifecycle: GenerationLifecycle | None = None,
+        generation_admission: GenerationAdmission | None = None,
     ) -> SessionCreateResponse:
         if effective_lock is not None and not isinstance(
             effective_lock, EffectiveHarnessLock
@@ -1654,16 +1774,40 @@ class SessionService:
         )
         if request.module_input is not None:
             record.module_grant = AdmissionGrant(
-                grant_id=f"grant-{uuid.uuid4().hex}",
-                authority_epoch=1,
+                grant_id=(
+                    f"grant-{generation_admission.grant_epoch}"
+                    if generation_admission is not None
+                    else f"grant-{uuid.uuid4().hex}"
+                ),
+                authority_epoch=(
+                    generation_admission.grant_epoch
+                    if generation_admission is not None
+                    else 1
+                ),
                 declaration=request.module_authority or AuthorityDeclaration(),
             )
             record.module_execution = ModuleExecutionRecord(
                 generation_id=effective_lock.generation_id,
                 root_binding=effective_lock["modules"]["root"],
-                work_item_id=session_id,
-                attempt_id=f"{session_id}.attempt",
+                work_item_id=(
+                    generation_admission.work_id
+                    if generation_admission is not None
+                    else session_id
+                ),
+                attempt_id=(
+                    generation_admission.attempt_id
+                    if generation_admission is not None
+                    else f"{session_id}.attempt"
+                ),
             )
+        if generation_lifecycle is not None and generation_admission is not None:
+            generation_admission = await asyncio.to_thread(
+                generation_lifecycle.mark_materialized,
+                generation_admission.admission_id,
+            )
+            record.generation_admission = generation_admission
+            await self.registry.reserve_session(record)
+            reservation.record = record
         captured_runtime = (
             self._captured_runtime_for_lock(effective_lock, request)
             if effective_lock is not None
@@ -1843,6 +1987,19 @@ class SessionService:
                 staged_event_dir / "session_events.jsonl",
                 max_bytes=_MAX_RETAINED_EVENT_JOURNAL_BYTES,
             )
+            if generation_admission is None:
+                await self.registry.reserve_session(record)
+                reservation.record = record
+            if generation_lifecycle is not None and generation_admission is not None:
+                await asyncio.to_thread(
+                    generation_lifecycle.require_dispatch,
+                    generation_admission.admission_id,
+                    generation_admission.generation_id,
+                    generation_admission.work_id,
+                    generation_admission.attempt_id,
+                    generation_admission.controller_epoch,
+                    generation_admission.grant_epoch,
+                )
             product_session = ProductSession.start(
                 runtime_lock,
                 session_title if request.module_input is None else None,
@@ -2704,28 +2861,65 @@ class SessionService:
             runtime_overrides = metadata.get("runtime_overrides")
             request_overrides = retained_runtime_overrides(runtime_overrides)
             record.metadata = metadata
+            generation_lock = (
+                EffectiveHarnessLock._from_record(
+                    record.generation_admission.lock_record
+                )
+                if record.generation_admission is not None
+                else None
+            )
 
             def build_runtime_candidate(
                 authored_permission_mode: str | None,
             ) -> tuple[SessionRunner, dict[str, Any], str]:
+                retained_request = SessionCreateRequest(
+                    config_path=config_path,
+                    task="",
+                    overrides=request_overrides,
+                    metadata=metadata,
+                    workspace=workspace,
+                    permission_mode=authored_permission_mode,
+                )
+                captured_runtime = (
+                    self._captured_runtime_for_lock(
+                        generation_lock,
+                        retained_request,
+                    )
+                    if generation_lock is not None
+                    else None
+                )
                 runner = SessionRunner(
                     session=record,
                     registry=self.registry,
-                    request=SessionCreateRequest(
-                        config_path=config_path,
-                        task="",
-                        overrides=request_overrides,
-                        metadata=metadata,
-                        workspace=workspace,
-                        permission_mode=authored_permission_mode,
-                    ),
+                    request=retained_request,
+                    captured_runtime=captured_runtime,
                 )
                 runtime_config = runner.prepare_runtime_config()
-                rebuilt_generation = self._runtime_lock(
-                    record.session_id,
-                    runtime_config,
-                    record.runtime_generation_source_ref or runner.request.config_path,
-                ).generation_id
+                if generation_lock is not None and not isinstance(
+                    metadata.get("model_role_lock"),
+                    Mapping,
+                ):
+                    rebuilt_generation = generation_lock.generation_id
+                elif generation_lock is None:
+                    rebuilt_generation = self._runtime_lock(
+                        record.session_id,
+                        runtime_config,
+                        (
+                            record.runtime_generation_source_ref
+                            or runner.request.config_path
+                        ),
+                    ).generation_id
+                else:
+                    rebuilt_generation = self._runtime_lock(
+                        record.session_id,
+                        runtime_config,
+                        (
+                            record.runtime_generation_source_ref
+                            or runner.request.config_path
+                        ),
+                        generation_lock["modules"],
+                        generation_lock["configuration_artifacts"],
+                    ).generation_id
                 return runner, runtime_config, rebuilt_generation
 
             authored_permission_mode = (
@@ -3663,6 +3857,11 @@ class SessionService:
                         raise GenerationAdoptionError(
                             "admission_closed",
                             "generation adoption is closed for this session",
+                        )
+                    if record.generation_admission is not None:
+                        raise GenerationAdoptionError(
+                            "generation_pinned",
+                            "published generation admissions cannot be reconfigured",
                         )
                     if record.active_turn_id is not None or record.queued_turn_ids:
                         raise GenerationAdoptionError(

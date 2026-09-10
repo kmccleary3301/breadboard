@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from functools import partial
 import os
 from collections.abc import Iterator
 from pathlib import Path
@@ -11,6 +12,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
@@ -18,7 +20,12 @@ from starlette.formparsers import MultiPartParser
 
 from breadboard_engine.api.cli_bridge.app import create_app
 import breadboard_engine.api.cli_bridge.app as app_module
-from breadboard_engine.api.cli_bridge.models import SessionStatus, TurnAdmission
+from breadboard_engine.api.cli_bridge.models import (
+    SessionCommandRequest,
+    SessionCreateRequest,
+    SessionStatus,
+    TurnAdmission,
+)
 from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry, TurnRecord
 from breadboard_engine.api.cli_bridge.registry.records import CancellationRecord
 from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
@@ -65,6 +72,140 @@ def _locked_harness(client: TestClient) -> str:
     result = client.post("/v1/harnesses/daily_driver.v1.yaml/lock").json()
     assert result["ok"] is True
     return result["data"]["path"]
+
+def test_published_target_pins_exact_admission(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    lock_id = _locked_harness(client)
+    harness = tmp_path / "daily_driver.v1.yaml"
+    harness.write_text(harness.read_text() + "\n# mutable source changed after lock\n")
+    published = client.post(
+        "/v1/harness-publications/main",
+        json={
+            "lock_id": lock_id,
+            "expected_revision": 0,
+            "request_id": "publish-main-a",
+        },
+    )
+    assert published.status_code == 200
+    publication = published.json()["data"]
+
+    started = client.post(
+        "/v1/sessions",
+        json={
+            "publication_target": "main",
+            "task": "hold the pinned generation",
+            "session_id": "published-session-a",
+        },
+        headers={"Idempotency-Key": "published-session-a"},
+    )
+    assert started.status_code == 202, json.dumps(started.json(), sort_keys=True)
+    record = client.portal.call(
+        client.app.state.session_service.ensure_session,
+        "published-session-a",
+    )
+    admission = record.generation_admission
+    assert admission is not None
+    assert admission.target == "main"
+    assert admission.publication_revision == publication["revision"]
+    assert admission.generation_id == publication["generation_id"]
+    assert admission.status == "materialized"
+    assert record.product_session.pinned_generation_id == publication["generation_id"]
+
+    retained_path = client.app.state.session_service.registry._state_path(
+        "published-session-a"
+    )
+    assert retained_path is not None
+    retained = json.loads(retained_path.read_text())["session"]["generation_admission"]
+    assert retained["admission_id"] == admission.admission_id
+    assert retained["work_id"] == admission.work_id
+    assert retained["attempt_id"] == admission.attempt_id
+    assert retained["controller_epoch"] == admission.controller_epoch
+    assert retained["grant_epoch"] == admission.grant_epoch
+
+
+    with pytest.raises(HTTPException) as reconfigure:
+        client.portal.call(
+            client.app.state.session_service.execute_command,
+            "published-session-a",
+            SessionCommandRequest(
+                command="set_mode",
+                payload={"mode": "plan"},
+            ),
+        )
+    assert reconfigure.value.status_code == 409
+    assert reconfigure.value.detail["code"] == "generation_pinned"
+    cancelled = client.post(
+        "/v1/sessions/published-session-a/cancel",
+        json={},
+        headers={"Idempotency-Key": "cancel-published-session-a"},
+    )
+    assert cancelled.status_code == 202
+
+    lifecycle_state = json.loads(
+        (tmp_path / ".breadboard" / "generations" / "state.json").read_text()
+    )
+    assert lifecycle_state["admissions"][admission.admission_id]["status"] == "released"
+
+def test_unknown_publication_target_refuses_start(client: TestClient) -> None:
+    refused = client.post(
+        "/v1/sessions",
+        json={
+            "publication_target": "missing",
+            "task": "must not start",
+            "session_id": "missing-publication",
+        },
+        headers={"Idempotency-Key": "missing-publication"},
+    )
+    assert refused.status_code == 409, json.dumps(refused.json(), sort_keys=True)
+    assert refused.json()["error"]["error_code"] == "publication_missing"
+
+
+def test_failed_generation_materialization_releases_admission(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    lock_id = _locked_harness(client)
+    published = client.post(
+        "/v1/harness-publications/team/main",
+        json={
+            "lock_id": lock_id,
+            "expected_revision": 0,
+            "request_id": "publish-main-failed-start",
+        },
+    )
+    assert published.status_code == 200
+    service = client.app.state.session_service
+
+    def fail_materialization(*_args, **_kwargs):
+        raise RuntimeError("materialization failed")
+
+    monkeypatch.setattr(service, "_captured_runtime_for_lock", fail_materialization)
+    with pytest.raises(RuntimeError, match="materialization failed"):
+        client.portal.call(
+            partial(
+                service.create_session,
+                SessionCreateRequest(task="never dispatched"),
+                session_id="failed-generation-materialization",
+                generation_workspace=tmp_path,
+                publication_target="team/main",
+            )
+        )
+    lifecycle_state = json.loads(
+        (tmp_path / ".breadboard" / "generations" / "state.json").read_text()
+    )
+    admissions = tuple(lifecycle_state["admissions"].values())
+    assert len(admissions) == 1
+    assert admissions[0]["status"] == "released"
+    assert (
+        client.portal.call(
+            service.registry.get,
+            "failed-generation-materialization",
+        )
+        is None
+    )
 
 
 def _stream_records(response) -> list[dict]:

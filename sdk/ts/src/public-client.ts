@@ -7,6 +7,7 @@ import {
 import type { EventStreamOptions } from "./stream.js"
 import type {
   PublicHarnessCreateRequest,
+  PublicHarnessPublishRequest,
   PublicHarnessUpdateRequest,
   PublicResult,
   PublicSessionApprovalRequest,
@@ -39,6 +40,7 @@ export interface BreadboardClient {
   validateHarness(id: string): Promise<PublicResult>
   explainHarness(id: string): Promise<PublicResult>
   lockHarness(id: string): Promise<PublicResult>
+  publishHarness(target: string, body: PublicHarnessPublishRequest): Promise<PublicResult>
   getHarnessLock(id: string): Promise<PublicResult>
   listIntegration(): Promise<PublicResult>
   getIntegration(id: string): Promise<PublicResult>
@@ -93,6 +95,7 @@ export const createBreadboardClient = (
     validateHarness: full.validateHarness,
     explainHarness: full.explainHarness,
     lockHarness: full.lockHarness,
+    publishHarness: full.publishHarness,
     getHarnessLock: full.getHarnessLock,
     listIntegration: full.listIntegration,
     getIntegration: full.getIntegration,

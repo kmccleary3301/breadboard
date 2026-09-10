@@ -2,7 +2,7 @@
 # generator: scripts/quality/generate_public_bindings.py
 # generator-version: 6
 # catalog-id: bb.public_operation_catalog.v2
-# catalog-sha256: sha256:8288cc7cd5f032ceec82963798984daed187e18c83478228085b057fbae52b85
+# catalog-sha256: sha256:e85d665fd3617f1130bc7e604682eedf30a7076e40d904a9088914d0e26ee45b
 
 from __future__ import annotations
 
@@ -178,6 +178,23 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         typescript_client="BreadBoardClient",
         typescript_method="packageHarness",
         action_id="public.harness.package",
+        action_kind="action",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="capability_gated",
+        required_capabilities=("public.harness.write",),
+    ),
+    PublicOperationBinding(
+        operation_id="harness.publish",
+        status="candidate",
+        http_method="POST",
+        path="/v1/harness-publications/{target}",
+        cli_command="breadboard harness publish",
+        python_client="BreadBoardClient",
+        python_method="publish_harness",
+        typescript_client="BreadBoardClient",
+        typescript_method="publishHarness",
+        action_id="public.harness.publish",
         action_kind="action",
         lifecycle="sync",
         idempotency_mode="idempotent",
@@ -521,25 +538,26 @@ PUBLIC_BINDINGS_BY_OPERATION_ID: Final[Mapping[str, PublicOperationBinding]] = (
             "harness.list": PUBLIC_OPERATION_BINDINGS[6],
             "harness.lock": PUBLIC_OPERATION_BINDINGS[7],
             "harness.package": PUBLIC_OPERATION_BINDINGS[8],
-            "harness.update": PUBLIC_OPERATION_BINDINGS[9],
-            "harness.validate": PUBLIC_OPERATION_BINDINGS[10],
-            "harness_lock.get": PUBLIC_OPERATION_BINDINGS[11],
-            "integration.get": PUBLIC_OPERATION_BINDINGS[12],
-            "integration.list": PUBLIC_OPERATION_BINDINGS[13],
-            "integration.probe": PUBLIC_OPERATION_BINDINGS[14],
-            "research.compare": PUBLIC_OPERATION_BINDINGS[15],
-            "session.approve": PUBLIC_OPERATION_BINDINGS[16],
-            "session.artifacts": PUBLIC_OPERATION_BINDINGS[17],
-            "session.cancel": PUBLIC_OPERATION_BINDINGS[18],
-            "session.events": PUBLIC_OPERATION_BINDINGS[19],
-            "session.get": PUBLIC_OPERATION_BINDINGS[20],
-            "session.list": PUBLIC_OPERATION_BINDINGS[21],
-            "session.resume": PUBLIC_OPERATION_BINDINGS[22],
-            "session.send_input": PUBLIC_OPERATION_BINDINGS[23],
-            "session.start": PUBLIC_OPERATION_BINDINGS[24],
-            "system.describe": PUBLIC_OPERATION_BINDINGS[25],
-            "system.health": PUBLIC_OPERATION_BINDINGS[26],
-            "system.schemas": PUBLIC_OPERATION_BINDINGS[27],
+            "harness.publish": PUBLIC_OPERATION_BINDINGS[9],
+            "harness.update": PUBLIC_OPERATION_BINDINGS[10],
+            "harness.validate": PUBLIC_OPERATION_BINDINGS[11],
+            "harness_lock.get": PUBLIC_OPERATION_BINDINGS[12],
+            "integration.get": PUBLIC_OPERATION_BINDINGS[13],
+            "integration.list": PUBLIC_OPERATION_BINDINGS[14],
+            "integration.probe": PUBLIC_OPERATION_BINDINGS[15],
+            "research.compare": PUBLIC_OPERATION_BINDINGS[16],
+            "session.approve": PUBLIC_OPERATION_BINDINGS[17],
+            "session.artifacts": PUBLIC_OPERATION_BINDINGS[18],
+            "session.cancel": PUBLIC_OPERATION_BINDINGS[19],
+            "session.events": PUBLIC_OPERATION_BINDINGS[20],
+            "session.get": PUBLIC_OPERATION_BINDINGS[21],
+            "session.list": PUBLIC_OPERATION_BINDINGS[22],
+            "session.resume": PUBLIC_OPERATION_BINDINGS[23],
+            "session.send_input": PUBLIC_OPERATION_BINDINGS[24],
+            "session.start": PUBLIC_OPERATION_BINDINGS[25],
+            "system.describe": PUBLIC_OPERATION_BINDINGS[26],
+            "system.health": PUBLIC_OPERATION_BINDINGS[27],
+            "system.schemas": PUBLIC_OPERATION_BINDINGS[28],
         }
     )
 )

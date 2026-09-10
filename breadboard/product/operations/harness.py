@@ -7,7 +7,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any
+from typing import Any, Protocol
 
 import yaml
 
@@ -15,8 +15,11 @@ from breadboard.artifacts.cas import FilesystemCAS
 from breadboard.product.harness.compile import HarnessCompilation
 from breadboard.product.harness.lock import (
     EffectiveHarnessLock,
+    LOCK_SCHEMA_VERSION,
+    load_lock,
     lock_metadata_path,
     lock_path,
+    materialize_lock,
     sha256_json,
 )
 from breadboard.product.harness.packages import build_module_package
@@ -37,6 +40,8 @@ from breadboard.product.harness.validate import (
     load_harness_definition,
 )
 from breadboard.product.operations.model import (
+    EXIT_BLOCKED,
+    EXIT_RUNTIME_FAILURE,
     EXIT_VALIDATION_FAILURE,
     OperationContext,
     OperationResult,
@@ -61,6 +66,33 @@ class LockHarnessRequest:
     path: str | Path
     out: str | Path | None = None
     check: bool = False
+
+@dataclass(frozen=True, slots=True)
+class PublishHarnessRequest:
+    target: str
+    lock_id: str
+    expected_revision: int
+    request_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class PublishHarnessOutcome:
+    target: str
+    revision: int
+    generation_id: str
+    preparation_id: str
+    request_id: str
+
+
+class GenerationPublicationPort(Protocol):
+    def publish(
+        self,
+        request: PublishHarnessRequest,
+        context: OperationContext,
+        effective_lock: EffectiveHarnessLock,
+        source_path: Path,
+    ) -> PublishHarnessOutcome: ...
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -339,6 +371,101 @@ def _lock_target(
     _validate_output_path(target, context)
     _validate_output_path(lock_metadata_path(target), context)
     return target
+
+
+def _resolve_publication_lock(
+    request: PublishHarnessRequest,
+    context: OperationContext,
+) -> tuple[EffectiveHarnessLock, Path]:
+    lock_path_value = context.resolve_path(request.lock_id)
+    lock, metadata_path = load_lock(lock_path_value, context.workspace, explicit=True)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    source_ref = metadata.get("source_ref")
+    if not isinstance(source_ref, str) or not source_ref:
+        raise ValueError("lock metadata source_ref is missing")
+    source_reference: str | Path = source_ref
+    if not context.contained and not Path(source_ref).is_absolute():
+        source_reference = context.workspace / source_ref
+    source_path = context.resolve_path(source_reference)
+    if lock["schema_version"] == LOCK_SCHEMA_VERSION:
+        cas = FilesystemCAS(context.workspace / ".breadboard" / "module-artifacts")
+        try:
+            materialize_lock(lock, cas=cas)
+        finally:
+            cas.close()
+    return lock, source_path
+
+
+def publish_harness(
+    request: PublishHarnessRequest,
+    context: OperationContext,
+    publication_port: GenerationPublicationPort,
+) -> OperationResult:
+    command = ["harness", "publish"]
+    stage = "harness.publish"
+    try:
+        effective_lock, source_path = _resolve_publication_lock(request, context)
+        publication = publication_port.publish(
+            request,
+            context,
+            effective_lock,
+            source_path,
+        )
+        if not isinstance(publication, PublishHarnessOutcome):
+            raise TypeError("generation publication port returned an invalid outcome")
+        data = {
+            "target": publication.target,
+            "revision": publication.revision,
+            "generation_id": publication.generation_id,
+            "preparation_id": publication.preparation_id,
+            "request_id": publication.request_id,
+        }
+        return OperationResult.success(
+            command,
+            data,
+            hashes={"lock": publication.generation_id},
+            stage=stage,
+        )
+    except Exception as error:
+        from breadboard.product.runtime.generations import GenerationLifecycleError
+        if isinstance(error, GenerationLifecycleError):
+            error_code = str(error.code)
+            if error_code in {
+                "revision_conflict",
+                "cas_conflict",
+                "request_conflict",
+                "request_in_progress",
+                "capacity_exceeded",
+                "capacity_pressure",
+                "cleanup_unknown",
+                "admission_unavailable",
+                "publication_missing",
+                "publication_unavailable",
+            }:
+                exit_code = EXIT_BLOCKED
+            elif error_code in {
+                "preparation_failure",
+                "prepare_failed",
+                "readiness_failure",
+                "resource_missing",
+                "resource_unknown",
+                "disposal_failure",
+            }:
+                exit_code = EXIT_RUNTIME_FAILURE
+            else:
+                exit_code = EXIT_VALIDATION_FAILURE
+            details = {}
+            if error.observed_revision is not None:
+                details["observed_revision"] = error.observed_revision
+            return OperationResult.failure(
+                command,
+                exit_code,
+                error_code,
+                error.message,
+                error.failed_stage,
+                data=details,
+            )
+        return from_exception(command, error, stage)
 
 
 def package_harness(

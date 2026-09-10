@@ -297,6 +297,12 @@ class PublicHarnessUpdateRequest(TypedDict):
     definition: Dict[str, Any]
 
 
+class PublicHarnessPublishRequest(TypedDict):
+    lock_id: str
+    expected_revision: int
+    request_id: str
+
+
 class ModuleInputRequest(TypedDict):
     schema_id: str
     body: str
@@ -332,16 +338,13 @@ class AuthorityDeclarationRequest(TypedDict):
     credential_disclosures: List[CredentialDisclosureRequest]
 
 
-class _PublicSessionStartRequestOptional(TypedDict, total=False):
+class PublicSessionStartRequest(TypedDict, total=False):
+    lock_id: str | None
+    publication_target: str | None
     task: str | None
     module_input: ModuleInputRequest | None
     module_authority: AuthorityDeclarationRequest | None
     session_id: str | None
-
-
-class PublicSessionStartRequest(_PublicSessionStartRequestOptional):
-    lock_id: str
-
 
 class PublicSessionInputRequest(TypedDict, total=False):
     content: str | None

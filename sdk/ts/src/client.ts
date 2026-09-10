@@ -9,9 +9,9 @@ import type {
   AuthLoginSession, BeginAuthLogin, CompleteAuthLogin, PutApiKeyInput, AuthActionResponse, ModelRolesResolveInput,
   ModelRolesResolveResponse, ReadSessionFileOptions, RegistryList, RLRunArtifactListResponse, RLRunAuditResponse,
   RLRunCancelRequest, RLRunReplayResponse, RLRunStatusResponse, RLRunSubmitRequest, RLRunSubmitResponse,
-  Problem, PublicHarnessCreateRequest, PublicHarnessUpdateRequest, PublicResult, PublicSessionApprovalRequest,
-  PublicSessionCancelRequest, PublicSessionDecision, PublicSessionInputRequest, PublicSessionStartRequest,
-  ResearchCompareBody,
+  Problem, PublicHarnessCreateRequest, PublicHarnessPublishRequest, PublicHarnessUpdateRequest, PublicResult,
+  PublicSessionApprovalRequest, PublicSessionCancelRequest, PublicSessionDecision, PublicSessionInputRequest,
+  PublicSessionStartRequest, ResearchCompareBody,
   SessionCommandRequest, SessionCommandResponse,
   SessionCreateRequest, SessionCreateResponse, SessionEvent, SessionFileContent, SessionFileInfo, SessionInputRequest,
   SessionInputResponse, SessionKernelRecordList, SessionListRow, SessionSummary, SkillCatalogResponse,
@@ -126,6 +126,7 @@ export interface BreadboardClient {
   validateHarness(id: string): Promise<PublicResult>
   explainHarness(id: string): Promise<PublicResult>
   lockHarness(id: string): Promise<PublicResult>
+  publishHarness(target: string, body: PublicHarnessPublishRequest): Promise<PublicResult>
   getHarnessLock(id: string): Promise<PublicResult>
   listIntegration(): Promise<PublicResult>
   getIntegration(id: string): Promise<PublicResult>
@@ -223,6 +224,10 @@ function action(
     case "public.harness.validate": return r({ harness_id: resource(String(input.harness_id ?? ""), "harness_id") })
     case "public.harness.explain": return r({ harness_id: resource(String(input.harness_id ?? ""), "harness_id") })
     case "public.harness.lock": return r({ harness_id: resource(String(input.harness_id ?? ""), "harness_id") })
+    case "public.harness.publish": return r(
+      { target: resource(String(input.target ?? ""), "target") },
+      { body: { lock_id: input.lock_id, expected_revision: input.expected_revision, request_id: input.request_id } },
+    )
     case "public.harness.package": return r({}, { body: { source: input.source, out: input.out } })
     case "public.harness_lock.get": return r({ lock_id: resource(String(input.lock_id ?? ""), "lock_id") })
     case "public.integration.list": return r()
@@ -235,6 +240,9 @@ function action(
       const hasTask = input.task !== undefined && input.task !== null
       const hasModuleInput = input.module_input !== undefined && input.module_input !== null
       if (hasTask === hasModuleInput) throw new Error("supply exactly one task or module_input")
+      const hasLock = input.lock_id !== undefined && input.lock_id !== null
+      const hasTarget = input.publication_target !== undefined && input.publication_target !== null
+      if (hasLock === hasTarget) throw new Error("supply exactly one lock_id or publication_target")
       if (input.module_authority !== undefined && input.module_authority !== null && !hasModuleInput) {
         throw new Error("module_authority requires module_input")
       }
@@ -287,6 +295,11 @@ export const createBreadboardClient = (config: BreadboardClientConfig): Breadboa
   const c = {
     compareResearch: (body: ResearchCompareBody) => action(config, "public.research.compare", { definition: body.definition, world: body.world, generation: body.generation, projection: body.projection, compare: body.compare }),
     packageHarness: (source: string, out: string) => action(config, "public.harness.package", { source, out }),
+    publishHarness: (target: string, body: PublicHarnessPublishRequest) => action(
+      config,
+      "public.harness.publish",
+      { target, ...body },
+    ),
     describeSystem: () => action(config, "public.system.describe"), healthSystem: () => action(config, "public.system.health"), schemasSystem: () => action(config, "public.system.schemas"), createHarness: (directory = ".") => action(config, "public.harness.create", { directory }), listHarness: () => action(config, "public.harness.list"), getHarness: (id: string) => action(config, "public.harness.get", { harness_id: id }), updateHarness: (id: string, definition: PublicHarnessUpdateRequest["definition"]) => action(config, "public.harness.update", { harness_id: id, definition }), validateHarness: (id: string) => action(config, "public.harness.validate", { harness_id: id }), explainHarness: (id: string) => action(config, "public.harness.explain", { harness_id: id }), lockHarness: (id: string) => action(config, "public.harness.lock", { harness_id: id }), getHarnessLock: (id: string) => action(config, "public.harness_lock.get", { lock_id: id }), listIntegration: () => action(config, "public.integration.list"), getIntegration: (id: string) => action(config, "public.integration.get", { integration_id: id }), probeIntegration: (id: string, key?: string) => action(config, "public.integration.probe", { integration_id: id, idempotency_key: key }), listArtifact: () => action(config, "public.artifact.list"), getArtifact: (id: string) => action(config, "public.artifact.get", { artifact_id: id }), verifyArtifact: (id: string) => action(config, "public.artifact.verify", { artifact_id: id }), startSession: (body: PublicSessionStartRequest, key?: string) => action(config, "public.session.start", { ...body, idempotency_key: key }), listSession: () => action(config, "public.session.list"), sendInputSession: (id: string, content: string, key?: string) => action(config, "public.session.send_input", { session_id: id, content, idempotency_key: key }), approveSession: (id: string, request: string, decision: PublicSessionDecision, key?: string) => action(config, "public.session.approve", { session_id: id, request_id: request, decision, idempotency_key: key }), resumeSession: (id: string, key?: string) => action(config, "public.session.resume", { session_id: id, idempotency_key: key }), cancelSession: (id: string, reason?: string, key?: string) => action(config, "public.session.cancel", { session_id: id, reason, idempotency_key: key }), artifactsSession: (id: string) => action(config, "public.session.artifacts", { session_id: id }),
     getSessionResult: (id: string) => action(config, "public.session.get", { session_id: id }),
     invokePublicAction: (id: PublicActionId, input?: Readonly<Record<string, unknown>>) => action(config, id, input),

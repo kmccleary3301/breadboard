@@ -2,7 +2,7 @@
 // generator: scripts/quality/generate_public_bindings.py
 // generator-version: 6
 // catalog-id: bb.public_operation_catalog.v2
-// catalog-sha256: sha256:8288cc7cd5f032ceec82963798984daed187e18c83478228085b057fbae52b85
+// catalog-sha256: sha256:e85d665fd3617f1130bc7e604682eedf30a7076e40d904a9088914d0e26ee45b
 // kernel-event-registry: contracts/kernel/registries/kernel_event_kinds.v1.json
 // kernel-event-registry-sha256: sha256:cc235e72f8756caf99a4dc7aa00dfdc1f3d8e2ef0ce6e35657b451127215ba22
 // public-projection-module: breadboard/product/runtime/public_event_projection.py

@@ -16,6 +16,7 @@ from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Sequence, 
 from breadboard_engine.compilation.v2_loader import load_agent_config
 from breadboard.product.runtime import session_store
 from breadboard.product.runtime.events import ReplayError
+from breadboard.product.runtime.generations import GenerationLifecycle
 from breadboard_engine.model_roles import (
     ModelRoleProblem,
     ModelRoleResolutionError,
@@ -40,6 +41,7 @@ from breadboard_engine.permissions import (
 from .events import EventType, SessionEvent
 from .models import SessionCreateRequest, SessionStatus
 from .registry import (
+    SessionRecordDeletedError,
     SessionRecord,
     SessionRegistry,
     TurnRecord,
@@ -540,6 +542,7 @@ class SessionRunner:
         disposal = await self._close_module_resources(reason)
         if disposal.status != "confirmed_absent":
             raise RuntimeError("module cleanup could not be confirmed")
+        await self._release_generation_admission()
         if cancelled_before_start:
             product_state = getattr(
                 getattr(
@@ -1288,11 +1291,40 @@ class SessionRunner:
 
 
 
+    async def _release_generation_admission(self) -> None:
+        admission = self.session.generation_admission
+        if admission is None or admission.status == "released":
+            return
+        metadata = (
+            self.session.metadata if isinstance(self.session.metadata, dict) else {}
+        )
+        workspace = metadata.get("workspace")
+        if not isinstance(workspace, str) or not workspace:
+            return
+        execution = self.session.module_execution
+        cleanup_confirmed = execution is None or all(
+            worker.cleanup is not None
+            and worker.cleanup.status == "confirmed_absent"
+            for worker in execution.workers
+        )
+        released = await asyncio.to_thread(
+            GenerationLifecycle(workspace).release,
+            admission.admission_id,
+            cleanup_confirmed,
+        )
+        self.session.generation_admission = released
+        try:
+            await self.registry.persist(self.session)
+        except SessionRecordDeletedError:
+            return
+
+
     async def _run(self) -> None:
         try:
             await self._lifecycle_owner.run()
         finally:
             await self._close_module_resources("session_terminal")
+            await self._release_generation_admission()
 
 
     async def _terminalize_admitted_turns(

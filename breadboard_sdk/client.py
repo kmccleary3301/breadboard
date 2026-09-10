@@ -644,6 +644,23 @@ class BreadBoardClient:
             path_params={"harness_id": _resource_path(harness_id)},
         )
 
+    def publish_harness(
+        self,
+        target: str,
+        lock_id: str,
+        expected_revision: int,
+        request_id: str,
+    ) -> PublicResult:
+        return self._request_operation(
+            "harness.publish",
+            path_params={"target": _resource_path(target)},
+            body={
+                "lock_id": lock_id,
+                "expected_revision": expected_revision,
+                "request_id": request_id,
+            },
+        )
+
     def get_harness_lock(self, lock_id: str) -> PublicResult:
         return self._request_operation(
             "harness_lock.get",
@@ -690,6 +707,10 @@ class BreadBoardClient:
         has_module_input = payload.get("module_input") is not None
         if has_task == has_module_input:
             raise ValueError("supply exactly one task or module_input")
+        has_lock = payload.get("lock_id") is not None
+        has_target = payload.get("publication_target") is not None
+        if has_lock == has_target:
+            raise ValueError("supply exactly one lock_id or publication_target")
         if payload.get("module_authority") is not None and not has_module_input:
             raise ValueError("module_authority requires module_input")
         return self._request_operation(

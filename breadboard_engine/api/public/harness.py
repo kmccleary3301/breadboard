@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from breadboard.product.operations.harness import (
     CreateHarnessRequest as CreateHarnessOperationRequest,
     ExplainHarnessRequest,
+    GenerationPublicationPort,
     GetHarnessLockRequest,
     GetHarnessRequest,
     ListHarnessesRequest,
     LockHarnessRequest,
     PackageHarnessRequest,
+    PublishHarnessOutcome,
+    PublishHarnessRequest,
     UpdateHarnessRequest as UpdateHarnessOperationRequest,
     ValidateHarnessRequest,
     create_harness,
@@ -20,13 +23,15 @@ from breadboard.product.operations.harness import (
     list_harnesses,
     lock_harness,
     package_harness,
+    publish_harness,
     update_harness,
     validate_harness,
 )
-
+from breadboard.product.operations.model import portable_ref
 from .models import (
     HarnessCreateRequest,
     HarnessPackageRequest,
+    HarnessPublishRequest,
     HarnessUpdateRequest,
     PublicResult,
     invoke,
@@ -35,6 +40,34 @@ from .models import (
 
 
 router = APIRouter(tags=["public-harness"])
+class _GenerationPublicationAdapter:
+    def __init__(self, service) -> None:
+        self._service = service
+
+    def publish(
+        self,
+        request: PublishHarnessRequest,
+        context,
+        effective_lock,
+        source_path,
+    ) -> PublishHarnessOutcome:
+        publication = self._service.generation_lifecycle(
+            context.workspace
+        ).prepare_and_publish(
+            request.target,
+            effective_lock,
+            portable_ref(source_path, context.workspace),
+            request.expected_revision,
+            request.request_id,
+        )
+        return PublishHarnessOutcome(
+            target=publication.target,
+            revision=publication.revision,
+            generation_id=publication.generation_id,
+            preparation_id=publication.preparation_id,
+            request_id=publication.request_id,
+        )
+
 
 
 def _create(request: HarnessCreateRequest, workspace):
@@ -82,6 +115,27 @@ def package(request: HarnessPackageRequest):
             public_operation_context(workspace),
         ),
     )
+
+@router.post(
+    "/v1/harness-publications/{target:path}",
+    operation_id="harness.publish",
+    response_model=PublicResult,
+)
+def publish(target: str, body: HarnessPublishRequest, request: Request):
+    return invoke(
+        "harness.publish",
+        lambda workspace: publish_harness(
+            PublishHarnessRequest(
+                target=target,
+                lock_id=body.lock_id,
+                expected_revision=body.expected_revision,
+                request_id=body.request_id,
+            ),
+            public_operation_context(workspace),
+            _GenerationPublicationAdapter(request.app.state.session_service),
+        ),
+    )
+
 
 
 @router.get("/v1/harnesses", operation_id="harness.list", response_model=PublicResult)

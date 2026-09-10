@@ -167,16 +167,22 @@ class HarnessPackageRequest(BaseModel):
     out: str = Field(min_length=1)
 
 
+class HarnessPublishRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    lock_id: str = Field(min_length=1)
+    expected_revision: int = Field(ge=0)
+    request_id: str = Field(min_length=1)
+
+
 class HarnessUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     definition: dict[str, Any]
 
 
-
-
 class SessionStartRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    lock_id: str = Field(min_length=1)
+    lock_id: str | None = Field(default=None, min_length=1)
+    publication_target: str | None = Field(default=None, min_length=1)
     task: str | None = Field(default=None, min_length=1)
     module_input: ModuleInputRequest | None = None
     module_authority: ModuleAuthorityRequest | None = None
@@ -184,6 +190,8 @@ class SessionStartRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_input_choice(self) -> SessionStartRequest:
+        if (self.lock_id is None) == (self.publication_target is None):
+            raise ValueError("supply exactly one lock_id or publication_target")
         if (self.task is None) == (self.module_input is None):
             raise ValueError("supply exactly one task or module_input")
         if self.module_authority is not None and self.module_input is None:

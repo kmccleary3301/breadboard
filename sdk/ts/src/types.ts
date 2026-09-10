@@ -47,6 +47,12 @@ export interface PublicHarnessUpdateRequest {
   readonly definition: Readonly<Record<string, unknown>>
 }
 
+export interface PublicHarnessPublishRequest {
+  readonly lock_id: string
+  readonly expected_revision: number
+  readonly request_id: string
+}
+
 export interface ModuleInput {
   readonly schema_id: string
   readonly body: string
@@ -82,26 +88,33 @@ export interface AuthorityDeclaration {
   readonly credential_disclosures: readonly CredentialDisclosure[]
 }
 
-export interface PublicSessionStartTextRequest {
-  readonly lock_id: string
+type PublicSessionSelector =
+  | {
+      readonly lock_id: string
+      readonly publication_target?: never
+    }
+  | {
+      readonly lock_id?: never
+      readonly publication_target: string
+    }
+
+export type PublicSessionStartTextRequest = PublicSessionSelector & {
   readonly task: string
+  readonly module_input?: never
+  readonly module_authority?: never
   readonly session_id?: string | null
 }
 
-export interface PublicSessionStartModuleRequest {
-  readonly lock_id: string
+export type PublicSessionStartModuleRequest = PublicSessionSelector & {
+  readonly task?: never
   readonly module_input: ModuleInput
   readonly module_authority?: AuthorityDeclaration
   readonly session_id?: string | null
 }
 
-export interface PublicSessionStartRequest {
-  readonly lock_id: string
-  readonly task?: string | null
-  readonly module_input?: ModuleInput | null
-  readonly module_authority?: AuthorityDeclaration | null
-  readonly session_id?: string | null
-}
+export type PublicSessionStartRequest =
+  | PublicSessionStartTextRequest
+  | PublicSessionStartModuleRequest
 
 export interface ResearchCompareBody {
   readonly definition: string

@@ -9,11 +9,14 @@ from breadboard.product.harness.resolution import compile_harness_source
 from breadboard.product.operations.harness import (
     CreateHarnessRequest,
     ExplainHarnessRequest,
+    GenerationPublicationPort,
     GetHarnessLockRequest,
     GetHarnessRequest,
     ListHarnessesRequest,
     LockHarnessRequest,
     PackageHarnessRequest,
+    PublishHarnessOutcome,
+    PublishHarnessRequest,
     UpdateHarnessRequest,
     ValidateHarnessRequest,
     create_harness,
@@ -23,6 +26,7 @@ from breadboard.product.operations.harness import (
     list_harnesses as list_harnesses_operation,
     lock_harness,
     package_harness,
+    publish_harness,
     update_harness,
     validate_harness,
 )
@@ -96,53 +100,104 @@ def lock(a):
     )
 
 
+class _LocalGenerationPublicationAdapter:
+    def publish(
+        self,
+        request: PublishHarnessRequest,
+        context: OperationContext,
+        effective_lock,
+        source_path,
+    ) -> PublishHarnessOutcome:
+        from breadboard.product.runtime.generations import GenerationLifecycle
+
+        publication = GenerationLifecycle(context.workspace).prepare_and_publish(
+            request.target,
+            effective_lock,
+            portable_ref(source_path, context.workspace),
+            request.expected_revision,
+            request.request_id,
+        )
+        return PublishHarnessOutcome(
+            target=publication.target,
+            revision=publication.revision,
+            generation_id=publication.generation_id,
+            preparation_id=publication.preparation_id,
+            request_id=publication.request_id,
+        )
+
+
+def publish(a):
+    return publish_harness(
+        PublishHarnessRequest(
+            target=a.TARGET,
+            lock_id=a.lock,
+            expected_revision=a.expected_revision,
+            request_id=a.request_id,
+        ),
+        _operation_context(a),
+        _LocalGenerationPublicationAdapter(),
+    )
+
+
 def run(a):
-    p, w = _p(a), _w(a)
+    w = _w(a)
+    target = getattr(a, "target", None)
     try:
-        lock_argument = getattr(a, "lock", None)
-        requested_lock_path = (
-            Path(lock_argument).expanduser().resolve() if lock_argument else p
-        )
-        effective_lock_path = (
-            requested_lock_path
-            if lock_argument or requested_lock_path.name.endswith(".lock.json")
-            else lock_path(requested_lock_path)
-        )
-        explicit = bool(lock_argument or p.name.endswith(".lock.json"))
-        lock, mp = load_lock(requested_lock_path, w, explicit=explicit)
-        m = json.loads(mp.read_text())
-        if (
-            m.get("schema_version") != "bb.harness_lock_metadata.v2"
-            or m.get("lock_id") != lock.generation_id
-            or m.get("graph_hash") != lock.configuration_graph["graph_hash"]
-        ):
-            return OperationResult.failure(
-                ["harness", "run"],
-                5,
-                "lock_identity_mismatch",
-                "the retained Lock lacks matching complete-identity metadata",
-                "harness.run",
+        if target and getattr(a, "PATH", None):
+            raise ValueError("harness run accepts either PATH or --target, not both")
+        if target:
+            a._effective_lock = None
+            a._workspace = w
+            a._lock_id = None
+        else:
+            if not getattr(a, "PATH", None):
+                raise ValueError("harness run requires PATH unless --target is supplied")
+            p = _p(a)
+            lock_argument = getattr(a, "lock", None)
+            requested_lock_path = (
+                Path(lock_argument).expanduser().resolve() if lock_argument else p
             )
-        lock_action = f"breadboard harness lock {shlex.quote(str(p))}"
-        if lock_argument:
-            lock_action += f" --out {shlex.quote(str(requested_lock_path))}"
-        if not explicit:
-            c = compile_harness_source(p, w, getattr(a, "contained", False))
+            effective_lock_path = (
+                requested_lock_path
+                if lock_argument or requested_lock_path.name.endswith(".lock.json")
+                else lock_path(requested_lock_path)
+            )
+            explicit = bool(lock_argument or p.name.endswith(".lock.json"))
+            lock, mp = load_lock(requested_lock_path, w, explicit=explicit)
+            m = json.loads(mp.read_text())
             if (
-                m.get("source_sha256") != sha256_json(c.resolved_author_dict())
-                or c.lock.generation_id != lock.generation_id
+                m.get("schema_version") != "bb.harness_lock_metadata.v2"
+                or m.get("lock_id") != lock.generation_id
+                or m.get("graph_hash") != lock.configuration_graph["graph_hash"]
             ):
                 return OperationResult.failure(
                     ["harness", "run"],
                     5,
-                    "lock_drift",
-                    "mutable harness definition cannot run without a fresh lock",
+                    "lock_identity_mismatch",
+                    "the retained Lock lacks matching complete-identity metadata",
                     "harness.run",
-                    next_actions=[lock_action],
                 )
-        a._effective_lock = lock
+            lock_action = f"breadboard harness lock {shlex.quote(str(p))}"
+            if lock_argument:
+                lock_action += f" --out {shlex.quote(str(requested_lock_path))}"
+            if not p.name.endswith(".lock.json"):
+                c = compile_harness_source(p, w, getattr(a, "contained", False))
+                if (
+                    m.get("source_sha256") != sha256_json(c.resolved_author_dict())
+                    or c.lock.generation_id != lock.generation_id
+                ):
+                    return OperationResult.failure(
+                        ["harness", "run"],
+                        5,
+                        "lock_drift",
+                        "mutable harness definition cannot run without a fresh lock",
+                        "harness.run",
+                        next_actions=[lock_action],
+                    )
+            a._effective_lock = lock
+            a._lock_id = _ref(effective_lock_path, w)
+        a._publication_target = target
         a._workspace = w
-        a._lock_id = _ref(effective_lock_path, w)
         if getattr(a, "local", False):
             try:
                 with local_server(w) as server:
@@ -182,7 +237,12 @@ def _server(a):
             if authority_path is not None
             else None
         )
-        payload = {"lock_id": a._lock_id}
+        publication_target = getattr(a, "_publication_target", None)
+        payload = (
+            {"publication_target": publication_target}
+            if publication_target is not None
+            else {"lock_id": a._lock_id}
+        )
         if module_input is not None:
             payload["module_input"] = module_input.to_dict()
         else:
@@ -198,14 +258,7 @@ def _server(a):
             c = breadboard_sdk.BreadBoardClient(a.server, timeout_s=120)
         started = c.start_session(
             payload,
-            idempotency_key=sha256_json(
-                {
-                    "lock_id": a._effective_lock.generation_id,
-                    "task": task,
-                    "module_input": payload.get("module_input"),
-                    "module_authority": payload.get("module_authority"),
-                }
-            ),
+            idempotency_key=sha256_json(payload),
         )
         if not isinstance(started, dict) or not started.get("ok"):
             raise RuntimeError(f"session.start failed: {started!r}")

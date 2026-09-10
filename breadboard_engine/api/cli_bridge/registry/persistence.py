@@ -31,7 +31,10 @@ from .records import (
     _STATE_SCHEMA_VERSION,
     _STATE_SCHEMA_VERSION_V1,
     _TERMINAL_EVENT_TYPES,
+    _deserialize_generation_admission,
+    _generation_admission_identity,
     _retained_model_id,
+    _serialize_generation_admission,
     _utcnow,
     CancellationRecord,
     ModuleExecutionRecord,
@@ -730,11 +733,13 @@ def _merge_module_execution(
 
 class PersistenceMixin:
     """Retained session persistence and basic record operations."""
+
     @staticmethod
     def _requires_disk_refresh(record: SessionRecord) -> bool:
         metadata = record.metadata if isinstance(record.metadata, dict) else {}
         return (
             record.loaded_from_retained_state
+            or record.generation_admission is not None
             or isinstance(metadata.get("durable_child"), dict)
             or isinstance(metadata.get("durable_parent_cancellation"), dict)
         )
@@ -1293,6 +1298,20 @@ class PersistenceMixin:
                     self._replace_metadata(record, previous)
                     raise
 
+    async def discard_starting(self, record: SessionRecord) -> None:
+        """Remove an uncommitted start reservation without tombstoning its ID."""
+
+        async with self._lock:
+            async with self._record_file_lock(record.session_id):
+                if self._records.get(record.session_id) is not record:
+                    return
+                self._records.pop(record.session_id, None)
+                self._session_reservation_identities.pop(record.session_id, None)
+                path = self._state_path(record.session_id)
+                if path is not None:
+                    path.unlink(missing_ok=True)
+                    _fsync_directory(path.parent)
+
     async def delete(self, session_id: str) -> None:
         async with self._lock:
             path = self._state_path(session_id)
@@ -1309,6 +1328,7 @@ class PersistenceMixin:
                         os.fsync(marker.fileno())
                     _fsync_directory(tombstone.parent)
                 self._records.pop(session_id, None)
+                self._session_reservation_identities.pop(session_id, None)
                 if path is not None:
                     try:
                         path.unlink()
@@ -1516,9 +1536,38 @@ class PersistenceMixin:
             target.module_execution,
             source.module_execution,
         )
+    @staticmethod
+    def _merge_generation_admission_state(
+        target: SessionRecord,
+        source: SessionRecord,
+    ) -> None:
+        target_projection = _serialize_generation_admission(
+            target.generation_admission
+        )
+        source_projection = _serialize_generation_admission(
+            source.generation_admission
+        )
+        if target_projection is None:
+            if source_projection is not None:
+                target.generation_admission = source.generation_admission
+            return
+        if source_projection is None:
+            return
+        if _generation_admission_identity(target_projection) != _generation_admission_identity(
+            source_projection
+        ):
+            raise ValueError("retained generation admission identity changed during refresh")
+        status_order = {"reserved": 0, "materialized": 1, "released": 2}
+        if status_order[source_projection["status"]] >= status_order[
+            target_projection["status"]
+        ]:
+            target.generation_admission = source.generation_admission
+
+
 
     @staticmethod
     def _apply_durable_fields(target: SessionRecord, source: SessionRecord) -> None:
+        PersistenceMixin._merge_generation_admission_state(target, source)
         PersistenceMixin._merge_module_admission_state(target, source)
         target.status = source.status
         target.created_at = source.created_at
@@ -1611,6 +1660,7 @@ class PersistenceMixin:
                     f"session {record.session_id} retained state is unreadable"
                 ) from error
             return
+        self._merge_generation_admission_state(record, disk_record)
         self._merge_module_admission_state(record, disk_record)
         for turn_id, disk_turn in disk_record.turns_by_id.items():
             if disk_turn.module_input is None:
@@ -1852,6 +1902,9 @@ class PersistenceMixin:
             else record.turn_admission
         )
         durable_head_sequence, durable_head_event_id = self._durable_replay_head(record)
+        generation_admission = _serialize_generation_admission(
+            record.generation_admission
+        )
         return {
             "schema_version": _STATE_SCHEMA_VERSION,
             "session": {
@@ -1874,6 +1927,7 @@ class PersistenceMixin:
                     if record.module_grant is not None
                     else None
                 ),
+                "generation_admission": generation_admission,
                 "module_execution": _serialize_module_execution(record.module_execution),
                 "model": _retained_model_id(metadata.get("model")),
                 "mode": (
@@ -2042,6 +2096,15 @@ class PersistenceMixin:
         session_id = session.get("session_id")
         if not isinstance(session_id, str) or not session_id:
             raise ValueError("retained session identity is invalid")
+        if legacy_schema and "generation_admission" in session:
+            raise ValueError("v1 session state contains v2 generation admission data")
+        try:
+            generation_admission = _deserialize_generation_admission(
+                session.get("generation_admission"),
+                session_id=session_id,
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError("retained generation admission is invalid") from error
         next_module_input_sequence = session.get("next_module_input_sequence", 0)
         if (
             type(next_module_input_sequence) is not int
@@ -2189,6 +2252,7 @@ class PersistenceMixin:
             metadata["model"] = str(active_target["route_id"])
         record = SessionRecord(
             module_execution=module_execution,
+            generation_admission=generation_admission,
             session_id=session_id,
             status=SessionStatus(str(session["status"])),
             created_at=datetime.fromisoformat(str(session["created_at"])),

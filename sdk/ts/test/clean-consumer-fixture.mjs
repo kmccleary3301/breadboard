@@ -95,7 +95,7 @@ const result: PublicResult = {
 type CatalogMethod =
   | "describeSystem" | "healthSystem" | "schemasSystem"
   | "createHarness" | "listHarness" | "getHarness" | "updateHarness"
-  | "validateHarness" | "explainHarness" | "lockHarness" | "getHarnessLock"
+  | "validateHarness" | "explainHarness" | "lockHarness" | "publishHarness" | "getHarnessLock"
   | "listIntegration" | "getIntegration" | "probeIntegration"
   | "listArtifact" | "getArtifact" | "verifyArtifact"
   | "startSession" | "listSession" | "getSessionResult" | "sendInputSession"
@@ -103,6 +103,11 @@ type CatalogMethod =
 const catalog: Pick<BreadboardClient, CatalogMethod> = client
 const started: Promise<PublicResult> = client.startSession(start)
 const updated: Promise<PublicResult> = client.updateHarness("harness", update.definition)
+const published: Promise<PublicResult> = client.publishHarness("main", {
+  lock_id: "harness.lock.json",
+  expected_revision: 0,
+  request_id: "publish-main",
+})
 const sent: Promise<PublicResult> = client.sendInputSession("session", sessionInput.content)
 const approved: Promise<PublicResult> = client.approveSession("session", approval.request_id, approval.decision)
 const canceled: Promise<PublicResult> = client.cancelSession("session", cancel.reason)

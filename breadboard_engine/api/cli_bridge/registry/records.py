@@ -12,7 +12,8 @@ import secrets
 import time
 import tempfile
 from collections import deque
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Deque, Dict, Iterable, Optional, Tuple, TypeVar
@@ -43,6 +44,8 @@ from ..models import (
 )
 from breadboard.modules.author import ModuleInput
 from breadboard.modules.authority import AdmissionGrant
+from breadboard.product.harness.lock import EffectiveHarnessLock
+from breadboard.product.runtime.generations import GenerationAdmission
 from breadboard_engine.execution.author_worker import (
     AuthorWorkerCleanupResult,
     AuthorWorkerResourceReceipt,
@@ -103,9 +106,137 @@ def submission_body_digest(
         }
     )
 
-
 def cancellation_body_digest(turn_id: str, reason: str) -> str:
     return _digest_payload({"turn_id": turn_id, "reason": reason})
+
+
+_GENERATION_ADMISSION_FIELDS = frozenset(
+    {
+        "admission_id",
+        "session_id",
+        "target",
+        "publication_revision",
+        "generation_id",
+        "source_ref",
+        "lock_record",
+        "controller_epoch",
+        "work_id",
+        "attempt_id",
+        "grant_epoch",
+        "status",
+        "input_digest",
+    }
+)
+_GENERATION_ADMISSION_STATUSES = frozenset(
+    {"reserved", "materialized", "released"}
+)
+
+
+def _plain_generation_admission_value(value: Any) -> Any:
+    """Detach JSON-compatible mappings used by the generation projection."""
+
+    if isinstance(value, Mapping):
+        if any(type(key) is not str for key in value):
+            raise ValueError("generation admission contains a non-string key")
+        return {
+            key: _plain_generation_admission_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_plain_generation_admission_value(item) for item in value]
+    try:
+        json.dumps(value, allow_nan=False)
+    except (TypeError, ValueError) as error:
+        raise ValueError("generation admission contains a non-JSON value") from error
+    return value
+
+
+def _generation_admission_dict(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    as_dict = getattr(value, "as_dict", None)
+    if callable(as_dict):
+        value = as_dict()
+    elif is_dataclass(value) and not isinstance(value, type):
+        value = {
+            item.name: getattr(value, item.name)
+            for item in fields(value)
+        }
+    if not isinstance(value, Mapping):
+        raise ValueError("generation admission is not a record")
+    detached = _plain_generation_admission_value(value)
+    if not isinstance(detached, dict) or set(detached) != _GENERATION_ADMISSION_FIELDS:
+        raise ValueError("generation admission has invalid fields")
+    for field_name in (
+        "admission_id",
+        "session_id",
+        "generation_id",
+        "source_ref",
+        "work_id",
+        "attempt_id",
+        "input_digest",
+    ):
+        field_value = detached[field_name]
+        if not isinstance(field_value, str) or not field_value.strip():
+            raise ValueError(f"generation admission {field_name} is invalid")
+    target = detached["target"]
+    if target is not None and (not isinstance(target, str) or not target.strip()):
+        raise ValueError("generation admission target is invalid")
+    publication_revision = detached["publication_revision"]
+    if publication_revision is not None and (
+        type(publication_revision) is not int or publication_revision < 0
+    ):
+        raise ValueError("generation admission publication revision is invalid")
+    for field_name in ("controller_epoch", "grant_epoch"):
+        field_value = detached[field_name]
+        if type(field_value) is not int or field_value < 0:
+            raise ValueError(f"generation admission {field_name} is invalid")
+    if detached["status"] not in _GENERATION_ADMISSION_STATUSES:
+        raise ValueError("generation admission status is invalid")
+    lock_record = detached["lock_record"]
+    if not isinstance(lock_record, dict) or not lock_record:
+        raise ValueError("generation admission lock record is invalid")
+    lock_id = lock_record.get("lock_id")
+    if lock_id is not None and lock_id != detached["generation_id"]:
+        raise ValueError("generation admission lock identity is contradictory")
+    return detached
+
+
+def _serialize_generation_admission(value: Any) -> dict[str, Any] | None:
+    """Return a strict detached v2 projection for a lifecycle admission."""
+
+    return _generation_admission_dict(value)
+
+
+def _deserialize_generation_admission(
+    value: Any,
+    *,
+    session_id: str,
+) -> GenerationAdmission | None:
+    """Validate and restore the lifecycle owner's immutable admission value."""
+
+    detached = _generation_admission_dict(value)
+    if detached is None:
+        return None
+    if detached["session_id"] != session_id:
+        raise ValueError("generation admission session identity is contradictory")
+    try:
+        lock = EffectiveHarnessLock._from_record(detached["lock_record"])
+        detached["lock_record"] = lock
+        return GenerationAdmission(**detached)
+    except (TypeError, ValueError) as error:
+        raise ValueError("retained generation admission is invalid") from error
+
+
+def _generation_admission_identity(value: Any) -> tuple[Any, ...] | None:
+    detached = _generation_admission_dict(value)
+    if detached is None:
+        return None
+    return tuple(
+        detached[field_name]
+        for field_name in sorted(_GENERATION_ADMISSION_FIELDS - {"status"})
+    )
+
 
 class SessionRecordDeletedError(RuntimeError):
     """Raised when an operation tries to persist a deleted session record."""
@@ -298,6 +429,7 @@ class SessionRecord:
     next_module_input_sequence: int = 0
     module_grant: AdmissionGrant | None = None
     module_execution: ModuleExecutionRecord | None = None
+    generation_admission: GenerationAdmission | None = None
 
     def projected_status(self) -> SessionStatus:
         if self.product_session is None:
@@ -356,6 +488,8 @@ class SessionRecord:
             logging_dir=self.logging_dir,
             metadata=self.metadata or None,
             turn_admission=self.turn_admission,
+
+
             active_turn_id=self.active_turn_id,
             queued_turn_count=len(self.queued_turn_ids),
             replay_retention=replay["replayRetention"],
@@ -369,4 +503,11 @@ class SessionRecord:
             terminal_event_envelopes=list(self.terminal_event_envelopes),
         )
 
+def _generation_admission_exact_identity(value: Any) -> tuple[Any, ...] | None:
+    detached = _generation_admission_dict(value)
+    if detached is None:
+        return None
+    return tuple(
+        detached[field_name] for field_name in sorted(_GENERATION_ADMISSION_FIELDS)
+    )
 

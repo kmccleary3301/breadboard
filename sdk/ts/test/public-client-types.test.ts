@@ -6,7 +6,7 @@ import { createBreadboardClient } from "../dist/index.js"
 const catalogMethods = [
   "describeSystem", "healthSystem", "schemasSystem", "createHarness", "listHarness",
   "getHarness", "updateHarness", "validateHarness", "explainHarness", "lockHarness",
-  "getHarnessLock", "listIntegration", "getIntegration", "probeIntegration", "listArtifact",
+  "publishHarness", "getHarnessLock", "listIntegration", "getIntegration", "probeIntegration", "listArtifact",
   "getArtifact", "verifyArtifact", "startSession", "compareResearch", "listSession", "getSessionResult",
   "sendInputSession", "approveSession", "resumeSession", "cancelSession", "eventsSession",
   "artifactsSession",

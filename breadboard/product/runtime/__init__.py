@@ -29,6 +29,15 @@ from .public_event_projection import (
     public_session_event,
 )
 
+from .generations import (
+    GenerationAdmission,
+    GenerationLifecycle,
+    GenerationLifecycleError,
+    GenerationPreparer,
+    GenerationPreparation,
+    GenerationPublication,
+)
+
 __all__ = [
     "AnchoredStorage",
     "ArtifactRef",
@@ -36,6 +45,12 @@ __all__ = [
     "AnnotationRecord",
     "CompactionEvent",
     "CompactionSnapshot",
+    "GenerationAdmission",
+    "GenerationLifecycle",
+    "GenerationLifecycleError",
+    "GenerationPreparer",
+    "GenerationPreparation",
+    "GenerationPublication",
     "GenerationAdoptionError",
     "KernelEvent",
     "Projected",

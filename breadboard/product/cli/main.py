@@ -20,14 +20,19 @@ def _harness(ns):
         x=s.add_parser("init");x.add_argument("--out");x.set_defaults(handler=_harness_handler("init"))
     x=s.add_parser("list");x.add_argument("--directory");x.set_defaults(handler=_harness_handler("list_harnesses"))
     x=s.add_parser("package",help="capture an immutable module package without executing it");x.add_argument("PATH");x.add_argument("--out",required=True);x.set_defaults(handler=_harness_handler("package"))
+    x=s.add_parser("publish",help="publish a retained harness Lock to a generation target");x.add_argument("TARGET");x.add_argument("--lock",required=True);x.add_argument("--expected-revision",type=int,required=True);x.add_argument("--request-id",required=True);x.set_defaults(handler=_harness_handler("publish"))
     commands=("get","update","validate","explain","lock","run")
     if _enabled("BREADBOARD_LEGACY_ROUTES"):commands=("show",)+commands
     for n in commands:
-        x=s.add_parser(n);x.add_argument("PATH");
+        x=s.add_parser(n);x.add_argument("PATH",nargs="?" if n=="run" else None);
         if n=="update":x.add_argument("--from",dest="source")
         if n=="explain":x.add_argument("--strict",action="store_true")
         if n=="lock":x.add_argument("--out");x.add_argument("--check",action="store_true")
-        if n=="run":t=x.add_mutually_exclusive_group(required=True);t.add_argument("--server");t.add_argument("--local",action="store_true");i=x.add_mutually_exclusive_group();i.add_argument("--task");i.add_argument("--module-input",metavar="PATH");x.add_argument("--module-authority",metavar="PATH");x.add_argument("--lock")
+        if n=="run":
+            t=x.add_mutually_exclusive_group(required=True);t.add_argument("--server");t.add_argument("--local",action="store_true")
+            s2=x.add_mutually_exclusive_group();s2.add_argument("--task");s2.add_argument("--module-input",metavar="PATH")
+            x.add_argument("--module-authority",metavar="PATH")
+            selectors=x.add_mutually_exclusive_group();selectors.add_argument("--lock");selectors.add_argument("--target")
         x.set_defaults(handler=_harness_handler(n))
 def _harness_lock(ns):
     p=ns.add_parser("harness-lock",help="inspect effective harness locks");_common(p);s=p.add_subparsers(dest="command",required=True);x=s.add_parser("get");x.add_argument("PATH");x.set_defaults(handler=_harness_handler("get_lock"))

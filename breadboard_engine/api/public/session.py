@@ -28,6 +28,7 @@ from breadboard_engine.api.cli_bridge.models import (
 from breadboard.product.operations import session as session_operations
 from breadboard.product.runtime import session_store
 from breadboard.product.runtime.public_event_projection import public_session_event
+from breadboard.product.runtime.generations import GenerationLifecycleError
 
 from .models import (
     PublicResult,
@@ -191,6 +192,26 @@ def _mutation_error(error: HTTPException) -> session_operations.SessionMutationE
     )
 
 
+def _generation_mutation_error(
+    error: GenerationLifecycleError,
+) -> session_operations.SessionMutationError:
+    blocked = {
+        "admission_released",
+        "capacity_pressure",
+        "publication_missing",
+        "publication_unavailable",
+        "request_in_progress",
+        "session_conflict",
+        "session_in_progress",
+        "stale_dispatch",
+        "unknown_admission",
+    }
+    return session_operations.SessionMutationError(
+        6 if error.code in blocked else 4,
+        error.code,
+        error.message,
+    )
+
 class _LiveSessionMutationAdapter:
     def __init__(self, service) -> None:
         self._service = service
@@ -200,7 +221,7 @@ class _LiveSessionMutationAdapter:
         request: session_operations.StartSessionRequest,
         context,
         effective_lock,
-        source_path: Path,
+        source_path: Path | None,
     ) -> session_operations.StartSessionOutcome:
         metadata = {
             "non_interactive_cli_session": request.module_input is None or request.module_input.final,
@@ -237,7 +258,7 @@ class _LiveSessionMutationAdapter:
         try:
             created = await self._service.create_session(
                 BridgeSessionCreateRequest(
-                    config_path=str(source_path),
+                    config_path=str(source_path) if source_path is not None else None,
                     task=request.task,
                     module_input=request.module_input,
                     module_authority=request.module_authority,
@@ -253,13 +274,18 @@ class _LiveSessionMutationAdapter:
                     ".breadboard/service_records",
                     context.workspace,
                 ),
+                generation_workspace=context.workspace,
+                publication_target=request.publication_target,
                 effective_lock=effective_lock,
+                effective_lock_source=source_path,
             )
             _, session = await _product_session(
                 self._service,
                 created.session_id,
             )
             return session_operations.StartSessionOutcome(session.read_model)
+        except GenerationLifecycleError as error:
+            raise _generation_mutation_error(error) from error
         except HTTPException as error:
             raise _mutation_error(error) from error
 
@@ -404,6 +430,7 @@ async def start(
     values = request.model_dump(mode="json")
     neutral_request = session_operations.StartSessionRequest(
         lock_id=request.lock_id,
+        publication_target=request.publication_target,
         task=request.task,
         session_id=request.session_id,
         module_input=request.module_input.decoded if request.module_input is not None else None,

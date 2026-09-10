@@ -68,11 +68,14 @@ def _validate_input(text: str | None, module_input: ModuleInput | None) -> None:
 
 @dataclass(frozen=True, slots=True)
 class StartSessionRequest:
-    lock_id: str
+    lock_id: str | None = None
+    publication_target: str | None = None
     task: str | None = None
     session_id: str | None = None
     module_input: ModuleInput | None = None
     module_authority: AuthorityDeclaration | None = None
+
+
 
 
 
@@ -142,8 +145,8 @@ class SessionMutationPort(Protocol):
         self,
         request: StartSessionRequest,
         context: OperationContext,
-        effective_lock: EffectiveHarnessLock,
-        source_path: Path,
+        effective_lock: EffectiveHarnessLock | None,
+        source_path: Path | None,
     ) -> StartSessionOutcome: ...
 
     async def send_input(
@@ -508,6 +511,10 @@ class SessionRuntime:
         stage = "session.start"
         try:
             _validate_input(request.task, request.module_input)
+            if (request.lock_id is None) == (request.publication_target is None):
+                raise ValueError(
+                    "supply exactly one lock_id or publication_target"
+                )
             if request.module_authority is not None:
                 if not isinstance(request.module_authority, AuthorityDeclaration):
                     raise TypeError("module_authority must be an AuthorityDeclaration")
@@ -515,25 +522,34 @@ class SessionRuntime:
                     raise ValueError("module_authority requires module_input")
             if request.session_id is not None:
                 validate_session_id(request.session_id)
-            effective_lock, source_path, checked = await asyncio.to_thread(
-                _resolve_start_lock,
-                request,
-                self.context,
-            )
-            if not checked.ok:
-                error = checked.error or {}
-                return OperationResult.failure(
-                    command,
-                    checked.exit_code,
-                    str(error.get("error_code") or "lock_drift"),
-                    str(error.get("message") or "harness lock validation failed"),
-                    stage,
-                    hint=error.get("hint"),
-                    refs=checked.record_refs,
-                    next_actions=checked.next_actions,
+            effective_lock: EffectiveHarnessLock | None = None
+            source_path: Path | None = None
+            if request.lock_id is not None:
+                effective_lock, source_path, checked = await asyncio.to_thread(
+                    _resolve_start_lock,
+                    request,
+                    self.context,
                 )
-            if (effective_lock["modules"] is not None) != (request.module_input is not None):
-                raise ValueError("executable Locks require module_input; data Locks require task")
+                if not checked.ok:
+                    error = checked.error or {}
+                    return OperationResult.failure(
+                        command,
+                        checked.exit_code,
+                        str(error.get("error_code") or "lock_drift"),
+                        str(error.get("message") or "harness lock validation failed"),
+                        stage,
+                        hint=error.get("hint"),
+                        refs=checked.record_refs,
+                        next_actions=checked.next_actions,
+                    )
+                if (
+                    effective_lock is not None
+                    and (effective_lock["modules"] is not None)
+                    != (request.module_input is not None)
+                ):
+                    raise ValueError(
+                        "executable Locks require module_input; data Locks require task"
+                    )
             outcome = await self._require_mutation_port().start(
                 request,
                 self.context,

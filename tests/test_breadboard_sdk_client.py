@@ -91,13 +91,33 @@ def test_candidate_python_sdk_preserves_public_result_and_idempotency(
         )
         == result
     )
+    assert (
+        client.publish_harness(
+            "main",
+            "locks/main.lock.json",
+            3,
+            "publish-main-4",
+        )
+        == result
+    )
     assert client.get_artifact("sha256:abc") == result
     start_binding = PUBLIC_BINDINGS_BY_OPERATION_ID["session.start"]
+    publish_binding = PUBLIC_BINDINGS_BY_OPERATION_ID["harness.publish"]
     artifact_binding = PUBLIC_BINDINGS_BY_OPERATION_ID["artifact.get"]
     assert requests[0]["method"] == start_binding.http_method
     assert requests[0]["headers"]["Idempotency-Key"] == "start-key"
-    assert requests[1]["method"] == artifact_binding.http_method
+    assert requests[1]["method"] == publish_binding.http_method
     assert requests[1]["url"] == (
+        "https://breadboard.test/"
+        + publish_binding.path.format(target="main").lstrip("/")
+    )
+    assert json.loads(requests[1]["data"]) == {
+        "lock_id": "locks/main.lock.json",
+        "expected_revision": 3,
+        "request_id": "publish-main-4",
+    }
+    assert requests[2]["method"] == artifact_binding.http_method
+    assert requests[2]["url"] == (
         "https://breadboard.test/"
         + artifact_binding.path.format(artifact_id="sha256%3Aabc").lstrip("/")
     )
