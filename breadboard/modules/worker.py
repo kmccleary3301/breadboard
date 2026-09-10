@@ -667,11 +667,14 @@ class _Worker:
             "package_path", "package_digest", "module_id", "instance_id",
             "generation_id", "instance_label", "input_schemas", "output_schemas",
             "checkpoint_schemas", "dependencies", "child_targets", "initial_input",
-            "resume",
+            "resume", "next_input_sequence",
         }
         _exact(body, required, "start")
         self.key = message.header.key
         self.io.set_identity(self.key)
+        self.input_sequence = _integer(
+            body["next_input_sequence"], "next_input_sequence"
+        )
         digest = _text(body["package_digest"], "package_digest")
         self.loader = _PackageLoader(Path(_text(body["package_path"], "package_path")), digest)
         self.package = self.loader.load()

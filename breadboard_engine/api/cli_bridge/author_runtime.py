@@ -545,6 +545,7 @@ class _ModuleWorker:
             "instance_id": self.key.instance_id,
             "generation_id": self.key.generation_id,
             "instance_label": self.binding,
+            "next_input_sequence": self.ownership.next_input_sequence,
             "initial_input": None,
             "resume": (
                 _checkpoint_to_wire(self.owner.resume_checkpoints[self.binding])
