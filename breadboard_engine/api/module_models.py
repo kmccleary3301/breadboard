@@ -7,6 +7,7 @@ from typing import Annotated
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, PlainSerializer, WithJsonSchema, model_validator
 
 from breadboard.modules import AuthorityDeclaration, ModuleInput
+from breadboard.modules.transport import WireProtocolError
 
 
 def _authority(value: object) -> AuthorityDeclaration:
@@ -32,7 +33,10 @@ class ModuleInputRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_document(self) -> ModuleInputRequest:
-        self.decoded
+        try:
+            self.decoded
+        except WireProtocolError as error:
+            raise ValueError(str(error)) from error
         return self
 
 

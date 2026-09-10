@@ -1244,6 +1244,27 @@ def test_c4_daily_driver_completes_with_stable_observations_and_restart(
     assert "C4_SENTINEL" not in persisted
 
 
+def test_session_rejects_malformed_module_input_as_validation_error(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/v1/sessions",
+        json={
+            "publication_target": "malformed-input",
+            "module_input": {
+                "schema_id": "bb.demo.input.v1",
+                "body": "not base64",
+                "final": False,
+            },
+            "session_id": "malformed-module-input",
+        },
+        headers={"Idempotency-Key": "malformed-module-input"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["error_code"] == "invalid_request"
+
+
 def test_session_invalid_state_is_stable_and_secret_free(
     client: TestClient, tmp_path: Path
 ) -> None:
