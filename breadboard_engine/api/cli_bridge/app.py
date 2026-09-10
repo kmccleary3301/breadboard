@@ -8,6 +8,7 @@ import logging
 import os
 import random
 import secrets
+import signal
 import stat
 import subprocess
 import time
@@ -717,6 +718,22 @@ def _authority_credential_buffers(
         raise
 
 
+def _initialize_local_ray(ray: Any) -> None:
+    managed_signals = (signal.SIGINT, signal.SIGTERM)
+    previous_handlers = {
+        managed_signal: signal.getsignal(managed_signal)
+        for managed_signal in managed_signals
+    }
+    try:
+        with sanitized_process_environment(
+            overrides={"RAY_DISABLE_DASHBOARD": "1"}
+        ):
+            ray.init(address="local", include_dashboard=False)
+    finally:
+        for managed_signal, handler in previous_handlers.items():
+            signal.signal(managed_signal, handler)
+
+
 def create_app(
     service: SessionService | None = None,
     include_atp_routes: bool | None = None,
@@ -991,14 +1008,11 @@ def create_app(
                 )
 
                 def _init_ray_sync() -> None:
-                    with sanitized_process_environment(
-                        overrides={"RAY_DISABLE_DASHBOARD": "1"}
-                    ):
-                        ray.init(address="local", include_dashboard=False)
+                    _initialize_local_ray(ray)
 
-                # Important: initialize Ray in the main thread. Session execution happens in worker
-                # threads, and Ray can degrade or refuse to install signal handlers if initialized
-                # off the main thread.
+                # Ray initialization must run in the main thread, but the HTTP
+                # server retains signal ownership so SIGTERM reaches its
+                # shutdown hooks before the process exits.
                 start = time.monotonic()
                 _init_ray_sync()
                 elapsed = time.monotonic() - start
