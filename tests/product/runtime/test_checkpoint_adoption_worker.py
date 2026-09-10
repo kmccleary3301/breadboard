@@ -313,13 +313,13 @@ def test_graph_checkpoint_retains_dependency_and_owner_frontier(tmp_path) -> Non
         "checkpoint graph",
         session_id="session-graph",
     )
-    session_store.create_session(tmp_path, product_session)
     runner = SessionRunner.__new__(SessionRunner)
     runner.session = SimpleNamespace(product_session=product_session)
     runner._product_session_lock = threading.RLock()
+    runner.artifacts = SimpleNamespace(authorize_manifest=lambda *_args, **_kwargs: None)
     runner._durable_product_session = (
         tmp_path.resolve(),
-        session_store.session_directory_identity(tmp_path),
+        session_store.session_directory_identity(tmp_path, create=True),
     )
     root = CheckpointEnvelope(
         generation,

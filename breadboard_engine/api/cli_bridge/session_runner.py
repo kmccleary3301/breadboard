@@ -216,7 +216,7 @@ class SessionRunner:
                 session_directory_identity,
             )
 
-    def _commit_terminal_product_session_locked(self) -> None:
+    def _persist_product_session_locked(self) -> None:
         binding = self._durable_product_session
         product_session = getattr(self.session, "product_session", None)
         if binding is None or product_session is None:
@@ -369,15 +369,24 @@ class SessionRunner:
             binding = self._durable_product_session
             if binding is not None:
                 workspace, expected_session_directory_identity = binding
-                persisted, _ = session_store.mutate_session(
-                    workspace,
-                    product_session.read_model.session_id,
-                    lambda session: session.stamp_checkpoint(
-                        proposal,
-                        checkpoint_id=checkpoint_id,
-                    ),
-                    expected_session_directory_identity=expected_session_directory_identity,
-                )
+
+                def persist_checkpoint() -> SessionGenerationCheckpoint:
+                    persisted, _ = session_store.mutate_session(
+                        workspace,
+                        product_session.read_model.session_id,
+                        lambda session: session.stamp_checkpoint(
+                            proposal,
+                            checkpoint_id=checkpoint_id,
+                        ),
+                        expected_session_directory_identity=expected_session_directory_identity,
+                    )
+                    return persisted
+
+                try:
+                    persisted = persist_checkpoint()
+                except FileNotFoundError:
+                    self._persist_product_session_locked()
+                    persisted = persist_checkpoint()
                 checkpoint = product_session.stamp_checkpoint(
                     proposal,
                     checkpoint_id=checkpoint_id,
@@ -1303,7 +1312,7 @@ class SessionRunner:
                     return
                 getattr(product_session, transition)(*args)
             if transition in {"complete", "fail", "cancel"}:
-                self._commit_terminal_product_session_locked()
+                self._persist_product_session_locked()
 
     # Provider-supplied names are not public identities until they resolve into
     # the active, configured tool surface.
