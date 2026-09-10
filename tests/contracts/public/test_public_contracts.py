@@ -35,7 +35,13 @@ def test_current_catalogs_partition_the_historical_authority() -> None:
     assert product["contract_id"] == "bb.public_operation_catalog.v2" and product["status"] == "current"
     assert internal["contract_id"] == "bb.internal_evidence_operation_catalog.v1" and internal["status"] == "current"
     legacy_ids = frozen_operation_ids(load_frozen_surface())
-    assert (product_ids | internal_ids) - legacy_ids == {"research.compare"}
+    assert (product_ids | internal_ids) - legacy_ids == {
+        "harness.package",
+        "harness.publish",
+        "research.compare",
+        "session.adopt",
+        "session.checkpoint",
+    }
     assert legacy_ids - (product_ids | internal_ids) == set()
     assert product_ids.isdisjoint(internal_ids)
     assert {operation_id.split(".",1)[0] for operation_id in product_ids} == {"artifact","harness","harness_lock","integration","research","session","system"}
@@ -115,13 +121,10 @@ def test_record_surface_semantic_mapping_is_strict(mode, match) -> None:
     else: value["roles"][0]["schema_ids"] = ["bb.syntactically_valid_missing.v1"]
     with pytest.raises(ContractValidationError, match=match):
         validate_record_surface(value)
-def test_harness_definition_role_names_v1_authority_and_v2_compatibility() -> None:
+def test_harness_definition_role_names_current_v2_authority() -> None:
     value = load_json(PUBLIC_DIR / "record_surface.v1.json")
     role = next(row for row in value["roles"] if row["role_id"] == "harness_definition")
-    assert role["schema_ids"] == [
-        "bb.harness_definition.v1",
-        "bb.agent_config_surface.v2",
-    ]
+    assert role["schema_ids"] == ["bb.harness_definition.v2"]
 
 
 def staged_root(tmp_path):
