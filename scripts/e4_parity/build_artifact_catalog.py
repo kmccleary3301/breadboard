@@ -634,6 +634,7 @@ def _path_to_role_id(lane: Mapping[str, Any], manifest: Mapping[str, Any]) -> di
         artifact = by_role.get(manifest_role)
         if artifact is not None:
             result[display_path(_split_ref(str(artifact["path"]))) ] = role_id
+            result[display_path(resolve_registered_path(str(artifact["path"])))] = role_id
     return result
 
 
