@@ -14,17 +14,22 @@ def local_server(workspace: Path) -> Iterator[str]:
     """Run the product API on an ephemeral loopback port for local harness runs."""
     import uvicorn
 
-    from breadboard_engine.api.cli_bridge.app import create_app
 
+    resolved_workspace = workspace.expanduser().resolve()
+    local_state = resolved_workspace / ".breadboard" / "local-server"
     settings = {
         "BREADBOARD_LEGACY_ROUTES": "0",
         "BREADBOARD_ENABLE_PUBLIC_API": "1",
         "BREADBOARD_ENABLE_E4_API": "0",
-        "BREADBOARD_PUBLIC_WORKSPACE": str(workspace),
+        "BREADBOARD_PUBLIC_WORKSPACE": str(resolved_workspace),
+        "BREADBOARD_RUNTIME_RECORD_ROOT": str(local_state / "runtime-records"),
+        "BREADBOARD_SESSION_STATE_ROOT": str(local_state / "session-state"),
+        "BREADBOARD_SESSION_EVENT_ROOT": str(local_state / "session-events"),
         "RAY_SCE_LOCAL_MODE": "1",
     }
     previous = {name: os.environ.get(name) for name in settings}
     os.environ.update(settings)
+    from breadboard_engine.api.cli_bridge.app import create_app
     listener: socket.socket | None = None
 
     def restore_environment() -> None:

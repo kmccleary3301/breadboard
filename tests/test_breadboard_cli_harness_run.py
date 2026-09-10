@@ -120,10 +120,25 @@ def test_local_server_enables_only_product_api_and_restores_environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("BREADBOARD_ENABLE_PUBLIC_API", "0")
+    monkeypatch.setenv("BREADBOARD_SESSION_STATE_ROOT", "/previous/session-state")
     with local_server(tmp_path) as base_url:
+        local_state = tmp_path / ".breadboard" / "local-server"
+        assert os.environ["BREADBOARD_PUBLIC_WORKSPACE"] == str(tmp_path.resolve())
+        assert os.environ["BREADBOARD_RUNTIME_RECORD_ROOT"] == str(
+            local_state / "runtime-records"
+        )
+        assert os.environ["BREADBOARD_SESSION_STATE_ROOT"] == str(
+            local_state / "session-state"
+        )
+        assert os.environ["BREADBOARD_SESSION_EVENT_ROOT"] == str(
+            local_state / "session-events"
+        )
         assert requests.get(f"{base_url}/v1/system", timeout=5).status_code == 200
         assert requests.get(f"{base_url}/v1/e4/lanes", timeout=5).status_code == 404
     assert os.environ["BREADBOARD_ENABLE_PUBLIC_API"] == "0"
+    assert os.environ["BREADBOARD_SESSION_STATE_ROOT"] == "/previous/session-state"
+    assert "BREADBOARD_RUNTIME_RECORD_ROOT" not in os.environ
+    assert "BREADBOARD_SESSION_EVENT_ROOT" not in os.environ
 
 
 def test_session_cli_restores_flat_legacy_event_layout(tmp_path: Path) -> None:
