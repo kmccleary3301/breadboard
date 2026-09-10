@@ -19,7 +19,7 @@ type CliOptions = {
 const parseArgs = (): CliOptions => {
   const args = process.argv.slice(2)
   let inputPath = ""
-  let configPath = "agent_configs/codex_0-107-0_e4_3-6-2026.yaml"
+  let configPath = "agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"
   let outPath: string | null = null
   let strict = false
   let maxItems = 7

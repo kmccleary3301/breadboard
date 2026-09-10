@@ -25,6 +25,8 @@ node tui_skeleton/dist/main.js run \
 
 Those commands may contact the configured provider. The Codex file is intentionally narrow: its accepted evidence covers one read-only capture probe, not collaboration, write execution, or full-session parity.
 
+The TUI defaults to the current Codex profile. Use `--config` or `BREADBOARD_DEFAULT_CONFIG` to select another profile.
+
 Oh My Pi and Pi use the installed-target API. This reads the hashed descriptor and declared assets without invoking a provider:
 
 ```bash
@@ -45,3 +47,4 @@ Canonical target packages live under `config/e4_targets/`. Historical frozen dos
 - `config/e4_targets/codex/0.107.0/` remains the historical GPT-5.1 package. The accepted Codex 0.139.0 probe uses the separately tracked 0.139.0 prompt asset.
 - Oh My Pi and Pi package descriptors are the machine authority. Their top-level files expose the package config for readers but do not replace `target.json` or `config/e4_targets/index.json`.
 - Immutable evidence may retain historical logical paths and hashes. Live manifests and commands use the current or archived paths documented here.
+- The LongRun parity audit checks active agent profiles, excludes `deprecated/`, and reports target-config projections separately as non-applicable.

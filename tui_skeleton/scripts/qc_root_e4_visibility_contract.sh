@@ -12,7 +12,7 @@ BREADBOARD_PTY_PRESERVE_HOME=1 \
 BREADBOARD_TUI_PROFILE="${BREADBOARD_TUI_PROFILE:-codex_v1}" \
 pnpm exec tsx scripts/repl_pty_harness.ts \
   --cmd "bb repl" \
-  --config ../agent_configs/codex_0-107-0_e4_3-6-2026.yaml \
+  --config ../agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml \
   --script scripts/root_e4_visibility_contract_pty.json \
   --snapshots "$OUT_DIR/pty_snapshots.txt" \
   --cols "${BREADBOARD_QC_COLS:-120}" \

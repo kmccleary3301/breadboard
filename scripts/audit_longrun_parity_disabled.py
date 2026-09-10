@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Sequence
 
+import yaml
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -32,6 +34,8 @@ def discover_parity_configs(root: Path) -> List[Path]:
     seen: set[Path] = set()
     for pattern in PATTERNS:
         for path in agent_configs.rglob(pattern):
+            if path.is_relative_to(agent_configs / "deprecated"):
+                continue
             rel = path.relative_to(root)
             if rel in seen:
                 continue
@@ -50,10 +54,15 @@ def _longrun_enabled(loaded: Dict[str, Any]) -> bool:
 def audit_configs(paths: Iterable[Path], repo_root: Path) -> Dict[str, Any]:
     results: List[Dict[str, Any]] = []
     failures: List[Dict[str, Any]] = []
+    skipped: List[Dict[str, str]] = []
     for path in paths:
         rel = str(path.relative_to(repo_root))
         entry: Dict[str, Any] = {"config": rel, "load_error": None, "long_running_enabled": False}
         try:
+            document = yaml.safe_load(path.read_text(encoding="utf-8"))
+            if isinstance(document, dict) and document.get("schema_version") == "bb.e4.target_config.v1":
+                skipped.append({"config": rel, "reason": "target_config_projection"})
+                continue
             loaded = load_agent_config(str(path))
             enabled = _longrun_enabled(loaded if isinstance(loaded, dict) else {})
             entry["long_running_enabled"] = enabled
@@ -67,13 +76,14 @@ def audit_configs(paths: Iterable[Path], repo_root: Path) -> Dict[str, Any]:
         "schema_version": "longrun_parity_audit_v1",
         "checked": len(results),
         "failures": failures,
+        "skipped": skipped,
         "results": results,
         "ok": len(failures) == 0,
     }
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Verify long-running mode is disabled across parity/E4 configs.")
+    parser = argparse.ArgumentParser(description="Verify long-running mode is disabled across active parity/E4 agent configs; report target projections separately.")
     parser.add_argument(
         "--repo-root",
         default=".",
