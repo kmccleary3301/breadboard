@@ -366,11 +366,32 @@ class SessionRunner:
                     "checkpoint_unavailable",
                     "session product state is unavailable",
                 )
-            checkpoint = product_session.stamp_checkpoint(
+            binding = self._durable_product_session
+            if binding is not None:
+                workspace, expected_session_directory_identity = binding
+                persisted, _ = session_store.mutate_session(
+                    workspace,
+                    product_session.read_model.session_id,
+                    lambda session: session.stamp_checkpoint(
+                        proposal,
+                        checkpoint_id=checkpoint_id,
+                    ),
+                    expected_session_directory_identity=expected_session_directory_identity,
+                )
+                checkpoint = product_session.stamp_checkpoint(
+                    proposal,
+                    checkpoint_id=checkpoint_id,
+                )
+                if persisted != checkpoint:
+                    raise GenerationAdoptionError(
+                        "checkpoint_conflict",
+                        "durable and active checkpoint identities differ",
+                    )
+                return checkpoint
+            return product_session.stamp_checkpoint(
                 proposal,
                 checkpoint_id=checkpoint_id,
             )
-            return checkpoint
 
     def commit_generation_checkpoint_adoption(
         self,

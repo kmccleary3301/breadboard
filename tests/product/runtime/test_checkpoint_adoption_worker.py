@@ -26,6 +26,7 @@ from breadboard.modules.transport import (
 from breadboard.modules.worker import _Worker
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.coordination.work_items import WorkItem, WorkItemRepository
+from breadboard.product.runtime import session_store
 from breadboard.product.runtime.events import Session
 from breadboard_engine.api.cli_bridge.author_domains import AuthorDomainQuiescence
 from breadboard_engine.api.cli_bridge.author_runtime import (
@@ -305,12 +306,20 @@ async def test_source_runtime_is_confirmed_absent_before_adoption_commit() -> No
     assert persisted
 
 
-def test_graph_checkpoint_retains_dependency_and_owner_frontier() -> None:
+def test_graph_checkpoint_retains_dependency_and_owner_frontier(tmp_path) -> None:
     generation = "sha256:" + "a" * 64
     product_session = Session.start(
         EffectiveHarnessLock._from_record({"graph_hash": generation}),
         "checkpoint graph",
         session_id="session-graph",
+    )
+    session_store.create_session(tmp_path, product_session)
+    runner = SessionRunner.__new__(SessionRunner)
+    runner.session = SimpleNamespace(product_session=product_session)
+    runner._product_session_lock = threading.RLock()
+    runner._durable_product_session = (
+        tmp_path.resolve(),
+        session_store.session_directory_identity(tmp_path),
     )
     root = CheckpointEnvelope(
         generation,
@@ -332,7 +341,7 @@ def test_graph_checkpoint_retains_dependency_and_owner_frontier() -> None:
             "unused": ("unused.contract.v1",),
         },
     )
-    checkpoint = product_session.stamp_checkpoint(
+    checkpoint = runner.stamp_generation_checkpoint(
         aggregate,
         checkpoint_id="checkpoint-1",
     )
@@ -346,6 +355,13 @@ def test_graph_checkpoint_retains_dependency_and_owner_frontier() -> None:
         "effects": [],
         "approvals": [],
     }
+    restored, _ = session_store.load_session(
+        tmp_path,
+        "session-graph",
+        allow_untrusted_running=True,
+    )
+    assert restored.checkpoints == (checkpoint,)
+
 
 
 def test_source_work_settlement_is_exact_and_idempotent(tmp_path) -> None:
