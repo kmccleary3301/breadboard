@@ -1476,35 +1476,21 @@ class PersistenceMixin:
     async def persist_confirmed_checkpoint_cleanup(
         self,
         record: SessionRecord,
-        *,
-        expected_execution: ModuleExecutionRecord,
-    ) -> None:
+    ) -> bool:
         """Atomically retire retained workers after authenticated cleanup."""
-        if not expected_execution.workers or not all(
-            worker.cleanup is not None
-            and worker.cleanup.status == "confirmed_absent"
-            for worker in expected_execution.workers
-        ):
-            raise ValueError("checkpoint cleanup is not confirmed")
         replacement = record.module_execution
         if (
             replacement is None
             or replacement.workers
-            or (
-                replacement.generation_id,
-                replacement.root_binding,
-                replacement.work_item_id,
-                replacement.attempt_id,
-            )
-            != (
-                expected_execution.generation_id,
-                expected_execution.root_binding,
-                expected_execution.work_item_id,
-                expected_execution.attempt_id,
-            )
             or not record.module_resume_checkpoints
         ):
             raise ValueError("checkpoint cleanup cutover is incomplete")
+        replacement_identity = (
+            replacement.generation_id,
+            replacement.root_binding,
+            replacement.work_item_id,
+            replacement.attempt_id,
+        )
         async with self._lock:
             async with self._record_file_lock(record.session_id):
                 path = self._state_path(record.session_id)
@@ -1522,11 +1508,28 @@ class PersistenceMixin:
                 persisted = self._deserialize_record(
                     json.loads(path.read_text(encoding="utf-8"))
                 )
-                if persisted.module_execution != expected_execution:
+                retained = persisted.module_execution
+                if (
+                    retained is None
+                    or (
+                        retained.generation_id,
+                        retained.root_binding,
+                        retained.work_item_id,
+                        retained.attempt_id,
+                    )
+                    != replacement_identity
+                ):
                     raise ValueError(
                         "retained module execution changed before checkpoint cleanup"
                     )
+                if not retained.workers or not all(
+                    worker.cleanup is not None
+                    and worker.cleanup.status == "confirmed_absent"
+                    for worker in retained.workers
+                ):
+                    return False
                 self._persist_record_locked(record)
+                return True
 
     async def persist(
         self,

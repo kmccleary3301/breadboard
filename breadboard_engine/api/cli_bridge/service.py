@@ -1985,11 +1985,6 @@ class SessionService:
             execution is None
             or product_session is None
             or not execution.workers
-            or not all(
-                worker.cleanup is not None
-                and worker.cleanup.status == "confirmed_absent"
-                for worker in execution.workers
-            )
         ):
             return
         checkpoint = next(
@@ -2004,7 +1999,7 @@ class SessionService:
         if checkpoint is None:
             return
         _, source_checkpoints = _decode_graph_checkpoint(checkpoint)
-        retained_execution = execution
+        previous_resume_checkpoints = record.module_resume_checkpoints
         record.module_execution = ModuleExecutionRecord(
             generation_id=execution.generation_id,
             root_binding=execution.root_binding,
@@ -2012,10 +2007,9 @@ class SessionService:
             attempt_id=execution.attempt_id,
         )
         record.module_resume_checkpoints = source_checkpoints
-        await self.registry.persist_confirmed_checkpoint_cleanup(
-            record,
-            expected_execution=retained_execution,
-        )
+        if not await self.registry.persist_confirmed_checkpoint_cleanup(record):
+            record.module_execution = execution
+            record.module_resume_checkpoints = previous_resume_checkpoints
 
     async def _reconcile_committed_checkpoint_adoption(
         self,

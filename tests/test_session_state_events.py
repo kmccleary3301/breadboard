@@ -1634,7 +1634,7 @@ async def test_registry_round_trips_adopted_module_resume_checkpoint(
 async def test_registry_atomically_retires_confirmed_checkpoint_worker(
     tmp_path: Path,
 ) -> None:
-    registry = SessionRegistry(state_root=tmp_path)
+    owner = SessionRegistry(state_root=tmp_path)
     generation = "sha256:" + "b" * 64
     cleanup = AuthorWorkerCleanupResult(
         status="confirmed_absent",
@@ -1659,10 +1659,22 @@ async def test_registry_atomically_retires_confirmed_checkpoint_worker(
                 execution_token="token-1",
                 staging_root=str(tmp_path / "staging"),
                 staging_owner_ref="module-staging:worker-1",
-                cleanup=cleanup,
             ),
         ),
     )
+    record = SessionRecord(
+        session_id="sess-checkpoint-cleanup",
+        status=SessionStatus.RUNNING,
+        module_execution=retained_execution,
+    )
+    await owner.create(record)
+    stale_registry = SessionRegistry(state_root=tmp_path)
+    stale_record = await stale_registry.get(record.session_id)
+    assert stale_record is not None
+    assert stale_record.module_execution is not None
+    assert stale_record.module_execution.workers[0].cleanup is None
+    record.module_execution.workers[0].cleanup = cleanup
+    await owner.persist(record)
     envelope = CheckpointEnvelope(
         source_generation_id=generation,
         source_module_id="module.example",
@@ -1672,25 +1684,17 @@ async def test_registry_atomically_retires_confirmed_checkpoint_worker(
         schema_id="state.v1",
         body=b'{"count":1}',
     )
-    record = SessionRecord(
-        session_id="sess-checkpoint-cleanup",
-        status=SessionStatus.RUNNING,
-        module_execution=retained_execution,
-    )
-    await registry.create(record)
-    record.module_execution = ModuleExecutionRecord(
+    stale_record.module_execution = ModuleExecutionRecord(
         generation_id=generation,
         root_binding="root",
         work_item_id="work-1",
         attempt_id="attempt-1",
     )
-    record.module_resume_checkpoints = {"root": envelope}
+    stale_record.module_resume_checkpoints = {"root": envelope}
 
-    await registry.persist_confirmed_checkpoint_cleanup(
-        record,
-        expected_execution=retained_execution,
-    )
+    retired = await stale_registry.persist_confirmed_checkpoint_cleanup(stale_record)
 
+    assert retired is True
     restored = await SessionRegistry(state_root=tmp_path).get(record.session_id)
     assert restored is not None
     assert restored.module_execution is not None
