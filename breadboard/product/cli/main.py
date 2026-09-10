@@ -53,6 +53,8 @@ def _session(ns):
         x=s.add_parser(n);x.add_argument("SESSION_ID");x.add_argument("--idempotency-key")
         if n=="cancel":x.add_argument("--reason")
         x.set_defaults(handler=getattr(session,n))
+    x=s.add_parser("checkpoint");x.add_argument("SESSION_ID");x.add_argument("--reason",required=True);x.add_argument("--request-id",dest="request_id",required=True);x.set_defaults(handler=session.checkpoint)
+    x=s.add_parser("adopt");x.add_argument("SESSION_ID");x.add_argument("--checkpoint",required=True);x.add_argument("--lock",required=True);x.add_argument("--request-id",dest="request_id",required=True);x.set_defaults(handler=session.adopt)
 def _integration(ns):
     p=ns.add_parser("integration",help="discover integrations");_common(p);s=p.add_subparsers(dest="command",required=True);s.add_parser("list").set_defaults(handler=integration.list_integrations);x=s.add_parser("get");x.add_argument("INTEGRATION_ID");x.set_defaults(handler=integration.get);x=s.add_parser("probe");x.add_argument("INTEGRATION_ID",nargs="?");x.set_defaults(handler=integration.probe)
 def _artifact(ns):

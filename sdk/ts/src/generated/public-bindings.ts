@@ -2,11 +2,11 @@
 // generator: scripts/quality/generate_public_bindings.py
 // generator-version: 6
 // catalog-id: bb.public_operation_catalog.v2
-// catalog-sha256: sha256:e85d665fd3617f1130bc7e604682eedf30a7076e40d904a9088914d0e26ee45b
+// catalog-sha256: sha256:d574352b4e55997181883cb316d1e9db13c8715636e610c992bb1c156a8e622b
 
 export type HttpMethod = "GET" | "POST" | "PUT";
-export type PublicOperationId = "artifact.get" | "artifact.list" | "artifact.verify" | "harness.create" | "harness.explain" | "harness.get" | "harness.list" | "harness.lock" | "harness.package" | "harness.publish" | "harness.update" | "harness.validate" | "harness_lock.get" | "integration.get" | "integration.list" | "integration.probe" | "research.compare" | "session.approve" | "session.artifacts" | "session.cancel" | "session.events" | "session.get" | "session.list" | "session.resume" | "session.send_input" | "session.start" | "system.describe" | "system.health" | "system.schemas";
-export type PublicActionId = "public.artifact.get" | "public.artifact.list" | "public.artifact.verify" | "public.harness.create" | "public.harness.explain" | "public.harness.get" | "public.harness.list" | "public.harness.lock" | "public.harness.package" | "public.harness.publish" | "public.harness.update" | "public.harness.validate" | "public.harness_lock.get" | "public.integration.get" | "public.integration.list" | "public.integration.probe" | "public.research.compare" | "public.session.approve" | "public.session.artifacts" | "public.session.cancel" | "public.session.events" | "public.session.get" | "public.session.list" | "public.session.resume" | "public.session.send_input" | "public.session.start" | "public.system.describe" | "public.system.health" | "public.system.schemas";
+export type PublicOperationId = "artifact.get" | "artifact.list" | "artifact.verify" | "harness.create" | "harness.explain" | "harness.get" | "harness.list" | "harness.lock" | "harness.package" | "harness.publish" | "harness.update" | "harness.validate" | "harness_lock.get" | "integration.get" | "integration.list" | "integration.probe" | "research.compare" | "session.adopt" | "session.approve" | "session.artifacts" | "session.cancel" | "session.checkpoint" | "session.events" | "session.get" | "session.list" | "session.resume" | "session.send_input" | "session.start" | "system.describe" | "system.health" | "system.schemas";
+export type PublicActionId = "public.artifact.get" | "public.artifact.list" | "public.artifact.verify" | "public.harness.create" | "public.harness.explain" | "public.harness.get" | "public.harness.list" | "public.harness.lock" | "public.harness.package" | "public.harness.publish" | "public.harness.update" | "public.harness.validate" | "public.harness_lock.get" | "public.integration.get" | "public.integration.list" | "public.integration.probe" | "public.research.compare" | "public.session.adopt" | "public.session.approve" | "public.session.artifacts" | "public.session.cancel" | "public.session.checkpoint" | "public.session.events" | "public.session.get" | "public.session.list" | "public.session.resume" | "public.session.send_input" | "public.session.start" | "public.system.describe" | "public.system.health" | "public.system.schemas";
 
 export interface PublicOperationBinding {
   readonly operationId: PublicOperationId;
@@ -317,6 +317,23 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     requiredCapabilities: ["public.session.execute", "public.session.read"],
   },
   {
+    operationId: "session.adopt",
+    status: "candidate",
+    httpMethod: "POST",
+    path: "/v1/sessions/{session_id}/adoptions",
+    cliCommand: "breadboard session adopt",
+    pythonClient: "BreadBoardClient",
+    pythonMethod: "adopt_session",
+    typescriptClient: "BreadBoardClient",
+    typescriptMethod: "adoptSession",
+    actionId: "public.session.adopt",
+    actionKind: "action",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.session.execute"],
+  },
+  {
     operationId: "session.approve",
     status: "candidate",
     httpMethod: "POST",
@@ -364,6 +381,23 @@ export const PUBLIC_OPERATION_BINDINGS: readonly PublicOperationBinding[] = [
     actionKind: "action",
     lifecycle: "async",
     idempotencyMode: "keyed",
+    authMode: "capability_gated",
+    requiredCapabilities: ["public.session.execute"],
+  },
+  {
+    operationId: "session.checkpoint",
+    status: "candidate",
+    httpMethod: "POST",
+    path: "/v1/sessions/{session_id}/checkpoints",
+    cliCommand: "breadboard session checkpoint",
+    pythonClient: "BreadBoardClient",
+    pythonMethod: "checkpoint_session",
+    typescriptClient: "BreadBoardClient",
+    typescriptMethod: "checkpointSession",
+    actionId: "public.session.checkpoint",
+    actionKind: "action",
+    lifecycle: "sync",
+    idempotencyMode: "idempotent",
     authMode: "capability_gated",
     requiredCapabilities: ["public.session.execute"],
   },
@@ -540,18 +574,20 @@ export const PUBLIC_BINDINGS_BY_OPERATION_ID: Readonly<Record<PublicOperationId,
   "integration.list": PUBLIC_OPERATION_BINDINGS[14],
   "integration.probe": PUBLIC_OPERATION_BINDINGS[15],
   "research.compare": PUBLIC_OPERATION_BINDINGS[16],
-  "session.approve": PUBLIC_OPERATION_BINDINGS[17],
-  "session.artifacts": PUBLIC_OPERATION_BINDINGS[18],
-  "session.cancel": PUBLIC_OPERATION_BINDINGS[19],
-  "session.events": PUBLIC_OPERATION_BINDINGS[20],
-  "session.get": PUBLIC_OPERATION_BINDINGS[21],
-  "session.list": PUBLIC_OPERATION_BINDINGS[22],
-  "session.resume": PUBLIC_OPERATION_BINDINGS[23],
-  "session.send_input": PUBLIC_OPERATION_BINDINGS[24],
-  "session.start": PUBLIC_OPERATION_BINDINGS[25],
-  "system.describe": PUBLIC_OPERATION_BINDINGS[26],
-  "system.health": PUBLIC_OPERATION_BINDINGS[27],
-  "system.schemas": PUBLIC_OPERATION_BINDINGS[28],
+  "session.adopt": PUBLIC_OPERATION_BINDINGS[17],
+  "session.approve": PUBLIC_OPERATION_BINDINGS[18],
+  "session.artifacts": PUBLIC_OPERATION_BINDINGS[19],
+  "session.cancel": PUBLIC_OPERATION_BINDINGS[20],
+  "session.checkpoint": PUBLIC_OPERATION_BINDINGS[21],
+  "session.events": PUBLIC_OPERATION_BINDINGS[22],
+  "session.get": PUBLIC_OPERATION_BINDINGS[23],
+  "session.list": PUBLIC_OPERATION_BINDINGS[24],
+  "session.resume": PUBLIC_OPERATION_BINDINGS[25],
+  "session.send_input": PUBLIC_OPERATION_BINDINGS[26],
+  "session.start": PUBLIC_OPERATION_BINDINGS[27],
+  "system.describe": PUBLIC_OPERATION_BINDINGS[28],
+  "system.health": PUBLIC_OPERATION_BINDINGS[29],
+  "system.schemas": PUBLIC_OPERATION_BINDINGS[30],
 } as const;
 
 export const PUBLIC_BINDINGS_BY_ACTION_ID: Readonly<Record<PublicActionId, PublicOperationBinding>> = {
@@ -572,18 +608,20 @@ export const PUBLIC_BINDINGS_BY_ACTION_ID: Readonly<Record<PublicActionId, Publi
   "public.integration.list": PUBLIC_OPERATION_BINDINGS[14],
   "public.integration.probe": PUBLIC_OPERATION_BINDINGS[15],
   "public.research.compare": PUBLIC_OPERATION_BINDINGS[16],
-  "public.session.approve": PUBLIC_OPERATION_BINDINGS[17],
-  "public.session.artifacts": PUBLIC_OPERATION_BINDINGS[18],
-  "public.session.cancel": PUBLIC_OPERATION_BINDINGS[19],
-  "public.session.events": PUBLIC_OPERATION_BINDINGS[20],
-  "public.session.get": PUBLIC_OPERATION_BINDINGS[21],
-  "public.session.list": PUBLIC_OPERATION_BINDINGS[22],
-  "public.session.resume": PUBLIC_OPERATION_BINDINGS[23],
-  "public.session.send_input": PUBLIC_OPERATION_BINDINGS[24],
-  "public.session.start": PUBLIC_OPERATION_BINDINGS[25],
-  "public.system.describe": PUBLIC_OPERATION_BINDINGS[26],
-  "public.system.health": PUBLIC_OPERATION_BINDINGS[27],
-  "public.system.schemas": PUBLIC_OPERATION_BINDINGS[28],
+  "public.session.adopt": PUBLIC_OPERATION_BINDINGS[17],
+  "public.session.approve": PUBLIC_OPERATION_BINDINGS[18],
+  "public.session.artifacts": PUBLIC_OPERATION_BINDINGS[19],
+  "public.session.cancel": PUBLIC_OPERATION_BINDINGS[20],
+  "public.session.checkpoint": PUBLIC_OPERATION_BINDINGS[21],
+  "public.session.events": PUBLIC_OPERATION_BINDINGS[22],
+  "public.session.get": PUBLIC_OPERATION_BINDINGS[23],
+  "public.session.list": PUBLIC_OPERATION_BINDINGS[24],
+  "public.session.resume": PUBLIC_OPERATION_BINDINGS[25],
+  "public.session.send_input": PUBLIC_OPERATION_BINDINGS[26],
+  "public.session.start": PUBLIC_OPERATION_BINDINGS[27],
+  "public.system.describe": PUBLIC_OPERATION_BINDINGS[28],
+  "public.system.health": PUBLIC_OPERATION_BINDINGS[29],
+  "public.system.schemas": PUBLIC_OPERATION_BINDINGS[30],
 } as const;
 
 export interface PublicRouteEntry {
@@ -610,9 +648,11 @@ export const PUBLIC_ROUTES: readonly PublicRouteEntry[] = [
   { path: "/v1/integrations", method: "GET", operationId: "integration.list" },
   { path: "/v1/integrations/{integration_id}/probe", method: "POST", operationId: "integration.probe" },
   { path: "/v1/research/compare", method: "POST", operationId: "research.compare" },
+  { path: "/v1/sessions/{session_id}/adoptions", method: "POST", operationId: "session.adopt" },
   { path: "/v1/sessions/{session_id}/approve", method: "POST", operationId: "session.approve" },
   { path: "/v1/sessions/{session_id}/artifacts", method: "GET", operationId: "session.artifacts" },
   { path: "/v1/sessions/{session_id}/cancel", method: "POST", operationId: "session.cancel" },
+  { path: "/v1/sessions/{session_id}/checkpoints", method: "POST", operationId: "session.checkpoint" },
   { path: "/v1/sessions/{session_id}/events", method: "GET", operationId: "session.events" },
   { path: "/v1/sessions/{session_id}", method: "GET", operationId: "session.get" },
   { path: "/v1/sessions", method: "GET", operationId: "session.list" },

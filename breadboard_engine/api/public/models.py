@@ -222,6 +222,19 @@ class SessionCancelRequest(BaseModel):
     reason: str = Field(default="operator request", min_length=1)
 
 
+
+class SessionCheckpointRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str = Field(min_length=1)
+    request_id: str = Field(min_length=1)
+
+
+class SessionAdoptRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    checkpoint_id: str = Field(min_length=1)
+    lock_id: str = Field(min_length=1)
+    request_id: str = Field(min_length=1)
+
 def public_workspace() -> Path:
     configured = Path(
         os.environ.get("BREADBOARD_PUBLIC_WORKSPACE", Path.cwd())

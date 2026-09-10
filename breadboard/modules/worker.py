@@ -26,6 +26,8 @@ from types import ModuleType
 from typing import Callable, Final, TypeAlias
 
 from .author import (
+    CheckpointCompatibility,
+    CheckpointCompatibilityContext,
     CheckpointCapture,
     CheckpointEnvelope,
     CheckpointProposal,
@@ -641,6 +643,8 @@ class _Worker:
                     self._input(message)
                 elif message.header.kind == "checkpoint_request":
                     self._checkpoint(message)
+                elif message.header.kind == "checkpoint_prepare":
+                    self._prepare_checkpoint(message)
                 elif message.header.kind == "cancel":
                     self.io.emit("result", message.header.key, {"status": "cancelled", "reason": _text(message.body.get("reason"), "cancel reason")})
                     return 0
@@ -869,6 +873,102 @@ class _Worker:
             raise
         except BaseException as exc:
             raise WorkerError("checkpoint_invalid", f"checkpoint failed: {type(exc).__name__}: {exc}") from exc
+
+    def _prepare_checkpoint(self, message: WireMessage) -> None:
+        if self.module is None or self.identity is None or self.instance is not None:
+            raise WorkerError(
+                "worker_protocol_mismatch",
+                "checkpoint preparation requires a ready unopened target worker",
+            )
+        body = message.body
+        _exact(
+            body,
+            {"source", "source_dependencies", "target_dependencies", "declared_at_sequence"},
+            "checkpoint_prepare",
+        )
+        source = _checkpoint_from_wire(body["source"])
+        declared_at_sequence = _integer(
+            body["declared_at_sequence"],
+            "declared_at_sequence",
+        )
+        source_dependencies = tuple(
+            _text(item, "source dependency")
+            for item in _string_list(body["source_dependencies"], "source_dependencies")
+        )
+        target_dependencies = tuple(
+            _text(item, "target dependency")
+            for item in _string_list(body["target_dependencies"], "target_dependencies")
+        )
+        context = CheckpointCompatibilityContext(
+            source_generation_id=source.source_generation_id,
+            source_schema_id=source.schema_id,
+            source_state_digest="sha256:" + hashlib.sha256(source.body).hexdigest(),
+            source_dependencies=source_dependencies,
+            target_dependencies=target_dependencies,
+        )
+        try:
+            compatibility = self.module.assess_checkpoint(context)
+            if not isinstance(compatibility, CheckpointCompatibility):
+                raise WorkerError(
+                    "checkpoint_invalid",
+                    "assess_checkpoint returned an unsupported result",
+                )
+            if compatibility.disposition == "incompatible":
+                self.io.emit(
+                    "checkpoint_compatibility",
+                    message.header.key,
+                    {
+                        "disposition": "incompatible",
+                        "target_schema_id": compatibility.target_schema_id,
+                        "reason": compatibility.reason,
+                    },
+                )
+                return
+            state = self.module.decode_checkpoint(source)
+            if compatibility.disposition == "compatible":
+                if compatibility.target_schema_id != source.schema_id:
+                    raise WorkerError(
+                        "checkpoint_invalid",
+                        "compatible checkpoint changed its schema identity",
+                    )
+                proposal = CheckpointProposal(source, declared_at_sequence)
+            elif compatibility.disposition == "migrate":
+                proposal = self.module.encode_checkpoint(
+                    state,
+                    source_generation_id=self.identity.generation_id,
+                    source_module_id=self.identity.module_id,
+                    source_instance_id=self.identity.instance_id,
+                    source_work_id=message.header.key.work_id,
+                    source_attempt_id=message.header.key.attempt_id,
+                    declared_at_sequence=declared_at_sequence,
+                )
+                if proposal.payload.schema_id != compatibility.target_schema_id:
+                    raise WorkerError(
+                        "checkpoint_invalid",
+                        "migrated checkpoint schema differs from compatibility decision",
+                    )
+            else:
+                raise WorkerError(
+                    "checkpoint_invalid",
+                    "checkpoint compatibility disposition is invalid",
+                )
+            self._send_proposal(message.header.key, proposal)
+            self.io.emit(
+                "checkpoint_compatibility",
+                message.header.key,
+                {
+                    "disposition": compatibility.disposition,
+                    "target_schema_id": compatibility.target_schema_id,
+                    "reason": compatibility.reason,
+                },
+            )
+        except WorkerError:
+            raise
+        except BaseException as exc:
+            raise WorkerError(
+                "checkpoint_invalid",
+                f"checkpoint preparation failed: {type(exc).__name__}: {exc}",
+            ) from exc
 
     def _send_proposal(self, key: RequestKey, proposal: CheckpointProposal | None) -> None:
         if proposal is None:

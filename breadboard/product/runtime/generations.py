@@ -888,6 +888,56 @@ class GenerationLifecycle:
             state["admissions"][record["admission_id"]] = record
             return self._admission(record)
 
+    def reserve_adoption_admission(
+        self,
+        lock: EffectiveHarnessLock | Mapping[str, Any],
+        source_ref: str,
+        session_id: str,
+        input_digest: str,
+    ) -> GenerationAdmission:
+        """Reserve an exact replacement while the Session's old admission stays live."""
+        source_ref = _required_string(source_ref, "source_ref")
+        session_id = _required_string(session_id, "session_id")
+        input_digest = _required_string(input_digest, "input_digest")
+        effective = self._lock_record(lock)
+        with self._locked() as state:
+            for value in state["admissions"].values():
+                if not isinstance(value, Mapping):
+                    continue
+                if (
+                    value.get("session_id") == session_id
+                    and value.get("status") != "released"
+                    and value.get("input_digest") == input_digest
+                ):
+                    replay = self._admission(value)
+                    if (
+                        replay.target is not None
+                        or replay.generation_id != effective.generation_id
+                        or replay.source_ref != source_ref
+                    ):
+                        raise GenerationLifecycleError(
+                            "session_conflict",
+                            "adoption request was reused with another Lock",
+                            "admission",
+                        )
+                    return replay
+            controller_epoch = state["next_epoch"]
+            grant_epoch = controller_epoch + 1
+            state["next_epoch"] = grant_epoch + 1
+            record = self._new_admission_record(
+                session_id=session_id,
+                target=None,
+                publication_revision=None,
+                generation_id=effective.generation_id,
+                source_ref=source_ref,
+                lock_record=effective.as_dict(),
+                input_digest=input_digest,
+                controller_epoch=controller_epoch,
+                grant_epoch=grant_epoch,
+            )
+            state["admissions"][record["admission_id"]] = record
+            return self._admission(record)
+
     def mark_materialized(self, admission_id: str) -> GenerationAdmission:
         admission_id = _required_string(admission_id, "admission_id")
         with self._locked() as state:

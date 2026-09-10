@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64, hashlib, json, os, re
 from collections.abc import Callable, Iterable, Mapping; from dataclasses import dataclass; from datetime import datetime, timezone; from pathlib import Path; from threading import RLock; from types import MappingProxyType; from typing import Any, Protocol; from uuid import uuid4
 from breadboard.product.harness.lock import EffectiveHarnessLock
-from breadboard.modules import ModuleInput, OutputEnvelope, RequestKey
+from breadboard.modules import CheckpointEnvelope, CheckpointProposal, MAX_CHECKPOINT_BYTES, ModuleInput, OutputEnvelope, RequestKey
 from .artifacts import ArtifactRef
 from breadboard.product.projection import Projected, ProjectionSource
 def _sync(stream: Any) -> None: stream.flush(); os.fsync(stream.fileno())
@@ -110,8 +110,9 @@ class JsonlEventSink:
 class NullEventSink:
     def append(self, event: object) -> None: return None
 _OBSERVATION_EVENT_KINDS = frozenset({"assistant_message", "tool_call", "tool_result"})
-_EVENT_KINDS = frozenset({"session.started", "input.accepted", "module_output", "annotation", "context.compacted", "approval.requested", "approval.resolved", "session.reconfigured", "session.paused", "session.resumed", "session.completed", "session.failed", "session.canceled"}) | _OBSERVATION_EVENT_KINDS
-_ALLOWED = MappingProxyType({"input.accepted": ("running",), "module_output": ("running",), "assistant_message": ("running",), "tool_call": ("running",), "tool_result": ("running",), "annotation": ("running", "awaiting_approval", "paused", "completed", "failed", "canceled"), "context.compacted": ("running",), "approval.requested": ("running",), "approval.resolved": ("awaiting_approval",), "session.paused": ("running",), "session.reconfigured": ("running", "awaiting_approval", "paused"), "session.resumed": ("paused",), "session.completed": ("running",), "session.failed": ("running", "awaiting_approval", "paused"), "session.canceled": ("running", "awaiting_approval", "paused")})
+_ADOPTION_EVENT_KIND = "session.adoption_committed"
+_EVENT_KINDS = frozenset({"session.started", "input.accepted", "module_output", "annotation", "context.compacted", "approval.requested", "approval.resolved", "session.reconfigured", _ADOPTION_EVENT_KIND, "session.paused", "session.resumed", "session.completed", "session.failed", "session.canceled"}) | _OBSERVATION_EVENT_KINDS
+_ALLOWED = MappingProxyType({"input.accepted": ("running",), "module_output": ("running",), "assistant_message": ("running",), "tool_call": ("running",), "tool_result": ("running",), "annotation": ("running", "awaiting_approval", "paused", "completed", "failed", "canceled"), "context.compacted": ("running",), "approval.requested": ("running",), "approval.resolved": ("awaiting_approval",), "session.paused": ("running",), "session.reconfigured": ("running", "awaiting_approval", "paused"), _ADOPTION_EVENT_KIND: ("running", "awaiting_approval", "paused"), "session.resumed": ("paused",), "session.completed": ("running",), "session.failed": ("running", "awaiting_approval", "paused"), "session.canceled": ("running", "awaiting_approval", "paused")})
 _STATUSES, _DECISIONS = frozenset({"running", "awaiting_approval", "paused", "completed", "failed", "canceled"}), frozenset({"allow", "deny", "once", "always", "reject"})
 _TERMINAL = {"session.completed": ("completed", ("summary",)), "session.failed": ("failed", ("error", "detail")), "session.canceled": ("canceled", ("reason",))}
 def _string(value: Any, name: str, populated: bool = True) -> str:
@@ -368,6 +369,74 @@ def _validate_payload(kind: str, payload: Mapping[str, Any]) -> None:
         _string(payload.get("request_id"), "request_id"); decision = _string(payload.get("decision"), "decision")
         if decision not in _DECISIONS: raise ValueError("invalid approval decision")
     elif kind == "session.reconfigured": _sha256(payload.get("effective_lock_hash"), "effective_lock_hash"); _string(payload.get("reason"), "reason", False)
+    elif kind == _ADOPTION_EVENT_KIND:
+        required = {
+            "adoption_id",
+            "checkpoint_id",
+            "source_generation_id",
+            "source_module_id",
+            "source_instance_id",
+            "source_work_id",
+            "source_attempt_id",
+            "source_schema_id",
+            "source_body_sha256",
+            "source_frontier",
+            "target_generation_id",
+        }
+        optional = {
+            "effective_lock_hash",
+
+            "effective_lock_source",
+            "target_lock",
+            "request_id",
+            "reason",
+            "source_admission_id",
+            "admission",
+            "migration",
+        }
+        if not required.issubset(core) or set(core) - required - optional:
+            raise ValueError("session.adoption_committed payload has invalid fields")
+        for name in (
+            "adoption_id",
+            "checkpoint_id",
+            "source_generation_id",
+            "source_module_id",
+            "source_instance_id",
+            "source_work_id",
+            "source_attempt_id",
+            "source_schema_id",
+            "target_generation_id",
+        ):
+            _string(payload.get(name), name)
+        _sha256(payload.get("source_body_sha256"), "source_body_sha256")
+        if "effective_lock_hash" in payload:
+            _sha256(payload.get("effective_lock_hash"), "effective_lock_hash")
+            if payload["effective_lock_hash"] != payload["target_generation_id"]:
+                raise ValueError("adoption target generation does not match effective lock")
+        _sha256(payload["target_generation_id"], "target_generation_id")
+        SessionCheckpointFrontier.from_dict(payload["source_frontier"])
+        if "effective_lock_source" in payload:
+            _string(payload.get("effective_lock_source"), "effective_lock_source")
+        if "source_admission_id" in payload:
+            _string(payload.get("source_admission_id"), "source_admission_id")
+        if "target_lock" in payload:
+            if not isinstance(payload["target_lock"], Mapping):
+                raise ValueError("adoption target_lock must be a JSON object")
+            json.dumps(_plain(payload["target_lock"]), allow_nan=False)
+        for name in ("request_id", "reason"):
+            if name in payload:
+                _string(payload.get(name), name, name == "request_id")
+        if "admission" in payload:
+            if not isinstance(payload["admission"], Mapping):
+                raise ValueError("adoption admission must be a JSON object")
+            json.dumps(_plain(payload["admission"]), allow_nan=False)
+        if "migration" in payload:
+            migration = payload["migration"]
+            if not isinstance(migration, (list, tuple)) or not all(
+                isinstance(item, Mapping) for item in migration
+            ):
+                raise ValueError("adoption migration must be an array of JSON objects")
+            json.dumps(_plain(migration), allow_nan=False)
     elif kind == "session.paused": _string(payload.get("reason"), "reason", False)
     elif kind == "session.resumed" and payload: raise ValueError("session.resumed payload must be empty")
     elif kind in _TERMINAL:
@@ -384,6 +453,173 @@ def _plain(value: Any) -> Any:
     if isinstance(value, Mapping): return {key: _plain(item) for key, item in value.items()}
     if isinstance(value, tuple): return [_plain(item) for item in value]
     return value
+@dataclass(frozen=True, slots=True)
+class SessionCheckpointFrontier:
+    """The exact owner-visible source position for a Session checkpoint."""
+
+    event_sequence: int
+    generation_id: str
+    typed_input_sequence: int
+    output_sequence: int
+    compaction_index: int
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.event_sequence, "event_sequence"),
+            (self.typed_input_sequence, "typed_input_sequence"),
+            (self.output_sequence, "output_sequence"),
+            (self.compaction_index, "compaction_index"),
+        ):
+            if type(value) is not int or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+        _sha256(self.generation_id, "generation_id")
+
+    @classmethod
+    def from_dict(cls, value: object) -> "SessionCheckpointFrontier":
+        required = {
+            "event_sequence",
+            "generation_id",
+            "typed_input_sequence",
+            "output_sequence",
+            "compaction_index",
+        }
+        if not isinstance(value, Mapping) or set(value) != required:
+            raise ValueError("checkpoint frontier must contain exactly its five fields")
+        return cls(
+            event_sequence=value["event_sequence"],
+            generation_id=value["generation_id"],
+            typed_input_sequence=value["typed_input_sequence"],
+            output_sequence=value["output_sequence"],
+            compaction_index=value["compaction_index"],
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "event_sequence": self.event_sequence,
+            "generation_id": self.generation_id,
+            "typed_input_sequence": self.typed_input_sequence,
+            "output_sequence": self.output_sequence,
+            "compaction_index": self.compaction_index,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class SessionGenerationCheckpoint:
+    """Immutable, JSON-roundtrippable bytes owned by one Session generation."""
+
+    checkpoint_id: str
+    session_id: str
+    source_generation_id: str
+    source_module_id: str
+    source_instance_id: str
+    source_work_id: str
+    source_attempt_id: str
+    schema_id: str
+    body_sha256: str
+    body: bytes
+    frontier: SessionCheckpointFrontier
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.checkpoint_id, "checkpoint_id"),
+            (self.session_id, "session_id"),
+            (self.source_generation_id, "source_generation_id"),
+            (self.source_module_id, "source_module_id"),
+            (self.source_instance_id, "source_instance_id"),
+            (self.source_work_id, "source_work_id"),
+            (self.source_attempt_id, "source_attempt_id"),
+            (self.schema_id, "schema_id"),
+        ):
+            _string(value, name)
+        _sha256(self.body_sha256, "body_sha256")
+        if type(self.body) is not bytes:
+            raise TypeError("checkpoint body must be bytes")
+        if len(self.body) > MAX_CHECKPOINT_BYTES:
+            raise ValueError("checkpoint body exceeds maximum size")
+        if _hash_bytes(self.body) != self.body_sha256:
+            raise ValueError("checkpoint body digest does not match body")
+        if not isinstance(self.frontier, SessionCheckpointFrontier):
+            raise TypeError("checkpoint frontier must be a SessionCheckpointFrontier")
+        if self.source_generation_id != self.frontier.generation_id:
+            raise ValueError("checkpoint owner generation differs from its frontier")
+    @property
+    def body_digest(self) -> str:
+        return self.body_sha256
+
+    @property
+    def source_frontier(self) -> SessionCheckpointFrontier:
+        return self.frontier
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "checkpoint_id": self.checkpoint_id,
+            "session_id": self.session_id,
+            "source_generation_id": self.source_generation_id,
+            "source_module_id": self.source_module_id,
+            "source_instance_id": self.source_instance_id,
+            "source_work_id": self.source_work_id,
+            "source_attempt_id": self.source_attempt_id,
+            "schema_id": self.schema_id,
+            "body_sha256": self.body_sha256,
+            "body": base64.b64encode(self.body).decode("ascii"),
+            "frontier": self.frontier.as_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "SessionGenerationCheckpoint":
+        required = {
+            "checkpoint_id",
+            "session_id",
+            "source_generation_id",
+            "source_module_id",
+            "source_instance_id",
+            "source_work_id",
+            "source_attempt_id",
+            "schema_id",
+            "body_sha256",
+            "body",
+            "frontier",
+        }
+        if not isinstance(value, Mapping) or set(value) != required:
+            raise ValueError("session generation checkpoint has invalid fields")
+        return cls(
+            checkpoint_id=value["checkpoint_id"],
+            session_id=value["session_id"],
+            source_generation_id=value["source_generation_id"],
+            source_module_id=value["source_module_id"],
+            source_instance_id=value["source_instance_id"],
+            source_work_id=value["source_work_id"],
+            source_attempt_id=value["source_attempt_id"],
+            schema_id=value["schema_id"],
+            body_sha256=value["body_sha256"],
+            body=_decode_event_body(value["body"], "checkpoint body"),
+            frontier=SessionCheckpointFrontier.from_dict(value["frontier"]),
+        )
+
+    @classmethod
+    def from_proposal(
+        cls,
+        checkpoint_id: str,
+        session_id: str,
+        proposal: CheckpointProposal,
+        frontier: SessionCheckpointFrontier,
+    ) -> "SessionGenerationCheckpoint":
+        if not isinstance(proposal, CheckpointProposal):
+            raise TypeError("checkpoint proposal must be a CheckpointProposal")
+        envelope = proposal.payload
+        return cls(
+            checkpoint_id=checkpoint_id,
+            session_id=session_id,
+            source_generation_id=envelope.source_generation_id,
+            source_module_id=envelope.source_module_id,
+            source_instance_id=envelope.source_instance_id,
+            source_work_id=envelope.source_work_id,
+            source_attempt_id=envelope.source_attempt_id,
+            schema_id=envelope.schema_id,
+            body_sha256=_hash_bytes(envelope.body),
+            body=envelope.body,
+            frontier=frontier,
+        )
 @dataclass(frozen=True, slots=True)
 class CompactionSnapshot:
     """Persistence-owner bytes and cumulative raw-fact identities at one boundary."""
@@ -554,6 +790,7 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
     output_frontiers: dict[tuple[str, ...], tuple[int, bool]] = {}
     message_targets: dict[str, str] = {}
     annotation_ids: set[str] = set()
+    adoption_ids: set[str] = set()
     compaction_count = 0
     last_compaction_sequence: int | None = None
     retained_raw_fact_order: tuple[str, ...] = ()
@@ -565,6 +802,20 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
             continue
         if status not in _ALLOWED.get(event.kind, ()):
             raise ValueError(f"invalid {event.kind} transition from {status}")
+        if event.kind == _ADOPTION_EVENT_KIND:
+            adoption_id = event.payload["adoption_id"]
+            if adoption_id in adoption_ids:
+                raise ValueError("duplicate adoption_id in event stream")
+            frontier = SessionCheckpointFrontier.from_dict(
+                event.payload["source_frontier"]
+            )
+            if (
+                frontier.event_sequence != expected - 1
+                or frontier.generation_id != lock_hash
+                or event.payload["source_generation_id"] != lock_hash
+            ):
+                raise ValueError("adoption source frontier does not match durable order")
+            adoption_ids.add(adoption_id)
         if event.kind in _TERMINAL and event.payload.get("lineage") != lineage_payload:
             raise ValueError("Session settlement lineage differs from its start")
         if event.kind == "input.accepted" and "module_input" in event.payload:
@@ -649,6 +900,9 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
         elif event.kind == "session.reconfigured":
             lock_hash = event.payload["effective_lock_hash"]
             generation_index += 1
+        elif event.kind == _ADOPTION_EVENT_KIND:
+            lock_hash = event.payload["target_generation_id"]
+            generation_index += 1
         elif event.kind == "session.paused":
             status = "paused"
         elif event.kind == "session.resumed":
@@ -712,7 +966,7 @@ class ReplayError(ValueError):
         self.code = code
         self.detail = detail
 
-
+_SESSION_ACTIONS = MappingProxyType({"accept input": ("running",), "emit module output": ("running",), "observe assistant": ("running",), "observe tool call": ("running",), "observe tool result": ("running",), "annotate": ("running", "awaiting_approval", "paused", "completed", "failed", "canceled"), "compact": ("running",), "request approval": ("running",), "resolve approval": ("awaiting_approval",), "reconfigure": ("running", "awaiting_approval", "paused"), "adopt checkpoint": ("running", "awaiting_approval", "paused"), "pause": ("running",), "resume": ("paused",), "cancel": ("running", "awaiting_approval", "paused"), "complete": ("running",), "fail": ("running", "awaiting_approval", "paused")})
 def _check(condition: bool, error: type[Exception], message: str) -> None:
     if not condition: raise error(message)
 class GenerationAdoptionError(RuntimeError):
@@ -747,6 +1001,7 @@ class Session:
         clock: Clock | None = None,
         sink: EventSink | None = None,
         task: str | None = None,
+        checkpoints: Iterable[SessionGenerationCheckpoint] = (),
     ) -> None:
         if task is not None and (not isinstance(task, str) or not task.strip()):
             raise ValueError("task must be non-empty when retained")
@@ -756,10 +1011,34 @@ class Session:
         self._events = list(events)
         self._clock = clock if clock is not None else SystemClock()
         self._sink = sink if sink is not None else NullEventSink()
+        retained_checkpoints = tuple(checkpoints)
+        if any(not isinstance(item, SessionGenerationCheckpoint) for item in retained_checkpoints):
+            raise TypeError("retained checkpoints must be SessionGenerationCheckpoint records")
+        session_ids = {item.session_id for item in retained_checkpoints}
+        if len(session_ids) > 1:
+            raise ValueError("retained checkpoints belong to multiple Sessions")
+        self._checkpoints: dict[str, SessionGenerationCheckpoint] = {
+            item.checkpoint_id: item for item in retained_checkpoints
+        }
+        if len(self._checkpoints) != len(retained_checkpoints):
+            raise ValueError("retained checkpoint ids must be unique")
+        self._committed_adoption_ids = {
+            event.payload["adoption_id"]
+            for event in self._events
+            if event.kind == _ADOPTION_EVENT_KIND
+        }
         self._terminal_annotation_commit: Callable[
             [AnnotationRecord], tuple[KernelEvent, ...]
         ] | None = None
         self._view = rebuild(self._events)
+        if session_ids and next(iter(session_ids)) != self._view.session_id:
+            raise ValueError("retained checkpoint belongs to another Session")
+        if any(
+            checkpoint.session_id != self._view.session_id
+            or checkpoint.source_generation_id not in self.generation_sequence
+            for checkpoint in self._checkpoints.values()
+        ):
+            raise ValueError("retained checkpoint is not owned by this Session generation")
         compaction = next(
             (row for row in reversed(self._events) if row.kind == "context.compacted"),
             None,
@@ -831,9 +1110,23 @@ class Session:
         active_sink.append(event)
         return cls((event,), clock=active_clock, sink=active_sink, task=task)
     @classmethod
-    def restore(cls, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None, task: str | None = None) -> "Session":
+    def restore(
+        cls,
+        events: Iterable[KernelEvent],
+        *,
+        clock: Clock | None = None,
+        sink: EventSink | None = None,
+        task: str | None = None,
+        checkpoints: Iterable[SessionGenerationCheckpoint] = (),
+    ) -> "Session":
         try:
-            return cls(events, clock=clock, sink=sink, task=task)
+            return cls(
+                events,
+                clock=clock,
+                sink=sink,
+                task=task,
+                checkpoints=checkpoints,
+            )
         except (AttributeError, TypeError, ValueError) as error:
             raise ReplayError("invalid_event_stream", str(error)) from error
     @property
@@ -845,6 +1138,290 @@ class Session:
     @property
     def read_model(self) -> SessionView:
         with self._transition_lock: return self._view
+    def checkpoint_frontier(self) -> SessionCheckpointFrontier:
+        """Return the exact source frontier currently owned by this Session."""
+        with self._transition_lock:
+            typed_input_sequence, _ = self._typed_input_frontier()
+            output_sequence = max(
+                (
+                    int(event.payload["output_sequence"]) + 1
+                    for event in self._events
+                    if event.kind == "module_output"
+                ),
+                default=0,
+            )
+            compaction_index = max(
+                (
+                    int(event.payload["compaction_index"])
+                    for event in self._events
+                    if event.kind == "context.compacted"
+                ),
+                default=0,
+            )
+            return SessionCheckpointFrontier(
+                event_sequence=len(self._events),
+                generation_id=self._view.effective_lock_hash,
+                typed_input_sequence=typed_input_sequence,
+                output_sequence=output_sequence,
+                compaction_index=compaction_index,
+            )
+
+    def validate_checkpoint_frontier(
+        self, frontier: SessionCheckpointFrontier
+    ) -> SessionCheckpointFrontier:
+        """Validate that a stamped source frontier is still the current one."""
+        if not isinstance(frontier, SessionCheckpointFrontier):
+            raise TypeError("checkpoint frontier must be a SessionCheckpointFrontier")
+        with self._transition_lock:
+            current = self.checkpoint_frontier()
+            if frontier.generation_id != current.generation_id:
+                raise GenerationAdoptionError(
+                    "source_generation_mismatch",
+                    "checkpoint source generation is no longer current",
+                )
+            if (
+                frontier.event_sequence != current.event_sequence
+                or frontier.typed_input_sequence != current.typed_input_sequence
+                or frontier.output_sequence != current.output_sequence
+                or frontier.compaction_index != current.compaction_index
+            ):
+                code = (
+                    "source_advanced"
+                    if any(
+                        (
+                            frontier.event_sequence != current.event_sequence,
+                            frontier.typed_input_sequence != current.typed_input_sequence,
+                            frontier.output_sequence != current.output_sequence,
+                            frontier.compaction_index != current.compaction_index,
+                        )
+                    )
+                    else "source_frontier_mismatch"
+                )
+                raise GenerationAdoptionError(
+                    code,
+                    "checkpoint source frontier no longer matches the Session",
+                )
+            return frontier
+
+    @property
+    def checkpoints(self) -> tuple[SessionGenerationCheckpoint, ...]:
+        with self._transition_lock:
+            return tuple(self._checkpoints.values())
+
+    def runtime_state(self) -> dict[str, Any]:
+        """Return bounded, explicit state needed to recover retained checkpoints."""
+        with self._transition_lock:
+            return {"checkpoints": [item.as_dict() for item in self._checkpoints.values()]}
+
+    def stamp_checkpoint(
+        self,
+        proposal: CheckpointProposal | CheckpointEnvelope,
+        *,
+        checkpoint_id: str | None = None,
+        source_frontier: SessionCheckpointFrontier | None = None,
+    ) -> SessionGenerationCheckpoint:
+        """Owner-stamp a validated module checkpoint at the current frontier."""
+        if isinstance(proposal, CheckpointEnvelope):
+            proposal = CheckpointProposal(
+                proposal,
+                self.checkpoint_frontier().typed_input_sequence,
+            )
+        if not isinstance(proposal, CheckpointProposal):
+            raise TypeError("stamp_checkpoint requires a CheckpointProposal")
+        envelope = proposal.payload
+        if not isinstance(envelope, CheckpointEnvelope):
+            raise TypeError("checkpoint proposal payload must be a CheckpointEnvelope")
+        with self._transition_lock:
+            if self._view.status == "awaiting_approval":
+                raise GenerationAdoptionError(
+                    "pending_approval",
+                    "checkpoint cannot be stamped while approval is pending",
+                )
+            if self._view.status != "running":
+                raise GenerationAdoptionError(
+                    "boundary_unavailable",
+                    "checkpoint requires a running Session boundary",
+                )
+            frontier = (
+                self.checkpoint_frontier()
+                if source_frontier is None
+                else source_frontier
+            )
+            self.validate_checkpoint_frontier(frontier)
+            if proposal.declared_at_sequence > frontier.typed_input_sequence:
+                raise GenerationAdoptionError(
+                    "source_advanced",
+                    "checkpoint proposal is ahead of the Session input frontier",
+                )
+            if envelope.source_generation_id != frontier.generation_id:
+                raise GenerationAdoptionError(
+                    "source_generation_mismatch",
+                    "checkpoint proposal generation is not pinned by this Session",
+                )
+            digest = _hash_bytes(envelope.body)
+            selected_id = checkpoint_id or (
+                f"{self._view.session_id}:checkpoint:"
+                f"{frontier.event_sequence}:{digest.removeprefix('sha256:')}"
+            )
+            record = SessionGenerationCheckpoint(
+                checkpoint_id=selected_id,
+                session_id=self._view.session_id,
+                source_generation_id=envelope.source_generation_id,
+                source_module_id=envelope.source_module_id,
+                source_instance_id=envelope.source_instance_id,
+                source_work_id=envelope.source_work_id,
+                source_attempt_id=envelope.source_attempt_id,
+                schema_id=envelope.schema_id,
+                body_sha256=digest,
+                body=envelope.body,
+                frontier=frontier,
+            )
+            prior = self._checkpoints.get(record.checkpoint_id)
+            if prior is not None and prior != record:
+                raise GenerationAdoptionError(
+                    "checkpoint_conflict",
+                    "checkpoint_id is already bound to different bytes or attribution",
+                )
+            self._checkpoints[record.checkpoint_id] = record
+            return record
+
+    def commit_checkpoint_adoption(
+        self,
+        lock: EffectiveHarnessLock,
+        adoption_record: Mapping[str, Any],
+    ) -> SessionView:
+        """Append one authoritative generation-adoption commit event."""
+        if not isinstance(lock, EffectiveHarnessLock):
+            raise TypeError("checkpoint adoption requires an EffectiveHarnessLock")
+        if not isinstance(adoption_record, Mapping):
+            raise TypeError("checkpoint adoption record must be a mapping")
+        adoption_id = adoption_record.get("adoption_id")
+        checkpoint_id = adoption_record.get("checkpoint_id")
+        _string(adoption_id, "adoption_id")
+        _string(checkpoint_id, "checkpoint_id")
+        checkpoint = self._checkpoints.get(checkpoint_id)
+        if checkpoint is None:
+            candidate = adoption_record.get("checkpoint")
+            if candidate is not None:
+                checkpoint = SessionGenerationCheckpoint.from_dict(candidate)
+                if checkpoint.checkpoint_id != checkpoint_id:
+                    raise GenerationAdoptionError(
+                        "checkpoint_conflict",
+                        "adoption checkpoint_id does not match retained checkpoint",
+                    )
+            else:
+                raise GenerationAdoptionError(
+                    "checkpoint_missing",
+                    "adoption references no retained checkpoint",
+                )
+        target_generation_id = _generation_id(lock)
+        supplied_target = adoption_record.get(
+            "target_generation_id", adoption_record.get("new_generation_id")
+        )
+        if supplied_target is not None and supplied_target != target_generation_id:
+            raise GenerationAdoptionError(
+                "target_generation_mismatch",
+                "adoption target does not match the supplied EffectiveHarnessLock",
+            )
+        with self._transition_lock:
+            if adoption_id in self._committed_adoption_ids:
+                return self._view
+            if checkpoint.session_id != self._view.session_id:
+                raise GenerationAdoptionError(
+                    "checkpoint_conflict",
+                    "adoption checkpoint belongs to another Session",
+                )
+            self.validate_checkpoint_frontier(checkpoint.frontier)
+            if checkpoint.source_generation_id != self._view.effective_lock_hash:
+                raise GenerationAdoptionError(
+                    "source_generation_mismatch",
+                    "adoption checkpoint is not from the active generation",
+                )
+            if target_generation_id == self._view.effective_lock_hash:
+                raise GenerationAdoptionError(
+                    "target_generation_mismatch",
+                    "adoption target is already the active generation",
+                )
+            for name in (
+                "source_generation_id",
+                "source_module_id",
+                "source_instance_id",
+                "source_work_id",
+                "source_attempt_id",
+                "source_schema_id",
+            ):
+                supplied = adoption_record.get(name)
+                if supplied is not None and supplied != getattr(checkpoint, name):
+                    raise GenerationAdoptionError(
+                        "checkpoint_conflict",
+                        f"adoption {name} differs from retained checkpoint",
+                    )
+            supplied_frontier = adoption_record.get(
+                "source_frontier", adoption_record.get("frontier")
+            )
+            if supplied_frontier is not None:
+                if SessionCheckpointFrontier.from_dict(supplied_frontier) != checkpoint.frontier:
+                    raise GenerationAdoptionError(
+                        "checkpoint_conflict",
+                        "adoption source frontier differs from retained checkpoint",
+                    )
+            supplied_digest = adoption_record.get(
+                "source_body_sha256", adoption_record.get("body_sha256")
+            )
+            if supplied_digest is not None and supplied_digest != checkpoint.body_sha256:
+                raise GenerationAdoptionError(
+                    "checkpoint_conflict",
+                    "adoption source digest differs from retained checkpoint",
+                )
+            reason = adoption_record.get("reason", "")
+            request_id = adoption_record.get("request_id", "")
+            if type(reason) is not str or type(request_id) is not str:
+                raise TypeError("adoption reason and request_id must be strings")
+            target_lock = lock.as_dict()
+            payload: dict[str, Any] = {
+                "adoption_id": adoption_id,
+                "checkpoint_id": checkpoint.checkpoint_id,
+                "source_generation_id": checkpoint.source_generation_id,
+                "source_module_id": checkpoint.source_module_id,
+                "source_instance_id": checkpoint.source_instance_id,
+                "source_work_id": checkpoint.source_work_id,
+                "source_attempt_id": checkpoint.source_attempt_id,
+                "source_schema_id": checkpoint.schema_id,
+                "source_body_sha256": checkpoint.body_sha256,
+                "source_frontier": checkpoint.frontier.as_dict(),
+                "target_generation_id": target_generation_id,
+                "effective_lock_hash": target_generation_id,
+                "target_lock": lock.as_dict(),
+                "reason": reason,
+                "admission": _plain(adoption_record.get("admission", {})),
+                "migration": _plain(adoption_record.get("migration", [])),
+            }
+            if request_id:
+                payload["request_id"] = request_id
+            effective_lock_source = adoption_record.get("effective_lock_source")
+            if effective_lock_source is not None:
+                if type(effective_lock_source) is not str:
+                    raise TypeError("effective_lock_source must be a string")
+                payload["effective_lock_source"] = effective_lock_source
+            source_admission_id = adoption_record.get("source_admission_id")
+            if source_admission_id is not None:
+                if type(source_admission_id) is not str or not source_admission_id:
+                    raise TypeError("source_admission_id must be a non-empty string")
+                payload["source_admission_id"] = source_admission_id
+            event, view = self._append_event(
+                "adopt checkpoint",
+                _ADOPTION_EVENT_KIND,
+                lambda: payload,
+            )
+            self._committed_adoption_ids.add(event.payload["adoption_id"])
+            self._checkpoints[checkpoint.checkpoint_id] = checkpoint
+            return view
+
+    def has_committed_adoption(self, adoption_id: str) -> bool:
+        """Pure recovery query for the authoritative adoption commit."""
+        _string(adoption_id, "adoption_id")
+        with self._transition_lock:
+            return adoption_id in self._committed_adoption_ids
     @property
     def effective_context(self) -> bytes | None:
         with self._transition_lock:
@@ -863,9 +1440,13 @@ class Session:
         """Ordered Lock identities that have governed this Session."""
         with self._transition_lock:
             return tuple(
-                event.payload["effective_lock_hash"]
+                (
+                    event.payload["target_generation_id"]
+                    if event.kind == _ADOPTION_EVENT_KIND
+                    else event.payload["effective_lock_hash"]
+                )
                 for event in self._events
-                if event.kind in {"session.started", "session.reconfigured"}
+                if event.kind in {"session.started", "session.reconfigured", _ADOPTION_EVENT_KIND}
             )
     @property
     def trajectory_segments(self) -> tuple[Mapping[str, Any], ...]:
@@ -874,14 +1455,26 @@ class Session:
             boundaries = tuple(
                 event
                 for event in self._events
-                if event.kind in {"session.started", "session.reconfigured"}
+                if event.kind in {"session.started", "session.reconfigured", _ADOPTION_EVENT_KIND}
             )
             return tuple(
                 MappingProxyType(
                     {
-                        "segment_id": _trajectory_segment_id(session_id, index, boundary.payload["effective_lock_hash"]),
+                        "segment_id": _trajectory_segment_id(
+                            session_id,
+                            index,
+                            (
+                                boundary.payload["target_generation_id"]
+                                if boundary.kind == _ADOPTION_EVENT_KIND
+                                else boundary.payload["effective_lock_hash"]
+                            ),
+                        ),
                         "segment_index": index,
-                        "generation_id": boundary.payload["effective_lock_hash"],
+                        "generation_id": (
+                            boundary.payload["target_generation_id"]
+                            if boundary.kind == _ADOPTION_EVENT_KIND
+                            else boundary.payload["effective_lock_hash"]
+                        ),
                         "start_sequence": boundary.sequence,
                     }
                 )
@@ -894,9 +1487,17 @@ class Session:
             prior = None
             history = []
             for event in self._events:
-                if event.kind not in {"session.started", "session.reconfigured"}:
+                if event.kind not in {
+                    "session.started",
+                    "session.reconfigured",
+                    _ADOPTION_EVENT_KIND,
+                }:
                     continue
-                generation = event.payload["effective_lock_hash"]
+                generation = (
+                    event.payload["target_generation_id"]
+                    if event.kind == _ADOPTION_EVENT_KIND
+                    else event.payload["effective_lock_hash"]
+                )
                 if event.kind == "session.reconfigured":
                     history.append(
                         MappingProxyType(
@@ -905,7 +1506,27 @@ class Session:
                                 "new_generation_id": generation,
                                 "reason": event.payload["reason"],
                                 "effective_sequence": event.sequence,
-                                "trajectory_segment_id": _trajectory_segment_id(session_id, len(history) + 1, generation),
+                                "trajectory_segment_id": _trajectory_segment_id(
+                                    session_id, len(history) + 1, generation
+                                ),
+                            }
+                        )
+                    )
+                elif event.kind == _ADOPTION_EVENT_KIND:
+                    history.append(
+                        MappingProxyType(
+                            {
+                                "adoption_id": event.payload["adoption_id"],
+                                "checkpoint_id": event.payload["checkpoint_id"],
+                                "old_generation_id": prior,
+                                "new_generation_id": generation,
+                                "reason": event.payload.get("reason", ""),
+                                "effective_sequence": event.sequence,
+                                "source_frontier": event.payload["source_frontier"],
+                                "source_body_sha256": event.payload["source_body_sha256"],
+                                "trajectory_segment_id": _trajectory_segment_id(
+                                    session_id, len(history) + 1, generation
+                                ),
                             }
                         )
                     )

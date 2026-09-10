@@ -82,6 +82,13 @@ const LIFECYCLE_PAYLOAD_FIELDS = {
   "approval.requested": { request_id: true, operation: true },
   "approval.resolved": { request_id: true, decision: true },
   "session.reconfigured": { effective_lock_hash: true, reason: true },
+  "session.adoption_committed": {
+    adoption_id: true, checkpoint_id: true, source_generation_id: true,
+    source_module_id: true, source_instance_id: true, source_work_id: true,
+    source_attempt_id: true, source_schema_id: true, source_body_sha256: true,
+    source_frontier: true, target_generation_id: true, effective_lock_hash: true,
+    reason: true, migration: true,
+  },
   "session.paused": { reason: true },
   "session.resumed": EMPTY_FIELDS,
   "session.completed": { outcome: true, summary: true },
@@ -94,6 +101,7 @@ const LIFECYCLE_OPTIONAL_FIELDS = {
   "approval.requested": EMPTY_FIELDS,
   "approval.resolved": EMPTY_FIELDS,
   "session.reconfigured": EMPTY_FIELDS,
+  "session.adoption_committed": { request_id: true },
   "session.paused": EMPTY_FIELDS,
   "session.resumed": EMPTY_FIELDS,
   "session.completed": { lineage: true },
@@ -102,6 +110,14 @@ const LIFECYCLE_OPTIONAL_FIELDS = {
 } satisfies Readonly<Record<keyof typeof LIFECYCLE_PAYLOAD_FIELDS, FieldSet>>
 const LINEAGE_FIELDS = {
   parent_session_id: true, root_session_id: true, parent_work_item_id: true, child_work_item_id: true,
+} satisfies FieldSet
+const ADOPTION_FRONTIER_FIELDS = {
+  event_sequence: true, generation_id: true, typed_input_sequence: true,
+  output_sequence: true, compaction_index: true,
+} satisfies FieldSet
+const ADOPTION_MIGRATION_FIELDS = {
+  binding: true, disposition: true, source_schema_id: true,
+  target_schema_id: true, reason: true,
 } satisfies FieldSet
 const ANNOTATION_PAYLOAD_FIELDS = {
   annotation_id: true, message_id: true, trajectory_id: true, label: true, author: true, generation: true,
@@ -394,6 +410,39 @@ const validateLifecyclePayload = (
     case "session.reconfigured":
       valid = sha256(payload.effective_lock_hash) && typeof payload.reason === "string"
       break
+    case "session.adoption_committed": {
+      const frontier = payload.source_frontier
+      const migrations = payload.migration
+      valid = typeof payload.adoption_id === "string" && payload.adoption_id.length > 0
+        && typeof payload.checkpoint_id === "string" && payload.checkpoint_id.length > 0
+        && sha256(payload.source_generation_id)
+        && typeof payload.source_module_id === "string" && payload.source_module_id.length > 0
+        && typeof payload.source_instance_id === "string" && payload.source_instance_id.length > 0
+        && typeof payload.source_work_id === "string" && payload.source_work_id.length > 0
+        && typeof payload.source_attempt_id === "string" && payload.source_attempt_id.length > 0
+        && typeof payload.source_schema_id === "string" && payload.source_schema_id.length > 0
+        && sha256(payload.source_body_sha256)
+        && record(frontier) && hasExactFields(frontier, ADOPTION_FRONTIER_FIELDS)
+        && typeof frontier.event_sequence === "number" && Number.isSafeInteger(frontier.event_sequence) && frontier.event_sequence >= 0
+        && sha256(frontier.generation_id)
+        && typeof frontier.typed_input_sequence === "number" && Number.isSafeInteger(frontier.typed_input_sequence) && frontier.typed_input_sequence >= 0
+        && typeof frontier.output_sequence === "number" && Number.isSafeInteger(frontier.output_sequence) && frontier.output_sequence >= 0
+        && typeof frontier.compaction_index === "number" && Number.isSafeInteger(frontier.compaction_index) && frontier.compaction_index >= 0
+        && sha256(payload.target_generation_id)
+        && payload.target_generation_id === payload.effective_lock_hash
+        && typeof payload.reason === "string"
+        && (!Object.hasOwn(payload, "request_id")
+          || (typeof payload.request_id === "string" && payload.request_id.length > 0))
+        && Array.isArray(migrations)
+        && migrations.every((migration) => record(migration)
+          && hasExactFields(migration, ADOPTION_MIGRATION_FIELDS)
+          && typeof migration.binding === "string" && migration.binding.length > 0
+          && (migration.disposition === "compatible" || migration.disposition === "migrate")
+          && typeof migration.source_schema_id === "string" && migration.source_schema_id.length > 0
+          && typeof migration.target_schema_id === "string" && migration.target_schema_id.length > 0
+          && typeof migration.reason === "string")
+      break
+    }
     case "session.paused":
       valid = typeof payload.reason === "string"
       break

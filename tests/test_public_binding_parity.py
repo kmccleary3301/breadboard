@@ -78,23 +78,64 @@ function dtoShapes(path) {
     "PublicSessionInputRequest",
     "PublicSessionCancelRequest",
     "PublicSessionApprovalRequest",
+    "PublicSessionCheckpointRequest",
+    "PublicSessionAdoptRequest",
     "ResearchCompareBody",
   ]);
-  const shapes = {};
+  const interfaces = new Map();
+  const aliases = new Map();
   for (const statement of file.statements) {
-    if (!ts.isInterfaceDeclaration(statement) || !wanted.has(statement.name.text)) {
-      continue;
-    }
-    const properties = statement.members
+    if (ts.isInterfaceDeclaration(statement)) interfaces.set(statement.name.text, statement);
+    if (ts.isTypeAliasDeclaration(statement)) aliases.set(statement.name.text, statement);
+  }
+  const memberShape = (members) => {
+    const properties = members
       .filter((member) => ts.isPropertySignature(member))
       .map((member) => ({
         name: nodeName(member, file),
         required: member.questionToken === undefined,
       }));
-    shapes[statement.name.text] = {
+    return {
       properties: properties.map((property) => property.name),
       required: properties.filter((property) => property.required).map((property) => property.name),
     };
+  };
+  const combine = (branches, intersection) => {
+    const properties = [...new Set(branches.flatMap((branch) => branch.properties))];
+    const required = properties.filter((property) =>
+      intersection
+        ? branches.some((branch) => branch.required.includes(property))
+        : branches.every((branch) => branch.required.includes(property)),
+    );
+    return { properties, required };
+  };
+  const shapeFromType = (node) => {
+    if (ts.isTypeLiteralNode(node)) return memberShape(node.members);
+    if (ts.isTypeReferenceNode(node)) {
+      const name = node.typeName.getText(file);
+      const direct = interfaces.get(name);
+      if (direct) return memberShape(direct.members);
+      const alias = aliases.get(name);
+      if (alias) return shapeFromType(alias.type);
+      return { properties: [], required: [] };
+    }
+    if (ts.isUnionTypeNode(node)) {
+      return combine(node.types.map(shapeFromType), false);
+    }
+    if (ts.isIntersectionTypeNode(node)) {
+      return combine(node.types.map(shapeFromType), true);
+    }
+    throw new Error(`unsupported DTO type node: ${node.getText(file)}`);
+  };
+  const shapes = {};
+  for (const name of wanted) {
+    const direct = interfaces.get(name);
+    if (direct) {
+      shapes[name] = memberShape(direct.members);
+      continue;
+    }
+    const alias = aliases.get(name);
+    if (alias) shapes[name] = shapeFromType(alias.type);
   }
   return shapes;
 }
@@ -439,6 +480,14 @@ def test_openapi_transport_components_match_authored_sdk_dtos() -> None:
             "SessionCancelRequest",
             python_types.PublicSessionCancelRequest,
         ),
+        "PublicSessionCheckpointRequest": (
+            "SessionCheckpointRequest",
+            python_types.PublicSessionCheckpointRequest,
+        ),
+        "PublicSessionAdoptRequest": (
+            "SessionAdoptRequest",
+            python_types.PublicSessionAdoptRequest,
+        ),
         "ResearchCompareBody": (
             "ResearchCompareBody",
             python_types.ResearchCompareRequest,
@@ -471,10 +520,13 @@ def test_openapi_transport_components_match_authored_sdk_dtos() -> None:
         "harness.create": "HarnessCreateRequest",
         "harness.package": "HarnessPackageRequest",
         "harness.update": "HarnessUpdateRequest",
+        "harness.publish": "HarnessPublishRequest",
         "session.start": "SessionStartRequest",
         "session.send_input": "SessionInputRequest",
         "session.approve": "SessionApprovalRequest",
         "session.cancel": "SessionCancelRequest",
+        "session.checkpoint": "SessionCheckpointRequest",
+        "session.adopt": "SessionAdoptRequest",
         "research.compare": "ResearchCompareBody",
     }
     for operation in _catalog()["operations"]:

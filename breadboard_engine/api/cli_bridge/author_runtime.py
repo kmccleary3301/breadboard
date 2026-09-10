@@ -44,8 +44,18 @@ from breadboard.product.runtime.artifacts import ArtifactStore
 
 
 class ModuleExecutionError(RuntimeError):
-    def __init__(self, code: str, detail: str, *, retryable: bool = False) -> None:
-        self.code, self.detail, self.retryable = code, detail, retryable
+    def __init__(
+        self,
+        code: str,
+        detail: str,
+        *,
+        retryable: bool = False,
+        cleanup_confirmed: bool = False,
+    ) -> None:
+        self.code = code
+        self.detail = detail
+        self.retryable = retryable
+        self.cleanup_confirmed = cleanup_confirmed
         super().__init__(f"{code}: {detail}")
 
 
@@ -76,6 +86,20 @@ def _same_scope(left: RequestKey, right: RequestKey) -> bool:
         and left.attempt_id == right.attempt_id
         and left.authority_epoch == right.authority_epoch
     )
+
+
+def _checkpoint_to_wire(envelope: CheckpointEnvelope) -> dict[str, object]:
+    if not isinstance(envelope, CheckpointEnvelope):
+        raise TypeError("resume checkpoint must be a CheckpointEnvelope")
+    return {
+        "source_generation_id": envelope.source_generation_id,
+        "source_module_id": envelope.source_module_id,
+        "source_instance_id": envelope.source_instance_id,
+        "source_work_id": envelope.source_work_id,
+        "source_attempt_id": envelope.source_attempt_id,
+        "schema_id": envelope.schema_id,
+        "body": encode_bytes(envelope.body, maximum=MAX_CHECKPOINT_BYTES),
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,13 +136,22 @@ class ModuleRuntime:
     """One admitted Session/Work Item and its separately isolated bindings."""
 
     def __init__(
-        self, *, record: SessionRecord, registry: SessionRegistry,
-        captured: CapturedRuntimeConfig, workspace: Path, storage_root: Path,
-        repository: WorkItemRepository, loop: asyncio.AbstractEventLoop,
-        session_lock: Any, persist_session: Callable[[], None],
+        self,
+        *,
+        record: SessionRecord,
+        registry: SessionRegistry,
+        captured: CapturedRuntimeConfig,
+        workspace: Path,
+        storage_root: Path,
+        repository: WorkItemRepository,
+        loop: asyncio.AbstractEventLoop,
+        session_lock: Any,
+        persist_session: Callable[[], None],
         emit_output: Callable[[OutputEnvelope, RequestKey, str, int, bool], None],
-        parent_fence: Callable[[], None] | None = None, depth: int = 0,
+        parent_fence: Callable[[], None] | None = None,
+        depth: int = 0,
         owns_work_lifecycle: bool = True,
+        resume_checkpoints: Mapping[str, CheckpointEnvelope] | None = None,
     ) -> None:
         execution, grant = record.module_execution, record.module_grant
         if execution is None or grant is None or record.product_session is None:
@@ -136,6 +169,12 @@ class ModuleRuntime:
         self.root_binding = execution.root_binding
         self.bindings = captured.materialization.lock["modules"]["bindings"]
         self.packages = captured.materialization.packages
+        self.resume_checkpoints = dict(resume_checkpoints or {})
+        if not set(self.resume_checkpoints) <= set(self.bindings):
+            raise ModuleExecutionError(
+                "checkpoint_incompatible",
+                "resume checkpoints name a binding outside the target graph",
+            )
         self.stopped = threading.Event()
         self._stop_reason = "owner_scope_closed"
         self._mutation_lock = threading.RLock()
@@ -265,6 +304,90 @@ class ModuleRuntime:
         finally:
             if timer is not None:
                 timer.cancel()
+
+    def capture_checkpoints(
+        self,
+        *,
+        request_id: str,
+        reason: str,
+    ) -> dict[str, CheckpointProposal | CheckpointRefusal]:
+        self.require_live()
+        self.worker(self.root_binding)
+        with self._mutation_lock:
+            workers = tuple(sorted(self._workers.values(), key=lambda row: row.binding))
+        unresolved: list[str] = []
+        for worker in workers:
+            domains = worker.domains.quiescence()
+            unresolved.extend(
+                f"{worker.binding}:{reference}"
+                for reference in (
+                    *domains.provider_exchanges,
+                    *domains.tool_executions,
+                    *domains.approvals,
+                )
+            )
+            if worker.children is not None:
+                unresolved.extend(
+                    f"{worker.binding}:{reference}"
+                    for reference in worker.children.quiescence()
+                )
+        if unresolved:
+            raise ModuleExecutionError(
+                "boundary_unavailable",
+                "checkpoint requires settled owned operations: "
+                + ", ".join(sorted(unresolved)),
+            )
+        return {
+            worker.binding: worker.checkpoint(
+                f"{_text(request_id, 'checkpoint request ID')}:{worker.binding}",
+                _text(reason, "checkpoint reason"),
+            )
+            for worker in workers
+        }
+
+    def prepare_checkpoint_adoption(
+        self,
+        source_checkpoints: Mapping[str, CheckpointEnvelope],
+        source_dependencies: Mapping[str, tuple[str, ...]],
+    ) -> tuple[dict[str, CheckpointEnvelope], tuple[dict[str, str], ...]]:
+        self.require_live()
+        if self.root_binding not in source_checkpoints:
+            raise ModuleExecutionError(
+                "checkpoint_incompatible",
+                "source checkpoint does not contain the root module binding",
+            )
+        resumed: dict[str, CheckpointEnvelope] = {}
+        decisions: list[dict[str, str]] = []
+        for binding, source in sorted(source_checkpoints.items()):
+            if binding not in self.bindings:
+                raise ModuleExecutionError(
+                    "checkpoint_incompatible",
+                    f"target graph does not contain source binding {binding!r}",
+                )
+            package = self.packages[binding]
+            disposition, target_schema_id, reason, proposal = self.worker(
+                binding
+            ).prepare_checkpoint(
+                source,
+                tuple(source_dependencies.get(binding, ())),
+                tuple(sorted(package.manifest.dependency_contracts.values())),
+            )
+            if disposition == "incompatible" or proposal is None:
+                raise ModuleExecutionError(
+                    "checkpoint_incompatible",
+                    reason or f"target binding {binding!r} refused the checkpoint",
+                )
+            resumed[binding] = proposal.payload
+            decisions.append(
+                {
+                    "binding": binding,
+                    "disposition": disposition,
+                    "source_schema_id": source.schema_id,
+                    "target_schema_id": target_schema_id,
+                    "reason": reason,
+                }
+            )
+        return resumed, tuple(decisions)
 
     def contract(self, binding: str, contract_id: str) -> ModuleContract:
         return next(
@@ -417,6 +540,12 @@ class _ModuleWorker:
             "instance_id": self.key.instance_id,
             "generation_id": self.key.generation_id,
             "instance_label": self.binding,
+            "initial_input": None,
+            "resume": (
+                _checkpoint_to_wire(self.owner.resume_checkpoints[self.binding])
+                if self.binding in self.owner.resume_checkpoints
+                else None
+            ),
             "input_schemas": list(manifest.input_schema_ids),
             "output_schemas": list(manifest.output_schema_ids),
             "checkpoint_schemas": schemas,
@@ -429,7 +558,6 @@ class _ModuleWorker:
                  "input_schema_ids": list(target.input_schema_ids), "output_schema_ids": list(target.output_schema_ids)}
                 for target in self.owner.child_targets(self.binding)
             ],
-            "initial_input": None, "resume": None,
         }
 
     def prepare(self) -> None:
@@ -576,6 +704,179 @@ class _ModuleWorker:
         finally:
             self._step_lock.release()
 
+    def checkpoint(
+        self,
+        request_id: str,
+        reason: str,
+    ) -> CheckpointProposal | CheckpointRefusal:
+        if not self._step_lock.acquire(blocking=False):
+            return CheckpointRefusal(
+                "boundary_unavailable",
+                "module instance has an active step",
+                True,
+            )
+        try:
+            self.owner.require_live()
+            self.prepare()
+            observed_sequence = self.ownership.next_input_sequence
+            key = replace(self.key, request_id=request_id)
+            body = {
+                "request_id": request_id,
+                "reason": reason,
+                "requested_at_sequence": observed_sequence,
+            }
+            self._send("checkpoint_request", key, body)
+            chunks = _CheckpointChunks(self, observed_sequence)
+            deadline = time.monotonic() + 30.0
+            while True:
+                message = self._receive(max(0.0, deadline - time.monotonic()))
+                if message.header.key != key:
+                    raise WireProtocolError(
+                        "checkpoint response does not match its request"
+                    )
+                if message.header.kind == "failure":
+                    self._raise_failure(message)
+                if message.header.kind == "checkpoint":
+                    chunks.append(message.body)
+                    continue
+                if message.header.kind != "result":
+                    raise WireProtocolError(
+                        "unexpected worker message during checkpoint"
+                    )
+                status = message.body.get("status")
+                if status == "checkpoint_refused":
+                    result = _object(
+                        message.body,
+                        {
+                            "status",
+                            "request_id",
+                            "code",
+                            "detail",
+                            "retryable",
+                            "observed_sequence",
+                        },
+                        "checkpoint refusal",
+                    )
+                    if (
+                        result["request_id"] != request_id
+                        or type(result["retryable"]) is not bool
+                    ):
+                        raise WireProtocolError(
+                            "checkpoint refusal identity is invalid"
+                        )
+                    return CheckpointRefusal(
+                        _text(result["code"], "checkpoint refusal code"),
+                        _text(result["detail"], "checkpoint refusal detail"),
+                        result["retryable"],
+                    )
+                result = _object(
+                    message.body,
+                    {"status", "request_id", "observed_sequence"},
+                    "checkpoint result",
+                )
+                if (
+                    result["status"] != "checkpoint"
+                    or result["request_id"] != request_id
+                    or result["observed_sequence"] != observed_sequence
+                ):
+                    raise WireProtocolError(
+                        "checkpoint result advanced from its requested frontier"
+                    )
+                proposal = chunks.finish()
+                if proposal is None:
+                    raise WireProtocolError(
+                        "checkpoint result omitted its state proposal"
+                    )
+                self.latest_checkpoint = proposal
+                return proposal
+        finally:
+            self._step_lock.release()
+
+
+    def prepare_checkpoint(
+        self,
+        source: CheckpointEnvelope,
+        source_dependencies: tuple[str, ...],
+        target_dependencies: tuple[str, ...],
+    ) -> tuple[str, str, str, CheckpointProposal | None]:
+        self.prepare()
+        if not self._step_lock.acquire(blocking=False):
+            raise ModuleExecutionError(
+                "boundary_unavailable",
+                "target checkpoint preparation is already active",
+                retryable=True,
+            )
+        try:
+            key = replace(self.key, request_id=f"checkpoint-adoption:{self.binding}")
+            chunk_messages: list[Mapping[str, object]] = []
+            self._send(
+                "checkpoint_prepare",
+                key,
+                {
+                    "source": _checkpoint_to_wire(source),
+                    "source_dependencies": list(source_dependencies),
+                    "target_dependencies": list(target_dependencies),
+                    "declared_at_sequence": 0,
+                },
+            )
+            deadline = time.monotonic() + 30.0
+            while True:
+                message = self._receive(max(0.0, deadline - time.monotonic()))
+                if not _same_scope(message.header.key, key):
+                    raise WireProtocolError(
+                        "checkpoint compatibility response escaped its request scope"
+                    )
+                if message.header.kind == "checkpoint":
+                    if len(chunk_messages) >= 7:
+                        raise WireProtocolError(
+                            "checkpoint preparation emitted too many chunks"
+                        )
+                    chunk_messages.append(message.body)
+                    continue
+                if message.header.kind == "checkpoint_compatibility":
+                    body = _object(
+                        message.body,
+                        {"disposition", "target_schema_id", "reason"},
+                        "checkpoint compatibility",
+                    )
+                    disposition = _text(body["disposition"], "checkpoint disposition")
+                    if disposition not in {"compatible", "migrate", "incompatible"}:
+                        raise WireProtocolError(
+                            "checkpoint compatibility disposition is invalid"
+                        )
+                    chunks = _CheckpointChunks(
+                        self,
+                        0,
+                        expected_envelope=(
+                            source if disposition == "compatible" else None
+                        ),
+                    )
+                    for chunk_message in chunk_messages:
+                        chunks.append(chunk_message)
+                    proposal = (
+                        chunks.finish() if disposition != "incompatible" else None
+                    )
+                    if disposition == "compatible" and (
+                        proposal is None or proposal.payload != source
+                    ):
+                        raise WireProtocolError(
+                            "compatible checkpoint response changed source state"
+                        )
+                    return (
+                        disposition,
+                        _text(body["target_schema_id"], "target checkpoint schema"),
+                        _text(body["reason"], "checkpoint compatibility reason"),
+                        proposal,
+                    )
+                if message.header.kind == "failure":
+                    self._raise_failure(message)
+                raise WireProtocolError(
+                    f"unexpected worker message during checkpoint preparation: {message.header.kind}"
+                )
+        finally:
+            self._step_lock.release()
+
+
     def close(self, reason: str, deadline: float) -> tuple[bool, tuple[str, ...]]:
         child_absent = True
         if self.children is not None:
@@ -604,8 +905,15 @@ class _ModuleWorker:
 
 
 class _CheckpointChunks:
-    def __init__(self, worker: _ModuleWorker, sequence: int) -> None:
+    def __init__(
+        self,
+        worker: _ModuleWorker,
+        sequence: int,
+        *,
+        expected_envelope: CheckpointEnvelope | None = None,
+    ) -> None:
         self.worker, self.sequence = worker, sequence
+        self.expected_envelope = expected_envelope
         self._metadata: Mapping[str, object] | None = None
         self._chunks: list[bytes] = []
         self._bytes = 0
@@ -617,18 +925,45 @@ class _CheckpointChunks:
         count = _integer(body["chunk_count"], "chunk count", 1)
         total = _integer(body["total_bytes"], "checkpoint total bytes")
         key = self.worker.key
+        expected = self.expected_envelope
         if (
             body["phase"] != "proposal" or index != len(self._chunks) or index >= count
             or count > 7 or total > self.worker.limits.max_checkpoint_bytes
-            or body["source_generation_id"] != key.generation_id
-            or body["source_module_id"] != self.worker.package.manifest.logical_package
-            or body["source_instance_id"] != key.instance_id
-            or body["source_work_id"] != key.work_id or body["source_attempt_id"] != key.attempt_id
+            or body["source_generation_id"] != (
+                expected.source_generation_id if expected is not None else key.generation_id
+            )
+            or body["source_module_id"] != (
+                expected.source_module_id
+                if expected is not None
+                else self.worker.package.manifest.logical_package
+            )
+            or body["source_instance_id"] != (
+                expected.source_instance_id if expected is not None else key.instance_id
+            )
+            or body["source_work_id"] != (
+                expected.source_work_id if expected is not None else key.work_id
+            )
+            or body["source_attempt_id"] != (
+                expected.source_attempt_id if expected is not None else key.attempt_id
+            )
             or body["declared_at_sequence"] != self.sequence
-            or body["schema_id"] != self.worker.package.manifest.checkpoint_schema_id
+            or (
+                expected is not None
+                and body["schema_id"] != expected.schema_id
+            )
+            or (
+                expected is None
+                and body["schema_id"] != self.worker.package.manifest.checkpoint_schema_id
+            )
         ):
-            raise WireProtocolError("checkpoint does not match its owner, frontier or declared bound")
-        metadata = {name: item for name, item in body.items() if name not in {"body", "chunk_index"}}
+            raise WireProtocolError(
+                "checkpoint does not match its owner, frontier or declared bound"
+            )
+        metadata = {
+            name: item
+            for name, item in body.items()
+            if name not in {"body", "chunk_index"}
+        }
         if self._metadata is not None and self._metadata != metadata:
             raise WireProtocolError("checkpoint metadata changed between chunks")
         self._metadata = metadata
@@ -642,12 +977,18 @@ class _CheckpointChunks:
         metadata = self._metadata
         if metadata is None:
             return None
-        if len(self._chunks) != metadata["chunk_count"] or self._bytes != metadata["total_bytes"]:
+        if (
+            len(self._chunks) != metadata["chunk_count"]
+            or self._bytes != metadata["total_bytes"]
+        ):
             raise WireProtocolError("checkpoint transfer is incomplete")
         envelope = CheckpointEnvelope(
-            schema_id=metadata["schema_id"], body=b"".join(self._chunks),
+            schema_id=metadata["schema_id"],
+            body=b"".join(self._chunks),
             source_generation_id=metadata["source_generation_id"],
-            source_module_id=metadata["source_module_id"], source_instance_id=metadata["source_instance_id"],
-            source_work_id=metadata["source_work_id"], source_attempt_id=metadata["source_attempt_id"],
+            source_module_id=metadata["source_module_id"],
+            source_instance_id=metadata["source_instance_id"],
+            source_work_id=metadata["source_work_id"],
+            source_attempt_id=metadata["source_attempt_id"],
         )
         return CheckpointProposal(envelope, self.sequence)

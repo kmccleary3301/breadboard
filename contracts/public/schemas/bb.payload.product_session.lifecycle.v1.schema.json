@@ -8,6 +8,7 @@
     { "$ref": "#/$defs/approvalRequested" },
     { "$ref": "#/$defs/approvalResolved" },
     { "$ref": "#/$defs/sessionReconfigured" },
+    { "$ref": "#/$defs/sessionAdoptionCommitted" },
     { "$ref": "#/$defs/sessionPaused" },
     { "$ref": "#/$defs/sessionResumed" },
     { "$ref": "#/$defs/sessionCompleted" },
@@ -128,6 +129,80 @@
       "properties": {
         "effective_lock_hash": { "$ref": "#/$defs/sha256" },
         "reason": { "type": "string" }
+      }
+    },
+    "sessionAdoptionCommitted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adoption_id",
+        "checkpoint_id",
+        "source_generation_id",
+        "source_module_id",
+        "source_instance_id",
+        "source_work_id",
+        "source_attempt_id",
+        "source_schema_id",
+        "source_body_sha256",
+        "source_frontier",
+        "target_generation_id",
+        "effective_lock_hash",
+        "reason",
+        "migration"
+      ],
+      "properties": {
+        "adoption_id": { "type": "string", "minLength": 1 },
+        "checkpoint_id": { "type": "string", "minLength": 1 },
+        "source_generation_id": { "$ref": "#/$defs/sha256" },
+        "source_module_id": { "type": "string", "minLength": 1 },
+        "source_instance_id": { "type": "string", "minLength": 1 },
+        "source_work_id": { "type": "string", "minLength": 1 },
+        "source_attempt_id": { "type": "string", "minLength": 1 },
+        "source_schema_id": { "type": "string", "minLength": 1 },
+        "source_body_sha256": { "$ref": "#/$defs/sha256" },
+        "source_frontier": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "event_sequence",
+            "generation_id",
+            "typed_input_sequence",
+            "output_sequence",
+            "compaction_index"
+          ],
+          "properties": {
+            "event_sequence": { "type": "integer", "minimum": 0 },
+            "generation_id": { "$ref": "#/$defs/sha256" },
+            "typed_input_sequence": { "type": "integer", "minimum": 0 },
+            "output_sequence": { "type": "integer", "minimum": 0 },
+            "compaction_index": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "target_generation_id": { "$ref": "#/$defs/sha256" },
+        "effective_lock_hash": { "$ref": "#/$defs/sha256" },
+        "reason": { "type": "string" },
+        "request_id": { "type": "string", "minLength": 1 },
+        "migration": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "binding",
+              "disposition",
+              "source_schema_id",
+              "target_schema_id",
+              "reason"
+            ],
+            "properties": {
+              "binding": { "type": "string", "minLength": 1 },
+              "disposition": { "enum": ["compatible", "migrate"] },
+              "source_schema_id": { "type": "string", "minLength": 1 },
+              "target_schema_id": { "type": "string", "minLength": 1 },
+              "reason": { "type": "string" }
+            }
+          }
+        }
       }
     },
     "sessionPaused": {

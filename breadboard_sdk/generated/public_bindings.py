@@ -2,7 +2,7 @@
 # generator: scripts/quality/generate_public_bindings.py
 # generator-version: 6
 # catalog-id: bb.public_operation_catalog.v2
-# catalog-sha256: sha256:e85d665fd3617f1130bc7e604682eedf30a7076e40d904a9088914d0e26ee45b
+# catalog-sha256: sha256:d574352b4e55997181883cb316d1e9db13c8715636e610c992bb1c156a8e622b
 
 from __future__ import annotations
 
@@ -321,6 +321,23 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         required_capabilities=("public.session.execute", "public.session.read"),
     ),
     PublicOperationBinding(
+        operation_id="session.adopt",
+        status="candidate",
+        http_method="POST",
+        path="/v1/sessions/{session_id}/adoptions",
+        cli_command="breadboard session adopt",
+        python_client="BreadBoardClient",
+        python_method="adopt_session",
+        typescript_client="BreadBoardClient",
+        typescript_method="adoptSession",
+        action_id="public.session.adopt",
+        action_kind="action",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
+        auth_mode="capability_gated",
+        required_capabilities=("public.session.execute",),
+    ),
+    PublicOperationBinding(
         operation_id="session.approve",
         status="candidate",
         http_method="POST",
@@ -368,6 +385,23 @@ PUBLIC_OPERATION_BINDINGS: Final[tuple[PublicOperationBinding, ...]] = (
         action_kind="action",
         lifecycle="async",
         idempotency_mode="keyed",
+        auth_mode="capability_gated",
+        required_capabilities=("public.session.execute",),
+    ),
+    PublicOperationBinding(
+        operation_id="session.checkpoint",
+        status="candidate",
+        http_method="POST",
+        path="/v1/sessions/{session_id}/checkpoints",
+        cli_command="breadboard session checkpoint",
+        python_client="BreadBoardClient",
+        python_method="checkpoint_session",
+        typescript_client="BreadBoardClient",
+        typescript_method="checkpointSession",
+        action_id="public.session.checkpoint",
+        action_kind="action",
+        lifecycle="sync",
+        idempotency_mode="idempotent",
         auth_mode="capability_gated",
         required_capabilities=("public.session.execute",),
     ),
@@ -546,18 +580,20 @@ PUBLIC_BINDINGS_BY_OPERATION_ID: Final[Mapping[str, PublicOperationBinding]] = (
             "integration.list": PUBLIC_OPERATION_BINDINGS[14],
             "integration.probe": PUBLIC_OPERATION_BINDINGS[15],
             "research.compare": PUBLIC_OPERATION_BINDINGS[16],
-            "session.approve": PUBLIC_OPERATION_BINDINGS[17],
-            "session.artifacts": PUBLIC_OPERATION_BINDINGS[18],
-            "session.cancel": PUBLIC_OPERATION_BINDINGS[19],
-            "session.events": PUBLIC_OPERATION_BINDINGS[20],
-            "session.get": PUBLIC_OPERATION_BINDINGS[21],
-            "session.list": PUBLIC_OPERATION_BINDINGS[22],
-            "session.resume": PUBLIC_OPERATION_BINDINGS[23],
-            "session.send_input": PUBLIC_OPERATION_BINDINGS[24],
-            "session.start": PUBLIC_OPERATION_BINDINGS[25],
-            "system.describe": PUBLIC_OPERATION_BINDINGS[26],
-            "system.health": PUBLIC_OPERATION_BINDINGS[27],
-            "system.schemas": PUBLIC_OPERATION_BINDINGS[28],
+            "session.adopt": PUBLIC_OPERATION_BINDINGS[17],
+            "session.approve": PUBLIC_OPERATION_BINDINGS[18],
+            "session.artifacts": PUBLIC_OPERATION_BINDINGS[19],
+            "session.cancel": PUBLIC_OPERATION_BINDINGS[20],
+            "session.checkpoint": PUBLIC_OPERATION_BINDINGS[21],
+            "session.events": PUBLIC_OPERATION_BINDINGS[22],
+            "session.get": PUBLIC_OPERATION_BINDINGS[23],
+            "session.list": PUBLIC_OPERATION_BINDINGS[24],
+            "session.resume": PUBLIC_OPERATION_BINDINGS[25],
+            "session.send_input": PUBLIC_OPERATION_BINDINGS[26],
+            "session.start": PUBLIC_OPERATION_BINDINGS[27],
+            "system.describe": PUBLIC_OPERATION_BINDINGS[28],
+            "system.health": PUBLIC_OPERATION_BINDINGS[29],
+            "system.schemas": PUBLIC_OPERATION_BINDINGS[30],
         }
     )
 )

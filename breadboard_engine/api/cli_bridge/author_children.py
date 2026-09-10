@@ -338,6 +338,15 @@ class _Backend:
         # packet; an unresolved child attempt stays unknown, not replayed.
         return None
 
+    def quiescence(self) -> tuple[str, ...]:
+        with self._runs_lock:
+            runs = tuple(self._runs.values())
+        return tuple(
+            f"child:{run.handle.child_work_id}"
+            for run in runs
+            if not run._closed.is_set() or not run.items.empty()
+        )
+
     def close(self, reason: str, deadline: float) -> bool:
         with self._runs_lock:
             runs = tuple(self._runs.values())
@@ -402,6 +411,9 @@ class AuthorChildren:
             owns_work_lifecycle=False,
         )
 
+
+    def quiescence(self) -> tuple[str, ...]:
+        return self._backend.quiescence()
 
     def close(self, reason: str, deadline: float) -> bool:
         return self._backend.close(reason, deadline)

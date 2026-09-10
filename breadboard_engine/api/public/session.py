@@ -4,6 +4,7 @@ import asyncio
 import json
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 from fastapi import (
     APIRouter,
@@ -32,8 +33,10 @@ from breadboard.product.runtime.generations import GenerationLifecycleError
 
 from .models import (
     PublicResult,
+    SessionAdoptRequest,
     SessionApprovalRequest,
     SessionCancelRequest,
+    SessionCheckpointRequest,
     SessionInputRequest,
     SessionStartRequest,
     authorize_public_operation,
@@ -390,6 +393,44 @@ class _LiveSessionMutationAdapter:
         except HTTPException as error:
             raise _mutation_error(error) from error
 
+    async def checkpoint(
+        self,
+        request: session_operations.CheckpointSessionRequest,
+        context,
+    ) -> dict[str, Any]:
+        del context
+        try:
+            return await self._service.create_generation_checkpoint(
+                request.session_id,
+                request.reason,
+                request.request_id,
+            )
+        except GenerationLifecycleError as error:
+            raise _generation_mutation_error(error) from error
+        except HTTPException as error:
+            raise _mutation_error(error) from error
+
+    async def adopt(
+        self,
+        request: session_operations.AdoptSessionRequest,
+        context,
+        effective_lock,
+        source_path: Path,
+    ) -> dict[str, Any]:
+        del context
+        try:
+            return await self._service.adopt_generation_checkpoint(
+                request.session_id,
+                request.checkpoint_id,
+                effective_lock,
+                source_path,
+                request.request_id,
+            )
+        except GenerationLifecycleError as error:
+            raise _generation_mutation_error(error) from error
+        except HTTPException as error:
+            raise _mutation_error(error) from error
+
 
 def _scrub_event_payload(kind, payload, workspace):
     public_payload = scrub_public(payload, workspace)
@@ -445,6 +486,55 @@ async def start(
             mutation_port=_LiveSessionMutationAdapter(_service(context)),
         ).start(neutral_request),
     )
+@router.post(
+    "/v1/sessions/{session_id}/checkpoints",
+    operation_id="session.checkpoint",
+    response_model=PublicResult,
+)
+async def checkpoint(
+    session_id: str,
+    request: SessionCheckpointRequest,
+    context: Request,
+):
+    neutral_request = session_operations.CheckpointSessionRequest(
+        session_id=session_id,
+        reason=request.reason,
+        request_id=request.request_id,
+    )
+    return await invoke_async(
+        "session.checkpoint",
+        lambda workspace: session_operations.SessionRuntime(
+            public_operation_context(workspace),
+            mutation_port=_LiveSessionMutationAdapter(_service(context)),
+        ).checkpoint(neutral_request),
+    )
+
+
+@router.post(
+    "/v1/sessions/{session_id}/adoptions",
+    operation_id="session.adopt",
+    response_model=PublicResult,
+)
+async def adopt(
+    session_id: str,
+    request: SessionAdoptRequest,
+    context: Request,
+):
+    neutral_request = session_operations.AdoptSessionRequest(
+        session_id=session_id,
+        checkpoint_id=request.checkpoint_id,
+        lock_id=request.lock_id,
+        request_id=request.request_id,
+    )
+    return await invoke_async(
+        "session.adopt",
+        lambda workspace: session_operations.SessionRuntime(
+            public_operation_context(workspace),
+            mutation_port=_LiveSessionMutationAdapter(_service(context)),
+        ).adopt(neutral_request),
+    )
+
+
 
 
 @router.get("/v1/sessions", operation_id="session.list", response_model=PublicResult)

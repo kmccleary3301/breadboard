@@ -489,6 +489,69 @@
     "title": "AuthProviderView",
     "type": "object"
    },
+   "AuthorityDeclaration": {
+    "description": "Requested rights. A manifest containing these values grants nothing.",
+    "properties": {
+     "child": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ChildAuthority"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "credential_disclosures": {
+      "default": [],
+      "items": {
+       "$ref": "#/components/schemas/CredentialDisclosure"
+      },
+      "title": "Credential Disclosures",
+      "type": "array"
+     },
+     "network": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/NetworkAuthority"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "project": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ProjectAuthority"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "provider_ids": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Provider Ids",
+      "type": "array",
+      "uniqueItems": true
+     },
+     "tool_ids": {
+      "default": [],
+      "items": {
+       "type": "string"
+      },
+      "title": "Tool Ids",
+      "type": "array",
+      "uniqueItems": true
+     }
+    },
+    "title": "AuthorityDeclaration",
+    "type": "object"
+   },
    "BeginAuthLoginRequest": {
     "properties": {
      "auth_scheme_id": {
@@ -685,6 +748,28 @@
      "expires_at_unix"
     ],
     "title": "BootstrapChallengeResponse",
+    "type": "object"
+   },
+   "ChildAuthority": {
+    "properties": {
+     "allowed_module_ids": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Allowed Module Ids",
+      "type": "array",
+      "uniqueItems": true
+     },
+     "max_depth": {
+      "title": "Max Depth",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "allowed_module_ids",
+     "max_depth"
+    ],
+    "title": "ChildAuthority",
     "type": "object"
    },
    "ClientLeaseRequest": {
@@ -960,6 +1045,24 @@
      }
     },
     "title": "CompleteAuthLoginRequest",
+    "type": "object"
+   },
+   "CredentialDisclosure": {
+    "properties": {
+     "purpose": {
+      "title": "Purpose",
+      "type": "string"
+     },
+     "secret_name": {
+      "title": "Secret Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "secret_name",
+     "purpose"
+    ],
+    "title": "CredentialDisclosure",
     "type": "object"
    },
    "DrainControlRequest": {
@@ -1829,6 +1932,33 @@
     "title": "HarnessPackageRequest",
     "type": "object"
    },
+   "HarnessPublishRequest": {
+    "additionalProperties": false,
+    "properties": {
+     "expected_revision": {
+      "minimum": 0.0,
+      "title": "Expected Revision",
+      "type": "integer"
+     },
+     "lock_id": {
+      "minLength": 1,
+      "title": "Lock Id",
+      "type": "string"
+     },
+     "request_id": {
+      "minLength": 1,
+      "title": "Request Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "lock_id",
+     "expected_revision",
+     "request_id"
+    ],
+    "title": "HarnessPublishRequest",
+    "type": "object"
+   },
    "HarnessUpdateRequest": {
     "additionalProperties": false,
     "properties": {
@@ -2173,6 +2303,64 @@
     "title": "ModelRolesResolveResponse",
     "type": "object"
    },
+   "ModuleInputRequest": {
+    "additionalProperties": false,
+    "properties": {
+     "body": {
+      "title": "Body",
+      "type": "string"
+     },
+     "final": {
+      "title": "Final",
+      "type": "boolean"
+     },
+     "schema_id": {
+      "minLength": 1,
+      "title": "Schema Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "schema_id",
+     "body",
+     "final"
+    ],
+    "title": "ModuleInputRequest",
+    "type": "object"
+   },
+   "NetworkAuthority": {
+    "properties": {
+     "destinations": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Destinations",
+      "type": "array"
+     },
+     "operations": {
+      "items": {
+       "$ref": "#/components/schemas/NetworkOperation"
+      },
+      "title": "Operations",
+      "type": "array",
+      "uniqueItems": true
+     }
+    },
+    "required": [
+     "destinations",
+     "operations"
+    ],
+    "title": "NetworkAuthority",
+    "type": "object"
+   },
+   "NetworkOperation": {
+    "enum": [
+     "connect",
+     "resolve"
+    ],
+    "title": "NetworkOperation",
+    "type": "string"
+   },
    "OwnerAcquireRequest": {
     "additionalProperties": false,
     "properties": {
@@ -2418,6 +2606,39 @@
     "title": "Problem",
     "type": "object"
    },
+   "ProjectAuthority": {
+    "properties": {
+     "operations": {
+      "items": {
+       "$ref": "#/components/schemas/ProjectOperation"
+      },
+      "title": "Operations",
+      "type": "array",
+      "uniqueItems": true
+     },
+     "roots": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Roots",
+      "type": "array"
+     }
+    },
+    "required": [
+     "roots",
+     "operations"
+    ],
+    "title": "ProjectAuthority",
+    "type": "object"
+   },
+   "ProjectOperation": {
+    "enum": [
+     "read",
+     "write"
+    ],
+    "title": "ProjectOperation",
+    "type": "string"
+   },
    "PublicResult": {
     "additionalProperties": false,
     "properties": {
@@ -2653,6 +2874,33 @@
     "title": "ResearchCompareBody",
     "type": "object"
    },
+   "SessionAdoptRequest": {
+    "additionalProperties": false,
+    "properties": {
+     "checkpoint_id": {
+      "minLength": 1,
+      "title": "Checkpoint Id",
+      "type": "string"
+     },
+     "lock_id": {
+      "minLength": 1,
+      "title": "Lock Id",
+      "type": "string"
+     },
+     "request_id": {
+      "minLength": 1,
+      "title": "Request Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "checkpoint_id",
+     "lock_id",
+     "request_id"
+    ],
+    "title": "SessionAdoptRequest",
+    "type": "object"
+   },
    "SessionApprovalRequest": {
     "additionalProperties": false,
     "properties": {
@@ -2693,18 +2941,53 @@
     "title": "SessionCancelRequest",
     "type": "object"
    },
-   "SessionInputRequest": {
+   "SessionCheckpointRequest": {
     "additionalProperties": false,
     "properties": {
-     "content": {
+     "reason": {
       "minLength": 1,
-      "title": "Content",
+      "title": "Reason",
+      "type": "string"
+     },
+     "request_id": {
+      "minLength": 1,
+      "title": "Request Id",
       "type": "string"
      }
     },
     "required": [
-     "content"
+     "reason",
+     "request_id"
     ],
+    "title": "SessionCheckpointRequest",
+    "type": "object"
+   },
+   "SessionInputRequest": {
+    "additionalProperties": false,
+    "properties": {
+     "content": {
+      "anyOf": [
+       {
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Content"
+     },
+     "module_input": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ModuleInputRequest"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
     "title": "SessionInputRequest",
     "type": "object"
    },
@@ -2712,9 +2995,48 @@
     "additionalProperties": false,
     "properties": {
      "lock_id": {
-      "minLength": 1,
-      "title": "Lock Id",
-      "type": "string"
+      "anyOf": [
+       {
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lock Id"
+     },
+     "module_authority": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/AuthorityDeclaration"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "module_input": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ModuleInputRequest"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "publication_target": {
+      "anyOf": [
+       {
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Publication Target"
      },
      "session_id": {
       "anyOf": [
@@ -2729,15 +3051,18 @@
       "title": "Session Id"
      },
      "task": {
-      "minLength": 1,
-      "title": "Task",
-      "type": "string"
+      "anyOf": [
+       {
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Task"
      }
     },
-    "required": [
-     "lock_id",
-     "task"
-    ],
     "title": "SessionStartRequest",
     "type": "object"
    },
@@ -4449,6 +4774,58 @@
     ]
    }
   },
+  "/v1/harness-publications/{target}": {
+   "post": {
+    "operationId": "harness.publish",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "target",
+      "required": true,
+      "schema": {
+       "title": "Target",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HarnessPublishRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PublicResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Publish",
+    "tags": [
+     "public-harness"
+    ]
+   }
+  },
   "/v1/harnesses": {
    "get": {
     "operationId": "harness.list",
@@ -5141,6 +5518,58 @@
     ]
    }
   },
+  "/v1/sessions/{session_id}/adoptions": {
+   "post": {
+    "operationId": "session.adopt",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "session_id",
+      "required": true,
+      "schema": {
+       "title": "Session Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SessionAdoptRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PublicResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Adopt",
+    "tags": [
+     "public-session"
+    ]
+   }
+  },
   "/v1/sessions/{session_id}/approve": {
    "post": {
     "operationId": "session.approve",
@@ -5314,6 +5743,58 @@
      }
     },
     "summary": "Cancel",
+    "tags": [
+     "public-session"
+    ]
+   }
+  },
+  "/v1/sessions/{session_id}/checkpoints": {
+   "post": {
+    "operationId": "session.checkpoint",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "session_id",
+      "required": true,
+      "schema": {
+       "title": "Session Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SessionCheckpointRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PublicResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Checkpoint",
     "tags": [
      "public-session"
     ]

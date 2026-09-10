@@ -1,6 +1,6 @@
 // GENERATED FILE - do not edit by hand.
 // generator: scripts/dev/generate_ts_sdk.py (deterministic, in-process, no network)
-// openapi-schema-sha256: 9c6adeae7025f6f3cea5c3c3acdbf264055a05e804b8db65b62d0a213bd8e7db
+// openapi-schema-sha256: 108564297ff0115b86c67ad33d7b6f5c20f3990c6eb19f653e6b02ef4f6be8fa
 // app-source-sha256: 43b6c21adcb20887b99520e702a6aa8cd4944ad27f4c8de9847b9fd051c70496
 
 export interface RouteEntry { path: string; method: string; operationId: string }
@@ -34,6 +34,7 @@ export const ROUTES: readonly RouteEntry[] = [
   { path: "/v1/engine/owner/renew", method: "POST", operationId: "renew_engine_owner_v1_engine_owner_renew_post" },
   { path: "/v1/harness-locks/{lock_id}", method: "GET", operationId: "harness_lock.get" },
   { path: "/v1/harness-packages", method: "POST", operationId: "harness.package" },
+  { path: "/v1/harness-publications/{target}", method: "POST", operationId: "harness.publish" },
   { path: "/v1/harnesses", method: "GET", operationId: "harness.list" },
   { path: "/v1/harnesses", method: "POST", operationId: "harness.create" },
   { path: "/v1/harnesses/{harness_id}", method: "GET", operationId: "harness.get" },
@@ -52,9 +53,11 @@ export const ROUTES: readonly RouteEntry[] = [
   { path: "/v1/sessions", method: "GET", operationId: "session.list" },
   { path: "/v1/sessions", method: "POST", operationId: "session.start" },
   { path: "/v1/sessions/{session_id}", method: "GET", operationId: "session.get" },
+  { path: "/v1/sessions/{session_id}/adoptions", method: "POST", operationId: "session.adopt" },
   { path: "/v1/sessions/{session_id}/approve", method: "POST", operationId: "session.approve" },
   { path: "/v1/sessions/{session_id}/artifacts", method: "GET", operationId: "session.artifacts" },
   { path: "/v1/sessions/{session_id}/cancel", method: "POST", operationId: "session.cancel" },
+  { path: "/v1/sessions/{session_id}/checkpoints", method: "POST", operationId: "session.checkpoint" },
   { path: "/v1/sessions/{session_id}/events", method: "GET", operationId: "session.events" },
   { path: "/v1/sessions/{session_id}/input", method: "POST", operationId: "session.send_input" },
   { path: "/v1/sessions/{session_id}/resume", method: "POST", operationId: "session.resume" },

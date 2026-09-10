@@ -21,16 +21,16 @@ PROTOCOL_VERSION: Final = 2
 
 WireKind: TypeAlias = Literal[
     "start", "input", "output", "service_result", "checkpoint_request",
-    "checkpoint", "result", "cancel", "close", "ready", "failure",
-    "provider_request", "tool_request", "context_request", "child_request",
-    "dependency_request",
+    "checkpoint_prepare", "checkpoint_compatibility", "checkpoint", "result",
+    "cancel", "close", "ready", "failure", "provider_request", "tool_request",
+    "context_request", "child_request", "dependency_request",
 ]
 WIRE_KINDS: Final[frozenset[str]] = frozenset(
     {
         "start", "input", "output", "service_result", "checkpoint_request",
-        "checkpoint", "result", "cancel", "close", "ready", "failure",
-        "provider_request", "tool_request", "context_request", "child_request",
-        "dependency_request",
+        "checkpoint_prepare", "checkpoint_compatibility", "checkpoint", "result",
+        "cancel", "close", "ready", "failure", "provider_request",
+        "tool_request", "context_request", "child_request", "dependency_request",
     }
 )
 

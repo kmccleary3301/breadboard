@@ -136,6 +136,17 @@ export interface PublicSessionApprovalRequest {
   readonly decision: PublicSessionDecision
 }
 
+export interface PublicSessionCheckpointRequest {
+  readonly reason: string
+  readonly request_id: string
+}
+
+export interface PublicSessionAdoptRequest {
+  readonly checkpoint_id: string
+  readonly lock_id: string
+  readonly request_id: string
+}
+
 export interface PublicSessionCancelRequest {
   readonly reason?: string
 }

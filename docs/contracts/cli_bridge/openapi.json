@@ -1932,6 +1932,33 @@
         "title": "HarnessPackageRequest",
         "type": "object"
       },
+      "HarnessPublishRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "lock_id": {
+            "minLength": 1,
+            "title": "Lock Id",
+            "type": "string"
+          },
+          "request_id": {
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lock_id",
+          "expected_revision",
+          "request_id"
+        ],
+        "title": "HarnessPublishRequest",
+        "type": "object"
+      },
       "HarnessUpdateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2847,6 +2874,33 @@
         "title": "ResearchCompareBody",
         "type": "object"
       },
+      "SessionAdoptRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "checkpoint_id": {
+            "minLength": 1,
+            "title": "Checkpoint Id",
+            "type": "string"
+          },
+          "lock_id": {
+            "minLength": 1,
+            "title": "Lock Id",
+            "type": "string"
+          },
+          "request_id": {
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkpoint_id",
+          "lock_id",
+          "request_id"
+        ],
+        "title": "SessionAdoptRequest",
+        "type": "object"
+      },
       "SessionApprovalRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2887,6 +2941,27 @@
         "title": "SessionCancelRequest",
         "type": "object"
       },
+      "SessionCheckpointRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "request_id": {
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "request_id"
+        ],
+        "title": "SessionCheckpointRequest",
+        "type": "object"
+      },
       "SessionInputRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2920,9 +2995,16 @@
         "additionalProperties": false,
         "properties": {
           "lock_id": {
-            "minLength": 1,
-            "title": "Lock Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lock Id"
           },
           "module_authority": {
             "anyOf": [
@@ -2943,6 +3025,18 @@
                 "type": "null"
               }
             ]
+          },
+          "publication_target": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publication Target"
           },
           "session_id": {
             "anyOf": [
@@ -2969,9 +3063,6 @@
             "title": "Task"
           }
         },
-        "required": [
-          "lock_id"
-        ],
         "title": "SessionStartRequest",
         "type": "object"
       },
@@ -4676,6 +4767,58 @@
         ]
       }
     },
+    "/v1/harness-publications/{target}": {
+      "post": {
+        "operationId": "harness.publish",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target",
+            "required": true,
+            "schema": {
+              "title": "Target",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HarnessPublishRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish",
+        "tags": [
+          "public-harness"
+        ]
+      }
+    },
     "/v1/harnesses": {
       "get": {
         "operationId": "harness.list",
@@ -5368,6 +5511,58 @@
         ]
       }
     },
+    "/v1/sessions/{session_id}/adoptions": {
+      "post": {
+        "operationId": "session.adopt",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionAdoptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Adopt",
+        "tags": [
+          "public-session"
+        ]
+      }
+    },
     "/v1/sessions/{session_id}/approve": {
       "post": {
         "operationId": "session.approve",
@@ -5541,6 +5736,58 @@
           }
         },
         "summary": "Cancel",
+        "tags": [
+          "public-session"
+        ]
+      }
+    },
+    "/v1/sessions/{session_id}/checkpoints": {
+      "post": {
+        "operationId": "session.checkpoint",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionCheckpointRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Checkpoint",
         "tags": [
           "public-session"
         ]

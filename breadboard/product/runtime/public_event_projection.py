@@ -18,6 +18,7 @@ _LIFECYCLE_EVENT_KINDS: Final[tuple[str, ...]] = (
     "approval.requested",
     "approval.resolved",
     "session.reconfigured",
+    "session.adoption_committed",
     "session.paused",
     "session.resumed",
     "session.completed",
@@ -43,6 +44,47 @@ PUBLIC_PAYLOAD_SCHEMAS: Final[Mapping[str, str]] = _PUBLIC_PAYLOAD_SCHEMAS
 _INTERNAL_EVENT_KINDS = frozenset({"context.compacted"})
 
 
+def _public_adoption_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    public = {
+        key: payload[key]
+        for key in (
+            "adoption_id",
+            "checkpoint_id",
+            "source_generation_id",
+            "source_module_id",
+            "source_instance_id",
+            "source_work_id",
+            "source_attempt_id",
+            "source_schema_id",
+            "source_body_sha256",
+            "source_frontier",
+            "target_generation_id",
+            "effective_lock_hash",
+            "reason",
+            "request_id",
+        )
+        if key in payload
+    }
+    migration = payload.get("migration")
+    if isinstance(migration, (list, tuple)):
+        public["migration"] = [
+            {
+                key: item[key]
+                for key in (
+                    "binding",
+                    "disposition",
+                    "source_schema_id",
+                    "target_schema_id",
+                    "reason",
+                )
+                if key in item
+            }
+            for item in migration
+            if isinstance(item, Mapping)
+        ]
+    return public
+
+
 def public_session_event(
     event: KernelEvent | Mapping[str, Any],
 ) -> dict[str, Any] | None:
@@ -52,6 +94,8 @@ def public_session_event(
     if kind in _INTERNAL_EVENT_KINDS:
         return None
     payload = source["payload"]
+    if kind == "session.adoption_committed":
+        payload = _public_adoption_payload(payload)
     lineage = payload.get("lineage")
     session_id = str(source["session_id"])
     sequence = int(source["sequence"])

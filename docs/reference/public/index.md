@@ -2,7 +2,7 @@
 <!-- generator: scripts/quality/generate_public_bindings.py -->
 <!-- generator-version: 6 -->
 <!-- catalog-id: bb.public_operation_catalog.v2 -->
-<!-- catalog-sha256: sha256:e85d665fd3617f1130bc7e604682eedf30a7076e40d904a9088914d0e26ee45b -->
+<!-- catalog-sha256: sha256:d574352b4e55997181883cb316d1e9db13c8715636e610c992bb1c156a8e622b -->
 <!-- document-kind: operation-index -->
 
 # Public operation reference
@@ -28,9 +28,11 @@ Candidate documentation generated from the public operation catalog.
 - [`integration.list`](operations/integration/list.md) — list integration
 - [`integration.probe`](operations/integration/probe.md) — probe integration
 - [`research.compare`](operations/research/compare.md) — compare research
+- [`session.adopt`](operations/session/adopt.md) — adopt an exact Lock into a session
 - [`session.approve`](operations/session/approve.md) — approve session
 - [`session.artifacts`](operations/session/artifacts.md) — artifacts session
 - [`session.cancel`](operations/session/cancel.md) — cancel session
+- [`session.checkpoint`](operations/session/checkpoint.md) — checkpoint session at a quiescent frontier
 - [`session.events`](operations/session/events.md) — events session
 - [`session.get`](operations/session/get.md) — get session
 - [`session.list`](operations/session/list.md) — list session

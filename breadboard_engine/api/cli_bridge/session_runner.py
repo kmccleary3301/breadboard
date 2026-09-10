@@ -41,6 +41,7 @@ from breadboard_engine.permissions import (
 from .events import EventType, SessionEvent
 from .models import SessionCreateRequest, SessionStatus
 from .registry import (
+    ModuleExecutionRecord,
     SessionRecordDeletedError,
     SessionRecord,
     SessionRegistry,
@@ -55,9 +56,23 @@ from .runtime_event_projector import (
 from .session_control import SessionControlController
 from .task_execution import TaskExecutionOwner
 from .session_lifecycle import SessionLifecycleOwner
+from breadboard.product.runtime import (
+    SessionGenerationCheckpoint,
+)
 from breadboard.product.runtime.events import GenerationAdoptionError
-from breadboard.modules import InputEnvelope, ModuleInput, OutputEnvelope, RequestKey
+from breadboard.modules import (
+    AdmissionGrant,
+    CheckpointEnvelope,
+    CheckpointProposal,
+    CheckpointRefusal,
+    InputEnvelope,
+    ModuleInput,
+    OutputEnvelope,
+    RequestKey,
+)
+from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.modules.transport import encode_bytes
+from breadboard.product.runtime.generations import GenerationAdmission
 
 from .session_artifacts import SessionArtifactStore
 from .runtime_emission import CapturedRuntimeConfig
@@ -93,6 +108,7 @@ class SessionRunner:
         captured_runtime: CapturedRuntimeConfig | None = None,
         storage_root: Path | None = None,
         repository: Any | None = None,
+        resume_checkpoints: Mapping[str, CheckpointEnvelope] | None = None,
     ) -> None:
         self.session = session
         self.registry = registry
@@ -100,7 +116,11 @@ class SessionRunner:
         self._module_storage_root = (
             storage_root.expanduser().resolve() if storage_root is not None else None
         )
-        self._durable_child_repository = repository
+        self._resume_checkpoints = dict(
+            session.module_resume_checkpoints
+            if resume_checkpoints is None
+            else resume_checkpoints
+        )
         self._module_runtime: ModuleRuntime | None = None
         self._module_disposal: ModuleDisposal | None = None
         self._module_close_lock = asyncio.Lock()
@@ -240,6 +260,11 @@ class SessionRunner:
         with self._product_session_lock:
             runtime = self._module_runtime
         if runtime is not None:
+            if runtime.stopped.is_set():
+                raise ModuleExecutionError(
+                    "cleanup_unknown",
+                    "source runtime cleanup must be reconciled before new input",
+                )
             return runtime
         captured = self._captured_runtime
         execution = self.session.module_execution
@@ -262,6 +287,7 @@ class SessionRunner:
             session_lock=self._product_session_lock,
             persist_session=self._persist_module_session,
             emit_output=self._emit_module_output,
+            resume_checkpoints=self._resume_checkpoints,
         )
         with self._product_session_lock:
             if self._module_runtime is None:
@@ -320,6 +346,307 @@ class SessionRunner:
             "completion_summary": {"completed": completed, "reason": reason},
             "reward_metrics": {},
         }
+
+    def stamp_generation_checkpoint(
+        self,
+        proposal: CheckpointProposal,
+        *,
+        checkpoint_id: str,
+    ) -> SessionGenerationCheckpoint:
+        with self._product_session_lock:
+            product_session = self.session.product_session
+            if product_session is None:
+                raise GenerationAdoptionError(
+                    "checkpoint_unavailable",
+                    "session product state is unavailable",
+                )
+            checkpoint = product_session.stamp_checkpoint(
+                proposal,
+                checkpoint_id=checkpoint_id,
+            )
+            self._commit_terminal_product_session_locked()
+            return checkpoint
+
+    def commit_generation_checkpoint_adoption(
+        self,
+        lock: EffectiveHarnessLock,
+        adoption_record: Mapping[str, Any],
+    ) -> None:
+        with self._product_session_lock:
+            product_session = self.session.product_session
+            if product_session is None:
+                raise GenerationAdoptionError(
+                    "checkpoint_unavailable",
+                    "session product state is unavailable",
+                )
+            product_session.commit_checkpoint_adoption(lock, adoption_record)
+            self._commit_terminal_product_session_locked()
+
+    async def capture_module_checkpoints(
+        self,
+        *,
+        request_id: str,
+        reason: str,
+    ) -> dict[str, CheckpointProposal | CheckpointRefusal]:
+        if self.session.module_execution is None:
+            return {}
+        runtime = self._ensure_module_runtime()
+        return await asyncio.to_thread(
+            runtime.capture_checkpoints,
+            request_id=request_id,
+            reason=reason,
+        )
+
+    def module_checkpoint_dependencies(self) -> dict[str, tuple[str, ...]]:
+        captured = self._captured_runtime
+        if captured is None:
+            raise ModuleExecutionError(
+                "checkpoint_unavailable",
+                "module Session has no captured generation",
+            )
+        return {
+            binding: tuple(sorted(package.manifest.dependency_contracts.values()))
+            for binding, package in captured.materialization.packages.items()
+        }
+
+    def module_checkpoint_modules(self) -> dict[str, str]:
+        captured = self._captured_runtime
+        if captured is None:
+            raise ModuleExecutionError(
+                "checkpoint_unavailable",
+                "module Session has no captured generation",
+            )
+        return {
+            binding: package.manifest.logical_package
+            for binding, package in captured.materialization.packages.items()
+        }
+
+    async def prepare_adopted_module_checkpoints(
+        self,
+        *,
+        captured_runtime: CapturedRuntimeConfig,
+        module_execution: ModuleExecutionRecord,
+        module_grant: AdmissionGrant,
+        source_checkpoints: Mapping[str, CheckpointEnvelope],
+        source_dependencies: Mapping[str, tuple[str, ...]],
+    ) -> tuple[dict[str, CheckpointEnvelope], tuple[dict[str, str], ...]]:
+        if self._module_storage_root is None or self._durable_child_repository is None:
+            raise ModuleExecutionError(
+                "checkpoint_unavailable",
+                "module Session has no durable runtime owner",
+            )
+        candidate_record = SessionRecord(
+            session_id=self.session.session_id,
+            status=self.session.status,
+            module_execution=module_execution,
+            module_grant=module_grant,
+            product_session=self.session.product_session,
+        )
+
+        def reject_output(*_args: Any) -> None:
+            raise ModuleExecutionError(
+                "checkpoint_invalid",
+                "target checkpoint preparation emitted output",
+            )
+
+        candidate = ModuleRuntime(
+            record=candidate_record,
+            registry=self.registry,
+            captured=captured_runtime,
+            workspace=self._workspace_path
+            or self._module_storage_root / "workspace",
+            storage_root=self._module_storage_root,
+            repository=self._durable_child_repository,
+            loop=self._loop,
+            session_lock=self._product_session_lock,
+            persist_session=lambda: None,
+            emit_output=reject_output,
+            owns_work_lifecycle=False,
+        )
+        try:
+            prepared = await asyncio.to_thread(
+                candidate.prepare_checkpoint_adoption,
+                source_checkpoints,
+                source_dependencies,
+            )
+        except BaseException as error:
+            disposal = await asyncio.to_thread(
+                candidate.close,
+                "adoption_preparation_failed",
+            )
+            if disposal.status != "confirmed_absent":
+                raise ModuleExecutionError(
+                    "cleanup_unknown",
+                    "target checkpoint preparation cleanup was not confirmed",
+                ) from error
+            if isinstance(error, ModuleExecutionError):
+                error.cleanup_confirmed = True
+                raise
+            raise ModuleExecutionError(
+                "checkpoint_invalid",
+                "target checkpoint preparation failed",
+                cleanup_confirmed=True,
+            ) from error
+        try:
+            disposal = await asyncio.to_thread(candidate.close, "adoption_prepared")
+        except BaseException as error:
+            raise ModuleExecutionError(
+                "cleanup_unknown",
+                "target checkpoint preparation cleanup failed",
+            ) from error
+        if disposal.status != "confirmed_absent":
+            raise ModuleExecutionError(
+                "cleanup_unknown",
+                "target checkpoint preparation cleanup was not confirmed",
+            )
+        return prepared
+
+    async def dispose_source_runtime_for_adoption(
+        self,
+        source_checkpoints: Mapping[str, CheckpointEnvelope],
+    ) -> ModuleDisposal:
+        with self._product_session_lock:
+            runtime = self._module_runtime
+            prior = self._module_disposal
+        if runtime is None:
+            if prior is not None:
+                return prior
+            execution = self.session.module_execution
+            if execution is None or not execution.workers:
+                return ModuleDisposal("confirmed_absent", (), ())
+            if all(
+                worker.cleanup is not None
+                and worker.cleanup.status == "confirmed_absent"
+                for worker in execution.workers
+            ):
+                with self._product_session_lock:
+                    self.session.module_execution = ModuleExecutionRecord(
+                        generation_id=execution.generation_id,
+                        root_binding=execution.root_binding,
+                        work_item_id=execution.work_item_id,
+                        attempt_id=execution.attempt_id,
+                    )
+                    self.session.module_resume_checkpoints = dict(source_checkpoints)
+                    self._resume_checkpoints = dict(source_checkpoints)
+                await self.registry.persist(self.session)
+                return ModuleDisposal("confirmed_absent", (), ())
+            return ModuleDisposal(
+                "unknown",
+                tuple(
+                    worker.resource_id
+                    for worker in execution.workers
+                    if worker.resource_id is not None
+                ),
+                ("retained_source_runtime_cleanup_unknown",),
+            )
+        try:
+            disposal = await asyncio.to_thread(
+                runtime.close,
+                "generation_adoption_fence",
+            )
+        except BaseException:
+            execution = self.session.module_execution
+            disposal = ModuleDisposal(
+                "unknown",
+                tuple(
+                    worker.resource_id
+                    for worker in execution.workers
+                    if worker.resource_id is not None
+                )
+                if execution is not None
+                else (),
+                ("source_runtime_cleanup_failed",),
+            )
+        if disposal.status != "confirmed_absent":
+            with self._product_session_lock:
+                self._module_disposal = disposal
+            return disposal
+        with self._product_session_lock:
+            execution = self.session.module_execution
+            if execution is None or execution.generation_id != runtime.generation_id:
+                raise ModuleExecutionError(
+                    "stale_owner",
+                    "source generation changed while adoption cleanup completed",
+                )
+            self.session.module_execution = ModuleExecutionRecord(
+                generation_id=execution.generation_id,
+                root_binding=execution.root_binding,
+                work_item_id=execution.work_item_id,
+                attempt_id=execution.attempt_id,
+            )
+            self.session.module_resume_checkpoints = dict(source_checkpoints)
+            self._module_runtime = None
+            self._module_disposal = disposal
+            self._resume_checkpoints = dict(source_checkpoints)
+        await self.registry.persist(self.session)
+        return disposal
+
+    async def install_adopted_module_runtime(
+        self,
+        *,
+        captured_runtime: CapturedRuntimeConfig,
+        module_execution: ModuleExecutionRecord,
+        module_grant: AdmissionGrant,
+        generation_admission: GenerationAdmission,
+        resume_checkpoints: Mapping[str, CheckpointEnvelope],
+    ) -> ModuleDisposal:
+        with self._product_session_lock:
+            previous_runtime = self._module_runtime
+            if previous_runtime is not None:
+                previous_runtime.record = SessionRecord(
+                    session_id=self.session.session_id,
+                    status=self.session.status,
+                    module_execution=self.session.module_execution,
+                    module_grant=self.session.module_grant,
+                    product_session=self.session.product_session,
+                )
+                previous_runtime.persist_session = lambda: None
+            previous_captured = self._captured_runtime
+            self.session.module_execution = module_execution
+            self.session.module_grant = module_grant
+            self.session.generation_admission = generation_admission
+            self._module_runtime = None
+            self._module_disposal = None
+            self.session.module_resume_checkpoints = dict(resume_checkpoints)
+            self._captured_runtime = captured_runtime
+            self._resume_checkpoints = dict(resume_checkpoints)
+        try:
+            disposal = (
+                await asyncio.to_thread(
+                    previous_runtime.close,
+                    "generation_adopted",
+                )
+                if previous_runtime is not None
+                else ModuleDisposal("confirmed_absent", (), ())
+            )
+        except BaseException:
+            execution = (
+                previous_runtime.record.module_execution
+                if previous_runtime is not None
+                else None
+            )
+            disposal = ModuleDisposal(
+                "unknown",
+                tuple(
+                    worker.resource_id
+                    for worker in execution.workers
+                    if worker.resource_id is not None
+                )
+                if execution is not None
+                else (),
+                ("source_runtime_cleanup_failed",),
+            )
+        if previous_captured is not None:
+            try:
+                await asyncio.to_thread(previous_captured.cleanup)
+            except BaseException:
+                disposal = ModuleDisposal(
+                    "unknown",
+                    disposal.resource_refs,
+                    (*disposal.pending_domain_refs, "source_capture_cleanup_failed"),
+                )
+        return disposal
+
 
     async def _close_module_resources(self, reason: str) -> ModuleDisposal:
         async with self._module_close_lock:

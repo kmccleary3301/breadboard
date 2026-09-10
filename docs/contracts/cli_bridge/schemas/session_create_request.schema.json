@@ -293,10 +293,17 @@
       "type": "boolean"
     },
     "task": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
       "default": "",
-      "description": "Optional initial task; omit for an idle session.",
-      "title": "Task",
-      "type": "string"
+      "description": "Initial user instruction. Empty initializes an interactive text Session.",
+      "title": "Task"
     },
     "workspace": {
       "anyOf": [

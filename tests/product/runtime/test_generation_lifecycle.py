@@ -123,6 +123,45 @@ def test_publication_admission_fence_retains_old_generation_and_rejects_stale_ow
         )
     assert stale.value.code == "stale_dispatch"
 
+def test_adoption_reservation_keeps_old_session_admission_live(tmp_path):
+    lifecycle = GenerationLifecycle(tmp_path)
+    lock_a, lock_b = _lock("a"), _lock("b")
+    original = lifecycle.mark_materialized(
+        lifecycle.reserve_explicit_admission(
+            lock_a,
+            "a.yaml",
+            "session-a",
+            "initial-input",
+        ).admission_id
+    )
+
+    replacement = lifecycle.reserve_adoption_admission(
+        lock_b,
+        "b.yaml",
+        "session-a",
+        "adoption-request",
+    )
+    replay = lifecycle.reserve_adoption_admission(
+        lock_b,
+        "b.yaml",
+        "session-a",
+        "adoption-request",
+    )
+
+    assert replay == replacement
+    assert replacement.admission_id != original.admission_id
+    assert replacement.work_id != original.work_id
+    assert replacement.attempt_id != original.attempt_id
+    lifecycle.require_dispatch(
+        original.admission_id,
+        original.generation_id,
+        original.work_id,
+        original.attempt_id,
+        original.controller_epoch,
+        original.grant_epoch,
+    )
+
+
 
 def test_failed_prepare_keeps_previous_route_and_cleans_external_sentinel(tmp_path):
     preparer = SentinelPreparer(tmp_path / "resources")

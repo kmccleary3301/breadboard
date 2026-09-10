@@ -19,6 +19,7 @@ from breadboard.product.runtime.events import (
     ProcessLock,
     ReplayError,
     Session,
+    SessionGenerationCheckpoint,
 )
 
 
@@ -109,6 +110,7 @@ def _metadata_bytes(session: Session) -> bytes:
     document = {
         "schema_version": "bb.session.v1",
         **session.read_model.as_dict(),
+        "runtime": session.runtime_state(),
     }
     return (json.dumps(document, sort_keys=True, indent=2) + "\n").encode()
 
@@ -828,8 +830,6 @@ def _decode_intent(
         event_sha256,
         metadata_sha256,
     )
-
-
 def _session_from_payloads(
     event_payload: bytes,
     metadata_payload: bytes,
@@ -859,9 +859,38 @@ def _session_from_payloads(
             "event_identity_mismatch",
             "session transaction event identity mismatch",
         )
+    if not isinstance(metadata, Mapping):
+        raise ReplayError(
+            "invalid_projection_encoding",
+            "invalid session transaction metadata",
+        )
+    runtime = metadata.get("runtime")
+    checkpoints: tuple[SessionGenerationCheckpoint, ...] = ()
+    if runtime is not None:
+        if (
+            not isinstance(runtime, Mapping)
+            or set(runtime) != {"checkpoints"}
+            or not isinstance(runtime["checkpoints"], list)
+            or len(runtime["checkpoints"]) > 256
+        ):
+            raise ReplayError(
+                "invalid_projection_encoding",
+                "invalid retained Session checkpoint state",
+            )
+        try:
+            checkpoints = tuple(
+                SessionGenerationCheckpoint.from_dict(item)
+                for item in runtime["checkpoints"]
+            )
+        except (TypeError, ValueError) as error:
+            raise ReplayError(
+                "invalid_projection_encoding",
+                "invalid retained Session checkpoint state",
+            ) from error
+    projection = {key: value for key, value in metadata.items() if key != "runtime"}
     differential = replay_differential(
-        metadata,
-        lambda: Session.restore(events),
+        projection,
+        lambda: Session.restore(events, checkpoints=checkpoints),
     )
     restored = differential.session
     if restored.read_model.session_id != session_id:

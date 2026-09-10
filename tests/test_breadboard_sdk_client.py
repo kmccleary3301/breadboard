@@ -482,6 +482,41 @@ def test_candidate_python_sdk_streams_generated_session_events_route(
                 "authority_epoch": 1,
             },
         ),
+        (
+            "session.adoption_committed",
+            "bb.payload.product_session.lifecycle.v1",
+            {
+                "adoption_id": "adoption-1",
+                "checkpoint_id": "checkpoint-1",
+                "source_generation_id": "sha256:" + "a" * 64,
+                "source_module_id": "demo.root",
+                "source_instance_id": "instance-1",
+                "source_work_id": "work-1",
+                "source_attempt_id": "attempt-1",
+                "source_schema_id": "bb.demo.state.v1",
+                "source_body_sha256": "sha256:" + "b" * 64,
+                "source_frontier": {
+                    "event_sequence": 3,
+                    "generation_id": "sha256:" + "a" * 64,
+                    "typed_input_sequence": 2,
+                    "output_sequence": 1,
+                    "compaction_index": 0,
+                },
+                "target_generation_id": "sha256:" + "c" * 64,
+                "effective_lock_hash": "sha256:" + "c" * 64,
+                "reason": "checkpoint_adoption",
+                "request_id": "adopt-1",
+                "migration": [
+                    {
+                        "binding": "root",
+                        "disposition": "migrate",
+                        "source_schema_id": "bb.demo.state.v1",
+                        "target_schema_id": "bb.demo.state.v2",
+                        "reason": "schema upgrade",
+                    }
+                ],
+            },
+        ),
     ],
 )
 def test_candidate_python_sdk_accepts_typed_module_events(

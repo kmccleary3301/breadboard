@@ -129,6 +129,24 @@ _LIFECYCLE_PAYLOAD_FIELDS = {
     "approval.requested": frozenset({"request_id", "operation"}),
     "approval.resolved": frozenset({"request_id", "decision"}),
     "session.reconfigured": frozenset({"effective_lock_hash", "reason"}),
+    "session.adoption_committed": frozenset(
+        {
+            "adoption_id",
+            "checkpoint_id",
+            "source_generation_id",
+            "source_module_id",
+            "source_instance_id",
+            "source_work_id",
+            "source_attempt_id",
+            "source_schema_id",
+            "source_body_sha256",
+            "source_frontier",
+            "target_generation_id",
+            "effective_lock_hash",
+            "reason",
+            "migration",
+        }
+    ),
     "session.paused": frozenset({"reason"}),
     "session.resumed": frozenset(),
     "session.completed": frozenset({"outcome", "summary"}),
@@ -142,6 +160,7 @@ _LIFECYCLE_OPTIONAL_PAYLOAD_FIELDS = {
     "input.accepted": frozenset(
         {"content_hash", "module_input", "module_input_sequence"}
     ),
+    "session.adoption_committed": frozenset({"request_id"}),
     "session.completed": frozenset({"lineage"}),
     "session.failed": frozenset({"lineage"}),
     "session.canceled": frozenset({"lineage"}),
@@ -377,6 +396,76 @@ def _validate_lifecycle_payload(kind: str, payload: dict[str, Any]) -> None:
         valid = _sha256(payload["effective_lock_hash"]) and isinstance(
             payload["reason"], str
         )
+    elif kind == "session.adoption_committed":
+        text_fields = (
+            "adoption_id",
+            "checkpoint_id",
+            "source_module_id",
+            "source_instance_id",
+            "source_work_id",
+            "source_attempt_id",
+            "source_schema_id",
+        )
+        frontier = payload["source_frontier"]
+        migrations = payload["migration"]
+        valid = (
+            all(isinstance(payload[field], str) and bool(payload[field]) for field in text_fields)
+            and _sha256(payload["source_generation_id"])
+            and _sha256(payload["source_body_sha256"])
+            and _sha256(payload["target_generation_id"])
+            and payload["target_generation_id"] == payload["effective_lock_hash"]
+            and isinstance(payload["reason"], str)
+            and (
+                "request_id" not in payload
+                or (
+                    isinstance(payload["request_id"], str)
+                    and bool(payload["request_id"])
+                )
+            )
+            and isinstance(frontier, dict)
+            and frontier.keys()
+            == {
+                "event_sequence",
+                "generation_id",
+                "typed_input_sequence",
+                "output_sequence",
+                "compaction_index",
+            }
+            and _sha256(frontier["generation_id"])
+            and all(
+                type(frontier[field]) is int and frontier[field] >= 0
+                for field in (
+                    "event_sequence",
+                    "typed_input_sequence",
+                    "output_sequence",
+                    "compaction_index",
+                )
+            )
+            and isinstance(migrations, list)
+        )
+        if valid:
+            migration_fields = {
+                "binding",
+                "disposition",
+                "source_schema_id",
+                "target_schema_id",
+                "reason",
+            }
+            valid = all(
+                isinstance(migration, dict)
+                and migration.keys() == migration_fields
+                and all(
+                    isinstance(migration[field], str) and bool(migration[field])
+                    for field in (
+                        "binding",
+                        "source_schema_id",
+                        "target_schema_id",
+                    )
+                )
+                and migration["disposition"] in {"compatible", "migrate"}
+                and isinstance(migration["reason"], str)
+                for migration in migrations
+            )
     elif kind in {"session.paused", "session.canceled"}:
         valid = isinstance(payload["reason"], str)
         if kind == "session.canceled":
@@ -717,6 +806,35 @@ class BreadBoardClient:
             "session.start",
             body=payload,
             headers=self._idempotency(idempotency_key),
+        )
+
+    def checkpoint_session(
+        self,
+        session_id: str,
+        reason: str,
+        request_id: str,
+    ) -> PublicResult:
+        return self._request_operation(
+            "session.checkpoint",
+            path_params={"session_id": _resource_path(session_id)},
+            body={"reason": reason, "request_id": request_id},
+        )
+
+    def adopt_session(
+        self,
+        session_id: str,
+        checkpoint_id: str,
+        lock_id: str,
+        request_id: str,
+    ) -> PublicResult:
+        return self._request_operation(
+            "session.adopt",
+            path_params={"session_id": _resource_path(session_id)},
+            body={
+                "checkpoint_id": checkpoint_id,
+                "lock_id": lock_id,
+                "request_id": request_id,
+            },
         )
 
     def compare_research(self, payload: ResearchCompareRequest) -> PublicResult:

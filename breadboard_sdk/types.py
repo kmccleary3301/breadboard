@@ -357,6 +357,16 @@ class PublicSessionApprovalRequest(TypedDict):
     request_id: str
     decision: PublicSessionDecision
 
+class PublicSessionCheckpointRequest(TypedDict):
+    reason: str
+    request_id: str
+
+
+class PublicSessionAdoptRequest(TypedDict):
+    checkpoint_id: str
+    lock_id: str
+    request_id: str
+
 
 class _PublicSessionCancelRequestDefaults(TypedDict, total=False):
     reason: str

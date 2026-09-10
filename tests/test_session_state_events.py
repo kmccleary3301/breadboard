@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pytest
 from fastapi import HTTPException
 
-from breadboard.modules import ModuleInput
+from breadboard.modules import CheckpointEnvelope, ModuleInput
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import ReplayError, session_store
 from breadboard.product.coordination.work_items import WorkItemRepository
@@ -1601,9 +1601,36 @@ async def test_deferred_input_does_not_enqueue_after_parent_cancellation(
 
 
 @pytest.mark.asyncio
+async def test_registry_round_trips_adopted_module_resume_checkpoint(
+    tmp_path: Path,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    envelope = CheckpointEnvelope(
+        source_generation_id="sha256:" + "a" * 64,
+        source_module_id="module.example",
+        source_instance_id="instance-1",
+        source_work_id="work-1",
+        source_attempt_id="attempt-1",
+        schema_id="state.v2",
+        body=b'{"count":2}',
+    )
+    record = SessionRecord(
+        session_id="sess-adopted-resume",
+        status=SessionStatus.RUNNING,
+        module_resume_checkpoints={"root": envelope},
+    )
+    await registry.create(record)
+
+    restored = await SessionRegistry(state_root=tmp_path).get(record.session_id)
+
+    assert restored is not None
+    assert restored.module_resume_checkpoints == {"root": envelope}
+@pytest.mark.asyncio
 async def test_stale_registry_cannot_recreate_cross_process_deleted_session(
     tmp_path: Path,
 ) -> None:
+
+
     state_root = tmp_path / "registry"
     owner = SessionRegistry(state_root=state_root)
     record = SessionRecord(

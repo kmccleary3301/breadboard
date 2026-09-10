@@ -4,7 +4,7 @@ import asyncio
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Mapping, Protocol, Sequence
+from typing import Any, Literal, Mapping, Protocol, Sequence
 
 from breadboard.artifacts.cas import FilesystemCAS
 from breadboard.modules import AuthorityDeclaration, ModuleInput
@@ -65,6 +65,10 @@ def _validate_input(text: str | None, module_input: ModuleInput | None) -> None:
     if not isinstance(text, str) or not text.strip():
         raise ValueError("text input must not be empty")
 
+def _validate_required_text(value: str, field: str) -> None:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} must not be empty")
+
 
 @dataclass(frozen=True, slots=True)
 class StartSessionRequest:
@@ -103,6 +107,20 @@ class ResumeSessionRequest:
 class CancelSessionRequest:
     session_id: str
     reason: str = "operator request"
+
+@dataclass(frozen=True, slots=True)
+class CheckpointSessionRequest:
+    session_id: str
+    reason: str
+    request_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class AdoptSessionRequest:
+    session_id: str
+    checkpoint_id: str
+    lock_id: str
+    request_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +190,20 @@ class SessionMutationPort(Protocol):
         request: CancelSessionRequest,
         context: OperationContext,
     ) -> CancelSessionOutcome: ...
+
+    async def checkpoint(
+        self,
+        request: CheckpointSessionRequest,
+        context: OperationContext,
+    ) -> dict[str, Any]: ...
+
+    async def adopt(
+        self,
+        request: AdoptSessionRequest,
+        context: OperationContext,
+        effective_lock: EffectiveHarnessLock,
+        source_path: Path,
+    ) -> dict[str, Any]: ...
 
 
 class LiveSessionReadPort(Protocol):
@@ -642,6 +674,70 @@ class SessionRuntime:
                     self.context,
                 ),
             )
+        except SessionMutationError as error:
+            return _mutation_failure(command, stage, error)
+        except Exception as error:
+            return from_exception(command, error, stage)
+
+    async def checkpoint(
+        self,
+        request: CheckpointSessionRequest,
+    ) -> OperationResult:
+        command = ["session", "checkpoint"]
+        stage = "session.checkpoint"
+        try:
+            validate_session_id(request.session_id)
+            _validate_required_text(request.reason, "checkpoint reason")
+            _validate_required_text(request.request_id, "request_id")
+            result = await self._require_mutation_port().checkpoint(
+                request,
+                self.context,
+            )
+            if not isinstance(result, dict):
+                raise TypeError("session checkpoint port returned an invalid result")
+            return OperationResult.success(command, result, stage=stage)
+        except SessionMutationError as error:
+            return _mutation_failure(command, stage, error)
+        except Exception as error:
+            return from_exception(command, error, stage)
+
+    async def adopt(
+        self,
+        request: AdoptSessionRequest,
+    ) -> OperationResult:
+        command = ["session", "adopt"]
+        stage = "session.adopt"
+        try:
+            validate_session_id(request.session_id)
+            _validate_required_text(request.checkpoint_id, "checkpoint_id")
+            _validate_required_text(request.lock_id, "lock_id")
+            _validate_required_text(request.request_id, "request_id")
+            effective_lock, source_path, checked = await asyncio.to_thread(
+                _resolve_start_lock,
+                StartSessionRequest(lock_id=request.lock_id, task="adoption"),
+                self.context,
+            )
+            if not checked.ok:
+                error = checked.error or {}
+                return OperationResult.failure(
+                    command,
+                    checked.exit_code,
+                    str(error.get("error_code") or "lock_drift"),
+                    str(error.get("message") or "harness lock validation failed"),
+                    stage,
+                    hint=error.get("hint"),
+                    refs=checked.record_refs,
+                    next_actions=checked.next_actions,
+                )
+            result = await self._require_mutation_port().adopt(
+                request,
+                self.context,
+                effective_lock,
+                source_path,
+            )
+            if not isinstance(result, dict):
+                raise TypeError("session adoption port returned an invalid result")
+            return OperationResult.success(command, result, stage=stage)
         except SessionMutationError as error:
             return _mutation_failure(command, stage, error)
         except Exception as error:

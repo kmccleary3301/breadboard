@@ -46,8 +46,9 @@ from .records import (
     identity_digest,
     submission_body_digest,
 )
-from breadboard.modules.author import ModuleInput
+from breadboard.modules.author import CheckpointEnvelope, ModuleInput
 from breadboard.modules.authority import AdmissionGrant
+from breadboard.modules.transport import MAX_CHECKPOINT_BYTES, decode_bytes, encode_bytes
 from breadboard_engine.execution.author_worker import (
     AuthorWorkerCleanupResult,
     AuthorWorkerResourceReceipt,
@@ -349,6 +350,64 @@ def _serialize_worker_cleanup(
         field_name: getattr(cleanup, field_name)
         for field_name in _CLEANUP_FIELDS
     }
+
+
+def _serialize_resume_checkpoints(
+    checkpoints: Mapping[str, CheckpointEnvelope],
+) -> Dict[str, Dict[str, Any]]:
+    if not isinstance(checkpoints, Mapping) or len(checkpoints) > 64:
+        raise ValueError("module resume checkpoints are invalid")
+    result: Dict[str, Dict[str, Any]] = {}
+    for binding, envelope in checkpoints.items():
+        if not isinstance(binding, str) or not binding or not isinstance(
+            envelope, CheckpointEnvelope
+        ):
+            raise ValueError("module resume checkpoint entry is invalid")
+        result[binding] = {
+            "source_generation_id": envelope.source_generation_id,
+            "source_module_id": envelope.source_module_id,
+            "source_instance_id": envelope.source_instance_id,
+            "source_work_id": envelope.source_work_id,
+            "source_attempt_id": envelope.source_attempt_id,
+            "schema_id": envelope.schema_id,
+            "body": encode_bytes(envelope.body, maximum=MAX_CHECKPOINT_BYTES),
+        }
+    return result
+
+
+def _deserialize_resume_checkpoints(value: Any) -> Dict[str, CheckpointEnvelope]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict) or len(value) > 64:
+        raise ValueError("retained module resume checkpoints are invalid")
+    fields = {
+        "source_generation_id",
+        "source_module_id",
+        "source_instance_id",
+        "source_work_id",
+        "source_attempt_id",
+        "schema_id",
+        "body",
+    }
+    result: Dict[str, CheckpointEnvelope] = {}
+    for binding, item in value.items():
+        if (
+            not isinstance(binding, str)
+            or not binding
+            or not isinstance(item, dict)
+            or set(item) != fields
+        ):
+            raise ValueError("retained module resume checkpoint entry is invalid")
+        result[binding] = CheckpointEnvelope(
+            source_generation_id=item["source_generation_id"],
+            source_module_id=item["source_module_id"],
+            source_instance_id=item["source_instance_id"],
+            source_work_id=item["source_work_id"],
+            source_attempt_id=item["source_attempt_id"],
+            schema_id=item["schema_id"],
+            body=decode_bytes(item["body"], maximum=MAX_CHECKPOINT_BYTES),
+        )
+    return result
 
 
 def _serialize_module_execution(
@@ -1569,6 +1628,7 @@ class PersistenceMixin:
     def _apply_durable_fields(target: SessionRecord, source: SessionRecord) -> None:
         PersistenceMixin._merge_generation_admission_state(target, source)
         PersistenceMixin._merge_module_admission_state(target, source)
+        target.module_resume_checkpoints = dict(source.module_resume_checkpoints)
         target.status = source.status
         target.created_at = source.created_at
         target.last_activity_at = source.last_activity_at
@@ -1929,6 +1989,15 @@ class PersistenceMixin:
                 ),
                 "generation_admission": generation_admission,
                 "module_execution": _serialize_module_execution(record.module_execution),
+                **(
+                    {
+                        "module_resume_checkpoints": _serialize_resume_checkpoints(
+                            record.module_resume_checkpoints
+                        )
+                    }
+                    if record.module_resume_checkpoints
+                    else {}
+                ),
                 "model": _retained_model_id(metadata.get("model")),
                 "mode": (
                     str(metadata["mode"]).strip()
@@ -2138,6 +2207,12 @@ class PersistenceMixin:
             module_execution = _deserialize_module_execution(module_execution_value)
         except (TypeError, ValueError) as error:
             raise ValueError("retained module execution is invalid") from error
+        try:
+            module_resume_checkpoints = _deserialize_resume_checkpoints(
+                session.get("module_resume_checkpoints")
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError("retained module resume checkpoints are invalid") from error
         persisted_event_seq = int(session.get("event_seq") or 0)
         persisted_replay_head_sequence = int(
             session.get("replay_head_sequence", persisted_event_seq) or 0
@@ -2253,6 +2328,7 @@ class PersistenceMixin:
         record = SessionRecord(
             module_execution=module_execution,
             generation_admission=generation_admission,
+            module_resume_checkpoints=module_resume_checkpoints,
             session_id=session_id,
             status=SessionStatus(str(session["status"])),
             created_at=datetime.fromisoformat(str(session["created_at"])),

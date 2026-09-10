@@ -10,7 +10,8 @@ import type {
   ModelRolesResolveResponse, ReadSessionFileOptions, RegistryList, RLRunArtifactListResponse, RLRunAuditResponse,
   RLRunCancelRequest, RLRunReplayResponse, RLRunStatusResponse, RLRunSubmitRequest, RLRunSubmitResponse,
   Problem, PublicHarnessCreateRequest, PublicHarnessPublishRequest, PublicHarnessUpdateRequest, PublicResult,
-  PublicSessionApprovalRequest, PublicSessionCancelRequest, PublicSessionDecision, PublicSessionInputRequest,
+  PublicSessionAdoptRequest, PublicSessionApprovalRequest, PublicSessionCancelRequest,
+  PublicSessionCheckpointRequest, PublicSessionDecision, PublicSessionInputRequest,
   PublicSessionStartRequest, ResearchCompareBody,
   SessionCommandRequest, SessionCommandResponse,
   SessionCreateRequest, SessionCreateResponse, SessionEvent, SessionFileContent, SessionFileInfo, SessionInputRequest,
@@ -135,6 +136,8 @@ export interface BreadboardClient {
   getArtifact(id: string): Promise<PublicResult>
   verifyArtifact(id: string): Promise<PublicResult>
   startSession(body: PublicSessionStartRequest, idempotencyKey?: string): Promise<PublicResult>
+  checkpointSession(id: string, body: PublicSessionCheckpointRequest): Promise<PublicResult>
+  adoptSession(id: string, body: PublicSessionAdoptRequest): Promise<PublicResult>
   compareResearch(body: ResearchCompareBody): Promise<PublicResult>
   listSession(): Promise<PublicResult>
   getSession(id: string): Promise<SessionSummary>
@@ -253,6 +256,14 @@ function action(
     case "public.research.compare": return r({}, { body: { definition: input.definition, world: input.world, generation: input.generation, projection: input.projection, compare: input.compare } })
     case "public.session.list": return r()
     case "public.session.get": return r({ session_id: identifier(String(input.session_id ?? ""), "session_id") })
+    case "public.session.checkpoint": return r(
+      { session_id: identifier(String(input.session_id ?? ""), "session_id") },
+      { body: { reason: input.reason, request_id: input.request_id } },
+    )
+    case "public.session.adopt": return r(
+      { session_id: identifier(String(input.session_id ?? ""), "session_id") },
+      { body: { checkpoint_id: input.checkpoint_id, lock_id: input.lock_id, request_id: input.request_id } },
+    )
     case "public.session.send_input": {
       const hasContent = input.content !== undefined
       const hasModuleInput = input.module_input !== undefined
@@ -324,6 +335,10 @@ export const createBreadboardClient = (config: BreadboardClientConfig): Breadboa
     downloadArtifact: (id: string, artifact: string) => request<string>(config, `/v1/internal/sessions/${encodeURIComponent(id)}/download`, "GET", { query: { artifact }, responseType: "text" }),
     uploadAttachments: async (id: string, attachments: ReadonlyArray<AttachmentUploadPayload>) => { if (!attachments.length) return []; const form = new FormData(); attachments.forEach((a, i) => { const bytes = Uint8Array.from(atob(a.base64), (char) => char.charCodeAt(0)); form.append("files", new Blob([bytes], { type: a.mime || "application/octet-stream" }), a.filename ?? `attachment-${i + 1}.bin`) }); form.append("metadata", JSON.stringify({ source: "clipboard" })); const token = await valueToken(config); const response = await (config.fetch ?? globalThis.fetch)(buildUrl(config.baseUrl, `/v1/internal/sessions/${encodeURIComponent(id)}/attachments`), { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : undefined, body: form }); const content = response.headers.get("content-type") ?? ""; const payload = content.includes("json") ? await response.json() : undefined; if (!response.ok) throw new ApiError(`Attachment upload failed with status ${response.status}`, response.status, payload); return (payload as { attachments?: AttachmentHandle[] } | undefined)?.attachments ?? [] },
     eventsSession: (id: string, options: Omit<EventStreamOptions, "config"> = {}) => streamSessionEvents(id, { ...options, config: config as StreamConfig }),
+    checkpointSession: (id: string, body: PublicSessionCheckpointRequest) =>
+      action(config, "public.session.checkpoint", { session_id: id, ...body }),
+    adoptSession: (id: string, body: PublicSessionAdoptRequest) =>
+      action(config, "public.session.adopt", { session_id: id, ...body }),
   }
   const client: BreadboardClient = {
     ...c,

@@ -10,8 +10,10 @@ import type {
   PublicHarnessPublishRequest,
   PublicHarnessUpdateRequest,
   PublicResult,
+  PublicSessionAdoptRequest,
   PublicSessionApprovalRequest,
   PublicSessionCancelRequest,
+  PublicSessionCheckpointRequest,
   PublicSessionDecision,
   PublicSessionInputRequest,
   PublicSessionStartRequest,
@@ -52,6 +54,11 @@ export interface BreadboardClient {
     body: PublicSessionStartRequest,
     idempotencyKey?: string,
   ): Promise<PublicResult>
+  checkpointSession(
+    id: string,
+    body: PublicSessionCheckpointRequest,
+  ): Promise<PublicResult>
+  adoptSession(id: string, body: PublicSessionAdoptRequest): Promise<PublicResult>
   compareResearch(body: ResearchCompareBody): Promise<PublicResult>
   listSession(): Promise<PublicResult>
   getSessionResult(id: string): Promise<PublicResult>
@@ -97,6 +104,8 @@ export const createBreadboardClient = (
     lockHarness: full.lockHarness,
     publishHarness: full.publishHarness,
     getHarnessLock: full.getHarnessLock,
+    checkpointSession: full.checkpointSession,
+    adoptSession: full.adoptSession,
     listIntegration: full.listIntegration,
     getIntegration: full.getIntegration,
     probeIntegration: full.probeIntegration,

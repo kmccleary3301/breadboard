@@ -635,6 +635,49 @@ def start(arguments: object) -> OperationResult:
     return _run(runtime.start(request))
 
 
+def checkpoint(arguments: object) -> OperationResult:
+    client = _remote_client(arguments)
+    if client is None:
+        return from_exception(
+            ["session", "checkpoint"],
+            RuntimeError("session checkpoint requires --server"),
+            "session.checkpoint",
+        )
+    return _remote_operation(
+        ["session", "checkpoint"],
+        "session.checkpoint",
+        lambda: _remote_result(
+            client.checkpoint_session(
+                arguments.SESSION_ID,
+                arguments.reason,
+                arguments.request_id,
+            )
+        ),
+    )
+
+
+def adopt(arguments: object) -> OperationResult:
+    client = _remote_client(arguments)
+    if client is None:
+        return from_exception(
+            ["session", "adopt"],
+            RuntimeError("session adoption requires --server"),
+            "session.adopt",
+        )
+    return _remote_operation(
+        ["session", "adopt"],
+        "session.adopt",
+        lambda: _remote_result(
+            client.adopt_session(
+                arguments.SESSION_ID,
+                arguments.checkpoint,
+                arguments.lock,
+                arguments.request_id,
+            )
+        ),
+    )
+
+
 def send_input(arguments: object) -> OperationResult:
     content_option = getattr(arguments, "content", None)
     text_argument = getattr(arguments, "TEXT", None)

@@ -18,7 +18,14 @@ from types import SimpleNamespace
 from threading import RLock
 from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Optional, Protocol, Sequence
 from breadboard.artifacts.cas import FilesystemCAS
-from breadboard.modules import AdmissionGrant, AuthorityDeclaration
+from breadboard.modules import (
+    AdmissionGrant,
+    AuthorityDeclaration,
+    CheckpointEnvelope,
+    CheckpointProposal,
+    CheckpointRefusal,
+)
+from breadboard.modules.transport import MAX_CHECKPOINT_BYTES, decode_bytes, encode_bytes
 from .model_catalog import build_model_catalog
 from .registry import ModuleExecutionRecord
 from breadboard.product.harness.lock import (
@@ -31,6 +38,7 @@ from breadboard.product.runtime import (
     AnchoredStorage,
     ReplayError,
     Session as ProductSession,
+    SessionGenerationCheckpoint,
 )
 from breadboard.product.runtime.generations import (
     GenerationAdmission,
@@ -129,6 +137,7 @@ from .engine_identity_config import (
     p30_session_schema_sha256,
 )
 from .session_runner import SessionRunner
+from .author_runtime import ModuleExecutionError
 from .tail_index import _TAIL_LINE_INDEX_CACHE
 from .runtime_emission import (
     DEFAULT_INTERACTIVE_SESSION_TITLE,
@@ -179,6 +188,229 @@ def _load_bridge_chaos_metadata() -> dict[str, float] | None:
 
 def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+_MODULE_GRAPH_CHECKPOINT_SCHEMA = "bb.module_graph_checkpoint.v1"
+
+
+def _stable_request_identity(prefix: str, session_id: str, request_id: str) -> str:
+    digest = hashlib.sha256(
+        f"{prefix}\0{session_id}\0{request_id}".encode("utf-8")
+    ).hexdigest()
+    return f"{prefix}-{digest}"
+
+
+def _graph_checkpoint_proposal(
+    *,
+    session_id: str,
+    request_id: str,
+    reason: str,
+    root_binding: str,
+    proposals: Mapping[str, CheckpointProposal],
+    source_dependencies: Mapping[str, tuple[str, ...]],
+) -> CheckpointProposal:
+    if root_binding not in proposals:
+        raise GenerationAdoptionError(
+            "checkpoint_invalid",
+            "module graph checkpoint omitted its root binding",
+        )
+    if not set(proposals) <= set(source_dependencies):
+        raise GenerationAdoptionError(
+            "checkpoint_invalid",
+            "module graph checkpoint lacks dependency identities for a captured binding",
+        )
+    rows: list[dict[str, Any]] = []
+    for binding, proposal in sorted(proposals.items()):
+        envelope = proposal.payload
+        rows.append(
+            {
+                "binding": binding,
+                "declared_at_sequence": proposal.declared_at_sequence,
+                "source_generation_id": envelope.source_generation_id,
+                "source_module_id": envelope.source_module_id,
+                "source_instance_id": envelope.source_instance_id,
+                "source_work_id": envelope.source_work_id,
+                "source_attempt_id": envelope.source_attempt_id,
+                "schema_id": envelope.schema_id,
+                "dependencies": list(source_dependencies.get(binding, ())),
+                "body": encode_bytes(
+                    envelope.body,
+                    maximum=MAX_CHECKPOINT_BYTES,
+                ),
+            }
+        )
+    body = json.dumps(
+        {
+            "schema_version": _MODULE_GRAPH_CHECKPOINT_SCHEMA,
+            "session_id": session_id,
+            "request_id": request_id,
+            "reason": reason,
+            "root_binding": root_binding,
+            "operation_frontier": {
+                "children": [],
+                "effects": [],
+                "approvals": [],
+            },
+            "bindings": rows,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    if len(body) > MAX_CHECKPOINT_BYTES:
+        raise GenerationAdoptionError(
+            "checkpoint_too_large",
+            "module graph checkpoint exceeds the retained state bound",
+        )
+    root = proposals[root_binding].payload
+    envelope = CheckpointEnvelope(
+        source_generation_id=root.source_generation_id,
+        source_module_id=root.source_module_id,
+        source_instance_id=root.source_instance_id,
+        source_work_id=root.source_work_id,
+        source_attempt_id=root.source_attempt_id,
+        schema_id=_MODULE_GRAPH_CHECKPOINT_SCHEMA,
+        body=body,
+    )
+    return CheckpointProposal(
+        envelope,
+        max(item.declared_at_sequence for item in proposals.values()),
+    )
+
+
+def _decode_graph_checkpoint(
+    checkpoint: SessionGenerationCheckpoint,
+) -> tuple[dict[str, Any], dict[str, CheckpointEnvelope]]:
+    if checkpoint.schema_id != _MODULE_GRAPH_CHECKPOINT_SCHEMA:
+        raise GenerationAdoptionError(
+            "checkpoint_incompatible",
+            "checkpoint is not a module graph checkpoint",
+        )
+    try:
+        payload = json.loads(checkpoint.body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise GenerationAdoptionError(
+            "checkpoint_corrupt",
+            "checkpoint body is not canonical JSON",
+        ) from error
+    fields = {
+        "schema_version",
+        "session_id",
+        "request_id",
+        "reason",
+        "root_binding",
+        "bindings",
+        "operation_frontier",
+    }
+    operation_frontier = payload.get("operation_frontier") if isinstance(payload, dict) else None
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != fields
+        or payload.get("schema_version") != _MODULE_GRAPH_CHECKPOINT_SCHEMA
+        or payload.get("session_id") != checkpoint.session_id
+        or not isinstance(payload.get("request_id"), str)
+        or not payload["request_id"]
+        or not isinstance(payload.get("root_binding"), str)
+        or not payload["root_binding"]
+        or not isinstance(payload.get("bindings"), list)
+        or len(payload["bindings"]) > 64
+        or not isinstance(operation_frontier, dict)
+        or set(operation_frontier) != {"children", "effects", "approvals"}
+        or any(value != [] for value in operation_frontier.values())
+    ):
+        raise GenerationAdoptionError(
+            "checkpoint_corrupt",
+            "checkpoint body has an invalid module graph",
+        )
+    row_fields = {
+        "binding",
+        "declared_at_sequence",
+        "source_generation_id",
+        "source_module_id",
+        "source_instance_id",
+        "source_work_id",
+        "source_attempt_id",
+        "schema_id",
+        "dependencies",
+        "body",
+    }
+    envelopes: dict[str, CheckpointEnvelope] = {}
+    try:
+        for row in payload["bindings"]:
+            if (
+                not isinstance(row, dict)
+                or set(row) != row_fields
+                or not isinstance(row["binding"], str)
+                or not row["binding"]
+                or row["binding"] in envelopes
+                or type(row["declared_at_sequence"]) is not int
+                or row["declared_at_sequence"] < 0
+                or row["declared_at_sequence"]
+                > checkpoint.frontier.typed_input_sequence
+                or not isinstance(row["dependencies"], list)
+                or any(
+                    not isinstance(item, str) or not item
+                    for item in row["dependencies"]
+                )
+                or len(set(row["dependencies"])) != len(row["dependencies"])
+            ):
+                raise ValueError("invalid graph checkpoint binding")
+            envelopes[row["binding"]] = CheckpointEnvelope(
+                source_generation_id=row["source_generation_id"],
+                source_module_id=row["source_module_id"],
+                source_instance_id=row["source_instance_id"],
+                source_work_id=row["source_work_id"],
+                source_attempt_id=row["source_attempt_id"],
+                schema_id=row["schema_id"],
+                body=decode_bytes(row["body"], maximum=MAX_CHECKPOINT_BYTES),
+            )
+    except (KeyError, TypeError, ValueError) as error:
+        raise GenerationAdoptionError(
+            "checkpoint_corrupt",
+            "checkpoint contains an invalid module state envelope",
+        ) from error
+    if payload["root_binding"] not in envelopes:
+        raise GenerationAdoptionError(
+            "checkpoint_corrupt",
+            "checkpoint body omits its root binding",
+        )
+    root = envelopes[payload["root_binding"]]
+    if (
+        root.source_generation_id != checkpoint.source_generation_id
+        or root.source_module_id != checkpoint.source_module_id
+        or root.source_instance_id != checkpoint.source_instance_id
+        or root.source_work_id != checkpoint.source_work_id
+        or root.source_attempt_id != checkpoint.source_attempt_id
+    ):
+        raise GenerationAdoptionError(
+            "checkpoint_corrupt",
+            "checkpoint graph root attribution differs from its owner envelope",
+        )
+    return payload, envelopes
+
+
+def _checkpoint_public_result(
+    checkpoint: SessionGenerationCheckpoint,
+) -> dict[str, Any]:
+    payload, envelopes = _decode_graph_checkpoint(checkpoint)
+    return {
+        "checkpoint_id": checkpoint.checkpoint_id,
+        "request_id": payload["request_id"],
+        "session_id": checkpoint.session_id,
+        "source_generation_id": checkpoint.source_generation_id,
+        "reason": payload["reason"],
+        "status": "ready",
+        "frontier": checkpoint.frontier.as_dict(),
+        "bindings": [
+            {
+                "owner": binding,
+                "schema": envelope.schema_id,
+                "state_digest": "sha256:"
+                + hashlib.sha256(envelope.body).hexdigest(),
+                "size": len(envelope.body),
+            }
+            for binding, envelope in sorted(envelopes.items())
+        ],
+    }
 
 
 _START_PENDING, _START_COMMITTED, _START_OWNER = (
@@ -1298,6 +1530,644 @@ class SessionService:
         finally:
             cas.close()
 
+
+    async def create_generation_checkpoint(
+        self,
+        session_id: str,
+        reason: str,
+        request_id: str,
+    ) -> dict[str, Any]:
+        if not isinstance(reason, str) or not reason.strip():
+            raise HTTPException(status_code=422, detail="reason must be non-empty")
+        if not isinstance(request_id, str) or not request_id.strip():
+            raise HTTPException(status_code=422, detail="request_id must be non-empty")
+        record = await self.ensure_session(session_id)
+        runner: SessionRunner | None = getattr(record, "runner", None)
+        if runner is None or record.product_session is None:
+            raise HTTPException(status_code=409, detail="session not active")
+        checkpoint_id = _stable_request_identity(
+            "checkpoint",
+            session_id,
+            request_id,
+        )
+        try:
+            async with record.admission_lock:
+                product_session = record.product_session
+                existing = next(
+                    (
+                        item
+                        for item in product_session.checkpoints
+                        if item.checkpoint_id == checkpoint_id
+                    ),
+                    None,
+                )
+                if existing is not None:
+                    result = _checkpoint_public_result(existing)
+                    if result["request_id"] != request_id or result["reason"] != reason:
+                        raise GenerationAdoptionError(
+                            "checkpoint_conflict",
+                            "request_id is already bound to another checkpoint request",
+                        )
+                    return result
+                if record.active_turn_id is not None or record.queued_turn_ids:
+                    raise GenerationAdoptionError(
+                        "non_quiescent",
+                        "checkpoint requires an empty Session input frontier",
+                    )
+                execution = record.module_execution
+                if execution is None:
+                    raise GenerationAdoptionError(
+                        "checkpoint_unsupported",
+                        "checkpoint requires a typed module Session",
+                    )
+                captures = await runner.capture_module_checkpoints(
+                    request_id=request_id,
+                    reason=reason,
+                )
+                refusals = {
+                    binding: capture
+                    for binding, capture in captures.items()
+                    if isinstance(capture, CheckpointRefusal)
+                }
+                if refusals:
+                    binding, refusal = next(iter(sorted(refusals.items())))
+                    raise GenerationAdoptionError(
+                        refusal.code,
+                        f"module binding {binding!r} refused checkpoint: {refusal.detail}",
+                    )
+                proposals = {
+                    binding: capture
+                    for binding, capture in captures.items()
+                    if isinstance(capture, CheckpointProposal)
+                }
+                if len(proposals) != len(captures) or not proposals:
+                    raise GenerationAdoptionError(
+                        "checkpoint_invalid",
+                        "module graph checkpoint returned an invalid capture set",
+                    )
+                aggregate = _graph_checkpoint_proposal(
+                    session_id=session_id,
+                    request_id=request_id,
+                    reason=reason,
+                    root_binding=execution.root_binding,
+                    proposals=proposals,
+                    source_dependencies=runner.module_checkpoint_dependencies(),
+                )
+                checkpoint = await asyncio.to_thread(
+                    runner.stamp_generation_checkpoint,
+                    aggregate,
+                    checkpoint_id=checkpoint_id,
+                )
+                return _checkpoint_public_result(checkpoint)
+        except GenerationAdoptionError as error:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": error.code, "detail": error.detail},
+            ) from error
+        except ModuleExecutionError as error:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": error.code, "detail": error.detail},
+            ) from error
+
+    async def adopt_generation_checkpoint(
+        self,
+        session_id: str,
+        checkpoint_id: str,
+        effective_lock: EffectiveHarnessLock,
+        effective_lock_source: str | Path,
+        request_id: str,
+    ) -> dict[str, Any]:
+        if not isinstance(effective_lock, EffectiveHarnessLock):
+            raise HTTPException(status_code=422, detail="adoption requires an exact Lock")
+        if not isinstance(checkpoint_id, str) or not checkpoint_id.strip():
+            raise HTTPException(status_code=422, detail="checkpoint_id must be non-empty")
+        if not isinstance(request_id, str) or not request_id.strip():
+            raise HTTPException(status_code=422, detail="request_id must be non-empty")
+        record = await self.ensure_session(session_id)
+        runner: SessionRunner | None = getattr(record, "runner", None)
+        if runner is None or record.product_session is None:
+            raise HTTPException(status_code=409, detail="session not active")
+        adoption_id = _stable_request_identity("adoption", session_id, request_id)
+        captured_target: CapturedRuntimeConfig | None = None
+        candidate_admission: GenerationAdmission | None = None
+        lifecycle: GenerationLifecycle | None = None
+        committed = False
+        candidate_cleanup_confirmed = True
+        try:
+            async with record.admission_lock:
+                product_session = record.product_session
+                previous_event = next(
+                    (
+                        event
+                        for event in reversed(product_session.events)
+                        if event.kind == "session.adoption_committed"
+                        and event.payload["adoption_id"] == adoption_id
+                    ),
+                    None,
+                )
+                if previous_event is not None:
+                    payload = previous_event.payload
+                    if (
+                        payload["checkpoint_id"] != checkpoint_id
+                        or payload["target_generation_id"]
+                        != effective_lock.generation_id
+                        or payload.get("request_id") != request_id
+                    ):
+                        raise GenerationAdoptionError(
+                            "adoption_conflict",
+                            "request_id is already bound to another adoption",
+                        )
+                    await asyncio.to_thread(
+                        self._settle_adopted_source_work,
+                        payload,
+                    )
+                    migration = payload.get("migration", [])
+                    return {
+                        "adoption_id": adoption_id,
+                        "request_id": request_id,
+                        "session_id": session_id,
+                        "checkpoint_id": checkpoint_id,
+                        "old_generation_id": payload["source_generation_id"],
+                        "new_generation_id": payload["target_generation_id"],
+                        "status": "committed",
+                        "source_frontier": dict(payload["source_frontier"]),
+                        "migration": [
+                            {
+                                key: value
+                                for key, value in item.items()
+                                if key != "resume"
+                            }
+                            for item in migration
+                            if isinstance(item, Mapping)
+                        ],
+                    }
+                if record.active_turn_id is not None or record.queued_turn_ids:
+                    raise GenerationAdoptionError(
+                        "non_quiescent",
+                        "adoption requires an empty Session input frontier",
+                    )
+                checkpoint = next(
+                    (
+                        item
+                        for item in product_session.checkpoints
+                        if item.checkpoint_id == checkpoint_id
+                    ),
+                    None,
+                )
+                if checkpoint is None:
+                    raise GenerationAdoptionError(
+                        "checkpoint_missing",
+                        "adoption checkpoint does not exist",
+                    )
+                product_session.validate_checkpoint_frontier(checkpoint.frontier)
+                graph_checkpoint, source_checkpoints = _decode_graph_checkpoint(
+                    checkpoint
+                )
+                source_dependencies = {
+                    row["binding"]: tuple(row["dependencies"])
+                    for row in graph_checkpoint["bindings"]
+                }
+                old_execution = record.module_execution
+                old_grant = record.module_grant
+                old_admission = record.generation_admission
+                if old_execution is None or old_grant is None or old_admission is None:
+                    raise GenerationAdoptionError(
+                        "checkpoint_unsupported",
+                        "adoption requires a generation-admitted module Session",
+                    )
+                source_modules = runner.module_checkpoint_modules()
+                retained_workers = {
+                    worker.binding: worker
+                    for worker in old_execution.workers
+                }
+                if (
+                    old_admission.generation_id != old_execution.generation_id
+                    or old_admission.work_id != old_execution.work_item_id
+                    or old_admission.attempt_id != old_execution.attempt_id
+                    or graph_checkpoint["root_binding"]
+                    != old_execution.root_binding
+                    or any(
+                        envelope.source_generation_id != old_execution.generation_id
+                        or envelope.source_work_id != old_execution.work_item_id
+                        or envelope.source_attempt_id != old_execution.attempt_id
+                        or source_modules.get(binding)
+                        != envelope.source_module_id
+                        or (
+                            binding in retained_workers
+                            and retained_workers[binding].instance_id
+                            != envelope.source_instance_id
+                        )
+                        for binding, envelope in source_checkpoints.items()
+                    )
+                    or not set(retained_workers) <= set(source_checkpoints)
+                ):
+                    raise GenerationAdoptionError(
+                        "checkpoint_conflict",
+                        "checkpoint attribution differs from the current source admission",
+                    )
+                workspace = (
+                    Path(runner.request.workspace).expanduser().resolve()
+                    if runner.request.workspace
+                    else Path(str(runner.request.config_path))
+                    .expanduser()
+                    .resolve()
+                    .parent
+                )
+                lifecycle = self.generation_lifecycle(workspace)
+                source_ref = str(effective_lock_source)
+                adoption_digest = sha256_json(
+                    {
+                        "adoption_id": adoption_id,
+                        "checkpoint_id": checkpoint_id,
+                        "target_generation_id": effective_lock.generation_id,
+                        "source_ref": source_ref,
+                    }
+                )
+                candidate_admission = await asyncio.to_thread(
+                    lifecycle.reserve_adoption_admission,
+                    effective_lock,
+                    source_ref,
+                    session_id,
+                    adoption_digest,
+                )
+                target_grant = AdmissionGrant(
+                    grant_id=f"grant-{candidate_admission.grant_epoch}",
+                    authority_epoch=candidate_admission.grant_epoch,
+                    declaration=old_grant.declaration,
+                )
+                target_execution = ModuleExecutionRecord(
+                    generation_id=effective_lock.generation_id,
+                    root_binding=effective_lock["modules"]["root"],
+                    work_item_id=candidate_admission.work_id,
+                    attempt_id=candidate_admission.attempt_id,
+                )
+                captured_target = self._captured_runtime_for_lock(
+                    effective_lock,
+                    runner.request,
+                )
+                candidate_cleanup_confirmed = False
+                resume_checkpoints, migration_decisions = (
+                    await runner.prepare_adopted_module_checkpoints(
+                        captured_runtime=captured_target,
+                        module_execution=target_execution,
+                        source_dependencies=source_dependencies,
+                        source_checkpoints=source_checkpoints,
+                    )
+                )
+                candidate_cleanup_confirmed = True
+                candidate_admission = await asyncio.to_thread(
+                    lifecycle.mark_materialized,
+                    candidate_admission.admission_id,
+                )
+                source_disposal = await runner.dispose_source_runtime_for_adoption(
+                    source_checkpoints
+                )
+                if source_disposal.status != "confirmed_absent":
+                    raise ModuleExecutionError(
+                        "cleanup_unknown",
+                        "source generation cleanup was not confirmed before adoption",
+                    )
+                migration = [
+                    {
+                        **decision,
+                        "resume": {
+                            "source_generation_id": resume_checkpoints[
+                                decision["binding"]
+                            ].source_generation_id,
+                            "source_module_id": resume_checkpoints[
+                                decision["binding"]
+                            ].source_module_id,
+                            "source_instance_id": resume_checkpoints[
+                                decision["binding"]
+                            ].source_instance_id,
+                            "source_work_id": resume_checkpoints[
+                                decision["binding"]
+                            ].source_work_id,
+                            "source_attempt_id": resume_checkpoints[
+                                decision["binding"]
+                            ].source_attempt_id,
+                            "schema_id": resume_checkpoints[
+                                decision["binding"]
+                            ].schema_id,
+                            "body": encode_bytes(
+                                resume_checkpoints[decision["binding"]].body,
+                                maximum=MAX_CHECKPOINT_BYTES,
+                            ),
+                        },
+                    }
+                    for decision in migration_decisions
+                ]
+                adoption_record = {
+                    "adoption_id": adoption_id,
+                    "checkpoint_id": checkpoint_id,
+                    "request_id": request_id,
+                    "reason": "checkpoint_adoption",
+                    "effective_lock_source": source_ref,
+                    "source_frontier": checkpoint.frontier.as_dict(),
+                    "source_body_sha256": checkpoint.body_sha256,
+                    "admission": candidate_admission.as_dict(),
+                    "source_admission_id": old_admission.admission_id,
+                    "migration": migration,
+                }
+                await asyncio.to_thread(
+                    runner.commit_generation_checkpoint_adoption,
+                    effective_lock,
+                    adoption_record,
+                )
+                committed = True
+                disposal = await runner.install_adopted_module_runtime(
+                    captured_runtime=captured_target,
+                    module_execution=target_execution,
+                    module_grant=target_grant,
+                    generation_admission=candidate_admission,
+                    resume_checkpoints=resume_checkpoints,
+                )
+                captured_target = None
+                await asyncio.to_thread(
+                    self._settle_adopted_source_work,
+                    product_session.events[-1].payload,
+                )
+                cleanup_metadata = dict(record.metadata or {})
+                cleanup_metadata["generation_adoption_cleanup"] = {
+                    "source_admission_id": old_admission.admission_id,
+                    "status": disposal.status,
+                    "resource_refs": list(disposal.resource_refs),
+                    "pending_domain_refs": list(disposal.pending_domain_refs),
+                }
+                record.metadata = cleanup_metadata
+                await self.registry.persist(record)
+                if disposal.status == "confirmed_absent":
+                    await asyncio.to_thread(
+                        lifecycle.release,
+                        old_admission.admission_id,
+                        True,
+                    )
+                    cleanup_metadata.pop("generation_adoption_cleanup", None)
+                    record.metadata = cleanup_metadata
+                    await self.registry.persist(record)
+                return {
+                    "adoption_id": adoption_id,
+                    "request_id": request_id,
+                    "session_id": session_id,
+                    "checkpoint_id": checkpoint_id,
+                    "old_generation_id": checkpoint.source_generation_id,
+                    "new_generation_id": effective_lock.generation_id,
+                    "status": "committed",
+                    "source_frontier": checkpoint.frontier.as_dict(),
+                    "migration": [dict(item) for item in migration_decisions],
+                }
+        except GenerationAdoptionError as error:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": error.code, "detail": error.detail},
+            ) from error
+        except ModuleExecutionError as error:
+            candidate_cleanup_confirmed = (
+                candidate_cleanup_confirmed or error.cleanup_confirmed
+            )
+            raise HTTPException(
+                status_code=409,
+                detail={"code": error.code, "detail": error.detail},
+            ) from error
+        finally:
+
+            if captured_target is not None:
+                await asyncio.to_thread(captured_target.cleanup)
+            if (
+                not committed
+                and lifecycle is not None
+                and candidate_admission is not None
+            ):
+                await asyncio.to_thread(
+                    lifecycle.release,
+                    candidate_admission.admission_id,
+                    candidate_cleanup_confirmed,
+                )
+    def _settle_adopted_source_work(self, payload: Mapping[str, Any]) -> None:
+        repository = self._durable_child_repository
+        if repository is None:
+            raise RuntimeError("checkpoint adoption has no Work Item repository")
+        work = WorkItem.restore(repository, str(payload["source_work_id"]))
+        view = work.read_model
+        attempt = view.attempts[-1] if view.attempts else None
+        if attempt is None or attempt.attempt_id != payload["source_attempt_id"]:
+            raise RuntimeError("checkpoint adoption source attempt changed")
+        if view.status == "running":
+            work.complete(
+                "generation checkpoint adopted",
+                attempt_id=attempt.attempt_id,
+            )
+        elif view.status != "completed":
+            raise RuntimeError(
+                "checkpoint adoption source Work Item settled unexpectedly"
+            )
+
+    async def _reconcile_confirmed_checkpoint_cleanup(
+        self,
+        record: SessionRecord,
+    ) -> None:
+        execution = record.module_execution
+        product_session = record.product_session
+        if (
+            execution is None
+            or product_session is None
+            or not execution.workers
+            or not all(
+                worker.cleanup is not None
+                and worker.cleanup.status == "confirmed_absent"
+                for worker in execution.workers
+            )
+        ):
+            return
+        checkpoint = next(
+            (
+                item
+                for item in reversed(product_session.checkpoints)
+                if item.source_generation_id == execution.generation_id
+                and item.schema_id == _MODULE_GRAPH_CHECKPOINT_SCHEMA
+            ),
+            None,
+        )
+        if checkpoint is None:
+            return
+        _, source_checkpoints = _decode_graph_checkpoint(checkpoint)
+        record.module_execution = ModuleExecutionRecord(
+            generation_id=execution.generation_id,
+            root_binding=execution.root_binding,
+            work_item_id=execution.work_item_id,
+            attempt_id=execution.attempt_id,
+        )
+        record.module_resume_checkpoints = source_checkpoints
+        await self.registry.persist(record)
+
+    async def _reconcile_committed_checkpoint_adoption(
+        self,
+        record: SessionRecord,
+    ) -> None:
+        product_session = record.product_session
+        if product_session is None:
+            return
+        event = next(
+            (
+                item
+                for item in reversed(product_session.events)
+                if item.kind == "session.adoption_committed"
+            ),
+            None,
+        )
+        if event is None:
+            return
+        payload = event.payload
+        await asyncio.to_thread(self._settle_adopted_source_work, payload)
+        already_restored = (
+            record.generation_admission is not None
+            and record.generation_admission.generation_id
+            == payload["target_generation_id"]
+            and bool(record.module_resume_checkpoints)
+        )
+        previous_admission = record.generation_admission
+        previous_execution = record.module_execution
+        admission_value = payload.get("admission")
+        target_lock_value = payload.get("target_lock")
+        migration_value = payload.get("migration")
+        if (
+            not isinstance(admission_value, Mapping)
+            or not isinstance(target_lock_value, Mapping)
+            or not isinstance(migration_value, (list, tuple))
+            or record.module_grant is None
+        ):
+            raise RuntimeError("committed checkpoint adoption recovery data is invalid")
+        admission_fields = {
+            "admission_id",
+            "session_id",
+            "target",
+            "publication_revision",
+            "generation_id",
+            "source_ref",
+            "lock_record",
+            "controller_epoch",
+            "work_id",
+            "attempt_id",
+            "grant_epoch",
+            "status",
+            "input_digest",
+        }
+        if set(admission_value) != admission_fields:
+            raise RuntimeError("committed checkpoint admission record is invalid")
+        try:
+            admission = GenerationAdmission(**dict(admission_value))
+            target_lock = EffectiveHarnessLock._from_record(target_lock_value)
+            resumes: dict[str, CheckpointEnvelope] = {}
+            for item in migration_value:
+                if not isinstance(item, Mapping):
+                    raise ValueError("migration item is not an object")
+                binding = item.get("binding")
+                resume = item.get("resume")
+                if (
+                    not isinstance(binding, str)
+                    or not binding
+                    or binding in resumes
+                    or not isinstance(resume, Mapping)
+                ):
+                    raise ValueError("migration resume identity is invalid")
+                required = {
+                    "source_generation_id",
+                    "source_module_id",
+                    "source_instance_id",
+                    "source_work_id",
+                    "source_attempt_id",
+                    "schema_id",
+                    "body",
+                }
+                if set(resume) != required:
+                    raise ValueError("migration resume envelope is invalid")
+                resumes[binding] = CheckpointEnvelope(
+                    source_generation_id=resume["source_generation_id"],
+                    source_module_id=resume["source_module_id"],
+                    source_instance_id=resume["source_instance_id"],
+                    source_work_id=resume["source_work_id"],
+                    source_attempt_id=resume["source_attempt_id"],
+                    schema_id=resume["schema_id"],
+                    body=decode_bytes(
+                        resume["body"],
+                        maximum=MAX_CHECKPOINT_BYTES,
+                    ),
+                )
+        except (TypeError, ValueError) as error:
+            raise RuntimeError(
+                "committed checkpoint adoption recovery data is invalid"
+            ) from error
+        if (
+            admission.session_id != record.session_id
+            or admission.status != "materialized"
+            or admission.generation_id != target_lock.generation_id
+            or admission.generation_id != payload["target_generation_id"]
+            or target_lock["modules"]["root"] not in resumes
+        ):
+            raise RuntimeError("committed checkpoint adoption recovery fence is invalid")
+        if not already_restored:
+            record.generation_admission = admission
+            record.module_execution = ModuleExecutionRecord(
+                generation_id=admission.generation_id,
+                root_binding=target_lock["modules"]["root"],
+                work_item_id=admission.work_id,
+                attempt_id=admission.attempt_id,
+            )
+            record.module_grant = AdmissionGrant(
+                grant_id=f"grant-{admission.grant_epoch}",
+                authority_epoch=admission.grant_epoch,
+                declaration=record.module_grant.declaration,
+            )
+            record.module_resume_checkpoints = resumes
+            record.runtime_generation_source_ref = admission.source_ref
+        source_admission_id = payload.get("source_admission_id")
+        metadata = dict(record.metadata or {})
+        cleanup = metadata.get("generation_adoption_cleanup")
+        if isinstance(source_admission_id, str) and source_admission_id:
+            if not isinstance(cleanup, Mapping) or cleanup.get(
+                "source_admission_id"
+            ) != source_admission_id:
+                cleanup_confirmed = (
+                    previous_admission is not None
+                    and previous_admission.admission_id == source_admission_id
+                    and (
+                        previous_execution is None
+                        or all(
+                            worker.cleanup is not None
+                            and worker.cleanup.status == "confirmed_absent"
+                            for worker in previous_execution.workers
+                        )
+                    )
+                )
+                cleanup = {
+                    "source_admission_id": source_admission_id,
+                    "status": (
+                        "confirmed_absent" if cleanup_confirmed else "unknown"
+                    ),
+                    "resource_refs": [],
+                    "pending_domain_refs": [],
+                }
+                metadata["generation_adoption_cleanup"] = cleanup
+                record.metadata = metadata
+        await self.registry.persist(record)
+        workspace_value = metadata.get("workspace")
+        if (
+            isinstance(cleanup, Mapping)
+            and cleanup.get("status") == "confirmed_absent"
+            and isinstance(source_admission_id, str)
+            and source_admission_id
+            and isinstance(workspace_value, str)
+            and workspace_value
+        ):
+            await asyncio.to_thread(
+                self.generation_lifecycle(Path(workspace_value).expanduser().resolve()).release,
+                source_admission_id,
+                True,
+            )
+            metadata.pop("generation_adoption_cleanup", None)
+            record.metadata = metadata
+            await self.registry.persist(record)
 
     @staticmethod
     def _configured_model_catalog(
@@ -2784,6 +3654,8 @@ class SessionService:
             self._managed_state_paths,
             event_root=retained_event_root,
         )
+        await self._reconcile_committed_checkpoint_adoption(record)
+        await self._reconcile_confirmed_checkpoint_cleanup(record)
         restored_status = record.projected_status()
         if restored_status in {
             SessionStatus.COMPLETED,
