@@ -32,6 +32,8 @@ export type {
   PublicSessionEventKind,
   PublicSessionEventPayloadSchema,
   SessionAnnotationPayload,
+  ModuleOutputEnvelope,
+  SessionModuleOutputPayload,
   SessionEvent,
   SessionEventLineage,
   SessionEventVisibility,

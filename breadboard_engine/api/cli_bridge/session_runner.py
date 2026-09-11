@@ -342,13 +342,14 @@ class SessionRunner:
                 },
                 "reward_metrics": {},
             }
-        if output is not None:
-            completed = True
-            reason = "final_output" if module_input.final else "module_output"
+        if module_input.final:
+            reason = "final_output"
+        elif output is not None:
+            reason = "module_output"
         else:
-            completed, reason = True, "module_continuation"
+            reason = "module_continuation"
         return {
-            "completion_summary": {"completed": completed, "reason": reason},
+            "completion_summary": {"completed": True, "reason": reason},
             "reward_metrics": {},
         }
 

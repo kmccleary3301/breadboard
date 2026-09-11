@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import time
 import queue
 import threading
 from pathlib import Path
@@ -7,14 +9,61 @@ from types import SimpleNamespace
 
 import pytest
 
+from breadboard.modules import ModuleInput
 from breadboard_engine.api.cli_bridge.events import EventType
 from breadboard_engine.api.cli_bridge.models import SessionCreateRequest, SessionStatus
 from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry
+from breadboard_engine.api.cli_bridge.registry.records import TurnRecord
 from breadboard_engine.api.cli_bridge.session_control import SessionControlController
-from breadboard_engine.api.cli_bridge.session_lifecycle import SessionLifecycleOwner
+from breadboard_engine.api.cli_bridge.session_lifecycle import (
+    SessionLifecycleOwner,
+    _LifecycleRunState,
+)
 from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
 from breadboard_engine.api.cli_bridge.task_execution import TaskExecutionOwner
 from breadboard_engine.todo import TodoDraft, TodoPatch, TodoStore
+
+
+@pytest.mark.asyncio
+async def test_final_module_continuation_completes_interactive_session(monkeypatch, tmp_path) -> None:
+    registry = SessionRegistry(state_root=tmp_path / "session-state")
+    record = SessionRecord(session_id="final-continuation", status=SessionStatus.RUNNING)
+    for sequence, final in enumerate((False, True)):
+        turn = TurnRecord(
+            input_id=f"input-{sequence}",
+            turn_id=f"turn-{sequence}",
+            client_message_id=f"message-{sequence}",
+            content=None,
+            attachments=(),
+            original_disposition="accepted",
+            state="completed" if not final else "running",
+            terminal_outcome="completed" if not final else None,
+            module_input=ModuleInput("bb.test.input.v1", b"{}", final),
+            module_input_sequence=sequence,
+        )
+        record.turns_by_id[turn.turn_id] = turn
+    record.next_module_input_sequence = 2
+    record.active_turn_id = turn.turn_id
+    await registry.create(record)
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=SessionCreateRequest(config_path="unused"),
+    )
+
+    class ContinuingRuntime:
+        def execute(self, envelope, *, input_id, turn_id):
+            return None
+
+    monkeypatch.setattr(runner, "_ensure_module_runtime", ContinuingRuntime)
+    runner._input_queue.put_nowait({"input_id": turn.input_id, "turn_id": turn.turn_id})
+    state = _LifecycleRunState(session_started_at=time.monotonic())
+    await asyncio.wait_for(runner._lifecycle_owner._process_inputs(state), timeout=2)
+    assert state.terminal_status == SessionStatus.COMPLETED
+    await runner._lifecycle_owner._finalize(state)
+
+    assert record.status == SessionStatus.COMPLETED
+    assert turn.terminal_outcome == "completed"
 
 
 

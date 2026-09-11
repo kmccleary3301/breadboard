@@ -179,6 +179,25 @@ export type SessionAnnotationPayload = {
   readonly generation: string
 }
 
+export type ModuleOutputEnvelope = {
+  readonly schema_id: string
+  readonly body: string
+  readonly final: boolean
+}
+
+export type SessionModuleOutputPayload = {
+  readonly module_output: ModuleOutputEnvelope
+  readonly output_sequence: number
+  readonly module_id: string
+  readonly worker_session_id: string
+  readonly request_id: string
+  readonly generation_id: string
+  readonly instance_id: string
+  readonly work_id: string
+  readonly attempt_id: string
+  readonly authority_epoch: number
+}
+
 export type WorldFieldMask = {
   readonly schema_version: "bb.world_field_mask.v1"
   readonly paths: readonly ["/occurred_at", "/timestamp"]
@@ -204,10 +223,10 @@ type SessionEventRecord<
   readonly payload_schema_version: TSchema
 }
 
-type NonAnnotationEventKind = Exclude<PublicSessionEventKind, "annotation">
-type NonAnnotationPayloadSchema = Exclude<
+type GenericSessionEventKind = Exclude<PublicSessionEventKind, "annotation" | "module_output">
+type GenericSessionPayloadSchema = Exclude<
   PublicSessionEventPayloadSchema,
-  "bb.payload.product_session.annotation.v1"
+  "bb.payload.product_session.annotation.v1" | "bb.payload.product_session.module_output.v1"
 >
 export type SessionEvent<
   TPayload extends Record<string, unknown> = Record<string, unknown>,
@@ -217,7 +236,12 @@ export type SessionEvent<
     SessionAnnotationPayload,
     "bb.payload.product_session.annotation.v1"
   >
-  | SessionEventRecord<NonAnnotationEventKind, TPayload, NonAnnotationPayloadSchema>
+  | SessionEventRecord<
+    "module_output",
+    SessionModuleOutputPayload,
+    "bb.payload.product_session.module_output.v1"
+  >
+  | SessionEventRecord<GenericSessionEventKind, TPayload, GenericSessionPayloadSchema>
 
 export interface AttachmentHandle {
   readonly filename: string

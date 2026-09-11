@@ -50,6 +50,8 @@ import {
   type PublicSessionInputRequest,
   type PublicSessionStartRequest,
   type SessionEvent,
+  type ModuleOutputEnvelope,
+  type SessionModuleOutputPayload,
   type WorldFieldMask,
   type StageOutcome,
 } from "@breadboard/sdk"
@@ -313,6 +315,22 @@ function annotationAuthor(observation: SessionEvent): string | undefined {
   if (observation.kind === "annotation") return observation.payload.author
   return undefined
 }
+function typedModuleOutput(observation: SessionEvent): ModuleOutputEnvelope | undefined {
+  if (observation.kind !== "module_output") return undefined
+  const payload: SessionModuleOutputPayload = observation.payload
+  const schema: "bb.payload.product_session.module_output.v1" = observation.payload_schema_version
+  const sequence: number = payload.output_sequence
+  const epoch: number = payload.authority_epoch
+  const body: string = payload.module_output.body
+  const final: boolean = payload.module_output.final
+  void schema
+  void sequence
+  void epoch
+  void body
+  void final
+  return payload.module_output
+}
+void typedModuleOutput
 const mask: WorldFieldMask = {
   schema_version: "bb.world_field_mask.v1",
   paths: ["/occurred_at", "/timestamp"],
