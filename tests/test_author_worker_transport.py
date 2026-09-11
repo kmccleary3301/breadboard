@@ -873,3 +873,106 @@ def test_fragmented_message_rejects_corrupted_chunk_body() -> None:
         assert reassembler.accept(chunk) is None
     with pytest.raises(WireProtocolError, match="digest"):
         reassembler.accept(chunks[-1])
+
+
+def test_worker_refuses_declared_import_already_loaded_in_worker_sys_modules(
+    tmp_path: Path,
+) -> None:
+    captured_root = tmp_path / "captured"
+    captured_root.mkdir()
+    loaded_name = "test_custom_preloaded_module"
+    module_source = """
+from breadboard.modules import OutputEnvelope, OutputResult
+
+class Instance:
+    def step(self, value):
+        return OutputResult(value, None, None)
+
+class Module:
+    def bind_dependencies(self, dependencies):
+        return dependencies
+
+    def decode_input(self, envelope):
+        return envelope.body
+
+    def decode_output(self, envelope):
+        return envelope.body
+
+    def decode_checkpoint(self, envelope):
+        return envelope.body
+
+    def encode_output(self, value):
+        return OutputEnvelope("output.v1", value)
+
+    def encode_checkpoint(self, state, **owner):
+        raise AssertionError("checkpoint not requested")
+
+    def assess_checkpoint(self, context):
+        raise AssertionError("checkpoint not prepared")
+
+    def open_instance(self, **kwargs):
+        return Instance()
+
+module = Module()
+"""
+    package, digest = _write_checkpoint_worker_package(
+        captured_root,
+        logical_package=loaded_name,
+        source=module_source,
+    )
+    generation = "sha256:" + "e" * 64
+    start_key = _worker_key(
+        "start",
+        session="preloaded-shadow-session",
+        generation=generation,
+        instance="preloaded-shadow-instance",
+    )
+    code = (
+        "import types, sys; "
+        f"sys.modules[{loaded_name!r}] = types.ModuleType({loaded_name!r}); "
+        f"exec({module_source!r}, sys.modules[{loaded_name!r}].__dict__); "
+        "from breadboard.modules.worker import main; "
+        "raise SystemExit(main())"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", code, "--stdio"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env={**os.environ, "BREADBOARD_CAPTURED_ROOT": str(captured_root)},
+    )
+    receipt = AuthorWorkerResourceReceipt(
+        resource_id=f"process:{process.pid}",
+        owner_ref="module:test:preloaded-worker",
+        execution_id=f"execution:{process.pid}",
+        container_id=f"process-{process.pid}",
+        container_name=f"process-{process.pid}",
+        image_id="sha256:" + "0" * 64,
+        image_ref="sha256:" + "0" * 64,
+        platform=sys.platform,
+        receiver_identity=f"pid:{process.pid}",
+        state="running",
+    )
+    notices = _ManagementNotices(process)
+    worker = AuthorWorker(process, receipt, notices)
+    try:
+        _send_worker_message(
+            worker,
+            "start",
+            start_key,
+            0,
+            _worker_start_body(
+                package,
+                digest,
+                module_id=loaded_name,
+                instance_id=start_key.instance_id,
+                generation_id=generation,
+                initial_input=None,
+                resume=None,
+            ),
+        )
+        failure = _receive_worker_message(worker)
+        assert failure.header.kind == "failure"
+        assert failure.body["code"] == "closure_mismatch"
+    finally:
+        worker.close("test_complete")

@@ -256,6 +256,11 @@ class _PackageLoader:
             if len(payload) != record["size_bytes"] or _sha256(payload) != record["sha256"]:
                 raise WorkerError("closure_mismatch", f"import member digest mismatch: {path}")
             module_name = record["module"]
+            if module_name in sys.modules:
+                raise WorkerError(
+                    "closure_mismatch",
+                    f"declared import member is already loaded in worker: {module_name}",
+                )
             if module_name in members and members[module_name] != destination / Path(path):
                 raise WorkerError("closure_mismatch", f"duplicate import binding: {module_name}")
             members[module_name] = destination / Path(path)
@@ -971,6 +976,11 @@ class _Worker:
         self.dependencies, self.providers, self.tools, self.context, self.children = self._ports(
             body["dependencies"], body["child_targets"]
         )
+        if self.package.module_name in sys.modules:
+            raise WorkerError(
+                "closure_mismatch",
+                f"declared import member is already loaded in worker: {self.package.module_name}",
+            )
         module_file = importlib.import_module(self.package.module_name)
         entry = getattr(module_file, self.package.symbol_name, None)
         if entry is None:

@@ -3198,10 +3198,12 @@ test("SSH Slurm strict profile survives one requeue and validates durable accoun
   let sacctMode: "cancelled" | "completed" = "cancelled"
   let allocatedMemoryTres = ""
   let allocationState = "PENDING"
+  let metadataAvailable = true
+  let receiptHasAttempt = true
   const commands: string[] = []
   const output = Buffer.from("strict profile\n", "utf8")
   const outputDigest = createHash("sha256").update(output).digest("hex")
-  const backend = makeSshSlurmBackend({
+  const makeBackend = () => makeSshSlurmBackend({
     sshTarget: "cluster.example",
     remoteEvidenceDirectory: "/tmp/evidence",
     resourceProfile: {
@@ -3228,11 +3230,12 @@ test("SSH Slurm strict profile survives one requeue and validates durable accoun
       if (remoteCommand.includes("submission-") && remoteCommand.includes("then cat")) {
         assert.match(attemptIdentity, /^[0-9a-f]{32}$/)
         return {
-          stdout: `49001;cluster\n${attemptIdentity}\n${digest}\n`,
+          stdout: `49001;cluster\n${receiptHasAttempt ? attemptIdentity : ""}\n${digest}\n`,
           stderr: "",
         }
       }
-      if (remoteCommand.startsWith("cat ") && remoteCommand.includes(".request.b64"))
+      if (remoteCommand.startsWith("cat ") && remoteCommand.includes(".request.b64")) {
+        if (!metadataAvailable) throw new Error("durable metadata unavailable")
         return {
           stdout: Buffer.from(JSON.stringify({
             request,
@@ -3247,6 +3250,7 @@ test("SSH Slurm strict profile survives one requeue and validates durable accoun
           }), "utf8").toString("base64"),
           stderr: "",
         }
+      }
       if (remoteCommand.includes("scontrol show job -o")) {
         return {
           stdout: [
@@ -3311,6 +3315,7 @@ test("SSH Slurm strict profile survives one requeue and validates durable accoun
       assert.fail(`unexpected Slurm command: ${remoteCommand}`)
     },
   })
+  const backend = makeBackend()
 
   const handle = await backend.submit(request, {
     signal: new AbortController().signal,
@@ -3324,6 +3329,31 @@ test("SSH Slurm strict profile survives one requeue and validates durable accoun
   })
   assert.equal(runningReplay.executionId, handle.executionId)
   assert.equal(allocationState, "RUNNING")
+  assert.ok(runningReplay.evidenceRefs?.includes(
+    `slurm://job/${handle.executionId}/attempt/${attemptIdentity}/restart/0`,
+  ))
+  metadataAvailable = false
+  const recoveredReplay = await makeBackend().submit(request, {
+    signal: new AbortController().signal,
+    deadlineAtMs: Date.now() + 1_000,
+    terminationGraceMs: 100,
+  })
+  assert.equal(recoveredReplay.executionId, handle.executionId)
+  assert.ok(recoveredReplay.evidenceRefs?.includes(
+    `slurm://job/${handle.executionId}/attempt/${attemptIdentity}`,
+  ))
+  assert.equal(allocationState, "RUNNING")
+  receiptHasAttempt = false
+  await assert.rejects(
+    () => makeBackend().submit(request, {
+      signal: new AbortController().signal,
+      deadlineAtMs: Date.now() + 1_000,
+      terminationGraceMs: 100,
+    }),
+    /attempt identity/,
+  )
+  receiptHasAttempt = true
+  metadataAvailable = true
   const pendingCancellation = await backend.observe(handle.executionId)
   assert.equal(pendingCancellation.state, "cancelled")
   sacctMode = "completed"

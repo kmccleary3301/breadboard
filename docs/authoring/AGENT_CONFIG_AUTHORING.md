@@ -88,6 +88,8 @@ The import record repeats the source member's exact digest and size:
 }
 ```
 
+Import module names must be unique and cannot bind Python standard-library modules or the `breadboard`, `breadboard_engine`, and `breadboard_sdk` namespaces. Every import path must belong to `source_members`. The worker refuses already-loaded declared imports instead of reusing host code.
+
 ### Author entrypoint protocol
 
 The packaged worker process already speaks `bb.worker.v2`. Do not write a frame
@@ -159,6 +161,8 @@ only when the package declares and starts that child. Project operations are
 `read` or `write`; network operations are `connect` or `resolve`. A manifest
 requests authority but never grants it. Session admission separately intersects
 the request with operator policy.
+
+Project roots intersect by resolved containment, retaining the narrower path. Network destinations likewise retain the narrower exact host or wildcard suffix, rather than requiring identical strings.
 
 `max_message_bytes` cannot exceed 262144 and `max_checkpoint_bytes` cannot
 exceed 1048576. `max_children` is a non-negative integer; `deadline_ms` is a

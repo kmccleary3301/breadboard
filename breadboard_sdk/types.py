@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple, TypedDict
+from typing import Any, Dict, Iterable, List, Literal, Never as _Never, Optional, Tuple, TypedDict
 
 from .generated.session_event_bindings import (
     PublicSessionEventKind,
@@ -31,6 +31,25 @@ class SessionAnnotationPayload(TypedDict):
     author: str
     generation: str
 
+
+
+class ModuleOutputEnvelope(TypedDict):
+    schema_id: str
+    body: str
+    final: bool
+
+
+class SessionModuleOutputPayload(TypedDict):
+    module_output: ModuleOutputEnvelope
+    output_sequence: int
+    module_id: str
+    worker_session_id: str
+    request_id: str
+    generation_id: str
+    instance_id: str
+    work_id: str
+    attempt_id: str
+    authority_epoch: int
 
 class WorldFieldMask(TypedDict):
     schema_version: Literal["bb.world_field_mask.v1"]
@@ -80,6 +99,12 @@ class _SessionAnnotationEvent(_SessionEventEnvelope):
     payload_schema_version: Literal["bb.payload.product_session.annotation.v1"]
 
 
+class SessionModuleOutputEvent(_SessionEventEnvelope):
+    kind: Literal["module_output"]
+    payload: SessionModuleOutputPayload
+    payload_schema_version: Literal["bb.payload.product_session.module_output.v1"]
+
+
 class _SessionKernelEvent(_SessionEventEnvelope):
     kind: Literal["assistant_message", "tool_call", "tool_result"]
     payload: Dict[str, Any]
@@ -90,7 +115,12 @@ class _SessionKernelEvent(_SessionEventEnvelope):
     ]
 
 
-SessionEvent = _SessionLifecycleEvent | _SessionAnnotationEvent | _SessionKernelEvent
+SessionEvent = (
+    _SessionLifecycleEvent
+    | _SessionAnnotationEvent
+    | SessionModuleOutputEvent
+    | _SessionKernelEvent
+)
 
 
 class ArtifactRefPreview(TypedDict, total=False):
@@ -346,9 +376,25 @@ class PublicSessionStartRequest(TypedDict, total=False):
     module_authority: AuthorityDeclarationRequest | None
     session_id: str | None
 
-class PublicSessionInputRequest(TypedDict, total=False):
-    content: str | None
-    module_input: ModuleInputRequest | None
+class _SessionTextInputOptional(TypedDict, total=False):
+    module_input: _Never
+
+
+class PublicSessionTextInputRequest(_SessionTextInputOptional):
+    content: str
+
+
+class _SessionModuleInputOptional(TypedDict, total=False):
+    content: _Never
+
+
+class PublicSessionModuleInputRequest(_SessionModuleInputOptional):
+    module_input: ModuleInputRequest
+
+
+PublicSessionInputRequest = (
+    PublicSessionTextInputRequest | PublicSessionModuleInputRequest
+)
 
 PublicSessionDecision = Literal["allow", "deny", "once", "always", "reject"]
 

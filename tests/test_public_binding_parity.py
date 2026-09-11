@@ -450,6 +450,22 @@ def test_python_sdk_explicit_methods_match_catalog() -> None:
         )
 
 
+def _python_dto_shape(python_type: Any) -> tuple[set[str], set[str]]:
+    branches = get_args(python_type)
+    if branches:
+        branch_shapes = [_python_dto_shape(branch) for branch in branches]
+        properties = set().union(*(props for props, _ in branch_shapes))
+        required = (
+            set.intersection(*(reqs for _, reqs in branch_shapes))
+            if branch_shapes
+            else set()
+        )
+        return properties, required
+    properties = set(get_type_hints(python_type))
+    required = set(getattr(python_type, "__required_keys__", set()))
+    return properties, required
+
+
 def test_openapi_transport_components_match_authored_sdk_dtos() -> None:
     import breadboard_sdk.types as python_types
 
@@ -502,9 +518,10 @@ def test_openapi_transport_components_match_authored_sdk_dtos() -> None:
         component = components[component_name]
         expected_properties = set(component["properties"])
         expected_required = set(component.get("required", []))
-        assert set(get_type_hints(python_type)) == expected_properties
+        py_properties, py_required = _python_dto_shape(python_type)
+        assert py_properties == expected_properties
         if typescript_name != "PublicResult":
-            assert set(python_type.__required_keys__) == expected_required
+            assert py_required == expected_required
         assert set(snapshot["types"][typescript_name]["properties"]) == (
             expected_properties
         )

@@ -107,11 +107,17 @@ class EffectiveDomainScope:
         cls,
         requested_authority: Mapping[str, object] | AuthorityDeclaration,
         effective_grant: Mapping[str, object] | AuthorityDeclaration,
+        *,
+        workspace: Path,
     ) -> "EffectiveDomainScope":
+        if not isinstance(workspace, Path):
+            raise TypeError("workspace must be a Path")
         requested = _authority_declaration(requested_authority, "requested authority")
         granted = _authority_declaration(effective_grant, "effective grant")
         return cls(
-            project=_project_intersection(requested.project, granted.project),
+            project=_project_intersection(
+                requested.project, granted.project, workspace=workspace
+            ),
             network=_network_intersection(requested.network, granted.network),
             child=_child_intersection(requested.child, granted.child),
             provider_ids=frozenset(requested.provider_ids & granted.provider_ids),
@@ -740,11 +746,46 @@ def _authority_declaration(value: Mapping[str, object] | AuthorityDeclaration, l
         raise TypeError(f"{label} is not canonical") from error
 
 
-def _project_intersection(left: ProjectAuthority | None, right: ProjectAuthority | None) -> ProjectAuthority | None:
+def _grant_path(value: str, workspace: Path) -> Path:
+    path = Path(value).expanduser()
+    return (path if path.is_absolute() else workspace / path).resolve()
+
+
+def _path_under(candidate: Path, base: Path) -> bool:
+    try:
+        candidate.relative_to(base)
+        return True
+    except ValueError:
+        return False
+
+
+def _project_roots_intersection(
+    requested: tuple[str, ...],
+    granted: tuple[str, ...],
+    workspace: Path,
+) -> tuple[str, ...]:
+    intersections: set[str] = set()
+    resolved_requested = tuple(_grant_path(root, workspace) for root in requested)
+    resolved_granted = tuple(_grant_path(root, workspace) for root in granted)
+    for req_path in resolved_requested:
+        for grant_path in resolved_granted:
+            if _path_under(req_path, grant_path):
+                intersections.add(str(req_path))
+            elif _path_under(grant_path, req_path):
+                intersections.add(str(grant_path))
+    return tuple(sorted(intersections))
+
+
+def _project_intersection(
+    left: ProjectAuthority | None,
+    right: ProjectAuthority | None,
+    *,
+    workspace: Path,
+) -> ProjectAuthority | None:
     if left is None or right is None:
         return None
     return ProjectAuthority(
-        roots=tuple(sorted(set(left.roots) & set(right.roots))),
+        roots=_project_roots_intersection(left.roots, right.roots, workspace),
         operations=frozenset(left.operations & right.operations),
     )
 
@@ -822,19 +863,12 @@ def _child_intersection(left: ChildAuthority | None, right: ChildAuthority | Non
     )
 
 
-def _grant_path(value: str, workspace: Path) -> Path:
-    path = Path(value).expanduser()
-    return (path if path.is_absolute() else workspace / path).resolve()
-
-
 def _under_roots(value: str, workspace: Path, roots: tuple[str, ...]) -> bool:
     candidate = _grant_path(value, workspace)
+    # Roots are resolved at admission; resolving again would follow retargeted symlinks.
     for root in roots:
-        try:
-            candidate.relative_to(_grant_path(root, workspace))
-        except ValueError:
-            continue
-        return True
+        if _path_under(candidate, Path(root)):
+            return True
     return False
 
 

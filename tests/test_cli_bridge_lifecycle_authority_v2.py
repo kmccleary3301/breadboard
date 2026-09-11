@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -12,6 +13,8 @@ from breadboard.modules import (
     ModuleInput,
     NetworkAuthority,
     NetworkOperation,
+    ProjectAuthority,
+    ProjectOperation,
 )
 from breadboard.product.harness.compile import compile_harness_definition
 from breadboard_engine.api.cli_bridge.author_domains import (
@@ -282,6 +285,8 @@ async def test_hard_signal_requires_live_process_authorization_before_recorded_o
 def _network_scope(
     requested_destinations: tuple[str, ...],
     granted_destinations: tuple[str, ...],
+    *,
+    workspace: Path,
 ) -> EffectiveDomainScope:
     operations = frozenset({NetworkOperation.CONNECT})
     return EffectiveDomainScope.from_grants(
@@ -293,6 +298,29 @@ def _network_scope(
             network=NetworkAuthority(granted_destinations, operations),
             tool_ids=frozenset({"http_get"}),
         ),
+        workspace=workspace,
+    )
+
+
+def _project_scope(
+    requested_roots: tuple[str, ...],
+    granted_roots: tuple[str, ...],
+    *,
+    workspace: Path,
+    operations: frozenset[ProjectOperation] = frozenset(
+        {ProjectOperation.READ, ProjectOperation.WRITE}
+    ),
+) -> EffectiveDomainScope:
+    return EffectiveDomainScope.from_grants(
+        AuthorityDeclaration(
+            project=ProjectAuthority(requested_roots, operations),
+            tool_ids=frozenset({"read", "write"}),
+        ),
+        AuthorityDeclaration(
+            project=ProjectAuthority(granted_roots, operations),
+            tool_ids=frozenset({"read", "write"}),
+        ),
+        workspace=workspace,
     )
 
 
@@ -337,7 +365,7 @@ def test_network_scope_uses_the_narrower_semantic_destination_intersection(
     allowed: str,
     denied: str,
 ) -> None:
-    scope = _network_scope(requested, granted)
+    scope = _network_scope(requested, granted, workspace=tmp_path)
 
     assert scope.network is not None
     assert scope.network.destinations == effective
@@ -354,7 +382,7 @@ def test_network_scope_uses_the_narrower_semantic_destination_intersection(
 
 
 def test_network_scope_denies_unrelated_destination_patterns(tmp_path) -> None:
-    scope = _network_scope(("api.example.com",), ("other.example.com",))
+    scope = _network_scope(("api.example.com",), ("other.example.com",), workspace=tmp_path)
 
     assert scope.network is not None
     assert scope.network.destinations == ()
@@ -368,16 +396,130 @@ def test_network_scope_denies_unrelated_destination_patterns(tmp_path) -> None:
 
 def test_network_scope_refuses_malformed_url_authority(tmp_path) -> None:
     with pytest.raises(AuthorDomainError) as declaration:
-        _network_scope(("http://[::1",), ("*",))
+        _network_scope(("http://[::1",), ("*",), workspace=tmp_path)
     assert declaration.value.code == "authority_denied"
 
-    scope = _network_scope(("*",), ("*",))
+    scope = _network_scope(("*",), ("*",), workspace=tmp_path)
     with pytest.raises(AuthorDomainError) as request:
         scope.require_tool_call(
             ToolCallIR("http_get", {"url": "http://[::1"}),
             tmp_path,
         )
     assert request.value.code == "tool_scope_unenforceable"
+
+
+@pytest.mark.parametrize(
+    ("requested", "granted"),
+    [
+        (("src/data",), (".",)),
+        ((".",), ("src/data",)),
+    ],
+)
+def test_project_scope_retains_narrower_root_containment(
+    tmp_path: Path,
+    requested: tuple[str, ...],
+    granted: tuple[str, ...],
+) -> None:
+    data_dir = tmp_path / "src" / "data"
+    data_dir.mkdir(parents=True)
+    file_path = data_dir / "file.txt"
+    file_path.write_text("ok")
+
+    scope = _project_scope(requested, granted, workspace=tmp_path)
+
+    scope.require_tool_call(
+        ToolCallIR("read", {"path": "src/data/file.txt"}),
+        tmp_path,
+    )
+    scope.require_tool_call(
+        ToolCallIR("write", {"path": "src/data/file.txt"}),
+        tmp_path,
+    )
+
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("read", {"path": "src/sibling.txt"}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("read", {"path": "../outside.txt"}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+
+def test_project_scope_resolves_symlinks_and_equivalents(tmp_path: Path) -> None:
+    real_data = tmp_path / "src" / "data"
+    real_data.mkdir(parents=True)
+    (real_data / "file.txt").write_text("payload")
+    symlink_dir = tmp_path / "link_data"
+    symlink_dir.symlink_to(real_data, target_is_directory=True)
+
+    symlink_scope = _project_scope(("link_data",), (".",), workspace=tmp_path)
+
+    symlink_scope.require_tool_call(
+        ToolCallIR("read", {"path": "link_data/file.txt"}),
+        tmp_path,
+    )
+    symlink_scope.require_tool_call(
+        ToolCallIR("write", {"path": "src/data/file.txt"}),
+        tmp_path,
+    )
+
+    with pytest.raises(AuthorDomainError) as refusal:
+        symlink_scope.require_tool_call(
+            ToolCallIR("read", {"path": "src/other.txt"}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+    absolute_root = str(real_data.resolve())
+    absolute_scope = _project_scope((absolute_root,), (".",), workspace=tmp_path)
+    absolute_scope.require_tool_call(
+        ToolCallIR("read", {"path": "src/data/file.txt"}),
+        tmp_path,
+    )
+
+    unrelated_scope = _project_scope(("src",), ("docs",), workspace=tmp_path)
+    with pytest.raises(AuthorDomainError) as refusal:
+        unrelated_scope.require_tool_call(
+            ToolCallIR("read", {"path": "src/file.txt"}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+    outside_dir = tmp_path.parent / f"outside-{tmp_path.name}"
+    outside_dir.mkdir(exist_ok=True)
+    (outside_dir / "file.txt").write_text("outside grant")
+    symlink_dir.unlink()
+    symlink_dir.symlink_to(outside_dir, target_is_directory=True)
+    with pytest.raises(AuthorDomainError) as refusal:
+        symlink_scope.require_tool_call(
+            ToolCallIR("read", {"path": "link_data/file.txt"}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+    real_data.rename(real_data.with_name("admitted_data"))
+    real_data.symlink_to(outside_dir, target_is_directory=True)
+    with pytest.raises(AuthorDomainError) as refusal:
+        absolute_scope.require_tool_call(
+            ToolCallIR("read", {"path": "src/data/file.txt"}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+    escape_symlink = tmp_path / "escape_link"
+    escape_symlink.symlink_to(outside_dir, target_is_directory=True)
+
+    escape_scope = _project_scope(("escape_link",), (".",), workspace=tmp_path)
+    with pytest.raises(AuthorDomainError) as refusal:
+        escape_scope.require_tool_call(
+            ToolCallIR("read", {"path": "escape_link/file.txt"}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
 
 
 @pytest.mark.asyncio

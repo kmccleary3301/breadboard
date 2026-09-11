@@ -241,6 +241,36 @@ def test_package_refuses_import_members_outside_source_closure(
     assert not output.exists()
 
 
+def test_package_refuses_reserved_import_modules_and_json_shadow(
+    tmp_path: Path,
+) -> None:
+    source = _write_source(tmp_path / "source", code=b"VALUE = 'ranker'\n")
+    manifest_base = json.loads((source / "module.json").read_bytes())
+    source_member = manifest_base["source_members"][0]
+
+    for index, module_name in enumerate(("json", "breadboard.modules.worker")):
+        manifest = json.loads((source / "module.json").read_bytes())
+        manifest["import_members"] = [
+            {
+                "module": module_name,
+                "path": source_member["path"],
+                "sha256": source_member["sha256"],
+                "size_bytes": source_member["size_bytes"],
+            }
+        ]
+        manifest["entrypoint"] = f"{source_member['path']}:open_instance"
+        (source / "module.json").write_bytes(canonical_json_bytes(manifest))
+        output = tmp_path / f"reserved-{index}.bbpkg"
+
+        with pytest.raises(ModulePackageValidationError):
+            build_module_package(
+                source,
+                output,
+                cas=FilesystemCAS(tmp_path / f"cas-{index}"),
+            )
+        assert not output.exists()
+
+
 def test_package_refuses_unsupported_worker_protocol(tmp_path: Path) -> None:
     source = _write_source(tmp_path / "source", code=b"VALUE = 'ranker'\n")
     manifest = json.loads((source / "module.json").read_text(encoding="utf-8"))

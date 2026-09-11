@@ -514,7 +514,9 @@ class _ModuleWorker:
             owner.grant.authority_epoch,
         )
         self.scope = EffectiveDomainScope.from_grants(
-            self.package.manifest.requested_authority, owner.grant.declaration,
+            self.package.manifest.requested_authority,
+            owner.grant.declaration,
+            workspace=owner.workspace,
         )
         self.domains = AuthorDomainDispatcher.for_worker(
             config=owner.captured.config, workspace=owner.workspace,

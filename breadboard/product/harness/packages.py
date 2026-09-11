@@ -12,6 +12,7 @@ import re
 
 import io
 import os
+import sys
 import tempfile
 import zipfile
 from collections.abc import Mapping, Sequence
@@ -67,6 +68,11 @@ _AUTHORITY_FIELDS: Final = frozenset(
 )
 _RESOURCE_BUDGET_FIELDS: Final = frozenset(
     {"max_children", "max_message_bytes", "max_checkpoint_bytes", "deadline_ms"}
+)
+
+_RESERVED_STDLIB_MODULES: Final = sys.stdlib_module_names
+_RESERVED_WORKER_NAMESPACES: Final[frozenset[str]] = frozenset(
+    {"breadboard", "breadboard_engine", "breadboard_sdk"}
 )
 
 _MANIFEST_FIELDS: Final = frozenset(
@@ -402,7 +408,22 @@ class ImportMember:
     size_bytes: int
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "module", _text(self.module, "import member module"))
+        module_text = _text(self.module, "import member module")
+        parts = tuple(module_text.split("."))
+        if any(not part.isidentifier() for part in parts):
+            raise ModulePackageValidationError(
+                f"import member module {module_text!r} must be a valid dotted Python module name"
+            )
+        root_name = parts[0]
+        if root_name in _RESERVED_STDLIB_MODULES:
+            raise ModulePackageValidationError(
+                f"import member module {module_text!r} binds reserved stdlib module {root_name!r}"
+            )
+        if root_name in _RESERVED_WORKER_NAMESPACES:
+            raise ModulePackageValidationError(
+                f"import member module {module_text!r} binds reserved worker namespace {root_name!r}"
+            )
+        object.__setattr__(self, "module", module_text)
         try:
             normalized = normalize_logical_path(self.path)
         except BundleError as exc:

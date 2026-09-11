@@ -272,6 +272,16 @@ function schedulerStateProvesExecution(state: string): boolean {
   return ["RUNNING", "COMPLETING", "STAGE_OUT", "SUSPENDED"].includes(base)
 }
 
+function attemptEvidenceRef(
+  durableId: string,
+  execution: SubmittedSlurmExecution,
+): string {
+  const attemptRef = `slurm://job/${durableId}/attempt/${encodeURIComponent(execution.attemptIdentity)}`
+  return execution.restartCount === undefined
+    ? attemptRef
+    : `${attemptRef}/restart/${execution.restartCount}`
+}
+
 function schedulerEvidenceRefs(
   sshTarget: string,
   executionId: string,
@@ -291,7 +301,7 @@ function schedulerEvidenceRefs(
       : []),
     ...(execution.attemptIdentity === "legacy"
       ? []
-      : [`slurm://job/${durableId}/attempt/${encodeURIComponent(execution.attemptIdentity)}/restart/${execution.restartCount ?? 0}`]),
+      : [attemptEvidenceRef(durableId, execution)]),
     `ssh://${sshTarget}${uriPath(execution.stdoutPath)}`,
     `ssh://${sshTarget}${uriPath(execution.stderrPath)}`,
   ]
@@ -631,6 +641,7 @@ export function makeSshSlurmBackend(
       throw new Error("Slurm scheduler job identity changed")
     }
     execution.observedRunning = cached?.observedRunning
+    execution.restartCount = cached?.restartCount
     submitted.set(identity.jobId, execution)
     return execution
   }
@@ -841,6 +852,9 @@ export function makeSshSlurmBackend(
       if (!/^\d+$/.test(executionId)) {
         throw new Error("Slurm submission returned an invalid job id")
       }
+      if (enforceResourceProfile && !/^[0-9a-f]{32}$/.test(receiptAttemptToken)) {
+        throw new Error("Slurm receipt attempt identity is invalid")
+      }
       if (submitted.get(executionId)?.requestDigest !== expectedRequestDigest) {
         submitted.delete(executionId)
       }
@@ -869,7 +883,7 @@ export function makeSshSlurmBackend(
           request,
           requestDigest: expectedRequestDigest,
           resourceProfile: admittedProfile,
-          attemptIdentity: enforceResourceProfile ? submissionAttemptToken : "legacy",
+          attemptIdentity: enforceResourceProfile ? receiptAttemptToken : "legacy",
           stdoutPath: remotePath(
             evidenceDirectory,
             `${slurmArtifactStem(executionId, expectedRequestDigest)}.out`,
@@ -918,7 +932,7 @@ export function makeSshSlurmBackend(
           `slurm://job/${durableExecutionHandle(executionId, execution.requestDigest)}/submitted`,
           ...(execution.attemptIdentity === "legacy"
             ? []
-            : [`slurm://job/${durableExecutionHandle(executionId, execution.requestDigest)}/attempt/${encodeURIComponent(execution.attemptIdentity)}/restart/${execution.restartCount}`]),
+            : [attemptEvidenceRef(durableExecutionHandle(executionId, execution.requestDigest), execution)]),
           `ssh://${sshTarget}${uriPath(receiptPath)}`,
           `ssh://${sshTarget}${uriPath(submissionCommandPath)}`,
           `ssh://${sshTarget}${uriPath(launchLogPath)}`,
