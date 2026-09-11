@@ -1055,20 +1055,38 @@ class _Worker:
         targets_value: object,
         manifest: Mapping[str, object],
     ):
-        raw_dependencies = dependencies_value
-        if not isinstance(raw_dependencies, list):
-            raise WorkerError("dependency_mismatch", "dependencies must be an array")
-        declarations: list[DependencyDeclaration] = []
-        ports: dict[str, DependencyAccess] = {}
-        for value in raw_dependencies:
-            record = _mapping(value, "dependency binding")
-            _exact(record, {"name", "contract_id"}, "dependency binding")
-            name = _text(record["name"], "dependency name")
-            contract_id = _text(record["contract_id"], "dependency contract_id")
-            declarations.append(DependencyDeclaration(name, contract_id))
-            ports[name] = _DependencyProxy(
+        if not isinstance(dependencies_value, Mapping):
+            raise WorkerError("dependency_mismatch", "dependencies must be an object")
+        declared_dependencies = manifest.get("dependency_contracts", {})
+        if not isinstance(declared_dependencies, Mapping):
+            raise WorkerError(
+                "closure_mismatch", "manifest dependency_contracts must be an object"
+            )
+        admitted_dependencies = {
+            _text(name, "dependency name"): _text(contract_id, "dependency contract_id")
+            for name, contract_id in dependencies_value.items()
+        }
+        captured_dependencies = {
+            _text(name, "manifest dependency name"): _text(
+                contract_id, "manifest dependency contract_id"
+            )
+            for name, contract_id in declared_dependencies.items()
+        }
+        if admitted_dependencies != captured_dependencies:
+            raise WorkerError(
+                "closure_mismatch",
+                "admitted dependencies differ from captured manifest",
+            )
+        declarations = [
+            DependencyDeclaration(name, contract_id)
+            for name, contract_id in sorted(admitted_dependencies.items())
+        ]
+        ports: dict[str, DependencyAccess] = {
+            name: _DependencyProxy(
                 self.io, self.key, lambda: self.opening, name, contract_id
             )
+            for name, contract_id in admitted_dependencies.items()
+        }
         if not isinstance(targets_value, list):
             raise WorkerError("child_denied", "child_targets must be an array")
         declared_values = manifest.get("child_targets", [])

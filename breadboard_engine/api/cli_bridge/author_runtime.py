@@ -628,10 +628,7 @@ class _ModuleWorker:
             "input_schemas": list(manifest.input_schema_ids),
             "output_schemas": list(manifest.output_schema_ids),
             "checkpoint_schemas": schemas,
-            "dependencies": [
-                {"name": name, "contract_id": contract}
-                for name, contract in manifest.dependency_contracts.items()
-            ],
+            "dependencies": dict(manifest.dependency_contracts),
             "child_targets": [
                 {
                     "label": target.label,

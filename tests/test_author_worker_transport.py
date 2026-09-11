@@ -227,6 +227,7 @@ def _write_checkpoint_worker_package(
     output_schema_ids: tuple[str, ...] = (),
     contracts: tuple[dict[str, object], ...] = (),
     child_targets: tuple[dict[str, object], ...] = (),
+    dependency_contracts: dict[str, str] | None = None,
 ) -> tuple[Path, str]:
     source_bytes = source.encode("utf-8")
     source_digest = "sha256:" + hashlib.sha256(source_bytes).hexdigest()
@@ -255,6 +256,9 @@ def _write_checkpoint_worker_package(
         "schema_members": {},
         "contracts": list(contracts),
         "child_targets": list(child_targets),
+        "dependency_contracts": (
+            {} if dependency_contracts is None else dependency_contracts
+        ),
     }
     manifest_bytes = json.dumps(
         manifest,
@@ -300,7 +304,7 @@ def _worker_start_body(
     max_message_bytes: int = MAX_FRAME_BYTES,
     max_checkpoint_bytes: int = MAX_CHECKPOINT_BYTES,
     output_schema_ids: tuple[str, ...] = (),
-    dependencies: list[dict[str, object]] | None = None,
+    dependencies: dict[str, str] | None = None,
     child_targets: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     return {
@@ -313,7 +317,7 @@ def _worker_start_body(
         "input_schemas": ["input.v1"],
         "output_schemas": list(output_schema_ids),
         "checkpoint_schemas": ["state.v1", "state.v2"],
-        "dependencies": [] if dependencies is None else dependencies,
+        "dependencies": {} if dependencies is None else dependencies,
         "child_targets": [] if child_targets is None else child_targets,
         "initial_input": (
             None
@@ -1205,6 +1209,7 @@ module = Module()
         logical_package="fragmented_service",
         source=module_source,
         output_schema_ids=("output.v1",),
+        dependency_contracts={"upstream": "upstream.v1"},
     )
     generation = "sha256:" + "f" * 64
     start_key = _worker_key(
@@ -1247,7 +1252,7 @@ module = Module()
                 initial_input=None,
                 resume=None,
                 output_schema_ids=("output.v1",),
-                dependencies=[{"name": "upstream", "contract_id": "upstream.v1"}],
+                dependencies={"upstream": "upstream.v1"},
                 max_message_bytes=frame_budget,
             ),
             max_bytes=frame_budget,
