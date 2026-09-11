@@ -319,7 +319,7 @@ def test_transfer_slice_manifest_round_trip() -> None:
     slice_manifest = TransferSliceManifest(
         slice_id="package.codex_dossier.current",
         slice_kind="package",
-        selector={"artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml"},
+        selector={"artifact_ref": "agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml"},
         promotion_role="required",
         visibility="hidden_hold",
         metadata={"phase": "v4"},

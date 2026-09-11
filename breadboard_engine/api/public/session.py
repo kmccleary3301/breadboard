@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 from fastapi import (
     APIRouter,
@@ -24,17 +26,17 @@ from breadboard_engine.api.cli_bridge.models import (
     SessionCreateRequest as BridgeSessionCreateRequest,
     SessionInputRequest as BridgeSessionInputRequest,
 )
-from breadboard.product.harness.resolution import (
-    daily_driver_model_roles_for_harness,
-)
 from breadboard.product.operations import session as session_operations
 from breadboard.product.runtime import session_store
 from breadboard.product.runtime.public_event_projection import public_session_event
+from breadboard.product.runtime.generations import GenerationLifecycleError
 
 from .models import (
     PublicResult,
+    SessionAdoptRequest,
     SessionApprovalRequest,
     SessionCancelRequest,
+    SessionCheckpointRequest,
     SessionInputRequest,
     SessionStartRequest,
     authorize_public_operation,
@@ -62,6 +64,26 @@ _PAYLOAD_LITERAL_FIELDS = {
     "session.completed": ("outcome",),
     "session.failed": ("outcome",),
     "session.canceled": ("outcome",),
+}
+_PAYLOAD_TYPED_RECORD_FIELDS = {
+    "session.started": ("module_input",),
+    "input.accepted": ("module_input",),
+    "module_output": ("module_output",),
+}
+_PAYLOAD_TYPED_LITERAL_FIELDS = {
+    "session.started": ("module_input_sequence",),
+    "input.accepted": ("module_input_sequence",),
+    "module_output": (
+        "output_sequence",
+        "module_id",
+        "worker_session_id",
+        "request_id",
+        "generation_id",
+        "instance_id",
+        "work_id",
+        "attempt_id",
+        "authority_epoch",
+    ),
 }
 
 
@@ -131,6 +153,59 @@ class _LiveSessionAdapter:
             return []
         return runner.artifacts.list_rows()
 
+    async def get_live_diagnostics(self, session_id: str):
+        try:
+            record, _ = await _product_session(self._service, session_id)
+        except _ProductSessionUnavailable:
+            return None
+        except HTTPException as error:
+            if error.status_code == 404:
+                return None
+            raise
+        admission = getattr(record, "generation_admission", None)
+        admission_projection = None
+        if admission is not None:
+            admission_projection = {
+                "admission_id": admission.admission_id,
+                "target": admission.target,
+                "publication_revision": admission.publication_revision,
+                "generation_id": admission.generation_id,
+                "work_id": admission.work_id,
+                "attempt_id": admission.attempt_id,
+                "status": admission.status,
+            }
+        metadata = record.metadata if isinstance(record.metadata, Mapping) else {}
+        cleanup = metadata.get("generation_adoption_cleanup")
+        cleanup_projection = None
+        pending_effect_refs: list[str] = []
+        if isinstance(cleanup, Mapping):
+            refs = cleanup.get("pending_domain_refs")
+            if isinstance(refs, (list, tuple)):
+                pending_effect_refs = [
+                    value for value in refs if isinstance(value, str)
+                ]
+            cleanup_projection = {
+                "source_admission_id": cleanup.get("source_admission_id"),
+                "status": cleanup.get("status"),
+                "pending_domain_refs": pending_effect_refs,
+            }
+        pending_turns = sorted(
+            turn.turn_id
+            for turn in record.turns_by_id.values()
+            if turn.terminal_outcome is None
+        )
+        return {
+            "generation_admission": admission_projection,
+            "pending": {
+                "turn_ids": pending_turns,
+                "effects": {
+                    "status": ("pending" if pending_effect_refs else "none_observed"),
+                    "references": pending_effect_refs,
+                },
+            },
+            "retirement_cleanup": cleanup_projection,
+        }
+
 
 async def _require_live_product_session(
     service,
@@ -173,6 +248,27 @@ def _mutation_error(error: HTTPException) -> session_operations.SessionMutationE
     )
 
 
+def _generation_mutation_error(
+    error: GenerationLifecycleError,
+) -> session_operations.SessionMutationError:
+    blocked = {
+        "admission_released",
+        "capacity_pressure",
+        "publication_missing",
+        "publication_unavailable",
+        "request_in_progress",
+        "session_conflict",
+        "session_in_progress",
+        "stale_dispatch",
+        "unknown_admission",
+    }
+    return session_operations.SessionMutationError(
+        6 if error.code in blocked else 4,
+        error.code,
+        error.message,
+    )
+
+
 class _LiveSessionMutationAdapter:
     def __init__(self, service) -> None:
         self._service = service
@@ -182,25 +278,48 @@ class _LiveSessionMutationAdapter:
         request: session_operations.StartSessionRequest,
         context,
         effective_lock,
-        source_path: Path,
+        source_path: Path | None,
     ) -> session_operations.StartSessionOutcome:
         metadata = {
-            "non_interactive_cli_session": True,
-            "cli_session_kind": "oneshot",
+            "non_interactive_cli_session": request.module_input is None
+            or request.module_input.final,
+            "cli_session_kind": (
+                "interactive"
+                if request.module_input is not None and not request.module_input.final
+                else "oneshot"
+            ),
         }
-        role_document = daily_driver_model_roles_for_harness(
-            source_path,
-            context.workspace,
-            contained=True,
-        )
+        role_document = None
+        if (
+            effective_lock is not None
+            and effective_lock["schema_version"] == "bb.effective_harness_lock.v2"
+        ):
+            from breadboard.artifacts.cas import FilesystemCAS
+            from breadboard.product.harness.lock import materialize_lock
+            from breadboard.product.harness.templates import (
+                DAILY_DRIVER_MODEL_ROLES_NAME,
+                load_daily_driver_model_roles_bytes,
+            )
+
+            cas = FilesystemCAS(context.workspace / ".breadboard" / "module-artifacts")
+            try:
+                materialized = materialize_lock(effective_lock, cas=cas)
+            finally:
+                cas.close()
+            for source_ref, payload in materialized.resource_bytes.items():
+                if str(source_ref).endswith(f"::{DAILY_DRIVER_MODEL_ROLES_NAME}"):
+                    role_document = load_daily_driver_model_roles_bytes(payload)
+                    break
         if role_document is not None:
             metadata["bb.model_roles.v1"] = role_document
 
         try:
             created = await self._service.create_session(
                 BridgeSessionCreateRequest(
-                    config_path=str(source_path),
+                    config_path=str(source_path) if source_path is not None else None,
                     task=request.task,
+                    module_input=request.module_input,
+                    module_authority=request.module_authority,
                     workspace=str(context.workspace),
                     metadata=metadata,
                 ),
@@ -213,13 +332,18 @@ class _LiveSessionMutationAdapter:
                     ".breadboard/service_records",
                     context.workspace,
                 ),
+                generation_workspace=context.workspace,
+                publication_target=request.publication_target,
                 effective_lock=effective_lock,
+                effective_lock_source=source_path,
             )
             _, session = await _product_session(
                 self._service,
                 created.session_id,
             )
             return session_operations.StartSessionOutcome(session.read_model)
+        except GenerationLifecycleError as error:
+            raise _generation_mutation_error(error) from error
         except HTTPException as error:
             raise _mutation_error(error) from error
 
@@ -236,7 +360,10 @@ class _LiveSessionMutationAdapter:
             )
             await self._service.send_input(
                 request.session_id,
-                BridgeSessionInputRequest(content=request.content),
+                BridgeSessionInputRequest(
+                    content=request.content,
+                    module_input=request.module_input,
+                ),
             )
             _, session = await _product_session(
                 self._service,
@@ -321,16 +448,59 @@ class _LiveSessionMutationAdapter:
         except HTTPException as error:
             raise _mutation_error(error) from error
 
+    async def checkpoint(
+        self,
+        request: session_operations.CheckpointSessionRequest,
+        context,
+    ) -> dict[str, Any]:
+        del context
+        try:
+            return await self._service.create_generation_checkpoint(
+                request.session_id,
+                request.reason,
+                request.request_id,
+            )
+        except GenerationLifecycleError as error:
+            raise _generation_mutation_error(error) from error
+        except HTTPException as error:
+            raise _mutation_error(error) from error
 
+    async def adopt(
+        self,
+        request: session_operations.AdoptSessionRequest,
+        context,
+        effective_lock,
+        source_path: Path,
+    ) -> dict[str, Any]:
+        del context
+        try:
+            return await self._service.adopt_generation_checkpoint(
+                request.session_id,
+                request.checkpoint_id,
+                effective_lock,
+                source_path,
+                request.request_id,
+            )
+        except GenerationLifecycleError as error:
+            raise _generation_mutation_error(error) from error
+        except HTTPException as error:
+            raise _mutation_error(error) from error
 
 
 def _scrub_event_payload(kind, payload, workspace):
     public_payload = scrub_public(payload, workspace)
     for field in _PAYLOAD_SHA256_FIELDS.get(kind, ()):
-        if public_payload[field] != payload[field]:
+        if field in payload and public_payload.get(field) != payload[field]:
             public_payload[field] = _REDACTED_SHA256
     for field in _PAYLOAD_LITERAL_FIELDS.get(kind, ()):
         public_payload[field] = payload[field]
+    for field in _PAYLOAD_TYPED_RECORD_FIELDS.get(kind, ()):
+        record = payload.get(field)
+        if isinstance(record, Mapping):
+            public_payload[field] = {key: record[key] for key in record}
+    for field in _PAYLOAD_TYPED_LITERAL_FIELDS.get(kind, ()):
+        if field in payload:
+            public_payload[field] = payload[field]
     if kind == "input.accepted":
         for source, public in zip(
             payload["attachments"],
@@ -356,8 +526,13 @@ async def start(
     values = request.model_dump(mode="json")
     neutral_request = session_operations.StartSessionRequest(
         lock_id=request.lock_id,
+        publication_target=request.publication_target,
         task=request.task,
         session_id=request.session_id,
+        module_input=request.module_input.decoded
+        if request.module_input is not None
+        else None,
+        module_authority=request.module_authority,
     )
     return await invoke_idempotent_async(
         "session.start",
@@ -367,6 +542,55 @@ async def start(
             public_operation_context(workspace),
             mutation_port=_LiveSessionMutationAdapter(_service(context)),
         ).start(neutral_request),
+    )
+
+
+@router.post(
+    "/v1/sessions/{session_id}/checkpoints",
+    operation_id="session.checkpoint",
+    response_model=PublicResult,
+)
+async def checkpoint(
+    session_id: str,
+    request: SessionCheckpointRequest,
+    context: Request,
+):
+    neutral_request = session_operations.CheckpointSessionRequest(
+        session_id=session_id,
+        reason=request.reason,
+        request_id=request.request_id,
+    )
+    return await invoke_async(
+        "session.checkpoint",
+        lambda workspace: session_operations.SessionRuntime(
+            public_operation_context(workspace),
+            mutation_port=_LiveSessionMutationAdapter(_service(context)),
+        ).checkpoint(neutral_request),
+    )
+
+
+@router.post(
+    "/v1/sessions/{session_id}/adoptions",
+    operation_id="session.adopt",
+    response_model=PublicResult,
+)
+async def adopt(
+    session_id: str,
+    request: SessionAdoptRequest,
+    context: Request,
+):
+    neutral_request = session_operations.AdoptSessionRequest(
+        session_id=session_id,
+        checkpoint_id=request.checkpoint_id,
+        lock_id=request.lock_id,
+        request_id=request.request_id,
+    )
+    return await invoke_async(
+        "session.adopt",
+        lambda workspace: session_operations.SessionRuntime(
+            public_operation_context(workspace),
+            mutation_port=_LiveSessionMutationAdapter(_service(context)),
+        ).adopt(neutral_request),
     )
 
 
@@ -397,6 +621,9 @@ async def send_input(
     neutral_request = session_operations.SendSessionInputRequest(
         session_id=session_id,
         content=request.content,
+        module_input=request.module_input.decoded
+        if request.module_input is not None
+        else None,
     )
     return await invoke_idempotent_async(
         "session.send_input",
@@ -668,6 +895,7 @@ async def events(
             )
             if batch.error is not None:
                 return
+
     return StreamingResponse(
         bounded_stream(),
         media_type="text/event-stream",

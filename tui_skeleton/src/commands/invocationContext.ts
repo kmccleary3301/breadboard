@@ -3,7 +3,7 @@ import { parseJsonObject } from "../utils/json.js"
 import { resolveBreadboardRepoPath, resolveBreadboardWorkspaceOrCwd } from "../utils/paths.js"
 
 export const DEFAULT_REQUEST_CONFIG_PATH =
-  process.env.BREADBOARD_DEFAULT_CONFIG ?? "agent_configs/codex_0-107-0_e4_3-6-2026.yaml"
+  process.env.BREADBOARD_DEFAULT_CONFIG ?? "agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"
 export const ANALYSIS_REQUEST_CONFIG_PATH =
   process.env.BREADBOARD_ANALYSIS_CONFIG ?? "agent_configs/misc/opencode_openai_gpt5nano_c_fs_cli_analysis.yaml"
 

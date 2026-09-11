@@ -24,7 +24,7 @@ def test_explanation_accounts_for_winners_effects_and_blockers() -> None:
     } <= messages
     winners = {row["path"]: row["source_layer"] for row in explanation["fields"]}
     locked = {row["path"]: row["source_layer_id"]
-              for row in compiled.lock["effective_values"]}
+              for row in compiled.lock["configuration_graph"]["effective_values"]}
     assert winners == locked
     assert "dossier.note" not in winners
 

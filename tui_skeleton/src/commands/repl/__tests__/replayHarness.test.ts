@@ -38,7 +38,7 @@ const buildControllerFromFixture = (name: string): ReplSessionController => {
   const raw = readFileSync(jsonlPath, "utf8")
   const lines = raw.split(/\r?\n/).filter((line) => line.trim().length > 0)
   const controller = new ReplSessionController({
-    configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+    configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
     workspace: null,
     model: null,
     remotePreference: null,
@@ -83,7 +83,7 @@ const readExpected = (name: string): string => {
 
 const newReplayController = (): ReplSessionController =>
   new ReplSessionController({
-    configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+    configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
     workspace: null,
     model: null,
     remotePreference: null,
@@ -137,7 +137,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("binds tool result without tool_name to prior call_id", () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,
@@ -162,7 +162,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("preserves tool exec output in the final rendered tool row", () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,
@@ -216,7 +216,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("preserves labeled stdout/stderr sections in the final rendered tool row", () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,
@@ -274,7 +274,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("projects native run_shell results into the durable tool-row contract", () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,
@@ -320,7 +320,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("normalizes prebuilt shell displays into the durable tool-row contract", () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,
@@ -352,7 +352,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("orders assistant segments around tool events by createdAt", () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,
@@ -381,7 +381,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("preserves canonical assistant transcript text across markdown and status surfaces", () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,
@@ -424,7 +424,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("keeps cumulative assistant_message updates in one hot assistant entry until completion", () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,
@@ -493,7 +493,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("deduplicates polluted backend user echo against the optimistic local prompt", async () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,
@@ -521,7 +521,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("sanitizes backend user echo prompt scaffolding before storing transcript text", () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,
@@ -544,7 +544,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("keeps optimistic local user turns ordered before later assistant transcript rows", async () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,
@@ -583,7 +583,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("does not duplicate a final cumulative assistant_message after an unstable streamed tail", async () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,
@@ -616,7 +616,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("keeps a streamed assistant entry hot after assistant.message.end until completion", async () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,
@@ -657,7 +657,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("rebinds a late cumulative assistant_message onto the finalized streamed assistant entry", async () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,
@@ -700,7 +700,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("rebinds a late cumulative assistant_message even when it arrives after completion", async () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,
@@ -725,7 +725,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("does not append completion final_message when it matches the final assistant content", async () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,
@@ -750,7 +750,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("keeps the locally advanced turn number when later backend events still report turn 1", async () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,
@@ -772,7 +772,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("does not expose backend model-call turns as the visible local submission turn", async () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,
@@ -793,7 +793,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("does not duplicate the final markdown tail when deltas are followed by a cumulative assistant_message", async () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,
@@ -839,7 +839,7 @@ describe("render_events_jsonl replay fixtures", () => {
 
   it("does not let a stale cumulative assistant_message overwrite a newer streamed assistant cell", async () => {
     const controller = new ReplSessionController({
-      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      configPath: path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"),
       workspace: null,
       model: null,
       remotePreference: null,

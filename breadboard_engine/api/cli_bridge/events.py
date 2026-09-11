@@ -121,6 +121,7 @@ class EventType(str, enum.Enum):
     REWARD_UPDATE = "reward_update"
     LIMITS_UPDATE = "limits_update"
     COMPLETION = "completion"
+    MODULE_OUTPUT = "module_output"
     LOG_LINK = "log_link"
     ERROR = "error"
     RUN_FINISHED = "run_finished"

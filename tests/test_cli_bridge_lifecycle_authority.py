@@ -2243,7 +2243,7 @@ async def test_paused_terminal_publish_remains_unresolved_for_drain(
         await original_persist(*args, **kwargs)
 
     registry.persist = paused_persist  # type: ignore[method-assign]
-    finish_task = asyncio.create_task(runner._finish_turn(turn, "completed"))
+    finish_task = asyncio.create_task(runner._task_execution.finish_turn(turn, "completed"))
     await persist_entered.wait()
     assert turn.terminal_outcome == "completed"
     assert turn.terminal_resolution_committed is False
@@ -2285,7 +2285,7 @@ async def test_no_state_root_terminal_dispatch_stays_unresolved_and_blocks_drain
     )
     await service._ensure_dispatcher(record)
     with pytest.raises(RuntimeError, match="turn_terminal_persistence_failed"):
-        await runner._finish_turn(turn, "completed")
+        await runner._task_execution.finish_turn(turn, "completed")
     dispatcher = record.dispatcher_task
     assert dispatcher is not None
     await dispatcher
@@ -3138,7 +3138,7 @@ def test_http_contract_is_typed_secret_safe_and_accepts_no_pid_authority(caplog:
     registration_body = registration_response.json()
     assert registration_body["first_slice_contract_id"] == "p30-e4-session-v1"
     assert registration_body["first_slice_schema_sha256"] == (
-        "sha256:979bff06137b659c0110c0f9324703b955e22da85a7aac93bee7f639290475a9"
+        "sha256:49ceaca16dc878316c204fdb67a2ec11dd6d480a25d177e02a63775ba5072e86"
     )
     assert registration_body["workspace_id"] == WORKSPACE_A
 

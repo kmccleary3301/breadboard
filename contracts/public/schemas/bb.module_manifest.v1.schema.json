@@ -1,0 +1,265 @@
+{
+  "$id": "https://breadboard.dev/contracts/public/schemas/bb.module_manifest.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BreadBoard Module Manifest V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "logical_package",
+    "package_version",
+    "entrypoint",
+    "execution_tier",
+    "worker_protocol",
+    "input_schema_ids",
+    "output_schema_ids",
+    "checkpoint_schema_id",
+    "accepted_checkpoint_schema_ids",
+    "dependency_contracts",
+    "child_targets",
+    "contracts",
+    "requested_authority",
+    "resource_budget",
+    "source_members",
+    "import_members",
+    "schema_members",
+    "runtime"
+  ],
+  "properties": {
+    "schema_version": {"const": "bb.module_manifest.v1"},
+    "logical_package": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+    "package_version": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+    "entrypoint": {"type": "string", "pattern": "^[^:\\s]+:[A-Za-z_][A-Za-z0-9_]*$"},
+    "execution_tier": {"enum": ["trusted_native", "enforced_isolated"]},
+    "worker_protocol": {"const": "bb.worker.v2"},
+    "input_schema_ids": {"$ref": "#/$defs/stringArray"},
+    "output_schema_ids": {"$ref": "#/$defs/stringArray"},
+    "checkpoint_schema_id": {"type": ["string", "null"], "minLength": 1},
+    "accepted_checkpoint_schema_ids": {"$ref": "#/$defs/stringArray"},
+    "dependency_contracts": {
+      "type": "object",
+      "propertyNames": {"minLength": 1},
+      "additionalProperties": {"type": "string", "minLength": 1}
+    },
+    "child_targets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "target", "contract_id"],
+        "properties": {
+          "label": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+          "target": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+          "contract_id": {"type": "string", "minLength": 1}
+        }
+      },
+      "uniqueItems": true
+    },
+    "contracts": {"type": "array", "items": {"$ref": "#/$defs/moduleContract"}, "uniqueItems": true},
+    "schema_members": {"type": "object", "additionalProperties": {"$ref": "#/$defs/path"}},
+    "requested_authority": {"$ref": "#/$defs/authority"},
+    "resource_budget": {"$ref": "#/$defs/resourceBudget"},
+    "source_members": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/sourceMember"},
+      "uniqueItems": true
+    },
+    "import_members": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/importMember"},
+      "uniqueItems": true
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "ref", "platform", "entrypoint"],
+      "properties": {
+        "kind": {"enum": ["oci", "native"]},
+        "ref": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+        "platform": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+        "entrypoint": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"}
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "oci"}}, "required": ["kind"]},
+          "then": {"properties": {"ref": {"pattern": "^(?:sha256:[0-9a-f]{64}|[^\\s@]+@sha256:[0-9a-f]{64})$"}, "entrypoint": {"const": ["python3", "-I", "-m", "breadboard.modules.worker", "--stdio"]}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "native"}}, "required": ["kind"]},
+          "then": {"properties": {"ref": {"pattern": "^sha256:[0-9a-f]{64}$"}}}
+        }
+      ]
+    }
+  },
+  "allOf": [{
+    "if": {"properties": {"execution_tier": {"const": "enforced_isolated"}}},
+    "then": {"properties": {"runtime": {"properties": {"kind": {"const": "oci"}}}}}
+  }],
+  "$defs": {
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project", "network", "child", "provider_ids", "tool_ids", "credential_disclosures"],
+      "properties": {
+        "project": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["roots", "operations"],
+              "properties": {
+                "roots": {"$ref": "#/$defs/stringArray"},
+                "operations": {
+                  "type": "array",
+                  "items": {"enum": ["read", "write"]},
+                  "uniqueItems": true
+                }
+              }
+            }
+          ]
+        },
+        "network": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["destinations", "operations"],
+              "properties": {
+                "destinations": {"$ref": "#/$defs/stringArray"},
+                "operations": {
+                  "type": "array",
+                  "items": {"enum": ["connect", "resolve"]},
+                  "uniqueItems": true
+                }
+              }
+            }
+          ]
+        },
+        "child": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["allowed_module_ids", "max_depth"],
+              "properties": {
+                "allowed_module_ids": {"$ref": "#/$defs/stringArray"},
+                "max_depth": {"type": "integer", "minimum": 0}
+              }
+            }
+          ]
+        },
+        "provider_ids": {"$ref": "#/$defs/stringArray"},
+        "tool_ids": {"$ref": "#/$defs/stringArray"},
+        "credential_disclosures": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["secret_name", "purpose"],
+            "properties": {
+              "secret_name": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+              "purpose": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"}
+            }
+          }
+        }
+      }
+    },
+    "resourceBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_children", "max_message_bytes", "max_checkpoint_bytes", "deadline_ms"],
+      "properties": {
+        "max_children": {"type": "integer", "minimum": 0},
+        "max_message_bytes": {"type": "integer", "minimum": 1, "maximum": 262144},
+        "max_checkpoint_bytes": {"type": "integer", "minimum": 1, "maximum": 1048576},
+        "deadline_ms": {"type": "integer", "minimum": 1}
+      }
+    },
+    "moduleContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_id", "input_schema_ids", "output_schema_ids"],
+      "properties": {
+        "contract_id": {"type": "string", "minLength": 1},
+        "input_schema_ids": {"$ref": "#/$defs/stringArray"},
+        "output_schema_ids": {"$ref": "#/$defs/stringArray"}
+      }
+    },
+    "package_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_ref", "import_members", "manifest", "package_digest", "runtime_key"],
+      "properties": {
+        "artifact_ref": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["artifact_id", "sha256", "size_bytes", "media_type", "metadata"],
+          "properties": {
+            "artifact_id": {"$ref": "#/$defs/digest"},
+            "sha256": {"$ref": "#/$defs/digest"},
+            "size_bytes": {"type": "integer", "minimum": 0},
+            "media_type": {"const": "application/zip"},
+            "metadata": {"type": "object", "maxProperties": 0}
+          }
+        },
+        "import_members": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["module", "path"],
+            "properties": {
+              "module": {"type": "string", "minLength": 1},
+              "path": {"$ref": "#/$defs/path"}
+            }
+          }
+        },
+        "manifest": {"$ref": "#"},
+        "package_digest": {"$ref": "#/$defs/digest"},
+        "runtime_key": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "stringArray": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+      "uniqueItems": true
+    },
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*//)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*\\\\)(?!.*%[0-9A-Fa-f]{2})(?!.*[\\u0000-\\u001f\\u007f]).+$"
+    },
+    "sourceMember": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "size_bytes"],
+      "properties": {
+        "path": {"allOf": [{"$ref": "#/$defs/path"}, {"not": {"const": "module.json"}}]},
+        "sha256": {"$ref": "#/$defs/digest"},
+        "size_bytes": {"type": "integer", "minimum": 0}
+      }
+    },
+    "importMember": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["module", "path", "sha256", "size_bytes"],
+      "properties": {
+        "module": {"type": "string", "minLength": 1, "pattern": "^\\S(?:.*\\S)?$"},
+        "path": {"allOf": [{"$ref": "#/$defs/path"}, {"not": {"const": "module.json"}}]},
+        "sha256": {"$ref": "#/$defs/digest"},
+        "size_bytes": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

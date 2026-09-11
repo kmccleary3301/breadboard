@@ -7,10 +7,13 @@ import {
 import type { EventStreamOptions } from "./stream.js"
 import type {
   PublicHarnessCreateRequest,
+  PublicHarnessPublishRequest,
   PublicHarnessUpdateRequest,
   PublicResult,
+  PublicSessionAdoptRequest,
   PublicSessionApprovalRequest,
   PublicSessionCancelRequest,
+  PublicSessionCheckpointRequest,
   PublicSessionDecision,
   PublicSessionInputRequest,
   PublicSessionStartRequest,
@@ -30,6 +33,7 @@ export interface BreadboardClient {
   healthSystem(): Promise<PublicResult>
   schemasSystem(): Promise<PublicResult>
   createHarness(directory?: PublicHarnessCreateRequest["directory"]): Promise<PublicResult>
+  packageHarness(source: string, out: string): Promise<PublicResult>
   listHarness(): Promise<PublicResult>
   getHarness(id: string): Promise<PublicResult>
   updateHarness(
@@ -39,6 +43,7 @@ export interface BreadboardClient {
   validateHarness(id: string): Promise<PublicResult>
   explainHarness(id: string): Promise<PublicResult>
   lockHarness(id: string): Promise<PublicResult>
+  publishHarness(target: string, body: PublicHarnessPublishRequest): Promise<PublicResult>
   getHarnessLock(id: string): Promise<PublicResult>
   listIntegration(): Promise<PublicResult>
   getIntegration(id: string): Promise<PublicResult>
@@ -50,12 +55,17 @@ export interface BreadboardClient {
     body: PublicSessionStartRequest,
     idempotencyKey?: string,
   ): Promise<PublicResult>
+  checkpointSession(
+    id: string,
+    body: PublicSessionCheckpointRequest,
+  ): Promise<PublicResult>
+  adoptSession(id: string, body: PublicSessionAdoptRequest): Promise<PublicResult>
   compareResearch(body: ResearchCompareBody): Promise<PublicResult>
   listSession(): Promise<PublicResult>
   getSessionResult(id: string): Promise<PublicResult>
   sendInputSession(
     id: string,
-    content: PublicSessionInputRequest["content"],
+    input: string | PublicSessionInputRequest,
     idempotencyKey?: string,
   ): Promise<PublicResult>
   approveSession(
@@ -87,13 +97,17 @@ export const createBreadboardClient = (
     healthSystem: full.healthSystem,
     schemasSystem: full.schemasSystem,
     createHarness: full.createHarness,
+    packageHarness: full.packageHarness,
     listHarness: full.listHarness,
     getHarness: full.getHarness,
     updateHarness: full.updateHarness,
     validateHarness: full.validateHarness,
     explainHarness: full.explainHarness,
     lockHarness: full.lockHarness,
+    publishHarness: full.publishHarness,
     getHarnessLock: full.getHarnessLock,
+    checkpointSession: full.checkpointSession,
+    adoptSession: full.adoptSession,
     listIntegration: full.listIntegration,
     getIntegration: full.getIntegration,
     probeIntegration: full.probeIntegration,

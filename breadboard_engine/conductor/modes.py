@@ -23,7 +23,6 @@ from .components import (
     apply_cache_control_to_initial_user_prompt,
     apply_cache_control_to_tool_messages,
     get_prompt_cache_control,
-    log_routing_event,
 )
 from ..surface import record_tool_schema_snapshot
 from ..security import redaction
@@ -809,17 +808,18 @@ def get_model_response(
 
     runtime_context.extra["stream_retry_observer"] = _record_stream_retry
 
-    result, _ = conductor._invoke_runtime_with_streaming(
-        runtime,
-        client,
-        model,
-        send_messages,
-        tools_schema,
-        effective_stream_responses,
-        runtime_context,
-        session_state,
-        markdown_logger,
-        turn_index,
+    result, _ = conductor.provider_invoker.invoke(
+        runtime=runtime,
+        client=client,
+        model=model,
+        send_messages=send_messages,
+        tools_schema=tools_schema,
+        stream_responses=effective_stream_responses,
+        runtime_context=runtime_context,
+        session_state=session_state,
+        markdown_logger=markdown_logger,
+        turn_index=turn_index,
+        route_id=getattr(conductor, "_current_route_id", None),
     )
 
     if (conductor.config.get("features", {}) or {}).get("response_normalizer"):

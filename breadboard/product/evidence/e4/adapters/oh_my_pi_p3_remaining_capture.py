@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 import shutil
 import tempfile
@@ -132,29 +131,22 @@ def validate_candidate_c4_chain(
         )
 
 
-def _json_bytes(value: Any) -> bytes:
-    return lane_runtime.canonical_json(value, separators_style="default").encode("utf-8")
-
-
 def _write_json(path: Path, value: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(_json_bytes(value))
+    path.write_bytes(lane_runtime.canonical_json(value, separators_style="default").encode("utf-8"))
 
 
 def _display(logical_path: Path) -> str:
     return lane_runtime.display_path(logical_path, repo_root=ROOT)
 
 
-def _sha256_file(path: Path) -> str:
-    return lane_runtime.sha256_file(path)
-
 
 def _ref(physical_path: Path, logical_path: Path) -> str:
-    return f"{_display(logical_path)}#{_sha256_file(physical_path)}"
+    return f"{_display(logical_path)}#{lane_runtime.sha256_file(physical_path)}"
 
 
 def _source_hashes(pairs: list[tuple[Path, Path]]) -> dict[str, str]:
-    return {_display(logical): _sha256_file(physical) for physical, logical in pairs}
+    return {_display(logical): lane_runtime.sha256_file(physical) for physical, logical in pairs}
 
 
 def _base(out_dir: Path | None, promote_accepted: bool) -> Path:
@@ -385,7 +377,7 @@ def _write_capture_replay_compare(
     _write_json(physical["schema_validation"], validation)
     source_pairs = _source_pairs(physical, logical)
     source_hashes = _source_hashes(source_pairs)
-    captured = [{"path": _display(logical_path), "role": "source", "sha256": _sha256_file(physical_path)} for physical_path, logical_path in source_pairs]
+    captured = [{"path": _display(logical_path), "role": "source", "sha256": lane_runtime.sha256_file(physical_path)} for physical_path, logical_path in source_pairs]
     raw_capture = {
         "accepted_as_capture_ref": True,
         "capture_class": "derived_capture",
@@ -415,9 +407,9 @@ def _write_capture_replay_compare(
     _write_json(physical["raw_capture"], raw_capture)
 
     replay_inputs = {
-        _display(logical["raw_capture"]): _sha256_file(physical["raw_capture"]),
-        _display(logical["compiled_records"]): _sha256_file(physical["compiled_records"]),
-        _display(logical["schema_validation"]): _sha256_file(physical["schema_validation"]),
+        _display(logical["raw_capture"]): lane_runtime.sha256_file(physical["raw_capture"]),
+        _display(logical["compiled_records"]): lane_runtime.sha256_file(physical["compiled_records"]),
+        _display(logical["schema_validation"]): lane_runtime.sha256_file(physical["schema_validation"]),
     }
     replay = {
         "schema_version": "bb.e4.bb_replay_result.v1",
@@ -458,9 +450,9 @@ def _write_capture_replay_compare(
         "assertions": assertions,
         "details": [{"name": assertion["name"], "status": assertion["status"]} for assertion in assertions],
         "input_hashes": {
-            _display(logical["raw_capture"]): _sha256_file(physical["raw_capture"]),
-            _display(logical["replay"]): _sha256_file(physical["replay"]),
-            _display(logical["compiled_records"]): _sha256_file(physical["compiled_records"]),
+            _display(logical["raw_capture"]): lane_runtime.sha256_file(physical["raw_capture"]),
+            _display(logical["replay"]): lane_runtime.sha256_file(physical["replay"]),
+            _display(logical["compiled_records"]): lane_runtime.sha256_file(physical["compiled_records"]),
         },
     }
     _write_json(physical["comparator"], comparator)
@@ -520,17 +512,17 @@ def _write_support_and_manifest(spec: Mapping[str, Any], inventory_lane: Mapping
     _write_json(physical["support_claim"], support_claim)
     artifacts = [
         {"path": _display(FREEZE_MANIFEST_PATH), "role": "freeze_manifest", "sha256": p3_packet.freeze_row_hash(str(spec["config_id"]))},
-        {"path": _display(logical["raw_capture"]), "role": "capture_ref", "sha256": _sha256_file(physical["raw_capture"])},
-        {"derived_from": [_ref(physical["raw_capture"], logical["raw_capture"]), _ref(physical["compiled_records"], logical["compiled_records"])], "path": _display(logical["replay"]), "role": "replay_ref", "sha256": _sha256_file(physical["replay"])},
-        {"derived_from": [_ref(physical["raw_capture"], logical["raw_capture"]), _ref(physical["replay"], logical["replay"]), _ref(physical["compiled_records"], logical["compiled_records"])], "path": _display(logical["comparator"]), "role": "comparator_ref", "sha256": _sha256_file(physical["comparator"])},
-        {"path": _display(logical["support_claim"]), "role": "support_claim_ref", "sha256": _sha256_file(physical["support_claim"])},
-        {"derived_from": [_ref(physical["comparator"], logical["comparator"])], "path": _display(logical["parity"]), "role": "parity_results", "sha256": _sha256_file(physical["parity"])},
-        {"path": _display(logical["secret_scan"]), "role": "secret_scan_report", "sha256": _sha256_file(physical["secret_scan"])},
-        {"path": _display(logical["prevalidation"]), "role": "validator_output", "sha256": _sha256_file(physical["prevalidation"])},
-        {"path": _display(logical["compiled_records"]), "role": "compiled_records", "sha256": _sha256_file(physical["compiled_records"])},
-        {"path": _display(logical["schema_validation"]), "role": "schema_validation", "sha256": _sha256_file(physical["schema_validation"])},
-        {"path": _display(logical["agent_config"]), "role": "agent_config", "sha256": _sha256_file(physical["agent_config"])},
-        {"path": _display(SOURCE_FREEZE_PATH), "role": "source_freeze", "sha256": _sha256_file(SOURCE_FREEZE_PATH)},
+        {"path": _display(logical["raw_capture"]), "role": "capture_ref", "sha256": lane_runtime.sha256_file(physical["raw_capture"])},
+        {"derived_from": [_ref(physical["raw_capture"], logical["raw_capture"]), _ref(physical["compiled_records"], logical["compiled_records"])], "path": _display(logical["replay"]), "role": "replay_ref", "sha256": lane_runtime.sha256_file(physical["replay"])},
+        {"derived_from": [_ref(physical["raw_capture"], logical["raw_capture"]), _ref(physical["replay"], logical["replay"]), _ref(physical["compiled_records"], logical["compiled_records"])], "path": _display(logical["comparator"]), "role": "comparator_ref", "sha256": lane_runtime.sha256_file(physical["comparator"])},
+        {"path": _display(logical["support_claim"]), "role": "support_claim_ref", "sha256": lane_runtime.sha256_file(physical["support_claim"])},
+        {"derived_from": [_ref(physical["comparator"], logical["comparator"])], "path": _display(logical["parity"]), "role": "parity_results", "sha256": lane_runtime.sha256_file(physical["parity"])},
+        {"path": _display(logical["secret_scan"]), "role": "secret_scan_report", "sha256": lane_runtime.sha256_file(physical["secret_scan"])},
+        {"path": _display(logical["prevalidation"]), "role": "validator_output", "sha256": lane_runtime.sha256_file(physical["prevalidation"])},
+        {"path": _display(logical["compiled_records"]), "role": "compiled_records", "sha256": lane_runtime.sha256_file(physical["compiled_records"])},
+        {"path": _display(logical["schema_validation"]), "role": "schema_validation", "sha256": lane_runtime.sha256_file(physical["schema_validation"])},
+        {"path": _display(logical["agent_config"]), "role": "agent_config", "sha256": lane_runtime.sha256_file(physical["agent_config"])},
+        {"path": _display(SOURCE_FREEZE_PATH), "role": "source_freeze", "sha256": lane_runtime.sha256_file(SOURCE_FREEZE_PATH)},
     ]
     manifest = {
         "artifacts": artifacts,

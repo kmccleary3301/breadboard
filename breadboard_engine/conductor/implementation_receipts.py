@@ -397,6 +397,14 @@ def _prompt_requires_implementation_write_text(prompt_text: str) -> bool:
     return bool(action_hit and artifact_hit)
 
 def _latest_implementation_prompt(session_state: SessionState) -> str:
+    try:
+        initial_prompt = _strip_internal_prompt_blocks(
+            str(session_state.get_provider_metadata("initial_user_prompt") or "")
+        )
+        if initial_prompt and not initial_prompt.startswith("Tool execution results:"):
+            return initial_prompt
+    except Exception:
+        pass
     prompts: List[str] = []
     try:
         for message in reversed(getattr(session_state, "messages", []) or []):
@@ -414,12 +422,6 @@ def _latest_implementation_prompt(session_state: SessionState) -> str:
             text = _strip_internal_prompt_blocks(str(message.get("content") or ""))
             if text and not text.startswith("Tool execution results:"):
                 prompts.append(text)
-    except Exception:
-        pass
-    try:
-        initial_prompt = _strip_internal_prompt_blocks(str(session_state.get_provider_metadata("initial_user_prompt") or ""))
-        if initial_prompt:
-            prompts.append(initial_prompt)
     except Exception:
         pass
     latest_prompt = _strip_internal_prompt_blocks(latest_real_user_prompt(session_state))

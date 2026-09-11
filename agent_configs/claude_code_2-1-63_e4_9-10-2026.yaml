@@ -1,0 +1,349 @@
+# Claude Code E4 reference config
+# Captured against Claude Code 2.1.63 and calibrated using the Claude Haiku 4.5 replay lane.
+# Catalog refreshed 2026-09-10; the profile name below retains the capture-era date.
+# This file is fully standalone by design: no `extends`, no hidden prompt refs, and no gitignored assets.
+# Local reference material lives under `../config/e4_targets/claude_code/2.1.63/`.
+#
+# +------------------------ Claude Code dossier map -----------------------+
+# | vendor system prompt + reminders + cache policy                        |
+# |   -> Anthropic native tool use                                         |
+# |   -> BB tool catalog compatible with the replay-calibrated lane        |
+# |   -> replay-tight turn strategy and guardrail posture                  |
+# +------------------------------------------------------------------------+
+#
+# Reading guide:
+# - This is the public top-level Claude Code dossier.
+# - The adjacent target package contains the tracked vendor prompt, reminder copy,
+#   and nearby reference material.
+# - Claude Code is unusually prompt-heavy and policy-heavy, so many of the comments
+#   below are about reminder/caching/rate-limit behavior rather than just tool names.
+# - This frozen lane is replay-oriented: it tells you how BreadBoard is making the
+#   Claude surface look and feel like Claude Code, not merely which model id it uses.
+
+version: 2
+profile:
+  name: claude-code-2.1.63-e4-2026-03-06
+workspace:
+  # Claude Code is also a direct-workspace harness. The replay lane intentionally keeps
+  # the setup simple: process sandbox, no mirror, no extra indirection.
+  root: ./agent_ws_claude
+  sandbox:
+    driver: process
+  mirror:
+    enabled: false
+    path: ./agent_ws_claude
+    mode: development
+providers:
+  # This dossier is pinned to the low-spend replay lane used for ongoing Claude parity work.
+  # The calibration model lives here explicitly, but the surrounding harness behavior is the
+  # real point of the config.
+  default_model: anthropic/claude-haiku-4-5-20251001
+  routing:
+    # Claude lane prefers to keep native tools if possible, but still disables
+    # streaming on probe failure because replay parity is sensitive to stream behavior.
+    disable_native_tools_on_probe_failure: false
+    disable_stream_on_probe_failure: true
+  models:
+  - id: anthropic/claude-haiku-4-5-20251001
+    adapter: anthropic
+    params:
+      tool_use: true
+      temperature: 0.1
+      max_output_tokens: 32000
+    routing:
+      fallback_models: []
+provider_tools:
+  # Claude Code is a native Anthropic tool-use harness with explicit reminder,
+  # prompt-cache, and rate-limit behavior.
+  #
+  # The key thing to notice here is that Claude is not just "Anthropic + tools".
+  # The harness itself has first-class policies around:
+  # - when system reminders are injected
+  # - prompt-cache behavior
+  # - retry / cooldown / token buffering
+  # Those behaviors are part of the harness soul, so they stay visible here.
+  use_native: true
+  suppress_prompts: false
+  anthropic:
+    # Lifecycle sketch for the replay-calibrated Claude lane:
+    #
+    # +---------------- system prompt ----------------+
+    # | vendor prompt + cache-control                |
+    # +--------------------+-------------------------+
+    #                      |
+    #                      v
+    # +--------------- tool-use turn ----------------+
+    # | native Anthropic tool call / tool results    |
+    # +--------------------+-------------------------+
+    #                      |
+    #                      v
+    # +-------------- reminder check ----------------+
+    # | budget / TodoWrite nudge / cooldown logic    |
+    # +--------------------+-------------------------+
+    #                      |
+    #                      v
+    # +-------------- retry window ------------------+
+    # | token buffer + min wait + bounded retries    |
+    # +---------------------------------------------+
+    #
+    # The point of keeping this visible is that Claude Code feels "self-regulating" in use.
+    # Those regulator behaviors are represented here, not implied.
+    max_output_tokens: 32000
+    temperature: 0.1
+    turn_delay_seconds: 1.0
+    tool_choice: auto
+    stream: true
+    system_reminders:
+      enabled: true
+      usd_budget_limit: 0.25
+      todowrite_nudge_after_tool_results: 4
+      # In practice this means the harness can inject compact reminder nudges after several
+      # tool-heavy turns instead of silently letting the session drift.
+    prompt_cache:
+      beta_header: null
+      apply_to_system: true
+      cache_control:
+        type: ephemeral
+        ttl: 1h
+      # The replay lane keeps the cache policy explicit because it affects request bodies and
+      # therefore parity, not just performance.
+    rate_limit:
+      enabled: true
+      token_buffer: 4000
+      fallback_cooldown_seconds: 5
+      min_wait_seconds: 1.0
+      max_retries: 2
+      retry_base_seconds: 2.0
+      retry_max_seconds: 20.0
+      retry_jitter_seconds: 0.5
+      # Read this block as the "harness patience policy": how long Claude Code waits, retries,
+      # and backs off before admitting the provider is unavailable.
+prompts:
+  packs:
+    base:
+      # The canonical logged vendor prompt stays adjacent to the target package.
+      system: ../config/e4_targets/claude_code/2.1.63/prompts/system-vendor-logged.prompt.md
+      plan: ../config/e4_targets/claude_code/2.1.63/prompts/system-vendor-logged.prompt.md
+      builder: ../config/e4_targets/claude_code/2.1.63/prompts/system-vendor-logged.prompt.md
+      compact: ../config/e4_targets/claude_code/2.1.63/prompts/system-vendor-logged.prompt.md
+      tools_catalog_full: ../implementations/system_prompts/default.md
+      tools_catalog_short: ../implementations/system_prompts/default.md
+  tool_prompt_mode: system_compiled_and_persistent_per_turn
+  tool_prompt_synthesis:
+    enabled: false
+  # Claude Code behaves more like "system prompt as the product" than Codex/OpenCode do.
+  # The important consequence is that the system-order block below matters: it makes the
+  # persistent vendor prompt the front door of the harness rather than a hidden include.
+  injection:
+    system_order:
+    - '@pack(base).system'
+    # Keeping only the vendor system prompt in `system_order` is intentional. For this lane,
+    # Claude's personality and tool expectations are carried by the preserved vendor prompt,
+    # not by a BreadBoard-generated stack of prompt fragments.
+tools:
+  mark_task_complete: false
+  registry:
+    # This is an intentional catalog boundary: `defs_cc` contains the tracked
+    # Claude-compatible tool definitions, while `include: ["*"]` makes the entire
+    # visible model surface explicit.
+    paths:
+    - ../implementations/tools/defs_cc
+    include:
+    - '*'
+    #
+    # Unlike the Codex dossier, this public Claude lane intentionally exposes the full tracked
+    # Claude-compatible tool catalog. The explanatory burden therefore lives in the comments:
+    # readers should understand that the defs catalog is the schema store, while `include: "*"`
+    # is the statement that the full public tool surface is intentionally visible in this lane.
+  aliases: null
+  dialects:
+    # Claude's edit surface is less about provider-native diff dialect quirks and more about
+    # stable textual editing behavior. The dialect preference block still matters because it
+    # determines what BreadBoard falls back to when Claude emits edit-like operations.
+    preference:
+      default:
+      - unified_diff
+      - bash_block
+      by_model:
+        openrouter/openai/*:
+          order:
+          - aider_search_replace
+          - unified_diff
+          - bash_block
+        openai/*:
+          order:
+          - aider_search_replace
+          - unified_diff
+          - bash_block
+        anthropic/*:
+          order:
+          - unified_diff
+          - bash_block
+    selection:
+      by_model:
+        openrouter/openai/*:
+        - aider_search_replace
+        - unified_diff
+        openai/*:
+        - aider_search_replace
+        - unified_diff
+        anthropic/*:
+        - unified_diff
+modes:
+# Claude's public harness posture is simple to read but important to interpret:
+#
+# +--------------------+
+# | plan (optional)    |  same prompt pack, full tool surface visible
+# +--------------------+
+#           |
+#           v
+# +--------------------+
+# | build             |
+# +--------------------+
+#           |
+#           v
+# +--------------------+
+# | compact           |  prompt-only compaction lane
+# +--------------------+
+#
+# The replay tranche keeps all three visible so the reader can see that Claude's "plan mode"
+# behavior is a harness concern, not just a generic BreadBoard feature.
+# It is also a reminder that Claude's compact lane is a real public behavior surface even
+# when the strict replay evidence is anchored to narrower tasks.
+- name: plan
+  prompt: '@pack(base).plan'
+  tools_enabled:
+  - '*'
+- name: build
+  prompt: '@pack(base).builder'
+  tools_enabled:
+  - '*'
+- name: compact
+  prompt: '@pack(base).compact'
+  tools_enabled: []
+loop:
+  # Claude stays in the familiar plan->build progression, but the relay/flow fields are where
+  # the replay lane gets strict: tool-role continuation and multi-tool turns are both visible.
+  sequence:
+  - if: features.plan
+    then:
+      mode: plan
+  - mode: build
+  plan_turn_limit: 1
+  turn_strategy:
+    relay: tool_role
+    flow: tool_role
+    allow_multiple_per_turn: true
+    # Claude's transcript is intentionally "tool-forward": tool calls and their results stay
+    # in the main conversational flow instead of being abstracted away into hidden orchestration.
+  guardrails:
+    # The zero-tool watchdog is present but effectively relaxed in this replay lane. Keeping it
+    # explicit matters because Claude Code does have this kind of harness-level nanny behavior.
+    zero_tool_watchdog:
+      warn_after_turns: 0
+      abort_after_turns: 0
+      emit_event: false
+long_running:
+  # Long-run primitives are shown here for completeness, but they remain disabled in this
+  # public replay dossier. Their presence signals substrate capability without overstating
+  # the current Claude E4 lane.
+  enabled: false
+  controller: longrun_v1
+  reset_policy: fresh
+  episode:
+    max_steps_override: null
+  queue:
+    backend: todo_store
+  reviewer:
+    enabled: false
+    mode: read_only
+  resume:
+    enabled: false
+    state_path: meta/longrun_state.json
+  verification:
+    tiers:
+    - name: smoke
+      commands:
+      - pytest -q tests/test_longrun_controller.py
+      timeout_seconds: 120
+      hard_fail: false
+    - name: full
+      commands:
+      - pytest -q
+      timeout_seconds: 1200
+      hard_fail: true
+  recovery:
+    no_progress_signature_repeats: 0
+  budgets:
+    wall_clock_s: 0
+    total_episodes: 0
+    total_tokens: 0
+    total_cost_usd: 0.0
+features:
+  # Claude Code exposes plan-mode behavior in the current frozen lane, but this
+  # replay tranche still keeps todos off.
+  #
+  # That asymmetry is intentional and informative:
+  # - plan behavior is part of the current frozen Claude replay evidence
+  # - todo/taskboard behavior is not being claimed here as a fully frozen public surface
+  plan: true
+  todos:
+    enabled: false
+    strict: false
+    reset_streak_on_todo: true
+completion:
+  # Claude can still finish naturally with content. The important thing is that the completion
+  # section tells the reader what counts as a believable "done" signal in this lane.
+  #
+  # The `provider_signals` flag matters here because Claude parity is sensitive to the exact
+  # boundary between "model thinks it's done" and "harness decides to stop".
+  confidence_threshold: 0.6
+  natural_finish:
+    idle_turn_limit: 1
+    no_tool_turns_threshold: 2
+  primary: hybrid
+  tool_finish: mark_task_complete
+  provider_signals: true
+  text_sentinels:
+  - TASK COMPLETE
+  - ALL TESTS PASSED
+  - IMPLEMENTATION COMPLETE
+  - '>>>>>> END RESPONSE'
+concurrency:
+  # Reads can fan out; shell/edit work is serialized.
+  #
+  # Claude's public product makes parallelism feel calm and conservative rather than flashy.
+  # This block is where that restraint becomes inspectable.
+  at_most_one_of:
+  - run_shell
+  groups:
+  - name: fs_reads
+    match_tools:
+    - read_file
+    - list_dir
+    - glob
+    - grep
+    max_parallel: 4
+  - name: edits_and_bash
+    match_tools:
+    - apply_unified_patch
+    - apply_search_replace
+    - write
+    - run_shell
+    max_parallel: 1
+    barrier_after: apply_unified_patch
+  nonblocking_tools:
+  - read_file
+  - list_dir
+  - glob
+  - grep
+  - apply_search_replace
+replay:
+  # Replay strictness is part of the harness contract here. These flags are worth exposing
+  # because Claude parity work lives and dies on tool-name and tool-output stability.
+  #
+  # In other words: this section is the public statement that we are not hand-waving Claude
+  # parity. The lane is expected to replay tightly enough that tool naming and outputs matter.
+  compare_tool_outputs: true
+  fail_on_tool_output_mismatch: true
+  preserve_tool_names: true

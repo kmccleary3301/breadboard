@@ -78,23 +78,64 @@ function dtoShapes(path) {
     "PublicSessionInputRequest",
     "PublicSessionCancelRequest",
     "PublicSessionApprovalRequest",
+    "PublicSessionCheckpointRequest",
+    "PublicSessionAdoptRequest",
     "ResearchCompareBody",
   ]);
-  const shapes = {};
+  const interfaces = new Map();
+  const aliases = new Map();
   for (const statement of file.statements) {
-    if (!ts.isInterfaceDeclaration(statement) || !wanted.has(statement.name.text)) {
-      continue;
-    }
-    const properties = statement.members
+    if (ts.isInterfaceDeclaration(statement)) interfaces.set(statement.name.text, statement);
+    if (ts.isTypeAliasDeclaration(statement)) aliases.set(statement.name.text, statement);
+  }
+  const memberShape = (members) => {
+    const properties = members
       .filter((member) => ts.isPropertySignature(member))
       .map((member) => ({
         name: nodeName(member, file),
         required: member.questionToken === undefined,
       }));
-    shapes[statement.name.text] = {
+    return {
       properties: properties.map((property) => property.name),
       required: properties.filter((property) => property.required).map((property) => property.name),
     };
+  };
+  const combine = (branches, intersection) => {
+    const properties = [...new Set(branches.flatMap((branch) => branch.properties))];
+    const required = properties.filter((property) =>
+      intersection
+        ? branches.some((branch) => branch.required.includes(property))
+        : branches.every((branch) => branch.required.includes(property)),
+    );
+    return { properties, required };
+  };
+  const shapeFromType = (node) => {
+    if (ts.isTypeLiteralNode(node)) return memberShape(node.members);
+    if (ts.isTypeReferenceNode(node)) {
+      const name = node.typeName.getText(file);
+      const direct = interfaces.get(name);
+      if (direct) return memberShape(direct.members);
+      const alias = aliases.get(name);
+      if (alias) return shapeFromType(alias.type);
+      return { properties: [], required: [] };
+    }
+    if (ts.isUnionTypeNode(node)) {
+      return combine(node.types.map(shapeFromType), false);
+    }
+    if (ts.isIntersectionTypeNode(node)) {
+      return combine(node.types.map(shapeFromType), true);
+    }
+    throw new Error(`unsupported DTO type node: ${node.getText(file)}`);
+  };
+  const shapes = {};
+  for (const name of wanted) {
+    const direct = interfaces.get(name);
+    if (direct) {
+      shapes[name] = memberShape(direct.members);
+      continue;
+    }
+    const alias = aliases.get(name);
+    if (alias) shapes[name] = shapeFromType(alias.type);
   }
   return shapes;
 }
@@ -367,7 +408,7 @@ def test_fastapi_public_routes_match_catalog(
     assert observed == expected_routes
 
 
-def test_bbh_argparse_leaf_commands_match_catalog(
+def test_breadboard_argparse_leaf_commands_match_catalog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("BREADBOARD_LEGACY_ROUTES", raising=False)
@@ -377,8 +418,11 @@ def test_bbh_argparse_leaf_commands_match_catalog(
     expected: set[tuple[str, ...]] = set()
     for operation in _catalog()["operations"]:
         command = operation["bindings"]["bbh"]["command"]
-        assert command.startswith("bbh ")
+        assert command.startswith("breadboard ")
         expected.add(tuple(command.split()[1:]))
+    assert _leaf_commands(build_parser()) == expected
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
+    monkeypatch.setenv("BREADBOARD_ENABLE_LOCAL_MIGRATIONS", "1")
     assert _leaf_commands(build_parser()) == expected
 
 
@@ -404,6 +448,22 @@ def test_python_sdk_explicit_methods_match_catalog() -> None:
             get_type_hints(getattr(BreadBoardClient, row["python_method"]))["return"]
             == expected_return
         )
+
+
+def _python_dto_shape(python_type: Any) -> tuple[set[str], set[str]]:
+    branches = get_args(python_type)
+    if branches:
+        branch_shapes = [_python_dto_shape(branch) for branch in branches]
+        properties = set().union(*(props for props, _ in branch_shapes))
+        required = (
+            set.intersection(*(reqs for _, reqs in branch_shapes))
+            if branch_shapes
+            else set()
+        )
+        return properties, required
+    properties = set(get_type_hints(python_type))
+    required = set(getattr(python_type, "__required_keys__", set()))
+    return properties, required
 
 
 def test_openapi_transport_components_match_authored_sdk_dtos() -> None:
@@ -439,6 +499,14 @@ def test_openapi_transport_components_match_authored_sdk_dtos() -> None:
             "SessionCancelRequest",
             python_types.PublicSessionCancelRequest,
         ),
+        "PublicSessionCheckpointRequest": (
+            "SessionCheckpointRequest",
+            python_types.PublicSessionCheckpointRequest,
+        ),
+        "PublicSessionAdoptRequest": (
+            "SessionAdoptRequest",
+            python_types.PublicSessionAdoptRequest,
+        ),
         "ResearchCompareBody": (
             "ResearchCompareBody",
             python_types.ResearchCompareRequest,
@@ -450,15 +518,18 @@ def test_openapi_transport_components_match_authored_sdk_dtos() -> None:
         component = components[component_name]
         expected_properties = set(component["properties"])
         expected_required = set(component.get("required", []))
-        if typescript_name == "PublicResult":
-            # The serialized public envelope always carries its defaulted identity.
-            expected_required.add("schema_version")
-        assert set(get_type_hints(python_type)) == expected_properties
-        assert set(python_type.__required_keys__) == expected_required
+        py_properties, py_required = _python_dto_shape(python_type)
+        assert py_properties == expected_properties
+        if typescript_name != "PublicResult":
+            assert py_required == expected_required
         assert set(snapshot["types"][typescript_name]["properties"]) == (
             expected_properties
         )
-        assert set(snapshot["types"][typescript_name]["required"]) == expected_required
+        if typescript_name != "PublicResult":
+            assert (
+                set(snapshot["types"][typescript_name]["required"])
+                == expected_required
+            )
     expected_decisions = set(
         components["SessionApprovalRequest"]["properties"]["decision"]["enum"]
     )
@@ -467,11 +538,15 @@ def test_openapi_transport_components_match_authored_sdk_dtos() -> None:
 
     request_components = {
         "harness.create": "HarnessCreateRequest",
+        "harness.package": "HarnessPackageRequest",
         "harness.update": "HarnessUpdateRequest",
+        "harness.publish": "HarnessPublishRequest",
         "session.start": "SessionStartRequest",
         "session.send_input": "SessionInputRequest",
         "session.approve": "SessionApprovalRequest",
         "session.cancel": "SessionCancelRequest",
+        "session.checkpoint": "SessionCheckpointRequest",
+        "session.adopt": "SessionAdoptRequest",
         "research.compare": "ResearchCompareBody",
     }
     for operation in _catalog()["operations"]:

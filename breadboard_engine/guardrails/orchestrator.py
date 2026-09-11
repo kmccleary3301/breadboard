@@ -49,45 +49,8 @@ class GuardrailOrchestrator:
         self.zero_tool_abort_message = zero_tool_abort_message
         self.zero_tool_emit_event = bool(zero_tool_emit_event)
 
-    # ----- Per-call guard preflight helpers -----
+    # ----- Per-call guard application -----
 
-    def todo_guard_preflight(
-        self,
-        session_state: SessionState,
-        parsed_call: Any,
-        current_mode: Optional[str],
-    ) -> Optional[str]:
-        return self.guardrail_coordinator.todo_guard_preflight(
-            session_state,
-            parsed_call,
-            current_mode,
-        )
-
-    def workspace_context_guard_preflight(
-        self,
-        session_state: SessionState,
-        parsed_call: Any,
-        workspace_guard_handler: Optional[Any],
-        todo_rate_guard_handler: Optional[Any],
-    ) -> Optional[str]:
-        return self.guardrail_coordinator.workspace_context_guard_preflight(
-            session_state,
-            parsed_call,
-            workspace_guard_handler,
-            todo_rate_guard_handler,
-        )
-
-    def todo_progress_guard_preflight(
-        self,
-        session_state: SessionState,
-        parsed_call: Any,
-        todo_rate_guard_handler: Optional[Any],
-    ) -> Optional[str]:
-        return self.guardrail_coordinator.todo_progress_guard_preflight(
-            session_state,
-            parsed_call,
-            todo_rate_guard_handler,
-        )
 
     def apply_turn_guards(
         self,
@@ -105,10 +68,14 @@ class GuardrailOrchestrator:
         filtered: List[Any] = []
         for call in turn_ctx.parsed_calls:
             guard_source = "todo"
-            block_reason = self.todo_guard_preflight(session_state, call, turn_ctx.mode)
+            block_reason = self.guardrail_coordinator.todo_guard_preflight(
+                session_state,
+                call,
+                turn_ctx.mode,
+            )
             if not block_reason:
                 guard_source = "workspace"
-                block_reason = self.workspace_context_guard_preflight(
+                block_reason = self.guardrail_coordinator.workspace_context_guard_preflight(
                     session_state,
                     call,
                     workspace_guard_handler,
@@ -116,7 +83,7 @@ class GuardrailOrchestrator:
                 )
             if not block_reason:
                 guard_source = "todo_progress"
-                block_reason = self.todo_progress_guard_preflight(
+                block_reason = self.guardrail_coordinator.todo_progress_guard_preflight(
                     session_state,
                     call,
                     todo_rate_guard_handler,

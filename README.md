@@ -136,8 +136,10 @@ The stable top-level zone model is documented in
 ## Repository map
 
 ```text
-├── agent_configs/                 product harness definitions + public top-level E4 dossier configs
-│   └── misc/                      scenario-specific, historical, and supporting configs
+├── agent_configs/                 six current E4 family entries + product harness definitions
+│   ├── deprecated/                byte-frozen historical dossiers and capture profiles
+│   ├── research/                  ATP/Hilbert comparator profiles
+│   └── misc/                      scenario-specific and supporting configs
 ├── breadboard/
 │   ├── product/                   public product operations and interfaces
 │   ├── artifacts/                 shared artifact ownership primitives
@@ -427,22 +429,26 @@ Relevant package docs:
 
 ## Public E4 dossiers
 
-One of the strongest features in this repo is that the top-level public E4 configs are inspectable harness dossiers rather than opaque overlays.
+The top-level catalog has six dated family entries. The filename date is the catalog
+refresh date; accepted upstream versions and capture dates remain explicit.
 
-| Harness | Public dossier | What it gives you |
+| Harness | Current entry | Claim boundary |
 |---|---|---|
-| Codex | [codex_0-107-0_e4_3-6-2026.yaml](agent_configs/codex_0-107-0_e4_3-6-2026.yaml) | current Codex public dossier with tracked target package refs |
-| Claude Code | [claude_code_2-1-63_e4_3-6-2026.yaml](agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml) | replay-focused Claude dossier with explicit policy surfaces |
-| OpenCode | [opencode_1-2-17_e4_3-6-2026.yaml](agent_configs/opencode_1-2-17_e4_3-6-2026.yaml) | shared OpenCode dossier with replay bundles in `misc/` |
-| oh-my-opencode | [oh_my_opencode_3-10-0_e4_3-6-2026.yaml](agent_configs/oh_my_opencode_3-10-0_e4_3-6-2026.yaml) | async/background-task-oriented dossier surface |
+| Codex | [Codex CLI 0.139.0 / GPT-5.5](agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml) | runnable capture/replay profile; accepted evidence is one read-only probe |
+| Claude Code | [Claude Code 2.1.63](agent_configs/claude_code_2-1-63_e4_9-10-2026.yaml) | standalone dossier for the accepted static-package/replay surface |
+| OpenCode | [OpenCode 1.2.17](agent_configs/opencode_1-2-17_e4_9-10-2026.yaml) | standalone dossier for the accepted static-package/replay surface |
+| oh-my-opencode | [oh-my-opencode 3.10.0](agent_configs/oh_my_opencode_3-10-0_e4_9-10-2026.yaml) | standalone dossier for the frozen Phase 8 replay surface |
+| Oh My Pi | [Oh My Pi 16.2.13](agent_configs/oh_my_pi_16-2-13_e4_9-10-2026.yaml) | installed-target config; not an agent-config CLI profile |
+| Pi | [Pi 0.57.1](agent_configs/pi_0-57-1_e4_9-10-2026.yaml) | installed-target config; not an agent-config CLI profile |
 
-Supporting docs:
+Catalog and conformance docs:
 
+- [agent_configs/README.md](agent_configs/README.md)
 - [docs/conformance/E4_COOKBOOK_V1.md](docs/conformance/E4_COOKBOOK_V1.md)
 - [docs/conformance/E4_TARGET_PACKAGES.md](docs/conformance/E4_TARGET_PACKAGES.md)
 - [docs/conformance/E4_DOSSIER_STYLE_GUIDE_V1.md](docs/conformance/E4_DOSSIER_STYLE_GUIDE_V1.md)
 
-> Public dossier readability does **not** mean perfect parity everywhere. Use the evidence docs and replay bundles for exact claim boundaries.
+> Catalog readability does **not** imply complete parity. Use each entry's evidence and exclusion notes for the exact claim.
 
 ## Conformance, replay, and evidence
 

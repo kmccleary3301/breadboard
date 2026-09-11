@@ -1,0 +1,65 @@
+{
+  "$id": "https://breadboard.dev/contracts/public/schemas/bb.effective_harness_lock.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BreadBoard Effective Harness Lock V2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "lock_id", "configuration_graph", "configuration_artifacts", "modules"],
+  "properties": {
+    "schema_version": {"const": "bb.effective_harness_lock.v2"},
+    "lock_id": {"$ref": "#/$defs/sha256"},
+    "configuration_graph": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.effective_config_graph.v1.schema.json"},
+    "configuration_artifacts": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/artifact_ref"}
+    },
+    "modules": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/modules"}]}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "binding_name": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]*$"},
+    "artifact_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "sha256", "size_bytes", "media_type", "metadata"],
+      "properties": {
+        "artifact_id": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "size_bytes": {"type": "integer", "minimum": 0},
+        "media_type": {"type": "string", "minLength": 1},
+        "metadata": {"type": "object"}
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package", "environment", "dependencies", "children", "config"],
+      "properties": {
+        "package": {"$ref": "bb.module_manifest.v1.schema.json#/$defs/package_record"},
+        "environment": {"type": "string", "minLength": 1},
+        "dependencies": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/binding_name"}
+        },
+        "children": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/binding_name"}
+        },
+        "config": {}
+      }
+    },
+    "modules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "bindings"],
+      "properties": {
+        "root": {"$ref": "#/$defs/binding_name"},
+        "bindings": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"$ref": "#/$defs/binding"}
+        }
+      }
+    }
+  }
+}

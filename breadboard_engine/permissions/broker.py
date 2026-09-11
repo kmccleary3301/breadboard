@@ -373,6 +373,59 @@ class PermissionBroker:
                         "The user rejected permission to use this specific tool call. You may try again with different parameters."
                     )
 
+    def authorize_tool_call(self, session_state: Any, call: Any) -> PermissionResolution:
+        """Admit one tool call while retaining policy and operator decisions."""
+        request = self._build_request(call)
+        if request is None:
+            return PermissionResolution("always", "implicit", persistent=True, rule_decision="allow")
+        if self._policy_denies(request):
+            self._log_event(session_state, request, status="denied", note="policy_pack_deny")
+            return PermissionResolution("reject", "policy_deny", rule_decision="deny", stop=True)
+        action = self._resolve_action(request)
+        if action == "deny":
+            self._log_event(session_state, request, status="denied", note="config_deny")
+            return PermissionResolution("reject", "config_deny", rule_decision="deny", stop=True)
+        if self._already_approved(session_state, request):
+            return PermissionResolution("always", "existing_approval", persistent=True, rule_decision="allow")
+        if action == "allow":
+            self._record_approval(session_state, request, mode="config_allow")
+            return PermissionResolution("always", "config_allow", persistent=True, rule_decision="allow")
+        if action == "ask" and self._auto_allow:
+            self._record_approval(session_state, request, mode="auto_allow")
+            return PermissionResolution("always", "auto_allow", persistent=True, rule_decision="allow")
+        if action == "ask":
+            response = self._request_permissions(session_state, [request])[0][1]
+            if response == "always":
+                self._record_approval(session_state, request, mode="user_allow_always")
+                return PermissionResolution("always", "user_allow_always", persistent=True, rule_decision="allow")
+            if response == "once":
+                self._record_one_shot_approval(session_state, request)
+                return PermissionResolution("once", "user_allow_once", rule_decision="allow")
+            return PermissionResolution("reject", "user_reject", rule_decision="allow", stop=True)
+        self._record_approval(session_state, request, mode="implicit")
+        return PermissionResolution("always", "implicit", persistent=True, rule_decision="allow")
+
+    def consume_one_shot_approval(self, session_state: Any, call: Any) -> None:
+        """Consume the one-use operator approval after owner execution."""
+        request = self._build_request(call)
+        if request is None:
+            return
+        state = self._permission_state(session_state)
+        one_shot = state.get("one_shot")
+        if not isinstance(one_shot, dict):
+            return
+        patterns = one_shot.get(request.category)
+        if not isinstance(patterns, list):
+            return
+        for index, pattern in enumerate(patterns):
+            if self._wildcard_match(request.pattern, str(pattern)):
+                patterns.pop(index)
+                break
+        if not patterns:
+            one_shot.pop(request.category, None)
+        state["one_shot"] = one_shot
+        session_state.set_provider_metadata(self.STATE_KEY, state)
+
     def _permission_state(self, session_state) -> Dict[str, Any]:
         state = session_state.get_provider_metadata(self.STATE_KEY, {})
         if not isinstance(state, dict):
@@ -749,22 +802,40 @@ class PermissionBroker:
         state = session_state.get_provider_metadata(self.STATE_KEY, {})
         if not isinstance(state, dict):
             return False
-        approved = state.get("approved", {})
-        if not isinstance(approved, dict):
-            return False
-        patterns = approved.get(request.category, [])
-        if not isinstance(patterns, list):
-            return False
         candidate = str(request.pattern or "")
         if not candidate:
             return False
-        for pat in patterns:
-            text = str(pat or "")
-            if not text:
+        for field in ("approved", "one_shot"):
+            approvals = state.get(field, {})
+            if not isinstance(approvals, dict):
                 continue
-            if self._wildcard_match(candidate, text):
-                return True
+            patterns = approvals.get(request.category, [])
+            if not isinstance(patterns, list):
+                continue
+            for pat in patterns:
+                text = str(pat or "")
+                if text and self._wildcard_match(candidate, text):
+                    return True
         return False
+
+    def _record_one_shot_approval(self, session_state, request: PermissionRequest) -> None:
+        state = self._permission_state(session_state)
+        one_shot = state.get("one_shot")
+        if not isinstance(one_shot, dict):
+            one_shot = {}
+        patterns = one_shot.setdefault(request.category, [])
+        if not isinstance(patterns, list):
+            patterns = []
+            one_shot[request.category] = patterns
+        candidate = request.pattern
+        meta = request.metadata if isinstance(request.metadata, dict) else {}
+        stored = meta.get("approval_pattern")
+        if isinstance(stored, str) and stored.strip():
+            candidate = stored.strip()
+        if candidate and candidate not in patterns:
+            patterns.append(candidate)
+        state["one_shot"] = one_shot
+        session_state.set_provider_metadata(self.STATE_KEY, state)
 
     def _record_approval(self, session_state, request: PermissionRequest, mode: str) -> None:
         state = self._permission_state(session_state)

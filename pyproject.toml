@@ -25,6 +25,7 @@ namespaces = true
 "agent_configs.templates" = ["*.yaml", "*.json"]
 "agent_configs.templates.prompts" = ["*.md"]
 "breadboard_engine" = ["engine-build-provenance.v1.json"]
+"breadboard_engine.execution" = ["node/*.mjs"]
 "breadboard_sdk.generated" = ["*.json"]
 "config.product" = ["*.json"]
 "config.e4_targets" = ["index.json", "oh_my_pi/16.2.13/*.json", "oh_my_pi/16.2.13/*.yaml", "oh_my_pi/16.2.13/prompts/*.md", "pi/0.57.1/*.json", "pi/0.57.1/*.yaml", "pi/0.57.1/prompts/*.md"]

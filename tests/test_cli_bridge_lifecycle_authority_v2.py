@@ -4,9 +4,26 @@ import hashlib
 import hmac
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
+from breadboard.modules import (
+    AuthorityDeclaration,
+    ModuleInput,
+    ToolApprovalRequest,
+    ToolUnknown,
+    NetworkAuthority,
+    NetworkOperation,
+    ProjectAuthority,
+    ProjectOperation,
+)
+from breadboard.product.harness.compile import compile_harness_definition
+from breadboard_engine.api.cli_bridge.author_domains import (
+    AuthorDomainError,
+    EffectiveDomainScope,
+    ToolAccessAdapter,
+)
 from breadboard_engine.api.cli_bridge.engine_identity_config import (
     EngineProcessIdentity,
     LaunchBootstrapVerifier,
@@ -20,8 +37,12 @@ from breadboard_engine.api.cli_bridge.models import (
     HardSignalOutcomeRequest,
     HardSignalPrepareRequest,
     OwnerAcquireRequest,
+    SessionCreateRequest,
 )
 from breadboard_engine.api.cli_bridge.registry import LifecycleAuthorityError, SessionRegistry
+from breadboard_engine.api.cli_bridge.service import SessionService
+from breadboard_engine.tool_calling.ir import ToolCallIR
+from breadboard_engine.compilation.tool_registry import registry_from_config
 
 BOOTSTRAP = b"bootstrap-proof-material-000000000000000000"
 OWNER = b"owner-proof-material-0000000000000000000000"
@@ -263,3 +284,624 @@ async def test_hard_signal_requires_live_process_authorization_before_recorded_o
         "hard_signal_decision_pending"
     )
     assert registry.admission_epoch == pending.admission_epoch
+
+
+def _network_scope(
+    requested_destinations: tuple[str, ...],
+    granted_destinations: tuple[str, ...],
+    *,
+    workspace: Path,
+) -> EffectiveDomainScope:
+    operations = frozenset({NetworkOperation.CONNECT})
+    return EffectiveDomainScope.from_grants(
+        AuthorityDeclaration(
+            network=NetworkAuthority(requested_destinations, operations),
+            tool_ids=frozenset({"http_get"}),
+        ),
+        AuthorityDeclaration(
+            network=NetworkAuthority(granted_destinations, operations),
+            tool_ids=frozenset({"http_get"}),
+        ),
+        workspace=workspace,
+    )
+
+
+def _project_scope(
+    requested_roots: tuple[str, ...],
+    granted_roots: tuple[str, ...],
+    *,
+    workspace: Path,
+    operations: frozenset[ProjectOperation] = frozenset(
+        {ProjectOperation.READ, ProjectOperation.WRITE}
+    ),
+    tool_ids: frozenset[str] = frozenset({"read", "write"}),
+) -> EffectiveDomainScope:
+    return EffectiveDomainScope.from_grants(
+        AuthorityDeclaration(
+            project=ProjectAuthority(requested_roots, operations),
+            tool_ids=tool_ids,
+        ),
+        AuthorityDeclaration(
+            project=ProjectAuthority(granted_roots, operations),
+            tool_ids=tool_ids,
+        ),
+        workspace=workspace,
+    )
+
+
+@pytest.mark.parametrize(
+    ("requested", "granted", "effective", "allowed", "denied"),
+    [
+        (
+            ("API.Example.com",),
+            ("*",),
+            ("api.example.com",),
+            "  API.Example.com  ",
+            "other.example.com",
+        ),
+        (
+            ("api.example.com",),
+            ("*.EXAMPLE.com",),
+            ("api.example.com",),
+            "api.example.com",
+            "other.example.com",
+        ),
+        (
+            ("*.example.com",),
+            ("api.example.com",),
+            ("api.example.com",),
+            "api.example.com",
+            "other.example.com",
+        ),
+        (
+            ("*.example.com",),
+            ("*.internal.example.com",),
+            ("*.internal.example.com",),
+            "api.internal.example.com",
+            "api.example.com",
+        ),
+    ],
+)
+def test_network_scope_uses_the_narrower_semantic_destination_intersection(
+    tmp_path,
+    requested: tuple[str, ...],
+    granted: tuple[str, ...],
+    effective: tuple[str, ...],
+    allowed: str,
+    denied: str,
+) -> None:
+    scope = _network_scope(requested, granted, workspace=tmp_path)
+
+    assert scope.network is not None
+    assert scope.network.destinations == effective
+    scope.require_tool_call(
+        ToolCallIR("http_get", {"host": allowed}),
+        tmp_path,
+    )
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("http_get", {"host": denied}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+
+def test_network_scope_denies_unrelated_destination_patterns(tmp_path) -> None:
+    scope = _network_scope(("api.example.com",), ("other.example.com",), workspace=tmp_path)
+
+    assert scope.network is not None
+    assert scope.network.destinations == ()
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("http_get", {"host": "api.example.com"}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+
+def test_network_scope_refuses_malformed_url_authority(tmp_path) -> None:
+    with pytest.raises(AuthorDomainError) as declaration:
+        _network_scope(("http://[::1",), ("*",), workspace=tmp_path)
+    assert declaration.value.code == "authority_denied"
+
+    scope = _network_scope(("*",), ("*",), workspace=tmp_path)
+    with pytest.raises(AuthorDomainError) as request:
+        scope.require_tool_call(
+            ToolCallIR("http_get", {"url": "http://[::1"}),
+            tmp_path,
+        )
+    assert request.value.code == "tool_scope_unenforceable"
+
+
+@pytest.mark.parametrize(
+    ("requested", "granted"),
+    [
+        (("src/data",), (".",)),
+        ((".",), ("src/data",)),
+    ],
+)
+def test_project_scope_retains_narrower_root_containment(
+    tmp_path: Path,
+    requested: tuple[str, ...],
+    granted: tuple[str, ...],
+) -> None:
+    data_dir = tmp_path / "src" / "data"
+    data_dir.mkdir(parents=True)
+    file_path = data_dir / "file.txt"
+    file_path.write_text("ok")
+
+    scope = _project_scope(requested, granted, workspace=tmp_path)
+
+    scope.require_tool_call(
+        ToolCallIR("read", {"path": "src/data/file.txt"}),
+        tmp_path,
+    )
+    scope.require_tool_call(
+        ToolCallIR("write", {"path": "src/data/file.txt"}),
+        tmp_path,
+    )
+
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("read", {"path": "src/sibling.txt"}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("read", {"path": "../outside.txt"}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+
+@pytest.mark.parametrize(
+    ("tool_id", "arguments", "operation"),
+    [
+        ("list_dir", {"path": "src"}, ProjectOperation.READ),
+        ("list", {"path": "src"}, ProjectOperation.READ),
+        (
+            "apply_search_replace",
+            {"file_name": "src/file.txt", "search": "old", "replace": "new"},
+            ProjectOperation.WRITE,
+        ),
+        (
+            "create_file_from_block",
+            {"file_name": "src/new.txt", "content": "new"},
+            ProjectOperation.WRITE,
+        ),
+        (
+            "blob.put_file_slice",
+            {"path": "src/file.txt", "start_line": 1},
+            ProjectOperation.READ,
+        ),
+    ],
+)
+def test_registry_filesystem_tools_enforce_project_authority(
+    tmp_path: Path,
+    tool_id: str,
+    arguments: dict[str, object],
+    operation: ProjectOperation,
+) -> None:
+    (tmp_path / "src").mkdir()
+    scope = _project_scope(
+        ("src",),
+        (".",),
+        workspace=tmp_path,
+        operations=frozenset({operation}),
+        tool_ids=frozenset({tool_id}),
+    )
+    scope.require_tool_call(ToolCallIR(tool_id, arguments), tmp_path)
+
+    outside_arguments = dict(arguments)
+    path_key = "path" if "path" in arguments else "file_name"
+    outside_arguments[path_key] = "../outside.txt"
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(ToolCallIR(tool_id, outside_arguments), tmp_path)
+    assert refusal.value.code == "authority_denied"
+
+    no_project = EffectiveDomainScope.from_grants(
+        AuthorityDeclaration(tool_ids=frozenset({tool_id})),
+        AuthorityDeclaration(tool_ids=frozenset({tool_id})),
+        workspace=tmp_path,
+    )
+    with pytest.raises(AuthorDomainError) as refusal:
+        no_project.require_tool_call(ToolCallIR(tool_id, arguments), tmp_path)
+    assert refusal.value.code == "authority_denied"
+
+
+def test_tool_grant_intersection_canonicalizes_registered_aliases(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "src").mkdir()
+    project = ProjectAuthority(
+        ("src",),
+        frozenset({ProjectOperation.READ}),
+    )
+    scope = EffectiveDomainScope.from_grants(
+        AuthorityDeclaration(
+            project=project,
+            tool_ids=frozenset({"read"}),
+        ),
+        AuthorityDeclaration(
+            project=project,
+            tool_ids=frozenset({"read_file"}),
+        ),
+        workspace=tmp_path,
+    )
+    assert scope.tool_ids == frozenset({"read_file"})
+    scope.require_tool_call(
+        ToolCallIR("read", {"path": "src/file.txt"}),
+        tmp_path,
+    )
+
+
+def test_tool_execution_must_match_the_approved_request(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    scope = _project_scope(
+        ("src",),
+        (".",),
+        workspace=tmp_path,
+        operations=frozenset({ProjectOperation.WRITE}),
+        tool_ids=frozenset({"write"}),
+    )
+
+    class AllowAuthority:
+        def ensure_allowed(self, _session_state, _calls) -> None:
+            return None
+
+    adapter = ToolAccessAdapter(
+        executor=object(),
+        permission_authority=AllowAuthority(),
+        session_state=object(),
+        scope=scope,
+        workspace=tmp_path,
+    )
+    request = ToolApprovalRequest(
+        request_id="tool-request-1",
+        approval_request_id="approval-request-1",
+        tool_id="write",
+        operation="write",
+        arguments_schema_id="bb.tool.write.v1",
+        arguments_json='{"path":"src/approved.txt"}',
+        arguments={"path": "src/approved.txt"},
+    )
+    approval = adapter.request_approval(request)
+    replacement = ToolApprovalRequest(
+        request_id=request.request_id,
+        approval_request_id=request.approval_request_id,
+        tool_id=request.tool_id,
+        operation=request.operation,
+        arguments_schema_id=request.arguments_schema_id,
+        arguments_json='{"path":"src/replacement.txt"}',
+        arguments={"path": "src/replacement.txt"},
+    )
+
+    outcome = adapter.execute(replacement, approval)
+    assert isinstance(outcome, ToolUnknown)
+    assert outcome.request_id == request.request_id
+    assert "not owned" in outcome.reason
+
+
+def test_configured_tool_alias_uses_session_registry_for_scope(
+    tmp_path: Path,
+) -> None:
+    registry = registry_from_config(
+        {"tools": {"aliases": {"safe_tool": "run_shell"}}}
+    )
+    scope = EffectiveDomainScope.from_grants(
+        AuthorityDeclaration(tool_ids=frozenset({"safe_tool"})),
+        AuthorityDeclaration(tool_ids=frozenset({"safe_tool"})),
+        workspace=tmp_path,
+        tool_registry=registry,
+    )
+    assert scope.tool_ids == frozenset({"run_shell"})
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("safe_tool", {"command": "cat secret.txt"}),
+            tmp_path,
+        )
+    assert refusal.value.code == "tool_scope_unenforceable"
+
+
+def test_filesystem_tool_defaults_are_checked_as_workspace_paths(
+    tmp_path: Path,
+) -> None:
+    tool_ids = frozenset({"list"})
+    workspace_scope = _project_scope(
+        (".",),
+        (".",),
+        workspace=tmp_path,
+        operations=frozenset({ProjectOperation.READ}),
+        tool_ids=tool_ids,
+    )
+    workspace_scope.require_tool_call(ToolCallIR("list", {}), tmp_path)
+
+    (tmp_path / "src").mkdir()
+    narrow_scope = _project_scope(
+        ("src",),
+        (".",),
+        workspace=tmp_path,
+        operations=frozenset({ProjectOperation.READ}),
+        tool_ids=tool_ids,
+    )
+    with pytest.raises(AuthorDomainError) as refusal:
+        narrow_scope.require_tool_call(ToolCallIR("list", {}), tmp_path)
+    assert refusal.value.code == "authority_denied"
+
+
+def test_unified_patch_validates_every_source_and_destination_path(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / ".git").mkdir()
+    scope = _project_scope(
+        ("src",),
+        (".",),
+        workspace=tmp_path,
+        operations=frozenset({ProjectOperation.WRITE}),
+        tool_ids=frozenset({"apply_unified_patch"}),
+    )
+    allowed = """diff --git a/src/a.txt b/src/a.txt
+--- a/src/a.txt
++++ b/src/a.txt
+@@ -1 +1 @@
+-old
++new
+diff --git a/src/b.txt b/src/b.txt
+--- a/src/b.txt
++++ b/src/b.txt
+@@ -1 +1 @@
+-old
++new
+diff --git "a/src/file with space.txt" "b/src/file with space.txt"
+--- "a/src/file with space.txt"
++++ "b/src/file with space.txt"
+@@ -1 +1 @@
+-old
++new
+"""
+    scope.require_tool_call(
+        ToolCallIR("apply_unified_patch", {"patch": allowed}),
+        tmp_path,
+    )
+
+    escaped = allowed + """diff --git a/outside.txt b/src/moved.txt
+similarity index 100%
+rename from outside.txt
+rename to src/moved.txt
+"""
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("apply_unified_patch", {"patch": escaped}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+    standard_escaped = """--- a/src/allowed.txt
++++ b/src/allowed.txt
+@@ -1 +1 @@
+-old
++new
+--- /dev/null
++++ b/outside.txt
+@@ -0,0 +1 @@
++escaped
+"""
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("apply_unified_patch", {"patch": standard_escaped}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+    format_ambiguous = """diff --git a/outside.txt b/outside.txt
+--- a/outside.txt
++++ b/outside.txt
+@@ -1 +1 @@
+-old
++new
+*** Begin Patch
+*** Update File: src/a.txt
+@@
+-old
++new
+*** End Patch
+"""
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("apply_unified_patch", {"patch": format_ambiguous}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+    unprefixed = """--- src/target.txt
++++ src/target.txt
+@@ -1 +1 @@
+-old
++new
+"""
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("apply_unified_patch", {"patch": unprefixed}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+    opencode = """*** Begin Patch
+*** Update File: src/a.txt
+*** Move to: ../outside.txt
+@@
+-old
++new
+*** End Patch
+"""
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("apply_unified_patch", {"patch": opencode}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("apply_unified_patch", {"patch": "not a patch"}),
+            tmp_path,
+        )
+    assert refusal.value.code == "tool_scope_unenforceable"
+    unwrapped_opencode = """*** Update File: src/a.txt
+*** Move to: ../outside.txt
+@@
+-old
++new
+"""
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("apply_unified_patch", {"patch": unwrapped_opencode}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+    symlink_patch = """diff --git a/src/link b/src/link
+new file mode 120000
+--- /dev/null
++++ b/src/link
+@@ -0,0 +1 @@
++../../outside
+"""
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("apply_unified_patch", {"patch": symlink_patch}),
+            tmp_path,
+        )
+    assert refusal.value.code == "tool_scope_unenforceable"
+
+
+    directory_a = tmp_path / "a"
+    directory_a.mkdir()
+    a_scope = _project_scope(
+        ("a",),
+        (".",),
+        workspace=tmp_path,
+        operations=frozenset({ProjectOperation.WRITE}),
+        tool_ids=frozenset({"apply_unified_patch"}),
+    )
+    rename_in_a = """diff --git a/a/old.txt b/a/new.txt
+similarity index 100%
+rename from a/old.txt
+rename to a/new.txt
+"""
+    a_scope.require_tool_call(
+        ToolCallIR("apply_unified_patch", {"patch": rename_in_a}),
+        tmp_path,
+    )
+
+
+def test_project_scope_resolves_symlinks_and_equivalents(tmp_path: Path) -> None:
+    real_data = tmp_path / "src" / "data"
+    real_data.mkdir(parents=True)
+    (real_data / "file.txt").write_text("payload")
+    symlink_dir = tmp_path / "link_data"
+    symlink_dir.symlink_to(real_data, target_is_directory=True)
+
+    symlink_scope = _project_scope(("link_data",), (".",), workspace=tmp_path)
+
+    symlink_scope.require_tool_call(
+        ToolCallIR("read", {"path": "link_data/file.txt"}),
+        tmp_path,
+    )
+    symlink_scope.require_tool_call(
+        ToolCallIR("write", {"path": "src/data/file.txt"}),
+        tmp_path,
+    )
+
+    with pytest.raises(AuthorDomainError) as refusal:
+        symlink_scope.require_tool_call(
+            ToolCallIR("read", {"path": "src/other.txt"}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+    absolute_root = str(real_data.resolve())
+    absolute_scope = _project_scope((absolute_root,), (".",), workspace=tmp_path)
+    absolute_scope.require_tool_call(
+        ToolCallIR("read", {"path": "src/data/file.txt"}),
+        tmp_path,
+    )
+
+    unrelated_scope = _project_scope(("src",), ("docs",), workspace=tmp_path)
+    with pytest.raises(AuthorDomainError) as refusal:
+        unrelated_scope.require_tool_call(
+            ToolCallIR("read", {"path": "src/file.txt"}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+    outside_dir = tmp_path.parent / f"outside-{tmp_path.name}"
+    outside_dir.mkdir(exist_ok=True)
+    (outside_dir / "file.txt").write_text("outside grant")
+    symlink_dir.unlink()
+    symlink_dir.symlink_to(outside_dir, target_is_directory=True)
+    with pytest.raises(AuthorDomainError) as refusal:
+        symlink_scope.require_tool_call(
+            ToolCallIR("read", {"path": "link_data/file.txt"}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+    real_data.rename(real_data.with_name("admitted_data"))
+    real_data.symlink_to(outside_dir, target_is_directory=True)
+    with pytest.raises(AuthorDomainError) as refusal:
+        absolute_scope.require_tool_call(
+            ToolCallIR("read", {"path": "src/data/file.txt"}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+    escape_symlink = tmp_path / "escape_link"
+    escape_symlink.symlink_to(outside_dir, target_is_directory=True)
+
+    escape_scope = _project_scope(("escape_link",), (".",), workspace=tmp_path)
+    with pytest.raises(AuthorDomainError) as refusal:
+        escape_scope.require_tool_call(
+            ToolCallIR("read", {"path": "escape_link/file.txt"}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+
+@pytest.mark.asyncio
+async def test_pre_record_failure_releases_generation_admission_for_session_id_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.delenv("BREADBOARD_ENGINE_LAUNCH_ID", raising=False)
+    service = SessionService(state_root=tmp_path / "session-state")
+    lock = compile_harness_definition(
+        {"name": "data-only"},
+        source_ref="config.yaml",
+    ).lock
+    session_id = "pre-record-failure"
+
+    for body in (b'{"attempt":1}', b'{"attempt":2}'):
+        with pytest.raises(ValueError, match="data Locks require text input"):
+            await service.create_session(
+                SessionCreateRequest(
+                    task="",
+                    module_input=ModuleInput("bb.test.input.v1", body),
+                ),
+                session_id=session_id,
+                generation_workspace=tmp_path,
+                effective_lock=lock,
+                effective_lock_source=tmp_path / "config.yaml",
+            )
+
+    assert await service.registry.get(session_id) is None
+    projection = service.generation_lifecycle(tmp_path).inspect_generation(
+        lock.generation_id
+    )
+    assert len(projection["admissions"]) == 2
+    assert {
+        (admission["session_id"], admission["status"])
+        for admission in projection["admissions"]
+    } == {(session_id, "released")}
+    assert projection["retirement"]["pinned_session_count"] == 0

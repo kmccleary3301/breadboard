@@ -75,3 +75,49 @@ def test_public_labels_preserve_canonical_targets_without_model_visibility() -> 
     assert label["payload"]["trajectory_id"] == public_session_event(assistant)["payload"]["trajectory_id"] == "trajectory-a"
     assert label["visibility"] == {"model_visible": False, "provider_visible": False, "host_visible": True, "redaction_state": "none"}
     assert public_session_event(compaction) is None
+
+
+def test_checkpoint_adoption_projection_omits_private_resume_state() -> None:
+    projected = public_session_event(
+        {
+            "session_id": "session-1",
+            "sequence": 6,
+            "kind": "session.adoption_committed",
+            "occurred_at": "2026-09-09T00:00:00Z",
+            "payload": {
+                "adoption_id": "adoption-1",
+                "checkpoint_id": "checkpoint-1",
+                "source_generation_id": "generation-a",
+                "target_generation_id": "generation-b",
+                "target_lock": {"provider_credential_ref": "secret"},
+                "admission": {"lock_record": {"provider_credential_ref": "secret"}},
+                "migration": [
+                    {
+                        "binding": "root",
+                        "disposition": "migrate",
+                        "source_schema_id": "state.v1",
+                        "target_schema_id": "state.v2",
+                        "reason": "schema upgrade",
+                        "resume": {"body": "c2VjcmV0"},
+                    }
+                ],
+            },
+        }
+    )
+
+    assert projected is not None
+    assert projected["payload"] == {
+        "adoption_id": "adoption-1",
+        "checkpoint_id": "checkpoint-1",
+        "source_generation_id": "generation-a",
+        "target_generation_id": "generation-b",
+        "migration": [
+            {
+                "binding": "root",
+                "disposition": "migrate",
+                "source_schema_id": "state.v1",
+                "target_schema_id": "state.v2",
+                "reason": "schema upgrade",
+            }
+        ],
+    }

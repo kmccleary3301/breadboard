@@ -11,6 +11,7 @@ from typing import Any, Dict, Union
 
 from jsonschema import Draft202012Validator
 from breadboard.product.harness.compile import HarnessCompilation, compile_harness_definition
+from breadboard.product.harness.lock import _copy
 
 from .effective_config_graph import sha256_json
 
@@ -41,7 +42,7 @@ class ConfigView(Mapping[str, Any]):
         config_path: Path,
     ) -> None:
         self._values = copy.deepcopy(dict(values))
-        self.graph = copy.deepcopy(dict(graph))
+        self.graph = _copy(graph, freeze=False)
         self.config_path = config_path
         self._sources_by_path = {
             str(item.get("path")): str(item.get("source_layer_id"))
@@ -136,8 +137,8 @@ def _surface_schema_version(doc: Mapping[str, Any]) -> str:
         return "bb.agent_config_surface.v1"
     if schema_version == "bb.agent_config_surface.v2":
         return "bb.agent_config_surface.v2"
-    if schema_version == "bb.harness_definition.v1":
-        return "bb.harness_definition.v1"
+    if schema_version in ("bb.harness_definition.v1", "bb.harness_definition.v2"):
+        return str(schema_version)
     raise ValueError(f"unsupported agent config surface schema_version: {schema_version}")
 
 def _has_agent_config_version_2(doc: Mapping[str, Any]) -> bool:
@@ -376,24 +377,25 @@ def _validate_schema_less_v2_compatibility(doc: Dict[str, Any]) -> None:
 
 
 
-def _config_view_from_compilation(compilation: HarnessCompilation, config_path: Path) -> ConfigView:
+def _config_view_from_compilation(
+    compilation: HarnessCompilation, config_path: Path
+) -> ConfigView:
     effective_doc = compilation.resolved_author_dict()
     surface_schema_version = _surface_schema_version(effective_doc)
     if surface_schema_version == "bb.harness_definition.v1":
         runtime_doc = _normalize_for_runtime(effective_doc)
+    elif surface_schema_version == "bb.harness_definition.v2":
+        runtime_doc = _normalize_for_runtime(effective_doc)
     elif surface_schema_version == "bb.agent_config_surface.v2":
         _validate_v2(effective_doc)
         runtime_doc = _normalize_for_runtime(effective_doc)
-    elif _has_agent_config_version_2(effective_doc):
-        if _env_truthy("AGENT_SCHEMA_V2_ENABLED"):
-            _validate_schema_less_v2_compatibility(effective_doc)
-            runtime_doc = _normalize_for_runtime(effective_doc)
-        else:
-            _validate_agent_config_surface(effective_doc, "bb.agent_config_surface.v1")
-            runtime_doc = effective_doc
     else:
         runtime_doc = effective_doc
-    return ConfigView(runtime_doc, graph=compilation.lock.as_dict(), config_path=config_path)
+    return ConfigView(
+        runtime_doc,
+        graph=dict(compilation.lock.configuration_graph),
+        config_path=config_path,
+    )
 
 def build_config_view(config_path_str: str) -> ConfigView:
     """Compile one product-owned result and adapt it to the legacy read-only view."""

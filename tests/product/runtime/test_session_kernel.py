@@ -4,8 +4,9 @@ import shutil
 from pathlib import Path; from typing import Any
 from jsonschema import Draft202012Validator
 from breadboard.product.harness.lock import EffectiveHarnessLock
+from breadboard.modules import CheckpointEnvelope, CheckpointProposal
 from breadboard.product.runtime.artifacts import AnchoredStorage, ArtifactRef, ArtifactStore
-from breadboard.product.runtime.events import AnnotationRecord, CompactionSnapshot, GenerationAdoptionError, JsonlEventSink, KernelEvent, ReplayError, Session, SessionView, rebuild, replay_differential
+from breadboard.product.runtime.events import AnnotationRecord, CompactionSnapshot, GenerationAdoptionError, JsonlEventSink, KernelEvent, ReplayError, Session, SessionCheckpointFrontier, SessionGenerationCheckpoint, SessionView, rebuild, replay_differential
 from breadboard.product.runtime.session_store import validate_session_id
 from breadboard.product.runtime import session_store
 HASH, OTHER_HASH, PORTS, ARTIFACTS = "sha256:" + "a" * 64, "sha256:" + "b" * 64, "breadboard.product.runtime.events.os.", "breadboard.product.runtime.artifacts.os."
@@ -19,9 +20,21 @@ _PAYLOADS = {
     "session.completed": {"outcome": "completed", "summary": ""}, "session.failed": {"outcome": "failed", "error": "error", "detail": "detail"}, "session.canceled": {"outcome": "canceled", "reason": ""}}
 def _event(sequence: int = 1, kind: str = "session.started", payload: dict[str, Any] | None = None, session_id: str = "s-1") -> KernelEvent: return KernelEvent.create(session_id, sequence, kind, "2026-07-16T00:00:00Z", _PAYLOADS[kind] if payload is None else payload)
 def test_nested_event_payload_is_immutable_and_replayable() -> None:
-    payload = {**_PAYLOADS["session.started"], "nested": [{"value": 1}]}; event = _event(payload=payload); payload["nested"][0]["value"] = 2; serialized = event.as_dict(); assert serialized["payload"]["nested"] == [{"value": 1}]
-    with pytest.raises(TypeError): event.payload["nested"][0]["value"] = 3
-    assert rebuild([KernelEvent(**serialized)]).as_dict() == rebuild([event]).as_dict()
+    attachment = {"digest": HASH, "size_bytes": 1, "media_type": "text/plain"}
+    payload = {**_PAYLOADS["input.accepted"], "attachments": [attachment]}
+    event = _event(sequence=2, kind="input.accepted", payload=payload)
+    attachment["size_bytes"] = 2
+    serialized = event.as_dict()
+    assert serialized["payload"]["attachments"] == [
+        {"digest": HASH, "size_bytes": 1, "media_type": "text/plain"}
+    ]
+    with pytest.raises(TypeError):
+        event.payload["attachments"][0]["size_bytes"] = 3
+    stream = [_event(), event]
+    assert (
+        rebuild([KernelEvent(**row.as_dict()) for row in stream]).as_dict()
+        == rebuild(stream).as_dict()
+    )
 @pytest.mark.parametrize("patch", [{"schema_version": "bb.session_event.v2"}, {"session_id": 1}, {"sequence": True}, {"kind": 1}, {"kind": "test"}, {"occurred_at": []}, {"payload": {1: "coerced"}}, {"payload": {"effective_lock_hash": "sha256:" + "A" * 64, "task_hash": HASH}}, {"payload": {"effective_lock_hash": HASH + "\n", "task_hash": HASH}}, {"payload": {"effective_lock_hash": HASH, "task_hash": HASH + "\n"}}])
 def test_malformed_persisted_events_cannot_rebuild(patch: dict[str, Any]) -> None: pytest.raises((TypeError, ValueError), lambda: rebuild([KernelEvent(**{**_event().as_dict(), **patch})]))  # type: ignore[arg-type]
 @pytest.mark.parametrize(("kind", "payload"), [("input.accepted", {"content_hash": HASH, "attachments": [{"digest": HASH, "size_bytes": True, "media_type": "text/plain"}]}), ("assistant_message", {"metadata": {"has_content": 1}}), ("assistant_message", {"metadata": {"has_content": True}, "content": "leak"}), ("tool_call", {"tool": ""}), ("tool_result", {"tool": "list_dir", "error": 0}), ("tool_result", {"error": False}), ("approval.requested", {"request_id": "", "operation": "write"}), ("approval.resolved", {"request_id": "r", "decision": "maybe"}), ("session.reconfigured", {"effective_lock_hash": HASH, "reason": 1}), ("session.paused", {"reason": None}), ("session.resumed", {"extra": True}), ("session.completed", {"outcome": "completed"}), ("session.failed", {"outcome": "completed", "error": "x", "detail": "y"}), ("session.canceled", {"outcome": "canceled", "reason": 1})])
@@ -417,6 +430,71 @@ def test_generation_identity_is_pinned_and_reconstructed_from_durable_order() ->
     assert restored.trajectory_segments == session.trajectory_segments
     assert restored.read_model.as_dict()["generation_id"] == OTHER_HASH
     assert restored.read_model.as_dict()["trajectory_segment_id"] == session.adoption_history[0]["trajectory_segment_id"]
+def test_checkpoint_stamp_and_adoption_commit_replay_are_authoritative() -> None:
+    session = Session.start(_lock(), "task", session_id="checkpoint-session")
+    frontier = session.checkpoint_frontier()
+    proposal = CheckpointProposal(
+        CheckpointEnvelope(
+            HASH,
+            "module-a",
+            "instance-a",
+            "work-a",
+            "attempt-a",
+            "bb.example.checkpoint.v1",
+            b"state-a",
+        ),
+        0,
+    )
+    checkpoint = session.stamp_checkpoint(
+        proposal,
+        checkpoint_id="checkpoint-a",
+        source_frontier=frontier,
+    )
+    assert SessionGenerationCheckpoint.from_dict(checkpoint.as_dict()) == checkpoint
+    assert session.pinned_generation_id == HASH
+    assert not session.has_committed_adoption("adoption-a")
+
+    session.commit_checkpoint_adoption(
+        _lock(OTHER_HASH),
+        {
+            "adoption_id": "adoption-a",
+            "checkpoint_id": "checkpoint-a",
+            "request_id": "request-a",
+            "reason": "provider swap",
+        },
+    )
+    assert session.events[-1].kind == "session.adoption_committed"
+    assert session.pinned_generation_id == OTHER_HASH
+    restored = Session.restore(session.events, checkpoints=session.checkpoints)
+    assert restored.pinned_generation_id == OTHER_HASH
+    assert restored.has_committed_adoption("adoption-a")
+    assert restored.adoption_history[-1]["checkpoint_id"] == "checkpoint-a"
+
+
+def test_checkpoint_adoption_refuses_source_advance_without_changing_a() -> None:
+    session = Session.start(_lock(), "task", session_id="checkpoint-stale")
+    checkpoint = session.stamp_checkpoint(
+        CheckpointEnvelope(
+            HASH,
+            "module-a",
+            "instance-a",
+            "work-a",
+            "attempt-a",
+            "bb.example.checkpoint.v1",
+            b"state-a",
+        ),
+        checkpoint_id="checkpoint-stale",
+    )
+    session.input("advanced source")
+    before = session.events
+    with pytest.raises(GenerationAdoptionError) as error:
+        session.commit_checkpoint_adoption(
+            _lock(OTHER_HASH),
+            {"adoption_id": "adoption-stale", "checkpoint_id": checkpoint.checkpoint_id},
+        )
+    assert error.value.code == "source_advanced"
+    assert session.pinned_generation_id == HASH
+    assert session.events == before
 
 @pytest.mark.parametrize("terminal_lineage", [None, {"parent_session_id": "wrong-parent", "root_session_id": "root", "parent_work_item_id": "parent-work", "child_work_item_id": "child-work"}])
 def test_replay_rejects_changed_or_missing_child_lineage(

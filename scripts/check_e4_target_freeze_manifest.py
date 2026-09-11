@@ -4,10 +4,17 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from breadboard.product.evidence.e4.path_refs import ReferenceResolutionError, resolve_declared_reference
 
 
 REQUIRED_TOP_KEYS = {"schema_version", "manifest_updated_utc", "e4_configs"}
@@ -66,9 +73,13 @@ def _validate_manifest(
         if not isinstance(config_path, str) or not config_path:
             issues.append(f"{stem}: config_path missing or invalid")
         else:
-            resolved = repo_root / config_path
-            if not resolved.exists():
-                issues.append(f"{stem}: config_path does not exist: {config_path}")
+            try:
+                resolve_declared_reference(
+                    config_path, checkout_root=repo_root, namespace="repo",
+                    label=f"{stem}: config_path",
+                )
+            except ReferenceResolutionError as exc:
+                issues.append(str(exc))
 
         harness = entry.get("harness")
         if not isinstance(harness, dict):

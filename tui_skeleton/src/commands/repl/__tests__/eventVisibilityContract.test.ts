@@ -3,7 +3,7 @@ import { ReplSessionController } from "../controller.js"
 
 const makeController = () =>
   new ReplSessionController({
-    configPath: "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+    configPath: "agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml",
     workspace: ".",
     model: null,
     remotePreference: null,

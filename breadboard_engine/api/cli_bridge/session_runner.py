@@ -16,6 +16,7 @@ from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Sequence, 
 from breadboard_engine.compilation.v2_loader import load_agent_config
 from breadboard.product.runtime import session_store
 from breadboard.product.runtime.events import ReplayError
+from breadboard.product.runtime.generations import GenerationLifecycle
 from breadboard_engine.model_roles import (
     ModelRoleProblem,
     ModelRoleResolutionError,
@@ -40,6 +41,8 @@ from breadboard_engine.permissions import (
 from .events import EventType, SessionEvent
 from .models import SessionCreateRequest, SessionStatus
 from .registry import (
+    ModuleExecutionRecord,
+    SessionRecordDeletedError,
     SessionRecord,
     SessionRegistry,
     TurnRecord,
@@ -48,15 +51,28 @@ from .registry import (
 )
 from .runtime_event_projector import (
     RuntimeEventProjector,
-    TranslatedRuntimeEvent,
     _safe_runtime_error_code,
 )
 from .session_control import SessionControlController
 from .task_execution import TaskExecutionOwner
 from .session_lifecycle import SessionLifecycleOwner
+from breadboard.product.runtime import (
+    SessionGenerationCheckpoint,
+)
 from breadboard.product.runtime.events import GenerationAdoptionError
+from breadboard.modules import (
+    AdmissionGrant,
+    CheckpointProposal,
+    CheckpointRefusal,
+    InputEnvelope,
+    ModuleInput,
+)
+from breadboard.product.harness.lock import EffectiveHarnessLock
+from breadboard.product.runtime.generations import GenerationAdmission
 
-from .session_artifacts import MAX_ATTACHMENT_BYTES, SessionArtifactStore
+from .session_artifacts import SessionArtifactStore
+from .runtime_emission import CapturedRuntimeConfig
+from .author_runtime import ModuleDisposal, ModuleExecutionError, ModuleRuntime
 
 _ADMISSION_BLOCKING_PRODUCT_EVENTS = frozenset(
     {
@@ -85,9 +101,26 @@ class SessionRunner:
         request: SessionCreateRequest,
         agent_factory: AgentFactory | None = None,
         permission_authority: PermissionAuthority | None = None,
+        captured_runtime: CapturedRuntimeConfig | None = None,
+        storage_root: Path | None = None,
+        repository: Any | None = None,
+        resume_checkpoints: Mapping[str, CheckpointProposal] | None = None,
     ) -> None:
         self.session = session
         self.registry = registry
+        self._captured_runtime = captured_runtime
+        self._module_storage_root = (
+            storage_root.expanduser().resolve() if storage_root is not None else None
+        )
+        self._durable_child_repository = repository
+        self._resume_checkpoints = dict(
+            session.module_resume_checkpoints
+            if resume_checkpoints is None
+            else resume_checkpoints
+        )
+        self._module_runtime: ModuleRuntime | None = None
+        self._module_disposal: ModuleDisposal | None = None
+        self._module_close_lock = asyncio.Lock()
         self.request = request
         self.agent_factory = agent_factory or self._default_factory
         self._task: Optional[asyncio.Task[None]] = None
@@ -110,7 +143,6 @@ class SessionRunner:
         self._checkpoint_manager: Optional[CheckpointManager] = None
         self._closed = False
         self._admission_lock_owner: Optional[asyncio.Task[Any]] = None
-        self._attachment_store: Dict[str, Dict[str, Any]] = {}
         self._active_attachment_capabilities: Dict[str, Dict[str, Any]] = {}
         self._active_input_media: List[Dict[str, str]] = []
         self._permission_queue: Any = None
@@ -183,7 +215,7 @@ class SessionRunner:
                 session_directory_identity,
             )
 
-    def _commit_terminal_product_session_locked(self) -> None:
+    def _persist_product_session_locked(self) -> None:
         binding = self._durable_product_session
         product_session = getattr(self.session, "product_session", None)
         if binding is None or product_session is None:
@@ -199,6 +231,486 @@ class SessionRunner:
             workspace,
             expected_session_directory_identity=expected_session_directory_identity,
         )
+
+    def _persist_module_session(self) -> None:
+        loop = self._loop
+        if loop is None or not loop.is_running():
+            return
+        asyncio.run_coroutine_threadsafe(
+            self.registry.persist(self.session),
+            loop,
+        ).result(timeout=30)
+
+    def _emit_module_output(
+        self,
+        output: Any,
+        key: Any,
+        module_id: str,
+        output_sequence: int,
+        final: bool,
+    ) -> None:
+        with self._product_session_lock:
+            product_session = getattr(self.session, "product_session", None)
+            if product_session is None:
+                return
+            product_session.module_output(
+                output,
+                key=key,
+                module_id=module_id,
+                output_sequence=output_sequence,
+                final=final,
+            )
+
+    def _ensure_module_runtime(self) -> ModuleRuntime:
+        with self._product_session_lock:
+            runtime = self._module_runtime
+        if runtime is not None:
+            if runtime.stopped.is_set():
+                raise ModuleExecutionError(
+                    "cleanup_unknown",
+                    "source runtime cleanup must be reconciled before new input",
+                )
+            return runtime
+        captured = self._captured_runtime
+        execution = self.session.module_execution
+        if captured is None or execution is None:
+            raise RuntimeError("module session has no retained execution binding")
+        if self._module_storage_root is None or self._durable_child_repository is None:
+            raise RuntimeError(
+                "module session lacks its storage root or work item repository"
+            )
+        workspace = self._workspace_path
+        if workspace is None:
+            workspace = self._module_storage_root / "workspace"
+            workspace.mkdir(mode=0o700, parents=True, exist_ok=True)
+        candidate = ModuleRuntime(
+            record=self.session,
+            registry=self.registry,
+            captured=captured,
+            workspace=workspace,
+            storage_root=self._module_storage_root,
+            repository=self._durable_child_repository,
+            loop=self._loop,
+            session_lock=self._product_session_lock,
+            persist_session=self._persist_module_session,
+            emit_output=self._emit_module_output,
+            resume_checkpoints=self._resume_checkpoints,
+        )
+        with self._product_session_lock:
+            if self._module_runtime is None:
+                self._module_runtime = candidate
+            runtime = self._module_runtime or candidate
+        return runtime
+
+    def execute_module_turn(
+        self,
+        module_input: ModuleInput,
+        module_input_sequence: int | None,
+        input_id: str | None,
+        turn_id: str | None,
+    ) -> Dict[str, Any]:
+        runtime = self._ensure_module_runtime()
+        envelope = InputEnvelope(
+            module_input.schema_id,
+            int(module_input_sequence or 0),
+            module_input.body,
+            module_input.final,
+        )
+        input_identity = input_id or f"input-{uuid.uuid4()}"
+        turn = turn_id or f"turn-{uuid.uuid4()}"
+        try:
+            output = runtime.execute(envelope, input_id=input_identity, turn_id=turn)
+        except ModuleExecutionError as error:
+            logger.error(
+                "Module execution failed in session %s with code=%s",
+                self.session.session_id,
+                error.code,
+            )
+            return {
+                "completion_summary": {"completed": False, "reason": error.code},
+                "reward_metrics": {},
+                "module_error_detail": error.detail,
+            }
+        except Exception:
+            logger.exception(
+                "Module execution crashed in session %s", self.session.session_id
+            )
+            return {
+                "completion_summary": {
+                    "completed": False,
+                    "reason": "worker_crash",
+                },
+                "reward_metrics": {},
+            }
+        if module_input.final:
+            reason = "final_output"
+        elif output is not None:
+            reason = "module_output"
+        else:
+            reason = "module_continuation"
+        return {
+            "completion_summary": {"completed": True, "reason": reason},
+            "reward_metrics": {},
+        }
+
+    def stamp_generation_checkpoint(
+        self,
+        proposal: CheckpointProposal,
+        *,
+        checkpoint_id: str,
+    ) -> SessionGenerationCheckpoint:
+        with self._product_session_lock:
+            product_session = self.session.product_session
+            if product_session is None:
+                raise GenerationAdoptionError(
+                    "checkpoint_unavailable",
+                    "session product state is unavailable",
+                )
+            binding = self._durable_product_session
+            if binding is not None:
+                workspace, expected_session_directory_identity = binding
+
+                def persist_checkpoint() -> SessionGenerationCheckpoint:
+                    persisted, _ = session_store.mutate_session(
+                        workspace,
+                        product_session.read_model.session_id,
+                        lambda session: session.stamp_checkpoint(
+                            proposal,
+                            checkpoint_id=checkpoint_id,
+                        ),
+                        expected_session_directory_identity=expected_session_directory_identity,
+                    )
+                    return persisted
+
+                try:
+                    persisted = persist_checkpoint()
+                except FileNotFoundError:
+                    self._persist_product_session_locked()
+                    persisted = persist_checkpoint()
+                checkpoint = product_session.stamp_checkpoint(
+                    proposal,
+                    checkpoint_id=checkpoint_id,
+                )
+                if persisted != checkpoint:
+                    raise GenerationAdoptionError(
+                        "checkpoint_conflict",
+                        "durable and active checkpoint identities differ",
+                    )
+                return checkpoint
+            return product_session.stamp_checkpoint(
+                proposal,
+                checkpoint_id=checkpoint_id,
+            )
+
+    def commit_generation_checkpoint_adoption(
+        self,
+        lock: EffectiveHarnessLock,
+        adoption_record: Mapping[str, Any],
+    ) -> None:
+        with self._product_session_lock:
+            product_session = self.session.product_session
+            if product_session is None:
+                raise GenerationAdoptionError(
+                    "checkpoint_unavailable",
+                    "session product state is unavailable",
+                )
+            product_session.commit_checkpoint_adoption(lock, adoption_record)
+
+    async def capture_module_checkpoints(
+        self,
+        *,
+        request_id: str,
+        reason: str,
+    ) -> dict[str, CheckpointProposal | CheckpointRefusal]:
+        if self.session.module_execution is None:
+            return {}
+        runtime = self._ensure_module_runtime()
+        return await asyncio.to_thread(
+            runtime.capture_checkpoints,
+            request_id=request_id,
+            reason=reason,
+        )
+
+    async def quiesce_module_runtime_for_shutdown(self) -> ModuleDisposal:
+        with self._product_session_lock:
+            runtime = self._module_runtime
+            prior = self._module_disposal
+        if runtime is None:
+            return prior or ModuleDisposal("confirmed_absent", (), ())
+        disposal = await asyncio.to_thread(runtime.close, "server_shutdown")
+        with self._product_session_lock:
+            if self._module_runtime is runtime:
+                self._module_runtime = None
+                self._module_disposal = disposal
+        return disposal
+
+    def module_checkpoint_dependencies(self) -> dict[str, tuple[str, ...]]:
+        captured = self._captured_runtime
+        if captured is None:
+            raise ModuleExecutionError(
+                "checkpoint_unavailable",
+                "module Session has no captured generation",
+            )
+        return {
+            binding: tuple(sorted(package.manifest.dependency_contracts.values()))
+            for binding, package in captured.materialization.packages.items()
+        }
+
+    def module_checkpoint_modules(self) -> dict[str, str]:
+        captured = self._captured_runtime
+        if captured is None:
+            raise ModuleExecutionError(
+                "checkpoint_unavailable",
+                "module Session has no captured generation",
+            )
+        return {
+            binding: package.manifest.logical_package
+            for binding, package in captured.materialization.packages.items()
+        }
+
+    async def prepare_adopted_module_checkpoints(
+        self,
+        *,
+        captured_runtime: CapturedRuntimeConfig,
+        module_execution: ModuleExecutionRecord,
+        module_grant: AdmissionGrant,
+        source_checkpoints: Mapping[str, CheckpointProposal],
+        source_dependencies: Mapping[str, tuple[str, ...]],
+    ) -> tuple[dict[str, CheckpointProposal], tuple[dict[str, str], ...]]:
+        if self._module_storage_root is None or self._durable_child_repository is None:
+            raise ModuleExecutionError(
+                "checkpoint_unavailable",
+                "module Session has no durable runtime owner",
+            )
+        candidate_record = SessionRecord(
+            session_id=self.session.session_id,
+            status=self.session.status,
+            module_execution=module_execution,
+            module_grant=module_grant,
+            product_session=self.session.product_session,
+        )
+
+        def reject_output(*_args: Any) -> None:
+            raise ModuleExecutionError(
+                "checkpoint_invalid",
+                "target checkpoint preparation emitted output",
+            )
+
+        candidate = ModuleRuntime(
+            record=candidate_record,
+            registry=self.registry,
+            captured=captured_runtime,
+            workspace=self._workspace_path or self._module_storage_root / "workspace",
+            storage_root=self._module_storage_root,
+            repository=self._durable_child_repository,
+            loop=self._loop,
+            session_lock=self._product_session_lock,
+            persist_session=lambda: None,
+            emit_output=reject_output,
+            owns_work_lifecycle=False,
+        )
+        try:
+            prepared = await asyncio.to_thread(
+                candidate.prepare_checkpoint_adoption,
+                source_checkpoints,
+                source_dependencies,
+            )
+        except BaseException as error:
+            disposal = await asyncio.to_thread(
+                candidate.close,
+                "adoption_preparation_failed",
+            )
+            if disposal.status != "confirmed_absent":
+                raise ModuleExecutionError(
+                    "cleanup_unknown",
+                    "target checkpoint preparation cleanup was not confirmed",
+                ) from error
+            if isinstance(error, ModuleExecutionError):
+                error.cleanup_confirmed = True
+                raise
+            raise ModuleExecutionError(
+                "checkpoint_invalid",
+                "target checkpoint preparation failed",
+                cleanup_confirmed=True,
+            ) from error
+        try:
+            disposal = await asyncio.to_thread(candidate.close, "adoption_prepared")
+        except BaseException as error:
+            raise ModuleExecutionError(
+                "cleanup_unknown",
+                "target checkpoint preparation cleanup failed",
+            ) from error
+        if disposal.status != "confirmed_absent":
+            raise ModuleExecutionError(
+                "cleanup_unknown",
+                "target checkpoint preparation cleanup was not confirmed",
+            )
+        return prepared
+
+    async def dispose_source_runtime_for_adoption(
+        self,
+        source_checkpoints: Mapping[str, CheckpointProposal],
+    ) -> ModuleDisposal:
+        with self._product_session_lock:
+            runtime = self._module_runtime
+            prior = self._module_disposal
+        if runtime is None:
+            if prior is not None:
+                return prior
+            execution = self.session.module_execution
+            if execution is None or not execution.workers:
+                return ModuleDisposal("confirmed_absent", (), ())
+            if all(
+                worker.cleanup is not None
+                and worker.cleanup.status == "confirmed_absent"
+                for worker in execution.workers
+            ):
+                with self._product_session_lock:
+                    self.session.module_execution = execution.retire_all_workers()
+                    self.session.module_resume_checkpoints = dict(source_checkpoints)
+                    self._resume_checkpoints = dict(source_checkpoints)
+                await self.registry.persist(self.session)
+                return ModuleDisposal("confirmed_absent", (), ())
+            return ModuleDisposal(
+                "unknown",
+                tuple(
+                    worker.resource_id
+                    for worker in execution.workers
+                    if worker.resource_id is not None
+                ),
+                ("retained_source_runtime_cleanup_unknown",),
+            )
+        try:
+            disposal = await asyncio.to_thread(
+                runtime.close,
+                "generation_adoption_fence",
+            )
+        except BaseException:
+            execution = self.session.module_execution
+            disposal = ModuleDisposal(
+                "unknown",
+                tuple(
+                    worker.resource_id
+                    for worker in execution.workers
+                    if worker.resource_id is not None
+                )
+                if execution is not None
+                else (),
+                ("source_runtime_cleanup_failed",),
+            )
+        if disposal.status != "confirmed_absent":
+            with self._product_session_lock:
+                self._module_disposal = disposal
+            return disposal
+        with self._product_session_lock:
+            execution = self.session.module_execution
+            if execution is None or execution.generation_id != runtime.generation_id:
+                raise ModuleExecutionError(
+                    "stale_owner",
+                    "source generation changed while adoption cleanup completed",
+                )
+            self.session.module_execution = execution.retire_all_workers()
+            self.session.module_resume_checkpoints = dict(source_checkpoints)
+            self._module_runtime = None
+            self._module_disposal = disposal
+            self._resume_checkpoints = dict(source_checkpoints)
+        await self.registry.persist(self.session)
+        return disposal
+
+    async def install_adopted_module_runtime(
+        self,
+        *,
+        captured_runtime: CapturedRuntimeConfig,
+        module_execution: ModuleExecutionRecord,
+        module_grant: AdmissionGrant,
+        generation_admission: GenerationAdmission,
+        resume_checkpoints: Mapping[str, CheckpointProposal],
+    ) -> ModuleDisposal:
+        with self._product_session_lock:
+            previous_runtime = self._module_runtime
+            if previous_runtime is not None:
+                previous_runtime.record = SessionRecord(
+                    session_id=self.session.session_id,
+                    status=self.session.status,
+                    module_execution=self.session.module_execution,
+                    module_grant=self.session.module_grant,
+                    product_session=self.session.product_session,
+                )
+                previous_runtime.persist_session = lambda: None
+            previous_captured = self._captured_runtime
+            self.session.module_execution = module_execution
+            self.session.module_grant = module_grant
+            self.session.generation_admission = generation_admission
+            self._module_runtime = None
+            self._module_disposal = None
+            self.session.module_resume_checkpoints = dict(resume_checkpoints)
+            self._captured_runtime = captured_runtime
+            self._resume_checkpoints = dict(resume_checkpoints)
+        try:
+            disposal = (
+                await asyncio.to_thread(
+                    previous_runtime.close,
+                    "generation_adopted",
+                )
+                if previous_runtime is not None
+                else ModuleDisposal("confirmed_absent", (), ())
+            )
+        except BaseException:
+            execution = (
+                previous_runtime.record.module_execution
+                if previous_runtime is not None
+                else None
+            )
+            disposal = ModuleDisposal(
+                "unknown",
+                tuple(
+                    worker.resource_id
+                    for worker in execution.workers
+                    if worker.resource_id is not None
+                )
+                if execution is not None
+                else (),
+                ("source_runtime_cleanup_failed",),
+            )
+        if previous_captured is not None:
+            try:
+                await asyncio.to_thread(previous_captured.cleanup)
+            except BaseException:
+                disposal = ModuleDisposal(
+                    "unknown",
+                    disposal.resource_refs,
+                    (*disposal.pending_domain_refs, "source_capture_cleanup_failed"),
+                )
+        return disposal
+
+    async def _close_module_resources(self, reason: str) -> ModuleDisposal:
+        async with self._module_close_lock:
+            disposal = self._module_disposal
+            if disposal is None or disposal.status != "confirmed_absent":
+                runtime = self._module_runtime
+                disposal = (
+                    await asyncio.to_thread(runtime.close, reason)
+                    if runtime is not None
+                    else ModuleDisposal("confirmed_absent", (), ())
+                )
+                self._module_disposal = disposal
+            captured = self._captured_runtime
+            if captured is not None:
+                await asyncio.to_thread(captured.cleanup)
+                self._captured_runtime = None
+            if disposal.status != "confirmed_absent":
+                metadata = dict(self.session.metadata or {})
+                metadata["module_cleanup"] = {
+                    "status": disposal.status,
+                    "resource_refs": list(disposal.resource_refs),
+                    "pending_domain_refs": list(disposal.pending_domain_refs),
+                }
+                self.session.metadata = metadata
+                await self.registry.update_metadata(
+                    self.session.session_id,
+                    metadata=metadata,
+                )
+            return disposal
 
     def _default_factory(
         self,
@@ -235,7 +747,8 @@ class SessionRunner:
             raise RuntimeError("runner already started")
         self._loop = asyncio.get_running_loop()
         initial_task = (self.request.task or "").strip()
-        if not initial_task:
+        initial_module_input = self.request.module_input
+        if not initial_task and initial_module_input is None:
             return
         client_message_id = f"session-create:{self.session.session_id}"
         input_id = f"input-{uuid.uuid4()}"
@@ -245,12 +758,27 @@ class SessionRunner:
             input_id=input_id,
             turn_id=turn_id,
             client_message_id=client_message_id,
-            content=initial_task,
+            content=initial_task if initial_module_input is None else None,
             attachments=attachments,
             original_disposition="started",
             state="active",
-            body_digest=submission_body_digest(initial_task, attachments),
+            body_digest=submission_body_digest(
+                initial_task if initial_module_input is None else None,
+                attachments,
+                initial_module_input,
+            ),
+            module_input=initial_module_input,
+            module_input_sequence=0 if initial_module_input is not None else None,
         )
+        if initial_module_input is not None:
+            if (
+                self.session.module_grant is None
+                or self.session.next_module_input_sequence != 0
+            ):
+                raise RuntimeError(
+                    "initial module admission lacks its grant or sequence"
+                )
+            self.session.next_module_input_sequence = 1
         self.session.turns_by_id[turn_id] = turn
         self.session.submissions_by_key[client_message_id] = turn
         self.session.submissions_by_key_digest[identity_digest(client_message_id)] = (
@@ -268,7 +796,9 @@ class SessionRunner:
         await self._run()
 
     async def start(self) -> None:
-        if (self.request.task or "").strip() and self.session.active_turn_id is None:
+        if (
+            (self.request.task or "").strip() or self.request.module_input is not None
+        ) and self.session.active_turn_id is None:
             await self.prepare_start()
         self.schedule_start()
         self.authorize_start()
@@ -337,7 +867,11 @@ class SessionRunner:
 
     def _active_turn_cancellation_requested(self) -> bool:
         turn = self.session.turns_by_id.get(self.session.active_turn_id or "")
-        return bool(turn is not None and turn.cancellation_requested and turn.terminal_outcome is None)
+        return bool(
+            turn is not None
+            and turn.cancellation_requested
+            and turn.terminal_outcome is None
+        )
 
     def request_turn_cancellation(self, turn_id: str) -> bool:
         with self._product_session_lock:
@@ -352,8 +886,10 @@ class SessionRunner:
             self._signal_control("stop")
             return True
 
-    async def finish_queued_turn_cancellation(self, turn: TurnRecord, reason: str) -> None:
-        await self._finish_turn(
+    async def finish_queued_turn_cancellation(
+        self, turn: TurnRecord, reason: str
+    ) -> None:
+        await self._task_execution.finish_turn(
             turn,
             "cancelled",
             reason=reason,
@@ -381,6 +917,10 @@ class SessionRunner:
                 await self._task
             except asyncio.CancelledError:
                 pass
+        disposal = await self._close_module_resources(reason)
+        if disposal.status != "confirmed_absent":
+            raise RuntimeError("module cleanup could not be confirmed")
+        await self._release_generation_admission()
         if cancelled_before_start:
             product_state = getattr(
                 getattr(
@@ -416,6 +956,7 @@ class SessionRunner:
             await self.registry.update_status(self.session.session_id, final_status)
             self._closed = True
             await self._enqueue_termination()
+
     @staticmethod
     def canonicalize_input_attachments(
         attachments: Optional[Sequence[str]],
@@ -433,16 +974,29 @@ class SessionRunner:
 
     def validate_input_admission(
         self,
-        content: str,
+        content: str | None,
         attachments: Sequence[str],
         *,
         input_id: Optional[str] = None,
         turn_id: Optional[str] = None,
+        module_input: ModuleInput | None = None,
+        module_input_sequence: int | None = None,
     ) -> None:
         if self._closed:
             raise RuntimeError("session is closed")
-        if not content or not content.strip():
-            raise ValueError("input content must not be empty")
+        if module_input is None:
+            if not content or not content.strip():
+                raise ValueError("input content must not be empty")
+            if module_input_sequence is not None:
+                raise ValueError("text input cannot have a module sequence")
+        elif (
+            content is not None
+            or type(module_input_sequence) is not int
+            or module_input_sequence < 0
+        ):
+            raise ValueError(
+                "typed input requires only its document and owner sequence"
+            )
         if (input_id is None) != (turn_id is None):
             raise ValueError("input and turn IDs must be supplied together")
         canonical_attachments = self.canonicalize_input_attachments(attachments)
@@ -468,6 +1022,11 @@ class SessionRunner:
                 raise RuntimeError("turn is not active or queued for execution")
             if admitted_turn.content != content:
                 raise RuntimeError("input content does not match the admitted turn")
+            if (
+                admitted_turn.module_input != module_input
+                or admitted_turn.module_input_sequence != module_input_sequence
+            ):
+                raise RuntimeError("module input does not match the admitted turn")
             if admitted_turn.attachments != tuple(canonical_attachments):
                 raise RuntimeError("attachments do not match the admitted turn")
         with self._product_session_lock:
@@ -498,8 +1057,7 @@ class SessionRunner:
                 return
             events = product_session.events
             markers = [
-                turn.logical_event_count_before_admission
-                for turn in retained_turns
+                turn.logical_event_count_before_admission for turn in retained_turns
             ]
             if any(
                 current is None
@@ -518,7 +1076,7 @@ class SessionRunner:
                 if (
                     before is None
                     or before < 1
-                    or not isinstance(content_hash, str)
+                    or (turn.module_input is None and not isinstance(content_hash, str))
                 ):
                     raise ReplayError(
                         "admission_journal_mismatch",
@@ -534,19 +1092,23 @@ class SessionRunner:
                         "retained input admission references unavailable attachments",
                     ) from exc
                 expected_payload = {
-                    "content_hash": content_hash,
                     "attachments": tuple(
                         artifact.as_dict() for artifact in selected_artifacts
                     ),
                 }
+                if turn.module_input is None:
+                    expected_payload["content_hash"] = content_hash
+                else:
+                    expected_payload["module_input"] = turn.module_input.to_dict()
+                    expected_payload["module_input_sequence"] = (
+                        turn.module_input_sequence
+                    )
                 if before > len(events):
                     raise ReplayError(
                         "admission_journal_mismatch",
                         "retained input admission journal position is missing",
                     )
-                next_before = (
-                    markers[index + 1] if index + 1 < len(markers) else None
-                )
+                next_before = markers[index + 1] if index + 1 < len(markers) else None
                 upper_bound = (
                     min(next_before, len(events))
                     if next_before is not None
@@ -559,16 +1121,14 @@ class SessionRunner:
                 ):
                     if event.kind in _ADMISSION_BLOCKING_PRODUCT_EVENTS:
                         blocking_positions.append(position)
-                    actual_payload = (
-                        {
-                            "content_hash": event.payload.get("content_hash"),
-                            "attachments": tuple(
-                                event.payload.get("attachments") or ()
-                            ),
-                        }
-                        if isinstance(event.payload, Mapping)
-                        else None
-                    )
+                    actual_payload = {
+                        name: (
+                            tuple(event.payload.get(name) or ())
+                            if name == "attachments"
+                            else event.payload.get(name)
+                        )
+                        for name in expected_payload
+                    }
                     if (
                         event.kind == "input.accepted"
                         and actual_payload == expected_payload
@@ -579,9 +1139,7 @@ class SessionRunner:
                         "admission_journal_mismatch",
                         "retained input admission has duplicate journal events",
                     )
-                before_status = (
-                    turn.logical_input_session_status_before_admission
-                )
+                before_status = turn.logical_input_session_status_before_admission
                 if matches:
                     match_position = matches[0]
                     if before_status not in {None, "running"} or any(
@@ -612,22 +1170,36 @@ class SessionRunner:
                         or "product_transition_interrupted_admission"
                     )
                     continue
-                product_session.input_digest(content_hash, selected_artifacts)
+                if turn.module_input is None:
+                    product_session.input_digest(content_hash, selected_artifacts)
+                else:
+                    product_session.input(
+                        None,
+                        selected_artifacts,
+                        module_input=turn.module_input,
+                        module_input_sequence=turn.module_input_sequence,
+                    )
                 events = product_session.events
 
     async def enqueue_input(
         self,
-        content: str,
+        content: str | None,
         attachments: Optional[list[str]] = None,
         *,
         input_id: Optional[str] = None,
         turn_id: Optional[str] = None,
-        defer_execution: Optional[Callable[[Callable[[], Awaitable[None]]], None]] = None,
-    ) -> str:
+        module_input: ModuleInput | None = None,
+        module_input_sequence: int | None = None,
+        defer_execution: Optional[
+            Callable[[Callable[[], Awaitable[None]]], None]
+        ] = None,
+    ) -> str | None:
         if self._closed:
             raise RuntimeError("session is closed")
-        if not content or not content.strip():
+        if module_input is None and (not content or not content.strip()):
             raise ValueError("input content must not be empty")
+        if module_input is not None and content is not None:
+            raise ValueError("typed input cannot have text content")
         if not isinstance(input_id, str) or not input_id.strip():
             raise ValueError("input_id is required at runner admission")
         if not isinstance(turn_id, str) or not turn_id.strip():
@@ -653,6 +1225,11 @@ class SessionRunner:
         attachment_ids = self.canonicalize_input_attachments(attachments)
         if admitted_turn.content != content:
             raise RuntimeError("input content does not match the admitted turn")
+        if (
+            admitted_turn.module_input != module_input
+            or admitted_turn.module_input_sequence != module_input_sequence
+        ):
+            raise RuntimeError("module input does not match the admitted turn")
         if admitted_turn.attachments != tuple(attachment_ids):
             raise RuntimeError("attachments do not match the admitted turn")
         with self._product_session_lock:
@@ -663,10 +1240,21 @@ class SessionRunner:
                 "input_id": input_id,
                 "turn_id": turn_id,
             }
+            if module_input is not None:
+                payload["module_input"] = module_input
+                payload["module_input_sequence"] = module_input_sequence
             product_session = getattr(self.session, "product_session", None)
 
             if product_session is not None:
-                product_session.input(content, selected_artifacts)
+                if module_input is None:
+                    product_session.input(content, selected_artifacts)
+                else:
+                    product_session.input(
+                        None,
+                        selected_artifacts,
+                        module_input=module_input,
+                        module_input_sequence=module_input_sequence,
+                    )
 
             def deliver_input() -> None:
                 self._input_queue.put_nowait(payload)
@@ -674,6 +1262,7 @@ class SessionRunner:
             if defer_execution is None:
                 deliver_input()
             else:
+
                 async def enqueue_after_response() -> None:
                     deliver_input()
 
@@ -686,7 +1275,10 @@ class SessionRunner:
             if product_session is None:
                 return
             if transition == "reconfigure":
-                if self.session.active_turn_id is not None or self.session.queued_turn_ids:
+                if (
+                    self.session.active_turn_id is not None
+                    or self.session.queued_turn_ids
+                ):
                     raise GenerationAdoptionError(
                         "non_quiescent",
                         "generation adoption requires a quiescent turn boundary",
@@ -698,12 +1290,19 @@ class SessionRunner:
                     )
                 product_session.adopt_generation(*args)
             else:
-                if transition in {"complete", "fail", "cancel"} and product_session.read_model.status in {"completed", "failed", "canceled"}:
+                if transition in {
+                    "complete",
+                    "fail",
+                    "cancel",
+                } and product_session.read_model.status in {
+                    "completed",
+                    "failed",
+                    "canceled",
+                }:
                     return
                 getattr(product_session, transition)(*args)
             if transition in {"complete", "fail", "cancel"}:
-                self._commit_terminal_product_session_locked()
-
+                self._persist_product_session_locked()
 
     # Provider-supplied names are not public identities until they resolve into
     # the active, configured tool surface.
@@ -761,29 +1360,33 @@ class SessionRunner:
             )
         return canonical if canonical in allowed else None
 
-    def _tool_completion_fingerprint(
-        self,
-        tool: str,
-        payload: Dict[str, Any],
-    ) -> Optional[str]:
-        return self._runtime_event_projector._tool_completion_fingerprint(tool, payload)
-
-    def _record_product_observation(
-        self,
-        family: Optional[str],
-        payload: Dict[str, Any],
-        *,
-        message_projection: bool = False,
-        trajectory_id: str | None = None,
-    ) -> None:
-        return self._runtime_event_projector._record_product_observation(
-            family,
-            payload,
-            message_projection=message_projection,
-            trajectory_id=trajectory_id,
-        )
-
-    def prepare_input_content(self, content: str) -> str:
+    def prepare_input_content(
+        self, content: str | None, module_input: ModuleInput | None = None
+    ) -> str | None:
+        if (self.session.module_execution is None) != (module_input is None):
+            raise ValueError(
+                "input must match the Session's admitted text or module kind"
+            )
+        if module_input is not None:
+            if content is not None:
+                raise ValueError("typed input cannot have text content")
+            if any(
+                turn.module_input is not None and turn.module_input.final
+                for turn in self.session.turns_by_id.values()
+            ):
+                raise ValueError("module input stream is already final")
+            retained = self._captured_runtime
+            execution = self.session.module_execution
+            if retained is None or execution is None:
+                raise RuntimeError("module Session has no retained execution binding")
+            package = retained.materialization.packages[execution.root_binding]
+            if module_input.schema_id not in package.manifest.input_schema_ids:
+                raise ValueError(
+                    "module input schema is not accepted by the root package"
+                )
+            return None
+        if not isinstance(content, str):
+            raise ValueError("text input is required")
         with self._product_session_lock:
             normalized, _ = self._input_boundary_repair(content)
             return normalized
@@ -802,9 +1405,7 @@ class SessionRunner:
             len(prior),
             len(raw) - len(prior),
         )
-        meta = (
-            self.session.metadata if isinstance(self.session.metadata, dict) else {}
-        )
+        meta = self.session.metadata if isinstance(self.session.metadata, dict) else {}
         repairs = (
             list(meta.get("input_boundary_repairs") or [])
             if isinstance(meta.get("input_boundary_repairs"), list)
@@ -838,23 +1439,6 @@ class SessionRunner:
         normalized, _ = self._input_boundary_repair(content)
         self._record_input_boundary_repair(str(content or ""), normalized)
         return normalized
-
-    def _upsert_permission_rule(
-        self,
-        workspace_dir: Path | str,
-        *,
-        category: str,
-        pattern: str,
-        decision: str,
-        scope: str,
-    ) -> bool:
-        return self.permission_authority.update_rule(
-            workspace_dir,
-            category=category,
-            pattern=pattern,
-            decision=decision,
-            scope=scope,
-        )
 
     def _fail_control_transition(self, code: str, detail: str) -> None:
         try:
@@ -938,8 +1522,11 @@ class SessionRunner:
     def _load_base_config(self) -> Dict[str, Any]:
         if isinstance(self._base_config_cache, dict):
             return dict(self._base_config_cache)
-        cfg = load_agent_config(self.request.config_path)
-        if not isinstance(cfg, dict):
+        if self._captured_runtime is not None:
+            cfg = self._captured_runtime.config
+        else:
+            cfg = load_agent_config(self.request.config_path)
+        if not isinstance(cfg, Mapping):
             raise TypeError("agent config loader must return a mapping")
         self._base_config_cache = dict(cfg)
         return dict(self._base_config_cache)
@@ -1055,16 +1642,6 @@ class SessionRunner:
         except Exception:
             return None
 
-    def _parse_replay_path(self, task_text: str) -> Optional[Path]:
-        return self._task_execution.parse_replay_path(task_text)
-
-    async def _maybe_publish_todo_snapshot(
-        self, workspace_dir: Optional[Path], *, call_id: str
-    ) -> None:
-        return await self._task_execution.maybe_publish_todo_snapshot(
-            workspace_dir, call_id=call_id
-        )
-
     async def _ensure_agent_initialized(self) -> None:
         if self._agent is not None:
             return
@@ -1088,7 +1665,11 @@ class SessionRunner:
                 snapshot, self.request.workspace, overrides or None
             )
             if hasattr(self._agent, "config_path"):
-                self._agent.config_path = self.request.config_path
+                self._agent.config_path = str(
+                    self._captured_runtime.config_path
+                    if self._captured_runtime is not None
+                    else self.request.config_path
+                )
             await asyncio.to_thread(self._agent.initialize)
         finally:
             Path(snapshot).unlink(missing_ok=True)
@@ -1102,7 +1683,7 @@ class SessionRunner:
                 self.session.metadata if isinstance(self.session.metadata, dict) else {}
             )
             if not isinstance(meta.get("todo_last_update"), dict):
-                await self._maybe_publish_todo_snapshot(
+                await self._task_execution.maybe_publish_todo_snapshot(
                     workspace_dir, call_id="todo:snapshot:init"
                 )
         try:
@@ -1112,29 +1693,38 @@ class SessionRunner:
         except Exception:
             self._checkpoint_manager = None
 
-    def _require_execution_correlation(
-        self, input_id: Optional[str], turn_id: Optional[str]
-    ) -> Dict[str, str]:
-        return self._task_execution.require_execution_correlation(input_id, turn_id)
-
-    async def _execute_replay_task(
-        self,
-        task_text: str,
-        *,
-        input_id: Optional[str] = None,
-        turn_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        return await self._task_execution.execute_replay_task(
-            task_text, input_id=input_id, turn_id=turn_id
+    async def _release_generation_admission(self) -> None:
+        admission = self.session.generation_admission
+        if admission is None or admission.status == "released":
+            return
+        metadata = (
+            self.session.metadata if isinstance(self.session.metadata, dict) else {}
         )
+        workspace = metadata.get("workspace")
+        if not isinstance(workspace, str) or not workspace:
+            return
+        execution = self.session.module_execution
+        cleanup_confirmed = execution is None or all(
+            worker.cleanup is not None and worker.cleanup.status == "confirmed_absent"
+            for worker in execution.workers
+        )
+        released = await asyncio.to_thread(
+            GenerationLifecycle(workspace).release,
+            admission.admission_id,
+            cleanup_confirmed,
+        )
+        self.session.generation_admission = released
+        try:
+            await self.registry.persist(self.session)
+        except SessionRecordDeletedError:
+            return
 
     async def _run(self) -> None:
-        await self._lifecycle_owner.run()
-
-    def _load_todo_envelope_from_disk(
-        self, workspace_dir: Path
-    ) -> Optional[Dict[str, Any]]:
-        return self._task_execution.load_todo_envelope_from_disk(workspace_dir)
+        try:
+            await self._lifecycle_owner.run()
+        finally:
+            await self._close_module_resources("session_terminal")
+            await self._release_generation_admission()
 
     async def _terminalize_admitted_turns(
         self,
@@ -1222,80 +1812,6 @@ class SessionRunner:
             )
         except Exception:
             pass
-
-    def _debug_permissions_enabled(self) -> bool:
-        return self._control_controller.debug_permissions_enabled()
-
-    async def _emit_debug_permission_request(
-        self, payload: Optional[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        return await self._control_controller.emit_debug_permission_request(payload)
-
-    def _pending_permission_key(self, entry: Dict[str, Any]) -> tuple[str, str, str]:
-        return self._control_controller.pending_permission_key(entry)
-
-    def _infer_permission_category(self, request_id: str) -> Optional[str]:
-        return self._control_controller.infer_permission_category(request_id)
-
-    def _update_pending_permissions(
-        self,
-        kind: str,
-        info: Dict[str, Any],
-        *,
-        source: str = "session",
-        task_session_id: Optional[str] = None,
-        subagent_type: Optional[str] = None,
-        consume_fifo: bool = False,
-    ) -> Optional[List[Dict[str, Any]]]:
-        return self._control_controller.update_pending_permissions(
-            kind,
-            info,
-            source=source,
-            task_session_id=task_session_id,
-            subagent_type=subagent_type,
-            consume_fifo=consume_fifo,
-        )
-
-    def _discard_undeliverable_permission(self, request_id: str) -> None:
-        return self._control_controller.discard_undeliverable_permission(request_id)
-
-    def _rehydrate_pending_permissions(
-        self, event_type: str, payload: Dict[str, Any]
-    ) -> Optional[List[Dict[str, Any]]]:
-        return self._control_controller.rehydrate_pending_permissions(
-            event_type, payload
-        )
-
-    def _execute_task(
-        self,
-        task_text: str,
-        *,
-        input_id: Optional[str] = None,
-        turn_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        return self._task_execution.execute_task(
-            task_text, input_id=input_id, turn_id=turn_id
-        )
-
-
-    async def _finish_turn(
-        self,
-        turn: TurnRecord,
-        outcome: str,
-        *,
-        reason: Optional[str] = None,
-        error_code: Optional[str] = None,
-        completed_payload: Optional[Dict[str, Any]] = None,
-        advance_queue: bool = True,
-    ) -> bool:
-        return await self._task_execution.finish_turn(
-            turn,
-            outcome,
-            reason=reason,
-            error_code=error_code,
-            completed_payload=completed_payload,
-            advance_queue=advance_queue,
-        )
 
     async def publish_event_async(
         self,
@@ -1392,34 +1908,6 @@ class SessionRunner:
         except Exception:
             pass
 
-    def _start_queue_pump(
-        self,
-        event_queue: Any,
-        handle_event: Callable[[str, Dict[str, Any], Optional[int]], None],
-        *,
-        acknowledgement_queue: Any = None,
-        errors: Optional[List[BaseException]] = None,
-    ) -> tuple[Any, Any]:
-        return self._task_execution.start_queue_pump(
-            event_queue,
-            handle_event,
-            acknowledgement_queue=acknowledgement_queue,
-            errors=errors,
-        )
-
-    def _drain_event_queue(
-        self,
-        event_queue: Any,
-        handle_event: Callable[[str, Dict[str, Any], Optional[int]], None],
-        *,
-        acknowledgement_queue: Any = None,
-    ) -> None:
-        return self._task_execution.drain_event_queue(
-            event_queue,
-            handle_event,
-            acknowledgement_queue=acknowledgement_queue,
-        )
-
     def get_workspace_dir(self) -> Optional[Path]:
         if self._workspace_path:
             self._workspace_path.mkdir(parents=True, exist_ok=True)
@@ -1434,69 +1922,11 @@ class SessionRunner:
             return path
         return None
 
-
     def _format_attachment_helper(self, attachment_ids: Sequence[str]) -> str:
         helper, capabilities, media = self.artifacts.format_helper(attachment_ids)
         self._active_attachment_capabilities = capabilities
         self._active_input_media = media
         return helper
-
-    def _load_run_summary(self, logging_dir: Optional[str]) -> Optional[Dict[str, Any]]:
-        return self._task_execution.load_run_summary(logging_dir)
-
-    def _normalize_usage_payload(
-        self, usage: Dict[str, Any], *, latency_ms: Optional[int] = None
-    ) -> Dict[str, Any]:
-        return self._task_execution.normalize_usage_payload(
-            usage, latency_ms=latency_ms
-        )
-
-    def _usage_from_run_summary(self, summary: Dict[str, Any]) -> Dict[str, Any]:
-        return self._task_execution.usage_from_run_summary(summary)
-
-    def _extract_usage_metrics(
-        self,
-        result: Dict[str, Any],
-        logging_dir: Optional[str],
-        *,
-        elapsed_ms: Optional[int] = None,
-    ) -> Dict[str, Any]:
-        return self._task_execution.extract_usage_metrics(
-            result, logging_dir, elapsed_ms=elapsed_ms
-        )
-
-    def _normalize_tool_call_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        return self._runtime_event_projector._normalize_tool_call_payload(payload)
-
-    def _normalize_tool_result_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        return self._runtime_event_projector._normalize_tool_result_payload(payload)
-
-    def _extract_artifact_ref(
-        self, payload: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
-        return self._runtime_event_projector._extract_artifact_ref(payload)
-
-    def _normalize_artifact_ref(
-        self, payload: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
-        return self._runtime_event_projector._normalize_artifact_ref(payload)
-
-    def _normalize_permission_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        return self._runtime_event_projector._normalize_permission_request(payload)
-
-    def _normalize_permission_response(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        return self._runtime_event_projector._normalize_permission_response(payload)
-
-    def _normalize_task_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        return self._runtime_event_projector._normalize_task_event(payload)
-
-    def _translate_runtime_event(
-        self,
-        event_type: str,
-        payload: Dict[str, Any],
-        turn: Optional[int],
-    ) -> Optional[TranslatedRuntimeEvent]:
-        return self._runtime_event_projector.translate(event_type, payload, turn)
 
     def _resolve_skill_catalog(self) -> Dict[str, Any]:
         config = self.current_runtime_config()

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import os
 import random
 import secrets
+import signal
 import stat
 import subprocess
 import time
@@ -18,21 +18,14 @@ from typing import Any, AsyncIterator, Callable, Dict
 from urllib.parse import urlsplit
 
 from fastapi import (
-    Depends,
     FastAPI,
-    File,
-    Form,
-    Header,
     HTTPException,
-    Query,
     Request,
-    Response,
-    UploadFile,
     status,
 )
 from fastapi.exceptions import RequestValidationError
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.openapi.utils import get_openapi
 from fastapi.routing import APIRoute
 from starlette._utils import get_route_path
@@ -53,12 +46,9 @@ if load_dotenv is not None:
         if _candidate.exists():
             load_dotenv(_candidate, override=False)
 
-from .events import SessionEvent, PROTOCOL_VERSION, replay_configuration_digest
+from .events import SessionEvent, PROTOCOL_VERSION
 from .engine_identity_config import (
-    ENGINE_IDENTITY_SCHEMA_VERSION,
     EngineIdentityConfigError,
-    P30_SESSION_CONTRACT_ID,
-    P30_SESSION_SCHEMA_SHA256,
     P30_SESSION_ROUTE_BINDINGS,
     P30_SESSION_BASELINE_HTTP,
     P30_SESSION_EVENT_STREAM_CONTRACT,
@@ -67,53 +57,9 @@ from .engine_identity_config import (
     p30_session_contract_schema,
 )
 from .models import (
-    AttachmentUploadResponse,
     ErrorEnvelope,
-    ErrorResponse,
-    BeginControlDrainRequest,
-    BootstrapChallengeRequest,
-    BootstrapChallengeResponse,
-    ClientLeaseRequest,
-    ClientRegisterRequest,
-    ClientRegistrationResponse,
-    DrainControlRequest,
-    DrainControlResponse,
-    EngineArtifactRevision,
-    EngineIdentityReadinessResponse,
-    EngineLaunchIdentity,
-    EngineLiveness,
-    EngineProcessStart,
-    EngineProtocolIdentity,
-    EngineSessionContractIdentity,
-    EngineSessionReadiness,
-    GracefulControlResultRequest,
-    HardSignalCommitRequest,
-    HardSignalPreparationResponse,
-    HardSignalPermitResponse,
-    HardSignalOutcomeRequest,
-    HardSignalPrepareRequest,
-    OwnerAcquireRequest,
-    OwnerLeaseRequest,
-    OwnerLeaseResponse,
-    ModelCatalogResponse,
-    ProviderAuthAttachRequest,
-    ProviderAuthAttachResponse,
-    ProviderAuthDetachRequest,
-    ProviderAuthDetachResponse,
-    ProviderAuthStatusResponse,
-    SessionCommandRequest,
-    SessionCommandResponse,
-    SessionCreateRequest,
-    SessionCreateResponse,
-    SkillCatalogResponse,
-    CTreeSnapshotResponse,
-    SessionFileContent,
-    SessionFileInfo,
     SessionInputRequest,
     SessionInputResponse,
-    SessionSummary,
-    SessionTurnCancelRequest,
-    SessionTurnCancelResponse,
 )
 from .service import SessionService
 from .runtime_emission import prepare_managed_state
@@ -724,11 +670,6 @@ def _http_error_content(exc: HTTPException) -> dict[str, Any]:
     ).model_dump()
 
 
-def _stable_json_hash(payload: Any) -> str:
-    encoded = json.dumps(
-        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode("utf-8")
-    return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
 def _encode_sse_event(event: SessionEvent) -> bytes:
@@ -777,6 +718,22 @@ def _authority_credential_buffers(
         raise
 
 
+def _initialize_local_ray(ray: Any) -> None:
+    managed_signals = (signal.SIGINT, signal.SIGTERM)
+    previous_handlers = {
+        managed_signal: signal.getsignal(managed_signal)
+        for managed_signal in managed_signals
+    }
+    try:
+        with sanitized_process_environment(
+            overrides={"RAY_DISABLE_DASHBOARD": "1"}
+        ):
+            ray.init(address="local", include_dashboard=False)
+    finally:
+        for managed_signal, handler in previous_handlers.items():
+            signal.signal(managed_signal, handler)
+
+
 def create_app(
     service: SessionService | None = None,
     include_atp_routes: bool | None = None,
@@ -792,6 +749,11 @@ def create_app(
     app = FastAPI(title="BreadBoard CLI Bridge", version=engine_version)
     _service = service or SessionService()
     app.state.session_service = _service
+
+    async def _shutdown_session_service() -> None:
+        await _service.shutdown_runtime_owners()
+
+    app.router.add_event_handler("shutdown", _shutdown_session_service)
 
     @app.exception_handler(LifecycleAuthorityError)
     async def _lifecycle_authority_error_handler(
@@ -1046,14 +1008,11 @@ def create_app(
                 )
 
                 def _init_ray_sync() -> None:
-                    with sanitized_process_environment(
-                        overrides={"RAY_DISABLE_DASHBOARD": "1"}
-                    ):
-                        ray.init(address="local", include_dashboard=False)
+                    _initialize_local_ray(ray)
 
-                # Important: initialize Ray in the main thread. Session execution happens in worker
-                # threads, and Ray can degrade or refuse to install signal handlers if initialized
-                # off the main thread.
+                # Ray initialization must run in the main thread, but the HTTP
+                # server retains signal ownership so SIGTERM reaches its
+                # shutdown hooks before the process exits.
                 start = time.monotonic()
                 _init_ray_sync()
                 elapsed = time.monotonic() - start

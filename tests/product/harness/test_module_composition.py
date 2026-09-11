@@ -93,11 +93,11 @@ def test_one_module_mutation_changes_only_its_lock_subgraph() -> None:
     changed = compose_modules(base, [module])
     left = compile_harness_definition(base, source_ref="x").lock.as_dict()
     right = compile_harness_definition(changed, source_ref="x").lock.as_dict()
-    left_rows = {row["path"]: row for row in left["effective_values"]}
-    right_rows = {row["path"]: row for row in right["effective_values"]}
+    left_rows = {row["path"]: row for row in left["configuration_graph"]["effective_values"]}
+    right_rows = {row["path"]: row for row in right["configuration_graph"]["effective_values"]}
     assert set(right_rows) - set(left_rows) == {"providers.stream_responses"}
     assert all(left_rows[path] == right_rows[path] for path in left_rows)
-    assert left["graph_hash"] != right["graph_hash"]
+    assert left["configuration_graph"]["graph_hash"] != right["configuration_graph"]["graph_hash"]
 
 
 def test_local_extensions_fail_closed_without_a_core_fork() -> None:

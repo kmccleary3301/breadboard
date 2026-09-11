@@ -1145,6 +1145,18 @@ class SessionState:
             )
             if not isinstance(history, list):
                 raise TypeError("provider_exchange_history must be a list")
+            exchange_id = (
+                exchange.get("exchange_id") if isinstance(exchange, dict) else None
+            )
+            if isinstance(exchange_id, str) and exchange_id:
+                history[:] = [
+                    item
+                    for item in history
+                    if not (
+                        isinstance(item, dict)
+                        and item.get("exchange_id") == exchange_id
+                    )
+                ]
             history.append(exchange)
             self.provider_metadata["last_provider_exchange"] = exchange
 

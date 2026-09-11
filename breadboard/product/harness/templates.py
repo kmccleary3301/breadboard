@@ -94,10 +94,9 @@ def daily_driver_model_roles_text() -> str:
     return daily_driver_model_roles_path().read_text(encoding="utf-8")
 
 
-def load_daily_driver_model_roles(path: Path | None = None) -> dict[str, Any]:
-    """Load and strictly validate a daily-driver model-role resource."""
-    target = daily_driver_model_roles_path() if path is None else Path(path)
-    document = json.loads(target.read_text(encoding="utf-8"))
+def load_daily_driver_model_roles_bytes(content: bytes) -> dict[str, Any]:
+    """Strictly validate one captured daily-driver model-role resource."""
+    document = json.loads(content.decode("utf-8"))
     errors = sorted(
         _model_roles_validator().iter_errors(document),
         key=lambda error: tuple(str(part) for part in error.absolute_path),
@@ -111,6 +110,12 @@ def load_daily_driver_model_roles(path: Path | None = None) -> dict[str, Any]:
     if not isinstance(document, dict):
         raise ValueError("daily-driver model roles must be an object")
     return document
+
+
+def load_daily_driver_model_roles(path: Path | None = None) -> dict[str, Any]:
+    """Load and strictly validate a daily-driver model-role resource."""
+    target = daily_driver_model_roles_path() if path is None else Path(path)
+    return load_daily_driver_model_roles_bytes(target.read_bytes())
 
 
 def daily_driver_prompt_path() -> Path:

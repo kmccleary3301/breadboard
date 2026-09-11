@@ -666,10 +666,11 @@ def ingest_directory(
     )
 
 
-def _read_archive_source(
+def read_bundle_archive(
     source: str | os.PathLike[str] | bytes | bytearray | memoryview,
     limit: int,
 ) -> bytes:
+    """Capture bounded archive bytes through the descriptor-pinned file reader."""
     if isinstance(source, bytes):
         if len(source) > limit:
             raise BundleLimitError("archive byte limit exceeded")
@@ -823,7 +824,7 @@ def ingest_zip(
     """Stream bounded ZIP members into memory and publish only after full validation."""
 
     resolved_limits = limits or BundleLimits()
-    archive_bytes = _read_archive_source(source, resolved_limits.max_archive_bytes)
+    archive_bytes = read_bundle_archive(source, resolved_limits.max_archive_bytes)
     try:
         _preflight_zip(archive_bytes, resolved_limits)
     except BundleValidationError:
@@ -1011,7 +1012,7 @@ def ingest_tar(
     """Stream bounded TAR members into memory and publish after validation."""
 
     resolved_limits = limits or BundleLimits()
-    archive_bytes = _read_archive_source(source, resolved_limits.max_archive_bytes)
+    archive_bytes = read_bundle_archive(source, resolved_limits.max_archive_bytes)
     try:
         tar_bytes = _preflight_tar(archive_bytes, resolved_limits)
     except BundleValidationError:
@@ -1355,4 +1356,5 @@ __all__ = [
     "ingest_member_map",
     "ingest_tar",
     "ingest_zip",
+    "read_bundle_archive",
 ]

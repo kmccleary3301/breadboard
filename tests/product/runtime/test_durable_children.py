@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import multiprocessing
@@ -24,6 +25,7 @@ from breadboard.product.coordination.work_items import (
 )
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import children as children_module
+from breadboard.product.runtime import research_world as research_world_module
 from breadboard.product.runtime.artifacts import (
     AnchoredStorage,
     ArtifactRef,
@@ -146,6 +148,26 @@ def _running_parent(tmp_path: Path, repository: WorkItemRepository | None = None
 
 def _spec(adapter_family: str, title: str = "child work") -> ChildSpec:
     return ChildSpec(title, "child task", _lock(), "child-worker", adapter_family)
+
+
+def test_research_world_authenticates_typescript_canonical_request_bytes() -> None:
+    request_bytes = b'{"command":["/bin/true"],"metadata":{"ratio":1e-7}}'
+    payload = {
+        "operation": "submit",
+        "execution_id": "ray:test-exact-bytes",
+        "request_digest": hashlib.sha256(request_bytes).hexdigest(),
+        "request_bytes": base64.b64encode(request_bytes).decode("ascii"),
+        "ray_address": "ray://test",
+        "ray_namespace": "breadboard-test",
+        "max_output_bytes": 1024,
+    }
+    parsed = research_world_module._request_payload(payload)
+    assert parsed["_request_bytes"] == request_bytes
+    assert parsed["request"]["metadata"]["ratio"] == 1e-7
+    with pytest.raises(ValueError, match="digest does not match"):
+        research_world_module._request_payload(
+            {**payload, "request_digest": "0" * 64}
+        )
 
 
 def test_unknown_adapter_is_rejected_before_owner_mutation(tmp_path: Path) -> None:
@@ -2538,6 +2560,17 @@ def test_cancel_adopts_terminal_child_work_item_without_signaling(
     assert load_session(workspace, activation.child_session_id)[0].read_model.status == "failed"
 
 
+class _UnexpectedChildReconciler:
+    def __call__(self, recovery_ref: str) -> None:
+        raise AssertionError(f"unexpected child replay: {recovery_ref}")
+
+    def cancel(self, recovery_ref: str, *, reason: str = "operator request") -> None:
+        raise AssertionError(f"unexpected child cancellation: {recovery_ref}")
+
+    def cancel_tree(self, parent_session_id: str, *, reason: str = "operator request") -> None:
+        raise AssertionError(f"unexpected cancellation tree: {parent_session_id}")
+
+
 @pytest.mark.parametrize("outcome", ["completed", "failed"])
 def test_parent_cancellation_replay_preserves_terminal_product_status(
     tmp_path: Path, outcome: str
@@ -2569,20 +2602,11 @@ def test_parent_cancellation_replay_preserves_terminal_product_status(
     )
     asyncio_run(registry.create(first_record))
 
-    class Reconciler:
-        def __call__(self, recovery_ref: str):
-            raise AssertionError(f"unexpected child replay: {recovery_ref}")
-
-        def cancel(self, recovery_ref: str, *, reason: str = "operator request"):
-            raise AssertionError(f"unexpected child cancellation: {recovery_ref}")
-
-        def cancel_tree(self, parent_session_id: str, *, reason: str = "operator request"):
-            raise AssertionError(f"unexpected cancellation tree: {parent_session_id}")
 
     service = SessionService(
         registry=SessionRegistry(state_root=tmp_path / "registry"),
         state_root=tmp_path / "registry",
-        durable_child_reconciler=Reconciler(),
+        durable_child_reconciler=_UnexpectedChildReconciler(),
         durable_child_repository=WorkItemRepository(tmp_path / "work-items.jsonl"),
     )
     record = asyncio_run(service.ensure_session("parent-session"))
@@ -2627,20 +2651,11 @@ def test_parent_replay_adopts_terminal_work_item_into_product(
         )
     )
 
-    class Reconciler:
-        def __call__(self, recovery_ref: str):
-            raise AssertionError(f"unexpected child replay: {recovery_ref}")
-
-        def cancel(self, recovery_ref: str, *, reason: str = "operator request"):
-            raise AssertionError(f"unexpected child cancellation: {recovery_ref}")
-
-        def cancel_tree(self, parent_session_id: str, *, reason: str = "operator request"):
-            raise AssertionError(f"unexpected cancellation tree: {parent_session_id}")
 
     service = SessionService(
         registry=SessionRegistry(state_root=tmp_path / "registry"),
         state_root=tmp_path / "registry",
-        durable_child_reconciler=Reconciler(),
+        durable_child_reconciler=_UnexpectedChildReconciler(),
         durable_child_repository=WorkItemRepository(tmp_path / "work-items.jsonl"),
     )
     record = asyncio_run(service.ensure_session("parent-session"))
@@ -2694,26 +2709,11 @@ def test_parent_cancellation_replay_terminalizes_retained_turn_admission(
     record.turn_admission = record.turn_admission.__class__.ACTIVE
     asyncio_run(registry.create(record))
 
-    class Reconciler:
-        def cancel(self, recovery_ref: str, *, reason: str = "operator request"):
-            raise AssertionError(f"unexpected child cancellation: {recovery_ref}")
-        def __call__(self, recovery_ref: str):
-            raise AssertionError(f"unexpected child replay: {recovery_ref}")
-
-        def cancel_tree(
-            self,
-            parent_session_id: str,
-            *,
-            reason: str = "operator request",
-        ):
-            raise AssertionError(
-                f"unexpected cancellation tree: {parent_session_id}"
-            )
 
     service = SessionService(
         registry=SessionRegistry(state_root=tmp_path / "registry"),
         state_root=tmp_path / "registry",
-        durable_child_reconciler=Reconciler(),
+        durable_child_reconciler=_UnexpectedChildReconciler(),
         durable_child_repository=repository,
     )
 
@@ -4477,7 +4477,7 @@ def test_ray_result_rpc_failure_stays_recovery_pending(tmp_path: Path) -> None:
         def get_state(self) -> str:
             return "completed"
 
-        def get_result(self) -> Dict[str, Any]:
+        def get_result(self) -> dict[str, object]:
             raise RuntimeError("transient result inspection failure")
 
     orchestrator = MultiAgentOrchestrator(TeamConfig("ray-result-recovery"))
@@ -5777,7 +5777,7 @@ def test_work_item_cancel_torn_transaction_does_not_orphan_descendant(tmp_path: 
     ),
 )
 def test_child_state_rejects_inconsistent_terminal_cardinality(
-    changes: Dict[str, Any],
+    changes: dict[str, object],
 ) -> None:
     retained = ChildState(
         child_session_id="child-session",
@@ -5819,7 +5819,7 @@ def test_child_state_rejects_inconsistent_terminal_cardinality(
     ),
 )
 def test_child_state_rejects_malformed_core_identity(
-    changes: Dict[str, Any],
+    changes: dict[str, object],
 ) -> None:
     retained = ChildState(
         child_session_id="child-session",

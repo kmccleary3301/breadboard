@@ -5,7 +5,7 @@
   "fixture_id": "run_request_invalid_missing_request_id",
   "invalid_reason": "Removes required reference_output field 'request_id' from bb.run_request.v1.",
   "reference_output": {
-    "config_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+    "config_ref": "agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml",
     "entry_mode": "interactive",
     "metadata": {
       "source": "python_reference"

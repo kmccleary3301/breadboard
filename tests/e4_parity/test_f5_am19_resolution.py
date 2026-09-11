@@ -368,6 +368,104 @@ def test_declared_absolute_references_are_rejected_by_both_resolvers(
         run_lane._resolve_repo_path(str(absolute_reference))
 
 
+@pytest.fixture
+def archived_config(tmp_path: Path) -> tuple[Path, str, Path]:
+    checkout = _nested_checkout(tmp_path)
+    logical = "agent_configs/captured.yaml"
+    archived = checkout / "agent_configs/deprecated/captured.yaml"
+    archived.parent.mkdir(parents=True)
+    content = b"version: 1\n"
+    archived.write_bytes(content)
+    (archived.parent / "manifest.json").write_text(
+        json.dumps({
+            "schema_version": "bb.e4.config_archive.v1",
+            "artifacts": {
+                logical: {
+                    "path": archived.relative_to(checkout).as_posix(),
+                    "sha256": "sha256:" + hashlib.sha256(content).hexdigest(),
+                }
+            },
+        }),
+        encoding="utf-8",
+    )
+    return checkout, logical, archived
+
+
+def test_archived_reference_preserves_bytes_and_rejects_tampering(archived_config):
+    checkout, logical, archived = archived_config
+    resolved = resolve_declared_reference(logical, checkout_root=checkout, namespace="repo")
+    assert resolved.read_bytes() == b"version: 1\n"
+    assert not (checkout / logical).exists()
+
+    archived.write_bytes(b"version: 2\n")
+    with pytest.raises(ReferenceResolutionError):
+        resolve_declared_reference(
+            logical, checkout_root=checkout, namespace="repo", must_exist=False,
+        )
+
+
+def test_report_freshness_validates_archived_bytes_against_original_pin(archived_config):
+    from scripts.e4_parity.validate_e4_report_hash_freshness import collect_scorecard_artifact_freshness_errors
+
+    checkout, logical, archived = archived_config
+    scorecard = checkout / "scorecard.json"
+    payload = {
+        "artifacts": [{
+            "path": logical,
+            "sha256": "sha256:" + hashlib.sha256(archived.read_bytes()).hexdigest(),
+        }]
+    }
+    scorecard.write_text(json.dumps(payload), encoding="utf-8")
+    _, report = collect_scorecard_artifact_freshness_errors(
+        scorecard_path=scorecard, workspace_root=checkout.parent,
+        implementation_checkout=checkout,
+    )
+    assert report["ok"] is True, report["errors"]
+
+    payload["artifacts"][0]["sha256"] = "sha256:" + "0" * 64
+    scorecard.write_text(json.dumps(payload), encoding="utf-8")
+    _, report = collect_scorecard_artifact_freshness_errors(
+        scorecard_path=scorecard, workspace_root=checkout.parent,
+        implementation_checkout=checkout,
+    )
+    assert report["ok"] is False
+
+
+@pytest.mark.parametrize("symlinked_checkout", [False, True])
+def test_report_freshness_rejects_checkout_symlink_escape(archived_config, symlinked_checkout):
+    from scripts.e4_parity.validate_e4_report_hash_freshness import resolve_artifact_ref
+
+    checkout, logical, archived = archived_config
+    outside = checkout.parent / "outside.yaml"
+    outside.write_bytes(archived.read_bytes())
+    (checkout / logical).symlink_to(outside)
+
+    if symlinked_checkout:
+        alias = checkout.parent / "checkout_alias"
+        alias.symlink_to(checkout, target_is_directory=True)
+        checkout = alias
+    with pytest.raises(ReferenceResolutionError):
+        resolve_artifact_ref(checkout.parent, checkout, logical)
+
+
+@pytest.mark.parametrize("escape", ["traversal", "symlink"])
+def test_archived_reference_rejects_archive_escape(archived_config, escape):
+    checkout, logical, archived = archived_config
+    outside = checkout / "outside.yaml"
+    outside.write_bytes(archived.read_bytes())
+    if escape == "symlink":
+        archived.unlink()
+        archived.symlink_to(outside)
+    else:
+        manifest_path = archived.parent / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["artifacts"][logical]["path"] = "agent_configs/deprecated/../../outside.yaml"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ReferenceResolutionError):
+        resolve_declared_reference(logical, checkout_root=checkout, namespace="repo")
+
+
 def test_claim_only_run_preserves_repo_local_derived_ledger_bytes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -459,11 +557,12 @@ def _reference_resolution_error(
         if kind == "source":
             path_ref = SOURCE_LINE_RANGE.sub("", path_ref)
 
-    candidate = (ROOT / path_ref).resolve()
     try:
-        candidate.relative_to(ROOT.resolve())
-    except ValueError:
-        return f"path escapes checkout: {path_ref}"
+        candidate = resolve_declared_reference(
+            path_ref, checkout_root=ROOT, namespace="repo", must_exist=False,
+        )
+    except ReferenceResolutionError as exc:
+        return str(exc)
     if candidate not in tracked_files:
         return f"path is not tracked: {path_ref}"
     if not candidate.is_file():

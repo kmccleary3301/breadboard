@@ -281,6 +281,11 @@ def test_system_describe_classifies_malformed_model_role_schema(
         "load_daily_driver_model_roles",
         raise_schema_error,
     )
+    monkeypatch.setattr(
+        harness_resolution,
+        "load_daily_driver_model_roles_bytes",
+        raise_schema_error,
+    )
 
     response = _client(monkeypatch, tmp_path).get("/v1/system")
 

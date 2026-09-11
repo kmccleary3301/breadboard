@@ -132,7 +132,10 @@ def _resolve_artifact_path(display_path: str) -> Path:
             must_exist=False,
         )
 
-    return ROOT / path
+    return resolve_declared_reference(
+        raw, checkout_root=ROOT, namespace="repo",
+        label="catalog artifact reference", must_exist=False,
+    )
 
 
 def _find_row(value: Any, row_id: str) -> Any | None:

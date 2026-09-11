@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from functools import partial
 import os
 from collections.abc import Iterator
 from pathlib import Path
@@ -11,15 +12,28 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 from starlette.formparsers import MultiPartParser
 
+import breadboard_sdk
+from breadboard.product.cli import harness as harness_operations
+
 from breadboard_engine.api.cli_bridge.app import create_app
 import breadboard_engine.api.cli_bridge.app as app_module
-from breadboard_engine.api.cli_bridge.models import SessionStatus, TurnAdmission
-from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry, TurnRecord
+from breadboard_engine.api.cli_bridge.models import (
+    SessionCommandRequest,
+    SessionCreateRequest,
+    SessionStatus,
+    TurnAdmission,
+)
+from breadboard_engine.api.cli_bridge.registry import (
+    SessionRecord,
+    SessionRegistry,
+    TurnRecord,
+)
 from breadboard_engine.api.cli_bridge.registry.records import CancellationRecord
 from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
 from breadboard_engine.api.cli_bridge.service import SessionService
@@ -30,7 +44,13 @@ from breadboard_engine.provider.runtimes.testing import MockRuntime
 from breadboard.product.cli import session as session_operations
 from breadboard.product.runtime import session_store
 from breadboard.product.harness.lock import EffectiveHarnessLock
-from breadboard.product.runtime.events import AnnotationRecord, CompactionSnapshot, KernelEvent, ReplayError, Session
+from breadboard.product.runtime.events import (
+    AnnotationRecord,
+    CompactionSnapshot,
+    KernelEvent,
+    ReplayError,
+    Session,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -67,6 +87,154 @@ def _locked_harness(client: TestClient) -> str:
     return result["data"]["path"]
 
 
+def test_published_target_pins_exact_admission(
+    client: TestClient,
+    tmp_path: Path,
+) -> None:
+    lock_id = _locked_harness(client)
+    harness = tmp_path / "daily_driver.v1.yaml"
+    harness.write_text(harness.read_text() + "\n# mutable source changed after lock\n")
+    published = client.post(
+        "/v1/harness-publications/main",
+        json={
+            "lock_id": lock_id,
+            "expected_revision": 0,
+            "request_id": "publish-main-a",
+        },
+    )
+    assert published.status_code == 200
+    publication = published.json()["data"]
+
+    started = client.post(
+        "/v1/sessions",
+        json={
+            "publication_target": "main",
+            "task": "hold the pinned generation",
+            "session_id": "published-session-a",
+        },
+        headers={"Idempotency-Key": "published-session-a"},
+    )
+    assert started.status_code == 202, json.dumps(started.json(), sort_keys=True)
+    record = client.portal.call(
+        client.app.state.session_service.ensure_session,
+        "published-session-a",
+    )
+    admission = record.generation_admission
+    assert admission is not None
+    assert admission.target == "main"
+    assert admission.publication_revision == publication["revision"]
+    assert admission.generation_id == publication["generation_id"]
+    assert admission.status == "materialized"
+    harness_projection = client.get("/v1/harnesses/daily_driver.v1.yaml").json()[
+        "data"
+    ]["lifecycle"]
+    assert harness_projection["publications"] == [
+        {
+            "target": "main",
+            "revision": publication["revision"],
+            "generation_id": publication["generation_id"],
+            "preparation_id": publication["preparation_id"],
+            "request_id": "publish-main-a",
+        }
+    ]
+    assert harness_projection["retirement"]["pinned_session_count"] == 1
+    assert record.product_session.pinned_generation_id == publication["generation_id"]
+
+    retained_path = client.app.state.session_service.registry._state_path(
+        "published-session-a"
+    )
+    assert retained_path is not None
+    retained = json.loads(retained_path.read_text())["session"]["generation_admission"]
+    assert retained["admission_id"] == admission.admission_id
+    assert retained["work_id"] == admission.work_id
+    assert retained["attempt_id"] == admission.attempt_id
+    assert retained["controller_epoch"] == admission.controller_epoch
+    assert retained["grant_epoch"] == admission.grant_epoch
+
+    with pytest.raises(HTTPException) as reconfigure:
+        client.portal.call(
+            client.app.state.session_service.execute_command,
+            "published-session-a",
+            SessionCommandRequest(
+                command="set_mode",
+                payload={"mode": "plan"},
+            ),
+        )
+    assert reconfigure.value.status_code == 409
+    assert reconfigure.value.detail["code"] == "generation_pinned"
+    cancelled = client.post(
+        "/v1/sessions/published-session-a/cancel",
+        json={},
+        headers={"Idempotency-Key": "cancel-published-session-a"},
+    )
+    assert cancelled.status_code == 202
+
+    lifecycle_state = json.loads(
+        (tmp_path / ".breadboard" / "generations" / "state.json").read_text()
+    )
+    assert lifecycle_state["admissions"][admission.admission_id]["status"] == "released"
+
+
+def test_unknown_publication_target_refuses_start(client: TestClient) -> None:
+    refused = client.post(
+        "/v1/sessions",
+        json={
+            "publication_target": "missing",
+            "task": "must not start",
+            "session_id": "missing-publication",
+        },
+        headers={"Idempotency-Key": "missing-publication"},
+    )
+    assert refused.status_code == 409, json.dumps(refused.json(), sort_keys=True)
+    assert refused.json()["error"]["error_code"] == "publication_missing"
+
+
+def test_failed_generation_materialization_releases_admission(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    lock_id = _locked_harness(client)
+    published = client.post(
+        "/v1/harness-publications/team/main",
+        json={
+            "lock_id": lock_id,
+            "expected_revision": 0,
+            "request_id": "publish-main-failed-start",
+        },
+    )
+    assert published.status_code == 200
+    service = client.app.state.session_service
+
+    def fail_materialization(*_args, **_kwargs):
+        raise RuntimeError("materialization failed")
+
+    monkeypatch.setattr(service, "_captured_runtime_for_lock", fail_materialization)
+    with pytest.raises(RuntimeError, match="materialization failed"):
+        client.portal.call(
+            partial(
+                service.create_session,
+                SessionCreateRequest(task="never dispatched"),
+                session_id="failed-generation-materialization",
+                generation_workspace=tmp_path,
+                publication_target="team/main",
+            )
+        )
+    lifecycle_state = json.loads(
+        (tmp_path / ".breadboard" / "generations" / "state.json").read_text()
+    )
+    admissions = tuple(lifecycle_state["admissions"].values())
+    assert len(admissions) == 1
+    assert admissions[0]["status"] == "released"
+    assert (
+        client.portal.call(
+            service.registry.get,
+            "failed-generation-materialization",
+        )
+        is None
+    )
+
+
 def _stream_records(response) -> list[dict]:
     return [
         json.loads(line[6:])
@@ -101,9 +269,7 @@ def test_session_restore_raises_typed_replay_error_for_invalid_history() -> None
 
 
 def test_replay_differential_uses_durable_projection_as_expected_side() -> None:
-    lock = EffectiveHarnessLock._from_record(
-        {"graph_hash": "sha256:" + "b" * 64}
-    )
+    lock = EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "b" * 64})
     session = Session.start(lock, "replay task", session_id="replay-differential")
     session.input("next")
     session.assistant_message("answer")
@@ -112,9 +278,7 @@ def test_replay_differential_uses_durable_projection_as_expected_side() -> None:
     session.request_approval("approval-1", "run command")
     session.resolve_approval("approval-1", "allow")
     session.reconfigure(
-        EffectiveHarnessLock._from_record(
-            {"graph_hash": "sha256:" + "c" * 64}
-        ),
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "c" * 64}),
         "operator update",
     )
     session.pause("checkpoint")
@@ -125,8 +289,10 @@ def test_replay_differential_uses_durable_projection_as_expected_side() -> None:
         "session_id": "replay-differential",
         "status": "completed",
         "effective_lock_hash": "sha256:" + "c" * 64,
-        "task_hash": "sha256:"
-        + hashlib.sha256(b"replay task").hexdigest(),
+        "generation_id": "sha256:" + "c" * 64,
+        "trajectory_segment_id": "replay-differential:segment:1:" + "c" * 64,
+        "lineage": None,
+        "task_hash": "sha256:" + hashlib.sha256(b"replay task").hexdigest(),
         "event_count": 11,
         "pending_approval": None,
         "terminal_outcome": {"outcome": "completed", "summary": "done"},
@@ -273,7 +439,7 @@ def test_session_lifecycle_and_resumable_event_stream(
         started.json()["hashes"]["lock"]
         == record.product_session.read_model.effective_lock_hash
     )
-    assert started.json()["hashes"]["lock"] != lock["graph_hash"]
+    assert started.json()["hashes"]["lock"] != lock["configuration_graph"]["graph_hash"]
     assert record.metadata["active_model_role"] == "default"
     assert set(record.metadata["model_role_lock"]["roles"]) == {
         "default",
@@ -338,8 +504,17 @@ def test_session_lifecycle_and_resumable_event_stream(
             / "contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json"
         ).read_text(encoding="utf-8")
     )
-    event_registry = Registry().with_resource(
-        lifecycle_schema["$id"], Resource.from_contents(lifecycle_schema)
+    assistant_schema = json.loads(
+        (
+            contract_root
+            / "contracts/kernel/schemas/payloads/bb.payload.message.assistant.v1.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    event_registry = Registry().with_resources(
+        (
+            (lifecycle_schema["$id"], Resource.from_contents(lifecycle_schema)),
+            (assistant_schema["$id"], Resource.from_contents(assistant_schema)),
+        )
     )
     event_validator = Draft202012Validator(event_schema, registry=event_registry)
     payload_roots = {
@@ -371,10 +546,20 @@ def test_session_lifecycle_and_resumable_event_stream(
         )
     )
     assert resumed == [first[-1]]
+    current = client.get("/v1/sessions/session-fixture").json()["data"]
+    assert current["session"]["status"] == "canceled"
+    assert current["lifecycle"]["schema_version"] == "bb.session_lifecycle.v1"
+    assert current["lifecycle"]["generation_sequence"] == [
+        current["session"]["generation_id"]
+    ]
     assert (
-        client.get("/v1/sessions/session-fixture").json()["data"]["session"]["status"]
-        == "canceled"
+        current["lifecycle"]["runtime"]["generation_admission"]["generation_id"]
+        == record.generation_admission.generation_id
     )
+    assert current["lifecycle"]["runtime"]["pending"]["effects"] == {
+        "status": "none_observed",
+        "references": [],
+    }
     assert client.get("/v1/sessions/session-fixture/artifacts").json()["ok"] is True
 
 
@@ -384,9 +569,7 @@ def test_public_event_limit_counts_annotations_but_skips_compaction(
 ) -> None:
     session_id = "annotation-limit"
     session = Session.start(
-        EffectiveHarnessLock._from_record(
-            {"graph_hash": "sha256:" + "a" * 64}
-        ),
+        EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64}),
         "annotation limit",
         session_id=session_id,
     )
@@ -410,13 +593,19 @@ def test_public_event_limit_counts_annotations_but_skips_compaction(
     session.compact(CompactionSnapshot(b"[]", ("ctn_000001",)))
     session.complete("done")
     session.annotate(
-        AnnotationRecord("post-run", "message-a", "trajectory-a", "verified", "reviewer-2", "generation-a")
+        AnnotationRecord(
+            "post-run",
+            "message-a",
+            "trajectory-a",
+            "verified",
+            "reviewer-2",
+            "generation-a",
+        )
     )
     session_store.create_session(tmp_path, session)
 
     response = client.get(
-        f"/v1/sessions/{session_id}/events"
-        "?resume_token=3&limit=1&follow=false"
+        f"/v1/sessions/{session_id}/events?resume_token=3&limit=1&follow=false"
     )
 
     assert response.status_code == 200
@@ -427,8 +616,7 @@ def test_public_event_limit_counts_annotations_but_skips_compaction(
     assert records[0]["payload"]["message_id"] == "message-a"
     assert records[0]["visibility"]["model_visible"] is False
     resumed_after_compaction = client.get(
-        f"/v1/sessions/{session_id}/events"
-        "?resume_token=5&limit=1&follow=false"
+        f"/v1/sessions/{session_id}/events?resume_token=5&limit=1&follow=false"
     )
     assert resumed_after_compaction.status_code == 200
     assert "id: 6\n\n" in resumed_after_compaction.text
@@ -436,12 +624,13 @@ def test_public_event_limit_counts_annotations_but_skips_compaction(
     assert len(after_compaction) == 1
     assert after_compaction[0]["kind"] == "session.completed"
     assert after_compaction[0]["seq"] == 7
-    snapshot = client.get(
-        f"/v1/sessions/{session_id}/events?follow=false"
-    )
+    snapshot = client.get(f"/v1/sessions/{session_id}/events?follow=false")
     assert snapshot.status_code == 200
     settled_and_labeled = _stream_records(snapshot)[-2:]
-    assert [event["kind"] for event in settled_and_labeled] == ["session.completed", "annotation"]
+    assert [event["kind"] for event in settled_and_labeled] == [
+        "session.completed",
+        "annotation",
+    ]
     assert [event["seq"] for event in settled_and_labeled] == [7, 8]
     assert settled_and_labeled[1]["payload"]["annotation_id"] == "post-run"
 
@@ -482,8 +671,7 @@ def test_live_event_limit_returns_annotation_before_later_input(
     record.product_session.input("visible after annotation")
 
     response = client.get(
-        "/v1/sessions/snapshot-fixture/events"
-        "?resume_token=2&limit=1&follow=false"
+        "/v1/sessions/snapshot-fixture/events?resume_token=2&limit=1&follow=false"
     )
 
     assert response.status_code == 200
@@ -500,9 +688,7 @@ def test_public_session_events_snapshot_excludes_annotation_appended_after_first
     tmp_path: Path,
 ) -> None:
     session_id = "snapshot-boundary"
-    lock = EffectiveHarnessLock._from_record(
-        {"graph_hash": "sha256:" + "a" * 64}
-    )
+    lock = EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64})
     session = Session.start(lock, "snapshot boundary", session_id=session_id)
     session.assistant_message(
         "candidate",
@@ -554,9 +740,7 @@ def test_public_session_events_snapshot_excludes_annotation_appended_after_first
         "session.completed",
     ]
 
-    fresh_snapshot = client.get(
-        f"/v1/sessions/{session_id}/events?follow=false"
-    )
+    fresh_snapshot = client.get(f"/v1/sessions/{session_id}/events?follow=false")
     assert fresh_snapshot.status_code == 200
     fresh_records = _stream_records(fresh_snapshot)
     assert fresh_records[-1]["kind"] == "annotation"
@@ -691,7 +875,13 @@ def test_managed_state_terminal_public_session_survives_restart(
         assert paused.status_code == 202, paused.text
         uploaded = first.post(
             "/v1/sessions/managed-session/attachments",
-            files={"files": ("restart-proof.txt", b"restart artifact bytes\n", "text/plain")},
+            files={
+                "files": (
+                    "restart-proof.txt",
+                    b"restart artifact bytes\n",
+                    "text/plain",
+                )
+            },
         )
         assert uploaded.status_code == 200, uploaded.text
         artifact_before = first.get("/v1/sessions/managed-session/artifacts")
@@ -738,6 +928,8 @@ def test_managed_state_terminal_public_session_survives_restart(
         assert restored_bytes.json()["data"]["bytes"] == len(
             b"restart artifact bytes\n"
         )
+
+
 def test_public_session_restart_terminalizes_each_unfinished_turn(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -754,9 +946,7 @@ def test_public_session_restart_terminalizes_each_unfinished_turn(
     first_registry = SessionRegistry(state_root=state_root)
     first_service = SessionService(registry=first_registry)
     runtime_config = {"providers": {"default_model": "test/restart"}}
-    lock = first_service._runtime_lock(
-        session_id, runtime_config, str(config)
-    )
+    lock = first_service._runtime_lock(session_id, runtime_config, str(config))
     Session.start(
         lock,
         "durability test",
@@ -802,7 +992,9 @@ def test_public_session_restart_terminalizes_each_unfinished_turn(
     record.event_seq = 10
     record.replay_head_sequence = 10
     record.replay_head_event_id = "event-before-restart"
-    with TestClient(create_app(service=first_service, include_atp_routes=False)) as first:
+    with TestClient(
+        create_app(service=first_service, include_atp_routes=False)
+    ) as first:
         first.portal.call(first_registry.create, record)
 
     monkeypatch.setattr(
@@ -837,10 +1029,7 @@ def test_public_session_restart_terminalizes_each_unfinished_turn(
         assert recovered is not None
         assert recovered.active_turn_id is None
         assert recovered.turns_by_id["turn-cancelled"].state == "cancelled"
-        assert (
-            recovered.turns_by_id["turn-cancelled"].terminal_outcome
-            == "cancelled"
-        )
+        assert recovered.turns_by_id["turn-cancelled"].terminal_outcome == "cancelled"
         assert recovered.turns_by_id["turn-failed"].state == "failed"
         assert recovered.turns_by_id["turn-failed"].terminal_outcome == "failed"
 
@@ -941,11 +1130,11 @@ def test_c4_daily_driver_completes_with_stable_observations_and_restart(
     ]
     assert assistant_events
     assert any(
-        event["payload"] == {"metadata": {"has_content": True}}
+        event["payload"]["metadata"]["has_content"] is True
         for event in assistant_events
     )
     assert all(
-        set(event["payload"]) == {"metadata"}
+        set(event["payload"]) == {"metadata", "message_id", "trajectory_id"}
         and set(event["payload"]["metadata"]) == {"has_content"}
         and type(event["payload"]["metadata"]["has_content"]) is bool
         for event in assistant_events
@@ -1033,26 +1222,31 @@ def test_c4_daily_driver_completes_with_stable_observations_and_restart(
             != profile["effective_lock_hash"]
         )
 
-        lock_path = tmp_path / lock_id
-        corrupt_lock = json.loads(lock_path.read_text(encoding="utf-8"))
-        corrupt_lock["graph_hash"] = "sha256:" + "0" * 64
-        lock_path.write_text(json.dumps(corrupt_lock), encoding="utf-8")
-        rejected = restarted_service.post(
-            "/v1/sessions",
-            json={
-                "lock_id": lock_id,
-                "task": "must reject corrupt lock",
-                "session_id": "c4-corrupt-lock",
-            },
-            headers={"Idempotency-Key": "c4-corrupt"},
-        )
-        assert rejected.status_code == 409
-        assert rejected.json()["error"]["error_code"] == "lock_drift"
-
     persisted = (
         tmp_path / ".breadboard" / "sessions" / session_id / "session_events.jsonl"
     ).read_text(encoding="utf-8")
     assert "C4_SENTINEL" not in persisted
+
+
+def test_session_rejects_malformed_module_input_as_validation_error(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/v1/sessions",
+        json={
+            "publication_target": "malformed-input",
+            "module_input": {
+                "schema_id": "bb.demo.input.v1",
+                "body": "not base64",
+                "final": False,
+            },
+            "session_id": "malformed-module-input",
+        },
+        headers={"Idempotency-Key": "malformed-module-input"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["error_code"] == "invalid_request"
 
 
 def test_session_invalid_state_is_stable_and_secret_free(
@@ -1296,25 +1490,96 @@ def test_durable_session_fallback_rejects_symlinked_event_file(
     assert external.read_bytes() == original_external
 
 
-def test_session_start_preserves_lock_drift_error(
-    client: TestClient, tmp_path: Path
+def test_cli_target_runs_admit_new_sessions_after_publication(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class PublicClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start_session(self, payload, *, idempotency_key):
+            return client.post(
+                "/v1/sessions",
+                json=payload,
+                headers={"Idempotency-Key": idempotency_key},
+            ).json()
+
+        def events_session(self, session_id, *, follow):
+            response = client.post(
+                f"/v1/sessions/{session_id}/input",
+                json={"content": "Continue deterministically."},
+                headers={"Idempotency-Key": f"finish-{session_id}"},
+            )
+            assert response.status_code == 202, response.text
+            yield from _stream_records(client.get(f"/v1/sessions/{session_id}/events"))
+
+        def get_session(self, session_id):
+            return client.get(f"/v1/sessions/{session_id}").json()
+
+    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", PublicClient)
+    lock_id = _locked_harness(client)
+    runs = []
+    publications = []
+    for revision in range(2):
+        if revision:
+            harness = tmp_path / "daily_driver.v1.yaml"
+            harness.write_text(harness.read_text() + "\n# replacement implementation input\n")
+            locked = client.post("/v1/harnesses/daily_driver.v1.yaml/lock").json()
+            assert locked["ok"], locked
+        published = client.post(
+            "/v1/harness-publications/catalog",
+            json={
+                "lock_id": lock_id,
+                "expected_revision": revision,
+                "request_id": f"publish-{revision}",
+            },
+        ).json()
+        assert published["ok"], published
+        publications.append(published["data"]["generation_id"])
+        result = harness_operations.run(
+            SimpleNamespace(
+                target="catalog",
+                PATH=None,
+                server="http://testserver",
+                workspace=str(tmp_path),
+                task="Inspect this workspace using a tool, then finish.",
+            )
+        )
+        assert result.ok, result.as_dict()
+        runs.append(result)
+    assert runs[0].data["session_id"] != runs[1].data["session_id"]
+    assert publications[0] != publications[1]
+    assert [run.hashes["lock"] for run in runs] == publications
+
+
+@pytest.mark.parametrize("source_change", ["replace", "delete"])
+def test_explicit_lock_start_uses_retained_source(
+    client: TestClient, tmp_path: Path, source_change: str
 ) -> None:
     lock_id = _locked_harness(client)
     harness = tmp_path / "daily_driver.v1.yaml"
-    original = harness.read_text()
-    changed = original.replace("name: coding", "name: changed", 1).replace(
-        "mode: coding", "mode: changed", 1
-    )
-    assert changed != original
-    harness.write_text(changed)
+    if source_change == "replace":
+        harness.write_text("not: the admitted harness\n")
+    else:
+        harness.unlink()
     response = client.post(
         "/v1/sessions",
-        json={"lock_id": lock_id, "task": "must reject drift"},
-        headers={"Idempotency-Key": "drifted-start"},
+        json={
+            "lock_id": lock_id,
+            "task": "run the retained harness",
+            "session_id": "retained-lock-session",
+        },
+        headers={"Idempotency-Key": "retained-lock-start"},
     )
-    assert response.status_code == 409
-    assert response.json()["command"] == ["session", "start"]
-    assert response.json()["error"]["error_code"] == "lock_drift"
+    assert response.status_code == 202, response.text
+    events = _stream_records(client.get("/v1/sessions/retained-lock-session/events"))
+    assert events[0]["kind"] == "session.started"
+    cancelled = client.post(
+        "/v1/sessions/retained-lock-session/cancel",
+        json={},
+        headers={"Idempotency-Key": "retained-lock-cancel"},
+    )
+    assert cancelled.status_code == 202
 
 
 def test_session_start_dispatches_task_to_execution_service(client: TestClient) -> None:
@@ -2331,9 +2596,7 @@ def test_retained_refresh_replaces_turn_and_idempotency_journals() -> None:
     assert target.turn_admission is TurnAdmission.ACTIVE
     assert target.submissions_by_key_digest == {"sha256:fresh": fresh_turn}
     assert target.cancellations_by_key == {}
-    assert target.cancellations_by_key_digest == {
-        "sha256:cancel": fresh_cancellation
-    }
+    assert target.cancellations_by_key_digest == {"sha256:cancel": fresh_cancellation}
     assert target.admission_closed is True
     retained = SessionRegistry()._deserialize_record(
         SessionRegistry()._serialize_record(source)

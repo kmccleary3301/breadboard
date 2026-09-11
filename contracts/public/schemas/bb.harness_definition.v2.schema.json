@@ -1,0 +1,82 @@
+{
+  "$id": "https://breadboard.dev/contracts/public/schemas/bb.harness_definition.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "completion": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/completion"},
+    "concurrency": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/concurrency"},
+    "dossier": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/dossier"},
+    "enhanced_tools": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/enhanced_tools"},
+    "features": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/features"},
+    "guardrails": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/guardrails"},
+    "long_running": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/long_running"},
+    "loop": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/loop"},
+    "modes": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/modes"},
+    "multi_agent": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/multi_agent"},
+    "permissions": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/permissions"},
+    "prompts": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/prompts"},
+    "provider_tools": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/provider_tools"},
+    "providers": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/providers"},
+    "replay": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/replay"},
+    "schema_version": {"const": "bb.harness_definition.v2"},
+    "tools": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/tools"},
+    "turn_strategy": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/turn_strategy"},
+    "version": {"const": 2},
+    "workspace": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/workspace"},
+    "modules": {"$ref": "#/$defs/modules"}
+  },
+  "required": ["schema_version", "version"],
+  "allOf": [
+    {
+      "if": {"required": ["modules"]},
+      "then": {},
+      "else": {"required": ["workspace", "providers", "modes", "loop"]}
+    }
+  ],
+  "title": "BreadBoard Harness Definition V2",
+  "type": "object",
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "binding_name": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/-]*$"},
+    "package_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "digest"],
+      "properties": {
+        "source": {"type": "string", "minLength": 1},
+        "digest": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "modules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "bindings"],
+      "properties": {
+        "root": {"$ref": "#/$defs/binding_name"},
+        "bindings": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"$ref": "#/$defs/binding"}
+        }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package", "environment", "dependencies", "children", "config"],
+      "properties": {
+        "package": {"$ref": "#/$defs/package_ref"},
+        "environment": {"type": "string", "minLength": 1},
+        "dependencies": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/binding_name"}
+        },
+        "children": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/binding_name"}
+        },
+        "config": {}
+      }
+    }
+  }
+}

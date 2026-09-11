@@ -29,7 +29,7 @@ const parseArgs = (): CliOptions => {
   let colors = false
   let asciiOnly = true
   let includeLiveSlots = false
-  let configPath = path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml")
+  let configPath = path.resolve("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml")
   let rows = Number(process.env.BREADBOARD_TUI_FRAME_HEIGHT ?? "40")
   let cols = Number(process.env.BREADBOARD_TUI_FRAME_WIDTH ?? "120")
 

@@ -381,7 +381,6 @@ def test_retry_with_fallback_marks_degraded(monkeypatch):
     monkeypatch.setattr("breadboard_engine.agent_llm_openai.provider_router", stub_router)
     monkeypatch.setattr("breadboard_engine.agent_llm_openai.provider_registry", stub_registry)
     monkeypatch.setattr("breadboard_engine.agent_llm_openai.time.sleep", lambda _: None)
-    monkeypatch.setattr("breadboard_engine.agent_llm_openai.random.uniform", lambda a, b: 0.0)
 
     recorder = ProviderExchangeRecorder(
         correlation=ProviderCorrelation(

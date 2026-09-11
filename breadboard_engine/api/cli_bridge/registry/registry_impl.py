@@ -30,7 +30,11 @@ from ..models import (
 from .authority_owner import OwnerAuthorityMixin
 from .authority_drain import DrainAuthorityMixin
 from .persistence import PersistenceMixin
-from .records import CONTROL_REQUEST_ID_CAPACITY, SessionRecord
+from .records import (
+    CONTROL_REQUEST_ID_CAPACITY,
+    SessionRecord,
+    _generation_admission_exact_identity,
+)
 
 
 class SessionRegistry(OwnerAuthorityMixin, DrainAuthorityMixin, PersistenceMixin):
@@ -74,4 +78,11 @@ class SessionRegistry(OwnerAuthorityMixin, DrainAuthorityMixin, PersistenceMixin
             if not self._state_root.is_dir():
                 raise NotADirectoryError(self._state_root)
             self._load_retained_records()
-
+        self._session_reservation_identities: Dict[str, tuple[Any, ...] | None] = {}
+        for retained_record in self._records.values():
+            if retained_record.status is SessionStatus.STARTING:
+                self._session_reservation_identities[
+                    retained_record.session_id
+                ] = _generation_admission_exact_identity(
+                    retained_record.generation_admission
+                )

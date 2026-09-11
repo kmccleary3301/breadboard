@@ -304,7 +304,7 @@ daily_paths = (
 assert all(path.is_relative_to(site_root) for path in daily_paths)
 assert default_profile["profile_id"] == "daily_driver.v1"
 assert default_profile["effective_lock_hash"] == (
-    default_resolution.compilation.lock["graph_hash"]
+    default_resolution.compilation.lock.generation_id
 )
 e4_imports = [
     name

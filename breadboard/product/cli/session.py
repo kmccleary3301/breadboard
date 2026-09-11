@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import uuid
 from collections.abc import Callable, Coroutine
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, TypeVar
 
-from breadboard.product.harness.lock import EffectiveHarnessLock
+from breadboard.modules import AuthorityDeclaration, ModuleInput
 from breadboard.product.operations import session as session_operations
 from breadboard.product.operations.model import (
     OperationContext,
@@ -19,14 +21,38 @@ from breadboard.product.operations.model import (
 from breadboard.product.runtime import session_store
 from breadboard.product.runtime.events import Session, SessionView
 
+
 _MutationOutcome = TypeVar(
     "_MutationOutcome",
-    session_operations.StartSessionOutcome,
     session_operations.SendSessionInputOutcome,
     session_operations.ApproveSessionOutcome,
     session_operations.ResumeSessionOutcome,
     session_operations.CancelSessionOutcome,
 )
+
+
+def _load_document(path_value: str, parser: Callable[[object], Any], label: str) -> Any:
+    path = Path(path_value).expanduser()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise PermissionError(f"{label} source is unavailable") from error
+    except JSONDecodeError as error:
+        raise ValueError(f"{label} source contains invalid JSON") from error
+    try:
+        return parser(raw)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{label} source is invalid: {error}") from error
+
+
+def load_module_input(path_value: str) -> ModuleInput:
+    return _load_document(path_value, ModuleInput.from_dict, "module input")
+
+
+def load_module_authority(path_value: str) -> AuthorityDeclaration:
+    return _load_document(
+        path_value, AuthorityDeclaration.from_dict, "module authority"
+    )
 
 
 def _workspace(arguments: object | None = None, workspace: Path | None = None) -> Path:
@@ -72,9 +98,7 @@ _PROBLEM_FIELDS = frozenset(
         "next_actions",
     }
 )
-_STAGE_OUTCOME_FIELDS = frozenset(
-    {"stage", "status", "report_ref", "next_action"}
-)
+_STAGE_OUTCOME_FIELDS = frozenset({"stage", "status", "report_ref", "next_action"})
 _ERROR_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_.-]*$")
 _SHA256_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 _EXIT_CODES = frozenset({0, 2, 3, 4, 5, 6})
@@ -84,8 +108,7 @@ _STAGE_STATUSES = frozenset({"passed", "failed", "blocked", "stale"})
 
 def _is_string_list(value: object, *, nonempty: bool) -> bool:
     return isinstance(value, list) and all(
-        isinstance(item, str) and (bool(item) or not nonempty)
-        for item in value
+        isinstance(item, str) and (bool(item) or not nonempty) for item in value
     )
 
 
@@ -214,15 +237,10 @@ def _retarget_remote_result(
         return result
     result.command = command
     result.stage_outcomes = [
-        {**outcome, "stage": stage}
-        if outcome.get("stage") == source_stage
-        else outcome
+        {**outcome, "stage": stage} if outcome.get("stage") == source_stage else outcome
         for outcome in result.stage_outcomes
     ]
-    if (
-        result.error is not None
-        and result.error.get("failed_stage") == source_stage
-    ):
+    if result.error is not None and result.error.get("failed_stage") == source_stage:
         result.error = {**result.error, "failed_stage": stage}
     return result
 
@@ -244,10 +262,7 @@ def _remote_error(
     )
     if isinstance(body, dict) and body.keys() == _PUBLIC_RESULT_FIELDS:
         canonical_error = _remote_result(body)
-        if (
-            not canonical_error.ok
-            and canonical_error.exit_code in expected_exit_codes
-        ):
+        if not canonical_error.ok and canonical_error.exit_code in expected_exit_codes:
             return canonical_error
     error_code = "runtime_failure" if status >= 500 else "invalid_state"
     message = f"remote server returned HTTP {status}"
@@ -285,7 +300,6 @@ def _remote_operation(
     except ApiError as error:
         result = _remote_error(command, stage, error.status, error.body)
     return _retarget_remote_result(result, command, stage)
-
 
 
 _REMOTE_EVENT_PAGE_SIZE = 256
@@ -331,20 +345,20 @@ def _remote_event_snapshot(
         if len(page) > page_limit:
             raise ValueError("server returned an oversized session event page")
         if not page:
-            if consumed_cursor is not None and consumed_cursor >= upper_sequence and events:
+            if (
+                consumed_cursor is not None
+                and consumed_cursor >= upper_sequence
+                and events
+            ):
                 return events
-            raise ValueError(
-                "server event snapshot ended before its initial bound"
-            )
+            raise ValueError("server event snapshot ended before its initial bound")
         previous_sequence = resume_token
         bounded_page: list[dict[str, Any]] = []
         crossed_bound = False
         for event in page:
             sequence = event["seq"]
             if type(sequence) is not int or sequence <= previous_sequence:
-                raise ValueError(
-                    "server returned a non-increasing session event page"
-                )
+                raise ValueError("server returned a non-increasing session event page")
             if sequence > upper_sequence:
                 crossed_bound = True
                 break
@@ -393,6 +407,7 @@ def _remote_events_result(client: Any, session_id: str) -> OperationResult:
         stage="session.events",
     )
 
+
 def list_sessions(arguments: object) -> OperationResult:
     client = _remote_client(arguments)
     if client is not None:
@@ -402,9 +417,7 @@ def list_sessions(arguments: object) -> OperationResult:
             lambda: _remote_result(client.list_session()),
         )
     runtime = session_operations.SessionRuntime(_context(arguments))
-    return _run(
-        runtime.list_sessions(session_operations.ListSessionsRequest())
-    )
+    return _run(runtime.list_sessions(session_operations.ListSessionsRequest()))
 
 
 def get(arguments: object, command_name: str = "get") -> OperationResult:
@@ -424,28 +437,6 @@ def get(arguments: object, command_name: str = "get") -> OperationResult:
             )
         )
     )
-
-
-def bootstrap_local(arguments: object) -> OperationResult:
-    """Create private authority for one explicitly selected local legacy session."""
-    context = _context(arguments)
-    command = ["session", "bootstrap-local"]
-    try:
-        durable, event_path = session_store.bootstrap_local_session_authority(
-            context.workspace,
-            arguments.SESSION_ID,
-        )
-        return OperationResult.success(
-            command,
-            {
-                "session": durable.read_model.as_dict(),
-                "projection_authority": "committed",
-            },
-            (portable_ref(event_path, context.workspace),),
-            stage="session.bootstrap-local",
-        )
-    except Exception as error:
-        return from_exception(command, error, "session.bootstrap-local")
 
 
 class _DurableSessionMutationAdapter:
@@ -483,37 +474,18 @@ class _DurableSessionMutationAdapter:
             outcome_type,
         )
 
-    async def start(
-        self,
-        request: session_operations.StartSessionRequest,
-        context: OperationContext,
-        effective_lock: EffectiveHarnessLock,
-        _source_path: Path,
-    ) -> session_operations.StartSessionOutcome:
-        def create() -> session_operations.StartSessionOutcome:
-            session = Session.start(
-                effective_lock,
-                request.task,
-                session_id=request.session_id,
-            )
-            session, event_path = session_store.create_session(
-                context.workspace,
-                session,
-            )
-            return self._outcome(
-                session.read_model,
-                event_path,
-                context.workspace,
-                session_operations.StartSessionOutcome,
-            )
-
-        return await asyncio.to_thread(create)
-
     async def send_input(
         self,
         request: session_operations.SendSessionInputRequest,
         context: OperationContext,
     ) -> session_operations.SendSessionInputOutcome:
+        if request.module_input is not None:
+            raise session_operations.SessionMutationError(
+                session_operations.EXIT_BLOCKED,
+                "module_execution_requires_server",
+                "module-input Session execution requires --server",
+                hint="use the installed server and pass --server",
+            )
         return await asyncio.to_thread(
             self._mutate,
             context.workspace,
@@ -565,27 +537,65 @@ class _DurableSessionMutationAdapter:
         )
 
 
-def start(arguments: object) -> OperationResult:
-    request = session_operations.StartSessionRequest(
-        lock_id=str(
-            getattr(arguments, "lock_id", None) or getattr(arguments, "LOCK_ID")
+def checkpoint(arguments: object) -> OperationResult:
+    client = _remote_client(arguments)
+    if client is None:
+        return from_exception(
+            ["session", "checkpoint"],
+            RuntimeError("session checkpoint requires --server"),
+            "session.checkpoint",
+        )
+    return _remote_operation(
+        ["session", "checkpoint"],
+        "session.checkpoint",
+        lambda: _remote_result(
+            client.checkpoint_session(
+                arguments.SESSION_ID,
+                arguments.reason,
+                arguments.request_id,
+            )
         ),
-        task=str(getattr(arguments, "task", None) or getattr(arguments, "TASK")),
-        session_id=getattr(arguments, "session_id", None),
     )
-    runtime = session_operations.SessionRuntime(
-        _context(arguments),
-        mutation_port=_DurableSessionMutationAdapter(),
+
+
+def adopt(arguments: object) -> OperationResult:
+    client = _remote_client(arguments)
+    if client is None:
+        return from_exception(
+            ["session", "adopt"],
+            RuntimeError("session adoption requires --server"),
+            "session.adopt",
+        )
+    return _remote_operation(
+        ["session", "adopt"],
+        "session.adopt",
+        lambda: _remote_result(
+            client.adopt_session(
+                arguments.SESSION_ID,
+                arguments.checkpoint,
+                arguments.lock,
+                arguments.request_id,
+            )
+        ),
     )
-    return _run(runtime.start(request))
 
 
 def send_input(arguments: object) -> OperationResult:
-    content = (
-        arguments.content
-        if getattr(arguments, "content", None) is not None
-        else arguments.TEXT
+    content_option = getattr(arguments, "content", None)
+    text_argument = getattr(arguments, "TEXT", None)
+    module_input_path = getattr(arguments, "module_input", None)
+    if module_input_path is not None and (
+        content_option is not None or text_argument is not None
+    ):
+        raise ValueError("supply exactly one text input or --module-input")
+    if content_option is not None and text_argument is not None:
+        raise ValueError("supply exactly one positional text or --content")
+    module_input = (
+        load_module_input(str(module_input_path))
+        if module_input_path is not None
+        else None
     )
+    content = content_option if content_option is not None else text_argument
     client = _remote_client(arguments)
     if client is not None:
         return _remote_operation(
@@ -595,6 +605,9 @@ def send_input(arguments: object) -> OperationResult:
                 client.send_input_session(
                     arguments.SESSION_ID,
                     content,
+                    module_input=None
+                    if module_input is None
+                    else module_input.to_dict(),
                     idempotency_key=_idempotency_key(arguments),
                 )
             ),
@@ -608,6 +621,7 @@ def send_input(arguments: object) -> OperationResult:
             session_operations.SendSessionInputRequest(
                 session_id=arguments.SESSION_ID,
                 content=content,
+                module_input=module_input,
             )
         )
     )
@@ -661,9 +675,7 @@ def resume(arguments: object) -> OperationResult:
         mutation_port=_DurableSessionMutationAdapter(),
     )
     return _run(
-        runtime.resume(
-            session_operations.ResumeSessionRequest(arguments.SESSION_ID)
-        )
+        runtime.resume(session_operations.ResumeSessionRequest(arguments.SESSION_ID))
     )
 
 

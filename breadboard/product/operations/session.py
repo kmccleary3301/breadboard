@@ -4,10 +4,16 @@ import asyncio
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Mapping, Protocol, Sequence
+from typing import Any, Literal, Mapping, Protocol, Sequence
 
-from breadboard.product.harness.lock import EffectiveHarnessLock, load_lock
-from breadboard.product.operations.harness import LockHarnessRequest, lock_harness
+from breadboard.artifacts.cas import FilesystemCAS
+from breadboard.modules import AuthorityDeclaration, ModuleInput
+from breadboard.product.harness.lock import (
+    EffectiveHarnessLock,
+    LOCK_SCHEMA_VERSION,
+    load_lock,
+    materialize_lock,
+)
 from breadboard.product.operations.model import (
     EXIT_BLOCKED,
     OperationContext,
@@ -54,17 +60,37 @@ class SessionMutationError(RuntimeError):
         self.next_actions = tuple(next_actions)
 
 
+def _validate_input(text: str | None, module_input: ModuleInput | None) -> None:
+    if (text is None) == (module_input is None):
+        raise ValueError("supply exactly one text input or module_input")
+    if module_input is not None:
+        if not isinstance(module_input, ModuleInput):
+            raise TypeError("module_input must be a ModuleInput")
+        return
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("text input must not be empty")
+
+
+def _validate_required_text(value: str, field: str) -> None:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} must not be empty")
+
+
 @dataclass(frozen=True, slots=True)
 class StartSessionRequest:
-    lock_id: str
-    task: str
+    lock_id: str | None = None
+    publication_target: str | None = None
+    task: str | None = None
     session_id: str | None = None
+    module_input: ModuleInput | None = None
+    module_authority: AuthorityDeclaration | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class SendSessionInputRequest:
     session_id: str
-    content: str
+    content: str | None = None
+    module_input: ModuleInput | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +109,21 @@ class ResumeSessionRequest:
 class CancelSessionRequest:
     session_id: str
     reason: str = "operator request"
+
+
+@dataclass(frozen=True, slots=True)
+class CheckpointSessionRequest:
+    session_id: str
+    reason: str
+    request_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class AdoptSessionRequest:
+    session_id: str
+    checkpoint_id: str
+    lock_id: str
+    request_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,8 +166,8 @@ class SessionMutationPort(Protocol):
         self,
         request: StartSessionRequest,
         context: OperationContext,
-        effective_lock: EffectiveHarnessLock,
-        source_path: Path,
+        effective_lock: EffectiveHarnessLock | None,
+        source_path: Path | None,
     ) -> StartSessionOutcome: ...
 
     async def send_input(
@@ -153,6 +194,20 @@ class SessionMutationPort(Protocol):
         context: OperationContext,
     ) -> CancelSessionOutcome: ...
 
+    async def checkpoint(
+        self,
+        request: CheckpointSessionRequest,
+        context: OperationContext,
+    ) -> dict[str, Any]: ...
+
+    async def adopt(
+        self,
+        request: AdoptSessionRequest,
+        context: OperationContext,
+        effective_lock: EffectiveHarnessLock,
+        source_path: Path,
+    ) -> dict[str, Any]: ...
+
 
 class LiveSessionReadPort(Protocol):
     async def get_live_session(self, session_id: str) -> Session | None: ...
@@ -163,6 +218,11 @@ class LiveSessionReadPort(Protocol):
         self,
         session_id: str,
     ) -> list[dict[str, object]] | None: ...
+
+    async def get_live_diagnostics(
+        self,
+        session_id: str,
+    ) -> Mapping[str, Any] | None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,11 +273,15 @@ def _session_result(
     command_name: str,
     *,
     refs: Sequence[str] = (),
+    live_diagnostics: Mapping[str, Any] | None = None,
 ) -> OperationResult:
     view = session.read_model
+    lifecycle = session.lifecycle_projection()
+    if live_diagnostics is not None:
+        lifecycle["runtime"] = dict(live_diagnostics)
     return OperationResult.success(
         ["session", command_name],
-        {"session": view.as_dict()},
+        {"session": view.as_dict(), "lifecycle": lifecycle},
         refs,
         {"lock": view.effective_lock_hash, "task": view.task_hash},
         stage=f"session.{command_name}",
@@ -289,10 +353,7 @@ class SessionRuntime:
                         "status": view.status,
                         "event_count": view.event_count,
                     }
-                rows = [
-                    rows_by_id[session_id]
-                    for session_id in sorted(rows_by_id)
-                ]
+                rows = [rows_by_id[session_id] for session_id in sorted(rows_by_id)]
             return OperationResult.success(
                 ["session", "list"],
                 {"sessions": rows, "count": len(rows)},
@@ -308,13 +369,14 @@ class SessionRuntime:
     ) -> OperationResult:
         try:
             if self.live_port is not None:
-                live_session = await self.live_port.get_live_session(
-                    request.session_id
-                )
+                live_session = await self.live_port.get_live_session(request.session_id)
                 if live_session is not None:
                     return _session_result(
                         live_session,
                         request.command_name,
+                        live_diagnostics=await self.live_port.get_live_diagnostics(
+                            request.session_id
+                        ),
                     )
             session, event_path = await asyncio.to_thread(
                 load_session,
@@ -350,9 +412,7 @@ class SessionRuntime:
     ) -> OperationResult:
         try:
             if self.live_port is not None:
-                live_rows = await self.live_port.get_live_artifacts(
-                    request.session_id
-                )
+                live_rows = await self.live_port.get_live_artifacts(request.session_id)
                 if live_rows is not None:
                     return OperationResult.success(
                         ["session", "artifacts"],
@@ -400,9 +460,7 @@ class SessionRuntime:
             source: Literal["live", "durable"] = "durable"
             session = None
             if self.live_port is not None:
-                session = await self.live_port.get_live_session(
-                    request.session_id
-                )
+                session = await self.live_port.get_live_session(request.session_id)
                 if session is not None:
                     source = "live"
             record_ref = None
@@ -435,11 +493,7 @@ class SessionRuntime:
             )
             if request.limit is not None:
                 events = events[: request.limit]
-            cursor = (
-                events[-1].sequence
-                if events
-                else request.after_sequence
-            )
+            cursor = events[-1].sequence if events else request.after_sequence
             return SessionEventBatch(
                 events=events,
                 cursor=cursor,
@@ -490,25 +544,42 @@ class SessionRuntime:
         command = ["session", "start"]
         stage = "session.start"
         try:
+            _validate_input(request.task, request.module_input)
+            if (request.lock_id is None) == (request.publication_target is None):
+                raise ValueError("supply exactly one lock_id or publication_target")
+            if request.module_authority is not None:
+                if not isinstance(request.module_authority, AuthorityDeclaration):
+                    raise TypeError("module_authority must be an AuthorityDeclaration")
+                if request.module_input is None:
+                    raise ValueError("module_authority requires module_input")
             if request.session_id is not None:
                 validate_session_id(request.session_id)
-            effective_lock, source_path, checked = await asyncio.to_thread(
-                _resolve_start_lock,
-                request,
-                self.context,
-            )
-            if not checked.ok:
-                error = checked.error or {}
-                return OperationResult.failure(
-                    command,
-                    checked.exit_code,
-                    str(error.get("error_code") or "lock_drift"),
-                    str(error.get("message") or "harness lock validation failed"),
-                    stage,
-                    hint=error.get("hint"),
-                    refs=checked.record_refs,
-                    next_actions=checked.next_actions,
+            effective_lock: EffectiveHarnessLock | None = None
+            source_path: Path | None = None
+            if request.lock_id is not None:
+                effective_lock, source_path, checked = await asyncio.to_thread(
+                    _resolve_start_lock,
+                    request,
+                    self.context,
                 )
+                if not checked.ok:
+                    error = checked.error or {}
+                    return OperationResult.failure(
+                        command,
+                        checked.exit_code,
+                        str(error.get("error_code") or "lock_drift"),
+                        str(error.get("message") or "harness lock validation failed"),
+                        stage,
+                        hint=error.get("hint"),
+                        refs=checked.record_refs,
+                        next_actions=checked.next_actions,
+                    )
+                if effective_lock is not None and (
+                    effective_lock["modules"] is not None
+                ) != (request.module_input is not None):
+                    raise ValueError(
+                        "executable Locks require module_input; data Locks require task"
+                    )
             outcome = await self._require_mutation_port().start(
                 request,
                 self.context,
@@ -529,6 +600,7 @@ class SessionRuntime:
         stage = "session.send-input"
         try:
             validate_session_id(request.session_id)
+            _validate_input(request.content, request.module_input)
             return _mutation_result(
                 command,
                 stage,
@@ -605,6 +677,70 @@ class SessionRuntime:
         except Exception as error:
             return from_exception(command, error, stage)
 
+    async def checkpoint(
+        self,
+        request: CheckpointSessionRequest,
+    ) -> OperationResult:
+        command = ["session", "checkpoint"]
+        stage = "session.checkpoint"
+        try:
+            validate_session_id(request.session_id)
+            _validate_required_text(request.reason, "checkpoint reason")
+            _validate_required_text(request.request_id, "request_id")
+            result = await self._require_mutation_port().checkpoint(
+                request,
+                self.context,
+            )
+            if not isinstance(result, dict):
+                raise TypeError("session checkpoint port returned an invalid result")
+            return OperationResult.success(command, result, stage=stage)
+        except SessionMutationError as error:
+            return _mutation_failure(command, stage, error)
+        except Exception as error:
+            return from_exception(command, error, stage)
+
+    async def adopt(
+        self,
+        request: AdoptSessionRequest,
+    ) -> OperationResult:
+        command = ["session", "adopt"]
+        stage = "session.adopt"
+        try:
+            validate_session_id(request.session_id)
+            _validate_required_text(request.checkpoint_id, "checkpoint_id")
+            _validate_required_text(request.lock_id, "lock_id")
+            _validate_required_text(request.request_id, "request_id")
+            effective_lock, source_path, checked = await asyncio.to_thread(
+                _resolve_start_lock,
+                StartSessionRequest(lock_id=request.lock_id, task="adoption"),
+                self.context,
+            )
+            if not checked.ok:
+                error = checked.error or {}
+                return OperationResult.failure(
+                    command,
+                    checked.exit_code,
+                    str(error.get("error_code") or "lock_drift"),
+                    str(error.get("message") or "harness lock validation failed"),
+                    stage,
+                    hint=error.get("hint"),
+                    refs=checked.record_refs,
+                    next_actions=checked.next_actions,
+                )
+            result = await self._require_mutation_port().adopt(
+                request,
+                self.context,
+                effective_lock,
+                source_path,
+            )
+            if not isinstance(result, dict):
+                raise TypeError("session adoption port returned an invalid result")
+            return OperationResult.success(command, result, stage=stage)
+        except SessionMutationError as error:
+            return _mutation_failure(command, stage, error)
+        except Exception as error:
+            return from_exception(command, error, stage)
+
 
 def _mutation_result(
     command: Sequence[str],
@@ -655,6 +791,12 @@ def _resolve_start_lock(
     lock_path = context.resolve_path(request.lock_id)
     lock, metadata_path = load_lock(lock_path, context.workspace, explicit=True)
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    if lock["schema_version"] == LOCK_SCHEMA_VERSION:
+        cas = FilesystemCAS(context.workspace / ".breadboard" / "module-artifacts")
+        try:
+            materialize_lock(lock, cas=cas)
+        finally:
+            cas.close()
     source_ref = metadata.get("source_ref")
     if not isinstance(source_ref, str) or not source_ref:
         raise ValueError("lock metadata source_ref is missing")
@@ -662,16 +804,16 @@ def _resolve_start_lock(
     if not context.contained and not Path(source_ref).is_absolute():
         source_reference = context.workspace / source_ref
     source_path = context.resolve_path(source_reference)
-    lock_request_path: str | Path = source_ref if context.contained else source_path
-    lock_request_out: str | Path = (
-        lock_path.relative_to(context.workspace) if context.contained else lock_path
-    )
-    checked = lock_harness(
-        LockHarnessRequest(
-            path=lock_request_path,
-            out=lock_request_out,
-            check=True,
+    return (
+        lock,
+        source_path,
+        OperationResult.success(
+            ["session", "start"],
+            refs=[portable_ref(lock_path, context.workspace)],
+            hashes={
+                "lock": lock.generation_id,
+                "graph": lock.configuration_graph["graph_hash"],
+            },
+            stage="session.lock",
         ),
-        context,
     )
-    return lock, source_path, checked

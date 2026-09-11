@@ -1,0 +1,528 @@
+from __future__ import annotations
+
+from pathlib import Path
+from threading import Barrier, Event, Thread
+
+import pytest
+
+from breadboard.product.harness.compile import compile_harness_definition
+from breadboard.product.runtime.generations import (
+    GenerationLifecycle,
+    GenerationLifecycleError,
+)
+
+
+class SentinelPreparer:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.created: list[str] = []
+        self.failed: set[str] = set()
+
+    def prepare(self, preparation, record_resource):
+        sentinel = self.root / f"{preparation.generation_id}.sentinel"
+        sentinel.write_text(preparation.source_ref, encoding="utf-8")
+        self.created.append(preparation.generation_id)
+        record_resource(str(sentinel))
+        if preparation.source_ref in self.failed:
+            raise RuntimeError("controlled prepare failure")
+        return str(sentinel)
+
+    def observe(self, resource_ref):
+        return "ready" if Path(resource_ref).exists() else "absent"
+
+    def dispose(self, resource_ref):
+        path = Path(resource_ref)
+        path.unlink(missing_ok=True)
+        return "confirmed_absent"
+
+
+class DistinctSentinelPreparer(SentinelPreparer):
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.resources: dict[str, Path] = {}
+
+    def prepare(self, preparation, record_resource):
+        sentinel = self.root / f"{preparation.preparation_id}.sentinel"
+        sentinel.write_text(preparation.source_ref, encoding="utf-8")
+        self.created.append(preparation.generation_id)
+        self.resources[preparation.preparation_id] = sentinel
+        record_resource(str(sentinel))
+        return str(sentinel)
+
+
+class SharedSentinelPreparer(SentinelPreparer):
+    def prepare(self, preparation, record_resource):
+        sentinel = self.root / "shared.sentinel"
+        sentinel.write_text(preparation.source_ref, encoding="utf-8")
+        self.created.append(preparation.generation_id)
+        record_resource(str(sentinel))
+        return str(sentinel)
+
+
+class MappedSentinelPreparer(SentinelPreparer):
+    def prepare(self, preparation, record_resource):
+        resource_name = (
+            "shared"
+            if preparation.source_ref in {"pinned.yaml", "loser.yaml"}
+            else preparation.source_ref
+        )
+        sentinel = self.root / f"{resource_name}.sentinel"
+        sentinel.write_text(preparation.source_ref, encoding="utf-8")
+        self.created.append(preparation.generation_id)
+        record_resource(str(sentinel))
+        return str(sentinel)
+
+
+class ResourceRecordedPausePreparer(DistinctSentinelPreparer):
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.recorded = Event()
+        self.resume = Event()
+
+    def prepare(self, preparation, record_resource):
+        resource_ref = super().prepare(preparation, record_resource)
+        self.recorded.set()
+        if not self.resume.wait(timeout=5):
+            raise RuntimeError("timed out waiting to resume preparation")
+        return resource_ref
+
+
+class CrashAfterResource(BaseException):
+    pass
+
+
+class CrashPreparer(SentinelPreparer):
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.crash_before: set[str] = set()
+        self.crash_after: set[str] = set()
+
+    def prepare(self, preparation, record_resource):
+        if preparation.source_ref in self.crash_before:
+            raise CrashAfterResource()
+        sentinel = super().prepare(preparation, record_resource)
+        if preparation.source_ref in self.crash_after:
+            raise CrashAfterResource()
+        return sentinel
+
+
+class UnknownCleanupPreparer(SentinelPreparer):
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.unknown: set[str] = set()
+
+    def observe(self, resource_ref):
+        if resource_ref in self.unknown:
+            return "unknown"
+        return super().observe(resource_ref)
+
+    def dispose(self, resource_ref):
+        self.unknown.add(resource_ref)
+        return "unknown"
+
+
+def _lock(name: str):
+    return compile_harness_definition({"name": name}, source_ref=f"{name}.yaml").lock
+
+
+def test_publication_admission_fence_retains_old_generation_and_rejects_stale_owner(
+    tmp_path,
+):
+    preparer = SentinelPreparer(tmp_path / "resources")
+    preparer.root.mkdir()
+    lifecycle = GenerationLifecycle(tmp_path, preparer)
+    lock_a, lock_b, lock_c = (_lock("a"), _lock("b"), _lock("c"))
+
+    publication_a = lifecycle.prepare_and_publish(
+        "main", lock_a, "a.yaml", 0, "publish-a"
+    )
+    admission_a = lifecycle.reserve_target_admission("main", "session-a", "input-a")
+    replay = lifecycle.reserve_target_admission("main", "session-a", "input-a")
+    assert replay == admission_a
+    lifecycle.mark_materialized(admission_a.admission_id)
+    publication_b = lifecycle.prepare_and_publish(
+        "main", lock_b, "b.yaml", publication_a.revision, "publish-b"
+    )
+    assert lifecycle.current("main") == publication_b
+    assert admission_a.generation_id == lock_a.generation_id
+    lifecycle.require_dispatch(
+        admission_a.admission_id,
+        admission_a.generation_id,
+        admission_a.work_id,
+        admission_a.attempt_id,
+        admission_a.controller_epoch,
+        admission_a.grant_epoch,
+    )
+
+    projection = lifecycle.inspect_generation(lock_a.generation_id)
+    assert projection["publications"] == []
+    assert projection["admissions"][0]["session_id"] == "session-a"
+    assert projection["retirement"] == {
+        "known": True,
+        "pinned_session_count": 1,
+        "cleanup_states": ["owned"],
+        "retired": False,
+    }
+    assert "resource_ref" not in projection["preparations"][0]
+    with pytest.raises(GenerationLifecycleError) as pressure:
+        lifecycle.prepare_and_publish(
+            "main", lock_c, "c.yaml", publication_b.revision, "publish-c"
+        )
+    assert pressure.value.code == "capacity_pressure"
+    assert (preparer.root / f"{lock_c.generation_id}.sentinel").exists() is False
+
+    lifecycle.release(admission_a.admission_id, cleanup_confirmed=True)
+    retry = lifecycle.reserve_target_admission("main", "session-a", "input-a")
+    assert retry.admission_id != admission_a.admission_id
+    assert retry.work_id != admission_a.work_id
+    lifecycle.release(retry.admission_id, cleanup_confirmed=True)
+    publication_a_again = lifecycle.prepare_and_publish(
+        "main", lock_a, "a.yaml", publication_b.revision, "publish-a-again"
+    )
+    assert publication_a_again.generation_id == lock_a.generation_id
+    with pytest.raises(GenerationLifecycleError) as stale:
+        lifecycle.require_dispatch(
+            admission_a.admission_id,
+            admission_a.generation_id,
+            admission_a.work_id,
+            admission_a.attempt_id,
+            admission_a.controller_epoch,
+            admission_a.grant_epoch,
+        )
+    assert stale.value.code == "stale_dispatch"
+
+
+def test_republication_reuses_current_resource_for_same_generation(tmp_path) -> None:
+    preparer = DistinctSentinelPreparer(tmp_path / "resources")
+    preparer.root.mkdir()
+    lifecycle = GenerationLifecycle(tmp_path, preparer)
+    lock = _lock("same-generation")
+
+    first = lifecycle.prepare_and_publish(
+        "main",
+        lock,
+        "same.yaml",
+        0,
+        "publish-first",
+    )
+    lifecycle.reserve_target_admission("main", "session-1", "input-1")
+    second = lifecycle.prepare_and_publish(
+        "main",
+        lock,
+        "same.yaml",
+        first.revision,
+        "publish-second",
+    )
+
+    assert second.preparation_id == first.preparation_id
+    assert preparer.created == [lock.generation_id]
+    assert preparer.resources[first.preparation_id].exists() is True
+    with pytest.raises(GenerationLifecycleError) as stale:
+        lifecycle.prepare_and_publish(
+            "main",
+            lock,
+            "same.yaml",
+            first.revision,
+            "publish-stale",
+        )
+    assert stale.value.code == "cas_conflict"
+    assert preparer.resources[first.preparation_id].exists() is True
+
+
+def test_rollback_reuses_ready_preparation_pinned_by_admission(tmp_path) -> None:
+    preparer = DistinctSentinelPreparer(tmp_path / "resources")
+    preparer.root.mkdir()
+    lifecycle = GenerationLifecycle(tmp_path, preparer)
+    lock_a, lock_b = _lock("rollback-a"), _lock("rollback-b")
+    publication_a = lifecycle.prepare_and_publish(
+        "main",
+        lock_a,
+        "a.yaml",
+        0,
+        "publish-a",
+    )
+    lifecycle.reserve_target_admission("main", "session-a", "input-a")
+    publication_b = lifecycle.prepare_and_publish(
+        "main",
+        lock_b,
+        "b.yaml",
+        publication_a.revision,
+        "publish-b",
+    )
+
+    rollback = lifecycle.prepare_and_publish(
+        "main",
+        lock_a,
+        "a.yaml",
+        publication_b.revision,
+        "rollback-a",
+    )
+
+    assert rollback.preparation_id == publication_a.preparation_id
+    assert preparer.created == [lock_a.generation_id, lock_b.generation_id]
+    assert preparer.resources[publication_a.preparation_id].exists() is True
+
+
+def test_cas_loser_does_not_dispose_current_shared_resource(tmp_path) -> None:
+    preparer = SharedSentinelPreparer(tmp_path / "resources")
+    preparer.root.mkdir()
+    lifecycle = GenerationLifecycle(tmp_path, preparer)
+    current = lifecycle.prepare_and_publish(
+        "main",
+        _lock("current"),
+        "current.yaml",
+        0,
+        "publish-current",
+    )
+
+    with pytest.raises(GenerationLifecycleError) as stale:
+        lifecycle.prepare_and_publish(
+            "main",
+            _lock("loser"),
+            "loser.yaml",
+            0,
+            "publish-loser",
+        )
+
+    assert stale.value.code == "cas_conflict"
+    assert lifecycle.current("main") == current
+    assert (preparer.root / "shared.sentinel").exists() is True
+
+
+def test_active_admission_protects_shared_resource_from_other_target_loser(
+    tmp_path,
+) -> None:
+    preparer = MappedSentinelPreparer(tmp_path / "resources")
+    preparer.root.mkdir()
+    lifecycle = GenerationLifecycle(tmp_path, preparer)
+    pinned = lifecycle.prepare_and_publish(
+        "pinned",
+        _lock("pinned"),
+        "pinned.yaml",
+        0,
+        "publish-pinned",
+    )
+    lifecycle.reserve_target_admission("pinned", "session", "input")
+    lifecycle.prepare_and_publish(
+        "pinned",
+        _lock("replacement"),
+        "replacement.yaml",
+        pinned.revision,
+        "publish-replacement",
+    )
+    lifecycle.prepare_and_publish(
+        "other",
+        _lock("other-current"),
+        "other.yaml",
+        0,
+        "publish-other",
+    )
+
+    with pytest.raises(GenerationLifecycleError) as stale:
+        lifecycle.prepare_and_publish(
+            "other",
+            _lock("other-loser"),
+            "loser.yaml",
+            0,
+            "publish-other-loser",
+        )
+
+    assert stale.value.code == "cas_conflict"
+    assert (preparer.root / "shared.sentinel").exists() is True
+
+
+def test_resource_recorded_candidate_blocks_duplicate_preparation(tmp_path) -> None:
+    preparer = ResourceRecordedPausePreparer(tmp_path / "resources")
+    preparer.root.mkdir()
+    lifecycle = GenerationLifecycle(tmp_path, preparer)
+    lock = _lock("concurrent")
+    outcome: list[object] = []
+
+    def publish() -> None:
+        try:
+            outcome.append(
+                lifecycle.prepare_and_publish(
+                    "main",
+                    lock,
+                    "same.yaml",
+                    None,
+                    "publish-first",
+                )
+            )
+        except BaseException as error:
+            outcome.append(error)
+
+    thread = Thread(target=publish)
+    thread.start()
+    assert preparer.recorded.wait(timeout=5)
+    try:
+        with pytest.raises(GenerationLifecycleError) as duplicate:
+            lifecycle.prepare_and_publish(
+                "main",
+                lock,
+                "same.yaml",
+                None,
+                "publish-second",
+            )
+        assert duplicate.value.code == "capacity_pressure"
+    finally:
+        preparer.resume.set()
+        thread.join(timeout=5)
+
+    assert len(outcome) == 1
+    assert not isinstance(outcome[0], BaseException)
+    assert preparer.created == [lock.generation_id]
+
+
+def test_adoption_reservation_keeps_old_session_admission_live(tmp_path):
+    lifecycle = GenerationLifecycle(tmp_path)
+    lock_a, lock_b = _lock("a"), _lock("b")
+    original = lifecycle.mark_materialized(
+        lifecycle.reserve_explicit_admission(
+            lock_a,
+            "a.yaml",
+            "session-a",
+            "initial-input",
+        ).admission_id
+    )
+
+    replacement = lifecycle.reserve_adoption_admission(
+        lock_b,
+        "b.yaml",
+        "session-a",
+        "adoption-request",
+    )
+    replay = lifecycle.reserve_adoption_admission(
+        lock_b,
+        "b.yaml",
+        "session-a",
+        "adoption-request",
+    )
+
+    assert replay == replacement
+    assert replacement.admission_id != original.admission_id
+    assert replacement.work_id != original.work_id
+    assert replacement.attempt_id != original.attempt_id
+    lifecycle.require_dispatch(
+        original.admission_id,
+        original.generation_id,
+        original.work_id,
+        original.attempt_id,
+        original.controller_epoch,
+        original.grant_epoch,
+    )
+
+
+def test_failed_prepare_keeps_previous_route_and_cleans_external_sentinel(tmp_path):
+    preparer = SentinelPreparer(tmp_path / "resources")
+    preparer.root.mkdir()
+    lifecycle = GenerationLifecycle(tmp_path, preparer)
+    lock_a, lock_b = _lock("a"), _lock("b")
+    published = lifecycle.prepare_and_publish("main", lock_a, "a.yaml", 0, "publish-a")
+    preparer.failed.add("b.yaml")
+
+    with pytest.raises(GenerationLifecycleError) as failed:
+        lifecycle.prepare_and_publish(
+            "main", lock_b, "b.yaml", published.revision, "publish-b"
+        )
+    assert failed.value.code == "prepare_failed"
+    assert lifecycle.current("main") == published
+    assert (preparer.root / f"{lock_b.generation_id}.sentinel").exists() is False
+
+
+def test_request_replay_and_competing_cas_are_durable_and_idempotent(tmp_path):
+    preparer = SentinelPreparer(tmp_path / "resources")
+    preparer.root.mkdir()
+    first = GenerationLifecycle(tmp_path, preparer)
+    lock_a, lock_b, lock_c = _lock("a"), _lock("b"), _lock("c")
+    committed = first.prepare_and_publish("main", lock_a, "a.yaml", 0, "publish-a")
+    recreated = GenerationLifecycle(tmp_path, preparer)
+    assert (
+        recreated.prepare_and_publish("main", lock_a, "a.yaml", 0, "publish-a")
+        == committed
+    )
+
+    barrier = Barrier(2)
+    outcomes: list[object] = []
+
+    def publish(lock, request_id):
+        barrier.wait()
+        try:
+            outcomes.append(
+                recreated.prepare_and_publish(
+                    "main", lock, f"{request_id}.yaml", 1, request_id
+                )
+            )
+        except GenerationLifecycleError as exc:
+            outcomes.append(exc)
+
+    threads = [
+        Thread(target=publish, args=(lock_b, "publish-b")),
+        Thread(target=publish, args=(lock_c, "publish-c")),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert (
+        sum(not isinstance(outcome, GenerationLifecycleError) for outcome in outcomes)
+        == 1
+    )
+    assert recreated.current("main").revision == 2
+
+
+def test_reconcile_converges_crashes_before_and_after_resource_identity(tmp_path):
+    preparer = CrashPreparer(tmp_path / "resources")
+    preparer.root.mkdir()
+    lock_a, lock_b = _lock("a"), _lock("b")
+    preparer.crash_before.add("a.yaml")
+    with pytest.raises(CrashAfterResource):
+        GenerationLifecycle(tmp_path, preparer).prepare_and_publish(
+            "main", lock_a, "a.yaml", 0, "publish-a"
+        )
+
+    lifecycle = GenerationLifecycle(tmp_path, preparer)
+    reconciled = {item.request_id: item for item in lifecycle.reconcile()}
+    assert reconciled["publish-a"].status == "failed"
+    with pytest.raises(GenerationLifecycleError) as interrupted:
+        lifecycle.prepare_and_publish("main", lock_a, "a.yaml", 0, "publish-a")
+    assert interrupted.value.code == "prepare_interrupted"
+
+    preparer.crash_after.add("b.yaml")
+    with pytest.raises(CrashAfterResource):
+        lifecycle.prepare_and_publish("main", lock_b, "b.yaml", 0, "publish-b")
+    assert (preparer.root / f"{lock_b.generation_id}.sentinel").is_file()
+    reconciled = {item.request_id: item for item in lifecycle.reconcile()}
+    assert reconciled["publish-b"].status == "ready"
+    assert (
+        lifecycle.prepare_and_publish(
+            "main", lock_b, "b.yaml", 0, "publish-b"
+        ).generation_id
+        == lock_b.generation_id
+    )
+
+
+def test_unknown_cleanup_retains_capacity_pin(tmp_path):
+    preparer = UnknownCleanupPreparer(tmp_path / "resources")
+    preparer.root.mkdir()
+    lifecycle = GenerationLifecycle(tmp_path, preparer)
+    lock_a, lock_b, lock_c = (_lock("a"), _lock("b"), _lock("c"))
+    publication_a = lifecycle.prepare_and_publish(
+        "main", lock_a, "a.yaml", 0, "publish-a"
+    )
+    admission_a = lifecycle.mark_materialized(
+        lifecycle.reserve_target_admission("main", "session-a", "input-a").admission_id
+    )
+    publication_b = lifecycle.prepare_and_publish(
+        "main", lock_b, "b.yaml", publication_a.revision, "publish-b"
+    )
+    lifecycle.release(admission_a.admission_id, cleanup_confirmed=True)
+
+    with pytest.raises(GenerationLifecycleError) as pressure:
+        lifecycle.prepare_and_publish(
+            "main", lock_c, "c.yaml", publication_b.revision, "publish-c"
+        )
+    assert pressure.value.code == "capacity_pressure"
+    assert (preparer.root / f"{lock_a.generation_id}.sentinel").is_file()
+    assert (preparer.root / f"{lock_b.generation_id}.sentinel").is_file()
+    assert not (preparer.root / f"{lock_c.generation_id}.sentinel").exists()

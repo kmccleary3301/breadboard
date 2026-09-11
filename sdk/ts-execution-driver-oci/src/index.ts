@@ -17,6 +17,10 @@ import {
   isPlacementCompatible,
 } from "@breadboard/execution-drivers"
 import { makeOciTerminalSessionDriver, type OciTerminalSessionAdapter } from "./terminals.js"
+import {
+  openOciAuthorChannel,
+  type OciAuthorChannelOptions,
+} from "./author-bridge.js"
 
 export function chooseOciPlacement(
   capability: ExecutionCapabilityV1,
@@ -310,6 +314,7 @@ function createOciExecutionDriver(options: {
   runtimeCommand?: string
   workspaceMountTarget?: string
   terminalAdapter?: OciTerminalSessionAdapter
+  authorWorkerOptions?: OciAuthorChannelOptions
 } = {}): TerminalSessionDriverV1 {
   const terminalDriver = options.terminalAdapter ? makeOciTerminalSessionDriver(options.terminalAdapter) : null
   interface ActiveOciExecution {
@@ -326,6 +331,18 @@ function createOciExecutionDriver(options: {
     supportedPlacements: ["local_oci", "local_oci_gvisor", "local_oci_kata"],
     supportsCapability(capability, placementClass) {
       return isPlacementCompatible(capability, placementClass)
+    },
+    supportsAuthorWorkers(capability, placementClass) {
+      return placementClass === "local_oci" && capability.isolation_class === "oci"
+    },
+    openAuthorWorker(input, hooks) {
+      const configured = options.authorWorkerOptions
+      return openOciAuthorChannel(input, {
+        ...configured,
+        runtimeCommand: configured?.runtimeCommand ?? options.runtimeCommand,
+        onIntent: hooks?.onIntent ?? configured?.onIntent,
+        onReceipt: hooks?.onReceipt ?? configured?.onReceipt,
+      })
     },
     buildSandboxRequest({ requestId, capability, command, workspaceRef, imageRef }) {
       if (!imageRef) {
@@ -449,6 +466,7 @@ export function makeConfiguredOciExecutionDriver(options: {
   runtimeCommand?: string
   workspaceMountTarget?: string
   terminalAdapter?: OciTerminalSessionAdapter
+  authorWorkerOptions?: OciAuthorChannelOptions
 } = {}): TerminalSessionDriverV1 {
   return createOciExecutionDriver(options)
 }
@@ -456,5 +474,6 @@ export function makeConfiguredOciExecutionDriver(options: {
 export function makeOciExecutionDriver(adapter?: OciTerminalSessionAdapter): TerminalSessionDriverV1 {
   return createOciExecutionDriver({ terminalAdapter: adapter })
 }
+export * from "./author-bridge.js"
 
 export * from "./terminals.js"

@@ -406,7 +406,7 @@ def test_legacy_routes_default_off_removes_unversioned_aliases(monkeypatch: pyte
     assert local_client.get("/v1/status").status_code == 404
     assert local_client.get("/v1/features").status_code == 404
     assert local_client.get("/v1/system").status_code == 200
-    assert public_sessions.status_code == 404
+    assert public_sessions.json()["command"] == ["session", "list"]
     assert public_sessions.json()["schema_version"] == "bb.cli.result.v1"
     assert local_client.get("/v1/internal/sessions").status_code == 200
     assert local_client.get("/v1/rl/runs/probe").status_code == 404
@@ -429,7 +429,7 @@ def test_legacy_routes_flag_off_removes_unversioned_aliases(
     assert local_client.get("/v1/status").status_code == 404
     assert local_client.get("/v1/features").status_code == 404
     assert local_client.get("/v1/system").status_code == 200
-    assert public_sessions.status_code == 404
+    assert public_sessions.json()["command"] == ["session", "list"]
     assert public_sessions.json()["schema_version"] == "bb.cli.result.v1"
     assert local_client.get("/v1/internal/sessions").status_code == 200
     assert local_client.get("/v1/rl/runs/probe").status_code == 404
@@ -742,7 +742,7 @@ def test_session_records_endpoint_serves_runtime_jsonl_with_schema_filter(
     emit_session_start_records(
         session_id="records-session",
         request=SessionCreateRequest(
-            config_path="agent_configs/atp_hilbert_like_gpt54_v1.yaml",
+            config_path="agent_configs/research/atp_hilbert_like_gpt54_v1.yaml",
             task="runtime records endpoint probe",
         ),
         generated_at="2026-07-04T00:00:00Z",
@@ -1019,7 +1019,7 @@ def test_runtime_emission_flag_off_writes_no_records(monkeypatch: pytest.MonkeyP
 
     response = client.post(
         "/v1/sessions",
-        json={"config_path": "agent_configs/atp_hilbert_like_gpt54_v1.yaml", "task": "runtime emission flag off probe"},
+        json={"config_path": "agent_configs/research/atp_hilbert_like_gpt54_v1.yaml", "task": "runtime emission flag off probe"},
     )
     assert response.status_code == 200
     records = client.get(
@@ -1038,7 +1038,7 @@ def test_runtime_emission_records_are_served_by_e4_api(monkeypatch: pytest.Monke
     paths = emit_session_start_records(
         session_id=session_id,
         request=SessionCreateRequest(
-            config_path="agent_configs/atp_hilbert_like_gpt54_v1.yaml",
+            config_path="agent_configs/research/atp_hilbert_like_gpt54_v1.yaml",
             task="runtime emission probe",
         ),
         generated_at=generated_at,

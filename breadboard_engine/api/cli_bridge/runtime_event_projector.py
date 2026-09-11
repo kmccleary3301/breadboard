@@ -58,7 +58,6 @@ BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES = {
     "warning",
     "reward_update",
     "limits_update",
-    "completion",
     "log_link",
     "error",
     "run_finished",
@@ -182,7 +181,6 @@ _REPLAY_EVENT_PAYLOAD_FIELDS = {
     ),
     EventType.WARNING: frozenset({"code", "message"}),
     EventType.REWARD_UPDATE: frozenset({"summary"}),
-    EventType.COMPLETION: frozenset({"summary", "mode", "usage"}),
     EventType.LOG_LINK: frozenset({"url"}),
     EventType.RUN_FINISHED: frozenset(
         {
@@ -249,7 +247,7 @@ def _validate_replay_event_payload(
     elif event_type in {EventType.TOOL_RESULT, EventType.TOOL_RESULT_DOT}:
         if "status" not in normalized or not isinstance(normalized.get("error"), bool):
             raise RuntimeProtocolError("runtime_protocol_error")
-    elif event_type in {EventType.REWARD_UPDATE, EventType.COMPLETION}:
+    elif event_type is EventType.REWARD_UPDATE:
         field = "summary"
         if not isinstance(normalized.get(field), dict):
             raise RuntimeProtocolError("runtime_protocol_error")
@@ -663,7 +661,6 @@ class RuntimeEventProjector:
             call_id = (
                 normalized.get("call_id")
                 or message.get("tool_call_id")
-                or message.get("tool_call_id")
                 or message.get("call_id")
             )
             content = message.get("content")
@@ -851,7 +848,6 @@ class RuntimeEventProjector:
             "warning": EventType.WARNING,
             "reward_update": EventType.REWARD_UPDATE,
             "limits_update": EventType.LIMITS_UPDATE,
-            "completion": EventType.COMPLETION,
             "log_link": EventType.LOG_LINK,
             "error": EventType.ERROR,
             "run_finished": EventType.RUN_FINISHED,

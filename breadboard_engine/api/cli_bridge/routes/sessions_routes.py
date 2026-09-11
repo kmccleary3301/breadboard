@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from typing import AsyncIterator
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -375,20 +374,17 @@ def register_session_routes(
         from_id: str | None = None,
         svc: SessionService = Depends(get_service),
     ):
-        try:
-            if not from_id:
-                from_id = request.headers.get("last-event-id") or request.headers.get("Last-Event-ID")
-            if from_id:
-                await svc.validate_event_stream(session_id, from_id=from_id, replay=replay)
-            prepared = await svc.prepare_event_stream(
-                session_id,
-                replay=replay,
-                limit=limit,
-                from_id=from_id,
-            )
-            generator = svc.prepared_event_stream(prepared)
-        except HTTPException as exc:
-            raise exc
+        if not from_id:
+            from_id = request.headers.get("last-event-id") or request.headers.get("Last-Event-ID")
+        if from_id:
+            await svc.validate_event_stream(session_id, from_id=from_id, replay=replay)
+        prepared = await svc.prepare_event_stream(
+            session_id,
+            replay=replay,
+            limit=limit,
+            from_id=from_id,
+        )
+        generator = svc.prepared_event_stream(prepared)
 
         return StreamingResponse(
             event_payloads(generator),

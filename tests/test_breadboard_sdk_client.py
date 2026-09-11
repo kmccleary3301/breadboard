@@ -91,13 +91,33 @@ def test_candidate_python_sdk_preserves_public_result_and_idempotency(
         )
         == result
     )
+    assert (
+        client.publish_harness(
+            "main",
+            "locks/main.lock.json",
+            3,
+            "publish-main-4",
+        )
+        == result
+    )
     assert client.get_artifact("sha256:abc") == result
     start_binding = PUBLIC_BINDINGS_BY_OPERATION_ID["session.start"]
+    publish_binding = PUBLIC_BINDINGS_BY_OPERATION_ID["harness.publish"]
     artifact_binding = PUBLIC_BINDINGS_BY_OPERATION_ID["artifact.get"]
     assert requests[0]["method"] == start_binding.http_method
     assert requests[0]["headers"]["Idempotency-Key"] == "start-key"
-    assert requests[1]["method"] == artifact_binding.http_method
+    assert requests[1]["method"] == publish_binding.http_method
     assert requests[1]["url"] == (
+        "https://breadboard.test/"
+        + publish_binding.path.format(target="main").lstrip("/")
+    )
+    assert json.loads(requests[1]["data"]) == {
+        "lock_id": "locks/main.lock.json",
+        "expected_revision": 3,
+        "request_id": "publish-main-4",
+    }
+    assert requests[2]["method"] == artifact_binding.http_method
+    assert requests[2]["url"] == (
         "https://breadboard.test/"
         + artifact_binding.path.format(artifact_id="sha256%3Aabc").lstrip("/")
     )
@@ -201,6 +221,12 @@ def test_candidate_python_sdk_streams_generated_session_events_route(
         "payload": {
             "effective_lock_hash": "sha256:" + "a" * 64,
             "task_hash": "sha256:" + "b" * 64,
+            "module_input": {
+                "schema_id": "bb.demo.input.v1",
+                "body": "e30=",
+                "final": False,
+            },
+            "module_input_sequence": 0,
         },
         "payload_schema_version": "bb.payload.product_session.lifecycle.v1",
     }
@@ -419,6 +445,110 @@ def test_candidate_python_sdk_streams_generated_session_events_route(
             json.dumps(partial_assistant_identity), "session id", "1"
         )
 
+
+@pytest.mark.parametrize(
+    ("kind", "payload_schema_version", "payload"),
+    [
+        (
+            "input.accepted",
+            "bb.payload.product_session.lifecycle.v1",
+            {
+                "attachments": [],
+                "module_input": {
+                    "schema_id": "bb.demo.input.v1",
+                    "body": "e30=",
+                    "final": True,
+                },
+                "module_input_sequence": 1,
+            },
+        ),
+        (
+            "module_output",
+            "bb.payload.product_session.module_output.v1",
+            {
+                "module_output": {
+                    "schema_id": "bb.demo.output.v1",
+                    "body": "e30=",
+                    "final": True,
+                },
+                "output_sequence": 0,
+                "module_id": "demo.root",
+                "worker_session_id": "worker-1",
+                "request_id": "request-1",
+                "generation_id": "sha256:" + "a" * 64,
+                "instance_id": "instance-1",
+                "work_id": "work-1",
+                "attempt_id": "attempt-1",
+                "authority_epoch": 1,
+            },
+        ),
+        (
+            "session.adoption_committed",
+            "bb.payload.product_session.lifecycle.v1",
+            {
+                "adoption_id": "adoption-1",
+                "checkpoint_id": "checkpoint-1",
+                "source_generation_id": "sha256:" + "a" * 64,
+                "source_module_id": "demo.root",
+                "source_instance_id": "instance-1",
+                "source_work_id": "work-1",
+                "source_attempt_id": "attempt-1",
+                "source_schema_id": "bb.demo.state.v1",
+                "source_body_sha256": "sha256:" + "b" * 64,
+                "source_frontier": {
+                    "event_sequence": 3,
+                    "generation_id": "sha256:" + "a" * 64,
+                    "typed_input_sequence": 2,
+                    "output_sequence": 1,
+                    "compaction_index": 0,
+                },
+                "target_generation_id": "sha256:" + "c" * 64,
+                "effective_lock_hash": "sha256:" + "c" * 64,
+                "reason": "checkpoint_adoption",
+                "request_id": "adopt-1",
+                "migration": [
+                    {
+                        "binding": "root",
+                        "disposition": "migrate",
+                        "source_schema_id": "bb.demo.state.v1",
+                        "target_schema_id": "bb.demo.state.v2",
+                        "reason": "schema upgrade",
+                    }
+                ],
+            },
+        ),
+    ],
+)
+def test_candidate_python_sdk_accepts_typed_module_events(
+    kind: str,
+    payload_schema_version: str,
+    payload: dict[str, Any],
+) -> None:
+    event = {
+        "schema_version": "bb.public_session_event.v1",
+        "event_id": "session:session-1:2",
+        "seq": 2,
+        "timestamp": "2026-09-09T00:00:00Z",
+        "work_item_id": None,
+        "parent_work_item_id": None,
+        "attempt_id": None,
+        "session_id": "session-1",
+        "span_id": None,
+        "visibility": {
+            "model_visible": True,
+            "provider_visible": True,
+            "host_visible": True,
+            "redaction_state": "none",
+        },
+        "kind": kind,
+        "payload": payload,
+        "payload_schema_version": payload_schema_version,
+    }
+
+    decoded = client_module._session_event(json.dumps(event), "session-1", "2")
+
+    assert decoded["kind"] == kind
+    assert decoded["payload"] == payload
 
 def test_snapshot_reader_retains_annotations_after_session_settlement(
     monkeypatch: pytest.MonkeyPatch,

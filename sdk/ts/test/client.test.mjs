@@ -14,13 +14,14 @@ test("candidate product methods preserve canonical result envelopes and routes",
     return new Response(JSON.stringify(result), { headers: { "content-type": "application/json" } })
   }
   const client = createBreadboardClient({ baseUrl: "http://breadboard.test:9099" })
-  for (const name of ["describeSystem", "healthSystem", "schemasSystem", "createHarness", "listHarness", "getHarness", "updateHarness", "validateHarness", "explainHarness", "lockHarness", "getHarnessLock", "listIntegration", "getIntegration", "probeIntegration", "listArtifact", "getArtifact", "verifyArtifact", "startSession", "listSession", "listSessions", "getSession", "getSessionResult", "sendInputSession", "approveSession", "resumeSession", "cancelSession", "artifactsSession", "eventsSession"]) assert.equal(typeof client[name], "function")
+  for (const name of ["describeSystem", "healthSystem", "schemasSystem", "createHarness", "listHarness", "getHarness", "updateHarness", "validateHarness", "explainHarness", "lockHarness", "publishHarness", "getHarnessLock", "listIntegration", "getIntegration", "probeIntegration", "listArtifact", "getArtifact", "verifyArtifact", "startSession", "listSession", "listSessions", "getSession", "getSessionResult", "sendInputSession", "approveSession", "resumeSession", "cancelSession", "artifactsSession", "eventsSession"]) assert.equal(typeof client[name], "function")
   assert.equal(typeof client.eventsSession, "function")
   const calls = [
     () => client.describeSystem(), () => client.healthSystem(), () => client.schemasSystem(),
     () => client.createHarness(), () => client.listHarness(), () => client.getHarness("bundles/main.yaml"),
     () => client.updateHarness("bundles/main.yaml", {}), () => client.validateHarness("bundles/main.yaml"),
     () => client.explainHarness("bundles/main.yaml"), () => client.lockHarness("bundles/main.yaml"),
+    () => client.publishHarness("main", { lock_id: "locks/main.json", expected_revision: 2, request_id: "publish-main-3" }),
     () => client.getHarnessLock("locks/main.json"), () => client.listIntegration(), () => client.getIntegration("fixture.provider"),
     () => client.probeIntegration("fixture.provider", "probe-key"), () => client.listArtifact(),
     () => client.getArtifact("sha256:abc"), () => client.verifyArtifact("sha256:abc"),
@@ -36,6 +37,7 @@ test("candidate product methods preserve canonical result envelopes and routes",
     ["POST", "/v1/harnesses"], ["GET", "/v1/harnesses"], ["GET", "/v1/harnesses/bundles/main.yaml"],
     ["PUT", "/v1/harnesses/bundles/main.yaml"], ["POST", "/v1/harnesses/bundles/main.yaml/validate"],
     ["POST", "/v1/harnesses/bundles/main.yaml/explain"], ["POST", "/v1/harnesses/bundles/main.yaml/lock"],
+    ["POST", "/v1/harness-publications/main"],
     ["GET", "/v1/harness-locks/locks/main.json"], ["GET", "/v1/integrations"], ["GET", "/v1/integrations/fixture.provider"],
     ["POST", "/v1/integrations/fixture.provider/probe"], ["GET", "/v1/artifacts"],
     ["GET", "/v1/artifacts/sha256%3Aabc"], ["POST", "/v1/artifacts/sha256%3Aabc/verify"],

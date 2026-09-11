@@ -1,0 +1,178 @@
+# Codex CLI E4 capture/replay profile
+# Catalog refreshed 2026-09-10 from the accepted Codex CLI 0.139.0 / GPT-5.5 lane.
+# The accepted run was captured on 2026-06-30 in a read-only sandbox.
+# This standalone profile replaces the capture probe's untracked industry_coder_refs prompt path.
+#
+# +------------------------- accepted claim -------------------------+
+# | Codex CLI 0.139.0 + GPT-5.5                                     |
+# | one read-only raw capture -> BreadBoard replay -> comparator pass |
+# +------------------------------------------------------------------+
+#
+# This is a runnable BreadBoard profile, but its acceptance does not cover writes,
+# collaboration, persistent terminals, or full Codex product parity.
+
+schema_version: bb.agent_config_surface.v2
+version: 2
+
+workspace:
+  root: ./agent_ws
+  sandbox:
+    driver: process
+  mirror:
+    enabled: false
+    path: ./agent_ws
+    mode: development
+
+providers:
+  default_model: gpt-5.5
+  routing:
+    disable_native_tools_on_probe_failure: true
+    disable_stream_on_probe_failure: true
+  models:
+  - id: gpt-5.5
+    adapter: openai
+    params:
+      temperature: 0.2
+      top_p: 0.9
+
+provider_tools:
+  use_native: true
+  suppress_prompts: false
+  api_variant: responses
+
+prompts:
+  packs:
+    base:
+      # Exact source asset from the Codex `rust-v0.139.0` tag.
+      system: ../config/e4_targets/codex/0.139.0/prompts/gpt_5_codex_prompt.md
+      plan: ../config/e4_targets/codex/0.139.0/prompts/gpt_5_codex_prompt.md
+      builder: ../config/e4_targets/codex/0.139.0/prompts/gpt_5_codex_prompt.md
+      compact: ../config/e4_targets/codex/0.139.0/prompts/gpt_5_codex_prompt.md
+      tools_catalog_full: ../config/e4_targets/codex/0.139.0/prompts/gpt_5_codex_prompt.md
+      tools_catalog_short: ../config/e4_targets/codex/0.139.0/prompts/gpt_5_codex_prompt.md
+  tool_prompt_mode: system_compiled_and_persistent_per_turn
+  tool_prompt_synthesis:
+    enabled: false
+
+# Preserve the accepted probe's deliberately narrow visible tool set.
+tools:
+  mark_task_complete: true
+  registry:
+    paths:
+    - ../implementations/tools/defs
+    include:
+    - shell_command
+    - apply_patch
+    - update_plan
+  aliases: {}
+  dialects:
+    preference:
+      default:
+      - aider_search_replace
+      - unified_diff
+      - bash_block
+      by_model:
+        openai/*:
+          order:
+          - aider_search_replace
+          - unified_diff
+          - bash_block
+    selection:
+      by_model:
+        openai/*:
+        - aider_search_replace
+        - unified_diff
+
+modes:
+- name: plan
+  prompt: '@pack(base).plan'
+  tools_enabled:
+  - read_file
+  - list_dir
+  - glob
+  - grep
+  tools_disabled: []
+- name: build
+  prompt: '@pack(base).builder'
+  tools_enabled:
+  - '*'
+  tools_disabled: []
+- name: compact
+  prompt: '@pack(base).compact'
+  tools_enabled: []
+
+loop:
+  sequence:
+  - if: features.plan
+    then:
+      mode: plan
+  - mode: build
+  plan_turn_limit: 1
+  turn_strategy:
+    relay: tool_role
+    flow: assistant_continuation
+    allow_multiple_per_turn: true
+
+long_running:
+  enabled: false
+  controller: longrun_v1
+  reset_policy: fresh
+  episode:
+    max_steps_override: null
+  queue:
+    backend: todo_store
+  reviewer:
+    enabled: false
+    mode: read_only
+  resume:
+    enabled: false
+    state_path: meta/longrun_state.json
+  verification:
+    tiers: []
+  recovery:
+    no_progress_signature_repeats: 0
+  budgets:
+    wall_clock_s: 0
+    total_episodes: 0
+    total_tokens: 0
+    total_cost_usd: 0.0
+
+features:
+  plan: false
+  todos:
+    enabled: false
+    strict: false
+    reset_streak_on_todo: true
+
+completion:
+  confidence_threshold: 0.6
+  natural_finish:
+    idle_turn_limit: 1
+    no_tool_turns_threshold: 2
+  primary: hybrid
+  tool_finish: mark_task_complete
+  provider_signals: true
+  text_sentinels:
+  - TASK COMPLETE
+  - ALL TESTS PASSED
+  - IMPLEMENTATION COMPLETE
+  - '>>>>>> END RESPONSE'
+
+concurrency:
+  at_most_one_of:
+  - shell_command
+  groups: []
+  nonblocking_tools: []
+
+dossier:
+  capture_scope:
+    target: codex-cli 0.139.0
+    model: gpt-5.5
+    sandbox: read-only
+    run_id: 20260630_codex_gpt55_capture_probe
+    support_claim: docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim.json
+    exclusions:
+    - write execution
+    - collaboration and subagents
+    - persistent terminal sessions
+    - broad Codex parity

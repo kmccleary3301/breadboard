@@ -23,7 +23,7 @@ bash scripts/start_tmux_phase4_replay_target.sh \
   --cols 160 --rows 45 \
   --port 9261 \
   --tui-preset codex_cli_like \
-  --config agent_configs/codex_0-107-0_e4_3-6-2026.yaml
+  --config agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml
 ```
 
 ## 2) Capture the nightly provider scenario

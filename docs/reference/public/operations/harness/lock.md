@@ -1,8 +1,8 @@
 <!-- GENERATED FILE - do not edit by hand. -->
 <!-- generator: scripts/quality/generate_public_bindings.py -->
-<!-- generator-version: 5 -->
+<!-- generator-version: 6 -->
 <!-- catalog-id: bb.public_operation_catalog.v2 -->
-<!-- catalog-sha256: sha256:627448eb95b9e12c1f951c1b5d5fd30a4fc870cb57c520f23bb3d8c4338394ec -->
+<!-- catalog-sha256: sha256:d574352b4e55997181883cb316d1e9db13c8715636e610c992bb1c156a8e622b -->
 <!-- document-kind: operation-reference -->
 <!-- operation-id: harness.lock -->
 <!-- slug: operations/harness/lock -->
@@ -17,7 +17,7 @@ Candidate public operation reference for `harness.lock`.
 | --- | --- |
 | Status | `candidate` |
 | HTTP | `POST /v1/harnesses/{harness_id}/lock` |
-| CLI | `bbh harness lock` |
+| CLI | `breadboard harness lock` |
 | Lifecycle | `sync` |
 | Effects | `write` |
 | Stability | `experimental` |
@@ -31,7 +31,7 @@ Candidate public operation reference for `harness.lock`.
 - Python: `BreadBoardClient.lock_harness`
 - TypeScript: `BreadBoardClient.lockHarness`
 - TUI: `public.harness.lock` (`action`)
-- CLI: `bbh harness lock`
+- CLI: `breadboard harness lock`
 - Documentation: `product-docs owner` (`candidate`)
 
 ## Schemas

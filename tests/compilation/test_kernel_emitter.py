@@ -242,12 +242,12 @@ def test_dev_ci_runtime_emission_mode_resolves_strict_when_unset_or_invalid(
         runner = SessionRunner(
             session=session,
             registry=SessionRegistry(),
-            request=SessionCreateRequest(config_path="agent_configs/atp_hilbert_like_gpt54_v1.yaml", task="probe"),
+            request=SessionCreateRequest(config_path="agent_configs/research/atp_hilbert_like_gpt54_v1.yaml", task="probe"),
         )
         fake_agent = FakeAgent()
         runner._agent = fake_agent
 
-        runner._execute_task(
+        runner._task_execution.execute_task(
             "probe", input_id=turn.input_id, turn_id=turn.turn_id
         )
 

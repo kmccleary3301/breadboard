@@ -209,26 +209,6 @@ class OpenAIConductorFacadeMethods:
             self._native_preference_hint = None
             return current
 
-    def _apply_selection_legacy(
-        self,
-        current: List[str],
-        model_id: str,
-        tool_defs: List[Any],
-        selection_cfg: Dict[str, Any],
-    ) -> List[str]:
-        return DialectManager.apply_selection_legacy(current, model_id, tool_defs, selection_cfg)
-
-    def _apply_preference_order(
-        self,
-        base_order: List[str],
-        model_id: str,
-        tool_defs: List[Any],
-        preference_cfg: Dict[str, Any],
-    ) -> Tuple[List[str], Optional[bool]]:
-        return DialectManager.apply_preference_order(base_order, model_id, tool_defs, preference_cfg)
-
-    def _get_native_preference_hint(self) -> Optional[bool]:
-        return getattr(self, "_native_preference_hint", None)
 
     def _setup_native_tools(self, model: str, use_native_tools: bool) -> bool:
         return setup_native_tools(self, model, use_native_tools)

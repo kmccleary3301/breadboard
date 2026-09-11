@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pytest
 from fastapi import HTTPException
 
+from breadboard.modules import CheckpointEnvelope, CheckpointProposal, ModuleInput
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import ReplayError, session_store
 from breadboard.product.coordination.work_items import WorkItemRepository
@@ -30,12 +31,15 @@ from breadboard_engine.api.cli_bridge.models import (
     SessionTurnCancelRequest,
 )
 from breadboard_engine.api.cli_bridge.registry import (
+    ModuleExecutionRecord,
     SessionRecord,
     SessionRegistry,
     TurnRecord,
     identity_digest,
     submission_body_digest,
 )
+from breadboard_engine.api.cli_bridge.registry.records import ModuleWorkerOwnership
+from breadboard_engine.api.cli_bridge.author_runtime import ModuleRuntime
 from breadboard_engine.api.cli_bridge.service import SessionService
 from breadboard_engine.api.cli_bridge.runtime_event_projector import (
     BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES,
@@ -46,6 +50,7 @@ from breadboard_engine.api.cli_bridge.runtime_event_projector import (
     _strip_completion_sentinels,
 )
 from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
+from breadboard_engine.execution.author_worker import AuthorWorkerCleanupResult
 from breadboard_engine.provider.contracts import (
     ProviderContractError,
     strip_public_completion_sentinel_tree,
@@ -1328,11 +1333,9 @@ def test_session_runner_translates_runtime_events() -> None:
 
     runner = SessionRunner(session=record, registry=registry, request=request)
     event_registry = SessionState.event_family_registry()
-    translated = runner._translate_runtime_event(
-        "assistant_message",
-        {"message": {"role": "assistant", "content": "hi"}},
-        turn=3,
-    )
+    translated = runner._runtime_event_projector.translate("assistant_message",
+    {"message": {"role": "assistant", "content": "hi"}},
+    turn=3,)
     assert translated is not None
     evt_type, payload, turn, contract = translated
     assert evt_type is EventType.ASSISTANT_MESSAGE
@@ -1343,11 +1346,9 @@ def test_session_runner_translates_runtime_events() -> None:
     assert turn == 3
     assert contract == event_registry["assistant_message"]
 
-    translated_none = runner._translate_runtime_event(
-        "assistant_message",
-        {"message": {"role": "assistant", "content": None}},
-        turn=3,
-    )
+    translated_none = runner._runtime_event_projector.translate("assistant_message",
+    {"message": {"role": "assistant", "content": None}},
+    turn=3,)
     assert translated_none is not None
     evt_type, payload, turn, contract = translated_none
     assert evt_type is EventType.ASSISTANT_MESSAGE
@@ -1355,11 +1356,9 @@ def test_session_runner_translates_runtime_events() -> None:
     assert turn == 3
     assert contract == event_registry["assistant_message"]
 
-    delta_translated = runner._translate_runtime_event(
-        "assistant_delta",
-        {"text": "chunk", "message_id": "m1"},
-        turn=3,
-    )
+    delta_translated = runner._runtime_event_projector.translate("assistant_delta",
+    {"text": "chunk", "message_id": "m1"},
+    turn=3,)
     assert delta_translated is not None
     evt_type, payload, turn, contract = delta_translated
     assert evt_type is EventType.ASSISTANT_DELTA
@@ -1373,24 +1372,20 @@ def test_session_runner_translates_runtime_events() -> None:
         ("assistant.message.delta", {"message_id": "m1", "delta": "chunk"}),
         ("assistant.message.end", {"message_id": "m1", "text": "chunk"}),
     ):
-        stream_translation = runner._translate_runtime_event(
-            stream_event,
-            stream_payload,
-            turn=3,
-        )
+        stream_translation = runner._runtime_event_projector.translate(stream_event,
+        stream_payload,
+        turn=3,)
         assert stream_translation is not None
         assert stream_translation[3]["family"] == "message.assistant.stream"
 
-    tool_delta_translated = runner._translate_runtime_event(
-        "assistant.tool_call.delta",
-        {
-            "index": 0,
-            "call_id": "call-1",
-            "tool": "read",
-            "arguments_delta": '{"path":',
-        },
-        turn=3,
-    )
+    tool_delta_translated = runner._runtime_event_projector.translate("assistant.tool_call.delta",
+    {
+        "index": 0,
+        "call_id": "call-1",
+        "tool": "read",
+        "arguments_delta": '{"path":',
+    },
+    turn=3,)
     assert tool_delta_translated is not None
     evt_type, payload, turn, contract = tool_delta_translated
     assert evt_type is EventType.ASSISTANT_TOOL_CALL_DELTA
@@ -1400,18 +1395,16 @@ def test_session_runner_translates_runtime_events() -> None:
     assert contract["visibility"] == "tool"
 
     with pytest.raises(RuntimeProtocolError):
-        runner._translate_runtime_event("unknown", {}, turn=None)
+        runner._runtime_event_projector.translate("unknown", {}, turn=None)
 
-    tool_call_translated = runner._translate_runtime_event(
-        "tool_call",
-        {
-            "call": {
-                "id": "call-1",
-                "function": {"name": "run_shell", "arguments": {"command": "pwd"}},
-            }
-        },
-        turn=3,
-    )
+    tool_call_translated = runner._runtime_event_projector.translate("tool_call",
+    {
+        "call": {
+            "id": "call-1",
+            "function": {"name": "run_shell", "arguments": {"command": "pwd"}},
+        }
+    },
+    turn=3,)
     assert tool_call_translated is not None
     evt_type, payload, turn, contract = tool_call_translated
     assert evt_type is EventType.TOOL_CALL
@@ -1420,18 +1413,16 @@ def test_session_runner_translates_runtime_events() -> None:
     assert turn == 3
     assert contract == event_registry["tool_call"]
 
-    tool_result_translated = runner._translate_runtime_event(
-        "tool_result",
-        {
-            "message": {
-                "role": "tool",
-                "name": "run_shell",
-                "tool_call_id": "call-1",
-                "content": "ok",
-            }
-        },
-        turn=3,
-    )
+    tool_result_translated = runner._runtime_event_projector.translate("tool_result",
+    {
+        "message": {
+            "role": "tool",
+            "name": "run_shell",
+            "tool_call_id": "call-1",
+            "content": "ok",
+        }
+    },
+    turn=3,)
     assert tool_result_translated is not None
     evt_type, payload, turn, contract = tool_result_translated
     assert evt_type is EventType.TOOL_RESULT
@@ -1441,14 +1432,12 @@ def test_session_runner_translates_runtime_events() -> None:
     assert turn == 3
     assert contract == event_registry["tool_result"]
 
-    todo_translated = runner._translate_runtime_event(
-        "todo_event",
-        {
-            "call_id": "todo:1",
-            "todo": {"op": "replace", "revision": 1, "scopeKey": "main", "items": []},
-        },
-        turn=3,
-    )
+    todo_translated = runner._runtime_event_projector.translate("todo_event",
+    {
+        "call_id": "todo:1",
+        "todo": {"op": "replace", "revision": 1, "scopeKey": "main", "items": []},
+    },
+    turn=3,)
     assert todo_translated is not None
     evt_type, payload, turn, contract = todo_translated
     assert evt_type is EventType.TOOL_RESULT
@@ -1498,7 +1487,7 @@ def test_session_runner_recognizes_replay_after_injected_system_reminder(
         f"replay:{fixture}\n\n"
         "Trailing compiled system prompt."
     )
-    assert runner._parse_replay_path(prompt) == fixture.resolve()
+    assert runner._task_execution.parse_replay_path(prompt) == fixture.resolve()
 
 
 @pytest.mark.asyncio
@@ -1565,7 +1554,13 @@ async def test_deferred_input_does_not_enqueue_after_parent_cancellation(
         def __init__(self) -> None:
             self.inputs: list[str] = []
 
-        def prepare_input_content(self, content: str) -> str:
+        def prepare_input_content(
+            self,
+            content: str | None,
+            module_input: ModuleInput | None,
+        ) -> str:
+            assert content is not None
+            assert module_input is None
             return content
 
         def validate_input_admission(self, *_args, **_kwargs) -> None:
@@ -1610,9 +1605,118 @@ async def test_deferred_input_does_not_enqueue_after_parent_cancellation(
 
 
 @pytest.mark.asyncio
+async def test_registry_round_trips_adopted_module_resume_checkpoint(
+    tmp_path: Path,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    envelope = CheckpointEnvelope(
+        source_generation_id="sha256:" + "a" * 64,
+        source_module_id="module.example",
+        source_instance_id="instance-1",
+        source_work_id="work-1",
+        source_attempt_id="attempt-1",
+        schema_id="state.v2",
+        body=b'{"count":2}',
+    )
+    proposal = CheckpointProposal(envelope, 2)
+    record = SessionRecord(
+        session_id="sess-adopted-resume",
+        status=SessionStatus.RUNNING,
+        module_resume_checkpoints={"root": proposal},
+    )
+    await registry.create(record)
+
+    restored = await SessionRegistry(state_root=tmp_path).get(record.session_id)
+
+    assert restored is not None
+    assert restored.module_resume_checkpoints == {"root": proposal}
+
+    retained = registry._serialize_record(record)
+    del retained["session"]["module_resume_checkpoints"]["root"][
+        "declared_at_sequence"
+    ]
+    with pytest.raises(ValueError):
+        registry._deserialize_record(retained)
+
+
+@pytest.mark.asyncio
+async def test_registry_atomically_retires_confirmed_checkpoint_worker(
+    tmp_path: Path,
+) -> None:
+    owner = SessionRegistry(state_root=tmp_path)
+    generation = "sha256:" + "b" * 64
+    cleanup = AuthorWorkerCleanupResult(
+        status="confirmed_absent",
+        resource_id="docker:worker-1",
+        container_id="container-1",
+        owner_ref="module:sess-checkpoint-cleanup:worker-1",
+        reason="server_shutdown",
+        evidence=("container_absence_observed",),
+    )
+    retained_execution = ModuleExecutionRecord(
+        generation_id=generation,
+        root_binding="root",
+        work_item_id="work-1",
+        attempt_id="attempt-1",
+        workers=(
+            ModuleWorkerOwnership(
+                binding="root",
+                instance_id="instance-1",
+                worker_session_id="worker-1",
+                owner_ref=cleanup.owner_ref,
+                execution_id="execution-1",
+                execution_token="token-1",
+                staging_root=str(tmp_path / "staging"),
+                staging_owner_ref="module-staging:worker-1",
+            ),
+        ),
+    )
+    record = SessionRecord(
+        session_id="sess-checkpoint-cleanup",
+        status=SessionStatus.RUNNING,
+        module_execution=retained_execution,
+    )
+    await owner.create(record)
+    stale_registry = SessionRegistry(state_root=tmp_path)
+    stale_record = await stale_registry.get(record.session_id)
+    assert stale_record is not None
+    assert stale_record.module_execution is not None
+    assert stale_record.module_execution.workers[0].cleanup is None
+    record.module_execution.workers[0].cleanup = cleanup
+    await owner.persist(record)
+    envelope = CheckpointEnvelope(
+        source_generation_id=generation,
+        source_module_id="module.example",
+        source_instance_id="instance-1",
+        source_work_id="work-1",
+        source_attempt_id="attempt-1",
+        schema_id="state.v1",
+        body=b'{"count":1}',
+    )
+    proposal = CheckpointProposal(envelope, 1)
+    stale_record.module_execution = ModuleExecutionRecord(
+        generation_id=generation,
+        root_binding="root",
+        work_item_id="work-1",
+        attempt_id="attempt-1",
+    )
+    stale_record.module_resume_checkpoints = {"root": proposal}
+
+    retired = await stale_registry.persist_confirmed_checkpoint_cleanup(stale_record)
+
+    assert retired is True
+    restored = await SessionRegistry(state_root=tmp_path).get(record.session_id)
+    assert restored is not None
+    assert restored.module_execution is not None
+    assert restored.module_execution.workers == ()
+    assert restored.module_resume_checkpoints == {"root": proposal}
+
+@pytest.mark.asyncio
 async def test_stale_registry_cannot_recreate_cross_process_deleted_session(
     tmp_path: Path,
 ) -> None:
+
+
     state_root = tmp_path / "registry"
     owner = SessionRegistry(state_root=state_root)
     record = SessionRecord(
@@ -1667,8 +1771,15 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
                 tuple[str, list[str], str | None, str | None, str | None]
             ] = []
 
-        def prepare_input_content(self, content: str) -> str:
+        def prepare_input_content(
+            self,
+            content: str | None,
+            module_input: ModuleInput | None,
+        ) -> str:
+            assert content is not None
+            assert module_input is None
             return content
+
         def validate_input_admission(
             self,
             _content: str,
@@ -1676,9 +1787,13 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
             *,
             input_id: str,
             turn_id: str,
+            module_input: ModuleInput | None,
+            module_input_sequence: int | None,
         ) -> None:
             assert input_id
             assert turn_id
+            assert module_input is None
+            assert module_input_sequence is None
 
         async def enqueue_input(
             self,
@@ -1688,7 +1803,12 @@ async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None
             input_id: str | None = None,
             turn_id: str | None = None,
             defer_execution: Any = None,
+            module_input: ModuleInput | None = None,
+            module_input_sequence: int | None = None,
         ) -> str:
+            assert module_input is None
+            assert module_input_sequence is None
+
             async def execute() -> None:
                 self.inputs.append(
                     (content, attachments, input_id, turn_id, record.active_turn_id)
@@ -2443,7 +2563,7 @@ async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(tmp_
         request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
     )
 
-    assert await runner._finish_turn(first, "completed") is True
+    assert await runner._task_execution.finish_turn(first, "completed") is True
     await asyncio.sleep(0)
 
     assert first.terminal_resolution_committed is True
@@ -2487,6 +2607,7 @@ async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(tmp_
     restored = await restarted.get(record.session_id)
     assert restored is not None
     summary = restored.to_summary()
+
     assert summary.head_sequence == replay_head.seq
     assert summary.head_event_id == replay_head.event_id
     assert summary.terminal_event_envelopes == [terminal_envelope]
@@ -2527,6 +2648,199 @@ async def test_finish_turn_promotes_queued_turn_without_stopping_dispatcher(tmp_
         restored,
         numeric_replay_queue,
     )
+
+@pytest.mark.asyncio
+async def test_typed_turn_terminal_persist_does_not_regress_to_disk_snapshot(
+    tmp_path: Path,
+) -> None:
+    registry = SessionRegistry(state_root=tmp_path)
+    record = SessionRecord(
+        session_id="typed-terminal-persist",
+        status=SessionStatus.RUNNING,
+        next_module_input_sequence=1,
+    )
+    turn = TurnRecord(
+        input_id="input-typed",
+        turn_id="turn-typed",
+        client_message_id="client-typed",
+        content=None,
+        attachments=(),
+        original_disposition="started",
+        state="active",
+        module_input=ModuleInput("bb.demo.input.v1", b"{}", True),
+        module_input_sequence=0,
+    )
+    record.turns_by_id[turn.turn_id] = turn
+    record.active_turn_id = turn.turn_id
+    await registry.create(record)
+    turn.state = "completed"
+    turn.terminal_outcome = "completed"
+    terminal = SessionEvent(
+        EventType.TURN_COMPLETED,
+        record.session_id,
+        {},
+        input_id=turn.input_id,
+        turn_id=turn.turn_id,
+    )
+
+    await registry.persist(record, terminal_event=terminal)
+
+    assert turn.state == "completed"
+    assert turn.terminal_outcome == "completed"
+    assert turn.terminal_resolution_committed is True
+
+
+def test_module_input_kind_uses_durable_execution_after_runner_reconstruction() -> None:
+    record = SessionRecord(
+        session_id="retained-module-kind",
+        status=SessionStatus.RUNNING,
+        module_execution=ModuleExecutionRecord(
+            generation_id="sha256:" + "a" * 64,
+            root_binding="root",
+            work_item_id="work-retained",
+            attempt_id="attempt-retained",
+        ),
+    )
+    captured = SimpleNamespace(
+        materialization=SimpleNamespace(
+            packages={
+                "root": SimpleNamespace(
+                    manifest=SimpleNamespace(
+                        input_schema_ids=("bb.demo.input.v1",),
+                    )
+                )
+            }
+        )
+    )
+    runner = SessionRunner(
+        session=record,
+        registry=SessionRegistry(),
+        request=SessionCreateRequest(task=""),
+        captured_runtime=captured,
+    )
+
+    assert (
+        runner.prepare_input_content(
+            None,
+            ModuleInput("bb.demo.input.v1", b"{}", False),
+        )
+        is None
+    )
+    with pytest.raises(
+        ValueError,
+        match="input must match the Session's admitted text or module kind",
+    ):
+        runner.prepare_input_content("text")
+
+
+@pytest.mark.asyncio
+async def test_confirmed_absent_worker_is_durably_retired_before_restart(
+    tmp_path: Path,
+) -> None:
+    generation_id = "sha256:" + "a" * 64
+    owner_ref = "module:retained-module-restart:worker-1"
+    retained = ModuleWorkerOwnership(
+        binding="root",
+        instance_id="instance-1",
+        worker_session_id="worker-1",
+        owner_ref=owner_ref,
+        execution_id="execution-1",
+        execution_token="token-1",
+        staging_root="/tmp/retained-module-restart",
+        staging_owner_ref="module-staging:worker-1",
+        resource_id="resource-1",
+        cleanup=AuthorWorkerCleanupResult(
+            status="confirmed_absent",
+            resource_id="resource-1",
+            container_id="container-1",
+            owner_ref=owner_ref,
+            reason="server_shutdown",
+            evidence=("container_absent",),
+        ),
+    )
+    record = SessionRecord(
+        session_id="retained-module-restart",
+        status=SessionStatus.RUNNING,
+        module_execution=ModuleExecutionRecord(
+            generation_id=generation_id,
+            root_binding="root",
+            work_item_id="work-1",
+            attempt_id="attempt-1",
+            workers=(retained,),
+        ),
+    )
+    owner = SessionRegistry(state_root=tmp_path)
+    await owner.create(record)
+    state_path = next(tmp_path.glob("*.json"))
+    v2_payload = json.loads(state_path.read_text(encoding="utf-8"))
+    v2_payload["schema_version"] = "bb.cli_bridge.session_state.v2"
+    v2_payload["session"]["module_execution"].pop("retired_workers")
+    state_path.write_text(json.dumps(v2_payload), encoding="utf-8")
+    stale_registry = SessionRegistry(state_root=tmp_path)
+    stale_record = await stale_registry.get(record.session_id)
+    assert stale_record is not None
+    restarted = SessionRegistry(state_root=tmp_path)
+    restored = await restarted.get(record.session_id)
+    assert restored is not None
+    assert restored.loaded_from_retained_state is True
+
+    runtime = ModuleRuntime.__new__(ModuleRuntime)
+    runtime.record = restored
+    runtime.registry = restarted
+    runtime.loop = asyncio.get_running_loop()
+    runtime.generation_id = generation_id
+    runtime.root_binding = "root"
+    runtime.work_id = "work-1"
+    runtime.attempt_id = "attempt-1"
+    runtime._mutation_lock = threading.RLock()
+
+    await asyncio.to_thread(runtime._retire_absent_worker, "root")
+
+    assert restored.module_execution.workers == ()
+    assert restored.module_execution.retired_worker_identities == (
+        ("root", "instance-1", "worker-1"),
+    )
+
+    await stale_registry.persist(stale_record)
+    assert stale_record.module_execution is not None
+    assert stale_record.module_execution.workers == ()
+    disk_reader = SessionRegistry(state_root=tmp_path)
+    disk_record = await disk_reader.get(record.session_id)
+    assert disk_record is not None
+    assert disk_record.module_execution.workers == ()
+    assert disk_record.module_execution.retired_worker_identities == (
+        ("root", "instance-1", "worker-1"),
+    )
+
+
+@pytest.mark.asyncio
+async def test_module_runtime_quiesces_on_server_shutdown() -> None:
+    record = SessionRecord(
+        session_id="retained-module-shutdown",
+        status=SessionStatus.RUNNING,
+    )
+    runner = SessionRunner(
+        session=record,
+        registry=SessionRegistry(),
+        request=SessionCreateRequest(task=""),
+    )
+    close_reasons: list[str] = []
+    disposal = SimpleNamespace(
+        status="confirmed_absent",
+        resource_refs=(),
+        pending_domain_refs=(),
+    )
+    runtime = SimpleNamespace(
+        close=lambda reason: close_reasons.append(reason) or disposal,
+    )
+    runner._module_runtime = runtime
+
+    result = await runner.quiesce_module_runtime_for_shutdown()
+
+    assert result is disposal
+    assert close_reasons == ["server_shutdown"]
+    assert runner._module_runtime is None
+    assert runner._module_disposal is disposal
 
 @pytest.mark.asyncio
 async def test_dispatcher_failure_drains_queue_and_rejects_future_events(
@@ -2900,11 +3214,9 @@ async def test_finish_turn_rejects_unknown_provider_completion_semantics(
     )
 
     with pytest.raises(RuntimeError, match="turn_terminal_persistence_failed"):
-        await runner._finish_turn(
-            turn,
-            "completed",
-            completed_payload={"usage": {"unknown_provider_counter": 1}},
-        )
+        await runner._task_execution.finish_turn(turn,
+        "completed",
+        completed_payload={"usage": {"unknown_provider_counter": 1}},)
 
     assert turn.terminal_outcome is None
     assert turn.terminal_resolution_committed is False
@@ -2949,12 +3261,10 @@ async def test_replay_events_preserve_active_turn_correlation(tmp_path) -> None:
         published.append((event_type, kwargs))
 
     runner.publish_event_async = capture  # type: ignore[method-assign]
-    await runner._execute_replay_task(
-        "<system-reminder>\ncontext\n</system-reminder>\n"
-        f"replay:{fixture}\n\ncompiled prompt",
-        input_id=turn.input_id,
-        turn_id=turn.turn_id,
-    )
+    await runner._task_execution.execute_replay_task("<system-reminder>\ncontext\n</system-reminder>\n"
+    f"replay:{fixture}\n\ncompiled prompt",
+    input_id=turn.input_id,
+    turn_id=turn.turn_id,)
     assistant = next(
         kwargs
         for event_type, kwargs in published
@@ -2965,78 +3275,11 @@ async def test_replay_events_preserve_active_turn_correlation(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_replay_completion_strips_nested_control_sentinels(tmp_path) -> None:
-    fixture = tmp_path / "completion-fixture.jsonl"
-    fixture.write_text(
-        json.dumps(
-            {
-                "type": "completion",
-                "payload": {
-                    "summary": {
-                        "final_message": "answer\nTASK COMPLETE\n",
-                        "nested": {"opaque": ">>>>>> END RESPONSE"},
-                    }
-                },
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    record = SessionRecord(
-        session_id="sess-replay-completion",
-        status=SessionStatus.RUNNING,
-    )
-    turn = TurnRecord(
-        input_id="input-1",
-        turn_id="turn-1",
-        client_message_id="message-1",
-        content="replay",
-        attachments=(),
-        original_disposition="started",
-        state="active",
-    )
-    record.active_turn_id = turn.turn_id
-    record.turns_by_id[turn.turn_id] = turn
-    runner = SessionRunner(
-        session=record,
-        registry=SessionRegistry(),
-        request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
-    )
-    published: list[tuple[EventType, dict[str, Any]]] = []
-
-    async def capture(
-        event_type: EventType,
-        payload: Dict[str, Any],
-        **_kwargs: Any,
-    ) -> None:
-        published.append((event_type, payload))
-
-    runner.publish_event_async = capture  # type: ignore[method-assign]
-    result = await runner._execute_replay_task(
-        f"replay:{fixture}",
-        input_id=turn.input_id,
-        turn_id=turn.turn_id,
-    )
-
-    assert published == []
-    completion = next(
-        payload
-        for event_type, payload, _turn, _contract in result["_terminal_events"]
-        if event_type is EventType.COMPLETION
-    )
-    assert completion == {
-        "summary": {
-            "final_message": "answer",
-            "nested": {"opaque": ""},
-        }
-    }
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "invalid_entries",
     [
         [{"type": "session_control", "payload": {"action": "stop"}}],
+        [{"type": "completion", "payload": {"summary": {"final_message": "done"}}}],
         [
             {
                 "type": "assistant_message",
@@ -3108,11 +3351,9 @@ async def test_replay_rejects_entire_fixture_before_publication(
 
     runner.publish_event_async = capture  # type: ignore[method-assign]
     with pytest.raises(RuntimeProtocolError, match="runtime_protocol_error"):
-        await runner._execute_replay_task(
-            f"replay:{fixture}",
-            input_id=turn.input_id,
-            turn_id=turn.turn_id,
-        )
+        await runner._task_execution.execute_replay_task(f"replay:{fixture}",
+        input_id=turn.input_id,
+        turn_id=turn.turn_id,)
 
     assert published == []
     assert record.metadata["preserved"] is True
@@ -3173,11 +3414,9 @@ def test_execute_task_withholds_success_terminals_until_exchange_validates() -> 
 
     runner.publish_event = capture  # type: ignore[method-assign]
     with pytest.raises(RuntimeProtocolError, match="runtime_protocol_error"):
-        runner._execute_task(
-            "run",
-            input_id=turn.input_id,
-            turn_id=turn.turn_id,
-        )
+        runner._task_execution.execute_task("run",
+        input_id=turn.input_id,
+        turn_id=turn.turn_id,)
 
     assert EventType.COMPLETION not in published
     assert EventType.RUN_FINISHED not in published
@@ -3558,12 +3797,12 @@ def test_session_runner_queue_pump_processes_events() -> None:
             return self._queue.get_nowait()
 
     fake_queue = FakeQueue()
-    stop_event, thread = runner._start_queue_pump(fake_queue, capture)
+    stop_event, thread = runner._task_execution.start_queue_pump(fake_queue, capture)
     fake_queue.put(("assistant_message", {"message": {"content": "stream"}}, 5))
     fake_queue.put((None, None, None))
     stop_event.set()
     thread.join(timeout=1)
-    runner._drain_event_queue(fake_queue, capture)
+    runner._task_execution.drain_event_queue(fake_queue, capture)
 
     assert captured
     assert captured[0][0] == "assistant_message"
@@ -3663,7 +3902,7 @@ def test_remote_observation_sink_failure_prevents_task_success(
         RuntimeError,
         match="runtime event persistence failed",
     ) as failure:
-        runner._execute_task("task", input_id=turn.input_id, turn_id=turn.turn_id)
+        runner._task_execution.execute_task("task", input_id=turn.input_id, turn_id=turn.turn_id)
     assert isinstance(failure.value.__cause__, OSError)
     assert product_session.read_model.status == "running"
     assert product_session.read_model.event_count == 1
@@ -3770,7 +4009,7 @@ def test_remote_nonstreaming_compaction_reaches_product_session(
     monkeypatch.setattr(ray_queue, "Queue", FakeQueue)
     monkeypatch.delenv("BREADBOARD_ENABLE_REMOTE_STREAM", raising=False)
 
-    runner._execute_task("task", input_id=turn.input_id, turn_id=turn.turn_id)
+    runner._task_execution.execute_task("task", input_id=turn.input_id, turn_id=turn.turn_id)
 
     assert product_session.effective_context == effective_context
     assert product_session.raw_fact_ids == ("ctn_000001", "ctn_000002")
@@ -3896,20 +4135,16 @@ def test_session_runner_unknown_runtime_event_fails_closed_and_strips_sentinel()
     )
 
     with pytest.raises(RuntimeProtocolError):
-        runner._translate_runtime_event("unknown.normative.event", {}, turn=3)
+        runner._runtime_event_projector.translate("unknown.normative.event", {}, turn=3)
 
-    translated = runner._translate_runtime_event(
-        "assistant_message",
-        {"message": {"role": "assistant", "content": "answer\n\n>>>>>> END RESPONSE"}},
-        turn=3,
-    )
+    translated = runner._runtime_event_projector.translate("assistant_message",
+    {"message": {"role": "assistant", "content": "answer\n\n>>>>>> END RESPONSE"}},
+    turn=3,)
     assert translated is not None
     assert translated[1]["text"] == "answer"
     assert translated[1]["message"]["content"] == "answer"
 
-    session_scoped = runner._translate_runtime_event(
-        "stream.gap", {"reason": "overflow"}, turn=3
-    )
+    session_scoped = runner._runtime_event_projector.translate("stream.gap", {"reason": "overflow"}, turn=3)
     assert session_scoped is not None
     assert session_scoped[2] is None
 
@@ -4479,7 +4714,7 @@ async def test_retained_registry_first_input_reconciles_journal_before_retry(
 
 
 @pytest.mark.asyncio
-async def test_legacy_workspace_journal_binds_before_terminal_publication(
+async def test_untrusted_legacy_terminal_journal_is_not_promoted(
     tmp_path: Path,
 ) -> None:
     from breadboard.product.harness.lock import EffectiveHarnessLock
@@ -4509,12 +4744,13 @@ async def test_legacy_workspace_journal_binds_before_terminal_publication(
 
     restarted = SessionRegistry(state_root=state_root)
     service = SessionService(registry=restarted)
-    restored = await service.ensure_session(session_id)
-
-    assert restored.metadata["durable_product_workspace"] == str(workspace)
-    projection, _ = session_store.load_session(workspace, session_id)
-    assert projection.read_model.status == "completed"
-    assert projection.read_model.session_id == session_id
+    original_events = event_path.read_bytes()
+    with pytest.raises(ReplayError) as error:
+        await service.ensure_session(session_id)
+    assert error.value.code == "missing_projection_authority"
+    assert event_path.read_bytes() == original_events
+    with pytest.raises(FileNotFoundError):
+        session_store.load_session(workspace, session_id)
 
 
 def test_retained_admission_reconciliation_accepts_interleaved_observations() -> None:

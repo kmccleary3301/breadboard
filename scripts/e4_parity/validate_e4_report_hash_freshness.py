@@ -28,6 +28,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     import catalog_refs
 from breadboard_engine.conformance.catalog_binding import stable_entries
+from breadboard.product.evidence.e4.path_refs import resolve_declared_reference
 
 
 
@@ -67,29 +68,32 @@ def _as_path(value: Path | str) -> Path:
     return Path(value).resolve()
 
 
-def _first_existing(candidates: Sequence[Path]) -> Path:
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate.resolve()
-    return candidates[0].resolve()
-
-
 def resolve_artifact_ref(workspace_root: Path, implementation_checkout: Path, ref: str) -> Path:
     path = Path(ref)
     if path.is_absolute():
-        return path.resolve()
+        candidates = (path,)
+    elif ref.startswith(f"{implementation_checkout.name}/"):
+        candidates = (workspace_root / ref,)
+    elif ref.startswith("docs_tmp/"):
+        # Production reports keep docs_tmp beside the checkout; portable fixtures
+        # may keep it inside. Preserve that lookup order.
+        candidates = (workspace_root / ref, implementation_checkout / ref)
+    else:
+        candidates = (implementation_checkout / ref, workspace_root / ref)
 
-    implementation_name = implementation_checkout.name
-    if ref.startswith(f"{implementation_name}/"):
-        return (workspace_root / ref).resolve()
-
-    # Production reports keep docs_tmp beside the checkout. Unit fixtures often keep
-    # docs_tmp inside the synthetic checkout. Prefer the production layout when it
-    # exists, but do not reject portable checkout-relative refs.
-    if ref.startswith("docs_tmp/"):
-        return _first_existing((workspace_root / ref, implementation_checkout / ref))
-
-    return _first_existing((implementation_checkout / ref, workspace_root / ref))
+    checkout = implementation_checkout.absolute()
+    for candidate in candidates:
+        declared = candidate.absolute()
+        if declared.is_relative_to(checkout):
+            resolved = resolve_declared_reference(
+                declared.relative_to(checkout), checkout_root=checkout,
+                namespace="repo", must_exist=False,
+            )
+        else:
+            resolved = candidate.resolve()
+        if resolved.exists():
+            return resolved
+    return candidates[0].resolve()
 
 def _strip_ref_suffix(ref: str) -> str:
     return ref.split("#", 1)[0]

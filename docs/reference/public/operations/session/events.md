@@ -1,8 +1,8 @@
 <!-- GENERATED FILE - do not edit by hand. -->
 <!-- generator: scripts/quality/generate_public_bindings.py -->
-<!-- generator-version: 5 -->
+<!-- generator-version: 6 -->
 <!-- catalog-id: bb.public_operation_catalog.v2 -->
-<!-- catalog-sha256: sha256:627448eb95b9e12c1f951c1b5d5fd30a4fc870cb57c520f23bb3d8c4338394ec -->
+<!-- catalog-sha256: sha256:d574352b4e55997181883cb316d1e9db13c8715636e610c992bb1c156a8e622b -->
 <!-- document-kind: operation-reference -->
 <!-- operation-id: session.events -->
 <!-- slug: operations/session/events -->
@@ -17,7 +17,7 @@ Candidate public operation reference for `session.events`.
 | --- | --- |
 | Status | `candidate` |
 | HTTP | `GET /v1/sessions/{session_id}/events` |
-| CLI | `bbh session events` |
+| CLI | `breadboard session events` |
 | Lifecycle | `sync` |
 | Effects | `read` |
 | Stability | `experimental` |
@@ -31,7 +31,7 @@ Candidate public operation reference for `session.events`.
 - Python: `BreadBoardClient.events_session`
 - TypeScript: `BreadBoardClient.eventsSession`
 - TUI: `public.session.events` (`view`)
-- CLI: `bbh session events`
+- CLI: `breadboard session events`
 - Documentation: `product-docs owner` (`candidate`)
 
 ## Schemas

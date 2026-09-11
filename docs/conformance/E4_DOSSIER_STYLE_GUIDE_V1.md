@@ -19,8 +19,8 @@ opaque pointer files.
 
 Use this together with:
 
-- [E4_TARGET_PACKAGES.md](/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo/docs/conformance/E4_TARGET_PACKAGES.md)
-- [E4_COOKBOOK_V1.md](/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo/docs/conformance/E4_COOKBOOK_V1.md)
+- [E4_TARGET_PACKAGES.md](E4_TARGET_PACKAGES.md)
+- [E4_COOKBOOK_V1.md](E4_COOKBOOK_V1.md)
 
 ## The three-layer model
 
@@ -38,6 +38,11 @@ Purpose:
 - heavily commented
 - standalone
 - readable line by line
+
+For installed Oh My Pi and Pi targets, "standalone" means a complete
+`bb.e4.target_config.v1` projection with explicit package asset paths. It does not mean
+fabricating a `bb.agent_config_surface.v2` profile or claiming support from the
+BreadBoard agent-config CLI.
 
 This file should answer:
 

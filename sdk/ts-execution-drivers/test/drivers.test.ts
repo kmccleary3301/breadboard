@@ -5227,6 +5227,49 @@ test("execution world rejects explicit interaction and cleanup pins that differ 
   assert.equal(interaction.kind, "terminal_interact")
   assert.equal(interaction.result, null)
   assert.deepEqual(interactionCalls, [])
+  const exactWorld = createExecutionWorld({ drivers: [makeDriver("remote"), makeDriver("ray")] })
+  await exactWorld.execute({
+    kind: "terminal_start",
+    capability,
+    placement,
+    driverId: "remote",
+    input: { terminalSessionId: "term-contradictory-pin", command: ["bash"] },
+  })
+  const contradictoryInteraction = await exactWorld.execute({
+    kind: "terminal_interact",
+    capability,
+    placement,
+    driverId: "remote",
+    driverIdHint: "ray",
+    input: {
+      terminalSessionId: "term-contradictory-pin",
+      interactionKind: "poll",
+    },
+  })
+  assert.equal(contradictoryInteraction.kind, "terminal_interact")
+  assert.equal(contradictoryInteraction.result, null)
+  assert.equal(
+    contradictoryInteraction.unsupportedCase?.reason_code,
+    "unsupported_terminal_driver",
+  )
+  assert.deepEqual(interactionCalls, [])
+  const hintedCleanup = await exactWorld.execute({
+    kind: "terminal_cleanup",
+    capability,
+    placement,
+    driverIdHint: "ray",
+    input: {
+      cleanupId: "cleanup-hinted-owner-pin",
+      scope: "single",
+      sessionIds: ["term-contradictory-pin"],
+    },
+  })
+  assert.equal(hintedCleanup.kind, "terminal_cleanup")
+  assert.deepEqual(hintedCleanup.result?.cleaned_session_ids, [])
+  assert.deepEqual(hintedCleanup.result?.failed_session_ids, [
+    "term-contradictory-pin",
+  ])
+  assert.deepEqual(cleanupCalls, [])
   const result = await world.execute({
     kind: "terminal_cleanup",
     capability,

@@ -30,7 +30,7 @@ The default server assigned `/v1/sessions` to the public projected API after rem
 
 - Classification: `internal`
 - Compatibility window: clean cutover on the default server before publication. Canonical internal callers move to `/v1/internal/sessions`; public callers remain on `/v1/sessions`. Explicit `BREADBOARD_LEGACY_ROUTES=1` compatibility mode retains its prior raw `/v1/sessions` and `/sessions` aliases for legacy clients only.
-- Required schema/version bumps: P30 session schema digest changes to `sha256:979bff06137b659c0110c0f9324703b955e22da85a7aac93bee7f639290475a9`. Protocol and package versions remain unchanged.
+- Required schema/version bumps: P30 session schema digest changes to `sha256:49ceaca16dc878316c204fdb67a2ec11dd6d480a25d177e02a63775ba5072e86`. Protocol and package versions remain unchanged.
 
 ## 5) Evidence and Validation Plan
 

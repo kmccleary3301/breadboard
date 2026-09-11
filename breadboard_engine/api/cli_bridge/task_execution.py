@@ -21,6 +21,7 @@ from .events import EventType, SessionEvent
 from .registry import TurnRecord, identity_digest
 from .runtime_event_projector import (
     RuntimeEventContract,
+    RuntimeEventProjector,
     RuntimeProtocolError,
     TranslatedRuntimeEvent,
     _assistant_visible_text,
@@ -41,6 +42,7 @@ class TaskExecutionHost(Protocol):
     request: Any
     registry: Any
     _agent: Any
+    _runtime_event_projector: RuntimeEventProjector
     _stop_event: asyncio.Event
     _profile_timing_enabled: bool
     _mode: Optional[str]
@@ -62,17 +64,6 @@ class TaskExecutionHost(Protocol):
     ) -> None: ...
     def publish_event(
         self, event_type: EventType, payload: Dict[str, Any], **kwargs: Any
-    ) -> None: ...
-    def _translate_runtime_event(
-        self, event_type: str, payload: Dict[str, Any], turn: Optional[int]
-    ) -> Optional[TranslatedRuntimeEvent]: ...
-    def _record_product_observation(
-        self,
-        family: Optional[str],
-        payload: Dict[str, Any],
-        *,
-        message_projection: bool = False,
-        trajectory_id: str | None = None,
     ) -> None: ...
     def _apply_model_override(self) -> bool: ...
     def _install_control_queue(self, queue: Any) -> None: ...
@@ -296,7 +287,7 @@ class TaskExecutionOwner:
                         if payload.get("completed") not in {None, True}:
                             raise RuntimeProtocolError("runtime_protocol_error")
                         seen_run_finished = True
-                    translated = runner._translate_runtime_event(
+                    translated = runner._runtime_event_projector.translate(
                         event_type.value, payload, turn
                     )
                     if translated is None or translated[0] is not event_type:
@@ -503,7 +494,7 @@ class TaskExecutionOwner:
                         "message_id": observed_message_id,
                         "trajectory_id": observed_trajectory_id,
                     }
-                    runner._record_product_observation(
+                    runner._runtime_event_projector._record_product_observation(
                         "message.assistant",
                         observed_payload,
                         trajectory_id=observed_trajectory_id,
@@ -597,7 +588,7 @@ class TaskExecutionOwner:
                     if completed_trajectory_id is None:
                         if observed_message_id in registered_assistant_ids:
                             raise RuntimeProtocolError("runtime_protocol_error")
-                        runner._record_product_observation(
+                        runner._runtime_event_projector._record_product_observation(
                             "message.assistant",
                             payload,
                             trajectory_id=observed_trajectory_id,
@@ -656,6 +647,9 @@ class TaskExecutionOwner:
         self, workspace_dir: Path
     ) -> Optional[Dict[str, Any]]:
         try:
+            from breadboard_engine.todo import TodoStore
+            from breadboard_engine.todo.projection import project_store_snapshot_to_tui_envelope
+
             store = TodoStore(str(workspace_dir), load_existing=True)
             snapshot = store.snapshot()
             return project_store_snapshot_to_tui_envelope(
@@ -869,7 +863,7 @@ class TaskExecutionOwner:
             )
             if permission_response_event and ready_responses == []:
                 return
-            translated = runner._translate_runtime_event(event_type, payload, turn)
+            translated = runner._runtime_event_projector.translate(event_type, payload, turn)
             if not translated:
                 return
             evt_type, evt_payload, evt_turn, evt_contract = translated
@@ -886,7 +880,7 @@ class TaskExecutionOwner:
                         evt_payload,
                     )
                     if completed_stream is not None:
-                        runner._record_product_observation(
+                        runner._runtime_event_projector._record_product_observation(
                             "message.assistant",
                             completed_stream,
                             trajectory_id=completed_stream["trajectory_id"],
@@ -970,7 +964,7 @@ class TaskExecutionOwner:
                                 )
                                 skip_product_observation = True
                     if not skip_product_observation:
-                        runner._record_product_observation(
+                        runner._runtime_event_projector._record_product_observation(
                             event_family,
                             evt_payload,
                             message_projection=(
@@ -1385,7 +1379,7 @@ class TaskExecutionOwner:
                         "message": {**entry, "content": content},
                         "source": "fallback",
                     }
-                    runner._record_product_observation(
+                    runner._runtime_event_projector._record_product_observation(
                         "message.assistant",
                         fallback_payload,
                         trajectory_id=str(correlation["turn_id"]),
@@ -1420,7 +1414,7 @@ class TaskExecutionOwner:
                     },
                     "source": "completion_summary",
                 }
-                runner._record_product_observation(
+                runner._runtime_event_projector._record_product_observation(
                     "message.assistant",
                     fallback_payload,
                     trajectory_id=str(correlation["turn_id"]),
@@ -1638,6 +1632,7 @@ class TaskExecutionOwner:
                 else runner.session.turn_admission.__class__.IDLE
             )
         return True
+
 
     def start_queue_pump(
         self,

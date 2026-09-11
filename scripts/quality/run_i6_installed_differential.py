@@ -28,7 +28,7 @@ from referencing import Registry, Resource
 from breadboard_sdk import ApiError, BreadBoardClient
 from breadboard_sdk.generated.public_bindings import PUBLIC_OPERATION_BINDINGS
 
-I6_MATRIX_SHA256 = "af02abf6e66e5638be66f17dd4ad53d517f6347b8ad8ae65399d24b4bc7935f5"
+I6_MATRIX_SHA256 = "f442d4804dc80b2ea970f9e440a7b81e586322146b26784c85b231e3a9d5045e"
 
 
 def _bytes(value: object) -> bytes:
@@ -148,12 +148,8 @@ def _server(
                         f"exit status {process.returncode}"
                     )
                 else:
-                    stderr = (
-                        process.stderr.read() if process.stderr is not None else ""
-                    )
-                    raise RuntimeError(
-                        f"installed server cleanup failed: {stderr}"
-                    )
+                    stderr = process.stderr.read() if process.stderr is not None else ""
+                    raise RuntimeError(f"installed server cleanup failed: {stderr}")
         except Exception as cleanup_error:
             if active_error is None:
                 raise
@@ -504,7 +500,7 @@ def _record_result(operation_id: str, status: int, value: Any) -> dict[str, Any]
 
 
 def _run_cli(
-    bbh: Path,
+    breadboard: Path,
     workspace: Path,
     arguments: list[str],
     env: dict[str, str],
@@ -514,7 +510,7 @@ def _run_cli(
     if namespace == "session":
         namespace_options.extend(["--server", env["BREADBOARD_I6_SERVER"]])
     completed = subprocess.run(
-        [str(bbh), "--json", namespace, *namespace_options, *tail],
+        [str(breadboard), "--json", namespace, *namespace_options, *tail],
         cwd=workspace,
         env=env,
         text=True,
@@ -984,7 +980,7 @@ def _verify_installed_typed_error(
     base_url: str,
     node: Path,
     installed_probe: Path,
-    bbh: Path,
+    breadboard: Path,
     workspace: Path,
     cli_env: dict[str, str],
     validator: Draft202012Validator,
@@ -1032,7 +1028,7 @@ def _verify_installed_typed_error(
         key_index = cli_arguments.index("--idempotency-key") + 1
         cli_arguments[key_index] = str(input_value["idempotency_key"])
     cli_error = _run_cli(
-        bbh,
+        breadboard,
         workspace,
         cli_arguments,
         cli_env,
@@ -1204,9 +1200,11 @@ def _archive_digest(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
-def _verify_installed_python(wheel: Path, python: Path, bbh: Path) -> dict[str, Any]:
+def _verify_installed_python(
+    wheel: Path, python: Path, breadboard: Path
+) -> dict[str, Any]:
     python = python.absolute()
-    bbh = bbh.absolute()
+    breadboard = breadboard.absolute()
     if not sys.flags.isolated:
         raise AssertionError(
             "installed differential runner must use Python isolated mode"
@@ -1274,7 +1272,7 @@ def _verify_installed_python(wheel: Path, python: Path, bbh: Path) -> dict[str, 
         f"#!{python}\n"
         "# -*- coding: utf-8 -*-\n"
         "import sys\n"
-        "from scripts.breadboard_cli import main\n"
+        "from breadboard.product.cli import main\n"
         'if __name__ == "__main__":\n'
         '    if sys.argv[0].endswith("-script.pyw"):\n'
         "        sys.argv[0] = sys.argv[0][:-11]\n"
@@ -1283,14 +1281,16 @@ def _verify_installed_python(wheel: Path, python: Path, bbh: Path) -> dict[str, 
         "    sys.exit(main())\n"
     )
     if (
-        bbh.parent != python.parent
-        or not bbh.is_file()
-        or bbh.read_text(encoding="utf-8") != expected_launcher
+        breadboard.parent != python.parent
+        or not breadboard.is_file()
+        or breadboard.read_text(encoding="utf-8") != expected_launcher
     ):
-        raise AssertionError("--bbh is not the wheel's isolated console launcher")
+        raise AssertionError(
+            "--breadboard is not the wheel's isolated console launcher"
+        )
     return {
         "python_package_tree_sha256": _digest(sorted(expected.items())),
-        "bbh_sha256": _file_digest(bbh),
+        "breadboard_sha256": _file_digest(breadboard),
     }
 
 
@@ -1434,7 +1434,7 @@ def _verify_provenance(arguments: argparse.Namespace) -> dict[str, Any]:
             "TypeScript package does not match a build from the pinned source"
         )
     installed_python = _verify_installed_python(
-        arguments.wheel, arguments.python, arguments.bbh
+        arguments.wheel, arguments.python, arguments.breadboard
     )
     installed_typescript = _verify_installed_typescript(
         arguments.tarball, arguments.node_project
@@ -1468,7 +1468,7 @@ def main() -> int:
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--python", type=Path, required=True)
-    parser.add_argument("--bbh", type=Path, required=True)
+    parser.add_argument("--breadboard", type=Path, required=True)
     parser.add_argument("--node", type=Path, required=True)
     parser.add_argument("--node-project", type=Path, required=True)
     parser.add_argument("--ts-probe", type=Path, required=True)
@@ -1552,7 +1552,7 @@ def main() -> int:
         binding.operation_id: binding for binding in PUBLIC_OPERATION_BINDINGS
     }
     installed_ids = set(bindings_by_id)
-    if len(rows) != len(by_id) or set(by_id) != set(bindings_by_id) or len(rows) != 26:
+    if len(rows) != len(by_id) or set(by_id) != set(bindings_by_id) or len(rows) != 31:
         raise AssertionError("installed operation catalog does not match I6 matrix")
     for operation_id, row in by_id.items():
         binding = bindings_by_id[operation_id]
@@ -1568,7 +1568,7 @@ def main() -> int:
             )
         cli_prefix = binding.cli_command.split()
         if (
-            cli_prefix[:1] != ["bbh"]
+            cli_prefix[:1] != ["breadboard"]
             or row["cli"][: len(cli_prefix) - 1] != cli_prefix[1:]
         ):
             raise AssertionError(
@@ -1611,7 +1611,7 @@ def main() -> int:
         check=False,
         timeout=60,
     )
-    expected_generated_check = "public binding codegen check: OK (34 files current)"
+    expected_generated_check = "public binding codegen check: OK (41 files current)"
     if (
         generated_check.returncode != 0
         or generated_check.stdout.strip() != expected_generated_check
@@ -1636,7 +1636,7 @@ def main() -> int:
     generated_paths.extend(
         sorted((arguments.source_root / "docs/reference/public").rglob("*.md"))
     )
-    if len(generated_paths) != 34 or any(
+    if len(generated_paths) != 41 or any(
         not path.is_file() or path.is_symlink() for path in generated_paths
     ):
         raise AssertionError("generated public output inventory is incomplete")
@@ -2281,7 +2281,7 @@ def main() -> int:
                     raise AssertionError(projection_response.text)
                 raw_projection = projection_response.json()
             cli = _run_cli(
-                arguments.bbh,
+                arguments.breadboard,
                 arguments.workspace,
                 _format_cli(row["cli"], values),
                 cli_env,
@@ -2382,7 +2382,7 @@ def main() -> int:
                         base_url=base_url,
                         node=arguments.node,
                         installed_probe=installed_probe,
-                        bbh=arguments.bbh,
+                        breadboard=arguments.breadboard,
                         workspace=arguments.workspace,
                         cli_env=cli_env,
                         validator=cli_result_validator,
@@ -2422,7 +2422,7 @@ def main() -> int:
                     base_url=base_url,
                     node=arguments.node,
                     installed_probe=installed_probe,
-                    bbh=arguments.bbh,
+                    breadboard=arguments.breadboard,
                     workspace=arguments.workspace,
                     cli_env=cli_env,
                     validator=cli_result_validator,
@@ -2481,7 +2481,7 @@ def main() -> int:
         auth_cli_env = dict(cli_env)
         auth_cli_env["BREADBOARD_I6_SERVER"] = auth_url
         cli_unauthorized = _run_cli(
-            arguments.bbh,
+            arguments.breadboard,
             auth_workspace,
             ["session", "list"],
             auth_cli_env,
@@ -2543,7 +2543,7 @@ def main() -> int:
         authorized_cli_env = dict(auth_cli_env)
         authorized_cli_env["BREADBOARD_API_TOKEN"] = "i6-auth-token"
         cli_authorized = _run_cli(
-            arguments.bbh,
+            arguments.breadboard,
             auth_workspace,
             ["session", "list"],
             authorized_cli_env,
@@ -2606,13 +2606,13 @@ def main() -> int:
         "source_commit": arguments.source_commit,
         "source_tree": arguments.source_tree,
         "provenance": provenance,
-        "catalog_operation_count": 26,
+        "catalog_operation_count": 31,
         "server_pid": server_pid,
         "artifacts": {
             "wheel_sha256": _file_digest(arguments.wheel),
             "typescript_tarball_sha256": _file_digest(arguments.tarball),
             "python_sha256": _file_digest(arguments.python),
-            "bbh_sha256": _file_digest(arguments.bbh),
+            "breadboard_sha256": _file_digest(arguments.breadboard),
             "matrix_sha256": _file_digest(arguments.matrix),
             "typescript_probe_sha256": _file_digest(arguments.ts_probe),
         },

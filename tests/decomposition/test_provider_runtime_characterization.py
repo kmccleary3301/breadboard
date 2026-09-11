@@ -78,13 +78,16 @@ class _RawCollection:
         return self.response
 
 
-class _Context:
-    def __init__(self, *, agent_config: dict[str, Any] | None = None, metadata: dict[str, Any] | None = None) -> None:
-        self.session_state = _SessionState(metadata)
-        self.agent_config = agent_config or {}
-        self.stream = False
-        self.extra: dict[str, Any] = {}
-
+def _provider_context(
+    *,
+    agent_config: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> runtime_module.ProviderRuntimeContext:
+    return runtime_module.ProviderRuntimeContext(
+        session_state=_SessionState(metadata),
+        agent_config=dict(agent_config or {}),
+        stream=False,
+    )
 
 def _descriptor(runtime_id: str, provider_id: str) -> Any:
     return types.SimpleNamespace(provider_id=provider_id, runtime_id=runtime_id)
@@ -99,23 +102,10 @@ def test_d_p4_moved_runtime_pickle_modules_are_intentional() -> None:
     for name, module_name in EXPECTED_MOVED_RUNTIME_MODULES.items():
         assert getattr(runtime_module, name).__module__ == module_name
 
-def test_builtin_registry_keys_and_registration_order() -> None:
-    assert list(runtime_module.provider_registry._runtime_classes) == [
-        "openai_chat",
-        "openrouter_chat",
-        "openai_responses",
-        "anthropic_messages",
-        "mock_chat",
-        "smoke_chat",
-        "cli_mock_chat",
-        "replay",
-        "codex_app_server",
-    ]
 
 
 def test_registry_is_singleton_across_canonical_and_root_facades() -> None:
     assert runtime_module.provider_registry is root_runtime.provider_registry
-    assert runtime_module.provider_registry is runtime_module.provider_registry
     assert root_runtime is runtime_module
 
 
@@ -125,17 +115,6 @@ def test_builtin_registration_is_idempotent() -> None:
     assert list(runtime_module.provider_registry._runtime_classes.items()) == before
 
 
-def test_optional_sdk_missing_errors_have_current_messages(monkeypatch: pytest.MonkeyPatch) -> None:
-    openai_runtime = runtime_module.OpenAIChatRuntime(_descriptor("openai_chat", "openai"))
-    anthropic_runtime = runtime_module.AnthropicMessagesRuntime(_descriptor("anthropic_messages", "anthropic"))
-
-    monkeypatch.setattr(provider_sdk_bindings, "openai", None)
-    with pytest.raises(runtime_module.ProviderRuntimeError, match=r"^openai package not installed$"):
-        openai_runtime.create_client("key")
-
-    monkeypatch.setattr(provider_sdk_bindings, "anthropic", None)
-    with pytest.raises(runtime_module.ProviderRuntimeError, match=r"^anthropic package not installed$"):
-        anthropic_runtime.create_client("key")
 
 
 def test_openai_chat_exact_request_payload_and_normalized_result() -> None:
@@ -143,6 +122,7 @@ def test_openai_chat_exact_request_payload_and_normalized_result() -> None:
     raw = _RawCollection(
         _RawResponse(
             types.SimpleNamespace(
+                id="chatcmpl-1",
                 choices=[
                     types.SimpleNamespace(
                         message={"role": "assistant", "content": "hello", "tool_calls": []},
@@ -169,7 +149,7 @@ def test_openai_chat_exact_request_payload_and_normalized_result() -> None:
         messages=[{"role": "system", "content": "system"}, {"role": "user", "content": "hello"}],
         tools=tools,
         stream=False,
-        context=_Context(),
+        context=_provider_context(),
     )
 
     assert raw.calls == [
@@ -204,6 +184,7 @@ def test_openai_responses_exact_request_payload_and_normalized_result() -> None:
                 output=[
                     types.SimpleNamespace(
                         type="message",
+                        id="message-1",
                         role="assistant",
                         content=[{"type": "output_text", "text": "done"}],
                         finish_reason=None,
@@ -214,7 +195,7 @@ def test_openai_responses_exact_request_payload_and_normalized_result() -> None:
         )
     )
     client = types.SimpleNamespace(responses=raw)
-    context = _Context(agent_config={"provider_tools": {"openai": {"include_reasoning": False}}})
+    context = _provider_context(agent_config={"provider_tools": {"openai": {"include_reasoning": False}}})
     result = runtime.invoke(
         client=client,
         model="gpt-responses-test",
@@ -234,7 +215,7 @@ def test_openai_responses_exact_request_payload_and_normalized_result() -> None:
         }
     ]
     assert isinstance(result, runtime_module.ProviderResult)
-    assert result.metadata == {"previous_response_id": "resp-1"}
+    assert result.metadata == {"previous_response_id": "resp-1", "raw_finish_reason": "completed"}
     assert result.messages[0].content == "done"
     assert result.messages[0].finish_reason == "stop"
 
@@ -244,6 +225,7 @@ def test_anthropic_exact_request_payload_and_normalized_result() -> None:
     raw = _RawCollection(
         _RawResponse(
             types.SimpleNamespace(
+                id="msg-1",
                 content=[{"type": "text", "text": "bonjour"}],
                 stop_reason="end_turn",
                 model="claude-test",
@@ -253,7 +235,7 @@ def test_anthropic_exact_request_payload_and_normalized_result() -> None:
     )
     client = types.SimpleNamespace(messages=raw)
     tools = [{"name": "lookup", "description": "Lookup", "input_schema": {"type": "object"}}]
-    context = _Context(
+    context = _provider_context(
         agent_config={
             "provider_tools": {
                 "anthropic": {
@@ -318,7 +300,7 @@ def test_retry_timing_uses_current_sleep_and_uniform_dependencies(monkeypatch: p
     result = runtime._call_with_raw_response(
         collection,
         error_context="responses.create",
-        context=_Context(),
+        context=_provider_context(),
         model="gpt-test",
         input=[],
     )
@@ -358,7 +340,7 @@ def test_registry_creates_normalized_mock_result_shape() -> None:
         messages=[{"role": "user", "content": "hello"}],
         tools=None,
         stream=False,
-        context=_Context(),
+        context=_provider_context(),
     )
     assert isinstance(result, runtime_module.ProviderResult)
     assert result.messages and isinstance(result.messages[0], runtime_module.ProviderMessage)

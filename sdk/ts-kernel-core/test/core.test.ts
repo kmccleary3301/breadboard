@@ -1702,7 +1702,7 @@ test("executeDriverMediatedToolTurn on remote isolation without remote backend t
   )
 })
 
-test("createKernelExecutionWorld with executeSandbox override advertises and executes remote capability without remote backend config", async () => {
+test("createKernelExecutionWorld honors exact remote hints and refuses a Ray-to-remote downgrade", async () => {
   const request = {
     schema_version: "bb.run_request.v1",
     request_id: "run-remote-override-1",
@@ -1746,22 +1746,21 @@ test("createKernelExecutionWorld with executeSandbox override advertises and exe
   assert.ok(injectedCalled, "injected executeSandbox was called for remote placement")
   assert.equal(result.sandboxResult.status, "completed")
   assert.equal(result.driverId, "remote")
-  const fallback = await executeDriverMediatedToolTurn(
-    { ...request, request_id: "run-ray-hint-fallback-1" },
-    {
-      sessionId: "sess-ray-hint-fallback-1",
-      toolName: "remote_tool",
-      command: ["python", "-c", "print('remote fallback')"],
-      isolationClass: "remote_service",
-      securityTier: "multi_tenant",
-      driverIdHint: "ray",
-      executionWorld: world,
-    },
-  )
-  assert.equal(fallback.driverId, "remote")
-  assert.equal(
-    fallback.executionPlacement.runtime_id,
-    "breadboard.ts-execution-driver-remote",
+  await assert.rejects(
+    () =>
+      executeDriverMediatedToolTurn(
+        { ...request, request_id: "run-ray-hint-refusal-1" },
+        {
+          sessionId: "sess-ray-hint-refusal-1",
+          toolName: "remote_tool",
+          command: ["python", "-c", "print('must not downgrade')"],
+          isolationClass: "remote_service",
+          securityTier: "multi_tenant",
+          driverIdHint: "ray",
+          executionWorld: world,
+        },
+      ),
+    /No execution driver supports delegated_python/,
   )
 })
 

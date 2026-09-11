@@ -53,10 +53,6 @@ interface OciTerminalSessionRecord {
   end: TerminalSessionEndV1 | null
 }
 
-function normalizeSignal(signal?: string | null): string {
-  return signal ?? "SIGTERM"
-}
-
 function buildDescriptor(input: TerminalSessionStartInputV1): TerminalSessionDescriptorV1 {
   return assertValid<TerminalSessionDescriptorV1>("terminalSessionDescriptor", {
     schema_version: "bb.terminal_session_descriptor.v1",
@@ -88,7 +84,7 @@ function buildInteraction(
     causing_call_id: input.causingCallId ?? null,
     interaction_kind: input.interactionKind,
     input_b64: input.interactionKind === "stdin" ? input.inputB64 ?? null : null,
-    signal: input.interactionKind === "signal" ? normalizeSignal(input.signal) : null,
+    signal: input.interactionKind === "signal" ? input.signal ?? "SIGTERM" : null,
   })
 }
 
@@ -300,7 +296,7 @@ export class OciTerminalSessionManager {
     const targetSet = new Set(targetIds)
     const alreadyEnded = targetIds.filter((sessionId) => !this.sessions.has(sessionId) && this.endedSessionIds.includes(sessionId))
     const rawResult = this.adapter.cleanupSessions
-      ? await this.adapter.cleanupSessions({ sessionIds: targetIds, signal: normalizeSignal(input.signal) })
+      ? await this.adapter.cleanupSessions({ sessionIds: targetIds, signal: input.signal ?? "SIGTERM" })
       : {
           cleaned_session_ids: alreadyEnded,
           failed_session_ids: targetIds.filter((id) => !alreadyEnded.includes(id)),
@@ -359,7 +355,7 @@ export class OciTerminalSessionManager {
       scope: input.scope,
       cleaned_session_ids: [...cleanedSet],
       failed_session_ids: finalFailed,
-      metadata: { signal: normalizeSignal(input.signal) },
+      metadata: { signal: input.signal ?? "SIGTERM" },
     })
   }
 }

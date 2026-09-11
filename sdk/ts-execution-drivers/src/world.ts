@@ -19,6 +19,11 @@ import {
   buildPlannedExecution,
   selectExecutionDriver,
   selectTerminalSessionDriver,
+  type AuthorWorkerChannelV1,
+  type AuthorWorkerCleanupResultV1,
+  type AuthorWorkerLaunchInputV1,
+  type AuthorWorkerResourceIdentityV1,
+  AuthorWorkerLaunchError,
   type ExecutionDriverV1,
   type PlannedExecutionV1,
   type TerminalSessionCleanupInputV1,
@@ -181,6 +186,35 @@ export interface ExecutionWorldTerminalCleanupResultV1 {
   readonly unsupportedCase?: UnsupportedCaseV1
 }
 
+
+export interface ExecutionWorldAuthorWorkerOpenInputV1 {
+  readonly capability: ExecutionCapabilityV1
+  readonly placement: ExecutionPlacementV1
+  readonly input: AuthorWorkerLaunchInputV1
+  readonly driverId?: string | null
+  readonly driverIdHint?: ExecutionDriverHintV1
+  readonly onIntent?: (intent: {
+    readonly ownerRef: string
+    readonly executionId: string
+    readonly resourceId: string
+    readonly containerName: string
+  }) => void | Promise<void>
+  readonly onReceipt?: (identity: AuthorWorkerResourceIdentityV1) => void | Promise<void>
+}
+
+export interface ExecutionWorldAuthorWorkerOpenResultV1 {
+  readonly driverId: string | null
+  readonly channelId: string | null
+  readonly identity: AuthorWorkerResourceIdentityV1 | null
+  readonly unsupportedCase?: UnsupportedCaseV1
+  readonly cleanup?: AuthorWorkerCleanupResultV1
+}
+
+export interface ExecutionWorldAuthorWorkerCloseResultV1 {
+  readonly driverId: string | null
+  readonly channelId: string
+  readonly cleanup: AuthorWorkerCleanupResultV1
+}
 export type ExecutionWorldOperationResultV1 =
   | ExecutionWorldSandboxResultV1
   | ExecutionWorldTerminalStartResultV1
@@ -200,27 +234,34 @@ export interface ExecutionWorldV1 {
     driverIdHint?: ExecutionDriverHintV1
   }): ExecutionWorldSelectionV1
   execute(operation: ExecutionWorldOperationV1): Promise<ExecutionWorldOperationResultV1>
+  openAuthorWorker?(
+    input: ExecutionWorldAuthorWorkerOpenInputV1,
+  ): Promise<ExecutionWorldAuthorWorkerOpenResultV1>
+  readAuthorWorker?(
+    channelId: string,
+    signal?: AbortSignal,
+  ): Promise<Uint8Array | null>
+  writeAuthorWorker?(
+    channelId: string,
+    frame: Uint8Array,
+    signal?: AbortSignal,
+  ): Promise<void>
+  closeAuthorWorker?(
+    channelId: string,
+    reason?: string,
+  ): Promise<ExecutionWorldAuthorWorkerCloseResultV1>
+}
+function hintedDriverId(hint: ExecutionDriverHintV1): string {
+  return hint === "trusted_local" ? "local-process" : hint
 }
 
-const DRIVER_ORDER: Record<ExecutionDriverHintV1, string[]> = {
-  trusted_local: ["local-process", "oci", "remote", "ray", "slurm"],
-  oci: ["oci", "local-process", "remote", "ray", "slurm"],
-  remote: ["remote", "ray", "slurm", "oci", "local-process"],
-  ray: ["ray", "remote", "slurm", "oci", "local-process"],
-  slurm: ["slurm", "remote", "ray", "oci", "local-process"],
-}
-
-function orderDrivers<T extends ExecutionDriverV1>(drivers: readonly T[], hint?: ExecutionDriverHintV1): T[] {
-  const preferred = DRIVER_ORDER[hint ?? "trusted_local"]
-  const rank = new Map(preferred.map((driverId, index) => [driverId, index]))
-  return drivers
-    .map((driver, index) => ({ driver, index }))
-    .sort((left, right) => {
-      const leftRank = rank.get(left.driver.driverId) ?? preferred.length + left.index
-      const rightRank = rank.get(right.driver.driverId) ?? preferred.length + right.index
-      return leftRank - rightRank || left.index - right.index
-    })
-    .map(({ driver }) => driver)
+function driversForHint(
+  drivers: readonly TerminalSessionDriverV1[],
+  hint?: ExecutionDriverHintV1,
+): TerminalSessionDriverV1[] {
+  if (hint === undefined) return [...drivers]
+  const driverId = hintedDriverId(hint)
+  return drivers.filter((driver) => driver.driverId === driverId)
 }
 
 function selectWorldDriver(
@@ -236,6 +277,12 @@ function selectWorldDriver(
 ): TerminalSessionDriverV1 | null {
   if (input.driverId) {
     const directMatch = drivers.find((d) => d.driverId === input.driverId)
+    if (
+      input.driverIdHint !== undefined
+      && input.driverId !== hintedDriverId(input.driverIdHint)
+    ) {
+      return null
+    }
     if (!directMatch) {
       return null
     }
@@ -276,9 +323,9 @@ function selectWorldDriver(
     }
     return directMatch
   }
-  const orderedDrivers = orderDrivers(drivers, input.driverIdHint)
+  const constrainedDrivers = driversForHint(drivers, input.driverIdHint)
   if (input.terminal) {
-    const eligibleDrivers = orderedDrivers.filter((d) => {
+    const eligibleDrivers = constrainedDrivers.filter((d) => {
       if (input.terminalOperation === "start") return typeof d.startTerminalSession === "function"
       if (input.terminalOperation === "interact") return typeof d.interactTerminalSession === "function"
       if (input.terminalOperation === "snapshot") return typeof d.snapshotTerminalRegistry === "function"
@@ -299,8 +346,36 @@ function selectWorldDriver(
   return (selectExecutionDriver({
     capability: input.capability,
     placement: input.placement,
-    drivers: orderedDrivers,
+    drivers: constrainedDrivers,
   }) as TerminalSessionDriverV1 | null)
+}
+
+function selectAuthorWorkerDriver(
+  drivers: readonly TerminalSessionDriverV1[],
+  input: {
+    readonly capability: ExecutionCapabilityV1
+    readonly placement: ExecutionPlacementV1
+    readonly driverId?: string | null
+    readonly driverIdHint?: ExecutionDriverHintV1
+  },
+): TerminalSessionDriverV1 | null {
+  const constrainedDrivers = driversForHint(drivers, input.driverIdHint)
+  const candidates = input.driverId
+    ? constrainedDrivers.filter((driver) => driver.driverId === input.driverId)
+    : constrainedDrivers
+  for (const driver of candidates) {
+    if (!driver.supportedPlacements.includes(input.placement.placement_class)) continue
+    if (!driver.supportsCapability(input.capability, input.placement.placement_class)) continue
+    if (typeof driver.openAuthorWorker !== "function") continue
+    if (
+      typeof driver.supportsAuthorWorkers === "function" &&
+      !driver.supportsAuthorWorkers(input.capability, input.placement.placement_class)
+    ) {
+      continue
+    }
+    return driver
+  }
+  return null
 }
 
 function buildLivenessEvidence(input: {
@@ -400,19 +475,6 @@ function buildSandboxFailureResult(input: {
   })
 }
 
-
-async function settleWithin(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<false>((resolve) => {
-    timer = setTimeout(() => resolve(false), Math.max(0, timeoutMs))
-  })
-  try {
-    return await Promise.race([promise.then(() => true, () => false), timeout])
-  } finally {
-    if (timer !== undefined) clearTimeout(timer)
-  }
-}
-
 async function settleValueWithin<T>(
   promise: Promise<T>,
   timeoutMs: number,
@@ -433,6 +495,7 @@ async function settleValueWithin<T>(
     if (timer !== undefined) clearTimeout(timer)
   }
 }
+
 function buildTerminalUnsupportedCase(
   capability: ExecutionCapabilityV1,
   placement: ExecutionPlacementV1,
@@ -475,7 +538,7 @@ export function createExecutionWorld(input: {
   drivers: readonly TerminalSessionDriverV1[]
   defaultDeadlineMs?: number | null
   terminationGraceMs?: number
-}): ExecutionWorldV1 {
+}): Required<ExecutionWorldV1> {
   const drivers = [...input.drivers]
   const defaultDeadlineMs = input.defaultDeadlineMs ?? null
   const defaultTerminationGraceMs = input.terminationGraceMs ?? 2000
@@ -484,6 +547,14 @@ export function createExecutionWorld(input: {
   const cleanedSessionOwners = new Map<string, string>()
   const startingSessionIds = new Set<string>()
   const activeSandboxRequests = new Map<string, symbol>()
+  const authorChannels = new Map<
+    string,
+    {
+      readonly driver: TerminalSessionDriverV1
+      readonly channel: AuthorWorkerChannelV1
+      cleanup: AuthorWorkerCleanupResultV1 | null
+    }
+  >()
   function rememberEndedSessionOwner(sessionId: string, driver: TerminalSessionDriverV1): void {
     if (endedSessionOwners.has(sessionId)) {
       endedSessionOwners.delete(sessionId)
@@ -1187,20 +1258,37 @@ export function createExecutionWorld(input: {
 
   async function executeTerminalInteract(operation: ExecutionWorldTerminalInteractionOperationV1): Promise<ExecutionWorldTerminalInteractionResultV1> {
     const selected = sessions.get(operation.input.terminalSessionId) ?? endedSessionOwners.get(operation.input.terminalSessionId)
-    if (selected && operation.driverId && selected.driverId !== operation.driverId) {
+    const selectedDriverId = selected?.driverId ?? null
+    const hintedPinnedDriverId =
+      operation.driverIdHint === undefined
+        ? null
+        : hintedDriverId(operation.driverIdHint)
+    const pinsContradict =
+      operation.driverId !== undefined
+      && operation.driverId !== null
+      && hintedPinnedDriverId !== null
+      && operation.driverId !== hintedPinnedDriverId
+    const pinnedDriverId = operation.driverId ?? hintedPinnedDriverId
+    if (
+      pinsContradict
+      || (selectedDriverId !== null && pinnedDriverId && selectedDriverId !== pinnedDriverId)
+    ) {
       return {
         kind: "terminal_interact",
-        driverId: selected.driverId,
+        driverId: selectedDriverId,
         result: null,
         unsupportedCase: buildTerminalUnsupportedCase(
           operation.capability,
           operation.placement,
-          `Terminal session '${operation.input.terminalSessionId}' is owned by '${selected.driverId}', not pinned driver '${operation.driverId}'.`,
+          pinsContradict
+            ? `Pinned driver '${operation.driverId}' contradicts driver hint '${hintedPinnedDriverId}'.`
+            : `Terminal session '${operation.input.terminalSessionId}' is owned by '${selectedDriverId}', not pinned driver '${pinnedDriverId}'.`,
           "unsupported_terminal_driver",
           {
             terminal_session_id: operation.input.terminalSessionId,
-            owner_driver_id: selected.driverId,
-            pinned_driver_id: operation.driverId,
+            owner_driver_id: selectedDriverId,
+            pinned_driver_id: pinnedDriverId,
+            hinted_driver_id: hintedPinnedDriverId,
           },
         ),
       }
@@ -1598,11 +1686,16 @@ export function createExecutionWorld(input: {
     const reportedCleanedSet = new Set<string>()
     const reportedFailedSet = new Set<string>()
     let primaryDriverId: string | null = operation.driverId ?? defaultDriver?.driverId ?? null
+    const requestedDriverId =
+      operation.driverId
+      ?? (operation.driverIdHint === undefined
+        ? null
+        : hintedDriverId(operation.driverIdHint))
     // Group requested session IDs by owning driver, routing ended owners through driver cleanup
     const driverToSessions = new Map<TerminalSessionDriverV1, string[]>()
     for (const sessionId of requestedIds) {
       const knownOwner = sessions.get(sessionId) ?? endedSessionOwners.get(sessionId)
-      if (pinnedTerminalDriver && knownOwner && knownOwner.driverId !== pinnedTerminalDriver.driverId) {
+      if (knownOwner && requestedDriverId && knownOwner.driverId !== requestedDriverId) {
         pendingFailedSet.add(sessionId)
         continue
       }
@@ -1725,6 +1818,70 @@ export function createExecutionWorld(input: {
     }
   }
 
+  async function openAuthorWorker(
+    operation: ExecutionWorldAuthorWorkerOpenInputV1,
+  ): Promise<ExecutionWorldAuthorWorkerOpenResultV1> {
+    const driver = selectAuthorWorkerDriver(drivers, operation)
+    if (!driver?.openAuthorWorker) {
+      return {
+        driverId: driver?.driverId ?? null,
+        channelId: null,
+        identity: null,
+        unsupportedCase: buildTerminalUnsupportedCase(
+          operation.capability,
+          operation.placement,
+          `No OCI author worker is available for ${operation.placement.placement_class}.`,
+          "unsupported_author_worker",
+        ),
+      }
+    }
+    try {
+      const channel = await driver.openAuthorWorker(operation.input, {
+        onIntent: operation.onIntent,
+        onReceipt: operation.onReceipt,
+      })
+      authorChannels.set(channel.channelId, { driver, channel, cleanup: null })
+      return { driverId: driver.driverId, channelId: channel.channelId, identity: channel.identity }
+    } catch (error) {
+      return {
+        driverId: driver.driverId,
+        channelId: null,
+        identity: null,
+        cleanup: error instanceof AuthorWorkerLaunchError ? error.cleanup : undefined,
+        unsupportedCase: buildTerminalUnsupportedCase(
+          operation.capability,
+          operation.placement,
+          error instanceof Error ? error.message : "Author worker launch failed",
+          "author_worker_launch_failed",
+        ),
+      }
+    }
+  }
+
+  async function readAuthorWorker(channelId: string, signal?: AbortSignal): Promise<Uint8Array | null> {
+    const owned = authorChannels.get(channelId)
+    if (!owned || owned.cleanup) throw new Error(`Unknown or closed author worker channel: ${channelId}`)
+    return owned.channel.readFrame(signal)
+  }
+
+  async function writeAuthorWorker(channelId: string, frame: Uint8Array, signal?: AbortSignal): Promise<void> {
+    const owned = authorChannels.get(channelId)
+    if (!owned || owned.cleanup) throw new Error(`Unknown or closed author worker channel: ${channelId}`)
+    await owned.channel.writeFrame(frame, signal)
+  }
+
+  async function closeAuthorWorker(
+    channelId: string,
+    reason?: string,
+  ): Promise<ExecutionWorldAuthorWorkerCloseResultV1> {
+    const owned = authorChannels.get(channelId)
+    if (!owned) throw new Error(`Unknown author worker channel: ${channelId}`)
+    if (owned.cleanup?.status === "confirmed_absent") return { driverId: owned.driver.driverId, channelId, cleanup: owned.cleanup }
+    const cleanup = await owned.channel.close(reason)
+    owned.cleanup = cleanup
+    return { driverId: owned.driver.driverId, channelId, cleanup }
+  }
+
   return {
     select(selection) {
       return {
@@ -1737,6 +1894,10 @@ export function createExecutionWorld(input: {
           })?.driverId ?? null,
       }
     },
+    openAuthorWorker,
+    readAuthorWorker,
+    writeAuthorWorker,
+    closeAuthorWorker,
     async execute(operation) {
       switch (operation.kind) {
         case "sandbox":

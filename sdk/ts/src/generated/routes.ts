@@ -1,7 +1,7 @@
 // GENERATED FILE - do not edit by hand.
 // generator: scripts/dev/generate_ts_sdk.py (deterministic, in-process, no network)
-// openapi-schema-sha256: 512f29a5384036639a726c355314bf613b10a90263d33ea9a402281ac7a4e5dc
-// app-source-sha256: c5a67f141fdc2ef626cb1184156df1c90bcb9325a2702bdd8be71992e6f48add
+// openapi-schema-sha256: a5953be2d9fbfcd5a9513b6be9f1b1e7e46e4aa5e069d63edc6cf609fa2b4657
+// app-source-sha256: ac1a7c0ae2186350a40d42d98da61f6dac71786810d0b1146cd02ec524b54231
 
 export interface RouteEntry { path: string; method: string; operationId: string }
 
@@ -33,6 +33,8 @@ export const ROUTES: readonly RouteEntry[] = [
   { path: "/v1/engine/owner/release", method: "POST", operationId: "release_engine_owner_v1_engine_owner_release_post" },
   { path: "/v1/engine/owner/renew", method: "POST", operationId: "renew_engine_owner_v1_engine_owner_renew_post" },
   { path: "/v1/harness-locks/{lock_id}", method: "GET", operationId: "harness_lock.get" },
+  { path: "/v1/harness-packages", method: "POST", operationId: "harness.package" },
+  { path: "/v1/harness-publications/{target}", method: "POST", operationId: "harness.publish" },
   { path: "/v1/harnesses", method: "GET", operationId: "harness.list" },
   { path: "/v1/harnesses", method: "POST", operationId: "harness.create" },
   { path: "/v1/harnesses/{harness_id}", method: "GET", operationId: "harness.get" },
@@ -51,9 +53,11 @@ export const ROUTES: readonly RouteEntry[] = [
   { path: "/v1/sessions", method: "GET", operationId: "session.list" },
   { path: "/v1/sessions", method: "POST", operationId: "session.start" },
   { path: "/v1/sessions/{session_id}", method: "GET", operationId: "session.get" },
+  { path: "/v1/sessions/{session_id}/adoptions", method: "POST", operationId: "session.adopt" },
   { path: "/v1/sessions/{session_id}/approve", method: "POST", operationId: "session.approve" },
   { path: "/v1/sessions/{session_id}/artifacts", method: "GET", operationId: "session.artifacts" },
   { path: "/v1/sessions/{session_id}/cancel", method: "POST", operationId: "session.cancel" },
+  { path: "/v1/sessions/{session_id}/checkpoints", method: "POST", operationId: "session.checkpoint" },
   { path: "/v1/sessions/{session_id}/events", method: "GET", operationId: "session.events" },
   { path: "/v1/sessions/{session_id}/input", method: "POST", operationId: "session.send_input" },
   { path: "/v1/sessions/{session_id}/resume", method: "POST", operationId: "session.resume" },

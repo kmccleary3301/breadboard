@@ -1,10 +1,67 @@
 from __future__ import annotations
 
+import signal
 import httpx
 import pytest
+from fastapi.testclient import TestClient
 
+import breadboard_engine.api.cli_bridge.app as app_module
 from breadboard_engine.api.cli_bridge.app import create_app
 from breadboard_engine.api.cli_bridge.service import SessionService
+
+
+def test_ray_initialization_preserves_server_signal_handlers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = {
+        signal.SIGINT: object(),
+        signal.SIGTERM: object(),
+    }
+    current = dict(expected)
+
+    def fake_getsignal(managed_signal: signal.Signals) -> object:
+        return current[managed_signal]
+
+    def fake_signal(managed_signal: signal.Signals, handler: object) -> object:
+        previous = current[managed_signal]
+        current[managed_signal] = handler
+        return previous
+
+    class FakeRay:
+        @staticmethod
+        def init(*, address: str, include_dashboard: bool) -> None:
+            assert address == "local"
+            assert include_dashboard is False
+            app_module.signal.signal(signal.SIGINT, object())
+            app_module.signal.signal(signal.SIGTERM, object())
+
+    monkeypatch.setattr(app_module.signal, "getsignal", fake_getsignal)
+    monkeypatch.setattr(app_module.signal, "signal", fake_signal)
+
+    app_module._initialize_local_ray(FakeRay())
+
+    assert current == expected
+
+
+def test_app_shutdown_quiesces_runtime_owners(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = SessionService(state_root=tmp_path)
+    calls: list[str] = []
+
+    async def shutdown_runtime_owners() -> None:
+        calls.append("shutdown")
+
+    monkeypatch.setattr(
+        service,
+        "shutdown_runtime_owners",
+        shutdown_runtime_owners,
+    )
+
+    with TestClient(create_app(service)):
+        pass
+
+    assert calls == ["shutdown"]
 
 
 @pytest.mark.asyncio

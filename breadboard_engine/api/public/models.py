@@ -15,8 +15,10 @@ from typing import Annotated, Any, Literal
 
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from starlette.concurrency import run_in_threadpool
+
+from breadboard_engine.api.module_models import ModuleAuthorityRequest, ModuleInputRequest
 
 from breadboard.product.operations.generated_bindings import (
     PUBLIC_BINDINGS_BY_OPERATION_ID,
@@ -159,6 +161,19 @@ class HarnessCreateRequest(BaseModel):
     directory: str = "."
 
 
+class HarnessPackageRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source: str = Field(min_length=1)
+    out: str = Field(min_length=1)
+
+
+class HarnessPublishRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    lock_id: str = Field(min_length=1)
+    expected_revision: int = Field(ge=0)
+    request_id: str = Field(min_length=1)
+
+
 class HarnessUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     definition: dict[str, Any]
@@ -166,14 +181,34 @@ class HarnessUpdateRequest(BaseModel):
 
 class SessionStartRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    lock_id: str = Field(min_length=1)
-    task: str = Field(min_length=1)
+    lock_id: str | None = Field(default=None, min_length=1)
+    publication_target: str | None = Field(default=None, min_length=1)
+    task: str | None = Field(default=None, min_length=1)
+    module_input: ModuleInputRequest | None = None
+    module_authority: ModuleAuthorityRequest | None = None
     session_id: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def validate_input_choice(self) -> SessionStartRequest:
+        if (self.lock_id is None) == (self.publication_target is None):
+            raise ValueError("supply exactly one lock_id or publication_target")
+        if (self.task is None) == (self.module_input is None):
+            raise ValueError("supply exactly one task or module_input")
+        if self.module_authority is not None and self.module_input is None:
+            raise ValueError("module_authority requires module_input")
+        return self
 
 
 class SessionInputRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    content: str = Field(min_length=1)
+    content: str | None = Field(default=None, min_length=1)
+    module_input: ModuleInputRequest | None = None
+
+    @model_validator(mode="after")
+    def validate_input_choice(self) -> SessionInputRequest:
+        if (self.content is None) == (self.module_input is None):
+            raise ValueError("supply exactly one content or module_input")
+        return self
 
 
 class SessionApprovalRequest(BaseModel):
@@ -186,6 +221,19 @@ class SessionCancelRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     reason: str = Field(default="operator request", min_length=1)
 
+
+
+class SessionCheckpointRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str = Field(min_length=1)
+    request_id: str = Field(min_length=1)
+
+
+class SessionAdoptRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    checkpoint_id: str = Field(min_length=1)
+    lock_id: str = Field(min_length=1)
+    request_id: str = Field(min_length=1)
 
 def public_workspace() -> Path:
     configured = Path(

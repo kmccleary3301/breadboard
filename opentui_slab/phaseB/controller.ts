@@ -161,7 +161,7 @@ const main = async () => {
   const configPathRaw =
     args.configPath?.trim() ||
     process.env.BREADBOARD_CONFIG_PATH?.trim() ||
-    "agent_configs/codex_0-107-0_e4_3-6-2026.yaml"
+    "agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml"
   const workspace = args.workspace?.trim() || process.env.BREADBOARD_WORKSPACE?.trim() || ""
 
   const runDir = path.resolve(process.cwd(), "artifacts", "phaseB", utcStamp())

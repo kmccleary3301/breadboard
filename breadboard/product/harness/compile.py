@@ -3,11 +3,23 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import PurePath
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
 from .explain import HarnessExplanation
-from .lock import EffectiveHarnessLock, _copy, graph_content_hash, sha256_bytes, sha256_json
+from .lock import (
+    EffectiveHarnessLock,
+    _copy,
+    graph_content_hash,
+    make_effective_harness_lock,
+    sha256_bytes,
+    sha256_json,
+)
 from .model import HarnessDefinition
 from .validate import HarnessDefinitionValidationError, parse_harness_definition
+
+if TYPE_CHECKING:
+    from .packages import ModulePackage
+
 LoadReference = Callable[[str, str], tuple[str, Mapping[str, Any]]]
 class HarnessCompileError(ValueError):
     """Raised before a compilation exists when an input cannot be resolved."""
@@ -30,16 +42,19 @@ class HarnessCompilation:
         object.__setattr__(instance, "_effective", _copy(effective, freeze=True))
         object.__setattr__(instance, "_resolved_author", _copy(author, freeze=True))
         return instance
+
     def as_dict(self) -> dict[str, Any]:
         return _copy(self._effective, freeze=False)
+
     def resolved_author_dict(self) -> dict[str, Any]:
         return _copy(self._resolved_author, freeze=False)
+
     def with_resource_inputs(
         self,
         resource_inputs: Mapping[str, bytes] | None,
     ) -> HarnessCompilation:
         """Bind resource bytes to this compilation's resolved source snapshot."""
-        graph = self.lock.as_dict()
+        graph = self.lock.configuration_graph
         additions = _resource_source_layers(
             resource_inputs,
             start_precedence=len(graph["source_layers"]) * 10,
@@ -51,21 +66,33 @@ class HarnessCompilation:
             for layer in graph["source_layers"]
         ):
             raise HarnessCompileError("resource inputs are already bound")
-        graph["source_layers"].extend(additions)
-        graph["graph_hash"] = graph_content_hash(graph)
-        instance = object.__new__(type(self))
-        object.__setattr__(
-            instance,
-            "lock",
-            EffectiveHarnessLock._from_record(graph),
+        graph_copy = _copy(graph, freeze=False)
+        graph_copy["source_layers"].extend(additions)
+        graph_copy["graph_hash"] = graph_content_hash(graph_copy)
+        lock = make_effective_harness_lock(
+            graph_copy, self.lock["modules"], self.lock["configuration_artifacts"]
         )
+        instance = object.__new__(type(self))
+        object.__setattr__(instance, "lock", lock)
         object.__setattr__(instance, "explanation", self.explanation)
         object.__setattr__(instance, "_effective", self._effective)
-        object.__setattr__(
-            instance,
-            "_resolved_author",
-            self._resolved_author,
+        object.__setattr__(instance, "_resolved_author", self._resolved_author)
+        return instance
+    def with_configuration_artifacts(
+        self,
+        configuration_artifacts: Mapping[str, Any],
+    ) -> HarnessCompilation:
+        """Bind immutable CAS references for the source/resource snapshot."""
+        lock = make_effective_harness_lock(
+            self.lock.configuration_graph,
+            self.lock["modules"],
+            configuration_artifacts,
         )
+        instance = object.__new__(type(self))
+        object.__setattr__(instance, "lock", lock)
+        object.__setattr__(instance, "explanation", self.explanation)
+        object.__setattr__(instance, "_effective", self._effective)
+        object.__setattr__(instance, "_resolved_author", self._resolved_author)
         return instance
 def _mapping(value: Mapping[str, Any], label: str) -> dict[str, Any]:
     if not isinstance(value, Mapping):
@@ -86,8 +113,11 @@ def _refs(document: Mapping[str, Any], source_ref: str) -> tuple[str, ...]:
         refs.append(value)
     return tuple(refs)
 def _runtime_values(document: Mapping[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in document.items()
-            if key not in {"extends", "dossier"}}
+    return {
+        key: value
+        for key, value in document.items()
+        if key not in {"extends", "dossier", "modules"}
+    }
 def _metadata_leaf(value: Any) -> bool:
     return isinstance(value, Mapping) and "value" in value and (
         "env_name" in value or "env_satisfied" in value)
@@ -188,13 +218,185 @@ def _resource_source_layers(
         })
     return layers
 
+def _compile_module_bindings(
+    declaration: Mapping[str, Any],
+    packages: Mapping[str, ModulePackage] | None,
+) -> dict[str, Any]:
+    """Resolve declared package values into a complete immutable composition."""
+
+    if packages is None:
+        raise HarnessCompileError(
+            "Definition v2 modules require verified ModulePackage values"
+        )
+    root = declaration.get("root")
+    bindings = declaration.get("bindings")
+    if not isinstance(root, str) or not root.strip():
+        raise HarnessCompileError("modules.root must name a binding")
+    if not isinstance(bindings, Mapping) or not bindings:
+        raise HarnessCompileError("modules.bindings must be a non-empty mapping")
+    names = {name for name in bindings if isinstance(name, str)}
+    if len(names) != len(bindings):
+        raise HarnessCompileError("module binding names must be strings")
+    if root not in names:
+        raise HarnessCompileError(f"modules.root binding is unknown: {root!r}")
+    if set(packages) != names:
+        missing = sorted(names - set(packages))
+        extra = sorted(set(packages) - names)
+        detail = f"missing {missing[0]!r}" if missing else f"undeclared {extra[0]!r}"
+        raise HarnessCompileError(f"verified ModulePackage set differs from bindings: {detail}")
+    contracts = {
+        name: {contract.contract_id: contract for contract in package.manifest.contracts}
+        for name, package in packages.items()
+    }
+
+    def require_contract(caller: str, receiver: str, contract_id: str) -> None:
+        expected = contracts[caller][contract_id]
+        if contracts[receiver].get(contract_id) != expected:
+            raise HarnessCompileError(
+                f"binding {receiver!r} does not implement contract {contract_id!r}"
+            )
+        target = packages[receiver].manifest
+        if (
+            not set(expected.input_schema_ids) <= set(target.input_schema_ids)
+            or not set(expected.output_schema_ids) <= set(target.output_schema_ids)
+        ):
+            raise HarnessCompileError(
+                f"binding {receiver!r} input/output does not implement {contract_id!r}"
+            )
+        schema_ids = (*expected.input_schema_ids, *expected.output_schema_ids)
+        if packages[caller].schema_closure(schema_ids) != packages[receiver].schema_closure(schema_ids):
+            raise HarnessCompileError(
+                f"bindings {caller!r} and {receiver!r} use different transitive schema bytes for contract {contract_id!r}"
+            )
+
+    records: dict[str, dict[str, Any]] = {}
+    environment_runtime: dict[str, str] = {}
+    environment_authority: dict[str, str] = {}
+    environment_imports: dict[str, dict[str, tuple[str, str, int]]] = {}
+
+    for name in sorted(names):
+        raw = bindings[name]
+        if not isinstance(raw, Mapping):
+            raise HarnessCompileError(f"module binding {name!r} must be an object")
+        package_ref = raw.get("package")
+        environment = raw.get("environment")
+        dependencies = raw.get("dependencies")
+        children = raw.get("children")
+        if not isinstance(package_ref, Mapping):
+            raise HarnessCompileError(f"module binding {name!r} package is invalid")
+        declared_digest = package_ref.get("digest")
+        declared_source = package_ref.get("source")
+        if not isinstance(declared_source, str) or not declared_source.strip():
+            raise HarnessCompileError(f"module binding {name!r} package source is invalid")
+        if not isinstance(declared_digest, str) or not declared_digest.startswith("sha256:"):
+            raise HarnessCompileError(f"module binding {name!r} package digest is invalid")
+        if not isinstance(environment, str) or not environment.strip():
+            raise HarnessCompileError(f"module binding {name!r} environment is invalid")
+        if not isinstance(dependencies, Mapping) or not isinstance(children, Mapping):
+            raise HarnessCompileError(
+                f"module binding {name!r} dependencies and children must be objects"
+            )
+        package = packages[name]
+        actual_digest = package.package_digest
+        if actual_digest != declared_digest:
+            raise HarnessCompileError(
+                f"module binding {name!r} package digest does not match declared bytes"
+            )
+        package_record = package.lock_record()
+        if not isinstance(package_record, Mapping):
+            raise HarnessCompileError(f"module binding {name!r} package record is invalid")
+        if set(package_record) != {
+            "package_digest",
+            "artifact_ref",
+            "manifest",
+            "runtime_key",
+            "import_members",
+        }:
+            raise HarnessCompileError(
+                f"module binding {name!r} package record is incomplete"
+            )
+        if package_record.get("package_digest") != actual_digest:
+            raise HarnessCompileError(
+                f"module binding {name!r} package record digest is invalid"
+            )
+        manifest = package.manifest
+        if set(dependencies) != set(manifest.dependency_contracts):
+            raise HarnessCompileError(
+                f"module binding {name!r} dependency bindings must match its manifest"
+            )
+        if any(not isinstance(key, str) or not isinstance(target, str) for key, target in dependencies.items()):
+            raise HarnessCompileError(f"module binding {name!r} dependencies are invalid")
+        declared_children = tuple(target.label for target in manifest.child_targets)
+        if set(children) != set(declared_children):
+            raise HarnessCompileError(
+                f"module binding {name!r} child bindings must match its manifest"
+            )
+        if any(not isinstance(key, str) or not isinstance(target, str) for key, target in children.items()):
+            raise HarnessCompileError(f"module binding {name!r} children are invalid")
+        for edge_kind, edge_values in (("dependency", dependencies), ("child", children)):
+            unknown = sorted(set(edge_values.values()) - names)
+            if unknown:
+                raise HarnessCompileError(
+                    f"module binding {name!r} {edge_kind} target is unknown: {unknown[0]!r}"
+                )
+        for field_name, receiver in dependencies.items():
+            require_contract(name, receiver, manifest.dependency_contracts[field_name])
+        for child in manifest.child_targets:
+            receiver = children[child.label]
+            if packages[receiver].manifest.logical_package != child.target:
+                raise HarnessCompileError(
+                    f"child {child.label!r} requires logical package {child.target!r}"
+                )
+            require_contract(name, receiver, child.contract_id)
+
+        runtime_key = package.runtime_key
+        authority_key = sha256_json(
+            {
+                "requested_authority": manifest.requested_authority,
+                "execution_tier": manifest.execution_tier,
+                "worker_protocol": manifest.worker_protocol,
+                "resource_budget": manifest.resource_budget,
+            }
+        )
+        previous_runtime = environment_runtime.setdefault(environment, runtime_key)
+        previous_authority = environment_authority.setdefault(environment, authority_key)
+        if previous_runtime != runtime_key:
+            raise HarnessCompileError(
+                f"conflicting runtime closures share sealed environment {environment!r}"
+            )
+        if previous_authority != authority_key:
+            raise HarnessCompileError(
+                f"conflicting worker authorities share sealed environment {environment!r}"
+            )
+        imports = environment_imports.setdefault(environment, {})
+        for member in manifest.import_members:
+            identity = (member.path, member.sha256, member.size_bytes)
+            previous = imports.setdefault(member.module, identity)
+            if previous != identity:
+                raise HarnessCompileError(
+                    f"conflicting import closures share sealed environment {environment!r}: "
+                    f"{member.module!r}"
+                )
+        config = raw.get("config")
+        _mapping({"config": config}, f"module binding {name!r}")
+        records[name] = {
+            "children": {str(key): str(children[key]) for key in sorted(children)},
+            "config": _copy(config, freeze=False),
+            "dependencies": {
+                str(key): str(dependencies[key]) for key in sorted(dependencies)
+            },
+            "environment": environment,
+            "package": _copy(package_record, freeze=False),
+        }
+    return {"bindings": records, "root": root}
 def compile_harness_definition(
     definition: Mapping[str, Any] | HarnessDefinition, *, source_ref: str,
     load_ref: LoadReference | None = None, defaults: Mapping[str, Any] | None = None,
     overlays: Sequence[Mapping[str, Any]] = (),
     resource_inputs: Mapping[str, bytes] | None = None,
+    packages: Mapping[str, ModulePackage] | None = None,
 ) -> HarnessCompilation:
-    """Resolve, merge, hash, and freeze one Harness Definition."""
+    """Resolve a Definition into an immutable v2 Lock and explanation."""
     if not isinstance(source_ref, str) or not source_ref.strip():
         raise HarnessCompileError("source_ref must be a non-empty string")
     root = _mapping(definition.as_dict() if isinstance(definition, HarnessDefinition)
@@ -285,11 +487,20 @@ def compile_harness_definition(
         start_precedence=len(source_layers) * 10,
     ))
 
-    if author.get("schema_version") == "bb.harness_definition.v1":
+    modules_record: dict[str, Any] | None = None
+    schema_version = author.get("schema_version")
+    if schema_version in {"bb.harness_definition.v1", "bb.harness_definition.v2"}:
         try:
             parse_harness_definition(author)
         except HarnessDefinitionValidationError as error:
             raise HarnessCompileError(f"invalid Harness Definition: {error}") from None
+    if "modules" in author:
+        if schema_version != "bb.harness_definition.v2":
+            raise HarnessCompileError("modules require bb.harness_definition.v2")
+        modules = author["modules"]
+        if not isinstance(modules, Mapping):
+            raise HarnessCompileError("modules must be an object")
+        modules_record = _compile_module_bindings(modules, packages)
     rows = _flatten(effective, provenance)
     if not rows or any(not path for path, *_ in rows):
         raise HarnessCompileError("effective configuration must contain at least one value")
@@ -324,39 +535,84 @@ def compile_harness_definition(
                       if row["visibility"] == "redacted"]
     graph = {
         "effective_values": effective_values,
-        "env_gates": [env_gates[key] for key in sorted(env_gates)], "graph_hash": None,
+        "env_gates": [env_gates[key] for key in sorted(env_gates)],
+        "graph_hash": None,
         "graph_id": f"agent_config:{PurePath(source_ref).stem or 'harness'}",
-        "merge_policy": {"conflict_resolution": "highest-precedence",
-                         "policy_id": "precedence_order_deep_merge",
-                         "strategy": "deep-merge"},
-        "migrations": [{"applied": True, "from_version": "agent-config-yaml",
-                        "migration_id": "agent-config-yaml-to-effective-config-graph-v1",
-                        "to_version": "bb.effective_config_graph.v1"}],
-        "schema_version": "bb.effective_config_graph.v1", "source_layers": source_layers,
-        "visibility": {"host_only_paths": [],
-                       "model_visible_paths": [row["path"] for row in effective_values
-                                               if row["visibility"] == "model-visible"],
-                       "redacted_paths": redacted_paths},
+        "merge_policy": {
+            "conflict_resolution": "highest-precedence",
+            "policy_id": "precedence_order_deep_merge",
+            "strategy": "deep-merge",
+        },
+        "migrations": [
+            {
+                "applied": True,
+                "from_version": "agent-config-yaml",
+                "migration_id": "agent-config-yaml-to-effective-config-graph-v1",
+                "to_version": "bb.effective_config_graph.v1",
+            }
+        ],
+        "schema_version": "bb.effective_config_graph.v1",
+        "source_layers": source_layers,
+        "visibility": {
+            "host_only_paths": [],
+            "model_visible_paths": [
+                row["path"]
+                for row in effective_values
+                if row["visibility"] == "model-visible"
+            ],
+            "redacted_paths": redacted_paths,
+        },
     }
     graph["graph_hash"] = graph_content_hash(graph)
     surface = effective.get("schema_version")
-    if surface not in {"bb.agent_config_surface.v1", "bb.agent_config_surface.v2"}:
+    if surface not in {
+        "bb.agent_config_surface.v1",
+        "bb.agent_config_surface.v2",
+        "bb.harness_definition.v1",
+        "bb.harness_definition.v2",
+    }:
         surface = "bb.agent_config_surface.v1"
+    fields = [{"classification": "operational", "consumer_ref": None,
+               "path": path, "source_layer": source}
+              for path, _, source, _ in rows]
+    if modules_record is not None:
+        module_sources = dict(_source_rows(author_sources))
+        for name, binding in modules_record["bindings"].items():
+            path = f"modules.bindings.{name}"
+            source = module_sources[f"{path}.package.digest"]
+            package = binding["package"]
+            manifest = package["manifest"]
+            fields.append({
+                "classification": "operational",
+                "consumer_ref": package["artifact_ref"]["artifact_id"],
+                "path": path, "source_layer": source,
+            })
+            diagnostics.append({
+                "severity": "info", "class": "other", "path": path,
+                "message": (
+                    f"effect=selected; source={source}; "
+                    f"package={manifest['logical_package']}@{manifest['package_version']}; "
+                    f"digest={package['package_digest']}; environment={binding['environment']}; "
+                    f"dependencies={binding['dependencies']}; children={binding['children']}; "
+                    f"requested_authority={sorted(manifest['requested_authority'])}"
+                ),
+            })
     explanation_record = {
         "schema_version": "bb.config_explanation.v1",
         "explanation_id": "harness_explanation:" + sha256_json(source_ref)[7:23],
         "config_path": source_ref, "config_sha256": sha256_json(author),
         "generated_at_utc": "1970-01-01T00:00:00Z",
         "surface_schema_version": surface, "resolved_summary": _summary(effective, extends_chain),
-        "fields": [{"classification": "operational", "consumer_ref": None,
-                    "path": path, "source_layer": source}
-                   for path, _, source, _ in rows],
+        "fields": fields,
         "diagnostics": sorted(diagnostics, key=lambda item: (item["path"], item["message"])),
         "ok": True,
     }
     return HarnessCompilation._create(
-        effective, author, EffectiveHarnessLock._from_record(graph),
-        HarnessExplanation._from_record(explanation_record))
+        effective,
+        author,
+        make_effective_harness_lock(graph, modules_record),
+        HarnessExplanation._from_record(explanation_record),
+    )
 def _looks_secret(path: str) -> bool:
     segments = (part.replace("-", "_") for part in path.lower().split("."))
     return any(part in {"api_key", "apikey", "password", "secret", "token"}

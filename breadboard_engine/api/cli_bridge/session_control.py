@@ -11,7 +11,7 @@ import threading
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator, Callable, Dict, List, Mapping, Optional, Protocol, Sequence
+from typing import Any, AsyncIterator, Callable, Dict, List, Mapping, Optional, Protocol
 
 from breadboard_engine.auth.enforcer import apply_dotted_overrides
 from breadboard_engine.checkpointing.checkpoint_manager import CheckpointManager
@@ -25,8 +25,6 @@ from breadboard_engine.model_roles import (
 )
 from breadboard_engine.permissions import (
     PermissionAuthority,
-    normalize_permission_responses,
-    resolve_permission_responses,
 )
 from breadboard_engine.security import WorkspaceFilesystem
 from breadboard_engine.skills.registry import normalize_skill_selection
@@ -82,19 +80,6 @@ class SessionControlHost(Protocol):
 
 
 
-def _canonical_permission_resolution(
-    response: Any,
-    responses: Any,
-    requested_ids: Sequence[str] = (),
-    missing_response: str = "reject",
-) -> str:
-    return resolve_permission_responses(
-        response, responses, requested_ids, missing_response
-    )
-
-
-def _canonical_permission_responses(responses: Dict[str, Any]) -> Dict[str, Any]:
-    return normalize_permission_responses(responses)
 
 def _control_kind(item: Any) -> str:
     return (

@@ -5,6 +5,7 @@ import { openEventStream, streamSessionEvents } from "../dist/stream.js"
 import { ApiError } from "../dist/client.js"
 const payloadSchemaVersion = (kind) => ({
   annotation: "bb.payload.product_session.annotation.v1",
+  module_output: "bb.payload.product_session.module_output.v1",
   assistant_message: "bb.payload.message.assistant.v1",
   tool_call: "bb.payload.tool.called.v1",
   tool_result: "bb.payload.tool.completed.v1",
@@ -73,6 +74,102 @@ test("streamSessionEvents uses the public endpoint and parses the SSE envelope",
     "http://breadboard.test:9099/v1/sessions/session-123/events?limit=1",
   )
   assert.deepEqual(events, [expected])
+})
+
+test("streamSessionEvents accepts typed module lifecycle events", async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => {
+    globalThis.fetch = originalFetch
+  })
+  const sessionId = "module-session"
+  const events = [
+    eventEnvelope(sessionId, 1, "session.started", {
+      effective_lock_hash: "sha256:" + "a".repeat(64),
+      task_hash: "sha256:" + "b".repeat(64),
+      module_input: {
+        schema_id: "bb.demo.input.v1",
+        body: "e30=",
+        final: false,
+      },
+      module_input_sequence: 0,
+    }),
+    eventEnvelope(sessionId, 2, "input.accepted", {
+      attachments: [],
+      module_input: {
+        schema_id: "bb.demo.input.v1",
+        body: "e30=",
+        final: true,
+      },
+      module_input_sequence: 1,
+    }),
+    eventEnvelope(sessionId, 3, "module_output", {
+      module_output: {
+        schema_id: "bb.demo.output.v1",
+        body: "e30=",
+        final: true,
+      },
+      output_sequence: 0,
+      module_id: "demo.root",
+      worker_session_id: "worker-1",
+      request_id: "request-1",
+      generation_id: "sha256:" + "c".repeat(64),
+      instance_id: "instance-1",
+      work_id: "work-1",
+      attempt_id: "attempt-1",
+      authority_epoch: 1,
+    }),
+    eventEnvelope(sessionId, 4, "session.adoption_committed", {
+      adoption_id: "adoption-1",
+      checkpoint_id: "checkpoint-1",
+      source_generation_id: "sha256:" + "c".repeat(64),
+      source_module_id: "demo.root",
+      source_instance_id: "instance-1",
+      source_work_id: "work-1",
+      source_attempt_id: "attempt-1",
+      source_schema_id: "bb.demo.state.v1",
+      source_body_sha256: "sha256:" + "d".repeat(64),
+      source_frontier: {
+        event_sequence: 3,
+        generation_id: "sha256:" + "c".repeat(64),
+        typed_input_sequence: 2,
+        output_sequence: 1,
+        compaction_index: 0,
+      },
+      target_generation_id: "sha256:" + "e".repeat(64),
+      effective_lock_hash: "sha256:" + "e".repeat(64),
+      reason: "checkpoint_adoption",
+      request_id: "adopt-1",
+      migration: [{
+        binding: "root",
+        disposition: "migrate",
+        source_schema_id: "bb.demo.state.v1",
+        target_schema_id: "bb.demo.state.v2",
+        reason: "schema upgrade",
+      }],
+    }),
+  ]
+  const encoded = new TextEncoder().encode(
+    events.map((event) =>
+      `id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`).join(""),
+  )
+  globalThis.fetch = async () => new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoded)
+        controller.close()
+      },
+    }),
+    { headers: { "content-type": "text/event-stream" } },
+  )
+
+  const received = []
+  for await (const event of streamSessionEvents(sessionId, {
+    config: { baseUrl: "http://breadboard.test:9099" },
+  })) {
+    received.push(event)
+  }
+
+  assert.deepEqual(received, events)
 })
 
 test("streamSessionEvents accepts RFC3339 case and leap-second variants", async (t) => {

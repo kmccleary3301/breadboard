@@ -162,7 +162,12 @@ function driverCapability(request: SandboxRequestV1): ExecutionCapabilityV1 {
   return {
     schema_version: "bb.execution_capability.v1",
     capability_id: request.capability_id ?? "unknown",
-    security_tier: "trusted_dev",
+    security_tier:
+      request.placement_class === "local_process"
+        ? "trusted_dev"
+        : request.placement_class === "remote_worker"
+          ? "shared_host"
+          : "single_tenant",
     isolation_class:
       request.placement_class === "local_process"
         ? "process"

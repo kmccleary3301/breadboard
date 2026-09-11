@@ -69,7 +69,7 @@ for (const scriptName of [
 }
 
 const configFiles = [
-  "../agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+  "../agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml",
   "../agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml",
 ]
 const configPresence: Record<string, boolean> = {}

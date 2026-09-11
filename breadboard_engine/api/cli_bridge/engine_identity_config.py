@@ -35,7 +35,7 @@ P30_SESSION_CONTRACT_SCHEMA_VERSION = "bb.p30.e4_session.v1"
 # This value is intentionally fixed. A landed session-schema change makes readiness
 # false until the contract change is explicitly reviewed and this digest is updated.
 P30_SESSION_SCHEMA_SHA256 = (
-    "sha256:979bff06137b659c0110c0f9324703b955e22da85a7aac93bee7f639290475a9"
+    "sha256:49ceaca16dc878316c204fdb67a2ec11dd6d480a25d177e02a63775ba5072e86"
 )
 P30_SESSION_REPLAY_CONTRACT_DIGEST = (
     "sha256:a107aea87bdc7075d68495d3c0bf2b68e85e38a2b2fef1000bf3f1eaee77f743"
@@ -45,16 +45,6 @@ ENGINE_BOOTSTRAP_FD_ENV = "BREADBOARD_LIFECYCLE_BOOTSTRAP_FD"
 _ENGINE_SOURCE_ROOT = Path(__file__).resolve().parents[2]
 _OPAQUE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}$")
 
-P30_REQUIRED_SESSION_ROUTES: frozenset[tuple[str, str]] = frozenset(
-    {
-        ("POST", "/v1/internal/sessions"),
-        ("GET", "/v1/internal/sessions/{session_id}"),
-        ("POST", "/v1/internal/sessions/{session_id}/input"),
-        ("POST", "/v1/internal/sessions/{session_id}/turns/{turn_id}/cancel"),
-        ("GET", "/v1/internal/sessions/{session_id}/events"),
-        ("DELETE", "/v1/internal/sessions/{session_id}"),
-    }
-)
 
 P30_SESSION_ROUTE_BINDINGS: tuple[tuple[str, str, str, str], ...] = (
     ("POST", "/v1/internal/sessions", "create_session", "create_session"),
@@ -75,15 +65,6 @@ P30_SESSION_ROUTE_BINDINGS: tuple[tuple[str, str, str, str], ...] = (
     ("DELETE", "/v1/internal/sessions/{session_id}", "delete_session", "stop_session"),
 )
 
-P30_REQUIRED_SESSION_SERVICE_METHODS: tuple[str, ...] = (
-    "create_session",
-    "ensure_session",
-    "send_input",
-    "cancel_turn",
-    "prepare_event_stream",
-    "prepared_event_stream",
-    "stop_session",
-)
 
 
 class EngineIdentityConfigError(RuntimeError):

@@ -41,6 +41,7 @@ import {
   type BreadboardClient,
   type Problem,
   type PublicHarnessCreateRequest,
+  type PublicHarnessPublishRequest,
   type PublicHarnessUpdateRequest,
   type PublicResult,
   type PublicSessionApprovalRequest,
@@ -49,6 +50,8 @@ import {
   type PublicSessionInputRequest,
   type PublicSessionStartRequest,
   type SessionEvent,
+  type ModuleOutputEnvelope,
+  type SessionModuleOutputPayload,
   type WorldFieldMask,
   type StageOutcome,
 } from "@breadboard/sdk"
@@ -74,7 +77,114 @@ const stage: StageOutcome = { stage: "fixture", status: "ok" }
 const create: PublicHarnessCreateRequest = {}
 const update: PublicHarnessUpdateRequest = { definition: {} }
 const start: PublicSessionStartRequest = { lock_id: "lock", task: "task" }
+const startWithPartialAuthority: PublicSessionStartRequest = {
+  lock_id: "lock",
+  module_input: {
+    schema_id: "fixture.module.input.v1",
+    body: "{}",
+    final: true,
+  },
+  module_authority: {
+    project: { roots: ["/workspace"] },
+    network: { destinations: ["api.example.com"] },
+    child: { max_depth: 1 },
+  },
+}
+const startWithNullableAuthority: PublicSessionStartRequest = {
+  publication_target: "main",
+  module_input: {
+    schema_id: "fixture.module.input.v1",
+    body: "{}",
+    final: true,
+  },
+  module_authority: {
+    project: null,
+    network: null,
+    child: null,
+  },
+}
+// @ts-expect-error start request requires selector and input
+const emptyStart: PublicSessionStartRequest = {}
+// @ts-expect-error start request cannot contain dual selectors
+const dualSelectorStart: PublicSessionStartRequest = {
+  lock_id: "lock",
+  publication_target: "main",
+  task: "task",
+}
+// @ts-expect-error start request cannot contain dual inputs
+const dualInputStart: PublicSessionStartRequest = {
+  lock_id: "lock",
+  task: "task",
+  module_input: {
+    schema_id: "fixture.module.input.v1",
+    body: "{}",
+    final: true,
+  },
+}
+const nullLockStart: PublicSessionStartRequest = {
+  // @ts-expect-error lock_id must be non-null
+  lock_id: null,
+  task: "task",
+}
+// @ts-expect-error text start request cannot include module_authority
+const invalidTextAuthorityStart: PublicSessionStartRequest = {
+  lock_id: "lock",
+  task: "task",
+  module_authority: {
+    project: { roots: ["/workspace"] },
+  },
+}
+const invalidAuthorityMissingPurpose: PublicSessionStartRequest = {
+  lock_id: "lock",
+  module_input: {
+    schema_id: "fixture.module.input.v1",
+    body: "{}",
+    final: true,
+  },
+  module_authority: {
+    credential_disclosures: [
+      // @ts-expect-error credential disclosure requires purpose
+      { secret_name: "fixture_token" },
+    ],
+  },
+}
+const invalidAuthorityMissingSecretName: PublicSessionStartRequest = {
+  lock_id: "lock",
+  module_input: {
+    schema_id: "fixture.module.input.v1",
+    body: "{}",
+    final: true,
+  },
+  module_authority: {
+    credential_disclosures: [
+      // @ts-expect-error credential disclosure requires secret_name
+      { purpose: "fixture_purpose" },
+    ],
+  },
+}
 const sessionInput: PublicSessionInputRequest = { content: "continue" }
+const moduleSessionInput: PublicSessionInputRequest = {
+  module_input: {
+    schema_id: "fixture.module.input.v1",
+    body: "{}",
+    final: true,
+  },
+}
+// @ts-expect-error session input requires content or module_input
+const emptySessionInput: PublicSessionInputRequest = {}
+// @ts-expect-error session input cannot contain content and module_input
+const dualSessionInput: PublicSessionInputRequest = {
+  content: "continue",
+  module_input: {
+    schema_id: "fixture.module.input.v1",
+    body: "{}",
+    final: true,
+  },
+}
+// @ts-expect-error content must be non-null
+const nullTextSessionInput: PublicSessionInputRequest = { content: null }
+// @ts-expect-error module_input must be non-null
+const nullModuleSessionInput: PublicSessionInputRequest = { module_input: null }
 const approval: PublicSessionApprovalRequest = { request_id: "request", decision: "allow" }
 const cancel: PublicSessionCancelRequest = {}
 const decision: PublicSessionDecision = "allow"
@@ -94,18 +204,39 @@ const result: PublicResult = {
 }
 type CatalogMethod =
   | "describeSystem" | "healthSystem" | "schemasSystem"
-  | "createHarness" | "listHarness" | "getHarness" | "updateHarness"
-  | "validateHarness" | "explainHarness" | "lockHarness" | "getHarnessLock"
+  | "createHarness" | "packageHarness" | "listHarness" | "getHarness" | "updateHarness"
+  | "validateHarness" | "explainHarness" | "lockHarness" | "publishHarness" | "getHarnessLock"
   | "listIntegration" | "getIntegration" | "probeIntegration"
   | "listArtifact" | "getArtifact" | "verifyArtifact"
   | "startSession" | "listSession" | "getSessionResult" | "sendInputSession"
-  | "approveSession" | "resumeSession" | "cancelSession" | "eventsSession" | "artifactsSession"
+  | "approveSession" | "resumeSession" | "cancelSession" | "checkpointSession" | "adoptSession"
+  | "eventsSession" | "artifactsSession"
 const catalog: Pick<BreadboardClient, CatalogMethod> = client
 const started: Promise<PublicResult> = client.startSession(start)
 const updated: Promise<PublicResult> = client.updateHarness("harness", update.definition)
-const sent: Promise<PublicResult> = client.sendInputSession("session", sessionInput.content)
+const packaged: Promise<PublicResult> = client.packageHarness("package", "bundle.zip")
+const publish: PublicHarnessPublishRequest = {
+  lock_id: "harness.lock.json",
+  expected_revision: 0,
+  request_id: "publish-main",
+}
+const published: Promise<PublicResult> = client.publishHarness("main", {
+  ...publish,
+})
+const sent: Promise<PublicResult> = client.sendInputSession("session", sessionInput)
+const sentText: Promise<PublicResult> = client.sendInputSession("session", "continue")
+const sentModule: Promise<PublicResult> = client.sendInputSession("session", moduleSessionInput)
 const approved: Promise<PublicResult> = client.approveSession("session", approval.request_id, approval.decision)
 const canceled: Promise<PublicResult> = client.cancelSession("session", cancel.reason)
+const checkpointed: Promise<PublicResult> = client.checkpointSession("session", {
+  reason: "replace",
+  request_id: "checkpoint-session",
+})
+const adopted: Promise<PublicResult> = client.adoptSession("session", {
+  checkpoint_id: "checkpoint",
+  lock_id: "harness.lock.json",
+  request_id: "adopt-session",
+})
 const listed: Promise<PublicResult> = client.listArtifact()
 const read: Promise<PublicResult> = client.getSessionResult("session")
 const listRows: Promise<SessionListRow[]> = engineClient.listSessions()
@@ -122,8 +253,19 @@ void catalog
 void started
 void updated
 void sent
+void moduleSessionInput
+void emptySessionInput
+void dualSessionInput
+void nullTextSessionInput
+void nullModuleSessionInput
+void sentText
+void sentModule
 void approved
 void canceled
+void checkpointed
+void adopted
+void packaged
+void published
 void decision
 void result
 void listed
@@ -173,6 +315,22 @@ function annotationAuthor(observation: SessionEvent): string | undefined {
   if (observation.kind === "annotation") return observation.payload.author
   return undefined
 }
+function typedModuleOutput(observation: SessionEvent): ModuleOutputEnvelope | undefined {
+  if (observation.kind !== "module_output") return undefined
+  const payload: SessionModuleOutputPayload = observation.payload
+  const schema: "bb.payload.product_session.module_output.v1" = observation.payload_schema_version
+  const sequence: number = payload.output_sequence
+  const epoch: number = payload.authority_epoch
+  const body: string = payload.module_output.body
+  const final: boolean = payload.module_output.final
+  void schema
+  void sequence
+  void epoch
+  void body
+  void final
+  return payload.module_output
+}
+void typedModuleOutput
 const mask: WorldFieldMask = {
   schema_version: "bb.world_field_mask.v1",
   paths: ["/occurred_at", "/timestamp"],

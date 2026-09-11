@@ -6,6 +6,7 @@ import enum
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
+from breadboard_engine.api.module_models import ModuleAuthorityRequest, ModuleInputValue
 from pydantic import BaseModel, ConfigDict, Field, model_validator, validator
 
 from .events import replay_configuration_digest
@@ -30,12 +31,13 @@ class TurnAdmission(str, enum.Enum):
 
 class SessionCreateRequest(BaseModel):
     """Incoming payload for POST /sessions."""
-
+    task: str | None = Field(default="", description="Initial user instruction. Empty initializes an interactive text Session.")
+    module_input: ModuleInputValue | None = None
+    module_authority: ModuleAuthorityRequest | None = None
     config_path: Optional[str] = Field(
         default=None,
         description="Path to agent config YAML/JSON; omit to use the packaged default profile.",
     )
-    task: str = Field(default="", description="Optional initial task; omit for an idle session.")
     overrides: Dict[str, Any] | None = Field(default=None, description="Dotted-key override map.")
     metadata: Dict[str, Any] | None = Field(default=None, description="Opaque metadata for UX features.")
     workspace: Optional[str] = Field(default=None, description="Optional explicit workspace root.")
@@ -48,6 +50,14 @@ class SessionCreateRequest(BaseModel):
         if value is not None and not value.strip():
             raise ValueError("config_path must not be empty")
         return value
+
+    @model_validator(mode="after")
+    def _validate_module_admission(self) -> SessionCreateRequest:
+        if self.module_input is not None and self.task not in (None, ""):
+            raise ValueError("supply task or module_input, not both")
+        if self.module_authority is not None and self.module_input is None:
+            raise ValueError("module_authority requires module_input")
+        return self
 
 
 class SessionCreateResponse(BaseModel):
@@ -153,8 +163,8 @@ class EngineProtocolIdentity(_StrictEngineIdentityModel):
 class EngineSessionContractIdentity(_StrictEngineIdentityModel):
     contract_id: Literal["p30-e4-session-v1"] = "p30-e4-session-v1"
     schema_sha256: Literal[
-        "sha256:979bff06137b659c0110c0f9324703b955e22da85a7aac93bee7f639290475a9"
-    ] = "sha256:979bff06137b659c0110c0f9324703b955e22da85a7aac93bee7f639290475a9"
+        "sha256:49ceaca16dc878316c204fdb67a2ec11dd6d480a25d177e02a63775ba5072e86"
+    ] = "sha256:49ceaca16dc878316c204fdb67a2ec11dd6d480a25d177e02a63775ba5072e86"
     session_replay_contract_digest: str = Field(
         ...,
         alias="sessionReplayContractDigest",
@@ -262,8 +272,8 @@ class ClientRegisterRequest(_StrictLifecycleModel):
     lifecycle_mode: Literal["local-owned", "local-external", "remote", "off"]
     first_slice_contract_id: Literal["p30-e4-session-v1"] = "p30-e4-session-v1"
     first_slice_schema_sha256: Literal[
-        "sha256:979bff06137b659c0110c0f9324703b955e22da85a7aac93bee7f639290475a9"
-    ] = "sha256:979bff06137b659c0110c0f9324703b955e22da85a7aac93bee7f639290475a9"
+        "sha256:49ceaca16dc878316c204fdb67a2ec11dd6d480a25d177e02a63775ba5072e86"
+    ] = "sha256:49ceaca16dc878316c204fdb67a2ec11dd6d480a25d177e02a63775ba5072e86"
 
 
 class ClientLeaseRequest(_StrictLifecycleModel):
@@ -284,8 +294,8 @@ class ClientRegistrationResponse(_StrictLifecycleModel):
     lifecycle_mode: Literal["local-owned", "local-external", "remote"]
     first_slice_contract_id: Literal["p30-e4-session-v1"] = "p30-e4-session-v1"
     first_slice_schema_sha256: Literal[
-        "sha256:979bff06137b659c0110c0f9324703b955e22da85a7aac93bee7f639290475a9"
-    ] = "sha256:979bff06137b659c0110c0f9324703b955e22da85a7aac93bee7f639290475a9"
+        "sha256:49ceaca16dc878316c204fdb67a2ec11dd6d480a25d177e02a63775ba5072e86"
+    ] = "sha256:49ceaca16dc878316c204fdb67a2ec11dd6d480a25d177e02a63775ba5072e86"
     registered_at_unix: float = Field(..., ge=0)
     expires_at_unix: float | None = Field(default=None, ge=0)
     admission_epoch: int = Field(..., ge=0)
@@ -425,15 +435,22 @@ class AttachmentUploadResponse(BaseModel):
 
 
 class SessionInputRequest(BaseModel):
-    content: str = Field(..., description="User supplied input text.")
+    content: str | None = Field(default=None, description="User supplied input text.")
+    module_input: ModuleInputValue | None = None
     attachments: Optional[List[str]] = Field(default=None, description="Attachment IDs returned by /attachments.")
     client_message_id: Optional[str] = Field(default=None, description="Stable client submission identity.")
 
     @validator("content")
-    def _validate_content(cls, value: str) -> str:
-        if not value or not value.strip():
+    def _validate_content(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
             raise ValueError("content must not be empty")
         return value
+
+    @model_validator(mode="after")
+    def _validate_input_choice(self) -> SessionInputRequest:
+        if (self.content is None) == (self.module_input is None):
+            raise ValueError("supply exactly one content or module_input")
+        return self
 
     @validator("attachments", each_item=True)
     def _validate_attachment_id(cls, value: str) -> str:

@@ -593,7 +593,7 @@ const main = async () => {
   const args: RunnerArgs = {
     scenario: (parsed.scenario ?? "all") as ScenarioId,
     mode: (parsed.mode ?? "external") as RunMode,
-    configPath: parsed.configPath ?? "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+    configPath: parsed.configPath ?? "agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml",
     artifactsRoot:
       parsed.artifactsRoot ??
       path.resolve(THIS_DIR, "..", "..", "opentui_slab", "artifacts", "phaseA", utcStamp()),

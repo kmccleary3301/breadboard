@@ -22,8 +22,8 @@ from breadboard_engine.permissions.policy_pack import PolicyPack
 
 
 FIXTURE_CONFIGS = [
-    "agent_configs/atp_hilbert_like_gpt54_v1.yaml",
-    "agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml",
+    "agent_configs/research/atp_hilbert_like_gpt54_v1.yaml",
+    "agent_configs/claude_code_2-1-63_e4_9-10-2026.yaml",
 ]
 
 
@@ -122,7 +122,7 @@ def test_work_items_reference_emitted_operation_policy(monkeypatch: pytest.Monke
     paths = emit_session_start_records(
         session_id="policy-ref-session",
         request=SessionCreateRequest(
-            config_path="agent_configs/atp_hilbert_like_gpt54_v1.yaml",
+            config_path="agent_configs/research/atp_hilbert_like_gpt54_v1.yaml",
             task="policy ref probe",
         ),
         generated_at="2026-07-04T00:00:00Z",
@@ -179,7 +179,7 @@ async def test_policy_authority_unset_keeps_emission_off(monkeypatch: pytest.Mon
 
     response = await service.create_session(
         SessionCreateRequest(
-            config_path="agent_configs/atp_hilbert_like_gpt54_v1.yaml",
+            config_path="agent_configs/research/atp_hilbert_like_gpt54_v1.yaml",
             task="emission off",
             metadata={"client": "test"},
         )
@@ -195,7 +195,7 @@ async def test_policy_authority_unset_keeps_emission_off(monkeypatch: pytest.Mon
 
 def test_parity_authority_logs_no_divergence_for_fixture(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
     monkeypatch.setenv("BREADBOARD_POLICY_AUTHORITY", "parity")
-    config_path = "agent_configs/atp_hilbert_like_gpt54_v1.yaml"
+    config_path = "agent_configs/research/atp_hilbert_like_gpt54_v1.yaml"
     config = load_agent_config(config_path)
 
     with caplog.at_level("WARNING"):

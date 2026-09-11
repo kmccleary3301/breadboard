@@ -51,7 +51,83 @@ export interface ExecutionDriverV1 {
       deadlineAtMs: number | null
     },
   ): Promise<SandboxResultV1 | void> | SandboxResultV1 | void
+  openAuthorWorker?(
+    input: AuthorWorkerLaunchInputV1,
+    hooks?: {
+      readonly onIntent?: (intent: {
+        readonly ownerRef: string
+        readonly executionId: string
+        readonly resourceId: string
+        readonly containerName: string
+      }) => void | Promise<void>
+      readonly onReceipt?: (identity: AuthorWorkerResourceIdentityV1) => void | Promise<void>
+    },
+  ): Promise<AuthorWorkerChannelV1>
+  supportsAuthorWorkers?(
+    capability: ExecutionCapabilityV1,
+    placementClass: ExecutionPlacementV1["placement_class"],
+  ): boolean
 }
+export interface AuthorWorkerProfileV1 {
+  readonly cpuCount?: number
+  readonly memoryBytes?: number
+  readonly processCount?: number
+  readonly scratchBytes?: number
+}
+export interface AuthorWorkerLaunchInputV1 {
+  readonly ownerRef: string
+  readonly executionId: string
+  readonly executionToken: string
+  readonly imageRef: string
+  readonly platform: string
+  readonly command: readonly string[]
+  readonly capturedStagingRoot?: string | null
+  readonly stagingOwnerRef?: string | null
+  readonly packageMountTarget?: string
+  readonly expectedPackageSha256?: string | null
+  readonly profile?: AuthorWorkerProfileV1
+  readonly capacityAuthorization?: string | null
+}
+
+export interface AuthorWorkerResourceIdentityV1 {
+  readonly resourceId: string
+  readonly ownerRef: string
+  readonly executionId: string
+  readonly containerId: string
+  readonly imageId: string
+  readonly containerName: string
+  readonly imageRef: string
+  readonly platform: string
+  readonly receiverIdentity: string
+  readonly state: string
+}
+
+
+export interface AuthorWorkerCleanupResultV1 {
+  readonly status: "confirmed_absent" | "unknown"
+  readonly resourceId: string
+  readonly containerId: string
+  readonly ownerRef: string
+  readonly reason: string
+  readonly evidence: readonly string[]
+}
+
+export class AuthorWorkerLaunchError extends Error {
+  constructor(message: string, readonly cleanup: AuthorWorkerCleanupResultV1) {
+    super(message)
+  }
+}
+
+export interface AuthorWorkerChannelV1 {
+  readonly channelId: string
+  readonly identity: AuthorWorkerResourceIdentityV1
+  readFrame(signal?: AbortSignal): Promise<Uint8Array | null>
+  writeFrame(frame: Uint8Array, signal?: AbortSignal): Promise<void>
+  cancel(reason: string): Promise<AuthorWorkerCleanupResultV1>
+  close(reason?: string): Promise<AuthorWorkerCleanupResultV1>
+}
+
+
 
 export interface TerminalSessionStartInputV1 {
   terminalSessionId: string

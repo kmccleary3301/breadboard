@@ -39,7 +39,10 @@ def test_recursive_merge_is_deterministic_and_keeps_author_dossier() -> None:
         dict(reversed(tuple(source.items()))), source_ref="root", load_ref=load)
     changed = compile_harness_definition({**source, "dossier": {"owner": "changed"}}, source_ref="root", load_ref=load)
     assert first.lock.canonical_json() == second.lock.canonical_json() == changed.lock.canonical_json()
-    assert [layer["layer_id"] for layer in first.lock["source_layers"]] == [
+    assert first.lock.generation_id == first.lock["lock_id"]
+    assert first.lock.generation_id == second.lock.generation_id == changed.lock.generation_id
+    assert first.lock.configuration_graph_hash == first.lock.configuration_graph["graph_hash"]
+    assert [layer["layer_id"] for layer in first.lock.configuration_graph["source_layers"]] == [
         "agent-config:0000:deep", "agent-config:0001:base", "agent-config:0002:root"]
     assert first.as_dict() == {"items": [2],
                                "nested": {"deep": True, "left": 1, "right": 2}}
@@ -72,7 +75,7 @@ def test_lock_and_explanation_match_public_projection_schemas() -> None:
         "modes": [{"name": "respond"}], "loop": {"sequence": [{"mode": "respond"}]},
     }, source_ref="/config/harness.yaml")
     assert _schema_errors(
-        "bb.effective_harness_lock.v1.schema.json", compiled.lock.as_dict()) == []
+        "bb.effective_harness_lock.v2.schema.json", compiled.lock.as_dict()) == []
     assert _schema_errors(
         "bb.harness_explanation_report.v1.schema.json",
         compiled.explanation.as_dict()) == []
@@ -116,10 +119,10 @@ def test_prompt_resources_are_deterministic_host_visible_lock_inputs() -> None:
         == reordered.lock.canonical_json()
         == bound.lock.canonical_json()
     )
-    assert first.lock["graph_hash"] != changed.lock["graph_hash"]
+    assert first.lock.configuration_graph["graph_hash"] != changed.lock.configuration_graph["graph_hash"]
     assert first.as_dict() == changed.as_dict() == definition
     resource_layers = [
-        layer for layer in first.lock["source_layers"]
+        layer for layer in first.lock.configuration_graph["source_layers"]
         if layer["scope"] == "resource"
     ]
     assert [layer["source_ref"] for layer in resource_layers] == [
@@ -131,7 +134,7 @@ def test_prompt_resources_are_deterministic_host_visible_lock_inputs() -> None:
         for layer in resource_layers
     )
     assert _schema_errors(
-        "bb.effective_harness_lock.v1.schema.json", first.lock.as_dict()) == []
+        "bb.effective_harness_lock.v2.schema.json", first.lock.as_dict()) == []
     assert unbound.with_resource_inputs({}) is unbound
     with pytest.raises(HarnessCompileError, match="already bound"):
         bound.with_resource_inputs(resources)
@@ -169,11 +172,11 @@ def test_invalid_and_empty_definitions_fail_before_lock() -> None:
 def test_empty_mapping_remains_an_explained_lock_value() -> None:
     scalar = compile_harness_definition({"tools": 1}, source_ref="root")
     empty = compile_harness_definition({"tools": {}}, source_ref="root")
-    row = empty.lock["effective_values"][0]
+    row = empty.lock.configuration_graph["effective_values"][0]
     assert empty.as_dict() == {"tools": {}}
     assert (row["path"], row["value"], row["value_kind"]) == ("tools", {}, "object")
     assert empty.explanation["fields"][0]["path"] == "tools"
-    assert scalar.lock["graph_hash"] != empty.lock["graph_hash"]
+    assert scalar.lock.configuration_graph["graph_hash"] != empty.lock.configuration_graph["graph_hash"]
 def test_legacy_loader_adapter_accepts_canonical_harness_definition(
     tmp_path: Path,
 ) -> None:
@@ -200,4 +203,38 @@ def test_legacy_loader_adapter_accepts_canonical_harness_definition(
     assert secret_view.graph["visibility"]["redacted_paths"] == ["a", "b", "providers.api_key"]
     assert secret_view.graph["env_gates"] == [{"env_name": "A", "gate_id": "env.A", "required": True, "satisfied": True}, {"env_name": "Z", "gate_id": "env.Z", "required": True, "satisfied": False}]
     assert finalize_effective_config_graph(secret_view.graph)["graph_hash"] == secret_view.graph["graph_hash"]
-    assert _schema_errors("bb.effective_harness_lock.v1.schema.json", secret_view.graph) == []
+    assert _schema_errors("bb.effective_config_graph.v1.schema.json", secret_view.graph) == []
+
+
+def test_shared_ancestor_restores_after_all_source_files_are_removed(tmp_path: Path) -> None:
+    from breadboard.artifacts.cas import FilesystemCAS
+    from breadboard.product.harness.lock import materialize_lock
+    from breadboard.product.harness.resolution import compile_harness_source
+
+    documents = {
+        "shared.json": {
+            "workspace": {"root": "."},
+            "providers": {"default_model": "mock/reference",
+                          "models": [{"id": "mock/reference", "adapter": "mock_chat"}]},
+            "modes": [{"name": "respond"}], "loop": {"sequence": [{"mode": "respond"}]},
+        },
+        "left.json": {"extends": "shared.json", "workspace": {"root": "left"}},
+        "right.json": {"extends": "shared.json"},
+        "harness.json": {
+            "extends": ["left.json", "right.json"],
+            "schema_version": "bb.harness_definition.v2", "version": 2,
+        },
+    }
+    captured = {name: json.dumps(document).encode() for name, document in documents.items()}
+    for name, content in captured.items():
+        (tmp_path / name).write_bytes(content)
+    compilation = compile_harness_source(tmp_path / "harness.json", tmp_path)
+    assert compilation.as_dict()["workspace"]["root"] == "."
+    for name in captured:
+        (tmp_path / name).unlink()
+    cas = FilesystemCAS(tmp_path / ".breadboard/module-artifacts")
+    try:
+        restored = materialize_lock(compilation.lock, cas=cas)
+        assert dict(restored.source_bytes) == captured
+    finally:
+        cas.close()

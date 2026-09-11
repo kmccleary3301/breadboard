@@ -664,7 +664,7 @@ def _retained_prepared(
         not isinstance(worker_input, dict)
         or worker_input.get("request_id") != run_id
         or worker_input.get("workspace") != str(context.workspace)
-        or parent.generation_sequence[0] != definition["graph_hash"]
+        or parent.generation_sequence[0] != generation.generation_id
     ):
         raise ValueError("retained comparison input belongs to another run")
     compressed = base64.b64decode(worker_input["command"][3], validate=True)
@@ -704,7 +704,7 @@ def _run_comparison(
             ref = put_workspace_artifact(
                 context.workspace, capsule.encode(), media_type="application/json"
             )
-            parent = Session.start(prepared.definition, capsule, session_id=run_id)
+            parent = Session.start(prepared.generation, capsule, session_id=run_id)
             parent.input(capsule, (ref,))
             parent, _ = create_session(context.workspace, parent)
         else:
@@ -730,16 +730,6 @@ def _run_comparison(
         def prepare_parent(session: Session) -> None:
             if session.read_model.status == "paused":
                 session.resume()
-            if session.pinned_generation_id != prepared.generation["graph_hash"]:
-                if factory.child_states(
-                    parent_work_item_id=work.read_model.work_item_id
-                ):
-                    raise ValueError(
-                        "cannot adopt a research generation with active child work"
-                    )
-                session.adopt_generation(
-                    prepared.generation, "research comparison generation"
-                )
 
         mutate_session(context.workspace, prepared.run_id, prepare_parent)
         controller = ReplayableWorkflowController(

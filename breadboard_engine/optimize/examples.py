@@ -91,7 +91,7 @@ def build_codex_dossier_example() -> Dict[str, object]:
         target_kind="agent_config_overlay",
         baseline_artifact_refs=[
             ArtifactRef(
-                ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
                 media_type="text/yaml",
                 metadata={"surface": "public_dossier"},
             )
@@ -101,7 +101,7 @@ def build_codex_dossier_example() -> Dict[str, object]:
                 locus_id="tool.render.exec_command",
                 locus_kind="tool_description",
                 selector="tools.exec_command.description",
-                artifact_ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                artifact_ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
                 mutation_kind="replace",
                 constraints={"max_words": 24},
             ),
@@ -109,7 +109,7 @@ def build_codex_dossier_example() -> Dict[str, object]:
                 locus_id="prompt.section.optimization_guidance",
                 locus_kind="developer_prompt_section",
                 selector="developer_prompt.optimization_guidance",
-                artifact_ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                artifact_ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
                 mutation_kind="replace",
                 constraints={"must_preserve_guardrails": True},
             ),
@@ -171,7 +171,7 @@ def build_codex_dossier_example() -> Dict[str, object]:
         target,
         candidate,
         effective_artifact={
-            "artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+            "artifact_ref": "agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
             "overlay": {
                 "tools": {
                     "exec_command": {
@@ -230,7 +230,7 @@ def build_codex_dossier_dataset_example() -> Dict[str, object]:
         ),
         evidence_refs=[
             ArtifactRef(
-                ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
                 media_type="text/yaml",
                 metadata={"surface": "public_dossier"},
             )
@@ -258,7 +258,7 @@ def build_codex_dossier_dataset_example() -> Dict[str, object]:
         },
         expected_artifacts=[
             ArtifactRef(
-                ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
                 media_type="text/yaml",
                 metadata={"role": "baseline_artifact"},
             )
@@ -1022,7 +1022,7 @@ def build_support_execution_benchmark_example() -> Dict[str, object]:
         target_kind="support_execution_policy_overlay",
         baseline_artifact_refs=[
             ArtifactRef(
-                ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
                 media_type="text/yaml",
                 metadata={"surface": "public_dossier"},
             )
@@ -1032,7 +1032,7 @@ def build_support_execution_benchmark_example() -> Dict[str, object]:
                 locus_id="policy.support_claim_limited_actions",
                 locus_kind="support_claim_policy",
                 selector="coordination.intervention.support_claim_limited_actions",
-                artifact_ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                artifact_ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
                 mutation_kind="replace",
                 constraints={"must_preserve_honesty": True},
             ),
@@ -1040,7 +1040,7 @@ def build_support_execution_benchmark_example() -> Dict[str, object]:
                 locus_id="policy.execution_profile.selection",
                 locus_kind="execution_profile_heuristic",
                 selector="workspace.execution_profile.selection.default",
-                artifact_ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                artifact_ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
                 mutation_kind="replace",
                 constraints={"must_preserve_replay_safe_lane": True},
             ),
@@ -1080,7 +1080,7 @@ def build_support_execution_benchmark_example() -> Dict[str, object]:
         ),
         evidence_refs=[
             ArtifactRef(
-                ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
                 media_type="text/yaml",
                 metadata={"surface": "public_dossier"},
             )
@@ -1320,7 +1320,7 @@ def build_support_execution_benchmark_example() -> Dict[str, object]:
         target,
         parent_candidate,
         effective_artifact={
-            "artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+            "artifact_ref": "agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
             "overlay": {
                 "coordination": {
                     "intervention": {"support_claim_limited_actions": ["checkpoint", "terminate", "continue"]}
@@ -1344,7 +1344,7 @@ def build_support_execution_benchmark_example() -> Dict[str, object]:
         target,
         child_candidate,
         effective_artifact={
-            "artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+            "artifact_ref": "agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
             "overlay": {
                 "coordination": {
                     "intervention": {"support_claim_limited_actions": ["checkpoint", "terminate"]}
@@ -1477,7 +1477,7 @@ def build_support_execution_benchmark_example() -> Dict[str, object]:
         promotion_class="support_sensitive_family_change",
         artifact_refs=[
             ArtifactRef(
-                ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
                 media_type="text/yaml",
                 metadata={"surface": "public_dossier"},
             )
@@ -1579,7 +1579,7 @@ def build_support_execution_benchmark_example() -> Dict[str, object]:
         },
         artifact_refs=[
             ArtifactRef(
-                ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
                 media_type="text/yaml",
             )
         ],
@@ -1784,7 +1784,7 @@ def build_tool_guidance_benchmark_example() -> Dict[str, object]:
         target_kind="tool_guidance_overlay",
         baseline_artifact_refs=[
             ArtifactRef(
-                ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
                 media_type="text/yaml",
                 metadata={"surface": "public_dossier"},
             )
@@ -1794,7 +1794,7 @@ def build_tool_guidance_benchmark_example() -> Dict[str, object]:
                 locus_id="tool.render.exec_command",
                 locus_kind="tool_description",
                 selector="tools.exec_command.description",
-                artifact_ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                artifact_ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
                 mutation_kind="replace",
                 constraints={"max_words": 28},
             ),
@@ -1802,7 +1802,7 @@ def build_tool_guidance_benchmark_example() -> Dict[str, object]:
                 locus_id="prompt.section.optimization_guidance",
                 locus_kind="developer_prompt_section",
                 selector="developer_prompt.optimization_guidance",
-                artifact_ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                artifact_ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
                 mutation_kind="replace",
                 constraints={"must_preserve_guardrails": True},
             ),
@@ -1831,7 +1831,7 @@ def build_tool_guidance_benchmark_example() -> Dict[str, object]:
         ),
         evidence_refs=[
             ArtifactRef(
-                ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
                 media_type="text/yaml",
             )
         ],
@@ -2005,7 +2005,7 @@ def build_tool_guidance_benchmark_example() -> Dict[str, object]:
     parent_materialized = materialize_candidate(
         target,
         parent_candidate,
-        effective_artifact={"artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml", "overlay": {}},
+        effective_artifact={"artifact_ref": "agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml", "overlay": {}},
         effective_tool_surface={"tools": ["exec_command", "apply_patch", "spawn_agent"], "exposed_count": 3},
         evaluation_input_compatibility={"replay": True, "schema": 2},
         metadata={"lane": "tool_guidance", "role": "parent"},
@@ -2013,7 +2013,7 @@ def build_tool_guidance_benchmark_example() -> Dict[str, object]:
     child_materialized = materialize_candidate(
         target,
         child_candidate,
-        effective_artifact={"artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml", "overlay": {}},
+        effective_artifact={"artifact_ref": "agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml", "overlay": {}},
         effective_tool_surface={"tools": ["exec_command", "apply_patch", "spawn_agent"], "exposed_count": 3},
         evaluation_input_compatibility={"replay": True, "schema": 2},
         metadata={"lane": "tool_guidance", "role": "child"},
@@ -2109,7 +2109,7 @@ def build_tool_guidance_benchmark_example() -> Dict[str, object]:
         promotion_class="single_surface_guidance_change",
         artifact_refs=[
             ArtifactRef(
-                ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
                 media_type="text/yaml",
                 metadata={"surface": "public_dossier"},
             )
@@ -2181,7 +2181,7 @@ def build_tool_guidance_benchmark_example() -> Dict[str, object]:
             "Comparison relies on bounded-overlay and support-envelope checks remaining explicit.",
         ],
         promotion_relevance={"requires_support_sensitive_review": False},
-        artifact_refs=[ArtifactRef(ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml", media_type="text/yaml")],
+        artifact_refs=[ArtifactRef(ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml", media_type="text/yaml")],
         metadata={
             "lane": "tool_guidance",
             "phase": "v1_5",
@@ -2351,7 +2351,7 @@ def build_coding_overlay_benchmark_example() -> Dict[str, object]:
         target_kind="coding_harness_overlay",
         baseline_artifact_refs=[
             ArtifactRef(
-                ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
                 media_type="text/yaml",
                 metadata={"surface": "public_dossier"},
             )
@@ -2361,7 +2361,7 @@ def build_coding_overlay_benchmark_example() -> Dict[str, object]:
                 locus_id="prompt.section.planning_policy",
                 locus_kind="planning_policy",
                 selector="developer_prompt.planning_policy",
-                artifact_ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                artifact_ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
                 mutation_kind="replace",
                 constraints={"must_preserve_apply_patch": True},
             ),
@@ -2369,7 +2369,7 @@ def build_coding_overlay_benchmark_example() -> Dict[str, object]:
                 locus_id="prompt.section.editing_policy",
                 locus_kind="editing_policy",
                 selector="developer_prompt.editing_constraints",
-                artifact_ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                artifact_ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
                 mutation_kind="replace",
                 constraints={"must_preserve_narrow_diffs": True},
             ),
@@ -2398,7 +2398,7 @@ def build_coding_overlay_benchmark_example() -> Dict[str, object]:
         ),
         evidence_refs=[
             ArtifactRef(
-                ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
                 media_type="text/yaml",
             )
         ],
@@ -2564,7 +2564,7 @@ def build_coding_overlay_benchmark_example() -> Dict[str, object]:
     parent_materialized = materialize_candidate(
         target,
         parent_candidate,
-        effective_artifact={"artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml", "overlay": {}},
+        effective_artifact={"artifact_ref": "agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml", "overlay": {}},
         effective_tool_surface={"tools": ["exec_command", "apply_patch", "spawn_agent"], "exposed_count": 3},
         evaluation_input_compatibility={"replay": True, "schema": 2},
         metadata={"lane": "coding_overlay", "role": "parent"},
@@ -2572,7 +2572,7 @@ def build_coding_overlay_benchmark_example() -> Dict[str, object]:
     child_materialized = materialize_candidate(
         target,
         child_candidate,
-        effective_artifact={"artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml", "overlay": {}},
+        effective_artifact={"artifact_ref": "agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml", "overlay": {}},
         effective_tool_surface={"tools": ["exec_command", "apply_patch", "spawn_agent"], "exposed_count": 3},
         evaluation_input_compatibility={"replay": True, "schema": 2},
         metadata={"lane": "coding_overlay", "role": "child"},
@@ -2672,7 +2672,7 @@ def build_coding_overlay_benchmark_example() -> Dict[str, object]:
         promotion_class="bounded_coding_overlay_change",
         artifact_refs=[
             ArtifactRef(
-                ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+                ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
                 media_type="text/yaml",
                 metadata={"surface": "public_dossier"},
             )
@@ -2743,7 +2743,7 @@ def build_coding_overlay_benchmark_example() -> Dict[str, object]:
             "Hold split should stay hidden at mutation time so fake broad-rewrite wins are caught honestly.",
         ],
         promotion_relevance={"requires_support_sensitive_review": False},
-        artifact_refs=[ArtifactRef(ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml", media_type="text/yaml")],
+        artifact_refs=[ArtifactRef(ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml", media_type="text/yaml")],
         metadata={
             "lane": "coding_overlay",
             "phase": "v1_5",
@@ -3345,7 +3345,7 @@ def build_tool_guidance_coding_overlay_composition_example() -> Dict[str, object
     atomic_materialized = materialize_candidate(
         composed_target,
         atomic_candidate,
-        effective_artifact={"artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml", "overlay": {}},
+        effective_artifact={"artifact_ref": "agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml", "overlay": {}},
         effective_tool_surface={"tools": ["exec_command", "apply_patch", "spawn_agent"], "exposed_count": 3},
         evaluation_input_compatibility={"replay": True, "schema": 3},
         metadata={"lane": "tool_guidance_coding_overlay_composed", "role": "atomic_union"},
@@ -3353,7 +3353,7 @@ def build_tool_guidance_coding_overlay_composition_example() -> Dict[str, object
     composed_materialized = materialize_candidate(
         composed_target,
         composed_candidate,
-        effective_artifact={"artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml", "overlay": {}},
+        effective_artifact={"artifact_ref": "agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml", "overlay": {}},
         effective_tool_surface={"tools": ["exec_command", "apply_patch", "spawn_agent"], "exposed_count": 3},
         evaluation_input_compatibility={"replay": True, "schema": 3},
         metadata={"lane": "tool_guidance_coding_overlay_composed", "role": "composed_child"},
@@ -3432,7 +3432,7 @@ def build_tool_guidance_coding_overlay_composition_example() -> Dict[str, object
         review_class="composed_guidance_overlay",
         promotion_class="bounded_composed_dossier_change",
         applicability_scope={
-            "artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+            "artifact_ref": "agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
             "tool_pack_profile": "codex-dossier-default",
             "environment_profile": "workspace-write",
         },
@@ -3520,7 +3520,7 @@ def build_tool_guidance_coding_overlay_composition_example() -> Dict[str, object
             "Composition search stays Nano-only in the first tranche and may not use hidden-hold details at mutation time."
         ],
         promotion_relevance={"requires_support_sensitive_review": False, "composition_id": composition.composition_id},
-        artifact_refs=[ArtifactRef(ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml", media_type="text/yaml")],
+        artifact_refs=[ArtifactRef(ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml", media_type="text/yaml")],
         metadata={
             "lane": "tool_guidance_coding_overlay_composed",
             "phase": "v3",
@@ -3977,7 +3977,7 @@ def build_support_execution_coding_overlay_composition_example() -> Dict[str, ob
         composed_target,
         atomic_candidate,
         effective_artifact={
-            "artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+            "artifact_ref": "agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
             "overlay": {
                 "coordination": {
                     "intervention": {"support_claim_limited_actions": ["checkpoint", "terminate"]}
@@ -4001,7 +4001,7 @@ def build_support_execution_coding_overlay_composition_example() -> Dict[str, ob
         composed_target,
         composed_candidate,
         effective_artifact={
-            "artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+            "artifact_ref": "agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
             "overlay": {
                 "coordination": {
                     "intervention": {"support_claim_limited_actions": ["checkpoint", "terminate"]}
@@ -4128,7 +4128,7 @@ def build_support_execution_coding_overlay_composition_example() -> Dict[str, ob
         review_class="support_sensitive_coding_overlay",
         promotion_class="bounded_e4_prompt_config_change",
         applicability_scope={
-            "artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+            "artifact_ref": "agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
             "tool_pack_profile": "codex-dossier-default",
             "environment_profile": "workspace-write",
         },
@@ -4250,7 +4250,7 @@ def build_support_execution_coding_overlay_composition_example() -> Dict[str, ob
             "composition_id": composition.composition_id,
             "transfer_slice_ids": ["package.codex_dossier.prompt_config", "model_tier.nano_first_openai"],
         },
-        artifact_refs=[ArtifactRef(ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml", media_type="text/yaml")],
+        artifact_refs=[ArtifactRef(ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml", media_type="text/yaml")],
         metadata={
             "lane": "support_execution_coding_overlay_composed",
             "phase": "v3",
@@ -5031,7 +5031,7 @@ def build_support_execution_tool_guidance_coding_overlay_package_example() -> Di
         package_target,
         baseline_candidate,
         effective_artifact={
-            "artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+            "artifact_ref": "agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
             "overlay": {"package_role": "v3_baseline_extension"},
         },
         effective_tool_surface={"tools": ["exec_command", "apply_patch", "spawn_agent"], "exposed_count": 3},
@@ -5042,7 +5042,7 @@ def build_support_execution_tool_guidance_coding_overlay_package_example() -> Di
         package_target,
         package_candidate,
         effective_artifact={
-            "artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+            "artifact_ref": "agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
             "overlay": {"package_role": "mixed_evidence_triplet"},
         },
         effective_tool_surface={"tools": ["exec_command", "apply_patch", "spawn_agent"], "exposed_count": 3},
@@ -5054,7 +5054,7 @@ def build_support_execution_tool_guidance_coding_overlay_package_example() -> Di
         TransferSliceManifest(
             slice_id="package.codex_dossier.current",
             slice_kind="package",
-            selector={"artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml"},
+            selector={"artifact_ref": "agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml"},
             promotion_role="required",
             visibility="hidden_hold",
             metadata={"lane": "support_execution_tool_guidance_coding_overlay_package"},
@@ -5195,7 +5195,7 @@ def build_support_execution_tool_guidance_coding_overlay_package_example() -> Di
         review_class="support_sensitive_package_triplet",
         promotion_class="bounded_package_triplet_change",
         applicability_scope={
-            "artifact_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+            "artifact_ref": "agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml",
             "tool_pack_profile": "codex-dossier-default",
             "environment_profile": "workspace-write/replay-safe",
         },
@@ -5321,7 +5321,7 @@ def build_support_execution_tool_guidance_coding_overlay_package_example() -> Di
                 "trigger_reason": None,
             },
         },
-        artifact_refs=[ArtifactRef(ref="agent_configs/codex_0-107-0_e4_3-6-2026.yaml", media_type="text/yaml")],
+        artifact_refs=[ArtifactRef(ref="agent_configs/deprecated/2026-03-06/codex_0-107-0_e4_3-6-2026.yaml", media_type="text/yaml")],
         metadata={
             "lane": "support_execution_tool_guidance_coding_overlay_package",
             "phase": "v4",
@@ -5626,7 +5626,7 @@ def build_opencode_prompt_config_tool_guidance_package_example() -> Dict[str, ob
         target_kind="agent_config_overlay_package",
         baseline_artifact_refs=[
             ArtifactRef(
-                ref="agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+                ref="agent_configs/deprecated/2026-03-06/opencode_1-2-17_e4_3-6-2026.yaml",
                 media_type="text/yaml",
                 metadata={"surface": "public_dossier", "package": "opencode_1_2_17"},
             )
@@ -5636,7 +5636,7 @@ def build_opencode_prompt_config_tool_guidance_package_example() -> Dict[str, ob
                 locus_id="prompt.pack.base.system",
                 locus_kind="prompt_pack_section",
                 selector="prompts.packs.base.system",
-                artifact_ref="agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+                artifact_ref="agent_configs/deprecated/2026-03-06/opencode_1-2-17_e4_3-6-2026.yaml",
                 mutation_kind="replace",
                 constraints={"must_preserve_single_system_envelope": True},
             ),
@@ -5644,7 +5644,7 @@ def build_opencode_prompt_config_tool_guidance_package_example() -> Dict[str, ob
                 locus_id="prompt.pack.base.builder",
                 locus_kind="prompt_pack_section",
                 selector="prompts.packs.base.builder",
-                artifact_ref="agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+                artifact_ref="agent_configs/deprecated/2026-03-06/opencode_1-2-17_e4_3-6-2026.yaml",
                 mutation_kind="replace",
                 constraints={"must_preserve_plan_build_shape": True},
             ),
@@ -5652,7 +5652,7 @@ def build_opencode_prompt_config_tool_guidance_package_example() -> Dict[str, ob
                 locus_id="guardrails.diff_policy.patch_splitting",
                 locus_kind="bounded_config_policy",
                 selector="enhanced_tools.diff_policy.patch_splitting",
-                artifact_ref="agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+                artifact_ref="agent_configs/deprecated/2026-03-06/opencode_1-2-17_e4_3-6-2026.yaml",
                 mutation_kind="replace",
                 constraints={"must_preserve_single_file_patch_boundary": True},
             ),
@@ -5660,7 +5660,7 @@ def build_opencode_prompt_config_tool_guidance_package_example() -> Dict[str, ob
                 locus_id="guardrails.validation.read_before_edit",
                 locus_kind="bounded_config_policy",
                 selector="enhanced_tools.validation.rule_config.read_before_edit",
-                artifact_ref="agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+                artifact_ref="agent_configs/deprecated/2026-03-06/opencode_1-2-17_e4_3-6-2026.yaml",
                 mutation_kind="replace",
                 constraints={"must_preserve_read_before_edit_signal": True},
             ),
@@ -5668,7 +5668,7 @@ def build_opencode_prompt_config_tool_guidance_package_example() -> Dict[str, ob
                 locus_id="tool.registry.include",
                 locus_kind="tool_pack_policy",
                 selector="tools.registry.include",
-                artifact_ref="agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+                artifact_ref="agent_configs/deprecated/2026-03-06/opencode_1-2-17_e4_3-6-2026.yaml",
                 mutation_kind="replace",
                 constraints={"must_remain_bounded_visible_tool_surface": True},
             ),
@@ -5676,7 +5676,7 @@ def build_opencode_prompt_config_tool_guidance_package_example() -> Dict[str, ob
                 locus_id="provider_tools.responses_use_developer_role",
                 locus_kind="tool_pack_policy",
                 selector="provider_tools.responses_use_developer_role",
-                artifact_ref="agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+                artifact_ref="agent_configs/deprecated/2026-03-06/opencode_1-2-17_e4_3-6-2026.yaml",
                 mutation_kind="replace",
                 constraints={"must_preserve_responses_native_posture": True},
             ),
@@ -5940,7 +5940,7 @@ def build_opencode_prompt_config_tool_guidance_package_example() -> Dict[str, ob
         package_target,
         baseline_candidate,
         effective_artifact={
-            "artifact_ref": "agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+            "artifact_ref": "agent_configs/deprecated/2026-03-06/opencode_1-2-17_e4_3-6-2026.yaml",
             "overlay": {"package_role": "atomic_baseline"},
         },
         effective_tool_surface={"tools": ["read_file", "list_dir", "bash", "write"], "exposed_count": 4},
@@ -5951,7 +5951,7 @@ def build_opencode_prompt_config_tool_guidance_package_example() -> Dict[str, ob
         package_target,
         package_candidate,
         effective_artifact={
-            "artifact_ref": "agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+            "artifact_ref": "agent_configs/deprecated/2026-03-06/opencode_1-2-17_e4_3-6-2026.yaml",
             "overlay": {"package_role": "mixed_evidence_triplet"},
         },
         effective_tool_surface={"tools": ["read_file", "list_dir", "bash", "write"], "exposed_count": 4},
@@ -5963,7 +5963,7 @@ def build_opencode_prompt_config_tool_guidance_package_example() -> Dict[str, ob
         TransferSliceManifest(
             slice_id="package.opencode_1_2_17.current",
             slice_kind="package",
-            selector={"artifact_ref": "agent_configs/opencode_1-2-17_e4_3-6-2026.yaml"},
+            selector={"artifact_ref": "agent_configs/deprecated/2026-03-06/opencode_1-2-17_e4_3-6-2026.yaml"},
             promotion_role="required",
             visibility="hidden_hold",
             metadata={"lane": "opencode_prompt_config_tool_guidance_package"},
@@ -6214,7 +6214,7 @@ def build_opencode_prompt_config_tool_guidance_package_example() -> Dict[str, ob
         review_class="bounded_e4_package_triplet",
         promotion_class="bounded_e4_package_triplet_change",
         applicability_scope={
-            "artifact_ref": "agent_configs/opencode_1-2-17_e4_3-6-2026.yaml",
+            "artifact_ref": "agent_configs/deprecated/2026-03-06/opencode_1-2-17_e4_3-6-2026.yaml",
             "tool_pack_profile": "opencode-native-responses",
             "environment_profile": "workspace-write",
             "provider_model_family": "openai-gpt-5.4",

@@ -23,7 +23,7 @@ def test_task_event_normalization_enriches_subagent_graph_fields() -> None:
         "status": "running",
     }
 
-    normalized = runner._normalize_task_event(payload)
+    normalized = runner._runtime_event_projector._normalize_task_event(payload)
 
     assert normalized["child_session_id"] == "sess-child-9"
     assert normalized["subagent_session_id"] == "sess-child-9"
@@ -49,7 +49,7 @@ def test_task_event_normalization_preserves_explicit_graph_fields() -> None:
         "status": "completed",
     }
 
-    normalized = runner._normalize_task_event(payload)
+    normalized = runner._runtime_event_projector._normalize_task_event(payload)
 
     assert normalized["child_session_id"] == "sess-child-explicit"
     assert normalized["parent_session_id"] == "sess-parent-explicit"

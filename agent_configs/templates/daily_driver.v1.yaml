@@ -1,6 +1,6 @@
 # BreadBoard's ordinary first-install profile. This is product configuration, not E4 evidence.
-schema_version: bb.harness_definition.v1
-version: 1
+schema_version: bb.harness_definition.v2
+version: 2
 
 # The session operates in the project selected by the caller.
 workspace:

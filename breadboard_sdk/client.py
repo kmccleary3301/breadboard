@@ -15,7 +15,9 @@ from .generated.session_event_bindings import PUBLIC_SESSION_EVENT_PAYLOAD_SCHEM
 from .types import (
     PublicResult,
     PublicSessionDecision,
+    PublicSessionInputRequest,
     PublicSessionStartRequest,
+    ModuleInputRequest,
     ResearchCompareRequest,
     SessionEvent,
 )
@@ -123,10 +125,28 @@ _SESSION_EVENT_VISIBILITY_FIELDS = frozenset(
 )
 _LIFECYCLE_PAYLOAD_FIELDS = {
     "session.started": frozenset({"effective_lock_hash", "task_hash"}),
-    "input.accepted": frozenset({"content_hash", "attachments"}),
+    "input.accepted": frozenset({"attachments"}),
     "approval.requested": frozenset({"request_id", "operation"}),
     "approval.resolved": frozenset({"request_id", "decision"}),
     "session.reconfigured": frozenset({"effective_lock_hash", "reason"}),
+    "session.adoption_committed": frozenset(
+        {
+            "adoption_id",
+            "checkpoint_id",
+            "source_generation_id",
+            "source_module_id",
+            "source_instance_id",
+            "source_work_id",
+            "source_attempt_id",
+            "source_schema_id",
+            "source_body_sha256",
+            "source_frontier",
+            "target_generation_id",
+            "effective_lock_hash",
+            "reason",
+            "migration",
+        }
+    ),
     "session.paused": frozenset({"reason"}),
     "session.resumed": frozenset(),
     "session.completed": frozenset({"outcome", "summary"}),
@@ -134,13 +154,16 @@ _LIFECYCLE_PAYLOAD_FIELDS = {
     "session.canceled": frozenset({"outcome", "reason"}),
 }
 _LIFECYCLE_OPTIONAL_PAYLOAD_FIELDS = {
-    kind: frozenset({"lineage"})
-    for kind in (
-        "session.started",
-        "session.completed",
-        "session.failed",
-        "session.canceled",
-    )
+    "session.started": frozenset(
+        {"lineage", "module_input", "module_input_sequence"}
+    ),
+    "input.accepted": frozenset(
+        {"content_hash", "module_input", "module_input_sequence"}
+    ),
+    "session.adoption_committed": frozenset({"request_id"}),
+    "session.completed": frozenset({"lineage"}),
+    "session.failed": frozenset({"lineage"}),
+    "session.canceled": frozenset({"lineage"}),
 }
 _LINEAGE_FIELDS = frozenset(
     {
@@ -191,6 +214,56 @@ def _sha256(value: Any) -> bool:
         character in "0123456789abcdef" for character in digest
     )
 
+
+def _valid_module_input(value: Any) -> bool:
+    return (
+        isinstance(value, dict)
+        and value.keys() == {"schema_id", "body", "final"}
+        and isinstance(value["schema_id"], str)
+        and bool(value["schema_id"])
+        and isinstance(value["body"], str)
+        and type(value["final"]) is bool
+    )
+
+_MODULE_OUTPUT_FIELDS = frozenset(
+    {
+        "module_output",
+        "output_sequence",
+        "module_id",
+        "worker_session_id",
+        "request_id",
+        "generation_id",
+        "instance_id",
+        "work_id",
+        "attempt_id",
+        "authority_epoch",
+    }
+)
+
+
+def _validate_module_output_payload(payload: dict[str, Any]) -> None:
+    text_fields = (
+        "module_id",
+        "worker_session_id",
+        "request_id",
+        "instance_id",
+        "work_id",
+        "attempt_id",
+    )
+    if (
+        payload.keys() != _MODULE_OUTPUT_FIELDS
+        or not _valid_module_input(payload["module_output"])
+        or not _sha256(payload["generation_id"])
+        or type(payload["output_sequence"]) is not int
+        or payload["output_sequence"] < 0
+        or type(payload["authority_epoch"]) is not int
+        or payload["authority_epoch"] < 0
+        or any(
+            not isinstance(payload[field], str) or not payload[field]
+            for field in text_fields
+        )
+    ):
+        raise ValueError("invalid session event module output payload")
 
 def _validate_lineage(value: Any) -> None:
     if (
@@ -264,14 +337,42 @@ def _validate_lifecycle_payload(kind: str, payload: dict[str, Any]) -> None:
         valid = _sha256(payload["effective_lock_hash"]) and _sha256(
             payload["task_hash"]
         )
+        module_input_present = "module_input" in payload
+        module_sequence_present = "module_input_sequence" in payload
+        valid = valid and module_input_present == module_sequence_present
+        if valid and module_input_present:
+            sequence = payload["module_input_sequence"]
+            valid = (
+                _valid_module_input(payload["module_input"])
+                and type(sequence) is int
+                and sequence >= 0
+            )
     elif kind == "input.accepted":
         attachments = payload["attachments"]
-        valid = _sha256(payload["content_hash"]) and isinstance(attachments, list)
+        content_hash_present = "content_hash" in payload
+        module_input_present = "module_input" in payload
+        module_sequence_present = "module_input_sequence" in payload
+        valid = (
+            isinstance(attachments, list)
+            and content_hash_present
+            != (module_input_present and module_sequence_present)
+            and module_input_present == module_sequence_present
+        )
+        if valid and content_hash_present:
+            valid = _sha256(payload["content_hash"])
+        elif valid:
+            sequence = payload["module_input_sequence"]
+            valid = (
+                _valid_module_input(payload["module_input"])
+                and type(sequence) is int
+                and sequence >= 0
+            )
         if valid:
             for attachment in attachments:
                 if (
                     not isinstance(attachment, dict)
-                    or attachment.keys() != {"digest", "size_bytes", "media_type"}
+                    or attachment.keys()
+                    != {"digest", "size_bytes", "media_type"}
                     or not _sha256(attachment["digest"])
                     or type(attachment["size_bytes"]) is not int
                     or attachment["size_bytes"] < 0
@@ -295,6 +396,76 @@ def _validate_lifecycle_payload(kind: str, payload: dict[str, Any]) -> None:
         valid = _sha256(payload["effective_lock_hash"]) and isinstance(
             payload["reason"], str
         )
+    elif kind == "session.adoption_committed":
+        text_fields = (
+            "adoption_id",
+            "checkpoint_id",
+            "source_module_id",
+            "source_instance_id",
+            "source_work_id",
+            "source_attempt_id",
+            "source_schema_id",
+        )
+        frontier = payload["source_frontier"]
+        migrations = payload["migration"]
+        valid = (
+            all(isinstance(payload[field], str) and bool(payload[field]) for field in text_fields)
+            and _sha256(payload["source_generation_id"])
+            and _sha256(payload["source_body_sha256"])
+            and _sha256(payload["target_generation_id"])
+            and payload["target_generation_id"] == payload["effective_lock_hash"]
+            and isinstance(payload["reason"], str)
+            and (
+                "request_id" not in payload
+                or (
+                    isinstance(payload["request_id"], str)
+                    and bool(payload["request_id"])
+                )
+            )
+            and isinstance(frontier, dict)
+            and frontier.keys()
+            == {
+                "event_sequence",
+                "generation_id",
+                "typed_input_sequence",
+                "output_sequence",
+                "compaction_index",
+            }
+            and _sha256(frontier["generation_id"])
+            and all(
+                type(frontier[field]) is int and frontier[field] >= 0
+                for field in (
+                    "event_sequence",
+                    "typed_input_sequence",
+                    "output_sequence",
+                    "compaction_index",
+                )
+            )
+            and isinstance(migrations, list)
+        )
+        if valid:
+            migration_fields = {
+                "binding",
+                "disposition",
+                "source_schema_id",
+                "target_schema_id",
+                "reason",
+            }
+            valid = all(
+                isinstance(migration, dict)
+                and migration.keys() == migration_fields
+                and all(
+                    isinstance(migration[field], str) and bool(migration[field])
+                    for field in (
+                        "binding",
+                        "source_schema_id",
+                        "target_schema_id",
+                    )
+                )
+                and migration["disposition"] in {"compatible", "migrate"}
+                and isinstance(migration["reason"], str)
+                for migration in migrations
+            )
     elif kind in {"session.paused", "session.canceled"}:
         valid = isinstance(payload["reason"], str)
         if kind == "session.canceled":
@@ -324,6 +495,8 @@ def _validate_event_payload(
         raise ValueError("invalid session event payload_schema_version")
     if kind in _LIFECYCLE_PAYLOAD_FIELDS:
         _validate_lifecycle_payload(kind, payload)
+    elif kind == "module_output":
+        _validate_module_output_payload(payload)
     elif kind == "annotation":
         _validate_annotation_payload(payload)
     else:
@@ -519,6 +692,11 @@ class BreadBoardClient:
     def create_harness(self, directory: str = ".") -> PublicResult:
         return self._request_operation("harness.create", body={"directory": directory})
 
+    def package_harness(self, source: str, out: str) -> PublicResult:
+        return self._request_operation(
+            "harness.package", body={"source": source, "out": out}
+        )
+
     def list_harness(self) -> PublicResult:
         return self._request_operation("harness.list")
 
@@ -553,6 +731,23 @@ class BreadBoardClient:
         return self._request_operation(
             "harness.lock",
             path_params={"harness_id": _resource_path(harness_id)},
+        )
+
+    def publish_harness(
+        self,
+        target: str,
+        lock_id: str,
+        expected_revision: int,
+        request_id: str,
+    ) -> PublicResult:
+        return self._request_operation(
+            "harness.publish",
+            path_params={"target": _resource_path(target)},
+            body={
+                "lock_id": lock_id,
+                "expected_revision": expected_revision,
+                "request_id": request_id,
+            },
         )
 
     def get_harness_lock(self, lock_id: str) -> PublicResult:
@@ -597,10 +792,49 @@ class BreadBoardClient:
     def start_session(
         self, payload: PublicSessionStartRequest, *, idempotency_key: str | None = None
     ) -> PublicResult:
+        has_task = payload.get("task") is not None
+        has_module_input = payload.get("module_input") is not None
+        if has_task == has_module_input:
+            raise ValueError("supply exactly one task or module_input")
+        has_lock = payload.get("lock_id") is not None
+        has_target = payload.get("publication_target") is not None
+        if has_lock == has_target:
+            raise ValueError("supply exactly one lock_id or publication_target")
+        if payload.get("module_authority") is not None and not has_module_input:
+            raise ValueError("module_authority requires module_input")
         return self._request_operation(
             "session.start",
             body=payload,
             headers=self._idempotency(idempotency_key),
+        )
+
+    def checkpoint_session(
+        self,
+        session_id: str,
+        reason: str,
+        request_id: str,
+    ) -> PublicResult:
+        return self._request_operation(
+            "session.checkpoint",
+            path_params={"session_id": _resource_path(session_id)},
+            body={"reason": reason, "request_id": request_id},
+        )
+
+    def adopt_session(
+        self,
+        session_id: str,
+        checkpoint_id: str,
+        lock_id: str,
+        request_id: str,
+    ) -> PublicResult:
+        return self._request_operation(
+            "session.adopt",
+            path_params={"session_id": _resource_path(session_id)},
+            body={
+                "checkpoint_id": checkpoint_id,
+                "lock_id": lock_id,
+                "request_id": request_id,
+            },
         )
 
     def compare_research(self, payload: ResearchCompareRequest) -> PublicResult:
@@ -619,12 +853,35 @@ class BreadBoardClient:
         )
 
     def send_input_session(
-        self, session_id: str, content: str, *, idempotency_key: str | None = None
+        self,
+        session_id: str,
+        content: str | PublicSessionInputRequest | None = None,
+        *,
+        module_input: ModuleInputRequest | None = None,
+        idempotency_key: str | None = None,
     ) -> PublicResult:
+        if isinstance(content, dict):
+            if module_input is not None:
+                raise ValueError("supply exactly one content or module_input")
+            has_content = content.get("content") is not None
+            has_module_input = content.get("module_input") is not None
+            if has_content == has_module_input:
+                raise ValueError("supply exactly one content or module_input")
+            body = content
+        else:
+            has_content = content is not None
+            has_module_input = module_input is not None
+            if has_content == has_module_input:
+                raise ValueError("supply exactly one content or module_input")
+            body = (
+                {"content": content}
+                if content is not None
+                else {"module_input": module_input}
+            )
         return self._request_operation(
             "session.send_input",
             path_params={"session_id": quote(session_id, safe="")},
-            body={"content": content},
+            body=body,
             headers=self._idempotency(idempotency_key),
         )
 

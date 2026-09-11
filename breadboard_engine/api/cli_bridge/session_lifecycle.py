@@ -144,6 +144,22 @@ class SessionLifecycleOwner:
                     "turn_id": initial_turn.turn_id,
                 }
             )
+        initial_module_input = host.request.module_input
+        if initial_module_input is not None:
+            module_turn = host.session.turns_by_id.get(
+                host.session.active_turn_id or ""
+            )
+            if module_turn is None or module_turn.module_input is None:
+                raise RuntimeProtocolError("runtime_protocol_error")
+            host._input_queue.put_nowait(
+                {
+                    "module_input": module_turn.module_input,
+                    "module_input_sequence": module_turn.module_input_sequence,
+                    "input_id": module_turn.input_id,
+                    "turn_id": module_turn.turn_id,
+                    "task_input_id": None,
+                }
+            )
 
     async def _process_inputs(self, state: _LifecycleRunState) -> None:
         host = self._host
@@ -182,7 +198,19 @@ class SessionLifecycleOwner:
             ):
                 raise RuntimeError("turn queue correlation mismatch")
             task_received_at = time.monotonic()
-            if execution.parse_replay_path(task_text) is not None:
+            module_input = (
+                task_turn.module_input if task_turn is not None else None
+            )
+            if module_input is not None:
+                result = await asyncio.to_thread(
+                    host.execute_module_turn,
+                    module_input,
+                    task_turn.module_input_sequence,
+                    task_input_id if isinstance(task_input_id, str) else None,
+                    task_turn_id if isinstance(task_turn_id, str) else None,
+                )
+                after_execute_task_at = time.monotonic()
+            elif execution.parse_replay_path(task_text) is not None:
                 result = await execution.execute_replay_task(
                     task_text,
                     input_id=(
@@ -255,6 +283,7 @@ class SessionLifecycleOwner:
                 or "turn_execution_failed"
             )
             execution_completed = bool(completion_summary.get("completed"))
+            terminal_execution = one_shot or completion_reason == "final_output"
             failure_code = _safe_runtime_error_code(
                 completion_reason,
                 default="runtime_failure",
@@ -266,19 +295,19 @@ class SessionLifecycleOwner:
                 product_session = getattr(host.session, "product_session", None)
                 if product_session is None:
                     durable_success = execution_completed or (
-                        turn_was_cancelled and not one_shot
+                        turn_was_cancelled and not terminal_execution
                     )
                 else:
                     product_state = product_session.read_model.status
                     if turn_was_cancelled:
-                        if one_shot and product_state == "running":
+                        if terminal_execution and product_state == "running":
                             host.transition_product_session(
                                 "cancel",
                                 task_turn.cancellation_reason or "user_requested",
                             )
                     elif product_state == "running" and not host._stop_event.is_set():
                         if execution_completed:
-                            if one_shot:
+                            if terminal_execution:
                                 host.transition_product_session("complete")
                         else:
                             host.transition_product_session(
@@ -289,7 +318,7 @@ class SessionLifecycleOwner:
                     product_state = product_session.read_model.status
                     durable_success = (
                         product_state not in {"failed", "canceled"}
-                        if not one_shot
+                        if not terminal_execution
                         else product_state == "completed"
                     )
             if durable_success:
@@ -338,7 +367,7 @@ class SessionLifecycleOwner:
                         reason=completion_reason,
                         error_code=failure_code,
                     )
-            if one_shot:
+            if terminal_execution:
                 if turn_was_cancelled:
                     await self.terminalize_admitted_turns(
                         outcome="cancelled",
@@ -359,7 +388,7 @@ class SessionLifecycleOwner:
                         reason=completion_reason,
                         error_code=failure_code,
                     )
-            if not one_shot and not durable_success:
+            if not terminal_execution and not durable_success:
                 if host._stop_event.is_set():
                     await self.terminalize_admitted_turns(
                         outcome="cancelled",
@@ -398,7 +427,7 @@ class SessionLifecycleOwner:
                     )
             host._input_queue.task_done()
             state.input_inflight = False
-            if one_shot or not durable_success:
+            if terminal_execution or not durable_success:
                 if host._stop_event.is_set() or turn_was_cancelled:
                     state.terminal_status = SessionStatus.STOPPED
                 elif execution_completed:
@@ -456,7 +485,10 @@ class SessionLifecycleOwner:
             host._input_queue.task_done()
             state.input_inflight = False
         logger.error(
-            "Session %s failed with code=%s", host.session.session_id, error_code
+            "Session %s failed with code=%s",
+            host.session.session_id,
+            error_code,
+            exc_info=exc,
         )
         try:
             await self.terminalize_admitted_turns(

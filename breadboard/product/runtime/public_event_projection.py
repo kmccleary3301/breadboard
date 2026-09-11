@@ -12,18 +12,26 @@ PUBLIC_SESSION_EVENT_SCHEMA_VERSION: Final = "bb.public_session_event.v1"
 # This is the one product-owned mapping from durable event kinds to public
 # payload schemas. The binding generator consumes it when producing the SDK
 # projection metadata, so Python and TypeScript cannot silently drift.
+_LIFECYCLE_EVENT_KINDS: Final[tuple[str, ...]] = (
+    "session.started",
+    "input.accepted",
+    "approval.requested",
+    "approval.resolved",
+    "session.reconfigured",
+    "session.adoption_committed",
+    "session.paused",
+    "session.resumed",
+    "session.completed",
+    "session.failed",
+    "session.canceled",
+)
 _PUBLIC_PAYLOAD_SCHEMAS: Final[Mapping[str, str]] = MappingProxyType(
-    {
-        "session.started": "bb.payload.product_session.lifecycle.v1",
-        "input.accepted": "bb.payload.product_session.lifecycle.v1",
-        "approval.requested": "bb.payload.product_session.lifecycle.v1",
-        "approval.resolved": "bb.payload.product_session.lifecycle.v1",
-        "session.reconfigured": "bb.payload.product_session.lifecycle.v1",
-        "session.paused": "bb.payload.product_session.lifecycle.v1",
-        "session.resumed": "bb.payload.product_session.lifecycle.v1",
-        "session.completed": "bb.payload.product_session.lifecycle.v1",
-        "session.failed": "bb.payload.product_session.lifecycle.v1",
-        "session.canceled": "bb.payload.product_session.lifecycle.v1",
+    dict.fromkeys(
+        _LIFECYCLE_EVENT_KINDS,
+        "bb.payload.product_session.lifecycle.v1",
+    )
+    | {
+        "module_output": "bb.payload.product_session.module_output.v1",
         "assistant_message": "bb.payload.message.assistant.v1",
         "tool_call": "bb.payload.tool.called.v1",
         "tool_result": "bb.payload.tool.completed.v1",
@@ -36,6 +44,47 @@ PUBLIC_PAYLOAD_SCHEMAS: Final[Mapping[str, str]] = _PUBLIC_PAYLOAD_SCHEMAS
 _INTERNAL_EVENT_KINDS = frozenset({"context.compacted"})
 
 
+def _public_adoption_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    public = {
+        key: payload[key]
+        for key in (
+            "adoption_id",
+            "checkpoint_id",
+            "source_generation_id",
+            "source_module_id",
+            "source_instance_id",
+            "source_work_id",
+            "source_attempt_id",
+            "source_schema_id",
+            "source_body_sha256",
+            "source_frontier",
+            "target_generation_id",
+            "effective_lock_hash",
+            "reason",
+            "request_id",
+        )
+        if key in payload
+    }
+    migration = payload.get("migration")
+    if isinstance(migration, (list, tuple)):
+        public["migration"] = [
+            {
+                key: item[key]
+                for key in (
+                    "binding",
+                    "disposition",
+                    "source_schema_id",
+                    "target_schema_id",
+                    "reason",
+                )
+                if key in item
+            }
+            for item in migration
+            if isinstance(item, Mapping)
+        ]
+    return public
+
+
 def public_session_event(
     event: KernelEvent | Mapping[str, Any],
 ) -> dict[str, Any] | None:
@@ -45,6 +94,8 @@ def public_session_event(
     if kind in _INTERNAL_EVENT_KINDS:
         return None
     payload = source["payload"]
+    if kind == "session.adoption_committed":
+        payload = _public_adoption_payload(payload)
     lineage = payload.get("lineage")
     session_id = str(source["session_id"])
     sequence = int(source["sequence"])

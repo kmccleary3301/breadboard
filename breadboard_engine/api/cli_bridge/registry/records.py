@@ -12,7 +12,8 @@ import secrets
 import time
 import tempfile
 from collections import deque
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass, field, fields, is_dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Deque, Dict, Iterable, Optional, Tuple, TypeVar
@@ -41,12 +42,23 @@ from ..models import (
     SessionSummary,
     TurnAdmission,
 )
+from breadboard.modules.author import CheckpointProposal, ModuleInput
+from breadboard.modules.authority import AdmissionGrant
+from breadboard.product.harness.lock import EffectiveHarnessLock
+from breadboard.product.runtime.generations import GenerationAdmission
+from breadboard_engine.execution.author_worker import (
+    AuthorWorkerCleanupResult,
+    AuthorWorkerResourceReceipt,
+)
+
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
-_STATE_SCHEMA_VERSION = "bb.cli_bridge.session_state.v1"
+_STATE_SCHEMA_VERSION_V1 = "bb.cli_bridge.session_state.v1"
+_STATE_SCHEMA_VERSION_V2 = "bb.cli_bridge.session_state.v2"
+_STATE_SCHEMA_VERSION = "bb.cli_bridge.session_state.v3"
 CONTROL_REQUEST_ID_CAPACITY = 4096
 _TERMINAL_EVENT_TYPES = {
     EventType.TURN_COMPLETED,
@@ -75,12 +87,157 @@ def identity_digest(value: str) -> str:
     return _digest_payload({"identity": str(value)})
 
 
-def submission_body_digest(content: str, attachments: Tuple[str, ...]) -> str:
-    return _digest_payload({"content": content, "attachments": list(attachments)})
-
+def submission_body_digest(
+    content: str | None,
+    attachments: Tuple[str, ...],
+    module_input: ModuleInput | None = None,
+) -> str:
+    if module_input is None:
+        if content is None:
+            raise ValueError("text submission content is required")
+        return _digest_payload({"content": content, "attachments": list(attachments)})
+    if content is not None:
+        raise ValueError("typed module input cannot have text content")
+    if not isinstance(module_input, ModuleInput):
+        raise TypeError("module_input must be a ModuleInput")
+    return _digest_payload(
+        {
+            "module_input": module_input.to_dict(),
+            "attachments": list(attachments),
+        }
+    )
 
 def cancellation_body_digest(turn_id: str, reason: str) -> str:
     return _digest_payload({"turn_id": turn_id, "reason": reason})
+
+
+_GENERATION_ADMISSION_FIELDS = frozenset(
+    {
+        "admission_id",
+        "session_id",
+        "target",
+        "publication_revision",
+        "generation_id",
+        "source_ref",
+        "lock_record",
+        "controller_epoch",
+        "work_id",
+        "attempt_id",
+        "grant_epoch",
+        "status",
+        "input_digest",
+    }
+)
+_GENERATION_ADMISSION_STATUSES = frozenset(
+    {"reserved", "materialized", "released"}
+)
+
+
+def _plain_generation_admission_value(value: Any) -> Any:
+    """Detach JSON-compatible mappings used by the generation projection."""
+
+    if isinstance(value, Mapping):
+        if any(type(key) is not str for key in value):
+            raise ValueError("generation admission contains a non-string key")
+        return {
+            key: _plain_generation_admission_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_plain_generation_admission_value(item) for item in value]
+    try:
+        json.dumps(value, allow_nan=False)
+    except (TypeError, ValueError) as error:
+        raise ValueError("generation admission contains a non-JSON value") from error
+    return value
+
+
+def _generation_admission_dict(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    as_dict = getattr(value, "as_dict", None)
+    if callable(as_dict):
+        value = as_dict()
+    elif is_dataclass(value) and not isinstance(value, type):
+        value = {
+            item.name: getattr(value, item.name)
+            for item in fields(value)
+        }
+    if not isinstance(value, Mapping):
+        raise ValueError("generation admission is not a record")
+    detached = _plain_generation_admission_value(value)
+    if not isinstance(detached, dict) or set(detached) != _GENERATION_ADMISSION_FIELDS:
+        raise ValueError("generation admission has invalid fields")
+    for field_name in (
+        "admission_id",
+        "session_id",
+        "generation_id",
+        "source_ref",
+        "work_id",
+        "attempt_id",
+        "input_digest",
+    ):
+        field_value = detached[field_name]
+        if not isinstance(field_value, str) or not field_value.strip():
+            raise ValueError(f"generation admission {field_name} is invalid")
+    target = detached["target"]
+    if target is not None and (not isinstance(target, str) or not target.strip()):
+        raise ValueError("generation admission target is invalid")
+    publication_revision = detached["publication_revision"]
+    if publication_revision is not None and (
+        type(publication_revision) is not int or publication_revision < 0
+    ):
+        raise ValueError("generation admission publication revision is invalid")
+    for field_name in ("controller_epoch", "grant_epoch"):
+        field_value = detached[field_name]
+        if type(field_value) is not int or field_value < 0:
+            raise ValueError(f"generation admission {field_name} is invalid")
+    if detached["status"] not in _GENERATION_ADMISSION_STATUSES:
+        raise ValueError("generation admission status is invalid")
+    lock_record = detached["lock_record"]
+    if not isinstance(lock_record, dict) or not lock_record:
+        raise ValueError("generation admission lock record is invalid")
+    lock_id = lock_record.get("lock_id")
+    if lock_id is not None and lock_id != detached["generation_id"]:
+        raise ValueError("generation admission lock identity is contradictory")
+    return detached
+
+
+def _serialize_generation_admission(value: Any) -> dict[str, Any] | None:
+    """Return a strict detached v2 projection for a lifecycle admission."""
+
+    return _generation_admission_dict(value)
+
+
+def _deserialize_generation_admission(
+    value: Any,
+    *,
+    session_id: str,
+) -> GenerationAdmission | None:
+    """Validate and restore the lifecycle owner's immutable admission value."""
+
+    detached = _generation_admission_dict(value)
+    if detached is None:
+        return None
+    if detached["session_id"] != session_id:
+        raise ValueError("generation admission session identity is contradictory")
+    try:
+        lock = EffectiveHarnessLock._from_record(detached["lock_record"])
+        detached["lock_record"] = lock
+        return GenerationAdmission(**detached)
+    except (TypeError, ValueError) as error:
+        raise ValueError("retained generation admission is invalid") from error
+
+
+def _generation_admission_identity(value: Any) -> tuple[Any, ...] | None:
+    detached = _generation_admission_dict(value)
+    if detached is None:
+        return None
+    return tuple(
+        detached[field_name]
+        for field_name in sorted(_GENERATION_ADMISSION_FIELDS - {"status"})
+    )
+
 
 class SessionRecordDeletedError(RuntimeError):
     """Raised when an operation tries to persist a deleted session record."""
@@ -152,6 +309,49 @@ class _DrainState:
     hard_signal_attempt_committed: bool = False
     hard_signal_authorization_owner_generation: int | None = None
     hard_signal_outcome: str | None = None
+@dataclass
+class ModuleWorkerOwnership:
+    binding: str
+    instance_id: str
+    worker_session_id: str
+    owner_ref: str
+    execution_id: str
+    execution_token: str = field(repr=False)
+    staging_root: str
+    staging_owner_ref: str
+    next_input_sequence: int = 0
+    resource_id: str | None = None
+    container_name: str | None = None
+    receipt: AuthorWorkerResourceReceipt | None = None
+    cleanup: AuthorWorkerCleanupResult | None = None
+
+
+@dataclass
+class ModuleExecutionRecord:
+    generation_id: str
+    root_binding: str
+    work_item_id: str
+    attempt_id: str
+    workers: tuple[ModuleWorkerOwnership, ...] = ()
+    retired_worker_identities: tuple[tuple[str, str, str], ...] = ()
+
+    def retire_all_workers(self) -> ModuleExecutionRecord:
+        retired = tuple(
+            dict.fromkeys(
+                (
+                    *self.retired_worker_identities,
+                    *(
+                        (
+                            worker.binding,
+                            worker.instance_id,
+                            worker.worker_session_id,
+                        )
+                        for worker in self.workers
+                    ),
+                )
+            )
+        )
+        return replace(self, workers=(), retired_worker_identities=retired)
 
 
 _T = TypeVar("_T")
@@ -162,7 +362,7 @@ class TurnRecord:
     input_id: str
     turn_id: str
     client_message_id: str
-    content: str
+    content: str | None
     attachments: Tuple[str, ...]
     original_disposition: str
     state: str
@@ -175,6 +375,8 @@ class TurnRecord:
     logical_event_count_before_admission: Optional[int] = None
     logical_input_content_hash: Optional[str] = None
     logical_input_session_status_before_admission: Optional[str] = None
+    module_input: ModuleInput | None = None
+    module_input_sequence: int | None = None
 
 
 @dataclass(frozen=True)
@@ -243,7 +445,15 @@ class SessionRecord:
     admission_lock: "asyncio.Lock" = field(default_factory=asyncio.Lock, repr=False)
     loaded_from_retained_state: bool = field(default=False, repr=False)
     retained_turn_journal_digest: Optional[str] = field(default=None, repr=False)
-    runtime_generation_source_ref: Optional[str] = field(default=None, repr=False)
+    runtime_generation_source_ref: Optional[str] = None
+    next_module_input_sequence: int = 0
+    module_grant: AdmissionGrant | None = None
+    module_execution: ModuleExecutionRecord | None = None
+    generation_admission: GenerationAdmission | None = None
+    module_resume_checkpoints: Dict[str, CheckpointProposal] = field(
+        default_factory=dict,
+        repr=False,
+    )
 
     def projected_status(self) -> SessionStatus:
         if self.product_session is None:
@@ -302,6 +512,8 @@ class SessionRecord:
             logging_dir=self.logging_dir,
             metadata=self.metadata or None,
             turn_admission=self.turn_admission,
+
+
             active_turn_id=self.active_turn_id,
             queued_turn_count=len(self.queued_turn_ids),
             replay_retention=replay["replayRetention"],
@@ -315,4 +527,11 @@ class SessionRecord:
             terminal_event_envelopes=list(self.terminal_event_envelopes),
         )
 
+def _generation_admission_exact_identity(value: Any) -> tuple[Any, ...] | None:
+    detached = _generation_admission_dict(value)
+    if detached is None:
+        return None
+    return tuple(
+        detached[field_name] for field_name in sorted(_GENERATION_ADMISSION_FIELDS)
+    )
 

@@ -1,8 +1,11 @@
 from __future__ import annotations
+import json
 import os
 
 from pathlib import Path
 from typing import Literal
+
+from .validators.hash_utils import sha256_file
 
 
 ReferenceNamespace = Literal["repo", "workspace", "workspace_evidence"]
@@ -10,6 +13,58 @@ ReferenceNamespace = Literal["repo", "workspace", "workspace_evidence"]
 
 class ReferenceResolutionError(ValueError):
     pass
+
+
+def _resolve_archived_config(checkout: Path, resolved: Path) -> Path:
+    if resolved.exists() or not resolved.is_relative_to(checkout):
+        return resolved
+    logical = resolved.relative_to(checkout)
+    if logical.parts[:1] != ("agent_configs",):
+        return resolved
+
+    archive_root = checkout / "agent_configs" / "deprecated"
+    manifest_path = archive_root / "manifest.json"
+    if not manifest_path.is_file():
+        return resolved
+    if not manifest_path.resolve().is_relative_to(archive_root):
+        raise ReferenceResolutionError("config archive manifest escapes its archive directory")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ReferenceResolutionError(f"invalid config archive manifest: {manifest_path}") from exc
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("schema_version") != "bb.e4.config_archive.v1"
+        or not isinstance(manifest.get("artifacts"), dict)
+    ):
+        raise ReferenceResolutionError(f"invalid config archive manifest: {manifest_path}")
+    record = manifest["artifacts"].get(logical.as_posix())
+    if record is None:
+        return resolved
+    if (
+        not isinstance(record, dict)
+        or set(record) != {"path", "sha256"}
+        or not isinstance(record["path"], str)
+        or not isinstance(record["sha256"], str)
+    ):
+        raise ReferenceResolutionError(f"invalid config archive entry: {logical}")
+    archive_path = Path(record["path"])
+    if (
+        archive_path.is_absolute()
+        or ".." in archive_path.parts
+        or archive_path.parts[:2] != ("agent_configs", "deprecated")
+    ):
+        raise ReferenceResolutionError(f"config archive entry escapes its archive directory: {logical}")
+    archived = (checkout / archive_path).resolve()
+    if not archived.is_relative_to(archive_root):
+        raise ReferenceResolutionError(f"config archive entry escapes its archive directory: {logical}")
+    try:
+        digest = sha256_file(archived)
+    except OSError as exc:
+        raise ReferenceResolutionError(f"config archive entry is unavailable: {logical}") from exc
+    if digest != record["sha256"]:
+        raise ReferenceResolutionError(f"config archive hash mismatch: {logical}")
+    return archived
 
 
 def _validated_workspace_root(value: str | Path, *, source: str) -> Path:
@@ -114,6 +169,7 @@ def resolve_declared_reference(
 
     if not resolved.is_relative_to(boundary):
         raise ReferenceResolutionError(f"{label} escapes {boundary}: {reference}")
+    resolved = _resolve_archived_config(checkout, resolved)
     if must_exist and not resolved.exists():
         raise ReferenceResolutionError(
             f"{label} is missing from checkout/workspace {boundary}: {reference}"

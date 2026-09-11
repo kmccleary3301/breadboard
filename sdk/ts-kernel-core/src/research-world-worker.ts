@@ -92,12 +92,14 @@ type WorkerResult = {
   readonly execution_evidence: readonly ScheduledExecutionEvidenceV1[]
 }
 
-type HelperOperation = "submit" | "observe" | "cancel" | "release"
+type HelperOperation = "submit" | "resolve" | "observe" | "cancel" | "release"
 type HelperState = "accepted" | "running" | "completed" | "failed" | "cancelled" | "timed_out"
 type HelperResponse = {
   readonly state: HelperState
   readonly execution_id?: string
   readonly evidence_refs: readonly string[]
+  readonly request_digest: string
+  readonly receiver_identity: string
   readonly exit_code?: number | null
   readonly stdout?: string
   readonly stderr?: string
@@ -262,6 +264,8 @@ function helperResponse(value: unknown): HelperResponse {
   const raw = requireRecord(value, "Ray helper response")
   const state = helperState(raw.state)
   const execution_id = raw.execution_id === undefined ? undefined : requireSingleLineText(raw.execution_id, "Ray helper execution_id")
+  const request_digest = requireSingleLineText(raw.request_digest, "Ray helper request_digest")
+  const receiver_identity = requireSingleLineText(raw.receiver_identity, "Ray helper receiver_identity")
   const stdout = raw.stdout === undefined ? undefined : typeof raw.stdout === "string" ? raw.stdout : (() => { throw new Error("Ray helper stdout must be a string") })()
   const stderr = raw.stderr === undefined ? undefined : typeof raw.stderr === "string" ? raw.stderr : (() => { throw new Error("Ray helper stderr must be a string") })()
   const error = raw.error === undefined ? undefined : requireText(raw.error, "Ray helper error")
@@ -274,7 +278,7 @@ function helperResponse(value: unknown): HelperResponse {
         : (() => { throw new Error("Ray helper exit_code must be a safe integer or null") })()
   if (!Array.isArray(raw.evidence_refs)) throw new Error("Ray helper evidence_refs must be an array")
   const evidence_refs = raw.evidence_refs.map((ref: unknown) => requireSingleLineText(ref, "Ray helper evidence reference"))
-  return { state, execution_id, stdout, stderr, error, exit_code, evidence_refs }
+  return { state, execution_id, request_digest, receiver_identity, stdout, stderr, error, exit_code, evidence_refs }
 }
 
 class RayHelperBackend implements ScheduledExecutionBackendV1 {
@@ -284,6 +288,7 @@ class RayHelperBackend implements ScheduledExecutionBackendV1 {
   private readonly exited: Promise<Error | null>
   private queue: Promise<void> = Promise.resolve()
   private readonly requests = new Map<string, SandboxRequestV1>()
+  private readonly receiverIdentities = new Map<string, string>()
 
   constructor(helperPath: string, workspace: string, private readonly world: RayWorld) {
     this.child = spawn(helperPath, ["--research-world-helper"], { cwd: workspace, stdio: ["pipe", "pipe", "pipe"] })
@@ -337,7 +342,20 @@ class RayHelperBackend implements ScheduledExecutionBackendV1 {
     const force = setTimeout(() => this.child.kill("SIGKILL"), 10_000)
     try {
       for (const [executionId, request] of this.requests) {
-        await this.invoke(this.payload("release", request, executionId))
+        if (!this.receiverIdentities.has(executionId)) {
+          const resolution = await this.invoke(this.payload("resolve", request, executionId))
+          this.assertResponseIdentity(resolution, request, executionId)
+          if (resolution.state === "completed") {
+            this.requests.delete(executionId)
+            this.receiverIdentities.delete(executionId)
+            continue
+          }
+        }
+        const response = await this.invoke(this.payload("release", request, executionId))
+        this.assertResponseIdentity(response, request, executionId)
+        if (response.state !== "completed") throw new Error("Ray helper did not confirm release")
+        this.requests.delete(executionId)
+        this.receiverIdentities.delete(executionId)
       }
       this.child.stdin.end()
       const error = await this.exited
@@ -350,12 +368,33 @@ class RayHelperBackend implements ScheduledExecutionBackendV1 {
     }
   }
 
+  private requestDigest(request: SandboxRequestV1): string {
+    return createHash("sha256").update(canonicalScheduledRequestKey(request)).digest("hex")
+  }
+
+  private assertResponseIdentity(
+    response: HelperResponse,
+    request: SandboxRequestV1,
+    executionId: string,
+  ): void {
+    if (response.execution_id !== executionId) throw new Error("Ray helper execution identity changed")
+    if (response.request_digest !== this.requestDigest(request)) throw new Error("Ray helper request digest changed")
+    const retainedReceiver = this.receiverIdentities.get(executionId)
+    if (retainedReceiver !== undefined && response.receiver_identity !== retainedReceiver) {
+      throw new Error("Ray helper receiver identity changed")
+    }
+    this.receiverIdentities.set(executionId, response.receiver_identity)
+  }
+
   private payload(operation: HelperOperation, request: SandboxRequestV1, executionId: string): Record<string, unknown> {
+    const receiverIdentity = this.receiverIdentities.get(executionId)
+    const requestBytes = canonicalScheduledRequestKey(request)
     return {
       operation,
       execution_id: executionId,
-      request,
-      request_digest: createHash("sha256").update(canonicalScheduledRequestKey(request)).digest("hex"),
+      request_bytes: Buffer.from(requestBytes, "utf8").toString("base64"),
+      request_digest: createHash("sha256").update(requestBytes).digest("hex"),
+      ...(receiverIdentity === undefined ? {} : { receiver_identity: receiverIdentity }),
       ray_address: this.world.ray_address,
       ray_namespace: this.world.ray_namespace,
       max_output_bytes: this.world.max_output_bytes,
@@ -366,7 +405,7 @@ class RayHelperBackend implements ScheduledExecutionBackendV1 {
     const executionId = `ray:${request.request_id}`
     this.requests.set(executionId, request)
     const response = await this.invoke(this.payload("submit", request, executionId))
-    if (response.execution_id !== undefined && response.execution_id !== executionId) throw new Error("Ray helper execution identity changed")
+    this.assertResponseIdentity(response, request, executionId)
     if (response.state !== "accepted" && response.state !== "running") throw new Error("Ray helper did not accept execution")
     return { executionId, evidenceRefs: response.evidence_refs }
   }
@@ -375,6 +414,7 @@ class RayHelperBackend implements ScheduledExecutionBackendV1 {
     const request = this.requests.get(executionId)
     if (!request) throw new Error("Ray execution request is unavailable after worker restart")
     const response = await this.invoke(this.payload("observe", request, executionId))
+    this.assertResponseIdentity(response, request, executionId)
     if (response.state === "accepted" || response.state === "running") return { state: response.state, evidenceRefs: response.evidence_refs }
     const status: SandboxResultV1["status"] = response.state === "completed" ? "completed" : response.state === "cancelled" ? "cancelled" : response.state === "timed_out" ? "timed_out" : "failed"
     const stdout = response.stdout ?? ""
@@ -402,6 +442,7 @@ class RayHelperBackend implements ScheduledExecutionBackendV1 {
     const request = this.requests.get(executionId)
     if (!request) throw new Error("Ray execution request is unavailable for cancellation")
     const response = await this.invoke(this.payload("cancel", request, executionId))
+    this.assertResponseIdentity(response, request, executionId)
     if (response.state !== "cancelled" && response.state !== "completed" && response.state !== "failed") throw new Error("Ray helper did not confirm cancellation")
   }
 }
@@ -415,7 +456,7 @@ function makeWorld(task: ResearchWorldTask, backend: RayHelperBackend | null, ev
   const capability = assertValid<ExecutionCapabilityV1>("executionCapability", {
     schema_version: "bb.execution_capability.v1",
     capability_id: `research-world:${requestId}`,
-    security_tier: "trusted_dev",
+    security_tier: config.kind === "local" ? "trusted_dev" : config.kind === "slurm" ? "shared_host" : "single_tenant",
     isolation_class: isolationClass,
     allow_read_paths: [workspace],
     allow_write_paths: [workspace],
@@ -445,6 +486,12 @@ function makeWorld(task: ResearchWorldTask, backend: RayHelperBackend | null, ev
     const backend = makeSshSlurmBackend({
       sshTarget: config.ssh_target,
       remoteEvidenceDirectory: config.remote_evidence_directory,
+      resourceProfile: {
+        cpuCount: 1,
+        memoryBytes: 128 * 1024 * 1024,
+        timeSeconds: 120,
+        gpuCount: 0,
+      },
       sshProgram: config.ssh_program,
       commandTimeoutMs: config.command_timeout_ms,
       maxOutputBytes: config.max_output_bytes,

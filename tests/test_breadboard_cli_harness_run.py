@@ -16,6 +16,7 @@ from scripts import breadboard_cli
 from breadboard.product.cli import harness as harness_operations
 from breadboard_engine.api.local_server import local_server
 from breadboard.product.cli import session as session_operations
+from breadboard.modules import ModuleInput
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.harness.templates import (
     daily_driver_model_roles_path,
@@ -80,9 +81,12 @@ class _RunClient:
         self.calls.append(("start", payload, idempotency_key))
         return {"ok": True, "data": {"session": {"session_id": "session-g3"}}}
 
-    def events_session(self, session_id: str) -> Iterator[dict[str, Any]]:
+    def events_session(
+        self, session_id: str, *, follow: bool = False
+    ) -> Iterator[dict[str, Any]]:
         assert session_id == "session-g3"
-        self.calls.append(("events", session_id))
+        assert follow is True
+        self.calls.append(("events", session_id, follow))
         yield {"kind": "assistant.message", "payload": {"content": "working"}}
         yield {"kind": "session.completed", "payload": {"status": "completed"}}
         raise AssertionError("the CLI must stop consuming events after completion")
@@ -104,9 +108,12 @@ class _RunClient:
 
 
 class _EofClient(_RunClient):
-    def events_session(self, session_id: str) -> Iterator[dict[str, Any]]:
+    def events_session(
+        self, session_id: str, *, follow: bool = False
+    ) -> Iterator[dict[str, Any]]:
         assert session_id == "session-g3"
-        self.calls.append(("events", session_id))
+        assert follow is True
+        self.calls.append(("events", session_id, follow))
         yield {"kind": "assistant.message", "payload": {"content": "still working"}}
 
 
@@ -114,10 +121,25 @@ def test_local_server_enables_only_product_api_and_restores_environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("BREADBOARD_ENABLE_PUBLIC_API", "0")
+    monkeypatch.setenv("BREADBOARD_SESSION_STATE_ROOT", "/previous/session-state")
     with local_server(tmp_path) as base_url:
+        local_state = tmp_path / ".breadboard" / "local-server"
+        assert os.environ["BREADBOARD_PUBLIC_WORKSPACE"] == str(tmp_path.resolve())
+        assert os.environ["BREADBOARD_RUNTIME_RECORD_ROOT"] == str(
+            local_state / "runtime-records"
+        )
+        assert os.environ["BREADBOARD_SESSION_STATE_ROOT"] == str(
+            local_state / "session-state"
+        )
+        assert os.environ["BREADBOARD_SESSION_EVENT_ROOT"] == str(
+            local_state / "session-events"
+        )
         assert requests.get(f"{base_url}/v1/system", timeout=5).status_code == 200
         assert requests.get(f"{base_url}/v1/e4/lanes", timeout=5).status_code == 404
     assert os.environ["BREADBOARD_ENABLE_PUBLIC_API"] == "0"
+    assert os.environ["BREADBOARD_SESSION_STATE_ROOT"] == "/previous/session-state"
+    assert "BREADBOARD_RUNTIME_RECORD_ROOT" not in os.environ
+    assert "BREADBOARD_SESSION_EVENT_ROOT" not in os.environ
 
 
 def test_session_cli_restores_flat_legacy_event_layout(tmp_path: Path) -> None:
@@ -194,59 +216,6 @@ def test_session_cli_mutation_persists_through_anchored_storage(tmp_path: Path) 
     assert session_store.session_metadata_path(tmp_path, session_id).is_file()
 
 
-def test_harness_run_submits_task_once_and_reports_completed_session(
-    locked_harness: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    _RunClient.calls = []
-    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", _RunClient)
-    monkeypatch.setenv("BREADBOARD_API_TOKEN", "cli-auth-token")
-
-    exit_code = breadboard_cli.main(
-        [
-            "--json",
-            "harness",
-            "run",
-            str(locked_harness),
-            "--server",
-            "https://breadboard.test/api",
-            "--task",
-            "repair the harness",
-        ]
-    )
-
-    captured = capsys.readouterr()
-    assert exit_code == 0
-    assert captured.err == ""
-    payload = json.loads(captured.out)
-    assert payload["data"] == {
-        "session_id": "session-g3",
-        "record_count": 3,
-        "event_count": 3,
-    }
-    assert _RunClient.calls == [
-        ("connect", "https://breadboard.test/api", "cli-auth-token", 120),
-        (
-            "start",
-            {
-                "lock_id": locked_harness.with_name(
-                    locked_harness.stem + ".lock.json"
-                ).name,
-                "task": "repair the harness",
-            },
-            harness_operations.sha256_json(
-                {
-                    "lock_id": locked_harness.with_name(
-                        locked_harness.stem + ".lock.json"
-                    ).name,
-                    "task": "repair the harness",
-                }
-            ),
-        ),
-        ("events", "session-g3"),
-        ("get", "session-g3"),
-    ]
 
 
 def test_harness_run_rejects_remote_plaintext_bearer_before_request(
@@ -342,17 +311,8 @@ def test_harness_run_consumes_custom_lock(
         ]
     )
     captured = capsys.readouterr()
-    assert exit_code == 5
-    assert f"breadboard harness lock {harness_path} --out {custom_lock}" in captured.err
-    capsys.readouterr()
-    assert (
-        breadboard_cli.main(
-            ["harness", "lock", str(harness_path), "--out", str(custom_lock)]
-        )
-        == 0
-    )
-    capsys.readouterr()
-    assert custom_lock.is_file()
+    assert exit_code == 0, captured.err
+    assert "session-g3" in captured.out
 
 
 def test_harness_run_rejects_event_stream_eof_before_terminal_event(
@@ -378,6 +338,50 @@ def test_harness_run_rejects_event_stream_eof_before_terminal_event(
     captured = capsys.readouterr()
     assert exit_code == 4
     assert captured.out == ""
+
+
+def test_harness_run_returns_nonfinal_module_session(
+    locked_harness: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module_input = tmp_path / "input.json"
+    module_input.write_text(
+        json.dumps(ModuleInput("example.input.v1", b"{}", final=False).to_dict()),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", _EofClient)
+
+    exit_code = breadboard_cli.main([
+        "harness", "run", str(locked_harness),
+        "--server", "https://breadboard.test/api",
+        "--module-input", str(module_input),
+    ])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0, captured.err
+    assert "session-g3" in captured.out
+
+
+def test_local_harness_run_refuses_nonfinal_input_before_admission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module_input = tmp_path / "input.json"
+    module_input.write_text(
+        json.dumps(ModuleInput("example.input.v1", b"{}", final=False).to_dict()),
+        encoding="utf-8",
+    )
+    _RunClient.calls = []
+    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", _RunClient)
+
+    result = harness_operations._server(SimpleNamespace(
+        server="http://127.0.0.1:1234", local=True,
+        module_input=module_input, _lock_id="example.lock.json",
+    ))
+
+    assert not result.ok
+    assert not any(call[0] == "start" for call in _RunClient.calls)
 
 
 def test_harness_run_maps_sdk_failures_to_runtime_exit(

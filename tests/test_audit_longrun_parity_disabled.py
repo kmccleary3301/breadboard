@@ -39,3 +39,27 @@ def test_repo_parity_audit_passes():
     assert paths, "expected at least one parity/E4 config to be discovered"
     payload = module.audit_configs(paths, repo_root)
     assert payload["ok"] is True
+
+
+def test_audit_separates_archives_and_target_projections_without_hiding_load_errors(tmp_path):
+    module = _load_module()
+    configs = tmp_path / "agent_configs"
+    archive = configs / "deprecated"
+    archive.mkdir(parents=True)
+    (archive / "old_e4.yaml").write_text("extends: missing.yaml\n", encoding="utf-8")
+    (configs / "target_e4.yaml").write_text(
+        "schema_version: bb.e4.target_config.v1\ntarget_id: example@1\n",
+        encoding="utf-8",
+    )
+    invalid = configs / "broken_e4.yaml"
+    invalid.write_text("extends: missing.yaml\n", encoding="utf-8")
+
+    payload = module.audit_configs(module.discover_parity_configs(tmp_path), tmp_path)
+
+    assert payload["ok"] is False
+    assert payload["checked"] == 1
+    assert payload["failures"][0]["config"] == "agent_configs/broken_e4.yaml"
+    assert payload["failures"][0]["reason"] == "load_error"
+    assert payload["skipped"] == [
+        {"config": "agent_configs/target_e4.yaml", "reason": "target_config_projection"}
+    ]

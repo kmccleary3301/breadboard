@@ -84,7 +84,7 @@ def test_harness_family_delegates_to_product_operations(
     }
     assert fetched_result["data"]["path"] == "daily_driver.v1.yaml"
     assert fetched_result["data"]["definition"]["schema_version"] == (
-        "bb.harness_definition.v1"
+        "bb.harness_definition.v2"
     )
     cli_arguments = SimpleNamespace(
         workspace=tmp_path,

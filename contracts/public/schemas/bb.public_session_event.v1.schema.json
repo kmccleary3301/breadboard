@@ -47,11 +47,13 @@
     },
     "kind": {
       "enum": [
+        "module_output",
         "session.started",
         "input.accepted",
         "approval.requested",
         "approval.resolved",
         "session.reconfigured",
+        "session.adoption_committed",
         "session.paused",
         "session.resumed",
         "session.completed",
@@ -67,6 +69,7 @@
     "payload_schema_version": {
       "enum": [
         "bb.payload.product_session.lifecycle.v1",
+        "bb.payload.product_session.module_output.v1",
         "bb.payload.message.assistant.v1",
         "bb.payload.tool.called.v1",
         "bb.payload.tool.completed.v1",
@@ -106,6 +109,7 @@
               "approval.requested",
               "approval.resolved",
               "session.reconfigured",
+              "session.adoption_committed",
               "session.paused",
               "session.resumed",
               "session.completed",
@@ -165,6 +169,14 @@
           },
           {
             "properties": {
+              "kind": { "const": "session.adoption_committed" },
+              "payload": {
+                "$ref": "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json#/$defs/sessionAdoptionCommitted"
+              }
+            }
+          },
+          {
+            "properties": {
               "kind": { "const": "session.paused" },
               "payload": {
                 "$ref": "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json#/$defs/sessionPaused"
@@ -204,6 +216,22 @@
             }
           }
         ]
+      }
+    },
+    {
+      "if": {
+        "properties": { "kind": { "const": "module_output" } },
+        "required": ["kind"]
+      },
+      "then": {
+        "properties": {
+          "payload_schema_version": {
+            "const": "bb.payload.product_session.module_output.v1"
+          },
+          "payload": {
+            "$ref": "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.module_output.v1.schema.json"
+          }
+        }
       }
     },
     {

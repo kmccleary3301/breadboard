@@ -89,7 +89,7 @@ python scripts/run_bb_atp_adapter_slice_v1.py \
 
 Hilbert-style comparator arm:
 
-- `agent_configs/atp_hilbert_like_gpt54_v1.yaml`
+- `agent_configs/research/atp_hilbert_like_gpt54_v1.yaml`
 
 This is a separate BreadBoard evaluation arm, not a replacement for the generic BB ATP
 baseline. It keeps the visible tool surface to `shell_command`, uses a persistent

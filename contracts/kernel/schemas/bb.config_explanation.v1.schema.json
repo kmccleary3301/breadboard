@@ -36,7 +36,9 @@
     "surface_schema_version": {
       "enum": [
         "bb.agent_config_surface.v1",
-        "bb.agent_config_surface.v2"
+        "bb.agent_config_surface.v2",
+        "bb.harness_definition.v1",
+        "bb.harness_definition.v2"
       ]
     },
     "resolved_summary": {

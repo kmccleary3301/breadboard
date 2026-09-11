@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple, TypedDict
+from typing import Any, Dict, Iterable, List, Literal, Never as _Never, Optional, Tuple, TypedDict
 
 from .generated.session_event_bindings import (
     PublicSessionEventKind,
     PublicSessionEventPayloadSchema,
-    PublicSessionLifecycleEventKind,
 )
 
 
@@ -32,11 +31,116 @@ class SessionAnnotationPayload(TypedDict):
     generation: str
 
 
+
+class ModuleOutputEnvelope(TypedDict):
+    schema_id: str
+    body: str
+    final: bool
+
+
+class SessionModuleOutputPayload(TypedDict):
+    module_output: ModuleOutputEnvelope
+    output_sequence: int
+    module_id: str
+    worker_session_id: str
+    request_id: str
+    generation_id: str
+    instance_id: str
+    work_id: str
+    attempt_id: str
+    authority_epoch: int
+
 class WorldFieldMask(TypedDict):
     schema_version: Literal["bb.world_field_mask.v1"]
     paths: Tuple[Literal["/occurred_at"], Literal["/timestamp"]]
 
 
+
+
+class SessionAdoptionFrontier(TypedDict):
+    event_sequence: int
+    generation_id: str
+    typed_input_sequence: int
+    output_sequence: int
+    compaction_index: int
+
+
+class SessionAdoptionMigration(TypedDict):
+    binding: str
+    disposition: Literal["compatible", "migrate"]
+    source_schema_id: str
+    target_schema_id: str
+    reason: str
+
+
+class _SessionAdoptionCommittedOptional(TypedDict, total=False):
+    request_id: str
+
+
+class SessionAdoptionCommittedPayload(_SessionAdoptionCommittedOptional):
+    adoption_id: str
+    checkpoint_id: str
+    source_generation_id: str
+    source_module_id: str
+    source_instance_id: str
+    source_work_id: str
+    source_attempt_id: str
+    source_schema_id: str
+    source_body_sha256: str
+    source_frontier: SessionAdoptionFrontier
+    target_generation_id: str
+    effective_lock_hash: str
+    reason: str
+    migration: List[SessionAdoptionMigration]
+
+
+class _SessionStartedCommonOptional(TypedDict, total=False):
+    lineage: SessionEventLineage
+
+
+class _SessionStartedTextOptional(_SessionStartedCommonOptional, total=False):
+    module_input: _Never
+    module_input_sequence: _Never
+
+
+class SessionStartedTextPayload(_SessionStartedTextOptional):
+    effective_lock_hash: str
+    task_hash: str
+
+
+class SessionStartedModulePayload(_SessionStartedCommonOptional):
+    effective_lock_hash: str
+    task_hash: str
+    module_input: ModuleInputRequest
+    module_input_sequence: int
+
+
+SessionStartedPayload = SessionStartedTextPayload | SessionStartedModulePayload
+
+
+class _SessionInputAcceptedTextOptional(TypedDict, total=False):
+    module_input: _Never
+    module_input_sequence: _Never
+
+
+class SessionInputAcceptedTextPayload(_SessionInputAcceptedTextOptional):
+    content_hash: str
+    attachments: List[Dict[str, Any]]
+
+
+class _SessionInputAcceptedModuleOptional(TypedDict, total=False):
+    content_hash: _Never
+
+
+class SessionInputAcceptedModulePayload(_SessionInputAcceptedModuleOptional):
+    module_input: ModuleInputRequest
+    module_input_sequence: int
+    attachments: List[Dict[str, Any]]
+
+
+SessionInputAcceptedPayload = (
+    SessionInputAcceptedTextPayload | SessionInputAcceptedModulePayload
+)
 
 
 class _SessionLifecyclePayload(TypedDict, total=False):
@@ -69,8 +173,35 @@ class _SessionEventEnvelope(TypedDict):
 
 
 class _SessionLifecycleEvent(_SessionEventEnvelope):
-    kind: PublicSessionLifecycleEventKind
+    kind: Literal[
+        "approval.requested",
+        "approval.resolved",
+        "session.canceled",
+        "session.completed",
+        "session.failed",
+        "session.paused",
+        "session.reconfigured",
+        "session.resumed",
+    ]
     payload: _SessionLifecyclePayload
+    payload_schema_version: Literal["bb.payload.product_session.lifecycle.v1"]
+
+
+class SessionStartedEvent(_SessionEventEnvelope):
+    kind: Literal["session.started"]
+    payload: SessionStartedPayload
+    payload_schema_version: Literal["bb.payload.product_session.lifecycle.v1"]
+
+
+class SessionInputAcceptedEvent(_SessionEventEnvelope):
+    kind: Literal["input.accepted"]
+    payload: SessionInputAcceptedPayload
+    payload_schema_version: Literal["bb.payload.product_session.lifecycle.v1"]
+
+
+class SessionAdoptionCommittedEvent(_SessionEventEnvelope):
+    kind: Literal["session.adoption_committed"]
+    payload: SessionAdoptionCommittedPayload
     payload_schema_version: Literal["bb.payload.product_session.lifecycle.v1"]
 
 
@@ -78,6 +209,12 @@ class _SessionAnnotationEvent(_SessionEventEnvelope):
     kind: Literal["annotation"]
     payload: SessionAnnotationPayload
     payload_schema_version: Literal["bb.payload.product_session.annotation.v1"]
+
+
+class SessionModuleOutputEvent(_SessionEventEnvelope):
+    kind: Literal["module_output"]
+    payload: SessionModuleOutputPayload
+    payload_schema_version: Literal["bb.payload.product_session.module_output.v1"]
 
 
 class _SessionKernelEvent(_SessionEventEnvelope):
@@ -90,7 +227,15 @@ class _SessionKernelEvent(_SessionEventEnvelope):
     ]
 
 
-SessionEvent = _SessionLifecycleEvent | _SessionAnnotationEvent | _SessionKernelEvent
+SessionEvent = (
+    _SessionLifecycleEvent
+    | SessionStartedEvent
+    | SessionInputAcceptedEvent
+    | SessionAdoptionCommittedEvent
+    | _SessionAnnotationEvent
+    | SessionModuleOutputEvent
+    | _SessionKernelEvent
+)
 
 
 class ArtifactRefPreview(TypedDict, total=False):
@@ -297,18 +442,123 @@ class PublicHarnessUpdateRequest(TypedDict):
     definition: Dict[str, Any]
 
 
-class _PublicSessionStartRequestDefaults(TypedDict, total=False):
+class PublicHarnessPublishRequest(TypedDict):
+    lock_id: str
+    expected_revision: int
+    request_id: str
+
+
+class ModuleInputRequest(TypedDict):
+    schema_id: str
+    body: str
+    final: bool
+
+
+class ProjectAuthorityRequest(TypedDict, total=False):
+    roots: List[str]
+    operations: List[Literal["read", "write"]]
+
+
+class NetworkAuthorityRequest(TypedDict, total=False):
+    destinations: List[str]
+    operations: List[Literal["connect", "resolve"]]
+
+
+class ChildAuthorityRequest(TypedDict, total=False):
+    allowed_module_ids: List[str]
+    max_depth: int
+
+
+class CredentialDisclosureRequest(TypedDict):
+    secret_name: str
+    purpose: str
+
+
+class AuthorityDeclarationRequest(TypedDict, total=False):
+    project: Optional[ProjectAuthorityRequest]
+    network: Optional[NetworkAuthorityRequest]
+    child: Optional[ChildAuthorityRequest]
+    provider_ids: List[str]
+    tool_ids: List[str]
+    credential_disclosures: List[CredentialDisclosureRequest]
+
+
+class _SessionStartLockSelectorOptional(TypedDict, total=False):
+    publication_target: _Never
+
+
+class _SessionStartTargetSelectorOptional(TypedDict, total=False):
+    lock_id: _Never
+
+
+class _SessionStartCommonOptional(TypedDict, total=False):
     session_id: Optional[str]
 
 
-class PublicSessionStartRequest(_PublicSessionStartRequestDefaults):
+class _SessionStartTextOptional(_SessionStartCommonOptional, total=False):
+    module_input: _Never
+    module_authority: _Never
+
+
+class _SessionStartModuleOptional(_SessionStartCommonOptional, total=False):
+    task: _Never
+    module_authority: Optional[AuthorityDeclarationRequest]
+
+
+class PublicSessionStartTextLockRequest(
+    _SessionStartLockSelectorOptional, _SessionStartTextOptional
+):
     lock_id: str
     task: str
 
 
-class PublicSessionInputRequest(TypedDict):
+class PublicSessionStartTextTargetRequest(
+    _SessionStartTargetSelectorOptional, _SessionStartTextOptional
+):
+    publication_target: str
+    task: str
+
+
+class PublicSessionStartModuleLockRequest(
+    _SessionStartLockSelectorOptional, _SessionStartModuleOptional
+):
+    lock_id: str
+    module_input: ModuleInputRequest
+
+
+class PublicSessionStartModuleTargetRequest(
+    _SessionStartTargetSelectorOptional, _SessionStartModuleOptional
+):
+    publication_target: str
+    module_input: ModuleInputRequest
+
+
+PublicSessionStartRequest = (
+    PublicSessionStartTextLockRequest
+    | PublicSessionStartTextTargetRequest
+    | PublicSessionStartModuleLockRequest
+    | PublicSessionStartModuleTargetRequest
+)
+
+class _SessionTextInputOptional(TypedDict, total=False):
+    module_input: _Never
+
+
+class PublicSessionTextInputRequest(_SessionTextInputOptional):
     content: str
 
+
+class _SessionModuleInputOptional(TypedDict, total=False):
+    content: _Never
+
+
+class PublicSessionModuleInputRequest(_SessionModuleInputOptional):
+    module_input: ModuleInputRequest
+
+
+PublicSessionInputRequest = (
+    PublicSessionTextInputRequest | PublicSessionModuleInputRequest
+)
 
 PublicSessionDecision = Literal["allow", "deny", "once", "always", "reject"]
 
@@ -316,6 +566,16 @@ PublicSessionDecision = Literal["allow", "deny", "once", "always", "reject"]
 class PublicSessionApprovalRequest(TypedDict):
     request_id: str
     decision: PublicSessionDecision
+
+class PublicSessionCheckpointRequest(TypedDict):
+    reason: str
+    request_id: str
+
+
+class PublicSessionAdoptRequest(TypedDict):
+    checkpoint_id: str
+    lock_id: str
+    request_id: str
 
 
 class _PublicSessionCancelRequestDefaults(TypedDict, total=False):

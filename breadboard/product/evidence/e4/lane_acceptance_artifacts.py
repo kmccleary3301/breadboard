@@ -181,9 +181,11 @@ def _materialize_candidate_validation_inputs(
 ) -> Path | None:
     if output_root is None:
         return None
-    for logical_path in dict.fromkeys(
-        [str(spec["config_path"]), *map(str, spec["source_paths"])]
-    ):
+    validation_inputs = [str(spec["config_path"]), *map(str, spec["source_paths"])]
+    archive_manifest = "agent_configs/deprecated/manifest.json"
+    if (ROOT / archive_manifest).is_file():
+        validation_inputs.append(archive_manifest)
+    for logical_path in dict.fromkeys(validation_inputs):
         source = resolve(logical_path)
         try:
             relative = source.relative_to(ROOT.resolve())
@@ -439,7 +441,7 @@ def emit_self_runtime_records(
             tempfile.TemporaryDirectory(prefix="bb-self-capture-workspace-", dir=workspace_parent) as workspace_tmp,
         ):
             agent = AgenticCoder(
-                "agent_configs/atp_hilbert_like_gpt54_v1.yaml",
+                "agent_configs/research/atp_hilbert_like_gpt54_v1.yaml",
                 workspace_tmp,
                 {
                     "providers.default_model": "mock/no_tool",

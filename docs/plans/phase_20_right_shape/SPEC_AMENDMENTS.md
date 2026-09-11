@@ -430,3 +430,58 @@ GATE_L_DECISION.md, and bd comments on bb-c6n.4/bb-c6n.6.
 **Freeze owner:** W10 public-contract owner owns the catalog row, operation schemas, generated bindings/manifests/docs, SDK dispatch, and the AM30 allowlist entries for this exact operation. Main owns the functional CLI/HTTP/router integration and installed proof; no unfinished operation is advertised.
 
 **Activation:** W9 records this authorization; W10 adds the functional operation, schemas, generated bindings, and client dispatch together. W9 does not advertise an unimplemented operation. The final installed build and E4 checks must cover the resulting single contract revision.
+
+## Amendment 31 - 2026-09-09 - Independent harness modules and safe live evolution
+
+**Authorization:** Kyle accepted `docs_tmp/bb_direction_assessment/live_evolution/CAMPAIGN_SPEC.md` in the control workspace, SHA256 `8c39a56762620c22001fe0e00bb60a415e3d2e77884f5bc335d1c171d8557555`. Beads `bb-44cg.14` resolution `01a08586-ad18-7290-a20f-7ed6a5a80e21` records the actual “Approve and implement” timeout selection. The specification and bounded independent review resolve the planning questions; successor `bb-xh49` owns implementation A–G.
+
+**Consumer and gap:** installed authoring can compile data Definitions and run retained Locks, but cannot admit independently authored executable harness modules, atomically publish their complete byte identity or adopt their state through ordinary public operations. Existing graph identity is not implementation identity.
+
+**Scope:** add `bb.module_manifest.v1`; version executable Definition and complete Lock records as `bb.harness_definition.v2` and `bb.effective_harness_lock.v2`. The existing effective configuration graph remains a constituent with unchanged semantics. Package/schema/runtime closures, explicit dependency/child bindings and coherent sealed environments are compiler-owned. Add only the accepted `harness.package`, `harness.publish`, `session.checkpoint` and `session.adopt` operations and their confined request/result schemas; extend ordinary Session start with explicit published-target selection. Propagate canonical schemas/catalog through validators, generators, Python/TypeScript SDKs, CLI/TUI, installed bundles and ordinary E4 consumers. Register exact schema evolution pins through the existing enforcement mechanism as each functional owner is implemented.
+
+**Ownership and cutover:** product lifecycle owns preparation/CAS/admission/retention; Session owns history/frontier/adoption; worlds and domain owners retain effects, fences and actual disposal. No parallel registry, runtime, generic operation bag or new SDK package. New writes use the accepted versioned contracts. Retain v1 history readers without guessing absent executable bytes, keeping dual writers or destructively downgrading history.
+
+**Activation and proof:** each packet propagates its changed contract together with its real public caller path. Do not advertise placeholders. Use the specification's bounded behavioral gates, actual world observations, impact-based evidence validity and final independent author/installed acceptance. Planning observations are not product support. No release, remote Git action, live provider call or destructive store migration is authorized by this amendment.
+
+Packet A advances the current Definition and Lock schema IDs in the existing
+record-role catalog and its exact projection pin. The catalog wire format and
+required roles do not change. Historical schema readers and the frozen
+public-surface authority remain intact.
+
+Packet A's implementation correction separates dependency field names from
+contract IDs: `dependency_contracts` maps each manifest field to its contract,
+while Definition bindings map that field to its selected package binding.
+Two fields may use the same contract. The selected author declaration already
+distinguishes `dependency_id` and `contract_id`; treating a contract ID as a
+unique field prevented this required composition. The unpublished manifest
+candidate is corrected in place, without an alias or alternate resolver.
+The affected compiler and installed package proof must be refreshed.
+
+Packet B adds explicit schema-bound `module_input` to ordinary Session start
+and input, mutually exclusive with their existing text fields. Admission
+assigns input sequence and execution identity; callers supply neither.
+Module outputs retain their schema, bytes and owner-stamped attribution in
+the existing Session event stream. These implement the accepted author
+contract rather than encode typed documents in ambiguous task text.
+The existing operation catalog, generators and event projection own this
+propagation. No separate author admission operation or event journal is added.
+
+Session start also accepts explicit caller `module_authority`, distinct from
+package requests. Admission mints the grant identity and epoch and retains the
+grant with the typed input before dispatch. Neither a package declaration nor
+discovery supplies a grant. Provider callers submit the existing canonical
+provider identity and request aggregate; the owner stamps exchange correlation
+and execution attribution. Request messages, replay, metadata and provider
+events keep their complete v2 representations. No alternate provider policy
+or generic effect journal is introduced.
+
+The unpublished worker candidate uses `bind_dependencies(DependencyBindings)`
+to construct the package's `SharedT` before `open_instance`. This keeps typed
+dependency construction in the package without pretending a union of domain
+ports is its aggregate. Each dependency handle exchanges a schema-bound
+`ModuleInput` for an `OutputEnvelope`; provider/tool/context/child interfaces
+remain separate. Child start and subsequent input also take `ModuleInput`,
+with the child owner assigning sequence. The SDK captures its worker command
+into the immutable runtime declaration; authors do not write bootstrap or
+transport loops. These corrections require B's installed journey, not another
+planning prototype.

@@ -82,7 +82,7 @@ def _cli_commands(root: Path) -> set[str]:
                             for item in child._actions
                         )
                         walk(child, (*prefix, name)) if nested else commands.add(
-                            " ".join(("bbh", *prefix, name))
+                            " ".join(("breadboard", *prefix, name))
                         )
 
         walk(build_parser(), ())
@@ -92,7 +92,7 @@ def _cli_commands(root: Path) -> set[str]:
         for namespace, command in re.findall(
             r'command="([a-z-]+) ([a-z-]+)"', path.read_text(encoding="utf-8")
         ):
-            commands.add(f"bbh {namespace} {command}")
+            commands.add(f"breadboard {namespace} {command}")
     return commands
 
 

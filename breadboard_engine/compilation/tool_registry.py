@@ -193,7 +193,11 @@ def _classification_for(name: str, manipulations: list[str], raw_classification:
     if lowered in {"list", "list_dir"} or any(item.startswith("file.list") for item in manipulations):
         guardrail_sets.add("list")
         categories.add("read_only")
-    if lowered in {"read", "read_file"} or any(item.startswith("file.read") for item in manipulations):
+    if (
+        lowered in {"read", "read_file"}
+        or any(item.startswith("file.read") for item in manipulations)
+        or "rlm.blob.put_file_slice" in manipulations
+    ):
         guardrail_sets.add("read")
         categories.add("read_only")
     if any(item.startswith("shell.") for item in manipulations) or lowered in {"bash", "run_shell", "shell_command"}:

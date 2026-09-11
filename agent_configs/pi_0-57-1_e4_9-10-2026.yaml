@@ -1,0 +1,38 @@
+# Pi E4 target-config projection
+# Catalog refreshed 2026-09-10; upstream source remains the accepted 0.57.1 package.
+# Canonical machine authority: config/e4_targets/pi/0.57.1/target.json
+# Load with breadboard_engine.e4_targets.load_e4_target("pi@0.57.1").
+# Do not pass this target-config schema to the BreadBoard agent-config CLI.
+
+schema_version: bb.e4.target_config.v1
+target_id: pi@0.57.1
+prompt:
+  renderer: pi-0.57.1
+  asset: ../config/e4_targets/pi/0.57.1/prompts/system-prompt.md
+  dynamic_fields:
+  - readme_path
+  - docs_path
+  - examples_path
+  - current_date_time
+  - cwd
+tools:
+  ordered:
+  - read
+  - bash
+  - edit
+  - write
+  - grep
+  - find
+  - ls
+  surface_asset: ../config/e4_targets/pi/0.57.1/tool-surface.json
+session:
+  persistence: disabled
+  extensions: disabled
+  skills: disabled
+  prompt_templates: disabled
+thinking: off
+retry:
+  enabled: false
+  max_retries: 0
+transport:
+  mode: json

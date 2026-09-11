@@ -47,11 +47,74 @@ export interface PublicHarnessUpdateRequest {
   readonly definition: Readonly<Record<string, unknown>>
 }
 
-export interface PublicSessionStartRequest {
+export interface PublicHarnessPublishRequest {
   readonly lock_id: string
+  readonly expected_revision: number
+  readonly request_id: string
+}
+
+export interface ModuleInput {
+  readonly schema_id: string
+  readonly body: string
+  readonly final: boolean
+}
+
+export interface ProjectAuthority {
+  readonly roots?: readonly string[]
+  readonly operations?: readonly ("read" | "write")[]
+}
+
+export interface NetworkAuthority {
+  readonly destinations?: readonly string[]
+  readonly operations?: readonly ("connect" | "resolve")[]
+}
+
+export interface ChildAuthority {
+  readonly allowed_module_ids?: readonly string[]
+  readonly max_depth?: number
+}
+
+export interface CredentialDisclosure {
+  readonly secret_name: string
+  readonly purpose: string
+}
+
+export interface AuthorityDeclaration {
+  readonly project?: ProjectAuthority | null
+  readonly network?: NetworkAuthority | null
+  readonly child?: ChildAuthority | null
+  readonly provider_ids?: readonly string[]
+  readonly tool_ids?: readonly string[]
+  readonly credential_disclosures?: readonly CredentialDisclosure[]
+}
+
+type PublicSessionSelector =
+  | {
+      readonly lock_id: string
+      readonly publication_target?: never
+    }
+  | {
+      readonly lock_id?: never
+      readonly publication_target: string
+    }
+
+export type PublicSessionStartTextRequest = PublicSessionSelector & {
   readonly task: string
+  readonly module_input?: never
+  readonly module_authority?: never
   readonly session_id?: string | null
 }
+
+export type PublicSessionStartModuleRequest = PublicSessionSelector & {
+  readonly task?: never
+  readonly module_input: ModuleInput
+  readonly module_authority?: AuthorityDeclaration
+  readonly session_id?: string | null
+}
+
+export type PublicSessionStartRequest =
+  | PublicSessionStartTextRequest
+  | PublicSessionStartModuleRequest
 
 export interface ResearchCompareBody {
   readonly definition: string
@@ -61,15 +124,32 @@ export interface ResearchCompareBody {
   readonly compare: readonly [string, string]
 }
 
-export interface PublicSessionInputRequest {
-  readonly content: string
-}
+export type PublicSessionInputRequest =
+  | {
+      readonly content: string
+      readonly module_input?: never
+    }
+  | {
+      readonly content?: never
+      readonly module_input: ModuleInput
+    }
 
 export type PublicSessionDecision = "allow" | "deny" | "once" | "always" | "reject"
 
 export interface PublicSessionApprovalRequest {
   readonly request_id: string
   readonly decision: PublicSessionDecision
+}
+
+export interface PublicSessionCheckpointRequest {
+  readonly reason: string
+  readonly request_id: string
+}
+
+export interface PublicSessionAdoptRequest {
+  readonly checkpoint_id: string
+  readonly lock_id: string
+  readonly request_id: string
 }
 
 export interface PublicSessionCancelRequest {
@@ -99,6 +179,90 @@ export type SessionAnnotationPayload = {
   readonly generation: string
 }
 
+export type ModuleOutputEnvelope = {
+  readonly schema_id: string
+  readonly body: string
+  readonly final: boolean
+}
+
+export type SessionModuleOutputPayload = {
+  readonly module_output: ModuleOutputEnvelope
+  readonly output_sequence: number
+  readonly module_id: string
+  readonly worker_session_id: string
+  readonly request_id: string
+  readonly generation_id: string
+  readonly instance_id: string
+  readonly work_id: string
+  readonly attempt_id: string
+  readonly authority_epoch: number
+}
+
+export type SessionAdoptionFrontier = {
+  readonly event_sequence: number
+  readonly generation_id: string
+  readonly typed_input_sequence: number
+  readonly output_sequence: number
+  readonly compaction_index: number
+}
+
+export type SessionAdoptionMigration = {
+  readonly binding: string
+  readonly disposition: "compatible" | "migrate"
+  readonly source_schema_id: string
+  readonly target_schema_id: string
+  readonly reason: string
+}
+
+export type SessionAdoptionCommittedPayload = {
+  readonly adoption_id: string
+  readonly checkpoint_id: string
+  readonly source_generation_id: string
+  readonly source_module_id: string
+  readonly source_instance_id: string
+  readonly source_work_id: string
+  readonly source_attempt_id: string
+  readonly source_schema_id: string
+  readonly source_body_sha256: string
+  readonly source_frontier: SessionAdoptionFrontier
+  readonly target_generation_id: string
+  readonly effective_lock_hash: string
+  readonly reason: string
+  readonly request_id?: string
+  readonly migration: ReadonlyArray<SessionAdoptionMigration>
+}
+
+export type SessionStartedPayload =
+  | {
+      readonly effective_lock_hash: string
+      readonly task_hash: string
+      readonly module_input?: never
+      readonly module_input_sequence?: never
+      readonly lineage?: SessionEventLineage
+    }
+  | {
+      readonly effective_lock_hash: string
+      readonly task_hash: string
+      readonly module_input: ModuleInput
+      readonly module_input_sequence: number
+      readonly lineage?: SessionEventLineage
+    }
+
+export type SessionInputAcceptedPayload =
+  | {
+      readonly content_hash: string
+      readonly module_input?: never
+      readonly module_input_sequence?: never
+      readonly attachments: ReadonlyArray<Readonly<Record<string, unknown>>>
+    }
+  | {
+      readonly content_hash?: never
+      readonly module_input: ModuleInput
+      readonly module_input_sequence: number
+      readonly attachments: ReadonlyArray<Readonly<Record<string, unknown>>>
+    }
+
+
 export type WorldFieldMask = {
   readonly schema_version: "bb.world_field_mask.v1"
   readonly paths: readonly ["/occurred_at", "/timestamp"]
@@ -124,10 +288,17 @@ type SessionEventRecord<
   readonly payload_schema_version: TSchema
 }
 
-type NonAnnotationEventKind = Exclude<PublicSessionEventKind, "annotation">
-type NonAnnotationPayloadSchema = Exclude<
+type GenericSessionEventKind = Exclude<
+  PublicSessionEventKind,
+  | "annotation"
+  | "module_output"
+  | "session.adoption_committed"
+  | "session.started"
+  | "input.accepted"
+>
+type GenericSessionPayloadSchema = Exclude<
   PublicSessionEventPayloadSchema,
-  "bb.payload.product_session.annotation.v1"
+  "bb.payload.product_session.annotation.v1" | "bb.payload.product_session.module_output.v1"
 >
 export type SessionEvent<
   TPayload extends Record<string, unknown> = Record<string, unknown>,
@@ -137,7 +308,27 @@ export type SessionEvent<
     SessionAnnotationPayload,
     "bb.payload.product_session.annotation.v1"
   >
-  | SessionEventRecord<NonAnnotationEventKind, TPayload, NonAnnotationPayloadSchema>
+  | SessionEventRecord<
+    "module_output",
+    SessionModuleOutputPayload,
+    "bb.payload.product_session.module_output.v1"
+  >
+  | SessionEventRecord<
+    "session.adoption_committed",
+    SessionAdoptionCommittedPayload,
+    "bb.payload.product_session.lifecycle.v1"
+  >
+  | SessionEventRecord<
+    "session.started",
+    SessionStartedPayload,
+    "bb.payload.product_session.lifecycle.v1"
+  >
+  | SessionEventRecord<
+    "input.accepted",
+    SessionInputAcceptedPayload,
+    "bb.payload.product_session.lifecycle.v1"
+  >
+  | SessionEventRecord<GenericSessionEventKind, TPayload, GenericSessionPayloadSchema>
 
 export interface AttachmentHandle {
   readonly filename: string

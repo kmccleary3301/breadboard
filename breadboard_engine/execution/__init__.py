@@ -8,3 +8,12 @@ from .enhanced_executor import EnhancedToolExecutor
 from .composite import CompositeToolCaller
 from .sequence_validator import SequenceValidator
 from breadboard_engine.dialects.enhanced_base_dialect import EnhancedBaseDialect, ToolCallFormat, TaskType  # re-export for legacy paths
+
+from .author_worker import (
+    AuthorWorker,
+    AuthorWorkerCleanupResult,
+    AuthorWorkerProfile,
+    AuthorWorkerResourceReceipt,
+    AuthorWorkerSpec,
+    open_author_worker,
+)

@@ -102,8 +102,8 @@ def test_checked_in_daily_driver_is_public_bounded_and_provider_free() -> None:
     assert prompt == DAILY_PROMPT.read_text(encoding="utf-8")
     assert roles_text == DAILY_MODEL_ROLES.read_text(encoding="utf-8")
     assert roles == json.loads(roles_text)
-    assert document["schema_version"] == "bb.harness_definition.v1"
-    assert document["version"] == 1
+    assert document["schema_version"] == "bb.harness_definition.v2"
+    assert document["version"] == 2
     assert len(text.splitlines()) <= 80
     assert "dossier" not in document
     assert document["providers"]["default_model"] == "mock/reference"

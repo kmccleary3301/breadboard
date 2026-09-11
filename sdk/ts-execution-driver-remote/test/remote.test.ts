@@ -3178,6 +3178,265 @@ test("SSH Slurm backend durably submits, polls, and cancels with external schedu
   assert.ok((commandTimeouts.at(-1) ?? Number.POSITIVE_INFINITY) <= 100)
 })
 
+test("SSH Slurm strict profile survives one requeue and validates durable accounting", async () => {
+  const request = buildRemoteSandboxRequest({
+    requestId: "req:slurm:strict-profile",
+    capability: slurmCapability,
+    command: ["python", "-c", "print('strict profile')"],
+    placementClass: "remote_worker",
+  })
+  const digest = `sha256:${createHash("sha256")
+    .update(canonicalScheduledRequestKey(request))
+    .digest("hex")}`
+  const jobName = slurmTestJobName(
+    "cluster.example",
+    "/tmp/evidence",
+    request.request_id,
+  )
+  let attemptIdentity = ""
+  let retainedAttemptIdentity: unknown = ""
+  let sacctMode: "cancelled" | "completed" = "cancelled"
+  let allocatedMemoryTres = ""
+  let allocationState = "PENDING"
+  let allocationReason = "JobHeldUser"
+  let failReleaseAck = false
+  let recoveredJobName = jobName
+  let metadataAvailable = true
+  let receiptHasAttempt = true
+  const output = Buffer.from("strict profile\n", "utf8")
+  const outputDigest = createHash("sha256").update(output).digest("hex")
+  const makeBackend = () => makeSshSlurmBackend({
+    sshTarget: "cluster.example",
+    remoteEvidenceDirectory: "/tmp/evidence",
+    resourceProfile: {
+      cpuCount: 1,
+      memoryBytes: 128 * 1024 * 1024,
+      timeSeconds: 120,
+      gpuCount: 0,
+    },
+    async runCommand(_program, args) {
+      const remoteCommand = args[1] ?? ""
+      if (remoteCommand.includes("setsid sh -c")) {
+        if (!attemptIdentity) {
+          attemptIdentity =
+            /\battempt=([0-9a-f]+);/.exec(remoteCommand)?.[1] ?? ""
+          retainedAttemptIdentity = attemptIdentity
+        }
+        assert.match(remoteCommand, /sbatch --parsable --hold --requeue/)
+        assert.match(remoteCommand, /--cpus-per-task=1/)
+        assert.match(remoteCommand, /--mem=128M/)
+        assert.match(remoteCommand, /--time=00:02:00/)
+        return { stdout: "", stderr: "" }
+      }
+      if (remoteCommand.includes("submission-") && remoteCommand.includes("then cat")) {
+        assert.match(attemptIdentity, /^[0-9a-f]{32}$/)
+        return {
+          stdout: `49001;cluster\n${receiptHasAttempt ? attemptIdentity : ""}\n${digest}\n`,
+          stderr: "",
+        }
+      }
+      if (remoteCommand.startsWith("cat ") && remoteCommand.includes(".request.b64")) {
+        if (!metadataAvailable) throw new Error("durable metadata unavailable")
+        return {
+          stdout: Buffer.from(JSON.stringify({
+            request,
+            requestDigest: digest,
+            resourceProfile: {
+              cpuCount: 1,
+              memoryBytes: 128 * 1024 * 1024,
+              timeSeconds: 120,
+              gpuCount: 0,
+            },
+            attemptIdentity: retainedAttemptIdentity,
+          }), "utf8").toString("base64"),
+          stderr: "",
+        }
+      }
+      if (remoteCommand.includes("scontrol show job -o")) {
+        return {
+          stdout: [
+            `JobState=${allocationState}`,
+            `Reason=${allocationReason}`,
+            "Requeue=1",
+            "Restarts=0",
+            "NumCPUs=2",
+            "ReqTRES=cpu=1,mem=128M,node=1,gres/gpu=0",
+            "AllocTRES=cpu=2,node=1,gres/gpu=0",
+            "MinMemoryNode=128M",
+            "TimeLimit=00:02:00",
+            "Gres=gpu:0",
+          ].join(" "),
+          stderr: "",
+        }
+      }
+      if (remoteCommand.includes("scontrol release")) {
+        allocationState = "RUNNING"
+        allocationReason = "None"
+        if (failReleaseAck) {
+          failReleaseAck = false
+          throw new Error("release acknowledgement lost")
+        }
+        return { stdout: "", stderr: "" }
+      }
+      if (remoteCommand.includes("squeue") && remoteCommand.includes("%i|%j|%T|%r")) {
+        return {
+          stdout: allocationState === "COMPLETED"
+            ? ""
+            : `49001|${recoveredJobName}|${allocationState}|${allocationReason}\n`,
+          stderr: "",
+        }
+      }
+      if (remoteCommand.includes("squeue"))
+        return { stdout: "", stderr: "" }
+      if (remoteCommand.includes("sacct")) {
+        const completed = sacctMode === "completed"
+        return {
+          stdout: [
+            jobName,
+            completed ? "COMPLETED" : "CANCELLED",
+            completed ? "0:0" : "0:15",
+            completed ? "node-strict" : "None assigned",
+            completed ? "2" : "0",
+            "128M",
+            "00:02:00",
+            completed ? "1" : "0",
+            "billing=1,cpu=1,mem=128M,node=1,gres/gpu=0",
+            completed
+              ? `billing=2,cpu=2,node=1,gres/gpu=0${allocatedMemoryTres}`
+              : "",
+          ].join("|"),
+          stderr: "",
+        }
+      }
+      if (remoteCommand.includes(".out") && remoteCommand.includes("sha256sum")) {
+        return {
+          stdout: `F:${output.length}:${outputDigest}\n`,
+          stderr: "",
+        }
+      }
+      if (remoteCommand.includes(".err") && remoteCommand.includes("sha256sum")) {
+        const emptyDigest = createHash("sha256").update("").digest("hex")
+        return { stdout: `F:0:${emptyDigest}\n`, stderr: "" }
+      }
+      if (remoteCommand.startsWith("dd if=")) {
+        return {
+          stdout: remoteCommand.includes(".out")
+            ? output.toString("base64")
+            : "",
+          stderr: "",
+        }
+      }
+      assert.fail(`unexpected Slurm command: ${remoteCommand}`)
+    },
+  })
+  const backend = makeBackend()
+
+  const handle = await backend.submit(request, {
+    signal: new AbortController().signal,
+    deadlineAtMs: Date.now() + 1_000,
+    terminationGraceMs: 100,
+  })
+  // A fresh client recovers a receipt left by a submitter that died before release.
+  allocationState = "PENDING"
+  allocationReason = "JobHeldUser"
+  failReleaseAck = true
+  const heldReplay = await makeBackend().submit(request, {
+    signal: new AbortController().signal,
+    deadlineAtMs: Date.now() + 1_000,
+    terminationGraceMs: 100,
+  })
+  assert.equal(heldReplay.executionId, handle.executionId)
+  assert.equal(allocationState, "RUNNING")
+
+  allocationState = "PENDING"
+  allocationReason = "JobHeldAdmin"
+  const adminHeldReplay = await makeBackend().submit(request, {
+    signal: new AbortController().signal,
+    deadlineAtMs: Date.now() + 1_000,
+    terminationGraceMs: 100,
+  })
+  assert.equal(adminHeldReplay.executionId, handle.executionId)
+  assert.equal(allocationState, "PENDING")
+
+  allocationState = "PENDING"
+  allocationReason = "JobHeldUser"
+  recoveredJobName = "foreign-job"
+  await assert.rejects(
+    () => makeBackend().submit(request, {
+      signal: new AbortController().signal,
+      deadlineAtMs: Date.now() + 1_000,
+      terminationGraceMs: 100,
+    }),
+    /no longer owns the scheduler job id/,
+  )
+  assert.equal(allocationState, "PENDING")
+  recoveredJobName = jobName
+  allocationState = "RUNNING"
+  allocationReason = "None"
+  const runningReplay = await backend.submit(request, {
+    signal: new AbortController().signal,
+    deadlineAtMs: Date.now() + 1_000,
+    terminationGraceMs: 100,
+  })
+  assert.equal(runningReplay.executionId, handle.executionId)
+  assert.equal(allocationState, "RUNNING")
+  assert.ok(runningReplay.evidenceRefs?.includes(
+    `slurm://job/${handle.executionId}/attempt/${attemptIdentity}/restart/0`,
+  ))
+  metadataAvailable = false
+  const recoveredReplay = await makeBackend().submit(request, {
+    signal: new AbortController().signal,
+    deadlineAtMs: Date.now() + 1_000,
+    terminationGraceMs: 100,
+  })
+  assert.equal(recoveredReplay.executionId, handle.executionId)
+  assert.ok(recoveredReplay.evidenceRefs?.includes(
+    `slurm://job/${handle.executionId}/attempt/${attemptIdentity}`,
+  ))
+  assert.equal(allocationState, "RUNNING")
+  receiptHasAttempt = false
+  await assert.rejects(
+    () => makeBackend().submit(request, {
+      signal: new AbortController().signal,
+      deadlineAtMs: Date.now() + 1_000,
+      terminationGraceMs: 100,
+    }),
+    /attempt identity/,
+  )
+  receiptHasAttempt = true
+  metadataAvailable = true
+  const pendingCancellation = await backend.observe(handle.executionId)
+  assert.equal(pendingCancellation.state, "cancelled")
+  sacctMode = "completed"
+  allocationState = "COMPLETED"
+  const observation = await backend.observe(handle.executionId)
+  assert.equal(observation.state, "completed")
+  assert.equal(observation.result?.usage?.exit_code, 0)
+  const completedReplay = await backend.submit(request, {
+    signal: new AbortController().signal,
+    deadlineAtMs: Date.now() + 1_000,
+    terminationGraceMs: 100,
+  })
+  assert.equal(completedReplay.executionId, handle.executionId)
+  assert.equal(allocationState, "COMPLETED")
+  assert.ok(
+    observation.evidenceRefs?.includes(
+      `slurm://job/${handle.executionId}/attempt/${attemptIdentity}/restart/1`,
+    ),
+  )
+  allocatedMemoryTres = ",mem=512M"
+  await assert.rejects(
+    () => backend.observe(handle.executionId),
+    /accounting does not match the admitted resource profile/,
+  )
+  allocatedMemoryTres = ""
+  retainedAttemptIdentity = {}
+  await assert.rejects(
+    () => backend.observe(handle.executionId),
+    /attempt identity is invalid/,
+  )
+})
+
 test("SSH Slurm backend rejects unsafe targets and relative evidence paths", () => {
   assert.throws(
     () => makeSshSlurmBackend({

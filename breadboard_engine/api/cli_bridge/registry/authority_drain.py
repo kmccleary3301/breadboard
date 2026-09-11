@@ -1,35 +1,19 @@
 from __future__ import annotations
 
-import asyncio
 from contextlib import asynccontextmanager
-import hashlib
 import json
-import math
-import os
 import secrets
-import time
-import tempfile
-from collections import deque
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Awaitable, Callable, Deque, Dict, Iterable, Optional, Tuple, TypeVar
+from typing import Any, Awaitable, Callable
 
-from ..engine_identity_config import EngineProcessIdentity, LaunchBootstrapVerifier
-from ..events import EventType, SessionEvent, replay_retention_facts
 from ..models import (
-    BeginControlDrainRequest, BootstrapChallengeRequest, BootstrapChallengeResponse,
-    ClientLeaseRequest, ClientRegisterRequest, ClientRegistrationResponse,
-    DrainControlRequest, DrainControlResponse, GracefulControlResultRequest,
+    BeginControlDrainRequest, DrainControlRequest, DrainControlResponse, GracefulControlResultRequest,
     HardSignalCommitRequest, HardSignalPreparationResponse, HardSignalPermitResponse,
-    HardSignalOutcomeRequest, HardSignalPrepareRequest, OwnerAcquireRequest,
-    OwnerLeaseRequest, OwnerLeaseResponse, SessionStatus, SessionSummary,
-    TurnAdmission,
+    HardSignalOutcomeRequest, HardSignalPrepareRequest, SessionStatus,
 )
 
 from .records import (
-    _DrainState, _GracefulControlReceipt, _OwnerLease, LifecycleAuthorityError,
-    SessionRecord, _T,
+    _DrainState, _GracefulControlReceipt, LifecycleAuthorityError,
+    SessionRecord, _T, _generation_admission_exact_identity,
 )
 
 
@@ -665,38 +649,107 @@ class DrainAuthorityMixin:
             if not self._session_admission_open:
                 raise LifecycleAuthorityError("admission_closed", "new session admission is closed")
 
-    @asynccontextmanager
-    async def publish_session(self, record: SessionRecord, runner: Any):
-        """Serialize admission, preparation, durable publication, and ledger visibility."""
+    async def reserve_session(self, record: SessionRecord) -> SessionRecord:
+        """Durably install a STARTING reservation before materialization."""
 
+        if not isinstance(record, SessionRecord):
+            raise TypeError("session reservation requires a SessionRecord")
+        if record.status is not SessionStatus.STARTING:
+            raise ValueError("session reservation must be STARTING")
         async with self._authority_lock:
             self._try_rollback_control_drain(require_orphaned_requester=True)
             if not self._session_admission_open:
-                raise LifecycleAuthorityError("admission_closed", "new session admission is closed")
-            async with self._lock:
-                collision = next(
-                    (
-                        session_id
-                        for session_id in self._records
-                        if session_id.casefold() == record.session_id.casefold()
-                    ),
-                    None,
+                raise LifecycleAuthorityError(
+                    "admission_closed", "new session admission is closed"
                 )
-                if collision is not None:
-                    raise ValueError(f"session already exists: {record.session_id}")
-                await runner.prepare_start(admission_serialized=True)
+            async with self._lock:
+                async with self._record_file_lock(record.session_id):
+                    tombstone = self._tombstone_path(record.session_id)
+                    if tombstone is not None and tombstone.exists():
+                        raise LifecycleAuthorityError(
+                            "session_deleted",
+                            f"session {record.session_id} was permanently deleted",
+                        )
+                    folded_id = record.session_id.casefold()
+                    collision = next(
+                        (
+                            session_id
+                            for session_id in self._records
+                            if session_id.casefold() == folded_id
+                        ),
+                        None,
+                    )
+                    state_path = self._state_path(record.session_id)
+                    if collision is not None or (
+                        state_path is not None and state_path.exists()
+                    ):
+                        raise ValueError(f"session already exists: {record.session_id}")
+                    if self._state_root is not None:
+                        for path in self._state_root.glob("*.json"):
+                            try:
+                                retained = self._deserialize_record(
+                                    json.loads(path.read_text(encoding="utf-8"))
+                                )
+                            except (
+                                OSError,
+                                ValueError,
+                                TypeError,
+                                KeyError,
+                                json.JSONDecodeError,
+                            ):
+                                continue
+                            if retained.session_id.casefold() == folded_id:
+                                raise ValueError(
+                                    f"session already exists: {retained.session_id}"
+                                )
+                    self._persist_record_locked(record)
+                    self._records[record.session_id] = record
+                    self._session_reservation_identities[
+                        record.session_id
+                    ] = _generation_admission_exact_identity(
+                        record.generation_admission
+                    )
+            self._admission_epoch += 1
+        return record
+
+    def _exact_session_reservation_locked(self, record: SessionRecord) -> bool:
+        return (
+            self._records.get(record.session_id) is record
+            and record.session_id in self._session_reservation_identities
+            and self._session_reservation_identities[record.session_id]
+            == _generation_admission_exact_identity(record.generation_admission)
+        )
+
+    async def _require_exact_session_reservation(self, record: SessionRecord) -> None:
+        async with self._lock:
+            if not self._exact_session_reservation_locked(record):
+                raise ValueError(
+                    f"session publication requires its exact reserved record: "
+                    f"{record.session_id}"
+                )
+
+    @asynccontextmanager
+    async def publish_session(self, record: SessionRecord, runner: Any):
+        """Prepare outside authority, then guard final bundle publication."""
+
+        await self._require_exact_session_reservation(record)
+        await runner.prepare_start(admission_serialized=False)
+        async with self._authority_lock:
+            async with self._lock:
+                if not self._exact_session_reservation_locked(record):
+                    raise ValueError(
+                        f"session publication requires its exact reserved record: "
+                        f"{record.session_id}"
+                    )
                 yield
-                self._records[record.session_id] = record
             self._admission_epoch += 1
 
     async def admit_session(self, record: SessionRecord, runner: Any) -> SessionRecord:
-        try:
-            async with self.publish_session(record, runner):
-                pass
-            await self.persist(record)
-        except BaseException:
-            await self.delete(record.session_id)
-            raise
+        """Compatibility path for explicit callers using the old API."""
+
+        await self.reserve_session(record)
+        await runner.prepare_start(admission_serialized=True)
+        await self.persist(record)
         return record
 
     async def admit_turn(
