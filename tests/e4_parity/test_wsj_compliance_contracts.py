@@ -11,7 +11,7 @@ from breadboard.product.evidence.e4.lane_acceptance_artifacts import build_lane_
 from breadboard.product.evidence.e4.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
 from scripts.replay_session_from_records import replay_session_from_records
 from scripts.e4_parity.validators.registries import schema_generation_default
-from scripts.e4_parity.path_refs import workspace_root_for_checkout
+from scripts.e4_parity.path_refs import resolve_declared_reference, workspace_root_for_checkout
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -48,9 +48,10 @@ def _ref_hash(ref_text: str) -> str | None:
 
 
 def _resolve_artifact_path(path_text: str) -> Path:
-    raw_path = path_text.split("#", 1)[0]
-    base = WORKSPACE if raw_path.startswith("docs_tmp/") else ROOT
-    return base / raw_path
+    return resolve_declared_reference(
+        path_text, checkout_root=ROOT, workspace_root=WORKSPACE,
+        namespace="workspace_evidence",
+    )
 
 
 def _catalog_entries(catalog: Mapping[str, Any], lane_id: str) -> list[dict[str, Any]]:
