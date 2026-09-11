@@ -2,8 +2,9 @@
 
 The lifecycle is deliberately the only owner of target publication state.  It
 stores complete Harness Locks rather than references to author files, and uses a
-small transaction around an atomic JSON snapshot.  External resource work is
-always performed after that transaction has released the lifecycle lock.
+small transaction around an atomic JSON snapshot. External preparation runs
+outside that transaction; disposal holds the lock from its final ownership
+check through its durable cleanup result.
 """
 
 from __future__ import annotations
