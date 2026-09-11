@@ -50,6 +50,15 @@ class DistinctSentinelPreparer(SentinelPreparer):
         return str(sentinel)
 
 
+class SharedSentinelPreparer(SentinelPreparer):
+    def prepare(self, preparation, record_resource):
+        sentinel = self.root / "shared.sentinel"
+        sentinel.write_text(preparation.source_ref, encoding="utf-8")
+        self.created.append(preparation.generation_id)
+        record_resource(str(sentinel))
+        return str(sentinel)
+
+
 class CrashAfterResource(BaseException):
     pass
 
@@ -190,6 +199,33 @@ def test_republication_reuses_current_resource_for_same_generation(tmp_path) -> 
         )
     assert stale.value.code == "cas_conflict"
     assert preparer.resources[first.preparation_id].exists() is True
+
+
+def test_cas_loser_does_not_dispose_current_shared_resource(tmp_path) -> None:
+    preparer = SharedSentinelPreparer(tmp_path / "resources")
+    preparer.root.mkdir()
+    lifecycle = GenerationLifecycle(tmp_path, preparer)
+    current = lifecycle.prepare_and_publish(
+        "main",
+        _lock("current"),
+        "current.yaml",
+        0,
+        "publish-current",
+    )
+
+    with pytest.raises(GenerationLifecycleError) as stale:
+        lifecycle.prepare_and_publish(
+            "main",
+            _lock("loser"),
+            "loser.yaml",
+            0,
+            "publish-loser",
+        )
+
+    assert stale.value.code == "cas_conflict"
+    assert lifecycle.current("main") == current
+    assert (preparer.root / "shared.sentinel").exists() is True
+
 
 
 def test_adoption_reservation_keeps_old_session_admission_live(tmp_path):

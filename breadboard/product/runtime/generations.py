@@ -571,9 +571,28 @@ class GenerationLifecycle:
                 )
                 request.update({"status": "failed", "error": failure.as_dict()})
                 resource_ref = preparation_record.get("resource_ref")
+                protected_preparation_ids = {
+                    value.get("preparation_id")
+                    for value in state["targets"].values()
+                    if isinstance(value, Mapping)
+                }
+                protected_preparation_ids.update(
+                    value.get("preparation_id")
+                    for value in state["admissions"].values()
+                    if isinstance(value, Mapping)
+                    and value.get("status") in ("reserved", "materialized")
+                )
+                protected_resources = {
+                    value.get("resource_ref")
+                    for preparation_key, value in state["preparations"].items()
+                    if preparation_key in protected_preparation_ids
+                    and isinstance(value, Mapping)
+                    and isinstance(value.get("resource_ref"), str)
+                }
                 if (
                     request.get("owns_preparation", True)
                     and isinstance(resource_ref, str)
+                    and resource_ref not in protected_resources
                 ):
                     loser_resource = (preparation_id, resource_ref)
             else:
@@ -1228,15 +1247,44 @@ class GenerationLifecycle:
         candidates: list[tuple[str, str]] = []
         with self._locked() as state:
             pointer = state["targets"].get(target)
-            current_generation = (
-                pointer.get("generation_id") if isinstance(pointer, Mapping) else None
+            current_preparation = (
+                state["preparations"].get(pointer.get("preparation_id"))
+                if isinstance(pointer, Mapping)
+                else None
             )
-            pinned = {
-                record.get("generation_id")
+            current_generation = (
+                pointer.get("generation_id")
+                if isinstance(pointer, Mapping)
+                and isinstance(current_preparation, Mapping)
+                and current_preparation.get("status") == "ready"
+                and current_preparation.get("cleanup") in ("owned", "not_required")
+                else None
+            )
+            pinned_admissions = [
+                record
                 for record in state["admissions"].values()
                 if isinstance(record, Mapping)
                 and record.get("target") == target
                 and record.get("status") in ("reserved", "materialized")
+            ]
+            pinned = {record.get("generation_id") for record in pinned_admissions}
+            protected_preparation_ids = {
+                value.get("preparation_id")
+                for value in state["targets"].values()
+                if isinstance(value, Mapping)
+            }
+            protected_preparation_ids.update(
+                value.get("preparation_id")
+                for value in state["admissions"].values()
+                if isinstance(value, Mapping)
+                and value.get("status") in ("reserved", "materialized")
+            )
+            protected_resources = {
+                value.get("resource_ref")
+                for preparation_key, value in state["preparations"].items()
+                if preparation_key in protected_preparation_ids
+                and isinstance(value, Mapping)
+                and isinstance(value.get("resource_ref"), str)
             }
             for preparation_id, record in state["preparations"].items():
                 if not isinstance(record, dict) or record.get("target") != target:
@@ -1254,7 +1302,8 @@ class GenerationLifecycle:
                 ):
                     continue
                 if (
-                    record.get("generation_id") == current_generation
+                    resource_ref in protected_resources
+                    or record.get("generation_id") == current_generation
                     or record.get("generation_id") in pinned
                 ):
                     continue
