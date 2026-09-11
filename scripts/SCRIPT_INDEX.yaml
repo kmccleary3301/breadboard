@@ -1352,7 +1352,7 @@ entries:
   - path: scripts/e4_parity/validate_e4_report_hash_freshness.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/build_e4_final_readiness_packet.py, scripts/e4_parity/regenerate_evidence.py, tests/e4_parity/test_e4_report_hash_freshness.py, tests/e4_parity/test_regenerate_evidence.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/build_e4_final_readiness_packet.py, scripts/e4_parity/regenerate_evidence.py, tests/e4_parity/test_e4_report_hash_freshness.py, tests/e4_parity/test_f5_am19_resolution.py, tests/e4_parity/test_regenerate_evidence.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/validate_frozen_e4_evidence.py
     class: live-wired

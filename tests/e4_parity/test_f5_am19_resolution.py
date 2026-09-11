@@ -404,6 +404,50 @@ def test_archived_reference_preserves_bytes_and_rejects_tampering(archived_confi
         )
 
 
+def test_report_freshness_validates_archived_bytes_against_original_pin(archived_config):
+    from scripts.e4_parity.validate_e4_report_hash_freshness import collect_scorecard_artifact_freshness_errors
+
+    checkout, logical, archived = archived_config
+    scorecard = checkout / "scorecard.json"
+    payload = {
+        "artifacts": [{
+            "path": logical,
+            "sha256": "sha256:" + hashlib.sha256(archived.read_bytes()).hexdigest(),
+        }]
+    }
+    scorecard.write_text(json.dumps(payload), encoding="utf-8")
+    _, report = collect_scorecard_artifact_freshness_errors(
+        scorecard_path=scorecard, workspace_root=checkout.parent,
+        implementation_checkout=checkout,
+    )
+    assert report["ok"] is True, report["errors"]
+
+    payload["artifacts"][0]["sha256"] = "sha256:" + "0" * 64
+    scorecard.write_text(json.dumps(payload), encoding="utf-8")
+    _, report = collect_scorecard_artifact_freshness_errors(
+        scorecard_path=scorecard, workspace_root=checkout.parent,
+        implementation_checkout=checkout,
+    )
+    assert report["ok"] is False
+
+
+@pytest.mark.parametrize("symlinked_checkout", [False, True])
+def test_report_freshness_rejects_checkout_symlink_escape(archived_config, symlinked_checkout):
+    from scripts.e4_parity.validate_e4_report_hash_freshness import resolve_artifact_ref
+
+    checkout, logical, archived = archived_config
+    outside = checkout.parent / "outside.yaml"
+    outside.write_bytes(archived.read_bytes())
+    (checkout / logical).symlink_to(outside)
+
+    if symlinked_checkout:
+        alias = checkout.parent / "checkout_alias"
+        alias.symlink_to(checkout, target_is_directory=True)
+        checkout = alias
+    with pytest.raises(ReferenceResolutionError):
+        resolve_artifact_ref(checkout.parent, checkout, logical)
+
+
 @pytest.mark.parametrize("escape", ["traversal", "symlink"])
 def test_archived_reference_rejects_archive_escape(archived_config, escape):
     checkout, logical, archived = archived_config
