@@ -226,6 +226,42 @@ class ModuleRuntime:
     def _persist(self) -> None:
         self.persist_session()
 
+    def _reconcile_retained_worker(self, binding: str) -> None:
+        with self._mutation_lock:
+            execution = self.record.module_execution
+            if execution is None or execution.generation_id != self.generation_id:
+                raise ModuleExecutionError(
+                    "stale_owner",
+                    "module execution record changed",
+                )
+            retained = tuple(
+                worker for worker in execution.workers if worker.binding == binding
+            )
+            if not retained:
+                return
+            if any(
+                worker.cleanup is None
+                or worker.cleanup.status != "confirmed_absent"
+                or worker.resource_id is None
+                or worker.cleanup.resource_id != worker.resource_id
+                or worker.cleanup.owner_ref != worker.owner_ref
+                for worker in retained
+            ):
+                raise ModuleExecutionError(
+                    "recovery_required",
+                    "retained module ownership must be reconciled before another receiver starts",
+                )
+            self.record.module_execution = replace(
+                execution,
+                workers=tuple(
+                    worker
+                    for worker in execution.workers
+                    if worker.binding != binding
+                ),
+            )
+            self._persist()
+
+
     def _replace_worker(self, worker: _ModuleWorker, **changes: Any) -> None:
         with self._mutation_lock:
             execution = self.record.module_execution
@@ -487,10 +523,7 @@ class _ModuleWorker:
         self.limits = _Limits.from_package(self.package)
         if self.package.manifest.execution_tier != "enforced_isolated" or self.package.manifest.runtime.kind != "oci":
             raise ModuleExecutionError("native_approval_required", "this admission has no exact native closure approval")
-        execution = owner.record.module_execution
-        retained = next((item for item in execution.workers if item.binding == binding), None)
-        if retained is not None:
-            raise ModuleExecutionError("recovery_required", "retained module ownership must be reconciled before another receiver starts")
+        owner._reconcile_retained_worker(binding)
         worker_id = str(uuid4())
         self.ownership = ModuleWorkerOwnership(
             binding=binding, instance_id=str(uuid4()), worker_session_id=worker_id,

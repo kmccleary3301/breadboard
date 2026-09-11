@@ -1190,26 +1190,55 @@ class GenerationLifecycle:
             record["status"] = "released"
             result = self._admission(record)
             target = record.get("target")
-            generation_id = record.get("generation_id")
         if isinstance(target, str):
-            self._retire_target_resources(target, generation_id)
+            self._retire_target_resources(target)
         return result
 
-    def _retire_target_resources(
-        self, target: str, generation_id: str | None = None
-    ) -> None:
+    def _retire_target_resources(self, target: str) -> None:
         candidates: list[tuple[str, str]] = []
         with self._locked() as state:
             pointer = state["targets"].get(target)
-            current_generation = (
-                pointer.get("generation_id") if isinstance(pointer, Mapping) else None
-            )
-            pinned = {
-                record.get("generation_id")
+            protected_preparations: set[str] = set()
+            if isinstance(pointer, Mapping):
+                protected_preparations.add(str(pointer["preparation_id"]))
+            pinned_generations = {
+                str(record["generation_id"])
                 for record in state["admissions"].values()
                 if isinstance(record, Mapping)
                 and record.get("target") == target
                 and record.get("status") in ("reserved", "materialized")
+            }
+            for pinned_generation in sorted(pinned_generations):
+                if any(
+                    preparation_id in protected_preparations
+                    and isinstance(record, Mapping)
+                    and record.get("generation_id") == pinned_generation
+                    for preparation_id, record in state["preparations"].items()
+                ):
+                    continue
+                retained = next(
+                    (
+                        preparation_id
+                        for preparation_id, record in sorted(
+                            state["preparations"].items()
+                        )
+                        if isinstance(record, Mapping)
+                        and record.get("target") == target
+                        and record.get("generation_id") == pinned_generation
+                        and record.get("status") == "ready"
+                        and isinstance(record.get("resource_ref"), str)
+                        and record.get("cleanup") == "owned"
+                    ),
+                    None,
+                )
+                if retained is not None:
+                    protected_preparations.add(retained)
+            protected_resources = {
+                str(record["resource_ref"])
+                for preparation_id, record in state["preparations"].items()
+                if preparation_id in protected_preparations
+                and isinstance(record, Mapping)
+                and isinstance(record.get("resource_ref"), str)
             }
             for preparation_id, record in state["preparations"].items():
                 if not isinstance(record, dict) or record.get("target") != target:
@@ -1227,8 +1256,8 @@ class GenerationLifecycle:
                 ):
                     continue
                 if (
-                    record.get("generation_id") == current_generation
-                    or record.get("generation_id") in pinned
+                    preparation_id in protected_preparations
+                    or resource_ref in protected_resources
                 ):
                     continue
                 candidates.append((preparation_id, resource_ref))

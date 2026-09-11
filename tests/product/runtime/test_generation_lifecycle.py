@@ -36,6 +36,20 @@ class SentinelPreparer:
         return "confirmed_absent"
 
 
+class DistinctSentinelPreparer(SentinelPreparer):
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.resources: dict[str, Path] = {}
+
+    def prepare(self, preparation, record_resource):
+        sentinel = self.root / f"{preparation.preparation_id}.sentinel"
+        sentinel.write_text(preparation.source_ref, encoding="utf-8")
+        self.created.append(preparation.generation_id)
+        self.resources[preparation.preparation_id] = sentinel
+        record_resource(str(sentinel))
+        return str(sentinel)
+
+
 class CrashAfterResource(BaseException):
     pass
 
@@ -139,6 +153,37 @@ def test_publication_admission_fence_retains_old_generation_and_rejects_stale_ow
             admission_a.grant_epoch,
         )
     assert stale.value.code == "stale_dispatch"
+
+
+def test_republication_retires_stale_resource_for_same_generation(tmp_path) -> None:
+    preparer = DistinctSentinelPreparer(tmp_path / "resources")
+    preparer.root.mkdir()
+    lifecycle = GenerationLifecycle(tmp_path, preparer)
+    lock = _lock("same-generation")
+
+    first = lifecycle.prepare_and_publish(
+        "main",
+        lock,
+        "same.yaml",
+        0,
+        "publish-first",
+    )
+    lifecycle.reserve_target_admission("main", "session-1", "input-1")
+    second = lifecycle.prepare_and_publish(
+        "main",
+        lock,
+        "same.yaml",
+        first.revision,
+        "publish-second",
+    )
+
+    assert second.preparation_id != first.preparation_id
+    assert preparer.resources[first.preparation_id].exists() is False
+    assert preparer.resources[second.preparation_id].exists() is True
+    projection = lifecycle.inspect_generation(lock.generation_id)
+    assert sorted(
+        row["cleanup"] for row in projection["preparations"]
+    ) == ["confirmed_absent", "owned"]
 
 
 def test_adoption_reservation_keeps_old_session_admission_live(tmp_path):

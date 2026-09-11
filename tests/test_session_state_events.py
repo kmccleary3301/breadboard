@@ -6,6 +6,7 @@ import copy
 import json
 import queue
 import threading
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
@@ -39,6 +40,10 @@ from breadboard_engine.api.cli_bridge.registry import (
     submission_body_digest,
 )
 from breadboard_engine.api.cli_bridge.registry.records import ModuleWorkerOwnership
+from breadboard_engine.api.cli_bridge.author_runtime import (
+    ModuleExecutionError,
+    ModuleRuntime,
+)
 from breadboard_engine.api.cli_bridge.service import SessionService
 from breadboard_engine.api.cli_bridge.runtime_event_projector import (
     BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES,
@@ -2730,6 +2735,71 @@ def test_module_input_kind_uses_durable_execution_after_runner_reconstruction() 
         match="input must match the Session's admitted text or module kind",
     ):
         runner.prepare_input_content("text")
+
+
+def test_confirmed_absent_worker_is_reconciled_before_runtime_restart() -> None:
+    generation_id = "sha256:" + "a" * 64
+    owner_ref = "module:retained-module-restart:worker-1"
+    retained = ModuleWorkerOwnership(
+        binding="root",
+        instance_id="instance-1",
+        worker_session_id="worker-1",
+        owner_ref=owner_ref,
+        execution_id="execution-1",
+        execution_token="token-1",
+        staging_root="/tmp/retained-module-restart",
+        staging_owner_ref="module-staging:worker-1",
+        resource_id="resource-1",
+        cleanup=AuthorWorkerCleanupResult(
+            status="confirmed_absent",
+            resource_id="resource-1",
+            container_id="container-1",
+            owner_ref=owner_ref,
+            reason="server_shutdown",
+            evidence=("container_absent",),
+        ),
+    )
+    record = SessionRecord(
+        session_id="retained-module-restart",
+        status=SessionStatus.RUNNING,
+        module_execution=ModuleExecutionRecord(
+            generation_id=generation_id,
+            root_binding="root",
+            work_item_id="work-1",
+            attempt_id="attempt-1",
+            workers=(retained,),
+        ),
+    )
+    persisted: list[tuple[ModuleWorkerOwnership, ...]] = []
+    runtime = ModuleRuntime.__new__(ModuleRuntime)
+    runtime.record = record
+    runtime.generation_id = generation_id
+    runtime._mutation_lock = threading.RLock()
+    runtime.persist_session = lambda: persisted.append(
+        record.module_execution.workers
+    )
+
+    runtime._reconcile_retained_worker("root")
+
+    assert record.module_execution.workers == ()
+    assert persisted == [()]
+
+    record.module_execution = ModuleExecutionRecord(
+        generation_id=generation_id,
+        root_binding="root",
+        work_item_id="work-1",
+        attempt_id="attempt-1",
+        workers=(
+            replace(
+                retained,
+                cleanup=replace(retained.cleanup, owner_ref="wrong-owner"),
+            ),
+        ),
+    )
+    with pytest.raises(ModuleExecutionError) as mismatch:
+        runtime._reconcile_retained_worker("root")
+    assert mismatch.value.code == "recovery_required"
+    assert record.module_execution.workers
 
 
 @pytest.mark.asyncio
