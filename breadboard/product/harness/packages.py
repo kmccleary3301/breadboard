@@ -8,10 +8,10 @@ anything from a package.
 
 from __future__ import annotations
 
-import re
-
+import importlib.machinery
 import io
 import os
+import re
 import sys
 import tempfile
 import zipfile
@@ -57,6 +57,7 @@ _MAX_SAFE_INTEGER: Final = 9_007_199_254_740_991
 _OCI_CONFIG_ID: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
 _OCI_REGISTRY_REF: Final = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
 _PYTHON_IDENTIFIER: Final = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_PYTHON_LOADER_SUFFIXES: Final = tuple(importlib.machinery.all_suffixes())
 _WORKER_PROTOCOL: Final = "bb.worker.v2"
 _AUTHORITY_FIELDS: Final = frozenset(
     {
@@ -670,9 +671,9 @@ class ModuleManifest:
             raise ModulePackageValidationError(
                 "import member module names must be unique"
             )
-        if any(not item.path.endswith(".py") for item in imports):
+        if any(not item.path.endswith(_PYTHON_LOADER_SUFFIXES) for item in imports):
             raise ModulePackageValidationError(
-                "import members must use supported .py source paths"
+                "import members must use a supported Python loader suffix"
             )
         if not {item.path for item in imports} <= source_paths:
             raise ModulePackageValidationError(

@@ -94,25 +94,53 @@ class SessionAdoptionCommittedPayload(_SessionAdoptionCommittedOptional):
     migration: List[SessionAdoptionMigration]
 
 
-class _SessionStartedOptional(TypedDict, total=False):
-    module_input: ModuleInputRequest
-    module_input_sequence: int
+class _SessionStartedCommonOptional(TypedDict, total=False):
     lineage: SessionEventLineage
 
 
-class SessionStartedPayload(_SessionStartedOptional):
+class _SessionStartedTextOptional(_SessionStartedCommonOptional, total=False):
+    module_input: _Never
+    module_input_sequence: _Never
+
+
+class SessionStartedTextPayload(_SessionStartedTextOptional):
     effective_lock_hash: str
     task_hash: str
 
 
-class _SessionInputAcceptedOptional(TypedDict, total=False):
-    content_hash: str
+class SessionStartedModulePayload(_SessionStartedCommonOptional):
+    effective_lock_hash: str
+    task_hash: str
     module_input: ModuleInputRequest
     module_input_sequence: int
 
 
-class SessionInputAcceptedPayload(_SessionInputAcceptedOptional):
+SessionStartedPayload = SessionStartedTextPayload | SessionStartedModulePayload
+
+
+class _SessionInputAcceptedTextOptional(TypedDict, total=False):
+    module_input: _Never
+    module_input_sequence: _Never
+
+
+class SessionInputAcceptedTextPayload(_SessionInputAcceptedTextOptional):
+    content_hash: str
     attachments: List[Dict[str, Any]]
+
+
+class _SessionInputAcceptedModuleOptional(TypedDict, total=False):
+    content_hash: _Never
+
+
+class SessionInputAcceptedModulePayload(_SessionInputAcceptedModuleOptional):
+    module_input: ModuleInputRequest
+    module_input_sequence: int
+    attachments: List[Dict[str, Any]]
+
+
+SessionInputAcceptedPayload = (
+    SessionInputAcceptedTextPayload | SessionInputAcceptedModulePayload
+)
 
 
 class _SessionLifecyclePayload(TypedDict, total=False):

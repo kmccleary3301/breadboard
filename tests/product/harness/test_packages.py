@@ -338,7 +338,7 @@ def test_package_refuses_import_members_without_python_loader(
 
     with pytest.raises(
         ModulePackageValidationError,
-        match=r"supported \.py source paths",
+        match="supported Python loader suffix",
     ):
         build_module_package(
             source,
