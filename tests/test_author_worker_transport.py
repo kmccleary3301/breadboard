@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from breadboard_engine.compilation.contracts import BundleLimits
 from breadboard.modules.author import InputEnvelope
 from breadboard.modules.transport import (
     FrameLimitError,
@@ -37,6 +38,7 @@ import breadboard_engine.execution.author_worker as author_worker
 from breadboard_engine.execution.author_worker import (
     AuthorWorker,
     AuthorWorkerCleanupResult,
+    AuthorWorkerProfile,
     AuthorWorkerResourceReceipt,
     AuthorWorkerSpec,
     _ManagementNotices,
@@ -127,9 +129,7 @@ def test_close_uses_authenticated_fallback_when_helper_receipt_is_missing() -> N
             evidence=("fallback_authenticated_owned_container_removed",),
         )
 
-    result = AuthorWorker(process, receipt, notices, fallback).close(
-        "server_shutdown"
-    )
+    result = AuthorWorker(process, receipt, notices, fallback).close("server_shutdown")
 
     assert result.status == "confirmed_absent"
     assert result.evidence == ("fallback_authenticated_owned_container_removed",)
@@ -812,9 +812,7 @@ module = Module()
     )
     with pytest.raises(FrameLimitError):
         input_message.encode(max_bytes=MAX_FRAME_BYTES)
-    input_frames = list(
-        iter_message_frames(input_message, max_bytes=MAX_FRAME_BYTES)
-    )
+    input_frames = list(iter_message_frames(input_message, max_bytes=MAX_FRAME_BYTES))
     assert len(input_frames) > 1
     assert all(len(frame) <= MAX_FRAME_BYTES for frame in input_frames)
 
@@ -885,8 +883,10 @@ def test_fragmented_message_rejects_corrupted_chunk_body() -> None:
 @pytest.mark.parametrize("status", ["ok", "failed"])
 def test_service_result_roundtrip_under_small_physical_frames(status) -> None:
     key = _worker_key(
-        "svc-0", session="fragment-session",
-        generation="sha256:" + "e" * 64, instance="fragment-instance",
+        "svc-0",
+        session="fragment-session",
+        generation="sha256:" + "e" * 64,
+        instance="fragment-instance",
     )
     result = (
         {
@@ -904,7 +904,8 @@ def test_service_result_roundtrip_under_small_physical_frames(status) -> None:
     assert all(len(frame) <= 4096 for frame in frames)
     reassembler = MessageReassembler(maximum=4096)
     results = [
-        result for frame in frames
+        result
+        for frame in frames
         if (result := reassembler.accept(WireMessage.decode(frame))) is not None
     ]
     assert results == [message]
@@ -973,6 +974,103 @@ def test_start_metadata_roundtrips_under_small_physical_frames() -> None:
     assert read_message(stream, max_bytes=4096) == message
 
 
+def test_start_metadata_can_use_the_package_manifest_member_ceiling() -> None:
+    key = _worker_key(
+        "start-large-metadata",
+        session="fragment-session",
+        generation="sha256:" + "a" * 64,
+        instance="fragment-instance",
+    )
+    message = WireMessage(
+        WireHeader(PROTOCOL_VERSION, "start", key, 0),
+        {
+            "resume": {
+                "source_generation_id": key.generation_id,
+                "source_module_id": "large.module",
+                "source_instance_id": key.instance_id,
+                "source_work_id": key.work_id,
+                "source_attempt_id": key.attempt_id,
+                "schema_id": "state.v1",
+                "body": encode_bytes(
+                    b"r" * MAX_CHECKPOINT_BYTES,
+                    maximum=MAX_CHECKPOINT_BYTES,
+                ),
+            },
+            "input_schemas": ["x" * (7 * MAX_CHECKPOINT_BYTES)],
+        },
+    )
+
+    frames = list(iter_message_frames(message, max_bytes=MAX_FRAME_BYTES))
+    reassembler = MessageReassembler(maximum=MAX_FRAME_BYTES)
+    results = [
+        result
+        for frame in frames
+        if (result := reassembler.accept(WireMessage.decode(frame))) is not None
+    ]
+
+    assert len(frames) > 1
+    assert results == [message]
+
+
+def test_start_fragmentation_rejects_oversized_resume_checkpoint() -> None:
+    key = _worker_key(
+        "oversized-resume",
+        session="fragment-session",
+        generation="sha256:" + "c" * 64,
+        instance="fragment-instance",
+    )
+    message = WireMessage(
+        WireHeader(PROTOCOL_VERSION, "start", key, 0),
+        {
+            "resume": {
+                "source_generation_id": key.generation_id,
+                "source_module_id": "large.module",
+                "source_instance_id": key.instance_id,
+                "source_work_id": key.work_id,
+                "source_attempt_id": key.attempt_id,
+                "schema_id": "state.v1",
+                "body": base64.b64encode(
+                    b"r" * (MAX_CHECKPOINT_BYTES + 1)
+                ).decode("ascii"),
+            },
+            "input_schemas": ["x" * MAX_FRAME_BYTES],
+        },
+    )
+
+    with pytest.raises(FrameLimitError):
+        tuple(iter_message_frames(message, max_bytes=MAX_FRAME_BYTES))
+
+
+def test_checkpoint_fragmentation_keeps_its_logical_ceiling() -> None:
+    key = _worker_key(
+        "checkpoint-bound",
+        session="fragment-session",
+        generation="sha256:" + "b" * 64,
+        instance="fragment-instance",
+    )
+
+    with pytest.raises(ValueError, match="logical payload bound"):
+        tuple(
+            iter_chunked_messages(
+                WireHeader(PROTOCOL_VERSION, "checkpoint_chunk", key, 0),
+                "checkpoint_chunk",
+                {},
+                b"x" * (MAX_CHECKPOINT_BYTES + 1),
+                maximum=MAX_CHECKPOINT_BYTES + 1,
+            )
+        )
+
+
+def test_default_worker_profile_fits_maximum_extracted_package() -> None:
+    profile = AuthorWorkerProfile()
+    limits = BundleLimits()
+
+    assert profile.scratch_bytes >= (
+        limits.max_total_bytes + limits.max_members * 4096
+    )
+    assert profile.memory_bytes >= 2 * profile.scratch_bytes
+
+
 def test_near_budget_service_result_crosses_fragmented_stdio_frames(
     tmp_path: Path,
 ) -> None:
@@ -1030,8 +1128,8 @@ module = Module()
         generation=generation,
         instance="service-instance",
     )
-    raw_service_payload = (
-        b"service-payload|" + b"y" * (60 * 1024 - len(b"service-payload|"))
+    raw_service_payload = b"service-payload|" + b"y" * (
+        60 * 1024 - len(b"service-payload|")
     )
     input_key = _worker_key(
         "step-0",
@@ -1143,8 +1241,10 @@ def test_fragmented_service_result_rejects_corrupted_chunk_body() -> None:
 @pytest.mark.parametrize("payload", [b"[]", b'{"duplicate":1,"duplicate":2}'])
 def test_fragmented_service_result_rejects_invalid_json_object(payload) -> None:
     key = _worker_key(
-        "svc-0", session="fragment-session",
-        generation="sha256:" + "2" * 64, instance="fragment-instance",
+        "svc-0",
+        session="fragment-session",
+        generation="sha256:" + "2" * 64,
+        instance="fragment-instance",
     )
     chunks = iter_chunked_messages(
         WireHeader(PROTOCOL_VERSION, "message_chunk", key, 0),

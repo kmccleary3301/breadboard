@@ -19,6 +19,8 @@ from breadboard.modules.transport import WireMessage, iter_message_frames
 
 AUTHOR_FRAME_MAX_BYTES = 262_144
 _STDERR_LIMIT = 64 * 1024
+_DEFAULT_MEMORY_BYTES = 256 * 1024 * 1024
+_DEFAULT_SCRATCH_BYTES = 112 * 1024 * 1024
 _NOTICE_PREFIX = b"BREADBOARD_AUTHOR_"
 _MANAGEMENT_ENV = (
     "PATH", "HOME", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG",
@@ -29,9 +31,9 @@ _MANAGEMENT_ENV = (
 @dataclass(frozen=True, slots=True)
 class AuthorWorkerProfile:
     cpu_count: int = 1
-    memory_bytes: int = 64 * 1024 * 1024
+    memory_bytes: int = _DEFAULT_MEMORY_BYTES
     process_count: int = 1
-    scratch_bytes: int = 8 * 1024 * 1024
+    scratch_bytes: int = _DEFAULT_SCRATCH_BYTES
 
 
 @dataclass(frozen=True, slots=True)

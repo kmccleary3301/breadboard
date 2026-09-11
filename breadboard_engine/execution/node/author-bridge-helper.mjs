@@ -35778,25 +35778,20 @@ function isTimeoutAbortSignal(signal) {
   const reason = signal.reason;
   return typeof reason === "object" && reason !== null && "name" in reason && reason.name === "TimeoutError";
 }
-var DRIVER_ORDER = {
-  trusted_local: ["local-process", "oci", "remote", "ray", "slurm"],
-  oci: ["oci", "local-process", "remote", "ray", "slurm"],
-  remote: ["remote", "ray", "slurm", "oci", "local-process"],
-  ray: ["ray", "remote", "slurm", "oci", "local-process"],
-  slurm: ["slurm", "remote", "ray", "oci", "local-process"]
-};
-function orderDrivers(drivers, hint) {
-  const preferred = DRIVER_ORDER[hint ?? "trusted_local"];
-  const rank = new Map(preferred.map((driverId, index) => [driverId, index]));
-  return drivers.map((driver, index) => ({ driver, index })).sort((left, right) => {
-    const leftRank = rank.get(left.driver.driverId) ?? preferred.length + left.index;
-    const rightRank = rank.get(right.driver.driverId) ?? preferred.length + right.index;
-    return leftRank - rightRank || left.index - right.index;
-  }).map(({ driver }) => driver);
+function hintedDriverId(hint) {
+  return hint === "trusted_local" ? "local-process" : hint;
+}
+function driversForHint(drivers, hint) {
+  if (hint === void 0) return [...drivers];
+  const driverId = hintedDriverId(hint);
+  return drivers.filter((driver) => driver.driverId === driverId);
 }
 function selectWorldDriver(drivers, input) {
   if (input.driverId) {
     const directMatch = drivers.find((d) => d.driverId === input.driverId);
+    if (input.driverIdHint !== void 0 && input.driverId !== hintedDriverId(input.driverIdHint)) {
+      return null;
+    }
     if (!directMatch) {
       return null;
     }
@@ -35828,9 +35823,9 @@ function selectWorldDriver(drivers, input) {
     }
     return directMatch;
   }
-  const orderedDrivers = orderDrivers(drivers, input.driverIdHint);
+  const constrainedDrivers = driversForHint(drivers, input.driverIdHint);
   if (input.terminal) {
-    const eligibleDrivers = orderedDrivers.filter((d) => {
+    const eligibleDrivers = constrainedDrivers.filter((d) => {
       if (input.terminalOperation === "start") return typeof d.startTerminalSession === "function";
       if (input.terminalOperation === "interact") return typeof d.interactTerminalSession === "function";
       if (input.terminalOperation === "snapshot") return typeof d.snapshotTerminalRegistry === "function";
@@ -35846,12 +35841,12 @@ function selectWorldDriver(drivers, input) {
   return selectExecutionDriver({
     capability: input.capability,
     placement: input.placement,
-    drivers: orderedDrivers
+    drivers: constrainedDrivers
   });
 }
 function selectAuthorWorkerDriver(drivers, input) {
-  const ordered = orderDrivers(drivers, input.driverIdHint);
-  const candidates = input.driverId ? ordered.filter((driver) => driver.driverId === input.driverId) : ordered;
+  const constrainedDrivers = driversForHint(drivers, input.driverIdHint);
+  const candidates = input.driverId ? constrainedDrivers.filter((driver) => driver.driverId === input.driverId) : constrainedDrivers;
   for (const driver of candidates) {
     if (!driver.supportedPlacements.includes(input.placement.placement_class)) continue;
     if (!driver.supportsCapability(input.capability, input.placement.placement_class)) continue;
@@ -36579,20 +36574,25 @@ function createExecutionWorld(input) {
   }
   async function executeTerminalInteract(operation) {
     const selected = sessions.get(operation.input.terminalSessionId) ?? endedSessionOwners.get(operation.input.terminalSessionId);
-    if (selected && operation.driverId && selected.driverId !== operation.driverId) {
+    const selectedDriverId = selected?.driverId ?? null;
+    const hintedPinnedDriverId = operation.driverIdHint === void 0 ? null : hintedDriverId(operation.driverIdHint);
+    const pinsContradict = operation.driverId !== void 0 && operation.driverId !== null && hintedPinnedDriverId !== null && operation.driverId !== hintedPinnedDriverId;
+    const pinnedDriverId = operation.driverId ?? hintedPinnedDriverId;
+    if (pinsContradict || selectedDriverId !== null && pinnedDriverId && selectedDriverId !== pinnedDriverId) {
       return {
         kind: "terminal_interact",
-        driverId: selected.driverId,
+        driverId: selectedDriverId,
         result: null,
         unsupportedCase: buildTerminalUnsupportedCase(
           operation.capability,
           operation.placement,
-          `Terminal session '${operation.input.terminalSessionId}' is owned by '${selected.driverId}', not pinned driver '${operation.driverId}'.`,
+          pinsContradict ? `Pinned driver '${operation.driverId}' contradicts driver hint '${hintedPinnedDriverId}'.` : `Terminal session '${operation.input.terminalSessionId}' is owned by '${selectedDriverId}', not pinned driver '${pinnedDriverId}'.`,
           "unsupported_terminal_driver",
           {
             terminal_session_id: operation.input.terminalSessionId,
-            owner_driver_id: selected.driverId,
-            pinned_driver_id: operation.driverId
+            owner_driver_id: selectedDriverId,
+            pinned_driver_id: pinnedDriverId,
+            hinted_driver_id: hintedPinnedDriverId
           }
         )
       };
@@ -36955,10 +36955,11 @@ function createExecutionWorld(input) {
     const reportedCleanedSet = /* @__PURE__ */ new Set();
     const reportedFailedSet = /* @__PURE__ */ new Set();
     let primaryDriverId = operation.driverId ?? defaultDriver?.driverId ?? null;
+    const requestedDriverId = operation.driverId ?? (operation.driverIdHint === void 0 ? null : hintedDriverId(operation.driverIdHint));
     const driverToSessions = /* @__PURE__ */ new Map();
     for (const sessionId of requestedIds) {
       const knownOwner = sessions.get(sessionId) ?? endedSessionOwners.get(sessionId);
-      if (pinnedTerminalDriver && knownOwner && knownOwner.driverId !== pinnedTerminalDriver.driverId) {
+      if (knownOwner && requestedDriverId && knownOwner.driverId !== requestedDriverId) {
         pendingFailedSet.add(sessionId);
         continue;
       }
@@ -37887,6 +37888,8 @@ function parseDockerContainer(source) {
 var AUTHOR_FRAME_MAX_BYTES = 262144;
 var COMMAND_TIMEOUT_MS = 2e3;
 var COMMAND_OUTPUT_BYTES = 64 * 1024;
+var DEFAULT_MEMORY_BYTES = 256 * 1024 * 1024;
+var DEFAULT_SCRATCH_BYTES = 112 * 1024 * 1024;
 var OCI_CONFIG_ID = /^sha256:[0-9a-f]{64}$/;
 var OCI_REGISTRY_REF = /^[^\s@]+@sha256:[0-9a-f]{64}$/;
 function dockerManagementEnvironment() {
@@ -37937,10 +37940,10 @@ function assertLaunchProfile(input) {
   if (input.command.length === 0 || input.command.some((part) => !part || part.includes("\0"))) throw new Error("An explicit worker command is required");
   const profile = input.profile;
   const cpu = positiveInteger(profile?.cpuCount, 1, "cpuCount");
-  const memory = positiveInteger(profile?.memoryBytes, 64 * 1024 * 1024, "memoryBytes");
+  const memory = positiveInteger(profile?.memoryBytes, DEFAULT_MEMORY_BYTES, "memoryBytes");
   const processes = positiveInteger(profile?.processCount, 1, "processCount");
-  const scratch = positiveInteger(profile?.scratchBytes, 8 * 1024 * 1024, "scratchBytes");
-  if (cpu !== 1 || memory !== 64 * 1024 * 1024 || processes !== 1 || scratch !== 8 * 1024 * 1024) {
+  const scratch = positiveInteger(profile?.scratchBytes, DEFAULT_SCRATCH_BYTES, "scratchBytes");
+  if (cpu !== 1 || memory !== DEFAULT_MEMORY_BYTES || processes !== 1 || scratch !== DEFAULT_SCRATCH_BYTES) {
     if (!input.capacityAuthorization) throw new Error("A non-default worker profile requires owner capacity authorization");
   }
   if (input.packageMountTarget !== void 0 && input.packageMountTarget !== "/breadboard-captured") throw new Error("The captured package mount target is fixed");
@@ -37957,7 +37960,7 @@ async function validateStaging(input) {
   if ((directory.mode & 146) !== 0 || (directory.mode & 5) !== 5) throw new Error("Captured staging must be read-only and readable by the nonroot receiver");
 }
 function createArgs(input, name) {
-  const memory = input.profile?.memoryBytes ?? 64 * 1024 * 1024;
+  const memory = input.profile?.memoryBytes ?? DEFAULT_MEMORY_BYTES;
   return [
     "create",
     "--interactive",
@@ -37975,7 +37978,7 @@ function createArgs(input, name) {
     "65532:65532",
     "--read-only",
     "--tmpfs",
-    `/tmp:rw,noexec,nosuid,mode=1777,size=${input.profile?.scratchBytes ?? 8 * 1024 * 1024}`,
+    `/tmp:rw,noexec,nosuid,mode=1777,size=${input.profile?.scratchBytes ?? DEFAULT_SCRATCH_BYTES}`,
     "--network=none",
     "--cap-drop=ALL",
     "--security-opt=no-new-privileges:true",
@@ -38063,12 +38066,12 @@ function requireOwner(identity, input) {
 function requireContainment(container, input) {
   const host = container.HostConfig;
   if (host.Privileged || !host.ReadonlyRootfs || host.NetworkMode !== "none" || container.Config.User !== "65532:65532" || !host.CapDrop?.includes("ALL") || !host.SecurityOpt?.some((option) => option === "no-new-privileges" || option === "no-new-privileges:true")) throw new Error("Docker did not enforce the worker security profile");
-  const memory = input.profile?.memoryBytes ?? 64 * 1024 * 1024;
+  const memory = input.profile?.memoryBytes ?? DEFAULT_MEMORY_BYTES;
   if (host.Memory !== memory || host.MemorySwap !== memory || host.PidsLimit !== (input.profile?.processCount ?? 1) || host.NanoCpus !== (input.profile?.cpuCount ?? 1) * 1e9) throw new Error("Docker did not enforce worker resource limits");
   const mount = container.Mounts[0];
   if (container.Mounts.length !== 1 || !mount || mount.Type !== "bind" || mount.Source !== input.capturedStagingRoot || mount.Destination !== "/breadboard-captured" || mount.RW) throw new Error("Worker has undeclared mounts");
   const tmpfs = host.Tmpfs;
-  if (!tmpfs || Object.keys(tmpfs).length !== 1 || !tmpfs["/tmp"]?.split(",").includes(`size=${input.profile?.scratchBytes ?? 8 * 1024 * 1024}`)) throw new Error("Worker scratch differs from its admitted bound");
+  if (!tmpfs || Object.keys(tmpfs).length !== 1 || !tmpfs["/tmp"]?.split(",").includes(`size=${input.profile?.scratchBytes ?? DEFAULT_SCRATCH_BYTES}`)) throw new Error("Worker scratch differs from its admitted bound");
 }
 async function cleanup(runtime, reference, expectedId, input, resourceId, reason) {
   const result = (status, evidence) => ({ status, resourceId, containerId: expectedId ?? reference, ownerRef: input.ownerRef, reason, evidence });

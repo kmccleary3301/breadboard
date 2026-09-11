@@ -667,6 +667,16 @@ class ModuleManifest:
         source_paths = {item.path for item in sources}
         if len(source_paths) != len(sources):
             raise ModulePackageValidationError("source member paths must be unique")
+        source_directories = {
+            "/".join(components[:index])
+            for path in source_paths
+            for components in (path.split("/"),)
+            for index in range(1, len(components))
+        }
+        if len(source_directories) > BundleLimits().max_members:
+            raise ModulePackageValidationError(
+                "source member directory count exceeds worker extraction limit"
+            )
         if len({item.module for item in imports}) != len(imports):
             raise ModulePackageValidationError(
                 "import member module names must be unique"

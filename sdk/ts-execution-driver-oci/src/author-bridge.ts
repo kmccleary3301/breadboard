@@ -14,6 +14,8 @@ import { AuthorWorkerLaunchError } from "@breadboard/execution-drivers"
 export const AUTHOR_FRAME_MAX_BYTES = 262_144
 const COMMAND_TIMEOUT_MS = 2_000
 const COMMAND_OUTPUT_BYTES = 64 * 1024
+const DEFAULT_MEMORY_BYTES = 256 * 1024 * 1024
+const DEFAULT_SCRATCH_BYTES = 112 * 1024 * 1024
 const OCI_CONFIG_ID = /^sha256:[0-9a-f]{64}$/
 const OCI_REGISTRY_REF = /^[^\s@]+@sha256:[0-9a-f]{64}$/
 
@@ -102,10 +104,10 @@ function assertLaunchProfile(input: AuthorWorkerLaunchInputV1): void {
   if (input.command.length === 0 || input.command.some(part => !part || part.includes("\0"))) throw new Error("An explicit worker command is required")
   const profile = input.profile
   const cpu = positiveInteger(profile?.cpuCount, 1, "cpuCount")
-  const memory = positiveInteger(profile?.memoryBytes, 64 * 1024 * 1024, "memoryBytes")
+  const memory = positiveInteger(profile?.memoryBytes, DEFAULT_MEMORY_BYTES, "memoryBytes")
   const processes = positiveInteger(profile?.processCount, 1, "processCount")
-  const scratch = positiveInteger(profile?.scratchBytes, 8 * 1024 * 1024, "scratchBytes")
-  if (cpu !== 1 || memory !== 64 * 1024 * 1024 || processes !== 1 || scratch !== 8 * 1024 * 1024) {
+  const scratch = positiveInteger(profile?.scratchBytes, DEFAULT_SCRATCH_BYTES, "scratchBytes")
+  if (cpu !== 1 || memory !== DEFAULT_MEMORY_BYTES || processes !== 1 || scratch !== DEFAULT_SCRATCH_BYTES) {
     if (!input.capacityAuthorization) throw new Error("A non-default worker profile requires owner capacity authorization")
   }
   if (input.packageMountTarget !== undefined && input.packageMountTarget !== "/breadboard-captured") throw new Error("The captured package mount target is fixed")
@@ -124,14 +126,14 @@ async function validateStaging(input: AuthorWorkerLaunchInputV1): Promise<void> 
 }
 
 function createArgs(input: AuthorWorkerLaunchInputV1, name: string): string[] {
-  const memory = input.profile?.memoryBytes ?? 64 * 1024 * 1024
+  const memory = input.profile?.memoryBytes ?? DEFAULT_MEMORY_BYTES
   return [
     "create", "--interactive", "--name", name, "--platform", input.platform,
     "--label", `${OWNER_LABEL}=${input.ownerRef}`,
     "--label", `${EXECUTION_LABEL}=${input.executionId}`,
     "--label", `${TOKEN_LABEL}=${input.executionToken}`,
     "--user", "65532:65532", "--read-only",
-    "--tmpfs", `/tmp:rw,noexec,nosuid,mode=1777,size=${input.profile?.scratchBytes ?? 8 * 1024 * 1024}`,
+    "--tmpfs", `/tmp:rw,noexec,nosuid,mode=1777,size=${input.profile?.scratchBytes ?? DEFAULT_SCRATCH_BYTES}`,
     "--network=none", "--cap-drop=ALL", "--security-opt=no-new-privileges:true",
     "--cpus", String(input.profile?.cpuCount ?? 1),
     "--memory", String(memory), "--memory-swap", String(memory),
@@ -204,12 +206,12 @@ function requireOwner(identity: ContainerIdentity, input: AuthorWorkerLaunchInpu
 function requireContainment(container: DockerContainerInspect, input: AuthorWorkerLaunchInputV1): void {
   const host = container.HostConfig
   if (host.Privileged || !host.ReadonlyRootfs || host.NetworkMode !== "none" || container.Config.User !== "65532:65532" || !host.CapDrop?.includes("ALL") || !host.SecurityOpt?.some(option => option === "no-new-privileges" || option === "no-new-privileges:true")) throw new Error("Docker did not enforce the worker security profile")
-  const memory = input.profile?.memoryBytes ?? 64 * 1024 * 1024
+  const memory = input.profile?.memoryBytes ?? DEFAULT_MEMORY_BYTES
   if (host.Memory !== memory || host.MemorySwap !== memory || host.PidsLimit !== (input.profile?.processCount ?? 1) || host.NanoCpus !== (input.profile?.cpuCount ?? 1) * 1_000_000_000) throw new Error("Docker did not enforce worker resource limits")
   const mount = container.Mounts[0]
   if (container.Mounts.length !== 1 || !mount || mount.Type !== "bind" || mount.Source !== input.capturedStagingRoot || mount.Destination !== "/breadboard-captured" || mount.RW) throw new Error("Worker has undeclared mounts")
   const tmpfs = host.Tmpfs
-  if (!tmpfs || Object.keys(tmpfs).length !== 1 || !tmpfs["/tmp"]?.split(",").includes(`size=${input.profile?.scratchBytes ?? 8 * 1024 * 1024}`)) throw new Error("Worker scratch differs from its admitted bound")
+  if (!tmpfs || Object.keys(tmpfs).length !== 1 || !tmpfs["/tmp"]?.split(",").includes(`size=${input.profile?.scratchBytes ?? DEFAULT_SCRATCH_BYTES}`)) throw new Error("Worker scratch differs from its admitted bound")
 }
 
 async function cleanup(runtime: string, reference: string, expectedId: string | null, input: AuthorWorkerLaunchInputV1, resourceId: string, reason: string): Promise<AuthorWorkerCleanupResultV1> {

@@ -18,6 +18,7 @@ from typing import Final, Literal, TypeAlias
 
 MAX_FRAME_BYTES: Final = 262_144
 MAX_CHECKPOINT_BYTES: Final = 1_048_576
+_MAX_START_BYTES: Final = 10 * 1024 * 1024
 # Absolute ceilings; each transfer derives its lower physical capacity from its
 # encoded envelope and configured frame budget.
 MAX_CHECKPOINT_CHUNK_BYTES: Final = MAX_FRAME_BYTES
@@ -402,10 +403,15 @@ def iter_chunked_messages(
     """Split one bounded binary value into canonical physical messages."""
     if type(max_bytes) is not int or max_bytes <= 0 or max_bytes > MAX_FRAME_BYTES:
         raise ValueError("max_bytes must be within the protocol frame bound")
+    maximum_bound = (
+        _MAX_START_BYTES
+        if kind == "message_chunk" and metadata.get("message_kind") == "start"
+        else MAX_CHECKPOINT_BYTES
+    )
     if (
         type(maximum) is not int
         or maximum <= 0
-        or maximum > MAX_CHECKPOINT_BYTES
+        or maximum > maximum_bound
     ):
         raise ValueError("maximum must be within the logical payload bound")
     advance_sequence = kind == "checkpoint"
@@ -510,9 +516,13 @@ class MessageReassembler:
         # Serialized service envelopes include JSON/base64 overhead. Use the
         # chunk protocol's absolute logical ceiling, not a physical frame size.
         maximum = (
-            MAX_CHECKPOINT_BYTES
-            if message_kind in _FRAGMENTABLE_JSON_KINDS
-            else self.maximum
+            _MAX_START_BYTES
+            if message_kind == "start"
+            else (
+                MAX_CHECKPOINT_BYTES
+                if message_kind in _FRAGMENTABLE_JSON_KINDS
+                else self.maximum
+            )
         )
         index = _integer(body["chunk_index"], "message chunk index")
         count = _integer(body["chunk_count"], "message chunk count", minimum=1)
@@ -593,9 +603,7 @@ def iter_message_frames(
     try:
         frame = message.encode(max_bytes=max_bytes)
     except FrameLimitError:
-        if message.header.kind == "start":
-            phase, field, context_name = "resume", "resume", "start"
-        elif message.header.kind == "checkpoint_prepare":
+        if message.header.kind == "checkpoint_prepare":
             phase, field, context_name = "source", "source", "prepare"
         else:
             phase = field = context_name = ""
@@ -646,6 +654,14 @@ def iter_message_frames(
                 maximum=MAX_FRAME_BYTES,
             )
         elif message.header.kind in _FRAGMENTABLE_JSON_KINDS:
+            if message.header.kind == "start":
+                resume = message.body.get("resume")
+                if isinstance(resume, Mapping):
+                    _exact(resume, _CHECKPOINT_FIELDS, "resume checkpoint")
+                    decode_bytes(
+                        resume["body"],
+                        maximum=MAX_CHECKPOINT_BYTES,
+                    )
             payload = _canonical_json(message.body)
             chunks = iter_chunked_messages(
                 WireHeader(
@@ -658,7 +674,11 @@ def iter_message_frames(
                 {"message_kind": message.header.kind, "context": {}},
                 payload,
                 max_bytes=max_bytes,
-                maximum=MAX_CHECKPOINT_BYTES,
+                maximum=(
+                    _MAX_START_BYTES
+                    if message.header.kind == "start"
+                    else MAX_CHECKPOINT_BYTES
+                ),
             )
         else:
             raise

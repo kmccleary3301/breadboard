@@ -417,6 +417,34 @@ def test_package_refuses_runtime_inoperable_authority_and_budget(
         assert not (tmp_path / label / "bad.bbpkg").exists()
 
 
+def test_package_rejects_implicit_directory_expansion_beyond_worker_scratch(
+    tmp_path: Path,
+) -> None:
+    source = _write_source(tmp_path / "source", code=b"VALUE = 'ranker'\n")
+    manifest = json.loads((source / "module.json").read_text(encoding="utf-8"))
+    digest = bytes_sha256(b"x")
+    for branch in range(66):
+        components = [f"branch-{branch}", *(f"depth-{index}" for index in range(62))]
+        manifest["source_members"].append(
+            {
+                "path": "/".join((*components, "member.py")),
+                "sha256": digest,
+                "size_bytes": 1,
+            }
+        )
+    (source / "module.json").write_bytes(canonical_json_bytes(manifest))
+
+    with pytest.raises(
+        ModulePackageValidationError,
+        match="directory count exceeds worker extraction limit",
+    ):
+        build_module_package(
+            source,
+            tmp_path / "bad.bbpkg",
+            cas=FilesystemCAS(tmp_path / "cas"),
+        )
+
+
 def test_package_rejects_frame_budget_below_protocol_overhead(
     tmp_path: Path,
 ) -> None:
