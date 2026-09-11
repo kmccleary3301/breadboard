@@ -94,6 +94,27 @@ class SessionAdoptionCommittedPayload(_SessionAdoptionCommittedOptional):
     migration: List[SessionAdoptionMigration]
 
 
+class _SessionStartedOptional(TypedDict, total=False):
+    module_input: ModuleInputRequest
+    module_input_sequence: int
+    lineage: SessionEventLineage
+
+
+class SessionStartedPayload(_SessionStartedOptional):
+    effective_lock_hash: str
+    task_hash: str
+
+
+class _SessionInputAcceptedOptional(TypedDict, total=False):
+    content_hash: str
+    module_input: ModuleInputRequest
+    module_input_sequence: int
+
+
+class SessionInputAcceptedPayload(_SessionInputAcceptedOptional):
+    attachments: List[Dict[str, Any]]
+
+
 class _SessionLifecyclePayload(TypedDict, total=False):
     effective_lock_hash: str
     task_hash: str
@@ -127,16 +148,26 @@ class _SessionLifecycleEvent(_SessionEventEnvelope):
     kind: Literal[
         "approval.requested",
         "approval.resolved",
-        "input.accepted",
         "session.canceled",
         "session.completed",
         "session.failed",
         "session.paused",
         "session.reconfigured",
         "session.resumed",
-        "session.started",
     ]
     payload: _SessionLifecyclePayload
+    payload_schema_version: Literal["bb.payload.product_session.lifecycle.v1"]
+
+
+class SessionStartedEvent(_SessionEventEnvelope):
+    kind: Literal["session.started"]
+    payload: SessionStartedPayload
+    payload_schema_version: Literal["bb.payload.product_session.lifecycle.v1"]
+
+
+class SessionInputAcceptedEvent(_SessionEventEnvelope):
+    kind: Literal["input.accepted"]
+    payload: SessionInputAcceptedPayload
     payload_schema_version: Literal["bb.payload.product_session.lifecycle.v1"]
 
 
@@ -170,6 +201,8 @@ class _SessionKernelEvent(_SessionEventEnvelope):
 
 SessionEvent = (
     _SessionLifecycleEvent
+    | SessionStartedEvent
+    | SessionInputAcceptedEvent
     | SessionAdoptionCommittedEvent
     | _SessionAnnotationEvent
     | SessionModuleOutputEvent

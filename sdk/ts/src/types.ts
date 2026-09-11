@@ -198,6 +198,71 @@ export type SessionModuleOutputPayload = {
   readonly authority_epoch: number
 }
 
+export type SessionAdoptionFrontier = {
+  readonly event_sequence: number
+  readonly generation_id: string
+  readonly typed_input_sequence: number
+  readonly output_sequence: number
+  readonly compaction_index: number
+}
+
+export type SessionAdoptionMigration = {
+  readonly binding: string
+  readonly disposition: "compatible" | "migrate"
+  readonly source_schema_id: string
+  readonly target_schema_id: string
+  readonly reason: string
+}
+
+export type SessionAdoptionCommittedPayload = {
+  readonly adoption_id: string
+  readonly checkpoint_id: string
+  readonly source_generation_id: string
+  readonly source_module_id: string
+  readonly source_instance_id: string
+  readonly source_work_id: string
+  readonly source_attempt_id: string
+  readonly source_schema_id: string
+  readonly source_body_sha256: string
+  readonly source_frontier: SessionAdoptionFrontier
+  readonly target_generation_id: string
+  readonly effective_lock_hash: string
+  readonly reason: string
+  readonly request_id?: string
+  readonly migration: ReadonlyArray<SessionAdoptionMigration>
+}
+
+export type SessionStartedPayload =
+  | {
+      readonly effective_lock_hash: string
+      readonly task_hash: string
+      readonly module_input?: never
+      readonly module_input_sequence?: never
+      readonly lineage?: SessionEventLineage
+    }
+  | {
+      readonly effective_lock_hash: string
+      readonly task_hash: string
+      readonly module_input: ModuleInput
+      readonly module_input_sequence: number
+      readonly lineage?: SessionEventLineage
+    }
+
+export type SessionInputAcceptedPayload =
+  | {
+      readonly content_hash: string
+      readonly module_input?: never
+      readonly module_input_sequence?: never
+      readonly attachments: ReadonlyArray<Readonly<Record<string, unknown>>>
+    }
+  | {
+      readonly content_hash?: never
+      readonly module_input: ModuleInput
+      readonly module_input_sequence: number
+      readonly attachments: ReadonlyArray<Readonly<Record<string, unknown>>>
+    }
+
+
 export type WorldFieldMask = {
   readonly schema_version: "bb.world_field_mask.v1"
   readonly paths: readonly ["/occurred_at", "/timestamp"]
@@ -223,7 +288,14 @@ type SessionEventRecord<
   readonly payload_schema_version: TSchema
 }
 
-type GenericSessionEventKind = Exclude<PublicSessionEventKind, "annotation" | "module_output">
+type GenericSessionEventKind = Exclude<
+  PublicSessionEventKind,
+  | "annotation"
+  | "module_output"
+  | "session.adoption_committed"
+  | "session.started"
+  | "input.accepted"
+>
 type GenericSessionPayloadSchema = Exclude<
   PublicSessionEventPayloadSchema,
   "bb.payload.product_session.annotation.v1" | "bb.payload.product_session.module_output.v1"
@@ -240,6 +312,21 @@ export type SessionEvent<
     "module_output",
     SessionModuleOutputPayload,
     "bb.payload.product_session.module_output.v1"
+  >
+  | SessionEventRecord<
+    "session.adoption_committed",
+    SessionAdoptionCommittedPayload,
+    "bb.payload.product_session.lifecycle.v1"
+  >
+  | SessionEventRecord<
+    "session.started",
+    SessionStartedPayload,
+    "bb.payload.product_session.lifecycle.v1"
+  >
+  | SessionEventRecord<
+    "input.accepted",
+    SessionInputAcceptedPayload,
+    "bb.payload.product_session.lifecycle.v1"
   >
   | SessionEventRecord<GenericSessionEventKind, TPayload, GenericSessionPayloadSchema>
 

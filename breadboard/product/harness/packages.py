@@ -669,6 +669,10 @@ class ModuleManifest:
             raise ModulePackageValidationError(
                 "import member module names must be unique"
             )
+        if any(not item.path.endswith(".py") for item in imports):
+            raise ModulePackageValidationError(
+                "import members must use supported .py source paths"
+            )
         if not {item.path for item in imports} <= source_paths:
             raise ModulePackageValidationError(
                 "import members must name captured source members"

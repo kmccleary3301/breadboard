@@ -323,6 +323,30 @@ def test_package_refuses_oci_worker_entrypoint_override(tmp_path: Path) -> None:
     )
 
 
+def test_package_refuses_import_members_without_python_loader(
+    tmp_path: Path,
+) -> None:
+    source = _write_source(tmp_path / "source", code=b"VALUE = 'ranker'\n")
+    python_source = source / "src" / "ranker.py"
+    text_source = source / "src" / "ranker.txt"
+    python_source.rename(text_source)
+    manifest = json.loads((source / "module.json").read_text(encoding="utf-8"))
+    manifest["entrypoint"] = "src/ranker.txt:open_instance"
+    manifest["source_members"][0]["path"] = "src/ranker.txt"
+    manifest["import_members"][0]["path"] = "src/ranker.txt"
+    (source / "module.json").write_bytes(canonical_json_bytes(manifest))
+
+    with pytest.raises(
+        ModulePackageValidationError,
+        match=r"supported \.py source paths",
+    ):
+        build_module_package(
+            source,
+            tmp_path / "bad.bbpkg",
+            cas=FilesystemCAS(tmp_path / "cas"),
+        )
+
+
 def test_package_refuses_entrypoints_the_worker_cannot_load(tmp_path: Path) -> None:
     invalid = {
         "missing-symbol-separator": (
