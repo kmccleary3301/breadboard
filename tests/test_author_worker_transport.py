@@ -225,6 +225,8 @@ def _write_checkpoint_worker_package(
     logical_package: str,
     source: str,
     output_schema_ids: tuple[str, ...] = (),
+    contracts: tuple[dict[str, object], ...] = (),
+    child_targets: tuple[dict[str, object], ...] = (),
 ) -> tuple[Path, str]:
     source_bytes = source.encode("utf-8")
     source_digest = "sha256:" + hashlib.sha256(source_bytes).hexdigest()
@@ -251,6 +253,8 @@ def _write_checkpoint_worker_package(
             }
         ],
         "schema_members": {},
+        "contracts": list(contracts),
+        "child_targets": list(child_targets),
     }
     manifest_bytes = json.dumps(
         manifest,
@@ -297,6 +301,7 @@ def _worker_start_body(
     max_checkpoint_bytes: int = MAX_CHECKPOINT_BYTES,
     output_schema_ids: tuple[str, ...] = (),
     dependencies: list[dict[str, object]] | None = None,
+    child_targets: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     return {
         "package_path": str(package),
@@ -309,7 +314,7 @@ def _worker_start_body(
         "output_schemas": list(output_schema_ids),
         "checkpoint_schemas": ["state.v1", "state.v2"],
         "dependencies": [] if dependencies is None else dependencies,
-        "child_targets": [],
+        "child_targets": [] if child_targets is None else child_targets,
         "initial_input": (
             None
             if initial_input is None
@@ -435,6 +440,86 @@ def _stdio_checkpoint_worker(
         yield worker
     finally:
         worker.close("test_complete")
+
+
+def test_worker_resolves_compact_child_contract_from_captured_manifest(
+    tmp_path: Path,
+) -> None:
+    captured_root = tmp_path / "captured"
+    captured_root.mkdir()
+    source = """
+class Module:
+    def bind_dependencies(self, dependencies):
+        return dependencies
+
+    def decode_input(self, envelope):
+        return envelope.body
+
+    def decode_output(self, envelope):
+        return envelope.body
+
+    def decode_checkpoint(self, envelope):
+        return envelope.body
+
+    def encode_output(self, value):
+        return value
+
+    def encode_checkpoint(self, state, **owner):
+        return state
+
+    def assess_checkpoint(self, context):
+        return context
+
+    def open_instance(self, **kwargs):
+        raise AssertionError("no input was sent")
+
+module = Module()
+"""
+    contract = {
+        "contract_id": "child.contract.v1",
+        "input_schema_ids": ["child.input.v1"],
+        "output_schema_ids": ["child.output.v1"],
+    }
+    target = {
+        "label": "child",
+        "target": "child.module",
+        "contract_id": "child.contract.v1",
+    }
+    package, digest = _write_checkpoint_worker_package(
+        captured_root,
+        logical_package="compact_child",
+        source=source,
+        contracts=(contract,),
+        child_targets=(target,),
+    )
+    generation = "sha256:" + "a" * 64
+    key = _worker_key(
+        "start",
+        session="compact-child-session",
+        generation=generation,
+        instance="compact-child-instance",
+    )
+
+    with _stdio_checkpoint_worker(captured_root) as worker:
+        _send_worker_message(
+            worker,
+            "start",
+            key,
+            0,
+            _worker_start_body(
+                package,
+                digest,
+                module_id="compact_child",
+                instance_id=key.instance_id,
+                generation_id=generation,
+                initial_input=None,
+                resume=None,
+                child_targets=[target],
+            ),
+        )
+        ready = _receive_worker_message(worker)
+
+    assert ready.header.kind == "ready"
 
 
 def test_checkpoint_migration_and_resume_respect_small_physical_frames(

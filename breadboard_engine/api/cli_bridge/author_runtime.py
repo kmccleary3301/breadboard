@@ -633,9 +633,12 @@ class _ModuleWorker:
                 for name, contract in manifest.dependency_contracts.items()
             ],
             "child_targets": [
-                {"label": target.label, "target": target.target, "contract_id": target.contract_id,
-                 "input_schema_ids": list(target.input_schema_ids), "output_schema_ids": list(target.output_schema_ids)}
-                for target in self.owner.child_targets(self.binding)
+                {
+                    "label": target.label,
+                    "target": target.target,
+                    "contract_id": target.contract_id,
+                }
+                for target in self.package.manifest.child_targets
             ],
         }
 

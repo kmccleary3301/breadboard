@@ -323,6 +323,36 @@ def test_package_refuses_oci_worker_entrypoint_override(tmp_path: Path) -> None:
     )
 
 
+
+def test_package_refuses_unsupported_oci_platform(tmp_path: Path) -> None:
+    source = _write_source(tmp_path / "source", code=b"VALUE = 'ranker'\n")
+    manifest = json.loads((source / "module.json").read_bytes())
+    manifest["execution_tier"] = "enforced_isolated"
+    manifest["runtime"] = {
+        "kind": "oci",
+        "ref": _RUNTIME_REF,
+        "platform": "windows/amd64",
+        "entrypoint": [
+            "python3",
+            "-I",
+            "-m",
+            "breadboard.modules.worker",
+            "--stdio",
+        ],
+    }
+    (source / "module.json").write_bytes(canonical_json_bytes(manifest))
+
+    with pytest.raises(
+        ModulePackageValidationError,
+        match="OCI runtime platform must be a normalized linux platform",
+    ):
+        build_module_package(
+            source,
+            tmp_path / "bad-platform.bbpkg",
+            cas=FilesystemCAS(tmp_path / "cas"),
+        )
+    assert not (tmp_path / "bad-platform.bbpkg").exists()
+
 def test_package_refuses_import_members_without_python_loader(
     tmp_path: Path,
 ) -> None:

@@ -975,7 +975,7 @@ class _Worker:
             instance_label=_text(body["instance_label"], "instance_label"),
         )
         self.dependencies, self.providers, self.tools, self.context, self.children = self._ports(
-            body["dependencies"], body["child_targets"]
+            body["dependencies"], body["child_targets"], manifest
         )
         if self.package.module_name in sys.modules:
             raise WorkerError(
@@ -1049,7 +1049,12 @@ class _Worker:
         self.opening = False
         return decoded
 
-    def _ports(self, dependencies_value: object, targets_value: object):
+    def _ports(
+        self,
+        dependencies_value: object,
+        targets_value: object,
+        manifest: Mapping[str, object],
+    ):
         raw_dependencies = dependencies_value
         if not isinstance(raw_dependencies, list):
             raise WorkerError("dependency_mismatch", "dependencies must be an array")
@@ -1061,21 +1066,79 @@ class _Worker:
             name = _text(record["name"], "dependency name")
             contract_id = _text(record["contract_id"], "dependency contract_id")
             declarations.append(DependencyDeclaration(name, contract_id))
-            ports[name] = _DependencyProxy(self.io, self.key, lambda: self.opening, name, contract_id)
-        targets: list[ChildTarget] = []
+            ports[name] = _DependencyProxy(
+                self.io, self.key, lambda: self.opening, name, contract_id
+            )
         if not isinstance(targets_value, list):
             raise WorkerError("child_denied", "child_targets must be an array")
-        for value in targets_value:
-            record = _mapping(value, "child target")
-            label = _text(record.get("label"), "child label")
-            target = _text(record.get("target"), "child target")
-            contract_id = _text(record.get("contract_id"), "child contract_id")
-            targets.append(ChildTarget(
-                label, target, contract_id,
-                _string_list(record.get("input_schema_ids"), "child input schemas"),
-                _string_list(record.get("output_schema_ids"), "child output schemas"),
-            ))
-        children = _ChildProxy(self.io, self.key, lambda: self.opening, tuple(targets))
+        declared_values = manifest.get("child_targets", [])
+        if not isinstance(declared_values, list):
+            raise WorkerError(
+                "closure_mismatch", "manifest child_targets must be an array"
+            )
+
+        def compact_target(value: object, label: str) -> tuple[str, str, str]:
+            record = _mapping(value, label)
+            _exact(record, {"label", "target", "contract_id"}, label)
+            return (
+                _text(record["label"], "child label"),
+                _text(record["target"], "child target"),
+                _text(record["contract_id"], "child contract_id"),
+            )
+
+        admitted = tuple(
+            compact_target(value, "child target") for value in targets_value
+        )
+        declared = tuple(
+            compact_target(value, "manifest child target")
+            for value in declared_values
+        )
+        if admitted != declared:
+            raise WorkerError(
+                "closure_mismatch",
+                "admitted child targets differ from captured manifest",
+            )
+        contracts: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {}
+        if declared:
+            contract_values = manifest.get("contracts")
+            if not isinstance(contract_values, list):
+                raise WorkerError(
+                    "closure_mismatch", "manifest contracts must be an array"
+                )
+            for value in contract_values:
+                record = _mapping(value, "manifest contract")
+                _exact(
+                    record,
+                    {"contract_id", "input_schema_ids", "output_schema_ids"},
+                    "manifest contract",
+                )
+                contract_id = _text(record["contract_id"], "contract_id")
+                if contract_id in contracts:
+                    raise WorkerError(
+                        "closure_mismatch", "manifest contract IDs must be unique"
+                    )
+                contracts[contract_id] = (
+                    _string_list(
+                        record["input_schema_ids"], "contract input schemas"
+                    ),
+                    _string_list(
+                        record["output_schema_ids"], "contract output schemas"
+                    ),
+                )
+        targets: list[ChildTarget] = []
+        for label, target, contract_id in admitted:
+            contract = contracts.get(contract_id)
+            if contract is None:
+                raise WorkerError(
+                    "closure_mismatch",
+                    "child target contract is absent from captured manifest",
+                )
+            targets.append(
+                ChildTarget(label, target, contract_id, contract[0], contract[1])
+            )
+        children = _ChildProxy(
+            self.io, self.key, lambda: self.opening, tuple(targets)
+        )
         providers = _ProviderProxy(self.io, self.key, lambda: self.opening)
         tools = _ToolProxy(self.io, self.key, lambda: self.opening)
         context = _ContextProxy(self.io, self.key, lambda: self.opening)

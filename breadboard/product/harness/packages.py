@@ -56,6 +56,7 @@ _PACKAGE_MANIFEST_PATH: Final = "module.json"
 _MAX_SAFE_INTEGER: Final = 9_007_199_254_740_991
 _OCI_CONFIG_ID: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
 _OCI_REGISTRY_REF: Final = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
+_OCI_PLATFORM: Final = re.compile(r"^linux/[a-z0-9_]+(?:/[a-z0-9_.-]+)?$")
 _PYTHON_IDENTIFIER: Final = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _PYTHON_LOADER_SUFFIXES: Final = tuple(importlib.machinery.all_suffixes())
 _WORKER_PROTOCOL: Final = "bb.worker.v2"
@@ -524,6 +525,10 @@ class RuntimeDescriptor:
                 require_sha256(digest, "runtime ref")
             except BundleValidationError as exc:
                 raise ModulePackageValidationError(str(exc)) from exc
+            if _OCI_PLATFORM.fullmatch(self.platform) is None:
+                raise ModulePackageValidationError(
+                    "OCI runtime platform must be a normalized linux platform"
+                )
         else:
             try:
                 require_sha256(self.ref, "runtime ref")
