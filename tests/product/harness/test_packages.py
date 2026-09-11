@@ -354,6 +354,11 @@ def test_package_refuses_entrypoints_the_worker_cannot_load(tmp_path: Path) -> N
             None,
             "entrypoint must be path:symbol",
         ),
+        "invalid-symbol": (
+            "src/ranker.py:not-valid",
+            None,
+            "entrypoint symbol must be a Python identifier",
+        ),
         "unbound-path": (
             "missing.py:open_instance",
             None,

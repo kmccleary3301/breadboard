@@ -56,6 +56,7 @@ _PACKAGE_MANIFEST_PATH: Final = "module.json"
 _MAX_SAFE_INTEGER: Final = 9_007_199_254_740_991
 _OCI_CONFIG_ID: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
 _OCI_REGISTRY_REF: Final = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
+_PYTHON_IDENTIFIER: Final = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _WORKER_PROTOCOL: Final = "bb.worker.v2"
 _AUTHORITY_FIELDS: Final = frozenset(
     {
@@ -720,6 +721,10 @@ class ModuleManifest:
         entry_path, entry_symbol = self.entrypoint.split(":", 1)
         _text(entry_path, "entrypoint path")
         _text(entry_symbol, "entrypoint symbol")
+        if _PYTHON_IDENTIFIER.fullmatch(entry_symbol) is None:
+            raise ModulePackageValidationError(
+                "entrypoint symbol must be a Python identifier"
+            )
         if len([item for item in imports if item.path == entry_path]) != 1:
             raise ModulePackageValidationError(
                 "entrypoint path must have exactly one import member binding"
