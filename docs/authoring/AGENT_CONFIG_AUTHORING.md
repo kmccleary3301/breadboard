@@ -185,6 +185,10 @@ breadboard harness package ./ranker --out ./dist/ranker.bbmodule.zip
 breadboard harness package ./revisiting-policy --out ./dist/revisiting-policy.bbmodule.zip
 ```
 
+Keep `--out` outside the module source directory. Packaging rejects outputs
+inside that directory, including symlink aliases, before capturing or publishing
+artifacts.
+
 Reference those immutable artifacts from one Definition v2, bind named dependencies and child edges there, then validate, explain, and lock the complete composition:
 
 ```bash

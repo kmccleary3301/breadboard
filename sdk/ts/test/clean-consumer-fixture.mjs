@@ -75,6 +75,91 @@ const stage: StageOutcome = { stage: "fixture", status: "ok" }
 const create: PublicHarnessCreateRequest = {}
 const update: PublicHarnessUpdateRequest = { definition: {} }
 const start: PublicSessionStartRequest = { lock_id: "lock", task: "task" }
+const startWithPartialAuthority: PublicSessionStartRequest = {
+  lock_id: "lock",
+  module_input: {
+    schema_id: "fixture.module.input.v1",
+    body: "{}",
+    final: true,
+  },
+  module_authority: {
+    project: { roots: ["/workspace"] },
+    network: { destinations: ["api.example.com"] },
+    child: { max_depth: 1 },
+  },
+}
+const startWithNullableAuthority: PublicSessionStartRequest = {
+  publication_target: "main",
+  module_input: {
+    schema_id: "fixture.module.input.v1",
+    body: "{}",
+    final: true,
+  },
+  module_authority: {
+    project: null,
+    network: null,
+    child: null,
+  },
+}
+// @ts-expect-error start request requires selector and input
+const emptyStart: PublicSessionStartRequest = {}
+// @ts-expect-error start request cannot contain dual selectors
+const dualSelectorStart: PublicSessionStartRequest = {
+  lock_id: "lock",
+  publication_target: "main",
+  task: "task",
+}
+// @ts-expect-error start request cannot contain dual inputs
+const dualInputStart: PublicSessionStartRequest = {
+  lock_id: "lock",
+  task: "task",
+  module_input: {
+    schema_id: "fixture.module.input.v1",
+    body: "{}",
+    final: true,
+  },
+}
+const nullLockStart: PublicSessionStartRequest = {
+  // @ts-expect-error lock_id must be non-null
+  lock_id: null,
+  task: "task",
+}
+// @ts-expect-error text start request cannot include module_authority
+const invalidTextAuthorityStart: PublicSessionStartRequest = {
+  lock_id: "lock",
+  task: "task",
+  module_authority: {
+    project: { roots: ["/workspace"] },
+  },
+}
+const invalidAuthorityMissingPurpose: PublicSessionStartRequest = {
+  lock_id: "lock",
+  module_input: {
+    schema_id: "fixture.module.input.v1",
+    body: "{}",
+    final: true,
+  },
+  module_authority: {
+    credential_disclosures: [
+      // @ts-expect-error credential disclosure requires purpose
+      { secret_name: "fixture_token" },
+    ],
+  },
+}
+const invalidAuthorityMissingSecretName: PublicSessionStartRequest = {
+  lock_id: "lock",
+  module_input: {
+    schema_id: "fixture.module.input.v1",
+    body: "{}",
+    final: true,
+  },
+  module_authority: {
+    credential_disclosures: [
+      // @ts-expect-error credential disclosure requires secret_name
+      { purpose: "fixture_purpose" },
+    ],
+  },
+}
 const sessionInput: PublicSessionInputRequest = { content: "continue" }
 const moduleSessionInput: PublicSessionInputRequest = {
   module_input: {

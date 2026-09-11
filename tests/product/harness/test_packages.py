@@ -583,3 +583,56 @@ def test_extended_module_bindings_resolve_package_from_its_source_layer(
             assert binding["config"] == config
     finally:
         cas.close()
+
+
+def test_build_module_package_refuses_output_inside_source_tree(
+    tmp_path: Path,
+) -> None:
+    code = b"VALUE = 'ranker-clean'\n"
+    source = _write_source(tmp_path / "source", code=code)
+    source_snapshot = {
+        path.relative_to(source): path.read_bytes()
+        for path in source.rglob("*")
+        if path.is_file()
+    }
+    cas = FilesystemCAS(tmp_path / "cas")
+    try:
+        alias_dir = tmp_path / "source_alias"
+        alias_dir.symlink_to(source, target_is_directory=True)
+
+        targets = (
+            source / "direct.bbpkg",
+            source / "nested" / "output.bbpkg",
+            source,
+            alias_dir / "aliased.bbpkg",
+        )
+        for target in targets:
+            with pytest.raises(ModulePackageValidationError):
+                build_module_package(source, target, cas=cas)
+            assert not (source / "direct.bbpkg").exists()
+            assert not (source / "nested").exists()
+            assert not (source / "aliased.bbpkg").exists()
+            current_snapshot = {
+                path.relative_to(source): path.read_bytes()
+                for path in source.rglob("*")
+                if path.is_file()
+            }
+            assert current_snapshot == source_snapshot
+            assert not list(cas.blobs.iterdir())
+
+        symlink_source = tmp_path / "symlink_source"
+        symlink_source.symlink_to(source, target_is_directory=True)
+        with pytest.raises(ModulePackageValidationError):
+            build_module_package(symlink_source, source / "sym_output.bbpkg", cas=cas)
+        assert not (source / "sym_output.bbpkg").exists()
+        assert not list(cas.blobs.iterdir())
+
+        external_output = tmp_path / "external.bbpkg"
+        built = build_module_package(source, external_output, cas=cas)
+        assert external_output.is_file()
+        loaded = load_module_package(external_output, built.package_digest, cas=cas)
+        assert loaded.package_digest == built.package_digest
+        with zipfile.ZipFile(external_output) as archive:
+            assert archive.read("src/ranker.py") == code
+    finally:
+        cas.close()

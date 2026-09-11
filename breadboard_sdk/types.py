@@ -339,17 +339,17 @@ class ModuleInputRequest(TypedDict):
     final: bool
 
 
-class ProjectAuthorityRequest(TypedDict):
+class ProjectAuthorityRequest(TypedDict, total=False):
     roots: List[str]
     operations: List[Literal["read", "write"]]
 
 
-class NetworkAuthorityRequest(TypedDict):
+class NetworkAuthorityRequest(TypedDict, total=False):
     destinations: List[str]
     operations: List[Literal["connect", "resolve"]]
 
 
-class ChildAuthorityRequest(TypedDict):
+class ChildAuthorityRequest(TypedDict, total=False):
     allowed_module_ids: List[str]
     max_depth: int
 
@@ -359,7 +359,7 @@ class CredentialDisclosureRequest(TypedDict):
     purpose: str
 
 
-class AuthorityDeclarationRequest(TypedDict):
+class AuthorityDeclarationRequest(TypedDict, total=False):
     project: Optional[ProjectAuthorityRequest]
     network: Optional[NetworkAuthorityRequest]
     child: Optional[ChildAuthorityRequest]
@@ -368,13 +368,62 @@ class AuthorityDeclarationRequest(TypedDict):
     credential_disclosures: List[CredentialDisclosureRequest]
 
 
-class PublicSessionStartRequest(TypedDict, total=False):
-    lock_id: str | None
-    publication_target: str | None
-    task: str | None
-    module_input: ModuleInputRequest | None
-    module_authority: AuthorityDeclarationRequest | None
-    session_id: str | None
+class _SessionStartLockSelectorOptional(TypedDict, total=False):
+    publication_target: _Never
+
+
+class _SessionStartTargetSelectorOptional(TypedDict, total=False):
+    lock_id: _Never
+
+
+class _SessionStartCommonOptional(TypedDict, total=False):
+    session_id: Optional[str]
+
+
+class _SessionStartTextOptional(_SessionStartCommonOptional, total=False):
+    module_input: _Never
+    module_authority: _Never
+
+
+class _SessionStartModuleOptional(_SessionStartCommonOptional, total=False):
+    task: _Never
+    module_authority: Optional[AuthorityDeclarationRequest]
+
+
+class PublicSessionStartTextLockRequest(
+    _SessionStartLockSelectorOptional, _SessionStartTextOptional
+):
+    lock_id: str
+    task: str
+
+
+class PublicSessionStartTextTargetRequest(
+    _SessionStartTargetSelectorOptional, _SessionStartTextOptional
+):
+    publication_target: str
+    task: str
+
+
+class PublicSessionStartModuleLockRequest(
+    _SessionStartLockSelectorOptional, _SessionStartModuleOptional
+):
+    lock_id: str
+    module_input: ModuleInputRequest
+
+
+class PublicSessionStartModuleTargetRequest(
+    _SessionStartTargetSelectorOptional, _SessionStartModuleOptional
+):
+    publication_target: str
+    module_input: ModuleInputRequest
+
+
+PublicSessionStartRequest = (
+    PublicSessionStartTextLockRequest
+    | PublicSessionStartTextTargetRequest
+    | PublicSessionStartModuleLockRequest
+    | PublicSessionStartModuleTargetRequest
+)
 
 class _SessionTextInputOptional(TypedDict, total=False):
     module_input: _Never

@@ -3198,9 +3198,11 @@ test("SSH Slurm strict profile survives one requeue and validates durable accoun
   let sacctMode: "cancelled" | "completed" = "cancelled"
   let allocatedMemoryTres = ""
   let allocationState = "PENDING"
+  let allocationReason = "JobHeldUser"
+  let failReleaseAck = false
+  let recoveredJobName = jobName
   let metadataAvailable = true
   let receiptHasAttempt = true
-  const commands: string[] = []
   const output = Buffer.from("strict profile\n", "utf8")
   const outputDigest = createHash("sha256").update(output).digest("hex")
   const makeBackend = () => makeSshSlurmBackend({
@@ -3214,7 +3216,6 @@ test("SSH Slurm strict profile survives one requeue and validates durable accoun
     },
     async runCommand(_program, args) {
       const remoteCommand = args[1] ?? ""
-      commands.push(remoteCommand)
       if (remoteCommand.includes("setsid sh -c")) {
         if (!attemptIdentity) {
           attemptIdentity =
@@ -3255,7 +3256,7 @@ test("SSH Slurm strict profile survives one requeue and validates durable accoun
         return {
           stdout: [
             `JobState=${allocationState}`,
-            allocationState === "PENDING" ? "Reason=JobHeldUser" : "Reason=None",
+            `Reason=${allocationReason}`,
             "Requeue=1",
             "Restarts=0",
             "NumCPUs=2",
@@ -3270,7 +3271,20 @@ test("SSH Slurm strict profile survives one requeue and validates durable accoun
       }
       if (remoteCommand.includes("scontrol release")) {
         allocationState = "RUNNING"
+        allocationReason = "None"
+        if (failReleaseAck) {
+          failReleaseAck = false
+          throw new Error("release acknowledgement lost")
+        }
         return { stdout: "", stderr: "" }
+      }
+      if (remoteCommand.includes("squeue") && remoteCommand.includes("%i|%j|%T|%r")) {
+        return {
+          stdout: allocationState === "COMPLETED"
+            ? ""
+            : `49001|${recoveredJobName}|${allocationState}|${allocationReason}\n`,
+          stderr: "",
+        }
       }
       if (remoteCommand.includes("squeue"))
         return { stdout: "", stderr: "" }
@@ -3322,6 +3336,43 @@ test("SSH Slurm strict profile survives one requeue and validates durable accoun
     deadlineAtMs: Date.now() + 1_000,
     terminationGraceMs: 100,
   })
+  // A fresh client recovers a receipt left by a submitter that died before release.
+  allocationState = "PENDING"
+  allocationReason = "JobHeldUser"
+  failReleaseAck = true
+  const heldReplay = await makeBackend().submit(request, {
+    signal: new AbortController().signal,
+    deadlineAtMs: Date.now() + 1_000,
+    terminationGraceMs: 100,
+  })
+  assert.equal(heldReplay.executionId, handle.executionId)
+  assert.equal(allocationState, "RUNNING")
+
+  allocationState = "PENDING"
+  allocationReason = "JobHeldAdmin"
+  const adminHeldReplay = await makeBackend().submit(request, {
+    signal: new AbortController().signal,
+    deadlineAtMs: Date.now() + 1_000,
+    terminationGraceMs: 100,
+  })
+  assert.equal(adminHeldReplay.executionId, handle.executionId)
+  assert.equal(allocationState, "PENDING")
+
+  allocationState = "PENDING"
+  allocationReason = "JobHeldUser"
+  recoveredJobName = "foreign-job"
+  await assert.rejects(
+    () => makeBackend().submit(request, {
+      signal: new AbortController().signal,
+      deadlineAtMs: Date.now() + 1_000,
+      terminationGraceMs: 100,
+    }),
+    /no longer owns the scheduler job id/,
+  )
+  assert.equal(allocationState, "PENDING")
+  recoveredJobName = jobName
+  allocationState = "RUNNING"
+  allocationReason = "None"
   const runningReplay = await backend.submit(request, {
     signal: new AbortController().signal,
     deadlineAtMs: Date.now() + 1_000,
@@ -3372,10 +3423,6 @@ test("SSH Slurm strict profile survives one requeue and validates durable accoun
     observation.evidenceRefs?.includes(
       `slurm://job/${handle.executionId}/attempt/${attemptIdentity}/restart/1`,
     ),
-  )
-  assert.equal(
-    commands.filter((command) => command.includes("scontrol show job -o")).length,
-    1,
   )
   allocatedMemoryTres = ",mem=512M"
   await assert.rejects(

@@ -60,18 +60,18 @@ export interface ModuleInput {
 }
 
 export interface ProjectAuthority {
-  readonly roots: readonly string[]
-  readonly operations: readonly ("read" | "write")[]
+  readonly roots?: readonly string[]
+  readonly operations?: readonly ("read" | "write")[]
 }
 
 export interface NetworkAuthority {
-  readonly destinations: readonly string[]
-  readonly operations: readonly ("connect" | "resolve")[]
+  readonly destinations?: readonly string[]
+  readonly operations?: readonly ("connect" | "resolve")[]
 }
 
 export interface ChildAuthority {
-  readonly allowed_module_ids: readonly string[]
-  readonly max_depth: number
+  readonly allowed_module_ids?: readonly string[]
+  readonly max_depth?: number
 }
 
 export interface CredentialDisclosure {
@@ -80,12 +80,12 @@ export interface CredentialDisclosure {
 }
 
 export interface AuthorityDeclaration {
-  readonly project: ProjectAuthority | null
-  readonly network: NetworkAuthority | null
-  readonly child: ChildAuthority | null
-  readonly provider_ids: readonly string[]
-  readonly tool_ids: readonly string[]
-  readonly credential_disclosures: readonly CredentialDisclosure[]
+  readonly project?: ProjectAuthority | null
+  readonly network?: NetworkAuthority | null
+  readonly child?: ChildAuthority | null
+  readonly provider_ids?: readonly string[]
+  readonly tool_ids?: readonly string[]
+  readonly credential_disclosures?: readonly CredentialDisclosure[]
 }
 
 type PublicSessionSelector =

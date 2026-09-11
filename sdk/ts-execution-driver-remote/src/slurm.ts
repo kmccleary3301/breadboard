@@ -423,12 +423,11 @@ export function makeSshSlurmBackend(
       },
     )
   }
-  async function verifySlurmAllocation(
+  async function readSlurmAllocation(
     jobId: string,
     profile: SlurmResourceProfileV1,
-    releaseHeld: boolean,
     signal?: AbortSignal,
-  ): Promise<number> {
+  ): Promise<{ restartCount: number; state: string; reason: string }> {
     const output = (await ssh(
       `scontrol show job -o ${shellQuote(jobId)}`,
       commandTimeoutMs,
@@ -447,6 +446,8 @@ export function makeSshSlurmBackend(
     const requeueMatch = /\bRequeue=(\d+)\b/.exec(output)
     const stateMatch = /\bJobState=([A-Z_]+)\b/.exec(output)
     const reasonMatch = /\bReason=([A-Za-z0-9_]+)\b/.exec(output)
+    const state = stateMatch?.[1]
+    const reason = reasonMatch?.[1]
     const allocatedCpus = allocatedCpuMatch ? Number.parseInt(allocatedCpuMatch[1]!, 10) : null
     const requestedCpus = requestedCpuMatch ? Number.parseInt(requestedCpuMatch[1]!, 10) : null
     const perNode = nodeMemoryMatch ? memoryBytes(nodeMemoryMatch[1]!) : null
@@ -479,15 +480,32 @@ export function makeSshSlurmBackend(
       || !Number.isSafeInteger(restartCount)
       || gpuAllocated
       || requeueMatch?.[1] !== "1"
-      || (releaseHeld && stateMatch?.[1] !== "PENDING")
-      || (releaseHeld && reasonMatch?.[1] !== "JobHeldUser")
+      || !state
+      || !reason
     ) {
       throw new Error("Slurm scheduler allocation does not match the admitted resource profile")
     }
-    if (releaseHeld) {
-      await ssh(`scontrol release ${shellQuote(jobId)}`, commandTimeoutMs, signal)
+    return { restartCount, state, reason }
+  }
+
+  async function verifySlurmAllocation(
+    jobId: string,
+    profile: SlurmResourceProfileV1,
+    releaseHeld: boolean,
+    signal?: AbortSignal,
+  ): Promise<number> {
+    let allocation = await readSlurmAllocation(jobId, profile, signal)
+    if (releaseHeld && allocation.state === "PENDING" && allocation.reason === "JobHeldUser") {
+      try {
+        await ssh(`scontrol release ${shellQuote(jobId)}`, commandTimeoutMs, signal)
+      } catch (error: unknown) {
+        allocation = await readSlurmAllocation(jobId, profile, signal)
+        if (allocation.state === "PENDING" && allocation.reason === "JobHeldUser") {
+          throw error
+        }
+      }
     }
-    return restartCount
+    return allocation.restartCount
   }
 
   function assertConfiguredResourceProfile(
@@ -924,6 +942,31 @@ export function makeSshSlurmBackend(
             context.terminationGraceMs,
           ).catch(() => undefined)
           throw error
+        }
+      } else if (enforceResourceProfile) {
+        const activeResult = await ssh(
+          `squeue -h --name ${shellQuote(jobName)} -o '%i|%j|%T|%r'`,
+          commandTimeoutMs,
+          context.signal,
+        )
+        for (const line of activeResult.stdout.trim().split("\n")) {
+          const [activeId, activeName, activeState, activeReason] = line.trim().split("|")
+          if (activeId !== executionId) continue
+          if (activeName !== jobName) {
+            throw new Error("Slurm execution handle no longer owns the scheduler job id")
+          }
+          if (activeState === "PENDING" && activeReason === "JobHeldUser") {
+            recordRestartCount(
+              execution,
+              await verifySlurmAllocation(
+                executionId,
+                admittedProfile,
+                true,
+                context.signal,
+              ),
+            )
+          }
+          break
         }
       }
       return {

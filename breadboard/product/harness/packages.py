@@ -1237,6 +1237,12 @@ def build_module_package(
     source_path, output_path = Path(source).expanduser(), Path(output).expanduser()
     if not source_path.is_dir():
         raise ModulePackageSecurityError("module package source must be a directory")
+    resolved_source = source_path.resolve()
+    resolved_output = output_path.resolve()
+    if resolved_output.is_relative_to(resolved_source):
+        raise ModulePackageValidationError(
+            "package output must not reside within source directory"
+        )
     try:
         bundle = ingest_bundle(
             source_path,
