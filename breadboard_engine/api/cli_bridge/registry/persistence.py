@@ -432,6 +432,20 @@ def _serialize_module_execution(
             raise ValueError("module execution identity is invalid")
     if not isinstance(execution.workers, tuple):
         raise ValueError("module execution workers must be a tuple")
+    if not isinstance(execution.retired_worker_identities, tuple):
+        raise ValueError("retired module worker identities must be a tuple")
+    retired_worker_identities: list[list[str]] = []
+    retired_identity_set: set[tuple[str, str, str]] = set()
+    for identity in execution.retired_worker_identities:
+        if (
+            not isinstance(identity, tuple)
+            or len(identity) != 3
+            or any(not isinstance(value, str) or not value for value in identity)
+            or identity in retired_identity_set
+        ):
+            raise ValueError("retired module worker identity is invalid")
+        retired_identity_set.add(identity)
+        retired_worker_identities.append(list(identity))
     workers = []
     worker_identities: set[tuple[str, str, str]] = set()
     for worker in execution.workers:
@@ -445,6 +459,8 @@ def _serialize_module_execution(
         if worker_identity in worker_identities:
             raise ValueError("module execution contains duplicate workers")
         worker_identities.add(worker_identity)
+        if worker_identity in retired_identity_set:
+            raise ValueError("active module worker identity is retired")
         for field_name in (
             "binding",
             "instance_id",
@@ -498,6 +514,7 @@ def _serialize_module_execution(
         "work_item_id": execution.work_item_id,
         "attempt_id": execution.attempt_id,
         "workers": workers,
+        "retired_workers": retired_worker_identities,
     }
 
 
@@ -538,12 +555,36 @@ def _deserialize_worker_cleanup(value: Any) -> AuthorWorkerCleanupResult:
 def _deserialize_module_execution(value: Any) -> ModuleExecutionRecord | None:
     if value is None:
         return None
-    fields = {"generation_id", "root_binding", "work_item_id", "attempt_id", "workers"}
+    fields = {
+        "generation_id",
+        "root_binding",
+        "work_item_id",
+        "attempt_id",
+        "workers",
+        "retired_workers",
+    }
     if not isinstance(value, dict) or set(value) != fields:
         raise ValueError("retained module execution is invalid")
-    for field_name in fields - {"workers"}:
+    for field_name in fields - {"workers", "retired_workers"}:
         if not isinstance(value[field_name], str) or not value[field_name]:
             raise ValueError("retained module execution identity is invalid")
+    retired_value = value["retired_workers"]
+    if not isinstance(retired_value, list):
+        raise ValueError("retired module worker identities are invalid")
+    retired_worker_identities: list[tuple[str, str, str]] = []
+    retired_identity_set: set[tuple[str, str, str]] = set()
+    for item in retired_value:
+        if (
+            not isinstance(item, list)
+            or len(item) != 3
+            or any(not isinstance(field, str) or not field for field in item)
+        ):
+            raise ValueError("retired module worker identity is invalid")
+        identity = (item[0], item[1], item[2])
+        if identity in retired_identity_set:
+            raise ValueError("retained module execution contains duplicate retirements")
+        retired_identity_set.add(identity)
+        retired_worker_identities.append(identity)
     workers_value = value["workers"]
     if not isinstance(workers_value, list):
         raise ValueError("retained module execution workers are invalid")
@@ -575,6 +616,8 @@ def _deserialize_module_execution(value: Any) -> ModuleExecutionRecord | None:
         if worker_identity in worker_identities:
             raise ValueError("retained module execution contains duplicate workers")
         worker_identities.add(worker_identity)
+        if worker_identity in retired_identity_set:
+            raise ValueError("active retained module worker identity is retired")
         if (
             type(item["next_input_sequence"]) is not int
             or item["next_input_sequence"] < 0
@@ -627,6 +670,7 @@ def _deserialize_module_execution(value: Any) -> ModuleExecutionRecord | None:
         work_item_id=value["work_item_id"],
         attempt_id=value["attempt_id"],
         workers=tuple(workers),
+        retired_worker_identities=tuple(retired_worker_identities),
     )
 
 
@@ -761,7 +805,18 @@ def _merge_module_execution(
         source.attempt_id,
     ):
         raise ValueError("retained module execution identity changed during refresh")
-    merged = list(target.workers)
+    retired = tuple(
+        dict.fromkeys(
+            (*target.retired_worker_identities, *source.retired_worker_identities)
+        )
+    )
+    retired_set = set(retired)
+    merged = [
+        worker
+        for worker in target.workers
+        if (worker.binding, worker.instance_id, worker.worker_session_id)
+        not in retired_set
+    ]
     by_identity = {
         (worker.binding, worker.instance_id, worker.worker_session_id): worker
         for worker in merged
@@ -772,6 +827,8 @@ def _merge_module_execution(
             source_worker.instance_id,
             source_worker.worker_session_id,
         )
+        if identity in retired_set:
+            continue
         target_worker = by_identity.get(identity)
         if target_worker is None:
             merged.append(source_worker)
@@ -807,6 +864,7 @@ def _merge_module_execution(
             if target_value is None and source_value is not None:
                 setattr(target_worker, field_name, source_value)
     target.workers = tuple(merged)
+    target.retired_worker_identities = retired
     return target
 
 
@@ -1619,6 +1677,21 @@ class PersistenceMixin:
                     for worker in retained
                 ):
                     return False
+                retired_identities = tuple(
+                    dict.fromkeys(
+                        (
+                            *execution.retired_worker_identities,
+                            *(
+                                (
+                                    worker.binding,
+                                    worker.instance_id,
+                                    worker.worker_session_id,
+                                )
+                                for worker in retained
+                            ),
+                        )
+                    )
+                )
                 record.module_execution = replace(
                     execution,
                     workers=tuple(
@@ -1626,6 +1699,7 @@ class PersistenceMixin:
                         for worker in execution.workers
                         if worker.binding != binding
                     ),
+                    retired_worker_identities=retired_identities,
                 )
                 self._persist_record_locked(record)
                 return True

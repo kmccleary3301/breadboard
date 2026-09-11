@@ -2016,12 +2016,7 @@ class SessionService:
             return
         _, source_checkpoints = _decode_graph_checkpoint(checkpoint)
         previous_resume_checkpoints = record.module_resume_checkpoints
-        record.module_execution = ModuleExecutionRecord(
-            generation_id=execution.generation_id,
-            root_binding=execution.root_binding,
-            work_item_id=execution.work_item_id,
-            attempt_id=execution.attempt_id,
-        )
+        record.module_execution = execution.retire_all_workers()
         record.module_resume_checkpoints = source_checkpoints
         if not await self.registry.persist_confirmed_checkpoint_cleanup(record):
             record.module_execution = execution

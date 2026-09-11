@@ -433,7 +433,6 @@ class GenerationLifecycle:
             if isinstance(record, Mapping)
             and record.get("target") == target
             and record.get("status") == "preparing"
-            and record.get("resource_ref") is None
         )
 
     def _resource_recorded(self, preparation_id: str, resource_ref: str) -> None:
@@ -477,26 +476,65 @@ class GenerationLifecycle:
                 record["error"] = dict(error)
             return self._preparation(record)
 
+    @staticmethod
+    def _protected_resource_refs(state: Mapping[str, Any]) -> set[str]:
+        current_preparation_ids = {
+            value.get("preparation_id")
+            for value in state["targets"].values()
+            if isinstance(value, Mapping)
+        }
+        active_generation_targets = {
+            (value.get("target"), value.get("generation_id"))
+            for value in state["admissions"].values()
+            if isinstance(value, Mapping)
+            and value.get("status") in ("reserved", "materialized")
+        }
+        return {
+            resource_ref
+            for preparation_id, value in state["preparations"].items()
+            if isinstance(value, Mapping)
+            and (
+                preparation_id in current_preparation_ids
+                or (value.get("target"), value.get("generation_id"))
+                in active_generation_targets
+            )
+            and isinstance((resource_ref := value.get("resource_ref")), str)
+        }
+
     def _dispose_and_mark(
         self, preparation_id: str, resource_ref: str
     ) -> CleanupStatus:
-        try:
-            result = self._preparer.dispose(resource_ref)
-            cleanup: CleanupStatus = (
-                "confirmed_absent" if result == "confirmed_absent" else "unknown"
-            )
-            if (
-                cleanup == "confirmed_absent"
-                and self._observe(resource_ref) != "absent"
-            ):
-                cleanup = "unknown"
-        except Exception:
-            cleanup = "unknown"
         with self._locked() as state:
             record = state["preparations"].get(preparation_id)
-            if isinstance(record, dict) and record.get("resource_ref") == resource_ref:
-                record["cleanup"] = cleanup
-        return cleanup
+            if (
+                not isinstance(record, Mapping)
+                or record.get("resource_ref") != resource_ref
+            ):
+                return "unknown"
+            if resource_ref in self._protected_resource_refs(state):
+                cleanup = record.get("cleanup")
+                return cleanup if cleanup in ("owned", "not_required") else "unknown"
+            try:
+                result = self._preparer.dispose(resource_ref)
+                cleanup: CleanupStatus = (
+                    "confirmed_absent"
+                    if result == "confirmed_absent"
+                    else "unknown"
+                )
+                if (
+                    cleanup == "confirmed_absent"
+                    and self._observe(resource_ref) != "absent"
+                ):
+                    cleanup = "unknown"
+            except Exception:
+                cleanup = "unknown"
+            for candidate in state["preparations"].values():
+                if (
+                    isinstance(candidate, dict)
+                    and candidate.get("resource_ref") == resource_ref
+                ):
+                    candidate["cleanup"] = cleanup
+            return cleanup
 
     def _observe(self, resource_ref: str) -> Literal["ready", "absent", "unknown"]:
         try:
@@ -571,28 +609,9 @@ class GenerationLifecycle:
                 )
                 request.update({"status": "failed", "error": failure.as_dict()})
                 resource_ref = preparation_record.get("resource_ref")
-                protected_preparation_ids = {
-                    value.get("preparation_id")
-                    for value in state["targets"].values()
-                    if isinstance(value, Mapping)
-                }
-                protected_preparation_ids.update(
-                    value.get("preparation_id")
-                    for value in state["admissions"].values()
-                    if isinstance(value, Mapping)
-                    and value.get("status") in ("reserved", "materialized")
-                )
-                protected_resources = {
-                    value.get("resource_ref")
-                    for preparation_key, value in state["preparations"].items()
-                    if preparation_key in protected_preparation_ids
-                    and isinstance(value, Mapping)
-                    and isinstance(value.get("resource_ref"), str)
-                }
                 if (
                     request.get("owns_preparation", True)
                     and isinstance(resource_ref, str)
-                    and resource_ref not in protected_resources
                 ):
                     loser_resource = (preparation_id, resource_ref)
             else:
@@ -1268,24 +1287,7 @@ class GenerationLifecycle:
                 and record.get("status") in ("reserved", "materialized")
             ]
             pinned = {record.get("generation_id") for record in pinned_admissions}
-            protected_preparation_ids = {
-                value.get("preparation_id")
-                for value in state["targets"].values()
-                if isinstance(value, Mapping)
-            }
-            protected_preparation_ids.update(
-                value.get("preparation_id")
-                for value in state["admissions"].values()
-                if isinstance(value, Mapping)
-                and value.get("status") in ("reserved", "materialized")
-            )
-            protected_resources = {
-                value.get("resource_ref")
-                for preparation_key, value in state["preparations"].items()
-                if preparation_key in protected_preparation_ids
-                and isinstance(value, Mapping)
-                and isinstance(value.get("resource_ref"), str)
-            }
+            protected_resources = self._protected_resource_refs(state)
             for preparation_id, record in state["preparations"].items():
                 if not isinstance(record, dict) or record.get("target") != target:
                     continue

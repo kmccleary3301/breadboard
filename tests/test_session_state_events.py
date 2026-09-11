@@ -6,7 +6,6 @@ import copy
 import json
 import queue
 import threading
-from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
@@ -40,10 +39,7 @@ from breadboard_engine.api.cli_bridge.registry import (
     submission_body_digest,
 )
 from breadboard_engine.api.cli_bridge.registry.records import ModuleWorkerOwnership
-from breadboard_engine.api.cli_bridge.author_runtime import (
-    ModuleExecutionError,
-    ModuleRuntime,
-)
+from breadboard_engine.api.cli_bridge.author_runtime import ModuleRuntime
 from breadboard_engine.api.cli_bridge.service import SessionService
 from breadboard_engine.api.cli_bridge.runtime_event_projector import (
     BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES,
@@ -2775,6 +2771,9 @@ async def test_confirmed_absent_worker_is_durably_retired_before_restart(
     )
     owner = SessionRegistry(state_root=tmp_path)
     await owner.create(record)
+    stale_registry = SessionRegistry(state_root=tmp_path)
+    stale_record = await stale_registry.get(record.session_id)
+    assert stale_record is not None
     restarted = SessionRegistry(state_root=tmp_path)
     restored = await restarted.get(record.session_id)
     assert restored is not None
@@ -2793,25 +2792,20 @@ async def test_confirmed_absent_worker_is_durably_retired_before_restart(
     await asyncio.to_thread(runtime._retire_absent_worker, "root")
 
     assert restored.module_execution.workers == ()
+    assert restored.module_execution.retired_worker_identities == (
+        ("root", "instance-1", "worker-1"),
+    )
+
+    await stale_registry.persist(stale_record)
+    assert stale_record.module_execution is not None
+    assert stale_record.module_execution.workers == ()
     disk_reader = SessionRegistry(state_root=tmp_path)
     disk_record = await disk_reader.get(record.session_id)
     assert disk_record is not None
     assert disk_record.module_execution.workers == ()
-
-    restored.module_execution = replace(
-        restored.module_execution,
-        workers=(
-            replace(
-                retained,
-                cleanup=replace(retained.cleanup, owner_ref="wrong-owner"),
-            ),
-        ),
+    assert disk_record.module_execution.retired_worker_identities == (
+        ("root", "instance-1", "worker-1"),
     )
-    await restarted.persist(restored)
-    with pytest.raises(ModuleExecutionError) as mismatch:
-        await asyncio.to_thread(runtime._retire_absent_worker, "root")
-    assert mismatch.value.code == "recovery_required"
-    assert restored.module_execution.workers
 
 
 @pytest.mark.asyncio

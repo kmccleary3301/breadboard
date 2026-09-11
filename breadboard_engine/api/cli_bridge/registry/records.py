@@ -13,7 +13,7 @@ import time
 import tempfile
 from collections import deque
 from collections.abc import Mapping
-from dataclasses import dataclass, field, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Deque, Dict, Iterable, Optional, Tuple, TypeVar
@@ -332,6 +332,25 @@ class ModuleExecutionRecord:
     work_item_id: str
     attempt_id: str
     workers: tuple[ModuleWorkerOwnership, ...] = ()
+    retired_worker_identities: tuple[tuple[str, str, str], ...] = ()
+
+    def retire_all_workers(self) -> ModuleExecutionRecord:
+        retired = tuple(
+            dict.fromkeys(
+                (
+                    *self.retired_worker_identities,
+                    *(
+                        (
+                            worker.binding,
+                            worker.instance_id,
+                            worker.worker_session_id,
+                        )
+                        for worker in self.workers
+                    ),
+                )
+            )
+        )
+        return replace(self, workers=(), retired_worker_identities=retired)
 
 
 _T = TypeVar("_T")

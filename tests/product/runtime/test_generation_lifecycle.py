@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from threading import Barrier, Thread
+from threading import Barrier, Event, Thread
 
 import pytest
 
@@ -57,6 +57,34 @@ class SharedSentinelPreparer(SentinelPreparer):
         self.created.append(preparation.generation_id)
         record_resource(str(sentinel))
         return str(sentinel)
+
+
+class MappedSentinelPreparer(SentinelPreparer):
+    def prepare(self, preparation, record_resource):
+        resource_name = (
+            "shared"
+            if preparation.source_ref in {"pinned.yaml", "loser.yaml"}
+            else preparation.source_ref
+        )
+        sentinel = self.root / f"{resource_name}.sentinel"
+        sentinel.write_text(preparation.source_ref, encoding="utf-8")
+        self.created.append(preparation.generation_id)
+        record_resource(str(sentinel))
+        return str(sentinel)
+
+
+class ResourceRecordedPausePreparer(DistinctSentinelPreparer):
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.recorded = Event()
+        self.resume = Event()
+
+    def prepare(self, preparation, record_resource):
+        resource_ref = super().prepare(preparation, record_resource)
+        self.recorded.set()
+        if not self.resume.wait(timeout=5):
+            raise RuntimeError("timed out waiting to resume preparation")
+        return resource_ref
 
 
 class CrashAfterResource(BaseException):
@@ -225,6 +253,91 @@ def test_cas_loser_does_not_dispose_current_shared_resource(tmp_path) -> None:
     assert stale.value.code == "cas_conflict"
     assert lifecycle.current("main") == current
     assert (preparer.root / "shared.sentinel").exists() is True
+
+def test_active_admission_protects_shared_resource_from_other_target_loser(
+    tmp_path,
+) -> None:
+    preparer = MappedSentinelPreparer(tmp_path / "resources")
+    preparer.root.mkdir()
+    lifecycle = GenerationLifecycle(tmp_path, preparer)
+    pinned = lifecycle.prepare_and_publish(
+        "pinned",
+        _lock("pinned"),
+        "pinned.yaml",
+        0,
+        "publish-pinned",
+    )
+    lifecycle.reserve_target_admission("pinned", "session", "input")
+    lifecycle.prepare_and_publish(
+        "pinned",
+        _lock("replacement"),
+        "replacement.yaml",
+        pinned.revision,
+        "publish-replacement",
+    )
+    lifecycle.prepare_and_publish(
+        "other",
+        _lock("other-current"),
+        "other.yaml",
+        0,
+        "publish-other",
+    )
+
+    with pytest.raises(GenerationLifecycleError) as stale:
+        lifecycle.prepare_and_publish(
+            "other",
+            _lock("other-loser"),
+            "loser.yaml",
+            0,
+            "publish-other-loser",
+        )
+
+    assert stale.value.code == "cas_conflict"
+    assert (preparer.root / "shared.sentinel").exists() is True
+
+
+def test_resource_recorded_candidate_blocks_duplicate_preparation(tmp_path) -> None:
+    preparer = ResourceRecordedPausePreparer(tmp_path / "resources")
+    preparer.root.mkdir()
+    lifecycle = GenerationLifecycle(tmp_path, preparer)
+    lock = _lock("concurrent")
+    outcome: list[object] = []
+
+    def publish() -> None:
+        try:
+            outcome.append(
+                lifecycle.prepare_and_publish(
+                    "main",
+                    lock,
+                    "same.yaml",
+                    None,
+                    "publish-first",
+                )
+            )
+        except BaseException as error:
+            outcome.append(error)
+
+    thread = Thread(target=publish)
+    thread.start()
+    assert preparer.recorded.wait(timeout=5)
+    try:
+        with pytest.raises(GenerationLifecycleError) as duplicate:
+            lifecycle.prepare_and_publish(
+                "main",
+                lock,
+                "same.yaml",
+                None,
+                "publish-second",
+            )
+        assert duplicate.value.code == "capacity_pressure"
+    finally:
+        preparer.resume.set()
+        thread.join(timeout=5)
+
+    assert len(outcome) == 1
+    assert not isinstance(outcome[0], BaseException)
+    assert preparer.created == [lock.generation_id]
+
 
 
 

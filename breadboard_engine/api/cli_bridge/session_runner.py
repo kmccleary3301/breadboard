@@ -566,12 +566,7 @@ class SessionRunner:
                 for worker in execution.workers
             ):
                 with self._product_session_lock:
-                    self.session.module_execution = ModuleExecutionRecord(
-                        generation_id=execution.generation_id,
-                        root_binding=execution.root_binding,
-                        work_item_id=execution.work_item_id,
-                        attempt_id=execution.attempt_id,
-                    )
+                    self.session.module_execution = execution.retire_all_workers()
                     self.session.module_resume_checkpoints = dict(source_checkpoints)
                     self._resume_checkpoints = dict(source_checkpoints)
                 await self.registry.persist(self.session)
@@ -614,12 +609,7 @@ class SessionRunner:
                     "stale_owner",
                     "source generation changed while adoption cleanup completed",
                 )
-            self.session.module_execution = ModuleExecutionRecord(
-                generation_id=execution.generation_id,
-                root_binding=execution.root_binding,
-                work_item_id=execution.work_item_id,
-                attempt_id=execution.attempt_id,
-            )
+            self.session.module_execution = execution.retire_all_workers()
             self.session.module_resume_checkpoints = dict(source_checkpoints)
             self._module_runtime = None
             self._module_disposal = disposal
