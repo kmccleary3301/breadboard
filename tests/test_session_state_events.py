@@ -2771,6 +2771,11 @@ async def test_confirmed_absent_worker_is_durably_retired_before_restart(
     )
     owner = SessionRegistry(state_root=tmp_path)
     await owner.create(record)
+    state_path = next(tmp_path.glob("*.json"))
+    v2_payload = json.loads(state_path.read_text(encoding="utf-8"))
+    v2_payload["schema_version"] = "bb.cli_bridge.session_state.v2"
+    v2_payload["session"]["module_execution"].pop("retired_workers")
+    state_path.write_text(json.dumps(v2_payload), encoding="utf-8")
     stale_registry = SessionRegistry(state_root=tmp_path)
     stale_record = await stale_registry.get(record.session_id)
     assert stale_record is not None

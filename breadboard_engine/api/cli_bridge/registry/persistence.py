@@ -31,6 +31,7 @@ from ..runtime_emission import retained_runtime_overrides as _retained_runtime_o
 from .records import (
     _STATE_SCHEMA_VERSION,
     _STATE_SCHEMA_VERSION_V1,
+    _STATE_SCHEMA_VERSION_V2,
     _TERMINAL_EVENT_TYPES,
     _deserialize_generation_admission,
     _generation_admission_identity,
@@ -2512,9 +2513,14 @@ class PersistenceMixin:
         if not isinstance(payload, dict):
             raise ValueError("retained session state must be an object")
         schema_version = payload.get("schema_version")
-        if schema_version not in {_STATE_SCHEMA_VERSION_V1, _STATE_SCHEMA_VERSION}:
+        if schema_version not in {
+            _STATE_SCHEMA_VERSION_V1,
+            _STATE_SCHEMA_VERSION_V2,
+            _STATE_SCHEMA_VERSION,
+        }:
             raise ValueError("unsupported session-state schema")
         legacy_schema = schema_version == _STATE_SCHEMA_VERSION_V1
+        previous_schema = schema_version == _STATE_SCHEMA_VERSION_V2
         session = payload.get("session")
         if not isinstance(session, dict):
             raise ValueError("retained session state has no session object")
@@ -2556,6 +2562,13 @@ class PersistenceMixin:
         module_execution_value = session.get("module_execution")
         if legacy_schema and "module_execution" in session:
             raise ValueError("v1 session state contains module execution data")
+        if previous_schema and isinstance(module_execution_value, dict):
+            if "retired_workers" in module_execution_value:
+                raise ValueError("v2 module execution contains v3 retirement data")
+            module_execution_value = {
+                **module_execution_value,
+                "retired_workers": [],
+            }
         try:
             module_execution = _deserialize_module_execution(module_execution_value)
         except (TypeError, ValueError) as error:

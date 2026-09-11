@@ -229,6 +229,40 @@ def test_republication_reuses_current_resource_for_same_generation(tmp_path) -> 
     assert preparer.resources[first.preparation_id].exists() is True
 
 
+def test_rollback_reuses_ready_preparation_pinned_by_admission(tmp_path) -> None:
+    preparer = DistinctSentinelPreparer(tmp_path / "resources")
+    preparer.root.mkdir()
+    lifecycle = GenerationLifecycle(tmp_path, preparer)
+    lock_a, lock_b = _lock("rollback-a"), _lock("rollback-b")
+    publication_a = lifecycle.prepare_and_publish(
+        "main",
+        lock_a,
+        "a.yaml",
+        0,
+        "publish-a",
+    )
+    lifecycle.reserve_target_admission("main", "session-a", "input-a")
+    publication_b = lifecycle.prepare_and_publish(
+        "main",
+        lock_b,
+        "b.yaml",
+        publication_a.revision,
+        "publish-b",
+    )
+
+    rollback = lifecycle.prepare_and_publish(
+        "main",
+        lock_a,
+        "a.yaml",
+        publication_b.revision,
+        "rollback-a",
+    )
+
+    assert rollback.preparation_id == publication_a.preparation_id
+    assert preparer.created == [lock_a.generation_id, lock_b.generation_id]
+    assert preparer.resources[publication_a.preparation_id].exists() is True
+
+
 def test_cas_loser_does_not_dispose_current_shared_resource(tmp_path) -> None:
     preparer = SharedSentinelPreparer(tmp_path / "resources")
     preparer.root.mkdir()
@@ -253,6 +287,7 @@ def test_cas_loser_does_not_dispose_current_shared_resource(tmp_path) -> None:
     assert stale.value.code == "cas_conflict"
     assert lifecycle.current("main") == current
     assert (preparer.root / "shared.sentinel").exists() is True
+
 
 def test_active_admission_protects_shared_resource_from_other_target_loser(
     tmp_path,
@@ -337,8 +372,6 @@ def test_resource_recorded_candidate_blocks_duplicate_preparation(tmp_path) -> N
     assert len(outcome) == 1
     assert not isinstance(outcome[0], BaseException)
     assert preparer.created == [lock.generation_id]
-
-
 
 
 def test_adoption_reservation_keeps_old_session_admission_live(tmp_path):

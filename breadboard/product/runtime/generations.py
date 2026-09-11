@@ -694,16 +694,31 @@ class GenerationLifecycle:
                     if isinstance(pointer, Mapping)
                     else None
                 )
-                if (
-                    isinstance(current, Mapping)
+                reusable = (
+                    current
+                    if isinstance(current, Mapping)
                     and current.get("generation_id") == effective.generation_id
                     and current.get("status") == "ready"
                     and current.get("cleanup") in ("owned", "not_required")
-                ):
-                    preparation_id = str(current["preparation_id"])
-                    preparation = self._preparation(current)
+                    else None
+                )
+                if reusable is None:
+                    for candidate in reversed(state["preparations"].values()):
+                        if (
+                            isinstance(candidate, Mapping)
+                            and candidate.get("target") == target
+                            and candidate.get("generation_id")
+                            == effective.generation_id
+                            and candidate.get("status") == "ready"
+                            and candidate.get("cleanup") in ("owned", "not_required")
+                        ):
+                            reusable = candidate
+                            break
+                if reusable is not None:
+                    preparation_id = str(reusable["preparation_id"])
+                    preparation = self._preparation(reusable)
                     preparation_ready = True
-                    resource = current.get("resource_ref")
+                    resource = reusable.get("resource_ref")
                     existing_resource = (
                         resource if isinstance(resource, str) else None
                     )

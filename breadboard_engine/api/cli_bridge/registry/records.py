@@ -57,7 +57,8 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 _STATE_SCHEMA_VERSION_V1 = "bb.cli_bridge.session_state.v1"
-_STATE_SCHEMA_VERSION = "bb.cli_bridge.session_state.v2"
+_STATE_SCHEMA_VERSION_V2 = "bb.cli_bridge.session_state.v2"
+_STATE_SCHEMA_VERSION = "bb.cli_bridge.session_state.v3"
 CONTROL_REQUEST_ID_CAPACITY = 4096
 _TERMINAL_EVENT_TYPES = {
     EventType.TURN_COMPLETED,
