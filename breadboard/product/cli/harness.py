@@ -231,6 +231,8 @@ def _server(a):
             if module_input_path is not None
             else None
         )
+        if module_input is not None and not module_input.final and getattr(a, "local", False):
+            raise ValueError("non-final module input requires a persistent --server, not --local")
         task = None if module_input is not None else str(getattr(a, "task", None) or "List files")
         authority_path = getattr(a, "module_authority", None)
         module_authority = (
@@ -267,6 +269,15 @@ def _server(a):
         sid = str(session.get("session_id") or "")
         if not sid:
             raise RuntimeError("session.start returned no session identity")
+        if module_input is not None and not module_input.final:
+            return OperationResult.success(
+                ["harness", "run"],
+                {"session_id": sid},
+                next_actions=[
+                    f"breadboard session --server {shlex.quote(a.server)} get {shlex.quote(sid)}"
+                ],
+                stage="harness.run",
+            )
         terminal = False
         for event in c.events_session(sid, follow=True):
             kind = (

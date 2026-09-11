@@ -7,7 +7,12 @@ from typing import Any
 import yaml
 
 from breadboard.artifacts.cas import FilesystemCAS
-from breadboard.product.harness.compile import HarnessCompilation, HarnessCompileError, compile_harness_definition
+from breadboard.product.harness.compile import (
+    HarnessCompilation,
+    HarnessCompileError,
+    _merge,
+    compile_harness_definition,
+)
 from breadboard.product.harness.lock import configuration_artifact_id, sha256_bytes
 from breadboard.product.harness.templates import (
     DAILY_DRIVER_MODEL_ROLES_NAME,
@@ -294,13 +299,15 @@ def compile_harness_source(
         return resolved, document
     document = load_harness_document_bytes(root_bytes)
     documents[source_ref] = document
-    module_declarations: dict[str, tuple[Mapping[str, Any], Path]] = {}
+    merged_modules: Any = {}
+    merged_module_sources: Any = {}
 
     def collect_modules(
         current: Mapping[str, Any],
         reference: str,
         stack: tuple[str, ...],
     ) -> None:
+        nonlocal merged_modules, merged_module_sources
         for declared in _declared_references(current):
             resolved, loaded = load_ref(reference, declared)
             if resolved in stack:
@@ -308,17 +315,57 @@ def compile_harness_source(
                     "cyclic reference: " + " -> ".join((*stack, resolved))
                 )
             collect_modules(loaded, resolved, (*stack, resolved))
-        modules = current.get("modules")
-        if isinstance(modules, Mapping):
-            bindings = modules.get("bindings")
-            if isinstance(bindings, Mapping):
-                for name, binding in bindings.items():
-                    if isinstance(name, str) and isinstance(binding, Mapping):
-                        module_declarations[name] = (binding, paths[reference].parent)
+        if "modules" in current:
+            merged_modules, merged_module_sources = _merge(
+                merged_modules,
+                merged_module_sources,
+                current["modules"],
+                reference,
+                metadata=False,
+            )
     try:
         collect_modules(document, source_ref, (source_ref,))
     except HarnessContainmentError as error:
         raise HarnessCompileError(str(error)) from error
+    module_declarations: dict[str, tuple[Mapping[str, Any], Path]] = {}
+    if isinstance(merged_modules, Mapping):
+        bindings = merged_modules.get("bindings")
+        binding_sources = (
+            merged_module_sources.get("bindings")
+            if isinstance(merged_module_sources, Mapping)
+            else None
+        )
+        if isinstance(bindings, Mapping):
+            for name, binding in bindings.items():
+                if not isinstance(name, str) or not isinstance(binding, Mapping):
+                    continue
+                sources = (
+                    binding_sources.get(name)
+                    if isinstance(binding_sources, Mapping)
+                    else None
+                )
+                package_sources = (
+                    sources.get("package") if isinstance(sources, Mapping) else None
+                )
+                source_provenance = (
+                    package_sources.get("source")
+                    if isinstance(package_sources, Mapping)
+                    else None
+                )
+                if not (
+                    isinstance(source_provenance, tuple)
+                    and len(source_provenance) == 2
+                    and isinstance(source_provenance[0], str)
+                ):
+                    raise HarnessCompileError(
+                        f"module binding {name!r} package source is invalid"
+                    )
+                package_source = paths.get(source_provenance[0])
+                if package_source is None:
+                    raise HarnessCompileError(
+                        f"module binding {name!r} package source is unavailable"
+                    )
+                module_declarations[name] = (binding, package_source.parent)
 
     owns_cas = False
     active_cas = cas

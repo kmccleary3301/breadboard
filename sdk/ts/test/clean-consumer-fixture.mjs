@@ -76,6 +76,28 @@ const create: PublicHarnessCreateRequest = {}
 const update: PublicHarnessUpdateRequest = { definition: {} }
 const start: PublicSessionStartRequest = { lock_id: "lock", task: "task" }
 const sessionInput: PublicSessionInputRequest = { content: "continue" }
+const moduleSessionInput: PublicSessionInputRequest = {
+  module_input: {
+    schema_id: "fixture.module.input.v1",
+    body: "{}",
+    final: true,
+  },
+}
+// @ts-expect-error session input requires content or module_input
+const emptySessionInput: PublicSessionInputRequest = {}
+// @ts-expect-error session input cannot contain content and module_input
+const dualSessionInput: PublicSessionInputRequest = {
+  content: "continue",
+  module_input: {
+    schema_id: "fixture.module.input.v1",
+    body: "{}",
+    final: true,
+  },
+}
+// @ts-expect-error content must be non-null
+const nullTextSessionInput: PublicSessionInputRequest = { content: null }
+// @ts-expect-error module_input must be non-null
+const nullModuleSessionInput: PublicSessionInputRequest = { module_input: null }
 const approval: PublicSessionApprovalRequest = { request_id: "request", decision: "allow" }
 const cancel: PublicSessionCancelRequest = {}
 const decision: PublicSessionDecision = "allow"
@@ -115,6 +137,8 @@ const published: Promise<PublicResult> = client.publishHarness("main", {
   ...publish,
 })
 const sent: Promise<PublicResult> = client.sendInputSession("session", sessionInput)
+const sentText: Promise<PublicResult> = client.sendInputSession("session", "continue")
+const sentModule: Promise<PublicResult> = client.sendInputSession("session", moduleSessionInput)
 const approved: Promise<PublicResult> = client.approveSession("session", approval.request_id, approval.decision)
 const canceled: Promise<PublicResult> = client.cancelSession("session", cancel.reason)
 const checkpointed: Promise<PublicResult> = client.checkpointSession("session", {
@@ -142,6 +166,13 @@ void catalog
 void started
 void updated
 void sent
+void moduleSessionInput
+void emptySessionInput
+void dualSessionInput
+void nullTextSessionInput
+void nullModuleSessionInput
+void sentText
+void sentModule
 void approved
 void canceled
 void checkpointed

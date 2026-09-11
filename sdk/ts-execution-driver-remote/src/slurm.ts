@@ -893,7 +893,7 @@ export function makeSshSlurmBackend(
         throw new Error("Slurm retained submission identity does not match its receipt")
       }
       assertConfiguredResourceProfile(execution)
-      if (enforceResourceProfile) {
+      if (enforceResourceProfile && receiptAttemptToken === submissionAttemptToken) {
         try {
           recordRestartCount(
             execution,

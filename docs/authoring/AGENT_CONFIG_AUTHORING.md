@@ -196,6 +196,8 @@ breadboard harness publish main --lock ./composition.lock.json --expected-revisi
 breadboard harness run --server http://127.0.0.1:8000 --target main --module-input ./input.json
 ```
 
+With `"final": false` in the module input, `harness run` returns the admitted Session ID without waiting for a terminal event. Use a persistent `--server` for later inputs; `--local` refuses non-final input because its server stops when the command exits.
+
 Existing work stays on its admitted generation. To replace it, checkpoint at a quiescent frontier and ask the Session owner to adopt an exact compatible Lock:
 
 ```bash

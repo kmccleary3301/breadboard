@@ -124,10 +124,15 @@ export interface ResearchCompareBody {
   readonly compare: readonly [string, string]
 }
 
-export interface PublicSessionInputRequest {
-  readonly content?: string | null
-  readonly module_input?: ModuleInput | null
-}
+export type PublicSessionInputRequest =
+  | {
+      readonly content: string
+      readonly module_input?: never
+    }
+  | {
+      readonly content?: never
+      readonly module_input: ModuleInput
+    }
 
 export type PublicSessionDecision = "allow" | "deny" | "once" | "always" | "reject"
 

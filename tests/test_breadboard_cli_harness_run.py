@@ -16,6 +16,7 @@ from scripts import breadboard_cli
 from breadboard.product.cli import harness as harness_operations
 from breadboard_engine.api.local_server import local_server
 from breadboard.product.cli import session as session_operations
+from breadboard.modules import ModuleInput
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.harness.templates import (
     daily_driver_model_roles_path,
@@ -337,6 +338,50 @@ def test_harness_run_rejects_event_stream_eof_before_terminal_event(
     captured = capsys.readouterr()
     assert exit_code == 4
     assert captured.out == ""
+
+
+def test_harness_run_returns_nonfinal_module_session(
+    locked_harness: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module_input = tmp_path / "input.json"
+    module_input.write_text(
+        json.dumps(ModuleInput("example.input.v1", b"{}", final=False).to_dict()),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", _EofClient)
+
+    exit_code = breadboard_cli.main([
+        "harness", "run", str(locked_harness),
+        "--server", "https://breadboard.test/api",
+        "--module-input", str(module_input),
+    ])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0, captured.err
+    assert "session-g3" in captured.out
+
+
+def test_local_harness_run_refuses_nonfinal_input_before_admission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module_input = tmp_path / "input.json"
+    module_input.write_text(
+        json.dumps(ModuleInput("example.input.v1", b"{}", final=False).to_dict()),
+        encoding="utf-8",
+    )
+    _RunClient.calls = []
+    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", _RunClient)
+
+    result = harness_operations._server(SimpleNamespace(
+        server="http://127.0.0.1:1234", local=True,
+        module_input=module_input, _lock_id="example.lock.json",
+    ))
+
+    assert not result.ok
+    assert not any(call[0] == "start" for call in _RunClient.calls)
 
 
 def test_harness_run_maps_sdk_failures_to_runtime_exit(

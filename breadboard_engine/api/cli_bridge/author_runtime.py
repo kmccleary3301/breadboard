@@ -27,8 +27,9 @@ from breadboard.modules.author import (
 )
 from breadboard.modules.authority import AdmissionGrant, AuthorityDeclaration
 from breadboard.modules.transport import (
-    MAX_CHECKPOINT_BYTES, MAX_FRAME_BYTES, PROTOCOL_VERSION, RequestKey,
-    WireHeader, WireKind, WireMessage, WireProtocolError, decode_bytes, encode_bytes,
+    MAX_CHECKPOINT_BYTES, MAX_FRAME_BYTES, MessageReassembler, PROTOCOL_VERSION,
+    RequestKey, WireHeader, WireKind, WireMessage, WireProtocolError,
+    decode_bytes, encode_bytes, iter_message_frames,
 )
 from breadboard.product.coordination.work_items import WorkItem, WorkItemRepository
 from breadboard.product.harness.packages import ModuleContract, ModulePackage
@@ -532,6 +533,7 @@ class _ModuleWorker:
         self._step_lock = threading.Lock()
         self._input_closed = False
         self._sent = self._received = self._next_service = 0
+        self._messages = MessageReassembler(maximum=self.limits.max_message_bytes)
         self.latest_checkpoint: CheckpointProposal | None = None
         owner._replace_worker(self)
 
@@ -556,6 +558,8 @@ class _ModuleWorker:
             "generation_id": self.key.generation_id,
             "instance_label": self.binding,
             "next_input_sequence": self.ownership.next_input_sequence,
+            "max_message_bytes": self.limits.max_message_bytes,
+            "max_checkpoint_bytes": self.limits.max_checkpoint_bytes,
             "initial_input": None,
             "resume": (
                 _checkpoint_to_wire(
@@ -587,7 +591,7 @@ class _ModuleWorker:
             try:
                 self.owner.require_live()
                 start = WireMessage(WireHeader(PROTOCOL_VERSION, "start", self.key, 0), self._start_body())
-                start.encode(max_bytes=self.limits.max_message_bytes)
+                next(iter_message_frames(start, max_bytes=self.limits.max_message_bytes))
                 root = Path(self.ownership.staging_root)
                 root.parent.mkdir(mode=0o700)
                 root.mkdir(mode=0o755)
@@ -642,12 +646,21 @@ class _ModuleWorker:
     def _receive(self, timeout: float | None = None) -> WireMessage:
         if self.channel is None:
             raise ModuleExecutionError("worker_unavailable", "worker channel is not prepared")
-        payload = self.channel.receive_frame(timeout)
-        if payload is None:
-            raise ModuleExecutionError("worker_lost", "worker channel closed before its result")
-        if len(payload) > self.limits.max_message_bytes:
-            raise WireProtocolError("worker exceeded its admitted frame budget")
-        message = WireMessage.decode(payload)
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while True:
+            remaining = (
+                None
+                if deadline is None
+                else max(0.0, deadline - time.monotonic())
+            )
+            payload = self.channel.receive_frame(remaining)
+            if payload is None:
+                raise ModuleExecutionError("worker_lost", "worker channel closed before its result")
+            if len(payload) > self.limits.max_message_bytes:
+                raise WireProtocolError("worker exceeded its admitted frame budget")
+            message = self._messages.accept(WireMessage.decode(payload))
+            if message is not None:
+                break
         if not _same_scope(message.header.key, self.key) or message.header.sequence != self._received:
             raise WireProtocolError("worker frame does not match the admitted scope and sequence")
         self._received += 1
@@ -683,8 +696,15 @@ class _ModuleWorker:
             if envelope.schema_id not in self.package.manifest.input_schema_ids:
                 raise ModuleExecutionError("schema_mismatch", "module input schema is not declared")
             key = replace(self.key, request_id=request_id)
-            body = {"schema_id": envelope.schema_id, "sequence": envelope.sequence, "body": encode_bytes(envelope.body), "final": envelope.final}
-            WireMessage(WireHeader(PROTOCOL_VERSION, "input", key, self._sent), body).encode(max_bytes=self.limits.max_message_bytes)
+            body = {
+                "schema_id": envelope.schema_id,
+                "sequence": envelope.sequence,
+                "body": encode_bytes(
+                    envelope.body,
+                    maximum=self.limits.max_message_bytes,
+                ),
+                "final": envelope.final,
+            }
             self.owner._replace_worker(self, next_input_sequence=envelope.sequence + 1)
             self._input_closed = envelope.final
             self._send("input", key, body)
@@ -704,7 +724,13 @@ class _ModuleWorker:
                     if output is not None:
                         raise WireProtocolError("worker emitted two outputs for one step")
                     body = _object(message.body, {"schema_id", "body"}, "module output")
-                    output = OutputEnvelope(_text(body["schema_id"], "output schema"), decode_bytes(body["body"]))
+                    output = OutputEnvelope(
+                        _text(body["schema_id"], "output schema"),
+                        decode_bytes(
+                            body["body"],
+                            maximum=self.limits.max_message_bytes,
+                        ),
+                    )
                     if output.schema_id not in self.package.manifest.output_schema_ids:
                         raise WireProtocolError("worker output schema is outside its declared closure")
                     self.owner.emit_output(output, key, self.package.manifest.logical_package, 0, envelope.final)
@@ -826,7 +852,12 @@ class _ModuleWorker:
             )
         try:
             key = replace(self.key, request_id=f"checkpoint-adoption:{self.binding}")
-            chunk_messages: list[Mapping[str, object]] = []
+            chunks = _CheckpointChunks(
+                self,
+                source.declared_at_sequence,
+                expected_envelope=source.payload,
+                allow_worker_envelope=True,
+            )
             self._send(
                 "checkpoint_prepare",
                 key,
@@ -845,11 +876,7 @@ class _ModuleWorker:
                         "checkpoint compatibility response escaped its request scope"
                     )
                 if message.header.kind == "checkpoint":
-                    if len(chunk_messages) >= 7:
-                        raise WireProtocolError(
-                            "checkpoint preparation emitted too many chunks"
-                        )
-                    chunk_messages.append(message.body)
+                    chunks.append(message.body)
                     continue
                 if message.header.kind == "checkpoint_compatibility":
                     body = _object(
@@ -862,20 +889,16 @@ class _ModuleWorker:
                         raise WireProtocolError(
                             "checkpoint compatibility disposition is invalid"
                         )
-                    chunks = _CheckpointChunks(
-                        self,
-                        source.declared_at_sequence,
-                        expected_envelope=(
-                            source.payload
-                            if disposition == "compatible"
-                            else None
-                        ),
-                    )
-                    for chunk_message in chunk_messages:
-                        chunks.append(chunk_message)
-                    proposal = (
-                        chunks.finish() if disposition != "incompatible" else None
-                    )
+                    proposal = chunks.finish()
+                    if disposition == "incompatible":
+                        if proposal is not None:
+                            raise WireProtocolError(
+                                "incompatible checkpoint response emitted state"
+                            )
+                    elif proposal is None:
+                        raise WireProtocolError(
+                            "checkpoint compatibility response omitted state"
+                        )
                     if disposition == "compatible" and proposal != source:
                         raise WireProtocolError(
                             "compatible checkpoint response changed source state"
@@ -932,50 +955,77 @@ class _CheckpointChunks:
         sequence: int,
         *,
         expected_envelope: CheckpointEnvelope | None = None,
+        allow_worker_envelope: bool = False,
     ) -> None:
         self.worker, self.sequence = worker, sequence
         self.expected_envelope = expected_envelope
+        self.allow_worker_envelope = allow_worker_envelope
         self._metadata: Mapping[str, object] | None = None
-        self._chunks: list[bytes] = []
-        self._bytes = 0
+        self._payload = bytearray()
+        self._count = 0
+
+    @staticmethod
+    def _matches_envelope(
+        body: Mapping[str, object],
+        envelope: CheckpointEnvelope,
+    ) -> bool:
+        return (
+            body["source_generation_id"] == envelope.source_generation_id
+            and body["source_module_id"] == envelope.source_module_id
+            and body["source_instance_id"] == envelope.source_instance_id
+            and body["source_work_id"] == envelope.source_work_id
+            and body["source_attempt_id"] == envelope.source_attempt_id
+            and body["schema_id"] == envelope.schema_id
+        )
+
+    def _matches_worker(self, body: Mapping[str, object]) -> bool:
+        key = self.worker.key
+        return (
+            body["source_generation_id"] == key.generation_id
+            and body["source_module_id"]
+            == self.worker.package.manifest.logical_package
+            and body["source_instance_id"] == key.instance_id
+            and body["source_work_id"] == key.work_id
+            and body["source_attempt_id"] == key.attempt_id
+            and body["schema_id"]
+            == self.worker.package.manifest.checkpoint_schema_id
+        )
 
     def append(self, value: Mapping[str, object]) -> None:
-        fields = {"phase", "chunk_index", "chunk_count", "total_bytes", "schema_id", "source_generation_id", "source_module_id", "source_instance_id", "source_work_id", "source_attempt_id", "declared_at_sequence", "body"}
+        fields = {
+            "phase", "chunk_index", "chunk_count", "total_bytes", "schema_id",
+            "source_generation_id", "source_module_id", "source_instance_id",
+            "source_work_id", "source_attempt_id", "declared_at_sequence",
+            "body",
+        }
         body = _object(value, fields, "checkpoint chunk")
         index = _integer(body["chunk_index"], "chunk index")
         count = _integer(body["chunk_count"], "chunk count", 1)
         total = _integer(body["total_bytes"], "checkpoint total bytes")
-        key = self.worker.key
         expected = self.expected_envelope
+        matches_expected = (
+            expected is not None and self._matches_envelope(body, expected)
+        )
+        matches_worker = (
+            self._matches_worker(body)
+            if expected is None
+            or (self.allow_worker_envelope and not matches_expected)
+            else False
+        )
         if (
-            body["phase"] != "proposal" or index != len(self._chunks) or index >= count
-            or count > 7 or total > self.worker.limits.max_checkpoint_bytes
-            or body["source_generation_id"] != (
-                expected.source_generation_id if expected is not None else key.generation_id
-            )
-            or body["source_module_id"] != (
-                expected.source_module_id
-                if expected is not None
-                else self.worker.package.manifest.logical_package
-            )
-            or body["source_instance_id"] != (
-                expected.source_instance_id if expected is not None else key.instance_id
-            )
-            or body["source_work_id"] != (
-                expected.source_work_id if expected is not None else key.work_id
-            )
-            or body["source_attempt_id"] != (
-                expected.source_attempt_id if expected is not None else key.attempt_id
-            )
+            body["phase"] != "proposal"
+            or index != self._count
+            or index >= count
+            or total > self.worker.limits.max_checkpoint_bytes
+            or (total == 0 and count != 1)
+            or (total > 0 and count > total)
             or body["declared_at_sequence"] != self.sequence
             or (
                 expected is not None
-                and body["schema_id"] != expected.schema_id
+                and not matches_expected
+                and not (self.allow_worker_envelope and matches_worker)
             )
-            or (
-                expected is None
-                and body["schema_id"] != self.worker.package.manifest.checkpoint_schema_id
-            )
+            or (expected is None and not matches_worker)
         ):
             raise WireProtocolError(
                 "checkpoint does not match its owner, frontier or declared bound"
@@ -988,24 +1038,36 @@ class _CheckpointChunks:
         if self._metadata is not None and self._metadata != metadata:
             raise WireProtocolError("checkpoint metadata changed between chunks")
         self._metadata = metadata
-        chunk = decode_bytes(body["body"], maximum=160 * 1024)
-        self._bytes += len(chunk)
-        if self._bytes > total:
+        chunk = decode_bytes(
+            body["body"],
+            maximum=self.worker.limits.max_checkpoint_bytes,
+        )
+        if total > 0 and not chunk:
+            raise WireProtocolError(
+                "non-empty checkpoint transfer has an empty chunk"
+            )
+        self._payload.extend(chunk)
+        self._count += 1
+        if len(self._payload) > total:
             raise WireProtocolError("checkpoint exceeds its declared length")
-        self._chunks.append(chunk)
+        if self._count < count and len(self._payload) == total:
+            raise WireProtocolError(
+                "checkpoint reached its declared length before its final chunk"
+            )
 
     def finish(self) -> CheckpointProposal | None:
         metadata = self._metadata
         if metadata is None:
             return None
         if (
-            len(self._chunks) != metadata["chunk_count"]
-            or self._bytes != metadata["total_bytes"]
+            self._count != metadata["chunk_count"]
+            or len(self._payload) != metadata["total_bytes"]
         ):
             raise WireProtocolError("checkpoint transfer is incomplete")
+        payload = bytes(self._payload)
         envelope = CheckpointEnvelope(
             schema_id=metadata["schema_id"],
-            body=b"".join(self._chunks),
+            body=payload,
             source_generation_id=metadata["source_generation_id"],
             source_module_id=metadata["source_module_id"],
             source_instance_id=metadata["source_instance_id"],

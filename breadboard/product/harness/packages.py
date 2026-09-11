@@ -636,10 +636,17 @@ class ModuleManifest:
             raise ModulePackageValidationError(
                 "import_members must contain ImportMember values"
             )
-        if len({item.path for item in sources}) != len(sources):
+        source_paths = {item.path for item in sources}
+        if len(source_paths) != len(sources):
             raise ModulePackageValidationError("source member paths must be unique")
-        if len({(item.module, item.path) for item in imports}) != len(imports):
-            raise ModulePackageValidationError("import member bindings must be unique")
+        if len({item.module for item in imports}) != len(imports):
+            raise ModulePackageValidationError(
+                "import member module names must be unique"
+            )
+        if not {item.path for item in imports} <= source_paths:
+            raise ModulePackageValidationError(
+                "import members must name captured source members"
+            )
         object.__setattr__(
             self, "source_members", tuple(sorted(sources, key=lambda item: item.path))
         )
@@ -674,7 +681,6 @@ class ModuleManifest:
                 self.schema_members, "schema_members"
             ).items()
         }
-        source_paths = {item.path for item in sources}
         if not set(schema_members.values()) <= source_paths:
             raise ModulePackageValidationError(
                 "schema members must name captured source members"

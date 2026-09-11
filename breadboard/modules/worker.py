@@ -23,7 +23,7 @@ import zipfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import ModuleType
-from typing import Callable, Final, TypeAlias
+from typing import Callable, Final, Literal, TypeAlias
 
 from .author import (
     CheckpointCompatibility,
@@ -67,16 +67,16 @@ from .transport import (
     FrameEOF,
     FrameLimitError,
     MAX_CHECKPOINT_BYTES,
-    MAX_CHECKPOINT_CHUNK_BYTES,
-    MAX_CHECKPOINT_CHUNKS,
     MAX_FRAME_BYTES,
     PROTOCOL_VERSION,
     RequestKey,
     WireHeader,
     WireMessage,
     WireProtocolError,
+    WireKind,
     decode_bytes,
     encode_bytes,
+    iter_chunked_messages,
     read_message,
     write_message,
 )
@@ -324,6 +324,8 @@ class _WorkerIO:
     def __init__(self, reader, writer) -> None:
         self.reader = reader
         self.writer = writer
+        self.max_message_bytes = MAX_FRAME_BYTES
+        self.max_checkpoint_bytes = MAX_CHECKPOINT_BYTES
         self._out_sequence = 0
         self._in_sequence = 0
         self._service_sequence = 0
@@ -353,7 +355,7 @@ class _WorkerIO:
             raise WorkerError("stale_reply", "wire identity does not match admitted worker")
 
     def next_message(self) -> WireMessage:
-        message = read_message(self.reader)
+        message = read_message(self.reader, max_bytes=self.max_message_bytes)
         if message is None:
             raise FrameEOF("host closed worker channel")
         if message.header.kind == "checkpoint_chunk":
@@ -365,9 +367,10 @@ class _WorkerIO:
         return message
 
     def _checkpoint_transfer(self, first: WireMessage) -> WireMessage:
-        chunks: list[bytes] = []
+        payload = bytearray()
         metadata: Mapping[str, object] | None = None
         message = first
+        next_index = 0
         while True:
             self.validate_identity(message)
             if (
@@ -392,6 +395,7 @@ class _WorkerIO:
                 "chunk_index",
                 "chunk_count",
                 "total_bytes",
+                "body_sha256",
                 context_name,
                 "source_generation_id",
                 "source_module_id",
@@ -423,9 +427,29 @@ class _WorkerIO:
                         "child_targets",
                         "initial_input",
                         "next_input_sequence",
+                        "max_message_bytes",
+                        "max_checkpoint_bytes",
                     },
                     "checkpoint transfer start",
                 )
+                frame_maximum = _integer(
+                    context["max_message_bytes"],
+                    "max_message_bytes",
+                    minimum=1,
+                )
+                checkpoint_maximum = _integer(
+                    context["max_checkpoint_bytes"],
+                    "max_checkpoint_bytes",
+                    minimum=1,
+                )
+                if (
+                    frame_maximum > MAX_FRAME_BYTES
+                    or checkpoint_maximum > MAX_CHECKPOINT_BYTES
+                ):
+                    raise WorkerError(
+                        "malformed_frame",
+                        "checkpoint transfer exceeds protocol limits",
+                    )
             else:
                 _exact(
                     context,
@@ -436,6 +460,8 @@ class _WorkerIO:
                     },
                     "checkpoint transfer prepare",
                 )
+                frame_maximum = self.max_message_bytes
+                checkpoint_maximum = self.max_checkpoint_bytes
             index = _integer(body["chunk_index"], "checkpoint chunk index")
             count = _integer(
                 body["chunk_count"],
@@ -443,20 +469,24 @@ class _WorkerIO:
                 minimum=1,
             )
             total = _integer(body["total_bytes"], "checkpoint total bytes")
-            expected_count = max(
-                1,
-                (
-                    total
-                    + MAX_CHECKPOINT_CHUNK_BYTES
-                    - 1
-                )
-                // MAX_CHECKPOINT_CHUNK_BYTES,
-            )
+            digest = body["body_sha256"]
             if (
-                index != len(chunks)
-                or count != expected_count
-                or count > MAX_CHECKPOINT_CHUNKS
-                or total > MAX_CHECKPOINT_BYTES
+                not isinstance(digest, str)
+                or len(digest) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in digest
+                )
+            ):
+                raise WorkerError(
+                    "malformed_frame",
+                    "checkpoint transfer digest is invalid",
+                )
+            if (
+                index != next_index
+                or total > checkpoint_maximum
+                or (total == 0 and count != 1)
+                or (total > 0 and count > total)
             ):
                 raise WorkerError(
                     "malformed_frame",
@@ -473,26 +503,42 @@ class _WorkerIO:
                     "checkpoint transfer metadata changed between chunks",
                 )
             metadata = current_metadata
-            chunk = decode_bytes(
-                body["body"],
-                maximum=MAX_CHECKPOINT_CHUNK_BYTES,
-            )
-            expected_bytes = min(
-                MAX_CHECKPOINT_CHUNK_BYTES,
-                total - index * MAX_CHECKPOINT_CHUNK_BYTES,
-            )
-            if len(chunk) != expected_bytes:
+            chunk = decode_bytes(body["body"], maximum=checkpoint_maximum)
+            if total > 0 and not chunk:
                 raise WorkerError(
                     "malformed_frame",
-                    "checkpoint chunk length differs from its declaration",
+                    "non-empty checkpoint transfer has an empty chunk",
                 )
-            chunks.append(chunk)
-            if len(chunks) == count:
-                break
-            message = read_message(self.reader)
-            if message is None:
-                raise FrameEOF("host closed during checkpoint transfer")
+            payload.extend(chunk)
+            next_index += 1
+            if len(payload) > total:
+                raise WorkerError(
+                    "malformed_frame",
+                    "checkpoint chunks exceed their declared length",
+                )
+            if next_index < count:
+                if len(payload) == total:
+                    raise WorkerError(
+                        "malformed_frame",
+                        "checkpoint transfer reached its length before its final chunk",
+                    )
+                message = read_message(self.reader, max_bytes=frame_maximum)
+                if message is None:
+                    raise FrameEOF("host closed during checkpoint transfer")
+                continue
+            if next_index != count or len(payload) != total:
+                raise WorkerError(
+                    "malformed_frame",
+                    "checkpoint transfer is incomplete",
+                )
+            break
         assert metadata is not None
+        checkpoint_body = bytes(payload)
+        if hashlib.sha256(checkpoint_body).hexdigest() != metadata["body_sha256"]:
+            raise WorkerError(
+                "malformed_frame",
+                "checkpoint transfer digest does not match its body",
+            )
         checkpoint = {
             name: metadata[name]
             for name in (
@@ -505,12 +551,12 @@ class _WorkerIO:
             )
         }
         checkpoint["body"] = encode_bytes(
-            b"".join(chunks),
-            maximum=MAX_CHECKPOINT_BYTES,
+            checkpoint_body,
+            maximum=checkpoint_maximum,
         )
         logical_body = dict(metadata[context_name])
         logical_body["resume" if phase == "resume" else "source"] = checkpoint
-        kind = "start" if phase == "resume" else "checkpoint_prepare"
+        kind: WireKind = "start" if phase == "resume" else "checkpoint_prepare"
         return WireMessage(
             WireHeader(
                 PROTOCOL_VERSION,
@@ -521,10 +567,39 @@ class _WorkerIO:
             logical_body,
         )
 
-    def emit(self, kind: str, key: RequestKey, body: Mapping[str, object]) -> None:
-        header = WireHeader(2, kind, key, self._out_sequence)
-        write_message(self.writer, WireMessage(header, dict(body)))
+    def emit(self, kind: WireKind, key: RequestKey, body: Mapping[str, object]) -> None:
+        header = WireHeader(PROTOCOL_VERSION, kind, key, self._out_sequence)
+        write_message(
+            self.writer,
+            WireMessage(header, dict(body)),
+            max_bytes=self.max_message_bytes,
+        )
         self._out_sequence += 1
+
+    def emit_chunks(
+        self,
+        kind: Literal["checkpoint"],
+        key: RequestKey,
+        metadata: Mapping[str, object],
+        payload: bytes,
+        *,
+        maximum: int,
+    ) -> None:
+        header = WireHeader(PROTOCOL_VERSION, kind, key, self._out_sequence)
+        for message in iter_chunked_messages(
+            header,
+            kind,
+            metadata,
+            payload,
+            max_bytes=self.max_message_bytes,
+            maximum=maximum,
+        ):
+            write_message(
+                self.writer,
+                message,
+                max_bytes=self.max_message_bytes,
+            )
+            self._out_sequence += 1
 
     def wait_service(self, request_id: str) -> Mapping[str, object]:
         while True:
@@ -828,11 +903,30 @@ class _Worker:
             "package_path", "package_digest", "module_id", "instance_id",
             "generation_id", "instance_label", "input_schemas", "output_schemas",
             "checkpoint_schemas", "dependencies", "child_targets", "initial_input",
-            "resume", "next_input_sequence",
+            "resume", "next_input_sequence", "max_message_bytes",
+            "max_checkpoint_bytes",
         }
         _exact(body, required, "start")
         self.key = message.header.key
         self.io.set_identity(self.key)
+        self.io.max_message_bytes = _integer(
+            body["max_message_bytes"],
+            "max_message_bytes",
+            minimum=1,
+        )
+        self.io.max_checkpoint_bytes = _integer(
+            body["max_checkpoint_bytes"],
+            "max_checkpoint_bytes",
+            minimum=1,
+        )
+        if (
+            self.io.max_message_bytes > MAX_FRAME_BYTES
+            or self.io.max_checkpoint_bytes > MAX_CHECKPOINT_BYTES
+        ):
+            raise WorkerError(
+                "malformed_frame",
+                "start transport limits exceed protocol bounds",
+            )
         self.input_sequence = _integer(
             body["next_input_sequence"], "next_input_sequence"
         )
@@ -896,6 +990,11 @@ class _Worker:
         self.dependencies = self.module.bind_dependencies(self.dependencies)
         if body["resume"] is not None:
             resume_envelope = _checkpoint_from_wire(body["resume"])
+            if len(resume_envelope.body) > self.io.max_checkpoint_bytes:
+                raise WorkerError(
+                    "serialization_limit",
+                    "resume checkpoint exceeds maximum size",
+                )
             if resume_envelope.schema_id not in self.checkpoint_schemas:
                 raise WorkerError("checkpoint_incompatible", "resume schema is not admitted")
             self.resume_state = self.module.decode_checkpoint(resume_envelope)
@@ -1051,6 +1150,11 @@ class _Worker:
             "checkpoint_prepare",
         )
         source = _checkpoint_from_wire(body["source"])
+        if len(source.body) > self.io.max_checkpoint_bytes:
+            raise WorkerError(
+                "serialization_limit",
+                "source checkpoint exceeds maximum size",
+            )
         declared_at_sequence = _integer(
             body["declared_at_sequence"],
             "declared_at_sequence",
@@ -1138,29 +1242,36 @@ class _Worker:
         if proposal is None:
             return
         envelope = proposal.payload
-        if len(envelope.body) > MAX_CHECKPOINT_BYTES:
+        if len(envelope.body) > self.io.max_checkpoint_bytes:
             raise WorkerError("serialization_limit", "checkpoint exceeds maximum size")
-        chunk_count = max(
-            1,
-            (
-                len(envelope.body)
-                + MAX_CHECKPOINT_CHUNK_BYTES
-                - 1
-            )
-            // MAX_CHECKPOINT_CHUNK_BYTES,
+        self.io.emit_chunks(
+            "checkpoint",
+            key,
+            {
+                "phase": "proposal",
+                "schema_id": envelope.schema_id,
+                "source_generation_id": envelope.source_generation_id,
+                "source_module_id": envelope.source_module_id,
+                "source_instance_id": envelope.source_instance_id,
+                "source_work_id": envelope.source_work_id,
+                "source_attempt_id": envelope.source_attempt_id,
+                "declared_at_sequence": proposal.declared_at_sequence,
+            },
+            envelope.body,
+            maximum=self.io.max_checkpoint_bytes,
         )
-        for index in range(chunk_count):
-            start = index * MAX_CHECKPOINT_CHUNK_BYTES
-            chunk = envelope.body[start : start + MAX_CHECKPOINT_CHUNK_BYTES]
-            self.io.emit("checkpoint", key, {"phase": "proposal", "chunk_index": index, "chunk_count": chunk_count, "total_bytes": len(envelope.body), "schema_id": envelope.schema_id, "source_generation_id": envelope.source_generation_id, "source_module_id": envelope.source_module_id, "source_instance_id": envelope.source_instance_id, "source_work_id": envelope.source_work_id, "source_attempt_id": envelope.source_attempt_id, "declared_at_sequence": proposal.declared_at_sequence, "body": encode_bytes(chunk, maximum=MAX_CHECKPOINT_CHUNK_BYTES)})
 
     def _validate_input(self, envelope: InputEnvelope) -> None:
         if envelope.schema_id not in self.input_schemas:
             raise WorkerError("closure_mismatch", f"input schema is not admitted: {envelope.schema_id}")
+        if len(envelope.body) > self.io.max_message_bytes:
+            raise WorkerError("serialization_limit", "input exceeds maximum size")
 
     def _validate_output(self, envelope: OutputEnvelope) -> None:
         if envelope.schema_id not in self.output_schemas:
             raise WorkerError("closure_mismatch", f"output schema is not admitted: {envelope.schema_id}")
+        if len(envelope.body) > self.io.max_message_bytes:
+            raise WorkerError("serialization_limit", "output exceeds maximum size")
 
     def _failure(self, exc: BaseException) -> None:
         if self.key is None:

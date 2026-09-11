@@ -178,6 +178,69 @@ def test_manifest_unknown_fields_refuse_without_output(tmp_path: Path) -> None:
     assert not (tmp_path / "bad.bbpkg").exists()
 
 
+def test_package_refuses_duplicate_import_module_names(tmp_path: Path) -> None:
+    source = _write_source(tmp_path / "source", code=b"VALUE = 'ranker'\n")
+    alternate = b"VALUE = 'alternate'\n"
+    alternate_path = source / "src" / "alternate.py"
+    alternate_path.write_bytes(alternate)
+    manifest_path = source / "module.json"
+    manifest = json.loads(manifest_path.read_bytes())
+    member = {
+        "path": "src/alternate.py",
+        "sha256": bytes_sha256(alternate),
+        "size_bytes": len(alternate),
+    }
+    manifest["source_members"].append(member)
+    manifest["import_members"].append(
+        {"module": "example.ranker", **member}
+    )
+    manifest_path.write_bytes(canonical_json_bytes(manifest))
+    output = tmp_path / "duplicate-module.bbpkg"
+
+    with pytest.raises(
+        ModulePackageValidationError,
+        match="import member module names must be unique",
+    ):
+        build_module_package(
+            source,
+            output,
+            cas=FilesystemCAS(tmp_path / "cas"),
+        )
+    assert not output.exists()
+
+
+def test_package_refuses_import_members_outside_source_closure(
+    tmp_path: Path,
+) -> None:
+    source = _write_source(tmp_path / "source", code=b"VALUE = 'ranker'\n")
+    helper = b"VALUE = 'helper'\n"
+    helper_path = source / "src" / "helper.py"
+    helper_path.write_bytes(helper)
+    manifest_path = source / "module.json"
+    manifest = json.loads(manifest_path.read_bytes())
+    manifest["import_members"].append(
+        {
+            "module": "example.helper",
+            "path": "src/helper.py",
+            "sha256": bytes_sha256(helper),
+            "size_bytes": len(helper),
+        }
+    )
+    manifest_path.write_bytes(canonical_json_bytes(manifest))
+    output = tmp_path / "import-only.bbpkg"
+
+    with pytest.raises(
+        ModulePackageValidationError,
+        match="import members must name captured source members",
+    ):
+        build_module_package(
+            source,
+            output,
+            cas=FilesystemCAS(tmp_path / "cas"),
+        )
+    assert not output.exists()
+
+
 def test_package_refuses_unsupported_worker_protocol(tmp_path: Path) -> None:
     source = _write_source(tmp_path / "source", code=b"VALUE = 'ranker'\n")
     manifest = json.loads((source / "module.json").read_text(encoding="utf-8"))
@@ -387,5 +450,106 @@ def test_distinct_dependency_slots_can_share_a_contract(tmp_path: Path) -> None:
         assert (
             first.lock.configuration_graph_hash == swapped.lock.configuration_graph_hash
         )
+    finally:
+        cas.close()
+
+
+def test_extended_module_bindings_resolve_package_from_its_source_layer(
+    tmp_path: Path,
+) -> None:
+    cas = FilesystemCAS(tmp_path / "cas")
+    try:
+        packages = {}
+        for directory, code in (
+            (tmp_path / "base", b"VALUE = 'base'\n"),
+            (tmp_path, b"VALUE = 'override'\n"),
+        ):
+            source = _write_source(
+                directory / "package-source",
+                code=code,
+            )
+            manifest_path = source / "module.json"
+            manifest = json.loads(manifest_path.read_bytes())
+            manifest["dependency_contracts"] = {}
+            manifest["child_targets"] = []
+            manifest_path.write_bytes(canonical_json_bytes(manifest))
+            packages[directory] = build_module_package(
+                source,
+                directory / "ranker.bbpkg",
+                cas=cas,
+            )
+
+        base = {
+            "schema_version": "bb.harness_definition.v2",
+            "version": 2,
+            "modules": {
+                "root": "ranker",
+                "bindings": {
+                    "ranker": {
+                        "package": {
+                            "source": "ranker.bbpkg",
+                            "digest": packages[tmp_path / "base"].package_digest,
+                        },
+                        "environment": "ranker",
+                        "dependencies": {},
+                        "children": {},
+                        "config": {
+                            "inherited": True,
+                            "nested": {"base": 1},
+                        },
+                    }
+                },
+            },
+        }
+        (tmp_path / "base" / "base.json").write_bytes(canonical_json_bytes(base))
+        derived = {
+            "extends": "base/base.json",
+            "modules": {
+                "bindings": {
+                    "ranker": {
+                        "config": {"nested": {"derived": 2}},
+                    }
+                }
+            },
+        }
+        overridden = {
+            "extends": "base/base.json",
+            "modules": {
+                "bindings": {
+                    "ranker": {
+                        "package": {
+                            "source": "ranker.bbpkg",
+                            "digest": packages[tmp_path].package_digest,
+                        },
+                        "config": {"nested": {"override": 3}},
+                    }
+                }
+            },
+        }
+        (tmp_path / "derived.json").write_bytes(canonical_json_bytes(derived))
+        (tmp_path / "overridden.json").write_bytes(canonical_json_bytes(overridden))
+
+        cases = (
+            (
+                "derived.json",
+                packages[tmp_path / "base"].package_digest,
+                {"inherited": True, "nested": {"base": 1, "derived": 2}},
+            ),
+            (
+                "overridden.json",
+                packages[tmp_path].package_digest,
+                {"inherited": True, "nested": {"base": 1, "override": 3}},
+            ),
+        )
+        for filename, digest, config in cases:
+            compilation = compile_harness_source(
+                tmp_path / filename,
+                tmp_path,
+                contained=True,
+                cas=cas,
+            )
+            binding = compilation.lock["modules"]["bindings"]["ranker"]
+            assert binding["package"]["package_digest"] == digest
+            assert binding["config"] == config
     finally:
         cas.close()

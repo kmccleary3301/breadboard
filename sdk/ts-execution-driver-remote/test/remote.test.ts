@@ -3197,6 +3197,7 @@ test("SSH Slurm strict profile survives one requeue and validates durable accoun
   let retainedAttemptIdentity: unknown = ""
   let sacctMode: "cancelled" | "completed" = "cancelled"
   let allocatedMemoryTres = ""
+  let allocationState = "PENDING"
   const commands: string[] = []
   const output = Buffer.from("strict profile\n", "utf8")
   const outputDigest = createHash("sha256").update(output).digest("hex")
@@ -3213,9 +3214,11 @@ test("SSH Slurm strict profile survives one requeue and validates durable accoun
       const remoteCommand = args[1] ?? ""
       commands.push(remoteCommand)
       if (remoteCommand.includes("setsid sh -c")) {
-        attemptIdentity =
-          /\battempt=([0-9a-f]+);/.exec(remoteCommand)?.[1] ?? ""
-        retainedAttemptIdentity = attemptIdentity
+        if (!attemptIdentity) {
+          attemptIdentity =
+            /\battempt=([0-9a-f]+);/.exec(remoteCommand)?.[1] ?? ""
+          retainedAttemptIdentity = attemptIdentity
+        }
         assert.match(remoteCommand, /sbatch --parsable --hold --requeue/)
         assert.match(remoteCommand, /--cpus-per-task=1/)
         assert.match(remoteCommand, /--mem=128M/)
@@ -3247,8 +3250,8 @@ test("SSH Slurm strict profile survives one requeue and validates durable accoun
       if (remoteCommand.includes("scontrol show job -o")) {
         return {
           stdout: [
-            "JobState=PENDING",
-            "Reason=JobHeldUser",
+            `JobState=${allocationState}`,
+            allocationState === "PENDING" ? "Reason=JobHeldUser" : "Reason=None",
             "Requeue=1",
             "Restarts=0",
             "NumCPUs=2",
@@ -3261,8 +3264,10 @@ test("SSH Slurm strict profile survives one requeue and validates durable accoun
           stderr: "",
         }
       }
-      if (remoteCommand.includes("scontrol release"))
+      if (remoteCommand.includes("scontrol release")) {
+        allocationState = "RUNNING"
         return { stdout: "", stderr: "" }
+      }
       if (remoteCommand.includes("squeue"))
         return { stdout: "", stderr: "" }
       if (remoteCommand.includes("sacct")) {
@@ -3312,12 +3317,27 @@ test("SSH Slurm strict profile survives one requeue and validates durable accoun
     deadlineAtMs: Date.now() + 1_000,
     terminationGraceMs: 100,
   })
+  const runningReplay = await backend.submit(request, {
+    signal: new AbortController().signal,
+    deadlineAtMs: Date.now() + 1_000,
+    terminationGraceMs: 100,
+  })
+  assert.equal(runningReplay.executionId, handle.executionId)
+  assert.equal(allocationState, "RUNNING")
   const pendingCancellation = await backend.observe(handle.executionId)
   assert.equal(pendingCancellation.state, "cancelled")
   sacctMode = "completed"
+  allocationState = "COMPLETED"
   const observation = await backend.observe(handle.executionId)
   assert.equal(observation.state, "completed")
   assert.equal(observation.result?.usage?.exit_code, 0)
+  const completedReplay = await backend.submit(request, {
+    signal: new AbortController().signal,
+    deadlineAtMs: Date.now() + 1_000,
+    terminationGraceMs: 100,
+  })
+  assert.equal(completedReplay.executionId, handle.executionId)
+  assert.equal(allocationState, "COMPLETED")
   assert.ok(
     observation.evidenceRefs?.includes(
       `slurm://job/${handle.executionId}/attempt/${attemptIdentity}/restart/1`,

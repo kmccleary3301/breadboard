@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import json
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
@@ -17,26 +18,35 @@ from typing import Final, Literal, TypeAlias
 
 MAX_FRAME_BYTES: Final = 262_144
 MAX_CHECKPOINT_BYTES: Final = 1_048_576
-MAX_CHECKPOINT_CHUNK_BYTES: Final = 160 * 1024
-MAX_CHECKPOINT_CHUNKS: Final = (
-    MAX_CHECKPOINT_BYTES + MAX_CHECKPOINT_CHUNK_BYTES - 1
-) // MAX_CHECKPOINT_CHUNK_BYTES
+# Absolute ceilings; each transfer derives its lower physical capacity from its
+# encoded envelope and configured frame budget.
+MAX_CHECKPOINT_CHUNK_BYTES: Final = MAX_FRAME_BYTES
+MAX_CHECKPOINT_CHUNKS: Final = MAX_CHECKPOINT_BYTES
+_CHUNK_FIELDS: Final = frozenset(
+    {
+        "body",
+        "body_sha256",
+        "chunk_count",
+        "chunk_index",
+        "total_bytes",
+    }
+)
 PROTOCOL_VERSION: Final = 2
 
 WireKind: TypeAlias = Literal[
     "start", "input", "output", "service_result", "checkpoint_request",
     "checkpoint_prepare", "checkpoint_compatibility", "checkpoint",
-    "checkpoint_chunk", "result", "cancel", "close", "ready", "failure",
-    "provider_request", "tool_request", "context_request", "child_request",
-    "dependency_request",
+    "checkpoint_chunk", "message_chunk", "result", "cancel", "close", "ready",
+    "failure", "provider_request", "tool_request", "context_request",
+    "child_request", "dependency_request",
 ]
 WIRE_KINDS: Final[frozenset[str]] = frozenset(
     {
         "start", "input", "output", "service_result", "checkpoint_request",
         "checkpoint_prepare", "checkpoint_compatibility", "checkpoint",
-        "checkpoint_chunk", "result", "cancel", "close", "ready", "failure",
-        "provider_request", "tool_request", "context_request", "child_request",
-        "dependency_request",
+        "checkpoint_chunk", "message_chunk", "result", "cancel", "close",
+        "ready", "failure", "provider_request", "tool_request",
+        "context_request", "child_request", "dependency_request",
     }
 )
 
@@ -277,6 +287,276 @@ _CHECKPOINT_FIELDS: Final = frozenset(
         "body",
     }
 )
+_FRAGMENTABLE_BODY_FIELDS: Final[Mapping[str, frozenset[str]]] = {
+    "input": frozenset({"schema_id", "sequence", "body", "final"}),
+    "output": frozenset({"schema_id", "body"}),
+}
+_MESSAGE_CHUNK_FIELDS: Final = frozenset(
+    {
+        "body",
+        "body_sha256",
+        "chunk_count",
+        "chunk_index",
+        "context",
+        "message_kind",
+        "total_bytes",
+    }
+)
+
+
+def _chunk_capacity(
+    header: WireHeader,
+    kind: WireKind,
+    metadata: Mapping[str, object],
+    *,
+    index: int,
+    count: int,
+    digest: str | None,
+    max_bytes: int,
+    advance_sequence: bool,
+) -> int:
+    chunk_header = (
+        WireHeader(
+            header.protocol_version,
+            kind,
+            header.key,
+            header.sequence + index,
+        )
+        if advance_sequence
+        else WireHeader(header.protocol_version, kind, header.key, header.sequence)
+    )
+    chunk_body = {
+        **metadata,
+        "chunk_count": count,
+        "chunk_index": index,
+        "total_bytes": metadata["total_bytes"],
+        "body": "",
+    }
+    if digest is not None:
+        chunk_body["body_sha256"] = digest
+    empty = WireMessage(chunk_header, chunk_body)
+    overhead = len(_canonical_json(empty.as_dict()))
+    return 3 * ((max_bytes - overhead) // 4)
+
+
+def _chunk_capacities(
+    header: WireHeader,
+    kind: WireKind,
+    metadata: Mapping[str, object],
+    payload: bytes,
+    *,
+    max_bytes: int,
+    maximum: int,
+    advance_sequence: bool,
+    digest: str | None,
+) -> tuple[int, ...]:
+    total = len(payload)
+    count = 1
+    while True:
+        capacities = tuple(
+            min(
+                maximum,
+                _chunk_capacity(
+                    header,
+                    kind,
+                    metadata,
+                    index=index,
+                    count=count,
+                    digest=digest,
+                    max_bytes=max_bytes,
+                    advance_sequence=advance_sequence,
+                ),
+            )
+            for index in range(count)
+        )
+        if total == 0:
+            if capacities[0] < 0:
+                raise FrameLimitError(
+                    "chunk metadata exceeds the configured frame maximum"
+                )
+            return (0,)
+        smallest = min(capacities)
+        if smallest <= 0:
+            raise FrameLimitError(
+                "configured frame maximum leaves no chunk payload capacity"
+            )
+        if count <= total and sum(capacities) >= total:
+            return capacities
+        count = max(count + 1, (total + smallest - 1) // smallest)
+        if count > total:
+            raise FrameLimitError(
+                "configured frame maximum cannot carry the chunked payload"
+            )
+
+
+def iter_chunked_messages(
+    header: WireHeader,
+    kind: Literal["checkpoint", "checkpoint_chunk", "message_chunk"],
+    metadata: Mapping[str, object],
+    payload: bytes,
+    *,
+    max_bytes: int = MAX_FRAME_BYTES,
+    maximum: int = MAX_FRAME_BYTES,
+) -> Iterator[WireMessage]:
+    """Split one bounded binary value into canonical physical messages."""
+    if type(max_bytes) is not int or max_bytes <= 0 or max_bytes > MAX_FRAME_BYTES:
+        raise ValueError("max_bytes must be within the protocol frame bound")
+    if (
+        type(maximum) is not int
+        or maximum <= 0
+        or maximum > MAX_CHECKPOINT_BYTES
+    ):
+        raise ValueError("maximum must be within the logical payload bound")
+    advance_sequence = kind == "checkpoint"
+    if not isinstance(payload, bytes):
+        raise TypeError("chunk payload must be bytes")
+    if len(payload) > maximum:
+        raise FrameLimitError(
+            f"payload is {len(payload)} bytes; maximum is {maximum}"
+        )
+    reserved = set(metadata) & _CHUNK_FIELDS
+    if reserved:
+        raise WireProtocolError(
+            "chunk metadata uses reserved fields: " + ", ".join(sorted(reserved))
+        )
+    framed_metadata = {**metadata, "total_bytes": len(payload)}
+    digest = None if kind == "checkpoint" else hashlib.sha256(payload).hexdigest()
+    capacities = _chunk_capacities(
+        header,
+        kind,
+        framed_metadata,
+        payload,
+        max_bytes=max_bytes,
+        maximum=maximum,
+        advance_sequence=advance_sequence,
+        digest=digest,
+    )
+    count = len(capacities)
+    offset = 0
+    for index, capacity in enumerate(capacities):
+        remaining_chunks = count - index - 1
+        size = min(capacity, len(payload) - offset - remaining_chunks)
+        chunk = payload[offset : offset + size]
+        offset += size
+        chunk_header = (
+            WireHeader(
+                header.protocol_version,
+                kind,
+                header.key,
+                header.sequence + index,
+            )
+            if advance_sequence
+            else WireHeader(header.protocol_version, kind, header.key, header.sequence)
+        )
+        chunk_body = {
+            **metadata,
+            "chunk_count": count,
+            "chunk_index": index,
+            "total_bytes": len(payload),
+            "body": encode_bytes(chunk, maximum=maximum),
+        }
+        if digest is not None:
+            chunk_body["body_sha256"] = digest
+        yield WireMessage(chunk_header, chunk_body)
+
+
+class MessageReassembler:
+    """Strictly reassemble contiguous fragmented input/output messages."""
+
+    def __init__(self, *, maximum: int = MAX_FRAME_BYTES) -> None:
+        if type(maximum) is not int or maximum <= 0 or maximum > MAX_FRAME_BYTES:
+            raise ValueError("maximum must be within the logical message bound")
+        self.maximum = maximum
+        self._header: WireHeader | None = None
+        self._metadata: Mapping[str, object] | None = None
+        self._payload = bytearray()
+        self._next_index = 0
+
+    def accept(self, message: WireMessage) -> WireMessage | None:
+        if message.header.kind != "message_chunk":
+            if self._header is not None:
+                raise WireProtocolError(
+                    "fragmented message ended before its declared chunk count"
+                )
+            return message
+        body = message.body
+        _exact(body, _MESSAGE_CHUNK_FIELDS, "message chunk")
+        message_kind = body["message_kind"]
+        if (
+            not isinstance(message_kind, str)
+            or message_kind not in _FRAGMENTABLE_BODY_FIELDS
+        ):
+            raise WireProtocolError("message chunk kind is not fragmentable")
+        context = body["context"]
+        if not isinstance(context, Mapping):
+            raise WireProtocolError("message chunk context must be an object")
+        expected_context_fields = _FRAGMENTABLE_BODY_FIELDS[message_kind] - {"body"}
+        _exact(context, expected_context_fields, "message chunk context")
+        index = _integer(body["chunk_index"], "message chunk index")
+        count = _integer(body["chunk_count"], "message chunk count", minimum=1)
+        total = _integer(body["total_bytes"], "message total bytes")
+        digest = body["body_sha256"]
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise WireProtocolError("message chunk digest must be lowercase sha256")
+        if (
+            total > self.maximum
+            or (total == 0 and count != 1)
+            or (total > 0 and count > total)
+        ):
+            raise WireProtocolError("message chunk count or total exceeds its bound")
+        metadata = {
+            name: value
+            for name, value in body.items()
+            if name not in {"body", "chunk_index"}
+        }
+        if self._header is None:
+            if index != 0:
+                raise WireProtocolError("fragmented message did not start at chunk zero")
+            self._header = message.header
+            self._metadata = metadata
+        elif (
+            message.header != self._header
+            or metadata != self._metadata
+            or index != self._next_index
+        ):
+            raise WireProtocolError(
+                "message chunks changed identity, metadata, or sequence"
+            )
+        chunk = decode_bytes(body["body"], maximum=self.maximum)
+        if total > 0 and not chunk:
+            raise WireProtocolError("non-empty fragmented message has an empty chunk")
+        self._payload.extend(chunk)
+        self._next_index += 1
+        if len(self._payload) > total:
+            raise WireProtocolError("message chunks exceed their declared length")
+        if self._next_index < count:
+            if len(self._payload) == total:
+                raise WireProtocolError(
+                    "message chunks reached their declared length too early"
+                )
+            return None
+        if self._next_index != count or len(self._payload) != total:
+            raise WireProtocolError("fragmented message is incomplete")
+        payload = bytes(self._payload)
+        if hashlib.sha256(payload).hexdigest() != digest:
+            raise WireProtocolError("fragmented message digest does not match its body")
+        rebuilt_body = dict(context)
+        rebuilt_body["body"] = encode_bytes(payload, maximum=self.maximum)
+        header = WireHeader(
+            message.header.protocol_version,
+            message_kind,  # type: ignore[arg-type]
+            message.header.key,
+            message.header.sequence,
+        )
+        self._header = None
+        self._metadata = None
+        self._payload.clear()
+        self._next_index = 0
+        return WireMessage(header, rebuilt_body)
 
 
 def iter_message_frames(
@@ -293,46 +573,59 @@ def iter_message_frames(
         elif message.header.kind == "checkpoint_prepare":
             phase, field, context_name = "source", "source", "prepare"
         else:
+            phase = field = context_name = ""
+        checkpoint = message.body.get(field) if field else None
+        if isinstance(checkpoint, Mapping):
+            _exact(checkpoint, _CHECKPOINT_FIELDS, f"{phase} checkpoint")
+            checkpoint_body = decode_bytes(
+                checkpoint["body"], maximum=MAX_CHECKPOINT_BYTES
+            )
+            message_body = dict(message.body)
+            del message_body[field]
+            checkpoint_metadata = dict(checkpoint)
+            del checkpoint_metadata["body"]
+            chunks = iter_chunked_messages(
+                WireHeader(
+                    message.header.protocol_version,
+                    "checkpoint_chunk",
+                    message.header.key,
+                    message.header.sequence,
+                ),
+                "checkpoint_chunk",
+                {
+                    "phase": phase,
+                    context_name: message_body,
+                    **checkpoint_metadata,
+                },
+                checkpoint_body,
+                max_bytes=max_bytes,
+                maximum=MAX_CHECKPOINT_BYTES,
+            )
+        elif message.header.kind in _FRAGMENTABLE_BODY_FIELDS:
+            expected = _FRAGMENTABLE_BODY_FIELDS[message.header.kind]
+            _exact(message.body, expected, f"{message.header.kind} message")
+            payload = decode_bytes(message.body["body"], maximum=MAX_FRAME_BYTES)
+            context = dict(message.body)
+            del context["body"]
+            chunks = iter_chunked_messages(
+                WireHeader(
+                    message.header.protocol_version,
+                    "message_chunk",
+                    message.header.key,
+                    message.header.sequence,
+                ),
+                "message_chunk",
+                {"message_kind": message.header.kind, "context": context},
+                payload,
+                max_bytes=max_bytes,
+                maximum=max_bytes,
+            )
+        else:
             raise
-        checkpoint = message.body.get(field)
-        if not isinstance(checkpoint, Mapping):
-            raise
-        _exact(checkpoint, _CHECKPOINT_FIELDS, f"{phase} checkpoint")
-        checkpoint_body = decode_bytes(
-            checkpoint["body"], maximum=MAX_CHECKPOINT_BYTES
-        )
-        message_body = dict(message.body)
-        del message_body[field]
-        checkpoint_metadata = dict(checkpoint)
-        del checkpoint_metadata["body"]
+        for chunk_message in chunks:
+            yield chunk_message.encode(max_bytes=max_bytes)
     else:
         yield frame
-        return
-    count = max(
-        1,
-        (len(checkpoint_body) + MAX_CHECKPOINT_CHUNK_BYTES - 1)
-        // MAX_CHECKPOINT_CHUNK_BYTES,
-    )
-    for index in range(count):
-        start = index * MAX_CHECKPOINT_CHUNK_BYTES
-        chunk = checkpoint_body[start : start + MAX_CHECKPOINT_CHUNK_BYTES]
-        yield WireMessage(
-            WireHeader(
-                message.header.protocol_version,
-                "checkpoint_chunk",
-                message.header.key,
-                message.header.sequence,
-            ),
-            {
-                "phase": phase,
-                "chunk_index": index,
-                "chunk_count": count,
-                "total_bytes": len(checkpoint_body),
-                context_name: message_body,
-                **checkpoint_metadata,
-                "body": encode_bytes(chunk, maximum=MAX_CHECKPOINT_CHUNK_BYTES),
-            },
-        ).encode(max_bytes=max_bytes)
 
 
 @dataclass(frozen=True, slots=True)
@@ -365,18 +658,33 @@ class WireMessage:
 
 def read_message(stream: BufferedIOBase, *, max_bytes: int = MAX_FRAME_BYTES) -> WireMessage | None:
     payload = read_frame(stream, max_bytes=max_bytes)
-    return None if payload is None else WireMessage.decode(payload)
+    if payload is None:
+        return None
+    message = WireMessage.decode(payload)
+    if message.header.kind != "message_chunk":
+        return message
+    reassembler = MessageReassembler(maximum=max_bytes)
+    while True:
+        complete = reassembler.accept(message)
+        if complete is not None:
+            return complete
+        payload = read_frame(stream, max_bytes=max_bytes)
+        if payload is None:
+            raise FrameEOF("channel ended during fragmented message")
+        message = WireMessage.decode(payload)
 
 
 def write_message(stream: BufferedIOBase, message: WireMessage, *, max_bytes: int = MAX_FRAME_BYTES) -> None:
-    write_frame(stream, message.encode(max_bytes=max_bytes), max_bytes=max_bytes)
+    for payload in iter_message_frames(message, max_bytes=max_bytes):
+        write_frame(stream, payload, max_bytes=max_bytes)
 
 
 __all__ = [
     "FrameEOF", "FrameLimitError", "MAX_CHECKPOINT_BYTES",
     "MAX_CHECKPOINT_CHUNK_BYTES", "MAX_CHECKPOINT_CHUNKS", "MAX_FRAME_BYTES",
-    "PROTOCOL_VERSION", "RequestKey", "TransportError", "WIRE_KINDS", "WireHeader",
-    "WireKind", "WireMessage", "WireProtocolError", "decode_bytes", "encode_bytes",
+    "MessageReassembler", "PROTOCOL_VERSION", "RequestKey", "TransportError",
+    "WIRE_KINDS", "WireHeader", "WireKind", "WireMessage", "WireProtocolError",
+    "decode_bytes", "encode_bytes", "iter_chunked_messages",
     "iter_message_frames", "read_frame", "read_message", "write_frame",
     "write_message",
 ]

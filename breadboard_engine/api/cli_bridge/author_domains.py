@@ -749,11 +749,66 @@ def _project_intersection(left: ProjectAuthority | None, right: ProjectAuthority
     )
 
 
+def _destination_pattern(value: str) -> tuple[str, str, str]:
+    normalized = value.lower().strip()
+    if normalized == "*":
+        return ("all", normalized, normalized)
+    if normalized.startswith("*."):
+        return ("wildcard", normalized[1:], normalized)
+    if "://" in normalized:
+        try:
+            hostname = urlparse(normalized).hostname
+        except ValueError as error:
+            raise AuthorDomainError(
+                "authority_denied", "network destination declaration is malformed"
+            ) from error
+        if hostname is not None:
+            return ("exact", hostname, normalized)
+    return ("exact", normalized, normalized)
+
+
+def _destination_pattern_covers(
+    grant: tuple[str, str, str],
+    requested: tuple[str, str, str],
+) -> bool:
+    grant_kind, grant_value, _ = grant
+    requested_kind, requested_value, _ = requested
+    if grant_kind == "all":
+        return True
+    if requested_kind == "all":
+        return False
+    if grant_kind == "exact":
+        return requested_kind == "exact" and grant_value == requested_value
+    return (
+        requested_kind == "exact" and requested_value.endswith(grant_value)
+    ) or (
+        requested_kind == "wildcard" and requested_value.endswith(grant_value)
+    )
+
+
+def _network_destinations_intersection(
+    requested: tuple[str, ...],
+    granted: tuple[str, ...],
+) -> tuple[str, ...]:
+    intersections: set[str] = set()
+    requested_patterns = tuple(_destination_pattern(value) for value in requested)
+    granted_patterns = tuple(_destination_pattern(value) for value in granted)
+    for requested_pattern in requested_patterns:
+        for granted_pattern in granted_patterns:
+            if _destination_pattern_covers(granted_pattern, requested_pattern):
+                intersections.add(requested_pattern[2])
+            elif _destination_pattern_covers(requested_pattern, granted_pattern):
+                intersections.add(granted_pattern[2])
+    return tuple(sorted(intersections))
+
+
 def _network_intersection(left: NetworkAuthority | None, right: NetworkAuthority | None) -> NetworkAuthority | None:
     if left is None or right is None:
         return None
     return NetworkAuthority(
-        destinations=tuple(sorted(set(left.destinations) & set(right.destinations))),
+        destinations=_network_destinations_intersection(
+            left.destinations, right.destinations
+        ),
         operations=frozenset(left.operations & right.operations),
     )
 
@@ -795,22 +850,22 @@ def _network_destination(arguments: Mapping[str, object]) -> str | None:
     for key in ("url", "uri", "destination", "host"):
         value = arguments.get(key)
         if isinstance(value, str) and value.strip():
-            parsed = urlparse(value)
-            return (parsed.hostname or value).lower()
+            normalized = value.strip().lower()
+            try:
+                parsed = urlparse(normalized)
+                return parsed.hostname or normalized
+            except ValueError:
+                return None
     return None
 
 
 def _destination_allowed(destination: str, grants: tuple[str, ...]) -> bool:
     for grant in grants:
-        normalized = grant.lower().strip()
-        if normalized == destination or normalized == "*":
+        kind, value, _ = _destination_pattern(grant)
+        if kind == "all" or (kind == "exact" and value == destination):
             return True
-        if normalized.startswith("*.") and destination.endswith(normalized[1:]):
+        if kind == "wildcard" and destination.endswith(value):
             return True
-        if "://" in normalized:
-            parsed = urlparse(normalized)
-            if parsed.hostname == destination:
-                return True
     return False
 
 

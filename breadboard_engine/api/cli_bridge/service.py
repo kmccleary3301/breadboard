@@ -2546,7 +2546,6 @@ class SessionService:
                 if (
                     lifecycle is not None
                     and admission is not None
-                    and owned_record is not None
                     and not runner_bound
                 ):
                     await asyncio.shield(

@@ -65,7 +65,7 @@ export interface BreadboardClient {
   getSessionResult(id: string): Promise<PublicResult>
   sendInputSession(
     id: string,
-    input: PublicSessionInputRequest,
+    input: string | PublicSessionInputRequest,
     idempotencyKey?: string,
   ): Promise<PublicResult>
   approveSession(

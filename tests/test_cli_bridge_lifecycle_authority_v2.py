@@ -7,6 +7,17 @@ from datetime import datetime, timezone
 
 import pytest
 
+from breadboard.modules import (
+    AuthorityDeclaration,
+    ModuleInput,
+    NetworkAuthority,
+    NetworkOperation,
+)
+from breadboard.product.harness.compile import compile_harness_definition
+from breadboard_engine.api.cli_bridge.author_domains import (
+    AuthorDomainError,
+    EffectiveDomainScope,
+)
 from breadboard_engine.api.cli_bridge.engine_identity_config import (
     EngineProcessIdentity,
     LaunchBootstrapVerifier,
@@ -20,8 +31,11 @@ from breadboard_engine.api.cli_bridge.models import (
     HardSignalOutcomeRequest,
     HardSignalPrepareRequest,
     OwnerAcquireRequest,
+    SessionCreateRequest,
 )
 from breadboard_engine.api.cli_bridge.registry import LifecycleAuthorityError, SessionRegistry
+from breadboard_engine.api.cli_bridge.service import SessionService
+from breadboard_engine.tool_calling.ir import ToolCallIR
 
 BOOTSTRAP = b"bootstrap-proof-material-000000000000000000"
 OWNER = b"owner-proof-material-0000000000000000000000"
@@ -263,3 +277,142 @@ async def test_hard_signal_requires_live_process_authorization_before_recorded_o
         "hard_signal_decision_pending"
     )
     assert registry.admission_epoch == pending.admission_epoch
+
+
+def _network_scope(
+    requested_destinations: tuple[str, ...],
+    granted_destinations: tuple[str, ...],
+) -> EffectiveDomainScope:
+    operations = frozenset({NetworkOperation.CONNECT})
+    return EffectiveDomainScope.from_grants(
+        AuthorityDeclaration(
+            network=NetworkAuthority(requested_destinations, operations),
+            tool_ids=frozenset({"http_get"}),
+        ),
+        AuthorityDeclaration(
+            network=NetworkAuthority(granted_destinations, operations),
+            tool_ids=frozenset({"http_get"}),
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("requested", "granted", "effective", "allowed", "denied"),
+    [
+        (
+            ("API.Example.com",),
+            ("*",),
+            ("api.example.com",),
+            "  API.Example.com  ",
+            "other.example.com",
+        ),
+        (
+            ("api.example.com",),
+            ("*.EXAMPLE.com",),
+            ("api.example.com",),
+            "api.example.com",
+            "other.example.com",
+        ),
+        (
+            ("*.example.com",),
+            ("api.example.com",),
+            ("api.example.com",),
+            "api.example.com",
+            "other.example.com",
+        ),
+        (
+            ("*.example.com",),
+            ("*.internal.example.com",),
+            ("*.internal.example.com",),
+            "api.internal.example.com",
+            "api.example.com",
+        ),
+    ],
+)
+def test_network_scope_uses_the_narrower_semantic_destination_intersection(
+    tmp_path,
+    requested: tuple[str, ...],
+    granted: tuple[str, ...],
+    effective: tuple[str, ...],
+    allowed: str,
+    denied: str,
+) -> None:
+    scope = _network_scope(requested, granted)
+
+    assert scope.network is not None
+    assert scope.network.destinations == effective
+    scope.require_tool_call(
+        ToolCallIR("http_get", {"host": allowed}),
+        tmp_path,
+    )
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("http_get", {"host": denied}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+
+def test_network_scope_denies_unrelated_destination_patterns(tmp_path) -> None:
+    scope = _network_scope(("api.example.com",), ("other.example.com",))
+
+    assert scope.network is not None
+    assert scope.network.destinations == ()
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("http_get", {"host": "api.example.com"}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+
+def test_network_scope_refuses_malformed_url_authority(tmp_path) -> None:
+    with pytest.raises(AuthorDomainError) as declaration:
+        _network_scope(("http://[::1",), ("*",))
+    assert declaration.value.code == "authority_denied"
+
+    scope = _network_scope(("*",), ("*",))
+    with pytest.raises(AuthorDomainError) as request:
+        scope.require_tool_call(
+            ToolCallIR("http_get", {"url": "http://[::1"}),
+            tmp_path,
+        )
+    assert request.value.code == "tool_scope_unenforceable"
+
+
+@pytest.mark.asyncio
+async def test_pre_record_failure_releases_generation_admission_for_session_id_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.delenv("BREADBOARD_ENGINE_LAUNCH_ID", raising=False)
+    service = SessionService(state_root=tmp_path / "session-state")
+    lock = compile_harness_definition(
+        {"name": "data-only"},
+        source_ref="config.yaml",
+    ).lock
+    session_id = "pre-record-failure"
+
+    for body in (b'{"attempt":1}', b'{"attempt":2}'):
+        with pytest.raises(ValueError, match="data Locks require text input"):
+            await service.create_session(
+                SessionCreateRequest(
+                    task="",
+                    module_input=ModuleInput("bb.test.input.v1", body),
+                ),
+                session_id=session_id,
+                generation_workspace=tmp_path,
+                effective_lock=lock,
+                effective_lock_source=tmp_path / "config.yaml",
+            )
+
+    assert await service.registry.get(session_id) is None
+    projection = service.generation_lifecycle(tmp_path).inspect_generation(
+        lock.generation_id
+    )
+    assert len(projection["admissions"]) == 2
+    assert {
+        (admission["session_id"], admission["status"])
+        for admission in projection["admissions"]
+    } == {(session_id, "released")}
+    assert projection["retirement"]["pinned_session_count"] == 0

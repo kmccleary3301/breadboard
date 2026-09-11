@@ -13,17 +13,20 @@ from pathlib import Path
 
 import pytest
 
+from breadboard.modules.author import InputEnvelope
 from breadboard.modules.transport import (
     FrameLimitError,
     MAX_CHECKPOINT_BYTES,
-    MAX_CHECKPOINT_CHUNK_BYTES,
     MAX_FRAME_BYTES,
+    MessageReassembler,
     PROTOCOL_VERSION,
     RequestKey,
     WireHeader,
     WireMessage,
+    WireProtocolError,
     decode_bytes,
     encode_bytes,
+    iter_message_frames,
 )
 import breadboard_engine.execution.author_worker as author_worker
 from breadboard_engine.execution.author_worker import (
@@ -216,6 +219,7 @@ def _write_checkpoint_worker_package(
     *,
     logical_package: str,
     source: str,
+    output_schema_ids: tuple[str, ...] = (),
 ) -> tuple[Path, str]:
     source_bytes = source.encode("utf-8")
     source_digest = "sha256:" + hashlib.sha256(source_bytes).hexdigest()
@@ -225,7 +229,7 @@ def _write_checkpoint_worker_package(
         "logical_package": logical_package,
         "entrypoint": f"{source_path}:module",
         "input_schema_ids": ["input.v1"],
-        "output_schema_ids": [],
+        "output_schema_ids": list(output_schema_ids),
         "source_members": [
             {
                 "path": source_path,
@@ -284,6 +288,9 @@ def _worker_start_body(
     generation_id: str,
     initial_input: bytes | None,
     resume: dict[str, object] | None,
+    max_message_bytes: int = MAX_FRAME_BYTES,
+    max_checkpoint_bytes: int = MAX_CHECKPOINT_BYTES,
+    output_schema_ids: tuple[str, ...] = (),
 ) -> dict[str, object]:
     return {
         "package_path": str(package),
@@ -293,7 +300,7 @@ def _worker_start_body(
         "generation_id": generation_id,
         "instance_label": "root",
         "input_schemas": ["input.v1"],
-        "output_schemas": [],
+        "output_schemas": list(output_schema_ids),
         "checkpoint_schemas": ["state.v1", "state.v2"],
         "dependencies": [],
         "child_targets": [],
@@ -309,6 +316,8 @@ def _worker_start_body(
         ),
         "resume": resume,
         "next_input_sequence": 0,
+        "max_message_bytes": max_message_bytes,
+        "max_checkpoint_bytes": max_checkpoint_bytes,
     }
 
 
@@ -318,30 +327,43 @@ def _send_worker_message(
     key: RequestKey,
     sequence: int,
     body: dict[str, object],
+    *,
+    max_bytes: int = MAX_FRAME_BYTES,
 ) -> None:
     worker.send_message(
         WireMessage(
             WireHeader(PROTOCOL_VERSION, kind, key, sequence),
             body,
-        )
+        ),
+        max_bytes=max_bytes,
     )
 
 
-def _receive_worker_message(worker: AuthorWorker) -> WireMessage:
-    payload = worker.receive_frame(5)
-    assert payload is not None
-    return WireMessage.decode(payload)
+def _receive_worker_message(
+    worker: AuthorWorker,
+    *,
+    max_bytes: int = MAX_FRAME_BYTES,
+) -> WireMessage:
+    reassembler = MessageReassembler(maximum=max_bytes)
+    while True:
+        payload = worker.receive_frame(5)
+        assert payload is not None
+        assert len(payload) <= max_bytes
+        message = reassembler.accept(WireMessage.decode(payload))
+        if message is not None:
+            return message
 
 
 def _receive_checkpoint(
     worker: AuthorWorker,
     *,
     terminal_kind: str,
+    max_bytes: int = MAX_FRAME_BYTES,
 ) -> tuple[dict[str, object], WireMessage]:
     chunks: list[bytes] = []
     metadata: dict[str, object] | None = None
     while True:
-        message = _receive_worker_message(worker)
+        message = _receive_worker_message(worker, max_bytes=max_bytes)
         if message.header.kind != "checkpoint":
             assert message.header.kind == terminal_kind
             assert metadata is not None
@@ -355,6 +377,7 @@ def _receive_checkpoint(
                     "phase",
                     "chunk_count",
                     "total_bytes",
+                    "body_sha256",
                     "declared_at_sequence",
                 }
             }
@@ -365,7 +388,7 @@ def _receive_checkpoint(
         assert body["chunk_index"] == len(chunks)
         chunk = decode_bytes(
             body.pop("body"),
-            maximum=MAX_CHECKPOINT_CHUNK_BYTES,
+            maximum=MAX_CHECKPOINT_BYTES,
         )
         index = body.pop("chunk_index")
         assert index == len(chunks)
@@ -407,17 +430,19 @@ def _stdio_checkpoint_worker(
         worker.close("test_complete")
 
 
-def test_large_checkpoint_capture_migration_and_resume_crosses_bounded_frames(
+def test_checkpoint_migration_and_resume_respect_small_physical_frames(
     tmp_path: Path,
 ) -> None:
     captured_root = tmp_path / "captured"
     captured_root.mkdir()
+    frame_budget = 64 * 1024
+    checkpoint_bytes = 100 * 1024
     source_module = """
 from breadboard.modules import CheckpointCapture, CheckpointEnvelope, CheckpointProposal
 
 class Instance:
     def __init__(self):
-        self.state = b"x" * (MAX_FRAME_BYTES + 32768)
+        self.state = b"x" * CHECKPOINT_BYTES
 
     def checkpoint(self, request):
         return CheckpointCapture(request, 0, self.state, None)
@@ -452,7 +477,7 @@ class Module:
         return Instance()
 
 module = Module()
-""".replace("MAX_FRAME_BYTES", str(MAX_FRAME_BYTES))
+""".replace("CHECKPOINT_BYTES", str(checkpoint_bytes))
     target_module = """
 from breadboard.modules import (
     CheckpointCapture,
@@ -539,9 +564,12 @@ module = Module()
                 generation_id=source_generation,
                 initial_input=b"open",
                 resume=None,
+                max_message_bytes=frame_budget,
+                max_checkpoint_bytes=MAX_CHECKPOINT_BYTES,
             ),
+            max_bytes=frame_budget,
         )
-        ready = _receive_worker_message(worker)
+        ready = _receive_worker_message(worker, max_bytes=frame_budget)
         assert ready.header.kind == "ready"
         checkpoint_key = _worker_key(
             "capture",
@@ -559,13 +587,15 @@ module = Module()
                 "reason": "adopt",
                 "requested_at_sequence": 0,
             },
+            max_bytes=frame_budget,
         )
         source_checkpoint, result = _receive_checkpoint(
             worker,
             terminal_kind="result",
+            max_bytes=frame_budget,
         )
         assert result.body["status"] == "checkpoint"
-        assert len(source_checkpoint["body"]) > MAX_FRAME_BYTES
+        assert len(source_checkpoint["body"]) == checkpoint_bytes
 
     target_key = _worker_key(
         "start",
@@ -587,9 +617,12 @@ module = Module()
                 generation_id=target_generation,
                 initial_input=None,
                 resume=None,
+                max_message_bytes=frame_budget,
+                max_checkpoint_bytes=MAX_CHECKPOINT_BYTES,
             ),
+            max_bytes=frame_budget,
         )
-        ready = _receive_worker_message(worker)
+        ready = _receive_worker_message(worker, max_bytes=frame_budget)
         assert ready.header.kind == "ready"
         adoption_key = _worker_key(
             "adopt",
@@ -614,11 +647,17 @@ module = Module()
             },
         )
         with pytest.raises(FrameLimitError):
-            preparation.encode()
-        worker.send_message(preparation)
+            preparation.encode(max_bytes=frame_budget)
+        preparation_frames = list(
+            iter_message_frames(preparation, max_bytes=frame_budget)
+        )
+        assert len(preparation_frames) > 1
+        assert all(len(frame) <= frame_budget for frame in preparation_frames)
+        worker.send_message(preparation, max_bytes=frame_budget)
         migrated, compatibility = _receive_checkpoint(
             worker,
             terminal_kind="checkpoint_compatibility",
+            max_bytes=frame_budget,
         )
         assert compatibility.body == {
             "disposition": "migrate",
@@ -655,9 +694,12 @@ module = Module()
                 generation_id=target_generation,
                 initial_input=b"fresh state must not win",
                 resume=resume_wire,
+                max_message_bytes=frame_budget,
+                max_checkpoint_bytes=MAX_CHECKPOINT_BYTES,
             ),
+            max_bytes=frame_budget,
         )
-        ready = _receive_worker_message(worker)
+        ready = _receive_worker_message(worker, max_bytes=frame_budget)
         assert ready.header.kind == "ready"
         assert ready.body["instance_open"] is True
         capture_key = _worker_key(
@@ -676,11 +718,158 @@ module = Module()
                 "reason": "verify resume",
                 "requested_at_sequence": 0,
             },
+            max_bytes=frame_budget,
         )
         resumed, result = _receive_checkpoint(
             worker,
             terminal_kind="result",
+            max_bytes=frame_budget,
         )
         assert result.body["status"] == "checkpoint"
         assert resumed["schema_id"] == "state.v2"
         assert resumed["body"] == migrated["body"]
+
+
+def test_near_budget_input_and_output_cross_fragmented_stdio_frames(
+    tmp_path: Path,
+) -> None:
+    captured_root = tmp_path / "captured"
+    captured_root.mkdir()
+    module_source = """
+from breadboard.modules import OutputEnvelope, OutputResult
+
+class Instance:
+    def step(self, value):
+        return OutputResult(value, None, None)
+
+class Module:
+    def bind_dependencies(self, dependencies):
+        return dependencies
+
+    def decode_input(self, envelope):
+        return envelope.body
+
+    def decode_output(self, envelope):
+        return envelope.body
+
+    def decode_checkpoint(self, envelope):
+        return envelope.body
+
+    def encode_output(self, value):
+        return OutputEnvelope("output.v1", value)
+
+    def encode_checkpoint(self, state, **owner):
+        raise AssertionError("checkpoint not requested")
+
+    def assess_checkpoint(self, context):
+        raise AssertionError("checkpoint not prepared")
+
+    def open_instance(self, **kwargs):
+        return Instance()
+
+module = Module()
+"""
+    package, digest = _write_checkpoint_worker_package(
+        captured_root,
+        logical_package="fragmented_echo",
+        source=module_source,
+        output_schema_ids=("output.v1",),
+    )
+    generation = "sha256:" + "c" * 64
+    start_key = _worker_key(
+        "start",
+        session="fragment-session",
+        generation=generation,
+        instance="fragment-instance",
+    )
+    envelope = InputEnvelope(
+        "input.v1",
+        0,
+        b"input-body|" + b"x" * (200 * 1024 - len(b"input-body|")),
+        False,
+    )
+    input_key = _worker_key(
+        "echo",
+        session="fragment-session",
+        generation=generation,
+        instance="fragment-instance",
+    )
+    input_message = WireMessage(
+        WireHeader(PROTOCOL_VERSION, "input", input_key, 1),
+        {
+            "schema_id": envelope.schema_id,
+            "sequence": envelope.sequence,
+            "body": encode_bytes(envelope.body),
+            "final": envelope.final,
+        },
+    )
+    with pytest.raises(FrameLimitError):
+        input_message.encode(max_bytes=MAX_FRAME_BYTES)
+    input_frames = list(
+        iter_message_frames(input_message, max_bytes=MAX_FRAME_BYTES)
+    )
+    assert len(input_frames) > 1
+    assert all(len(frame) <= MAX_FRAME_BYTES for frame in input_frames)
+
+    with _stdio_checkpoint_worker(captured_root) as worker:
+        _send_worker_message(
+            worker,
+            "start",
+            start_key,
+            0,
+            _worker_start_body(
+                package,
+                digest,
+                module_id="fragmented_echo",
+                instance_id=start_key.instance_id,
+                generation_id=generation,
+                initial_input=None,
+                resume=None,
+                output_schema_ids=("output.v1",),
+            ),
+        )
+        ready = _receive_worker_message(worker)
+        assert ready.header.kind == "ready"
+        worker.send_message(input_message)
+        output = _receive_worker_message(worker)
+        result = _receive_worker_message(worker)
+
+    assert output.header.kind == "output"
+    assert output.header.key == input_key
+    assert decode_bytes(output.body["body"]) == envelope.body
+    assert result.header.kind == "result"
+    assert result.body == {"status": "output", "output_emitted": True}
+
+
+def test_fragmented_message_rejects_corrupted_chunk_body() -> None:
+    key = _worker_key(
+        "corrupt",
+        session="fragment-session",
+        generation="sha256:" + "d" * 64,
+        instance="fragment-instance",
+    )
+    message = WireMessage(
+        WireHeader(PROTOCOL_VERSION, "input", key, 0),
+        {
+            "schema_id": "input.v1",
+            "sequence": 0,
+            "body": encode_bytes(b"x" * (200 * 1024)),
+            "final": False,
+        },
+    )
+    chunks = [
+        WireMessage.decode(frame)
+        for frame in iter_message_frames(message, max_bytes=MAX_FRAME_BYTES)
+    ]
+    assert len(chunks) > 1
+    final_body = dict(chunks[-1].body)
+    corrupted = bytearray(decode_bytes(final_body["body"]))
+    corrupted[-1] ^= 1
+    final_body["body"] = encode_bytes(bytes(corrupted))
+    chunks[-1] = WireMessage(chunks[-1].header, final_body)
+
+    reassembler = MessageReassembler(maximum=MAX_FRAME_BYTES)
+    for chunk in chunks[:-1]:
+        assert reassembler.accept(chunk) is None
+    with pytest.raises(WireProtocolError, match="digest"):
+        reassembler.accept(chunks[-1])
