@@ -120,6 +120,11 @@ the instance. Use `DependencyAccess.exchange`, `ChildWorkAccess.start` /
 `ProviderAccess.start` / `next_event` only when the manifest and Session grant
 the corresponding authority.
 
+Child inputs and outputs must match the pinned edge contract, including
+follow-up inputs and intermediate outputs. A package's wider schema set does
+not expand that edge. Only the child root worker contributes outputs to this
+stream; nested dependency outputs remain internal to the child.
+
 The installed author contract is inspectable without Engine source:
 
 ```bash
@@ -169,6 +174,10 @@ exceed 1048576. `max_children` is a non-negative integer; `deadline_ms` is a
 positive integer. These are the executable worker-profile fields. CPU, memory,
 process, and scratch limits belong to the selected execution world and are not
 valid `resource_budget` keys.
+
+Service requests and replies may span physical frames. Their serialized JSON
+envelopes use the protocol's 1 MiB logical-payload ceiling; binary module
+envelopes retain their 256 KiB ceiling and any stricter service-specific limit.
 
 Use `execution_tier: enforced_isolated` with `runtime.kind: oci` for the
 installed local authoring journey. The image reference must be an immutable OCI

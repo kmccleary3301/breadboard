@@ -135,11 +135,13 @@ class _ChildRun:
         self,
         runtime: "ModuleRuntime",
         handle: ChildHandle,
+        target: ChildTarget,
         execution_target_ref: str,
         initial_input: InputEnvelope,
     ) -> None:
         self.runtime = runtime
         self.handle = handle
+        self.target = target
         self.execution_target_ref = execution_target_ref
         self.items: "queue.Queue[ChildOutput | ChildSucceeded | ChildFailed | ChildUnknown]" = queue.Queue()
         self.inputs: "queue.Queue[InputEnvelope | None]" = queue.Queue()
@@ -158,6 +160,10 @@ class _ChildRun:
         if final:
             # Terminal delivery happens after the driver's runtime settles.
             return
+        if output.schema_id not in self.target.output_schema_ids:
+            raise ModuleExecutionError(
+                "schema_mismatch", "child output is outside its declared contract"
+            )
         sequence = self._next_output_sequence
         self._next_output_sequence += 1
         self.items.put(ChildOutput(
@@ -178,7 +184,17 @@ class _ChildRun:
                         input_id=f"child:{self.handle.child_work_id}:input:{sequence}",
                         turn_id=f"child:{self.handle.child_work_id}:turn:{sequence}",
                     )
+                    if envelope.final and output is not None:
+                        _require(
+                            output.schema_id in self.target.output_schema_ids,
+                            "schema_mismatch",
+                            "child output is outside its declared contract",
+                        )
                 except ModuleExecutionError as error:
+                    try:
+                        self.runtime.close(reason=error.code)
+                    except Exception:
+                        pass
                     self.items.put(ChildFailed(
                         child_work_id=self.handle.child_work_id,
                         child_attempt_id=self.handle.child_attempt_id,
@@ -203,6 +219,10 @@ class _ChildRun:
                 "Author child runtime failed for child Work Item %s",
                 self.handle.child_work_id,
             )
+            try:
+                self.runtime.close(reason="child_failed")
+            except Exception:
+                pass
             self.items.put(ChildFailed(
                 child_work_id=self.handle.child_work_id,
                 child_attempt_id=self.handle.child_attempt_id,
@@ -224,7 +244,12 @@ class _Backend:
     def __init__(self, children: "AuthorChildren") -> None:
         self.children = children
         self._runs: dict[str, _ChildRun] = {}
+        self._runs_by_handle: dict[ChildHandle, _ChildRun] = {}
         self._runs_lock = threading.Lock()
+
+    def run_for_handle(self, handle: ChildHandle) -> _ChildRun | None:
+        with self._runs_lock:
+            return self._runs_by_handle.get(handle)
 
     def _run(self, target: Mapping[str, Any]) -> _ChildRun:
         ref = target.get("ref") if isinstance(target, Mapping) else None
@@ -274,6 +299,10 @@ class _Backend:
             final: bool,
         ) -> None:
             assert run is not None
+            # Dependency workers share this runtime's event callback, but their
+            # outputs do not belong to the child root's declared stream.
+            if key.instance_id != runtime.worker(binding).key.instance_id:
+                return
             run.emit_output(output, key, module_id, output_sequence, final)
 
         runtime = self.children._child_runtime(
@@ -282,11 +311,13 @@ class _Backend:
         run = _ChildRun(
             runtime=runtime,
             handle=handle,
+            target=target,
             execution_target_ref=execution_target_ref,
             initial_input=initial_input,
         )
         with self._runs_lock:
             self._runs[execution_target_ref] = run
+            self._runs_by_handle[handle] = run
         run.thread.start()
         return ExecutionTarget(
             execution_target_ref=execution_target_ref,
@@ -300,7 +331,12 @@ class _Backend:
     def submit_input(
         self, target: Mapping[str, Any], envelope: InputEnvelope, *, scope_fence: Any,
     ) -> None:
-        self._run(target).inputs.put(envelope)
+        run = self._run(target)
+        if envelope.schema_id not in run.target.input_schema_ids:
+            raise ModuleExecutionError(
+                "schema_mismatch", "child input is outside its declared contract"
+            )
+        run.inputs.put(envelope)
 
     def next_output(self, target: Mapping[str, Any], *, scope_fence: Any) -> Any:
         run = self._run(target)
@@ -310,7 +346,6 @@ class _Backend:
             except queue.Empty:
                 if scope_fence is not None:
                     scope_fence()
-
     def observe(self, target: Mapping[str, Any]) -> str:
         run = self._run(target)
         if run._closed.is_set():
@@ -494,9 +529,25 @@ class AuthorChildren:
         return {"handle": asdict(activation.child_handle)}
 
     def _submit_input(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        handle = _handle_from_dict(body.get("handle", {}))
+        try:
+            value = ModuleInput.from_dict(body["input"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise ModuleExecutionError(
+                "child_protocol_mismatch", "child input is malformed"
+            ) from error
+        run = self._backend.run_for_handle(handle)
+        if run is None:
+            raise ModuleExecutionError(
+                "child_denied", "child handle has no execution owned by this runtime"
+            )
+        if value.schema_id not in run.target.input_schema_ids:
+            raise ModuleExecutionError(
+                "schema_mismatch", "child input is outside its declared contract"
+            )
         self._ensure_factory().submit_input(
-            _handle_from_dict(body.get("handle", {})),
-            ModuleInput.from_dict(body["input"]),
+            handle,
+            value,
             scope_fence=self.owner.require_live,
         )
         return {}

@@ -27,6 +27,7 @@ from breadboard.modules.transport import (
     decode_bytes,
     encode_bytes,
     iter_message_frames,
+    iter_chunked_messages,
 )
 import breadboard_engine.execution.author_worker as author_worker
 from breadboard_engine.execution.author_worker import (
@@ -291,6 +292,7 @@ def _worker_start_body(
     max_message_bytes: int = MAX_FRAME_BYTES,
     max_checkpoint_bytes: int = MAX_CHECKPOINT_BYTES,
     output_schema_ids: tuple[str, ...] = (),
+    dependencies: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     return {
         "package_path": str(package),
@@ -302,7 +304,7 @@ def _worker_start_body(
         "input_schemas": ["input.v1"],
         "output_schemas": list(output_schema_ids),
         "checkpoint_schemas": ["state.v1", "state.v2"],
-        "dependencies": [],
+        "dependencies": [] if dependencies is None else dependencies,
         "child_targets": [],
         "initial_input": (
             None
@@ -343,8 +345,9 @@ def _receive_worker_message(
     worker: AuthorWorker,
     *,
     max_bytes: int = MAX_FRAME_BYTES,
+    maximum: int = MAX_FRAME_BYTES,
 ) -> WireMessage:
-    reassembler = MessageReassembler(maximum=max_bytes)
+    reassembler = MessageReassembler(maximum=maximum)
     while True:
         payload = worker.receive_frame(5)
         assert payload is not None
@@ -873,6 +876,252 @@ def test_fragmented_message_rejects_corrupted_chunk_body() -> None:
         assert reassembler.accept(chunk) is None
     with pytest.raises(WireProtocolError, match="digest"):
         reassembler.accept(chunks[-1])
+
+
+@pytest.mark.parametrize("status", ["ok", "failed"])
+def test_service_result_roundtrip_under_small_physical_frames(status) -> None:
+    key = _worker_key(
+        "svc-0", session="fragment-session",
+        generation="sha256:" + "e" * 64, instance="fragment-instance",
+    )
+    result = (
+        {
+            "outcomes": [{"output": encode_bytes(b"x" * MAX_FRAME_BYTES)}],
+            "tool_result": {"text": "non-binary service data"},
+        }
+        if status == "ok"
+        else {"code": "domain_error", "detail": "\0" * (60 * 1024)}
+    )
+    message = WireMessage(
+        WireHeader(PROTOCOL_VERSION, "service_result", key, 0),
+        {"request_id": key.request_id, "status": status, **result},
+    )
+    frames = list(iter_message_frames(message, max_bytes=4096))
+    assert all(len(frame) <= 4096 for frame in frames)
+    reassembler = MessageReassembler(maximum=4096)
+    results = [
+        result for frame in frames
+        if (result := reassembler.accept(WireMessage.decode(frame))) is not None
+    ]
+    assert results == [message]
+
+
+def test_near_budget_service_result_crosses_fragmented_stdio_frames(
+    tmp_path: Path,
+) -> None:
+    captured_root = tmp_path / "captured"
+    captured_root.mkdir()
+    frame_budget = 65536
+    module_source = """
+from breadboard.modules import ModuleInput, OutputEnvelope, OutputResult
+
+class Instance:
+    def __init__(self, dependencies):
+        self.dependencies = dependencies
+
+    def step(self, value):
+        output = self.dependencies.exchange(ModuleInput("input.v1", value))
+        return OutputResult(output.body, None, None)
+
+class Module:
+    def bind_dependencies(self, dependencies):
+        return dependencies.dependency("upstream", "upstream.v1")
+
+    def decode_input(self, envelope):
+        return envelope.body
+
+    def decode_output(self, envelope):
+        return envelope.body
+
+    def decode_checkpoint(self, envelope):
+        return envelope.body
+
+    def encode_output(self, value):
+        return OutputEnvelope("output.v1", value)
+
+    def encode_checkpoint(self, state, **owner):
+        raise AssertionError("checkpoint not requested")
+
+    def assess_checkpoint(self, context):
+        raise AssertionError("checkpoint not prepared")
+
+    def open_instance(self, dependencies, **kwargs):
+        return Instance(dependencies)
+
+module = Module()
+"""
+    package, digest = _write_checkpoint_worker_package(
+        captured_root,
+        logical_package="fragmented_service",
+        source=module_source,
+        output_schema_ids=("output.v1",),
+    )
+    generation = "sha256:" + "f" * 64
+    start_key = _worker_key(
+        "start",
+        session="service-session",
+        generation=generation,
+        instance="service-instance",
+    )
+    raw_service_payload = (
+        b"service-payload|" + b"y" * (60 * 1024 - len(b"service-payload|"))
+    )
+    input_key = _worker_key(
+        "step-0",
+        session="service-session",
+        generation=generation,
+        instance="service-instance",
+    )
+    input_message = WireMessage(
+        WireHeader(PROTOCOL_VERSION, "input", input_key, 1),
+        {
+            "schema_id": "input.v1",
+            "sequence": 0,
+            "body": encode_bytes(raw_service_payload),
+            "final": False,
+        },
+    )
+
+    with _stdio_checkpoint_worker(captured_root) as worker:
+        _send_worker_message(
+            worker,
+            "start",
+            start_key,
+            0,
+            _worker_start_body(
+                package,
+                digest,
+                module_id="fragmented_service",
+                instance_id=start_key.instance_id,
+                generation_id=generation,
+                initial_input=None,
+                resume=None,
+                output_schema_ids=("output.v1",),
+                dependencies=[{"name": "upstream", "contract_id": "upstream.v1"}],
+                max_message_bytes=frame_budget,
+            ),
+            max_bytes=frame_budget,
+        )
+        ready = _receive_worker_message(worker, max_bytes=frame_budget)
+        assert ready.header.kind == "ready"
+
+        worker.send_message(input_message, max_bytes=frame_budget)
+        request = _receive_worker_message(worker, max_bytes=frame_budget)
+        assert request.header.kind == "dependency_request"
+        assert request.body["dependency"] == "upstream"
+        assert decode_bytes(request.body["input"]["body"]) == raw_service_payload
+
+        service_reply = WireMessage(
+            WireHeader(
+                PROTOCOL_VERSION,
+                "service_result",
+                request.header.key,
+                2,
+            ),
+            {
+                "request_id": request.body["request_id"],
+                "status": "ok",
+                "schema_id": "output.v1",
+                "body": encode_bytes(raw_service_payload),
+            },
+        )
+        worker.send_message(service_reply, max_bytes=frame_budget)
+
+        output = _receive_worker_message(worker, max_bytes=frame_budget)
+        assert output.header.kind == "output", output.body
+        assert decode_bytes(output.body["body"]) == raw_service_payload
+
+        result = _receive_worker_message(worker, max_bytes=frame_budget)
+        assert result.header.kind == "result"
+        assert result.body == {"status": "output", "output_emitted": True}
+
+
+def test_fragmented_service_result_rejects_corrupted_chunk_body() -> None:
+    key = _worker_key(
+        "service-corrupt",
+        session="fragment-session",
+        generation="sha256:" + "1" * 64,
+        instance="fragment-instance",
+    )
+    message = WireMessage(
+        WireHeader(PROTOCOL_VERSION, "service_result", key, 0),
+        {
+            "request_id": "svc-0",
+            "status": "ok",
+            "output": {
+                "schema_id": "output.v1",
+                "body": encode_bytes(b"z" * (60 * 1024)),
+                "final": True,
+            },
+        },
+    )
+    chunks = [
+        WireMessage.decode(frame)
+        for frame in iter_message_frames(message, max_bytes=4096)
+    ]
+    assert len(chunks) > 1
+    final_body = dict(chunks[-1].body)
+    corrupted = bytearray(decode_bytes(final_body["body"]))
+    corrupted[-1] ^= 1
+    final_body["body"] = encode_bytes(bytes(corrupted))
+    chunks[-1] = WireMessage(chunks[-1].header, final_body)
+
+    reassembler = MessageReassembler(maximum=MAX_FRAME_BYTES)
+    for chunk in chunks[:-1]:
+        assert reassembler.accept(chunk) is None
+    with pytest.raises(WireProtocolError, match="digest"):
+        reassembler.accept(chunks[-1])
+
+
+@pytest.mark.parametrize("payload", [b"[]", b'{"duplicate":1,"duplicate":2}'])
+def test_fragmented_service_result_rejects_invalid_json_object(payload) -> None:
+    key = _worker_key(
+        "svc-0", session="fragment-session",
+        generation="sha256:" + "2" * 64, instance="fragment-instance",
+    )
+    chunks = iter_chunked_messages(
+        WireHeader(PROTOCOL_VERSION, "message_chunk", key, 0),
+        "message_chunk",
+        {"message_kind": "service_result", "context": {}},
+        payload,
+        max_bytes=4096,
+        maximum=MAX_CHECKPOINT_BYTES,
+    )
+    reassembler = MessageReassembler()
+    with pytest.raises(WireProtocolError):
+        for chunk in chunks:
+            reassembler.accept(chunk)
+
+
+def test_fragmented_service_result_rejects_exceeded_total_bound() -> None:
+    key = _worker_key(
+        "service-bound",
+        session="fragment-session",
+        generation="sha256:" + "3" * 64,
+        instance="fragment-instance",
+    )
+    message = WireMessage(
+        WireHeader(PROTOCOL_VERSION, "service_result", key, 0),
+        {
+            "request_id": "svc-0",
+            "status": "ok",
+            "output": {
+                "schema_id": "output.v1",
+                "body": encode_bytes(b"u" * (60 * 1024)),
+                "final": True,
+            },
+        },
+    )
+    chunks = [
+        WireMessage.decode(frame)
+        for frame in iter_message_frames(message, max_bytes=4096)
+    ]
+    assert len(chunks) > 1
+    oversized = dict(chunks[0].body)
+    oversized["total_bytes"] = MAX_CHECKPOINT_BYTES + 1
+    reassembler = MessageReassembler()
+    with pytest.raises(WireProtocolError):
+        reassembler.accept(WireMessage(chunks[0].header, oversized))
 
 
 def test_worker_refuses_declared_import_already_loaded_in_worker_sys_modules(

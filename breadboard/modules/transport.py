@@ -460,8 +460,16 @@ def iter_chunked_messages(
         yield WireMessage(chunk_header, chunk_body)
 
 
+
+
+_FRAGMENTABLE_JSON_KINDS: Final = frozenset({
+    "service_result", "dependency_request", "child_request",
+    "provider_request", "tool_request", "context_request",
+})
+
+
 class MessageReassembler:
-    """Strictly reassemble contiguous fragmented input/output messages."""
+    """Strictly reassemble contiguous fragmented wire messages."""
 
     def __init__(self, *, maximum: int = MAX_FRAME_BYTES) -> None:
         if type(maximum) is not int or maximum <= 0 or maximum > MAX_FRAME_BYTES:
@@ -484,14 +492,27 @@ class MessageReassembler:
         message_kind = body["message_kind"]
         if (
             not isinstance(message_kind, str)
-            or message_kind not in _FRAGMENTABLE_BODY_FIELDS
+            or (
+                message_kind not in _FRAGMENTABLE_BODY_FIELDS
+                and message_kind not in _FRAGMENTABLE_JSON_KINDS
+            )
         ):
             raise WireProtocolError("message chunk kind is not fragmentable")
         context = body["context"]
         if not isinstance(context, Mapping):
             raise WireProtocolError("message chunk context must be an object")
-        expected_context_fields = _FRAGMENTABLE_BODY_FIELDS[message_kind] - {"body"}
-        _exact(context, expected_context_fields, "message chunk context")
+        if message_kind in _FRAGMENTABLE_BODY_FIELDS:
+            expected_context_fields = _FRAGMENTABLE_BODY_FIELDS[message_kind] - {"body"}
+            _exact(context, expected_context_fields, "message chunk context")
+        else:
+            _exact(context, frozenset(), "service message chunk context")
+        # Serialized service envelopes include JSON/base64 overhead. Use the
+        # chunk protocol's absolute logical ceiling, not a physical frame size.
+        maximum = (
+            MAX_CHECKPOINT_BYTES
+            if message_kind in _FRAGMENTABLE_JSON_KINDS
+            else self.maximum
+        )
         index = _integer(body["chunk_index"], "message chunk index")
         count = _integer(body["chunk_count"], "message chunk count", minimum=1)
         total = _integer(body["total_bytes"], "message total bytes")
@@ -503,7 +524,7 @@ class MessageReassembler:
         ):
             raise WireProtocolError("message chunk digest must be lowercase sha256")
         if (
-            total > self.maximum
+            total > maximum
             or (total == 0 and count != 1)
             or (total > 0 and count > total)
         ):
@@ -526,7 +547,7 @@ class MessageReassembler:
             raise WireProtocolError(
                 "message chunks changed identity, metadata, or sequence"
             )
-        chunk = decode_bytes(body["body"], maximum=self.maximum)
+        chunk = decode_bytes(body["body"], maximum=min(maximum, MAX_FRAME_BYTES))
         if total > 0 and not chunk:
             raise WireProtocolError("non-empty fragmented message has an empty chunk")
         self._payload.extend(chunk)
@@ -544,8 +565,11 @@ class MessageReassembler:
         payload = bytes(self._payload)
         if hashlib.sha256(payload).hexdigest() != digest:
             raise WireProtocolError("fragmented message digest does not match its body")
-        rebuilt_body = dict(context)
-        rebuilt_body["body"] = encode_bytes(payload, maximum=self.maximum)
+        if message_kind in _FRAGMENTABLE_JSON_KINDS:
+            rebuilt_body = _json_object(payload)
+        else:
+            rebuilt_body = dict(context)
+            rebuilt_body["body"] = encode_bytes(payload, maximum=self.maximum)
         header = WireHeader(
             message.header.protocol_version,
             message_kind,  # type: ignore[arg-type]
@@ -618,7 +642,22 @@ def iter_message_frames(
                 {"message_kind": message.header.kind, "context": context},
                 payload,
                 max_bytes=max_bytes,
-                maximum=max_bytes,
+                maximum=MAX_FRAME_BYTES,
+            )
+        elif message.header.kind in _FRAGMENTABLE_JSON_KINDS:
+            payload = _canonical_json(message.body)
+            chunks = iter_chunked_messages(
+                WireHeader(
+                    message.header.protocol_version,
+                    "message_chunk",
+                    message.header.key,
+                    message.header.sequence,
+                ),
+                "message_chunk",
+                {"message_kind": message.header.kind, "context": {}},
+                payload,
+                max_bytes=max_bytes,
+                maximum=MAX_CHECKPOINT_BYTES,
             )
         else:
             raise
