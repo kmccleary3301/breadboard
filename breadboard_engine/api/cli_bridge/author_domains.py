@@ -7,6 +7,7 @@ owners; no universal effect ledger or author-visible client is created here.
 from __future__ import annotations
 
 import json
+import shlex
 import threading
 from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager, contextmanager
@@ -53,7 +54,10 @@ from breadboard.modules.provider import (
     ProviderUnknown,
 )
 from breadboard.modules.transport import RequestKey, decode_bytes, encode_bytes
+from breadboard.opencode_patch import PatchParseError, parse_opencode_patch
+from breadboard_engine.conductor.patching import normalize_patch_block
 from breadboard.product.runtime.events import Session
+from breadboard_engine.compilation.tool_registry import cached_tool_registry
 from breadboard_engine.conductor.tool_executor import (
     ToolExecutor,
     execute_agent_calls,
@@ -137,7 +141,12 @@ class EffectiveDomainScope:
             )
 
     def require_tool(self, tool_id: str) -> None:
-        if tool_id not in self.tool_ids:
+        registry = cached_tool_registry()
+        canonical = registry.resolve_name(str(tool_id).strip().lower())
+        if not any(
+            registry.resolve_name(str(value).strip().lower()) == canonical
+            for value in self.tool_ids
+        ):
             raise AuthorDomainError(
                 "authority_denied",
                 "tool is not in the caller-supplied effective grant",
@@ -151,36 +160,37 @@ class EffectiveDomainScope:
         """
 
         self.require_tool(str(call.function))
-        tool_id = str(call.function).strip().lower()
+        invoked_tool_id = str(call.function).strip().lower()
+        tool_id = cached_tool_registry().resolve_name(invoked_tool_id)
         arguments = call.arguments if isinstance(call.arguments, Mapping) else {}
         if tool_id in _UNCONFINED_TOOLS:
             raise AuthorDomainError(
                 "tool_scope_unenforceable",
                 f"{call.function} can perform arbitrary project/network effects and has no owner scope enforcement",
             )
-        if tool_id in _PROJECT_READ_TOOLS or tool_id in _PROJECT_WRITE_TOOLS:
+        project_operation = _project_tool_operation(tool_id)
+        if project_operation is not None:
             project = self.project
             if project is None:
                 raise AuthorDomainError(
                     "authority_denied", "project authority is not admitted for this tool"
                 )
-            operation = (
-                ProjectOperation.WRITE
-                if tool_id in _PROJECT_WRITE_TOOLS
-                else ProjectOperation.READ
-            )
+            operation = project_operation
             if operation not in project.operations:
                 raise AuthorDomainError(
                     "authority_denied",
                     f"project {operation.value} is not in the effective grant",
                 )
-            path = _tool_path(arguments)
-            if path is None:
+            paths = _tool_paths(tool_id, arguments, workspace)
+            if not paths:
                 raise AuthorDomainError(
                     "tool_scope_unenforceable",
-                    "project tool did not provide an owner-checkable path",
+                    "project tool did not provide owner-checkable paths",
                 )
-            if not _under_roots(path, workspace, project.roots):
+            if any(
+                not _under_roots(path, workspace, project.roots)
+                for path in paths
+            ):
                 raise AuthorDomainError(
                     "authority_denied", "project path is outside the effective roots"
                 )
@@ -872,12 +882,224 @@ def _under_roots(value: str, workspace: Path, roots: tuple[str, ...]) -> bool:
     return False
 
 
-def _tool_path(arguments: Mapping[str, object]) -> str | None:
-    for key in ("path", "file", "filename", "target"):
-        value = arguments.get(key)
-        if isinstance(value, str) and value.strip():
-            return value
+
+
+def _project_tool_operation(tool_id: str) -> ProjectOperation | None:
+    registry = cached_tool_registry()
+    canonical = registry.resolve_name(tool_id)
+    tool = registry.tools_by_name.get(canonical)
+    if tool is not None:
+        categories = set(tool.classification.get("categories", ()))
+        if "write" in categories:
+            return ProjectOperation.WRITE
+        if "read_only" in categories:
+            return ProjectOperation.READ
+    if canonical in _PROJECT_WRITE_TOOLS:
+        return ProjectOperation.WRITE
+    if canonical in _PROJECT_READ_TOOLS:
+        return ProjectOperation.READ
     return None
+
+
+def _tool_paths(
+    tool_id: str,
+    arguments: Mapping[str, object],
+    workspace: Path,
+) -> tuple[str, ...]:
+    canonical = cached_tool_registry().resolve_name(tool_id)
+    if canonical in {"apply_patch", "apply_unified_patch", "patch"}:
+        return _patch_paths(arguments, workspace)
+    path_keys = (
+        "path",
+        "file",
+        "filename",
+        "file_name",
+        "filePath",
+        "target",
+        "source",
+        "destination",
+        "src",
+        "dst",
+        "from",
+        "to",
+    )
+    paths = tuple(
+        value
+        for key in path_keys
+        if isinstance((value := arguments.get(key)), str) and value.strip()
+    )
+    if paths:
+        return paths
+    if canonical in {"glob", "grep", "list", "list_dir", "list_files", "file_search"}:
+        return (".",)
+    return ()
+
+
+def _patch_paths(
+    arguments: Mapping[str, object],
+    workspace: Path,
+) -> tuple[str, ...]:
+    raw = arguments.get("patch")
+    if not isinstance(raw, str):
+        raw = arguments.get("input")
+    if not isinstance(raw, str) or not raw.strip():
+        return ()
+    paths: set[str] = set()
+    opencode_markers = (
+        "*** Add File:",
+        "*** Update File:",
+        "*** Delete File:",
+        "*** Begin Patch",
+    )
+    if any(marker in raw for marker in opencode_markers):
+        try:
+            operations = parse_opencode_patch(normalize_patch_block(raw))
+        except PatchParseError:
+            operations = []
+        paths.update(
+            path
+            for operation in operations
+            for path in (operation.file_path, operation.move_to)
+            if isinstance(path, str) and path.strip()
+        )
+    try:
+        unified_paths = _unified_patch_paths(raw)
+    except AuthorDomainError:
+        if paths:
+            return tuple(sorted(paths))
+        raise
+    if not (workspace / ".git").exists():
+        raise AuthorDomainError(
+            "tool_scope_unenforceable",
+            "unified patch workspace has no local Git authority root",
+        )
+    paths.update(unified_paths)
+    return tuple(sorted(paths))
+
+
+def _unified_patch_paths(raw: str) -> tuple[str, ...]:
+    paths: set[str] = set()
+    saw_diff_header = False
+    saw_old_header = False
+    saw_new_header = False
+    in_hunk = False
+    lines = raw.splitlines()
+    for index, line in enumerate(lines):
+        if line.startswith("diff --git "):
+            in_hunk = False
+            try:
+                fields = shlex.split(line)
+            except ValueError as error:
+                raise AuthorDomainError(
+                    "tool_scope_unenforceable",
+                    "project patch path quoting is malformed",
+                ) from error
+            if len(fields) != 4 or fields[:2] != ["diff", "--git"]:
+                raise AuthorDomainError(
+                    "tool_scope_unenforceable",
+                    "project patch file header is malformed",
+                )
+            saw_diff_header = True
+            paths.update(
+                _normalized_unified_path(value, strip_prefix=True)
+                for value in fields[2:]
+                if value != "/dev/null"
+            )
+            continue
+        if line in {
+            "new file mode 120000",
+            "new mode 120000",
+            "old mode 120000",
+            "deleted file mode 120000",
+        }:
+            raise AuthorDomainError(
+                "tool_scope_unenforceable",
+                "project patch cannot create or modify symbolic links",
+            )
+        if (
+            in_hunk
+            and line.startswith("--- ")
+            and index + 1 < len(lines)
+            and lines[index + 1].startswith("+++ ")
+        ):
+            in_hunk = False
+        if line.startswith("@@"):
+            in_hunk = True
+            continue
+        if in_hunk:
+            continue
+        for marker in (
+            "--- ",
+            "+++ ",
+            "rename from ",
+            "rename to ",
+            "copy from ",
+            "copy to ",
+        ):
+            if not line.startswith(marker):
+                continue
+            value = line[len(marker) :]
+            strip_prefix = marker in {"--- ", "+++ "}
+            if marker == "--- ":
+                saw_old_header = True
+            elif marker == "+++ ":
+                saw_new_header = True
+            value = _decoded_unified_path(value, has_timestamp=strip_prefix)
+            if value != "/dev/null":
+                paths.add(
+                    _normalized_unified_path(
+                        value,
+                        strip_prefix=strip_prefix,
+                    )
+                )
+            break
+    if (
+        not paths
+        or any(not path for path in paths)
+        or (not saw_diff_header and not (saw_old_header and saw_new_header))
+    ):
+        raise AuthorDomainError(
+            "tool_scope_unenforceable",
+            "project patch paths could not be established",
+        )
+    return tuple(sorted(paths))
+
+
+def _decoded_unified_path(value: str, *, has_timestamp: bool) -> str:
+    candidate = value.split("\t", 1)[0] if has_timestamp else value
+    if not candidate.startswith('"'):
+        return candidate
+    try:
+        fields = shlex.split(candidate)
+    except ValueError as error:
+        raise AuthorDomainError(
+            "tool_scope_unenforceable",
+            "project patch path quoting is malformed",
+        ) from error
+    if len(fields) != 1:
+        raise AuthorDomainError(
+            "tool_scope_unenforceable",
+            "project patch file header is malformed",
+        )
+    return fields[0]
+
+
+def _normalized_unified_path(value: str, *, strip_prefix: bool) -> str:
+    path = value.strip()
+    if not strip_prefix:
+        return path
+    prefix, separator, relative = path.partition("/")
+    if (
+        not separator
+        or prefix in {"", ".", ".."}
+        or not relative
+        or relative.startswith("/")
+    ):
+        raise AuthorDomainError(
+            "tool_scope_unenforceable",
+            "project patch path does not match Git's component stripping",
+        )
+    return relative
 
 
 def _network_destination(arguments: Mapping[str, object]) -> str | None:

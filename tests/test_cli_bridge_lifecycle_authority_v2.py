@@ -310,15 +310,16 @@ def _project_scope(
     operations: frozenset[ProjectOperation] = frozenset(
         {ProjectOperation.READ, ProjectOperation.WRITE}
     ),
+    tool_ids: frozenset[str] = frozenset({"read", "write"}),
 ) -> EffectiveDomainScope:
     return EffectiveDomainScope.from_grants(
         AuthorityDeclaration(
             project=ProjectAuthority(requested_roots, operations),
-            tool_ids=frozenset({"read", "write"}),
+            tool_ids=tool_ids,
         ),
         AuthorityDeclaration(
             project=ProjectAuthority(granted_roots, operations),
-            tool_ids=frozenset({"read", "write"}),
+            tool_ids=tool_ids,
         ),
         workspace=workspace,
     )
@@ -449,6 +450,266 @@ def test_project_scope_retains_narrower_root_containment(
             tmp_path,
         )
     assert refusal.value.code == "authority_denied"
+
+
+@pytest.mark.parametrize(
+    ("tool_id", "arguments", "operation"),
+    [
+        ("list_dir", {"path": "src"}, ProjectOperation.READ),
+        ("list", {"path": "src"}, ProjectOperation.READ),
+        (
+            "apply_search_replace",
+            {"file_name": "src/file.txt", "search": "old", "replace": "new"},
+            ProjectOperation.WRITE,
+        ),
+        (
+            "create_file_from_block",
+            {"file_name": "src/new.txt", "content": "new"},
+            ProjectOperation.WRITE,
+        ),
+    ],
+)
+def test_registry_filesystem_tools_enforce_project_authority(
+    tmp_path: Path,
+    tool_id: str,
+    arguments: dict[str, object],
+    operation: ProjectOperation,
+) -> None:
+    (tmp_path / "src").mkdir()
+    scope = _project_scope(
+        ("src",),
+        (".",),
+        workspace=tmp_path,
+        operations=frozenset({operation}),
+        tool_ids=frozenset({tool_id}),
+    )
+    scope.require_tool_call(ToolCallIR(tool_id, arguments), tmp_path)
+
+    outside_arguments = dict(arguments)
+    path_key = "path" if "path" in arguments else "file_name"
+    outside_arguments[path_key] = "../outside.txt"
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(ToolCallIR(tool_id, outside_arguments), tmp_path)
+    assert refusal.value.code == "authority_denied"
+
+    no_project = EffectiveDomainScope.from_grants(
+        AuthorityDeclaration(tool_ids=frozenset({tool_id})),
+        AuthorityDeclaration(tool_ids=frozenset({tool_id})),
+        workspace=tmp_path,
+    )
+    with pytest.raises(AuthorDomainError) as refusal:
+        no_project.require_tool_call(ToolCallIR(tool_id, arguments), tmp_path)
+    assert refusal.value.code == "authority_denied"
+
+
+def test_canonical_tool_grant_admits_registered_alias(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "src").mkdir()
+    scope = _project_scope(
+        ("src",),
+        (".",),
+        workspace=tmp_path,
+        operations=frozenset({ProjectOperation.READ}),
+        tool_ids=frozenset({"read_file"}),
+    )
+    scope.require_tool_call(
+        ToolCallIR("read", {"path": "src/file.txt"}),
+        tmp_path,
+    )
+
+
+def test_filesystem_tool_defaults_are_checked_as_workspace_paths(
+    tmp_path: Path,
+) -> None:
+    tool_ids = frozenset({"list"})
+    workspace_scope = _project_scope(
+        (".",),
+        (".",),
+        workspace=tmp_path,
+        operations=frozenset({ProjectOperation.READ}),
+        tool_ids=tool_ids,
+    )
+    workspace_scope.require_tool_call(ToolCallIR("list", {}), tmp_path)
+
+    (tmp_path / "src").mkdir()
+    narrow_scope = _project_scope(
+        ("src",),
+        (".",),
+        workspace=tmp_path,
+        operations=frozenset({ProjectOperation.READ}),
+        tool_ids=tool_ids,
+    )
+    with pytest.raises(AuthorDomainError) as refusal:
+        narrow_scope.require_tool_call(ToolCallIR("list", {}), tmp_path)
+    assert refusal.value.code == "authority_denied"
+
+
+def test_unified_patch_validates_every_source_and_destination_path(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / ".git").mkdir()
+    scope = _project_scope(
+        ("src",),
+        (".",),
+        workspace=tmp_path,
+        operations=frozenset({ProjectOperation.WRITE}),
+        tool_ids=frozenset({"apply_unified_patch"}),
+    )
+    allowed = """diff --git a/src/a.txt b/src/a.txt
+--- a/src/a.txt
++++ b/src/a.txt
+@@ -1 +1 @@
+-old
++new
+diff --git a/src/b.txt b/src/b.txt
+--- a/src/b.txt
++++ b/src/b.txt
+@@ -1 +1 @@
+-old
++new
+diff --git "a/src/file with space.txt" "b/src/file with space.txt"
+--- "a/src/file with space.txt"
++++ "b/src/file with space.txt"
+@@ -1 +1 @@
+-old
++new
+"""
+    scope.require_tool_call(
+        ToolCallIR("apply_unified_patch", {"patch": allowed}),
+        tmp_path,
+    )
+
+    escaped = allowed + """diff --git a/outside.txt b/src/moved.txt
+similarity index 100%
+rename from outside.txt
+rename to src/moved.txt
+"""
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("apply_unified_patch", {"patch": escaped}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+    standard_escaped = """--- a/src/allowed.txt
++++ b/src/allowed.txt
+@@ -1 +1 @@
+-old
++new
+--- /dev/null
++++ b/outside.txt
+@@ -0,0 +1 @@
++escaped
+"""
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("apply_unified_patch", {"patch": standard_escaped}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+    format_ambiguous = """diff --git a/outside.txt b/outside.txt
+--- a/outside.txt
++++ b/outside.txt
+@@ -1 +1 @@
+-old
++new
+*** Begin Patch
+*** Update File: src/a.txt
+@@
+-old
++new
+*** End Patch
+"""
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("apply_unified_patch", {"patch": format_ambiguous}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+    unprefixed = """--- src/target.txt
++++ src/target.txt
+@@ -1 +1 @@
+-old
++new
+"""
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("apply_unified_patch", {"patch": unprefixed}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+    opencode = """*** Begin Patch
+*** Update File: src/a.txt
+*** Move to: ../outside.txt
+@@
+-old
++new
+*** End Patch
+"""
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("apply_unified_patch", {"patch": opencode}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("apply_unified_patch", {"patch": "not a patch"}),
+            tmp_path,
+        )
+    assert refusal.value.code == "tool_scope_unenforceable"
+    unwrapped_opencode = """*** Update File: src/a.txt
+*** Move to: ../outside.txt
+@@
+-old
++new
+"""
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("apply_unified_patch", {"patch": unwrapped_opencode}),
+            tmp_path,
+        )
+    assert refusal.value.code == "authority_denied"
+
+    symlink_patch = """diff --git a/src/link b/src/link
+new file mode 120000
+--- /dev/null
++++ b/src/link
+@@ -0,0 +1 @@
++../../outside
+"""
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("apply_unified_patch", {"patch": symlink_patch}),
+            tmp_path,
+        )
+    assert refusal.value.code == "tool_scope_unenforceable"
+
+
+    directory_a = tmp_path / "a"
+    directory_a.mkdir()
+    a_scope = _project_scope(
+        ("a",),
+        (".",),
+        workspace=tmp_path,
+        operations=frozenset({ProjectOperation.WRITE}),
+        tool_ids=frozenset({"apply_unified_patch"}),
+    )
+    rename_in_a = """diff --git a/a/old.txt b/a/new.txt
+similarity index 100%
+rename from a/old.txt
+rename to a/new.txt
+"""
+    a_scope.require_tool_call(
+        ToolCallIR("apply_unified_patch", {"patch": rename_in_a}),
+        tmp_path,
+    )
 
 
 def test_project_scope_resolves_symlinks_and_equivalents(tmp_path: Path) -> None:

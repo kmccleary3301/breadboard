@@ -169,6 +169,10 @@ the request with operator policy.
 
 Project roots intersect by resolved containment, retaining the narrower path. Network destinations likewise retain the narrower exact host or wildcard suffix, rather than requiring identical strings.
 
+Built-in file tools also require the matching project operation and every path
+must remain within the effective roots. Patch authorization checks every
+affected source and destination path before execution.
+
 `max_message_bytes` cannot exceed 262144 and `max_checkpoint_bytes` cannot
 exceed 1048576. `max_children` is a non-negative integer; `deadline_ms` is a
 positive integer. These are the executable worker-profile fields. CPU, memory,
