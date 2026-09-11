@@ -125,7 +125,7 @@ class EffectiveDomainScope:
             network=_network_intersection(requested.network, granted.network),
             child=_child_intersection(requested.child, granted.child),
             provider_ids=frozenset(requested.provider_ids & granted.provider_ids),
-            tool_ids=frozenset(requested.tool_ids & granted.tool_ids),
+            tool_ids=_tool_intersection(requested.tool_ids, granted.tool_ids),
             credential_disclosures=tuple(
                 disclosure
                 for disclosure in requested.credential_disclosures
@@ -767,6 +767,21 @@ def _path_under(candidate: Path, base: Path) -> bool:
         return True
     except ValueError:
         return False
+
+def _canonical_tool_ids(tool_ids: frozenset[str]) -> frozenset[str]:
+    registry = cached_tool_registry()
+    return frozenset(
+        registry.resolve_name(str(tool_id).strip().lower())
+        for tool_id in tool_ids
+    )
+
+
+def _tool_intersection(
+    requested: frozenset[str],
+    granted: frozenset[str],
+) -> frozenset[str]:
+    return _canonical_tool_ids(requested) & _canonical_tool_ids(granted)
+
 
 
 def _project_roots_intersection(

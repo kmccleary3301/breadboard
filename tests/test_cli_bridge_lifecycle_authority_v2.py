@@ -467,6 +467,11 @@ def test_project_scope_retains_narrower_root_containment(
             {"file_name": "src/new.txt", "content": "new"},
             ProjectOperation.WRITE,
         ),
+        (
+            "blob.put_file_slice",
+            {"path": "src/file.txt", "start_line": 1},
+            ProjectOperation.READ,
+        ),
     ],
 )
 def test_registry_filesystem_tools_enforce_project_authority(
@@ -502,17 +507,26 @@ def test_registry_filesystem_tools_enforce_project_authority(
     assert refusal.value.code == "authority_denied"
 
 
-def test_canonical_tool_grant_admits_registered_alias(
+def test_tool_grant_intersection_canonicalizes_registered_aliases(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "src").mkdir()
-    scope = _project_scope(
+    project = ProjectAuthority(
         ("src",),
-        (".",),
-        workspace=tmp_path,
-        operations=frozenset({ProjectOperation.READ}),
-        tool_ids=frozenset({"read_file"}),
+        frozenset({ProjectOperation.READ}),
     )
+    scope = EffectiveDomainScope.from_grants(
+        AuthorityDeclaration(
+            project=project,
+            tool_ids=frozenset({"read"}),
+        ),
+        AuthorityDeclaration(
+            project=project,
+            tool_ids=frozenset({"read_file"}),
+        ),
+        workspace=tmp_path,
+    )
+    assert scope.tool_ids == frozenset({"read_file"})
     scope.require_tool_call(
         ToolCallIR("read", {"path": "src/file.txt"}),
         tmp_path,

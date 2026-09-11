@@ -9,6 +9,7 @@ import sys
 import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,8 @@ from breadboard.modules.transport import (
     encode_bytes,
     iter_message_frames,
     iter_chunked_messages,
+    read_message,
+    write_message,
 )
 import breadboard_engine.execution.author_worker as author_worker
 from breadboard_engine.execution.author_worker import (
@@ -904,6 +907,41 @@ def test_service_result_roundtrip_under_small_physical_frames(status) -> None:
         if (result := reassembler.accept(WireMessage.decode(frame))) is not None
     ]
     assert results == [message]
+
+
+def test_start_metadata_roundtrips_under_small_physical_frames() -> None:
+    key = _worker_key(
+        "start-metadata",
+        session="fragment-session",
+        generation="sha256:" + "f" * 64,
+        instance="fragment-instance",
+    )
+    message = WireMessage(
+        WireHeader(PROTOCOL_VERSION, "start", key, 0),
+        {
+            "resume": None,
+            "input_schemas": [f"schema.input.{index}" for index in range(1000)],
+            "output_schemas": [f"schema.output.{index}" for index in range(1000)],
+            "dependencies": [
+                {"name": f"dependency-{index}", "contract_id": f"contract.{index}"}
+                for index in range(250)
+            ],
+        },
+    )
+    frames = list(iter_message_frames(message, max_bytes=4096))
+    assert len(frames) > 1
+    assert all(len(frame) <= 4096 for frame in frames)
+    reassembler = MessageReassembler(maximum=4096)
+    results = [
+        result
+        for frame in frames
+        if (result := reassembler.accept(WireMessage.decode(frame))) is not None
+    ]
+    assert results == [message]
+    stream = BytesIO()
+    write_message(stream, message, max_bytes=4096)
+    stream.seek(0)
+    assert read_message(stream, max_bytes=4096) == message
 
 
 def test_near_budget_service_result_crosses_fragmented_stdio_frames(

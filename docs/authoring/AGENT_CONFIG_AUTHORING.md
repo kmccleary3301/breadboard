@@ -179,6 +179,9 @@ positive integer. These are the executable worker-profile fields. CPU, memory,
 process, and scratch limits belong to the selected execution world and are not
 valid `resource_budget` keys.
 
+Worker start metadata uses the same bounded JSON fragmentation when it exceeds
+an admitted physical frame.
+
 Service requests and replies may span physical frames. Their serialized JSON
 envelopes use the protocol's 1 MiB logical-payload ceiling; binary module
 envelopes retain their 256 KiB ceiling and any stricter service-specific limit.

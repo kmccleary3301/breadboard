@@ -463,7 +463,7 @@ def iter_chunked_messages(
 
 
 _FRAGMENTABLE_JSON_KINDS: Final = frozenset({
-    "service_result", "dependency_request", "child_request",
+    "start", "service_result", "dependency_request", "child_request",
     "provider_request", "tool_request", "context_request",
 })
 
