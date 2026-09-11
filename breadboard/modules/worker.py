@@ -68,6 +68,7 @@ from .transport import (
     FrameLimitError,
     MAX_CHECKPOINT_BYTES,
     MAX_FRAME_BYTES,
+    MIN_FRAME_BYTES,
     PROTOCOL_VERSION,
     RequestKey,
     WireHeader,
@@ -917,7 +918,7 @@ class _Worker:
         self.io.max_message_bytes = _integer(
             body["max_message_bytes"],
             "max_message_bytes",
-            minimum=1,
+            minimum=MIN_FRAME_BYTES,
         )
         self.io.max_checkpoint_bytes = _integer(
             body["max_checkpoint_bytes"],

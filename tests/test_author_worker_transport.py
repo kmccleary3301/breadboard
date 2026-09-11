@@ -32,6 +32,7 @@ from breadboard.modules.transport import (
     read_message,
     write_message,
 )
+from breadboard.modules.worker import WorkerError, _Worker
 import breadboard_engine.execution.author_worker as author_worker
 from breadboard_engine.execution.author_worker import (
     AuthorWorker,
@@ -907,6 +908,34 @@ def test_service_result_roundtrip_under_small_physical_frames(status) -> None:
         if (result := reassembler.accept(WireMessage.decode(frame))) is not None
     ]
     assert results == [message]
+
+
+def test_worker_rejects_frame_budget_below_protocol_overhead() -> None:
+    worker = _Worker(BytesIO(), BytesIO())
+    key = _worker_key(
+        "undersized-frame",
+        session="frame-session",
+        generation="sha256:" + "f" * 64,
+        instance="frame-instance",
+    )
+    body = _worker_start_body(
+        Path("unused.bbpkg"),
+        "sha256:" + "e" * 64,
+        module_id="frame.module",
+        instance_id=key.instance_id,
+        generation_id=key.generation_id,
+        initial_input=None,
+        resume=None,
+        max_message_bytes=4095,
+    )
+
+    with pytest.raises(WorkerError, match="max_message_bytes"):
+        worker._start(
+            WireMessage(
+                WireHeader(PROTOCOL_VERSION, "start", key, 0),
+                body,
+            )
+        )
 
 
 def test_start_metadata_roundtrips_under_small_physical_frames() -> None:

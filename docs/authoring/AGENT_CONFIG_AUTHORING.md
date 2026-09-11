@@ -173,7 +173,8 @@ Built-in file tools also require the matching project operation and every path
 must remain within the effective roots. Patch authorization checks every
 affected source and destination path before execution.
 
-`max_message_bytes` cannot exceed 262144 and `max_checkpoint_bytes` cannot
+`max_message_bytes` must be between 4096 and 262144;
+`max_checkpoint_bytes` cannot
 exceed 1048576. `max_children` is a non-negative integer; `deadline_ms` is a
 positive integer. These are the executable worker-profile fields. CPU, memory,
 process, and scratch limits belong to the selected execution world and are not

@@ -14,6 +14,7 @@ from breadboard.modules import (
     CheckpointEnvelope,
     CheckpointProposal,
     InstanceIdentity,
+    InputEnvelope,
 )
 from breadboard.modules.transport import (
     PROTOCOL_VERSION,
@@ -155,6 +156,50 @@ def test_checkpoint_refuses_unsettled_owned_operation() -> None:
     assert error.value.code == "boundary_unavailable"
     assert "root:approval:pending" in error.value.detail
     assert not checkpoint_called
+
+
+def test_module_runtime_completes_after_final_continuation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    worker = SimpleNamespace(
+        limits=SimpleNamespace(deadline_ms=None),
+        step=lambda _envelope, _turn_id: None,
+    )
+    close_reasons: list[str] = []
+    completions: list[tuple[str, str]] = []
+    work = SimpleNamespace(
+        read_model=SimpleNamespace(status="running"),
+        complete=lambda reason, *, attempt_id: completions.append((reason, attempt_id)),
+    )
+    runtime = ModuleRuntime.__new__(ModuleRuntime)
+    runtime.require_live = lambda: None
+    runtime._ensure_work = lambda: None
+    runtime.root_binding = "root"
+    runtime.worker = lambda _binding: worker
+    runtime.close = lambda *, reason: (
+        close_reasons.append(reason)
+        or ModuleDisposal("confirmed_absent", (), ())
+    )
+    runtime.repository = object()
+    runtime.work_id = "work-final-continuation"
+    runtime.attempt_id = "attempt-final-continuation"
+    runtime.owns_work_lifecycle = True
+    monkeypatch.setattr(
+        WorkItem,
+        "restore",
+        lambda _repository, _work_id: work,
+    )
+
+    output = runtime.execute(
+        InputEnvelope("input.v1", 0, b"finish", True),
+        input_id="input-final-continuation",
+        turn_id="turn-final-continuation",
+    )
+    assert output is None
+    assert close_reasons == ["final_output"]
+    assert completions == [
+        ("module final input", "attempt-final-continuation")
+    ]
 
 
 @pytest.mark.asyncio

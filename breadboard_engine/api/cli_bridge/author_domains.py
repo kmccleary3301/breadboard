@@ -340,7 +340,7 @@ class ToolAccessAdapter:
         self._scope.require_tool_call(call, self._workspace)
         with self._lock:
             pending = self._pending.pop(str(request.request_id), None)
-            if pending is None or pending[1] != approval:
+            if pending is None or pending != (call, approval):
                 return ToolUnknown(
                     request_id=request.request_id,
                     reason="tool approval is not owned by this request",

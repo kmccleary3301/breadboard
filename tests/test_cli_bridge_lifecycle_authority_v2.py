@@ -11,6 +11,8 @@ import pytest
 from breadboard.modules import (
     AuthorityDeclaration,
     ModuleInput,
+    ToolApprovalRequest,
+    ToolUnknown,
     NetworkAuthority,
     NetworkOperation,
     ProjectAuthority,
@@ -20,6 +22,7 @@ from breadboard.product.harness.compile import compile_harness_definition
 from breadboard_engine.api.cli_bridge.author_domains import (
     AuthorDomainError,
     EffectiveDomainScope,
+    ToolAccessAdapter,
 )
 from breadboard_engine.api.cli_bridge.engine_identity_config import (
     EngineProcessIdentity,
@@ -531,6 +534,53 @@ def test_tool_grant_intersection_canonicalizes_registered_aliases(
         ToolCallIR("read", {"path": "src/file.txt"}),
         tmp_path,
     )
+
+
+def test_tool_execution_must_match_the_approved_request(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    scope = _project_scope(
+        ("src",),
+        (".",),
+        workspace=tmp_path,
+        operations=frozenset({ProjectOperation.WRITE}),
+        tool_ids=frozenset({"write"}),
+    )
+
+    class AllowAuthority:
+        def ensure_allowed(self, _session_state, _calls) -> None:
+            return None
+
+    adapter = ToolAccessAdapter(
+        executor=object(),
+        permission_authority=AllowAuthority(),
+        session_state=object(),
+        scope=scope,
+        workspace=tmp_path,
+    )
+    request = ToolApprovalRequest(
+        request_id="tool-request-1",
+        approval_request_id="approval-request-1",
+        tool_id="write",
+        operation="write",
+        arguments_schema_id="bb.tool.write.v1",
+        arguments_json='{"path":"src/approved.txt"}',
+        arguments={"path": "src/approved.txt"},
+    )
+    approval = adapter.request_approval(request)
+    replacement = ToolApprovalRequest(
+        request_id=request.request_id,
+        approval_request_id=request.approval_request_id,
+        tool_id=request.tool_id,
+        operation=request.operation,
+        arguments_schema_id=request.arguments_schema_id,
+        arguments_json='{"path":"src/replacement.txt"}',
+        arguments={"path": "src/replacement.txt"},
+    )
+
+    outcome = adapter.execute(replacement, approval)
+    assert isinstance(outcome, ToolUnknown)
+    assert outcome.request_id == request.request_id
+    assert "not owned" in outcome.reason
 
 
 def test_filesystem_tool_defaults_are_checked_as_workspace_paths(

@@ -33,6 +33,7 @@ from breadboard.modules import (
     MAX_FRAME_BYTES,
     AuthorityDeclaration,
 )
+from breadboard.modules.transport import MIN_FRAME_BYTES
 from breadboard.artifacts.references import ArtifactRef
 from breadboard_engine.compilation.bundle import ingest_bundle, read_bundle_archive
 from breadboard_engine.compilation.contracts import (
@@ -240,9 +241,13 @@ def _manifest_resource_budget(
         value["max_checkpoint_bytes"], "resource_budget.max_checkpoint_bytes"
     )
     deadline_ms = _size(value["deadline_ms"], "resource_budget.deadline_ms")
-    if max_message_bytes < 1 or max_message_bytes > MAX_FRAME_BYTES:
+    if (
+        max_message_bytes < MIN_FRAME_BYTES
+        or max_message_bytes > MAX_FRAME_BYTES
+    ):
         raise ModulePackageValidationError(
-            f"resource_budget.max_message_bytes must be between 1 and {MAX_FRAME_BYTES}"
+            "resource_budget.max_message_bytes must be between "
+            f"{MIN_FRAME_BYTES} and {MAX_FRAME_BYTES}"
         )
     if max_checkpoint_bytes < 1 or max_checkpoint_bytes > MAX_CHECKPOINT_BYTES:
         raise ModulePackageValidationError(

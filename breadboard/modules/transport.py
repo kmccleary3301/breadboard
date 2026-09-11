@@ -22,6 +22,7 @@ MAX_CHECKPOINT_BYTES: Final = 1_048_576
 # encoded envelope and configured frame budget.
 MAX_CHECKPOINT_CHUNK_BYTES: Final = MAX_FRAME_BYTES
 MAX_CHECKPOINT_CHUNKS: Final = MAX_CHECKPOINT_BYTES
+MIN_FRAME_BYTES: Final = 4_096
 _CHUNK_FIELDS: Final = frozenset(
     {
         "body",
@@ -719,9 +720,9 @@ def write_message(stream: BufferedIOBase, message: WireMessage, *, max_bytes: in
 
 
 __all__ = [
-    "FrameEOF", "FrameLimitError", "MAX_CHECKPOINT_BYTES",
     "MAX_CHECKPOINT_CHUNK_BYTES", "MAX_CHECKPOINT_CHUNKS", "MAX_FRAME_BYTES",
-    "MessageReassembler", "PROTOCOL_VERSION", "RequestKey", "TransportError",
+    "MIN_FRAME_BYTES", "MessageReassembler", "PROTOCOL_VERSION", "RequestKey",
+    "TransportError",
     "WIRE_KINDS", "WireHeader", "WireKind", "WireMessage", "WireProtocolError",
     "decode_bytes", "encode_bytes", "iter_chunked_messages",
     "iter_message_frames", "read_frame", "read_message", "write_frame",

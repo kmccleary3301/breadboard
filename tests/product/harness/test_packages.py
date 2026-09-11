@@ -388,6 +388,26 @@ def test_package_refuses_runtime_inoperable_authority_and_budget(
         assert not (tmp_path / label / "bad.bbpkg").exists()
 
 
+def test_package_rejects_frame_budget_below_protocol_overhead(
+    tmp_path: Path,
+) -> None:
+    source = _write_source(tmp_path / "source", code=b"VALUE = 'ranker'\n")
+    manifest = json.loads((source / "module.json").read_text(encoding="utf-8"))
+    manifest["resource_budget"]["max_message_bytes"] = 4095
+    (source / "module.json").write_bytes(canonical_json_bytes(manifest))
+
+    with pytest.raises(
+        ModulePackageValidationError,
+        match="max_message_bytes must be between 4096",
+    ):
+        build_module_package(
+            source,
+            tmp_path / "bad.bbpkg",
+            cas=FilesystemCAS(tmp_path / "cas"),
+        )
+    assert not (tmp_path / "bad.bbpkg").exists()
+
+
 def test_relative_schema_ids_resolve_from_their_declared_base(tmp_path: Path) -> None:
     source = _write_source(tmp_path / "source", code=b"VALUE = 'ranker'\n")
     manifest_path = source / "module.json"
