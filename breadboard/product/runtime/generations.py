@@ -571,7 +571,10 @@ class GenerationLifecycle:
                 )
                 request.update({"status": "failed", "error": failure.as_dict()})
                 resource_ref = preparation_record.get("resource_ref")
-                if isinstance(resource_ref, str):
+                if (
+                    request.get("owns_preparation", True)
+                    and isinstance(resource_ref, str)
+                ):
                     loser_resource = (preparation_id, resource_ref)
             else:
                 revision = observed_revision + 1
@@ -647,39 +650,66 @@ class GenerationLifecycle:
                     resource = previous.get("resource_ref")
                     existing_resource = resource if isinstance(resource, str) else None
             else:
-                if self._staging_count(state, target):
-                    raise GenerationLifecycleError(
-                        "capacity_pressure",
-                        "target already has a staging candidate",
-                        "prepare",
+                pointer = state["targets"].get(target)
+                current = (
+                    state["preparations"].get(pointer.get("preparation_id"))
+                    if isinstance(pointer, Mapping)
+                    else None
+                )
+                if (
+                    isinstance(current, Mapping)
+                    and current.get("generation_id") == effective.generation_id
+                    and current.get("status") == "ready"
+                    and current.get("cleanup") in ("owned", "not_required")
+                ):
+                    preparation_id = str(current["preparation_id"])
+                    preparation = self._preparation(current)
+                    preparation_ready = True
+                    resource = current.get("resource_ref")
+                    existing_resource = (
+                        resource if isinstance(resource, str) else None
                     )
-                residents = self._active_resident_generations(state, target)
-                if len(residents) >= 2:
-                    raise GenerationLifecycleError(
-                        "capacity_pressure",
-                        "target resident generation capacity is full",
-                        "prepare",
-                    )
-                preparation_id = _new_id("preparation")
-                preparation_record = {
-                    "preparation_id": preparation_id,
-                    "target": target,
-                    "generation_id": effective.generation_id,
-                    "source_ref": source_ref,
-                    "lock_record": lock_record,
-                    "status": "preparing",
-                    "resource_ref": None,
-                    "cleanup": "not_required",
-                    "request_id": request_id,
-                    "request_digest": request_digest,
-                }
-                state["preparations"][preparation_id] = preparation_record
-                preparation = self._preparation(preparation_record)
-                state["requests"][request_id] = {
-                    "digest": request_digest,
-                    "status": "preparing",
-                    "preparation_id": preparation_id,
-                }
+                    state["requests"][request_id] = {
+                        "digest": request_digest,
+                        "status": "preparing",
+                        "preparation_id": preparation_id,
+                        "owns_preparation": False,
+                    }
+                else:
+                    if self._staging_count(state, target):
+                        raise GenerationLifecycleError(
+                            "capacity_pressure",
+                            "target already has a staging candidate",
+                            "prepare",
+                        )
+                    residents = self._active_resident_generations(state, target)
+                    if len(residents) >= 2:
+                        raise GenerationLifecycleError(
+                            "capacity_pressure",
+                            "target resident generation capacity is full",
+                            "prepare",
+                        )
+                    preparation_id = _new_id("preparation")
+                    preparation_record = {
+                        "preparation_id": preparation_id,
+                        "target": target,
+                        "generation_id": effective.generation_id,
+                        "source_ref": source_ref,
+                        "lock_record": lock_record,
+                        "status": "preparing",
+                        "resource_ref": None,
+                        "cleanup": "not_required",
+                        "request_id": request_id,
+                        "request_digest": request_digest,
+                    }
+                    state["preparations"][preparation_id] = preparation_record
+                    preparation = self._preparation(preparation_record)
+                    state["requests"][request_id] = {
+                        "digest": request_digest,
+                        "status": "preparing",
+                        "preparation_id": preparation_id,
+                        "owns_preparation": True,
+                    }
         if preparation_ready and existing_resource is None:
             publication = self._publish_preparation(
                 preparation_id,
@@ -1198,47 +1228,15 @@ class GenerationLifecycle:
         candidates: list[tuple[str, str]] = []
         with self._locked() as state:
             pointer = state["targets"].get(target)
-            protected_preparations: set[str] = set()
-            if isinstance(pointer, Mapping):
-                protected_preparations.add(str(pointer["preparation_id"]))
-            pinned_generations = {
-                str(record["generation_id"])
+            current_generation = (
+                pointer.get("generation_id") if isinstance(pointer, Mapping) else None
+            )
+            pinned = {
+                record.get("generation_id")
                 for record in state["admissions"].values()
                 if isinstance(record, Mapping)
                 and record.get("target") == target
                 and record.get("status") in ("reserved", "materialized")
-            }
-            for pinned_generation in sorted(pinned_generations):
-                if any(
-                    preparation_id in protected_preparations
-                    and isinstance(record, Mapping)
-                    and record.get("generation_id") == pinned_generation
-                    for preparation_id, record in state["preparations"].items()
-                ):
-                    continue
-                retained = next(
-                    (
-                        preparation_id
-                        for preparation_id, record in sorted(
-                            state["preparations"].items()
-                        )
-                        if isinstance(record, Mapping)
-                        and record.get("target") == target
-                        and record.get("generation_id") == pinned_generation
-                        and record.get("status") == "ready"
-                        and isinstance(record.get("resource_ref"), str)
-                        and record.get("cleanup") == "owned"
-                    ),
-                    None,
-                )
-                if retained is not None:
-                    protected_preparations.add(retained)
-            protected_resources = {
-                str(record["resource_ref"])
-                for preparation_id, record in state["preparations"].items()
-                if preparation_id in protected_preparations
-                and isinstance(record, Mapping)
-                and isinstance(record.get("resource_ref"), str)
             }
             for preparation_id, record in state["preparations"].items():
                 if not isinstance(record, dict) or record.get("target") != target:
@@ -1256,8 +1254,8 @@ class GenerationLifecycle:
                 ):
                     continue
                 if (
-                    preparation_id in protected_preparations
-                    or resource_ref in protected_resources
+                    record.get("generation_id") == current_generation
+                    or record.get("generation_id") in pinned
                 ):
                     continue
                 candidates.append((preparation_id, resource_ref))

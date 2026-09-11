@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import tempfile
+from dataclasses import replace
 from contextlib import asynccontextmanager
 from functools import wraps
 from datetime import datetime
@@ -1536,6 +1537,99 @@ class PersistenceMixin:
                     return False
                 self._persist_record_locked(record)
                 return True
+
+    async def persist_confirmed_worker_retirement(
+        self,
+        record: SessionRecord,
+        binding: str,
+        expected_execution_identity: tuple[str, str, str, str],
+        allow_unallocated: bool = False,
+    ) -> bool:
+        """Atomically retire one binding after verified cleanup."""
+        if not isinstance(binding, str) or not binding:
+            raise ValueError("module worker binding is invalid")
+        if (
+            len(expected_execution_identity) != 4
+            or any(
+                not isinstance(value, str) or not value
+                for value in expected_execution_identity
+            )
+            or type(allow_unallocated) is not bool
+        ):
+            raise ValueError("module execution retirement identity is invalid")
+        async with self._lock:
+            async with self._record_file_lock(record.session_id):
+                path = self._state_path(record.session_id)
+                tombstone = self._tombstone_path(record.session_id)
+                if (
+                    tombstone is not None
+                    and tombstone.exists()
+                    or self._state_root is not None
+                    and (
+                        path is None
+                        or not path.is_file()
+                        or self._records.get(record.session_id) is not record
+                    )
+                ):
+                    raise SessionRecordDeletedError(
+                        f"session {record.session_id} was deleted before worker retirement"
+                    )
+                if path is not None:
+                    persisted = self._deserialize_record(
+                        json.loads(path.read_text(encoding="utf-8"))
+                    )
+                    self._apply_durable_fields(record, persisted)
+                execution = record.module_execution
+                if execution is None or (
+                    execution.generation_id,
+                    execution.root_binding,
+                    execution.work_item_id,
+                    execution.attempt_id,
+                ) != expected_execution_identity:
+                    raise ValueError(
+                        "retained module execution changed before worker retirement"
+                    )
+                retained = tuple(
+                    worker
+                    for worker in execution.workers
+                    if worker.binding == binding
+                )
+                if not retained:
+                    return True
+                if not all(
+                    (
+                        worker.cleanup is not None
+                        and worker.cleanup.status == "confirmed_absent"
+                        and worker.resource_id is not None
+                        and worker.cleanup.resource_id == worker.resource_id
+                        and worker.cleanup.owner_ref == worker.owner_ref
+                        and (
+                            worker.receipt is None
+                            or worker.cleanup.container_id
+                            == worker.receipt.container_id
+                        )
+                    )
+                    or (
+                        allow_unallocated
+                        and worker.resource_id is None
+                        and worker.container_name is None
+                        and worker.receipt is None
+                        and worker.cleanup is None
+                    )
+                    for worker in retained
+                ):
+                    return False
+                record.module_execution = replace(
+                    execution,
+                    workers=tuple(
+                        worker
+                        for worker in execution.workers
+                        if worker.binding != binding
+                    ),
+                )
+                self._persist_record_locked(record)
+                return True
+
 
     async def persist(
         self,

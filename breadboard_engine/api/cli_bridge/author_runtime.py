@@ -226,50 +226,74 @@ class ModuleRuntime:
     def _persist(self) -> None:
         self.persist_session()
 
-    def _reconcile_retained_worker(self, binding: str) -> None:
-        with self._mutation_lock:
-            execution = self.record.module_execution
-            if execution is None or execution.generation_id != self.generation_id:
-                raise ModuleExecutionError(
-                    "stale_owner",
-                    "module execution record changed",
-                )
-            retained = tuple(
-                worker for worker in execution.workers if worker.binding == binding
+    def _execution_identity(self) -> tuple[str, str, str, str]:
+        return (
+            self.generation_id,
+            self.root_binding,
+            self.work_id,
+            self.attempt_id,
+        )
+
+    def _require_execution_identity(self) -> ModuleExecutionRecord:
+        execution = self.record.module_execution
+        if execution is None or (
+            execution.generation_id,
+            execution.root_binding,
+            execution.work_item_id,
+            execution.attempt_id,
+        ) != self._execution_identity():
+            raise ModuleExecutionError(
+                "stale_owner",
+                "module execution record changed",
             )
-            if not retained:
-                return
-            if any(
-                worker.cleanup is None
-                or worker.cleanup.status != "confirmed_absent"
-                or worker.resource_id is None
-                or worker.cleanup.resource_id != worker.resource_id
-                or worker.cleanup.owner_ref != worker.owner_ref
-                for worker in retained
+        return execution
+
+    def _retire_absent_worker(
+        self,
+        binding: str,
+        *,
+        allow_unallocated: bool = False,
+    ) -> None:
+        with self._mutation_lock:
+            self._require_execution_identity()
+            retired = self.registry_call(
+                "persist_confirmed_worker_retirement",
+                self.record,
+                binding,
+                self._execution_identity(),
+                allow_unallocated,
+            )
+            if (
+                not retired
+                or any(
+                    worker.binding == binding
+                    for worker in self._require_execution_identity().workers
+                )
             ):
                 raise ModuleExecutionError(
                     "recovery_required",
                     "retained module ownership must be reconciled before another receiver starts",
                 )
-            self.record.module_execution = replace(
-                execution,
-                workers=tuple(
-                    worker
-                    for worker in execution.workers
-                    if worker.binding != binding
-                ),
-            )
-            self._persist()
 
+    def _reconcile_retained_worker(self, binding: str) -> None:
+        with self._mutation_lock:
+            execution = self._require_execution_identity()
+            if not any(worker.binding == binding for worker in execution.workers):
+                return
+            self.require_live()
+            self._retire_absent_worker(binding)
 
     def _replace_worker(self, worker: _ModuleWorker, **changes: Any) -> None:
         with self._mutation_lock:
-            execution = self.record.module_execution
-            if execution is None or execution.generation_id != self.generation_id:
-                raise ModuleExecutionError("stale_owner", "module execution record changed")
+            execution = self._require_execution_identity()
             updated = replace(worker.ownership, **changes)
-            workers = tuple(updated if row.binding == updated.binding else row for row in execution.workers)
-            if not any(row.binding == updated.binding for row in execution.workers):
+            workers = tuple(
+                updated if row.binding == updated.binding else row
+                for row in execution.workers
+            )
+            if not any(
+                row.binding == updated.binding for row in execution.workers
+            ):
                 workers = (*workers, updated)
             self.record.module_execution = replace(execution, workers=workers)
             worker.ownership = updated
@@ -303,6 +327,7 @@ class ModuleRuntime:
     def worker(self, binding: str) -> _ModuleWorker:
         self.require_live()
         with self._mutation_lock:
+            self.require_live()
             worker = self._workers.get(binding)
             if worker is None:
                 worker = _ModuleWorker(self, binding)
@@ -664,6 +689,15 @@ class _ModuleWorker:
                 self._prepare_error = error
                 if isinstance(error, AuthorWorkerLaunchError) and error.cleanup is not None:
                     self.owner._replace_worker(self, cleanup=error.cleanup)
+                elif self.channel is None and self.ownership.resource_id is None:
+                    try:
+                        self.owner._retire_absent_worker(
+                            self.binding,
+                            allow_unallocated=True,
+                        )
+                    except BaseException as cleanup_error:
+                        self._prepare_error = cleanup_error
+                        raise cleanup_error from error
                 raise
             finally:
                 self._prepared.set()

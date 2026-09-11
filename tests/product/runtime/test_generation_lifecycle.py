@@ -155,7 +155,7 @@ def test_publication_admission_fence_retains_old_generation_and_rejects_stale_ow
     assert stale.value.code == "stale_dispatch"
 
 
-def test_republication_retires_stale_resource_for_same_generation(tmp_path) -> None:
+def test_republication_reuses_current_resource_for_same_generation(tmp_path) -> None:
     preparer = DistinctSentinelPreparer(tmp_path / "resources")
     preparer.root.mkdir()
     lifecycle = GenerationLifecycle(tmp_path, preparer)
@@ -177,13 +177,19 @@ def test_republication_retires_stale_resource_for_same_generation(tmp_path) -> N
         "publish-second",
     )
 
-    assert second.preparation_id != first.preparation_id
-    assert preparer.resources[first.preparation_id].exists() is False
-    assert preparer.resources[second.preparation_id].exists() is True
-    projection = lifecycle.inspect_generation(lock.generation_id)
-    assert sorted(
-        row["cleanup"] for row in projection["preparations"]
-    ) == ["confirmed_absent", "owned"]
+    assert second.preparation_id == first.preparation_id
+    assert preparer.created == [lock.generation_id]
+    assert preparer.resources[first.preparation_id].exists() is True
+    with pytest.raises(GenerationLifecycleError) as stale:
+        lifecycle.prepare_and_publish(
+            "main",
+            lock,
+            "same.yaml",
+            first.revision,
+            "publish-stale",
+        )
+    assert stale.value.code == "cas_conflict"
+    assert preparer.resources[first.preparation_id].exists() is True
 
 
 def test_adoption_reservation_keeps_old_session_admission_live(tmp_path):

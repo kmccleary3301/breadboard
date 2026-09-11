@@ -2737,7 +2737,10 @@ def test_module_input_kind_uses_durable_execution_after_runner_reconstruction() 
         runner.prepare_input_content("text")
 
 
-def test_confirmed_absent_worker_is_reconciled_before_runtime_restart() -> None:
+@pytest.mark.asyncio
+async def test_confirmed_absent_worker_is_durably_retired_before_restart(
+    tmp_path: Path,
+) -> None:
     generation_id = "sha256:" + "a" * 64
     owner_ref = "module:retained-module-restart:worker-1"
     retained = ModuleWorkerOwnership(
@@ -2770,25 +2773,33 @@ def test_confirmed_absent_worker_is_reconciled_before_runtime_restart() -> None:
             workers=(retained,),
         ),
     )
-    persisted: list[tuple[ModuleWorkerOwnership, ...]] = []
+    owner = SessionRegistry(state_root=tmp_path)
+    await owner.create(record)
+    restarted = SessionRegistry(state_root=tmp_path)
+    restored = await restarted.get(record.session_id)
+    assert restored is not None
+    assert restored.loaded_from_retained_state is True
+
     runtime = ModuleRuntime.__new__(ModuleRuntime)
-    runtime.record = record
+    runtime.record = restored
+    runtime.registry = restarted
+    runtime.loop = asyncio.get_running_loop()
     runtime.generation_id = generation_id
+    runtime.root_binding = "root"
+    runtime.work_id = "work-1"
+    runtime.attempt_id = "attempt-1"
     runtime._mutation_lock = threading.RLock()
-    runtime.persist_session = lambda: persisted.append(
-        record.module_execution.workers
-    )
 
-    runtime._reconcile_retained_worker("root")
+    await asyncio.to_thread(runtime._retire_absent_worker, "root")
 
-    assert record.module_execution.workers == ()
-    assert persisted == [()]
+    assert restored.module_execution.workers == ()
+    disk_reader = SessionRegistry(state_root=tmp_path)
+    disk_record = await disk_reader.get(record.session_id)
+    assert disk_record is not None
+    assert disk_record.module_execution.workers == ()
 
-    record.module_execution = ModuleExecutionRecord(
-        generation_id=generation_id,
-        root_binding="root",
-        work_item_id="work-1",
-        attempt_id="attempt-1",
+    restored.module_execution = replace(
+        restored.module_execution,
         workers=(
             replace(
                 retained,
@@ -2796,10 +2807,11 @@ def test_confirmed_absent_worker_is_reconciled_before_runtime_restart() -> None:
             ),
         ),
     )
+    await restarted.persist(restored)
     with pytest.raises(ModuleExecutionError) as mismatch:
-        runtime._reconcile_retained_worker("root")
+        await asyncio.to_thread(runtime._retire_absent_worker, "root")
     assert mismatch.value.code == "recovery_required"
-    assert record.module_execution.workers
+    assert restored.module_execution.workers
 
 
 @pytest.mark.asyncio
