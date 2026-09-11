@@ -5,7 +5,6 @@ from typing import Any, Dict, Iterable, List, Literal, Never as _Never, Optional
 from .generated.session_event_bindings import (
     PublicSessionEventKind,
     PublicSessionEventPayloadSchema,
-    PublicSessionLifecycleEventKind,
 )
 
 
@@ -58,6 +57,43 @@ class WorldFieldMask(TypedDict):
 
 
 
+class SessionAdoptionFrontier(TypedDict):
+    event_sequence: int
+    generation_id: str
+    typed_input_sequence: int
+    output_sequence: int
+    compaction_index: int
+
+
+class SessionAdoptionMigration(TypedDict):
+    binding: str
+    disposition: Literal["compatible", "migrate"]
+    source_schema_id: str
+    target_schema_id: str
+    reason: str
+
+
+class _SessionAdoptionCommittedOptional(TypedDict, total=False):
+    request_id: str
+
+
+class SessionAdoptionCommittedPayload(_SessionAdoptionCommittedOptional):
+    adoption_id: str
+    checkpoint_id: str
+    source_generation_id: str
+    source_module_id: str
+    source_instance_id: str
+    source_work_id: str
+    source_attempt_id: str
+    source_schema_id: str
+    source_body_sha256: str
+    source_frontier: SessionAdoptionFrontier
+    target_generation_id: str
+    effective_lock_hash: str
+    reason: str
+    migration: List[SessionAdoptionMigration]
+
+
 class _SessionLifecyclePayload(TypedDict, total=False):
     effective_lock_hash: str
     task_hash: str
@@ -88,8 +124,25 @@ class _SessionEventEnvelope(TypedDict):
 
 
 class _SessionLifecycleEvent(_SessionEventEnvelope):
-    kind: PublicSessionLifecycleEventKind
+    kind: Literal[
+        "approval.requested",
+        "approval.resolved",
+        "input.accepted",
+        "session.canceled",
+        "session.completed",
+        "session.failed",
+        "session.paused",
+        "session.reconfigured",
+        "session.resumed",
+        "session.started",
+    ]
     payload: _SessionLifecyclePayload
+    payload_schema_version: Literal["bb.payload.product_session.lifecycle.v1"]
+
+
+class SessionAdoptionCommittedEvent(_SessionEventEnvelope):
+    kind: Literal["session.adoption_committed"]
+    payload: SessionAdoptionCommittedPayload
     payload_schema_version: Literal["bb.payload.product_session.lifecycle.v1"]
 
 
@@ -117,6 +170,7 @@ class _SessionKernelEvent(_SessionEventEnvelope):
 
 SessionEvent = (
     _SessionLifecycleEvent
+    | SessionAdoptionCommittedEvent
     | _SessionAnnotationEvent
     | SessionModuleOutputEvent
     | _SessionKernelEvent

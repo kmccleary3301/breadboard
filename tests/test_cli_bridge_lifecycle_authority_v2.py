@@ -42,6 +42,7 @@ from breadboard_engine.api.cli_bridge.models import (
 from breadboard_engine.api.cli_bridge.registry import LifecycleAuthorityError, SessionRegistry
 from breadboard_engine.api.cli_bridge.service import SessionService
 from breadboard_engine.tool_calling.ir import ToolCallIR
+from breadboard_engine.compilation.tool_registry import registry_from_config
 
 BOOTSTRAP = b"bootstrap-proof-material-000000000000000000"
 OWNER = b"owner-proof-material-0000000000000000000000"
@@ -581,6 +582,27 @@ def test_tool_execution_must_match_the_approved_request(tmp_path: Path) -> None:
     assert isinstance(outcome, ToolUnknown)
     assert outcome.request_id == request.request_id
     assert "not owned" in outcome.reason
+
+
+def test_configured_tool_alias_uses_session_registry_for_scope(
+    tmp_path: Path,
+) -> None:
+    registry = registry_from_config(
+        {"tools": {"aliases": {"safe_tool": "run_shell"}}}
+    )
+    scope = EffectiveDomainScope.from_grants(
+        AuthorityDeclaration(tool_ids=frozenset({"safe_tool"})),
+        AuthorityDeclaration(tool_ids=frozenset({"safe_tool"})),
+        workspace=tmp_path,
+        tool_registry=registry,
+    )
+    assert scope.tool_ids == frozenset({"run_shell"})
+    with pytest.raises(AuthorDomainError) as refusal:
+        scope.require_tool_call(
+            ToolCallIR("safe_tool", {"command": "cat secret.txt"}),
+            tmp_path,
+        )
+    assert refusal.value.code == "tool_scope_unenforceable"
 
 
 def test_filesystem_tool_defaults_are_checked_as_workspace_paths(

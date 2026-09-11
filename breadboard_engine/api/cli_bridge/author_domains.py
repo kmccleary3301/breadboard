@@ -11,7 +11,7 @@ import shlex
 import threading
 from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager, contextmanager
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, TYPE_CHECKING
@@ -55,9 +55,12 @@ from breadboard.modules.provider import (
 )
 from breadboard.modules.transport import RequestKey, decode_bytes, encode_bytes
 from breadboard.opencode_patch import PatchParseError, parse_opencode_patch
-from breadboard_engine.conductor.patching import normalize_patch_block
 from breadboard.product.runtime.events import Session
-from breadboard_engine.compilation.tool_registry import cached_tool_registry
+from breadboard_engine.conductor.patching import normalize_patch_block
+from breadboard_engine.compilation.tool_registry import (
+    ToolRegistry,
+    cached_tool_registry,
+)
 from breadboard_engine.conductor.tool_executor import (
     ToolExecutor,
     execute_agent_calls,
@@ -104,6 +107,7 @@ class EffectiveDomainScope:
     child: ChildAuthority | None
     provider_ids: frozenset[str]
     tool_ids: frozenset[str]
+    tool_registry: ToolRegistry = field(hash=False, repr=False)
     credential_disclosures: tuple[CredentialDisclosure, ...]
 
     @classmethod
@@ -113,11 +117,13 @@ class EffectiveDomainScope:
         effective_grant: Mapping[str, object] | AuthorityDeclaration,
         *,
         workspace: Path,
+        tool_registry: ToolRegistry | None = None,
     ) -> "EffectiveDomainScope":
         if not isinstance(workspace, Path):
             raise TypeError("workspace must be a Path")
         requested = _authority_declaration(requested_authority, "requested authority")
         granted = _authority_declaration(effective_grant, "effective grant")
+        registry = tool_registry or cached_tool_registry()
         return cls(
             project=_project_intersection(
                 requested.project, granted.project, workspace=workspace
@@ -125,12 +131,17 @@ class EffectiveDomainScope:
             network=_network_intersection(requested.network, granted.network),
             child=_child_intersection(requested.child, granted.child),
             provider_ids=frozenset(requested.provider_ids & granted.provider_ids),
-            tool_ids=_tool_intersection(requested.tool_ids, granted.tool_ids),
+            tool_ids=_tool_intersection(
+                requested.tool_ids,
+                granted.tool_ids,
+                registry,
+            ),
             credential_disclosures=tuple(
                 disclosure
                 for disclosure in requested.credential_disclosures
                 if disclosure in granted.credential_disclosures
             ),
+            tool_registry=registry,
         )
 
     def require_provider(self, call: ProviderCallRequest) -> None:
@@ -141,7 +152,7 @@ class EffectiveDomainScope:
             )
 
     def require_tool(self, tool_id: str) -> None:
-        registry = cached_tool_registry()
+        registry = self.tool_registry
         canonical = registry.resolve_name(str(tool_id).strip().lower())
         if not any(
             registry.resolve_name(str(value).strip().lower()) == canonical
@@ -155,33 +166,38 @@ class EffectiveDomainScope:
     def require_tool_call(self, call: ToolCallIR, workspace: Path) -> None:
         """Enforce canonical domain scope before invoking ToolExecutor.
 
-        A tool ID alone cannot confine arbitrary shell/network behavior.  Such
+        A tool ID alone cannot confine arbitrary shell/network behavior. Such
         calls are refused rather than pretending the allowlist is a sandbox.
         """
 
         self.require_tool(str(call.function))
         invoked_tool_id = str(call.function).strip().lower()
-        tool_id = cached_tool_registry().resolve_name(invoked_tool_id)
+        tool_id = self.tool_registry.resolve_name(invoked_tool_id)
+        categories = _tool_categories(tool_id, self.tool_registry)
         arguments = call.arguments if isinstance(call.arguments, Mapping) else {}
-        if tool_id in _UNCONFINED_TOOLS:
+        if tool_id in _UNCONFINED_TOOLS or "shell" in categories:
             raise AuthorDomainError(
                 "tool_scope_unenforceable",
                 f"{call.function} can perform arbitrary project/network effects and has no owner scope enforcement",
             )
-        project_operation = _project_tool_operation(tool_id)
+        project_operation = _project_tool_operation(tool_id, self.tool_registry)
         if project_operation is not None:
             project = self.project
             if project is None:
                 raise AuthorDomainError(
                     "authority_denied", "project authority is not admitted for this tool"
                 )
-            operation = project_operation
-            if operation not in project.operations:
+            if project_operation not in project.operations:
                 raise AuthorDomainError(
                     "authority_denied",
-                    f"project {operation.value} is not in the effective grant",
+                    f"project {project_operation.value} is not in the effective grant",
                 )
-            paths = _tool_paths(tool_id, arguments, workspace)
+            paths = _tool_paths(
+                tool_id,
+                arguments,
+                workspace,
+                self.tool_registry,
+            )
             if not paths:
                 raise AuthorDomainError(
                     "tool_scope_unenforceable",
@@ -194,7 +210,7 @@ class EffectiveDomainScope:
                 raise AuthorDomainError(
                     "authority_denied", "project path is outside the effective roots"
                 )
-        if tool_id in _NETWORK_TOOLS:
+        if tool_id in _NETWORK_TOOLS or "network" in categories:
             network = self.network
             if network is None or NetworkOperation.CONNECT not in network.operations:
                 raise AuthorDomainError(
@@ -768,8 +784,10 @@ def _path_under(candidate: Path, base: Path) -> bool:
     except ValueError:
         return False
 
-def _canonical_tool_ids(tool_ids: frozenset[str]) -> frozenset[str]:
-    registry = cached_tool_registry()
+def _canonical_tool_ids(
+    tool_ids: frozenset[str],
+    registry: ToolRegistry,
+) -> frozenset[str]:
     return frozenset(
         registry.resolve_name(str(tool_id).strip().lower())
         for tool_id in tool_ids
@@ -779,8 +797,12 @@ def _canonical_tool_ids(tool_ids: frozenset[str]) -> frozenset[str]:
 def _tool_intersection(
     requested: frozenset[str],
     granted: frozenset[str],
+    registry: ToolRegistry,
 ) -> frozenset[str]:
-    return _canonical_tool_ids(requested) & _canonical_tool_ids(granted)
+    return (
+        _canonical_tool_ids(requested, registry)
+        & _canonical_tool_ids(granted, registry)
+    )
 
 
 
@@ -879,11 +901,16 @@ def _network_intersection(left: NetworkAuthority | None, right: NetworkAuthority
     )
 
 
-def _child_intersection(left: ChildAuthority | None, right: ChildAuthority | None) -> ChildAuthority | None:
+def _child_intersection(
+    left: ChildAuthority | None,
+    right: ChildAuthority | None,
+) -> ChildAuthority | None:
     if left is None or right is None:
         return None
     return ChildAuthority(
-        allowed_module_ids=frozenset(left.allowed_module_ids & right.allowed_module_ids),
+        allowed_module_ids=frozenset(
+            left.allowed_module_ids & right.allowed_module_ids
+        ),
         max_depth=min(left.max_depth, right.max_depth),
     )
 
@@ -896,11 +923,25 @@ def _under_roots(value: str, workspace: Path, roots: tuple[str, ...]) -> bool:
             return True
     return False
 
+def _tool_categories(
+    tool_id: str,
+    registry: ToolRegistry,
+) -> frozenset[str]:
+    canonical = registry.resolve_name(tool_id)
+    tool = registry.tools_by_name.get(canonical)
+    if tool is None:
+        return frozenset()
+    return frozenset(
+        str(value)
+        for value in tool.classification.get("categories", ())
+    )
 
 
 
-def _project_tool_operation(tool_id: str) -> ProjectOperation | None:
-    registry = cached_tool_registry()
+def _project_tool_operation(
+    tool_id: str,
+    registry: ToolRegistry,
+) -> ProjectOperation | None:
     canonical = registry.resolve_name(tool_id)
     tool = registry.tools_by_name.get(canonical)
     if tool is not None:
@@ -920,8 +961,9 @@ def _tool_paths(
     tool_id: str,
     arguments: Mapping[str, object],
     workspace: Path,
+    registry: ToolRegistry,
 ) -> tuple[str, ...]:
-    canonical = cached_tool_registry().resolve_name(tool_id)
+    canonical = registry.resolve_name(tool_id)
     if canonical in {"apply_patch", "apply_unified_patch", "patch"}:
         return _patch_paths(arguments, workspace)
     path_keys = (

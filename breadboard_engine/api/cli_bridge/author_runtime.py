@@ -37,6 +37,7 @@ from breadboard_engine.execution.author_worker import (
     AuthorWorker, AuthorWorkerCleanupResult, AuthorWorkerLaunchError,
     AuthorWorkerResourceReceipt, AuthorWorkerSpec, open_author_worker,
 )
+from breadboard_engine.compilation.tool_registry import registry_from_config
 
 from .author_domains import AuthorDomainDispatcher, AuthorDomainError, EffectiveDomainScope
 from .registry import ModuleExecutionRecord, ModuleWorkerOwnership, SessionRecord, SessionRegistry
@@ -512,6 +513,7 @@ class _ModuleWorker:
             self.package.manifest.requested_authority,
             owner.grant.declaration,
             workspace=owner.workspace,
+            tool_registry=registry_from_config(owner.captured.config),
         )
         self.domains = AuthorDomainDispatcher.for_worker(
             config=owner.captured.config, workspace=owner.workspace,
