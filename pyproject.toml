@@ -18,13 +18,15 @@ include-package-data = false
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["agent_configs.templates*", "breadboard_engine*", "breadboard*", "breadboard_sdk*", "config.e4_targets*", "config.product*", "conformance.comparators*", "contracts.kernel*", "contracts.public*", "contracts.internal.evidence*", "implementations*"]
-exclude = ["breadboard.rl*", "breadboard.optimize*", "breadboard.search*", "breadboard_ext*"]
+exclude = ["breadboard.optimize*", "breadboard.search*", "breadboard_ext*"]
 namespaces = true
 
 [tool.setuptools.package-data]
 "agent_configs.templates" = ["*.yaml", "*.json"]
 "agent_configs.templates.prompts" = ["*.md"]
 "breadboard_engine" = ["engine-build-provenance.v1.json"]
+"breadboard.rl.harness" = ["SANDBOX_CAPABILITY_MATRIX.json"]
+"breadboard.rl.harness.resources.qualification" = ["canonical_artifact_vectors_v1.json", "tls/authority.json", "tls/ca.cert.pem", "tls/server.cert.pem", "tls/server.key.pem"]
 "breadboard_engine.execution" = ["node/*.mjs"]
 "breadboard_sdk.generated" = ["*.json"]
 "config.product" = ["*.json"]
