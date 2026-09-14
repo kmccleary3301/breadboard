@@ -5,6 +5,7 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 
@@ -74,6 +75,7 @@ def test_snapshot_mode_uses_snapshot_heads_without_remote_lookup(tmp_path: Path)
     assert report["comparison_source"] == "snapshot_json"
     assert report["drift_count"] == 0
     assert report["aligned_count"] == 1
+    assert report["aligned"][0]["source_mode"] == "snapshot_json"
     assert report["error_count"] == 0
 
 
@@ -103,18 +105,90 @@ def test_main_snapshot_mode_writes_report_and_exits_clean(tmp_path: Path, monkey
     assert rc == 0
     payload = json.loads(out_json.read_text(encoding="utf-8"))
     assert payload["comparison_source"] == "snapshot_json"
+    assert payload["snapshot_id"] == "e4_refsnapshot_test"
     assert payload["drift_count"] == 0
     assert payload["aligned_count"] == 1
+
+
+def test_explicit_snapshot_rejects_empty_or_partial_coverage(tmp_path: Path) -> None:
+    module = _load_module("audit_e4_target_drift_snapshot_validation")
+    empty = tmp_path / "empty.json"
+    empty.write_text(json.dumps({"snapshot_id": "empty", "entries": {}}), encoding="utf-8")
+    with pytest.raises(ValueError):
+        module._load_snapshot_heads(empty, required_repositories={"https://example.com/codex.git"})  # noqa: SLF001
+
+    partial = tmp_path / "partial.json"
+    partial.write_text(
+        json.dumps(
+            {
+                "snapshot_id": "partial",
+                "entries": {
+                    "codex": {
+                        "repo_url": "https://example.com/codex.git",
+                        "commit": "abc123",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        module._load_snapshot_heads(  # noqa: SLF001
+            partial,
+            required_repositories={
+                "https://example.com/codex.git",
+                "https://example.com/claude.git",
+            },
+        )
+
+
+def test_snapshot_conflicts_and_local_namespace_never_fall_back_to_live(tmp_path: Path) -> None:
+    module = _load_module("audit_e4_target_drift_source_controls")
+    conflict = tmp_path / "conflict.json"
+    conflict.write_text(
+        json.dumps(
+            {
+                "snapshot_id": "conflict",
+                "entries": {
+                    "first": {"repo_url": "https://example.com/codex.git", "commit": "abc123"},
+                    "second": {"repo_url": "https://example.com/codex.git", "commit": "def456"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        module._load_snapshot_heads(conflict)  # noqa: SLF001
+
+    report = module._build_report(  # noqa: SLF001
+        e4_configs={
+            "local": {
+                "harness": {
+                    "upstream_repo": "local://breadboard",
+                    "upstream_commit": "abc123",
+                }
+            },
+            "unknown": {
+                "harness": {
+                    "upstream_repo": "local://other",
+                    "upstream_commit": "abc123",
+                }
+            },
+        },
+        snapshot_heads={"local://breadboard": "abc123"},
+        remote_head_lookup=lambda _repo: (_ for _ in ()).throw(AssertionError("must not call live lookup")),
+    )
+    assert report["error_count"] == 1
+    assert report["aligned"][0]["source_mode"] == "snapshot_json"
 
 
 def test_build_report_live_mode_uses_cached_remote_lookup() -> None:
     module = _load_module("audit_e4_target_drift_live_cache")
     repo = "https://example.com/claude.git"
-    calls = {"count": 0}
+    heads = iter(("123abc", "999999"))
 
     def _lookup(_repo: str) -> str:
-        calls["count"] += 1
-        return "123abc"
+        return next(heads)
 
     report = module._build_report(  # noqa: SLF001
         e4_configs={
@@ -124,7 +198,6 @@ def test_build_report_live_mode_uses_cached_remote_lookup() -> None:
         remote_head_lookup=_lookup,
     )
     assert report["comparison_source"] == "live_remote_head"
-    assert calls["count"] == 1
     assert report["aligned_count"] == 1
     assert report["drift_count"] == 1
     assert report["error_count"] == 0
