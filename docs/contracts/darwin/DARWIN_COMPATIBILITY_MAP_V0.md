@@ -11,9 +11,9 @@ Freeze the near-term coexistence rules between the canonical DARWIN program iden
 - Program name: `DARWIN`
 - Legacy alias: `EvoLake`
 
-DARWIN is the canonical planning, control-plane, and evaluation-plane identity. EvoLake remains as a compatibility/runtime alias until a dedicated migration tranche lands.
+DARWIN is the canonical planning, control-plane, and evaluation-plane identity. EvoLake remains as a compatibility/runtime alias for the extension surfaces below; the false toy-nightly producer is retired rather than treated as replay evidence.
 
-## Stable legacy surfaces retained for now
+## Stable legacy runtime surfaces retained for now
 
 These remain valid and must **not** be renamed during Phase-1:
 
@@ -28,9 +28,14 @@ These remain valid and must **not** be renamed during Phase-1:
   - `breadboard.evolake.campaign_record.v1`
   - `breadboard.evolake.campaign_checkpoint.v1`
   - `breadboard.evolake.replay_manifest.v1`
-- existing nightly producer naming:
-  - `scripts/evolake_toy_campaign_nightly.py`
-  - `.github/workflows/evolake_toy_campaign_nightly.yml`
+
+The former nightly producer source lineage is retained in protected-base history
+and archival custody only:
+
+- `scripts/evolake_toy_campaign_nightly.py`
+- `.github/workflows/evolake_toy_campaign_nightly.yml`
+
+Neither path is an active schedule or current replay/acceptance producer.
 
 ## New DARWIN-native surfaces
 
