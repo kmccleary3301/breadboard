@@ -250,6 +250,13 @@ fast-deep-equal `3.1.3`, json-schema-traverse `1.0.0` and fast-uri
 when the locked bundled dependency closure changes. Existing explicit
 setuptools package-data declarations remain the sole distribution owner.
 
+The existing build-provenance cleanliness owner also includes
+`config/e4_targets/notices`. Changed or untracked notice inputs must reject
+before a wheel or sdist can claim the clean source commit/tree. A real-Git
+regression covers the new directory; the actual builders reject the reproduced
+untracked notice and emit no distribution artifact. This closes a source-input
+coverage gap without adding a separate provenance authority.
+
 Kyle's controlled internal-copy authority does not create a first-party MIT
 license or public-release permission. These upstream notices grant no additional
 rights over other BreadBoard files. All nine existing target resources, their
