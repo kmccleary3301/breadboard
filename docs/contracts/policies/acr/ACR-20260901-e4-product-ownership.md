@@ -277,6 +277,9 @@ No custody deletion or review-budget extension is authorized by this record.
 
 ## 14) Implementation resource notices and rights gate, 2026-09-15
 
+The installation/permission stop below records the earlier bounded wave.
+Section 15 supersedes that owner-imposed stop; attribution facts remain.
+
 This source correction adds `implementations/THIRD_PARTY_NOTICES.txt` and
 packages it through the existing explicit setuptools package-data ownership.
 It changes no prompt, tool, helper, or historical resource bytes. `setup.py`
@@ -319,3 +322,25 @@ The OpenCode and Codex notices do not close that gate, grant rights over other
 BreadBoard files, establish a public-release license, or transfer native
 acceptance. Current exact-head review and the remaining protected gates stay
 required. No custody deletion or review-budget extension is authorized.
+
+## 15) Owner-authorized continuation, 2026-09-15
+
+Kyle subsequently directed: “You have my approval to continue. There shouldn't
+be a permission gate here, of any kind.” Main recorded the actual decision at
+2026-09-15T23:36:54.864320Z.
+
+This direction supersedes section 14's owner-imposed installation and
+permission pauses. Continue installed proof, CI, independent review and normal
+protected promotion without another general permission request. Preserve the
+accepted bounded resource envelopes and record actual attempts.
+
+The direction is project execution authority, not a fabricated third-party
+rights grant or a statement that unresolved provenance and license obligations
+have been discharged. Keep the original license/NOTICE bodies, factual origin
+limits and unchanged model-visible/historical resources. The distribution
+notice records those facts without imposing a separate owner-permission gate.
+
+Protected checks, exact-artifact independent review, actual runtime and
+recipient evidence, and the prohibition on custody deletion remain in force.
+This record does not award worker qualification, final acceptance or public
+package release.

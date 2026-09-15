@@ -45,9 +45,9 @@ Scope limits
 ------------
 No exact upstream origin is established here for summarize.md, title.md or
 other unlisted resources. A vendor-named directory is not a blanket license.
-These OpenCode/Codex notices do not grant rights over Claude-origin content;
-its applicable permission must be established separately before installation
-or handoff. No model-visible or historical resource bytes are changed.
+These OpenCode/Codex notices do not grant rights over Claude-origin content
+or replace its applicable terms. No model-visible or historical resource bytes
+are changed by this notice.
 
 OpenCode LICENSE (verbatim)
 ---------------------------
