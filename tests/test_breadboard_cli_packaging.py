@@ -183,6 +183,7 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         "contracts/public/surface_inventory.v1.json",
         "implementations/prompts/todos/build.md",
         "implementations/prompts/todos/plan.md",
+        "implementations/THIRD_PARTY_NOTICES.txt",
         "implementations/system_prompts/default.md",
         "implementations/tool_prompt_synthesis/pythonic/system_full.j2.md",
         "implementations/tools/defs/read_file.yaml",
