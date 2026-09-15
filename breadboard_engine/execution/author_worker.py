@@ -165,7 +165,7 @@ def _helper_path() -> Path:
         return Path(configured)
     candidate = resources.files("breadboard_engine.execution").joinpath("node/author-bridge-helper.mjs")
     if not candidate.is_file():
-        raise RuntimeError("The installed OCI author helper is missing; rebuild the wheel with scripts/build_author_worker_helper.py")
+        raise RuntimeError("The installed OCI author helper is missing; rebuild the wheel with scripts/release/build_author_worker_helper.py")
     return Path(candidate)
 
 

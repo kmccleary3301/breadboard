@@ -107,6 +107,14 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+def _audit_status(returncode: int) -> str:
+    if returncode == 0:
+        return "completed"
+    if returncode == 1:
+        return "drifted"
+    return "failed"
+
+
 def _load_manifest(path: Path) -> dict[str, Any]:
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -458,25 +466,31 @@ def main() -> int:
 
     drift_snapshot_out = repo_root / "artifacts" / "conformance" / "e4_target_drift_snapshot_report.json"
     drift_live_out = repo_root / "artifacts" / "conformance" / "e4_target_drift_live_head_report.json"
-    _run(
+    drift_snapshot_proc = _run(
         [
             "python",
             "scripts/research/parity/audit_e4_target_drift.py",
+            "--repo-root",
+            str(repo_root),
             "--snapshot-json",
             str(tracked_snapshot),
             "--json-out",
             str(drift_snapshot_out),
         ],
         cwd=repo_root,
+        check=False,
     )
-    _run(
+    drift_live_proc = _run(
         [
             "python",
             "scripts/research/parity/audit_e4_target_drift.py",
+            "--repo-root",
+            str(repo_root),
             "--json-out",
             str(drift_live_out),
         ],
         cwd=repo_root,
+        check=False,
     )
 
     summary = {
@@ -489,12 +503,17 @@ def main() -> int:
         "strict_check": json.loads(strict_json),
         "strict_45d_check": json.loads(strict45_json),
         "drift_snapshot_report": str(drift_snapshot_out),
+        "drift_snapshot_returncode": drift_snapshot_proc.returncode,
+        "drift_snapshot_status": _audit_status(drift_snapshot_proc.returncode),
+        "drift_snapshot_policy": "closed; partial selected snapshots fail",
         "drift_live_report": str(drift_live_out),
+        "drift_live_returncode": drift_live_proc.returncode,
+        "drift_live_status": _audit_status(drift_live_proc.returncode),
     }
     summary_path = repo_root / "artifacts" / "conformance" / "e4_snapshot_recalibration_summary.json"
     _write_json(summary_path, summary)
     print(json.dumps(summary, indent=2))
-    return 0
+    return 2 if drift_snapshot_proc.returncode or drift_live_proc.returncode else 0
 
 
 if __name__ == "__main__":
