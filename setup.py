@@ -24,7 +24,14 @@ _HEX40 = re.compile(r"[0-9a-f]{40}")
 _WHEEL_INPUT_PATHS = (
     "adaptive_iter.py",
     "agent_configs/templates",
-    "breadboard",
+    # Match the installed namespace roots without admitting research subpackages.
+    ":(glob)breadboard/*",
+    "breadboard/artifacts",
+    "breadboard/ext",
+    "breadboard/modules",
+    "breadboard/product",
+    ":(glob)breadboard/rl/*",
+    "breadboard/rl/harness",
     "breadboard_engine",
     "breadboard_sdk",
     "config/e4_targets/index.json",
@@ -40,9 +47,6 @@ _WHEEL_INPUT_PATHS = (
     "requirements.txt",
     "requirements_web.txt",
     "setup.py",
-    ":(exclude)breadboard/optimize/**",
-    ":(exclude)breadboard/rl/**",
-    ":(exclude)breadboard/search/**",
 )
 
 

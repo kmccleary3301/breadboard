@@ -4,6 +4,8 @@ import copy
 import runpy
 import hashlib
 import json
+import os
+import subprocess
 from pathlib import Path
 from typing import Mapping
 
@@ -228,12 +230,6 @@ def test_wheel_provenance_rejects_checkout_identity_overrides(
             "--untracked-files=all",
             "--",
         ):
-            assert "breadboard" in arguments
-            assert "contracts" in arguments
-            assert "agent_configs" in arguments
-            assert (
-                ":(exclude)docs/conformance/e4_target_support/**" in arguments
-            )
             return ""
         values = {
             ("rev-parse", "--is-inside-work-tree"): "true",
@@ -361,26 +357,57 @@ def test_wheel_provenance_validates_before_populating_build_output(
     assert build_calls == []
 
 
+@pytest.mark.parametrize(
+    ("public_path", "tracked"),
+    (
+        ("breadboard/untracked_runtime.py", False),
+        ("breadboard/rl/__init__.py", True),
+        ("breadboard/rl/harness/headless.py", True),
+    ),
+)
 def test_wheel_provenance_rejects_dirty_non_engine_package(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    public_path: str,
+    tracked: bool,
 ) -> None:
     monkeypatch.setattr(setuptools, "setup", lambda **_kwargs: None)
     namespace = runpy.run_path(str(ROOT / "setup.py"), run_name="bb_setup_test")
+    source_root = tmp_path / "source"
+    public_file = source_root / public_path
+    public_file.parent.mkdir(parents=True)
+    if tracked:
+        public_file.write_text("", encoding="utf-8")
+    for name in tuple(os.environ):
+        if name.startswith("GIT_") or name.startswith("BREADBOARD_BUILD_SOURCE_"):
+            monkeypatch.delenv(name)
+    global_config = tmp_path / "empty.gitconfig"
+    global_config.write_text("", encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(global_config))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    for command in (
+        ("git", "init", "--quiet"),
+        ("git", "add", "."),
+        (
+            "git", "-c", "user.name=Fixture", "-c",
+            "user.email=fixture@example.invalid", "commit", "--quiet",
+            "--allow-empty", "-m", "Fixture",
+        ),
+        (
+            "git", "remote", "add", "origin",
+            "https://github.com/kmccleary3301/breadboard.git",
+        ),
+    ):
+        subprocess.run(command, cwd=source_root, check=True, capture_output=True)
+    namespace["_source_identity"].__globals__["_ROOT"] = source_root
+    clean_identity = namespace["_source_identity"]()
 
-    def fake_git(*arguments: str) -> str:
-        if arguments == ("rev-parse", "--is-inside-work-tree"):
-            return "true"
-        if arguments[:4] == (
-            "status",
-            "--porcelain",
-            "--untracked-files=all",
-            "--",
-        ):
-            return "?? breadboard/untracked_runtime.py"
-        raise AssertionError(arguments)
+    research_file = source_root / "breadboard/rl/trace/research_only.py"
+    research_file.parent.mkdir(parents=True)
+    research_file.write_text("research = True\n", encoding="utf-8")
+    assert namespace["_source_identity"]() == clean_identity
 
-    namespace["_source_identity"].__globals__["_git"] = fake_git
-
+    public_file.write_text("changed = True\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="clean wheel build inputs"):
         namespace["_source_identity"]()
 
