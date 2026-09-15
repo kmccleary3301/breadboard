@@ -1980,6 +1980,20 @@ def test_compiler_implementation_digest_is_path_stable_and_semantically_sensitiv
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     baseline, _, _ = _compile()
+    with monkeypatch.context() as relocated:
+        relocated.setattr(
+            server_compiler._harness_validation_module,
+            "__file__",
+            "/installed/breadboard/product/harness/validate.py",
+        )
+        relocated.setattr(
+            server_compiler._target_resources_module,
+            "__file__",
+            "/installed/breadboard_engine/e4_targets.py",
+        )
+        installed, _, _ = _compile()
+    assert installed.canonical_bytes() == baseline.canonical_bytes()
+
     original = server_compiler._compile_providers
 
     def controlled_implementation_change(config):

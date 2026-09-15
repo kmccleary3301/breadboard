@@ -595,7 +595,9 @@ def _module_code_inventory(namespace: Mapping[str, Any], module_name: str) -> di
             methods = class_methods(value)
             if methods:
                 inventory[name] = methods
-    excluded = {"COMPILER_CODE_DIGEST", "CONFIG_SCHEMA_DIGEST", "MANIFEST_SCHEMA_DIGEST"}
+    # Acquisition locations are not sealed inputs. Loaded code and schema contents
+    # are measured separately so relocating an installation preserves identity.
+    excluded = {"__file__", "COMPILER_CODE_DIGEST", "CONFIG_SCHEMA_DIGEST", "MANIFEST_SCHEMA_DIGEST"}
     inventory["semantic_globals"] = {
         name: _implementation_value(namespace[name])
         for name in sorted(referenced_globals)
