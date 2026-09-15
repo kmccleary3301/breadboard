@@ -24,16 +24,16 @@ LOCK_SCHEMA_VERSION = "bb.effective_harness_lock.v2"
 GRAPH_SCHEMA_VERSION = "bb.effective_config_graph.v1"
 
 
-def _copy(value: Any, *, freeze: bool) -> Any:
+def copy_harness_json(value: Any, *, freeze: bool) -> Any:
     """Detach a JSON value, optionally replacing containers with immutable ones."""
 
     if isinstance(value, Mapping):
         if any(type(key) is not str for key in value):
             raise TypeError("JSON object keys must be strings")
-        copied = {key: _copy(item, freeze=freeze) for key, item in value.items()}
+        copied = {key: copy_harness_json(item, freeze=freeze) for key, item in value.items()}
         return MappingProxyType(copied) if freeze else copied
     if isinstance(value, (list, tuple)):
-        copied = [_copy(item, freeze=freeze) for item in value]
+        copied = [copy_harness_json(item, freeze=freeze) for item in value]
         return tuple(copied) if freeze else copied
     json.dumps(value, allow_nan=False)
     return value
@@ -42,7 +42,7 @@ def _copy(value: Any, *, freeze: bool) -> Any:
 def canonical_json_bytes(value: Any) -> bytes:
     """Return the existing BreadBoard canonical JSON encoding."""
 
-    plain = _copy(value, freeze=False)
+    plain = copy_harness_json(value, freeze=False)
     text = (
         json.dumps(
             plain,
@@ -69,7 +69,7 @@ def graph_content_hash(record: Mapping[str, Any]) -> str:
     """Hash a configuration graph, never a complete Harness Lock."""
     if record.get("schema_version") != GRAPH_SCHEMA_VERSION:
         raise ValueError("graph_content_hash requires a configuration graph")
-    preimage = _copy(record, freeze=False)
+    preimage = copy_harness_json(record, freeze=False)
     preimage["graph_hash"] = None
     return sha256_json(preimage)
 
@@ -77,7 +77,7 @@ def graph_content_hash(record: Mapping[str, Any]) -> str:
 def lock_content_hash(record: Mapping[str, Any]) -> str:
     """Hash a complete v2 Lock with its identity field unset."""
 
-    preimage = _copy(record, freeze=False)
+    preimage = copy_harness_json(record, freeze=False)
     preimage["lock_id"] = None
     return sha256_json(preimage)
 
@@ -104,7 +104,7 @@ class _FrozenRecord(Mapping[str, Any]):
     @classmethod
     def _from_record(cls, record: Mapping[str, Any]):
         instance = object.__new__(cls)
-        object.__setattr__(instance, "_record", _copy(record, freeze=True))
+        object.__setattr__(instance, "_record", copy_harness_json(record, freeze=True))
         return instance
 
     def __getitem__(self, key: str) -> Any:
@@ -117,7 +117,7 @@ class _FrozenRecord(Mapping[str, Any]):
         return len(self._record)
 
     def as_dict(self) -> dict[str, Any]:
-        return _copy(self._record, freeze=False)
+        return copy_harness_json(self._record, freeze=False)
 
     def canonical_json(self) -> str:
         return canonical_json_bytes(self._record).decode("utf-8")
@@ -132,7 +132,7 @@ class EffectiveHarnessLock(_FrozenRecord):
     def _from_record(cls, record: Mapping[str, Any]) -> EffectiveHarnessLock:
         if not isinstance(record, Mapping):
             raise TypeError("Harness Lock must be a mapping")
-        snapshot = _copy(record, freeze=False)
+        snapshot = copy_harness_json(record, freeze=False)
         if snapshot.get("schema_version") == LOCK_SCHEMA_VERSION:
             _validate_v2_record(snapshot)
         elif snapshot.get("schema_version") not in (None, GRAPH_SCHEMA_VERSION):
@@ -177,6 +177,24 @@ def configuration_artifact_id(source_ref: str, content_hash: str) -> str:
     return "harness-config:" + sha256_json(
         {"content_hash": content_hash, "source_ref": source_ref}
     ).removeprefix("sha256:")
+
+
+def configuration_artifact_ref(
+    source_ref: str, content: bytes, *, layer_hash: str
+) -> ArtifactRef:
+    """Describe captured bytes without asserting that a CAS has stored them."""
+    content_hash = sha256_bytes(content)
+    return ArtifactRef(
+        artifact_id=configuration_artifact_id(source_ref, content_hash),
+        sha256=content_hash,
+        size_bytes=len(content),
+        media_type="application/octet-stream",
+        metadata={
+            "layer_hash": layer_hash,
+            "source_ref": source_ref,
+            "content_sha256": content_hash,
+        },
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -259,23 +277,23 @@ def materialize_lock(
             reference = ArtifactRef.from_dict(package_record["artifact_ref"])
             payload = cas.get_bytes(reference, max_bytes=reference.size_bytes)
             package = load_module_package(payload, package_record["package_digest"], cas=cas)
-            if package.lock_record() != _copy(package_record, freeze=False):
+            if package.lock_record() != copy_harness_json(package_record, freeze=False):
                 raise ValueError(f"Lock package declaration does not match captured bytes: {name}")
             packages[name] = payload
             verified_packages[name] = package
             declaration["bindings"][name] = {
                 "package": {"source": f"{name}.bbpkg", "digest": package.package_digest},
                 "environment": binding["environment"],
-                "dependencies": _copy(binding["dependencies"], freeze=False),
-                "children": _copy(binding["children"], freeze=False),
-                "config": _copy(binding["config"], freeze=False),
+                "dependencies": copy_harness_json(binding["dependencies"], freeze=False),
+                "children": copy_harness_json(binding["children"], freeze=False),
+                "config": copy_harness_json(binding["config"], freeze=False),
             }
         parse_harness_definition({
             "schema_version": "bb.harness_definition.v2",
             "version": 2,
             "modules": declaration,
         })
-        if _compile_module_bindings(declaration, verified_packages) != _copy(modules, freeze=False):
+        if _compile_module_bindings(declaration, verified_packages) != copy_harness_json(modules, freeze=False):
             raise ValueError("Lock composition does not match its captured inputs")
     return LockMaterialization(
         lock=lock,
@@ -302,11 +320,11 @@ def make_effective_harness_lock(
         "configuration_artifacts": (
             {}
             if configuration_artifacts is None
-            else _copy(configuration_artifacts, freeze=False)
+            else copy_harness_json(configuration_artifacts, freeze=False)
         ),
-        "configuration_graph": _copy(configuration_graph, freeze=False),
+        "configuration_graph": copy_harness_json(configuration_graph, freeze=False),
         "lock_id": None,
-        "modules": None if modules is None else _copy(modules, freeze=False),
+        "modules": None if modules is None else copy_harness_json(modules, freeze=False),
         "schema_version": LOCK_SCHEMA_VERSION,
     }
     record["lock_id"] = lock_content_hash(record)

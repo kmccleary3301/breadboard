@@ -11,7 +11,7 @@ from typing import Any, Dict, Union
 
 from jsonschema import Draft202012Validator
 from breadboard.product.harness.compile import HarnessCompilation, compile_harness_definition
-from breadboard.product.harness.lock import _copy
+from breadboard.product.harness.lock import copy_harness_json
 
 from .effective_config_graph import sha256_json
 
@@ -42,7 +42,7 @@ class ConfigView(Mapping[str, Any]):
         config_path: Path,
     ) -> None:
         self._values = copy.deepcopy(dict(values))
-        self.graph = _copy(graph, freeze=False)
+        self.graph = copy_harness_json(graph, freeze=False)
         self.config_path = config_path
         self._sources_by_path = {
             str(item.get("path")): str(item.get("source_layer_id"))
@@ -393,7 +393,7 @@ def _config_view_from_compilation(
         runtime_doc = effective_doc
     return ConfigView(
         runtime_doc,
-        graph=dict(compilation.lock.configuration_graph),
+        graph=compilation.lock.configuration_graph,
         config_path=config_path,
     )
 

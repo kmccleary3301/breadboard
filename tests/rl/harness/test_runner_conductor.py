@@ -2127,8 +2127,16 @@ async def test_conductor_rejects_every_unsupported_prompt_control_value(
             "System compiled instruction.",
             "Per-turn compiled instruction.\n\nTOOL CATALOG: read_file",
         ),
+        (
+            "native_only",
+            " \n[CACHE] source {{text}}\n ",
+            "",
+            "This catalog is not model-visible.",
+            " \n[CACHE] source {{text}}\n ",
+            "",
+        ),
     ],
-    ids=["system-once-placement", "per-turn-placement"],
+    ids=["system-once-placement", "per-turn-placement", "native-only-placement"],
 )
 async def test_conductor_places_compiled_tool_catalog_for_each_supported_prompt_mode(
     tool_prompt_mode: str,

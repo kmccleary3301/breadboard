@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,7 @@ from breadboard.product.harness.compile import (
     _merge,
     compile_harness_definition,
 )
-from breadboard.product.harness.lock import configuration_artifact_id, sha256_bytes
+from breadboard.product.harness.lock import canonical_json_bytes, configuration_artifact_ref
 from breadboard.product.harness.templates import (
     DAILY_DRIVER_MODEL_ROLES_NAME,
     DAILY_DRIVER_TEMPLATE_NAME,
@@ -26,6 +27,13 @@ from breadboard.product.harness.validate import (
     validate_harness_document_domain,
 )
 from breadboard.product.operations.model import portable_ref
+from breadboard_engine.compilation.contracts import (
+    CompileOptions,
+    CompiledConfigManifest,
+    ConfigBundleManifest,
+    DependencyClosureManifest,
+)
+from breadboard_engine.e4_targets import E4TargetPackage
 
 class HarnessContainmentError(PermissionError):
     """Raised when a harness source or resource escapes its allowed root."""
@@ -219,16 +227,12 @@ def _publish_configuration_artifacts(
             raise HarnessResourceInvalidError(
                 f"locked configuration source is unavailable: {source_ref}"
             )
-        content_hash = sha256_bytes(content)
+        reference = configuration_artifact_ref(source_ref, content, layer_hash=layer_hash)
         artifact = cas.put_bytes(
             content,
-            artifact_id=configuration_artifact_id(source_ref, content_hash),
-            media_type="application/octet-stream",
-            metadata={
-                "layer_hash": layer_hash,
-                "source_ref": source_ref,
-                "content_sha256": content_hash,
-            },
+            artifact_id=reference.artifact_id,
+            media_type=reference.media_type,
+            metadata=reference.metadata,
         )
         artifacts[source_ref] = artifact.to_dict()
     return artifacts
@@ -463,3 +467,54 @@ def _declared_references(document: Mapping[str, Any]) -> tuple[str, ...]:
     if any(not isinstance(item, str) or not item.strip() for item in values):
         raise HarnessCompileError("invalid reference")
     return tuple(values)
+
+
+@dataclass(frozen=True, slots=True)
+class E4CompiledHarness:
+    harness: HarnessCompilation
+    bundle: ConfigBundleManifest
+    closure: DependencyClosureManifest
+    manifest: CompiledConfigManifest
+
+
+def compile_e4_harness(
+    package: E4TargetPackage,
+    dynamic_fields: Mapping[str, Any],
+    runtime_configuration: Mapping[str, Any],
+    *,
+    cas: FilesystemCAS,
+    options: CompileOptions,
+    request_schema_version: str = "bb.rl.headless-run-request.v1",
+) -> E4CompiledHarness:
+    """Publish the source lock, then compile its exact sealed target inputs."""
+    from breadboard_engine.compilation.bundle import (
+        ManifestReader,
+        build_dependency_closure,
+        ingest_member_map,
+    )
+    from breadboard_engine.compilation.server_compiler import compile_config
+
+    from .targets import lower_e4_harness
+
+    source = lower_e4_harness(
+        package, dynamic_fields, runtime_configuration,
+        request_schema_version=request_schema_version,
+    )
+    artifact_refs = _publish_configuration_artifacts(
+        source.compilation, source.members, source.members, cas
+    )
+    harness = source.compilation.with_configuration_artifacts(artifact_refs)
+    members = dict(source.members)
+    members[source.lock_ref] = canonical_json_bytes(harness.lock)
+    bundle = ingest_member_map(
+        members,
+        cas,
+        entrypoints={"main": source.source_ref},
+        source_label=package.target_id,
+    )
+    closure = build_dependency_closure(
+        bundle, root_entrypoint="main", edges=source.edges
+    )
+    reader = ManifestReader(cas=cas, bundle=bundle, closure=closure)
+    manifest = compile_config(reader, closure, options)
+    return E4CompiledHarness(harness, bundle, closure, manifest)

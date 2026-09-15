@@ -20,6 +20,7 @@ from breadboard.rl.harness.policy_provider import E4TargetPolicyProjection
 from breadboard.rl.harness.qualification import (
     materialize_production_composition_fixture,
 )
+from tests.rl.harness.e4_compiler_test_helper import compile_pi_target
 from breadboard.rl.harness.swe_bench_runner import (
     E4ProfileIdentity,
     E4_PROFILE_IDS,
@@ -110,20 +111,9 @@ def _command(
     )
 
 
-def _target(
-    target_id: str = "mini-swe-agent@1.0.0",
-) -> E4TargetPolicyProjection:
-    return E4TargetPolicyProjection(
-        target_id=target_id,
-        overlay_id="fixture-headless.v1",
-        descriptor_digest=f"sha256:{'1' * 64}",
-        execution_config_digest=f"sha256:{'2' * 64}",
-        overlay_digest=f"sha256:{'3' * 64}",
-        rendered_prompt_digest=f"sha256:{'4' * 64}",
-        system_prompt="fixture",
-        ordered_tool_names=(),
-        chat_tools=(),
-    )
+def _target(tmp_path: Path) -> E4TargetPolicyProjection:
+    projection, _ = compile_pi_target(tmp_path)
+    return projection
 
 
 def _invocation(
@@ -163,9 +153,15 @@ def _headless_request(tmp_path: Path) -> HeadlessRunRequest:
     resolution_payload = dict(schema_fixture.create_body["resolution"])
     resolution_payload["episode_id"] = "episode-1"
     return HeadlessRunRequest(
-        target_id="mini-swe-agent@1.0.0",
-        target_overlay_id="fixture-headless.v1",
-        target_dynamic_fields={"fixture": "value"},
+        target_id="pi@0.57.1",
+        target_overlay_id="r3-json-no-session.v1",
+        target_dynamic_fields={
+            "readme_path": "README.md",
+            "docs_path": "docs",
+            "examples_path": "examples",
+            "current_date_time": "2026-09-14T00:00:00Z",
+            "cwd": "/workspace",
+        },
         resolve_request=c.ResolveEpisodeRequest.model_validate(resolution_payload),
         provider=provider,
         workspace=HeadlessWorkspaceInput(
@@ -213,7 +209,7 @@ def _headless_request(tmp_path: Path) -> HeadlessRunRequest:
 
 def _request(tmp_path: Path) -> InstalledSweBenchRequest:
     return InstalledSweBenchRequest(
-        profile=E4ProfileIdentity("mini-swe-agent"),
+        profile=E4ProfileIdentity("Pi"),
         headless_request=_headless_request(tmp_path),
         headless_invocation=_invocation(tmp_path),
         dataset_path=str(tmp_path / "dataset.parquet"),
@@ -327,21 +323,21 @@ def test_pins_profile_identity_command_and_controller_are_generic(
     tmp_path: Path,
 ) -> None:
     assert E4_PROFILE_IDS == ("Pi", "OMP", "OpenHands", "mini-swe-agent")
-    profile = E4ProfileIdentity("OpenHands")
-    assert profile.identity_dict()["profile_id"] == "OpenHands"
+    profile = E4ProfileIdentity("Pi")
+    assert profile.identity_dict()["profile_id"] == "Pi"
     assert PINNED_SWE_BENCH_TASK.identity_dict()["image_leaf_digest"] == IMAGE_LEAF_DIGEST
     assert OFFICIAL_SWE_BENCH_EVALUATOR.version == EVALUATOR_VERSION
     assert OFFICIAL_SWE_BENCH_EVALUATOR.commit == EVALUATOR_COMMIT
     command = _command(tmp_path)
     assert command.argv[0:2] == ("swebench", "eval")
     assert command.evaluator == OFFICIAL_SWE_BENCH_EVALUATOR
-    controller = _controller_identity(profile, _target("openhands@1.0.0"))
+    controller = _controller_identity(profile, _target(tmp_path))
     assert _controller_model_name(controller).startswith("breadboard-e4-")
     assert "/" not in _controller_model_name(controller)
     with pytest.raises((AttributeError, TypeError)):
-        profile.profile_id = "Pi"  # type: ignore[misc]
+        profile.profile_id = "OMP"  # type: ignore[misc]
     with pytest.raises(SweBenchRunnerError, match="does not match"):
-        _controller_identity(profile, _target("pi@0.57.1"))
+        _controller_identity(E4ProfileIdentity("OpenHands"), _target(tmp_path))
 
 
 def test_evaluator_requires_root_owned_work_custody(
@@ -690,15 +686,14 @@ def test_installed_run_binds_canonical_headless_evaluator_and_both_cleanups(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    target = _target()
-    monkeypatch.setattr(
-        E4TargetPolicyProjection,
-        "load",
-        classmethod(lambda cls, target_id, dynamic_fields: target),
-    )
+    target = _target(tmp_path)
     request = _request(tmp_path)
+    monkeypatch.setattr(
+        InstalledHeadlessInvocation,
+        "target_projection",
+        lambda _self, _request: target,
+    )
     canonical = _headless_result(request, target)
-
     async def run_headless(
         _self: InstalledHeadlessInvocation,
         _request: HeadlessRunRequest,
@@ -762,14 +757,14 @@ def test_installed_run_binds_canonical_headless_evaluator_and_both_cleanups(
         leaked_mount["cleanup_inventory"]
     )
     with pytest.raises(SweBenchRunnerError, match="not empty"):
-        _validate_headless_result(leaked_mount, request)
+        _validate_headless_result(leaked_mount, request, target=target)
 
     forged_cleanup = json.loads(json.dumps(canonical))
     forged_cleanup["cleanup"]["receipt_digest"] = f"sha256:{'e' * 64}"
     with pytest.raises(SweBenchRunnerError, match="receipt digest mismatch"):
-        _validate_headless_result(forged_cleanup, request)
+        _validate_headless_result(forged_cleanup, request, target=target)
 
     detached_patch = json.loads(json.dumps(canonical))
     detached_patch["patch"]["digest"] = f"sha256:{'e' * 64}"
     with pytest.raises(SweBenchRunnerError, match="canonical workspace patch"):
-        _validate_headless_result(detached_patch, request)
+        _validate_headless_result(detached_patch, request, target=target)

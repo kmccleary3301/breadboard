@@ -33,6 +33,78 @@ configs backed by tracked prompt/reference packages. The Codex 0.139.0 package
 intentionally contains only the exact prompt source needed by the accepted probe; it
 does not fabricate an installed-target descriptor or a broad parity profile.
 
+## Compiler ownership and admission
+
+`breadboard.product.harness.resolution.compile_e4_harness` connects a verified
+`E4TargetPackage` to the product Harness Lock, published configuration artifacts,
+sealed bundle/closure and server compiler. It takes the target inputs, runtime
+configuration, `FilesystemCAS` and `CompileOptions`. Runtime configuration cannot
+replace target-owned prompts, tools, modes or loop behavior. Native target tools
+require `provider_tools.use_native: true`.
+
+`E4TargetPolicyProjection.from_compiled` reads compiler output; it does not load or
+render package files. Headless and SWE consumers select equivalent projections
+from the composition's verified pinned artifacts. `load_pinned_compiler` performs
+read-only acquisition, not admission or runtime activation. The selected final
+plan remains authoritative and is checked before provider sampling.
+
+The headless entrypoint selects the target before reading provider or composition
+credentials. It binds the same composition-reference bytes across that preflight
+and composition loading, and rejects a changed pinned-manifest set before starting
+the service. A target/version/input rejection must not depend on credential access.
+
+Compiler 1.2.0 binds the target descriptor, indexed bytes, input frame, generated
+members, schema documents and lowering implementation. Recompile changed inputs;
+do not relabel old manifests or receipts. Historical package bytes remain unchanged.
+Pi 0.57.1 has supported legacy lowering. Loading the Oh My Pi 16.2.13 package does
+not imply that its runtime semantics are implemented.
+
+Captured configuration YAML uses the compiler's bounded parser, including
+duplicate-key, alias, depth and node rejection. Historical target v1 keeps its
+YAML 1.1 scalar interpretation within those bounds. Target v2 uses the strict
+JSON-compatible scalar dialect; this does not relax ordinary agent-config parsing.
+
+## Versioned inputs and serialization
+
+`bb.e4.target.v2` and `bb.e4.target_config.v2` are closed contracts. Configuration
+owns renderer, policy, input and materialization declarations; the descriptor
+binds those bytes. Each input names its `value_schema`, producer, lifetime,
+source reference and omission rule. Required/default/null declarations must be
+consistent with that actual JSON Schema. Runtime-produced fields cannot be
+supplied as caller bootstrap values.
+Nested property schemas are checked even when their parent omits `required`.
+The bounded schema vocabulary keeps standard JSON Schema keyword spellings.
+V2 descriptor asset digests use the `sha256:` prefix. The shared v1 index and
+historical v1 descriptor digest forms remain unchanged.
+
+Headless request v1 remains text-only and pairs with target v1. Explicit
+`bb.rl.headless-run-request.v2` accepts JSON values and pairs only with target v2.
+Missing, null, empty, false and zero are distinct. `bind_e4_target_inputs` validates
+the selected declaration without filling omitted values. V1 frames retain JCS
+encoding; v2 byte identity preserves nested object order and numeric representation,
+with outer fields ordered by the declaration.
+This frame records supplied inputs, not constructor execution. An omitted
+`omission: default` field stays absent; its declared default remains bound in the
+verified configuration. An admitted source renderer applies omission/default
+rules at its declared phase. The current v2 capability rejection does not execute
+that renderer or claim its default behavior.
+The installed distribution requires Pydantic `>=2.13.5,<3`, the supported
+dependency floor for both the typed headless request and the public API models.
+
+`breadboard.product.harness.targets.serialize_e4_target` takes `descriptor_path`,
+descriptor fields **without** the derived `assets` table, complete configuration
+and exact asset bytes. It emits the declared configuration asset, descriptor and
+other members, verifies them through `read_e4_target`, and returns immutable
+members relative to `config/e4_targets/` plus an additive `index_delta`. It does not
+write files or replace the installed index. Review and merge that fragment while
+preserving existing entries.
+
+Parsing or serializing a v2 package does not grant runtime support. Unimplemented
+renderers and required capabilities raise `E4TargetCapabilityError`; sealed
+compilation reports `e4_runtime_capabilities_unsupported`. No new campaign target
+is indexed by this compiler cutover. Source recipes and their complete runtime
+implementations belong to their own profile changes.
+
 ## Rules
 
 1. Keep package assets tracked in-repo; do not rely on ignored source trees.

@@ -2,7 +2,7 @@
 # regenerable structure. CI runs --check (S-2): file-set drift fails.
 schema: bb.script_index.v1
 default_owner: kmccleary3301
-live_script_count: 439
+live_script_count: 437
 entries:
   - path: scripts/SCRIPT_INDEX.yaml
     class: live-wired
@@ -67,32 +67,32 @@ entries:
   - path: scripts/atp_firecracker_ci.sh
     class: live-wired
     owner: kmccleary3301
-    callers: [.github/workflows/ci.yml, scripts/SCRIPT_INDEX.yaml, scripts/atp_ops_digest.py, tests/test_upstream_producer_bridge_scripts.py]
+    callers: [.github/workflows/ci.yml, scripts/SCRIPT_INDEX.yaml, scripts/atp_ops_digest.py]
     expiry: none (durable tooling)
   - path: scripts/atp_firecracker_repl_load_nightly.sh
-    class: live-wired
+    class: campaign
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/atp_ops_digest.py, tests/test_upstream_producer_bridge_scripts.py]
-    expiry: none (durable tooling)
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/atp_ops_digest.py]
+    expiry: archive-when-campaign-closes
   - path: scripts/atp_ops_digest.py
     class: live-wired
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, scripts/run_darwin_t1_live_baselines_v1.py, tests/test_upstream_producer_bridge_scripts.py]
     expiry: none (durable tooling)
   - path: scripts/atp_snapshot_pool_stability.py
-    class: live-wired
+    class: campaign
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, scripts/atp_ops_digest.py, tests/test_upstream_producer_bridge_scripts.py]
-    expiry: none (durable tooling)
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, scripts/atp_ops_digest.py]
+    expiry: archive-when-campaign-closes
   - path: scripts/atp_state_ref_regression_recovery.py
-    class: live-wired
+    class: campaign
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, scripts/atp_ops_digest.py, tests/test_upstream_producer_bridge_scripts.py]
-    expiry: none (durable tooling)
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, scripts/atp_ops_digest.py]
+    expiry: archive-when-campaign-closes
   - path: scripts/audit_e4_target_drift.py
     class: live-wired
     owner: kmccleary3301
-    callers: [.github/workflows/e4-target-drift-audit-nightly.yml, scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_summary_20260401.md, tests/test_audit_e4_target_drift.py, tests/test_repo_migration_closeout_matrix.py, tests/test_script_wrapper_paths.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_summary_20260401.md, tests/test_audit_e4_target_drift.py, tests/test_repo_migration_closeout_matrix.py, tests/test_script_wrapper_paths.py]
     expiry: none (durable tooling)
   - path: scripts/audit_longrun_parity_disabled.py
     class: live-wired
@@ -174,16 +174,6 @@ entries:
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, tests/test_build_atp_invalid_extract_ledger_v1.py]
     expiry: none (durable tooling)
-  - path: scripts/build_author_worker_helper.py
-    class: campaign
-    owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml]
-    expiry: archive-when-campaign-closes
-  - path: scripts/build_author_worker_image.py
-    class: campaign
-    owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml]
-    expiry: archive-when-campaign-closes
   - path: scripts/build_darwin_bootstrap_rollup_v0.py
     class: live-wired
     owner: kmccleary3301
@@ -1409,11 +1399,6 @@ entries:
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, scripts/bless_render_profile_version.py, tests/test_evaluate_screenshot_ground_truth_frozen_fixtures.py]
     expiry: none (durable tooling)
-  - path: scripts/evolake_toy_campaign_nightly.py
-    class: live-wired
-    owner: kmccleary3301
-    callers: [.github/workflows/evolake_toy_campaign_nightly.yml, scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, tests/test_upstream_producer_bridge_scripts.py]
-    expiry: none (durable tooling)
   - path: scripts/export_cli_bridge_contracts.py
     class: live-wired
     owner: kmccleary3301
@@ -1624,6 +1609,16 @@ entries:
     owner: kmccleary3301
     callers: [docs/reference/SCRIPTS_INDEX.md, scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_summary_20260401.md, scripts/bless_golden.py, tests/test_script_wrapper_paths.py]
     expiry: none (durable tooling)
+  - path: scripts/release/build_author_worker_helper.py
+    class: live-owned
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: none (durable tooling)
+  - path: scripts/release/build_author_worker_image.py
+    class: live-owned
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: none (durable tooling)
   - path: scripts/release/export_cli_bridge_contracts.py
     class: live-wired
     owner: kmccleary3301
@@ -1662,7 +1657,7 @@ entries:
   - path: scripts/research/parity/audit_e4_target_drift.py
     class: live-wired
     owner: kmccleary3301
-    callers: [Makefile, docs/reference/SCRIPTS_INDEX.md, scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_summary_20260401.md, scripts/audit_e4_target_drift.py, scripts/run_e4_snapshot_recalibration.py]
+    callers: [.github/workflows/e4-target-drift-audit-nightly.yml, Makefile, docs/reference/SCRIPTS_INDEX.md, scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_summary_20260401.md, scripts/audit_e4_target_drift.py]
     expiry: none (durable tooling)
   - path: scripts/research/parity/check_e4_snapshot_coverage.py
     class: live-wired

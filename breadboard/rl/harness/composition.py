@@ -95,7 +95,7 @@ class ManagedPolicyRuntimeClientResolver(PolicyRuntimeClientResolver, Protocol):
 
 
 PolicyClientResolverFactory = Callable[
-    [ManagedPolicyRuntimeClientResolver],
+    [ManagedPolicyRuntimeClientResolver, "PinnedServerCompilerAdapter"],
     ManagedPolicyRuntimeClientResolver,
 ]
 
@@ -1849,7 +1849,8 @@ def _compiled_identity_projection(
 
 class PinnedServerCompilerAdapter:
     def __init__(self, manifests: Mapping[str, bytes]) -> None:
-        verified: dict[str, tuple[bytes, CompiledConfigManifest]] = {}
+        verified: dict[str, CompiledConfigManifest] = {}
+        pinned_bytes: dict[str, bytes] = {}
         for digest, payload in manifests.items():
             if "sha256:" + hashlib.sha256(payload).hexdigest() != digest:
                 raise ValueError("compiled manifest digest mismatch")
@@ -1857,12 +1858,22 @@ class PinnedServerCompilerAdapter:
             cached = _verify_server_manifest(
                 payload, parsed.inputs.compiler_input_digest
             )
-            verified[digest] = (bytes(payload), cached)
-        self._manifests = MappingProxyType(verified)
+            verified[digest] = cached
+            pinned_bytes[digest] = bytes(payload)
+        self._pinned_manifests: Mapping[str, CompiledConfigManifest] = (
+            MappingProxyType(verified)
+        )
+        self._pinned_manifest_bytes: Mapping[str, bytes] = MappingProxyType(
+            pinned_bytes
+        )
+
+    @property
+    def pinned_manifests(self) -> Mapping[str, CompiledConfigManifest]:
+        return self._pinned_manifests
 
     def _manifest(self, request: c.AdmissionRequest) -> CompiledConfigManifest:
         try:
-            _, manifest = self._manifests[request.compiled.manifest_digest]
+            manifest = self._pinned_manifests[request.compiled.manifest_digest]
         except KeyError as exc:
             raise ValueError("compiled manifest is not pinned") from exc
         expected = _compiled_identity_projection(manifest)
@@ -1955,11 +1966,15 @@ class PinnedServerCompilerAdapter:
     def extract_effective_semantics(
         self, *, canonical_manifest_bytes: bytes
     ) -> Mapping[str, Any]:
-        parsed = CompiledConfigManifest.from_json(canonical_manifest_bytes)
-        _verify_server_manifest(
-            canonical_manifest_bytes, parsed.inputs.compiler_input_digest
-        )
-        return parsed.semantic.to_canonical_obj()
+        digest = "sha256:" + hashlib.sha256(canonical_manifest_bytes).hexdigest()
+        try:
+            manifest = self._pinned_manifests[digest]
+            pinned_bytes = self._pinned_manifest_bytes[digest]
+        except KeyError as exc:
+            raise ValueError("compiled manifest is not pinned") from exc
+        if canonical_manifest_bytes != pinned_bytes:
+            raise ValueError("compiled manifest is not pinned")
+        return manifest.semantic.to_canonical_obj()
 
     def normalize_effective_semantics(
         self,
@@ -1987,6 +2002,32 @@ class PinnedServerCompilerAdapter:
         initial_differences = set(
             _semantic_difference_paths(baseline, candidate)
         )
+        metadata = baseline.get("metadata")
+        target_binding = (
+            metadata.get("e4_target") if isinstance(metadata, Mapping) else None
+        )
+        if isinstance(target_binding, Mapping):
+            target_owned_prefixes = (
+                "/metadata/e4_target",
+                "/prompts",
+                "/tools",
+                "/modes",
+                "/loop",
+                f"/config_nodes/{root_index}/semantic_config/metadata/e4_target",
+                f"/config_nodes/{root_index}/semantic_config/prompts",
+                f"/config_nodes/{root_index}/semantic_config/tools",
+                f"/config_nodes/{root_index}/semantic_config/modes",
+                f"/config_nodes/{root_index}/semantic_config/loop",
+            )
+            if any(
+                difference == prefix
+                or difference.startswith(prefix + "/")
+                for difference in initial_differences
+                for prefix in target_owned_prefixes
+            ):
+                raise ValueError(
+                    "effective semantics changed compiler-bound E4 target fields"
+                )
         allowed_differences = set(allowed) | set(mirror_by_pointer.values())
         if not initial_differences <= allowed_differences:
             raise ValueError("effective semantics changed undeclared fields")
@@ -2011,8 +2052,6 @@ class PinnedServerCompilerAdapter:
             raise ValueError("effective semantics normalization drifted")
         CompiledConfig.from_dict(candidate)
         return candidate
-
-
     def validate_effective_semantics(
         self, *, canonical_manifest_bytes: bytes, effective_semantics: Mapping[str, Any]
     ) -> str:
@@ -2031,7 +2070,6 @@ class PinnedServerCompilerAdapter:
                 )
             ).hexdigest()
         )
-
 
 class _CASMaterializationSourceReader:
     """Read sealed source manifests and members from the composition's shared CAS."""
@@ -4107,7 +4145,7 @@ def _build_runtime_graph(
     else:
         try:
             policy_resolver = policy_client_resolver_factory(
-                authority_policy_resolver
+                authority_policy_resolver, graph.compiler
             )
             if not all(
                 callable(getattr(policy_resolver, name, None))
@@ -4193,15 +4231,14 @@ def _build_runtime_graph(
     )
 
 
-def load_production_composition(
+def _load_composition_manifest(
     composition_ref_path: str,
-    secret_files: Mapping[str, str],
     *,
-    composition_ref_data: bytes | None = None,
-    prebound_service_socket_fds: Mapping[str, int] | None = None,
-    fault_injection_authority: V2FaultInjectionAuthority | None = None,
-    policy_client_resolver_factory: PolicyClientResolverFactory | None = None,
-) -> ProductionComposition:
+    composition_ref_data: bytes | None,
+) -> tuple[
+    CompositionRefV1 | CompositionRefV2,
+    HarnessCompositionManifestV1 | HarnessCompositionManifestV2,
+]:
     composition_ref_path = _absolute(composition_ref_path)
     if composition_ref_data is None:
         ref_data, ref_fd = _secure_read(composition_ref_path)
@@ -4246,6 +4283,74 @@ def load_production_composition(
         )
     else:
         raise ValueError("composition ref and manifest schema versions differ")
+    return ref, manifest
+
+
+def _read_compiled_manifests(
+    manifest: HarnessCompositionManifestV1 | HarnessCompositionManifestV2,
+    authority: AuthorityBundleV1,
+) -> dict[str, bytes]:
+    compiled_manifests: dict[str, bytes] = {}
+    for member_ref in authority.compiled_manifest_refs:
+        if (
+            member_ref.media_type
+            != _ARTIFACT_MEDIA_TYPES[c.ArtifactKind.COMPILED_MANIFEST]
+        ):
+            raise ValueError("compiled manifest media type mismatch")
+        compiled_manifests[member_ref.sha256] = _read_ref(member_ref)
+    expected_compiler = manifest.control_plane.compiler
+    for payload in compiled_manifests.values():
+        compiler = CompiledConfigManifest.from_json(payload).compiler
+        actual_identity = (
+            compiler.compiler_id,
+            compiler.compiler_version,
+            compiler.compiler_code_digest,
+            compiler.config_schema_digest,
+            compiler.manifest_schema_digest,
+            compiler.canonicalizer_id,
+            compiler.runtime_abi,
+        )
+        declared_identity = (
+            expected_compiler.compiler_id,
+            expected_compiler.semantic_version,
+            expected_compiler.code_digest,
+            expected_compiler.source_schema_digest,
+            expected_compiler.manifest_schema_digest,
+            expected_compiler.canonicalizer_id,
+            expected_compiler.runtime_abi,
+        )
+        if actual_identity != declared_identity:
+            raise ValueError("compiler authority identity mismatch")
+    return compiled_manifests
+
+
+def load_pinned_compiler(
+    composition_ref_path: str,
+    *,
+    composition_ref_data: bytes | None = None,
+) -> PinnedServerCompilerAdapter:
+    """Read pinned compiler artifacts without admitting or activating a runtime."""
+    _, manifest = _load_composition_manifest(
+        composition_ref_path, composition_ref_data=composition_ref_data
+    )
+    authority = AuthorityBundleV1.model_validate_json(
+        _read_ref(manifest.authority_bundle_ref), strict=True
+    )
+    return PinnedServerCompilerAdapter(_read_compiled_manifests(manifest, authority))
+
+
+def load_production_composition(
+    composition_ref_path: str,
+    secret_files: Mapping[str, str],
+    *,
+    composition_ref_data: bytes | None = None,
+    prebound_service_socket_fds: Mapping[str, int] | None = None,
+    fault_injection_authority: V2FaultInjectionAuthority | None = None,
+    policy_client_resolver_factory: PolicyClientResolverFactory | None = None,
+) -> ProductionComposition:
+    ref, manifest = _load_composition_manifest(
+        composition_ref_path, composition_ref_data=composition_ref_data
+    )
     socket_fds = MappingProxyType(dict(prebound_service_socket_fds or {}))
     supplied = dict(secret_files)
     required = {item.handle_id for item in manifest.secret_handles.records}
@@ -4516,37 +4621,7 @@ def load_production_composition(
             for item in (*direct_selectors, *weighted_selectors)
         ):
             raise ValueError("selector admitted-set cross-reference mismatch")
-        compiled_manifests: dict[str, bytes] = {}
-        for member_ref in authority.compiled_manifest_refs:
-            if (
-                member_ref.media_type
-                != _ARTIFACT_MEDIA_TYPES[c.ArtifactKind.COMPILED_MANIFEST]
-            ):
-                raise ValueError("compiled manifest media type mismatch")
-            compiled_manifests[member_ref.sha256] = _read_ref(member_ref)
-        expected_compiler = manifest.control_plane.compiler
-        for payload in compiled_manifests.values():
-            compiler = CompiledConfigManifest.from_json(payload).compiler
-            actual_identity = (
-                compiler.compiler_id,
-                compiler.compiler_version,
-                compiler.compiler_code_digest,
-                compiler.config_schema_digest,
-                compiler.manifest_schema_digest,
-                compiler.canonicalizer_id,
-                compiler.runtime_abi,
-            )
-            declared_identity = (
-                expected_compiler.compiler_id,
-                expected_compiler.semantic_version,
-                expected_compiler.code_digest,
-                expected_compiler.source_schema_digest,
-                expected_compiler.manifest_schema_digest,
-                expected_compiler.canonicalizer_id,
-                expected_compiler.runtime_abi,
-            )
-            if actual_identity != declared_identity:
-                raise ValueError("compiler authority identity mismatch")
+        compiled_manifests = _read_compiled_manifests(manifest, authority)
         _verify_config_bundle_cas(cas, config_bundles, compiled_manifests)
         admission_receipts: dict[str, bytes] = {}
         for member_ref in authority.admission_receipt_refs:
@@ -4770,4 +4845,5 @@ __all__ = [
     "SecretHandleSpecV1",
     "ServerV1",
     "load_production_composition",
+    "load_pinned_compiler",
 ]

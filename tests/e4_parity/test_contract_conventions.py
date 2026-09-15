@@ -384,6 +384,129 @@ def test_v2_allowlist_exempts_only_the_named_property_rule(tmp_path: Path) -> No
     assert lint_contract_conventions(repo_root=tmp_path) == []
 
 
+def _nested_property_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "minLength": {"type": "integer"},
+            "camelCase": {"type": "string"},
+        },
+    }
+
+
+def test_v2_scoped_allowlist_exempts_only_the_named_property_pointer(tmp_path: Path) -> None:
+    schema_rel = "contracts/kernel/schemas/bb.test_item.v2.schema.json"
+    scoped_pointer = "$/properties/nested_record/properties/minLength"
+    _write_allowlist(
+        tmp_path,
+        [
+            {
+                "path": schema_rel,
+                "exemptions": [],
+                "scoped_exemptions": [
+                    {
+                        "rule": "snake_case_property_names",
+                        "pointers": [scoped_pointer],
+                    }
+                ],
+                "source": "test",
+                "reason": "unit-test fixture",
+            }
+        ],
+    )
+    payload = _schema("bb.test_item.v2.schema.json")
+    payload["required"].append("nested_record")
+    payload["properties"]["nested_record"] = _nested_property_schema()
+    _write_schema(tmp_path, "bb.test_item.v2.schema.json", payload)
+
+    diagnostics = lint_contract_conventions(repo_root=tmp_path)
+
+    assert [(diagnostic.rule, diagnostic.pointer) for diagnostic in diagnostics] == [
+        (
+            "snake_case_property_names",
+            "$/properties/nested_record/properties/camelCase",
+        )
+    ]
+
+
+def test_v2_scoped_allowlist_unknown_pointer_does_not_exempt_any_property(
+    tmp_path: Path,
+) -> None:
+    scoped_pointer = "$/properties/nested_record/properties/minLenght"
+    schema_rel = "contracts/kernel/schemas/bb.test_item.v2.schema.json"
+    _write_allowlist(
+        tmp_path,
+        [
+            {
+                "path": schema_rel,
+                "exemptions": [],
+                "scoped_exemptions": [
+                    {
+                        "rule": "snake_case_property_names",
+                        "pointers": [scoped_pointer],
+                    }
+                ],
+                "source": "test",
+                "reason": "unit-test fixture",
+            }
+        ],
+    )
+    payload = _schema("bb.test_item.v2.schema.json")
+    payload["required"].append("nested_record")
+    payload["properties"]["nested_record"] = _nested_property_schema()
+    _write_schema(tmp_path, "bb.test_item.v2.schema.json", payload)
+
+    diagnostics = lint_contract_conventions(repo_root=tmp_path)
+
+    assert {
+        diagnostic.pointer
+        for diagnostic in diagnostics
+        if diagnostic.rule == "snake_case_property_names"
+    } == {
+        "$/properties/nested_record/properties/minLength",
+        "$/properties/nested_record/properties/camelCase",
+    }
+
+
+@pytest.mark.parametrize(
+    "scoped_exemptions",
+    [
+        [{"rule": "unknown_rule", "pointers": ["$/properties/camelCase"]}],
+        [{"rule": "snake_case_property_names", "pointers": ["not-a-pointer"]}],
+        [{
+            "rule": "snake_case_property_names",
+            "pointers": ["$/properties/camelCase", "$/properties/camelCase"],
+        }],
+        [
+            {"rule": "snake_case_property_names", "pointers": ["$/properties/camelCase"]},
+            {"rule": "snake_case_property_names", "pointers": ["$/properties/camelCase"]},
+        ],
+        [{}],
+    ],
+)
+def test_scoped_allowlist_rejects_invalid_scope_declarations(
+    tmp_path: Path,
+    scoped_exemptions: list[dict[str, Any]],
+) -> None:
+    schema_rel = "contracts/kernel/schemas/bb.test_item.v2.schema.json"
+    _write_allowlist(
+        tmp_path,
+        [
+            {
+                "path": schema_rel,
+                "exemptions": [],
+                "scoped_exemptions": scoped_exemptions,
+                "source": "test",
+                "reason": "unit-test fixture",
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError):
+        lint_contract_conventions(repo_root=tmp_path)
+
+
 @pytest.mark.parametrize(
     "entries, expected_message",
     [

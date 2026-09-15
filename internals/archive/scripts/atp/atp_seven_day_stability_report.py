@@ -49,7 +49,12 @@ def _parse_day(value: str) -> date | None:
 
 
 def _entry_green(entry: dict[str, Any]) -> bool:
-    return bool(entry.get("atp_ok")) and bool(entry.get("evolake_ok"))
+    return (
+        bool(entry.get("atp_ok"))
+        and entry.get("evolake_status") == "executed"
+        and entry.get("evolake_execution_observed") is True
+        and entry.get("evolake_ok") is True
+    )
 
 
 def _contiguous_green_days(days: list[dict[str, Any]]) -> int:

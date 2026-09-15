@@ -423,6 +423,38 @@
    "tier": "evidence"
   },
   {
+   "consumers": [
+    {
+     "kind": "loader",
+     "path": "breadboard_engine/e4_targets.py"
+    },
+    {
+     "kind": "tests",
+     "path": "tests/test_e4_targets.py"
+    }
+   ],
+   "disposition": "keep",
+   "notes": "Closed v2 target descriptor admitted by the verified target reader.",
+   "schema_id": "bb.e4.target.v2",
+   "tier": "config_algebra"
+  },
+  {
+   "consumers": [
+    {
+     "kind": "loader",
+     "path": "breadboard_engine/e4_targets.py"
+    },
+    {
+     "kind": "tests",
+     "path": "tests/test_e4_targets.py"
+    }
+   ],
+   "disposition": "keep",
+   "notes": "Closed v2 executable target configuration admitted by the verified target reader.",
+   "schema_id": "bb.e4.target_config.v2",
+   "tier": "config_algebra"
+  },
+  {
    "consumers": [],
    "disposition": "freeze",
    "notes": "Frozen for accepted evidence and not eligible for new production.",

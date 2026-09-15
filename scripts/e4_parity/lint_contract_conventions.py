@@ -36,6 +36,18 @@ ROOT_RULES = {
 
 
 @dataclass(frozen=True)
+class ScopedAllowlistExemption:
+    rule: str
+    pointers: frozenset[str]
+
+
+@dataclass(frozen=True)
+class AllowlistEntry:
+    exemptions: frozenset[str]
+    scoped_exemptions: tuple[ScopedAllowlistExemption, ...]
+
+
+@dataclass(frozen=True)
 class ConventionDiagnostic:
     path: str
     rule: str
@@ -63,7 +75,11 @@ def _display_path(path: Path, repo_root: Path) -> str:
         return path.as_posix()
 
 
-def load_allowlist(path: Path) -> dict[str, frozenset[str]]:
+def _is_schema_pointer(pointer: str) -> bool:
+    return pointer == "$" or bool(re.fullmatch(r"\$(?:/(?:[^~/]|~[01])+)+", pointer))
+
+
+def load_allowlist(path: Path) -> dict[str, AllowlistEntry]:
     payload = _load_json(path)
     if not isinstance(payload, Mapping):
         raise ValueError(f"allowlist root must be an object: {path}")
@@ -74,7 +90,8 @@ def load_allowlist(path: Path) -> dict[str, frozenset[str]]:
     entries = payload.get("entries")
     if not isinstance(entries, list):
         raise ValueError(f"allowlist.entries must be an array: {path}")
-    allowlist: dict[str, frozenset[str]] = {}
+    allowlist: dict[str, AllowlistEntry] = {}
+    scoped_declarations: set[tuple[str, str, str]] = set()
     for index, entry in enumerate(entries):
         if not isinstance(entry, Mapping):
             raise ValueError(f"allowlist entry {index} must be an object: {path}")
@@ -91,15 +108,76 @@ def load_allowlist(path: Path) -> dict[str, frozenset[str]]:
             raise ValueError(
                 f"allowlist entry {rel_path} has unknown exemptions: {sorted(unknown)}"
             )
-        allowlist[rel_path] = frozenset(exemptions)
+
+        raw_scoped_exemptions = entry.get("scoped_exemptions", [])
+        if not isinstance(raw_scoped_exemptions, list):
+            raise ValueError(
+                f"allowlist entry {rel_path} has invalid scoped_exemptions: {path}"
+            )
+        scoped_exemptions: list[ScopedAllowlistExemption] = []
+        for scope_index, scope in enumerate(raw_scoped_exemptions):
+            if not isinstance(scope, Mapping) or set(scope) != {"rule", "pointers"}:
+                raise ValueError(
+                    f"allowlist entry {rel_path} scoped exemption {scope_index} "
+                    f"must contain only rule and pointers: {path}"
+                )
+            rule = scope.get("rule")
+            pointers = scope.get("pointers")
+            if not isinstance(rule, str) or rule not in ROOT_RULES:
+                raise ValueError(
+                    f"allowlist entry {rel_path} scoped exemption {scope_index} "
+                    f"has unknown rule: {rule!r}"
+                )
+            if (
+                not isinstance(pointers, list)
+                or not pointers
+                or not all(isinstance(pointer, str) for pointer in pointers)
+                or not all(_is_schema_pointer(pointer) for pointer in pointers)
+            ):
+                raise ValueError(
+                    f"allowlist entry {rel_path} scoped exemption {scope_index} "
+                    f"has invalid pointers: {path}"
+                )
+            if len(pointers) != len(set(pointers)):
+                raise ValueError(
+                    f"allowlist entry {rel_path} scoped exemption {scope_index} "
+                    f"contains duplicate pointers: {path}"
+                )
+            for pointer in pointers:
+                declaration = (rel_path, rule, pointer)
+                if declaration in scoped_declarations:
+                    raise ValueError(
+                        f"allowlist entry {rel_path} has duplicate scoped exemption "
+                        f"for {rule!r} at {pointer!r}: {path}"
+                    )
+                scoped_declarations.add(declaration)
+            scoped_exemptions.append(
+                ScopedAllowlistExemption(rule, frozenset(pointers))
+            )
+        allowlist[rel_path] = AllowlistEntry(
+            frozenset(exemptions),
+            tuple(scoped_exemptions),
+        )
     return allowlist
 
 
-def _is_exempt(rel_path: str, rule: str, allowlist: Mapping[str, frozenset[str]]) -> bool:
-    return rule in allowlist.get(rel_path, frozenset())
+def _is_exempt(
+    rel_path: str,
+    rule: str,
+    pointer: str,
+    allowlist: Mapping[str, AllowlistEntry],
+) -> bool:
+    entry = allowlist.get(rel_path)
+    if entry is None:
+        return False
+    if rule in entry.exemptions:
+        return True
+    return any(
+        scope.rule == rule and pointer in scope.pointers
+        for scope in entry.scoped_exemptions
+    )
 
-
-def _is_legacy_allowlisted(rel_path: str, allowlist: Mapping[str, frozenset[str]]) -> bool:
+def _is_legacy_allowlisted(rel_path: str, allowlist: Mapping[str, AllowlistEntry]) -> bool:
     major_version = _schema_major_version(Path(rel_path).name)
     return rel_path in allowlist and major_version is not None and major_version < 2
 
@@ -181,7 +259,11 @@ def _schema_major_version(filename: str) -> int | None:
     return int(version) if version.isdigit() else None
 
 
-def _uses_new_kernel_dialect(schema_path: Path, rel_path: str, allowlist: Mapping[str, frozenset[str]]) -> bool:
+def _uses_new_kernel_dialect(
+    schema_path: Path,
+    rel_path: str,
+    allowlist: Mapping[str, AllowlistEntry],
+) -> bool:
     if _is_legacy_allowlisted(rel_path, allowlist):
         return False
     major_version = _schema_major_version(schema_path.name)
@@ -522,7 +604,7 @@ def lint_schema(
     schema_path: Path,
     *,
     repo_root: Path,
-    allowlist: Mapping[str, frozenset[str]],
+    allowlist: Mapping[str, AllowlistEntry],
 ) -> list[ConventionDiagnostic]:
     rel_path = _display_path(schema_path, repo_root)
     payload = _load_json(schema_path)
@@ -532,10 +614,10 @@ def lint_schema(
     diagnostics: list[ConventionDiagnostic] = []
     legacy_allowlisted = _is_legacy_allowlisted(rel_path, allowlist)
     for diagnostic in _rule_name_id(schema_path, rel_path, payload):
-        if not _is_exempt(rel_path, diagnostic.rule, allowlist):
+        if not _is_exempt(rel_path, diagnostic.rule, diagnostic.pointer, allowlist):
             diagnostics.append(diagnostic)
     for diagnostic in _rule_root_strictness(rel_path, payload):
-        if not _is_exempt(rel_path, diagnostic.rule, allowlist):
+        if not _is_exempt(rel_path, diagnostic.rule, diagnostic.pointer, allowlist):
             diagnostics.append(diagnostic)
     if not legacy_allowlisted:
         diagnostics.extend(_rule_schema_version(schema_path, rel_path, payload))
@@ -549,7 +631,7 @@ def lint_schema(
     diagnostics.extend(_rule_visibility_fields(rel_path, payload))
     if _uses_new_kernel_dialect(schema_path, rel_path, allowlist):
         for diagnostic in _rule_closed_object_property_names(rel_path, payload):
-            if not _is_exempt(rel_path, diagnostic.rule, allowlist):
+            if not _is_exempt(rel_path, diagnostic.rule, diagnostic.pointer, allowlist):
                 diagnostics.append(diagnostic)
         diagnostics.extend(_rule_at_utc_timestamp_refs(rel_path, payload))
     return diagnostics

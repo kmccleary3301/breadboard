@@ -6,6 +6,7 @@
     "completion": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/completion"},
     "concurrency": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/concurrency"},
     "dossier": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/dossier"},
+    "e4_target": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/e4_target"},
     "enhanced_tools": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/enhanced_tools"},
     "features": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/features"},
     "guardrails": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/guardrails"},

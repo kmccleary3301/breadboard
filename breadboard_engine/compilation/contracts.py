@@ -1243,8 +1243,8 @@ class CompileErrorCode(str, Enum):
     MANIFEST_IDENTITY_MISMATCH = "MANIFEST_IDENTITY_MISMATCH"
 
 
-@dataclass(frozen=True, slots=True)
-class ConfigCompileError(Exception, _CanonicalContract):
+@dataclass(frozen=True)
+class _ConfigCompileErrorData(Exception, _CanonicalContract):
     stage: CompileStage
     code: CompileErrorCode
     logical_path: str | None = None
@@ -1324,6 +1324,12 @@ class ConfigCompileError(Exception, _CanonicalContract):
             ),
             details=raw["details"],
         )
+
+
+class ConfigCompileError(_ConfigCompileErrorData):
+    """Frozen diagnostics with mutable BaseException metadata, including traceback."""
+
+    __slots__ = ()
 
 
 @_compiler_dataclass

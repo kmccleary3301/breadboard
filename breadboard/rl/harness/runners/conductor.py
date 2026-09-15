@@ -772,14 +772,14 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
     dialects = prompts.get("dialects") if isinstance(prompts, Mapping) else None
     if (
         not isinstance(variants, tuple)
-        or prompts.get("tool_prompt_mode") not in {"system_once", "per_turn_append"}
+        or prompts.get("tool_prompt_mode") not in {"system_once", "per_turn_append", "native_only"}
         or prompts.get("environment") not in ({}, None)
         or prompts.get("dedupe", False) is not False
         or prompts.get("packs", ()) != ()
         or not isinstance(dialects, Mapping)
         or dialects.get("default", ()) != ()
         or not isinstance(injection, Mapping)
-        or injection.get("system_order", ()) != ()
+        or injection.get("system_order", ()) not in ((), ("mode_specific",))
         or injection.get("per_turn_order", ()) != ()
         or not isinstance(synthesis, Mapping)
         or synthesis.get("enabled") is not True
@@ -1269,7 +1269,7 @@ class _ConductorSession:
             per_turn_text = variant["per_turn"]["text"]
             if self._projection.tool_prompt_mode == "system_once":
                 system_text = _join_prompt_parts(system_text, catalog_text)
-            else:
+            elif self._projection.tool_prompt_mode == "per_turn_append":
                 per_turn_text = _join_prompt_parts(per_turn_text, catalog_text)
             final_request: dict[str, Any] = thaw_json(model.params)
             final_request.update(

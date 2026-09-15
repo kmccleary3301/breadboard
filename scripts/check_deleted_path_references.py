@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 from pathlib import Path
 from typing import Any, Iterable
@@ -18,6 +19,10 @@ from typing import Any, Iterable
 IMMUTABLE_SNAPSHOT_ROOT = Path("docs/conformance/evidence_snapshots")
 IMMUTABLE_EXTERNAL_RECORD_MANIFESTS = {
     "docs_tmp/phase_20/evidence/SP6/implementer.json":
+        "config/deletion_audit/immutable_historical_records.v1.json",
+    "docs/plans/phase_20_right_shape/SCOUT_FACTS.json":
+        "config/deletion_audit/immutable_historical_records.v1.json",
+    "internals/archive/scripts/misc/run_upstream_producers_to_bridge.sh":
         "config/deletion_audit/immutable_historical_records.v1.json",
 }
 
@@ -78,14 +83,30 @@ def _tracked_paths(repo_root: Path) -> list[str]:
     return sorted(path for path in proc.stdout.decode("utf-8").split("\0") if path)
 
 
-def _reference_tokens(deleted_path: str) -> list[str]:
+def _reference_patterns(deleted_path: str) -> list[tuple[str, re.Pattern[str]]]:
     normalized = Path(deleted_path).as_posix().removeprefix("./")
     without_suffix = normalized.removesuffix(".py")
+    module = without_suffix.replace("/", ".") if normalized.endswith(".py") else None
     tokens = {normalized, without_suffix}
-    if normalized.endswith(".py"):
-        tokens.add(without_suffix.replace("/", "."))
-        tokens.add(Path(without_suffix).name)
-    return sorted((token for token in tokens if token), key=lambda token: (-len(token), token))
+    if module is not None:
+        tokens.update((module, Path(normalized).name, Path(without_suffix).name))
+    patterns = []
+    for token in sorted(tokens, key=lambda value: (-len(value), value)):
+        if token == module:
+            # Fully qualified modules can be followed by attribute access.
+            expression = rf"(?<![\w.]){re.escape(token)}(?!\w)"
+        elif "/" in token:
+            expression = rf"(?<![\w.]){re.escape(token)}(?![\w.])"
+        else:
+            # A basename inside another path, module, or artifact filename is
+            # not an unqualified reference to the deleted file.
+            is_filename = token.endswith(".py")
+            prefix = r"(?:\./)?" if is_filename else r"\.*"
+            # Bare definitions/calls name callables, not module imports.
+            suffix = r"(?![\w.])" if is_filename else r"(?![\w.]|[ \t]*\()"
+            expression = rf"(?<![\w./]){prefix}{re.escape(token)}{suffix}"
+        patterns.append((token, re.compile(expression)))
+    return patterns
 
 
 def _authorized_snapshots(
@@ -143,7 +164,7 @@ def build_report(repo_root: Path, deleted_paths: Iterable[str], manifest_values:
     authorized, manifest_errors = _authorized_snapshots(repo_root, tracked_set, manifest_values)
     references: list[dict[str, Any]] = []
 
-    tokens_by_target = {target: _reference_tokens(target) for target in deleted_paths}
+    patterns_by_target = {target: _reference_patterns(target) for target in deleted_paths}
     for rel_path in tracked_paths:
         path = repo_root / rel_path
         if not path.is_file():
@@ -152,18 +173,21 @@ def build_report(repo_root: Path, deleted_paths: Iterable[str], manifest_values:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        for target, tokens in tokens_by_target.items():
-            matched_tokens = [token for token in tokens if token in text]
-            if not matched_tokens:
+        for target, patterns in patterns_by_target.items():
+            matches = [
+                (token, match)
+                for token, pattern in patterns
+                if (match := pattern.search(text)) is not None
+            ]
+            if not matches:
                 continue
-            first_token = matched_tokens[0]
-            offset = text.index(first_token)
+            offset = matches[0][1].start()
             references.append(
                 {
                     "deleted_path": target,
                     "path": rel_path,
                     "line": text.count("\n", 0, offset) + 1,
-                    "matched_tokens": matched_tokens,
+                    "matched_tokens": [token for token, _ in matches],
                     "classification": "immutable_historical" if rel_path in authorized else "live",
                 }
             )
@@ -174,7 +198,7 @@ def build_report(repo_root: Path, deleted_paths: Iterable[str], manifest_values:
     ]
     return {
         "ok": not live_references and not manifest_errors,
-        "deleted_paths": list(tokens_by_target),
+        "deleted_paths": list(patterns_by_target),
         "tracked_file_count": len(tracked_paths),
         "authorized_snapshot_count": len(authorized),
         "live_reference_count": len(live_references),

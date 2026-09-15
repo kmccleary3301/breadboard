@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from .explain import HarnessExplanation
 from .lock import (
     EffectiveHarnessLock,
-    _copy,
+    copy_harness_json,
     graph_content_hash,
     make_effective_harness_lock,
     sha256_bytes,
@@ -39,15 +39,15 @@ class HarnessCompilation:
         instance = object.__new__(cls)
         object.__setattr__(instance, "lock", lock)
         object.__setattr__(instance, "explanation", explanation)
-        object.__setattr__(instance, "_effective", _copy(effective, freeze=True))
-        object.__setattr__(instance, "_resolved_author", _copy(author, freeze=True))
+        object.__setattr__(instance, "_effective", copy_harness_json(effective, freeze=True))
+        object.__setattr__(instance, "_resolved_author", copy_harness_json(author, freeze=True))
         return instance
 
     def as_dict(self) -> dict[str, Any]:
-        return _copy(self._effective, freeze=False)
+        return copy_harness_json(self._effective, freeze=False)
 
     def resolved_author_dict(self) -> dict[str, Any]:
-        return _copy(self._resolved_author, freeze=False)
+        return copy_harness_json(self._resolved_author, freeze=False)
 
     def with_resource_inputs(
         self,
@@ -66,7 +66,7 @@ class HarnessCompilation:
             for layer in graph["source_layers"]
         ):
             raise HarnessCompileError("resource inputs are already bound")
-        graph_copy = _copy(graph, freeze=False)
+        graph_copy = copy_harness_json(graph, freeze=False)
         graph_copy["source_layers"].extend(additions)
         graph_copy["graph_hash"] = graph_content_hash(graph_copy)
         lock = make_effective_harness_lock(
@@ -98,7 +98,7 @@ def _mapping(value: Mapping[str, Any], label: str) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise HarnessCompileError(f"{label} must be a mapping")
     try:
-        return _copy(value, freeze=False)
+        return copy_harness_json(value, freeze=False)
     except (TypeError, ValueError, OverflowError) as error:
         raise HarnessCompileError(f"{label} is not canonical JSON: {error}") from None
 def _refs(document: Mapping[str, Any], source_ref: str) -> tuple[str, ...]:
@@ -124,12 +124,12 @@ def _metadata_leaf(value: Any) -> bool:
 def _merge(current: Any, sources: Any, incoming: Any, layer_id: str,
            *, metadata: bool = True) -> tuple[Any, Any]:
     if metadata and _metadata_leaf(incoming):
-        meta = {key: _copy(value, freeze=False) for key, value in incoming.items() if key != "value"}
+        meta = {key: copy_harness_json(value, freeze=False) for key, value in incoming.items() if key != "value"}
         if "env_name" in meta and (not isinstance(meta["env_name"], str) or not meta["env_name"]):
             raise HarnessCompileError("env_name metadata must be a non-empty string")
         if "env_satisfied" in meta and type(meta["env_satisfied"]) is not bool:
             raise HarnessCompileError("env_satisfied metadata must be a boolean")
-        return _copy(incoming["value"], freeze=False), (layer_id, meta)
+        return copy_harness_json(incoming["value"], freeze=False), (layer_id, meta)
     if isinstance(incoming, Mapping):
         if not incoming and (not isinstance(current, Mapping) or not current):
             return {}, (layer_id, {})
@@ -140,10 +140,10 @@ def _merge(current: Any, sources: Any, incoming: Any, layer_id: str,
                 values.get(key), provenance.get(key), incoming[key], layer_id,
                 metadata=metadata)
         return values, provenance
-    return _copy(incoming, freeze=False), (layer_id, {})
+    return copy_harness_json(incoming, freeze=False), (layer_id, {})
 def _flatten(values: Any, sources: Any, prefix: str = "") -> list[tuple[str, Any, str, dict[str, Any]]]:
     if isinstance(sources, tuple):
-        return [(prefix, _copy(values, freeze=False), sources[0], sources[1])]
+        return [(prefix, copy_harness_json(values, freeze=False), sources[0], sources[1])]
     rows: list[tuple[str, Any, str, dict[str, Any]]] = []
     if isinstance(values, Mapping):
         for key in sorted(values):
@@ -381,12 +381,12 @@ def _compile_module_bindings(
         _mapping({"config": config}, f"module binding {name!r}")
         records[name] = {
             "children": {str(key): str(children[key]) for key in sorted(children)},
-            "config": _copy(config, freeze=False),
+            "config": copy_harness_json(config, freeze=False),
             "dependencies": {
                 str(key): str(dependencies[key]) for key in sorted(dependencies)
             },
             "environment": environment,
-            "package": _copy(package_record, freeze=False),
+            "package": copy_harness_json(package_record, freeze=False),
         }
     return {"bindings": records, "root": root}
 def compile_harness_definition(

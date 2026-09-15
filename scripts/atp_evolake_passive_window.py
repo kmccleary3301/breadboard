@@ -93,20 +93,6 @@ def _copy_plan() -> dict[str, list[str]]:
     }
 
 
-def _evolake_payload_ok(payload: dict[str, Any]) -> bool:
-    if not payload:
-        return False
-    if "ok" in payload:
-        return bool(payload.get("ok"))
-    runs_failed = payload.get("runs_failed")
-    runs_requested = payload.get("runs_requested")
-    runs_passed = payload.get("runs_passed")
-    if isinstance(runs_failed, int) and runs_failed == 0:
-        if isinstance(runs_requested, int) and isinstance(runs_passed, int):
-            return runs_passed == runs_requested
-        return True
-    return str(payload.get("classification", "")).lower() == "stable_pass"
-
 
 def _read_atp_ok(source_dirs: list[Path]) -> bool:
     candidate = _find_first_existing(
@@ -130,29 +116,6 @@ def _read_atp_ok(source_dirs: list[Path]) -> bool:
     return False
 
 
-def _read_evolake_ok(source_dirs: list[Path]) -> bool:
-    candidate = _find_first_existing(
-        source_dirs,
-        [
-            "evolake_toy_campaign_nightly.json",
-            "evolake_toy_campaign_nightly.latest.json",
-            "evolake_toy_campaign_nightly.local.json",
-            "evolake_toy_campaign_nightly.ops_nightly.local.json",
-            "evolake_toy_campaign_local.latest.json",
-        ],
-    )
-    if candidate and _evolake_payload_ok(_load_json(candidate)):
-        return True
-
-    for source_dir in source_dirs:
-        local_dir = source_dir / "evolake_toy_campaign_local"
-        if not local_dir.exists() or not local_dir.is_dir():
-            continue
-        local_jsons = sorted(local_dir.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True)
-        for json_path in local_jsons[:20]:
-            if _evolake_payload_ok(_load_json(json_path)):
-                return True
-    return False
 
 
 def _materialize_evolake_local_dir(source_dirs: list[Path], archive_day_dir: Path) -> str | None:
@@ -175,16 +138,24 @@ def _write_tracker_markdown(tracker: dict[str, Any], tracker_md: Path) -> None:
     lines = [
         "# Passive 4-Day Tracker",
         "",
-        "| day | atp_ok | evolake_ok | ok |",
-        "|---|---:|---:|---:|",
+        "| day | atp_ok | evolake_status | evolake_ok | ok |",
+        "|---|---:|---|---:|---:|",
     ]
     days = tracker.get("days", [])
     for row in days:
         day = row.get("day", "")
         atp_ok = "true" if row.get("atp_ok") else "false"
-        evolake_ok = "true" if row.get("evolake_ok") else "false"
-        ok = "true" if row.get("ok") else "false"
-        lines.append(f"| {day} | {atp_ok} | {evolake_ok} | {ok} |")
+        status = row.get("evolake_status")
+        if not isinstance(status, str) or not status:
+            status = "historical_retired"
+        current_replay = (
+            status == "executed"
+            and row.get("evolake_execution_observed") is True
+            and row.get("evolake_ok") is True
+        )
+        evolake_ok = "true" if current_replay else "false"
+        ok = "true" if row.get("atp_ok") and current_replay else "false"
+        lines.append(f"| {day} | {atp_ok} | {status} | {evolake_ok} | {ok} |")
     tracker_md.parent.mkdir(parents=True, exist_ok=True)
     tracker_md.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -213,7 +184,10 @@ def run_passive_archive(
         copied_artifacts["evolake_local_dir"] = evolake_local_dir
 
     atp_ok = _read_atp_ok(source_dirs)
-    evolake_ok = _read_evolake_ok(source_dirs)
+    evolake_ok = False
+    evolake_status = "retired"
+    evolake_execution_observed = False
+    evolake_reason = "bootstrap_structural_producer_retired"
     ok = atp_ok and evolake_ok
 
     tracker = _load_json(tracker_json)
@@ -231,6 +205,9 @@ def run_passive_archive(
         "day": day,
         "atp_ok": atp_ok,
         "evolake_ok": evolake_ok,
+        "evolake_status": evolake_status,
+        "evolake_execution_observed": evolake_execution_observed,
+        "evolake_reason": evolake_reason,
         "ok": ok,
         "updated_at": time.time(),
     }
@@ -250,6 +227,9 @@ def run_passive_archive(
         "day": day,
         "atp_ok": atp_ok,
         "evolake_ok": evolake_ok,
+        "evolake_status": evolake_status,
+        "evolake_execution_observed": evolake_execution_observed,
+        "evolake_reason": evolake_reason,
         "ok": ok,
         "archive_dir": str(archive_day_dir),
         "copied_artifacts": copied_artifacts,

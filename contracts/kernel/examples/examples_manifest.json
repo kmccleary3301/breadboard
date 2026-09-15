@@ -216,6 +216,16 @@
       "schema_version": "bb.e4.support_claim.v4"
     },
     {
+      "example_path": "contracts/kernel/examples/e4_target_v2_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.target.v2.schema.json",
+      "schema_version": "bb.e4.target.v2"
+    },
+    {
+      "example_path": "contracts/kernel/examples/e4_target_config_v2_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.target_config.v2.schema.json",
+      "schema_version": "bb.e4.target_config.v2"
+    },
+    {
       "example_path": "contracts/kernel/examples/e4_target_coverage_v1_minimal.json",
       "schema_path": "contracts/kernel/schemas/bb.e4.target_coverage.v1.schema.json",
       "schema_version": "bb.e4.target_coverage.v1"

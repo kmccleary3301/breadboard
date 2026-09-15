@@ -1,9 +1,10 @@
 # ACR-20260901-e4-product-ownership
 
 - `acr_id`: `ACR-20260901-e4-product-ownership`
-- `title`: Move active E4 evidence adapters under product ownership
+- `title`: Keep E4 evidence and compiler admission under product ownership
 - `author`: Codex (engine PR campaign)
 - `date`: 2026-09-01
+- `updated`: 2026-09-15
 - `status`: implemented
 
 ## 1) Problem Statement
@@ -31,7 +32,8 @@ Active E4 registry entries and product evidence flows load runtime implementatio
 
 ## 4) Change Classification
 
-- Classification: `internal`.
+- Classification: `breaking`.
+- The original ownership move was internal. The current classification includes the compiler 1.2 identity migration in Section 11; Sections 1–10 retain their original tranche scope.
 - Compatibility window: command modules and import paths remain thin forwarders; direct Pi P5 adapter `--help` behavior remains supported.
 - Clean cutover: active registry implementations point directly to product owners. Script modules must not remain alternate owners.
 - No intentional public wire-format, accepted-evidence, or lane-result change.
@@ -118,3 +120,110 @@ A nested destination-parent symlink that resolves outside its authorized root
 therefore fails closed before promotion side effects. This is a bounded
 non-hostile-filesystem guarantee; check-then-use validation does not claim
 race-free protection against an active hostile path swap.
+
+## 11) Compiler-owned target admission — 2026-09-15
+
+### Decision and scope
+
+Keep target lowering in the existing compiler, not a second supplier-specific
+compiler or an opaque supplier loop. The approved compatibility cutover adds
+closed v2 target/configuration contracts and typed headless materialization
+inputs. The unchanged v1 Pi `0.57.1` and Oh My Pi `16.2.13` resources retain their
+accepted bytes and behavior. New supplier versions require sibling identities
+and their own source, capture, replay and live evidence.
+
+The compiler owns ordered input identity, lowering, source closure and compiled
+locks. Omission remains distinct from an explicit empty string or null;
+source-owned rendering defaults do not rewrite the supplied-input frame.
+Unsupported renderers, semantic policies and runtime capabilities fail
+admission rather than acquire a fallback implementation.
+
+The existing lock owner exports `copy_harness_json`; compiler consumers use that
+operation without a private alias or a second copy implementation. Installed
+packaging includes the public RL harness namespace and its required resources,
+not research RL siblings. Wheel provenance includes the actual installed source
+boundary. False EvoLake live entries are retired without rewriting historical
+records or claiming that a bootstrap result proves replay.
+
+### Credential and compatibility boundaries
+
+The real headless entrypoint verifies the target and pinned compiler inputs
+before provider or composition credential access. It uses the same explicit
+composition-reference bytes for preflight and composition loading, then checks
+the pinned manifest set before starting the service. A rejected target must not
+depend on readable credentials.
+
+Compiler 1.2 changes implementation/provenance identities. Historical fixture
+inputs remain frozen; implementation-independent comparisons do not assert that
+old and new compiler identities are equal. The existing Phase20 amendment and
+content pins record the authorized schema/configuration scope without changing
+the historical freeze baseline.
+
+### Evidence, rollout and rollback
+
+Candidate `72ed11162cd8316a02a2b8b1f4c0c598fd992897` passed 1,057 focused
+compiler/target/product-spine/headless tests with ten skips, three clean
+built-artifact tests, and 49 SDK tests. Source and installed manifest, bundle,
+closure and lock bytes match. Actual installed entrypoint probes reject input
+and version mismatches before credential activity; admitted pins reach only a
+guarded credential boundary. No credential contents or runtime were consumed.
+These are compiler/installed-boundary proofs, not supplier or live qualification.
+
+The independent Standards and Spec reviewers found no blocking source defect
+at that candidate. [PR 125](https://github.com/kmccleary3301/breadboard/pull/125)
+passed the protected Linux product-spine lanes; its architecture guard correctly
+required this changed decision record. The amended head still requires current
+CI and a fresh exact-head attestation. No prior verdict is transferred silently.
+
+Kyle approved the public compiler cutover and protected promotion route on
+2026-09-14, then one bounded credential repair and additional review round on
+2026-09-15. This record adds no review rounds, private implementation authority,
+supplier/runtime acceptance, package-publication authority or custody cleanup.
+The existing broader lifecycle and fixture-scanner residuals remain assigned
+to their owning packets and block any claim that depends on them.
+
+Rollback selects the prior intact compiler, engine distribution, schemas,
+resources and locks as one compatible tuple. Do not combine old compiler bytes
+with newly generated locks or delete accepted targets, failed candidates,
+review records or custody. Later profile promotion and final merged installation
+retain their separate required gates.
+
+## 12) Target parsing and installed-contract correction, 2026-09-15
+
+PR125's later review and E4 Battery found gaps beyond the earlier credential
+repair. Kyle approved one bounded correction wave and one further independent
+review round at `2026-09-15T19:36:46.668573Z`. The prior three rounds remain
+consumed. This approval also permits a bounded evaluator-input diagnosis but
+not replacement of its trust anchors.
+
+All target configuration parsing now uses the existing bounded compiler parser.
+V1 explicitly retains the historical YAML scalar dialect, including `off`,
+while byte, depth, node, duplicate-key and alias checks remain enforced.
+Ordinary config and v2 target parsing retain strict JSON-compatible scalars.
+Recursive value-schema checks no longer depend on an optional parent
+`required` declaration.
+
+New v2 descriptor asset hashes use the canonical `sha256:` prefix. V1 target
+and index hashes retain their accepted form. The bounded JSON Schema vocabulary
+uses exact-pointer allowances for `minLength`, `maxLength`, `minItems`, `maxItems`
+and `additionalProperties` under `$/$defs/value_schema/properties`. No unrelated
+property or digest check is exempted. The Phase20 amendment records the revised
+unpublished schema pin without modifying the historical baseline.
+
+The installed dependency contract explicitly requires `pydantic>=2.13.5,<3`.
+Earlier wheel metadata admitted Pydantic 1. Pydantic 2.5 supplies `JsonValue`, but
+an actual clean consumer at 2.5 failed public API forward-reference resolution.
+The supported floor is the already-exercised 2.13.5 assembly, not a claim of the
+oldest version on which an individual import exists.
+
+The evaluator environment includes the digest of `pyvenv.cfg`. An actual
+same-Python comparison of uv0.12.7 and0.12.14 showed that the generated file
+changes with uv's version. The workflow restores the historical producer
+version0.12.7; environment, Python and Docker trust anchors and their assertions
+remain unchanged. Only a fresh Linux measurement can establish full recovery.
+
+The installed API reproductions, source boundary regressions and final
+exact-artifact proofs govern this correction. Earlier candidate test counts and
+review verdicts are historical evidence, not acceptance of the revised head.
+Protected CI, independent review and all later runtime/recipient gates remain
+mandatory; the rollback and custody rules in section11 are unchanged.

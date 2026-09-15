@@ -15,12 +15,20 @@ from typing import Any, Literal, Mapping
 import uuid
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
+from breadboard.product.harness.targets import bind_e4_target_inputs, serialize_e4_target_inputs
+from breadboard_engine.e4_targets import E4TargetPackage, load_e4_target
 from breadboard_engine.provider.contracts import OpenAICompletionsProviderProfile
 
 from . import contracts as c
-from .composition import ProductionComposition, load_production_composition
+from .composition import (
+    ManagedPolicyRuntimeClientResolver,
+    PinnedServerCompilerAdapter,
+    ProductionComposition,
+    load_pinned_compiler,
+    load_production_composition,
+)
 from .policy_provider import (
     E4TargetPolicyProjection,
     EpisodeOpenAICompletionsPolicyResolver,
@@ -174,12 +182,12 @@ class HeadlessProviderRouteAuthority(BaseModel):
 class HeadlessRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal["bb.rl.headless-run-request.v1"] = (
-        "bb.rl.headless-run-request.v1"
-    )
+    schema_version: Literal[
+        "bb.rl.headless-run-request.v1", "bb.rl.headless-run-request.v2"
+    ] = "bb.rl.headless-run-request.v1"
     target_id: str
     target_overlay_id: str
-    target_dynamic_fields: Mapping[str, str]
+    target_dynamic_fields: Mapping[str, JsonValue]
     resolve_request: c.ResolveEpisodeRequest
     prompt: str = Field(min_length=1, max_length=4 * 1024 * 1024)
     tool_allowlist: tuple[str, ...]
@@ -218,11 +226,11 @@ class HeadlessRunRequest(BaseModel):
             raise ValueError("headless output paths must differ")
         if not self.target_id or not self.target_overlay_id:
             raise ValueError("target and overlay identities are required")
-        if any(
-            type(name) is not str or not name or type(value) is not str or not value
-            for name, value in self.target_dynamic_fields.items()
-        ):
-            raise ValueError("target_dynamic_fields must contain non-empty text")
+        if any(type(name) is not str or not name for name in self.target_dynamic_fields):
+            raise ValueError("target_dynamic_fields requires non-empty field names")
+        inputs = serialize_e4_target_inputs(self.schema_version, self.target_dynamic_fields)
+        if len(inputs) > _MAX_REQUEST_BYTES:
+            raise ValueError("target input frame exceeds the request byte limit")
         if (
             not self.tool_allowlist
             or len(set(self.tool_allowlist)) != len(self.tool_allowlist)
@@ -244,7 +252,7 @@ class HeadlessRunRequest(BaseModel):
         provider_profile: OpenAICompletionsProviderProfile,
         provider_route: HeadlessProviderRouteAuthority,
     ) -> dict[str, Any]:
-        return {
+        identity = {
             "schema_version": "bb.rl.headless-run-identity.v1",
             "composition_manifest_ref": composition_manifest_ref,
             "target": target.identity_dict(),
@@ -265,6 +273,16 @@ class HeadlessRunRequest(BaseModel):
             "provider_route": provider_route.identity_dict(),
             "provider_timeout_seconds": self.provider.timeout_seconds,
         }
+        if self.schema_version == "bb.rl.headless-run-request.v2":
+            identity.update({
+                "schema_version": "bb.rl.headless-run-identity.v2",
+                "request_schema_version": self.schema_version,
+                "target_input_digest": target.input_digest,
+                "target_index_digest": target.index_digest,
+                "target_descriptor_bytes_digest": target.descriptor_bytes_digest,
+                "target_renderer_id": target.renderer_id,
+            })
+        return identity
 
 
 class HeadlessRunFailed(RuntimeError):
@@ -287,6 +305,45 @@ def load_headless_provider_route_authority(
         require_private_mode=True,
     )
     return HeadlessProviderRouteAuthority.model_validate_json(payload, strict=True)
+
+
+def select_pinned_target_projection(
+    request: HeadlessRunRequest,
+    compiler: PinnedServerCompilerAdapter,
+    package: E4TargetPackage,
+) -> E4TargetPolicyProjection:
+    """Select an equivalent bootstrap projection without resolving the episode."""
+    if package.target_id != request.target_id:
+        raise ValueError("headless request and target identities do not match")
+    inputs = bind_e4_target_inputs(
+        package, request.schema_version, request.target_dynamic_fields
+    )
+    expected = {
+        "target_id": request.target_id,
+        "target_schema_version": package.descriptor["schema_version"],
+        "request_schema_version": request.schema_version,
+        "input_digest": _digest_bytes(inputs),
+        "index_digest": _digest_bytes(package.index_bytes),
+        "descriptor_bytes_digest": "sha256:" + package.descriptor_sha256,
+    }
+    selected: E4TargetPolicyProjection | None = None
+    for manifest in compiler.pinned_manifests.values():
+        binding = manifest.semantic.metadata.get("e4_target")
+        if not isinstance(binding, Mapping) or any(
+            binding.get(name) != value for name, value in expected.items()
+        ):
+            continue
+        candidate = E4TargetPolicyProjection.from_compiled(manifest)
+        if candidate.overlay_id != request.target_overlay_id:
+            raise ValueError("selected target overlay does not match the compiled target")
+        if candidate.ordered_tool_names != request.tool_allowlist:
+            raise ValueError("requested tool allowlist does not match the compiled target")
+        if selected is not None and selected != candidate:
+            raise ValueError("pinned compilations have divergent target projections")
+        selected = candidate
+    if selected is None:
+        raise ValueError("no pinned compilation matches target bytes and request inputs")
+    return selected
 
 
 async def run_headless_request(
@@ -344,18 +401,18 @@ async def run_headless_request(
             raise ValueError(
                 "provider model identities do not match launcher route authority"
             )
-        target = E4TargetPolicyProjection.load(
-            request.target_id,
-            request.target_dynamic_fields,
+        target_package = load_e4_target(request.target_id)
+        if composition_ref_data is None:
+            composition_ref_data = _read_regular_file(
+                composition_ref_path, max_bytes=_MAX_REQUEST_BYTES
+            )
+        preflight_compiler = load_pinned_compiler(
+            composition_ref_path, composition_ref_data=composition_ref_data
         )
-        if target.overlay_id != request.target_overlay_id:
-            raise ValueError(
-                "selected target overlay does not match the packaged target"
-            )
-        if request.tool_allowlist != target.ordered_tool_names:
-            raise ValueError(
-                "requested tool allowlist does not match the selected target"
-            )
+        preflight_target = select_pinned_target_projection(
+            request, preflight_compiler, target_package
+        )
+        target = preflight_target
         profile = request.provider.load_profile(
             credential=_read_secret_text(
                 provider_secrets[request.provider.credential_handle]
@@ -364,12 +421,20 @@ async def run_headless_request(
         )
         episode_id = request.resolve_request.episode_id
 
-        def resolver_factory(authority: Any) -> EpisodeOpenAICompletionsPolicyResolver:
+        def resolver_factory(
+            authority: ManagedPolicyRuntimeClientResolver,
+            compiler: PinnedServerCompilerAdapter,
+        ) -> EpisodeOpenAICompletionsPolicyResolver:
+            if (
+                compiler.pinned_manifests.keys()
+                != preflight_compiler.pinned_manifests.keys()
+            ):
+                raise ValueError("composition compiler changed after target admission")
             return EpisodeOpenAICompletionsPolicyResolver(
                 authority,
                 profiles={episode_id: profile},
                 credential_handle_ids={episode_id: request.provider.credential_handle},
-                target_projections={episode_id: target},
+                target_projections={episode_id: preflight_target},
                 authority_model_ids={episode_id: request.provider.authority_model_id},
                 authority_wire_models={episode_id: route.model},
                 expected_observation_digests={
@@ -674,134 +739,11 @@ def _validate_effective_plan(
         raise ValueError(
             "effective repository snapshot does not match the workspace input"
         )
-    _validate_target_semantics(target, plan.effective_semantics)
+    target.validate_semantics(plan.effective_semantics)
 
 
-def _project_effective_chat_tool(definition: Mapping[str, Any]) -> dict[str, Any]:
-    model_name = definition.get("model_name")
-    description = definition.get("description")
-    parameters = definition.get("parameters")
-    routing = definition.get("provider_routing")
-    if (
-        type(model_name) is not str
-        or not model_name
-        or type(description) is not str
-        or not isinstance(parameters, tuple)
-        or not isinstance(routing, Mapping)
-    ):
-        raise ValueError("effective target tool definition is malformed")
-    properties: dict[str, Any] = {}
-    required: list[str] = []
-    for parameter in parameters:
-        if (
-            not isinstance(parameter, Mapping)
-            or type(parameter.get("name")) is not str
-            or not parameter["name"]
-            or parameter["name"] in properties
-            or not isinstance(parameter.get("schema"), Mapping)
-            or not isinstance(parameter.get("validation_rules"), Mapping)
-        ):
-            raise ValueError("effective target tool parameter is malformed")
-        schema = thaw_json(parameter["schema"])
-        schema.update(thaw_json(parameter["validation_rules"]))
-        if parameter.get("has_default") is True:
-            schema["default"] = thaw_json(parameter.get("default_value"))
-        if parameter.get("description") is not None:
-            schema["description"] = parameter["description"]
-        properties[parameter["name"]] = schema
-        if parameter.get("required") is True:
-            required.append(parameter["name"])
-    parameter_schema: dict[str, Any] = {
-        "type": "object",
-        "properties": properties,
-        "required": required,
-    }
-    openai_routing = routing.get("openai")
-    if isinstance(openai_routing, Mapping) and "additionalProperties" in openai_routing:
-        additional_properties = openai_routing["additionalProperties"]
-        if type(additional_properties) is not bool:
-            raise ValueError("effective target tool routing is malformed")
-        parameter_schema["additionalProperties"] = additional_properties
-    return {
-        "type": "function",
-        "function": {
-            "name": model_name,
-            "description": description,
-            "parameters": parameter_schema,
-        },
-    }
 
 
-def _validate_target_semantics(
-    target: E4TargetPolicyProjection,
-    semantics: Mapping[str, Any],
-) -> None:
-    prompts = semantics.get("prompts")
-    providers = semantics.get("providers")
-    tools = semantics.get("tools")
-    modes = semantics.get("modes")
-    root_id = semantics.get("root_config_node_id")
-    if not all(isinstance(value, Mapping) for value in (prompts, providers, tools)):
-        raise ValueError("effective semantics cannot bind the selected E4 target")
-    variants = prompts.get("variants")
-    definitions = tools.get("definitions")
-    if (
-        not isinstance(variants, tuple)
-        or not isinstance(definitions, tuple)
-        or not isinstance(modes, tuple)
-    ):
-        raise ValueError("effective semantics cannot bind the selected E4 target")
-    default_model_id = providers.get("default_model_id")
-    definitions_by_id = {
-        item.get("tool_id"): item for item in definitions if isinstance(item, Mapping)
-    }
-    variant_by_key = {
-        (item.get("config_node_id"), item.get("mode_id"), item.get("model_id")): item
-        for item in variants
-        if isinstance(item, Mapping)
-    }
-    if len(definitions_by_id) != len(definitions) or len(variant_by_key) != len(
-        variants
-    ):
-        raise ValueError("effective target semantics contain duplicate identities")
-    tool_prompt_mode = prompts.get("tool_prompt_mode")
-    for mode in modes:
-        if not isinstance(mode, Mapping) or mode.get("enabled") is not True:
-            raise ValueError("effective target mode is invalid")
-        variant = variant_by_key.get((root_id, mode.get("mode_id"), default_model_id))
-        enabled_ids = mode.get("enabled_tool_ids")
-        if not isinstance(variant, Mapping) or not isinstance(enabled_ids, tuple):
-            raise ValueError("effective target prompt variant is missing")
-        system = variant.get("system")
-        per_turn = variant.get("per_turn")
-        catalog = variant.get("tool_catalog")
-        if not all(isinstance(value, Mapping) for value in (system, per_turn, catalog)):
-            raise ValueError("effective target prompt variant is malformed")
-        system_text = system.get("text")
-        per_turn_text = per_turn.get("text")
-        catalog_text = catalog.get("text")
-        if not all(
-            type(value) is str for value in (system_text, per_turn_text, catalog_text)
-        ):
-            raise ValueError("effective target prompt text is malformed")
-        if tool_prompt_mode == "system_once":
-            system_text = _join_prompt_parts(system_text, catalog_text)
-        elif tool_prompt_mode == "per_turn_append":
-            per_turn_text = _join_prompt_parts(per_turn_text, catalog_text)
-        else:
-            raise ValueError("effective target tool prompt mode is unsupported")
-        projected_tools = tuple(
-            _project_effective_chat_tool(definitions_by_id[tool_id])
-            for tool_id in enabled_ids
-            if tool_id in definitions_by_id
-        )
-        target_tools = tuple(thaw_json(tool) for tool in target.chat_tools)
-        if (
-            system_text != target.system_prompt
-            or per_turn_text != ""
-            or projected_tools != target_tools
-        ):
-            raise ValueError("effective semantics do not match the selected E4 target")
 
 
 def _load_effective_plan(
@@ -869,12 +811,21 @@ def _preflight_failure_result(
     route: HeadlessProviderRouteAuthority | None,
     failure: BaseException,
 ) -> dict[str, Any]:
-    dynamic_field_digests = {
-        name: _digest_bytes(value.encode("utf-8"))
-        for name, value in sorted(request.target_dynamic_fields.items())
-    }
+    dynamic_field_digests: dict[str, str] = {}
+    for name, value in sorted(request.target_dynamic_fields.items()):
+        if request.schema_version == "bb.rl.headless-run-request.v1":
+            if type(value) is not str:
+                raise ValueError("v1 target inputs require text")
+            encoded = value.encode("utf-8")
+        else:
+            encoded = serialize_e4_target_inputs(request.schema_version, {name: value})
+        dynamic_field_digests[name] = _digest_bytes(encoded)
     config_identity = {
-        "schema_version": "bb.rl.headless-preflight-identity.v1",
+        "schema_version": (
+            "bb.rl.headless-preflight-identity.v1"
+            if request.schema_version == "bb.rl.headless-run-request.v1"
+            else "bb.rl.headless-preflight-identity.v2"
+        ),
         "composition_ref_digest": (
             _digest_bytes(composition_ref_data)
             if composition_ref_data is not None
@@ -1299,8 +1250,6 @@ def _atomic_write(path: str, payload: bytes) -> None:
         os.close(directory)
 
 
-def _join_prompt_parts(*parts: str) -> str:
-    return "\n\n".join(part for part in parts if part)
 
 
 def _canonical_bytes(value: Any) -> bytes:
@@ -1330,5 +1279,6 @@ __all__ = [
     "load_headless_request",
     "load_headless_provider_route_authority",
     "run_headless_request",
+    "select_pinned_target_projection",
     "run_headless_request_file",
 ]

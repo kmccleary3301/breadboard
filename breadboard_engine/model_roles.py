@@ -21,7 +21,7 @@ from typing import Any
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
-from breadboard.product.harness.lock import _copy, graph_content_hash, sha256_json
+from breadboard.product.harness.lock import copy_harness_json, graph_content_hash, sha256_json
 
 
 _PUBLIC_ROLES = frozenset({"default", "smol", "slow", "vision", "plan", "designer", "task"})
@@ -110,7 +110,7 @@ class DerivedModelRoleLock(Mapping[str, Any]):
     @classmethod
     def _from_record(cls, record: Mapping[str, Any]) -> "DerivedModelRoleLock":
         instance = object.__new__(cls)
-        object.__setattr__(instance, "_record", _copy(record, freeze=True))
+        object.__setattr__(instance, "_record", copy_harness_json(record, freeze=True))
         return instance
 
     def __getitem__(self, key: str) -> Any:
@@ -123,7 +123,7 @@ class DerivedModelRoleLock(Mapping[str, Any]):
         return len(self._record)
 
     def as_dict(self) -> dict[str, Any]:
-        return _copy(self._record, freeze=False)
+        return copy_harness_json(self._record, freeze=False)
 
     @property
     def lock_hash(self) -> str:
@@ -144,7 +144,7 @@ def _mapping(value: Any, path: str) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise _problem("invalid_model_roles", f"{path} must be an object", path)
     try:
-        copied = _copy(value, freeze=False)
+        copied = copy_harness_json(value, freeze=False)
     except (TypeError, ValueError, OverflowError) as error:
         raise _problem("invalid_model_roles", f"{path} is not canonical JSON", path, reason=str(error)) from None
     return dict(copied)
@@ -742,7 +742,7 @@ def resolve_role_name(document: Mapping[str, Any], requested_role: str | None = 
 
 
 def _effective_source_with_overrides(root: Mapping[str, Any], role_overrides: Mapping[str, Any] | None) -> dict[str, Any]:
-    effective = _copy(root, freeze=False)
+    effective = copy_harness_json(root, freeze=False)
     if role_overrides is None:
         return dict(effective)
     if not isinstance(role_overrides, Mapping):
@@ -758,7 +758,7 @@ def _effective_source_with_overrides(root: Mapping[str, Any], role_overrides: Ma
             override = {"provider_id": provider_id, "model_id": model_id}
         if isinstance(override, Mapping) and "provider_id" in override and "primary" not in override:
             override = {"primary": dict(override), "fallbacks": [], "fallback_on": []}
-        roles[role] = _copy(override, freeze=False)
+        roles[role] = copy_harness_json(override, freeze=False)
     _validate_source(effective)
     return dict(effective)
 
@@ -867,7 +867,7 @@ def _binding(
         "metadata",
     ):
         if field_name in binding:
-            result[field_name] = _copy(binding[field_name], freeze=False)
+            result[field_name] = copy_harness_json(binding[field_name], freeze=False)
     return result, claims
 
 
@@ -1206,7 +1206,7 @@ def validate_model_role_lock(
 ) -> DerivedModelRoleLock:
     """Validate an immutable role lock without resolving current credentials."""
     checked = _validate_effective(record)
-    expected = _copy(checked, freeze=False)
+    expected = copy_harness_json(checked, freeze=False)
     supplied_hash = expected.get("lock_hash")
     expected["lock_hash"] = None
     if supplied_hash != sha256_json(expected):
@@ -1343,7 +1343,7 @@ def select_role_target(
 
 def embed_model_role_lock(runtime_graph: Mapping[str, Any], role_lock: DerivedModelRoleLock) -> dict[str, Any]:
     """Embed the role map in an effective config graph and recompute its hash."""
-    graph = _copy(runtime_graph, freeze=False)
+    graph = copy_harness_json(runtime_graph, freeze=False)
     graph["model_role_lock"] = role_lock.as_dict()
     graph["graph_hash"] = graph_content_hash(graph)
     return graph

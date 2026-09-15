@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import hashlib
 import ipaddress
 import json
@@ -37,6 +38,9 @@ from breadboard.rl.harness.composition import (
     TlsCallbackRuntimeInputV1,
 )
 from breadboard.artifacts.cas import FilesystemCAS
+from breadboard.product.harness.resolution import compile_e4_harness
+from breadboard_engine.e4_targets import load_e4_target
+from tests.compilation.test_server_compiler import _MINIMAL_CONFIG, _compile, _options
 
 
 def _digest(value: object) -> str:
@@ -495,3 +499,113 @@ def test_tls_authority_binds_checked_in_dedicated_ca_and_leaf() -> None:
         ).__class__.model_validate(
             {**authority.model_dump(mode="json"), "ca_bundle_ref": {**authority.ca_bundle_ref.model_dump(mode="json"), "media_type": "application/json"}}
         )
+
+
+def _real_target_manifest(
+    tmp_path: Path, *, mutable_pointers: tuple[str, ...]
+) -> tuple[bytes, dict[str, object]]:
+    cas = FilesystemCAS(tmp_path / "cas")
+    try:
+        compiled = compile_e4_harness(
+            load_e4_target("pi@0.57.1"),
+            {
+                "readme_path": "README.md",
+                "docs_path": "docs",
+                "examples_path": "examples",
+                "current_date_time": "2026-09-14T00:00:00Z",
+                "cwd": "/workspace",
+            },
+            {
+                "version": 2,
+                "profile": {"name": "target-boundary-test"},
+                "workspace": {"root": "workspace"},
+                "provider_tools": {"use_native": True},
+                "providers": {
+                    "default_model": "test-model",
+                    "models": [
+                        {
+                            "id": "test-model",
+                            "adapter": "openai",
+                            "params": {"temperature": 0.25},
+                        }
+                    ],
+                },
+                "optimizer_mutable_pointers": list(mutable_pointers),
+            },
+            cas=cas,
+            options=_options(),
+        )
+        return compiled.manifest.canonical_bytes(), compiled.manifest.semantic.to_canonical_obj()
+    finally:
+        cas.close()
+
+
+def test_pinned_compiler_extracts_only_pinned_compiler_output() -> None:
+    manifest, _, _ = _compile()
+    payload = manifest.canonical_bytes()
+    digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+    adapter = composition.PinnedServerCompilerAdapter({digest: payload})
+
+    assert adapter.pinned_manifests[digest].semantic.to_canonical_obj() == (
+        manifest.semantic.to_canonical_obj()
+    )
+    with pytest.raises(TypeError):
+        adapter.pinned_manifests[digest] = manifest  # type: ignore[index]
+
+    other, _, _ = _compile(
+        {"config.yaml": _MINIMAL_CONFIG.replace(
+            b"generated-unclassified-agent", b"other-unclassified-agent"
+        )}
+    )
+    with pytest.raises(ValueError):
+        adapter.extract_effective_semantics(
+            canonical_manifest_bytes=other.canonical_bytes()
+        )
+
+
+def test_target_bound_compiler_output_rejects_target_overlays_only(
+    tmp_path: Path,
+) -> None:
+    pointers = (
+        "/metadata/e4_target/target_id",
+        "/prompts/variants/0/system/text",
+        "/tools/definitions/0/description",
+        "/providers/models/0/params/temperature",
+    )
+    payload, baseline = _real_target_manifest(
+        tmp_path, mutable_pointers=pointers
+    )
+    digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+    adapter = composition.PinnedServerCompilerAdapter({digest: payload})
+
+    target_binding = copy.deepcopy(baseline)
+    target_binding["metadata"]["e4_target"]["target_id"] = "other@target"
+    with pytest.raises(ValueError):
+        adapter.normalize_effective_semantics(
+            canonical_manifest_bytes=payload,
+            effective_semantics=target_binding,
+        )
+
+    prompt_candidate = copy.deepcopy(baseline)
+    prompt_candidate["prompts"]["variants"][0]["system"]["text"] = "different prompt"
+    with pytest.raises(ValueError):
+        adapter.normalize_effective_semantics(
+            canonical_manifest_bytes=payload,
+            effective_semantics=prompt_candidate,
+        )
+
+    tool_candidate = copy.deepcopy(baseline)
+    tool_candidate["tools"]["definitions"][0]["description"] = "different tool contract"
+    with pytest.raises(ValueError):
+        adapter.normalize_effective_semantics(
+            canonical_manifest_bytes=payload,
+            effective_semantics=tool_candidate,
+        )
+
+    provider_candidate = copy.deepcopy(baseline)
+    provider_candidate["providers"]["models"][0]["params"]["temperature"] = 0.5
+    normalized = adapter.normalize_effective_semantics(
+        canonical_manifest_bytes=payload,
+        effective_semantics=provider_candidate,
+    )
+    assert normalized["providers"]["models"][0]["params"]["temperature"] == 0.5

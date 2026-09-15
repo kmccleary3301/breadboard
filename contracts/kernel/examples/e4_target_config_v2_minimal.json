@@ -1,0 +1,118 @@
+{
+  "schema_version": "bb.e4.target_config.v2",
+  "target_id": "example@2.0",
+  "semantic_revision": "bb.e4.target-semantics.v2",
+  "renderer": {
+    "selector": "example-renderer.v2",
+    "revision": "example-renderer.v2"
+  },
+  "prompt": {
+    "asset": "prompts/system-prompt.md",
+    "dynamic_fields": ["task"]
+  },
+  "tools": {
+    "ordered": ["terminal"],
+    "surface_asset": "tool-surface.json",
+    "normalization": {
+      "aliases": {}
+    }
+  },
+  "policy": {
+    "revision": "bb.e4.target-policy.v2",
+    "provider": {
+      "api": "openai_chat_completions",
+      "stream": false,
+      "samples": 1,
+      "provider_attempts": 1,
+      "fallback": false,
+      "compaction": false,
+      "request_timeout_seconds": 45
+    },
+    "action": {
+      "protocol": "native_tools",
+      "decoder": "native_tools.v1",
+      "repair": null,
+      "argument_processors": [],
+      "aliases": {},
+      "decode_entire_batch_before_dispatch": true,
+      "require_nonempty_calls": true,
+      "malformed": "append_format_error_user_message",
+      "empty_reply": "same_as_format_error",
+      "max_consecutive_format_errors": 3
+    },
+    "execution": {
+      "scheduler": "serial_in_assistant_call_order",
+      "history_commit": "assistant_then_observation_batch_only_after_all_execute_return",
+      "terminal_policy": "submitted_exit_message_or_explicit_budget_or_error",
+      "bounded_controls": {
+        "max_model_calls": 8,
+        "episode_wall_seconds": 120,
+        "single_tool_wall_seconds": 30,
+        "raw_evidence_bytes_per_outcome": 1048576,
+        "max_active_episodes": 1,
+        "samples_per_call": 1
+      }
+    },
+    "observations": {
+      "renderer": "example-observation-renderer.v2",
+      "preserve_raw_outcome": true,
+      "preserve_model_render": true,
+      "commit_at_source_boundary": true
+    },
+    "authority": {
+      "workspace_root": "/workspace/repo",
+      "containment": "task_provided_isolated_substrate",
+      "interaction": "noninteractive",
+      "network_tools": false,
+      "subagents": false
+    },
+    "claim_exclusions": ["unimplemented_source_behavior"]
+  },
+  "inputs": {
+    "revision": "bb.e4.target-inputs.v2",
+    "fields": [
+      {
+        "name": "task",
+        "required": true,
+        "producer": "operator",
+        "lifetime": "episode",
+        "source_ref": "fixture/task.txt",
+        "omission": "required",
+        "value_schema": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    ],
+    "order": ["task"]
+  },
+  "materialization": {
+    "revision": "bb.e4.target-materialization.v2",
+    "assets": [
+      {
+        "path": "harness.yaml",
+        "role": "config",
+        "required": true,
+        "source_ref": "fixture/harness.yaml"
+      },
+      {
+        "path": "prompts/system-prompt.md",
+        "role": "prompt",
+        "required": true,
+        "source_ref": "fixture/system-prompt.md"
+      },
+      {
+        "path": "tool-surface.json",
+        "role": "tool_surface",
+        "required": true,
+        "source_ref": "fixture/tool-surface.json"
+      }
+    ],
+    "order": [
+      "harness.yaml",
+      "prompts/system-prompt.md",
+      "tool-surface.json"
+    ]
+  },
+  "required_capabilities": ["native_action_processors.v1"]
+}

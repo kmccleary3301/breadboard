@@ -1,0 +1,38 @@
+{
+  "schema_version": "bb.e4.target.v2",
+  "target_id": "example@2.0",
+  "family": "example",
+  "version": "2.0",
+  "execution": {
+    "config_asset": "harness.yaml",
+    "system_prompt_asset": "prompts/system-prompt.md",
+    "tool_surface_asset": "tool-surface.json"
+  },
+  "overlay": {
+    "overlay_id": "example-overlay.v2",
+    "argv": ["--mode", "json"],
+    "settings": [
+      {
+        "name": "retry.enabled",
+        "value": false
+      }
+    ]
+  },
+  "assets": [
+    {
+      "path": "harness.yaml",
+      "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "bytes": 1
+    },
+    {
+      "path": "prompts/system-prompt.md",
+      "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "bytes": 1
+    },
+    {
+      "path": "tool-surface.json",
+      "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "bytes": 1
+    }
+  ]
+}

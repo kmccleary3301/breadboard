@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Iterator, Mapping
 from builtins import BaseExceptionGroup
 from dataclasses import dataclass
 from concurrent.futures import Future
@@ -10,10 +10,11 @@ import re
 import threading
 from typing import Any
 
-from breadboard_engine.compilation.contracts import canonical_sha256
-import yaml
-
-from breadboard_engine.e4_targets import load_e4_target
+from breadboard_engine.compilation.contracts import (
+    CompiledConfigManifest,
+    canonical_sha256,
+    require_sha256,
+)
 
 from breadboard_engine.provider.contracts import (
     OpenAICompletionsProviderProfile,
@@ -53,6 +54,163 @@ def _provider_descriptor() -> ProviderDescriptor:
         api_key_env=None,
         default_headers={},
     )
+def _project_effective_chat_tool(definition: Mapping[str, Any]) -> dict[str, Any]:
+    model_name = definition.get("model_name")
+    description = definition.get("description")
+    parameters = definition.get("parameters")
+    routing = definition.get("provider_routing")
+    if (
+        type(model_name) is not str
+        or not model_name
+        or type(description) is not str
+        or not isinstance(parameters, tuple)
+        or not isinstance(routing, Mapping)
+    ):
+        raise ValueError("effective target tool definition is malformed")
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+    for parameter in parameters:
+        if (
+            not isinstance(parameter, Mapping)
+            or type(parameter.get("name")) is not str
+            or not parameter["name"]
+            or parameter["name"] in properties
+            or not isinstance(parameter.get("schema"), Mapping)
+            or not isinstance(parameter.get("validation_rules"), Mapping)
+        ):
+            raise ValueError("effective target tool parameter is malformed")
+        schema = thaw_json(parameter["schema"])
+        schema.update(thaw_json(parameter["validation_rules"]))
+        if parameter.get("has_default") is True:
+            schema["default"] = thaw_json(parameter.get("default_value"))
+        if parameter.get("description") is not None:
+            schema["description"] = parameter["description"]
+        properties[parameter["name"]] = schema
+        if parameter.get("required") is True:
+            required.append(parameter["name"])
+    parameter_schema: dict[str, Any] = {
+        "type": "object",
+        "properties": properties,
+        "required": required,
+    }
+    openai_routing = routing.get("openai")
+    if isinstance(openai_routing, Mapping) and "additionalProperties" in openai_routing:
+        additional_properties = openai_routing["additionalProperties"]
+        if type(additional_properties) is not bool:
+            raise ValueError("effective target tool routing is malformed")
+        parameter_schema["additionalProperties"] = additional_properties
+    return {
+        "type": "function",
+        "function": {
+            "name": model_name,
+            "description": description,
+            "parameters": parameter_schema,
+        },
+    }
+def _join_prompt_parts(*parts: str) -> str:
+    return "\n\n".join(part for part in parts if part)
+
+
+def _target_mode_projections(
+    semantics: Mapping[str, Any],
+) -> Iterator[tuple[str, str, tuple[dict[str, Any], ...]]]:
+    prompts = semantics.get("prompts")
+    providers = semantics.get("providers")
+    tools = semantics.get("tools")
+    modes = semantics.get("modes")
+    root_id = semantics.get("root_config_node_id")
+    if not all(isinstance(value, Mapping) for value in (prompts, providers, tools)):
+        raise ValueError("effective semantics cannot bind the selected E4 target")
+    variants = prompts.get("variants")
+    definitions = tools.get("definitions")
+    if (
+        not isinstance(variants, tuple)
+        or not isinstance(definitions, tuple)
+        or not isinstance(modes, tuple)
+        or not modes
+    ):
+        raise ValueError("effective semantics cannot bind the selected E4 target")
+    definitions_by_id = {
+        item.get("tool_id"): item for item in definitions if isinstance(item, Mapping)
+    }
+    variant_by_key = {
+        (item.get("config_node_id"), item.get("mode_id"), item.get("model_id")): item
+        for item in variants
+        if isinstance(item, Mapping)
+    }
+    if len(definitions_by_id) != len(definitions) or len(variant_by_key) != len(variants):
+        raise ValueError("effective target semantics contain duplicate identities")
+    for mode in modes:
+        if not isinstance(mode, Mapping) or mode.get("enabled") is not True:
+            raise ValueError("effective target mode is invalid")
+        variant = variant_by_key.get(
+            (root_id, mode.get("mode_id"), providers.get("default_model_id"))
+        )
+        enabled_ids = mode.get("enabled_tool_ids")
+        if not isinstance(variant, Mapping) or not isinstance(enabled_ids, tuple):
+            raise ValueError("effective target prompt variant is missing")
+        system = variant.get("system")
+        per_turn = variant.get("per_turn")
+        catalog = variant.get("tool_catalog")
+        if not all(isinstance(value, Mapping) for value in (system, per_turn, catalog)):
+            raise ValueError("effective target prompt variant is malformed")
+        system_text, per_turn_text, catalog_text = (
+            system.get("text"), per_turn.get("text"), catalog.get("text")
+        )
+        if not all(type(value) is str for value in (system_text, per_turn_text, catalog_text)):
+            raise ValueError("effective target prompt text is malformed")
+        tool_prompt_mode = prompts.get("tool_prompt_mode")
+        if tool_prompt_mode == "system_once":
+            system_text = _join_prompt_parts(system_text, catalog_text)
+        elif tool_prompt_mode == "per_turn_append":
+            per_turn_text = _join_prompt_parts(per_turn_text, catalog_text)
+        elif tool_prompt_mode != "native_only":
+            raise ValueError("effective target tool prompt mode is unsupported")
+        if any(tool_id not in definitions_by_id for tool_id in enabled_ids):
+            raise ValueError("effective target mode references an undeclared tool")
+        yield system_text, per_turn_text, tuple(
+            _project_effective_chat_tool(definitions_by_id[tool_id])
+            for tool_id in enabled_ids
+        )
+
+
+_TARGET_BINDING_FIELDS = (
+    "target_id", "overlay_id", "descriptor_digest", "execution_config_digest",
+    "overlay_digest", "rendered_prompt_digest", "ordered_tool_names",
+    "input_digest", "index_digest", "descriptor_bytes_digest",
+    "target_schema_version", "request_schema_version", "renderer_id",
+)
+_TARGET_BINDING_DIGESTS = (
+    "descriptor_digest", "execution_config_digest", "overlay_digest",
+    "rendered_prompt_digest", "input_digest", "index_digest",
+    "descriptor_bytes_digest", "tool_surface_digest", "harness_lock_digest",
+)
+
+
+def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
+    binding = metadata.get("e4_target")
+    if (
+        not isinstance(binding, Mapping)
+        or set(binding) != {*_TARGET_BINDING_FIELDS, "version", "tool_surface_digest", "harness_lock_digest"}
+        or type(binding.get("version")) is not int
+        or binding["version"] != 1
+    ):
+        raise ValueError("compiled semantics lack a supported E4 target binding")
+    for name in _TARGET_BINDING_FIELDS:
+        if name != "ordered_tool_names" and (
+            type(binding[name]) is not str or not binding[name]
+        ):
+            raise ValueError("compiled target identity is malformed")
+    names = binding["ordered_tool_names"]
+    if (
+        not isinstance(names, tuple)
+        or any(type(name) is not str or not name for name in names)
+        or len(set(names)) != len(names)
+    ):
+        raise ValueError("compiled target tool order is malformed")
+    for name in _TARGET_BINDING_DIGESTS:
+        require_sha256(binding[name], name)
+    return binding
 
 
 def _validate_owned_profile_observation(
@@ -97,116 +255,53 @@ class E4TargetPolicyProjection:
     system_prompt: str
     ordered_tool_names: tuple[str, ...]
     chat_tools: tuple[FrozenJsonObject, ...]
+    input_digest: str
+    index_digest: str
+    descriptor_bytes_digest: str
+    target_schema_version: str
+    request_schema_version: str
+    renderer_id: str
 
     @classmethod
-    def load(
-        cls,
-        target_id: str,
-        dynamic_fields: Mapping[str, str],
+    def from_compiled(
+        cls, manifest: CompiledConfigManifest,
     ) -> E4TargetPolicyProjection:
-        package = load_e4_target(target_id)
-        descriptor = dict(package.descriptor)
-        execution = descriptor.get("execution")
-        overlay = descriptor.get("overlay")
-        if not isinstance(execution, Mapping) or not isinstance(overlay, Mapping):
-            raise ValueError("E4 target execution and overlay descriptors are required")
-        config_asset = execution.get("config_asset")
-        prompt_asset = execution.get("system_prompt_asset")
-        tool_asset = execution.get("tool_surface_asset")
-        if not all(
-            type(value) is str and value
-            for value in (config_asset, prompt_asset, tool_asset)
-        ):
-            raise ValueError("E4 target execution assets are invalid")
-        harness = yaml.safe_load(package.read_asset_text(config_asset))
-        if type(harness) is not dict or harness.get("target_id") != target_id:
-            raise ValueError("E4 target harness identity is invalid")
-        prompt_config = harness.get("prompt")
-        tools_config = harness.get("tools")
-        if type(prompt_config) is not dict or type(tools_config) is not dict:
-            raise ValueError("E4 target prompt and tool configuration is invalid")
-        required_fields = prompt_config.get("dynamic_fields")
-        if (
-            type(required_fields) is not list
-            or not required_fields
-            or any(type(value) is not str or not value for value in required_fields)
-            or len(set(required_fields)) != len(required_fields)
-            or set(dynamic_fields) != set(required_fields)
-        ):
-            raise ValueError(
-                "E4 target dynamic fields do not match the target contract"
-            )
-        prompt_template = package.read_asset_text(prompt_asset)
-        values: dict[str, str] = {}
-        for field_name in required_fields:
-            value = dynamic_fields[field_name]
-            if (
-                type(value) is not str
-                or not value
-                or len(value.encode("utf-8")) > 16_384
+        """Project verified compiler output; callers retain pin/admission authority."""
+        if type(manifest) is not CompiledConfigManifest:
+            raise TypeError("target projection requires a CompiledConfigManifest")
+        semantic = manifest.semantic
+        binding = _checked_target_binding(semantic.metadata)
+        view = {
+            "root_config_node_id": semantic.root_config_node_id,
+            "providers": semantic.providers,
+            "prompts": semantic.prompts,
+            "tools": semantic.tools,
+            "modes": semantic.modes,
+        }
+        system_prompt: str | None = None
+        chat_tools: tuple[dict[str, Any], ...] | None = None
+        for system_text, per_turn_text, projected_tools in _target_mode_projections(view):
+            if per_turn_text or (
+                system_prompt is not None
+                and (system_text != system_prompt or projected_tools != chat_tools)
             ):
-                raise ValueError(f"E4 target dynamic field {field_name!r} is invalid")
-            values[field_name] = value
-        placeholder = re.compile(
-            r"\{\{(" + "|".join(re.escape(name) for name in required_fields) + r")\}\}"
-        )
-        rendered_prompt = placeholder.sub(
-            lambda match: values[match.group(1)],
-            prompt_template,
-        )
+                raise ValueError("compiled target modes have divergent projections")
+            system_prompt, chat_tools = system_text, projected_tools
+        if system_prompt is None or chat_tools is None:
+            raise ValueError("compiled target has no model-visible projection")
         if (
-            re.search(r"\{\{[^{}]+\}\}", rendered_prompt)
-            or len(rendered_prompt.encode("utf-8")) > 512 * 1024
+            canonical_sha256({"text": system_prompt}) != binding["rendered_prompt_digest"]
+            or canonical_sha256(chat_tools) != binding["tool_surface_digest"]
+            or tuple(tool["function"]["name"] for tool in chat_tools) != binding["ordered_tool_names"]
         ):
-            raise ValueError("E4 target prompt rendering is invalid or too large")
-        surface = json.loads(package.read_asset_text(tool_asset))
-        ordered_names = tools_config.get("ordered")
-        if (
-            type(surface) is not dict
-            or surface.get("target_id") != target_id
-            or type(ordered_names) is not list
-            or surface.get("ordered_tools") != ordered_names
-            or any(type(name) is not str or not name for name in ordered_names)
-        ):
-            raise ValueError("E4 target tool ordering is invalid")
-        surface_tools = surface.get("tools")
-        if type(surface_tools) is not dict or set(surface_tools) != set(ordered_names):
-            raise ValueError("E4 target tool surface is incomplete")
-        chat_tools: list[FrozenJsonObject] = []
-        for name in ordered_names:
-            tool = surface_tools[name]
-            if (
-                type(tool) is not dict
-                or type(tool.get("description")) is not str
-                or type(tool.get("parameters")) is not dict
-            ):
-                raise ValueError(f"E4 target tool {name!r} is invalid")
-            chat_tools.append(
-                freeze_json_object(
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": name,
-                            "description": tool["description"],
-                            "parameters": tool["parameters"],
-                        },
-                    },
-                    field_name=f"E4 target tool {name}",
-                )
-            )
-        overlay_id = overlay.get("overlay_id")
-        if type(overlay_id) is not str or not overlay_id:
-            raise ValueError("E4 target overlay identity is invalid")
+            raise ValueError("compiled target outputs differ from their source binding")
         return cls(
-            target_id=target_id,
-            overlay_id=overlay_id,
-            descriptor_digest=canonical_sha256(descriptor),
-            execution_config_digest=canonical_sha256(harness),
-            overlay_digest=canonical_sha256(overlay),
-            rendered_prompt_digest=canonical_sha256({"text": rendered_prompt}),
-            system_prompt=rendered_prompt,
-            ordered_tool_names=tuple(ordered_names),
-            chat_tools=tuple(chat_tools),
+            **{name: binding[name] for name in _TARGET_BINDING_FIELDS},
+            system_prompt=system_prompt,
+            chat_tools=tuple(
+                freeze_json_object(tool, field_name="compiled E4 target tool")
+                for tool in chat_tools
+            ),
         )
 
     def identity_dict(self) -> dict[str, Any]:
@@ -222,6 +317,26 @@ class E4TargetPolicyProjection:
                 [thaw_json(tool) for tool in self.chat_tools]
             ),
         }
+
+    def validate_semantics(self, semantics: Mapping[str, Any]) -> None:
+        metadata = semantics.get("metadata")
+        if not isinstance(metadata, Mapping):
+            raise ValueError("effective semantics lack target identity")
+        binding = _checked_target_binding(metadata)
+        if any(binding[name] != getattr(self, name) for name in _TARGET_BINDING_FIELDS):
+            raise ValueError("effective target binding differs from the requested target")
+        # The selected plan owns its complete lock, including runtime configuration.
+        # Bootstrap candidates may differ there while sharing this target projection.
+        target_tools = tuple(thaw_json(tool) for tool in self.chat_tools)
+        if canonical_sha256(target_tools) != binding["tool_surface_digest"]:
+            raise ValueError("effective target tool identity differs from the projection")
+        for system_text, per_turn_text, projected_tools in _target_mode_projections(semantics):
+            if (
+                system_text != self.system_prompt
+                or per_turn_text != ""
+                or projected_tools != target_tools
+            ):
+                raise ValueError("effective semantics do not match the selected E4 target")
 
 
 class EpisodeOpenAICompletionsPolicyClient:

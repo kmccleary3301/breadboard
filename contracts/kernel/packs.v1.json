@@ -26,6 +26,8 @@
           "bb.environment_selector.v2.schema.json",
           "bb.execution_capability.v1.schema.json",
           "bb.execution_placement.v1.schema.json",
+          "bb.e4.target.v2.schema.json",
+          "bb.e4.target_config.v2.schema.json",
           "bb.extension_hook_execution.v1.schema.json",
           "bb.external_protocol_session.v1.schema.json",
           "bb.kernel.common.v1.schema.json",

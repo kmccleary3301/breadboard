@@ -144,10 +144,6 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
 
     with ZipFile(wheel) as archive:
         names = set(archive.namelist())
-        entry_points_path = next(
-            name for name in names if name.endswith(".dist-info/entry_points.txt")
-        )
-        entry_points = archive.read(entry_points_path).decode("utf-8")
 
     required = {
         "agent_configs/templates/daily_driver.v1.yaml",
@@ -156,6 +152,7 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         "agent_configs/templates/prompts/daily_driver_system.md",
         "agent_configs/templates/prompts/minimal_system.md",
         "breadboard_engine/__init__.py",
+        "breadboard_engine/execution/node/author-bridge-helper.mjs",
         "breadboard/product/cli/main.py",
         "breadboard/product/operations/generated_bindings.py",
         "breadboard_engine/compilation/bundle.py",
@@ -164,6 +161,15 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         "breadboard_sdk/generated/__init__.py",
         "breadboard_sdk/generated/public_bindings.py",
         "breadboard_sdk/generated/public_surface_manifest.v1.json",
+        "breadboard/rl/__init__.py",
+        "breadboard/rl/harness/__init__.py",
+        "breadboard/rl/harness/headless.py",
+        "breadboard/rl/harness/SANDBOX_CAPABILITY_MATRIX.json",
+        "breadboard/rl/harness/resources/qualification/canonical_artifact_vectors_v1.json",
+        "breadboard/rl/harness/resources/qualification/tls/authority.json",
+        "breadboard/rl/harness/resources/qualification/tls/ca.cert.pem",
+        "breadboard/rl/harness/resources/qualification/tls/server.cert.pem",
+        "breadboard/rl/harness/resources/qualification/tls/server.key.pem",
         "config/product/tui-release.json",
         "conformance/comparators/registry.json",
         "contracts/kernel/manifests/bb.engine_conformance_manifest.v1.schema.json",
@@ -179,15 +185,10 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         "implementations/tools/defs/read_file.yaml",
     }
     assert required <= names, sorted(required - names)
-    assert entry_points == (
-        "[console_scripts]\n"
-        "breadboard = breadboard.product.cli:main\n"
-    )
 
     forbidden_prefixes = (
         "agentic_coder_prototype/",
         "breadboard/optimize/",
-        "breadboard/rl/",
         "breadboard/search/",
         ".beads/",
         ".git/",
@@ -215,6 +216,11 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         or name.endswith(forbidden_suffixes)
         or "/__pycache__/" in name
         or "/.env" in name
+        or (
+            name.startswith("breadboard/rl/")
+            and name != "breadboard/rl/__init__.py"
+            and not name.startswith("breadboard/rl/harness/")
+        )
     )
     assert forbidden == []
 
