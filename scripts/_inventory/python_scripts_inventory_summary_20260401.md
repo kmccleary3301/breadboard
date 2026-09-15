@@ -1,8 +1,8 @@
 # Python Scripts Inventory Summary
 
-Date: 2026-04-01
+Origin: 2026-04-01 inventory, maintained for current paths and retirements.
 
-Total inventoried Python scripts: `260`
+Total inventoried Python scripts: `259`
 
 ## Category counts
 
@@ -11,7 +11,7 @@ Total inventoried Python scripts: `260`
 - `migration`: `10`
 - `ops`: `5`
 - `release`: `8`
-- `research`: `229`
+- `research`: `228`
 
 
 ## Post-inventory canonical campaign families

@@ -19,11 +19,11 @@ Summary counts live at:
 
 ## Current scope
 
-Current Python scripts inventoried: `260`
+Current Python scripts inventoried: `259`
 
-Primary category counts from the 2026-04-01 inventory remain:
+Maintained category counts from the 2026-04-01 inventory, excluding retired producers:
 
-- `research`: `229`
+- `research`: `228`
 - `migration`: `10`
 - `release`: `8`
 - `ops`: `5`

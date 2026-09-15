@@ -18,7 +18,7 @@ The deleted-path audit recognizes historical commands only in digest-bound
 records listed by an applicable `--immutable-snapshot-manifest`. Snapshot
 manifests may authorize individual files under
 `docs/conformance/evidence_snapshots/`. The deletion-audit source separately
-names the one external historical record it accepts; its exact path and digest
+names the exact external historical records it accepts; their paths and digests
 are stored in `config/deletion_audit/immutable_historical_records.v1.json`.
 Other `docs_tmp` files cannot be exempted. Every manifest must be tracked, list
 an individual file, and match that file's SHA-256 digest. A directory name, an

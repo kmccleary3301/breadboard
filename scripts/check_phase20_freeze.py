@@ -73,6 +73,8 @@ ALLOWED_SCHEMA_IDS = {
     "https://breadboard.dev/contracts/public/schemas/bb.effective_harness_lock.v2.schema.json",  # AM31
     "https://breadboard.dev/contracts/public/schemas/bb.harness.package.input.v1.schema.json",  # AM31
     "https://breadboard.dev/contracts/public/schemas/bb.harness.package.result.v1.schema.json",  # AM31
+    "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target.v2.schema.json",  # E4-CompilerCutover / AM32
+    "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target_config.v2.schema.json",  # E4-CompilerCutover / AM32
 }
 
 # FREEZE_POLICY.md permits plan-required tightening of an existing schema only
@@ -85,8 +87,10 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
         "ref": "AM31",
     },
     "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json": {
-        "packet": "I2",
-        "sha256": "fbb7d1492c4f98ac8b38b2923d971b3faa51c921f70cee012d3903fcc29491ad",
+        "packet": "E4-CompilerCutover",
+        "sha256": "4837d71e92dbe587cea5cff69a13bbadb18f52e773862c7f4a9f453c3b7a673a",
+        "class": "plan_mandated_evolution",
+        "ref": "AM32",
     },
     "bb.e4.lane_manifest.v1": {
         "packet": "F4",
@@ -188,10 +192,10 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
         "ref": "AM31",
     },
     "https://breadboard.dev/contracts/public/schemas/bb.harness_definition.v2.schema.json": {
-        "packet": "bb-xh49.1",
-        "sha256": "9c546dc1cfee4f1ddfd9de11b985eea1047688181c20e1e75831608b2551d7a9",
+        "packet": "E4-CompilerCutover",
+        "sha256": "ca43df40d62db13b643dcf2ef535a7d7a5a8cac605b8db7c63ee3aed695e1e12",
         "class": "plan_mandated_evolution",
-        "ref": "AM31",
+        "ref": "AM31/AM32",
     },
     "https://breadboard.dev/contracts/public/schemas/bb.effective_harness_lock.v2.schema.json": {
         "packet": "bb-xh49.1",

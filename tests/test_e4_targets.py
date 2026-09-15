@@ -601,11 +601,15 @@ def test_v2_input_binding_preserves_presence_and_runtime_ownership(tmp_path: Pat
             },
         ),
         dict(
+            field_base, name="fallback", omission="default", default=0,
+            value_schema={"type": "integer"},
+        ),
+        dict(
             field_base, name="tick", producer="runtime", lifetime="turn",
             required=True, omission="required", value_schema={"type": "integer", "minimum": 0},
         ),
     ])
-    config["inputs"]["order"] = ["task", "tag", "payload", "tick"]
+    config["inputs"]["order"] = ["task", "tag", "payload", "fallback", "tick"]
     config_path.write_text(json.dumps(config), encoding="utf-8")
     _refresh_v2_descriptor(root)
     package = _load_e4_target_from_root(root, "example@2.0")
@@ -620,6 +624,9 @@ def test_v2_input_binding_preserves_presence_and_runtime_ownership(tmp_path: Pat
     assert observed["payload"]["enabled"] is False
     assert type(observed["payload"]["count"]) is int
     assert "tick" not in observed
+    assert "fallback" not in observed
+    explicit_default = bind_e4_target_inputs(package, version, dict(values, fallback=0))
+    assert explicit_default != missing
     with pytest.raises(HarnessDefinitionValidationError) as runtime:
         bind_e4_target_inputs(package, version, dict(values, tick=0))
     assert [(finding.pointer, finding.code) for finding in runtime.value.findings] == [

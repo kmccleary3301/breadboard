@@ -5,6 +5,18 @@
       "path": "docs_tmp/phase_20/evidence/SP6/implementer.json",
       "sha256": "sha256:53ca249360c3af787e3cd48d9165c64ebcce3b74c68a92f37dd638f4e673c648",
       "reason": "Phase-20 SP6 command and test result record retained byte-for-byte as historical evidence"
+    },
+    {
+      "path": "docs/plans/phase_20_right_shape/SCOUT_FACTS.json",
+      "sha256": "sha256:2e0db0f228e41e71728e427084640009add0d77553d081e3da72a019b0d677e8",
+      "source_commit": "1dce5c2c5dd2ec29d1bc5d374e1a9c42dae81a03",
+      "reason": "Read-only Phase-20 scout evidence retained byte-for-byte, not a current workflow inventory"
+    },
+    {
+      "path": "internals/archive/scripts/misc/run_upstream_producers_to_bridge.sh",
+      "sha256": "sha256:8fc604c7500ad4c0f1118b20ad360aab2ef3f069ee791488d017d7a5af2a55f4",
+      "source_commit": "1dce5c2c5dd2ec29d1bc5d374e1a9c42dae81a03",
+      "reason": "Archived pre-retirement bridge command history retained byte-for-byte, not a current producer entrypoint"
     }
   ]
 }

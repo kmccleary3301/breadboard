@@ -245,13 +245,15 @@ def _expected_record(record: dict[str, object]) -> dict[str, object]:
     return json.loads(_vector_path(record, str(expected["record"])).read_bytes())
 
 def _implementation_independent_manifest(payload: bytes) -> bytes:
-    # The frozen corpus records its original compiler and Python/dependency ABI.
-    # Keep its bytes intact; compare all fields except that identity and the two
-    # hashes derived from it. Fresh-process tests below still compare full bytes.
+    # Preserve the frozen corpus's original compiler/schema identities. Compare
+    # effective behavior, not identities of different implementations; the fresh
+    # process tests below still require full current-manifest byte equality.
     record = CompiledConfigManifest.from_json(payload).to_canonical_obj(
         include_digest=False
     )
     del record["compiler"]["compiler_code_digest"]
+    del record["compiler"]["compiler_version"]
+    del record["compiler"]["config_schema_digest"]
     del record["inputs"]["compiler_input_digest"]
     return canonical_json_bytes(record)
 

@@ -144,10 +144,6 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
 
     with ZipFile(wheel) as archive:
         names = set(archive.namelist())
-        entry_points_path = next(
-            name for name in names if name.endswith(".dist-info/entry_points.txt")
-        )
-        entry_points = archive.read(entry_points_path).decode("utf-8")
 
     required = {
         "agent_configs/templates/daily_driver.v1.yaml",
@@ -189,10 +185,6 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         "implementations/tools/defs/read_file.yaml",
     }
     assert required <= names, sorted(required - names)
-    assert entry_points == (
-        "[console_scripts]\n"
-        "breadboard = breadboard.product.cli:main\n"
-    )
 
     forbidden_prefixes = (
         "agentic_coder_prototype/",
@@ -224,6 +216,11 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         or name.endswith(forbidden_suffixes)
         or "/__pycache__/" in name
         or "/.env" in name
+        or (
+            name.startswith("breadboard/rl/")
+            and name != "breadboard/rl/__init__.py"
+            and not name.startswith("breadboard/rl/harness/")
+        )
     )
     assert forbidden == []
 

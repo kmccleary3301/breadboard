@@ -146,7 +146,6 @@ evaluate_longrun_phase2_go_no_go.py,research,longrun/RLM,no
 evaluate_rlm_phase2_p5.py,research,longrun/RLM,no
 evaluate_screenshot_ground_truth.py,research,rendering,no
 evaluate_static_renderer_binary.py,research,rendering,no
-evolake_toy_campaign_nightly.py,research,ATP,no
 release/export_cli_bridge_contracts.py,release,repo hygiene,yes
 export_phase4_run_health.py,research,parity,no
 export_phase4_tier3_health.py,research,parity,no

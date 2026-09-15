@@ -53,6 +53,9 @@ def _audit(repo: Path, *extra_args: str) -> subprocess.CompletedProcess[str]:
             'importlib.import_module("scripts.e4_parity.build_old_lane")',
         ),
         ("pyproject.toml", 'old-lane = "scripts.e4_parity.build_old_lane:main"'),
+        ("tests/test_from_import.py", "from scripts.e4_parity import build_old_lane"),
+        ("docs/local-command.md", "python build_old_lane.py --json"),
+        ("pyproject.toml", 'old-lane = "scripts.e4_parity.build_old_lane.main"'),
     ],
 )
 def test_deleted_path_audit_blocks_a_live_reference(tmp_path: Path, live_path: str, reference: str) -> None:
@@ -68,6 +71,33 @@ def test_deleted_path_audit_blocks_a_live_reference(tmp_path: Path, live_path: s
     assert report["live_reference_count"] == 1
     assert report["live_references"][0]["path"] == live_path
     assert report["immutable_historical_reference_count"] == 0
+
+
+def test_deleted_path_audit_distinguishes_files_with_shared_basename(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    runbook = repo / "docs" / "runbook.md"
+    _write(
+        runbook,
+        "Archive: artifacts/build_old_lane.local.json\n"
+        "Current command: python scripts/release/build_old_lane.py\n",
+    )
+    _write(
+        repo / "scripts" / "release" / "build_old_lane.py",
+        "def build_old_lane():\n    return 0\nbuild_old_lane()\n",
+    )
+    _track_all(repo)
+
+    clean = _audit(repo)
+    assert clean.returncode == 0, clean.stderr or clean.stdout
+    assert json.loads(clean.stdout)["live_references"] == []
+
+    with runbook.open("a", encoding="utf-8") as stream:
+        stream.write(f"Stale command: python {DELETED_PATH}\n")
+    stale = _audit(repo)
+    assert stale.returncode == 1, stale.stderr or stale.stdout
+    reference = json.loads(stale.stdout)["live_references"][0]
+    assert reference["path"] == "docs/runbook.md"
+    assert reference["line"] == 3
 
 
 def test_deleted_path_audit_allows_a_digest_bound_immutable_snapshot(tmp_path: Path) -> None:

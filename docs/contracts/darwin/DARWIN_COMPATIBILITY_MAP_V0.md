@@ -29,13 +29,10 @@ These remain valid and must **not** be renamed during Phase-1:
   - `breadboard.evolake.campaign_checkpoint.v1`
   - `breadboard.evolake.replay_manifest.v1`
 
-The former nightly producer source lineage is retained in protected-base history
-and archival custody only:
-
-- `scripts/evolake_toy_campaign_nightly.py`
-- `.github/workflows/evolake_toy_campaign_nightly.yml`
-
-Neither path is an active schedule or current replay/acceptance producer.
+The former EvoLake bootstrap nightly producer and schedule are retired. Their
+source remains in [protected-base history](https://github.com/kmccleary3301/breadboard/tree/1dce5c2c5dd2ec29d1bc5d374e1a9c42dae81a03)
+and archival custody. Historical reports remain readable; they are not current
+replay or acceptance evidence.
 
 ## New DARWIN-native surfaces
 

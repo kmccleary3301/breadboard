@@ -191,7 +191,8 @@ The stable top-level zone model is documented in
 Zone intent:
 
 - `breadboard/product/` and `breadboard/artifacts/` are product-facing packages
-- `breadboard/rl/`, `breadboard/search/`, and `breadboard/optimize/` are research-only and excluded from the product wheel
+- `breadboard/rl/harness/` is the installed public headless/V2 integration, including its qualification resources
+- Other `breadboard/rl/` packages, `breadboard/search/`, and `breadboard/optimize/` remain research-only and excluded from the product wheel
 - `breadboard_engine/` is the canonical internal engine; the former package alias has been removed
 - `breadboard_ext/` is extension space
 - `breadboard_sdk/` and `sdk/` are SDK and host surfaces

@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **24 numbered amendments (AM1-AM24)** plus addenda AM9a, AM11a, AM14a, AM17a, AM17b-r, AM19a, AM20a, AM21a, AM22a, AM23a, AM23b (below).
+Current state: **32 numbered amendments (AM1-AM32)** plus addenda AM9a, AM11a, AM14a, AM17a, AM17b-r, AM19a, AM20a, AM21a, AM22a, AM23a, AM23b (below).
 
 ---
 
@@ -485,3 +485,20 @@ with the child owner assigning sequence. The SDK captures its worker command
 into the immutable runtime declaration; authors do not write bootstrap or
 transport loops. These corrections require B's installed journey, not another
 planning prototype.
+
+## Amendment 32 - 2026-09-15 - Compiler-owned E4 target admission
+
+**Authorization:** Kyle selected “Accept plan and execute” for `docs_tmp/wayfinder/e4-campaign-local-production/assets/execution-plan.md`, SHA-256 `a3659150641e7329b34b8deb425fd70e28fd305669d8e320add763a9a14a3d64`, recorded at the post-choice clock observation `2026-09-14T22:16:53Z`. The accepted compiler-authority and materialization decisions require this compatibility/admission packet before new profile runtimes. This entry records that existing approval; it does not award runtime or recipient acceptance.
+
+**Consumer and gap:** installed headless and SWE consumers must use one product-owned target lowering through `HarnessCompilation`, the complete Lock, sealed server inputs and the compiled effective plan. The existing closed schemas cannot represent the required target-resource carrier or typed v2 declarations. The first candidate's required freeze check rejected both new IDs and both changed content pins; that candidate was not promoted.
+
+**Scope:** add the closed configuration contracts `bb.e4.target.v2` and `bb.e4.target_config.v2`. Add only the closed `e4_target` resource-reference carrier to the existing `bb.agent_config_surface.v2` and `bb.harness_definition.v2` contracts. These target documents are compiler inputs, not emitted runtime primitives. Preserve historical v1 target bytes and version-aware behavior. New compiler identities require fresh receipts; historical compatibility compares effective semantics and source bytes without rewriting old implementation identities.
+
+| Schema path | Authorized SHA-256 |
+| --- | --- |
+| `contracts/kernel/schemas/bb.e4.target.v2.schema.json` | `ce278cf6752d3f65bd32436b9484c483485b9980365db38b9d7d57d815b4e3ce` |
+| `contracts/kernel/schemas/bb.e4.target_config.v2.schema.json` | `0794751c7093f0d2354788bd6f4bdca4cb1ba1659d87b5da6f507860756e8b3f` |
+| `contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json` | `4837d71e92dbe587cea5cff69a13bbadb18f52e773862c7f4a9f453c3b7a673a` |
+| `contracts/public/schemas/bb.harness_definition.v2.schema.json` | `ca43df40d62db13b643dcf2ef535a7d7a5a8cac605b8db7c63ee3aed695e1e12` |
+
+**Activation and ownership:** the existing freeze checker admits the two IDs and pins the two evolved schemas through its amendment-referenced evolution mechanism; the historical baseline is unchanged. Existing schema registries, validators and public consumers migrate with this packet. Unsupported v2 renderers/capabilities must reject before model/tool activity. No new campaign profile is indexed or advertised as executable, and no placeholder runtime, new SDK package, private wrapper/trainer/task-provider change or custody deletion is authorized. Required checks, exact-head independent review and installed-artifact proof still block protected promotion.

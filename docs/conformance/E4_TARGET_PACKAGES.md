@@ -69,6 +69,11 @@ Missing, null, empty, false and zero are distinct. `bind_e4_target_inputs` valid
 the selected declaration without filling omitted values. V1 frames retain JCS
 encoding; v2 byte identity preserves nested object order and numeric representation,
 with outer fields ordered by the declaration.
+This frame records supplied inputs, not constructor execution. An omitted
+`omission: default` field stays absent; its declared default remains bound in the
+verified configuration. An admitted source renderer applies omission/default
+rules at its declared phase. The current v2 capability rejection does not execute
+that renderer or claim its default behavior.
 
 `breadboard.product.harness.targets.serialize_e4_target` takes `descriptor_path`,
 descriptor fields **without** the derived `assets` table, complete configuration
