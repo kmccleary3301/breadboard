@@ -52,6 +52,10 @@ from breadboard_engine.compilation.server_compiler import (
     strict_parse_payload,
 )
 from breadboard.artifacts import InMemoryCAS
+from breadboard.product.harness.lock import configuration_artifact_ref
+from breadboard.product.harness.targets import lower_e4_harness
+from breadboard_engine.e4_targets import load_e4_target
+
 
 
 _MINIMAL_CONFIG = b"""version: 2
@@ -161,6 +165,118 @@ def _sha256(payload: bytes) -> str:
     return "sha256:" + hashlib.sha256(payload).hexdigest()
 
 
+_PI_DYNAMIC_FIELDS = {
+    "readme_path": "README.md",
+    "docs_path": "docs",
+    "examples_path": "examples",
+    "current_date_time": "2026-09-15T00:00:00Z",
+    "cwd": "/workspace",
+}
+_PI_HARNESS_LOGICAL_PATH = "pi/0.57.1/target.json:harness.yaml"
+
+
+def _captured_pi_members(
+    captured_harness: bytes,
+) -> tuple[dict[str, bytes], tuple[DependencyEdge, ...]]:
+    target = load_e4_target("pi@0.57.1")
+    runtime_configuration = strict_parse_payload(
+        _MINIMAL_CONFIG,
+        logical_path="e4-runtime.yaml",
+    )
+    runtime_configuration = {
+        key: value
+        for key, value in runtime_configuration.items()
+        if key not in {"prompts", "modes", "loop"}
+    }
+    runtime_configuration["provider_tools"] = {"use_native": True}
+    source = lower_e4_harness(
+        target,
+        _PI_DYNAMIC_FIELDS,
+        runtime_configuration,
+    )
+    configuration_artifacts = {
+        layer["source_ref"]: configuration_artifact_ref(
+            layer["source_ref"],
+            source.members[layer["source_ref"]],
+            layer_hash=layer["layer_hash"],
+        ).to_dict()
+        for layer in source.compilation.lock.configuration_graph["source_layers"]
+    }
+    lock = source.compilation.with_configuration_artifacts(
+        configuration_artifacts
+    ).lock
+    members = dict(source.members)
+    members[source.lock_ref] = lock.canonical_json().encode("utf-8")
+
+    descriptor_ref = "config/e4_targets/" + target.descriptor_path
+    harness_ref = descriptor_ref.removesuffix("target.json") + "harness.yaml"
+    descriptor = json.loads(members[descriptor_ref])
+    harness_asset = next(
+        asset for asset in descriptor["assets"] if asset["path"] == "harness.yaml"
+    )
+    harness_asset["sha256"] = hashlib.sha256(captured_harness).hexdigest()
+    harness_asset["bytes"] = len(captured_harness)
+    descriptor_bytes = json.dumps(descriptor, separators=(",", ":")).encode()
+    index_ref = "config/e4_targets/index.json"
+    index = json.loads(members[index_ref])
+    index["targets"][target.target_id]["sha256"] = hashlib.sha256(descriptor_bytes).hexdigest()
+    index_bytes = json.dumps(index, separators=(",", ":")).encode()
+    members[harness_ref] = captured_harness
+    members[descriptor_ref] = descriptor_bytes
+    members[index_ref] = index_bytes
+    return members, source.edges
+
+
+@pytest.mark.parametrize(
+    ("captured_harness", "expected_code"),
+    (
+        (b"target_id: [\n", CompileErrorCode.UNSUPPORTED_YAML_SCALAR),
+        (
+            b"target_id: pi@0.57.1\n"
+            b"target_id: pi@0.57.1\n",
+            CompileErrorCode.DUPLICATE_MAPPING_KEY,
+        ),
+        (
+            b"target_id: &target pi@0.57.1\n"
+            b"copy: *target\n",
+            CompileErrorCode.UNSUPPORTED_YAML_TAG,
+        ),
+        (
+            b"value: "
+            + b"[" * (server_compiler.MAX_DOCUMENT_DEPTH + 1)
+            + b"0"
+            + b"]" * (server_compiler.MAX_DOCUMENT_DEPTH + 1),
+            CompileErrorCode.RESOURCE_LIMIT_EXCEEDED,
+        ),
+    ),
+)
+def test_compile_config_strict_parses_captured_pi_harness_yaml(
+    captured_harness: bytes,
+    expected_code: CompileErrorCode,
+) -> None:
+    members, edges = _captured_pi_members(captured_harness)
+    reader, closure, _ = _inputs(
+        members,
+        edges=edges,
+        root="e4-harness.json",
+    )
+
+    with pytest.raises(ConfigCompileError) as caught:
+        compile_config(reader, closure, _options())
+
+    assert caught.value.stage is CompileStage.PARSE
+    assert caught.value.code is expected_code
+    assert caught.value.logical_path == _PI_HARNESS_LOGICAL_PATH
+
+
+def test_legacy_target_scalar_dialect_does_not_relax_default_compilation() -> None:
+    payload = b"thinking: off\n"
+    with pytest.raises(ConfigCompileError) as caught:
+        strict_parse_payload(payload, logical_path="config.yaml")
+    assert caught.value.code is CompileErrorCode.UNSUPPORTED_YAML_SCALAR
+    assert strict_parse_payload(
+        payload, logical_path="historical-target.yaml", legacy_yaml_scalars=True
+    ) == {"thinking": False}
 
 
 def test_compile_config_emits_closed_runtime_semantics() -> None:

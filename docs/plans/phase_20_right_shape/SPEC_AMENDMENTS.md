@@ -496,9 +496,20 @@ planning prototype.
 
 | Schema path | Authorized SHA-256 |
 | --- | --- |
-| `contracts/kernel/schemas/bb.e4.target.v2.schema.json` | `ce278cf6752d3f65bd32436b9484c483485b9980365db38b9d7d57d815b4e3ce` |
+| `contracts/kernel/schemas/bb.e4.target.v2.schema.json` | `6a721c90db2a5c861435e878fb6d5039bf78bd3bad204dfc6f0b61a44b46f8a5` |
 | `contracts/kernel/schemas/bb.e4.target_config.v2.schema.json` | `0794751c7093f0d2354788bd6f4bdca4cb1ba1659d87b5da6f507860756e8b3f` |
 | `contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json` | `4837d71e92dbe587cea5cff69a13bbadb18f52e773862c7f4a9f453c3b7a673a` |
 | `contracts/public/schemas/bb.harness_definition.v2.schema.json` | `ca43df40d62db13b643dcf2ef535a7d7a5a8cac605b8db7c63ee3aed695e1e12` |
 
 **Activation and ownership:** the existing freeze checker admits the two IDs and pins the two evolved schemas through its amendment-referenced evolution mechanism; the historical baseline is unchanged. Existing schema registries, validators and public consumers migrate with this packet. Unsupported v2 renderers/capabilities must reject before model/tool activity. No new campaign profile is indexed or advertised as executable, and no placeholder runtime, new SDK package, private wrapper/trainer/task-provider change or custody deletion is authorized. Required checks, exact-head independent review and installed-artifact proof still block protected promotion.
+
+**Pre-promotion correction:** Kyle selected “Repair and re-review” at the
+post-choice clock `2026-09-15T19:36:46.668573Z` after PR125's actual E4 convention
+gate rejected the candidate. V2 descriptor asset digests now use canonical
+`sha256:`-prefixed values; the previous unpublished pin was
+`ce278cf6752d3f65bd32436b9484c483485b9980365db38b9d7d57d815b4e3ce`.
+The bounded value-schema vocabulary retains standard JSON Schema keyword
+spellings through exact-pointer convention allowances, not a whole-schema
+exemption. Historical v1 resource/index bytes and the freeze baseline are
+unchanged. This correction remains subject to fresh artifact, CI and independent
+review gates; it does not authorize runtime or recipient acceptance.

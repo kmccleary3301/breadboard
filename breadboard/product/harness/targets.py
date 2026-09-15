@@ -77,7 +77,7 @@ def serialize_e4_target(
     if set(contents) != set(order):
         raise HarnessCompileError("E4 serialization requires exactly the declared materialization assets")
     definition["assets"] = [
-        {"path": path, "sha256": sha256(contents[path]).hexdigest(), "bytes": len(contents[path])}
+        {"path": path, "sha256": "sha256:" + sha256(contents[path]).hexdigest(), "bytes": len(contents[path])}
         for path in order
     ]
     if findings := validate_e4_target_document(definition):
@@ -169,7 +169,12 @@ def bind_e4_target_inputs(
     execution = package.descriptor.get("execution")
     if not isinstance(execution, Mapping) or type(execution.get("config_asset")) is not str:
         raise ValueError("E4 target configuration asset is required")
-    configuration = yaml.safe_load(package.read_asset_text(execution["config_asset"]))
+    from breadboard_engine.compilation.server_compiler import strict_parse_payload
+
+    configuration = strict_parse_payload(
+        package.read_asset_bytes(execution["config_asset"]),
+        logical_path=f"{package.descriptor_path}:{execution['config_asset']}",
+    )
     if (
         type(configuration) is not dict
         or configuration.get("schema_version") != "bb.e4.target_config.v2"
@@ -220,7 +225,13 @@ def lower_e4_target(
         for value in (config_asset, prompt_asset, tool_asset)
     ):
         raise ValueError("E4 target execution assets are invalid")
-    harness = yaml.safe_load(package.read_asset_text(config_asset))
+    from breadboard_engine.compilation.server_compiler import strict_parse_payload
+
+    harness = strict_parse_payload(
+        package.read_asset_bytes(config_asset),
+        logical_path=f"{package.descriptor_path}:{config_asset}",
+        legacy_yaml_scalars=target_version == "bb.e4.target.v1",
+    )
     if type(harness) is not dict or harness.get("target_id") != target_id:
         raise ValueError("E4 target harness identity is invalid")
     if target_version == "bb.e4.target.v2":

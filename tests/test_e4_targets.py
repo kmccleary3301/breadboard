@@ -352,7 +352,7 @@ def _write_v2_fixture(root: Path) -> Path:
     }
     for asset in descriptor["assets"]:
         content = assets[asset["path"]]
-        asset["sha256"] = hashlib.sha256(content).hexdigest()
+        asset["sha256"] = "sha256:" + hashlib.sha256(content).hexdigest()
         asset["bytes"] = len(content)
         asset_path = target_dir / asset["path"]
         asset_path.parent.mkdir(parents=True, exist_ok=True)
@@ -384,7 +384,7 @@ def _refresh_v2_descriptor(root: Path) -> None:
     descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
     for asset in descriptor["assets"]:
         content = (target_dir / asset["path"]).read_bytes()
-        asset["sha256"] = hashlib.sha256(content).hexdigest()
+        asset["sha256"] = "sha256:" + hashlib.sha256(content).hexdigest()
         asset["bytes"] = len(content)
     descriptor_path.write_text(
         json.dumps(descriptor, separators=(",", ":")),
@@ -411,6 +411,57 @@ def test_target_loader_accepts_a_closed_v2_descriptor_and_configuration(
     assert target.descriptor["schema_version"] == "bb.e4.target.v2"
     assert target.descriptor["overlay"]["overlay_id"] == "example-overlay.v2"
     assert target.read_asset_text("prompts/system-prompt.md") == "example prompt\\n"
+
+
+def test_target_loader_rejects_duplicate_v2_configuration_keys(tmp_path: Path) -> None:
+    root = _write_v2_fixture(tmp_path)
+    config_path = root / "example" / "2.0" / "harness.yaml"
+    payload = config_path.read_text(encoding="utf-8")
+    payload = payload.replace(
+        '"target_id":"example@2.0"',
+        '"target_id":"discarded","target_id":"example@2.0"',
+    )
+    config_path.write_text(payload, encoding="utf-8")
+    _refresh_v2_descriptor(root)
+
+    with pytest.raises(E4TargetError):
+        _load_e4_target_from_root(root, "example@2.0")
+
+
+def test_target_loader_checks_nested_schema_without_parent_required(tmp_path: Path) -> None:
+    root = _write_v2_fixture(tmp_path)
+    config_path = root / "example" / "2.0" / "harness.yaml"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["inputs"]["fields"][0]["value_schema"] = {
+        "type": "object",
+        "properties": {
+            "child": {
+                "type": "object",
+                "properties": {},
+                "required": ["ghost"],
+                "additionalProperties": False,
+            }
+        },
+        "additionalProperties": False,
+    }
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    _refresh_v2_descriptor(root)
+
+    with pytest.raises(E4TargetError):
+        _load_e4_target_from_root(root, "example@2.0")
+
+    config["inputs"]["fields"][0]["value_schema"]["properties"]["child"]["properties"] = {
+        "ghost": {"type": "string"}
+    }
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    _refresh_v2_descriptor(root)
+    package = _load_e4_target_from_root(root, "example@2.0")
+    frame = bind_e4_target_inputs(
+        package, "bb.rl.headless-run-request.v2", {"task": {"child": {"ghost": "present"}}}
+    )
+    assert json.loads(frame)["target_dynamic_fields"] == {
+        "task": {"child": {"ghost": "present"}}
+    }
 
 
 

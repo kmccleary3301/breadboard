@@ -837,19 +837,33 @@ def _plain_scalar(value: str, *, logical_path: str, pointer: str) -> Any:
     return value
 
 
-def _node_to_json(node: Node, *, logical_path: str, pointer: str = "") -> Any:
+def _node_to_json(
+    node: Node, *, logical_path: str, pointer: str = "",
+    scalar_loader: yaml.SafeLoader | None = None,
+) -> Any:
     if isinstance(node, ScalarNode):
+        if scalar_loader is not None:
+            return scalar_loader.construct_object(node)
         if node.tag not in {"tag:yaml.org,2002:str"}:
             raise _error(CompileStage.PARSE, CompileErrorCode.UNSUPPORTED_YAML_TAG, logical_path=logical_path, instance_pointer=pointer)
         if node.style is not None:
             return node.value
         return _plain_scalar(node.value, logical_path=logical_path, pointer=pointer)
     if isinstance(node, SequenceNode):
-        return [_node_to_json(item, logical_path=logical_path, pointer=_pointer(pointer, index)) for index, item in enumerate(node.value)]
+        return [
+            _node_to_json(
+                item, logical_path=logical_path, pointer=_pointer(pointer, index),
+                scalar_loader=scalar_loader,
+            )
+            for index, item in enumerate(node.value)
+        ]
     if isinstance(node, MappingNode):
         result: dict[str, Any] = {}
         for key_node, value_node in node.value:
-            key = _node_to_json(key_node, logical_path=logical_path, pointer=pointer)
+            key = _node_to_json(
+                key_node, logical_path=logical_path, pointer=pointer,
+                scalar_loader=scalar_loader,
+            )
             if type(key) is not str:
                 raise _error(CompileStage.PARSE, CompileErrorCode.UNSUPPORTED_YAML_SCALAR, logical_path=logical_path, instance_pointer=pointer, details={"reason": "non_string_mapping_key"})
             child_pointer = _pointer(pointer, key)
@@ -857,7 +871,10 @@ def _node_to_json(node: Node, *, logical_path: str, pointer: str = "") -> Any:
                 raise _error(CompileStage.PARSE, CompileErrorCode.UNSUPPORTED_YAML_TAG, logical_path=logical_path, instance_pointer=child_pointer, details={"reason": "yaml_merge_key"})
             if key in result:
                 raise _error(CompileStage.PARSE, CompileErrorCode.DUPLICATE_MAPPING_KEY, logical_path=logical_path, instance_pointer=child_pointer, details={"key": key})
-            result[key] = _node_to_json(value_node, logical_path=logical_path, pointer=child_pointer)
+            result[key] = _node_to_json(
+                value_node, logical_path=logical_path, pointer=child_pointer,
+                scalar_loader=scalar_loader,
+            )
         return result
     raise _error(CompileStage.PARSE, CompileErrorCode.UNSUPPORTED_YAML_TAG, logical_path=logical_path, instance_pointer=pointer)
 
@@ -908,6 +925,7 @@ def strict_parse_payload(
     *,
     logical_path: str,
     media_type: str = "application/yaml",
+    legacy_yaml_scalars: bool = False,
 ) -> dict[str, Any]:
     """Parse one reader-provided payload into the constrained JSON data model."""
 
@@ -991,7 +1009,9 @@ def strict_parse_payload(
                     event_nodes += 1
                 if event_depth > MAX_DOCUMENT_DEPTH or event_nodes > MAX_DOCUMENT_NODES:
                     raise _error(CompileStage.PARSE, CompileErrorCode.RESOURCE_LIMIT_EXCEEDED, logical_path=logical_path, details={"max_depth": MAX_DOCUMENT_DEPTH, "max_nodes": MAX_DOCUMENT_NODES})
-            node = yaml.compose(text, Loader=yaml.BaseLoader)
+            node = yaml.compose(
+                text, Loader=yaml.SafeLoader if legacy_yaml_scalars else yaml.BaseLoader
+            )
         except ConfigCompileError:
             raise
         except RecursionError as exc:
@@ -1010,7 +1030,23 @@ def strict_parse_payload(
             value = {}
         else:
             _check_yaml_node_budget(node, logical_path=logical_path)
-            value = _node_to_json(node, logical_path=logical_path)
+            if legacy_yaml_scalars:
+                scalar_loader = yaml.SafeLoader("")
+                try:
+                    value = _node_to_json(
+                        node, logical_path=logical_path, scalar_loader=scalar_loader
+                    )
+                except ConfigCompileError:
+                    raise
+                except (yaml.YAMLError, ValueError, OverflowError) as exc:
+                    raise _error(
+                        CompileStage.PARSE, CompileErrorCode.UNSUPPORTED_YAML_SCALAR,
+                        logical_path=logical_path,
+                    ) from exc
+                finally:
+                    scalar_loader.dispose()
+            else:
+                value = _node_to_json(node, logical_path=logical_path)
     else:
         raise _error(
             CompileStage.PARSE,

@@ -187,3 +187,43 @@ resources and locks as one compatible tuple. Do not combine old compiler bytes
 with newly generated locks or delete accepted targets, failed candidates,
 review records or custody. Later profile promotion and final merged installation
 retain their separate required gates.
+
+## 12) Target parsing and installed-contract correction, 2026-09-15
+
+PR125's later review and E4 Battery found gaps beyond the earlier credential
+repair. Kyle approved one bounded correction wave and one further independent
+review round at `2026-09-15T19:36:46.668573Z`. The prior three rounds remain
+consumed. This approval also permits a bounded evaluator-input diagnosis but
+not replacement of its trust anchors.
+
+All target configuration parsing now uses the existing bounded compiler parser.
+V1 explicitly retains the historical YAML scalar dialect, including `off`,
+while byte, depth, node, duplicate-key and alias checks remain enforced.
+Ordinary config and v2 target parsing retain strict JSON-compatible scalars.
+Recursive value-schema checks no longer depend on an optional parent
+`required` declaration.
+
+New v2 descriptor asset hashes use the canonical `sha256:` prefix. V1 target
+and index hashes retain their accepted form. The bounded JSON Schema vocabulary
+uses exact-pointer allowances for `minLength`, `maxLength`, `minItems`, `maxItems`
+and `additionalProperties` under `$/$defs/value_schema/properties`. No unrelated
+property or digest check is exempted. The Phase20 amendment records the revised
+unpublished schema pin without modifying the historical baseline.
+
+The installed dependency contract explicitly requires `pydantic>=2.13.5,<3`.
+Earlier wheel metadata admitted Pydantic 1. Pydantic 2.5 supplies `JsonValue`, but
+an actual clean consumer at 2.5 failed public API forward-reference resolution.
+The supported floor is the already-exercised 2.13.5 assembly, not a claim of the
+oldest version on which an individual import exists.
+
+The evaluator environment includes the digest of `pyvenv.cfg`. An actual
+same-Python comparison of uv0.12.7 and0.12.14 showed that the generated file
+changes with uv's version. The workflow restores the historical producer
+version0.12.7; environment, Python and Docker trust anchors and their assertions
+remain unchanged. Only a fresh Linux measurement can establish full recovery.
+
+The installed API reproductions, source boundary regressions and final
+exact-artifact proofs govern this correction. Earlier candidate test counts and
+review verdicts are historical evidence, not acceptance of the revised head.
+Protected CI, independent review and all later runtime/recipient gates remain
+mandatory; the rollback and custody rules in section11 are unchanged.

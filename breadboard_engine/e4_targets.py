@@ -13,8 +13,6 @@ from typing import Any
 from urllib.parse import urlparse
 from urllib.request import url2pathname
 
-import yaml
-
 from breadboard.product.harness import validate as _harness_validation_module
 
 
@@ -197,7 +195,10 @@ def read_e4_target(
                 f"{descriptor_path} declares duplicate asset {asset_path!r}"
             )
         declared_paths.add(asset_path)
-        expected_digest = _required_sha256(asset, "sha256", context)
+        expected_digest = _required_sha256(
+            asset, "sha256", context,
+            prefix="sha256:" if descriptor_schema == _TARGET_V2_SCHEMA else "",
+        )
         asset_bytes = read_member("/".join((*descriptor_parent_parts, *asset_parts)))
         _verify_sha256(asset_bytes, expected_digest, f"{descriptor_path}:{asset_path}")
         expected_bytes = asset.get("bytes")
@@ -256,13 +257,13 @@ def _raise_validation_findings(
 
 
 def _decode_yaml_object(content: bytes, label: str) -> dict[str, Any]:
+    from breadboard_engine.compilation.contracts import ConfigCompileError
+    from breadboard_engine.compilation.server_compiler import strict_parse_payload
+
     try:
-        value = yaml.safe_load(content)
-    except (yaml.YAMLError, UnicodeDecodeError, TypeError) as exc:
-        raise E4TargetError(f"target resource {label!r} is not valid YAML") from exc
-    if not isinstance(value, dict):
-        raise E4TargetError(f"target resource {label!r} must contain a YAML object")
-    return value
+        return strict_parse_payload(content, logical_path=label)
+    except ConfigCompileError as exc:
+        raise E4TargetError(f"target resource {label!r} is not valid YAML: {exc.code.value}") from exc
 
 
 def _validate_v2_value_schema_relations(
@@ -271,8 +272,8 @@ def _validate_v2_value_schema_relations(
 ) -> None:
     properties = schema.get("properties")
     required = schema.get("required")
-    if isinstance(properties, Mapping) and isinstance(required, list):
-        if not set(required) <= set(properties):
+    if isinstance(properties, Mapping):
+        if isinstance(required, list) and not set(required) <= set(properties):
             raise E4TargetError(
                 f"{context}.required references an undeclared property"
             )
@@ -449,13 +450,18 @@ def _required_string(value: dict[str, Any], key: str, context: str) -> str:
     return field
 
 
-def _required_sha256(value: dict[str, Any], key: str, context: str) -> str:
+def _required_sha256(
+    value: dict[str, Any], key: str, context: str, *, prefix: str = ""
+) -> str:
     digest = _required_string(value, key, context)
-    if len(digest) != 64 or any(
-        character not in "0123456789abcdef" for character in digest
+    if not digest.startswith(prefix):
+        raise E4TargetError(f"{context}.{key} must use the {prefix!r} prefix")
+    value_digest = digest[len(prefix):]
+    if len(value_digest) != 64 or any(
+        character not in "0123456789abcdef" for character in value_digest
     ):
         raise E4TargetError(f"{context}.{key} must be a lowercase SHA-256 digest")
-    return digest
+    return value_digest
 
 
 def _verify_sha256(content: bytes, expected: str, label: str) -> None:

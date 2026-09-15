@@ -21,6 +21,8 @@ jobs:
         with:
           python-version: "3.11.16"
       - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.7"
       - name: Install exact evaluator environment
         run: |
           PYTHON_SOURCE="$(readlink -f "$(command -v python)")"

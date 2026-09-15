@@ -238,6 +238,24 @@
       ],
       "source": "docs_tmp/phase_17/BB_NS_MASTER_PLAN.md",
       "reason": "Agent config YAML surface validates existing version: 2 config files, not emitted runtime records; schema_version is intentionally absent from accepted config YAML input."
+    },
+    {
+      "path": "contracts/kernel/schemas/bb.e4.target_config.v2.schema.json",
+      "exemptions": [],
+      "scoped_exemptions": [
+        {
+          "rule": "snake_case_property_names",
+          "pointers": [
+            "$/$defs/value_schema/properties/minLength",
+            "$/$defs/value_schema/properties/maxLength",
+            "$/$defs/value_schema/properties/minItems",
+            "$/$defs/value_schema/properties/maxItems",
+            "$/$defs/value_schema/properties/additionalProperties"
+          ]
+        }
+      ],
+      "source": "docs/contracts/policies/acr/ACR-20260901-e4-product-ownership.md",
+      "reason": "Bounded standard JSON Schema vocabulary retains these five exact keyword names inside value_schema."
     }
   ]
 }
