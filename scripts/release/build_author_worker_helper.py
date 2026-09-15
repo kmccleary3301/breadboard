@@ -1,3 +1,10 @@
+"""Build the standalone helper shipped in the installed wheel.
+
+When changing bundled dependencies, refresh node/THIRD_PARTY_NOTICES.txt beside
+the helper from the exact locked upstream packages. Include transitive packages
+and distinct versions reached through the linked SDKs; retain their full notices.
+"""
+
 from __future__ import annotations
 
 import subprocess
