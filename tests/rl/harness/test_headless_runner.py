@@ -185,12 +185,22 @@ def test_target_semantics_reject_changed_tool_parameter_schema(
 
 
 @pytest.mark.skipif(
-    sys.platform != "linux",
-    reason="development trusted-process sandbox requires Linux",
+    sys.platform == "win32",
+    reason="composition fixtures require POSIX file authorities",
+)
+@pytest.mark.parametrize(
+    ("request_schema", "runtime_class"),
+    (
+        ("bb.rl.headless-run-request.v1", c.RuntimeClass.TRUSTED_PROCESS),
+        ("bb.rl.headless-run-request.v1", c.RuntimeClass.HARDENED_DOCKER),
+        ("bb.rl.headless-run-request.v2", c.RuntimeClass.HARDENED_DOCKER),
+    ),
 )
 @pytest.mark.asyncio
-async def test_headless_runner_rejects_development_trusted_process(
+async def test_headless_runner_rejects_unadmitted_requests_before_credentials(
     tmp_path: Path,
+    request_schema: str,
+    runtime_class: c.RuntimeClass,
 ) -> None:
     fixture = materialize_production_composition_fixture(tmp_path)
     resolution = c.ResolveEpisodeRequest.model_validate(
@@ -200,6 +210,7 @@ async def test_headless_runner_rejects_development_trusted_process(
     event_path = tmp_path / "events.json"
     task_image_digest = "sha256:" + "0" * 64
     request = HeadlessRunRequest(
+        schema_version=request_schema,
         target_id="pi@0.57.1",
         target_overlay_id="r3-json-no-session.v1",
         target_dynamic_fields={
@@ -239,7 +250,7 @@ async def test_headless_runner_rejects_development_trusted_process(
         ),
         expected_sandbox=c.SandboxGrant(
             runtime_id="fixture-trusted-process",
-            runtime_class=c.RuntimeClass.TRUSTED_PROCESS,
+            runtime_class=runtime_class,
             driver_implementation_digest=task_image_digest,
             runtime_binary_digest="sha256:" + "1" * 64,
             security_policy_digest="sha256:" + "2" * 64,
@@ -270,10 +281,26 @@ async def test_headless_runner_rejects_development_trusted_process(
         await run_headless_request(
             request,
             composition_ref_path=str(fixture.composition_ref_path),
-            secret_files={},
-            provider_credentials={},
-            provider_routes={},
-            repository_base_commits={},
+            secret_files={
+                handle: str(tmp_path / "unavailable-secrets" / handle)
+                for handle in fixture.secret_files
+            },
+            provider_credentials={
+                request.provider.credential_handle: str(
+                    tmp_path / "unavailable-provider-credential"
+                )
+            },
+            provider_routes={
+                request.provider.credential_handle: HeadlessProviderRouteAuthority(
+                    model=request.provider.model,
+                    authority_model_id=request.provider.authority_model_id,
+                    base_url="http://127.0.0.1:45219/v1",
+                    policy_observation_digest=task_image_digest,
+                )
+            },
+            repository_base_commits={
+                task_image_digest: request.workspace.base_commit
+            },
         )
 
     assert rejected.value.result["terminal"]["status"] == "failed"

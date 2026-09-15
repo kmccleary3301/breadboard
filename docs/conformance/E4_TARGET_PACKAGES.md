@@ -48,6 +48,11 @@ from the composition's verified pinned artifacts. `load_pinned_compiler` perform
 read-only acquisition, not admission or runtime activation. The selected final
 plan remains authoritative and is checked before provider sampling.
 
+The headless entrypoint selects the target before reading provider or composition
+credentials. It binds the same composition-reference bytes across that preflight
+and composition loading, and rejects a changed pinned-manifest set before starting
+the service. A target/version/input rejection must not depend on credential access.
+
 Compiler 1.2.0 binds the target descriptor, indexed bytes, input frame, generated
 members, schema documents and lowering implementation. Recompile changed inputs;
 do not relabel old manifests or receipts. Historical package bytes remain unchanged.

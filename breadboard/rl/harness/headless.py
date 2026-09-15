@@ -26,6 +26,7 @@ from .composition import (
     ManagedPolicyRuntimeClientResolver,
     PinnedServerCompilerAdapter,
     ProductionComposition,
+    load_pinned_compiler,
     load_production_composition,
 )
 from .policy_provider import (
@@ -401,6 +402,17 @@ async def run_headless_request(
                 "provider model identities do not match launcher route authority"
             )
         target_package = load_e4_target(request.target_id)
+        if composition_ref_data is None:
+            composition_ref_data = _read_regular_file(
+                composition_ref_path, max_bytes=_MAX_REQUEST_BYTES
+            )
+        preflight_compiler = load_pinned_compiler(
+            composition_ref_path, composition_ref_data=composition_ref_data
+        )
+        preflight_target = select_pinned_target_projection(
+            request, preflight_compiler, target_package
+        )
+        target = preflight_target
         profile = request.provider.load_profile(
             credential=_read_secret_text(
                 provider_secrets[request.provider.credential_handle]
@@ -413,13 +425,16 @@ async def run_headless_request(
             authority: ManagedPolicyRuntimeClientResolver,
             compiler: PinnedServerCompilerAdapter,
         ) -> EpisodeOpenAICompletionsPolicyResolver:
-            nonlocal target
-            target = select_pinned_target_projection(request, compiler, target_package)
+            if (
+                compiler.pinned_manifests.keys()
+                != preflight_compiler.pinned_manifests.keys()
+            ):
+                raise ValueError("composition compiler changed after target admission")
             return EpisodeOpenAICompletionsPolicyResolver(
                 authority,
                 profiles={episode_id: profile},
                 credential_handle_ids={episode_id: request.provider.credential_handle},
-                target_projections={episode_id: target},
+                target_projections={episode_id: preflight_target},
                 authority_model_ids={episode_id: request.provider.authority_model_id},
                 authority_wire_models={episode_id: route.model},
                 expected_observation_digests={
@@ -434,8 +449,6 @@ async def run_headless_request(
             composition_ref_data=composition_ref_data,
             policy_client_resolver_factory=resolver_factory,
         )
-        if target is None:
-            raise ValueError("composition did not resolve a compiled target projection")
         await composition.service.start()
         config_identity = request.identity_dict(
             composition_manifest_ref=composition.manifest_ref,
