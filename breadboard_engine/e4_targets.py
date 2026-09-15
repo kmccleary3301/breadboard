@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from importlib import metadata
 from importlib.resources.abc import Traversable
@@ -13,6 +13,10 @@ from typing import Any
 from urllib.parse import urlparse
 from urllib.request import url2pathname
 
+import yaml
+
+from breadboard.product.harness import validate as _harness_validation_module
+
 
 _DISTRIBUTION_NAME = "breadboard-harness-cli"
 _LOADER_PATH = "breadboard_engine/e4_targets.py"
@@ -20,6 +24,7 @@ _RESOURCE_DIRECTORY = "config/e4_targets"
 _INDEX_FILE = "index.json"
 _INDEX_SCHEMA = "bb.e4.target_index.v1"
 _TARGET_SCHEMA = "bb.e4.target.v1"
+_TARGET_V2_SCHEMA = "bb.e4.target.v2"
 
 
 class E4TargetError(ValueError):
@@ -30,11 +35,15 @@ class E4TargetError(ValueError):
 class E4TargetPackage:
     target_id: str
     descriptor: Mapping[str, Any]
-    _assets: Mapping[str, bytes]
+    descriptor_path: str
+    descriptor_bytes: bytes
+    descriptor_sha256: str
+    index_bytes: bytes
+    assets: Mapping[str, bytes]
 
     def read_asset_bytes(self, relative_path: str) -> bytes:
         try:
-            return self._assets[relative_path]
+            return self.assets[relative_path]
         except KeyError:
             raise E4TargetError(
                 f"target {self.target_id!r} does not declare asset {relative_path!r}"
@@ -118,7 +127,25 @@ def _location_key(location: object) -> str:
 def _load_e4_target_from_root(
     root: Traversable | Path, target_id: str
 ) -> E4TargetPackage:
-    index = _load_index(root)
+    return read_e4_target(
+        target_id,
+        read_resource=lambda path: _read_bytes(_join_safe(root, path), path),
+    )
+
+
+def read_e4_target(
+    target_id: str, *, read_resource: Callable[[str], bytes]
+) -> E4TargetPackage:
+    """Verify one target from immutable indexed bytes, without locating a distribution."""
+
+    def read_member(path: str) -> bytes:
+        content = read_resource(path)
+        if not isinstance(content, bytes):
+            raise E4TargetError(f"target resource {path!r} must be immutable bytes")
+        return content
+
+    index_bytes = read_member(_INDEX_FILE)
+    index = _decode_index(index_bytes)
     targets = index["targets"]
     entry = targets.get(target_id)
     if entry is None:
@@ -132,21 +159,27 @@ def _load_e4_target_from_root(
     )
     descriptor_sha256 = _required_sha256(entry, "sha256", f"index entry {target_id!r}")
     descriptor_parts = _validate_relative_path(descriptor_path)
-    descriptor_resource = _join_parts(root, descriptor_parts)
-    descriptor_bytes = _read_bytes(descriptor_resource, descriptor_path)
+    descriptor_bytes = read_member(descriptor_path)
     _verify_sha256(descriptor_bytes, descriptor_sha256, descriptor_path)
     descriptor = _decode_json_object(descriptor_bytes, descriptor_path)
 
-    if descriptor.get("schema_version") != _TARGET_SCHEMA:
+    descriptor_schema = descriptor.get("schema_version")
+    if descriptor_schema not in (_TARGET_SCHEMA, _TARGET_V2_SCHEMA):
         raise E4TargetError(
-            f"{descriptor_path} schema_version must be {_TARGET_SCHEMA!r}"
+            f"{descriptor_path} schema_version must be one of "
+            f"{_TARGET_SCHEMA!r} or {_TARGET_V2_SCHEMA!r}"
         )
     if descriptor.get("target_id") != target_id:
         raise E4TargetError(
             f"{descriptor_path} target_id does not match index key {target_id!r}"
         )
+    if descriptor_schema == _TARGET_V2_SCHEMA:
+        _raise_validation_findings(
+            _harness_validation_module.validate_e4_target_document(descriptor),
+            descriptor_path,
+        )
 
-    descriptor_parent = _join_parts(root, descriptor_parts[:-1])
+    descriptor_parent_parts = descriptor_parts[:-1]
     assets = descriptor.get("assets")
     if not isinstance(assets, list) or not assets:
         raise E4TargetError(f"{descriptor_path} assets must be a non-empty array")
@@ -158,17 +191,14 @@ def _load_e4_target_from_root(
         if not isinstance(asset, dict):
             raise E4TargetError(f"{context} must be an object")
         asset_path = _required_string(asset, "path", context)
-        _validate_relative_path(asset_path)
+        asset_parts = _validate_relative_path(asset_path)
         if asset_path in declared_paths:
             raise E4TargetError(
                 f"{descriptor_path} declares duplicate asset {asset_path!r}"
             )
         declared_paths.add(asset_path)
         expected_digest = _required_sha256(asset, "sha256", context)
-        asset_bytes = _read_bytes(
-            _join_safe(descriptor_parent, asset_path),
-            f"{descriptor_path}:{asset_path}",
-        )
+        asset_bytes = read_member("/".join((*descriptor_parent_parts, *asset_parts)))
         _verify_sha256(asset_bytes, expected_digest, f"{descriptor_path}:{asset_path}")
         expected_bytes = asset.get("bytes")
         if type(expected_bytes) is not int or expected_bytes < 0:
@@ -190,18 +220,161 @@ def _load_e4_target_from_root(
             raise E4TargetError(
                 f"{descriptor_path} execution.{key} must name a declared asset"
             )
+    if descriptor_schema == _TARGET_V2_SCHEMA:
+        _validate_v2_configuration(
+            descriptor,
+            descriptor_path,
+            declared_paths,
+            verified_assets,
+        )
 
     return E4TargetPackage(
         target_id=target_id,
         descriptor=_freeze_json(descriptor),
-        _assets=MappingProxyType(verified_assets),
+        descriptor_path=descriptor_path,
+        descriptor_bytes=descriptor_bytes,
+        descriptor_sha256=descriptor_sha256,
+        index_bytes=index_bytes,
+        assets=MappingProxyType(verified_assets),
     )
 
+
+def _raise_validation_findings(
+    findings: tuple[_harness_validation_module.ValidationFinding, ...], label: str
+) -> None:
+    if not findings:
+        return
+    finding = findings[0]
+    pointer = finding.pointer
+    code = finding.code
+    message = finding.message
+    if code == "additionalProperties":
+        raise E4TargetError(f"{label} contains undeclared field at {pointer}")
+    if code == "required":
+        raise E4TargetError(f"{label} is missing required field at {pointer}")
+    raise E4TargetError(f"{label}{pointer}: {message}")
+
+
+def _decode_yaml_object(content: bytes, label: str) -> dict[str, Any]:
+    try:
+        value = yaml.safe_load(content)
+    except (yaml.YAMLError, UnicodeDecodeError, TypeError) as exc:
+        raise E4TargetError(f"target resource {label!r} is not valid YAML") from exc
+    if not isinstance(value, dict):
+        raise E4TargetError(f"target resource {label!r} must contain a YAML object")
+    return value
+
+
+def _validate_v2_value_schema_relations(
+    schema: Mapping[str, Any],
+    context: str,
+) -> None:
+    properties = schema.get("properties")
+    required = schema.get("required")
+    if isinstance(properties, Mapping) and isinstance(required, list):
+        if not set(required) <= set(properties):
+            raise E4TargetError(
+                f"{context}.required references an undeclared property"
+            )
+        for name, property_schema in properties.items():
+            _validate_v2_value_schema_relations(
+                property_schema,
+                f"{context}.properties[{name!r}]",
+            )
+    items = schema.get("items")
+    if isinstance(items, Mapping):
+        _validate_v2_value_schema_relations(items, f"{context}.items")
+
+
+
+
+def _validate_v2_input_relations(config: Mapping[str, Any], label: str) -> set[str]:
+    inputs = config["inputs"]
+    fields = inputs["fields"]
+    names: list[str] = []
+    for position, field in enumerate(fields):
+        name = field["name"]
+        if name in names:
+            raise E4TargetError(f"{label}.inputs.fields has duplicate name {name!r}")
+        names.append(name)
+        _validate_v2_value_schema_relations(
+            field["value_schema"],
+            f"{label}.inputs.fields[{position}].value_schema",
+        )
+    order = inputs["order"]
+    if set(order) != set(names):
+        raise E4TargetError(f"{label}.inputs.order must cover every declared field")
+    return set(names)
+
+
+def _validate_v2_materialization_relations(
+    config: Mapping[str, Any],
+    label: str,
+    declared_paths: set[str],
+) -> None:
+    materialization = config["materialization"]
+    paths: list[str] = []
+    for position, asset in enumerate(materialization["assets"]):
+        asset_context = f"{label}.materialization.assets[{position}]"
+        path = asset["path"]
+        _validate_relative_path(path)
+        if path in paths:
+            raise E4TargetError(
+                f"{label}.materialization.assets has duplicate path {path!r}"
+            )
+        paths.append(path)
+        if path not in declared_paths:
+            raise E4TargetError(
+                f"{asset_context}.path must name a declared package asset"
+            )
+    if set(materialization["order"]) != set(paths):
+        raise E4TargetError(
+            f"{label}.materialization.order must cover every materialized asset"
+        )
+
+
+def _validate_v2_configuration(
+    descriptor: Mapping[str, Any],
+    descriptor_path: str,
+    declared_paths: set[str],
+    verified_assets: Mapping[str, bytes],
+) -> None:
+    config_asset = descriptor["execution"]["config_asset"]
+    config_label = f"{descriptor_path}:{config_asset}"
+    config = _decode_yaml_object(verified_assets[config_asset], config_label)
+    _raise_validation_findings(
+        _harness_validation_module.validate_e4_target_document(config),
+        config_label,
+    )
+    if config["target_id"] != descriptor["target_id"]:
+        raise E4TargetError(
+            f"{config_label}.target_id does not match descriptor target_id"
+        )
+    prompt = config["prompt"]
+    if prompt["asset"] != descriptor["execution"]["system_prompt_asset"]:
+        raise E4TargetError(
+            f"{config_label}.prompt.asset must match the declared system prompt asset"
+        )
+    input_names = _validate_v2_input_relations(config, config_label)
+    if not set(prompt["dynamic_fields"]) <= input_names:
+        raise E4TargetError(
+            f"{config_label}.prompt.dynamic_fields contains an undeclared input"
+        )
+    tools = config["tools"]
+    if tools["surface_asset"] != descriptor["execution"]["tool_surface_asset"]:
+        raise E4TargetError(
+            f"{config_label}.tools.surface_asset must match the declared tool "
+            "surface asset"
+        )
+    _validate_v2_materialization_relations(config, config_label, declared_paths)
 
 def _load_index(root: Traversable | Path) -> dict[str, Any]:
-    index = _decode_json_object(
-        _read_bytes(root.joinpath(_INDEX_FILE), _INDEX_FILE), _INDEX_FILE
-    )
+    return _decode_index(_read_bytes(root.joinpath(_INDEX_FILE), _INDEX_FILE))
+
+
+
+def _decode_index(content: bytes) -> dict[str, Any]:
+    index = _decode_json_object(content, _INDEX_FILE)
     if index.get("schema_version") != _INDEX_SCHEMA:
         raise E4TargetError(f"{_INDEX_FILE} schema_version must be {_INDEX_SCHEMA!r}")
     targets = index.get("targets")

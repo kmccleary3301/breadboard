@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import zipfile
+from contextlib import contextmanager
 from dataclasses import FrozenInstanceError, replace
 from collections.abc import Iterator, Mapping
 from pathlib import Path
@@ -1869,6 +1870,35 @@ def test_prompt_variant_wire_revalidates_tool_set_invariants() -> None:
         CompiledConfig.from_dict(semantic)
 
 
+def test_verbatim_prompt_preserves_source_text_without_textual_tool_catalog() -> None:
+    prompt = " \n[CACHE] café {{literal}}\n "
+    config = strict_parse_payload(_MINIMAL_CONFIG, logical_path="config.yaml")
+    config["provider_tools"] = {"use_native": True}
+    config["prompts"] = {
+        "renderer_id": "breadboard.prompt-assembly.verbatim.v1",
+        "tool_prompt_mode": "native_only",
+        "injection": {"system_order": ["mode_specific"], "per_turn_order": []},
+    }
+    config["tools"] = {"registry": {"paths": ["tools"], "include": ["read-file"]}}
+    config["modes"][0]["prompt"] = prompt
+    config["modes"][0]["tools_enabled"] = ["read-file"]
+    edges = (DependencyEdge("config.json", "tool_registry", "tools", "tools/read.yaml", 0),)
+    members = {
+        "config.json": canonical_json_bytes(config),
+        "tools/read.yaml": _tool_member("read-file", "read_file"),
+    }
+    manifest, _, _ = _compile(members, root="config.json", edges=edges)
+    variant = manifest.semantic.prompts["variants"][0]
+    assert variant["system"]["text"] == prompt
+    assert variant["tool_catalog"]["text"] == ""
+    assert manifest.semantic.tools["definitions"][0]["model_name"] == "read_file"
+
+    del config["prompts"]["renderer_id"]
+    members["config.json"] = canonical_json_bytes(config)
+    legacy, _, _ = _compile(members, root="config.json", edges=edges)
+    assert legacy.semantic.prompts["variants"][0]["system"]["text"] == "café {{literal}}"
+
+
 def test_tool_catalog_delimiter_collision_is_a_typed_render_denial() -> None:
     tool = _tool_member("delimiter", "delimiter_tool")
     raw = canonical_json_loads(tool)
@@ -1964,6 +1994,21 @@ def test_compiler_implementation_digest_is_path_stable_and_semantically_sensitiv
     assert baseline.inputs.compiler_input_digest != changed.inputs.compiler_input_digest
     assert baseline.semantic_digest == changed.semantic_digest
     assert baseline.compiled_manifest_digest != changed.compiled_manifest_digest
+
+
+def test_implementation_digest_preserves_large_integer_precision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline, _, _ = _compile()
+    validation = server_compiler._harness_validation_module
+    monkeypatch.setattr(
+        validation, "_MAX_JSON_INTEGER", validation._MAX_JSON_INTEGER - 1
+    )
+    changed, _, _ = _compile()
+
+    assert baseline.compiler.compiler_code_digest != changed.compiler.compiler_code_digest
+    assert baseline.inputs.compiler_input_digest != changed.inputs.compiler_input_digest
+    assert baseline.semantic_digest == changed.semantic_digest
 
 
 def _nested_object(depth: int) -> dict[str, object]:
@@ -3020,3 +3065,21 @@ def test_manifest_schema_version_binds_compiler_input_and_cache_identity(
         )
         changed = compiler_cache_key(closure, options)
     assert changed != baseline
+
+
+def test_compile_error_propagates_through_owned_scope_with_frozen_diagnostics() -> None:
+    @contextmanager
+    def owned_scope() -> Iterator[None]:
+        yield
+
+    error = ConfigCompileError(
+        stage=CompileStage.SCHEMA,
+        code=CompileErrorCode.PROVIDER_INVALID,
+        instance_pointer="/prompts/tool_prompt_mode",
+    )
+    with pytest.raises(ConfigCompileError) as caught:
+        with owned_scope():
+            raise error
+    assert caught.value is error
+    with pytest.raises(FrozenInstanceError):
+        error.code = CompileErrorCode.SCHEMA_UNKNOWN_FIELD  # type: ignore[misc]

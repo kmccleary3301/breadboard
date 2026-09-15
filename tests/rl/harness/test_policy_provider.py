@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import threading
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -10,10 +11,10 @@ import pytest
 from breadboard_engine.compilation.contracts import canonical_sha256
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.policy_provider import (
-    E4TargetPolicyProjection,
     EpisodeOpenAICompletionsPolicyClient,
     EpisodeOpenAICompletionsPolicyResolver,
 )
+from tests.rl.harness.e4_compiler_test_helper import compile_pi_target
 from breadboard.rl.harness.runners.base import (
     RunnerDependencyError,
     PolicyRuntimeInvokeRequest,
@@ -418,18 +419,10 @@ async def test_profile_client_fails_closed_on_invalid_provider_action(
 
 @pytest.mark.asyncio
 async def test_pi_target_projection_drives_exact_prompt_user_and_tool_wire_shape(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    projection = E4TargetPolicyProjection.load(
-        "pi@0.57.1",
-        {
-            "readme_path": "/opt/pi/README.md",
-            "docs_path": "/opt/pi/docs",
-            "examples_path": "/opt/pi/examples",
-            "current_date_time": "2026-08-29T12:00:00Z",
-            "cwd": "/workspace",
-        },
-    )
+    projection, _ = compile_pi_target(tmp_path)
     assert projection.overlay_id == "r3-json-no-session.v1"
     assert "{{" not in projection.system_prompt
     target_tools = [thaw_json(tool) for tool in projection.chat_tools]

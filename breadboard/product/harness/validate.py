@@ -24,12 +24,22 @@ _CANONICAL_V2 = ("bb.harness_definition.v2", 2)
 _LEGACY = ("bb.agent_config_surface.v2", 2)
 _GRAPH = ("bb.effective_config_graph.v1", 0)
 _LOCK_V2 = ("bb.effective_harness_lock.v2", 2)
+_E4_TARGET_V2 = ("bb.e4.target.v2", 2)
+_E4_TARGET_CONFIG_V2 = ("bb.e4.target_config.v2", 2)
 _SCHEMA_PATHS = {
     _CANONICAL: Path("contracts/public/schemas/bb.harness_definition.v1.schema.json"),
     _CANONICAL_V2: Path("contracts/public/schemas/bb.harness_definition.v2.schema.json"),
     _LEGACY: Path("contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json"),
     _GRAPH: Path("contracts/kernel/schemas/bb.effective_config_graph.v1.schema.json"),
     _LOCK_V2: Path("contracts/public/schemas/bb.effective_harness_lock.v2.schema.json"),
+    _E4_TARGET_V2: Path("contracts/kernel/schemas/bb.e4.target.v2.schema.json"),
+    _E4_TARGET_CONFIG_V2: Path(
+        "contracts/kernel/schemas/bb.e4.target_config.v2.schema.json"
+    ),
+}
+_E4_SCHEMA_PAIRS = {
+    _E4_TARGET_V2[0]: _E4_TARGET_V2,
+    _E4_TARGET_CONFIG_V2[0]: _E4_TARGET_CONFIG_V2,
 }
 _SOURCE_SCHEMA_PAIRS = {_CANONICAL, _CANONICAL_V2, _LEGACY}
 _KNOWN_VERSIONS = {
@@ -38,6 +48,7 @@ _KNOWN_VERSIONS = {
     _LEGACY[0]: _LEGACY[1],
 }
 _MAX_JSON_INTEGER = 10**640 - 1
+_E4_VALUE_SCHEMA_REGISTRY = Registry()
 
 @dataclass(frozen=True, order=True)
 class ValidationFinding:
@@ -70,22 +81,29 @@ _MappingDraft202012Validator = validators.extend(
     type_checker=Draft202012Validator.TYPE_CHECKER.redefine("object", _is_mapping),
 )
 @lru_cache(maxsize=1)
-def _schema_validators() -> dict[tuple[str, int], Validator]:
-    schemas = {pair: _load_schema(path) for pair, path in _SCHEMA_PATHS.items()}
-    module_schema = _load_schema(
-        Path("contracts/public/schemas/bb.module_manifest.v1.schema.json")
-    )
-    resources = []
-    for schema in (*schemas.values(), module_schema):
+def _schema_documents() -> dict[str, dict[str, Any]]:
+    paths = (*_SCHEMA_PATHS.values(), Path(
+        "contracts/public/schemas/bb.module_manifest.v1.schema.json"
+    ))
+    documents = {path.as_posix(): _load_schema(path) for path in paths}
+    for schema in documents.values():
         Draft202012Validator.check_schema(schema)
-        schema_id = schema.get("$id")
-        if not isinstance(schema_id, str):
+        if not isinstance(schema.get("$id"), str):
             raise RuntimeError("Harness schemas must have canonical $id values")
-        resources.append((schema_id, Resource.from_contents(schema)))
-    registry = Registry().with_resources(resources)
+    return documents
+
+@lru_cache(maxsize=1)
+def _schema_validators() -> dict[tuple[str, int], Validator]:
+    documents = _schema_documents()
+    registry = Registry().with_resources(
+        (schema["$id"], Resource.from_contents(schema))
+        for schema in documents.values()
+    )
     return {
-        pair: _MappingDraft202012Validator(schema, registry=registry)
-        for pair, schema in schemas.items()
+        pair: _MappingDraft202012Validator(
+            documents[path.as_posix()], registry=registry
+        )
+        for pair, path in _SCHEMA_PATHS.items()
     }
 def _pointer(path: Sequence[object]) -> str:
     if not path:
@@ -289,6 +307,111 @@ def validate_effective_harness_lock(
         )
     )
 
+
+def _e4_schema_value_findings(
+    schema: Mapping[str, Any], value: Any, prefix: tuple[str | int, ...]
+) -> list[ValidationFinding]:
+    validator = _MappingDraft202012Validator(schema, registry=_E4_VALUE_SCHEMA_REGISTRY)
+    return [
+        ValidationFinding(
+            _pointer((*prefix, *tuple(error.absolute_path))),
+            finding.code,
+            finding.message,
+        )
+        for error in validator.iter_errors(value)
+        for finding in _schema_error_findings(error)
+    ]
+
+
+def _e4_input_value_findings(document: Mapping[str, Any]) -> list[ValidationFinding]:
+    if document["schema_version"] != _E4_TARGET_CONFIG_V2[0]:
+        return []
+    findings: list[ValidationFinding] = []
+    for position, field in enumerate(document["inputs"]["fields"]):
+        omission = field["omission"]
+        if omission == "default":
+            value = field["default"]
+            prefix = ("inputs", "fields", position, "default")
+        elif omission == "null":
+            value = None
+            prefix = ("inputs", "fields", position, "omission")
+        else:
+            continue
+        findings.extend(_e4_schema_value_findings(field["value_schema"], value, prefix))
+    return findings
+
+
+def validate_e4_target_document(
+    document: object,
+) -> tuple[ValidationFinding, ...]:
+    """Validate either closed v2 E4 target document through the shared registry."""
+    if findings := _json_findings(document):
+        return tuple(sorted(set(findings)))
+    if not isinstance(document, Mapping):
+        return (ValidationFinding("/", "type", "E4 target document must be a mapping"),)
+    schema_version = document.get("schema_version")
+    pair = (
+        _E4_SCHEMA_PAIRS.get(schema_version)
+        if isinstance(schema_version, str)
+        else None
+    )
+    if pair is None:
+        supported = ", ".join(repr(value) for value in sorted(_E4_SCHEMA_PAIRS))
+        return (
+            ValidationFinding(
+                "/schema_version",
+                "unsupported_schema_version",
+                f"Unsupported schema_version; expected one of {supported}",
+            ),
+        )
+    validator = _schema_validators()[pair]
+    findings = [
+        finding
+        for error in validator.iter_errors(document)
+        for finding in _schema_error_findings(error)
+    ]
+    if findings:
+        return tuple(sorted(set(findings)))
+    return tuple(sorted(set(_e4_input_value_findings(document))))
+
+
+def validate_e4_target_input_values(
+    document: object, values: object
+) -> tuple[ValidationFinding, ...]:
+    """Validate caller inputs without supplying runtime values or omission defaults."""
+    if findings := validate_e4_target_document(document):
+        return findings
+    if not isinstance(document, Mapping) or document.get("schema_version") != _E4_TARGET_CONFIG_V2[0]:
+        return (ValidationFinding("/", "type", "E4 input declaration requires target_config.v2"),)
+    if findings := _json_findings(values):
+        return tuple(sorted(set(findings)))
+    if not isinstance(values, Mapping):
+        return (ValidationFinding("/", "type", "E4 input values must be an object"),)
+    fields = document["inputs"]["fields"]
+    declared_names = {field["name"] for field in fields}
+    findings = [
+        ValidationFinding(_pointer((name,)), "additionalProperties", "E4 input is not declared")
+        for name in values.keys() - declared_names
+    ]
+    for field in fields:
+        name = field["name"]
+        if field["producer"] == "runtime":
+            if name in values:
+                findings.append(ValidationFinding(
+                    _pointer((name,)), "input_producer", "Runtime-produced E4 input cannot be supplied"
+                ))
+            continue
+        if name not in values:
+            if field["required"]:
+                findings.append(ValidationFinding(
+                    _pointer((name,)), "required", "Required E4 input is missing"
+                ))
+            continue
+        findings.extend(_e4_schema_value_findings(
+            field["value_schema"], values[name], (name,)
+        ))
+    return tuple(sorted(set(findings)))
+
 def parse_harness_definition(document: Mapping[str, object]) -> HarnessDefinition:
     from .model import HarnessDefinition
 
@@ -302,3 +425,7 @@ def load_harness_definition(path: str | Path) -> HarnessDefinition:
             (ValidationFinding("/", "type", "Harness definition must be a mapping"),)
         )
     return parse_harness_definition(document)
+
+
+# Packaged schema acquisition belongs to module initialization, not pure validation.
+_schema_validators()

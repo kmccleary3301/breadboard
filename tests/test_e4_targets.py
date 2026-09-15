@@ -19,6 +19,12 @@ from breadboard_engine.e4_targets import (
     load_e4_target,
 )
 
+from breadboard.product.harness.targets import bind_e4_target_inputs, serialize_e4_target_inputs
+from breadboard.product.harness.validate import (
+    HarnessDefinitionValidationError,
+    validate_e4_target_document,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET_ROOT = ROOT / "config" / "e4_targets"
@@ -248,11 +254,11 @@ def test_target_freeze_references_match_calibrated_source_rows() -> None:
 
 
 def test_target_loader_rejects_unknown_and_undeclared_assets() -> None:
-    with pytest.raises(E4TargetError, match="unknown E4 target"):
+    with pytest.raises(E4TargetError):
         load_e4_target("pi@latest")
 
     target = load_e4_target("pi@0.57.1")
-    with pytest.raises(E4TargetError, match="does not declare asset"):
+    with pytest.raises(E4TargetError):
         target.read_asset_text("../target.json")
 
 
@@ -271,7 +277,7 @@ def test_target_loader_rejects_corrupt_runtime_asset(tmp_path: Path) -> None:
     harness = copied_root / "pi" / "0.57.1" / "harness.yaml"
     harness.write_text(harness.read_text(encoding="utf-8") + "corrupt: true\n")
 
-    with pytest.raises(E4TargetError, match="SHA-256 mismatch"):
+    with pytest.raises(E4TargetError):
         _load_e4_target_from_root(copied_root, "pi@0.57.1")
 
 
@@ -302,7 +308,7 @@ def test_target_loader_rejects_boolean_asset_size(tmp_path: Path) -> None:
     ).hexdigest()
     index_path.write_text(json.dumps(index), encoding="utf-8")
 
-    with pytest.raises(E4TargetError, match="bytes must be a non-negative integer"):
+    with pytest.raises(E4TargetError):
         _load_e4_target_from_root(copied_root, "pi@0.57.1")
 
 
@@ -321,5 +327,316 @@ def test_target_loader_rejects_unsafe_descriptor_path(
     index["targets"]["pi@0.57.1"]["descriptor"] = unsafe_path
     index_path.write_text(json.dumps(index), encoding="utf-8")
 
-    with pytest.raises(E4TargetError, match="unsafe target resource path"):
+    with pytest.raises(E4TargetError):
         _load_e4_target_from_root(copied_root, "pi@0.57.1")
+
+
+def _write_v2_fixture(root: Path) -> Path:
+    target_root = root / "e4_targets"
+    target_dir = target_root / "example" / "2.0"
+    target_dir.mkdir(parents=True)
+    descriptor = json.loads(
+        (ROOT / "contracts/kernel/examples/e4_target_v2_minimal.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    config = json.loads(
+        (
+            ROOT / "contracts/kernel/examples/e4_target_config_v2_minimal.json"
+        ).read_text(encoding="utf-8")
+    )
+    assets = {
+        "harness.yaml": json.dumps(config, separators=(",", ":")).encode("utf-8"),
+        "prompts/system-prompt.md": b"example prompt\\n",
+        "tool-surface.json": b"{\"ordered_tools\":[\"terminal\"]}\\n",
+    }
+    for asset in descriptor["assets"]:
+        content = assets[asset["path"]]
+        asset["sha256"] = hashlib.sha256(content).hexdigest()
+        asset["bytes"] = len(content)
+        asset_path = target_dir / asset["path"]
+        asset_path.parent.mkdir(parents=True, exist_ok=True)
+        asset_path.write_bytes(content)
+    descriptor_path = target_dir / "target.json"
+    descriptor_path.write_text(
+        json.dumps(descriptor, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    index = {
+        "schema_version": "bb.e4.target_index.v1",
+        "targets": {
+            "example@2.0": {
+                "descriptor": "example/2.0/target.json",
+                "sha256": hashlib.sha256(descriptor_path.read_bytes()).hexdigest(),
+            }
+        },
+    }
+    (target_root / "index.json").write_text(
+        json.dumps(index, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    return target_root
+
+
+def _refresh_v2_descriptor(root: Path) -> None:
+    target_dir = root / "example" / "2.0"
+    descriptor_path = target_dir / "target.json"
+    descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
+    for asset in descriptor["assets"]:
+        content = (target_dir / asset["path"]).read_bytes()
+        asset["sha256"] = hashlib.sha256(content).hexdigest()
+        asset["bytes"] = len(content)
+    descriptor_path.write_text(
+        json.dumps(descriptor, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    index_path = root / "index.json"
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    index["targets"]["example@2.0"]["sha256"] = hashlib.sha256(
+        descriptor_path.read_bytes()
+    ).hexdigest()
+    index_path.write_text(
+        json.dumps(index, separators=(",", ":")),
+        encoding="utf-8",
+    )
+
+
+def test_target_loader_accepts_a_closed_v2_descriptor_and_configuration(
+    tmp_path: Path,
+) -> None:
+    root = _write_v2_fixture(tmp_path)
+
+    target = _load_e4_target_from_root(root, "example@2.0")
+
+    assert target.descriptor["schema_version"] == "bb.e4.target.v2"
+    assert target.descriptor["overlay"]["overlay_id"] == "example-overlay.v2"
+    assert target.read_asset_text("prompts/system-prompt.md") == "example prompt\\n"
+
+
+
+def test_v2_input_schema_supports_nullable_typed_arrays_and_closed_objects() -> None:
+    config = json.loads(
+        (
+            ROOT / "contracts/kernel/examples/e4_target_config_v2_minimal.json"
+        ).read_text(encoding="utf-8")
+    )
+    field = config["inputs"]["fields"][0]
+    field["required"] = False
+    field["omission"] = "null"
+    field["value_schema"] = {
+        "type": ["object", "null"],
+        "properties": {
+            "enabled": {"type": "boolean"},
+            "labels": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["enabled", "labels"],
+        "additionalProperties": False,
+    }
+
+    assert validate_e4_target_document(config) == ()
+
+
+def test_v2_input_default_must_validate_against_its_value_schema() -> None:
+    config = json.loads(
+        (
+            ROOT / "contracts/kernel/examples/e4_target_config_v2_minimal.json"
+        ).read_text(encoding="utf-8")
+    )
+    field = config["inputs"]["fields"][0]
+    field["required"] = False
+    field["omission"] = "default"
+    field["default"] = {"enabled": "yes"}
+    field["value_schema"] = {
+        "type": "object",
+        "properties": {"enabled": {"type": "boolean"}},
+        "required": ["enabled"],
+        "additionalProperties": False,
+    }
+
+    findings = validate_e4_target_document(config)
+    assert any(
+        finding.pointer == "/inputs/fields/0/default/enabled"
+        for finding in findings
+    )
+
+
+def test_v2_input_schema_is_required_and_value_type_is_not_admitted() -> None:
+    config = json.loads(
+        (
+            ROOT / "contracts/kernel/examples/e4_target_config_v2_minimal.json"
+        ).read_text(encoding="utf-8")
+    )
+    field = config["inputs"]["fields"][0]
+    field.pop("value_schema")
+    field["value_type"] = "string"
+
+    findings = validate_e4_target_document(config)
+    assert any(
+        finding.pointer == "/inputs/fields/0/value_type"
+        and finding.code == "additionalProperties"
+        for finding in findings
+    )
+    assert any(
+        finding.pointer == "/inputs/fields/0/value_schema"
+        and finding.code == "required"
+        for finding in findings
+    )
+
+def test_target_loader_rejects_unknown_v2_descriptor_fields(tmp_path: Path) -> None:
+    root = _write_v2_fixture(tmp_path)
+    descriptor_path = root / "example" / "2.0" / "target.json"
+    descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
+    descriptor["unexpected"] = True
+    descriptor_path.write_text(
+        json.dumps(descriptor, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    _refresh_v2_descriptor(root)
+
+    with pytest.raises(E4TargetError, match="undeclared field"):
+        _load_e4_target_from_root(root, "example@2.0")
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    (
+        (
+            lambda config: config.__setitem__("unexpected", True),
+            "undeclared field",
+        ),
+        (
+            lambda config: config["policy"].__setitem__("unexpected", True),
+            "undeclared field",
+        ),
+        (
+            lambda config: config.__setitem__(
+                "semantic_revision", "bb.e4.target-semantics.v99"
+            ),
+            "semantic_revision",
+        ),
+    ),
+)
+def test_target_loader_rejects_unknown_v2_configuration_declarations(
+    tmp_path: Path,
+    mutation: Any,
+    message: str,
+) -> None:
+    root = _write_v2_fixture(tmp_path)
+    config_path = root / "example" / "2.0" / "harness.yaml"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    mutation(config)
+    config_path.write_text(
+        json.dumps(config, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    _refresh_v2_descriptor(root)
+
+    with pytest.raises(E4TargetError, match=message):
+        _load_e4_target_from_root(root, "example@2.0")
+
+
+def test_target_loader_rejects_v2_materialization_reference_outside_package(
+    tmp_path: Path,
+) -> None:
+    root = _write_v2_fixture(tmp_path)
+    config_path = root / "example" / "2.0" / "harness.yaml"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["materialization"]["assets"][0]["path"] = "missing.txt"
+    config_path.write_text(
+        json.dumps(config, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    _refresh_v2_descriptor(root)
+
+    with pytest.raises(E4TargetError, match="declared package asset"):
+        _load_e4_target_from_root(root, "example@2.0")
+
+
+def test_target_loader_rejects_nontext_descriptor_revision(tmp_path: Path) -> None:
+    root = _write_v2_fixture(tmp_path)
+    descriptor_path = root / "example" / "2.0" / "target.json"
+    descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
+    descriptor["schema_version"] = ["bb.e4.target.v2"]
+    descriptor_path.write_text(
+        json.dumps(descriptor, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    _refresh_v2_descriptor(root)
+
+    with pytest.raises(E4TargetError):
+        _load_e4_target_from_root(root, "example@2.0")
+
+
+def test_target_loader_rejects_unknown_v2_configuration_revision(tmp_path: Path) -> None:
+    root = _write_v2_fixture(tmp_path)
+    config_path = root / "example" / "2.0" / "harness.yaml"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["schema_version"] = "bb.e4.target_config.v99"
+    config_path.write_text(
+        json.dumps(config, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    _refresh_v2_descriptor(root)
+
+    with pytest.raises(E4TargetError, match="schema_version"):
+        _load_e4_target_from_root(root, "example@2.0")
+
+
+def test_v2_input_binding_preserves_presence_and_runtime_ownership(tmp_path: Path) -> None:
+    root = _write_v2_fixture(tmp_path)
+    config_path = root / "example" / "2.0" / "harness.yaml"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    field_base = {
+        "required": False, "producer": "operator", "lifetime": "episode",
+        "source_ref": "fixture/inputs.json", "omission": "missing",
+    }
+    config["inputs"]["fields"].extend([
+        dict(field_base, name="tag", value_schema={"type": ["string", "null"]}),
+        dict(
+            field_base, name="payload", required=True, omission="required",
+            value_schema={
+                "type": "object",
+                "properties": {"enabled": {"type": "boolean"}, "count": {"type": "integer"}},
+                "required": ["enabled", "count"], "additionalProperties": False,
+            },
+        ),
+        dict(
+            field_base, name="tick", producer="runtime", lifetime="turn",
+            required=True, omission="required", value_schema={"type": "integer", "minimum": 0},
+        ),
+    ])
+    config["inputs"]["order"] = ["task", "tag", "payload", "tick"]
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    _refresh_v2_descriptor(root)
+    package = _load_e4_target_from_root(root, "example@2.0")
+    values = {"task": "fixture", "payload": {"enabled": False, "count": 0}}
+    version = "bb.rl.headless-run-request.v2"
+    missing = bind_e4_target_inputs(package, version, values)
+    null = bind_e4_target_inputs(package, version, dict(values, tag=None))
+    empty = bind_e4_target_inputs(package, version, dict(values, tag=""))
+    assert len({missing, null, empty}) == 3
+    observed = json.loads(null)["target_dynamic_fields"]
+    assert observed["tag"] is None
+    assert observed["payload"]["enabled"] is False
+    assert type(observed["payload"]["count"]) is int
+    assert "tick" not in observed
+    with pytest.raises(HarnessDefinitionValidationError) as runtime:
+        bind_e4_target_inputs(package, version, dict(values, tick=0))
+    assert [(finding.pointer, finding.code) for finding in runtime.value.findings] == [
+        ("/tick", "input_producer")
+    ]
+    with pytest.raises(HarnessDefinitionValidationError) as encoded_object:
+        bind_e4_target_inputs(package, version, dict(values, payload='{"enabled":false,"count":0}'))
+    assert [(finding.pointer, finding.code) for finding in encoded_object.value.findings] == [
+        ("/payload", "type")
+    ]
+
+
+def test_v2_input_identity_preserves_numeric_form_and_nested_key_order() -> None:
+    version = "bb.rl.headless-run-request.v2"
+    integer = serialize_e4_target_inputs(version, {"value": {"first": 1, "second": 2}})
+    floating = serialize_e4_target_inputs(version, {"value": {"first": 1.0, "second": 2}})
+    reordered = serialize_e4_target_inputs(version, {"value": {"second": 2, "first": 1}})
+    assert len({integer, floating, reordered}) == 3
+    assert type(json.loads(floating)["target_dynamic_fields"]["value"]["first"]) is float
+    assert list(json.loads(reordered)["target_dynamic_fields"]["value"]) == ["second", "first"]

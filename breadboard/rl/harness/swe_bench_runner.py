@@ -14,11 +14,15 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal, cast
 
+from breadboard_engine.e4_targets import load_e4_target
+
+from .composition import load_pinned_compiler
 from .contracts import RuntimeClass
 from .headless import (
     HeadlessProviderRouteAuthority,
     HeadlessRunRequest,
     run_headless_request,
+    select_pinned_target_projection,
 )
 from .runners.base import FrozenJsonObject, freeze_json_object, thaw_json
 from .policy_provider import E4TargetPolicyProjection
@@ -1610,6 +1614,15 @@ class InstalledHeadlessInvocation:
             ),
         }
 
+    def target_projection(self, request: HeadlessRunRequest) -> E4TargetPolicyProjection:
+        compiler = load_pinned_compiler(
+            self.composition_ref_path,
+            composition_ref_data=self.composition_ref_data,
+        )
+        return select_pinned_target_projection(
+            request, compiler, load_e4_target(request.target_id)
+        )
+
     async def run(self, request: HeadlessRunRequest) -> Mapping[str, Any]:
         return await run_headless_request(
             request,
@@ -1851,6 +1864,8 @@ class InstalledSweBenchRewardReceipt:
 def _validate_headless_result(
     result: Mapping[str, Any],
     request: InstalledSweBenchRequest,
+    *,
+    target: E4TargetPolicyProjection,
 ) -> tuple[FrozenJsonObject, str, str, str, str]:
     frozen = _frozen_projection(result, field_name="headless result")
     payload = cast(Mapping[str, Any], thaw_json(frozen))
@@ -1866,10 +1881,6 @@ def _validate_headless_result(
         or _canonical_digest(config_identity) != config_digest
     ):
         raise SweBenchRunnerError("headless config identity is not canonical")
-    target = E4TargetPolicyProjection.load(
-        request.headless_request.target_id,
-        request.headless_request.target_dynamic_fields,
-    )
     if payload.get("target_identity") != target.identity_dict():
         raise SweBenchRunnerError("headless target identity mismatch")
     if (
@@ -2066,10 +2077,7 @@ async def run_installed_swe_bench(
         raise SweBenchRunnerError(
             "evaluator adapter is not the pinned official evaluator"
         )
-    target = E4TargetPolicyProjection.load(
-        request.headless_request.target_id,
-        request.headless_request.target_dynamic_fields,
-    )
+    target = request.headless_invocation.target_projection(request.headless_request)
     controller_identity = _controller_identity(request.profile, target)
     model_name = _controller_model_name(controller_identity)
     try:
@@ -2086,7 +2094,7 @@ async def run_installed_swe_bench(
         headless_cleanup_digest,
         cleanup_inventory_digest,
         patch_digest,
-    ) = _validate_headless_result(headless_result, request)
+    ) = _validate_headless_result(headless_result, request, target=target)
     patch_path = request.headless_request.patch_path
     if patch_path is None:
         raise SweBenchRunnerError("canonical workspace patch path is missing")

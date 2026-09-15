@@ -1,0 +1,796 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target_config.v2.schema.json",
+  "title": "BreadBoard E4 executable target configuration V2",
+  "description": "Closed target-owned input, policy and materialization declarations. The declarations are admission data; they do not by themselves assert that a renderer, policy or capability is executable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "target_id",
+    "semantic_revision",
+    "renderer",
+    "prompt",
+    "tools",
+    "policy",
+    "inputs",
+    "materialization",
+    "required_capabilities"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.e4.target_config.v2"
+    },
+    "target_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "semantic_revision": {
+      "const": "bb.e4.target-semantics.v2"
+    },
+    "renderer": {
+      "$ref": "#/$defs/renderer"
+    },
+    "prompt": {
+      "$ref": "#/$defs/prompt"
+    },
+    "tools": {
+      "$ref": "#/$defs/tools"
+    },
+    "policy": {
+      "$ref": "#/$defs/policy"
+    },
+    "inputs": {
+      "$ref": "#/$defs/inputs"
+    },
+    "materialization": {
+      "$ref": "#/$defs/materialization"
+    },
+    "required_capabilities": {
+      "$ref": "#/$defs/required_capabilities"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]*$"
+    },
+    "relative_path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*\\\\)(?!.*:)(?!.*(?:^|/)\\.{1,2}(?:/|$)).+$"
+    },
+    "selector": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]*$"
+    },
+    "renderer_selector": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?:[A-Za-z0-9][A-Za-z0-9_.:@/-]*)(?:\\.v[0-9]+|[-_.][0-9]+(?:\\.[0-9]+)*)$"
+    },
+    "renderer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selector",
+        "revision"
+      ],
+      "properties": {
+        "selector": {
+          "$ref": "#/$defs/renderer_selector"
+        },
+        "revision": {
+          "$ref": "#/$defs/renderer_selector"
+        }
+      }
+    },
+    "prompt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "asset",
+        "dynamic_fields"
+      ],
+      "properties": {
+        "asset": {
+          "$ref": "#/$defs/relative_path"
+        },
+        "dynamic_fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        }
+      }
+    },
+    "tools": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ordered",
+        "surface_asset"
+      ],
+      "properties": {
+        "ordered": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "surface_asset": {
+          "$ref": "#/$defs/relative_path"
+        },
+        "normalization": {
+          "$ref": "#/$defs/normalization"
+        }
+      }
+    },
+    "normalization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "aliases"
+      ],
+      "properties": {
+        "aliases": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/identifier"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/identifier"
+          }
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "provider",
+        "action",
+        "execution",
+        "observations",
+        "authority",
+        "claim_exclusions"
+      ],
+      "properties": {
+        "revision": {
+          "const": "bb.e4.target-policy.v2"
+        },
+        "provider": {
+          "$ref": "#/$defs/provider_policy"
+        },
+        "action": {
+          "$ref": "#/$defs/action_policy"
+        },
+        "execution": {
+          "$ref": "#/$defs/execution_policy"
+        },
+        "observations": {
+          "$ref": "#/$defs/observations_policy"
+        },
+        "authority": {
+          "$ref": "#/$defs/authority_policy"
+        },
+        "claim_exclusions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "provider_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "api",
+        "stream",
+        "samples",
+        "provider_attempts",
+        "fallback",
+        "compaction",
+        "request_timeout_seconds"
+      ],
+      "properties": {
+        "api": {
+          "$ref": "#/$defs/selector"
+        },
+        "stream": {
+          "type": "boolean"
+        },
+        "samples": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "provider_attempts": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fallback": {
+          "type": "boolean"
+        },
+        "compaction": {
+          "type": "boolean"
+        },
+        "request_timeout_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "action_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol",
+        "decoder",
+        "repair",
+        "argument_processors",
+        "aliases",
+        "decode_entire_batch_before_dispatch",
+        "require_nonempty_calls",
+        "malformed",
+        "empty_reply",
+        "max_consecutive_format_errors"
+      ],
+      "properties": {
+        "protocol": {
+          "$ref": "#/$defs/selector"
+        },
+        "decoder": {
+          "$ref": "#/$defs/selector"
+        },
+        "repair": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]*$"
+        },
+        "argument_processors": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/selector"
+          }
+        },
+        "aliases": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/identifier"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "decode_entire_batch_before_dispatch": {
+          "type": "boolean"
+        },
+        "require_nonempty_calls": {
+          "type": "boolean"
+        },
+        "malformed": {
+          "$ref": "#/$defs/selector"
+        },
+        "empty_reply": {
+          "$ref": "#/$defs/selector"
+        },
+        "max_consecutive_format_errors": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "execution_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scheduler",
+        "history_commit",
+        "terminal_policy",
+        "bounded_controls"
+      ],
+      "properties": {
+        "scheduler": {
+          "$ref": "#/$defs/selector"
+        },
+        "history_commit": {
+          "$ref": "#/$defs/selector"
+        },
+        "terminal_policy": {
+          "$ref": "#/$defs/selector"
+        },
+        "bounded_controls": {
+          "$ref": "#/$defs/bounded_controls"
+        }
+      }
+    },
+    "bounded_controls": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_model_calls",
+        "episode_wall_seconds",
+        "single_tool_wall_seconds",
+        "raw_evidence_bytes_per_outcome",
+        "max_active_episodes",
+        "samples_per_call"
+      ],
+      "properties": {
+        "max_model_calls": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "episode_wall_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "single_tool_wall_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "raw_evidence_bytes_per_outcome": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_active_episodes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "samples_per_call": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "observations_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "renderer",
+        "preserve_raw_outcome",
+        "preserve_model_render",
+        "commit_at_source_boundary"
+      ],
+      "properties": {
+        "renderer": {
+          "$ref": "#/$defs/selector"
+        },
+        "preserve_raw_outcome": {
+          "type": "boolean"
+        },
+        "preserve_model_render": {
+          "type": "boolean"
+        },
+        "commit_at_source_boundary": {
+          "type": "boolean"
+        }
+      }
+    },
+    "authority_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspace_root",
+        "containment",
+        "interaction",
+        "network_tools",
+        "subagents"
+      ],
+      "properties": {
+        "workspace_root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "containment": {
+          "$ref": "#/$defs/selector"
+        },
+        "interaction": {
+          "$ref": "#/$defs/selector"
+        },
+        "network_tools": {
+          "type": "boolean"
+        },
+        "subagents": {
+          "type": "boolean"
+        }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "fields",
+        "order"
+      ],
+      "properties": {
+        "revision": {
+          "const": "bb.e4.target-inputs.v2"
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/input_field"
+          }
+        },
+        "order": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        }
+      }
+    },
+    "input_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "required",
+        "producer",
+        "lifetime",
+        "source_ref",
+        "omission",
+        "value_schema"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/identifier"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "producer": {
+          "enum": [
+            "operator",
+            "bootstrap",
+            "runtime"
+          ]
+        },
+        "lifetime": {
+          "enum": [
+            "build",
+            "episode",
+            "turn"
+          ]
+        },
+        "source_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "omission": {
+          "enum": [
+            "required",
+            "missing",
+            "null",
+            "default"
+          ]
+        },
+        "value_schema": {
+          "$ref": "#/$defs/value_schema"
+        },
+        "default": {}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "omission": {
+                "const": "required"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "required": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "omission": {
+                "enum": [
+                  "missing",
+                  "null",
+                  "default"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "required": {
+                "const": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "omission": {
+                "const": "default"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "default"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "default"
+            ]
+          },
+          "then": {
+            "properties": {
+              "omission": {
+                "const": "default"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "value_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "oneOf": [
+            {
+              "enum": [
+                "string",
+                "integer",
+                "number",
+                "boolean",
+                "object",
+                "array",
+                "null"
+              ]
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "string",
+                  "integer",
+                  "number",
+                  "boolean",
+                  "object",
+                  "array",
+                  "null"
+                ]
+              }
+            }
+          ]
+        },
+        "minLength": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "minItems": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxItems": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "enum": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "items": {
+          "$ref": "#/$defs/value_schema"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/value_schema"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "required": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "additionalProperties": {
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              {
+                "properties": {
+                  "type": {
+                    "const": "array"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "type": {
+                    "type": "array",
+                    "contains": {
+                      "const": "array"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "then": {
+            "required": [
+              "items"
+            ]
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "properties": {
+                  "type": {
+                    "const": "object"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "type": {
+                    "type": "array",
+                    "contains": {
+                      "const": "object"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "then": {
+            "required": [
+              "properties",
+              "additionalProperties"
+            ],
+            "properties": {
+              "additionalProperties": {
+                "const": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "required"
+            ]
+          },
+          "then": {
+            "required": [
+              "properties"
+            ]
+          }
+        }
+      ]
+    },
+    "materialization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "assets",
+        "order"
+      ],
+      "properties": {
+        "revision": {
+          "const": "bb.e4.target-materialization.v2"
+        },
+        "assets": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/materialized_asset"
+          }
+        },
+        "order": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/relative_path"
+          }
+        }
+      }
+    },
+    "materialized_asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "role",
+        "required",
+        "source_ref"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/relative_path"
+        },
+        "role": {
+          "enum": [
+            "config",
+            "prompt",
+            "tool_surface",
+            "bootstrap",
+            "license",
+            "runtime",
+            "source",
+            "input"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "source_ref": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "required_capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[a-z][a-z0-9_.-]*\\.v[0-9]+$"
+      }
+    }
+  }
+}

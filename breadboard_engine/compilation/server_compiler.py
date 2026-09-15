@@ -16,6 +16,7 @@ import sys
 import types
 from decimal import Decimal, InvalidOperation
 from fnmatch import fnmatchcase
+from importlib.metadata import version as package_version
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
@@ -29,6 +30,11 @@ import jinja2
 from jinja2 import StrictUndefined, meta, nodes
 from jinja2.sandbox import SandboxedEnvironment
 
+from breadboard.product.harness import compile as _harness_compile_module
+from breadboard.product.harness import lock as _harness_lock_module
+from breadboard.product.harness import targets as _target_lowering_module
+from breadboard.product.harness import validate as _harness_validation_module
+from breadboard_engine import e4_targets as _target_resources_module
 from breadboard_engine.compilation import contracts as _contracts_module
 from breadboard_engine.compilation.bundle import ManifestReader
 from breadboard_engine.compilation.contracts import (
@@ -70,7 +76,7 @@ from breadboard_engine.compilation.contracts import (
     canonical_sha256,
 )
 
-COMPILER_VERSION: Final = "1.1.0"
+COMPILER_VERSION: Final = "1.2.0"
 BUILTIN_TOOL_RENDERER_ID: Final = "breadboard.tool-catalog.v1"
 V1_MAPPING_TABLE: Final[dict[str, str]] = {
     "/model": "/providers/default_model",
@@ -121,6 +127,7 @@ _TOP_LEVEL_FIELDS: Final = {
     "enhanced_tools", "plugins", "multi_agent", "task_tool", "replay",
     "long_running", "resume", "logging", "telemetry", "sampling",
     "optimizer_mutable_pointers", "sandbox", "setup",
+    "e4_target",
     "_v1_translation",
 }
 
@@ -129,13 +136,14 @@ _FAMILY_FIELDS: Final[dict[str, set[str]]] = {
     "profile": {"name", "description", "version", "metadata"},
     "workspace": {"root", "mirror", "sandbox", "driver", "options", "mounts", "network", "image", "resources"},
     "providers": {"default_model", "models", "routing", "provider_tools"},
-    "prompts": {"tool_prompt_mode", "environment", "synthesis", "tool_prompt_synthesis", "packs", "injection", "dialects", "dedupe", "templates", "tool_catalog"},
+    "prompts": {"renderer_id", "tool_prompt_mode", "environment", "synthesis", "tool_prompt_synthesis", "packs", "injection", "dialects", "dedupe", "templates", "tool_catalog"},
     "tools": {"registry", "overlays", "aliases", "dialects", "mark_task_complete", "bindings", "packs"},
     "plugins": {"enabled", "manifest_refs", "trust_requests", "untrusted_hook_tools"},
     "guardrails": {"include", "definitions", "guards", "overrides", "plan_bootstrap"},
     "multi_agent": {"enabled", "team_config", "team", "coordination", "bus", "workspace_sharing", "event_log_path", "max_concurrent_agents", "scheduler", "async", "spawn_tool"},
     "task_tool": {"id", "description_template_path", "description_template", "subagents", "render_context"},
     "sampling": {"temperature"},
+    "e4_target": {"target_id", "index_ref", "inputs_ref", "runtime_ref", "lock_ref"},
 }
 
 _DEFAULT_OBJECT_FAMILIES: Final = (
@@ -185,7 +193,7 @@ _COMPILER_POLICY_DESCRIPTOR: Final = {
     "semantic_identity": "source-independent-content-v2",
     "authority_policy": "closed-recursive-authority-v2",
     "v1_translator": V1_SHADOW_TRANSLATOR_ID,
-    "prompt_renderer": "breadboard.prompt-assembly.v1",
+    "prompt_renderers": ["breadboard.prompt-assembly.v1", "breadboard.prompt-assembly.verbatim.v1"],
     "tool_renderer": BUILTIN_TOOL_RENDERER_ID,
     "template_renderer": "jinja2-sandboxed-allowlist-v1",
     "resource_limits": {
@@ -480,6 +488,8 @@ def _error(
 def _implementation_value(value: Any) -> Any:
     if isinstance(value, types.CodeType):
         return _code_object(value)
+    if type(value) is int and abs(value) > JCS_SAFE_INTEGER_MAX:
+        return {"integer_decimal": str(value)}
     if value is None or type(value) in {bool, int, float, str}:
         return value
     if type(value) is bytes:
@@ -605,11 +615,27 @@ def _compiler_implementation_digest() -> str:
             "pyyaml": yaml.__version__,
             "jinja2": jinja2.__version__,
         },
+        "harness_schema_dependencies": _HARNESS_VALIDATION_DEPENDENCIES,
+        "harness_schemas": _harness_validation_module._schema_documents(),
+        "harness_schema_factories": {
+            name: _function_inventory(getattr(_harness_validation_module, name).__wrapped__)
+            for name in ("_schema_documents", "_schema_validators")
+        },
         "modules": {
             __name__: _module_code_inventory(globals(), __name__),
             _contracts_module.__name__: _module_code_inventory(
                 vars(_contracts_module), _contracts_module.__name__
             ),
+            **{
+                module.__name__: _module_code_inventory(vars(module), module.__name__)
+                for module in (
+                    _harness_compile_module,
+                    _harness_lock_module,
+                    _target_lowering_module,
+                    _target_resources_module,
+                    _harness_validation_module,
+                )
+            },
         },
     }
     return canonical_sha256(preimage)
@@ -2342,6 +2368,14 @@ def _compile_prompts(
         defaults.append(DefaultRecord(target_pointer="/prompts/tool_prompt_mode", default_code="prompt_tool_mode_system_once", value=tool_prompt_mode))
     if type(tool_prompt_mode) is not str:
         raise _error(CompileStage.SCHEMA, CompileErrorCode.SCHEMA_TYPE_MISMATCH, instance_pointer="/prompts/tool_prompt_mode")
+    prompt_renderer = prompt_cfg.get("renderer_id", "breadboard.prompt-assembly.v1")
+    if prompt_renderer not in (
+        "breadboard.prompt-assembly.v1",
+        "breadboard.prompt-assembly.verbatim.v1",
+    ):
+        raise _error(CompileStage.RENDER, CompileErrorCode.PROMPT_RENDER_FAILED, instance_pointer="/prompts/renderer_id")
+    if tool_prompt_mode == "native_only" and providers["provider_tools"].get("use_native") is not True:
+        raise _error(CompileStage.SCHEMA, CompileErrorCode.PROVIDER_INVALID, instance_pointer="/prompts/tool_prompt_mode")
     environment = _require_object(prompt_cfg.get("environment", {}), "/prompts/environment")
     _reject_embedded_authority(environment, "/prompts/environment")
     dedupe = prompt_cfg.get("dedupe", False)
@@ -2401,6 +2435,8 @@ def _compile_prompts(
     tool_catalog_template = None
     if "tool_catalog" in prompt_cfg:
         tool_catalog_template = compile_template("tool_catalog", prompt_cfg["tool_catalog"], "/prompts/tool_catalog")
+    if tool_prompt_mode == "native_only" and tool_catalog_template is not None:
+        raise _error(CompileStage.SCHEMA, CompileErrorCode.PROMPT_TEMPLATE_INVALID, instance_pointer="/prompts/tool_catalog")
     selection = _require_object(synthesis_cfg.get("selection", {}), "/prompts/synthesis/selection")
     detail = _require_object(synthesis_cfg.get("detail", {}), "/prompts/synthesis/detail")
     _closed_fields(selection, {"by_mode", "by_model", "default"}, "/prompts/synthesis/selection")
@@ -2540,7 +2576,11 @@ def _compile_prompts(
         selected_definitions = [definitions_by_id[tool_id] for tool_id in selected_tool_ids]
         for model in providers["models"]:
             dialects = select_dialects(mode, model)
-            if tool_catalog_template is None:
+            if tool_prompt_mode == "native_only":
+                tool_catalog_text = ""
+                catalog_renderer_id = BUILTIN_TOOL_RENDERER_ID
+                template_source_ids = []
+            elif tool_catalog_template is None:
                 catalog_lines = ["# TOOL CATALOG"]
                 for definition in selected_definitions:
                     catalog_lines.extend([f"## {definition['model_name']}", definition["description"]])
@@ -2591,7 +2631,9 @@ def _compile_prompts(
                     else:
                         raise _error(CompileStage.RENDER, CompileErrorCode.PROMPT_RENDER_FAILED, details={"token": token})
                     source = sources[source_id]
-                    fragment_text = source["text"].replace("[CACHE]", "").strip()
+                    fragment_text = source["text"]
+                    if prompt_renderer == "breadboard.prompt-assembly.v1":
+                        fragment_text = fragment_text.replace("[CACHE]", "").strip()
                     digest = bytes_sha256(fragment_text.encode())
                     included = bool(fragment_text)
                     reason = "none" if included else "empty"
@@ -2607,7 +2649,7 @@ def _compile_prompts(
             system_text, _ = render_order(system_order, "system")
             turn_text, _ = render_order(per_turn_order, "per_turn")
             variant_id = canonical_sha256({"schema": PROMPT_VARIANT_ID_SCHEMA_ID, "config_node_id": config_node_id, "mode_id": mode["mode_id"], "model_id": model["model_id"], "dialect_ids": dialects, "tool_set_digest": tool_set_digest})
-            variants.append({"variant_id": variant_id, "config_node_id": config_node_id, "mode_id": mode["mode_id"], "model_id": model["model_id"], "dialect_ids": list(dialects), "effective_tool_ids": list(selected_tool_ids), "tool_set_digest": tool_set_digest, "tool_catalog": tool_catalog, "system": {"text": system_text, "text_digest": bytes_sha256(system_text.encode()), "fragments": fragments_system, "renderer_id": "breadboard.prompt-assembly.v1", "template_source_ids": []}, "per_turn": {"text": turn_text, "text_digest": bytes_sha256(turn_text.encode()), "fragments": fragments_turn, "renderer_id": "breadboard.prompt-assembly.v1", "template_source_ids": []}})
+            variants.append({"variant_id": variant_id, "config_node_id": config_node_id, "mode_id": mode["mode_id"], "model_id": model["model_id"], "dialect_ids": list(dialects), "effective_tool_ids": list(selected_tool_ids), "tool_set_digest": tool_set_digest, "tool_catalog": tool_catalog, "system": {"text": system_text, "text_digest": bytes_sha256(system_text.encode()), "fragments": fragments_system, "renderer_id": prompt_renderer, "template_source_ids": []}, "per_turn": {"text": turn_text, "text_digest": bytes_sha256(turn_text.encode()), "fragments": fragments_turn, "renderer_id": prompt_renderer, "template_source_ids": []}})
     return {"tool_prompt_mode": tool_prompt_mode, "environment": deepcopy(environment), "dedupe": dedupe, "injection": {"system_order": list(system_order), "per_turn_order": list(per_turn_order)}, "dialects": {"default": list(default_dialects)}, "synthesis": synthesis, "packs": packs, "variants": variants}
 
 
@@ -3507,6 +3549,110 @@ def _finalize_semantic_identity(semantic: CompiledConfig) -> CompiledConfig:
     return CompiledConfig.from_dict(payload)
 
 
+def _compile_e4_target_binding(
+    config: dict[str, Any], ledger: _ReadLedger, root_path: str
+) -> dict[str, Any] | None:
+    if "e4_target" not in config:
+        return None
+    target = _require_object(config["e4_target"], "/e4_target")
+    fields = _FAMILY_FIELDS["e4_target"]
+    if set(target) != fields or any(type(target[key]) is not str or not target[key] for key in fields):
+        raise _error(CompileStage.SCHEMA, CompileErrorCode.SCHEMA_TYPE_MISMATCH, instance_pointer="/e4_target")
+    index_path, index_bytes, _ = ledger.resolve_one(root_path, "e4_target_index", target["index_ref"])
+    descriptor_location: tuple[str, str] | None = None
+
+    def read_resource(path: str) -> bytes:
+        nonlocal descriptor_location
+        if path == "index.json":
+            return index_bytes
+        if descriptor_location is None:
+            logical_path, payload, _ = ledger.resolve_one(index_path, "e4_target_descriptor", path)
+            descriptor_location = (path.rpartition("/")[0], logical_path)
+            return payload
+        parent, declaring_path = descriptor_location
+        prefix = parent + "/" if parent else ""
+        if not path.startswith(prefix):
+            raise ValueError("target asset is outside its descriptor directory")
+        _, payload, _ = ledger.resolve_one(declaring_path, "e4_target_asset", path[len(prefix):])
+        return payload
+
+    try:
+        package = _target_resources_module.read_e4_target(target["target_id"], read_resource=read_resource)
+        inputs_path, inputs_bytes, _ = ledger.resolve_one(root_path, "e4_target_inputs", target["inputs_ref"])
+        frame = _require_object(strict_parse_payload(inputs_bytes, logical_path=inputs_path), "/e4_target/inputs")
+        _closed_fields(frame, {"request_schema_version", "target_dynamic_fields"}, "/e4_target/inputs")
+        if frame.get("request_schema_version") not in (
+            "bb.rl.headless-run-request.v1", "bb.rl.headless-run-request.v2"
+        ):
+            raise _error(CompileStage.SCHEMA, CompileErrorCode.SCHEMA_VERSION_UNSUPPORTED, instance_pointer="/e4_target/inputs/request_schema_version")
+        dynamic_fields = _require_object(frame.get("target_dynamic_fields"), "/e4_target/inputs/target_dynamic_fields")
+        runtime_path, runtime_bytes, _ = ledger.resolve_one(root_path, "e4_target_runtime", target["runtime_ref"])
+        runtime_config = _require_object(strict_parse_payload(runtime_bytes, logical_path=runtime_path), "/e4_target/runtime")
+        source = _target_lowering_module.lower_e4_harness(
+            package, dynamic_fields, runtime_config,
+            request_schema_version=frame["request_schema_version"],
+        )
+        if source.source_ref != root_path or source.compilation.as_dict() != config:
+            raise ValueError("target configuration differs from its captured derivation")
+        for path, expected_bytes in source.members.items():
+            ledger.dependency_for(path)
+            if ledger._read(path) != expected_bytes:
+                raise ValueError("target generated or source bytes differ from the locked derivation")
+        _, lock_bytes, _ = ledger.resolve_one(root_path, "e4_target_lock", target["lock_ref"])
+        references = {
+            layer["source_ref"]: _harness_lock_module.configuration_artifact_ref(
+                layer["source_ref"],
+                source.members[layer["source_ref"]],
+                layer_hash=layer["layer_hash"],
+            ).to_dict()
+            for layer in source.compilation.lock.configuration_graph["source_layers"]
+        }
+        expected_lock = source.compilation.with_configuration_artifacts(references).lock
+        if lock_bytes != _harness_lock_module.canonical_json_bytes(expected_lock):
+            raise ValueError("target Harness Lock differs from its captured derivation")
+    except ConfigCompileError:
+        raise
+    except _target_lowering_module.E4TargetCapabilityError as exc:
+        raise _error(
+            CompileStage.SEMANTIC_VALIDATION,
+            CompileErrorCode.SCHEMA_INVALID_VALUE,
+            instance_pointer="/e4_target",
+            details={
+                "reason": "e4_runtime_capabilities_unsupported",
+                "renderer_id": exc.renderer_id,
+                "required_capabilities": list(exc.required_capabilities),
+            },
+        ) from exc
+    except (ValueError, TypeError, KeyError) as exc:
+        raise _error(
+            CompileStage.SEMANTIC_VALIDATION,
+            CompileErrorCode.SCHEMA_INVALID_VALUE,
+            instance_pointer="/e4_target",
+            details={"reason": "target_derivation_mismatch"},
+        ) from exc
+    rendered = source.rendering
+    return {
+        "version": 1,
+        "target_id": rendered.target_id,
+        "target_schema_version": package.descriptor["schema_version"],
+        "request_schema_version": frame["request_schema_version"],
+        "input_digest": bytes_sha256(inputs_bytes),
+        "index_digest": bytes_sha256(index_bytes),
+        "descriptor_bytes_digest": bytes_sha256(package.descriptor_bytes),
+        "descriptor_digest": rendered.descriptor_digest,
+        "execution_config_digest": rendered.execution_config_digest,
+        "overlay_id": rendered.overlay_id,
+        "overlay_digest": rendered.overlay_digest,
+        "renderer_id": "breadboard.e4.legacy-string-template.v1",
+        "rendered_prompt_digest": rendered.rendered_prompt_digest,
+        "ordered_tool_names": list(rendered.ordered_tool_names),
+        "tool_surface_digest": canonical_sha256([
+            {"type": "function", "function": tool} for tool in rendered.tools
+        ]),
+        "harness_lock_digest": bytes_sha256(lock_bytes),
+    }
+
+
 def _build_semantic(
     config: dict[str, Any],
     ledger: _ReadLedger,
@@ -3524,6 +3670,7 @@ def _build_semantic(
     origins = _source_origin_map(raw_provenance, root_path)
     providers = _compile_providers(config)
     tools, by_tool = _compile_tools(config, ledger, root_path, origins)
+    target_binding = _compile_e4_target_binding(config, ledger, root_path)
     modes = _mode_records(config, by_tool)
     prompts = _compile_prompts(config, modes, providers, tools, ledger, root_path, node_id, origins, defaults)
     plugins = _compile_plugins(
@@ -3556,6 +3703,8 @@ def _build_semantic(
         "config_schema_id": AGENT_CONFIG_SCHEMA_ID,
         "translation": config.get("_v1_translation"),
     }
+    if target_binding is not None:
+        metadata["e4_target"] = target_binding
     workspace = _require_object(config.get("workspace", {}), "/workspace")
     root_name = workspace.get("root", "workspace")
     root_slot = _runtime_slot(root_name, "workspace_root")
@@ -4053,6 +4202,11 @@ def verify_cached_manifest(
         )
     return manifest
 
+
+# Resolve packaged validation dependencies at module load, never during compilation.
+_HARNESS_VALIDATION_DEPENDENCIES: Final = {
+    package: package_version(package) for package in ("jsonschema", "referencing", "pyyaml")
+}
 
 COMPILER_CODE_DIGEST: Final = _compiler_implementation_digest()
 

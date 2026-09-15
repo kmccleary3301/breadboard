@@ -44,6 +44,8 @@ Status: `active`
 | `bb.environment_selector.v2` | BreadBoard Environment Selector V2 | `config_algebra` |
 | `bb.execution_capability.v1` | bb.execution_capability.v1 | `host_protocol` |
 | `bb.execution_placement.v1` | bb.execution_placement.v1 | `host_protocol` |
+| `bb.e4.target.v2` | BreadBoard E4 target descriptor V2 | `config_algebra` |
+| `bb.e4.target_config.v2` | BreadBoard E4 executable target configuration V2 | `config_algebra` |
 | `bb.extension_hook_execution.v1` | BreadBoard extension hook execution V1 | `host_protocol` |
 | `bb.external_protocol_session.v1` | BreadBoard external protocol session V1 | `host_protocol` |
 | `bb.kernel_event.v2` | BreadBoard Kernel Event V2 | `runtime_protocol` |

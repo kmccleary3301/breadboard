@@ -353,6 +353,26 @@
       "status": "active"
     },
     {
+      "description": "e4_target descriptor contract family.",
+      "id": "e4_target",
+      "metadata": {
+        "schema_versions": [
+          "bb.e4.target.v2"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "e4_target_config executable configuration contract family.",
+      "id": "e4_target_config",
+      "metadata": {
+        "schema_versions": [
+          "bb.e4.target_config.v2"
+        ]
+      },
+      "status": "active"
+    },
+    {
       "description": "e4_target_coverage contract family.",
       "id": "e4_target_coverage",
       "metadata": {

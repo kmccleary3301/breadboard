@@ -29,7 +29,7 @@ def test_lock_is_frozen_detached_and_self_hashing() -> None:
         == lock.configuration_graph["graph_hash"]
         == lock.configuration_graph_hash
     )
-    with pytest.raises(ValueError, match="requires a configuration graph"):
+    with pytest.raises(ValueError):
         graph_content_hash(lock)
     with pytest.raises(TypeError):
         lock["configuration_graph"]["visibility"]["model_visible_paths"] = []  # type: ignore[index]

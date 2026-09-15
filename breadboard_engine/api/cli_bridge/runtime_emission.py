@@ -18,7 +18,7 @@ from breadboard.product.harness.compile import compile_harness_definition
 from breadboard.product.harness.lock import (
     EffectiveHarnessLock,
     LockMaterialization,
-    _copy,
+    copy_harness_json,
     make_effective_harness_lock,
     materialize_lock,
 )
@@ -494,7 +494,7 @@ def emit_session_start_records(
     else:
         config = _sanitize_persisted_runtime_config(effective_runtime_config)
     graph = (
-        _copy(effective_lock.configuration_graph, freeze=False)
+        copy_harness_json(effective_lock.configuration_graph, freeze=False)
         if effective_lock is not None
         else compile_runtime_effective_config_graph(
             session_id, config, str(config_path), repo_root=root

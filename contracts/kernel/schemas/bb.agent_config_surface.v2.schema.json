@@ -655,6 +655,19 @@
       "description": "Non-normative dossier commentary (L7). Generators, loaders, and validators MUST NOT read this field.",
       "type": "object"
     },
+    "e4_target": {
+      "additionalProperties": false,
+      "description": "Sealed references for compiler-verified target derivation.",
+      "properties": {
+        "target_id": {"minLength": 1, "type": "string"},
+        "index_ref": {"minLength": 1, "type": "string"},
+        "inputs_ref": {"minLength": 1, "type": "string"},
+        "runtime_ref": {"minLength": 1, "type": "string"},
+        "lock_ref": {"minLength": 1, "type": "string"}
+      },
+      "required": ["target_id", "index_ref", "inputs_ref", "runtime_ref", "lock_ref"],
+      "type": "object"
+    },
     "enhanced_tools": {
       "additionalProperties": false,
       "properties": {
@@ -1426,6 +1439,13 @@
             }
           },
           "type": "object"
+        },
+        "renderer_id": {
+          "enum": [
+            "breadboard.prompt-assembly.v1",
+            "breadboard.prompt-assembly.verbatim.v1"
+          ],
+          "type": "string"
         },
         "tool_prompt_mode": {
           "minLength": 1,
