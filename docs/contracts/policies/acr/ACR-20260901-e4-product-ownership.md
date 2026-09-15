@@ -227,3 +227,50 @@ exact-artifact proofs govern this correction. Earlier candidate test counts and
 review verdicts are historical evidence, not acceptance of the revised head.
 Protected CI, independent review and all later runtime/recipient gates remain
 mandatory; the rollback and custody rules in section11 are unchanged.
+
+## 13) Installed upstream notice resources, 2026-09-15
+
+The installed wheel must retain applicable notices for copied historical target
+assets and the standalone author-worker helper's bundled dependencies. This is
+an additive packaging correction, not a compiler, runtime or license-policy
+change. The helper notice is an execution-namespace resource and therefore
+remains subject to the danger-zone decision and review gate.
+
+Keep the Pi `0.57.1` and Oh My Pi `16.2.13` notices under
+`config/e4_targets/notices`, outside every indexed or model-visible target asset.
+Their pinned npm archives match the existing integrity, hash and size anchors
+but omit a root LICENSE. Retain the root license text from each exact recorded
+upstream source commit; this does not establish recovery of a historical source
+archive.
+
+Package `node/THIRD_PARTY_NOTICES.txt` beside the existing helper. It retains the
+four distinct original license bodies for ajv `8.18.0`/`8.20.0`,
+fast-deep-equal `3.1.3`, json-schema-traverse `1.0.0` and fast-uri
+`3.1.0`/`3.1.7`, including the latter's BSD-3-Clause notices. Refresh this resource
+when the locked bundled dependency closure changes. Existing explicit
+setuptools package-data declarations remain the sole distribution owner.
+
+The existing build-provenance cleanliness owner also includes
+`config/e4_targets/notices`. Changed or untracked notice inputs must reject
+before a wheel or sdist can claim the clean source commit/tree. A real-Git
+regression covers the new directory; the actual builders reject the reproduced
+untracked notice and emit no distribution artifact. This closes a source-input
+coverage gap without adding a separate provenance authority.
+
+Kyle's controlled internal-copy authority does not create a first-party MIT
+license or public-release permission. These upstream notices grant no additional
+rights over other BreadBoard files. All nine existing target resources, their
+index/descriptor identities, and the helper bytes remain unchanged.
+
+The initial notice candidate passed the existing built-wheel resource regression.
+A fresh installed consumer retrieved the notices at their recorded hashes,
+verified target assets and compiled the default profile with source checkout and
+network access denied. Original upstream notice bodies remain verbatim in the
+wheel. Require current exact-head review and protected CI after this decision
+record changes; earlier candidate acceptance is not transferred silently.
+
+Native author-worker execution, supplier/system dependency notices, independent
+final-recipient acceptance and whole-campaign completion remain separate gates.
+Rollback selects a previously accepted intact distribution and its permissions
+and notices; never remove required notices from an otherwise retained artifact.
+No custody deletion or review-budget extension is authorized by this record.

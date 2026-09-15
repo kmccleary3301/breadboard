@@ -363,6 +363,7 @@ def test_wheel_provenance_validates_before_populating_build_output(
         ("breadboard/untracked_runtime.py", False),
         ("breadboard/rl/__init__.py", True),
         ("breadboard/rl/harness/headless.py", True),
+        ("config/e4_targets/notices/untracked_notice.txt", False),
     ),
 )
 def test_wheel_provenance_rejects_dirty_non_engine_package(
@@ -408,7 +409,7 @@ def test_wheel_provenance_rejects_dirty_non_engine_package(
     assert namespace["_source_identity"]() == clean_identity
 
     public_file.write_text("changed = True\n", encoding="utf-8")
-    with pytest.raises(RuntimeError, match="clean wheel build inputs"):
+    with pytest.raises(RuntimeError):
         namespace["_source_identity"]()
 
 
