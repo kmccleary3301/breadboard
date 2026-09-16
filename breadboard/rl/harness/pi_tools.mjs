@@ -7,11 +7,14 @@
  * stderr: diagnostics only
  */
 
+import { delimiter } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Pi captures its managed-binary directory while importing tools-manager.
 process.env.PI_CODING_AGENT_DIR = fileURLToPath(new URL(".", import.meta.url));
 process.env.PI_OFFLINE = "1";
+const binaryDirectory = fileURLToPath(new URL("./bin", import.meta.url));
+process.env.PATH = binaryDirectory + (process.env.PATH ? delimiter + process.env.PATH : "");
 
 const {
   createBashTool,
