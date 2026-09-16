@@ -54,6 +54,7 @@ class HeadlessWorkspaceInput(BaseModel):
     )
     base_commit: str = Field(pattern=_GIT_COMMIT_PATTERN)
     task_image_digest: str = Field(pattern=_DIGEST_PATTERN)
+    outer_isolation: Literal["apptainer"] | None = None
 
 
 class HeadlessProviderInput(BaseModel):
@@ -368,8 +369,13 @@ async def run_headless_request(
     route: HeadlessProviderRouteAuthority | None = None
     composition: ProductionComposition | None = None
     try:
-        if request.expected_sandbox.runtime_class is c.RuntimeClass.TRUSTED_PROCESS:
-            raise ValueError("headless execution requires an isolated sandbox runtime")
+        if (
+            request.expected_sandbox.runtime_class is c.RuntimeClass.TRUSTED_PROCESS
+            and request.workspace.outer_isolation != "apptainer"
+        ):
+            raise ValueError(
+                "headless trusted-process execution requires outer Apptainer isolation"
+            )
         composition_secrets = _secret_file_bindings(
             secret_files,
             field_name="composition secret files",
