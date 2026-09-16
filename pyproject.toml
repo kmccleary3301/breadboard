@@ -41,6 +41,7 @@ namespaces = true
 "contracts.public.schemas" = ["*.schema.json"]
 "contracts.internal.evidence" = ["operations.v1.json"]
 "contracts.internal.evidence.schemas" = ["*.schema.json"]
+"implementations" = ["THIRD_PARTY_NOTICES.txt"]
 "implementations.tools.defs" = ["*.yaml"]
 "implementations.prompts.todos" = ["*.md"]
 "implementations.system_prompts" = ["*.md"]

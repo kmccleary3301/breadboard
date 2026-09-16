@@ -274,3 +274,73 @@ final-recipient acceptance and whole-campaign completion remain separate gates.
 Rollback selects a previously accepted intact distribution and its permissions
 and notices; never remove required notices from an otherwise retained artifact.
 No custody deletion or review-budget extension is authorized by this record.
+
+## 14) Implementation resource notices and rights gate, 2026-09-15
+
+The installation/permission stop below records the earlier bounded wave.
+Section 15 supersedes that owner-imposed stop; attribution facts remain.
+
+This source correction adds `implementations/THIRD_PARTY_NOTICES.txt` and
+packages it through the existing explicit setuptools package-data ownership.
+It changes no prompt, tool, helper, or historical resource bytes. `setup.py`
+remains the sole source-cleanliness owner for the existing `implementations`
+path; this record adds no second provenance authority.
+
+The notice retains the original acquired OpenCode MIT license body and the
+original Codex Apache-2.0 license and NOTICE bodies. The Codex NOTICE remains
+complete, including its Meriyah paragraph. The notice identifies measured
+OpenCode joins for `anthropic.md`, `beast.md`, `gemini.md`, `qwen.md` and `initialize.md`.
+Gemini is byte-identical to its comparison source; the other four retain
+matching content with differences. It identifies the adapted Codex comparison in
+`opencode/codex.md` and the 65-of-67-line derivation join in the
+`apply_patch` description, including the recorded tool-versus-shell and
+literal-backslash-`t` changes.
+
+The 2026 upstream revisions are reference-identifiable comparison sources, not
+proof of original import dates or versions. The source history predates those
+pins. Bounded primary comparisons also inspected `summarize.md`, `title.md`
+and `plan.md`; their limited matches do not establish exact origins or the
+scout's asserted proprietary provenance. No file under an OpenCode-named
+directory is treated as an automatic MIT copy.
+
+The adjacent notice describes Codex modifications but does not establish
+compliance with Apache-2.0 section 4(b), which calls for prominent change
+notices in modified files. No accepted disposition of that obligation is
+retained here. It remains an additional handoff/promotion gate; this wave
+must not alter model-visible or historical files to resolve it.
+
+Main may build and inspect one source-bound wheel in quarantine under this
+authority. That artifact is proof only. The editable candidate install and
+built-wheel clean-install path in `.github/workflows/ci.yml` remain blocked
+while Claude permission evidence is absent. No installation, consumer
+handoff, native admission, or promotion may follow from this source change.
+CI must not be bypassed or disabled to claim that proof.
+
+No Claude permission or assembly grant is supplied for the retained
+Claude-origin prompt content. The permission and assembly gate remains open.
+The OpenCode and Codex notices do not close that gate, grant rights over other
+BreadBoard files, establish a public-release license, or transfer native
+acceptance. Current exact-head review and the remaining protected gates stay
+required. No custody deletion or review-budget extension is authorized.
+
+## 15) Owner-authorized continuation, 2026-09-15
+
+Kyle subsequently directed: “You have my approval to continue. There shouldn't
+be a permission gate here, of any kind.” Main recorded the actual decision at
+2026-09-15T23:36:54.864320Z.
+
+This direction supersedes section 14's owner-imposed installation and
+permission pauses. Continue installed proof, CI, independent review and normal
+protected promotion without another general permission request. Preserve the
+accepted bounded resource envelopes and record actual attempts.
+
+The direction is project execution authority, not a fabricated third-party
+rights grant or a statement that unresolved provenance and license obligations
+have been discharged. Keep the original license/NOTICE bodies, factual origin
+limits and unchanged model-visible/historical resources. The distribution
+notice records those facts without imposing a separate owner-permission gate.
+
+Protected checks, exact-artifact independent review, actual runtime and
+recipient evidence, and the prohibition on custody deletion remain in force.
+This record does not award worker qualification, final acceptance or public
+package release.
