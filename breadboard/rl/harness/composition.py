@@ -233,6 +233,27 @@ class ArtifactFileRefV1(_ExactModel):
     media_type: str
 
     _path = field_validator("path")(_absolute)
+    _sha = field_validator("sha256")(_digest)
+
+
+class CompositionRefV1(_ExactModel):
+    schema_version: Literal["bb.rl.harness-composition-ref.v1"]
+    manifest_path: str
+    manifest_sha256: str
+    manifest_size_bytes: int = Field(gt=0, le=_MAX_AUTHORITY_BYTES)
+    manifest_media_type: Literal[COMPOSITION_MEDIA_TYPE]
+
+    _path = field_validator("manifest_path")(_absolute)
+    _sha = field_validator("manifest_sha256")(_digest)
+
+
+
+
+
+class CompositionRefV2(CompositionRefV1):
+    schema_version: Literal["bb.rl.harness-composition-ref.v2"]
+
+
 class DirectoryAuthorityRefV1(_ExactModel):
     authority_id: str = Field(min_length=1, max_length=256)
     path: str
@@ -242,8 +263,6 @@ class DirectoryAuthorityRefV1(_ExactModel):
     mode: str = Field(pattern=r"0[0-7]{3}")
 
     _path = field_validator("path")(_absolute)
-
-
 class InstalledToolAdapterV1(_ExactModel):
     adapter_id: str = Field(min_length=1, max_length=256)
     tool_ids: tuple[str, ...]
@@ -270,24 +289,6 @@ class InstalledToolAdapterV1(_ExactModel):
         if self.manifest_ref.media_type != _NATIVE_TOOL_SOURCE_REF_MEDIA_TYPE:
             raise ValueError("native tool source manifest media type is not exact")
         return self
-
-    _path = field_validator("manifest_path")(_absolute)
-    _sha = field_validator("manifest_sha256")(_digest)
-
-
-class CompositionRefV2(CompositionRefV1):
-    schema_version: Literal["bb.rl.harness-composition-ref.v2"]
-
-
-class DirectoryAuthorityRefV1(_ExactModel):
-    authority_id: str = Field(min_length=1, max_length=256)
-    path: str
-    device: int = Field(ge=0)
-    inode: int = Field(gt=0)
-    owner_uid: int = Field(ge=0)
-    mode: str = Field(pattern=r"0[0-7]{3}")
-
-    _path = field_validator("path")(_absolute)
 
 
 class SecretHandleSpecV1(_ExactModel):

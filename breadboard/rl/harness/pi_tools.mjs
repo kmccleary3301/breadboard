@@ -7,7 +7,13 @@
  * stderr: diagnostics only
  */
 
-import {
+import { fileURLToPath } from "node:url";
+
+// Pi captures its managed-binary directory while importing tools-manager.
+process.env.PI_CODING_AGENT_DIR = fileURLToPath(new URL(".", import.meta.url));
+process.env.PI_OFFLINE = "1";
+
+const {
   createBashTool,
   createEditTool,
   createFindTool,
@@ -15,7 +21,7 @@ import {
   createLsTool,
   createReadTool,
   createWriteTool,
-} from "@mariozechner/pi-coding-agent";
+} = await import("@mariozechner/pi-coding-agent");
 
 const MAX_REQUEST_BYTES = 1024 * 1024;
 const TOOL_FACTORIES = Object.freeze({
