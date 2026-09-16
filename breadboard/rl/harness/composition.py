@@ -15,7 +15,7 @@ import subprocess
 from builtins import BaseExceptionGroup, ExceptionGroup
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from secrets import token_bytes
 from types import MappingProxyType
 from typing import Any, Literal, Mapping, Protocol, Sequence
@@ -70,6 +70,7 @@ from .sandbox import (
     InstalledImage,
     InstalledRuntime,
     InstalledSandboxAuthoritySet,
+    InstalledToolAdapter,
     InstalledVerifier,
     SandboxNetworkPolicy,
     SandboxRuntimeManager,
@@ -106,7 +107,25 @@ COMPOSITION_REF_MEDIA_TYPE = (
 COMPOSITION_MEDIA_TYPE = COMPOSITION_REF_MEDIA_TYPE
 COMPOSED_MEDIA_TYPE = "application/vnd.breadboard.harness-composed+json;version=1"
 _MAX_AUTHORITY_BYTES = 64 * 1024 * 1024
+_NATIVE_TOOL_SOURCE_SCHEMA_VERSION = "bb.rl.native-tool-source.v1"
+_NATIVE_TOOL_SOURCE_MEDIA_TYPE = (
+    "application/vnd.breadboard.native-tool-source+json;version=1"
+)
+_NATIVE_TOOL_SOURCE_REF_MEDIA_TYPE = _NATIVE_TOOL_SOURCE_MEDIA_TYPE
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
+
+
+def _relative(value: str) -> str:
+    if type(value) is not str or not value or "\x00" in value or "\\" in value:
+        raise ValueError("path must be a normalized relative POSIX path")
+    path = PurePosixPath(value)
+    if (
+        path.is_absolute()
+        or any(part in {"", ".", ".."} for part in path.parts)
+        or path.as_posix() != value
+    ):
+        raise ValueError("path must be a normalized relative POSIX path")
+    return value
 
 
 def _canonical_bytes(value: Any) -> bytes:
@@ -214,15 +233,43 @@ class ArtifactFileRefV1(_ExactModel):
     media_type: str
 
     _path = field_validator("path")(_absolute)
-    _sha = field_validator("sha256")(_digest)
+class DirectoryAuthorityRefV1(_ExactModel):
+    authority_id: str = Field(min_length=1, max_length=256)
+    path: str
+    device: int = Field(ge=0)
+    inode: int = Field(gt=0)
+    owner_uid: int = Field(ge=0)
+    mode: str = Field(pattern=r"0[0-7]{3}")
+
+    _path = field_validator("path")(_absolute)
 
 
-class CompositionRefV1(_ExactModel):
-    schema_version: Literal["bb.rl.harness-composition-ref.v1"]
-    manifest_path: str
-    manifest_sha256: str
-    manifest_size_bytes: int = Field(gt=0, le=_MAX_AUTHORITY_BYTES)
-    manifest_media_type: Literal[COMPOSITION_MEDIA_TYPE]
+class InstalledToolAdapterV1(_ExactModel):
+    adapter_id: str = Field(min_length=1, max_length=256)
+    tool_ids: tuple[str, ...]
+    runtime_root: DirectoryAuthorityRefV1
+    manifest_ref: ArtifactFileRefV1
+    executable_relative_path: str
+    entrypoint_relative_path: str
+
+    _executable_path = field_validator("executable_relative_path")(_relative)
+    _entrypoint_path = field_validator("entrypoint_relative_path")(_relative)
+
+    @model_validator(mode="after")
+    def exact_tools(self) -> "InstalledToolAdapterV1":
+        if not self.tool_ids or self.tool_ids != tuple(sorted(set(self.tool_ids))):
+            raise ValueError("installed tool adapter tool IDs must be sorted, unique, and nonempty")
+        if any(
+            type(tool_id) is not str
+            or not tool_id
+            or "\x00" in tool_id
+            or any(character.isspace() for character in tool_id)
+            for tool_id in self.tool_ids
+        ):
+            raise ValueError("installed tool adapter tool IDs are invalid")
+        if self.manifest_ref.media_type != _NATIVE_TOOL_SOURCE_REF_MEDIA_TYPE:
+            raise ValueError("native tool source manifest media type is not exact")
+        return self
 
     _path = field_validator("manifest_path")(_absolute)
     _sha = field_validator("manifest_sha256")(_digest)
@@ -1199,9 +1246,9 @@ class PrivateDockerDaemonAuthorityV1(_ExactModel):
     def daemon_root(self) -> str:
         return os.path.dirname(self.config_path)
 
-
 class InstalledV1(_ExactModel):
     runner_adapters: tuple[RunnerAdapterDescriptor, ...]
+    tool_adapters: tuple[InstalledToolAdapterV1, ...] = ()
     runtimes: tuple[InstalledRuntime, ...]
     images: tuple[InstalledImage, ...]
     security_policies: tuple[SandboxSecurityPolicy, ...]
@@ -1218,11 +1265,17 @@ class InstalledV1(_ExactModel):
             network_policies=self.network_policies,
             verifiers=self.verifiers,
         )
-        adapter_keys = tuple(
+        adapter_keys = tuple(item.adapter_id for item in self.tool_adapters)
+        if adapter_keys != tuple(sorted(set(adapter_keys))):
+            raise ValueError("installed tool adapter authorities must be sorted and unique")
+        tool_ids = tuple(tool_id for item in self.tool_adapters for tool_id in item.tool_ids)
+        if len(tool_ids) != len(set(tool_ids)):
+            raise ValueError("installed tool adapter tool bindings must be unique")
+        runner_keys = tuple(
             (item.adapter_id, item.runtime_abi) for item in self.runner_adapters
         )
-        if adapter_keys != tuple(sorted(adapter_keys)) or len(adapter_keys) != len(
-            set(adapter_keys)
+        if runner_keys != tuple(sorted(runner_keys)) or len(runner_keys) != len(
+            set(runner_keys)
         ):
             raise ValueError("runner adapter authorities must be sorted and unique")
         hardened = tuple(
@@ -3395,6 +3448,232 @@ def _read_ref(ref: ArtifactFileRefV1, *, canonical_json: bool = True) -> bytes:
 def _projection_digest(value: Any) -> str:
     return "sha256:" + hashlib.sha256(_canonical_bytes(value)).hexdigest()
 
+def _read_native_source_manifest(
+    payload: bytes, *, expected_digest: str
+) -> SealedSourceManifest:
+    raw = _load_json_exact(payload)
+    if type(raw) is not dict or set(raw) != {
+        "schema_version",
+        "media_type",
+        "source_digest",
+        "entries",
+        "total_bytes",
+        "total_files",
+    }:
+        raise ValueError("native tool source manifest keys are not exact")
+    if (
+        raw["schema_version"] != _NATIVE_TOOL_SOURCE_SCHEMA_VERSION
+        or raw["media_type"] != _NATIVE_TOOL_SOURCE_MEDIA_TYPE
+        or type(raw["entries"]) is not list
+        or type(raw["total_bytes"]) is not int
+        or type(raw["total_files"]) is not int
+    ):
+        raise ValueError("native tool source manifest authority is not exact")
+    entries: list[SourceManifestEntry] = []
+    for item in raw["entries"]:
+        if (
+            type(item) is not dict
+            or set(item) != {"path", "kind", "bytes", "mode", "digest"}
+            or type(item["path"]) is not str
+            or type(item["kind"]) is not str
+            or type(item["bytes"]) is not int
+            or type(item["mode"]) is not int
+            or (item["digest"] is not None and type(item["digest"]) is not str)
+        ):
+            raise ValueError("native tool source entry is not exact")
+        entries.append(
+            SourceManifestEntry(
+                logical_path=item["path"],
+                kind=item["kind"],
+                byte_count=item["bytes"],
+                mode=item["mode"],
+                content_digest=item["digest"],
+            )
+        )
+    manifest = SealedSourceManifest(
+        source_digest=raw["source_digest"],
+        schema_identity=raw["schema_version"],
+        media_identity=raw["media_type"],
+        entries=tuple(entries),
+        total_bytes=raw["total_bytes"],
+        total_files=raw["total_files"],
+    )
+    if manifest.manifest_digest != expected_digest:
+        raise ValueError("native tool source manifest digest mismatch")
+    return manifest
+
+
+def _validate_native_tool_closure(
+    descriptor: InstalledToolAdapterV1, manifest: SealedSourceManifest
+) -> tuple[str, str]:
+    root = descriptor.runtime_root
+    flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
+    root_fd = os.open(root.path, flags)
+    expected_root = (
+        root.device,
+        root.inode,
+        root.owner_uid,
+        int(root.mode, 8),
+    )
+    try:
+        root_before = os.fstat(root_fd)
+        if (
+            not stat.S_ISDIR(root_before.st_mode)
+            or (
+                root_before.st_dev,
+                root_before.st_ino,
+                root_before.st_uid,
+                stat.S_IMODE(root_before.st_mode),
+            )
+            != expected_root
+        ):
+            raise ValueError("native tool runtime root authority mismatch")
+        expected = {item.logical_path: item for item in manifest.entries}
+        seen: set[str] = set()
+
+        def walk(directory_fd: int, prefix: str) -> None:
+            names = tuple(sorted(os.listdir(directory_fd)))
+            for name in names:
+                relative = f"{prefix}/{name}" if prefix else name
+                before = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+                item = expected.get(relative)
+                if stat.S_ISDIR(before.st_mode):
+                    kind = "directory"
+                elif stat.S_ISREG(before.st_mode):
+                    kind = "file"
+                else:
+                    kind = "special"
+                if (
+                    item is None
+                    or item.kind != kind
+                    or stat.S_IMODE(before.st_mode) != item.mode
+                    or (kind == "file" and before.st_nlink != 1)
+                ):
+                    raise ValueError("native tool runtime closure mismatch")
+                seen.add(relative)
+                if kind == "directory":
+                    child_fd = os.open(
+                        name,
+                        os.O_RDONLY
+                        | os.O_DIRECTORY
+                        | getattr(os, "O_NOFOLLOW", 0),
+                        dir_fd=directory_fd,
+                    )
+                    try:
+                        walk(child_fd, relative)
+                        after = os.fstat(child_fd)
+                        if (after.st_dev, after.st_ino) != (
+                            before.st_dev,
+                            before.st_ino,
+                        ):
+                            raise ValueError("native tool directory identity changed")
+                    finally:
+                        os.close(child_fd)
+                    continue
+                if before.st_size != item.byte_count:
+                    raise ValueError("native tool runtime file size mismatch")
+                descriptor_fd = os.open(
+                    name,
+                    os.O_RDONLY
+                    | getattr(os, "O_NOFOLLOW", 0)
+                    | getattr(os, "O_CLOEXEC", 0),
+                    dir_fd=directory_fd,
+                )
+                try:
+                    opened = os.fstat(descriptor_fd)
+                    if (
+                        (opened.st_dev, opened.st_ino, opened.st_size)
+                        != (before.st_dev, before.st_ino, before.st_size)
+                    ):
+                        raise ValueError("native tool file identity changed")
+                    digest = hashlib.sha256()
+                    remaining = item.byte_count
+                    while remaining:
+                        chunk = os.read(descriptor_fd, min(1024 * 1024, remaining))
+                        if not chunk:
+                            raise ValueError("native tool file read was short")
+                        digest.update(chunk)
+                        remaining -= len(chunk)
+                    if (
+                        os.read(descriptor_fd, 1)
+                        or "sha256:" + digest.hexdigest() != item.content_digest
+                    ):
+                        raise ValueError("native tool runtime file digest mismatch")
+                    after = os.fstat(descriptor_fd)
+                    if (after.st_dev, after.st_ino, after.st_size) != (
+                        opened.st_dev,
+                        opened.st_ino,
+                        opened.st_size,
+                    ):
+                        raise ValueError("native tool file identity changed")
+                finally:
+                    os.close(descriptor_fd)
+            if tuple(sorted(os.listdir(directory_fd))) != names:
+                raise ValueError("native tool runtime closure changed")
+
+        walk(root_fd, "")
+        if seen != set(expected):
+            raise ValueError("native tool runtime closure is incomplete")
+        root_after = os.fstat(root_fd)
+        if (root_after.st_dev, root_after.st_ino) != (
+            root_before.st_dev,
+            root_before.st_ino,
+        ):
+            raise ValueError("native tool runtime root identity changed")
+        entries = {item.logical_path: item for item in manifest.entries}
+        executable = entries.get(descriptor.executable_relative_path)
+        entrypoint = entries.get(descriptor.entrypoint_relative_path)
+        if (
+            executable is None
+            or executable.kind != "file"
+            or not executable.mode & 0o111
+            or entrypoint is None
+            or entrypoint.kind != "file"
+        ):
+            raise ValueError("native tool executable or entrypoint is not covered")
+        return executable.content_digest or "", entrypoint.content_digest or ""
+    finally:
+        os.close(root_fd)
+
+
+def _load_native_tool_bindings(
+    installed: InstalledV1,
+    receipts: Sequence[c.AdmissionReceipt],
+) -> tuple[InstalledToolAdapter, ...]:
+    reachable: dict[str, set[str]] = {}
+    for receipt in receipts:
+        for tool in receipt.effective_capabilities.tools:
+            reachable.setdefault(tool.tool_id, set()).add(tool.implementation_digest)
+    bindings: list[InstalledToolAdapter] = []
+    for descriptor in installed.tool_adapters:
+        digests = {digest for tool_id in descriptor.tool_ids for digest in reachable.get(tool_id, set())}
+        if len(digests) != 1 or next(iter(digests), None) != descriptor.manifest_ref.sha256:
+            raise ValueError("native tool binding is unadmitted or implementation-mismatched")
+        payload = _read_ref(descriptor.manifest_ref)
+        source_manifest = _read_native_source_manifest(
+            payload, expected_digest=descriptor.manifest_ref.sha256
+        )
+        executable_digest, entrypoint_digest = _validate_native_tool_closure(
+            descriptor, source_manifest
+        )
+        bindings.append(
+            InstalledToolAdapter(
+                adapter_id=descriptor.adapter_id,
+                tool_ids=descriptor.tool_ids,
+                runtime_root_path=descriptor.runtime_root.path,
+                runtime_root_device=descriptor.runtime_root.device,
+                runtime_root_inode=descriptor.runtime_root.inode,
+                runtime_root_owner_uid=descriptor.runtime_root.owner_uid,
+                runtime_root_mode=descriptor.runtime_root.mode,
+                manifest_digest=descriptor.manifest_ref.sha256,
+                executable_relative_path=descriptor.executable_relative_path,
+                entrypoint_relative_path=descriptor.entrypoint_relative_path,
+                executable_digest=executable_digest,
+                entrypoint_digest=entrypoint_digest,
+            )
+        )
+    return tuple(bindings)
+
 
 def _measure_installed_runtime(runtime: InstalledRuntime) -> None:
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
@@ -3426,8 +3705,30 @@ def _validate_installed_registry_graph(
     registries: c.RegistrySnapshotSet,
     receipts: Sequence[c.AdmissionReceipt],
     evidence_bindings: Sequence[EvidenceRoleBindingV2],
+    *,
+    native_tool_adapters: Sequence[InstalledToolAdapter] = (),
 ) -> None:
     capabilities = tuple(item.effective_capabilities for item in receipts)
+    reachable_native_tools = {
+        (tool.tool_id, tool.implementation_digest)
+        for capability in capabilities
+        for tool in capability.tools
+        if tool.tool_id != "terminal"
+    }
+    installed_native_tools = {
+        (tool_id, adapter.manifest_digest)
+        for adapter in native_tool_adapters
+        for tool_id in adapter.tool_ids
+    }
+    registered_tools = {
+        (record.grant.tool_id, record.grant.implementation_digest)
+        for record in registries.tools
+    }
+    if (
+        installed_native_tools != reachable_native_tools
+        or not installed_native_tools <= registered_tools
+    ):
+        raise ValueError("installed native tool authority is not exactly reachable")
     reachable_runners = {
         (
             item.runner.adapter_id,
@@ -3853,12 +4154,6 @@ def _build_runtime_graph(
     OuterBridgeLifecycle | None,
     _ProductionCleanupProbe,
 ]:
-    _validate_installed_registry_graph(
-        manifest.installed,
-        authority.registries,
-        admission_receipts,
-        manifest.evidence_bindings,
-    )
 
     def revalidate_directory(name: str, path: str) -> None:
         pinned_stat = os.fstat(directory_fds[name])
@@ -3874,12 +4169,24 @@ def _build_runtime_graph(
         "security_profile",
     ):
         revalidate_directory(name, getattr(manifest.stores, name).path)
+    native_tool_adapters = _load_native_tool_bindings(
+        manifest.installed,
+        admission_receipts,
+    )
+    _validate_installed_registry_graph(
+        manifest.installed,
+        authority.registries,
+        admission_receipts,
+        manifest.evidence_bindings,
+        native_tool_adapters=native_tool_adapters,
+    )
     installed = InstalledSandboxAuthoritySet(
         runtimes=manifest.installed.runtimes,
         images=manifest.installed.images,
         security_policies=manifest.installed.security_policies,
         network_policies=manifest.installed.network_policies,
         verifiers=manifest.installed.verifiers,
+        tool_adapters=tuple(native_tool_adapters),
     )
     adapters = []
     for descriptor in manifest.installed.runner_adapters:

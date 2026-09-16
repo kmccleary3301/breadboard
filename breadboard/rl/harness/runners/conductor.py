@@ -680,10 +680,16 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
     definitions = tools.get("definitions") if isinstance(tools, Mapping) else None
     aliases_raw = tools.get("aliases") if isinstance(tools, Mapping) else None
     selected_tool_ids = tools.get("selected_tool_ids") if isinstance(tools, Mapping) else None
-    if not isinstance(definitions, tuple) or not isinstance(aliases_raw, tuple) or selected_tool_ids != tool_grant_ids:
+    if (
+        not isinstance(definitions, tuple)
+        or not isinstance(aliases_raw, tuple)
+        or not isinstance(selected_tool_ids, tuple)
+        or any(type(tool_id) is not str for tool_id in selected_tool_ids)
+        or tuple(sorted(selected_tool_ids)) != tool_grant_ids
+    ):
         raise _plan_error(request, "compiled tool authority is invalid", "tool_grant_mismatch")
     by_id = {item.get("tool_id"): item for item in definitions if isinstance(item, Mapping)}
-    if len(by_id) != len(definitions) or tuple(by_id) != tool_grant_ids:
+    if len(by_id) != len(definitions) or tuple(by_id) != selected_tool_ids:
         raise _plan_error(request, "compiled tools do not match grants", "tool_grant_mismatch")
     aliases_by_id: dict[str, list[str]] = {tool_id: [] for tool_id in tool_grant_ids}
     seen_names: set[str] = set(tool_grant_ids)
@@ -700,10 +706,14 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
         aliases_by_id[alias_record[1]].append(alias_record[0])
     projected_tools: list[_ToolProjection] = []
     admitted_provider_ids = {model.provider_id for model in projected_models}
-    for tool_id in tool_grant_ids:
+    for tool_id in selected_tool_ids:
         definition = by_id[tool_id]
         model_name = definition.get("model_name")
-        if type(model_name) is not str or not model_name or model_name in seen_names:
+        if (
+            type(model_name) is not str
+            or not model_name
+            or model_name in seen_names and model_name != tool_id
+        ):
             raise _plan_error(request, "compiled tool model name is invalid", "tool_grant_mismatch")
         seen_names.add(model_name)
         parameters = definition.get("parameters")

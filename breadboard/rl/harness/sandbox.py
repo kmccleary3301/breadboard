@@ -5,7 +5,7 @@ import fcntl
 import hashlib
 import json
 import os
-import shutil
+import re
 import signal
 import stat
 import selectors
@@ -459,6 +459,17 @@ def _exact_absolute_path(value: object) -> bool:
     return all(component not in {"", ".", ".."} for component in value.split("/")[1:])
 
 
+def _exact_relative_path(value: object) -> bool:
+    if type(value) is not str or not value or "\x00" in value or "\\" in value:
+        return False
+    path = Path(value)
+    return (
+        not path.is_absolute()
+        and ".." not in path.parts
+        and "." not in path.parts
+        and str(path) == value
+    )
+
 def _open_installed_regular(path: str) -> int:
     if not _exact_absolute_path(path):
         raise OSError("installed executable path is not lexically exact")
@@ -798,23 +809,154 @@ class InstalledVerifier:
 
 
 @dataclass(frozen=True, slots=True)
+class InstalledToolAdapter:
+    """Measured native-tool authority prepared by the composition loader."""
+
+    adapter_id: str
+    tool_ids: tuple[str, ...]
+    runtime_root_path: str
+    runtime_root_device: int
+    runtime_root_inode: int
+    runtime_root_owner_uid: int
+    runtime_root_mode: str
+    manifest_digest: str
+    executable_relative_path: str
+    entrypoint_relative_path: str
+    executable_digest: str
+    entrypoint_digest: str
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.adapter_id) is not str
+            or not self.adapter_id
+            or "\x00" in self.adapter_id
+            or any(character.isspace() for character in self.adapter_id)
+            or self.tool_ids != tuple(sorted(set(self.tool_ids)))
+            or not self.tool_ids
+            or any(
+                type(tool_id) is not str
+                or not tool_id
+                or "\x00" in tool_id
+                or any(character.isspace() for character in tool_id)
+                for tool_id in self.tool_ids
+            )
+            or not _exact_absolute_path(self.runtime_root_path)
+            or type(self.runtime_root_device) is not int
+            or self.runtime_root_device < 0
+            or type(self.runtime_root_inode) is not int
+            or self.runtime_root_inode <= 0
+            or type(self.runtime_root_owner_uid) is not int
+            or self.runtime_root_owner_uid < 0
+            or type(self.runtime_root_mode) is not str
+            or re.fullmatch(r"0[0-7]{3}", self.runtime_root_mode) is None
+            or not _exact_sha256_digest(self.manifest_digest)
+            or not _exact_relative_path(self.executable_relative_path)
+            or not _exact_relative_path(self.entrypoint_relative_path)
+            or not _exact_sha256_digest(self.executable_digest)
+            or not _exact_sha256_digest(self.entrypoint_digest)
+        ):
+            raise ValueError("native tool adapter authority is not exact")
+        if self.executable_relative_path == self.entrypoint_relative_path:
+            raise ValueError("native tool executable and entrypoint must be distinct")
+
+
+@dataclass(frozen=True, slots=True)
 class InstalledSandboxAuthoritySet:
     runtimes: tuple[InstalledRuntime, ...]
     images: tuple[InstalledImage, ...]
     security_policies: tuple[SandboxSecurityPolicy, ...]
     network_policies: tuple[SandboxNetworkPolicy, ...]
     verifiers: tuple[InstalledVerifier, ...]
+    tool_adapters: tuple[InstalledToolAdapter, ...] = ()
 
     def __post_init__(self) -> None:
-        for values, key in ((self.runtimes, lambda value: value.runtime_id),
-                            (self.images, lambda value: value.image_digest),
-                            (self.security_policies, lambda value: value.policy_digest),
-                            (self.network_policies, lambda value: value.policy_digest),
-                            (self.verifiers, lambda value: value.grant.verifier_id)):
+        for values, key in (
+            (self.runtimes, lambda value: value.runtime_id),
+            (self.images, lambda value: value.image_digest),
+            (self.security_policies, lambda value: value.policy_digest),
+            (self.network_policies, lambda value: value.policy_digest),
+            (self.verifiers, lambda value: value.grant.verifier_id),
+            (self.tool_adapters, lambda value: value.adapter_id),
+        ):
             keys = tuple(key(value) for value in values)
             if keys != tuple(sorted(keys)) or len(keys) != len(set(keys)):
                 raise ValueError("installed authority catalogs must be sorted and unique")
+        tool_ids = tuple(
+            tool_id for adapter in self.tool_adapters for tool_id in adapter.tool_ids
+        )
+        if len(tool_ids) != len(set(tool_ids)):
+            raise ValueError("installed native tool bindings must be unique")
 
+
+def _native_member_path(binding: InstalledToolAdapter, relative_path: str) -> str:
+    if not _exact_relative_path(relative_path):
+        raise SandboxLaunchError(
+            "native tool path is not exact",
+            code="runtime_preflight_failed",
+        )
+    return str(Path(binding.runtime_root_path) / relative_path)
+
+
+def _validate_native_root(binding: InstalledToolAdapter) -> None:
+    try:
+        metadata = os.stat(binding.runtime_root_path, follow_symlinks=False)
+    except OSError as exc:
+        raise SandboxLaunchError(
+            "native tool runtime root is unavailable",
+            code="runtime_preflight_failed",
+        ) from exc
+    expected = (
+        binding.runtime_root_device,
+        binding.runtime_root_inode,
+        binding.runtime_root_owner_uid,
+        int(binding.runtime_root_mode, 8),
+    )
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or (metadata.st_dev, metadata.st_ino, metadata.st_uid, stat.S_IMODE(metadata.st_mode))
+        != expected
+    ):
+        raise SandboxLaunchError(
+            "native tool runtime root identity changed",
+            code="runtime_preflight_failed",
+        )
+
+
+def _measure_native_file(path: str, expected_digest: str) -> None:
+    try:
+        descriptor = _open_installed_regular(path)
+    except OSError as exc:
+        raise SandboxLaunchError(
+            "native tool file is unavailable",
+            code="runtime_preflight_failed",
+        ) from exc
+    try:
+        metadata = os.fstat(descriptor)
+        if metadata.st_nlink != 1:
+            raise SandboxLaunchError(
+                "native tool file link authority is invalid",
+                code="runtime_preflight_failed",
+            )
+        digest = hashlib.sha256()
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+        if "sha256:" + digest.hexdigest() != expected_digest:
+            raise SandboxLaunchError(
+                "native tool file identity changed",
+                code="runtime_preflight_failed",
+            )
+    except SandboxLaunchError:
+        raise
+    except OSError as exc:
+        raise SandboxLaunchError(
+            "native tool file measurement failed",
+            code="runtime_preflight_failed",
+        ) from exc
+    finally:
+        os.close(descriptor)
 
 @dataclass(frozen=True, slots=True)
 class SandboxExecutionPlan:
@@ -833,6 +975,7 @@ class SandboxExecutionPlan:
     materialization_plan: WorkspaceMaterializationPlan
     tool_bindings: tuple[RunnerToolBinding, ...]
     isolation_disposition: IsolationDisposition
+    installed_tool_adapters: tuple[InstalledToolAdapter, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1072,6 +1215,28 @@ def build_sandbox_execution_plan(request: WorkspaceOpenRequest, registries: Regi
         raise SandboxPlanError("verifier authority mismatch", code="verifier_authority_mismatch")
     tools = tuple(RunnerToolBinding(item.tool_id, item.implementation_digest, item.capability_ids)
                   for item in plan.effective_capabilities.tools)
+    native_tool_adapters = tuple(installed_authorities.tool_adapters)
+    tool_digests = {
+        item.tool_id: item.implementation_digest for item in plan.effective_capabilities.tools
+    }
+    for adapter in native_tool_adapters:
+        for tool_id in adapter.tool_ids:
+            digest = tool_digests.get(tool_id)
+            if digest is None:
+                raise SandboxPlanError(
+                    "native tool binding is not admitted",
+                    code="tool_binding_projection_mismatch",
+                )
+            if digest != adapter.manifest_digest:
+                raise SandboxPlanError(
+                    "native tool implementation authority mismatch",
+                    code="tool_binding_projection_mismatch",
+                )
+    if native_tool_adapters and runtime.runtime_class is not RuntimeClass.TRUSTED_PROCESS:
+        raise SandboxPlanError(
+            "native tool bindings are unsupported for this runtime class",
+            code="runtime_unsupported",
+        )
     mounts_by_digest = {mount.source_artifact_digest: mount for mount in plan.sandbox.mounts}
     required: list[tuple[str, str]] = []
     if plan.task.repository_snapshot_digest is not None:
@@ -1082,30 +1247,90 @@ def build_sandbox_execution_plan(request: WorkspaceOpenRequest, registries: Regi
     if any(digest not in mounts_by_digest for digest, _ in required):
         raise SandboxPlanError("task or setup input has no admitted target", code="task_input_unmapped")
     role_by_digest = {digest: role for digest, role in required}
-    entries = tuple(sorted((MaterializationEntry(mount.source_artifact_digest, mount.target_logical_path,
-                                                  mount.access, mount.max_bytes,
-                                                  role_by_digest.get(mount.source_artifact_digest, "mount"))
-                            for mount in plan.sandbox.mounts), key=lambda item: (item.target_logical_path, item.source_digest, item.role)))
+    entries = tuple(
+        sorted(
+            (
+                MaterializationEntry(
+                    mount.source_artifact_digest,
+                    mount.target_logical_path,
+                    mount.access,
+                    mount.max_bytes,
+                    role_by_digest.get(mount.source_artifact_digest, "mount"),
+                )
+                for mount in plan.sandbox.mounts
+            ),
+            key=lambda item: (
+                item.target_logical_path,
+                item.source_digest,
+                item.role,
+            ),
+        )
+    )
     materialization = WorkspaceMaterializationPlan(
-        request.episode_id, plan.subject_digest, plan.final_receipt_digest, request.effective_plan_digest,
-        plan.sandbox.model_dump(mode="json"), plan.task.model_dump(mode="json"),
-        tuple(record.plan_projection() for record in setup_records), entries, tools,
+        request.episode_id,
+        plan.subject_digest,
+        plan.final_receipt_digest,
+        request.effective_plan_digest,
+        plan.sandbox.model_dump(mode="json"),
+        plan.task.model_dump(mode="json"),
+        tuple(record.plan_projection() for record in setup_records),
+        entries,
+        tools,
         plan.effective_capabilities.resources.model_dump(mode="json"),
-        plan.effective_capabilities.limits.model_dump(mode="json"))
-    disposition = IsolationDisposition.TRUSTED_PROCESS if runtime.runtime_class is RuntimeClass.TRUSTED_PROCESS else IsolationDisposition.ISOLATED
-    return SandboxExecutionPlan(request.episode_id, request.effective_plan_digest, plan.subject_digest,
-                                plan.final_receipt_digest, runtime, image, security, network,
-                                tuple(setup_records), verifier, plan.effective_capabilities.resources,
-                                plan.effective_capabilities.limits, materialization, tools, disposition)
+        plan.effective_capabilities.limits.model_dump(mode="json"),
+    )
+    disposition = (
+        IsolationDisposition.TRUSTED_PROCESS
+        if runtime.runtime_class is RuntimeClass.TRUSTED_PROCESS
+        else IsolationDisposition.ISOLATED
+    )
+    return SandboxExecutionPlan(
+        request.episode_id,
+        request.effective_plan_digest,
+        plan.subject_digest,
+        plan.final_receipt_digest,
+        runtime,
+        image,
+        security,
+        network,
+        tuple(setup_records),
+        verifier,
+        plan.effective_capabilities.resources,
+        plan.effective_capabilities.limits,
+        materialization,
+        tools,
+        disposition,
+        native_tool_adapters,
+    )
 
 
 class RuntimeHandle(Protocol):
     runtime_id: str
-    async def run_shell(self, command: str, *, timeout_ms: int, output_limit: int) -> Mapping[str, Any]: ...
+
+    async def run_shell(
+        self,
+        command: str,
+        *,
+        timeout_ms: int,
+        output_limit: int,
+        input_bytes: bytes = b"",
+    ) -> Mapping[str, Any]: ...
+
+    async def run_native_tool(
+        self,
+        binding: InstalledToolAdapter,
+        tool_id: str,
+        request_bytes: bytes,
+        *,
+        timeout_ms: int,
+        output_limit: int,
+    ) -> Mapping[str, Any]: ...
+
     async def terminate(self) -> tuple[CleanupStepReceipt, ...]: ...
 
-    async def run_argv(self, argv: Sequence[str], *, timeout_ms: int, output_limit: int) -> Mapping[str, Any]: ...
-
+    async def run_argv(
+        self, argv: Sequence[str], *, timeout_ms: int, output_limit: int
+    ) -> Mapping[str, Any]: ...
 def _sealed_repository_diff(
     *,
     repository: Path,
@@ -1540,8 +1765,6 @@ class TrustedProcessHandle:
         except (OSError, subprocess.SubprocessError, ValueError, IndexError):
             return False
 
-
-
     async def _drain_group(
         self,
         process_group: int,
@@ -1611,13 +1834,104 @@ class TrustedProcessHandle:
             raise
 
     async def run_shell(
-        self, command: str, *, timeout_ms: int, output_limit: int
+        self,
+        command: str,
+        *,
+        timeout_ms: int,
+        output_limit: int,
+        input_bytes: bytes = b"",
     ) -> Mapping[str, Any]:
         return await self._run_pinned_argv(
             (self._executable.proc_fd_path, "-lc", command),
             timeout_ms=timeout_ms,
             output_limit=output_limit,
+            input_bytes=input_bytes,
         )
+
+    async def run_native_tool(
+        self,
+        binding: InstalledToolAdapter,
+        tool_id: str,
+        request_bytes: bytes,
+        *,
+        timeout_ms: int,
+        output_limit: int,
+    ) -> Mapping[str, Any]:
+        if type(binding) is not InstalledToolAdapter or tool_id not in binding.tool_ids:
+            raise SandboxLaunchError(
+                "native tool binding is not admitted",
+                code="tool_binding_projection_mismatch",
+                lease_id=self.lease_id,
+            )
+        if type(request_bytes) is not bytes or not request_bytes:
+            raise SandboxLaunchError(
+                "native tool request is invalid",
+                code="runtime_preflight_failed",
+                lease_id=self.lease_id,
+            )
+        _validate_native_root(binding)
+        node_path = _native_member_path(binding, binding.executable_relative_path)
+        entrypoint_path = _native_member_path(binding, binding.entrypoint_relative_path)
+        _measure_native_file(entrypoint_path, binding.entrypoint_digest)
+        node = _snapshot_installed_executable(node_path, binding.executable_digest)
+        try:
+            result = await self._run_pinned_argv(
+                (
+                    self._executable.proc_fd_path,
+                    "-lc",
+                    'exec "$@"',
+                    "breadboard-native-tool",
+                    node.proc_fd_path,
+                    entrypoint_path,
+                ),
+                timeout_ms=timeout_ms,
+                output_limit=output_limit,
+                input_bytes=request_bytes,
+                extra_fds=(node.fd,),
+            )
+        finally:
+            node.close()
+        if result.get("returncode") != 0:
+            raise SandboxLaunchError(
+                "native tool process exited unsuccessfully",
+                code="runtime_launch_failed",
+                lease_id=self.lease_id,
+                details={
+                    "returncode": result.get("returncode"),
+                    "stderr": result.get("stderr", ""),
+                },
+            )
+        stdout = result.get("stdout")
+        if type(stdout) is not str:
+            raise SandboxLaunchError(
+                "native tool result is malformed",
+                code="runtime_protocol_error",
+                lease_id=self.lease_id,
+            )
+        try:
+            def collect(items: list[tuple[str, Any]]) -> dict[str, Any]:
+                keys = [key for key, _ in items]
+                if len(keys) != len(set(keys)):
+                    raise ValueError("duplicate JSON member")
+                return dict(items)
+
+            decoder = json.JSONDecoder(
+                object_pairs_hook=collect,
+                parse_constant=lambda _value: (_ for _ in ()).throw(
+                    ValueError("non-finite JSON number")
+                ),
+            )
+            start = len(stdout) - len(stdout.lstrip())
+            payload, end = decoder.raw_decode(stdout, start)
+            if stdout[end:].strip() or type(payload) is not dict:
+                raise ValueError("native tool result must be one object")
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise SandboxLaunchError(
+                "native tool result is malformed",
+                code="runtime_protocol_error",
+                lease_id=self.lease_id,
+            ) from exc
+        return payload
 
     async def run_argv(
         self, argv: Sequence[str], *, timeout_ms: int, output_limit: int
@@ -1662,11 +1976,23 @@ class TrustedProcessHandle:
         )
 
     async def _run_pinned_argv(
-        self, argv: Sequence[str], *, timeout_ms: int, output_limit: int
+        self,
+        argv: Sequence[str],
+        *,
+        timeout_ms: int,
+        output_limit: int,
+        input_bytes: bytes = b"",
+        extra_fds: Sequence[int] = (),
     ) -> Mapping[str, Any]:
-        if not argv or any(type(item) is not str or "\x00" in item for item in argv):
+        if (
+            not argv
+            or any(type(item) is not str or "\x00" in item for item in argv)
+            or type(input_bytes) is not bytes
+            or len(input_bytes) > output_limit
+            or any(type(fd) is not int or fd < 0 for fd in extra_fds)
+        ):
             raise SandboxLaunchError(
-                "fixed argv is invalid",
+                "fixed process invocation is invalid",
                 code="runtime_preflight_failed",
                 lease_id=self.lease_id,
             )
@@ -1703,10 +2029,12 @@ class TrustedProcessHandle:
                         )
                         if executable is not None
                     )
+                    + tuple(extra_fds)
                     + (self._workspace_fd,),
                     preexec_fn=lambda: os.fchdir(self._workspace_fd),
                     env=dict(self.plan.runtime.fixed_environment),
                     start_new_session=True,
+                    stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
@@ -1771,10 +2099,23 @@ class TrustedProcessHandle:
                     total += len(chunk)
                 chunks.append(chunk)
 
+        async def feed_stdin() -> None:
+            if process.stdin is None:
+                raise RuntimeError("trusted process stdin pipe is unavailable")
+            try:
+                if input_bytes:
+                    process.stdin.write(input_bytes)
+                    await process.stdin.drain()
+            except BrokenPipeError:
+                pass
+            finally:
+                process.stdin.close()
+
         primary_error: BaseException | None = None
         stream_tasks = (
             asyncio.create_task(consume(process.stdout)),
             asyncio.create_task(consume(process.stderr)),
+            asyncio.create_task(feed_stdin()),
         )
         wait_task = asyncio.create_task(process.wait())
         stream_result: tuple[bytes, bytes] | None = None
@@ -2145,26 +2486,18 @@ class LeaseBackedRunnerWorkspace:
         await lease._begin_operation()
         try:
             bindings = tuple(
-                binding for binding in self.__tool_bindings
-                if binding.tool_id == tool_id
+                binding for binding in self.__tool_bindings if binding.tool_id == tool_id
             )
-            if tool_id != "terminal" or len(bindings) != 1:
+            native_bindings = tuple(
+                binding
+                for adapter in lease.plan.installed_tool_adapters
+                if tool_id in adapter.tool_ids
+                for binding in (adapter,)
+            )
+            if len(bindings) != 1 and len(native_bindings) != 1:
                 raise WorkspaceStateError(
                     "tool is not exactly admitted",
                     code="tool_binding_projection_mismatch",
-                    lease_id=lease.lease_id,
-                )
-            if set(frozen_arguments) != {"command"}:
-                raise WorkspaceStateError(
-                    "tool arguments are invalid",
-                    code="runtime_preflight_failed",
-                    lease_id=lease.lease_id,
-                )
-            command = frozen_arguments["command"]
-            if type(command) is not str or not command:
-                raise WorkspaceStateError(
-                    "tool arguments are invalid",
-                    code="runtime_preflight_failed",
                     lease_id=lease.lease_id,
                 )
             if (
@@ -2177,8 +2510,50 @@ class LeaseBackedRunnerWorkspace:
                     code="runtime_preflight_failed",
                     lease_id=lease.lease_id,
                 )
-            return await lease._runtime.run_shell(
-                command,
+            if tool_id == "terminal":
+                if len(bindings) != 1 or native_bindings:
+                    raise WorkspaceStateError(
+                        "tool is not exactly admitted",
+                        code="tool_binding_projection_mismatch",
+                        lease_id=lease.lease_id,
+                    )
+                if set(frozen_arguments) != {"command"}:
+                    raise WorkspaceStateError(
+                        "tool arguments are invalid",
+                        code="runtime_preflight_failed",
+                        lease_id=lease.lease_id,
+                    )
+                command = frozen_arguments["command"]
+                if type(command) is not str or not command:
+                    raise WorkspaceStateError(
+                        "tool arguments are invalid",
+                        code="runtime_preflight_failed",
+                        lease_id=lease.lease_id,
+                    )
+                return await lease._runtime.run_shell(
+                    command,
+                    timeout_ms=timeout_ms,
+                    output_limit=lease.plan.limits.observation_bytes,
+                )
+            if len(native_bindings) != 1 or len(bindings) != 1:
+                raise WorkspaceStateError(
+                    "tool is not exactly admitted",
+                    code="tool_binding_projection_mismatch",
+                    lease_id=lease.lease_id,
+                )
+            if lease.plan.runtime.runtime_class is not RuntimeClass.TRUSTED_PROCESS:
+                raise WorkspaceStateError(
+                    "native tools are unsupported for this runtime class",
+                    code="runtime_unsupported",
+                    lease_id=lease.lease_id,
+                )
+            request_bytes = canonical_json_bytes(
+                {"tool_id": tool_id, "arguments": dict(frozen_arguments)}
+            )
+            return await lease._runtime.run_native_tool(
+                native_bindings[0],
+                tool_id,
+                request_bytes,
                 timeout_ms=timeout_ms,
                 output_limit=lease.plan.limits.observation_bytes,
             )
