@@ -45,6 +45,11 @@ from breadboard_engine.compilation.contracts import (
     canonical_sha256,
 )
 from breadboard_engine.compilation import server_compiler
+from breadboard_engine.compilation.provider_response import (
+    CompiledNativeResponseBinding,
+    NativeResponseBindingError,
+    NativeResponsePolicy,
+)
 from breadboard_engine.compilation.server_compiler import (
     compile_config,
     compiler_cache_key,
@@ -1112,6 +1117,43 @@ def test_recursive_provider_authority_and_fallback_smuggling_are_denied() -> Non
     with pytest.raises(ConfigCompileError) as tool_fallback:
         compile_config(reader, closure, _options())
     assert tool_fallback.value.code is CompileErrorCode.FORBIDDEN_AUTHORITY
+
+
+def test_native_response_policy_is_openai_chat_only() -> None:
+    payload = _MINIMAL_CONFIG.replace(
+        b"      adapter: openai",
+        b"""      adapter: openai_responses
+      response_policy:
+        schema_version: bb.provider_native_response_policy.v1
+        consumer_id: breadboard.provider.recording.v1
+        provider_profile_digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+        max_response_bytes: 65536
+        max_stream_fragments: 64""",
+    )
+    reader, closure, _ = _inputs({"config.yaml": payload})
+    with pytest.raises(ConfigCompileError) as caught:
+        compile_config(reader, closure, _options())
+    assert caught.value.code is CompileErrorCode.PROVIDER_INVALID
+
+
+def test_compiled_native_response_binding_cannot_be_fabricated() -> None:
+    policy = NativeResponsePolicy(
+        schema_version="bb.provider_native_response_policy.v1",
+        consumer_id="breadboard.provider.recording.v1",
+        provider_profile_digest="sha256:" + "0" * 64,
+        max_response_bytes=65_536,
+        max_stream_fragments=64,
+    )
+    with pytest.raises(NativeResponseBindingError):
+        CompiledNativeResponseBinding(
+            policy=policy,
+            episode_id="episode",
+            effective_plan_digest="sha256:" + "1" * 64,
+            capability_observation_digest="sha256:" + "2" * 64,
+            authority_model_id="authority",
+            compiled_manifest_digest="sha256:" + "3" * 64,
+            compiled_model_digest="sha256:" + "4" * 64,
+        )
 
 
 def test_cache_key_binds_options_and_cached_content_is_revalidated() -> None:

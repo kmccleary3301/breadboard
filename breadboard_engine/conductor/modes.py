@@ -164,7 +164,7 @@ def _bind_episode_provider_profile(
     if profile_client is None:
         profile_client = runtime.create_client_from_profile(profile)
         episode._episode_provider_client = profile_client
-    return profile_client, True, profile
+    return profile_client, profile.request_policy.mode == "streaming", profile
 
 
 def _provider_wire_evidence(

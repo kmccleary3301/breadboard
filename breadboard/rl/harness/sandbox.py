@@ -933,6 +933,52 @@ def _measure_native_file(path: str, expected_digest: str) -> None:
     finally:
         os.close(descriptor)
 
+
+def _decode_native_tool_result(
+    result: Mapping[str, Any], *, lease_id: str | None
+) -> Mapping[str, Any]:
+    if result.get("returncode") != 0:
+        raise SandboxLaunchError(
+            "native tool process exited unsuccessfully",
+            code="runtime_launch_failed",
+            lease_id=lease_id,
+            details={
+                "returncode": result.get("returncode"),
+                "stderr": result.get("stderr", ""),
+            },
+        )
+    stdout = result.get("stdout")
+    if type(stdout) is not str:
+        raise SandboxLaunchError(
+            "native tool result is malformed",
+            code="runtime_protocol_error",
+            lease_id=lease_id,
+        )
+    try:
+        def collect(items: list[tuple[str, Any]]) -> dict[str, Any]:
+            keys = [key for key, _ in items]
+            if len(keys) != len(set(keys)):
+                raise ValueError("duplicate JSON member")
+            return dict(items)
+
+        decoder = json.JSONDecoder(
+            object_pairs_hook=collect,
+            parse_constant=lambda _value: (_ for _ in ()).throw(
+                ValueError("non-finite JSON number")
+            ),
+        )
+        start = len(stdout) - len(stdout.lstrip())
+        payload, end = decoder.raw_decode(stdout, start)
+        if stdout[end:].strip() or type(payload) is not dict:
+            raise ValueError("native tool result must be one object")
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise SandboxLaunchError(
+            "native tool result is malformed",
+            code="runtime_protocol_error",
+            lease_id=lease_id,
+        ) from exc
+    return payload
+
 @dataclass(frozen=True, slots=True)
 class SandboxExecutionPlan:
     episode_id: str
@@ -1209,7 +1255,9 @@ def build_sandbox_execution_plan(request: WorkspaceOpenRequest, registries: Regi
             adapter if selected_ids == adapter.tool_ids else replace(adapter, tool_ids=selected_ids)
         )
     native_tool_adapters = tuple(selected_adapters)
-    if native_tool_adapters and runtime.runtime_class is not RuntimeClass.TRUSTED_PROCESS:
+    if native_tool_adapters and runtime.runtime_class not in {
+        RuntimeClass.TRUSTED_PROCESS, RuntimeClass.HARDENED_DOCKER
+    }:
         raise SandboxPlanError(
             "native tool bindings are unsupported for this runtime class",
             code="runtime_unsupported",
@@ -1868,47 +1916,7 @@ class TrustedProcessHandle:
             )
         finally:
             node.close()
-        if result.get("returncode") != 0:
-            raise SandboxLaunchError(
-                "native tool process exited unsuccessfully",
-                code="runtime_launch_failed",
-                lease_id=self.lease_id,
-                details={
-                    "returncode": result.get("returncode"),
-                    "stderr": result.get("stderr", ""),
-                },
-            )
-        stdout = result.get("stdout")
-        if type(stdout) is not str:
-            raise SandboxLaunchError(
-                "native tool result is malformed",
-                code="runtime_protocol_error",
-                lease_id=self.lease_id,
-            )
-        try:
-            def collect(items: list[tuple[str, Any]]) -> dict[str, Any]:
-                keys = [key for key, _ in items]
-                if len(keys) != len(set(keys)):
-                    raise ValueError("duplicate JSON member")
-                return dict(items)
-
-            decoder = json.JSONDecoder(
-                object_pairs_hook=collect,
-                parse_constant=lambda _value: (_ for _ in ()).throw(
-                    ValueError("non-finite JSON number")
-                ),
-            )
-            start = len(stdout) - len(stdout.lstrip())
-            payload, end = decoder.raw_decode(stdout, start)
-            if stdout[end:].strip() or type(payload) is not dict:
-                raise ValueError("native tool result must be one object")
-        except (ValueError, json.JSONDecodeError) as exc:
-            raise SandboxLaunchError(
-                "native tool result is malformed",
-                code="runtime_protocol_error",
-                lease_id=self.lease_id,
-            ) from exc
-        return payload
+        return _decode_native_tool_result(result, lease_id=self.lease_id)
 
     async def run_argv(
         self, argv: Sequence[str], *, timeout_ms: int, output_limit: int
@@ -2518,7 +2526,9 @@ class LeaseBackedRunnerWorkspace:
                     code="tool_binding_projection_mismatch",
                     lease_id=lease.lease_id,
                 )
-            if lease.plan.runtime.runtime_class is not RuntimeClass.TRUSTED_PROCESS:
+            if lease.plan.runtime.runtime_class not in {
+                RuntimeClass.TRUSTED_PROCESS, RuntimeClass.HARDENED_DOCKER
+            }:
                 raise WorkspaceStateError(
                     "native tools are unsupported for this runtime class",
                     code="runtime_unsupported",
@@ -3901,6 +3911,7 @@ class SandboxRuntimeManager:
                 raise VerifierExecutionError("verifier runtime authority mismatch", code="verifier_authority_mismatch")
             verifier_plan = replace(primary.plan, runtime=runtime, image=image, security_policy=security,
                                     network_policy=network,
+                                    installed_tool_adapters=(),
                                     isolation_disposition=(IsolationDisposition.TRUSTED_PROCESS
                                         if runtime.runtime_class is RuntimeClass.TRUSTED_PROCESS else IsolationDisposition.ISOLATED))
             workspace_id = "verifier-workspace-" + self._nonce()

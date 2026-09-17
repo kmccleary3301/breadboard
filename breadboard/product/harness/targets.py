@@ -125,7 +125,10 @@ def _encode_e4_target_input_frame(
         if any(type(value) is not str or not value for value in dynamic_fields.values()):
             raise ValueError("v1 target inputs require non-empty text")
         return canonical_json_bytes(frame)
-    if request_schema_version != "bb.rl.headless-run-request.v2":
+    if request_schema_version not in {
+        "bb.rl.headless-run-request.v2",
+        "bb.rl.headless-run-request.v3",
+    }:
         raise ValueError("unsupported E4 request input revision")
     # Constructor-visible object order and 1 versus 1.0 survive this encoding.
     # The resulting bytes, rather than a JCS-normalized object, are the identity.
@@ -157,13 +160,21 @@ def bind_e4_target_inputs(
 ) -> bytes:
     """Validate bootstrap values against their verified declaration and encode them."""
     target_version = package.descriptor.get("schema_version")
-    expected_request = {
-        "bb.e4.target.v1": "bb.rl.headless-run-request.v1",
-        "bb.e4.target.v2": "bb.rl.headless-run-request.v2",
-    }.get(target_version)
-    if expected_request is None or request_schema_version != expected_request:
+    supported_requests = {
+        "bb.e4.target.v1": {
+            "bb.rl.headless-run-request.v1",
+            "bb.rl.headless-run-request.v3",
+        },
+        "bb.e4.target.v2": {
+            "bb.rl.headless-run-request.v2",
+            "bb.rl.headless-run-request.v3",
+        },
+    }.get(target_version, set())
+    if request_schema_version not in supported_requests:
         raise ValueError("headless request and target versions do not match")
     if target_version == "bb.e4.target.v1":
+        if any(type(value) is not str or not value for value in dynamic_fields.values()):
+            raise ValueError("legacy target inputs require non-empty text")
         return serialize_e4_target_inputs(request_schema_version, dynamic_fields)
 
     execution = package.descriptor.get("execution")

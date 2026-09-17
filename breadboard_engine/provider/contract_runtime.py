@@ -146,6 +146,8 @@ class ProviderRuntimeContext:
     exchange_recorder: Optional[ProviderExchangeRecorder] = None
     cancel_requested: Optional[Callable[[], bool]] = None
     provider_profile: Optional[OpenAICompletionsProviderProfile] = None
+    effective_plan_digest: Optional[str] = None
+    capability_observation_digest: Optional[str] = None
 
     def record_provider_event(
         self, kind: str, payload: Optional[Mapping[str, Any]] = None

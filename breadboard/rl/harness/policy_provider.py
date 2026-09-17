@@ -8,13 +8,14 @@ from concurrent.futures import Future
 import json
 import re
 import threading
-from typing import Any
+from typing import Any, overload
 
 from breadboard_engine.compilation.contracts import (
     CompiledConfigManifest,
     canonical_sha256,
     require_sha256,
 )
+from breadboard_engine.compilation.provider_response import CompiledNativeResponseBinding
 
 from breadboard_engine.provider.contracts import (
     OpenAICompletionsProviderProfile,
@@ -22,10 +23,11 @@ from breadboard_engine.provider.contracts import (
     ProviderMessage,
     ProviderRuntimeContext,
 )
+from breadboard_engine.provider.native_response import NativeProviderResponse
 from breadboard_engine.provider.routing import ProviderDescriptor
 from breadboard_engine.provider.runtimes.openai.chat import OpenAIChatRuntime
 
-from .contracts import PolicyBindingRef, PolicyCapabilityObservation
+from .contracts import EffectiveExecutionPlan, PolicyBindingRef, PolicyCapabilityObservation
 from .runners.base import (
     FrozenJsonObject,
     PolicyRuntimeClientPort,
@@ -213,6 +215,34 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
     return binding
 
 
+def _validate_request_features(
+    profile: OpenAICompletionsProviderProfile,
+    observation: PolicyCapabilityObservation,
+    *,
+    tools: bool,
+    episode_id: str,
+    effective_plan_digest: str,
+) -> None:
+    missing = set(profile.required_request_features(tools=tools)).difference(
+        observation.capabilities.request_features
+    )
+    unsupported_tools = tools and (
+        not observation.capabilities.tool_calling
+        or not profile.capabilities.supports_tools
+        or (
+            profile.request_policy.strict_tools is not None
+            and not profile.capabilities.supports_strict_tools
+        )
+    )
+    if missing or unsupported_tools:
+        raise RunnerPolicyBindingError(
+            "admitted provider does not support the selected request features",
+            code="provider_request_features_unsupported",
+            episode_id=episode_id,
+            effective_plan_digest=effective_plan_digest,
+        )
+
+
 def _validate_owned_profile_observation(
     *,
     profile: OpenAICompletionsProviderProfile,
@@ -242,6 +272,13 @@ def _validate_owned_profile_observation(
             episode_id=episode_id,
             effective_plan_digest=effective_plan_digest,
         )
+    _validate_request_features(
+        profile,
+        observation,
+        tools=False,
+        episode_id=episode_id,
+        effective_plan_digest=effective_plan_digest,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -351,6 +388,7 @@ class EpisodeOpenAICompletionsPolicyClient:
         profile: OpenAICompletionsProviderProfile,
         timeout_seconds: float = 600.0,
         target_projection: E4TargetPolicyProjection | None = None,
+        max_requests: int | None = None,
         on_close: Callable[[EpisodeOpenAICompletionsPolicyClient], Awaitable[None]]
         | None = None,
     ) -> None:
@@ -363,6 +401,10 @@ class EpisodeOpenAICompletionsPolicyClient:
             or not 0 < timeout_seconds <= 3_600
         ):
             raise ValueError("timeout_seconds must be within (0, 3600]")
+        if max_requests is not None and (
+            type(max_requests) is not int or not 0 < max_requests <= 2**53 - 1
+        ):
+            raise ValueError("max_requests must be a positive safe integer")
         if (
             target_projection is not None
             and type(target_projection) is not E4TargetPolicyProjection
@@ -387,9 +429,12 @@ class EpisodeOpenAICompletionsPolicyClient:
         self._invoke_lock = asyncio.Lock()
         self._close_lock = asyncio.Lock()
         self._closed = False
+        self._closing = False
         self._worker_retired = False
         self._transport_closed = False
         self._on_close = on_close
+        self._max_requests = max_requests
+        self._request_attempts = 0
 
     @property
     def profile_identity(self) -> Mapping[str, Any]:
@@ -406,9 +451,75 @@ class EpisodeOpenAICompletionsPolicyClient:
     def observe(self) -> PolicyCapabilityObservation:
         return self._observation
 
+    @property
+    def request_attempts(self) -> int:
+        with self._state_lock:
+            return self._request_attempts
+
     async def invoke(
         self, request: PolicyRuntimeInvokeRequest
     ) -> PolicyRuntimeInvokeResult:
+        return await self._invoke(request, native_binding=None)
+
+    async def invoke_native(
+        self,
+        request: PolicyRuntimeInvokeRequest,
+        *,
+        binding: CompiledNativeResponseBinding,
+        effective_plan: EffectiveExecutionPlan,
+    ) -> NativeProviderResponse:
+        if (
+            type(binding) is not CompiledNativeResponseBinding
+            or type(effective_plan) is not EffectiveExecutionPlan
+        ):
+            raise TypeError("native recording requires an exact binding and execution plan")
+        providers = effective_plan.effective_semantics.get("providers")
+        models = providers.get("models") if isinstance(providers, Mapping) else None
+        selected = None
+        if isinstance(models, tuple):
+            selected = next(
+                (
+                    model for model in models
+                    if isinstance(model, Mapping)
+                    and model.get("model_id") == binding.authority_model_id
+                ),
+                None,
+            )
+        if (
+            effective_plan.canonical_digest() != self._effective_plan_digest
+            or effective_plan.base_compiled.manifest_digest != binding.compiled_manifest_digest
+            or effective_plan.policy_capability_observation_digest
+            != self._observation.canonical_digest()
+            or selected is None
+            or canonical_sha256(thaw_json(selected)) != binding.compiled_model_digest
+        ):
+            raise RunnerPolicyBindingError(
+                "native response policy is not bound to the owned execution plan",
+                code="native_response_binding_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        return await self._invoke(request, native_binding=binding)
+
+    @overload
+    async def _invoke(
+        self, request: PolicyRuntimeInvokeRequest, *, native_binding: None
+    ) -> PolicyRuntimeInvokeResult: ...
+
+    @overload
+    async def _invoke(
+        self,
+        request: PolicyRuntimeInvokeRequest,
+        *,
+        native_binding: CompiledNativeResponseBinding,
+    ) -> NativeProviderResponse: ...
+
+    async def _invoke(
+        self,
+        request: PolicyRuntimeInvokeRequest,
+        *,
+        native_binding: CompiledNativeResponseBinding | None,
+    ) -> PolicyRuntimeInvokeResult | NativeProviderResponse:
         if type(request) is not PolicyRuntimeInvokeRequest:
             raise TypeError("request must be an exact PolicyRuntimeInvokeRequest")
         if (
@@ -422,9 +533,16 @@ class EpisodeOpenAICompletionsPolicyClient:
                 effective_plan_digest=request.effective_plan_digest,
             )
         async with self._invoke_lock:
+            if not await self._retire_worker():
+                raise RunnerDependencyError(
+                    "previous provider worker has not retired",
+                    code="provider_cleanup_failed",
+                    episode_id=request.episode_id,
+                    effective_plan_digest=request.effective_plan_digest,
+                )
             with self._state_lock:
                 profile = self._profile
-                if self._closed or profile is None:
+                if self._closing or self._closed or profile is None:
                     raise RunnerDependencyError(
                         "episode provider client is closed",
                         code="provider_client_closed",
@@ -448,31 +566,79 @@ class EpisodeOpenAICompletionsPolicyClient:
                 )
                 error.__cause__ = exc
                 raise error
+            _validate_request_features(
+                profile,
+                self._observation,
+                tools=bool(tools),
+                episode_id=request.episode_id,
+                effective_plan_digest=request.effective_plan_digest,
+            )
+            if native_binding is not None:
+                if (
+                    type(native_binding) is not CompiledNativeResponseBinding
+                    or self._target_projection is not None
+                    or native_binding.authority_model_id != self._observation.model_id
+                ):
+                    raise RunnerPolicyBindingError(
+                        "native recording requires its compiled standalone binding",
+                        code="native_response_binding_invalid",
+                        episode_id=request.episode_id,
+                        effective_plan_digest=request.effective_plan_digest,
+                    )
+                native_binding.validate_invocation(
+                    profile,
+                    episode_id=request.episode_id,
+                    effective_plan_digest=request.effective_plan_digest,
+                    capability_observation_digest=self._observation.canonical_digest(),
+                )
 
+            stream = profile.request_policy.mode == "streaming"
             context = ProviderRuntimeContext(
                 None,
                 {},
-                stream=True,
+                stream=stream,
                 session_id=request.episode_id,
                 input_id=request.request_digest,
                 turn_id=str(request.turn),
                 cancel_requested=self._cancelled.is_set,
                 provider_profile=profile,
+                effective_plan_digest=request.effective_plan_digest,
+                capability_observation_digest=self._observation.canonical_digest(),
             )
 
             def run() -> Any:
+                context.raise_if_cancelled()
+                with self._state_lock:
+                    self._request_attempts += 1
+                if native_binding is not None:
+                    return self._runtime.invoke_native(
+                        client=self._transport,
+                        model=profile.model,
+                        messages=messages,
+                        tools=tools,
+                        stream=stream,
+                        context=context,
+                        binding=native_binding,
+                    )
                 return self._runtime.invoke(
                     client=self._transport,
                     model=profile.model,
                     messages=messages,
                     tools=tools,
-                    stream=True,
+                    stream=stream,
                     context=context,
                 )
 
             with self._state_lock:
                 if self._closed or self._cancelled.is_set():
                     raise asyncio.CancelledError
+                if self._max_requests is not None and self._request_attempts >= self._max_requests:
+                    raise RunnerDependencyError(
+                        "episode provider request budget exhausted",
+                        code="provider_request_budget_exhausted",
+                        episode_id=request.episode_id,
+                        effective_plan_digest=request.effective_plan_digest,
+                    )
                 active: Future[Any] = Future()
 
                 def worker() -> None:
@@ -501,6 +667,8 @@ class EpisodeOpenAICompletionsPolicyClient:
             except asyncio.CancelledError:
                 self._cancelled.set()
                 raise
+            except RunnerDependencyError:
+                raise
             except Exception:
                 if self._cancelled.is_set():
                     raise asyncio.CancelledError
@@ -515,6 +683,15 @@ class EpisodeOpenAICompletionsPolicyClient:
                     with self._state_lock:
                         if self._active is active:
                             self._active = None
+            if native_binding is not None:
+                if not isinstance(result, NativeProviderResponse):
+                    raise RunnerProtocolError(
+                        "native provider returned an invalid response",
+                        code="native_response_invalid",
+                        episode_id=request.episode_id,
+                        effective_plan_digest=request.effective_plan_digest,
+                    )
+                return result
             try:
                 payload = _provider_result_to_responses(result)
             except (ProviderContractError, TypeError, ValueError) as exc:
@@ -543,8 +720,29 @@ class EpisodeOpenAICompletionsPolicyClient:
                     return
             self._transport_closed = True
 
+    async def _retire_worker(self) -> bool:
+        with self._state_lock:
+            worker = self._worker
+        if worker is None:
+            return True
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 5.0
+        while worker.is_alive():
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                return False
+            await asyncio.sleep(min(0.01, remaining))
+        worker.join(timeout=0)
+        with self._state_lock:
+            if self._worker is worker:
+                self._worker = None
+                self._active = None
+        return True
+
     async def close(self) -> None:
         async with self._close_lock:
+            with self._state_lock:
+                self._closing = True
             self._cancelled.set()
             transport_failure = False
             if not self._transport_closed:
@@ -559,25 +757,8 @@ class EpisodeOpenAICompletionsPolicyClient:
                 else:
                     self._transport_closed = True
             if not self._worker_retired:
-                with self._state_lock:
-                    active = self._active
-                if active is not None:
-                    try:
-                        await asyncio.wait_for(
-                            asyncio.shield(asyncio.wrap_future(active)),
-                            timeout=5.0,
-                        )
-                    except (Exception, asyncio.CancelledError):
-                        pass
-                    if active.done():
-                        with self._state_lock:
-                            if self._active is active:
-                                self._active = None
-                with self._state_lock:
-                    if self._active is None:
-                        self._profile = None
-                        self._target_projection = None
-                        self._worker = None
+                if await self._retire_worker():
+                    with self._state_lock:
                         self._worker_retired = True
             if transport_failure or not self._worker_retired:
                 raise RunnerDependencyError(
@@ -586,7 +767,10 @@ class EpisodeOpenAICompletionsPolicyClient:
                     episode_id=self._episode_id,
                     effective_plan_digest=self._effective_plan_digest,
                 )
-            self._closed = True
+            with self._state_lock:
+                self._profile = None
+                self._target_projection = None
+                self._closed = True
             if self._on_close is not None:
                 await self._on_close(self)
                 self._on_close = None
@@ -605,6 +789,7 @@ class EpisodeOpenAICompletionsPolicyResolver:
         expected_observation_digests: Mapping[str, str],
         target_projections: Mapping[str, E4TargetPolicyProjection] | None = None,
         timeout_seconds: Mapping[str, float] | None = None,
+        request_limits: Mapping[str, int] | None = None,
     ) -> None:
         if not profiles:
             raise ValueError("at least one episode provider profile is required")
@@ -670,11 +855,20 @@ class EpisodeOpenAICompletionsPolicyResolver:
             if type(value) not in (int, float) or not 0 < value <= 3_600:
                 raise ValueError("provider timeout must be within (0, 3600]")
             copied_timeouts[episode_id] = float(value)
+        copied_request_limits: dict[str, int] = {}
+        if request_limits is not None:
+            if set(request_limits) != set(copied) or any(
+                type(value) is not int or not 0 < value <= 2**53 - 1
+                for value in request_limits.values()
+            ):
+                raise ValueError("request limits must positively bound each provider profile")
+            copied_request_limits = dict(request_limits)
         self._authority_resolver = authority_resolver
         self._profiles = copied
         self._target_projections = copied_projections
         self._credential_handle_ids = copied_credential_handles
         self._timeout_seconds = copied_timeouts
+        self._request_limits = copied_request_limits
         self._authority_model_ids = copied_model_ids
         self._authority_wire_models = copied_wire_models
         self._expected_observation_digests = copied_observation_digests
@@ -689,6 +883,7 @@ class EpisodeOpenAICompletionsPolicyResolver:
             raise RuntimeError("cannot abort provider resolver after runtime admission")
         self._profiles.clear()
         self._timeout_seconds.clear()
+        self._request_limits.clear()
         self._target_projections.clear()
         self._credential_handle_ids.clear()
         self._expected_observation_digests.clear()
@@ -775,10 +970,12 @@ class EpisodeOpenAICompletionsPolicyResolver:
                 timeout_seconds=timeout_seconds,
                 target_projection=target_projection,
                 on_close=self._deregister,
+                max_requests=self._request_limits.get(episode_id),
             )
             self._profiles.pop(episode_id)
             self._target_projections.pop(episode_id, None)
             self._timeout_seconds.pop(episode_id, None)
+            self._request_limits.pop(episode_id, None)
             self._credential_handle_ids.pop(episode_id)
             self._authority_model_ids.pop(episode_id)
             self._authority_wire_models.pop(episode_id)
@@ -800,6 +997,7 @@ class EpisodeOpenAICompletionsPolicyResolver:
                 self._profiles.clear()
                 self._target_projections.clear()
                 self._timeout_seconds.clear()
+                self._request_limits.clear()
                 self._credential_handle_ids.clear()
                 self._authority_model_ids.clear()
                 self._authority_wire_models.clear()
