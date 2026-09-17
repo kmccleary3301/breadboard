@@ -26,6 +26,7 @@ from breadboard.rl.harness.materialization import (
 from breadboard.rl.harness.runners.base import RunnerToolBinding
 from breadboard.rl.harness.sandbox import (
     InstalledSandboxAuthoritySet,
+    InstalledToolAdapter,
     SandboxAttestationError,
     SandboxFault,
     SandboxLaunchError,
@@ -249,6 +250,41 @@ def test_exact_plan_projection_derives_runtime_materialization_and_runner_author
     }
     assert plan.tool_bindings == plan_tool_bindings(fixture.plan)
     assert plan.isolation_disposition is IsolationDisposition.TRUSTED_PROCESS
+
+
+def test_selected_plan_does_not_receive_unrelated_native_tool_authority(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture()
+    selected = fixture.plan.effective_capabilities.tools[0]
+    root = tmp_path.stat()
+    adapter = InstalledToolAdapter(
+        adapter_id="selected-native-adapter",
+        tool_ids=tuple(sorted((selected.tool_id, "zz-other-receipt-tool"))),
+        runtime_root_path=str(tmp_path),
+        runtime_root_device=root.st_dev,
+        runtime_root_inode=root.st_ino,
+        runtime_root_owner_uid=root.st_uid,
+        runtime_root_mode=f"{stat.S_IMODE(root.st_mode):04o}",
+        manifest_digest=selected.implementation_digest,
+        executable_relative_path="bin/runtime",
+        entrypoint_relative_path="entrypoint.mjs",
+        executable_digest=digest("runtime"),
+        entrypoint_digest=digest("entrypoint"),
+    )
+    unrelated = replace(
+        adapter,
+        adapter_id="unrelated-native-adapter",
+        tool_ids=("zz-unrelated",),
+        manifest_digest=digest("unrelated-manifest"),
+    )
+    authorities = replace(fixture.authorities, tool_adapters=(adapter, unrelated))
+
+    plan = build_sandbox_execution_plan(fixture.request, fixture.registries, authorities)
+
+    assert len(plan.installed_tool_adapters) == 1
+    assert plan.installed_tool_adapters[0].tool_ids == (selected.tool_id,)
+    assert plan.installed_tool_adapters[0].manifest_digest == selected.implementation_digest
 
 
 @pytest.mark.parametrize("runtime_id", ["none", "light", "dev", "unknown"])

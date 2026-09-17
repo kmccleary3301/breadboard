@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import signal
 import stat
 import selectors
@@ -1215,23 +1216,25 @@ def build_sandbox_execution_plan(request: WorkspaceOpenRequest, registries: Regi
         raise SandboxPlanError("verifier authority mismatch", code="verifier_authority_mismatch")
     tools = tuple(RunnerToolBinding(item.tool_id, item.implementation_digest, item.capability_ids)
                   for item in plan.effective_capabilities.tools)
-    native_tool_adapters = tuple(installed_authorities.tool_adapters)
     tool_digests = {
         item.tool_id: item.implementation_digest for item in plan.effective_capabilities.tools
     }
-    for adapter in native_tool_adapters:
-        for tool_id in adapter.tool_ids:
-            digest = tool_digests.get(tool_id)
-            if digest is None:
-                raise SandboxPlanError(
-                    "native tool binding is not admitted",
-                    code="tool_binding_projection_mismatch",
-                )
+    selected_adapters: list[InstalledToolAdapter] = []
+    for adapter in installed_authorities.tool_adapters:
+        selected_ids = tuple(tool_id for tool_id in adapter.tool_ids if tool_id in tool_digests)
+        if not selected_ids:
+            continue
+        for tool_id in selected_ids:
+            digest = tool_digests[tool_id]
             if digest != adapter.manifest_digest:
                 raise SandboxPlanError(
                     "native tool implementation authority mismatch",
                     code="tool_binding_projection_mismatch",
                 )
+        selected_adapters.append(
+            adapter if selected_ids == adapter.tool_ids else replace(adapter, tool_ids=selected_ids)
+        )
+    native_tool_adapters = tuple(selected_adapters)
     if native_tool_adapters and runtime.runtime_class is not RuntimeClass.TRUSTED_PROCESS:
         raise SandboxPlanError(
             "native tool bindings are unsupported for this runtime class",

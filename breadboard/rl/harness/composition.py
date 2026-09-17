@@ -3713,6 +3713,7 @@ def _validate_installed_registry_graph(
     reachable_native_tools = {
         (tool.tool_id, tool.implementation_digest)
         for capability in capabilities
+        if capability.runner.adapter_id != TERMINAL_ADAPTER_ID
         for tool in capability.tools
         if tool.tool_id != "terminal"
     }
