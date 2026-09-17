@@ -2220,12 +2220,32 @@ class DockerRuntimeHandle:
             raise
 
     async def run_shell(
-        self, command: str, *, timeout_ms: int, output_limit: int
+        self,
+        command: str,
+        *,
+        timeout_ms: int,
+        output_limit: int,
+        input_bytes: bytes = b"",
     ) -> Mapping[str, Any]:
         return await self._run(
             ("sh", "-lc", command),
             timeout_ms=timeout_ms,
             output_limit=output_limit,
+            input_bytes=input_bytes,
+        )
+
+    async def run_native_tool(
+        self,
+        binding: Any,
+        tool_id: str,
+        request_bytes: bytes,
+        *,
+        timeout_ms: int,
+        output_limit: int,
+    ) -> Mapping[str, Any]:
+        raise DockerAdapterError(
+            "runtime_unsupported",
+            "native tool bindings are not admitted to Docker runtimes",
         )
 
     async def run_argv(

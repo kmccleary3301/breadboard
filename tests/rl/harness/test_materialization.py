@@ -4,6 +4,8 @@ from builtins import BaseExceptionGroup
 import json
 import os
 import stat
+import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import FrozenInstanceError, replace
 from datetime import timedelta
@@ -555,6 +557,45 @@ def test_full_ancestor_collision_rejects_before_cache_or_workspace_effects(
     assert list((cache_root / "objects").iterdir()) == []
     assert list(workspace_root.iterdir()) == []
     assert reader.loads == []
+
+
+def test_materialization_preserves_declared_modes_under_restrictive_umask(
+    tmp_path: Path,
+) -> None:
+    script = """
+import os
+import stat
+import sys
+from pathlib import Path
+from tests.rl.harness.test_materialization import _entry, _store
+from tests.rl.harness.wp7_fixtures import (
+    FrozenClock, MemorySourceReader, digest, make_effective_plan, make_materialization_plan,
+)
+
+os.umask(0o077)
+source = digest("mode-preservation")
+reader = MemorySourceReader(
+    {source: {"nested/value.txt": b"preserved"}},
+    modes={(source, "nested"): 0o777, (source, "nested/value.txt"): 0o666},
+)
+store, _, _ = _store(Path(sys.argv[1]), reader, FrozenClock())
+plan = make_materialization_plan(make_effective_plan(), entries=(_entry(source),))
+for _ in range(2):
+    workspace = store.materialize(plan)
+    root = workspace.workspace_path / "task"
+    assert stat.S_IMODE((root / "nested").stat().st_mode) == 0o777
+    assert stat.S_IMODE((root / "nested/value.txt").stat().st_mode) == 0o666
+    assert (root / "nested/value.txt").read_bytes() == b"preserved"
+    workspace.close()
+store.close()
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script, str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
 def test_materialization_verifies_source_closure_and_creates_private_episode_workspaces(

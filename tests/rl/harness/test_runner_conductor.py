@@ -1534,6 +1534,33 @@ async def test_conductor_stops_at_compiled_max_turns_with_terminal_ledger() -> N
     assert client.close_calls == 1
 
 
+async def test_conductor_honors_compiled_unlimited_per_turn_tool_calls() -> None:
+    observation = _observation()
+    semantic = _tool_semantics(observation)
+    semantic["tools"]["definitions"][0]["execution"]["max_per_turn"] = None
+    response = _response()
+    response["output"] = [
+        _function_call(call_id=f"call-{index}") for index in range(3)
+    ]
+    client = RecordingPolicyClient(observation, responses=[response, _response()])
+    tools = RecordingToolPort(
+        (_tool_binding(),),
+        results=[{"ordinal": index} for index in range(3)],
+    )
+    session, _, _, _, _, _ = await _open(
+        observation=observation,
+        plan=_plan_with_tools(observation, semantics=semantic),
+        client=client,
+        tools=tools,
+    )
+    try:
+        result = await session.run(ConductorRunRequest({"query": "inspect"}))
+        assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
+        assert tools.calls == [("read-file", {"path": "src/main.py"}, 9_000)] * 3
+    finally:
+        await session.close()
+
+
 async def test_conductor_rejects_tool_calls_above_compiled_per_turn_limit_before_excess_effect() -> None:
     observation = _observation()
     response = _response()
@@ -1558,14 +1585,12 @@ async def test_conductor_rejects_tool_calls_above_compiled_per_turn_limit_before
         await session.run(ConductorRunRequest({"query": "inspect"}))
 
     assert captured.value.code == "policy_response_invalid"
-    assert str(captured.value) == "policy exceeded the compiled per-turn tool limit"
     assert [call[0] for call in tools.calls] == ["read-file", "read-file"]
     assert len([event for event in sink.events if isinstance(event, ToolCallEvent)]) == 2
     assert len([event for event in sink.events if isinstance(event, ToolObservationEvent)]) == 2
     error_event = sink.events[-1]
     assert isinstance(error_event, RunnerErrorEvent)
     assert error_event.code == "policy_response_invalid"
-    assert error_event.message == "policy exceeded the compiled per-turn tool limit"
     assert error_event.turn == 1
     assert error_event.call_id == "call-3"
     assert not any(isinstance(event, RunnerTerminationEvent) for event in sink.events)

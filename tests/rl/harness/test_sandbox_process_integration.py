@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
+import errno
 import fcntl
 import json
 import os
@@ -61,19 +62,10 @@ RUNTIME_ABI = TERMINAL_RUNTIME_ABI
 RUNNER_DIGEST = TERMINAL_IMPLEMENTATION_DIGEST
 
 def _sealed_execution_supported() -> bool:
-    required_fcntl = (
-        "F_ADD_SEALS",
-        "F_GET_SEALS",
-        "F_SEAL_WRITE",
-        "F_SEAL_SHRINK",
-        "F_SEAL_GROW",
-        "F_SEAL_SEAL",
-    )
     return (
         sys.platform == "linux"
         and hasattr(os, "memfd_create")
         and hasattr(os, "MFD_ALLOW_SEALING")
-        and all(hasattr(fcntl, name) for name in required_fcntl)
         and os.path.isdir("/proc/self/fd")
     )
 
@@ -82,6 +74,36 @@ requires_sealed_execution = pytest.mark.skipif(
     not _sealed_execution_supported(),
     reason="requires Linux sealed-memfd descriptor execution",
 )
+
+
+@requires_sealed_execution
+def test_sealed_executable_works_without_python_exported_seal_constants(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in (
+        "F_ADD_SEALS", "F_GET_SEALS", "F_SEAL_WRITE",
+        "F_SEAL_SHRINK", "F_SEAL_GROW", "F_SEAL_SEAL",
+    ):
+        monkeypatch.delattr(fcntl, name, raising=False)
+    executable = tmp_path / "shell"
+    shutil.copyfile(os.path.realpath("/bin/sh"), executable)
+    executable.chmod(0o500)
+
+    pinned = _snapshot_installed_executable(str(executable), None)
+    try:
+        with pytest.raises(OSError) as captured:
+            os.write(pinned.fd, b"tampered")
+        assert captured.value.errno == errno.EPERM
+        result = subprocess.run(
+            [f"/proc/self/fd/{pinned.fd}", "-c", "printf sealed-execution"],
+            pass_fds=(pinned.fd,),
+            capture_output=True,
+            timeout=5,
+        )
+        assert result.returncode == 0
+        assert result.stdout == b"sealed-execution"
+    finally:
+        pinned.close()
 
 
 def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(

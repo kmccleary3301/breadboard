@@ -1771,7 +1771,7 @@ class FilesystemMaterializationStore:
         for item in manifest.entries:
             relative = destination + "/" + _logical_path(item.logical_path)
             if item.kind == "directory":
-                self._cache.mkdir(relative, mode=item.mode, parents=True)
+                self._cache.mkdir(relative, mode=0o700, parents=True)
                 continue
             parent = str(PurePosixPath(relative).parent)
             self._cache.mkdir(parent, parents=True)
@@ -1788,6 +1788,18 @@ class FilesystemMaterializationStore:
             )
             try:
                 _write_all(descriptor, data, failure="atomic_publish_failed")
+                os.fchmod(descriptor, item.mode)
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        for item in sorted(
+            (item for item in manifest.entries if item.kind == "directory"),
+            key=lambda item: item.logical_path.count("/"),
+            reverse=True,
+        ):
+            descriptor = self._cache.open_dir(destination + "/" + item.logical_path)
+            try:
+                os.fchmod(descriptor, item.mode)
                 os.fsync(descriptor)
             finally:
                 os.close(descriptor)
@@ -3132,6 +3144,7 @@ class FilesystemMaterializationStore:
                                 dir_fd=destination_fd,
                                 follow_symlinks=False,
                             )
+                    os.fchmod(destination_fd, 0o500)
                     os.fsync(destination_fd)
                 finally:
                     os.close(destination_fd)

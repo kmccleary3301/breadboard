@@ -92,7 +92,10 @@ def test_headless_projection_exports_the_exact_workspace_patch() -> None:
         primary_disposition=SimpleNamespace(value="succeeded"),
         termination="completed",
         turn_count=1,
-        response={"answer": "done"},
+        response=freeze_json_object(
+            {"output": [{"type": "message", "content": [{"type": "output_text", "text": "done"}]}]},
+            field_name="runner response",
+        ),
         completed_envelope_ref=None,
         closed_envelope_ref=None,
         result_ref=None,
@@ -129,6 +132,9 @@ def test_headless_projection_exports_the_exact_workspace_patch() -> None:
     assert result["workspace_evidence"]["patch_digest"] == (
         "sha256:" + hashlib.sha256(patch).hexdigest()
     )
+    assert json.loads(json.dumps(result))["terminal"]["response"] == {
+        "output": [{"type": "message", "content": [{"type": "output_text", "text": "done"}]}]
+    }
 
 
 @pytest.mark.parametrize(
