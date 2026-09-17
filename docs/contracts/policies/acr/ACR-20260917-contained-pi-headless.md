@@ -4,7 +4,7 @@
 - `title`: Bind pinned Pi tools to contained installed headless execution
 - `author`: Main, BreadBoard E4 campaign
 - `date`: 2026-09-17
-- `status`: review
+- `status`: implemented
 
 ## 1) Problem Statement
 
@@ -19,7 +19,7 @@ The required outcome is a contained producer that invokes the pinned tools, pres
 - Materialization, process execution, Docker snapshot acquisition and verifier snapshot handoff.
 - Nullable compiled per-turn tool limits and recursive thawing at JSON publication.
 - Contract surfaces: composition configuration, native tool bindings, process results, artifact modes and cleanup evidence.
-- Kernel danger-zone change: yes.
+- Kernel danger-zone change? yes
 - Outside scope: private wrappers, trainers, reward logic and task providers; provider request-policy changes; new E4 profiles; a complete generic SIF qualification; public package release.
 
 ## 3) Coupling and Generalization Impact
@@ -34,7 +34,9 @@ The accepted pi@0.57.1 and oh-my-pi@16.2.13 target assets remain unchanged. Runt
 
 ## 4) Change Classification
 
-Classification: `additive`, with corrective changes to the shared lifecycle. Existing target identities and canonical episode envelopes are retained. The new containment selection and measured native bindings are explicit composition inputs. No compatibility alias or private fallback is added.
+- Classification: `additive`
+
+The change also corrects shared lifecycle behavior. Existing target identities and canonical episode envelopes are retained. The new containment selection and measured native bindings are explicit composition inputs. No compatibility alias or private fallback is added.
 
 ## 5) Evidence and Validation Plan
 
