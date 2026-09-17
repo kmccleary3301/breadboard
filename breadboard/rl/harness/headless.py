@@ -971,7 +971,7 @@ def _project_headless_run(
         "status": run.primary_disposition.value,
         "reason": run.termination,
         "turn_count": run.turn_count,
-        "response": None if run.response is None else dict(run.response),
+        "response": None if run.response is None else thaw_json(run.response),
     }
     result["evidence"] = {
         "completed_envelope_ref": _optional_ref(run.completed_envelope_ref),
