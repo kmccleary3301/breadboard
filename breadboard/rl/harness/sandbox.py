@@ -532,22 +532,20 @@ class _PinnedExecutable:
             self.closed = True
 
 
+# Linux UAPI include/uapi/linux/fcntl.h. Some Python builds omit these
+# names when compiled against older headers; the kernel ABI is unchanged.
+_LINUX_F_ADD_SEALS = 1033
+_LINUX_F_GET_SEALS = 1034
+_LINUX_EXECUTABLE_SEALS = 0x0001 | 0x0002 | 0x0004 | 0x0008
+
+
 def _snapshot_installed_executable(
     path: str, expected_digest: str | None
 ) -> _PinnedExecutable:
-    required_fcntl = (
-        "F_ADD_SEALS",
-        "F_GET_SEALS",
-        "F_SEAL_WRITE",
-        "F_SEAL_SHRINK",
-        "F_SEAL_GROW",
-        "F_SEAL_SEAL",
-    )
     if (
         sys.platform != "linux"
         or not hasattr(os, "memfd_create")
         or not hasattr(os, "MFD_ALLOW_SEALING")
-        or any(not hasattr(fcntl, name) for name in required_fcntl)
         or not os.path.isdir("/proc/self/fd")
     ):
         raise SandboxLaunchError(
@@ -613,14 +611,9 @@ def _snapshot_installed_executable(
             )
         os.fchmod(snapshot_fd, 0o500)
         os.lseek(snapshot_fd, 0, os.SEEK_SET)
-        seals = (
-            fcntl.F_SEAL_WRITE
-            | fcntl.F_SEAL_SHRINK
-            | fcntl.F_SEAL_GROW
-            | fcntl.F_SEAL_SEAL
-        )
-        fcntl.fcntl(snapshot_fd, fcntl.F_ADD_SEALS, seals)
-        if fcntl.fcntl(snapshot_fd, fcntl.F_GET_SEALS) & seals != seals:
+        seals = _LINUX_EXECUTABLE_SEALS
+        fcntl.fcntl(snapshot_fd, _LINUX_F_ADD_SEALS, seals)
+        if fcntl.fcntl(snapshot_fd, _LINUX_F_GET_SEALS) & seals != seals:
             raise OSError("executable snapshot sealing was incomplete")
         snapshot = os.fstat(snapshot_fd)
         proc_fd_path = f"/proc/self/fd/{snapshot_fd}"
