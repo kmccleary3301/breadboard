@@ -2117,7 +2117,7 @@ class TrustedProcessHandle:
         stream_result: tuple[bytes, bytes] | None = None
         try:
             async with asyncio.timeout_at(deadline):
-                stdout, stderr, _ = await asyncio.gather(*stream_tasks, wait_task)
+                stdout, stderr, _, _ = await asyncio.gather(*stream_tasks, wait_task)
             stream_result = (stdout, stderr)
         except TimeoutError as exc:
             primary_error = SandboxLaunchError(
