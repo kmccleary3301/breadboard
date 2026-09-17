@@ -493,7 +493,7 @@ class _ToolProjection:
     aliases: tuple[str, ...]
     schema: FrozenJsonObject
     timeout_ms: int
-    max_per_turn: int
+    max_per_turn: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -765,7 +765,9 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
         )
         execution = definition.get("execution")
         max_per_turn = execution.get("max_per_turn") if isinstance(execution, Mapping) else None
-        if type(max_per_turn) is not int or max_per_turn < 1:
+        if not isinstance(execution, Mapping) or (
+            max_per_turn is not None and (type(max_per_turn) is not int or max_per_turn < 1)
+        ):
             raise _plan_error(request, "compiled tool limit is invalid", "compiled_ir_mismatch")
         projected_tools.append(
             _ToolProjection(
@@ -1437,7 +1439,7 @@ class _ConductorSession:
                     )
                 tool = tool_by_name[name]
                 counts[tool.tool_id] = counts.get(tool.tool_id, 0) + 1
-                if counts[tool.tool_id] > tool.max_per_turn:
+                if tool.max_per_turn is not None and counts[tool.tool_id] > tool.max_per_turn:
                     await self._raise_error(
                         RunnerProtocolError(
                             "policy exceeded the compiled per-turn tool limit",
