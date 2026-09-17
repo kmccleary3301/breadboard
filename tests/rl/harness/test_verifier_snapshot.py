@@ -383,9 +383,13 @@ async def test_verifier_uses_distinct_runtime_workspace_and_read_only_snapshot(
     assert verifier.plan.security_policy.policy_digest == primary.plan.verifier.security_policy_digest
     assert verifier.plan.network_policy.policy_digest == primary.plan.verifier.grant.network_policy_digest
     assert (verifier.workspace / "snapshot" / "work" / "candidate.txt").read_bytes() == b"candidate"
-    assert stat.S_IMODE(
-        (verifier.workspace / "snapshot" / "work" / "candidate.txt").stat().st_mode
-    ) == 0o400
+    snapshot_root = verifier.workspace / "snapshot"
+    entries = _snapshot_entries(snapshot_root)
+    assert independent_digest(
+        {"schema_version": "bb.rl.verifier-snapshot.v1", "entries": entries}
+    ) == snapshot.root_digest
+    assert stat.S_IMODE(snapshot_root.stat().st_mode) & 0o222 == 0
+    assert all(entry["mode"] & 0o222 == 0 for entry in entries)
     assert stat.S_IMODE((verifier.workspace / "result").stat().st_mode) == 0o700
     assert len(harness.backend.launches) == 2
     assert primary.measurement.reward_eligible is False

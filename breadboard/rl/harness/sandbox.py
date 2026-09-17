@@ -228,25 +228,6 @@ def _wp7_digest(value: Any) -> str:
     return "sha256:" + hashlib.sha256(canonical_json_bytes(value)).hexdigest()
 
 
-def _seal_tree_at(parent_fd: int, name: str) -> None:
-    directory_fd = os.open(
-        name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
-        dir_fd=parent_fd,
-    )
-    try:
-        for child in os.listdir(directory_fd):
-            metadata = os.stat(child, dir_fd=directory_fd, follow_symlinks=False)
-            if stat.S_ISDIR(metadata.st_mode):
-                _seal_tree_at(directory_fd, child)
-            elif stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1:
-                os.chmod(child, 0o400, dir_fd=directory_fd, follow_symlinks=False)
-            else:
-                raise OSError("snapshot contains unsupported inode")
-        os.fsync(directory_fd)
-    finally:
-        os.close(directory_fd)
-    os.chmod(name, 0o500, dir_fd=parent_fd, follow_symlinks=False)
-
 
 def _workspace_parts(logical_path: str) -> tuple[str, ...]:
     relative = Path(logical_path)
@@ -3996,7 +3977,6 @@ class SandboxRuntimeManager:
                     raise VerifierSnapshotError(
                         "sealed snapshot authentication failed", code="snapshot_tampered"
                     ) from exc
-                _seal_tree_at(workspace_fd, "snapshot")
                 os.mkdir("result", mode=0o700, dir_fd=workspace_fd)
                 backend = self.process_backend if runtime.runtime_class is RuntimeClass.TRUSTED_PROCESS else self.docker_backend
                 if backend is None:

@@ -3144,6 +3144,7 @@ class FilesystemMaterializationStore:
                                 dir_fd=destination_fd,
                                 follow_symlinks=False,
                             )
+                    os.fchmod(destination_fd, 0o500)
                     os.fsync(destination_fd)
                 finally:
                     os.close(destination_fd)

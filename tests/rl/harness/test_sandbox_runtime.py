@@ -574,6 +574,7 @@ async def test_conductor_tool_port_dispatches_only_exact_terminal_authority() ->
         plan=SimpleNamespace(
             effective_plan_digest=digest("conductor-plan"),
             tool_bindings=(binding,),
+            installed_tool_adapters=(),
             limits=SimpleNamespace(action_timeout_ms=2_000, observation_bytes=4_096),
         ),
         _begin_operation=begin,
