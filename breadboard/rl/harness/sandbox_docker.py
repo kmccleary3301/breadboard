@@ -1221,7 +1221,8 @@ def _platform_version(payload: Mapping[str, Any]) -> str:
         raise DockerAdapterError("runtime_unsupported", "Docker server platform is unavailable")
     name = platform.get("Name")
     version = server.get("Version")
-    if type(name) is not str or not name or type(version) is not str or not version:
+    # Docker's product label may be empty; preserve it in the exact authority key.
+    if type(name) is not str or type(version) is not str or not version:
         raise DockerAdapterError("runtime_unsupported", "Docker server platform version is malformed")
     return f"{name}/{version}"
 

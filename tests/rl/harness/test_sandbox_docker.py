@@ -2393,6 +2393,37 @@ async def test_installed_catalog_oci_identity_reaches_docker_preflight_unchanged
     assert executor.results == []
 
 
+@pytest.mark.parametrize("authorized", [True, False])
+async def test_empty_docker_product_label_requires_exact_version_authority(
+    tmp_path: Path, authorized: bool
+) -> None:
+    plan, _, _, _ = _docker_plan(tmp_path)
+    plan = replace(
+        plan,
+        runtime=replace(
+            plan.runtime,
+            supported_platform_versions=("/29.1.3" if authorized else "/other",),
+        ),
+    )
+    results = _preflight_success(plan)
+    results[0] = _result(
+        stdout=json.dumps(
+            {"Server": {"Platform": {"Name": ""}, "Version": "29.1.3"}}
+        ).encode("utf-8")
+    )
+    executor = ScriptedDockerExecutor(results)
+    adapter = _mechanics_adapter(plan, executor, environment=())
+
+    if authorized:
+        measured = await adapter.preflight(plan)
+        assert measured.platform_version == "/29.1.3"
+    else:
+        with pytest.raises(DockerAdapterError) as captured:
+            await adapter.preflight(plan)
+        assert captured.value.code == "runtime_unsupported"
+        assert [call[0][1] for call in executor.calls] == ["version"]
+
+
 @pytest.mark.parametrize(
     "supported_platform_versions",
     [(), ("bb-test/other",)],
