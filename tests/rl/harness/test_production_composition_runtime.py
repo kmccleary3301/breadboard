@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import hashlib
 import json
 import os
 import signal
 from builtins import BaseExceptionGroup
+from datetime import timedelta
+from pathlib import Path
 
 import pytest
 import uvicorn
@@ -17,12 +20,14 @@ from breadboard.rl.harness.composition import (
     _DirectoryIdentityGuard,
     _measure_installed_runtime,
     _ProductionCleanupProbe,
-    _PinnedDirectoryStorageBackend,
+    _PinnedStorageBackend,
     _non_repeating_close_callback,
 )
-from breadboard.rl.harness.contracts import RuntimeClass
+from breadboard.rl.harness.contracts import MountAccess, RuntimeClass
+from breadboard.rl.harness.materialization import DirectoryStorageBackend, FilesystemMaterializationStore, MaterializationEntry
 from breadboard.rl.harness.sandbox import InstalledRuntime
 from breadboard.artifacts.cas import FilesystemCAS
+from tests.rl.harness.wp7_fixtures import FrozenClock, MemorySourceReader, digest, make_effective_plan, make_materialization_plan, make_store_roots
 
 
 def _digest(payload: bytes) -> str:
@@ -298,7 +303,7 @@ def test_workspace_swap_is_rejected_before_path_mutation(tmp_path) -> None:
     workspace.mkdir(mode=0o700)
     descriptor = os.open(workspace, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
     guard = _DirectoryIdentityGuard(descriptor, str(workspace), "workspace")
-    backend = _PinnedDirectoryStorageBackend(guard)
+    backend = _PinnedStorageBackend(guard, DirectoryStorageBackend())
     original = tmp_path / "workspace-original"
     workspace.rename(original)
     workspace.mkdir(mode=0o700)
@@ -308,6 +313,50 @@ def test_workspace_swap_is_rejected_before_path_mutation(tmp_path) -> None:
         assert not (workspace / "must-not-exist").exists()
         assert not (original / "must-not-exist").exists()
     finally:
+        os.close(descriptor)
+
+
+def test_materialization_does_not_bypass_pinned_storage_rejection(tmp_path: Path) -> None:
+    class FullStorage(DirectoryStorageBackend):
+        def allocate(self, *, workspace_id: str, root: Path, max_bytes: int) -> Path:
+            raise OSError(errno.ENOSPC, "workspace capacity exhausted")
+
+    cache_root, workspace_root = make_store_roots(tmp_path)
+    descriptor = os.open(workspace_root, os.O_RDONLY | os.O_DIRECTORY)
+    source_digest = digest("pinned-storage-input")
+
+    reader = MemorySourceReader({source_digest: {"input.txt": b"bounded"}})
+    store = FilesystemMaterializationStore(
+        cache_root=cache_root,
+        workspace_root=workspace_root,
+        source_reader=reader,
+        clock=FrozenClock(),
+        lease_ttl=timedelta(minutes=5),
+        storage_backend=_PinnedStorageBackend(
+            _DirectoryIdentityGuard(descriptor, str(workspace_root), "workspace"),
+            FullStorage(),
+        ),
+    )
+    plan = make_materialization_plan(
+        make_effective_plan(),
+        entries=(MaterializationEntry(
+            source_digest=source_digest,
+            target_logical_path=".",
+            access=MountAccess.READ_WRITE,
+            max_bytes=4096,
+            role="repository",
+        ),),
+    )
+    workspace = None
+    try:
+        with pytest.raises(OSError) as caught:
+            workspace = store.materialize(plan)
+        assert caught.value.errno == errno.ENOSPC
+        assert tuple(workspace_root.iterdir()) == ()
+    finally:
+        if workspace is not None:
+            workspace.close()
+        store.close()
         os.close(descriptor)
 
 
