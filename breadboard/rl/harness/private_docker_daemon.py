@@ -769,6 +769,7 @@ class PrivateDockerDaemonOwner:
             authority.socket_path,
             authority.pid_file,
             authority.containerd_socket_path,
+            authority.containerd_ttrpc_socket_path,
         ):
             if os.path.lexists(absent):
                 raise PrivateDockerDaemonError(

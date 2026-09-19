@@ -214,6 +214,45 @@ def test_owner_pins_exact_files_and_seals_deterministic_config(tmp_path: Path) -
     _remove_socket_parent(authority)
 
 
+@pytest.mark.parametrize("collision", ["socket", "dangling_link"])
+def test_containerd_ttrpc_collision_is_rejected_without_claiming_path(
+    tmp_path: Path, collision: str
+) -> None:
+    authority = _authority(tmp_path)
+    path = Path(authority.containerd_ttrpc_socket_path)
+    listener = None
+    owner = None
+    if collision == "socket":
+        listener = socket.socket(socket.AF_UNIX)
+        listener.bind(str(path))
+    else:
+        path.symlink_to(tmp_path / "absent-target")
+    before = path.lstat()
+    try:
+        with pytest.raises(PrivateDockerDaemonError) as rejected:
+            owner = PrivateDockerDaemonOwner(
+                authority,
+                prerequisite_check=lambda: None,
+                daemon_environment={"PATH": str(tmp_path)},
+            )
+        assert rejected.value.code == "runtime_unsupported"
+        after = path.lstat()
+        assert (
+            after.st_dev, after.st_ino, after.st_mode, after.st_ctime_ns
+        ) == (
+            before.st_dev, before.st_ino, before.st_mode, before.st_ctime_ns
+        )
+        if collision == "dangling_link":
+            assert path.readlink() == tmp_path / "absent-target"
+    finally:
+        if listener is not None:
+            listener.close()
+        path.unlink()
+        if owner is not None:
+            owner.close()
+        _remove_socket_parent(authority)
+
+
 @pytest.mark.parametrize("mutation", ["content", "replacement"])
 def test_changed_containerd_config_is_rejected_before_process_launch(
     tmp_path: Path, mutation: str
