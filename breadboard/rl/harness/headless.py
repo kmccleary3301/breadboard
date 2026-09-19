@@ -5,8 +5,8 @@ from builtins import BaseExceptionGroup
 from dataclasses import asdict
 import ipaddress
 import hashlib
-from importlib.metadata import PackageNotFoundError, version
 import json
+from importlib.metadata import PackageNotFoundError, version
 import os
 import re
 from pathlib import Path
@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, m
 from breadboard.product.harness.targets import bind_e4_target_inputs, serialize_e4_target_inputs
 from breadboard_engine.e4_targets import E4TargetPackage, load_e4_target
 from breadboard_engine.provider.contracts import OpenAICompletionsProviderProfile
-
+from breadboard_engine.provider.profiles import OpenAICompletionsRequestPolicy, validate_wire_model
 from . import contracts as c
 from .composition import (
     ManagedPolicyRuntimeClientResolver,
@@ -60,15 +60,22 @@ class HeadlessWorkspaceInput(BaseModel):
 class HeadlessProviderInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    model: str
+    model: str = Field(min_length=1, max_length=256)
     authority_model_id: str = Field(min_length=1, max_length=256)
     credential_handle: str = Field(min_length=1, max_length=256)
-    context_window: int
-    max_output_tokens: int
+    context_window: int = Field(gt=0, le=2**53 - 1, strict=True)
+    max_output_tokens: int = Field(gt=0, le=2**53 - 1, strict=True)
     timeout_seconds: float = Field(gt=0, le=3_600)
     sampling: Mapping[str, Any] = Field(default_factory=dict)
     capabilities: Mapping[str, Any] = Field(default_factory=dict)
     compatibility: Mapping[str, Any] = Field(default_factory=dict)
+    request_policy: OpenAICompletionsRequestPolicy | None = None
+
+    @field_validator("model", "authority_model_id")
+    @classmethod
+    def _identifiers_have_no_controls(cls, value: str) -> str:
+        return validate_wire_model(value)
+
 
     def load_profile(
         self,
@@ -86,10 +93,15 @@ class HeadlessProviderInput(BaseModel):
             caller_headers=route.caller_headers,
             capabilities=self.capabilities,
             compatibility=self.compatibility,
+            request_policy=(
+                OpenAICompletionsRequestPolicy()
+                if self.request_policy is None
+                else self.request_policy
+            ),
         )
 
     def identity_dict(self) -> dict[str, Any]:
-        return {
+        identity = {
             "model": self.model,
             "authority_model_id": self.authority_model_id,
             "credential_handle": self.credential_handle,
@@ -104,6 +116,9 @@ class HeadlessProviderInput(BaseModel):
             ),
             "timeout_seconds": self.timeout_seconds,
         }
+        if self.request_policy is not None:
+            identity["request_policy"] = self.request_policy.as_dict()
+        return identity
 
 
 class HeadlessProviderRouteAuthority(BaseModel):
@@ -112,7 +127,7 @@ class HeadlessProviderRouteAuthority(BaseModel):
     schema_version: Literal["bb.rl.headless-provider-route-authority.v1"] = (
         "bb.rl.headless-provider-route-authority.v1"
     )
-    model: str = Field(min_length=1, max_length=512)
+    model: str = Field(min_length=1, max_length=256)
     authority_model_id: str = Field(min_length=1, max_length=256)
     base_url: str
     caller_headers: Mapping[str, str] = Field(default_factory=dict)
@@ -143,6 +158,11 @@ class HeadlessProviderRouteAuthority(BaseModel):
         ):
             raise ValueError("provider base_url must use an explicit loopback port")
         return value
+
+    @field_validator("model", "authority_model_id")
+    @classmethod
+    def _identifiers_have_no_controls(cls, value: str) -> str:
+        return validate_wire_model(value)
 
     @model_validator(mode="after")
     def _caller_headers_are_exact(self) -> HeadlessProviderRouteAuthority:
@@ -184,7 +204,9 @@ class HeadlessRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal[
-        "bb.rl.headless-run-request.v1", "bb.rl.headless-run-request.v2"
+        "bb.rl.headless-run-request.v1",
+        "bb.rl.headless-run-request.v2",
+        "bb.rl.headless-run-request.v3",
     ] = "bb.rl.headless-run-request.v1"
     target_id: str
     target_overlay_id: str
@@ -229,6 +251,13 @@ class HeadlessRunRequest(BaseModel):
             raise ValueError("target and overlay identities are required")
         if any(type(name) is not str or not name for name in self.target_dynamic_fields):
             raise ValueError("target_dynamic_fields requires non-empty field names")
+        if self.schema_version == "bb.rl.headless-run-request.v3":
+            if self.provider.request_policy is None:
+                raise ValueError("headless request v3 requires an explicit request policy")
+        elif self.provider.request_policy is not None:
+            raise ValueError(
+                "request policy is only supported by headless request v3"
+            )
         inputs = serialize_e4_target_inputs(self.schema_version, self.target_dynamic_fields)
         if len(inputs) > _MAX_REQUEST_BYTES:
             raise ValueError("target input frame exceeds the request byte limit")
@@ -253,6 +282,7 @@ class HeadlessRunRequest(BaseModel):
         provider_profile: OpenAICompletionsProviderProfile,
         provider_route: HeadlessProviderRouteAuthority,
     ) -> dict[str, Any]:
+        provider_profile_identity = provider_profile.identity_dict()
         identity = {
             "schema_version": "bb.rl.headless-run-identity.v1",
             "composition_manifest_ref": composition_manifest_ref,
@@ -269,20 +299,29 @@ class HeadlessRunRequest(BaseModel):
             "expected_limits": self.expected_limits.model_dump(mode="json"),
             "tool_allowlist": list(self.tool_allowlist),
             "expected_sandbox": self.expected_sandbox.model_dump(mode="json"),
-            "provider_profile": provider_profile.identity_dict(),
+            "provider_profile": provider_profile_identity,
             "provider": self.provider.identity_dict(),
             "provider_route": provider_route.identity_dict(),
             "provider_timeout_seconds": self.provider.timeout_seconds,
         }
-        if self.schema_version == "bb.rl.headless-run-request.v2":
-            identity.update({
-                "schema_version": "bb.rl.headless-run-identity.v2",
-                "request_schema_version": self.schema_version,
-                "target_input_digest": target.input_digest,
-                "target_index_digest": target.index_digest,
-                "target_descriptor_bytes_digest": target.descriptor_bytes_digest,
-                "target_renderer_id": target.renderer_id,
-            })
+        if self.schema_version in {
+            "bb.rl.headless-run-request.v2",
+            "bb.rl.headless-run-request.v3",
+        }:
+            identity.update(
+                {
+                    "schema_version": (
+                        "bb.rl.headless-run-identity.v2"
+                        if self.schema_version.endswith(".v2")
+                        else "bb.rl.headless-run-identity.v3"
+                    ),
+                    "request_schema_version": self.schema_version,
+                    "target_input_digest": target.input_digest,
+                    "target_index_digest": target.index_digest,
+                    "target_descriptor_bytes_digest": target.descriptor_bytes_digest,
+                    "target_renderer_id": target.renderer_id,
+                }
+            )
         return identity
 
 
@@ -447,6 +486,7 @@ async def run_headless_request(
                     episode_id: route.policy_observation_digest
                 },
                 timeout_seconds={episode_id: request.provider.timeout_seconds},
+                request_limits={episode_id: request.expected_limits.max_turns},
             )
 
         composition = load_production_composition(
@@ -826,11 +866,16 @@ def _preflight_failure_result(
         else:
             encoded = serialize_e4_target_inputs(request.schema_version, {name: value})
         dynamic_field_digests[name] = _digest_bytes(encoded)
+    profile_identity = None if profile is None else profile.identity_dict()
     config_identity = {
         "schema_version": (
             "bb.rl.headless-preflight-identity.v1"
             if request.schema_version == "bb.rl.headless-run-request.v1"
-            else "bb.rl.headless-preflight-identity.v2"
+            else (
+                "bb.rl.headless-preflight-identity.v2"
+                if request.schema_version == "bb.rl.headless-run-request.v2"
+                else "bb.rl.headless-preflight-identity.v3"
+            )
         ),
         "composition_ref_digest": (
             _digest_bytes(composition_ref_data)
@@ -861,10 +906,11 @@ def _preflight_failure_result(
         "expected_resources": request.expected_resources.model_dump(mode="json"),
         "expected_limits": request.expected_limits.model_dump(mode="json"),
         "expected_sandbox": request.expected_sandbox.model_dump(mode="json"),
-        "provider": request.provider.identity_dict(),
-        "provider_profile": (None if profile is None else profile.identity_dict()),
+        "provider_profile": profile_identity,
         "provider_route": None if route is None else route.identity_dict(),
     }
+    if request.schema_version == "bb.rl.headless-run-request.v3":
+        config_identity["request_schema_version"] = request.schema_version
     try:
         distribution_version = version("breadboard-harness-cli")
     except PackageNotFoundError:

@@ -9,17 +9,16 @@ from __future__ import annotations
 
 import hashlib
 import re
+import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 from ..security import redaction
 from .contract_wire import ProviderContractError, canonical_json
 
-_EXACT_MODEL = "Qwen/Qwen3.5-35B-A3B"
-_EXACT_CONTEXT_WINDOW = 131_072
-_EXACT_MAX_OUTPUT_TOKENS = 32_000
+_MAX_SAFE_INTEGER = 2**53 - 1
 _HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 _RESERVED_CALLER_HEADERS = frozenset(
     {
@@ -38,14 +37,6 @@ _RESERVED_CALLER_HEADERS = frozenset(
         "transfer-encoding",
         "upgrade",
     }
-)
-_REQUIRED_CAPABILITIES = (
-    "supports_tools",
-    "supports_strict_tools",
-    "supports_stream_options",
-    "supports_thinking_control",
-    "supports_n",
-    "supports_max_tokens",
 )
 
 
@@ -69,9 +60,91 @@ class _FrozenHeaders(Mapping[str, str]):
 def _text(value: Any, field_name: str, *, max_length: int) -> str:
     if not isinstance(value, str) or not value or len(value) > max_length:
         raise ProviderContractError(f"{field_name} must be non-empty text")
-    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in value):
+    if any(unicodedata.category(char) == "Cc" for char in value):
         raise ProviderContractError(f"{field_name} contains control characters")
     return value
+
+
+def validate_wire_model(value: Any) -> str:
+    """Validate an opaque, bounded Unicode model name without rewriting it."""
+    model = _text(value, "provider.model", max_length=256)
+    if any(unicodedata.category(char) == "Cs" for char in model):
+        raise ProviderContractError("provider.model contains a surrogate")
+    return model
+
+
+@dataclass(frozen=True, slots=True)
+class OpenAICompletionsRequestPolicy:
+    """Closed request-field policy for one OpenAI Chat Completions route."""
+
+    schema_version: Literal["bb.openai_chat_request_policy.v1"] = (
+        "bb.openai_chat_request_policy.v1"
+    )
+    mode: Literal["streaming", "non_streaming"] = "streaming"
+    include_usage: bool = True
+    max_token_field: Literal["max_tokens", "max_completion_tokens"] = "max_tokens"
+    strict_tools: bool | None = False
+    enable_thinking: bool | None = False
+
+    def __post_init__(self) -> None:
+        if self.schema_version != "bb.openai_chat_request_policy.v1":
+            raise ProviderContractError(
+                "request_policy.schema_version is unsupported"
+            )
+        if self.mode not in {"streaming", "non_streaming"}:
+            raise ProviderContractError("request_policy.mode is unsupported")
+        if type(self.include_usage) is not bool:
+            raise ProviderContractError("request_policy.include_usage must be boolean")
+        if self.max_token_field not in {"max_tokens", "max_completion_tokens"}:
+            raise ProviderContractError(
+                "request_policy.max_token_field is unsupported"
+            )
+        if self.strict_tools is not None and type(self.strict_tools) is not bool:
+            raise ProviderContractError(
+                "request_policy.strict_tools must be boolean or null"
+            )
+        if (
+            self.enable_thinking is not None
+            and type(self.enable_thinking) is not bool
+        ):
+            raise ProviderContractError(
+                "request_policy.enable_thinking must be boolean or null"
+            )
+        if self.mode == "non_streaming" and self.include_usage:
+            raise ProviderContractError(
+                "non_streaming request policy cannot include usage"
+            )
+
+    @classmethod
+    def from_value(
+        cls,
+        value: OpenAICompletionsRequestPolicy | Mapping[str, Any],
+    ) -> OpenAICompletionsRequestPolicy:
+        if isinstance(value, cls):
+            return value
+        if not isinstance(value, Mapping):
+            raise ProviderContractError("request_policy must be an object")
+        allowed = set(cls.__dataclass_fields__)
+        unknown = sorted(str(key) for key in value if key not in allowed)
+        if unknown:
+            raise ProviderContractError(
+                "request_policy contains unsupported fields: " + ", ".join(unknown)
+            )
+        return cls(**{str(key): item for key, item in value.items()})
+
+    @property
+    def stream(self) -> bool:
+        return self.mode == "streaming"
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "mode": self.mode,
+            "include_usage": self.include_usage,
+            "max_token_field": self.max_token_field,
+            "strict_tools": self.strict_tools,
+            "enable_thinking": self.enable_thinking,
+        }
 
 
 def _bounded_int(value: Any, field_name: str, *, minimum: int, maximum: int) -> int:
@@ -191,6 +264,9 @@ class OpenAICompletionsCapabilities:
     supports_store: bool = False
     supports_n: bool = True
     supports_max_tokens: bool = True
+    supports_streaming: bool = True
+    supports_non_streaming: bool = False
+    supports_max_completion_tokens: bool = False
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -201,6 +277,9 @@ class OpenAICompletionsCapabilities:
             "supports_store",
             "supports_n",
             "supports_max_tokens",
+            "supports_streaming",
+            "supports_non_streaming",
+            "supports_max_completion_tokens",
         ):
             if type(getattr(self, field_name)) is not bool:
                 raise ProviderContractError(
@@ -305,6 +384,9 @@ class OpenAICompletionsProviderProfile:
     compatibility: OpenAICompletionsCompatibility | Mapping[str, Any] = field(
         default_factory=OpenAICompletionsCompatibility
     )
+    request_policy: OpenAICompletionsRequestPolicy | Mapping[str, Any] = field(
+        default_factory=OpenAICompletionsRequestPolicy
+    )
     provider_id: str = "openai"
     runtime_id: str = "openai_chat"
     _sampling_explicit_fields: frozenset[str] = field(
@@ -312,9 +394,7 @@ class OpenAICompletionsProviderProfile:
     )
 
     def __post_init__(self) -> None:
-        model = _text(self.model, "profile.model", max_length=256)
-        if model != _EXACT_MODEL:
-            raise ProviderContractError(f"profile.model must be {_EXACT_MODEL}")
+        validate_wire_model(self.model)
         base_url = _text(self.base_url, "profile.base_url", max_length=2048)
         parsed = urlsplit(base_url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
@@ -330,14 +410,18 @@ class OpenAICompletionsProviderProfile:
             "profile.scoped_credential",
             max_length=8192,
         )
-        if self.context_window != _EXACT_CONTEXT_WINDOW:
-            raise ProviderContractError(
-                f"profile.context_window must be {_EXACT_CONTEXT_WINDOW}"
-            )
-        if self.max_output_tokens != _EXACT_MAX_OUTPUT_TOKENS:
-            raise ProviderContractError(
-                f"profile.max_output_tokens must be {_EXACT_MAX_OUTPUT_TOKENS}"
-            )
+        _bounded_int(
+            self.context_window,
+            "profile.context_window",
+            minimum=1,
+            maximum=_MAX_SAFE_INTEGER,
+        )
+        _bounded_int(
+            self.max_output_tokens,
+            "profile.max_output_tokens",
+            minimum=1,
+            maximum=_MAX_SAFE_INTEGER,
+        )
         sampling_explicit_fields = (
             frozenset(str(key) for key in self.sampling)
             if isinstance(self.sampling, Mapping)
@@ -354,11 +438,42 @@ class OpenAICompletionsProviderProfile:
             "capabilities",
             OpenAICompletionsCapabilities.from_value(self.capabilities),
         )
-        for field_name in _REQUIRED_CAPABILITIES:
-            if not getattr(self.capabilities, field_name):
-                raise ProviderContractError(f"capabilities.{field_name} must be true")
-        if self.capabilities.supports_store:
-            raise ProviderContractError("capabilities.supports_store must be false")
+        object.__setattr__(
+            self,
+            "request_policy",
+            OpenAICompletionsRequestPolicy.from_value(self.request_policy),
+        )
+        if not self.capabilities.supports_n:
+            raise ProviderContractError("capabilities.supports_n must be true")
+        mode_capability = (
+            self.capabilities.supports_streaming
+            if self.request_policy.stream
+            else self.capabilities.supports_non_streaming
+        )
+        if not mode_capability:
+            raise ProviderContractError("request mode is not supported by the profile")
+        token_capability = (
+            self.capabilities.supports_max_tokens
+            if self.request_policy.max_token_field == "max_tokens"
+            else self.capabilities.supports_max_completion_tokens
+        )
+        if not token_capability:
+            raise ProviderContractError("max-token field is not supported by the profile")
+        if (
+            self.request_policy.stream
+            and self.request_policy.include_usage
+            and not self.capabilities.supports_stream_options
+        ):
+            raise ProviderContractError(
+                "capabilities.supports_stream_options must be true for usage"
+            )
+        if (
+            self.request_policy.enable_thinking is not None
+            and not self.capabilities.supports_thinking_control
+        ):
+            raise ProviderContractError(
+                "capabilities.supports_thinking_control must be true for thinking"
+            )
         object.__setattr__(
             self,
             "compatibility",
@@ -429,6 +544,7 @@ class OpenAICompletionsProviderProfile:
             "max_output_tokens": self.max_output_tokens,
             "model": self.model,
             "provider_id": self.provider_id,
+            "request_policy": self.request_policy.as_dict(),
             "runtime_id": self.runtime_id,
             "sampling": self.sampling.as_dict(),
         }
@@ -436,13 +552,12 @@ class OpenAICompletionsProviderProfile:
     def identity_json(self) -> str:
         """Return canonical JSON identity with no credential material."""
         return canonical_json(self.identity_dict())
-
     def chat_request(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None,
     ) -> dict[str, Any]:
-        """Build the exact streamed Chat Completions payload for this profile."""
+        """Build the exact Chat Completions payload for this profile."""
         if type(messages) is not list or any(
             type(message) is not dict for message in messages
         ):
@@ -457,6 +572,17 @@ class OpenAICompletionsProviderProfile:
         if tools is not None and type(tools) is not list:
             raise ProviderContractError("profile tools must be an exact array")
         if tools:
+            if not self.capabilities.supports_tools:
+                raise ProviderContractError(
+                    "capabilities.supports_tools must be true for tools"
+                )
+            if (
+                self.request_policy.strict_tools is not None
+                and not self.capabilities.supports_strict_tools
+            ):
+                raise ProviderContractError(
+                    "capabilities.supports_strict_tools must be true for strict tools"
+                )
             copied_tools: list[dict[str, Any]] = []
             for tool in tools:
                 if type(tool) is not dict or type(tool.get("function")) is not dict:
@@ -465,13 +591,16 @@ class OpenAICompletionsProviderProfile:
                     )
                 copied = dict(tool)
                 function_copy = dict(tool["function"])
-                function_copy["strict"] = False
+                function_copy.pop("strict", None)
+                if self.request_policy.strict_tools is not None:
+                    function_copy["strict"] = self.request_policy.strict_tools
                 copied["function"] = function_copy
                 copied_tools.append(copied)
             request["tools"] = copied_tools
-        request["stream"] = True
-        request["stream_options"] = {"include_usage": True}
-        request["max_tokens"] = self.max_output_tokens
+        request["stream"] = self.request_policy.stream
+        if self.request_policy.stream and self.request_policy.include_usage:
+            request["stream_options"] = {"include_usage": True}
+        request[self.request_policy.max_token_field] = self.max_output_tokens
         request["n"] = self.sampling.n
         for field_name in (
             "temperature",
@@ -483,8 +612,27 @@ class OpenAICompletionsProviderProfile:
             value = getattr(self.sampling, field_name)
             if value is not None:
                 request[field_name] = value
-        request["enable_thinking"] = False
+        if self.request_policy.enable_thinking is not None:
+            request["enable_thinking"] = self.request_policy.enable_thinking
         return request
+
+    def required_request_features(self, *, tools: bool) -> tuple[str, ...]:
+        """Name the selected wire features an authority observation must support."""
+        features = {
+            "streaming" if self.request_policy.stream else "non_streaming",
+            self.request_policy.max_token_field,
+            "n",
+        }
+        if self.request_policy.include_usage:
+            features.add("stream_options")
+        if self.request_policy.enable_thinking is not None:
+            features.add("enable_thinking")
+        if tools and self.request_policy.strict_tools is not None:
+            features.add("strict_tools")
+        for name in ("temperature", "top_p", "seed", "frequency_penalty", "presence_penalty"):
+            if getattr(self.sampling, name) is not None:
+                features.add(name)
+        return tuple(sorted(features))
 
     def chat_request_provenance(
         self,
@@ -507,6 +655,7 @@ class OpenAICompletionsProviderProfile:
         ).hexdigest()
         requested_tools = tools or []
         effective_tools = request.get("tools") or []
+        policy_source = "lock.provider_profile.request_policy"
         provenance: dict[str, Any] = {
             "model": {
                 "status": "effective",
@@ -532,23 +681,29 @@ class OpenAICompletionsProviderProfile:
                 ).hexdigest(),
                 "uncertainty": None,
             },
+            "request_policy": {
+                "status": "effective",
+                "source": policy_source,
+                "effective": self.request_policy.as_dict(),
+                "uncertainty": None,
+            },
+            "capabilities": {
+                "status": "effective",
+                "source": "lock.provider_profile.capabilities",
+                "effective": self.capabilities.as_dict(),
+                "uncertainty": None,
+            },
             "stream": {
-                "status": "adapter",
-                "source": "openai_chat.profile",
+                "status": "effective",
+                "source": f"{policy_source}.mode",
                 "requested": requested_stream,
                 "effective": request["stream"],
                 "uncertainty": None,
             },
-            "stream_options": {
-                "status": "adapter",
-                "source": "openai_chat.profile",
-                "effective": request["stream_options"],
-                "uncertainty": None,
-            },
-            "max_tokens": {
+            self.request_policy.max_token_field: {
                 "status": "effective",
-                "source": "lock.provider_profile.max_output_tokens",
-                "effective": request["max_tokens"],
+                "source": f"{policy_source}.max_token_field",
+                "effective": request[self.request_policy.max_token_field],
                 "uncertainty": None,
             },
             "n": {
@@ -565,13 +720,21 @@ class OpenAICompletionsProviderProfile:
                 "effective": request["n"],
                 "uncertainty": None,
             },
-            "enable_thinking": {
-                "status": "adapter",
-                "source": "openai_chat.profile",
+        }
+        if "stream_options" in request:
+            provenance["stream_options"] = {
+                "status": "effective",
+                "source": f"{policy_source}.include_usage",
+                "effective": request["stream_options"],
+                "uncertainty": None,
+            }
+        if "enable_thinking" in request:
+            provenance["enable_thinking"] = {
+                "status": "effective",
+                "source": f"{policy_source}.enable_thinking",
                 "effective": request["enable_thinking"],
                 "uncertainty": None,
-            },
-        }
+            }
         for field_name in (
             "temperature",
             "top_p",
@@ -586,19 +749,20 @@ class OpenAICompletionsProviderProfile:
                     "effective": request[field_name],
                     "uncertainty": None,
                 }
-        for index, _tool in enumerate(effective_tools):
-            requested_strict = None
-            if index < len(requested_tools):
-                requested_function = requested_tools[index].get("function")
-                if isinstance(requested_function, dict):
-                    requested_strict = requested_function.get("strict")
-            provenance[f"tools[{index}].function.strict"] = {
-                "status": "adapter",
-                "source": "openai_chat.profile",
-                "requested": requested_strict,
-                "effective": False,
-                "uncertainty": None,
-            }
+        if self.request_policy.strict_tools is not None:
+            for index, _tool in enumerate(effective_tools):
+                requested_strict = None
+                if index < len(requested_tools):
+                    requested_function = requested_tools[index].get("function")
+                    if isinstance(requested_function, dict):
+                        requested_strict = requested_function.get("strict")
+                provenance[f"tools[{index}].function.strict"] = {
+                    "status": "effective",
+                    "source": f"{policy_source}.strict_tools",
+                    "requested": requested_strict,
+                    "effective": self.request_policy.strict_tools,
+                    "uncertainty": None,
+                }
         return provenance
 
 
@@ -606,5 +770,7 @@ __all__ = [
     "OpenAICompletionsCapabilities",
     "OpenAICompletionsCompatibility",
     "OpenAICompletionsProviderProfile",
+    "OpenAICompletionsRequestPolicy",
     "OpenAICompletionsSampling",
+    "validate_wire_model",
 ]

@@ -47,6 +47,7 @@ from .profiles import (
     OpenAICompletionsCapabilities,
     OpenAICompletionsCompatibility,
     OpenAICompletionsProviderProfile,
+    OpenAICompletionsRequestPolicy,
     OpenAICompletionsSampling,
 )
 from .contract_runtime import (
@@ -82,6 +83,7 @@ __all__ = [
     "OpenAICompletionsCapabilities",
     "OpenAICompletionsCompatibility",
     "OpenAICompletionsProviderProfile",
+    "OpenAICompletionsRequestPolicy",
     "OpenAICompletionsSampling",
     "ProviderRuntimeContext",
     "ProviderRuntimeError",

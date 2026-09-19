@@ -2022,6 +2022,27 @@ async def test_conductor_rejects_each_nonempty_unsupported_semantic_family(
     )
 
 
+async def test_conductor_rejects_native_recording_policy_before_effects() -> None:
+    observation = _observation()
+    semantic = copy.deepcopy(_empty_semantics(observation=observation))
+    semantic["providers"]["models"][0]["response_policy"] = {
+        "schema_version": "bb.provider_native_response_policy.v1",
+        "consumer_id": "breadboard.provider.recording.v1",
+        "provider_profile_digest": _digest("native-provider-profile"),
+        "max_response_bytes": 65_536,
+        "max_stream_fragments": 64,
+    }
+    await _assert_open_rejected(
+        observation=observation,
+        plan=_plan(
+            observation=observation,
+            semantics=_sync_root_semantics(semantic),
+            implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
+        ),
+        code="native_response_consumer_mismatch",
+    )
+
+
 @pytest.mark.parametrize(
     ("control", "value"),
     [

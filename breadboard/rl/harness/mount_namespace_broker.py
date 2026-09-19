@@ -2280,7 +2280,7 @@ def _child_loop(
                         request.get("expected_inode"),
                     )
                     directory = request.get("directory")
-                    readonly = request.get("readonly", directory is False)
+                    readonly = request.get("readonly")
                     if type(directory) is not bool or type(readonly) is not bool:
                         raise ValueError("invalid stage type")
                     if (metadata.st_dev, metadata.st_ino) != expected:
@@ -3388,13 +3388,13 @@ class MountNamespaceBroker:
             if self.containerd_observation is not None:
                 child = self.containerd_observation
                 containerd = self._journal_process(
-                    child.pid,
-                    child.starttime,
-                    executable_device=child.executable_device,
-                    executable_inode=child.executable_inode,
-                    executable_ctime_ns=child.executable_ctime_ns,
-                    executable_size=child.executable_size,
-                    executable_digest=child.executable_digest,
+                    child["pid"],
+                    child["starttime"],
+                    executable_device=child["executable_device"],
+                    executable_inode=child["executable_inode"],
+                    executable_ctime_ns=child["executable_ctime_ns"],
+                    executable_size=child["executable_size"],
+                    executable_digest=child["executable_digest"],
                 )
         stage_root = os.stat(observation.stage_root, follow_symlinks=False)
         stage_digest = _journal_digest(
@@ -3848,6 +3848,7 @@ class MountNamespaceBroker:
         expected_device: int,
         expected_inode: int,
         directory: bool,
+        readonly: bool,
         lease_id: str,
         destination: str,
     ) -> StagedDockerDescriptorMount:
@@ -3864,7 +3865,7 @@ class MountNamespaceBroker:
                 "expected_device": expected_device,
                 "expected_inode": expected_inode,
                 "lease_id": lease_id,
-                "readonly": not directory,
+                "readonly": readonly,
                 "authority_path": authority_path,
             },
             (descriptor,),
@@ -4118,6 +4119,7 @@ class MountNamespaceBroker:
                     ),
                     authority.pid_file,
                     authority.config_path,
+                    authority.containerd_config_path,
                     authority.exec_root,
                     authority.data_root,
                     authority.containerd_root,

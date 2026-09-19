@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import errno
 import hashlib
 import hmac
 import os
@@ -544,8 +545,9 @@ def _real_broker(stage_root: Path) -> MountNamespaceBroker:
         raise
 
 
+@pytest.mark.parametrize("readonly", [False, True])
 def test_private_namespace_stage_validate_release_and_host_absence(
-    tmp_path: Path,
+    tmp_path: Path, readonly: bool,
 ) -> None:
     source = tmp_path / "workspace"
     source.mkdir(mode=0o700)
@@ -562,6 +564,7 @@ def test_private_namespace_stage_validate_release_and_host_absence(
                 expected_device=metadata.st_dev,
                 expected_inode=metadata.st_ino,
                 directory=True,
+                readonly=readonly,
                 lease_id="lease-1",
                 destination="/workspace",
             )
@@ -571,6 +574,16 @@ def test_private_namespace_stage_validate_release_and_host_absence(
         assert os.path.isdir(staged.source_path)
         assert os.listdir(staged.source_path) == []
         asyncio.run(broker.validate(staged, descriptor))
+        private_view = Path(f"/proc/{broker.pid}/root{staged.source_path}")
+        assert (private_view / "sentinel").read_bytes() == b"held"
+        if readonly:
+            with pytest.raises(OSError) as rejected:
+                (private_view / "write").write_bytes(b"rejected")
+            assert rejected.value.errno == errno.EROFS
+            assert not (source / "write").exists()
+        else:
+            (private_view / "write").write_bytes(b"allowed")
+            assert (source / "write").read_bytes() == b"allowed"
         asyncio.run(broker.release(staged))
         assert not os.path.lexists(staged.source_path)
         broker.close()
@@ -601,6 +614,7 @@ def test_stage_replacement_is_rejected_and_cleanup_is_quarantined(
                 expected_device=metadata.st_dev,
                 expected_inode=metadata.st_ino,
                 directory=False,
+                readonly=True,
                 lease_id="lease-2",
                 destination="/profile",
             )
@@ -675,6 +689,7 @@ def test_stage_publication_rejects_bind_time_authority_mutation(
                     expected_device=metadata.st_dev,
                     expected_inode=metadata.st_ino,
                     directory=False,
+                    readonly=True,
                     lease_id="race",
                     destination="/authority",
                 )
@@ -712,6 +727,7 @@ def test_wrong_descriptor_and_broker_crash_fail_closed(tmp_path: Path) -> None:
                 expected_device=metadata.st_dev,
                 expected_inode=metadata.st_ino,
                 directory=True,
+                readonly=False,
                 lease_id="lease-3",
                 destination="/workspace",
             )
@@ -1331,6 +1347,7 @@ def test_close_after_log_receipt_failure_reaps_and_closes_returned_fds(
         containerd_socket_path=os.fspath(tmp_path / "missing-containerd.sock"),
         pid_file=os.fspath(tmp_path / "missing.pid"),
         config_path=os.fspath(tmp_path / "missing.toml"),
+        containerd_config_path=os.fspath(tmp_path / "missing.toml.containerd.toml"),
         exec_root=os.fspath(tmp_path / "missing-exec"),
         data_root=os.fspath(tmp_path / "missing-data"),
         containerd_root=os.fspath(tmp_path / "missing-containerd-root"),
@@ -1481,6 +1498,7 @@ def test_non_graceful_close_identity_terminates_both_daemon_groups(
         containerd_socket_path=missing("containerd.sock"),
         pid_file=missing("docker.pid"),
         config_path=missing("docker.toml"),
+        containerd_config_path=missing("docker.toml.containerd.toml"),
         exec_root=missing("exec"),
         data_root=missing("data"),
         containerd_root=missing("containerd-root"),

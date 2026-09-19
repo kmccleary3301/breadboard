@@ -282,11 +282,14 @@ class ProviderInvoker:
                 failure = _contract_failure()
                 _terminalize_error(failure)
                 raise failure from None
-        profile_bound = runtime_context.provider_profile is not None
-        if profile_bound and not stream_responses:
+        profile = runtime_context.provider_profile
+        profile_bound = profile is not None
+        if profile is not None and stream_responses is not (
+            profile.request_policy.mode == "streaming"
+        ):
             profile_error = ProviderRuntimeError(
-                "profile-bound provider invocation requires streaming",
-                details={"code": "profile_requires_streaming"},
+                "profile-bound invocation does not match the request policy",
+                details={"code": "profile_request_mode_mismatch"},
                 kind="configuration",
             )
             _terminalize_error(profile_error)

@@ -131,6 +131,13 @@ def _logical_path(value: str) -> str:
     return value
 
 
+def _mount_target_path(value: str) -> str:
+    value = _validate_text(value, field_name="mount target path", max_bytes=1024)
+    if value == ".":
+        return value
+    return _logical_path(value)
+
+
 def _json_pointer(value: str) -> str:
     value = _validate_text(value, field_name="JSON pointer", max_bytes=1024)
     if not value.startswith("/"):
@@ -253,6 +260,11 @@ UtcSecond = Annotated[
     str,
     StringConstraints(strict=True),
     AfterValidator(_timestamp),
+]
+MountTargetPath = Annotated[
+    str,
+    StringConstraints(strict=True),
+    AfterValidator(_mount_target_path),
 ]
 LogicalPath = Annotated[
     str,
@@ -750,7 +762,7 @@ class SecretHandleGrant(_ConfigRuntimeContract):
 
 class MountGrant(_ConfigRuntimeContract):
     source_artifact_digest: Digest
-    target_logical_path: LogicalPath
+    target_logical_path: MountTargetPath
     access: MountAccess
     max_bytes: PositiveUInt53
 
@@ -3091,6 +3103,7 @@ __all__ += [
     "ModelRegistryRecord",
     "MountAccess",
     "MountGrant",
+    "MountTargetPath",
     "MutableOperation",
     "MutablePointerRule",
     "OperatorCeiling",

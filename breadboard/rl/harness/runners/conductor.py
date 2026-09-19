@@ -631,6 +631,12 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
         raise _plan_error(request, "compiled default model is missing", "compiled_ir_mismatch")
     projected_models: list[_ModelProjection] = []
     for model in models:
+        if "response_policy" in model:
+            raise _plan_error(
+                request,
+                "compiled native response policy requires its recording consumer",
+                "native_response_consumer_mismatch",
+            )
         model_id = model["model_id"]
         slot_id = model.get("policy_slot_id")
         slot = slots_by_id.get(slot_id)

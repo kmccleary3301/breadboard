@@ -93,6 +93,7 @@ Deferred providers: `google-gemini-cli`, `google-antigravity`. Evidence-only pro
   - [8.4 Caching policy integration](#84-caching-policy-integration)
   - [8.5 Chain-of-thought handling in BreadBoard](#85-chain-of-thought-handling-in-breadboard)
   - [8.6 Streaming plumbing and cancellation](#86-streaming-plumbing-and-cancellation)
+  - [8.7 Bound Chat request policy and native recording](#87-bound-chat-request-policy-and-native-recording)
 - [9. Edge Cases and Gotchas](#9-edge-cases-and-gotchas)
 - [10. Test Plans and Checklists](#10-test-plans-and-checklists)
 
@@ -699,6 +700,37 @@ Client returns:
 
 - Implement SSE readers tolerant of keepalive comments and mid-stream error payloads.
 - Support cancellation by aborting HTTP requests where providers support cancellation. Fall back gracefully when providers do not support cancellation (documented by OpenRouter).
+
+### 8.7 Bound Chat request policy and native recording
+
+`OpenAICompletionsProviderProfile` keeps the opaque wire model separate from the authority model identifier. Context and output limits are positive inputs, not Qwen-family defaults. The episode resolver checks the actual admitted route, credential handle, model mapping and capability observation before making a request.
+
+`OpenAICompletionsRequestPolicy` is a closed, immutable value included in profile identity and provenance. Headless request version `bb.rl.headless-run-request.v3` requires it under `provider.request_policy`. Versions v1 and v2 retain the legacy resolved policy and do not accept an explicit policy. For example, a separately authorized nonstreaming binding can select:
+
+```json
+{
+  "schema_version": "bb.openai_chat_request_policy.v1",
+  "mode": "non_streaming",
+  "include_usage": false,
+  "max_token_field": "max_completion_tokens",
+  "strict_tools": null,
+  "enable_thinking": null
+}
+```
+
+That selection also requires the corresponding declared capabilities, including `supports_non_streaming` and `supports_max_completion_tokens`, and matching features in the actual admitted capability observation. A caller's support boolean alone does not supply authority. Nonstreaming sends `stream=false` and omits `stream_options`. A null strict-tool or thinking control omits that field; false explicitly sends false. Bound clients use `n=1`, zero SDK retries and no model fallback. Unsupported selected fields fail before an attempt. This does not authorize a nonstreaming adaptation of an accepted streaming E4 target.
+
+Native recording is separate from normal response conversion. A compiled OpenAI model may declare a closed `response_policy` with schema `bb.provider_native_response_policy.v1`, consumer `breadboard.provider.recording.v1`, the exact `provider_profile_digest`, `max_response_bytes`, and `max_stream_fragments`. Compute the profile digest with `profile_identity_digest`; do not substitute a model-name or caller-supplied capability flag.
+
+`admit_native_response_binding` in `breadboard_engine.compilation.provider_response` verifies the compiled manifest, expected compiler-input digest, profile, selected authority model and context limit. The profile digest binds the separate wire model. It rejects fallback routing. The resulting binding records the episode, plan and capability-observation digests and authority model identifier. The owned client checks those joins against its actual admission at invocation. The ordinary Conductor consumer rejects a compiled native-recording policy rather than silently ignoring it.
+
+The owned episode client's `invoke_native` requires that binding and the actual `EffectiveExecutionPlan`. It checks the plan digest, capability observation, base compiled manifest and selected effective model against the binding before an attempt; rehashing a foreign manifest or changed model cannot authorize it. It then uses the real bound Chat runtime. `NativeProviderResponse` preserves ordered tool calls, raw argument strings, content, finish reason, reported response identity, usage and ordered content/argument fragments. It does not parse or repair tool arguments. Its request digest identifies the canonical Chat request, not the outer policy-request envelope. Normal `invoke` still validates normalized tool arguments.
+
+`NativeRecordingConsumer.record` retains bounded immutable responses and exposes a read-only snapshot. It has no tool-dispatch operation. Recording a syntactically invalid argument string proves preservation only, not acceptance by a tool or a complete agent loop.
+
+Hardened Docker stages installed native-tool roots read-only through descriptor-pinned mounts; only primary runtimes receive those adapters. A sole repository may occupy logical mount target `.` so native commands and the sealed verifier snapshot share the repository-root layout. Before staging, the runtime assigns copied workspace contents to the admitted UID/GID while preserving inode, mode and quota identity. Cached sources and native-tool installations are not reassigned.
+
+The episode client counts actual runtime attempts, including failed attempts, independently of caller turn numbers. Closing stops further invocations. Cleanup succeeds only after transport close and actual worker-thread retirement; completing a future is insufficient. Failed cleanup retains the profile identity for the owner and can be retried. Installed cancellation and socket/process absence still require their own external observations.
 
 ## 9. Edge Cases and Gotchas
 
