@@ -1511,6 +1511,8 @@ class StagedDockerDescriptorMount:
 
 
 class DockerDescriptorMountStager(Protocol):
+    """Stage descriptor authority with its admitted access mode, not a type default."""
+
     async def stage(
         self,
         descriptor: int,
@@ -1518,6 +1520,7 @@ class DockerDescriptorMountStager(Protocol):
         expected_device: int,
         expected_inode: int,
         directory: bool,
+        readonly: bool,
         lease_id: str,
         destination: str,
     ) -> StagedDockerDescriptorMount: ...
@@ -3339,6 +3342,7 @@ class DockerSandboxBackend:
                 expected_device=skeleton_metadata.st_dev,
                 expected_inode=skeleton_metadata.st_ino,
                 directory=True,
+                readonly=skeleton_readonly,
                 lease_id=context.lease_id,
                 destination=CONTAINER_WORKSPACE_ROOT,
             )
@@ -3353,6 +3357,7 @@ class DockerSandboxBackend:
                     expected_device=child_metadata.st_dev,
                     expected_inode=child_metadata.st_ino,
                     directory=stat.S_ISDIR(child_metadata.st_mode),
+                    readonly=readonly,
                     lease_id=context.lease_id,
                     destination=destination,
                 )
@@ -3390,6 +3395,7 @@ class DockerSandboxBackend:
                         expected_device=root_metadata.st_dev,
                         expected_inode=root_metadata.st_ino,
                         directory=True,
+                        readonly=True,
                         lease_id=context.lease_id,
                         destination=destination,
                     )
@@ -3420,6 +3426,7 @@ class DockerSandboxBackend:
                 expected_device=profile_metadata.st_dev,
                 expected_inode=profile_metadata.st_ino,
                 directory=False,
+                readonly=True,
                 lease_id=context.lease_id,
                 destination="/.breadboard/seccomp",
             )

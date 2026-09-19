@@ -2280,7 +2280,7 @@ def _child_loop(
                         request.get("expected_inode"),
                     )
                     directory = request.get("directory")
-                    readonly = request.get("readonly", directory is False)
+                    readonly = request.get("readonly")
                     if type(directory) is not bool or type(readonly) is not bool:
                         raise ValueError("invalid stage type")
                     if (metadata.st_dev, metadata.st_ino) != expected:
@@ -3848,6 +3848,7 @@ class MountNamespaceBroker:
         expected_device: int,
         expected_inode: int,
         directory: bool,
+        readonly: bool,
         lease_id: str,
         destination: str,
     ) -> StagedDockerDescriptorMount:
@@ -3864,7 +3865,7 @@ class MountNamespaceBroker:
                 "expected_device": expected_device,
                 "expected_inode": expected_inode,
                 "lease_id": lease_id,
-                "readonly": not directory,
+                "readonly": readonly,
                 "authority_path": authority_path,
             },
             (descriptor,),
