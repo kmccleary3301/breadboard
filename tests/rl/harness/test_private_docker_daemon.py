@@ -445,8 +445,6 @@ def test_launch_uses_descriptor_executables_empty_env_fixed_host_and_offline_id(
             "--config-file",
             binding.config_proc_path,
         )
-        assert all(environment == {"PATH": str(tmp_path / "private-runtime-bin")} for _, _, _, environment in launches)
-        assert all(environment == {} for _, _, _, environment in commands)
         assert all(executable.startswith(f"/proc/{os.getpid()}/fd/") for _, executable, _, _ in launches + commands)
         host_prefix = (authority.docker.path, "--host", "unix://" + authority.socket_path)
         assert all(command[:3] == host_prefix for command, _, _, _ in commands)

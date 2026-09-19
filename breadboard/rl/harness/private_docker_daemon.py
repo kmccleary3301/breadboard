@@ -510,6 +510,8 @@ class PrivateDockerDaemonOwner:
     Containerd receives an explicit configuration without ambient imports,
     CRI services, or NRI plugins. Both daemon configurations participate in
     authenticated cleanup.
+    Private control-plane Go schedulers use one processor rather than the
+    host CPU count; aggregate cgroup limits remain the hard resource ceiling.
     """
 
     def __init__(
@@ -541,6 +543,7 @@ class PrivateDockerDaemonOwner:
                 or ":" in self._daemon_environment["PATH"]
             ):
                 raise ValueError("private daemon environment must be one exact PATH")
+            self._daemon_environment["GOMAXPROCS"] = "1"
         self._runner = runner
         self._monotonic = monotonic
         self._progress_sink = progress_sink

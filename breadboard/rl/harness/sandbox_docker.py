@@ -1987,12 +1987,17 @@ class DockerRuntimeAdapter:
 
     @staticmethod
     def _is_not_found(result: DockerCommandResult, reference: str) -> bool:
-        if result.timed_out or result.output_limited or result.returncode == 0 or result.stdout.strip():
+        if (
+            result.timed_out
+            or result.output_limited
+            or result.returncode != 1
+            or result.stdout.strip() not in {b"", b"[]"}
+        ):
             return False
-        stderr = result.stderr.strip()
-        return stderr in {
-            f"Error: No such object: {reference}".encode(),
-            f"Error response from daemon: No such container: {reference}".encode(),
+        prefix, _, absent_reference = result.stderr.strip().rpartition(b": ")
+        return absent_reference == reference.encode() and prefix.lower() in {
+            b"error: no such object",
+            b"error response from daemon: no such container",
         }
 
     async def _bound_container(

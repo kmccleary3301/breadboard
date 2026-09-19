@@ -477,7 +477,8 @@ def _docker_inspect_bytes(inspected: Mapping[str, Any]) -> bytes:
 def _not_found(reference: str) -> DockerCommandResult:
     return _result(
         returncode=1,
-        stderr=f"Error: No such object: {reference}".encode("utf-8"),
+        stdout=b"[]\n",
+        stderr=f"error: no such object: {reference}\n".encode("utf-8"),
     )
 
 
@@ -4053,11 +4054,14 @@ async def test_definite_exec_nonzero_does_not_fence_or_trigger_cleanup(
 @pytest.mark.parametrize(
     "inspect_result",
     [
-        _result(timed_out=True),
-        _result(output_limited=True),
+        replace(_not_found(CONTAINER_ID), timed_out=True),
+        replace(_not_found(CONTAINER_ID), output_limited=True),
         _result(returncode=1, stderr=b"Cannot connect to the Docker daemon"),
         _result(returncode=1, stderr=b"permission denied"),
         _result(returncode=1, stderr=b"not found"),
+        replace(_not_found(CONTAINER_ID), returncode=-9),
+        replace(_not_found(CONTAINER_ID), stdout=b'[{"Id":"unexpected"}]\n'),
+        _not_found("d" * 64),
     ],
 )
 async def test_unmeasurable_cleanup_inspect_quarantines_without_stop_or_remove(
@@ -4113,8 +4117,14 @@ async def test_concurrent_removal_normalizes_cleanup_and_retries_idempotently(
     executor = ScriptedDockerExecutor(
         [
             _result(stdout=_identity_inspect(plan)),
-            _not_found(CONTAINER_ID),
-            _not_found(CONTAINER_ID),
+            _result(
+                returncode=1,
+                stderr=f"Error response from daemon: No such container: {CONTAINER_ID}".encode(),
+            ),
+            _result(
+                returncode=1,
+                stderr=f"Error response from daemon: No such container: {CONTAINER_ID}".encode(),
+            ),
             _not_found(CONTAINER_ID),
             _not_found(CONTAINER_ID),
         ]
