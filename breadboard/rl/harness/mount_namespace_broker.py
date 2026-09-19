@@ -3388,13 +3388,13 @@ class MountNamespaceBroker:
             if self.containerd_observation is not None:
                 child = self.containerd_observation
                 containerd = self._journal_process(
-                    child.pid,
-                    child.starttime,
-                    executable_device=child.executable_device,
-                    executable_inode=child.executable_inode,
-                    executable_ctime_ns=child.executable_ctime_ns,
-                    executable_size=child.executable_size,
-                    executable_digest=child.executable_digest,
+                    child["pid"],
+                    child["starttime"],
+                    executable_device=child["executable_device"],
+                    executable_inode=child["executable_inode"],
+                    executable_ctime_ns=child["executable_ctime_ns"],
+                    executable_size=child["executable_size"],
+                    executable_digest=child["executable_digest"],
                 )
         stage_root = os.stat(observation.stage_root, follow_symlinks=False)
         stage_digest = _journal_digest(
