@@ -362,6 +362,7 @@ async def lifecycle(args: argparse.Namespace) -> dict[str, Any]:
                 expected_device=workspace_stat.st_dev,
                 expected_inode=workspace_stat.st_ino,
                 directory=True,
+                readonly=False,
                 lease_id=args.attempt_id,
                 destination="/workspace",
             )
@@ -406,6 +407,7 @@ async def lifecycle(args: argparse.Namespace) -> dict[str, Any]:
             expected_device=workspace_stat.st_dev,
             expected_inode=workspace_stat.st_ino,
             directory=True,
+            readonly=False,
             lease_id=args.attempt_id,
             destination="/workspace",
         )
@@ -416,6 +418,7 @@ async def lifecycle(args: argparse.Namespace) -> dict[str, Any]:
             expected_device=profile_stat.st_dev,
             expected_inode=profile_stat.st_ino,
             directory=False,
+            readonly=True,
             lease_id=args.attempt_id,
             destination="/probe-profile.json",
         )
