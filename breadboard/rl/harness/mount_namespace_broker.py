@@ -4118,6 +4118,7 @@ class MountNamespaceBroker:
                     ),
                     authority.pid_file,
                     authority.config_path,
+                    authority.containerd_config_path,
                     authority.exec_root,
                     authority.data_root,
                     authority.containerd_root,

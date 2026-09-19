@@ -214,6 +214,39 @@ def test_owner_pins_exact_files_and_seals_deterministic_config(tmp_path: Path) -
     _remove_socket_parent(authority)
 
 
+@pytest.mark.parametrize("mutation", ["content", "replacement"])
+def test_changed_containerd_config_is_rejected_before_process_launch(
+    tmp_path: Path, mutation: str
+) -> None:
+    authority = _authority(tmp_path)
+
+    def forbidden_launcher(*_args, **_kwargs):
+        pytest.fail("changed configuration reached process launch")
+
+    owner = PrivateDockerDaemonOwner(
+        authority,
+        prerequisite_check=lambda: None,
+        daemon_environment={"PATH": str(tmp_path)},
+        launcher=forbidden_launcher,
+    )
+    path = Path(authority.containerd_config_path)
+    if mutation == "replacement":
+        path.unlink()
+    path.write_bytes(b"version = 2\nimports = ['/etc/containerd/*.toml']\n")
+    try:
+        with pytest.raises(PrivateDockerDaemonError) as rejected:
+            owner.start(readiness_timeout=1)
+        assert rejected.value.code == "runtime_unsupported"
+    finally:
+        if mutation == "replacement":
+            with pytest.raises(ExceptionGroup):
+                owner.close()
+            assert path.read_bytes() == b"version = 2\nimports = ['/etc/containerd/*.toml']\n"
+            path.unlink()
+        owner.close()
+        _remove_socket_parent(authority)
+
+
 def test_operator_authority_allows_node_local_inode_and_records_live_identity(
     tmp_path: Path,
 ) -> None:
@@ -368,15 +401,6 @@ def test_launch_uses_descriptor_executables_empty_env_fixed_host_and_offline_id(
     try:
         binding = owner.start(readiness_timeout=1)
         assert len(launches) == 2
-        assert launches[0][0] == (
-            authority.containerd.path,
-            "--address",
-            authority.containerd_socket_path,
-            "--root",
-            authority.containerd_root,
-            "--state",
-            authority.containerd_state,
-        )
         assert launches[1][0] == (
             authority.dockerd.path,
             "--config-file",

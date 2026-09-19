@@ -24,6 +24,18 @@ from .sandbox_docker import (
 _SHA256_PREFIX = "sha256:"
 _BUFFER_SIZE = 1024 * 1024
 _COMMAND_OUTPUT_LIMIT = 4 * 1024 * 1024
+_CONTAINERD_CONFIG = b"""version = 2
+imports = []
+disabled_plugins = ["io.containerd.grpc.v1.cri", "io.containerd.cri.v1.images", "io.containerd.cri.v1.runtime"]
+[grpc]
+tcp_address = ""
+[debug]
+address = ""
+[metrics]
+address = ""
+[plugins."io.containerd.nri.v1.nri"]
+disable = true
+"""
 
 
 class PrivateDockerDaemonError(RuntimeError):
@@ -155,6 +167,7 @@ class PrivateDockerDaemonAuthority:
             raise ValueError("private daemon log bound is invalid")
         paths = {
             self.config_path,
+            self.containerd_config_path,
             self.socket_path,
             self.pid_file,
             self.containerd_socket_path,
@@ -166,7 +179,7 @@ class PrivateDockerDaemonAuthority:
             self.mount_stage_root,
             self.log_root,
         }
-        if len(paths) != 11:
+        if len(paths) != 12:
             raise ValueError("private daemon paths must be distinct")
         output_parents = {os.path.dirname(path) for path in paths}
         if len(output_parents) != 1:
@@ -176,6 +189,10 @@ class PrivateDockerDaemonAuthority:
         ids = tuple(image.image_id for image in self.images)
         if ids != tuple(sorted(set(ids))):
             raise ValueError("offline image authorities must be sorted and unique")
+
+    @property
+    def containerd_config_path(self) -> str:
+        return self.config_path + ".containerd.toml"
 
     @property
     def containerd_ttrpc_socket_path(self) -> str:
@@ -488,7 +505,12 @@ class _OwnerDockerCliExecutor:
 
 
 class PrivateDockerDaemonOwner:
-    """Owns one rootful dockerd and every descriptor in its injected authority."""
+    """Owns rootful dockerd/containerd and their pinned descriptors and outputs.
+
+    Containerd receives an explicit configuration without ambient imports,
+    CRI services, or NRI plugins. Both daemon configurations participate in
+    authenticated cleanup.
+    """
 
     def __init__(
         self,
@@ -573,7 +595,12 @@ class PrivateDockerDaemonOwner:
                 self._fds[name] = self._pin_file(name, image.archive)
             self._prepare_owned_paths()
             self._open_logs()
-            self._seal_config()
+            self._config_digest = self._seal_config(
+                "config", authority.config_path, self._config_bytes()
+            )
+            self._seal_config(
+                "containerd-config", authority.containerd_config_path, _CONTAINERD_CONFIG
+            )
             self._emit_progress("owner_init", "end", {
                 "config_digest": self._config_digest,
                 "runtime_registered_path": (
@@ -738,6 +765,7 @@ class PrivateDockerDaemonOwner:
         authority = self.authority
         for absent in (
             authority.config_path,
+            authority.containerd_config_path,
             authority.socket_path,
             authority.pid_file,
             authority.containerd_socket_path,
@@ -866,10 +894,9 @@ class PrivateDockerDaemonOwner:
         }
         return json.dumps(document, ensure_ascii=True, allow_nan=False, separators=(",", ":"), sort_keys=True).encode("ascii")
 
-    def _seal_config(self) -> None:
-        payload = self._config_bytes()
+    def _seal_config(self, name: str, path: str, payload: bytes) -> str:
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
-        write_fd = os.open(self.authority.config_path, flags, 0o600)
+        write_fd = os.open(path, flags, 0o600)
         try:
             offset = 0
             while offset < len(payload):
@@ -877,20 +904,42 @@ class PrivateDockerDaemonOwner:
             os.fsync(write_fd)
         finally:
             os.close(write_fd)
-        config_metadata = os.stat(self.authority.config_path, follow_symlinks=False)
+        config_metadata = os.stat(path, follow_symlinks=False)
         config_authority = PinnedFileAuthority(
-            path=self.authority.config_path,
+            path=path,
             digest=_SHA256_PREFIX + hashlib.sha256(payload).hexdigest(),
             owner_uid=config_metadata.st_uid,
             mode=stat.S_IMODE(config_metadata.st_mode),
             executable=False,
         )
-        self._fds["config"] = self._pin_file("config", config_authority)
-        self._config_digest = config_authority.digest
-        self._cleanup_file_identities[self.authority.config_path] = (
+        self._fds[name] = self._pin_file(name, config_authority)
+        self._cleanup_file_identities[path] = (
             config_metadata.st_dev,
             config_metadata.st_ino,
         )
+        return config_authority.digest
+
+    def _assert_containerd_config(self) -> None:
+        observation = self._file_observations["containerd-config"]
+        try:
+            descriptor = self._fds["containerd-config"]
+            opened = os.fstat(descriptor)
+            current = os.stat(observation.path, follow_symlinks=False)
+            if (
+                (opened.st_dev, opened.st_ino, opened.st_ctime_ns, opened.st_size,
+                 opened.st_uid, stat.S_IMODE(opened.st_mode))
+                != (observation.device, observation.inode, observation.ctime_ns,
+                    observation.size, observation.owner_uid, observation.mode)
+                or (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino)
+                or _digest_fd(descriptor) != observation.digest
+            ):
+                raise OSError("private containerd configuration changed")
+        except OSError as exc:
+            self._quarantined = True
+            raise PrivateDockerDaemonError(
+                "runtime_unsupported", "private containerd configuration authority drifted"
+            ) from exc
+
     def start(self, *, readiness_timeout: float = 30.0) -> PrivateDockerDaemonBinding:
         if self._closed or self._quarantined or self._process is not None:
             raise PrivateDockerDaemonError("runtime_unsupported", "private daemon owner cannot be restarted")
@@ -898,11 +947,14 @@ class PrivateDockerDaemonOwner:
             self._quarantine("private daemon runtime PATH authority is unavailable")
         if readiness_timeout <= 0:
             raise ValueError("private daemon constructor timeout must be positive")
+        self._assert_containerd_config()
         self._startup_deadline = self._monotonic() + readiness_timeout
         self._emit_progress("containerd_start", "begin")
         containerd_fd = self._fds["containerd"]
         containerd_argv = (
             self.authority.containerd.path,
+            "--config",
+            _proc_path(self._fds["containerd-config"]),
             "--address",
             self.authority.containerd_socket_path,
             "--root",
@@ -1218,6 +1270,7 @@ class PrivateDockerDaemonOwner:
             )
 
     def _assert_containerd_live(self) -> None:
+        self._assert_containerd_config()
         process = self._containerd_process
         observation = self._containerd_observation
         if process is None or observation is None or process.poll() is not None:
@@ -1487,6 +1540,7 @@ class PrivateDockerDaemonOwner:
             self.authority.containerd_ttrpc_socket_path,
             self.authority.pid_file,
             self.authority.config_path,
+            self.authority.containerd_config_path,
         )
         for path in owned_files:
             try:
