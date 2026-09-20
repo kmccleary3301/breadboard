@@ -299,12 +299,19 @@ def _validate_request_features(
     observation: PolicyCapabilityObservation,
     *,
     tools: bool,
+    target_projection: E4TargetPolicyProjection | None,
     episode_id: str,
     effective_plan_digest: str,
-) -> None:
-    missing = set(profile.required_request_features(tools=tools)).difference(
-        observation.capabilities.request_features
-    )
+) -> set[str]:
+    required = set(profile.required_request_features(tools=tools))
+    if (
+        target_projection is not None
+        and target_projection.renderer_id == OPENHANDS_RESPONSE_CONSUMER_ID
+    ):
+        # The SDK supplies raw HTTP instead of profile.chat_request(), which
+        # inserts n=1. The pinned SDK omits n; native admission rejects that key.
+        required.remove("n")
+    missing = required.difference(observation.capabilities.request_features)
     unsupported_tools = tools and (
         not observation.capabilities.tool_calling
         or not profile.capabilities.supports_tools
@@ -320,11 +327,13 @@ def _validate_request_features(
             episode_id=episode_id,
             effective_plan_digest=effective_plan_digest,
         )
+    return required
 
 
 def _validate_owned_profile_observation(
     *,
     profile: OpenAICompletionsProviderProfile,
+    target_projection: E4TargetPolicyProjection | None,
     observation: PolicyCapabilityObservation,
     authority_model_id: str,
     authority_wire_model: str,
@@ -355,6 +364,7 @@ def _validate_owned_profile_observation(
         profile,
         observation,
         tools=False,
+        target_projection=target_projection,
         episode_id=episode_id,
         effective_plan_digest=effective_plan_digest,
     )
@@ -881,10 +891,11 @@ class EpisodeOpenAICompletionsPolicyClient:
                 episode_id=self._episode_id,
                 effective_plan_digest=self._effective_plan_digest,
             )
-        _validate_request_features(
+        required_features = _validate_request_features(
             profile,
             self._observation,
             tools=tools_present,
+            target_projection=target,
             episode_id=self._episode_id,
             effective_plan_digest=self._effective_plan_digest,
         )
@@ -903,9 +914,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                 )
             declared_set = set(declared)
             supported = set(self._observation.capabilities.request_features)
-            if not declared_set <= supported or not set(
-                profile.required_request_features(tools=tools_present)
-            ) <= declared_set:
+            if not declared_set <= supported or not required_features <= declared_set:
                 raise RunnerPolicyBindingError(
                     "native HTTP declared capabilities are not admitted",
                     code="native_http_capability_mismatch",
@@ -1329,6 +1338,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                 profile,
                 self._observation,
                 tools=bool(tools),
+                target_projection=self._target_projection,
                 episode_id=request.episode_id,
                 effective_plan_digest=request.effective_plan_digest,
             )
@@ -1739,6 +1749,7 @@ class EpisodeOpenAICompletionsPolicyResolver:
                 )
             _validate_owned_profile_observation(
                 profile=profile,
+                target_projection=target_projection,
                 observation=observation,
                 authority_model_id=authority_model_id,
                 authority_wire_model=authority_wire_model,
