@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import sys
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -10,6 +11,8 @@ from typing import Any
 import pytest
 
 from breadboard.rl.harness import contracts as c
+from breadboard.artifacts import InMemoryCAS
+from breadboard.rl.harness.service import EpisodePrimaryDisposition, V2RunResult
 from breadboard.rl.harness.composition import load_production_composition
 from breadboard.rl.harness.headless import (
     HeadlessRunFailed,
@@ -42,54 +45,31 @@ def test_atomic_result_publication_refuses_existing_destination(
     assert list(tmp_path.iterdir()) == [destination]
 
 
-def test_headless_projection_exports_the_exact_workspace_patch() -> None:
+def test_headless_projection_preserves_evidence_without_fabricating_patches() -> None:
     patch = b"diff --git a/a.py b/a.py\n"
     events = b'{"event":"done"}\n'
 
-    class CAS:
-        def __init__(self) -> None:
-            artifact_manifest = json.dumps(
-                {"objects": [{"role": "patch", "payload": "runner-result-json"}]},
-                sort_keys=True,
-            ).encode()
-            self.payloads = {
-                "manifest": json.dumps(
-                    {
-                        "runner_ledger_ref": self.ref("events", events),
-                        "artifact_manifest_ref": self.ref(
-                            "artifacts",
-                            artifact_manifest,
-                        ),
-                    },
-                    sort_keys=True,
-                ).encode(),
-                "events": events,
-                "artifacts": artifact_manifest,
-            }
-
-        @staticmethod
-        def ref(artifact_id: str, payload: bytes) -> dict[str, str]:
-            return {
-                "artifact_id": artifact_id,
-                "sha256": "sha256:" + hashlib.sha256(payload).hexdigest(),
-            }
-
-        def get_ref(self, artifact_id: str) -> SimpleNamespace:
-            payload = self.payloads[artifact_id]
-            projection = self.ref(artifact_id, payload)
-            return SimpleNamespace(**projection, to_dict=lambda: projection)
-
-        def get_bytes(self, ref: SimpleNamespace, *, max_bytes: int) -> bytes:
-            payload = self.payloads[ref.artifact_id]
-            assert len(payload) <= max_bytes
-            return payload
-
-    cas = CAS()
+    cas = InMemoryCAS()
+    events_ref = cas.put_bytes(events, media_type="application/json")
+    artifacts_ref = cas.put_bytes(
+        json.dumps({"objects": [{"role": "patch", "payload": "runner-result-json"}]}).encode(),
+        media_type="application/json",
+    )
+    manifest_ref = cas.put_bytes(
+        json.dumps({
+            "runner_ledger_ref": events_ref.to_dict(),
+            "artifact_manifest_ref": artifacts_ref.to_dict(),
+        }).encode(),
+        media_type="application/json",
+    )
     composition = SimpleNamespace(
         authority_graph=SimpleNamespace(cas=cas),
     )
-    run = SimpleNamespace(
-        primary_disposition=SimpleNamespace(value="succeeded"),
+    run = V2RunResult(
+        episode_id="projection-test",
+        create_fingerprint="sha256:" + "0" * 64,
+        run_fingerprint="sha256:" + "1" * 64,
+        primary_disposition=EpisodePrimaryDisposition.SUCCEEDED,
         termination="completed",
         turn_count=1,
         response=freeze_json_object(
@@ -99,7 +79,7 @@ def test_headless_projection_exports_the_exact_workspace_patch() -> None:
         completed_envelope_ref=None,
         closed_envelope_ref=None,
         result_ref=None,
-        evidence_manifest_ref=cas.get_ref("manifest"),
+        evidence_manifest_ref=manifest_ref,
         evidence_root="sha256:" + "0" * 64,
         artifact_manifest_ref=None,
         primary_measurement_digest="sha256:" + "1" * 64,
@@ -119,7 +99,7 @@ def test_headless_projection_exports_the_exact_workspace_patch() -> None:
     )
     result: dict[str, Any] = {}
 
-    with pytest.raises(ValueError, match="base commit mismatch"):
+    with pytest.raises(ValueError):
         _project_headless_run(
             {}, run, composition, expected_base_commit="1" * 40
         )
@@ -135,6 +115,26 @@ def test_headless_projection_exports_the_exact_workspace_patch() -> None:
     assert json.loads(json.dumps(result))["terminal"]["response"] == {
         "output": [{"type": "message", "content": [{"type": "output_text", "text": "done"}]}]
     }
+
+    with pytest.raises(ValueError):
+        _project_headless_run(
+            {}, replace(run, workspace_diff=None), composition,
+            expected_base_commit="0" * 40,
+        )
+    cancelled_run = replace(
+        run, primary_disposition=EpisodePrimaryDisposition.CANCELLED,
+        response=None, termination=None, turn_count=0, workspace_diff=None,
+    )
+    cancelled: dict[str, Any] = {}
+    event_bytes, patch_bytes = _project_headless_run(
+        cancelled, cancelled_run, composition, expected_base_commit="0" * 40,
+    )
+    assert event_bytes == events
+    assert patch_bytes is None
+    assert cancelled["terminal"]["status"] == "cancelled"
+    assert cancelled["workspace_evidence"]["runner_event_ledger_digest"] == (
+        "sha256:" + hashlib.sha256(events).hexdigest()
+    )
 
 
 @pytest.mark.parametrize(
