@@ -840,7 +840,7 @@ class EpisodeOpenAICompletionsPolicyClient:
         if (
             not isinstance(body_object, dict)
             or body_object.get("model") != profile.model
-            or body_object.get("stream") is not False
+            or body_object.get("stream", False) is not False
         ):
             raise RunnerPolicyBindingError(
                 "native HTTP request model or streaming mode is not admitted",
