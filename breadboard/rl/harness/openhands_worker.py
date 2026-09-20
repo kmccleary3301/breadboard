@@ -608,3 +608,12 @@ def factory(channel: Any) -> OpenHandsActor:
 
 
 __all__ = ["OpenHandsActor", "NativeWorkerError", "factory"]
+
+
+if __name__ == "__main__":
+    # Interpreter bootstrap paths must not contaminate source tool subprocesses.
+    for name in ("PYTHONHOME", "PYTHONPATH", "PYTHONNOUSERSITE", "LD_LIBRARY_PATH"):
+        os.environ.pop(name, None)
+    from native_worker import serve
+
+    serve(factory)

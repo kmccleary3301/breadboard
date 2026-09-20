@@ -2040,7 +2040,12 @@ class TrustedProcessHandle:
                         ),
                         timeout_ms=min(timeout_ms, self.plan.limits.setup_timeout_ms),
                         extra_fds=(node.fd,),
-                        environment=dict(self.plan.runtime.fixed_environment),
+                        environment={
+                            **dict(self.plan.runtime.fixed_environment),
+                            "PYTHONHOME": str(Path(binding.runtime_root_path) / "python"),
+                            "PYTHONNOUSERSITE": "1",
+                            "LD_LIBRARY_PATH": str(Path(binding.runtime_root_path) / "python/lib"),
+                        },
                     )
 
                     async def retire() -> bool:

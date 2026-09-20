@@ -27,9 +27,6 @@ from ....security import redaction
 from .streaming import OpenAIBaseRuntime
 from .chat_stream_decoder import OpenAIChatStreamDecoder
 
-_NATIVE_HTTP_SECRET_HEADERS = frozenset(
-    {"authorization", "cookie", "proxy-authorization", "x-api-key", "api-key"}
-)
 
 
 @dataclass(frozen=True, slots=True)

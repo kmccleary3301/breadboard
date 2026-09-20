@@ -841,6 +841,10 @@ class EpisodeOpenAICompletionsPolicyClient:
             not isinstance(body_object, dict)
             or body_object.get("model") != profile.model
             or body_object.get("stream", False) is not False
+            or set(body_object) - {
+                "model", "messages", "tools", "stream", "temperature",
+                "max_tokens", "max_completion_tokens", "reasoning_effort",
+            }
         ):
             raise RunnerPolicyBindingError(
                 "native HTTP request model or streaming mode is not admitted",
@@ -862,7 +866,7 @@ class EpisodeOpenAICompletionsPolicyClient:
             )
         token_fields = [name for name in ("max_tokens", "max_completion_tokens") if name in body_object]
         if (
-            len(token_fields) != 1
+            token_fields != [profile.request_policy.max_token_field]
             or type(body_object[token_fields[0]]) is not int
             or body_object[token_fields[0]] != 2048
             or "temperature" in body_object and (
@@ -870,9 +874,6 @@ class EpisodeOpenAICompletionsPolicyClient:
                 or body_object["temperature"] != 0
             )
             or "reasoning_effort" in body_object and body_object["reasoning_effort"] != "none"
-            or "n" in body_object and (
-                type(body_object["n"]) is not int or body_object["n"] != 1
-            )
         ):
             raise RunnerPolicyBindingError(
                 "native HTTP sampling controls differ from the admitted profile",

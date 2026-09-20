@@ -82,6 +82,7 @@ class NativeSession:
         "_next_request_id",
         "_closed",
         "_retiring",
+        "_retired",
         "_stderr_task",
         "_provider_pending",
         "_stderr_bytes",
@@ -112,6 +113,7 @@ class NativeSession:
         self._provider_pending = False
         self._closed = False
         self._retiring = False
+        self._retired = False
         self._stderr_bytes = bytearray()
         self._stderr_error: NativeSessionError | None = None
         self._stderr_task = asyncio.create_task(self._drain_stderr())
@@ -322,11 +324,7 @@ class NativeSession:
     async def _retire(self) -> bool:
         async with self._close_lock:
             if self._retiring:
-                try:
-                    await self._process.wait()
-                except (OSError, ChildProcessError):
-                    pass
-                return self._process.returncode is not None
+                return self._retired
             self._retiring = True
             try:
                 stdin = self._process.stdin
@@ -339,9 +337,11 @@ class NativeSession:
                 if self._retire_callback is not None:
                     result = self._retire_callback()
                     if inspect.isawaitable(result):
-                        return bool(await result)
-                    return bool(result)
-                return await self._kill_process_group()
+                        result = await result
+                    self._retired = bool(result)
+                else:
+                    self._retired = await self._kill_process_group()
+                return self._retired
             finally:
                 self._closed = True
 
@@ -367,10 +367,17 @@ class NativeSession:
         return self._process.returncode is not None
 
     async def close(self) -> None:
-        await self._retire()
-        if self._stderr_task is not asyncio.current_task() and not self._stderr_task.done():
-            self._stderr_task.cancel()
-        await asyncio.gather(self._stderr_task, return_exceptions=True)
+        try:
+            if not await self._retire():
+                raise NativeSessionError(
+                    "native worker ownership was not retired",
+                    code="native_retire_failed",
+                )
+        finally:
+            if self._stderr_task is not asyncio.current_task():
+                if not self._stderr_task.done():
+                    self._stderr_task.cancel()
+                await asyncio.gather(self._stderr_task, return_exceptions=True)
 
 
 __all__ = [
