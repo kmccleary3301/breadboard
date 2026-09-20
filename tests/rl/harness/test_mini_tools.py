@@ -2,53 +2,27 @@
 
 from __future__ import annotations
 
-import asyncio
+import base64
 import json
 import os
+from pathlib import Path
+import shlex
 import subprocess
-from types import SimpleNamespace
-from typing import Any, Mapping
+import sys
 
-import pytest
-
+from breadboard.rl.harness import mini_tools
 from breadboard.rl.harness.mini_tools import (
-    DEFAULT_COMMAND_TIMEOUT,
     DEFAULT_RAW_OUTPUT_LIMIT,
-    MAX_REQUEST_BYTES,
-    MINI_ENVIRONMENT_OVERRIDES,
-    MINI_SWE_AGENT_LOCAL_ADAPTER_ID,
-    MINI_TOOL_ID,
-    RawOutputLimitExceeded,
-    check_finished,
     execute_mini_shell_action,
-)
-from breadboard.rl.harness.runners.base import (
-    RunnerToolBinding,
-    freeze_json_object,
-    thaw_json,
-)
-from breadboard.rl.harness.sandbox import (
-    InstalledToolAdapter,
-    LeaseBackedRunnerWorkspace,
-    RuntimeClass,
-    WorkspaceStateError,
 )
 
 
 def test_mini_environment_overrides() -> None:
-    """Exact five Mini overrides are present."""
-    assert dict(MINI_ENVIRONMENT_OVERRIDES) == {
-        "PAGER": "cat",
-        "MANPAGER": "cat",
-        "LESS": "-R",
-        "PIP_PROGRESS_BAR": "off",
-        "TQDM_DISABLE": "1",
-    }
     result = execute_mini_shell_action(
-        {"command": "echo PAGER=$PAGER LESS=$LESS TQDM=$TQDM_DISABLE"}
+        {"command": "printf '%s|' \"$PAGER\" \"$MANPAGER\" \"$LESS\" \"$PIP_PROGRESS_BAR\" \"$TQDM_DISABLE\""}
     )
     assert result["returncode"] == 0
-    assert result["output"].strip() == "PAGER=cat LESS=-R TQDM=1"
+    assert result["output"] == "cat|cat|-R|off|1|"
     assert "exit" not in result
 
 
@@ -137,13 +111,6 @@ def test_native_timeout_rendering() -> None:
     assert "exit" not in result
 
 
-def test_raw_output_limit_exceeded() -> None:
-    """Raw output exceeding limit raises RawOutputLimitExceeded explicitly with prefix/count."""
-    large_action = {"command": "python3 -c 'print(\"A\" * 1000)'"}
-    with pytest.raises(RawOutputLimitExceeded) as exc_info:
-        execute_mini_shell_action(large_action, raw_output_limit=128)
-    assert len(exc_info.value.raw_prefix) == 128
-    assert exc_info.value.total_bytes >= 128
 
 
 def test_shell_exit_does_not_discard_descendant_pipe_output() -> None:
@@ -158,3 +125,51 @@ def test_closed_stdout_does_not_disable_native_deadline() -> None:
     )
     assert result["returncode"] == -1
     assert result["extra"]["exception_type"] == "TimeoutExpired"
+
+
+def test_helper_bootstrap_environment_cannot_break_guest_python(tmp_path: Path) -> None:
+    launcher = (
+        "import os,runpy,sys;"
+        "os.environ['PYTHONHOME']='/transport-only';"
+        "os.environ['LD_LIBRARY_PATH']='/transport-only';"
+        "runpy.run_path(sys.argv[1],run_name='__main__')"
+    )
+    request = {
+        "tool_id": "bash",
+        "arguments": {
+            "command": shlex.join([sys.executable, "-c", "print('guest-python-ok')"])
+        },
+        "environment": {"PATH": os.defpath, "HOME": str(tmp_path)},
+    }
+    result = subprocess.run(
+        [sys.executable, "-c", launcher, mini_tools.__file__],
+        input=json.dumps(request), capture_output=True, text=True, cwd=tmp_path, timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    observation = json.loads(result.stdout)
+    assert observation["returncode"] == 0, observation
+    assert observation["output"] == "guest-python-ok\n"
+
+
+def test_helper_raw_cap_retains_exact_prefix_on_failure(tmp_path: Path) -> None:
+    request = {
+        "tool_id": "bash",
+        "arguments": {
+            "command": shlex.join([
+                sys.executable, "-c",
+                f"import os; os.write(1, b'x' * {DEFAULT_RAW_OUTPUT_LIMIT + 1})",
+            ])
+        },
+        "environment": {"PATH": os.defpath, "HOME": str(tmp_path)},
+    }
+    result = subprocess.run(
+        [sys.executable, mini_tools.__file__],
+        input=json.dumps(request), capture_output=True, text=True, cwd=tmp_path, timeout=10,
+    )
+    assert result.returncode != 0
+    failure = json.loads(result.stdout)
+    assert failure["outer_error"] == "raw_output_limit_exceeded"
+    assert failure["examined_bytes"] == DEFAULT_RAW_OUTPUT_LIMIT + 1
+    assert base64.b64decode(failure["raw_prefix_base64"], validate=True) == (
+        b"x" * DEFAULT_RAW_OUTPUT_LIMIT
+    )

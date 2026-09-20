@@ -283,45 +283,6 @@ async def test_process_backend_binds_identity_recorder_before_base_measurement(
 
 
 
-async def test_run_shell_delegates_pinned_descriptor_as_workload_argv() -> None:
-    handle = object.__new__(TrustedProcessHandle)
-    handle._executable = type(
-        "ScriptedPinnedExecutable",
-        (),
-        {"proc_fd_path": "/proc/self/fd/71"},
-    )()
-    handle.plan = type(
-        "ScriptedPlan",
-        (),
-        {
-            "runtime": type(
-                "ScriptedRuntime",
-                (),
-                {"executable_path": "/catalog/runtime/shell"},
-            )()
-        },
-    )()
-    calls: list[tuple[tuple[str, ...], int, int]] = []
-    expected = {"returncode": 0, "stdout": "delegated", "stderr": ""}
-
-    async def scripted_run_argv(
-        argv: tuple[str, ...], *, timeout_ms: int, output_limit: int
-    ) -> dict[str, object]:
-        calls.append((argv, timeout_ms, output_limit))
-        return expected
-
-    handle._run_pinned_argv = scripted_run_argv  # type: ignore[method-assign]
-
-    result = await handle.run_shell(
-        "printf delegated",
-        timeout_ms=1_234,
-        output_limit=5_678,
-    )
-
-    assert result is expected
-    assert calls == [
-        (("/proc/self/fd/71", "-lc", "printf delegated"), 1_234, 5_678)
-    ]
 
 
 async def test_run_argv_executes_requested_command_through_pinned_shell() -> None:

@@ -1911,9 +1911,15 @@ class TrustedProcessHandle:
         entrypoint_path = _native_member_path(binding, binding.entrypoint_relative_path)
         _measure_native_file(entrypoint_path, binding.entrypoint_digest)
         node = _snapshot_installed_executable(node_path, binding.executable_digest)
+        execution_environment = None
         try:
             if binding.adapter_id == MINI_SWE_AGENT_LOCAL_ADAPTER_ID:
                 execution_argv = (node.proc_fd_path, entrypoint_path)
+                python_home = str(Path(node_path).parent.parent)
+                execution_environment = dict(self.plan.runtime.fixed_environment) | {
+                    "PYTHONHOME": python_home,
+                    "LD_LIBRARY_PATH": str(Path(python_home) / "lib"),
+                }
             else:
                 execution_argv = (
                     self._executable.proc_fd_path,
@@ -1929,6 +1935,7 @@ class TrustedProcessHandle:
                 output_limit=output_limit,
                 input_bytes=request_bytes,
                 extra_fds=(node.fd,),
+                environment=execution_environment,
             )
         finally:
             node.close()
@@ -1984,6 +1991,7 @@ class TrustedProcessHandle:
         output_limit: int,
         input_bytes: bytes = b"",
         extra_fds: Sequence[int] = (),
+        environment: Mapping[str, str] | None = None,
     ) -> Mapping[str, Any]:
         if (
             not argv
@@ -2033,7 +2041,7 @@ class TrustedProcessHandle:
                     + tuple(extra_fds)
                     + (self._workspace_fd,),
                     preexec_fn=lambda: os.fchdir(self._workspace_fd),
-                    env=dict(self.plan.runtime.fixed_environment),
+                    env=environment if environment is not None else dict(self.plan.runtime.fixed_environment),
                     start_new_session=True,
                     stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE,
@@ -2579,7 +2587,11 @@ class LeaseBackedRunnerWorkspace:
             if is_mini:
                 from .runners.base import thaw_json
                 request_bytes = json.dumps(
-                    {"tool_id": tool_id, "arguments": thaw_json(frozen_arguments)},
+                    {
+                        "tool_id": tool_id,
+                        "arguments": thaw_json(frozen_arguments),
+                        "environment": dict(lease.plan.runtime.fixed_environment),
+                    },
                     separators=(",", ":"),
                     ensure_ascii=False,
                     allow_nan=False,
@@ -2638,7 +2650,7 @@ class LeaseBackedRunnerWorkspace:
             "env": env_overrides,
             "timeout": 30,
             **platform.uname()._asdict(),
-            **lease.plan.runtime.fixed_environment,
+            **dict(lease.plan.runtime.fixed_environment),
         }
 
     async def read_text(self, path: str, *, offset: int = 0, limit: int | None = None) -> Mapping[str, Any]:

@@ -30,6 +30,7 @@ Semantics:
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import select
@@ -252,7 +253,7 @@ def execute_mini_shell_action(
 def main() -> int:
     """CLI entrypoint for InstalledToolAdapter protocol.
 
-    Reads stdin JSON: {"tool_id": "bash", "arguments": {"command": ...}} bounded to 4 MiB.
+    Reads a 4 MiB envelope containing tool_id, arguments, and the owned source environment.
     Writes stdout JSON: one result object.
     Traps SIGINT and SIGTERM, raising HelperCancelled to kill child group and reap before exit.
     """
@@ -286,8 +287,8 @@ def main() -> int:
             sys.stderr.write(f"mini-tools: request is not valid JSON: {exc}\n")
             return 1
 
-        if not isinstance(request, dict):
-            sys.stderr.write("mini-tools: request must be a JSON object\n")
+        if not isinstance(request, dict) or set(request) != {"tool_id", "arguments", "environment"}:
+            sys.stderr.write("mini-tools: request must contain tool_id, arguments, and environment\n")
             return 1
 
         tool_id = request.get("tool_id")
@@ -300,13 +301,29 @@ def main() -> int:
             sys.stderr.write("mini-tools: arguments must be a JSON object\n")
             return 1
 
-        result = execute_mini_shell_action(arguments)
+        environment = request["environment"]
+        if not isinstance(environment, dict) or any(
+            not key or "=" in key or "\x00" in key
+            or type(value) is not str or "\x00" in value
+            for key, value in environment.items()
+        ):
+            sys.stderr.write("mini-tools: environment must contain valid string bindings\n")
+            return 1
+
+        result = execute_mini_shell_action(arguments, env=environment)
         output_bytes = json.dumps(result, ensure_ascii=False).encode("utf-8") + b"\n"
         sys.stdout.buffer.write(output_bytes)
         sys.stdout.buffer.flush()
         return 0
 
     except RawOutputLimitExceeded as exc:
+        failure = {
+            "outer_error": "raw_output_limit_exceeded",
+            "raw_prefix_base64": base64.b64encode(exc.raw_prefix).decode("ascii"),
+            "examined_bytes": exc.total_bytes,
+        }
+        sys.stdout.buffer.write(json.dumps(failure).encode("utf-8") + b"\n")
+        sys.stdout.buffer.flush()
         sys.stderr.write(
             f"mini-tools: output limit exceeded: {exc} (examined {exc.total_bytes} bytes)\n"
         )
