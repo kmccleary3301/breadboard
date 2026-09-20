@@ -13,8 +13,12 @@ from types import MappingProxyType
 from pathlib import Path
 from typing import Any, Literal, Mapping
 from urllib.parse import urlsplit
-
-from breadboard_engine.compilation.contracts import CompiledConfigManifest, ConfigBundleManifest
+from breadboard_engine.compilation.contracts import (
+    CompiledConfigManifest,
+    ConfigBundleManifest,
+    DependencyClosureManifest,
+    canonical_json_bytes,
+)
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from breadboard.rl.harness import contracts as c
@@ -282,6 +286,7 @@ class AuthoritySources(_ExactModel):
     mount_broker_implementation: SourceArtifact
     openssl: OpenSslAuthorityInput
     config_bundle: SourceArtifact
+    config_closure: SourceArtifact
     config_members: tuple[ConfigMemberSource, ...]
     compiled_manifests: tuple[SourceArtifact, ...]
     admission_receipts: tuple[SourceArtifact, ...]
@@ -312,6 +317,8 @@ class AuthoritySources(_ExactModel):
             raise ValueError("F2 requires exactly one compiled manifest and one admission receipt")
         if self.config_bundle.media_type != "application/json":
             raise ValueError("config bundle media type mismatch")
+        if self.config_closure.media_type != "application/json":
+            raise ValueError("config closure media type mismatch")
         if self.compiled_manifests[0].media_type != _COMPILED_MEDIA:
             raise ValueError("compiled manifest media type mismatch")
         if self.admission_receipts[0].media_type != _RECEIPT_MEDIA:
@@ -385,7 +392,7 @@ class RequestTemplateInput(_ExactModel):
 
 
 class F2ProductionCompositionInput(_ExactModel):
-    schema_version: Literal["bb.rl.phase5-f2-production-input.v1"]
+    schema_version: Literal["bb.rl.phase5-f2-production-input.v2"]
     composition_id: str = Field(min_length=1, max_length=256)
     authority: AuthoritySources
     installed: InstalledV1
@@ -1067,6 +1074,12 @@ def _materialize_f2_production_composition(
         )
 
         config_ref, config_bytes = _copy_artifact(artifacts, "config-bundle.json", sources.config_bundle)
+        closure_ref, closure_bytes = _copy_artifact(
+            artifacts, "config-closure.json", sources.config_closure
+        )
+        closure = DependencyClosureManifest.from_json(closure_bytes)
+        if closure.canonical_bytes() != closure_bytes:
+            raise F2CompositionError("config closure is not canonical")
         config_bundle = ConfigBundleManifest.from_json(config_bytes)
         if config_bundle.canonical_bytes() != config_bytes:
             raise F2CompositionError("config bundle is not canonical")
@@ -1093,6 +1106,25 @@ def _materialize_f2_production_composition(
             ref, payload = _copy_artifact(artifacts, f"compiled-manifest-{index}.json", source)
             compiled_refs.append(ref)
             compiled_models.append(CompiledConfigManifest.from_json(payload))
+        if closure.closure_digest != compiled_models[0].inputs.closure_digest:
+            raise F2CompositionError(
+                "compiled manifest does not bind the supplied config closure"
+            )
+        closure_cas = FilesystemCAS(parsed.stores.cas)
+        try:
+            closure_cas_ref = closure_cas.put_bytes(
+                closure_bytes,
+                artifact_id=closure.closure_digest,
+                media_type="application/json",
+            )
+        finally:
+            closure_cas.close()
+        if (
+            closure_cas_ref.sha256 != closure_ref.sha256
+            or closure_cas_ref.size_bytes != closure_ref.size_bytes
+            or closure_cas_ref.media_type != "application/json"
+        ):
+            raise F2CompositionError("config closure CAS publication mismatch")
         receipt_refs: list[ArtifactFileRefV1] = []
         receipts: list[c.AdmissionReceipt] = []
         for index, source in enumerate(sources.admission_receipts):

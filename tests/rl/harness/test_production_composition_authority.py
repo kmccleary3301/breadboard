@@ -7,6 +7,7 @@ import ipaddress
 import json
 import os
 import stat
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -578,6 +579,91 @@ def _real_target_manifest(
         )
         return compiled.manifest.canonical_bytes(), compiled.manifest.semantic.to_canonical_obj()
     finally:
+        cas.close()
+
+
+def test_declared_target_dependency_order_survives_admission(tmp_path: Path) -> None:
+    cas = FilesystemCAS(tmp_path / "original")
+    altered_cas = FilesystemCAS(tmp_path / "altered")
+    try:
+        compiled = compile_e4_harness(
+            load_e4_target("mini-swe-agent@2.4.6"),
+            {},
+            {
+                "version": 2,
+                "profile": {"name": "closure-admission"},
+                "workspace": {"root": "workspace"},
+                "provider_tools": {"use_native": True},
+                "providers": {
+                    "default_model": "test-model",
+                    "models": [{
+                        "id": "test-model",
+                        "adapter": "openai",
+                        "params": {},
+                        "response_policy": {
+                            "schema_version": "bb.provider_native_response_policy.v1",
+                            "consumer_id": "breadboard.mini-swe-agent.v2.4.6",
+                            "provider_profile_digest": "sha256:" + "0" * 64,
+                            "max_response_bytes": 4194304,
+                            "max_stream_fragments": 1,
+                        },
+                    }],
+                },
+            },
+            cas=cas,
+            options=_options(),
+            request_schema_version="bb.rl.headless-run-request.v2",
+        )
+        bundles = {compiled.bundle.bundle_digest: compiled.bundle}
+        manifests = {
+            compiled.manifest.compiled_manifest_digest: compiled.manifest.canonical_bytes()
+        }
+        composition._verify_config_bundle_cas(cas, bundles, manifests)
+
+        asset_count = sum(
+            edge.kind == "e4_target_asset" for edge in compiled.closure.edges
+        )
+        altered = replace(
+            compiled.closure,
+            edges=tuple(
+                replace(edge, ordinal=asset_count - 1 - edge.ordinal)
+                if edge.kind == "e4_target_asset" else edge
+                for edge in compiled.closure.edges
+            ),
+            closure_digest="",
+        )
+        for entry in compiled.bundle.entries:
+            altered_cas.put_bytes(
+                cas.get_bytes(entry.artifact_id, max_bytes=entry.size_bytes),
+                artifact_id=entry.artifact_id,
+                media_type=entry.media_type,
+            )
+        altered_cas.put_bytes(
+            altered.canonical_bytes(),
+            artifact_id=compiled.closure.closure_digest,
+            media_type="application/json",
+        )
+        with pytest.raises(ValueError):
+            composition._verify_config_bundle_cas(altered_cas, bundles, manifests)
+        altered_manifest = replace(
+            compiled.manifest,
+            source_dependencies=(
+                replace(
+                    compiled.manifest.source_dependencies[0],
+                    raw_reference="unadmitted-reference",
+                ),
+                *compiled.manifest.source_dependencies[1:],
+            ),
+            compiled_manifest_digest="",
+        )
+        with pytest.raises(ValueError):
+            composition._verify_config_bundle_cas(
+                cas,
+                bundles,
+                {altered_manifest.compiled_manifest_digest: altered_manifest.canonical_bytes()},
+            )
+    finally:
+        altered_cas.close()
         cas.close()
 
 

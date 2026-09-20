@@ -20,13 +20,12 @@ from secrets import token_bytes
 from types import MappingProxyType
 from typing import Any, Literal, Mapping, Protocol, Sequence
 
-from breadboard_engine.compilation.bundle import build_dependency_closure
+from breadboard_engine.compilation.bundle import ManifestReader
 from breadboard_engine.compilation.contracts import (
-    ClosureMember,
     CompiledConfig,
     CompiledConfigManifest,
     ConfigBundleManifest,
-    DependencyEdge,
+    DependencyClosureManifest,
 )
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -3931,70 +3930,50 @@ def _verify_config_bundle_cas(
         raise ValueError("compiled manifest config bundle set mismatch")
     for compiled in parsed_manifests:
         bundle = bundles[compiled.inputs.bundle_digest]
-        bundled_paths = {entry.logical_path for entry in bundle.entries}
-        member_paths = tuple(
-            item.logical_path
-            for item in compiled.source_dependencies
-            if item.logical_path in bundled_paths
-        )
-        edge_values: list[DependencyEdge] = []
-        edge_ordinals: dict[tuple[str, str], int] = {}
-        for item in compiled.source_dependencies:
-            if item.from_logical_path is None or item.raw_reference is None:
-                continue
-            key = (item.from_logical_path, item.dependency_kind)
-            ordinal = edge_ordinals.get(key, 0)
-            edge_ordinals[key] = ordinal + 1
-            edge_values.append(
-                DependencyEdge(
-                    from_path=item.from_logical_path,
-                    kind=item.dependency_kind,
-                    raw_ref=item.raw_reference,
-                    logical_path=item.logical_path,
-                    ordinal=ordinal,
-                )
-            )
-        edges = tuple(edge_values)
-        external = tuple(
-            ClosureMember(
-                logical_path=item.logical_path,
-                artifact_id=item.blob_digest,
-                blob_digest=item.blob_digest,
-                size_bytes=item.size_bytes,
-                media_type=item.media_type,
-                source="external",
-            )
-            for item in compiled.source_dependencies
-            if item.logical_path not in bundled_paths
-        )
-        for member in external:
-            ref = cas.get_ref(member.artifact_id)
-            if (
-                ref.sha256 != member.blob_digest
-                or ref.size_bytes != member.size_bytes
-                or ref.media_type != member.media_type
-            ):
-                raise ValueError("external closure CAS member authority mismatch")
-            cas.get_bytes(ref, max_bytes=member.size_bytes)
-        entrypoint = next(
-            (
-                item.name
-                for item in bundle.entrypoints
-                if item.logical_path == compiled.inputs.entrypoint
-            ),
-            None,
-        )
-        if entrypoint is None:
-            raise ValueError("compiled entrypoint is absent from config bundle")
-        closure = build_dependency_closure(
-            bundle,
-            root_entrypoint=entrypoint,
-            member_paths=member_paths,
-            edges=edges,
-            external_members=external,
-        )
-        if closure.closure_digest != compiled.inputs.closure_digest:
+        closure_ref = cas.get_ref(compiled.inputs.closure_digest)
+        if closure_ref.media_type != "application/json":
+            raise ValueError("compiled dependency closure media type mismatch")
+        closure_bytes = cas.get_bytes(closure_ref, max_bytes=_MAX_AUTHORITY_BYTES)
+        closure = DependencyClosureManifest.from_json(closure_bytes)
+        if (
+            closure.closure_digest != compiled.inputs.closure_digest
+            or closure.canonical_bytes() != closure_bytes
+            or closure.root_entrypoint != compiled.inputs.entrypoint
+        ):
             raise ValueError("compiled dependency closure authority mismatch")
+        if not any(
+            item.logical_path == compiled.inputs.entrypoint
+            for item in bundle.entrypoints
+        ):
+            raise ValueError("compiled entrypoint is absent from config bundle")
+        reader = ManifestReader(cas=cas, bundle=bundle, closure=closure)
+        members = {member.logical_path: member for member in closure.members}
+        root = members[closure.root_entrypoint]
+        expected_dependencies = {
+            (
+                root.logical_path, "config_entrypoint", None, None,
+                root.blob_digest, root.size_bytes, root.media_type,
+            )
+        }
+        for edge in closure.edges:
+            member = members[edge.logical_path]
+            expected_dependencies.add((
+                member.logical_path, edge.kind, edge.from_path, edge.raw_ref,
+                member.blob_digest, member.size_bytes, member.media_type,
+            ))
+        actual_dependencies = {
+            (
+                item.logical_path, item.dependency_kind,
+                item.from_logical_path, item.raw_reference,
+                item.blob_digest, item.size_bytes, item.media_type,
+            )
+            for item in compiled.source_dependencies
+        }
+        if actual_dependencies != expected_dependencies:
+            raise ValueError("compiled dependency provenance differs from closure")
+        for member in closure.members:
+            if member.source == "external":
+                reader.read_bytes(member.logical_path)
         for entry in bundle.entries:
             ref = cas.get_ref(entry.artifact_id)
             if (

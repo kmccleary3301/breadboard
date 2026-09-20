@@ -1728,6 +1728,11 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
                 or config_ref.size_bytes != entry.size_bytes
             ):
                 raise ValueError("config bundle member CAS identity mismatch")
+        cas.put_bytes(
+            closure.canonical_bytes(),
+            artifact_id=closure.closure_digest,
+            media_type="application/json",
+        )
         pinned_compiler = PinnedServerCompilerAdapter({compiled_digest: compiled_bytes})
         revocations = PinnedRevocationStore((policy.revocation,))
         receipt_store = CASConfigRuntimeStore(cas)
