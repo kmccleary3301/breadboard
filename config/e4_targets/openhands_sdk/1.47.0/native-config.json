@@ -1,0 +1,316 @@
+{
+  "schema_version": "bb.e4.openhands-source-profile.v1",
+  "source_commit": "50080b58d35b4824fda25fca2345d80bcd08aeff",
+  "versions": {
+    "openhands-sdk": "1.47.0",
+    "openhands-tools": "1.47.0",
+    "litellm": "1.93.0",
+    "openai": "2.33.0"
+  },
+  "agent": {
+    "tools": [
+      {
+        "name": "TerminalTool",
+        "params": {
+          "terminal_type": "subprocess",
+          "shell_path": "/bin/bash",
+          "no_change_timeout_seconds": 30
+        }
+      },
+      {
+        "name": "FileEditorTool",
+        "params": {}
+      },
+      {
+        "name": "TaskTrackerTool",
+        "params": {}
+      }
+    ],
+    "include_default_tools": [
+      "FinishTool",
+      "ThinkTool"
+    ],
+    "system_prompt_kwargs": {
+      "cli_mode": true
+    },
+    "agent_context": null,
+    "condenser": null,
+    "critic": null,
+    "mcp_config": {},
+    "tool_concurrency_limit": 1
+  },
+  "conversation": {
+    "persistence_dir": null,
+    "max_iteration_per_run": 16,
+    "stuck_detection": true,
+    "max_budget_per_run": null,
+    "visualizer": null,
+    "plugins": null
+  },
+  "model": {
+    "num_retries": 0,
+    "timeout": 45,
+    "max_output_tokens": 2048,
+    "temperature": 0,
+    "reasoning_effort": "none",
+    "extended_thinking_budget": null,
+    "disable_vision": true,
+    "log_completions": false,
+    "api_mode": "chat",
+    "stream": false,
+    "native_tool_calling": true,
+    "drop_params": true,
+    "model_canonical_name": null
+  },
+  "environment": {
+    "LITELLM_LOCAL_MODEL_COST_MAP": "True",
+    "OH_RUNTIME_IDLE_TIMEOUT_SECONDS": null
+  },
+  "rendering": {
+    "system_prompt": "source_registry_at_lease_initialization",
+    "file_editor.description": "source_tool_factory_at_lease_initialization",
+    "capture_prompt_asset": "prompts/captured-system.txt",
+    "source_registry_asset": "prompts/source-registry.json"
+  },
+  "bounds": {
+    "episode_wall_seconds": 180,
+    "action_wall_seconds": 90,
+    "setup_wall_seconds": 60,
+    "raw_terminal_bytes": 1048576,
+    "raw_terminal_cap_exit_code": 74,
+    "response_wire_bytes": 4194304,
+    "outcome_bytes": 16777216,
+    "transcript_bytes": 33554432,
+    "memory_bytes": 2147483648,
+    "workspace_storage_bytes": 2147483648,
+    "cpu_millis": 1000,
+    "pids": 64,
+    "file_descriptors": 256,
+    "artifact_bytes": 67108864,
+    "total_artifact_bytes": 536870912
+  },
+  "tool_schemas": [
+    {
+      "type": "function",
+      "function": {
+        "name": "terminal",
+        "description": "Execute a shell command in the terminal within a persistent shell session.\n\n\n### Command Execution\n* One command at a time: You can only execute one shell command at a time.\n  If you need to run multiple commands sequentially, use `&&` or `;`.\n* Persistent session: Environment variables, virtual environments, and\n  working directory changes persist across commands.\n* Soft timeout: Commands pause for confirmation after 10 seconds without\n  new output unless you provide a longer `timeout`.\n* Shell options: Do NOT use `set -e`, `set -eu`, or `set -euo pipefail`.\n  The runtime may not support them reliably.\n\n### Long-running Commands\n* For commands that may run indefinitely, run them in the background and\n  redirect output to a file, e.g. `python3 app.py > server.log 2>&1 &`.\n* For long-running commands, set the `timeout` parameter accordingly.\n* If a command returns exit code `-1`, it hit the soft timeout and is\n  still running. With `is_input=true`, you can:\n  - Send empty `command` to retrieve additional logs\n  - Send text to STDIN of the running process\n  - Send control commands like `C-c`, `C-d`, or `C-z`\n  - Send navigation keys like `UP`, `DOWN`, `LEFT`, `RIGHT`, `TAB`,\n    `ESC`, `BS`, `HOME`, `END`, `PGUP`, and `PGDN`\n  - Send any `C-<letter>` Ctrl sequence such as `C-a`, `C-e`, or `C-l`\n\n### Best Practices\n* Verify a parent directory exists before creating files or directories.\n* Prefer absolute paths and avoid excessive use of `cd`.\n\n### Output Handling\n* Large output may be truncated before being returned.\n\n### Terminal Reset\n* Set `reset=true` to create a fresh terminal session if the current one\n  becomes unresponsive.\n* Resetting the terminal clears environment variables, working directory\n  changes, and running processes.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "security_risk": {
+              "type": "string",
+              "description": "Security risk levels for actions.\n\nBased on OpenHands security risk levels but adapted for agent-sdk.\nInteger values allow for easy comparison and ordering.",
+              "enum": [
+                "UNKNOWN",
+                "LOW",
+                "MEDIUM",
+                "HIGH"
+              ]
+            },
+            "summary": {
+              "type": "string",
+              "description": "A concise summary (approximately 10 words) describing what this specific action does. Focus on the key operation and target. Example: 'List all Python files in current directory'"
+            },
+            "command": {
+              "type": "string",
+              "description": "The shell command to execute. Can be empty string to view additional logs when the previous exit code is `-1`. Can be a special key name when `is_input` is True: `C-c` (Ctrl+C), `C-d` (Ctrl+D/EOF), `C-z` (Ctrl+Z), or any `C-<letter>` for Ctrl sequences; navigation keys `UP`, `DOWN`, `LEFT`, `RIGHT`, `HOME`, `END`, `PGUP`, `PGDN`; and `TAB`, `ESC`, `BS` (Backspace), `ENTER`. You can only execute one command at a time. Use the platform-appropriate shell syntax described in the tool description when chaining commands."
+            },
+            "is_input": {
+              "type": "boolean",
+              "description": "If True, the command is an input to the running process. If False, the command is executed in the terminal session. Default is False."
+            },
+            "timeout": {
+              "type": "number",
+              "description": "Optional. Sets a maximum time limit (in seconds) for running the command. If the command takes longer than this limit, you’ll be asked whether to continue or stop it. If you don’t set a value, the command will instead pause and ask for confirmation when it produces no new output for 30 seconds. Use a higher value if the command is expected to take a long time (like installation or testing), or if it has a known fixed duration (like sleep)."
+            },
+            "reset": {
+              "type": "boolean",
+              "description": "If True, reset the terminal by creating a new session. Use this only when the terminal becomes unresponsive. Note that all previously set environment variables and session state will be lost after reset. Cannot be used with is_input=True."
+            }
+          },
+          "required": [
+            "command"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "file_editor",
+        "description": "Custom editing tool for viewing, creating and editing files in plain-text format\n* State is persistent across command calls and discussions with the user\n* If `path` is a text file, `view` displays the result of applying `cat -n`. If `path` is a directory, `view` lists non-hidden files and directories up to 2 levels deep\n* The `create` command cannot be used if the specified `path` already exists as a file\n* If a `command` generates a long output, it will be truncated and marked with `<response clipped>`\n* The `undo_edit` command will revert the last edit made to the file at `path`\n* This tool can be used for creating and editing files in plain-text format.\n\n\nBefore using this tool:\n1. Use the view tool to understand the file's contents and context\n2. Verify the directory path is correct (only applicable when creating new files):\n   - Use the view tool to verify the parent directory exists and is the correct location\n\nWhen making edits:\n   - Ensure the edit results in idiomatic, correct code\n   - Do not leave the code in a broken state\n   - Always use absolute file paths (starting with /)\n\nCRITICAL REQUIREMENTS FOR USING THIS TOOL:\n\n1. EXACT MATCHING: The `old_str` parameter must match EXACTLY one or more consecutive lines from the file, including all whitespace and indentation. The tool will fail if `old_str` matches multiple locations or doesn't match exactly with the file content.\n\n2. UNIQUENESS: The `old_str` must uniquely identify a single instance in the file:\n   - Include sufficient context before and after the change point (3-5 lines recommended)\n   - If not unique, the replacement will not be performed\n\n3. REPLACEMENT: The `new_str` parameter should contain the edited lines that replace the `old_str`. Both strings must be different.\n\nRemember: when making multiple file edits in a row to the same file, you should prefer to send all edits in a single message with multiple calls to this tool, rather than multiple messages with a single call each.\n\n\nYour current working directory is: /opt/openhands-preparation/workspace\nWhen exploring project structure, start with this directory instead of the root filesystem.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "security_risk": {
+              "type": "string",
+              "description": "Security risk levels for actions.\n\nBased on OpenHands security risk levels but adapted for agent-sdk.\nInteger values allow for easy comparison and ordering.",
+              "enum": [
+                "UNKNOWN",
+                "LOW",
+                "MEDIUM",
+                "HIGH"
+              ]
+            },
+            "summary": {
+              "type": "string",
+              "description": "A concise summary (approximately 10 words) describing what this specific action does. Focus on the key operation and target. Example: 'List all Python files in current directory'"
+            },
+            "command": {
+              "type": "string",
+              "description": "The commands to run. Allowed options are: `view`, `create`, `str_replace`, `insert`, `undo_edit`.",
+              "enum": [
+                "view",
+                "create",
+                "str_replace",
+                "insert",
+                "undo_edit"
+              ]
+            },
+            "path": {
+              "type": "string",
+              "description": "Absolute path to file or directory."
+            },
+            "file_text": {
+              "type": "string",
+              "description": "Required parameter of `create` command, with the content of the file to be created."
+            },
+            "old_str": {
+              "type": "string",
+              "description": "Required parameter of `str_replace` command containing the string in `path` to replace."
+            },
+            "new_str": {
+              "type": "string",
+              "description": "Optional parameter of `str_replace` command containing the new string (if not given, no string will be added). Required parameter of `insert` command containing the string to insert."
+            },
+            "insert_line": {
+              "type": "integer",
+              "description": "Required parameter of `insert` command. The `new_str` will be inserted AFTER the line `insert_line` of `path`."
+            },
+            "view_range": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "description": "Optional parameter of `view` command when `path` points to a file. If none is given, the full file is shown. If provided, the file will be shown in the indicated line number range, e.g. [11, 12] will show lines 11 and 12. Indexing at 1 to start. Setting `[start_line, -1]` shows all lines from `start_line` to the end of the file."
+            }
+          },
+          "required": [
+            "command",
+            "path"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "task_tracker",
+        "description": "This tool provides structured task management capabilities for development workflows.\nIt enables systematic tracking of work items, progress monitoring, and efficient\norganization of complex development activities.\n\nThe tool maintains visibility into project status and helps communicate\nprogress effectively to users.\n\n## Application Guidelines\n\nUtilize this tool in the following situations:\n\n1. Multi-phase development work - When projects involve multiple sequential or\n   parallel activities\n2. Complex implementation tasks - Work requiring systematic planning and\n   coordination across multiple components\n3. Explicit user request for task organization - When users specifically ask\n   for structured task management\n4. Multiple concurrent requirements - When users present several work items\n   that need coordination\n5. Project initiation - Capture and organize user requirements at project start\n6. Work commencement - Update task status to in_progress before beginning\n   implementation. Maintain focus by limiting active work to one task\n7. Task completion - Update status to done and identify any additional work\n   that emerged during implementation\n\n## Situations Where Tool Usage Is Unnecessary\n\nAvoid using this tool when:\n\n1. Single atomic tasks that require no decomposition\n2. Trivial operations where tracking adds no organizational value\n3. Simple activities completable in minimal steps\n4. Pure information exchange or discussion\n\nNote: For single straightforward tasks, proceed with direct implementation\nrather than creating tracking overhead.\n\n## Usage Scenarios\n\n**Scenario A: Feature Development with Validation**\nUser request: \"Build a user authentication system with login/logout functionality.\nDon't forget to include input validation and error handling!\"\n\nResponse approach: I'll implement a user authentication system with comprehensive\nvalidation. Let me organize this work systematically.\n\n*Task breakdown includes:*\n1. Design authentication API endpoints and data models\n2. Implement user login/logout controllers with session management\n3. Add client-side form validation and error display\n4. Create backend input sanitization and security checks\n5. Implement comprehensive error handling for edge cases\n6. Perform integration testing and fix any issues\n\n**Scenario B: Codebase Refactoring**\nUser request: \"I need to update all instances of the method 'fetchData' to\n'retrieveInformation' throughout the entire project\"\n\nResponse approach: Let me first analyze your codebase to identify all locations\nwhere 'fetchData' appears.\n\n*After code analysis*\n\nI've located 12 occurrences of 'fetchData' across 6 files in your project.\nI'll create a systematic plan to update these references.\n\n*Organized task list includes specific file-by-file updates*\n\n**Scenario C: Multi-feature Development**\nUser request: \"Set up a blog platform with these components: admin dashboard,\narticle management, comment system, and user profiles.\"\n\nResponse approach: I'll help build your blog platform. Let me break down these\ncomponents into manageable implementation phases.\n\n*Creates structured plan with each feature decomposed into specific development tasks*\n\n## Counter-examples - Direct Implementation Preferred\n\n**Counter-example A: Simple inquiry**\nUser request: \"What's the syntax for a for loop in JavaScript?\"\n\nResponse approach: Here's how to write a for loop in JavaScript:\n\n```javascript\nfor (let i = 0; i < array.length; i++) {\n    console.log(array[i]);\n}\n```\n\n*No task tracking needed - single informational response*\n\n**Counter-example B: Minor modification**\nUser request: \"Please add a docstring to the processPayment function explaining\nits parameters.\"\n\nResponse approach: I'll add a docstring to explain the processPayment function.\n\n*Direct edit without task tracking for simple modification*\n\n## Status Management and Workflow\n\n1. **Status Values**: Track work using these states:\n   - todo: Not yet initiated\n   - in_progress: Currently active (maintain single focus)\n   - done: Successfully completed\n\n2. **Workflow Practices**:\n   - Update status dynamically as work progresses\n   - Mark completion immediately upon task finish\n   - Limit active work to ONE task at any given time\n   - Complete current activities before initiating new ones\n   - Remove obsolete tasks from tracking entirely\n\n3. **Completion Criteria**:\n   - Mark tasks as done only when fully achieved\n   - Keep status as in_progress if errors, blocks, or partial completion exist\n   - Create new tasks for discovered issues or dependencies\n   - Never mark done when:\n       - Test suites are failing\n       - Implementation remains incomplete\n       - Unresolved errors persist\n       - Required resources are unavailable\n\n4. **Task Organization**:\n   - Write precise, actionable descriptions\n   - Decompose complex work into manageable units\n   - Use descriptive, clear naming conventions\n\nWhen uncertain, favor using this tool. Proactive task management demonstrates\nsystematic approach and ensures comprehensive requirement fulfillment.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "security_risk": {
+              "type": "string",
+              "description": "Security risk levels for actions.\n\nBased on OpenHands security risk levels but adapted for agent-sdk.\nInteger values allow for easy comparison and ordering.",
+              "enum": [
+                "UNKNOWN",
+                "LOW",
+                "MEDIUM",
+                "HIGH"
+              ]
+            },
+            "summary": {
+              "type": "string",
+              "description": "A concise summary (approximately 10 words) describing what this specific action does. Focus on the key operation and target. Example: 'List all Python files in current directory'"
+            },
+            "command": {
+              "type": "string",
+              "description": "The command to execute. `view` shows the current task list. `plan` creates or updates the task list based on provided requirements and progress. Always `view` the current list before making changes.",
+              "enum": [
+                "view",
+                "plan"
+              ]
+            },
+            "task_list": {
+              "type": "array",
+              "description": "The full task list. Required parameter of `plan` command.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "description": "A brief title for the task."
+                  },
+                  "notes": {
+                    "type": "string",
+                    "description": "Additional details or notes about the task."
+                  },
+                  "status": {
+                    "type": "string",
+                    "description": "The current status of the task. One of 'todo', 'in_progress', or 'done'.",
+                    "enum": [
+                      "todo",
+                      "in_progress",
+                      "done"
+                    ]
+                  }
+                },
+                "required": [
+                  "title"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "finish",
+        "description": "Signals the completion of the current task or conversation.\n\nUse this tool when:\n- You have successfully completed the user's requested task\n- You cannot proceed further due to technical limitations or missing information\n\nThe message should include:\n- A clear summary of actions taken and their results\n- Any next steps for the user\n- Explanation if you're unable to complete the task\n- Any follow-up questions if more information is needed\n",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string",
+              "description": "A concise summary (approximately 10 words) describing what this specific action does. Focus on the key operation and target. Example: 'List all Python files in current directory'"
+            },
+            "message": {
+              "type": "string",
+              "description": "Final message to send to the user."
+            }
+          },
+          "required": [
+            "message"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "think",
+        "description": "Use the tool to think about something. It will not obtain new information or make any changes to the repository, but just log the thought. Use it when complex reasoning or brainstorming is needed.\n\nCommon use cases:\n1. When exploring a repository and discovering the source of a bug, call this tool to brainstorm several unique ways of fixing the bug, and assess which change(s) are likely to be simplest and most effective.\n2. After receiving test results, use this tool to brainstorm ways to fix failing tests.\n3. When planning a complex refactoring, use this tool to outline different approaches and their tradeoffs.\n4. When designing a new feature, use this tool to think through architecture decisions and implementation details.\n5. When debugging a complex issue, use this tool to organize your thoughts and hypotheses.\n\nThe tool simply logs your thought process for better transparency and does not execute any code or make changes.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string",
+              "description": "A concise summary (approximately 10 words) describing what this specific action does. Focus on the key operation and target. Example: 'List all Python files in current directory'"
+            },
+            "thought": {
+              "type": "string",
+              "description": "The thought to log."
+            }
+          },
+          "required": [
+            "thought"
+          ]
+        }
+      }
+    }
+  ]
+}

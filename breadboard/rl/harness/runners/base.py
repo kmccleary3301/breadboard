@@ -607,6 +607,42 @@ class SourceHistoryCommitEvent:
             object.__setattr__(self, "runtime_frame", freeze_json_object(self.runtime_frame, field_name="source runtime frame"))
 
 @dataclass(frozen=True, slots=True)
+class SourceEventCommitEvent:
+    sequence: int
+    episode_id: str
+    effective_plan_digest: str
+    turn: int | None
+    source_id: str
+    phase: str
+    events: tuple[FrozenJsonObject, ...]
+    history_digest: str
+    state: FrozenJsonObject
+
+    def __post_init__(self) -> None:
+        _validate_event_identity(self.sequence, self.episode_id, self.effective_plan_digest)
+        _positive_turn(self.turn, optional=True)
+        _nonempty_text(self.source_id, field_name="source_id")
+        if self.phase not in {
+            "initial",
+            "before_policy",
+            "assistant",
+            "observation_batch",
+            "exit",
+        }:
+            raise ValueError("source event phase is unsupported")
+        _implementation_digest(self.history_digest)
+        object.__setattr__(
+            self,
+            "events",
+            tuple(freeze_json_object(event, field_name="source event") for event in self.events),
+        )
+        object.__setattr__(
+            self,
+            "state",
+            freeze_json_object(self.state, field_name="source state"),
+        )
+
+@dataclass(frozen=True, slots=True)
 class ToolCallEvent:
     sequence: int
     episode_id: str
@@ -651,6 +687,7 @@ class ToolObservationEvent:
             raise TypeError("submitted must be a bool")
         _optional_nonempty_text(self.error_type, field_name="error_type")
         object.__setattr__(self, "observation", freeze_json_object(self.observation, field_name="tool observation event"))
+
 
 @dataclass(frozen=True, slots=True)
 class RunnerTerminationEvent:
@@ -717,6 +754,7 @@ RunnerEvent: TypeAlias = (
     PolicyRequestEvent
     | PolicyResponseEvent
     | SourceHistoryCommitEvent
+    | SourceEventCommitEvent
     | PolicyRuntimeRequestEvent
     | PolicyRuntimeResponseEvent
     | ToolCallEvent
@@ -752,6 +790,7 @@ class RunnerResult:
             PolicyRequestEvent,
             PolicyResponseEvent,
             SourceHistoryCommitEvent,
+            SourceEventCommitEvent,
             PolicyRuntimeRequestEvent,
             PolicyRuntimeResponseEvent,
             ToolCallEvent,
@@ -781,6 +820,7 @@ class RunnerResult:
                     PolicyRequestEvent,
                     PolicyResponseEvent,
                     SourceHistoryCommitEvent,
+                    SourceEventCommitEvent,
                     PolicyRuntimeRequestEvent,
                     PolicyRuntimeResponseEvent,
                     ToolCallEvent,
@@ -963,6 +1003,37 @@ class CompiledPolicyRuntimeClientPort(PolicyRuntimeClientPort, Protocol):
     """Native consumers bind their verified source manifest before any sample."""
 
     def bind_compiled_plan(self, plan: EffectiveExecutionPlan) -> Mapping[str, Any]: ...
+
+ 
+@runtime_checkable
+class NativeSourceSessionPort(Protocol):
+    """Lease-owned persistent source-native phase session."""
+
+    async def invoke_native_phase(
+        self,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+    ) -> Mapping[str, Any]: ...
+
+
+@runtime_checkable
+class NativeHTTPPolicyRuntimeClientPort(CompiledPolicyRuntimeClientPort, Protocol):
+    """Compiled provider authority for a source-native HTTP exchange."""
+
+    def bind_native_tools(self, tools: tuple[Mapping[str, Any], ...]) -> None: ...
+
+    def stage_native_http_request(
+        self, request: Mapping[str, Any]
+    ) -> Mapping[str, Any]: ...
+
+    def take_native_http_response(
+        self, response_digest: str
+    ) -> Mapping[str, Any]: ...
+
+ 
+
 
 
 @runtime_checkable

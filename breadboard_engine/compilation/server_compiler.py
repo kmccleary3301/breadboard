@@ -3704,7 +3704,11 @@ def _compile_e4_target_binding(
         ) from exc
     rendered = source.rendering
     return {
-        "version": 1 if rendered.runtime_profile is None else 2,
+        "version": (
+            3 if rendered.system_prompt is None
+            else 2 if rendered.runtime_profile is not None
+            else 1
+        ),
         "target_id": rendered.target_id,
         "target_schema_version": package.descriptor["schema_version"],
         "request_schema_version": frame["request_schema_version"],

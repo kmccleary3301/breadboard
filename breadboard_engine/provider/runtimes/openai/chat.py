@@ -27,6 +27,10 @@ from ....security import redaction
 from .streaming import OpenAIBaseRuntime
 from .chat_stream_decoder import OpenAIChatStreamDecoder
 
+_NATIVE_HTTP_SECRET_HEADERS = frozenset(
+    {"authorization", "cookie", "proxy-authorization", "x-api-key", "api-key"}
+)
+
 
 @dataclass(frozen=True, slots=True)
 class _ProfileClient:
@@ -134,6 +138,83 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         if http_client is None:
             raise AssertionError("profile HTTP client was not created")
         return _ProfileClient(transport, profile, http_client)
+
+    def send_native_http_request(
+        self,
+        *,
+        client: Any,
+        method: str,
+        url: str,
+        headers: Tuple[Tuple[str, str], ...],
+        body: bytes,
+        max_response_bytes: int,
+    ) -> Dict[str, Any]:
+        """Send an admitted source request without SDK request/response projection."""
+        if (
+            not isinstance(client, _ProfileClient)
+            or not isinstance(client.profile, OpenAICompletionsProviderProfile)
+            or client.profile.provider_id != "openai"
+            or client.profile.runtime_id != "openai_chat"
+            or method != "POST"
+            or type(url) is not str
+            or type(body) is not bytes
+            or type(max_response_bytes) is not int
+            or max_response_bytes <= 0
+        ):
+            raise ProviderRuntimeError(
+                "native HTTP client or request is invalid",
+                kind="configuration",
+                details={"code": "native_http_request_invalid"},
+            )
+        profile = client.profile
+        wire_headers: list[tuple[str, str]] = []
+        for name, value in profile.caller_headers.items():
+            wire_headers.append((name, value))
+        for name, value in headers:
+            if name.casefold() == "authorization":
+                continue
+            wire_headers.append((name, value))
+        wire_headers.append(("Authorization", "Bearer " + profile.scoped_credential))
+        with redaction.secret_value_scope(
+            profile.scoped_credential,
+            *profile.caller_headers.values(),
+            *(value for _, value in headers),
+            allow_short=True,
+        ):
+            try:
+                with client.http_client.stream(
+                    method,
+                    url,
+                    headers=wire_headers,
+                    content=body,
+                ) as response:
+                    chunks: list[bytes] = []
+                    total = 0
+                    for chunk in response.iter_raw():
+                        total += len(chunk)
+                        if total > max_response_bytes:
+                            raise ProviderRuntimeError(
+                                "native HTTP response exceeds its byte bound",
+                                kind="protocol",
+                                details={"code": "native_http_response_oversized"},
+                            )
+                        chunks.append(chunk)
+                    return {
+                        "status_code": response.status_code,
+                        "headers": [
+                            [name, value] for name, value in response.headers.multi_items()
+                        ],
+                        "body": b"".join(chunks),
+                    }
+            except ProviderRuntimeError:
+                raise
+            except Exception as exc:
+                return {
+                    "error": {
+                        "type": exc.__class__.__name__,
+                        "message": redaction.safe_exception_message(exc),
+                    }
+                }
 
     def _stream_chat_completion(
         self,
