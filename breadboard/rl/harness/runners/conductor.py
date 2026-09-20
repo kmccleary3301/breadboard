@@ -8,16 +8,21 @@ from decimal import Decimal
 import json
 import math
 import re
+import time
 from typing import Any
 
 from breadboard_engine.compilation.contracts import (
     bytes_sha256,
     canonical_sha256,
 )
+from breadboard_engine.compilation.provider_response import MINI_RESPONSE_CONSUMER_ID, NativeResponsePolicy
 from breadboard.rl.harness.contracts import PolicyCapabilityObservation
 from breadboard.rl.harness.runner_identity import measure_module_artifact
+from breadboard.rl.harness.runners import mini_semantics
 from breadboard.rl.harness.runners.base import (
     ConductorToolPort,
+    CompiledPolicyRuntimeClientPort,
+    MiniTemplateFramePort,
     FrozenJsonObject,
     JsonSnapshotError,
     PolicyRequestEvent,
@@ -55,6 +60,7 @@ from breadboard.rl.harness.runners.base import (
     RunnerTurn,
     ToolCallEvent,
     ToolObservationEvent,
+    SourceHistoryCommitEvent,
     freeze_json_object,
     freeze_json_object_with_size,
     thaw_json,
@@ -69,7 +75,11 @@ _EVENT_SINK_SESSION: ContextVar[object | None] = ContextVar(
 
 
 _CONDUCTOR_MODULE_IDENTITY = measure_module_artifact(__file__)
-CONDUCTOR_IMPLEMENTATION_DIGEST = _CONDUCTOR_MODULE_IDENTITY.digest
+_MINI_MODULE_IDENTITY = measure_module_artifact(mini_semantics.__file__)
+CONDUCTOR_IMPLEMENTATION_DIGEST = canonical_sha256({
+    "conductor": _CONDUCTOR_MODULE_IDENTITY.digest,
+    "mini_semantics": _MINI_MODULE_IDENTITY.digest,
+})
 
 
 CONDUCTOR_ADAPTER_ID = "breadboard.conductor.v1"
@@ -120,6 +130,7 @@ class PolicyRuntimeBinding:
         "_close_task",
         "_active_task",
         "_generated_turn",
+        "_source_model_config",
     )
 
     def __init__(
@@ -243,6 +254,24 @@ class PolicyRuntimeBinding:
         self._close_task: asyncio.Task[None] | None = None
         self._active_task: asyncio.Task[PolicyRuntimeInvokeResult] | None = None
         self._generated_turn = 0
+        self._source_model_config: FrozenJsonObject | None = None
+        metadata = plan.effective_semantics.get("metadata")
+        target = metadata.get("e4_target") if isinstance(metadata, Mapping) else None
+        if isinstance(target, Mapping) and target.get("renderer_id") == MINI_RESPONSE_CONSUMER_ID:
+            if not isinstance(client, CompiledPolicyRuntimeClientPort):
+                raise RunnerPolicyBindingError(
+                    "Mini requires a compiled native provider client",
+                    code="native_response_consumer_mismatch",
+                    episode_id=request.episode_id,
+                    effective_plan_digest=request.effective_plan_digest,
+                )
+            self._source_model_config = freeze_json_object(
+                client.bind_compiled_plan(plan), field_name="source model configuration"
+            )
+
+    @property
+    def source_model_config(self) -> FrozenJsonObject | None:
+        return self._source_model_config
 
     @property
     def episode_id(self) -> str:
@@ -521,6 +550,7 @@ class _RuntimeProjection:
     tools: tuple[_ToolProjection, ...]
     responses_use_developer_role: bool
     tool_prompt_mode: str
+    source_profile: FrozenJsonObject | None = None
 
 
 
@@ -630,8 +660,26 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
     if default_model_id not in model_ids:
         raise _plan_error(request, "compiled default model is missing", "compiled_ir_mismatch")
     projected_models: list[_ModelProjection] = []
+    metadata = semantic.get("metadata")
+    target = metadata.get("e4_target") if isinstance(metadata, Mapping) else None
+    source_profile = None
+    if isinstance(target, Mapping) and target.get("renderer_id") == MINI_RESPONSE_CONSUMER_ID:
+        if (
+            target.get("target_id") != "mini-swe-agent@2.4.6"
+            or target.get("version") != 2
+            or not isinstance(target.get("runtime_profile"), Mapping)
+        ):
+            raise _plan_error(request, "Mini source profile is invalid", "compiled_ir_mismatch")
+        source_profile = target["runtime_profile"]
     for model in models:
-        if "response_policy" in model:
+        if source_profile is not None:
+            try:
+                native_policy = NativeResponsePolicy.from_dict(model.get("response_policy"))
+            except ValueError as exc:
+                raise _plan_error(request, "Mini native response policy is invalid", "native_response_consumer_mismatch") from exc
+            if native_policy.consumer_id != MINI_RESPONSE_CONSUMER_ID:
+                raise _plan_error(request, "Mini native response consumer differs", "native_response_consumer_mismatch")
+        elif "response_policy" in model:
             raise _plan_error(
                 request,
                 "compiled native response policy requires its recording consumer",
@@ -900,7 +948,7 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
     return _RuntimeProjection(
         tuple(projected_models), tuple(projected_modes), tuple(sequence),
         tuple(projected_tools), responses_use_developer_role,
-        prompts["tool_prompt_mode"],
+        prompts["tool_prompt_mode"], source_profile,
     )
 
 
@@ -1043,7 +1091,7 @@ class ConductorAdapter:
         if runtime_abi != CONDUCTOR_RUNTIME_ABI:
             raise ValueError("conductor adapter accepts only its exact runtime ABI")
         measured = measure_module_artifact(__file__)
-        if measured != _CONDUCTOR_MODULE_IDENTITY:
+        if measured != _CONDUCTOR_MODULE_IDENTITY or measure_module_artifact(mini_semantics.__file__) != _MINI_MODULE_IDENTITY:
             raise RuntimeError("conductor module artifact changed after bootstrap")
         self._descriptor = RunnerAdapterDescriptor(
             adapter_id=CONDUCTOR_ADAPTER_ID,
@@ -1271,7 +1319,49 @@ class _ConductorSession:
         models = {model.model_id: model for model in self._projection.models}
         modes = {mode.mode_id: mode for mode in self._projection.modes}
         tools_by_id = {tool.tool_id: tool for tool in self._projection.tools}
-        for turn in range(1, limits.max_turns + 1):
+        mini = None
+        if self._projection.source_profile is not None:
+            if (
+                not isinstance(self._tools, MiniTemplateFramePort)
+                or self._binding.source_model_config is None
+                or limits.max_turns != 8
+                or limits.action_timeout_ms != 35_000
+                or len(models) != 1
+                or any(model.params for model in models.values())
+                or set(tools_by_id) != {"bash"}
+            ):
+                raise _plan_error(self._open_request, "Mini source runtime controls differ", "compiled_ir_mismatch")
+            task = request.task_input.get("prompt")
+            if set(request.task_input) != {"prompt"} or type(task) is not str:
+                raise RunnerRequestError("Mini requires the owned headless prompt", code="request_authority_invalid")
+            frame = self._tools.mini_template_frame()
+            profile = self._projection.source_profile
+            agent = profile["agent"]
+            model_config = self._binding.source_model_config
+            mini = mini_semantics.MiniSemanticsState(
+                task=task,
+                system_template=agent["system_template"],
+                instance_template=agent["instance_template"],
+                observation_template=model_config["observation_template"],
+                format_error_template=model_config["format_error_template"],
+                runtime_template_vars=mini_semantics.recursive_merge(frame, model_config),
+                step_limit=agent["step_limit"],
+                cost_limit=agent["cost_limit"],
+                wall_time_limit_seconds=agent["wall_time_limit_seconds"],
+                max_consecutive_format_errors=agent["max_consecutive_format_errors"],
+            )
+            await self._source_history_commit(
+                mini, 0, "initial", turn=None, runtime_frame={"environment": frame, "model": model_config}
+            )
+        for turn in range(1, limits.max_turns + (2 if mini is not None else 1)):
+            if mini is not None:
+                before = len(mini.messages)
+                try:
+                    mini.begin_query()
+                except mini_semantics.LimitsExceeded:
+                    await self._source_history_commit(mini, before, "exit", turn=len(self._turns))
+                    termination = RunnerTermination.LIMITS_EXCEEDED
+                    break
             mode_id = self._projection.mode_sequence[(turn - 1) % len(self._projection.mode_sequence)]
             mode = modes[mode_id]
             model = models[mode.model_id]
@@ -1311,6 +1401,19 @@ class _ConductorSession:
             )
             if request.context:
                 final_request["metadata"] = {"task_context": thaw_json(request.context)}
+            if mini is not None:
+                chat_tools = []
+                for tool in mode_tools:
+                    function = thaw_json(tool.schema)
+                    function.pop("type")
+                    function.pop("strict")
+                    function["parameters"].pop("additionalProperties")
+                    chat_tools.append({"type": "function", "function": function})
+                final_request = {
+                    "model": model.model_id,
+                    "messages": mini.prepare_request_history(),
+                    "tools": chat_tools,
+                }
             frozen_request = freeze_json_object(final_request, field_name="final policy request")
             request_digest = canonical_sha256(frozen_request)
             await self._checkpoint("before_policy", turn=turn)
@@ -1382,7 +1485,7 @@ class _ConductorSession:
                     ),
                     turn=turn,
                 )
-            output = response.get("output", ())
+            output = response.get("output", ()) if mini is None else ()
             if not isinstance(output, tuple):
                 await self._raise_error(
                     RunnerProtocolError(
@@ -1426,6 +1529,33 @@ class _ConductorSession:
             )
             observations: list[FrozenJsonObject] = []
             calls = tuple(item for item in normalized if item.get("type") == "function_call")
+            parsed = None
+            if mini is not None:
+                native = response.get("native_response")
+                if not isinstance(native, Mapping) or not isinstance(native.get("raw_response"), Mapping):
+                    await self._raise_error(
+                        RunnerProtocolError("Mini native sample is missing", code="native_response_invalid", **self._context()),
+                        turn=turn,
+                    )
+                before = len(mini.messages)
+                parsed = mini.parse_and_commit_response(
+                    native["raw_response"], cost=response["cost"], timestamp=time.time()
+                )
+                await self._source_history_commit(
+                    mini, before, "format_error" if parsed.is_format_error else "assistant", turn=turn
+                )
+                if parsed.is_format_error:
+                    self._turns.append(RunnerTurn(turn, (), ()))
+                    if mini.is_exited:
+                        termination = RunnerTermination.REPEATED_FORMAT_ERROR
+                        break
+                    continue
+                raw_calls = native["raw_response"]["choices"][0]["message"]["tool_calls"]
+                calls = tuple({
+                    "name": call["function"]["name"],
+                    "call_id": call["id"],
+                    "arguments": call["function"]["arguments"],
+                } for call in raw_calls)
             await self._checkpoint(
                 "before_action" if calls else "after_policy", turn=turn
             )
@@ -1457,7 +1587,10 @@ class _ConductorSession:
                     )
                 raw_arguments = call["arguments"]
                 try:
-                    arguments = json.loads(raw_arguments)
+                    arguments = (
+                        {"command": parsed.actions[ordinal].command}
+                        if mini is not None else json.loads(raw_arguments)
+                    )
                     if type(arguments) is not dict:
                         raise ValueError
                 except Exception as exc:
@@ -1469,7 +1602,8 @@ class _ConductorSession:
                     error.__cause__ = exc
                     await self._raise_error(error, turn=turn, call_id=call_id)
                 try:
-                    _validate_arguments(arguments, tool.schema["parameters"])
+                    if mini is None:
+                        _validate_arguments(arguments, tool.schema["parameters"])
                 except RunnerProtocolError as error:
                     error.episode_id = self._open_request.episode_id
                     error.effective_plan_digest = self._open_request.effective_plan_digest
@@ -1521,6 +1655,33 @@ class _ConductorSession:
                     )
                     error.__cause__ = exc
                     await self._raise_error(error, turn=turn, call_id=call_id)
+                if mini is not None:
+                    observations.append(observation)
+                    native_exit = observation.get("exit")
+                    await self._emit(
+                        ToolObservationEvent(
+                            0, self._open_request.episode_id,
+                            self._open_request.effective_plan_digest, turn,
+                            ordinal, call_id, name, observation, native_exit is not None,
+                        )
+                    )
+                    await self._checkpoint("after_action", turn=turn, call_id=call_id)
+                    if native_exit is not None:
+                        if (
+                            not isinstance(native_exit, Mapping)
+                            or native_exit.get("role") != "exit"
+                            or native_exit.get("extra", {}).get("exit_status") != "Submitted"
+                        ):
+                            await self._raise_error(
+                                RunnerProtocolError("Mini native exit is invalid", code="tool_result_invalid", **self._context()),
+                                turn=turn, call_id=call_id,
+                            )
+                        before = len(mini.messages)
+                        mini.commit_native_exit("Submitted", native_exit["content"])
+                        await self._source_history_commit(mini, before, "exit", turn=turn)
+                        termination = RunnerTermination.SUBMITTED
+                        break
+                    continue
                 await self._checkpoint("after_action", turn=turn, call_id=call_id)
                 output_item = {
                     "type": "function_call_output",
@@ -1553,6 +1714,10 @@ class _ConductorSession:
                 await self._checkpoint("after_action", turn=turn, call_id=call_id)
                 transcript.extend((thaw_json(call), output_item))
                 transcript_size += added_size
+            if mini is not None and not mini.is_exited:
+                before = len(mini.messages)
+                mini.commit_whole_batch_observations(observations, timestamp=time.time())
+                await self._source_history_commit(mini, before, "observation_batch", turn=turn)
             self._turns.append(
                 RunnerTurn(
                     turn=turn,
@@ -1561,9 +1726,24 @@ class _ConductorSession:
                 )
             )
             last_response = response
+            if mini is not None:
+                if mini.is_exited:
+                    break
+                continue
             if not calls:
                 termination = RunnerTermination.ASSISTANT_COMPLETE
                 break
+        if mini is not None:
+            last_response = freeze_json_object({
+                "trajectory_format": "mini-swe-agent-1.1",
+                "messages": mini.messages,
+                "info": {
+                    "mini_version": "2.4.6",
+                    "exit_status": mini.exit_status,
+                    "submission": mini.submission,
+                    "model_stats": {"instance_cost": mini.cost, "api_calls": mini.n_calls},
+                },
+            }, field_name="Mini source trajectory")
         await self._checkpoint("after_loop", turn=len(self._turns))
         await self._checkpoint("before_commit", turn=len(self._turns))
         await self._commit_termination(termination)
@@ -1580,6 +1760,27 @@ class _ConductorSession:
             turns=tuple(self._turns),
             events=tuple(self._events),
         )
+
+    async def _source_history_commit(
+        self,
+        state: mini_semantics.MiniSemanticsState,
+        start: int,
+        phase: str,
+        *,
+        turn: int | None,
+        runtime_frame: Mapping[str, Any] | None = None,
+    ) -> None:
+        limits = self._open_request.effective_plan.effective_capabilities.limits
+        if _encoded_json_size(state.messages) > limits.transcript_bytes:
+            await self._raise_error(
+                RunnerProtocolError("source transcript limit exceeded", code="transcript_limit_exceeded", **self._context()),
+                turn=turn,
+            )
+        await self._emit(SourceHistoryCommitEvent(
+            0, self._open_request.episode_id, self._open_request.effective_plan_digest,
+            turn, phase, tuple(state.messages[start:]), canonical_sha256(state.messages),
+            state.n_calls, state.cost, runtime_frame,
+        ))
 
     async def _checkpoint(
         self,

@@ -21,6 +21,7 @@ from breadboard_engine.provider.profiles import OpenAICompletionsProviderProfile
 
 NATIVE_RESPONSE_POLICY_SCHEMA_VERSION: Final = "bb.provider_native_response_policy.v1"
 NATIVE_RESPONSE_CONSUMER_ID: Final = "breadboard.provider.recording.v1"
+MINI_RESPONSE_CONSUMER_ID: Final = "breadboard.mini-swe-agent.v2.4.6"
 NATIVE_RESPONSE_BINDING_SCHEMA_VERSION: Final = "bb.provider_native_response_binding.v1"
 MAX_NATIVE_RESPONSE_BYTES: Final = 16 * 1024 * 1024
 MAX_NATIVE_STREAM_FRAGMENTS: Final = 65_536
@@ -79,7 +80,7 @@ class NativeResponsePolicy:
             raise NativeResponseBindingError(
                 "response_policy.schema_version is unsupported"
             )
-        if self.consumer_id != NATIVE_RESPONSE_CONSUMER_ID:
+        if self.consumer_id not in {NATIVE_RESPONSE_CONSUMER_ID, MINI_RESPONSE_CONSUMER_ID}:
             raise NativeResponseBindingError(
                 "response_policy.consumer_id is unsupported"
             )
@@ -317,8 +318,22 @@ def admit_native_response_binding(
         raise
     except (TypeError, ValueError, KeyError) as exc:
         raise NativeResponseBindingError("compiled native response policy is invalid") from exc
-    if policy.consumer_id != NATIVE_RESPONSE_CONSUMER_ID:
-        raise NativeResponseBindingError("native response consumer is unsupported")
+    if policy.consumer_id == MINI_RESPONSE_CONSUMER_ID:
+        target = manifest.semantic.metadata.get("e4_target")
+        if (
+            not isinstance(target, Mapping)
+            or target.get("version") != 2
+            or target.get("target_id") != "mini-swe-agent@2.4.6"
+            or target.get("renderer_id") != MINI_RESPONSE_CONSUMER_ID
+            or not isinstance(target.get("runtime_profile"), Mapping)
+            or profile.request_policy.mode != "non_streaming"
+            or profile.request_policy.max_token_field != "max_tokens"
+            or profile.request_policy.strict_tools is not None
+            or profile.request_policy.enable_thinking is not None
+            or profile.max_output_tokens != 2048
+            or profile.sampling.as_dict() != {"temperature": 0.0, "n": 1}
+        ):
+            raise NativeResponseBindingError("Mini native response requires its compiled source profile")
     if profile_identity_digest(profile) != policy.provider_profile_digest:
         raise NativeResponseBindingError("profile identity does not match policy")
 
@@ -339,6 +354,7 @@ __all__ = [
     "MAX_NATIVE_STREAM_FRAGMENTS",
     "NATIVE_RESPONSE_BINDING_SCHEMA_VERSION",
     "NATIVE_RESPONSE_CONSUMER_ID",
+    "MINI_RESPONSE_CONSUMER_ID",
     "NATIVE_RESPONSE_POLICY_SCHEMA_VERSION",
     "NativeResponseBindingError",
     "NativeResponsePolicy",

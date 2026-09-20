@@ -414,6 +414,8 @@ class RunnerTermination(str, Enum):
     INVALID_POLICY_OUTPUT = "invalid_policy_output"
     ASSISTANT_COMPLETE = "assistant_complete"
     SUBMITTED = "submitted"
+    LIMITS_EXCEEDED = "limits_exceeded"
+    REPEATED_FORMAT_ERROR = "repeated_format_error"
 
 
 @dataclass(frozen=True, slots=True)
@@ -568,6 +570,42 @@ class PolicyResponseEvent:
         object.__setattr__(self, "response_payload", freeze_json_object(self.response_payload, field_name="policy response"))
         object.__setattr__(self, "normalized_output", tuple(freeze_json_object(item, field_name="policy output") for item in self.normalized_output))
 
+
+@dataclass(frozen=True, slots=True)
+class SourceHistoryCommitEvent:
+    """A source-history delta, distinct from a provider sample or native effect."""
+
+    sequence: int
+    episode_id: str
+    effective_plan_digest: str
+    turn: int | None
+    phase: str
+    messages: tuple[FrozenJsonObject, ...]
+    history_digest: str
+    model_calls: int
+    model_cost: float
+    runtime_frame: FrozenJsonObject | None = None
+
+    def __post_init__(self) -> None:
+        _validate_event_identity(self.sequence, self.episode_id, self.effective_plan_digest)
+        if self.turn is not None:
+            _positive_turn(self.turn)
+        if self.phase not in {"initial", "assistant", "format_error", "observation_batch", "exit"}:
+            raise ValueError("source history phase is unsupported")
+        _implementation_digest(self.history_digest)
+        if type(self.model_calls) is not int or self.model_calls < 0:
+            raise ValueError("source model call count must be nonnegative")
+        if type(self.model_cost) not in (int, float) or not math.isfinite(self.model_cost):
+            raise ValueError("source model cost must be finite")
+        object.__setattr__(
+            self, "messages",
+            tuple(freeze_json_object(message, field_name="source history message") for message in self.messages),
+        )
+        if self.runtime_frame is not None:
+            if self.phase != "initial":
+                raise ValueError("runtime frame belongs to initial source history")
+            object.__setattr__(self, "runtime_frame", freeze_json_object(self.runtime_frame, field_name="source runtime frame"))
+
 @dataclass(frozen=True, slots=True)
 class ToolCallEvent:
     sequence: int
@@ -678,6 +716,7 @@ class RunnerErrorEvent:
 RunnerEvent: TypeAlias = (
     PolicyRequestEvent
     | PolicyResponseEvent
+    | SourceHistoryCommitEvent
     | PolicyRuntimeRequestEvent
     | PolicyRuntimeResponseEvent
     | ToolCallEvent
@@ -712,6 +751,7 @@ class RunnerResult:
         event_types = (
             PolicyRequestEvent,
             PolicyResponseEvent,
+            SourceHistoryCommitEvent,
             PolicyRuntimeRequestEvent,
             PolicyRuntimeResponseEvent,
             ToolCallEvent,
@@ -740,6 +780,7 @@ class RunnerResult:
                 if type(event) in {
                     PolicyRequestEvent,
                     PolicyResponseEvent,
+                    SourceHistoryCommitEvent,
                     PolicyRuntimeRequestEvent,
                     PolicyRuntimeResponseEvent,
                     ToolCallEvent,
@@ -902,6 +943,20 @@ class PolicyRuntimeClientPort(Protocol):
     ) -> PolicyRuntimeInvokeResult: ...
     async def cancel(self, reason: str) -> None: ...
     async def close(self) -> None: ...
+
+
+@runtime_checkable
+class CompiledPolicyRuntimeClientPort(PolicyRuntimeClientPort, Protocol):
+    """Native consumers bind their verified source manifest before any sample."""
+
+    def bind_compiled_plan(self, plan: EffectiveExecutionPlan) -> Mapping[str, Any]: ...
+
+
+@runtime_checkable
+class MiniTemplateFramePort(Protocol):
+    """Runtime-owned template facts for the pinned Mini local environment."""
+
+    def mini_template_frame(self) -> Mapping[str, Any]: ...
 
 
 @runtime_checkable

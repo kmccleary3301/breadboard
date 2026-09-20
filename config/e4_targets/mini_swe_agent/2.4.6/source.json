@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/SWE-agent/mini-swe-agent",
+  "version": "2.4.6",
+  "commit": "a83fcae82d2a08f0ee0c688f9d137b3566c097f8",
+  "source_archive_sha256": "6621bf1f23f462f3a179edb2aa08be6547a8167a7eccc666b15e7830be38e362",
+  "native_loop": "DefaultAgent semantics executed by BreadBoard Conductor; upstream run() is not invoked",
+  "source_config": "src/minisweagent/config/mini.yaml"
+}

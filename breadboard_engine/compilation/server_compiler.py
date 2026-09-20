@@ -3704,7 +3704,7 @@ def _compile_e4_target_binding(
         ) from exc
     rendered = source.rendering
     return {
-        "version": 1,
+        "version": 1 if rendered.runtime_profile is None else 2,
         "target_id": rendered.target_id,
         "target_schema_version": package.descriptor["schema_version"],
         "request_schema_version": frame["request_schema_version"],
@@ -3715,13 +3715,14 @@ def _compile_e4_target_binding(
         "execution_config_digest": rendered.execution_config_digest,
         "overlay_id": rendered.overlay_id,
         "overlay_digest": rendered.overlay_digest,
-        "renderer_id": "breadboard.e4.legacy-string-template.v1",
+        "renderer_id": rendered.renderer_id,
         "rendered_prompt_digest": rendered.rendered_prompt_digest,
         "ordered_tool_names": list(rendered.ordered_tool_names),
         "tool_surface_digest": canonical_sha256([
             {"type": "function", "function": tool} for tool in rendered.tools
         ]),
         "harness_lock_digest": bytes_sha256(lock_bytes),
+        **({"runtime_profile": rendered.runtime_profile} if rendered.runtime_profile is not None else {}),
     }
 
 

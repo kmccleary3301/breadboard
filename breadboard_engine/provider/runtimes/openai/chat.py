@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 from builtins import ExceptionGroup
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
@@ -20,7 +20,7 @@ from ...contracts import (
 )
 from ...contract_wire import canonical_json
 from ...native_response import NativeProviderResponse
-from ....compilation.provider_response import CompiledNativeResponseBinding
+from ....compilation.provider_response import CompiledNativeResponseBinding, MINI_RESPONSE_CONSUMER_ID
 from ...model_role_options import openai_chat_role_options
 from ...sdk_bindings import provider_sdk_bindings
 from ....security import redaction
@@ -326,6 +326,16 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                     max_response_bytes=binding.policy.max_response_bytes,
                     max_stream_fragments=binding.policy.max_stream_fragments,
                 )
+                if binding.policy.consumer_id == MINI_RESPONSE_CONSUMER_ID:
+                    # Mini consumes the SDK message as a whole, before argument parsing.
+                    # The recording consumer's existing projection stays byte-compatible.
+                    response = replace(
+                        response, raw_response=raw_response.model_dump(mode="json")
+                    )
+                    response.validate_bounds(
+                        max_response_bytes=binding.policy.max_response_bytes,
+                        max_stream_fragments=binding.policy.max_stream_fragments,
+                    )
             response_payload = response.as_dict()
             safe_response, problems = redaction.scrub_structure(
                 response_payload, path="$.native_response"

@@ -134,6 +134,7 @@ class NativeProviderResponse:
     tool_calls: tuple[NativeToolCall, ...] = field(default_factory=tuple)
     usage: Mapping[str, Any] | None = None
     stream_fragments: tuple[NativeStreamFragment, ...] = field(default_factory=tuple)
+    raw_response: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         _require_text(self.binding_digest, "binding_digest", max_length=256)
@@ -151,6 +152,11 @@ class NativeProviderResponse:
             if not isinstance(copied_usage, Mapping):
                 raise ProviderContractError("usage must be an object")
             object.__setattr__(self, "usage", copied_usage)
+        if self.raw_response is not None:
+            raw = _copy_json_value(self.raw_response, "raw_response", freeze=True)
+            if not isinstance(raw, Mapping):
+                raise ProviderContractError("raw_response must be an object")
+            object.__setattr__(self, "raw_response", raw)
         if not isinstance(self.stream_fragments, tuple):
             raise ProviderContractError("stream_fragments must be an ordered tuple")
         if any(not isinstance(item, NativeStreamFragment) for item in self.stream_fragments):
@@ -170,6 +176,8 @@ class NativeProviderResponse:
             "usage": _copy_json_value(self.usage, "usage"),
             "stream_fragments": [item.as_dict() for item in self.stream_fragments],
         }
+        if self.raw_response is not None:
+            result["raw_response"] = _copy_json_value(self.raw_response, "raw_response")
         return result
 
     def validate_bounds(self, *, max_response_bytes: int, max_stream_fragments: int) -> None:
