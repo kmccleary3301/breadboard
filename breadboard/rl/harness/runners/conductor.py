@@ -658,6 +658,26 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
     ):
         raise _plan_error(request, "compiled semantic family is unsupported", "compiled_ir_mismatch")
 
+    metadata = semantic.get("metadata")
+    target = metadata.get("e4_target") if isinstance(metadata, Mapping) else None
+    source_profile = None
+    source_consumer_id = None
+    if isinstance(target, Mapping) and target.get("renderer_id") in {
+        MINI_RESPONSE_CONSUMER_ID, OPENHANDS_RESPONSE_CONSUMER_ID,
+    }:
+        source_consumer_id = target["renderer_id"]
+        expected_target, expected_version = (
+            ("mini-swe-agent@2.4.6", 2)
+            if source_consumer_id == MINI_RESPONSE_CONSUMER_ID
+            else ("openhands-sdk@1.47.0", 3)
+        )
+        if (
+            target.get("target_id") != expected_target
+            or target.get("version") != expected_version
+            or not isinstance(target.get("runtime_profile"), Mapping)
+        ):
+            raise _plan_error(request, "source-native profile is invalid", "compiled_ir_mismatch")
+        source_profile = target["runtime_profile"]
     providers = semantic.get("providers")
     if not isinstance(providers, Mapping):
         raise _plan_error(request, "compiled provider IR is invalid", "compiled_ir_mismatch")
@@ -674,7 +694,9 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
             and value not in (False, None, "", (), {})
             for key, value in provider_tools.items()
         )
-        or provider_tools.get("api_variant") != "responses"
+        or provider_tools.get("api_variant") != (
+            "chat" if source_consumer_id == OPENHANDS_RESPONSE_CONSUMER_ID else "responses"
+        )
         or provider_tools.get("use_native") is not True
         or provider_tools.get("suppress_prompts", False) is not False
         or provider_tools.get("responses_stateful", False) is not False
@@ -716,26 +738,6 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
     if default_model_id not in model_ids:
         raise _plan_error(request, "compiled default model is missing", "compiled_ir_mismatch")
     projected_models: list[_ModelProjection] = []
-    metadata = semantic.get("metadata")
-    target = metadata.get("e4_target") if isinstance(metadata, Mapping) else None
-    source_profile = None
-    source_consumer_id = None
-    if isinstance(target, Mapping) and target.get("renderer_id") in {
-        MINI_RESPONSE_CONSUMER_ID, OPENHANDS_RESPONSE_CONSUMER_ID,
-    }:
-        source_consumer_id = target["renderer_id"]
-        expected_target, expected_version = (
-            ("mini-swe-agent@2.4.6", 2)
-            if source_consumer_id == MINI_RESPONSE_CONSUMER_ID
-            else ("openhands-sdk@1.47.0", 3)
-        )
-        if (
-            target.get("target_id") != expected_target
-            or target.get("version") != expected_version
-            or not isinstance(target.get("runtime_profile"), Mapping)
-        ):
-            raise _plan_error(request, "source-native profile is invalid", "compiled_ir_mismatch")
-        source_profile = target["runtime_profile"]
     for model in models:
         if source_profile is not None:
             try:
