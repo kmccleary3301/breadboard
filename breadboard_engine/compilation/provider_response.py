@@ -341,6 +341,7 @@ def admit_native_response_binding(
             raise NativeResponseBindingError("Mini native response requires its compiled source profile")
     elif policy.consumer_id == OPENHANDS_RESPONSE_CONSUMER_ID:
         target = manifest.semantic.metadata.get("e4_target")
+        # Profile identity includes n=1 even though the source SDK omits n on wire.
         if (
             not isinstance(target, Mapping)
             or target.get("version") != 3
@@ -352,7 +353,7 @@ def admit_native_response_binding(
             or profile.request_policy.strict_tools is not None
             or profile.request_policy.enable_thinking is not None
             or profile.max_output_tokens != 2048
-            or profile.sampling.as_dict() != {"temperature": 0.0}
+            or profile.sampling.as_dict() != {"temperature": 0.0, "n": 1}
         ):
             raise NativeResponseBindingError(
                 "OpenHands native response requires its compiled source profile"

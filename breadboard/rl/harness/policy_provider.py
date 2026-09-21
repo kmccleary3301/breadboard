@@ -862,6 +862,18 @@ class EpisodeOpenAICompletionsPolicyClient:
                 episode_id=self._episode_id,
                 effective_plan_digest=self._effective_plan_digest,
             )
+        messages = body_object.get("messages")
+        if (
+            type(messages) is not list
+            or not messages
+            or any(type(message) is not dict for message in messages)
+        ):
+            raise RunnerProtocolError(
+                "native HTTP messages must be a nonempty object array",
+                code="native_http_request_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
         tools_present = "tools" in body_object
         if (
             self._native_tool_schemas is None
