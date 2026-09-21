@@ -2114,6 +2114,8 @@ class FilesystemMaterializationStore:
             if existing is not None:
                 workspace._close_workspace_fd()
                 return existing
+            # Drop the inode pin before the backend verifies project-quota release.
+            workspace._close_workspace_fd()
             try:
                 if isinstance(self.storage_backend, DirectoryStorageBackend):
                     self.storage_backend.release(workspace.workspace_path)
@@ -2128,7 +2130,6 @@ class FilesystemMaterializationStore:
                 state = CacheLeaseState.RELEASED
             except FileNotFoundError:
                 state = CacheLeaseState.RELEASED
-            workspace._close_workspace_fd()
             self._active_workspaces.pop(workspace.cache_token.lease_id, None)
             record_path = self._record_path(workspace.cache_token.cache_key)
             payload = self._read_record(record_path)
