@@ -1290,6 +1290,22 @@ def _validate_identity(
     return container_id
 
 
+def _normalized_seccomp_profile(payload: str | bytes) -> str:
+    def object_from_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        value: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError("duplicate seccomp profile key")
+            value[key] = item
+        return value
+
+    profile = json.loads(payload, object_pairs_hook=object_from_pairs)
+    if type(profile) is not dict:
+        raise ValueError("seccomp profile must be an object")
+    # Preserve uint64 syscall arguments that are not exactly representable as binary64.
+    return json.dumps(profile, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
 def decode_docker_inspect(
     payload: bytes,
     plan: Any,
@@ -1299,7 +1315,6 @@ def decode_docker_inspect(
     labels: Mapping[str, str],
     skeleton_path: Path,
     mounts: Sequence[tuple[Path, str, bool]],
-    security_profile_path: Path,
     storage_bytes: int,
     skeleton_readonly: bool = True,
 ) -> dict[str, Any]:
@@ -1344,7 +1359,7 @@ def decode_docker_inspect(
         or type(networks) is not dict
         or set(networks) != {"none"}
         or any(
-            key not in host or host.get(key) is not None
+            key not in host or host[key] not in (None, [])
             for key in ("Devices", "DeviceRequests", "DeviceCgroupRules")
         )
         or "Tmpfs" not in host
@@ -1354,10 +1369,23 @@ def decode_docker_inspect(
         raise DockerAdapterError(
             "runtime_measurement_mismatch", "Docker inspect security schema is not closed"
         )
-    expected_security = {
-        "no-new-privileges",
-        f"seccomp={security_profile_path}",
-    }
+    seccomp_options = [value for value in security_options if value.startswith("seccomp=")]
+    if len(seccomp_options) != 1:
+        raise DockerAdapterError(
+            "runtime_measurement_mismatch", "Docker inspect seccomp profile is ambiguous"
+        )
+    try:
+        observed_profile = _normalized_seccomp_profile(seccomp_options[0].removeprefix("seccomp="))
+        expected_profile = _normalized_seccomp_profile(plan.security_policy.seccomp_bytes)
+    except ValueError as exc:
+        raise DockerAdapterError(
+            "runtime_measurement_mismatch", "Docker inspect seccomp profile is malformed"
+        ) from exc
+    if observed_profile != expected_profile:
+        raise DockerAdapterError(
+            "runtime_measurement_mismatch", "Docker inspect seccomp profile contradicts the plan"
+        )
+    expected_security = {"no-new-privileges", seccomp_options[0]}
     lsm = plan.security_policy.apparmor_profile or plan.security_policy.selinux_label
     if plan.security_policy.apparmor_profile is not None:
         expected_security.add(f"apparmor={plan.security_policy.apparmor_profile}")
@@ -3490,7 +3518,6 @@ class DockerSandboxBackend:
                 inspect_payload, plan, container_id=container_id,
                 container_name=container_name, labels=labels,
                 skeleton_path=workspace_source, mounts=tuple(descriptor_mounts),
-                security_profile_path=profile_source,
                 storage_bytes=context.storage.quota_bytes,
                 skeleton_readonly=skeleton_readonly,
             )
