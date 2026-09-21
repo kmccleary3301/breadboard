@@ -2184,6 +2184,14 @@ class TrustedProcessHandle:
                     binding, binding.entrypoint_relative_path
                 )
                 _measure_native_file(entrypoint_path, binding.entrypoint_digest)
+                python_root = Path(binding.runtime_root_path) / "python"
+                environment = dict(self.plan.runtime.fixed_environment)
+                environment["PYTHONHOME"] = str(python_root)
+                environment["PYTHONNOUSERSITE"] = "1"
+                environment["LD_LIBRARY_PATH"] = str(python_root / "lib")
+                if binding.adapter_id == HERMES_AGENT_LOCAL_ADAPTER_ID:
+                    # Hermes requires canonical identity despite sealed descriptor execution.
+                    environment["PYTHONEXECUTABLE"] = str(node_path)
                 node = _snapshot_installed_executable(
                     node_path, binding.executable_digest
                 )
@@ -2210,14 +2218,7 @@ class TrustedProcessHandle:
                         ),
                         timeout_ms=min(timeout_ms, self.plan.limits.setup_timeout_ms),
                         extra_fds=(node.fd,),
-                        environment={
-                            **environment,
-                            **(
-                                {"PYTHONEXECUTABLE": str(node_path)}
-                                if binding.adapter_id != PI_CODING_AGENT_LOCAL_ADAPTER_ID
-                                else {}
-                            ),
-                        }
+                        environment=environment,
                     )
 
                     async def retire() -> bool:
