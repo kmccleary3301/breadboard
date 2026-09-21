@@ -510,6 +510,8 @@ class PrivateDockerDaemonOwner:
     Containerd receives an explicit configuration without ambient imports,
     CRI services, or NRI plugins. Both daemon configurations participate in
     authenticated cleanup.
+    Dockerd uses cgroupfs within the delegated hierarchy, without access to
+    the host systemd manager.
     Private control-plane Go schedulers use one processor rather than the
     host CPU count; aggregate cgroup limits remain the hard resource ceiling.
     """
@@ -877,6 +879,7 @@ class PrivateDockerDaemonOwner:
             "data-root": authority.data_root,
             "default-runtime": authority.runtime_name,
             "containerd": authority.containerd_socket_path,
+            "exec-opts": ["native.cgroupdriver=cgroupfs"],
             "exec-root": authority.exec_root,
             "hosts": ["unix://" + authority.socket_path],
             "ip-forward": False,

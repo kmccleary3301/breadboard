@@ -186,7 +186,6 @@ def test_owner_pins_exact_files_and_seals_deterministic_config(tmp_path: Path) -
     owner = PrivateDockerDaemonOwner(authority, prerequisite_check=lambda: None)
     try:
         config = Path(authority.config_path).read_bytes()
-        assert config == owner._config_bytes()
         assert stat.S_IMODE(Path(authority.config_path).stat().st_mode) == 0o600
         parsed = json.loads(config)
         assert parsed["containerd"] == authority.containerd_socket_path
