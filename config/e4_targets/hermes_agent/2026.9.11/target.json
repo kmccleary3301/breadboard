@@ -1,0 +1,151 @@
+{
+  "assets": [
+    {
+      "bytes": 5716,
+      "path": "harness.yaml",
+      "sha256": "sha256:b7c90759ec0a919fcb8bb2aa1dad5ed3e23e00f341e691275144d825a36fd9b2"
+    },
+    {
+      "bytes": 6860,
+      "path": "prompts/captured-system.txt",
+      "sha256": "sha256:51f7b980419c7a40fa63a580f0e9071d9f13bd06b61ed036423d898b19d73b8c"
+    },
+    {
+      "bytes": 1380731,
+      "path": "prompts/source-registry.json",
+      "sha256": "sha256:160742b70597adf74dd77cfa60c701d53eb6d685ad0029987fc37c6046d2de49"
+    },
+    {
+      "bytes": 26790,
+      "path": "native-config.json",
+      "sha256": "sha256:bf90f2589d44070cc580b76d78321e2bc4fa0813d0edd0037d3da060af2d229f"
+    },
+    {
+      "bytes": 11394,
+      "path": "tool-surface.json",
+      "sha256": "sha256:9e21494fd5747efe4b3cf11d676b3ffdf5a53fe10d56127fa6916a499143cd2d"
+    },
+    {
+      "bytes": 1100,
+      "path": "LICENSE.txt",
+      "sha256": "sha256:0ccd74fdb52fb1f7f8849aa6c624e78b185669315fbe4628808ee353c4f37f96"
+    },
+    {
+      "bytes": 1070,
+      "path": "SOURCE-LICENSE.txt",
+      "sha256": "sha256:821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6"
+    },
+    {
+      "bytes": 430,
+      "path": "PROVENANCE.json",
+      "sha256": "sha256:c40430499c042c20cd4681f192b0244729dae38a46a3cd37a6e5f0f342464213"
+    },
+    {
+      "bytes": 28,
+      "path": "fixtures/MEMORY.md",
+      "sha256": "sha256:a6a8af3b2eee355a5cda8486c4fcd36aafed1389fafb7103c11b1a76005981c0"
+    },
+    {
+      "bytes": 37,
+      "path": "fixtures/USER.md",
+      "sha256": "sha256:fdea79de7b26225efe7a9eb376b9266772475c714a71e561af72ed48a6a1541f"
+    },
+    {
+      "bytes": 250,
+      "path": "fixtures/fixture-code-style/SKILL.md",
+      "sha256": "sha256:e153cd6dd1845bf2c962da327facae75b905bc9017f42286c6ff79c5942b71dd"
+    },
+    {
+      "bytes": 103,
+      "path": "fixtures/fixture-code-style/references/assertions.md",
+      "sha256": "sha256:a71861684295f052d56ffacf1057c9980ca978296d1697efae3685711f7318e5"
+    }
+  ],
+  "execution": {
+    "config_asset": "harness.yaml",
+    "system_prompt_asset": "prompts/captured-system.txt",
+    "tool_surface_asset": "tool-surface.json"
+  },
+  "family": "hermes_agent",
+  "overlay": {
+    "argv": [],
+    "overlay_id": "breadboard.hermes-agent.v2026.9.11",
+    "settings": [
+      {
+        "name": "agent.max_iterations",
+        "value": 8
+      },
+      {
+        "name": "agent.max_tokens",
+        "value": 2048
+      },
+      {
+        "name": "agent.api_max_retries",
+        "value": 1
+      },
+      {
+        "name": "agent.skip_background_review",
+        "value": true
+      },
+      {
+        "name": "agent.session_db",
+        "value": null
+      },
+      {
+        "name": "agent.save_trajectories",
+        "value": false
+      },
+      {
+        "name": "agent.checkpoints_enabled",
+        "value": false
+      },
+      {
+        "name": "agent.pass_session_id",
+        "value": false
+      },
+      {
+        "name": "agent.lsp_enabled",
+        "value": false
+      },
+      {
+        "name": "agent.verify_on_stop",
+        "value": false
+      },
+      {
+        "name": "model.streaming",
+        "value": false
+      },
+      {
+        "name": "model.request_timeout_seconds",
+        "value": 45
+      },
+      {
+        "name": "model.fallback",
+        "value": false
+      },
+      {
+        "name": "terminal.foreground_timeout_seconds",
+        "value": 30
+      },
+      {
+        "name": "native.tool_timeout_seconds",
+        "value": 35
+      },
+      {
+        "name": "episode.wall_seconds",
+        "value": 120
+      },
+      {
+        "name": "episode.max_actual_requests",
+        "value": 8
+      },
+      {
+        "name": "resource.context_length",
+        "value": 65536
+      }
+    ]
+  },
+  "schema_version": "bb.e4.target.v2",
+  "target_id": "hermes-agent@2026.9.11",
+  "version": "2026.9.11"
+}

@@ -1,6 +1,10 @@
 {
   "schema_version": "bb.e4.target_index.v1",
   "targets": {
+    "hermes-agent@2026.9.11": {
+      "descriptor": "hermes_agent/2026.9.11/target.json",
+      "sha256": "a357a3aeaa2e694a192e1d5bc4e0a4bbfe8ddca264ad3d9f52b929d025371177"
+    },
     "mini-swe-agent@2.4.6": {
       "descriptor": "mini_swe_agent/2.4.6/target.json",
       "sha256": "191999cd6da077ad29d8413356a7e5e2c1ae98c8448759f8c8f29e81ebfca85e"

@@ -97,9 +97,15 @@ OPENHANDS_NATIVE_TOOL_IDS: tuple[str, ...] = (
 )
 PI_CODING_AGENT_LOCAL_ADAPTER_ID: str = "pi-coding-agent.local.v0.73.1"
 PI_NATIVE_TOOL_IDS: tuple[str, ...] = ("bash", "edit", "read", "write")
+HERMES_AGENT_LOCAL_ADAPTER_ID: str = "hermes-agent.local.v2026.9.11"
+HERMES_NATIVE_TOOL_IDS: tuple[str, ...] = (
+    "patch", "read_file", "search_files", "skill_view",
+    "skills_list", "terminal", "write_file",
+)
 NATIVE_PHASE_TOOL_IDS: Mapping[str, tuple[str, ...]] = MappingProxyType({
     OPENHANDS_SDK_LOCAL_ADAPTER_ID: OPENHANDS_NATIVE_TOOL_IDS,
     PI_CODING_AGENT_LOCAL_ADAPTER_ID: PI_NATIVE_TOOL_IDS,
+    HERMES_AGENT_LOCAL_ADAPTER_ID: HERMES_NATIVE_TOOL_IDS,
 })
 MINI_SWE_AGENT_LOCAL_ADAPTER_ID: str = "mini-swe-agent.local.v2.4.6"
 MINI_SWE_AGENT_TOOL_ID: str = "bash"
@@ -6273,5 +6279,7 @@ __all__ = [
     "OPENHANDS_NATIVE_TOOL_IDS",
     "PI_CODING_AGENT_LOCAL_ADAPTER_ID",
     "PI_NATIVE_TOOL_IDS",
+    "HERMES_AGENT_LOCAL_ADAPTER_ID",
+    "HERMES_NATIVE_TOOL_IDS",
     "NATIVE_PHASE_TOOL_IDS",
 ]

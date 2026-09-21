@@ -627,6 +627,7 @@ class SourceEventCommitEvent:
             "before_policy",
             "assistant",
             "observation_batch",
+            "observation",
             "exit",
         }:
             raise ValueError("source event phase is unsupported")

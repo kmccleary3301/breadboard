@@ -1,0 +1,673 @@
+{
+  "schema_version": "bb.e4.hermes-source-profile.v1",
+  "source_commit": "939e45c91d751fadd94dcd1b873ac3cb44846213",
+  "versions": {
+    "hermes-agent": "2026.9.11",
+    "hermes-python-package": "0.21.2"
+  },
+  "agent": {
+    "tool_names": [
+      "patch",
+      "read_file",
+      "search_files",
+      "skill_view",
+      "skills_list",
+      "terminal",
+      "write_file"
+    ],
+    "toolsets": {
+      "requested": [
+        "patch",
+        "read_file",
+        "search_files",
+        "skill_view",
+        "skills_list",
+        "terminal",
+        "write_file"
+      ],
+      "includes": [],
+      "selected": "custom_exact_toolset"
+    },
+    "max_iterations": 8,
+    "max_output_tokens": 2048,
+    "skip_background_review": true,
+    "session_db": null,
+    "save_trajectories": false,
+    "checkpoints_enabled": false,
+    "pass_session_id": false,
+    "lsp_enabled": false,
+    "verify_on_stop": false,
+    "compression": false,
+    "prefill": false,
+    "callbacks": false,
+    "plugins": false
+  },
+  "conversation": {
+    "persistence_dir": null,
+    "max_iteration_per_run": 8,
+    "max_budget_per_run": null,
+    "visualizer": null,
+    "plugins": null,
+    "session_db": null
+  },
+  "model": {
+    "model_name": "e4-opaque-chat",
+    "provider": "custom",
+    "base_url_classification": "local_controlled_receiver",
+    "api_mode": "chat_completions",
+    "stream": false,
+    "native_tool_calling": true,
+    "max_output_tokens": 2048,
+    "timeout": 45,
+    "api_max_retries": 1,
+    "request_client_max_retries": 0,
+    "fallback": false,
+    "context_length": 65536,
+    "wire_fields_omitted": [
+      "n",
+      "temperature",
+      "tool_choice",
+      "parallel_tool_calls",
+      "reasoning",
+      "cache",
+      "stop",
+      "stream",
+      "stream_options"
+    ]
+  },
+  "prompt": {
+    "assembly": [
+      "source_stable",
+      "context",
+      "volatile"
+    ],
+    "system_prompt_asset": "prompts/captured-system.txt",
+    "captured_system_sha256": "51f7b980419c7a40fa63a580f0e9071d9f13bd06b61ed036423d898b19d73b8c",
+    "captured_system_bytes": 6860,
+    "capture_kind": "controlled_producer_capture",
+    "normalization": "none",
+    "independent_supplier_equality": false,
+    "generic_deterministic_live_prompt": false,
+    "fixture_sha256": {
+      "memories/MEMORY.md": "a6a8af3b2eee355a5cda8486c4fcd36aafed1389fafb7103c11b1a76005981c0",
+      "memories/USER.md": "fdea79de7b26225efe7a9eb376b9266772475c714a71e561af72ed48a6a1541f",
+      "skills/fixture-code-style/SKILL.md": "e153cd6dd1845bf2c962da327facae75b905bc9017f42286c6ff79c5942b71dd",
+      "skills/fixture-code-style/references/assertions.md": "a71861684295f052d56ffacf1057c9980ca978296d1697efae3685711f7318e5"
+    },
+    "fixture_context_length": 65536
+  },
+  "environment": {
+    "workspace_context_file": "AGENTS.md",
+    "workspace_context_text": "Use unittest. No network.\n",
+    "workspace_context_sha256": "6fc95531db12a94c2c8a08ccde807b1e266cb0cb92c40e7533552f3460ff6bbd",
+    "timezone": "UTC",
+    "platform_source": "native_runtime_frame",
+    "shell": "bash",
+    "terminal_timeout_seconds": 30,
+    "native_tool_timeout_seconds": 35,
+    "raw_command_output_bytes": 1048576,
+    "observation_bytes": 16777216,
+    "response_bytes": 4194304,
+    "transcript_bytes": 33554432
+  },
+  "rendering": {
+    "system_prompt": "captured native request body message[0]; source renderer at lease initialization",
+    "tool_surface": "native request body tools; source schema order",
+    "capture_prompt_asset": "prompts/captured-system.txt",
+    "source_registry_asset": "prompts/source-registry.json",
+    "source_registry_scope": [
+      "agent/system_prompt.py",
+      "agent/agent_init.py",
+      "agent/conversation_loop.py",
+      "agent/turn_empty_response.py",
+      "agent/turn_finalizer.py",
+      "agent/turn_tool_validation.py",
+      "agent/turn_tool_round.py",
+      "agent/tool_dispatch_helpers.py",
+      "agent/tool_executor.py",
+      "agent/transports/chat_completions.py",
+      "run_agent.py",
+      "toolsets.py",
+      "tools/file_tools.py",
+      "tools/file_operations.py",
+      "tools/terminal_tool.py",
+      "tools/terminal_tool_result.py",
+      "tools/environments/local.py",
+      "tools/skills_tool.py",
+      "tools/registry.py",
+      "tools/patch_parser.py",
+      "agent/turn_recovery.py",
+      "agent/turn_iteration_prep.py",
+      "agent/turn_response_check.py",
+      "agent/turn_response_intake.py",
+      "agent/turn_request_assembly.py",
+      "agent/turn_stop_gates.py",
+      "agent/turn_truncation.py",
+      "agent/memory_manager.py",
+      "agent/memory_provider.py",
+      "tools/memory_tool_store.py",
+      "tools/memory_tool.py",
+      "tools/terminal_tool_backends.py",
+      "tools/terminal_tool_lifecycle.py",
+      "tools/file_tools_read_tracking.py",
+      "tools/file_tools_write_guards.py",
+      "tools/file_tools_paths.py",
+      "tools/skills_tool_dedup.py",
+      "tools/skill_usage.py",
+      "tools/skills_tool_plugin.py"
+    ]
+  },
+  "bounds": {
+    "episode_wall_seconds": 120,
+    "max_actual_requests": 8,
+    "request_timeout_seconds": 45,
+    "terminal_timeout_seconds": 30,
+    "native_tool_timeout_seconds": 35,
+    "raw_command_output_bytes": 1048576,
+    "observation_bytes": 16777216,
+    "response_bytes": 4194304,
+    "transcript_bytes": 33554432,
+    "memory_bytes": 2147483648,
+    "workspace_storage_bytes": 2147483648,
+    "cpu_millis": 1000,
+    "pids": 64,
+    "file_descriptors": 256,
+    "artifact_bytes": 67108864,
+    "total_artifact_bytes": 536870912
+  },
+  "native_semantics": {
+    "scheduler": "ordered_parallel_safe_segments",
+    "reader_reader_overlap": "parallel",
+    "writer_subtree_overlap": "sequential_boundary",
+    "terminal_unknown_or_malformed": "barrier",
+    "plan_before_execution": true,
+    "join_order": "original_call_order",
+    "history_commit": "per_result_source_order_checkpoint",
+    "history_flush": "source_boundary",
+    "visible_recovery": {
+      "post_tool_empty": {
+        "assistant_empty_plus_user_nudge": 1,
+        "scope": "recovery_cycle"
+      },
+      "thinking_only_prefills": {
+        "max": 2,
+        "scope": "recovery_cycle"
+      },
+      "trailing_intent_nudges": 2,
+      "dropped_tool_call_nudges": 3,
+      "all_invalid_name_feedback_rounds": 2
+    },
+    "excluded_recovery": [
+      "malformed_json_silent_retry",
+      "truncated_argument_retry",
+      "text_length_cap_increasing_continuation",
+      "ordinary_empty_retry",
+      "provider_fallback",
+      "exhaustion_summary"
+    ],
+    "source_iteration_counters_distinct_from_actual_requests": true,
+    "terminal_records_do_not_require_final_model_request": true
+  },
+  "capture": {
+    "kind": "controlled_producer_capture",
+    "receipt": "HERMES_NATIVE_ASSEMBLY_RESULT_06.json",
+    "receipt_sha256": "59f8f47441b70487d1f1db12543b4b5ef8880c0f34c4d2097643c74054436706",
+    "receipt_result_pointer": "inner_receipt.content.preflight.result",
+    "claim": "Controlled native SDK/tool preflight only; no live model, grading, supplier-reference equality or public composition qualification.",
+    "live_model": false,
+    "supplier_reference_equality": false,
+    "public_composition_qualification": false,
+    "request_capture": [
+      {
+        "index": 0,
+        "bytes": 15828,
+        "sha256": "e81b380238f5e648d07f240fad53fa9fcd81517aa77abe2b94f8928f1bb3f894",
+        "wire_keys": [
+          "max_tokens",
+          "messages",
+          "model",
+          "tools"
+        ],
+        "message_roles": [
+          "system",
+          "user"
+        ],
+        "model": "e4-opaque-chat",
+        "tool_names": [
+          "patch",
+          "read_file",
+          "search_files",
+          "skill_view",
+          "skills_list",
+          "terminal",
+          "write_file"
+        ]
+      },
+      {
+        "index": 1,
+        "bytes": 19575,
+        "sha256": "a6c1f21d0639972944b761f64f838b06fadfbba2333f4e1d0bb349f24967706f",
+        "wire_keys": [
+          "max_tokens",
+          "messages",
+          "model",
+          "tools"
+        ],
+        "message_roles": [
+          "system",
+          "user",
+          "assistant",
+          "tool",
+          "tool",
+          "tool",
+          "tool",
+          "tool",
+          "tool"
+        ],
+        "model": "e4-opaque-chat",
+        "tool_names": [
+          "patch",
+          "read_file",
+          "search_files",
+          "skill_view",
+          "skills_list",
+          "terminal",
+          "write_file"
+        ]
+      }
+    ],
+    "observed_source_runtime": {
+      "source": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213",
+      "source_root": "/opt/hermes/source/hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213",
+      "fixture_root": "/opt/hermes/hermes-fixtures",
+      "workspace": "/opt/hermes-build/native-preflight/workspace",
+      "home": "/opt/hermes-build/native-preflight/scratch/hermes-home",
+      "scratch": "/opt/hermes-build/native-preflight/scratch",
+      "site_packages": "/opt/hermes/sdk/lib/python3.12/site-packages",
+      "module_origins": {
+        "agent.agent_init": "/opt/hermes/source/hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/agent/agent_init.py",
+        "agent.conversation_loop": "/opt/hermes/source/hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/agent/conversation_loop.py",
+        "httpx": "/opt/hermes/sdk/lib/python3.12/site-packages/httpx/__init__.py",
+        "run_agent": "/opt/hermes/source/hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/run_agent.py",
+        "toolsets": "/opt/hermes/source/hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/toolsets.py"
+      },
+      "sdk_clients": [
+        {
+          "base_url": "http://127.0.0.1:53079/v1/",
+          "class": "openai.OpenAI",
+          "max_retries": 0,
+          "reason": "agent_init",
+          "shared_argument": true
+        },
+        {
+          "base_url": "http://127.0.0.1:53079/v1/",
+          "class": "openai.OpenAI",
+          "max_retries": 0,
+          "reason": "chat_completion_request",
+          "shared_argument": false
+        }
+      ],
+      "shell_boundary": {
+        "actor_dumpable": false,
+        "authority_path": "/opt/hermes-build/native-preflight/scratch/shell-authority.json",
+        "authority_sha256": "09e048d4efdd6906f9f5ca6c8309c2f467e203c03139e4be52660fee4eeb7d8d",
+        "bash_entrypoint": "/opt/hermes/tool-exec/bash",
+        "child_enforcement": "landlock-filesystem/capabilities-empty/no-new-privileges",
+        "landlock_abi": 4,
+        "namespaces_after": {
+          "mnt": "mnt:[4026542484]",
+          "net": "net:[4026542485]"
+        },
+        "namespaces_before": {
+          "mnt": "mnt:[4026542482]",
+          "net": "net:[4026542393]"
+        },
+        "native_root_readonly": true,
+        "pid_namespace": "pid:[4026542483]",
+        "proc_self_pid": 1,
+        "read_paths": [
+          "/usr",
+          "/bin",
+          "/sbin",
+          "/lib",
+          "/lib64",
+          "/etc",
+          "/opt/miniconda3",
+          "/dev/null",
+          "/dev/zero",
+          "/dev/random",
+          "/dev/urandom",
+          "/proc/self",
+          "/proc/thread-self",
+          "/proc/cpuinfo",
+          "/proc/meminfo",
+          "/proc/stat",
+          "/proc/uptime",
+          "/proc/version",
+          "/proc/sys/kernel/osrelease",
+          "/sys/devices/system/cpu",
+          "/sys/fs/cgroup",
+          "/opt/hermes",
+          "/opt/hermes-build/native-preflight/scratch/hermes-home",
+          "/opt/hermes-build/native-preflight/scratch/shell-authority.json"
+        ],
+        "schema_version": "bb.hermes-shell-authority.v1",
+        "sealed_files": [
+          {
+            "bytes": 28,
+            "mode": 292,
+            "path": "/opt/hermes-build/native-preflight/scratch/hermes-home/memories/MEMORY.md",
+            "sha256": "a6a8af3b2eee355a5cda8486c4fcd36aafed1389fafb7103c11b1a76005981c0"
+          },
+          {
+            "bytes": 37,
+            "mode": 292,
+            "path": "/opt/hermes-build/native-preflight/scratch/hermes-home/memories/USER.md",
+            "sha256": "fdea79de7b26225efe7a9eb376b9266772475c714a71e561af72ed48a6a1541f"
+          },
+          {
+            "bytes": 250,
+            "mode": 292,
+            "path": "/opt/hermes-build/native-preflight/scratch/hermes-home/skills/fixture-code-style/SKILL.md",
+            "sha256": "e153cd6dd1845bf2c962da327facae75b905bc9017f42286c6ff79c5942b71dd"
+          },
+          {
+            "bytes": 103,
+            "mode": 292,
+            "path": "/opt/hermes-build/native-preflight/scratch/hermes-home/skills/fixture-code-style/references/assertions.md",
+            "sha256": "a71861684295f052d56ffacf1057c9980ca978296d1697efae3685711f7318e5"
+          },
+          {
+            "bytes": 703,
+            "mode": 292,
+            "path": "/opt/hermes-build/native-preflight/scratch/hermes-home/config.yaml",
+            "sha256": "00c7c65fa1dd64aad99a7e2d4cc8fafc280617214568cbf83ef33346a749d2dd"
+          },
+          {
+            "bytes": 0,
+            "mode": 292,
+            "path": "/opt/hermes-build/native-preflight/scratch/shell-home/.bash_profile",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "bytes": 0,
+            "mode": 292,
+            "path": "/opt/hermes-build/native-preflight/scratch/shell-home/.bash_login",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "bytes": 0,
+            "mode": 292,
+            "path": "/opt/hermes-build/native-preflight/scratch/shell-home/.profile",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "bytes": 0,
+            "mode": 292,
+            "path": "/opt/hermes-build/native-preflight/scratch/shell-home/.bashrc",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "bytes": 0,
+            "mode": 292,
+            "path": "/etc/profile",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "bytes": 0,
+            "mode": 292,
+            "path": "/etc/bash.bashrc",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ],
+        "write_roots": [
+          "/opt/hermes-build/native-preflight/workspace",
+          "/opt/hermes-build/native-preflight/scratch/shell-home",
+          "/opt/hermes-build/native-preflight/scratch/terminal"
+        ]
+      }
+    },
+    "bundle": {
+      "path": "/shared/bbctl1-6fad46cda941/hermes-native-bundle-939e45c9-06.tar.gz",
+      "bytes": 510627856,
+      "sha256": "af2428148956040133cbd1ed085d5fe61537f7077b1ebbbf0785ac955dbec684"
+    }
+  },
+  "tool_schemas": [
+    {
+      "function": {
+        "description": "Targeted find-and-replace edits in files. Use this instead of sed/awk in terminal. Uses fuzzy matching (9 strategies) so minor whitespace/indentation differences won't break it. Returns a unified diff. Auto-runs syntax checks after editing. Finds a unique string and replaces it.",
+        "name": "patch",
+        "parameters": {
+          "properties": {
+            "new_string": {
+              "description": "Changed replacement text; it must differ from old_string. Pass empty string '' to delete the matched text.",
+              "type": "string"
+            },
+            "old_string": {
+              "description": "Exact text to find and replace. Must be unique in the file unless replace_all=true. Include surrounding context lines to ensure uniqueness.",
+              "type": "string"
+            },
+            "path": {
+              "description": "File path to edit.",
+              "type": "string"
+            },
+            "replace_all": {
+              "default": false,
+              "description": "Replace all occurrences instead of requiring a unique match (default: false)",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "path",
+            "old_string",
+            "new_string"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "function"
+    },
+    {
+      "function": {
+        "description": "Read a text file with line numbers and pagination. Use this instead of cat/head/tail in terminal. Output format: 'LINE_NUM|CONTENT'. Suggests similar filenames if not found. Use offset and limit for large files. Reads exceeding ~100K characters are truncated on a line boundary and return a next_offset; continue with offset to read the rest. Document extraction is disabled in this bounded profile. Cannot read images/binary — use vision_analyze for images.",
+        "name": "read_file",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "default": 2000,
+              "description": "Maximum number of lines to read (default: 2000, max: 2000). Reads are additionally capped at a ~100K-character budget with a next_offset continuation.",
+              "maximum": 2000,
+              "type": "integer"
+            },
+            "offset": {
+              "default": 1,
+              "description": "Line number to start reading from (1-indexed, default: 1)",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "path": {
+              "description": "Path to the file to read (absolute, relative, or ~/path)",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "function"
+    },
+    {
+      "function": {
+        "description": "Search file contents or find files by name. Use this instead of grep/rg/find/ls in terminal. Ripgrep-backed, faster than shell equivalents. On macOS, broad searches above the user home automatically skip TCC-protected folders (Desktop, Documents, Downloads, Library, Movies, Music, Pictures); target one directly when access is intentional.\n\nContent search (target='content'): Regex search inside files. Output modes: full matches with line numbers, file paths only, or match counts.\n\nFile search (target='files'): Find files by glob pattern (e.g., '*.py', '*config*'). Also use this instead of ls. Discovery order is the fast bounded default; exact global newest-first order is an explicit opt-in and may scan the full tree.",
+        "name": "search_files",
+        "parameters": {
+          "properties": {
+            "context": {
+              "default": 0,
+              "description": "Number of context lines before and after each match (grep mode only)",
+              "type": "integer"
+            },
+            "file_glob": {
+              "description": "Filter files by pattern in grep mode (e.g., '*.py' to only search Python files)",
+              "type": "string"
+            },
+            "limit": {
+              "default": 50,
+              "description": "Maximum number of results to return (default: 50)",
+              "type": "integer"
+            },
+            "offset": {
+              "default": 0,
+              "description": "Skip first N results for pagination (default: 0)",
+              "type": "integer"
+            },
+            "order": {
+              "default": "discovery",
+              "description": "File-search order: 'discovery' is fast bounded traversal order; 'modified' is exact global newest-first and may scan the full tree; ignored for content",
+              "enum": [
+                "discovery",
+                "modified"
+              ],
+              "type": "string"
+            },
+            "output_mode": {
+              "default": "content",
+              "description": "Output format for grep mode: 'content' shows matching lines with line numbers, 'files_only' lists file paths, 'count' shows match counts per file",
+              "enum": [
+                "content",
+                "files_only",
+                "count"
+              ],
+              "type": "string"
+            },
+            "path": {
+              "default": ".",
+              "description": "Directory or file to search in (default: current working directory)",
+              "type": "string"
+            },
+            "pattern": {
+              "description": "Regex pattern for content search, or glob pattern (e.g., '*.py') for file search",
+              "type": "string"
+            },
+            "target": {
+              "default": "content",
+              "description": "'content' searches inside file contents, 'files' searches for files by name",
+              "enum": [
+                "content",
+                "files"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "pattern"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "function"
+    },
+    {
+      "function": {
+        "description": "Skills allow for loading information about specific tasks and workflows, as well as scripts and templates. Load a skill's full content or access its linked files (references, templates, scripts). First call returns SKILL.md content plus a 'linked_files' dict showing available references/templates/scripts. To access those, call again with file_path parameter.",
+        "name": "skill_view",
+        "parameters": {
+          "properties": {
+            "file_path": {
+              "description": "OPTIONAL: Path to a linked file within the skill (e.g., 'references/api.md', 'templates/config.yaml', 'scripts/validate.py'). Omit to get the main SKILL.md content.",
+              "type": "string"
+            },
+            "name": {
+              "description": "The skill name (use skills_list to see available skills). For plugin-provided skills, use the qualified form 'plugin:skill' (e.g. 'superpowers:writing-plans').",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "function"
+    },
+    {
+      "function": {
+        "description": "List available skills (name + description). Use skill_view(name) to load full content.",
+        "name": "skills_list",
+        "parameters": {
+          "properties": {
+            "category": {
+              "description": "Optional category filter to narrow results",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "function"
+    },
+    {
+      "function": {
+        "description": "Execute shell commands. The host OS, shell, and terminal backend are stated in your environment section — write commands for THAT platform. Filesystem, current working directory, and exported environment variables persist between calls.\n\nDo NOT use cat/head/tail (use read_file), grep/rg/find/ls (use search_files), sed/awk (use patch), or echo/heredoc file creation (use write_file). Reserve terminal for: builds, installs, git, processes, scripts, network, package managers — anything that needs a shell. Output is auto-truncated with the full text saved to a file — never pipe through tail/head to shorten it.\nEnvironment state persists: activate a virtualenv or export variables once per session, not before every command.\n\nForeground (default): returns INSTANTLY when the command finishes, even with a high timeout — set timeout generously for long builds.\nBackground: set background=true (returns a session_id); add notify=true for bounded tasks, leave silent only for servers/daemons that never exit. After starting a server, verify readiness with a health check in a separate call (no blind sleep loops); manage with process(action=\"poll\"/\"wait\").\nWorking directory: use 'workdir' for per-command cwd; when a command changes the session cwd (cd, pushd), trust the result's \"cwd\" field instead of prefixing every command with 'cd'.\nPTY: pty=true + background=true for interactive CLIs (they hang without a terminal); drive them with process(action=\"write\"/\"submit\"). Local backend only.\n Bounded profile: foreground commands only; timeout is at most 30 seconds.",
+        "name": "terminal",
+        "parameters": {
+          "properties": {
+            "command": {
+              "description": "The shell command to execute",
+              "type": "string"
+            },
+            "timeout": {
+              "description": "Max seconds to wait (default: 180, foreground max: 600). Returns INSTANTLY when command finishes — set high for long tasks, you won't wait unnecessarily. A foreground timeout above 600s runs the command as a tracked background process with notify_on_complete=true instead (the result says so; do not re-run it).",
+              "maximum": 30,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "workdir": {
+              "description": "Working directory for this command (absolute path). Defaults to the session working directory.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "command"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "function"
+    },
+    {
+      "function": {
+        "description": "Write content to a file, completely replacing existing content. Use this instead of echo/cat heredoc in terminal. Creates parent directories automatically. OVERWRITES the entire file — use 'patch' for targeted edits. Auto-runs syntax checks on .py/.json/.yaml/.toml and other linted languages; only NEW errors introduced by this write are surfaced (pre-existing errors are filtered out). The result's verified:true means the on-disk content hash was confirmed — do NOT re-read the file to check the write landed.",
+        "name": "write_file",
+        "parameters": {
+          "properties": {
+            "content": {
+              "description": "Complete content to write to the file",
+              "type": "string"
+            },
+            "path": {
+              "description": "Path to the file to write (will be created if it doesn't exist, overwritten if it does)",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "content"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "function"
+    }
+  ],
+  "license": {
+    "fixture_asset": "LICENSE.txt",
+    "fixture_scope": "original synthetic fixture files only",
+    "source_asset": "SOURCE-LICENSE.txt",
+    "source_scope": "pinned Hermes source files embedded in prompts/source-registry.json",
+    "source_sha256": "821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6"
+  }
+}

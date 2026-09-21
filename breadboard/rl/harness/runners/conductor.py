@@ -4,19 +4,22 @@ import asyncio
 import base64
 from collections.abc import Mapping
 from contextvars import ContextVar
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from decimal import Decimal
 import json
 import math
 import re
 import time
-from typing import Any, Protocol, runtime_checkable
+from typing import Any
 
 from breadboard_engine.compilation.contracts import (
     bytes_sha256,
+    canonical_json_bytes,
     canonical_sha256,
 )
 from breadboard_engine.compilation.provider_response import (
+    HERMES_RESPONSE_CONSUMER_ID,
+    NATIVE_CHAT_RESPONSE_TARGETS,
     MINI_RESPONSE_CONSUMER_ID,
     OPENHANDS_RESPONSE_CONSUMER_ID,
     NativeResponsePolicy,
@@ -291,7 +294,7 @@ class PolicyRuntimeBinding:
         metadata = plan.effective_semantics.get("metadata")
         target = metadata.get("e4_target") if isinstance(metadata, Mapping) else None
         if isinstance(target, Mapping) and (
-            target.get("renderer_id") in {MINI_RESPONSE_CONSUMER_ID, OPENHANDS_RESPONSE_CONSUMER_ID}
+            target.get("renderer_id") in {MINI_RESPONSE_CONSUMER_ID, *NATIVE_CHAT_RESPONSE_TARGETS}
             or target.get("renderer_id") in NATIVE_STREAM_PROFILES
         ):
             if not isinstance(client, CompiledPolicyRuntimeClientPort):
@@ -312,12 +315,12 @@ class PolicyRuntimeBinding:
 
     def bind_native_tools(self, tools: tuple[Mapping[str, Any], ...]) -> None:
         if (
-            self._source_consumer_id != OPENHANDS_RESPONSE_CONSUMER_ID
+            self._source_consumer_id not in NATIVE_CHAT_RESPONSE_TARGETS
             or self._state != "claimed"
             or not isinstance(self._client, NativeHTTPPolicyRuntimeClientPort)
         ):
             raise RunnerPolicyBindingError(
-                "native tools require an active compiled OpenHands binding",
+                "native tools require an active compiled Chat binding",
                 code="native_response_binding_invalid",
                 episode_id=self._episode_id,
                 effective_plan_digest=self._effective_plan_digest,
@@ -342,12 +345,12 @@ class PolicyRuntimeBinding:
 
     def stage_native_http_request(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
         if (
-            self._source_consumer_id != OPENHANDS_RESPONSE_CONSUMER_ID
+            self._source_consumer_id not in NATIVE_CHAT_RESPONSE_TARGETS
             or self._state != "claimed"
             or not isinstance(self._client, NativeHTTPPolicyRuntimeClientPort)
         ):
             raise RunnerPolicyBindingError(
-                "native HTTP request requires an active compiled OpenHands binding",
+                "native HTTP request requires an active compiled Chat binding",
                 code="native_response_binding_invalid",
                 episode_id=self._episode_id,
                 effective_plan_digest=self._effective_plan_digest,
@@ -356,12 +359,12 @@ class PolicyRuntimeBinding:
 
     def take_native_http_response(self, response_digest: str) -> Mapping[str, Any]:
         if (
-            self._source_consumer_id != OPENHANDS_RESPONSE_CONSUMER_ID
+            self._source_consumer_id not in NATIVE_CHAT_RESPONSE_TARGETS
             or self._state != "claimed"
             or not isinstance(self._client, NativeHTTPPolicyRuntimeClientPort)
         ):
             raise RunnerPolicyBindingError(
-                "native HTTP response requires an active compiled OpenHands binding",
+                "native HTTP response requires an active compiled Chat binding",
                 code="native_response_binding_invalid",
                 episode_id=self._episode_id,
                 effective_plan_digest=self._effective_plan_digest,
@@ -710,7 +713,7 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
     source_profile = None
     source_consumer_id = None
     if isinstance(target, Mapping) and (
-        target.get("renderer_id") in {MINI_RESPONSE_CONSUMER_ID, OPENHANDS_RESPONSE_CONSUMER_ID}
+        target.get("renderer_id") in {MINI_RESPONSE_CONSUMER_ID, *NATIVE_CHAT_RESPONSE_TARGETS}
         or target.get("renderer_id") in NATIVE_STREAM_PROFILES
     ):
         source_consumer_id = target["renderer_id"]
@@ -720,7 +723,10 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
             if stream_profile is not None
             else {
                 MINI_RESPONSE_CONSUMER_ID: ("mini-swe-agent@2.4.6", 2),
-                OPENHANDS_RESPONSE_CONSUMER_ID: ("openhands-sdk@1.47.0", 3),
+                **{
+                    consumer_id: (target_id, 3)
+                    for consumer_id, target_id in NATIVE_CHAT_RESPONSE_TARGETS.items()
+                },
             }[source_consumer_id]
         )
         if (
@@ -747,7 +753,7 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
             for key, value in provider_tools.items()
         )
         or provider_tools.get("api_variant") != (
-            "chat" if source_consumer_id == OPENHANDS_RESPONSE_CONSUMER_ID else "responses"
+            "chat" if source_consumer_id in NATIVE_CHAT_RESPONSE_TARGETS else "responses"
         )
         or provider_tools.get("use_native") is not True
         or provider_tools.get("suppress_prompts", False) is not False
@@ -1317,7 +1323,7 @@ class ConductorAdapter:
 class _ConductorSession:
     __slots__ = (
         "_open_request", "_binding", "_tools", "_cancellation_probe", "_event_sink",
-        "_projection", "_events", "_sequence", "_lock", "_emit_lock", "_phase",
+        "_projection", "_events", "_sequence", "_native_event_bytes", "_lock", "_emit_lock", "_phase",
         "_cancellation", "_turns", "_cancellation_published", "_binding_cancel_task",
         "_close_task", "_poison", "_terminal_committing",
         "_native_stream_close_callback", "_native_stream_close_started",
@@ -1342,6 +1348,7 @@ class _ConductorSession:
         self._projection = projection
         self._events: list[RunnerEvent] = []
         self._sequence = 0
+        self._native_event_bytes = 0
         self._lock = asyncio.Lock()
         self._emit_lock = asyncio.Lock()
         self._phase = "idle"
@@ -1488,6 +1495,9 @@ class _ConductorSession:
         if self._projection.source_consumer_id == OPENHANDS_RESPONSE_CONSUMER_ID:
             async with asyncio.timeout(180):
                 return await self._loop_openhands(request)
+        if self._projection.source_consumer_id == HERMES_RESPONSE_CONSUMER_ID:
+            async with asyncio.timeout(120):
+                return await self._loop_hermes(request)
         stream_profile = NATIVE_STREAM_PROFILES.get(self._projection.source_consumer_id)
         if stream_profile is not None:
             async with asyncio.timeout(stream_profile.episode_timeout_seconds):
@@ -2411,7 +2421,387 @@ class _ConductorSession:
             termination=termination, turn_count=len(self._turns),
             turns=tuple(self._turns), events=tuple(self._events),
         )
+    async def _loop_hermes(self, request: ConductorRunRequest) -> RunnerResult:
+        limits = self._open_request.effective_plan.effective_capabilities.limits
+        tools = self._tools
+        model_config = self._binding.source_model_config
+        tool_order = (
+            "patch", "read_file", "search_files", "skill_view",
+            "skills_list", "terminal", "write_file",
+        )
+        if (
+            not isinstance(tools, NativeSourceSessionPort)
+            or self._projection.source_profile is None
+            or model_config is None
+            or limits.max_turns != 8
+            or limits.action_timeout_ms != 40_000
+            or len(self._projection.models) != 1
+            or len(self._projection.modes) != 1
+            or tuple(self._projection.modes[0].tool_ids) != tool_order
+            or self._projection.models[0].params
+        ):
+            raise _plan_error(
+                self._open_request, "Hermes source runtime controls differ",
+                "compiled_ir_mismatch",
+            )
+        task = request.task_input.get("prompt")
+        if set(request.task_input) != {"prompt"} or type(task) is not str or request.context:
+            raise RunnerRequestError(
+                "Hermes requires the owned headless prompt without caller context",
+                code="request_authority_invalid",
+            )
+        model = self._projection.models[0]
+        deadline = time.monotonic() + 120
+        history: list[FrozenJsonObject] = []
+        history_digest = canonical_sha256(history)
+        state: FrozenJsonObject = freeze_json_object({}, field_name="Hermes state")
 
+        def invalid(message: str) -> RunnerProtocolError:
+            return RunnerProtocolError(message, code="native_response_invalid", **self._context())
+
+        def remaining() -> float:
+            seconds = deadline - time.monotonic()
+            if seconds <= 0:
+                raise TimeoutError("Hermes episode deadline elapsed")
+            return seconds
+
+        async def commit_history(
+            value: FrozenJsonObject, phase_name: str, turn: int | None,
+            *, checkpoint_call_id: str | None = None,
+        ) -> None:
+            nonlocal history, history_digest, state
+            delta = value.get("event_delta")
+            if not isinstance(delta, tuple):
+                raise invalid("Hermes history delta is not an array")
+            candidate_history, candidate_digest = history, history_digest
+            for revision in delta:
+                if (
+                    not isinstance(revision, Mapping)
+                    or set(revision) != {
+                        "kind", "start", "delete_count", "insert",
+                        "before_digest", "after_digest",
+                    }
+                    or revision.get("kind") != "history_revision"
+                    or type(revision.get("start")) is not int
+                    or not 0 <= revision["start"] <= len(candidate_history)
+                    or type(revision.get("delete_count")) is not int
+                    or revision["delete_count"] != len(candidate_history) - revision["start"]
+                    or not isinstance(revision.get("insert"), tuple)
+                    or any(not isinstance(row, Mapping) for row in revision["insert"])
+                    or revision.get("before_digest") != candidate_digest
+                ):
+                    raise invalid("Hermes history revision does not match its committed prefix")
+                candidate_history = [
+                    *candidate_history[:revision["start"]], *revision["insert"],
+                ]
+                encoded_history = canonical_json_bytes(candidate_history)
+                if len(encoded_history) > limits.transcript_bytes:
+                    raise RunnerProtocolError(
+                        "Hermes source history exceeds the transcript limit",
+                        code="transcript_limit_exceeded", **self._context(),
+                    )
+                candidate_digest = bytes_sha256(encoded_history)
+                if candidate_digest != revision["after_digest"]:
+                    raise invalid("Hermes history revision digest differs")
+            if checkpoint_call_id is not None and (
+                len(candidate_history) <= len(history)
+                or candidate_history[-1].get("role") != "tool"
+                or candidate_history[-1].get("tool_call_id") != checkpoint_call_id
+            ):
+                raise invalid("Hermes checkpoint did not append the next source result")
+            status, iteration = value.get("status"), value.get("iteration")
+            if (
+                status not in {"RUNNING", "FINISHED", "ERROR", "STOPPED"}
+                or type(iteration) is not int
+                or not 0 <= iteration <= 8
+                or value.get("history_digest") != candidate_digest
+            ):
+                raise invalid("Hermes source state or history digest is invalid")
+            candidate_state = freeze_json_object({
+                "status": status, "iteration": iteration, "source_kind": value["kind"],
+                **{
+                    name: value[name]
+                    for name in (
+                        "source_exit", "public_stop", "source_runtime", "source_error",
+                        "phase", "native_counters", "proposal", "segment_index", "action_index",
+                        "source_result_metadata", "resource_facts",
+                    )
+                    if name in value
+                },
+            }, field_name="Hermes source state")
+            # Neither the local committed prefix nor the worker's acknowledgement
+            # advances if canonical publication fails.
+            await self._emit(SourceEventCommitEvent(
+                0, self._open_request.episode_id, self._open_request.effective_plan_digest,
+                turn, HERMES_RESPONSE_CONSUMER_ID, phase_name, delta,
+                candidate_digest, candidate_state,
+            ))
+            history, history_digest, state = candidate_history, candidate_digest, candidate_state
+
+        async def phase(
+            operation: str, payload: Mapping[str, Any], phase_name: str,
+            turn: int | None, *, segment: Mapping[str, Any] | None = None,
+            actions: tuple[FrozenJsonObject, ...] = (),
+        ) -> FrozenJsonObject:
+            command = operation
+            command_payload = {**payload, "remaining_seconds": remaining()}
+            watchdog = time.monotonic() + min(40, remaining())
+            progress = 0
+            while True:
+                seconds = min(watchdog - time.monotonic(), remaining())
+                if seconds <= 0:
+                    raise TimeoutError("Hermes native action watchdog elapsed")
+                raw = await tools.invoke_native_phase(
+                    command, command_payload, timeout_ms=max(1, int(seconds * 1000)),
+                )
+                value, _ = freeze_json_object_with_size(
+                    raw, field_name="Hermes phase result",
+                    max_encoded_bytes=16 * 1024 * 1024,
+                    max_nodes=16 * 1024 * 1024 + 1,
+                )
+                if (
+                    value.get("schema_version") != "bb.hermes-native.v1"
+                    or type(value.get("kind")) is not str
+                ):
+                    raise invalid("Hermes phase result revision is invalid")
+                checkpoint_call_id = None
+                if value["kind"] == "history_checkpoint":
+                    if segment is not None:
+                        indices = segment["action_indices"]
+                        if (
+                            progress >= len(indices)
+                            or type(value.get("segment_index")) is not int
+                            or value["segment_index"] != segment["index"]
+                            or type(value.get("action_index")) is not int
+                            or value["action_index"] != indices[progress]
+                        ):
+                            raise invalid("Hermes checkpoint result order differs")
+                        checkpoint_call_id = actions[indices[progress]]["call_id"]
+                    elif "segment_index" in value or "action_index" in value:
+                        raise invalid("Hermes non-execution checkpoint carries action authority")
+                elif (
+                    segment is not None and value.get("status") == "RUNNING"
+                    and progress != len(segment["action_indices"])
+                ):
+                    raise invalid("Hermes segment omitted a canonical result checkpoint")
+                await commit_history(
+                    value, phase_name, turn, checkpoint_call_id=checkpoint_call_id,
+                )
+                if value["kind"] != "history_checkpoint":
+                    return value
+                if segment is not None:
+                    progress += 1
+                    if segment["kind"] == "sequential":
+                        watchdog = time.monotonic() + min(40, remaining())
+                await self._checkpoint(
+                    "after_action" if segment is not None else "before_policy", turn=turn,
+                )
+                command = "history_ack"
+                command_payload = {"history_digest": history_digest}
+
+        initialized = await phase(
+            "initialize", {"task": task, "model_config": model_config}, "initial", None,
+        )
+        if (
+            initialized.get("kind") != "initialized"
+            or state["status"] != "RUNNING" or state["iteration"] != 0
+            or not isinstance(initialized.get("tool_schemas"), tuple)
+        ):
+            raise invalid("Hermes did not initialize its complete native tool surface")
+        self._binding.bind_native_tools(initialized["tool_schemas"])
+        termination = RunnerTermination.MAX_TURNS
+        for turn in range(1, 9):
+            await self._checkpoint("before_policy", turn=turn)
+            sampled = await phase("sample", {}, "before_policy", turn)
+            if sampled.get("kind") == "sample_ready" and state["status"] != "RUNNING":
+                if state["status"] == "ERROR":
+                    await self._raise_error(RunnerDependencyError(
+                        "native Hermes source phase failed before a provider request",
+                        code="native_source_failed", **self._context(),
+                    ), turn=turn)
+                termination = (
+                    RunnerTermination.ASSISTANT_COMPLETE
+                    if state["status"] == "FINISHED"
+                    else RunnerTermination.MAX_TURNS
+                    if state.get("public_stop") == "request_cap"
+                    else RunnerTermination.POLICY_INCOMPLETE
+                )
+                break
+            if sampled.get("kind") != "provider_request":
+                raise invalid("Hermes sample did not produce its single provider request")
+            http_request = sampled.get("http_request")
+            if not isinstance(http_request, Mapping):
+                raise invalid("Hermes serialized provider request is missing")
+            async with asyncio.timeout(min(45, remaining())):
+                receipt = await self._invoke_native_policy(http_request, model=model, turn=turn)
+            sampled = await phase("provider_response", receipt, "before_policy", turn)
+            if sampled.get("kind") != "sample_ready":
+                raise invalid("Hermes sample did not complete its SDK request")
+            prepared = await phase("prepare", {}, "assistant", turn)
+            if prepared.get("kind") != "prepared":
+                raise invalid("Hermes response preparation failed")
+            actions, segments = prepared.get("actions"), prepared.get("segments")
+            if not isinstance(actions, tuple) or not isinstance(segments, tuple):
+                raise invalid("Hermes prepared actions or segments are invalid")
+            for index, action in enumerate(actions):
+                if (
+                    not isinstance(action, Mapping)
+                    or type(action.get("index")) is not int or action["index"] != index
+                    or action.get("tool_id") not in tool_order
+                    or type(action.get("call_id")) is not str or not action["call_id"]
+                    or type(action.get("arguments_json")) is not str
+                ):
+                    raise invalid("Hermes prepared action identity is invalid")
+            scheduled: list[int] = []
+            for index, segment in enumerate(segments):
+                if (
+                    not isinstance(segment, Mapping)
+                    or type(segment.get("index")) is not int or segment["index"] != index
+                    or segment.get("kind") not in {"parallel", "sequential"}
+                    or not isinstance(segment.get("action_indices"), tuple)
+                    or not segment["action_indices"]
+                    or any(type(item) is not int for item in segment["action_indices"])
+                ):
+                    raise invalid("Hermes source segment plan is invalid")
+                scheduled.extend(segment["action_indices"])
+            if scheduled != list(range(len(actions))):
+                raise invalid("Hermes source plan does not cover each surviving action once")
+            observations: list[FrozenJsonObject] = []
+            if state["status"] == "RUNNING":
+                for segment in segments:
+                    indices = segment["action_indices"]
+                    for index in indices:
+                        action = actions[index]
+                        await self._checkpoint("before_action", turn=turn, call_id=action["call_id"])
+                        await self._emit(ToolCallEvent(
+                            0, self._open_request.episode_id,
+                            self._open_request.effective_plan_digest, turn, index,
+                            action["call_id"], action["tool_id"], action["arguments_json"],
+                        ))
+                    executed = await phase(
+                        "execute_segment", {"index": segment["index"]}, "observation", turn,
+                        segment=segment, actions=actions,
+                    )
+                    observed = executed.get("observations")
+                    if (
+                        executed.get("kind") != "segment_executed"
+                        or type(executed.get("index")) is not int
+                        or executed["index"] != segment["index"]
+                        or not isinstance(observed, tuple) or len(observed) > len(indices)
+                        or state["status"] == "RUNNING" and len(observed) != len(indices)
+                    ):
+                        raise invalid("Hermes source segment result is invalid")
+                    for position, observation in enumerate(observed):
+                        index = indices[position]
+                        action = actions[index]
+                        if (
+                            not isinstance(observation, Mapping)
+                            or type(observation.get("action_index")) is not int
+                            or observation["action_index"] != index
+                            or observation.get("tool_id") != action["tool_id"]
+                            or observation.get("call_id") != action["call_id"]
+                        ):
+                            raise invalid("Hermes observation is not in native source order")
+                        observations.append(observation)
+                        await self._emit(ToolObservationEvent(
+                            0, self._open_request.episode_id,
+                            self._open_request.effective_plan_digest, turn, index,
+                            action["call_id"], action["tool_id"], observation, False,
+                        ))
+                        await self._checkpoint("after_action", turn=turn, call_id=action["call_id"])
+                    if state["status"] != "RUNNING":
+                        break
+            if state["status"] == "RUNNING" and segments:
+                committed = await phase("commit", {}, "observation_batch", turn)
+                if committed.get("kind") != "committed":
+                    raise invalid("Hermes post-tool/recovery commit failed")
+            self._turns.append(RunnerTurn(turn, actions, tuple(observations)))
+            if state["status"] == "FINISHED":
+                termination = RunnerTermination.ASSISTANT_COMPLETE
+                break
+            if state["status"] == "STOPPED":
+                termination = (
+                    RunnerTermination.MAX_TURNS
+                    if state.get("public_stop") == "request_cap"
+                    else RunnerTermination.POLICY_INCOMPLETE
+                )
+                break
+            if state["status"] == "ERROR":
+                await self._raise_error(RunnerDependencyError(
+                    "native Hermes source phase failed",
+                    code="native_source_failed", **self._context(),
+                ), turn=turn)
+        await self._emit(SourceEventCommitEvent(
+            0, self._open_request.episode_id, self._open_request.effective_plan_digest,
+            len(self._turns), HERMES_RESPONSE_CONSUMER_ID, "exit", (),
+            history_digest, state,
+        ))
+        await self._checkpoint("after_loop", turn=len(self._turns))
+        await self._checkpoint("before_commit", turn=len(self._turns))
+        await self._commit_termination(termination)
+        return RunnerResult(
+            episode_id=self._open_request.episode_id,
+            effective_plan_digest=self._open_request.effective_plan_digest,
+            original_request={"task_input": request.task_input, "context": request.context},
+            response={"source_id": HERMES_RESPONSE_CONSUMER_ID, "messages": history, "state": state},
+            termination=termination, turn_count=len(self._turns),
+            turns=tuple(self._turns), events=tuple(self._events),
+        )
+
+    async def _invoke_native_policy(
+        self, http_request: Mapping[str, Any], *, model: _ModelProjection, turn: int,
+    ) -> Mapping[str, Any]:
+        """Persist the serialized SDK exchange before releasing its response."""
+        frozen_request = freeze_json_object(
+            self._binding.stage_native_http_request(http_request),
+            field_name="native policy request",
+        )
+        request_digest = canonical_sha256(frozen_request)
+        await self._emit(PolicyRequestEvent(
+            0, self._open_request.episode_id,
+            self._open_request.effective_plan_digest, turn, frozen_request,
+        ))
+        await self._emit(PolicyRuntimeRequestEvent(
+            0, self._open_request.episode_id,
+            self._open_request.effective_plan_digest, turn, 1,
+            self._binding.binding_digest,
+            self._binding.policy_capability_observation_digest,
+            model.policy_slot_id, request_digest,
+            self._binding.first_request_digest or request_digest,
+            model.trainable_values,
+        ))
+        await self._checkpoint("before_policy", turn=turn)
+        result = await self._binding.invoke(PolicyRuntimeInvokeRequest(
+            episode_id=self._open_request.episode_id,
+            effective_plan_digest=self._open_request.effective_plan_digest,
+            binding_digest=self._binding.binding_digest,
+            policy_slot_id=model.policy_slot_id,
+            request_digest=request_digest, request_payload=frozen_request,
+            turn=turn, attempt=1,
+        ))
+        await self._checkpoint("after_policy", turn=turn)
+        response, _ = freeze_json_object_with_size(
+            result.response_payload, field_name="native policy response",
+            max_encoded_bytes=16 * 1024 * 1024,
+            max_nodes=16 * 1024 * 1024 + 1,
+        )
+        response_digest = canonical_sha256(response)
+        if response_digest != result.response_digest:
+            raise RunnerProtocolError(
+                "policy response digest does not match the response payload",
+                code="policy_response_digest_mismatch", **self._context(),
+            )
+        await self._emit(PolicyRuntimeResponseEvent(
+            0, self._open_request.episode_id,
+            self._open_request.effective_plan_digest, turn, 1,
+            self._binding.binding_digest, model.policy_slot_id,
+            request_digest, response_digest,
+        ))
+        await self._emit(PolicyResponseEvent(
+            0, self._open_request.episode_id,
+            self._open_request.effective_plan_digest, turn, response, (),
+        ))
+        return self._binding.take_native_http_response(response_digest)
     async def _loop_openhands(self, request: ConductorRunRequest) -> RunnerResult:
         limits = self._open_request.effective_plan.effective_capabilities.limits
         profile = self._projection.source_profile
@@ -2581,64 +2971,14 @@ class _ConductorSession:
                     "index": len(trace_requests),
                     "body": request_body,
                 })
-                frozen_request = freeze_json_object(
-                    self._binding.stage_native_http_request(http_request),
-                    field_name="native policy request",
-                )
-                request_digest = canonical_sha256(frozen_request)
-                await self._emit(PolicyRequestEvent(
-                    0, self._open_request.episode_id,
-                    self._open_request.effective_plan_digest, turn, frozen_request,
-                ))
-                await self._emit(PolicyRuntimeRequestEvent(
-                    0, self._open_request.episode_id,
-                    self._open_request.effective_plan_digest, turn, 1,
-                    self._binding.binding_digest,
-                    self._binding.policy_capability_observation_digest,
-                    model.policy_slot_id, request_digest,
-                    self._binding.first_request_digest or request_digest,
-                    model.trainable_values,
-                ))
-                await self._checkpoint("before_policy", turn=turn)
-                result = await self._binding.invoke(PolicyRuntimeInvokeRequest(
-                    episode_id=self._open_request.episode_id,
-                    effective_plan_digest=self._open_request.effective_plan_digest,
-                    binding_digest=self._binding.binding_digest,
-                    policy_slot_id=model.policy_slot_id,
-                    request_digest=request_digest, request_payload=frozen_request,
-                    turn=turn, attempt=1,
-                ))
-                await self._checkpoint("after_policy", turn=turn)
-                # The public receipt includes base64 wire bytes. The provider
-                # independently bounds the decoded response at four MiB.
-                response, _ = freeze_json_object_with_size(
-                    result.response_payload, field_name="native policy response",
-                    max_encoded_bytes=16 * 1024 * 1024,
-                    max_nodes=16 * 1024 * 1024 + 1,
-                )
-                response_digest = canonical_sha256(response)
-                if response_digest != result.response_digest:
-                    raise RunnerProtocolError(
-                        "policy response digest does not match the response payload",
-                        code="policy_response_digest_mismatch", **self._context(),
-                    )
-                public_response = response.get("native_http_response")
+                receipt = await self._invoke_native_policy(http_request, model=model, turn=turn)
+                public_response = receipt.get("native_http_response")
                 if isinstance(public_response, Mapping):
                     decoded_response = decode_json_body(public_response.get("body_b64"))
                     if isinstance(decoded_response, Mapping) and trace_requests:
                         trace_requests[-1]["response"] = decoded_response
-                await self._emit(PolicyRuntimeResponseEvent(
-                    0, self._open_request.episode_id,
-                    self._open_request.effective_plan_digest, turn, 1,
-                    self._binding.binding_digest, model.policy_slot_id,
-                    request_digest, response_digest,
-                ))
-                await self._emit(PolicyResponseEvent(
-                    0, self._open_request.episode_id,
-                    self._open_request.effective_plan_digest, turn, response, (),
-                ))
                 sampled = await phase(
-                    "provider_response", self._binding.take_native_http_response(response_digest),
+                    "provider_response", receipt,
                     timeout_ms=60_000,
                 )
                 await commit_events(sampled, "before_policy", turn)
@@ -2934,6 +3274,19 @@ class _ConductorSession:
 
     async def _publish_locked(self, event: RunnerEvent) -> None:
         sequenced = replace(event, sequence=self._sequence)
+        native_event_size = 0
+        if self._projection.source_consumer_id == HERMES_RESPONSE_CONSUMER_ID:
+            native_event_size = _encoded_json_size({
+                field.name: getattr(sequenced, field.name) for field in fields(sequenced)
+            })
+            if (
+                self._native_event_bytes + native_event_size
+                > self._open_request.effective_plan.effective_capabilities.limits.transcript_bytes
+            ):
+                raise RunnerProtocolError(
+                    "Hermes canonical journal exceeds the transcript limit",
+                    code="transcript_limit_exceeded", **self._context(),
+                )
         token = _EVENT_SINK_SESSION.set(self)
         try:
             try:
@@ -2953,6 +3306,7 @@ class _ConductorSession:
             _EVENT_SINK_SESSION.reset(token)
         self._events.append(sequenced)
         self._sequence += 1
+        self._native_event_bytes += native_event_size
 
     async def _raise_error(
         self,
