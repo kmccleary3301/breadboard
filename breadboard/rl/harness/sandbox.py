@@ -2210,7 +2210,14 @@ class TrustedProcessHandle:
                         ),
                         timeout_ms=min(timeout_ms, self.plan.limits.setup_timeout_ms),
                         extra_fds=(node.fd,),
-                        environment=environment,
+                        environment={
+                            **environment,
+                            **(
+                                {"PYTHONEXECUTABLE": str(node_path)}
+                                if binding.adapter_id != PI_CODING_AGENT_LOCAL_ADAPTER_ID
+                                else {}
+                            ),
+                        }
                     )
 
                     async def retire() -> bool:
