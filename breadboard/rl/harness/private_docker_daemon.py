@@ -546,6 +546,8 @@ class PrivateDockerDaemonOwner:
             ):
                 raise ValueError("private daemon environment must be one exact PATH")
             self._daemon_environment["GOMAXPROCS"] = "1"
+            # Runtime exec creates temporary process specs; ambient /tmp is read-only.
+            self._daemon_environment["TMPDIR"] = authority.exec_root
         self._runner = runner
         self._monotonic = monotonic
         self._progress_sink = progress_sink
