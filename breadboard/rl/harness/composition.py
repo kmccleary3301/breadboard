@@ -69,6 +69,8 @@ from .runners.base import RunnerAdapterDescriptor, RunnerAdapterRegistry
 from .runners.conductor import CONDUCTOR_ADAPTER_ID, ConductorAdapter
 from .runners.terminal import TERMINAL_ADAPTER_ID, TerminalResponsesAdapter
 from .sandbox import (
+    OPENHANDS_NATIVE_TOOL_IDS,
+    OPENHANDS_SDK_LOCAL_ADAPTER_ID,
     InstalledImage,
     InstalledRuntime,
     InstalledSandboxAuthoritySet,
@@ -288,6 +290,11 @@ class InstalledToolAdapterV1(_ExactModel):
             for tool_id in self.tool_ids
         ):
             raise ValueError("installed tool adapter tool IDs are invalid")
+        if (
+            self.adapter_id == OPENHANDS_SDK_LOCAL_ADAPTER_ID
+            and self.tool_ids != OPENHANDS_NATIVE_TOOL_IDS
+        ):
+            raise ValueError("OpenHands native adapter requires its exact source tool set")
         if self.manifest_ref.media_type != _NATIVE_TOOL_SOURCE_REF_MEDIA_TYPE:
             raise ValueError("native tool source manifest media type is not exact")
         return self
