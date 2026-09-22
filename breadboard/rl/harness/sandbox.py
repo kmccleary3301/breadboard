@@ -309,6 +309,35 @@ def _runtime_cleanup_released(steps: Sequence[CleanupStepReceipt]) -> bool:
     )
 
 
+def _cleanup_steps_projection(
+    steps: Sequence[CleanupStepReceipt],
+) -> list[dict[str, str]]:
+    return [
+        {
+            "resource": step.resource,
+            "state": step.state.value,
+            "detail": step.detail,
+        }
+        for step in steps
+    ]
+
+
+def _runtime_to_lease_cleanup_step(
+    steps: Sequence[CleanupStepReceipt],
+) -> CleanupStepReceipt:
+    if len(steps) == 1 and steps[0].resource == "runtime":
+        return steps[0]
+    if not steps:
+        return CleanupStepReceipt(
+            "runtime",
+            CleanupState.FAILED,
+            "runtime cleanup returned no receipts",
+        )
+    aggregate = SandboxCleanupReceipt.from_steps("runtime", tuple(steps))
+    detail = canonical_json_bytes(_cleanup_steps_projection(steps)).decode("utf-8")
+    return CleanupStepReceipt("runtime", aggregate.state, detail)
+
+
 def _atomic_regular_write(root: Path, logical_path: str, payload: bytes) -> None:
     parts = _workspace_parts(logical_path)
     parent_fd, name = _open_parent_descriptor(root, parts, create=True)
@@ -3121,11 +3150,14 @@ class VerifierWorkspaceLease:
                 return self._cleanup
             while self._active_operation_tasks:
                 await self._operations_drained.wait()
-            steps = list(await self._runtime.terminate())
-            runtime_released = all(
-                step.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
-                for step in steps
+            runtime_step = _runtime_to_lease_cleanup_step(
+                await self._runtime.terminate()
             )
+            steps = [runtime_step]
+            runtime_released = runtime_step.state in {
+                CleanupState.RELEASED,
+                CleanupState.ALREADY_RELEASED,
+            }
             if runtime_released:
                 try:
                     for root, dirs, files in os.walk(self.workspace, topdown=True, followlinks=False):
@@ -4211,26 +4243,12 @@ class SandboxRuntimeManager:
                     CleanupState.ALREADY_RELEASED,
                 }:
                     incomplete_child_ids.append(child.lease_id)
-            if CleanupState.QUARANTINED in child_states:
-                child_state = CleanupState.QUARANTINED
-            elif CleanupState.FAILED in child_states:
-                child_state = CleanupState.FAILED
-            elif CleanupState.RELEASED in child_states:
-                child_state = CleanupState.RELEASED
-            else:
-                child_state = CleanupState.ALREADY_RELEASED
-            steps.append(
-                CleanupStepReceipt(
-                    "child_verifier",
-                    child_state,
-                    ",".join(sorted(incomplete_child_ids)),
-                )
-            )
             lease._verifier_children[:] = [
                 child
                 for child in lease._verifier_children
                 if not child._closed
             ]
+            snapshot_steps: list[CleanupStepReceipt] = []
             if not incomplete_child_ids:
                 snapshot_ids = tuple(
                     snapshot_id
@@ -4238,8 +4256,34 @@ class SandboxRuntimeManager:
                     if snapshot.source_lease_id == lease.lease_id
                 )
                 for snapshot_id in snapshot_ids:
-                    steps.append(await self._release_snapshot(snapshot_id))
-            steps.extend(await lease._runtime.terminate())
+                    snapshot_steps.append(await self._release_snapshot(snapshot_id))
+            child_component_steps = tuple(
+                CleanupStepReceipt("child_verifier", state)
+                for state in child_states
+            ) + tuple(snapshot_steps)
+            if child_component_steps:
+                child_state = SandboxCleanupReceipt.from_steps(
+                    "child_verifier", child_component_steps
+                ).state
+            else:
+                child_state = CleanupState.ALREADY_RELEASED
+            child_detail = ",".join(sorted(incomplete_child_ids))
+            if snapshot_steps:
+                child_detail = json.dumps(
+                    {
+                        "incomplete_child_lease_ids": sorted(incomplete_child_ids),
+                        "snapshot_steps": _cleanup_steps_projection(snapshot_steps),
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            steps.append(
+                CleanupStepReceipt("child_verifier", child_state, child_detail)
+            )
+            steps.append(
+                _runtime_to_lease_cleanup_step(await lease._runtime.terminate())
+            )
             dependencies_released = all(
                 step.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
                 for step in steps
