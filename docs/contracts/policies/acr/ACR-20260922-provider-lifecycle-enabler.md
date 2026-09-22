@@ -27,7 +27,7 @@ The required outcome is a public provider-lifecycle enabler. This PR is not a ne
 
 ## 3) Coupling and Generalization Impact
 
-No core-to-private-extension dependency is introduced. No added import in `breadboard_engine` references the `breadboard` product package; added imports are limited to `breadboard`, `breadboard_engine`, tests and the standard library. The CI kernel-extension boundary guard does not verify this: it skips on this branch because `scripts/validate_kernel_ext_boundaries.py` is absent.
+No core-to-private-extension dependency is introduced. No added import in `breadboard_engine` references the `breadboard` product package. Added project-package imports are limited to `breadboard`, `breadboard_engine` and `tests`; the only other added imports are the standard library and `pytest` in tests. The CI kernel-extension boundary guard does not verify this: it skips on this branch because `scripts/validate_kernel_ext_boundaries.py` is absent.
 
 Request policy is a closed, versioned input. Headless requests v1 and v2 omit `request_policy` and keep the historical streaming behavior. Only v3 requests can select non-streaming. Nothing infers a capability from a model name or from a caller flag.
 
