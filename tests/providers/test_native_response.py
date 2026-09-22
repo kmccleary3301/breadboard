@@ -111,7 +111,7 @@ def _stream_body() -> bytes:
 
 
 @contextmanager
-def _receiver():
+def _receiver(*, response_payload: bytes | None = None):
     credential = secrets.token_urlsafe(32)
     requests = []
 
@@ -126,7 +126,9 @@ def _receiver():
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             authenticated = self.headers.get("Authorization") == f"Bearer {credential}"
             requests.append((self.path, authenticated, body))
-            payload = _stream_body() if body["stream"] else json.dumps(_response_body()).encode()
+            payload = response_payload
+            if payload is None:
+                payload = _stream_body() if body["stream"] else json.dumps(_response_body()).encode()
             self.send_response(200 if authenticated else 401)
             self.send_header("Content-Type", "text/event-stream" if body["stream"] else "application/json")
             self.send_header("Content-Length", str(len(payload)))
@@ -208,6 +210,80 @@ def _context(profile, binding):
         effective_plan_digest=binding.effective_plan_digest,
         capability_observation_digest=binding.capability_observation_digest,
     )
+
+
+@pytest.mark.parametrize(
+    ("delta", "safe_code"),
+    [
+        ({"role": "user"}, "invalid_chat_role"),
+        ({"refusal": "unsupported"}, "unsupported_chat_delta"),
+    ],
+)
+def test_stream_rejects_unsupported_delta_in_normalized_and_native_paths(delta, safe_code):
+    chunks = [
+        {
+            "id": "semantic-rejection", "object": "chat.completion.chunk",
+            "created": 1, "model": _MODEL,
+            "choices": [{
+                "index": 0,
+                "delta": {"role": "assistant", "content": "hello", **delta},
+                "finish_reason": None,
+            }],
+        },
+        {
+            "id": "semantic-rejection", "object": "chat.completion.chunk",
+            "created": 1, "model": _MODEL,
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+        },
+    ]
+    payload = b"".join(b"data: " + json.dumps(chunk).encode() + b"\n\n" for chunk in chunks)
+    payload += b"data: [DONE]\n\n"
+    with _receiver(response_payload=payload) as (base_url, credential, requests):
+        profile = _profile(base_url, credential, True)
+        binding = _binding(profile)
+        runtime = _runtime()
+        client = runtime.create_client_from_profile(profile, timeout_seconds=3)
+        try:
+            for native in (False, True):
+                kwargs = {
+                    "client": client, "model": _MODEL,
+                    "messages": [{"role": "user", "content": "inspect response"}],
+                    "tools": _TOOLS, "stream": True, "context": _context(profile, binding),
+                }
+                if native:
+                    kwargs["binding"] = binding
+                invoke = runtime.invoke_native if native else runtime.invoke
+                with pytest.raises(ProviderRuntimeError) as raised:
+                    invoke(**kwargs)
+                assert raised.value.kind == "protocol"
+                assert raised.value.safe_code == safe_code
+        finally:
+            client.close()
+        assert len(requests) == 2
+
+
+def test_nonstream_native_rejects_indices_that_would_reorder_calls():
+    body = _response_body()
+    calls = body["choices"][0]["message"]["tool_calls"][:2]
+    calls[0]["index"], calls[1]["index"] = 1, 0
+    body["choices"][0]["message"]["tool_calls"] = calls
+    with _receiver(response_payload=json.dumps(body).encode()) as (base_url, credential, requests):
+        profile = _profile(base_url, credential, False)
+        binding = _binding(profile)
+        runtime = _runtime()
+        client = runtime.create_client_from_profile(profile, timeout_seconds=3)
+        try:
+            with pytest.raises(ProviderRuntimeError) as raised:
+                runtime.invoke_native(
+                    client=client, model=_MODEL,
+                    messages=[{"role": "user", "content": "preserve call order"}],
+                    tools=_TOOLS, stream=False,
+                    context=_context(profile, binding), binding=binding,
+                )
+            assert raised.value.safe_code == "invalid_chat_tool_index"
+        finally:
+            client.close()
+        assert len(requests) == 1
 
 
 def test_native_admission_rejects_an_uncompiled_authority():

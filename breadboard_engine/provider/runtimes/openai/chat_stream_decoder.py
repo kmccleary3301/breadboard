@@ -482,7 +482,6 @@ class OpenAIChatStreamDecoder:
                 state,
                 "invalid_chat_tool_calls",
             )
-        seen_indices: set[int] = set()
         for fallback_index, tool_call in enumerate(tool_calls):
             if self._host._non_null_unknown_fields(
                 tool_call, {"index", "id", "type", "function"}
@@ -494,18 +493,12 @@ class OpenAIChatStreamDecoder:
                 )
             index_value = self._host._get_attr(tool_call, "index")
             index = fallback_index if index_value is None else index_value
-            if (
-                not isinstance(index, int)
-                or isinstance(index, bool)
-                or index < 0
-                or index in seen_indices
-            ):
+            if type(index) is not int or index != fallback_index:
                 raise self._protocol_error(
                     "Native Chat Completions tool index is invalid",
                     state,
                     "invalid_chat_tool_index",
                 )
-            seen_indices.add(index)
             if self._host._get_attr(tool_call, "type") != "function":
                 raise self._protocol_error(
                     "Native Chat Completions tool type is unsupported",
@@ -969,6 +962,20 @@ class OpenAIChatStreamDecoder:
                 state,
                 "unknown_chat_delta",
             )
+        role = self._host._get_attr(delta, "role")
+        if role is not None and role != "assistant":
+            raise self._protocol_error(
+                "Chat Completions delta has an invalid role",
+                state,
+                "invalid_chat_role",
+            )
+        for unsupported_field in ("refusal", "function_call", "audio"):
+            if self._host._get_attr(delta, unsupported_field) is not None:
+                raise self._protocol_error(
+                    "Unsupported Chat Completions delta semantic",
+                    state,
+                    "unsupported_chat_delta",
+                )
         return delta
 
     def _record_native_fragment(

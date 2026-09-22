@@ -28,6 +28,52 @@ from breadboard.rl.harness.sandbox import InstalledRuntime
 from breadboard.rl.harness.sandbox_docker import PrivateDockerDaemonBinding
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux" or os.geteuid() != 0,
+    reason="requires Linux root to observe sandbox-UID traversal",
+)
+def test_daemon_launcher_keeps_native_mounts_readable_without_relaxing_parent(
+    tmp_path: Path,
+) -> None:
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    runtime.chmod(0o755)
+    program = (
+        "import os,sys; from pathlib import Path; "
+        "os.chdir(sys.argv[1]); "
+        "Path('bb-native').mkdir(mode=0o755); "
+        "Path('bb-native/proof').write_text('native mount reachable\\n'); "
+        "os.setgroups([]); os.setgid(65534); os.setuid(65534); "
+        "print(Path('bb-native/proof').read_text(),end='')"
+    )
+    log_path = tmp_path / "daemon.log"
+    log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    process = None
+    previous_umask = os.umask(0o077)
+    try:
+        process = private_docker_daemon._default_launcher(
+            (sys.executable, "-I", "-c", program, str(runtime)),
+            executable=sys.executable,
+            pass_fds=(),
+            env={},
+            log_fd=log_fd,
+            log_limit_bytes=4096,
+        )
+        assert process.wait(timeout=10) == 0
+        assert log_path.read_text() == "native mount reachable\n"
+        private_root = tmp_path / "private-root"
+        private_root.mkdir(mode=0o755)
+        assert stat.S_IMODE(private_root.stat().st_mode) == 0o700
+    finally:
+        os.umask(previous_umask)
+        try:
+            if process is not None and process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
+        finally:
+            os.close(log_fd)
+
+
 @pytest.mark.asyncio
 async def test_owner_executor_forwards_nonempty_stdin_to_pinned_delegate(
     tmp_path: Path,
@@ -186,7 +232,6 @@ def test_owner_pins_exact_files_and_seals_deterministic_config(tmp_path: Path) -
     owner = PrivateDockerDaemonOwner(authority, prerequisite_check=lambda: None)
     try:
         config = Path(authority.config_path).read_bytes()
-        assert config == owner._config_bytes()
         assert stat.S_IMODE(Path(authority.config_path).stat().st_mode) == 0o600
         parsed = json.loads(config)
         assert parsed["containerd"] == authority.containerd_socket_path

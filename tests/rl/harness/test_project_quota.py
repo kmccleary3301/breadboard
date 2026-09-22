@@ -10,12 +10,23 @@ import struct
 import sys
 import time
 import uuid
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from breadboard.rl.harness.materialization import (
+    CacheLeaseState,
+    FilesystemMaterializationStore,
+)
 from breadboard.rl.harness.project_quota import ProjectQuotaStorageBackend
+from tests.rl.harness.wp7_fixtures import (
+    FrozenClock,
+    MemorySourceReader,
+    make_effective_plan,
+    make_materialization_plan,
+)
 
 
 _TEST_ROOT_ENV = "BREADBOARD_PROJECT_QUOTA_TEST_ROOT"
@@ -361,3 +372,34 @@ def test_project_quota_rejects_project_identity_drift_before_reuse(
 
     reused = _allocate(backend, root, created, workspace_id, 64 * 1024, skip_capability=False)
     assert backend.measure(reused)["quota_bytes"] == 64 * 1024
+
+
+def test_materialized_workspace_releases_project_quota(
+    project_quota_backend: tuple[ProjectQuotaStorageBackend, Path, list[tuple[Path, tuple[int, int]]]],
+    tmp_path: Path,
+) -> None:
+    backend, root, _created = project_quota_backend
+    cache_root = tmp_path / "cache"
+    cache_root.mkdir(mode=0o700)
+    store = FilesystemMaterializationStore(
+        cache_root=cache_root,
+        workspace_root=root,
+        source_reader=MemorySourceReader({}),
+        clock=FrozenClock(),
+        lease_ttl=timedelta(minutes=5),
+        storage_backend=backend,
+    )
+    try:
+        workspace = store.materialize(
+            make_materialization_plan(make_effective_plan(storage_bytes=64 * 1024))
+        )
+        try:
+            receipt = workspace.close()
+            assert receipt.release_state is CacheLeaseState.RELEASED
+            assert backend.verify_absent(workspace.workspace_path)
+        finally:
+            workspace._close_workspace_fd()
+            if not backend.verify_absent(workspace.workspace_path):
+                backend.release(workspace.workspace_path)
+    finally:
+        store.close()

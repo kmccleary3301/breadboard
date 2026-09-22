@@ -106,25 +106,17 @@ def test_sealed_executable_works_without_python_exported_seal_constants(
         pinned.close()
 
 
+@requires_sealed_execution
 def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     repository = tmp_path / "source"
     git_path = shutil.which("git")
     assert git_path is not None
 
-    class PinnedGit:
-        def __init__(self) -> None:
-            self.fd = os.open(git_path, os.O_RDONLY)
-            self.proc_fd_path = git_path
-            self.digest = "sha256:" + "0" * 64
-
-        def close(self) -> None:
-            os.close(self.fd)
-
-    monkeypatch.setattr(
-        "breadboard.rl.harness.sandbox._snapshot_installed_executable",
-        lambda path, expected_digest: PinnedGit(),
+    git_directory = tmp_path / "git-bin"
+    git_directory.symlink_to(
+        Path(os.path.realpath(git_path)).parent, target_is_directory=True
     )
     repository.mkdir()
 
@@ -160,7 +152,7 @@ def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
         "SealedDiffPlan", (),
         {
             "runtime": type(
-                "Runtime", (), {"fixed_environment": (("PATH", os.environ["PATH"]),)}
+                "Runtime", (), {"fixed_environment": (("PATH", str(git_directory)),)}
             )(),
             "limits": type(
                 "Limits", (),

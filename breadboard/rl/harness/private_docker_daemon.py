@@ -401,6 +401,9 @@ def _default_launcher(
         stderr=subprocess.STDOUT,
         close_fds=True,
         start_new_session=True,
+        # Container mount parents must be traversable by the declared sandbox UID.
+        # Private authority roots and sockets retain their explicit 0700/0600 modes.
+        umask=0o022,
     )
     return _CapturedProcess(process, log_fd, log_limit_bytes)
 
@@ -510,6 +513,8 @@ class PrivateDockerDaemonOwner:
     Containerd receives an explicit configuration without ambient imports,
     CRI services, or NRI plugins. Both daemon configurations participate in
     authenticated cleanup.
+    Dockerd uses cgroupfs within the delegated hierarchy, without access to
+    the host systemd manager.
     Private control-plane Go schedulers use one processor rather than the
     host CPU count; aggregate cgroup limits remain the hard resource ceiling.
     """
@@ -544,6 +549,8 @@ class PrivateDockerDaemonOwner:
             ):
                 raise ValueError("private daemon environment must be one exact PATH")
             self._daemon_environment["GOMAXPROCS"] = "1"
+            # Runtime exec creates temporary process specs; ambient /tmp is read-only.
+            self._daemon_environment["TMPDIR"] = authority.exec_root
         self._runner = runner
         self._monotonic = monotonic
         self._progress_sink = progress_sink
@@ -877,6 +884,7 @@ class PrivateDockerDaemonOwner:
             "data-root": authority.data_root,
             "default-runtime": authority.runtime_name,
             "containerd": authority.containerd_socket_path,
+            "exec-opts": ["native.cgroupdriver=cgroupfs"],
             "exec-root": authority.exec_root,
             "hosts": ["unix://" + authority.socket_path],
             "ip-forward": False,

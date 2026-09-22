@@ -22,7 +22,6 @@ from breadboard.rl.harness.headless import (
     HeadlessWorkspaceInput,
     _atomic_write,
     _project_headless_run,
-    _validate_repository_base_commit_binding,
     run_headless_request,
 )
 from breadboard.rl.harness.runners.base import freeze_json_object, thaw_json
@@ -133,6 +132,20 @@ def test_headless_projection_preserves_evidence_without_fabricating_patches() ->
     assert patch_bytes is None
     assert cancelled["terminal"]["status"] == "cancelled"
     assert cancelled["workspace_evidence"]["runner_event_ledger_digest"] == (
+        "sha256:" + hashlib.sha256(events).hexdigest()
+    )
+    failed_run = replace(
+        run, primary_disposition=EpisodePrimaryDisposition.FAILED,
+        response=None, termination=None, turn_count=2, workspace_diff=None,
+    )
+    failed: dict[str, Any] = {}
+    event_bytes, patch_bytes = _project_headless_run(
+        failed, failed_run, composition, expected_base_commit="0" * 40,
+    )
+    assert event_bytes == events
+    assert patch_bytes is None
+    assert failed["terminal"]["status"] == "failed"
+    assert failed["workspace_evidence"]["runner_event_ledger_digest"] == (
         "sha256:" + hashlib.sha256(events).hexdigest()
     )
 

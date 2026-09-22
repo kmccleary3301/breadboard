@@ -395,7 +395,6 @@ def _identity_inspect(
 def _docker_inspect_payload(
     plan: Any,
     skeleton: Path,
-    profile: Path,
     mounts: Sequence[tuple[Path, str, bool]],
     *,
     role: str = "primary",
@@ -427,12 +426,14 @@ def _docker_inspect_payload(
             "ReadonlyRootfs": True,
             "CapAdd": None,
             "CapDrop": ["ALL"],
-            "Devices": None,
+            "Devices": [],
             "DeviceRequests": None,
             "DeviceCgroupRules": None,
             "SecurityOpt": [
                 "no-new-privileges",
-                f"seccomp={profile}",
+                "seccomp=" + json.dumps(
+                    json.loads(plan.security_policy.seccomp_bytes), separators=(",", ":")
+                ),
                 f"apparmor={plan.security_policy.apparmor_profile}",
             ],
             "CpuPeriod": 100_000,
@@ -1419,49 +1420,29 @@ def test_sole_root_repository_grant_controls_create_and_inspect_authority(
     assert captured.value.code == "runtime_preflight_failed"
 
     valid_payload = _docker_inspect_bytes(
-        _docker_inspect_payload(
-            plan,
-            skeleton,
-            profile,
-            (),
-            skeleton_readonly=skeleton_readonly,
-        )
+        _docker_inspect_payload(plan, skeleton, (), skeleton_readonly=skeleton_readonly,)
     )
-    decode_docker_inspect(
-        valid_payload,
+    decode_docker_inspect(valid_payload,
+    plan,
+    container_id=CONTAINER_ID,
+    container_name="bb-primary-workspace-1",
+    labels=_binding_labels(plan),
+    skeleton_path=skeleton,
+    mounts=(), storage_bytes=plan.resources.storage_bytes,
+    skeleton_readonly=skeleton_readonly,)
+
+    inconsistent_payload = _docker_inspect_bytes(
+        _docker_inspect_payload(plan, skeleton, (), skeleton_readonly=not skeleton_readonly,)
+    )
+    with pytest.raises(DockerAdapterError) as captured:
+        decode_docker_inspect(inconsistent_payload,
         plan,
         container_id=CONTAINER_ID,
         container_name="bb-primary-workspace-1",
         labels=_binding_labels(plan),
         skeleton_path=skeleton,
-        mounts=(),
-        security_profile_path=profile,
-        storage_bytes=plan.resources.storage_bytes,
-        skeleton_readonly=skeleton_readonly,
-    )
-
-    inconsistent_payload = _docker_inspect_bytes(
-        _docker_inspect_payload(
-            plan,
-            skeleton,
-            profile,
-            (),
-            skeleton_readonly=not skeleton_readonly,
-        )
-    )
-    with pytest.raises(DockerAdapterError) as captured:
-        decode_docker_inspect(
-            inconsistent_payload,
-            plan,
-            container_id=CONTAINER_ID,
-            container_name="bb-primary-workspace-1",
-            labels=_binding_labels(plan),
-            skeleton_path=skeleton,
-            mounts=(),
-            security_profile_path=profile,
-            storage_bytes=plan.resources.storage_bytes,
-            skeleton_readonly=skeleton_readonly,
-        )
+        mounts=(), storage_bytes=plan.resources.storage_bytes,
+        skeleton_readonly=skeleton_readonly,)
     assert captured.value.code == "runtime_measurement_mismatch"
 
 
@@ -2808,7 +2789,7 @@ async def test_prepared_identity_is_inspected_and_persisted_before_start(
         trace.append("persist")
 
     inspect_bytes = _docker_inspect_bytes(
-        _docker_inspect_payload(plan, skeleton, installed_profile, mounts)
+        _docker_inspect_payload(plan, skeleton, mounts)
     )
     executor = ScriptedDockerExecutor(
         [
@@ -3318,7 +3299,6 @@ async def test_descriptor_success_retains_fds_until_exact_container_absence(
         def __init__(self) -> None:
             self.mounts: tuple[tuple[Path, str, bool], ...] = ()
             self.skeleton = Path()
-            self.profile = Path()
             self.skeleton_readonly = True
 
         async def preflight(self, _: Any) -> None:
@@ -3328,7 +3308,6 @@ async def test_descriptor_success_retains_fds_until_exact_container_absence(
             trace.append("create")
             self.mounts = tuple(kwargs["mounts"])
             self.skeleton = kwargs["skeleton_path"]
-            self.profile = kwargs["security_profile_path"]
             self.skeleton_readonly = kwargs["skeleton_readonly"]
             profile = docker_module._bounded_regular_file_descriptor_bytes(
                 kwargs["security_profile_descriptor"],
@@ -3348,13 +3327,7 @@ async def test_descriptor_success_retains_fds_until_exact_container_absence(
             assert container_id == CONTAINER_ID
             trace.append("inspect")
             return _docker_inspect_bytes(
-                _docker_inspect_payload(
-                    plan,
-                    self.skeleton,
-                    self.profile,
-                    self.mounts,
-                    skeleton_readonly=self.skeleton_readonly,
-                )
+                _docker_inspect_payload(plan, self.skeleton, self.mounts, skeleton_readonly=self.skeleton_readonly,)
             )
 
         async def cleanup(self, _: Any, reference: str, **kwargs: Any) -> tuple[tuple[str, str, str], ...]:
@@ -3513,6 +3486,64 @@ async def test_verifier_backend_refuses_before_create_or_measurement(
     assert provider.calls == []
 
 
+def test_inspect_attests_embedded_seccomp_without_rounding_syscall_arguments(
+    tmp_path: Path,
+) -> None:
+    plan, skeleton, _, mounts = _docker_plan(tmp_path)
+    profile = {
+        "defaultAction": "SCMP_ACT_ERRNO",
+        "syscalls": [{
+            "names": ["write"],
+            "action": "SCMP_ACT_ALLOW",
+            "args": [{"index": 0, "value": 2**64 - 1, "op": "SCMP_CMP_EQ"}],
+        }],
+    }
+    raw_profile = json.dumps(profile, indent=2).encode()
+    policy = replace(
+        plan.security_policy,
+        seccomp_bytes=raw_profile,
+        seccomp_digest=digest(raw_profile),
+    )
+    policy = replace(policy, policy_digest=policy.derive_digest(policy.projection()))
+    plan = replace(plan, security_policy=policy)
+    inspected = _docker_inspect_payload(plan, skeleton, mounts)
+    host = inspected["HostConfig"]
+    for field in ("Devices", "DeviceRequests", "DeviceCgroupRules"):
+        host[field] = []
+    host["SecurityOpt"][1] = "seccomp=" + json.dumps(profile, sort_keys=True)
+
+    def measure() -> dict[str, Any]:
+        return decode_docker_inspect(
+            _docker_inspect_bytes(inspected),
+            plan,
+            container_id=CONTAINER_ID,
+            container_name="bb-primary-workspace-1",
+            labels=_binding_labels(plan),
+            skeleton_path=skeleton,
+            mounts=mounts,
+            storage_bytes=plan.resources.storage_bytes,
+        )
+
+    assert measurement_mismatches(
+        requested_measurement(plan, mounts, identity=_measurement_identity(plan)),
+        measure(),
+    ) == ()
+
+    profile["syscalls"][0]["args"][0]["value"] -= 1
+    host["SecurityOpt"][1] = "seccomp=" + json.dumps(profile)
+    with pytest.raises(DockerAdapterError) as changed:
+        measure()
+    assert changed.value.code == "runtime_measurement_mismatch"
+
+    profile["syscalls"][0]["args"][0]["value"] += 1
+    host["SecurityOpt"][1] = (
+        "seccomp=" + json.dumps(profile)[:-1] + ',"defaultAction":"SCMP_ACT_ERRNO"}'
+    )
+    with pytest.raises(DockerAdapterError) as duplicated:
+        measure()
+    assert duplicated.value.code == "runtime_measurement_mismatch"
+
+
 @pytest.mark.parametrize(
     ("case", "expected_mismatch"),
     [
@@ -3541,8 +3572,8 @@ def test_inspect_decoder_reports_each_effective_control_drift_from_observed_stat
     case: str,
     expected_mismatch: str,
 ) -> None:
-    plan, skeleton, profile, mounts = _docker_plan(tmp_path)
-    inspected = _docker_inspect_payload(plan, skeleton, profile, mounts)
+    plan, skeleton, _, mounts = _docker_plan(tmp_path)
+    inspected = _docker_inspect_payload(plan, skeleton, mounts)
     host = inspected["HostConfig"]
     config = inspected["Config"]
     storage_bytes = plan.resources.storage_bytes
@@ -3583,17 +3614,13 @@ def test_inspect_decoder_reports_each_effective_control_drift_from_observed_stat
     elif case == "missing-pids":
         del host["PidsLimit"]
 
-    measured = decode_docker_inspect(
-        _docker_inspect_bytes(inspected),
-        plan,
-        container_id=CONTAINER_ID,
-        container_name="bb-primary-workspace-1",
-        labels=_binding_labels(plan),
-        skeleton_path=skeleton,
-        mounts=mounts,
-        security_profile_path=profile,
-        storage_bytes=storage_bytes,
-    )
+    measured = decode_docker_inspect(_docker_inspect_bytes(inspected),
+    plan,
+    container_id=CONTAINER_ID,
+    container_name="bb-primary-workspace-1",
+    labels=_binding_labels(plan),
+    skeleton_path=skeleton,
+    mounts=mounts, storage_bytes=storage_bytes,)
 
     assert measurement_mismatches(
         requested_measurement(
@@ -3613,13 +3640,10 @@ def test_inspect_decoder_reports_each_effective_control_drift_from_observed_stat
         ("cap-add", "runtime_measurement_mismatch"),
         ("cap-drop", "runtime_measurement_mismatch"),
         ("missing-devices", "runtime_measurement_mismatch"),
-        ("list-devices", "runtime_measurement_mismatch"),
         ("nonempty-devices", "runtime_measurement_mismatch"),
         ("missing-device-requests", "runtime_measurement_mismatch"),
-        ("list-device-requests", "runtime_measurement_mismatch"),
         ("nonempty-device-requests", "runtime_measurement_mismatch"),
         ("missing-device-cgroup-rules", "runtime_measurement_mismatch"),
-        ("list-device-cgroup-rules", "runtime_measurement_mismatch"),
         ("nonempty-device-cgroup-rules", "runtime_measurement_mismatch"),
         ("missing-tmpfs", "runtime_measurement_mismatch"),
         ("wrong-tmpfs", "runtime_measurement_mismatch"),
@@ -3644,8 +3668,8 @@ def test_inspect_decoder_rejects_malformed_or_contradictory_closed_schema(
     case: str,
     expected_code: str,
 ) -> None:
-    plan, skeleton, profile, mounts = _docker_plan(tmp_path)
-    inspected = _docker_inspect_payload(plan, skeleton, profile, mounts)
+    plan, skeleton, _, mounts = _docker_plan(tmp_path)
+    inspected = _docker_inspect_payload(plan, skeleton, mounts)
     if case == "missing-host-config":
         del inspected["HostConfig"]
     elif case == "privileged":
@@ -3654,7 +3678,7 @@ def test_inspect_decoder_rejects_malformed_or_contradictory_closed_schema(
         inspected["HostConfig"]["CapAdd"] = ["SYS_ADMIN"]
     elif case == "cap-drop":
         inspected["HostConfig"]["CapDrop"] = []
-    elif case.startswith(("missing-device", "list-device", "nonempty-device")):
+    elif case.startswith(("missing-device", "nonempty-device")):
         field = {
             "devices": "Devices",
             "device-requests": "DeviceRequests",
@@ -3662,8 +3686,6 @@ def test_inspect_decoder_rejects_malformed_or_contradictory_closed_schema(
         }[case.partition("-")[2]]
         if case.startswith("missing-"):
             del inspected["HostConfig"][field]
-        elif case.startswith("list-"):
-            inspected["HostConfig"][field] = []
         else:
             inspected["HostConfig"][field] = ["host-authority"]
     elif case == "missing-tmpfs":
@@ -3702,17 +3724,13 @@ def test_inspect_decoder_rejects_malformed_or_contradictory_closed_schema(
         inspected["HostConfig"]["UTSMode"] = "host"
 
     with pytest.raises(DockerAdapterError) as captured:
-        decode_docker_inspect(
-            _docker_inspect_bytes(inspected),
-            plan,
-            container_id=CONTAINER_ID,
-            container_name="bb-primary-workspace-1",
-            labels=_binding_labels(plan),
-            skeleton_path=skeleton,
-            mounts=mounts,
-            security_profile_path=profile,
-            storage_bytes=plan.resources.storage_bytes,
-        )
+        decode_docker_inspect(_docker_inspect_bytes(inspected),
+        plan,
+        container_id=CONTAINER_ID,
+        container_name="bb-primary-workspace-1",
+        labels=_binding_labels(plan),
+        skeleton_path=skeleton,
+        mounts=mounts, storage_bytes=plan.resources.storage_bytes,)
 
     assert captured.value.code == expected_code
 

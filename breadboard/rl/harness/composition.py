@@ -3278,6 +3278,7 @@ class ProductionComposition:
         self._runtime_close_lock = asyncio.Lock()
         self._authority_close_lock = asyncio.Lock()
         self._runtime_closed = False
+        self._runtime_close_attempted = False
         self._closed = False
         self._close_task: asyncio.Task[None] | None = None
 
@@ -3307,7 +3308,9 @@ class ProductionComposition:
         return None if lifecycle is None else lifecycle.cleanup_receipt
 
     def observe_cleanup_inventory(self) -> ProductionCleanupInventory:
-        if not self._runtime_closed:
+        if self._runtime_close_lock.locked() or not (
+            self._runtime_closed or self._runtime_close_attempted
+        ):
             raise RuntimeError(
                 "cleanup inventory is unavailable before runtime close"
             )
@@ -3323,6 +3326,7 @@ class ProductionComposition:
                     if not self._runtime_callbacks:
                         self._runtime_closed = True
                         return
+                    self._runtime_close_attempted = True
                     callback = self._runtime_callbacks[-1]
                 try:
                     result = callback()
