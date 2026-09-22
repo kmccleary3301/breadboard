@@ -426,19 +426,42 @@ def _run_compare(
             raise LaneRunError(
                 "comparator must return bb.e4.comparator_report.v1"
             )
+        failed = report.get("failed")
+        warned = report.get("warned")
+        if (
+            type(failed) is not int
+            or failed < 0
+            or type(warned) is not int
+            or warned < 0
+        ):
+            raise LaneRunError(
+                "comparator report must include non-negative integer failed and warned counts"
+            )
+        comparator_ok = failed == 0 and warned == 0
+        if "ok" in report and (
+            type(report["ok"]) is not bool or report["ok"] is not comparator_ok
+        ):
+            raise LaneRunError(
+                "comparator report ok must match failed and warned counts"
+            )
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(
             json.dumps(dict(report), indent=2, sort_keys=True, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
-        return {
+        result = {
             "stage": "compare",
             "lane_id": lane_id,
-            "returncode": 0,
+            "returncode": 0 if comparator_ok else 1,
             "output_path": _display_path(output_path),
             "comparator_id": entry.get("comparator_id"),
             "comparator_report": dict(report),
         }
+        if not comparator_ok:
+            result["detail"] = (
+                f"comparator report failed: failed={failed}, warned={warned}"
+            )
+        return result
     except Exception as exc:
         failure_path = output_path.with_name("compare_failure_report.json")
         failure_path.parent.mkdir(parents=True, exist_ok=True)
