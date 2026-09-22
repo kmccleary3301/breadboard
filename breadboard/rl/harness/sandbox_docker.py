@@ -3559,7 +3559,9 @@ class DockerSandboxBackend:
                 launch_complete=False,
                 repository_at_workspace_root=repository_at_workspace_root,
             )
-            repository_base_commit = await handle.measure_repository_base_commit()
+            repository_base_commit = None
+            if context.role == "primary":
+                repository_base_commit = await handle.measure_repository_base_commit()
             if repository_base_commit is not None:
                 if await handle.reset_repository_to_base() is not True:
                     raise DockerAdapterError(
