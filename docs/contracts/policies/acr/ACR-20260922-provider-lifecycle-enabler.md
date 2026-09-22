@@ -59,7 +59,7 @@ These jobs executed and passed at `2e032d5e`:
 
 The CT job uses the tracked clean-checkout scenario selection; it does not establish workspace-dependent campaign evidence.
 
-The same run's [Danger-zone ACR guard](https://github.com/kmccleary3301/breadboard/actions/runs/35786278187/job/106943749076) failed because no ACR was changed, so run 35786278187 as a whole failed. This ACR is the correction. The ACR guard passes on the fresh checks for this commit.
+The same run's [Danger-zone ACR guard](https://github.com/kmccleary3301/breadboard/actions/runs/35786278187/job/106943749076) failed because no ACR was changed, so run 35786278187 as a whole failed. This ACR is the correction. The ACR guard passed at the first ACR commit `508264cf`. Each later ACR commit requires its own fresh checks.
 
 These jobs reported success at `2e032d5e`, but each skipped its work because tracked prerequisites are absent on this branch. They are not evidence for this change:
 
