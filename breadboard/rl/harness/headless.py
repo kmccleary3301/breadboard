@@ -35,6 +35,7 @@ from .policy_provider import (
 )
 from .runner_identity import measure_module_artifact
 from .runners.base import freeze_json_object, thaw_json
+from .service import EpisodePrimaryDisposition, V2RunResult
 
 
 _MAX_REQUEST_BYTES = 4 * 1024 * 1024
@@ -652,10 +653,8 @@ async def run_headless_request(
                 **result["event_log"],
                 "publication_failure": _safe_failure_projection(exc),
             }
-    if request.patch_path is not None:
+    if request.patch_path is not None and patch_bytes is not None:
         try:
-            if patch_bytes is None:
-                raise ValueError("headless run did not produce a workspace patch")
             _atomic_write(request.patch_path, patch_bytes)
         except Exception as exc:
             publication_failure = publication_failure or exc
@@ -1008,7 +1007,7 @@ def _base_result(
 
 def _project_headless_run(
     result: dict[str, Any],
-    run: Any,
+    run: V2RunResult,
     composition: ProductionComposition,
     *,
     expected_base_commit: str,
@@ -1040,6 +1039,9 @@ def _project_headless_run(
     )
     workspace_diff = run.workspace_diff
     if workspace_diff is None:
+        if run.primary_disposition is not EpisodePrimaryDisposition.SUCCEEDED:
+            result["workspace_evidence"] = evidence_projection
+            return event_bytes, None
         raise ValueError("canonical workspace diff is unavailable")
     expected_keys = {
         "returncode", "stdout", "stderr", "base_commit",

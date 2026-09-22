@@ -9,6 +9,7 @@ import signal
 from builtins import BaseExceptionGroup
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import uvicorn
@@ -60,6 +61,78 @@ def test_cleanup_probe_excludes_only_authenticated_supervisor_journal(
         errors,
     ) == (active_lease, journal)
 
+@pytest.mark.asyncio
+async def test_failed_public_close_exposes_inventory_and_retry_releases_resources(
+    tmp_path: Path,
+) -> None:
+    lease_root = tmp_path / "leases"
+    workspace_root = tmp_path / "workspaces"
+    lease_root.mkdir()
+    workspace_root.mkdir()
+    live_lease = lease_root / "episode-live"
+    live_workspace = workspace_root / "workspace-live"
+    live_lease.mkdir()
+    live_workspace.mkdir()
+    probe = _ProductionCleanupProbe(
+        manifest=SimpleNamespace(
+            stores=SimpleNamespace(
+                lease=SimpleNamespace(path=lease_root),
+                workspace=SimpleNamespace(path=workspace_root),
+            )
+        ),
+        materialization=SimpleNamespace(),
+        sandbox_runtime=SimpleNamespace(_leases={}, _snapshots={}),
+        broker=None,
+        pinned={},
+        directory_fds={},
+    )
+    started = asyncio.Event()
+    release = asyncio.Event()
+    failed_once = False
+
+    async def close_runtime() -> None:
+        nonlocal failed_once
+        started.set()
+        await release.wait()
+        if not failed_once:
+            failed_once = True
+            raise RuntimeError("runtime cleanup pending")
+        live_lease.rmdir()
+        live_workspace.rmdir()
+
+    composition = ProductionComposition(
+        app=None,
+        service=None,
+        server=None,
+        manifest=None,
+        manifest_ref=None,
+        authority_graph=None,
+        bridge_lifecycle=None,
+        cleanup_probe=probe,
+        runtime_close_callbacks=(close_runtime,),
+        authority_close_callbacks=(),
+    )
+
+    with pytest.raises(RuntimeError):
+        composition.observe_cleanup_inventory()
+
+    first_close = asyncio.create_task(composition.close())
+    await started.wait()
+    with pytest.raises(RuntimeError):
+        composition.observe_cleanup_inventory()
+    release.set()
+    with pytest.raises(BaseExceptionGroup):
+        await first_close
+
+    inventory = composition.observe_cleanup_inventory()
+    assert inventory.active_lease_ids == ("episode-live",)
+    assert inventory.workspace_paths == (os.fspath(live_workspace),)
+
+    await composition.close()
+
+    inventory = composition.observe_cleanup_inventory()
+    assert inventory.active_lease_ids == ()
+    assert inventory.workspace_paths == ()
 
 @pytest.mark.asyncio
 async def test_composition_retries_failed_runtime_cleanup_before_authorities() -> None:
