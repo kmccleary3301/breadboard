@@ -1379,7 +1379,7 @@ def _sealed_repository_diff(
             "sealed workspace diff requires installed host git",
             code="runtime_unsupported",
         )
-    pinned = _snapshot_installed_executable(git_path, None)
+    pinned = _snapshot_installed_executable(os.path.realpath(git_path), None)
     timeout_seconds = max(1, (plan.limits.action_timeout_ms + 999) // 1000)
 
     def invoke(
