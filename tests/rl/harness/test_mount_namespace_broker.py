@@ -570,6 +570,71 @@ def _real_broker(stage_root: Path) -> MountNamespaceBroker:
         raise
 
 
+def test_real_broker_seals_roundtrip_and_rejects_unsealed_stdin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in (
+        "F_ADD_SEALS", "F_GET_SEALS", "F_SEAL_SEAL",
+        "F_SEAL_SHRINK", "F_SEAL_GROW", "F_SEAL_WRITE",
+    ):
+        monkeypatch.delattr(broker_module.fcntl, name, raising=False)
+    broker = _real_broker(tmp_path / "stages")
+    descriptors: list[int] = []
+    payload = b"broker socket roundtrip\n"
+    try:
+        cancellation_read, cancellation_write = os.pipe()
+        descriptors.extend((cancellation_read, cancellation_write))
+        os.set_blocking(cancellation_read, False)
+        sealed = broker_module._sealed_payload_fd(payload)
+        descriptors.append(sealed)
+        unsealed = os.memfd_create(
+            "unsealed-rpc-control", os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING
+        )
+        descriptors.append(unsealed)
+        os.write(unsealed, payload)
+        os.lseek(unsealed, 0, os.SEEK_SET)
+        with open("/bin/cat", "rb") as executable:
+            request = {
+                "argv": ["/bin/cat"],
+                "digest": "sha256:" + hashlib.sha256(executable.read()).hexdigest(),
+                "environment": [],
+                "timeout_ms": 1_000,
+                "output_limit": len(payload) + 1,
+                "cancellation_descriptor": True,
+                "input_size": len(payload),
+                "input_digest": "sha256:" + hashlib.sha256(payload).hexdigest(),
+            }
+            result, outputs = broker._call(
+                "execute", request,
+                (executable.fileno(), sealed, cancellation_read),
+                expected_return_fds=2,
+            )
+            descriptors.extend(outputs)
+            assert result["returncode"] == 0
+            stdout, digest = broker_module._read_output_descriptor(
+                outputs[0], result["stdout_size"]
+            )
+            assert stdout == payload
+            assert digest == request["input_digest"]
+            with pytest.raises(OSError) as mutation:
+                os.pwrite(outputs[0], b"changed", 0)
+            assert mutation.value.errno == errno.EPERM
+            with pytest.raises(MountNamespaceBrokerError) as rejected:
+                _, unexpected_outputs = broker._call(
+                    "execute", request,
+                    (executable.fileno(), unsealed, cancellation_read),
+                    expected_return_fds=2,
+                )
+                descriptors.extend(unexpected_outputs)
+            assert rejected.value.code == "workspace_authority_mismatch"
+    finally:
+        for descriptor in descriptors:
+            os.close(descriptor)
+        if not broker._closed:
+            broker.close()
+    assert not os.path.lexists(tmp_path / "stages")
+
+
 @pytest.mark.parametrize("readonly", [False, True])
 def test_private_namespace_stage_validate_release_and_host_absence(
     tmp_path: Path, readonly: bool,
