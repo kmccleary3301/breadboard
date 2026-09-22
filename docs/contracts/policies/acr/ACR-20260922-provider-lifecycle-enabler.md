@@ -27,11 +27,11 @@ The required outcome is a public provider-lifecycle enabler. This PR is not a ne
 
 ## 3) Coupling and Generalization Impact
 
-No core-to-private-extension dependency is introduced. The kernel-extension boundary guard passes at the reviewed head.
+No core-to-private-extension dependency is introduced. No added import in `breadboard_engine` references the `breadboard` product package; added imports are limited to `breadboard`, `breadboard_engine`, tests and the standard library. The CI kernel-extension boundary guard does not verify this: it skips on this branch because `scripts/validate_kernel_ext_boundaries.py` is absent.
 
 Request policy is a closed, versioned input. Headless requests v1 and v2 omit `request_policy` and keep the historical streaming behavior. Only v3 requests can select non-streaming. Nothing infers a capability from a model name or from a caller flag.
 
-Native responses are validated before argument normalization. Unknown delta semantics, invalid roles, refusal/`function_call`/`audio` fields and reordered tool indices fail closed with typed errors. Accepted responses are preserved byte-for-byte rather than rewritten.
+Native responses are validated before argument normalization. Unknown delta semantics, invalid roles, refusal/`function_call`/`audio` fields and reordered tool indices fail closed with typed errors. Accepted tool-call argument text and native fragments are carried unmodified into the projected native response. Raw HTTP response bytes are not retained.
 
 Docker execution, project-quota workspaces and the mount-namespace broker require an owned, measured runtime. They do not turn an arbitrary host into a hardened sandbox or relax the default headless rejection of uncontained execution.
 
@@ -41,7 +41,7 @@ Coupling risk is medium-high. Provider decoding, compilation, headless admission
 
 - Classification: `additive`
 
-The request v3 schema, closed request policy and Docker/quota execution paths are new explicit inputs. Existing target identities, headless v1/v2 behavior and canonical episode envelopes are retained. The decoder repairs restore previously intended rejection; they do not accept any response the protected baseline rejected. No compatibility alias or private fallback is added.
+The request v3 schema, closed request policy and Docker/quota execution paths are new explicit inputs. Existing target identities, headless v1/v2 behavior and canonical episode envelopes are retained. The decoder repairs restore rejection that the unrepaired predecessor `8dee9e5b` had lost. No compatibility alias or private fallback is added.
 
 ## 5) Evidence and Validation Plan
 
@@ -49,19 +49,28 @@ The source candidate is `2e032d5e8fd893da1513060c4bf04b0e795c5aac`, tree `cb8a87
 
 ### Source gate references
 
-These required jobs passed at `2e032d5e`:
+These jobs executed and passed at `2e032d5e`:
 
-| Evidence | Exact job |
+| Evidence | Exact job | Executed work |
+| --- | --- | --- |
+| Product contract and behavior checks | [Product spine checks](https://github.com/kmccleary3301/breadboard/actions/runs/35786278187/job/106943749163) | spine and clean-consumer suites |
+| Compilation contracts | [Product compilation](https://github.com/kmccleary3301/breadboard/actions/runs/35786278187/job/106943749139) | 856 passed, 10 skipped |
+| CT scenarios and matrix status | [Conformance matrix sync guard](https://github.com/kmccleary3301/breadboard/actions/runs/35786278187/job/106943749261) | 108 tracked-selection scenarios, status pass |
+
+The CT job uses the tracked clean-checkout scenario selection; it does not establish workspace-dependent campaign evidence.
+
+The same run's [Danger-zone ACR guard](https://github.com/kmccleary3301/breadboard/actions/runs/35786278187/job/106943749076) failed because no ACR was changed, so run 35786278187 as a whole failed. This ACR is the correction. The ACR guard passes on the fresh checks for this commit.
+
+These jobs reported success at `2e032d5e`, but each skipped its work because tracked prerequisites are absent on this branch. They are not evidence for this change:
+
+| Job | Missing prerequisite |
 | --- | --- |
-| Product contract and behavior checks | [Product spine checks](https://github.com/kmccleary3301/breadboard/actions/runs/35786278187/job/106943749163) |
-| Compilation contracts | [Product compilation](https://github.com/kmccleary3301/breadboard/actions/runs/35786278187/job/106943749139) |
-| Kernel/extension boundaries | [Kernel-extension boundary guard](https://github.com/kmccleary3301/breadboard/actions/runs/35786278187/job/106943748876) |
-| CT scenarios and matrix status | [Conformance matrix sync guard](https://github.com/kmccleary3301/breadboard/actions/runs/35786278187/job/106943749261) |
-| Conformance regression gate | [Conformance gate (ubuntu)](https://github.com/kmccleary3301/breadboard/actions/runs/35786278187/job/106943749397) |
-| Replay determinism | [Replay determinism guard](https://github.com/kmccleary3301/breadboard/actions/runs/35786278187/job/106943748947) |
-| Evidence bundle validation | [Evidence bundle contract guard](https://github.com/kmccleary3301/breadboard/actions/runs/35786278187/job/106943749492) |
+| [Kernel-extension boundary guard](https://github.com/kmccleary3301/breadboard/actions/runs/35786278187/job/106943748876) | `scripts/validate_kernel_ext_boundaries.py` |
+| [Replay determinism guard](https://github.com/kmccleary3301/breadboard/actions/runs/35786278187/job/106943748947) | `tests/test_check_replay_determinism_gate.py`; the seeded `bb.replay_determinism_report.v1` fixture |
+| [Evidence bundle contract guard](https://github.com/kmccleary3301/breadboard/actions/runs/35786278187/job/106943749492) | `tests/test_evidence_bundle_v1.py` |
+| [Conformance gate (ubuntu)](https://github.com/kmccleary3301/breadboard/actions/runs/35786278187/job/106943749397) | `scripts/provider_conformance_report.py`; conformance baselines |
 
-The CT job uses the tracked clean-checkout scenario selection; it does not establish workspace-dependent campaign evidence. The replay job validates its seeded fixture, not a live-provider replay. These references do not waive fresh required checks for the ACR commit.
+Replay determinism and the kernel-extension boundary are therefore not CI-verified for this PR. `ACR-20260917-contained-pi-headless` names two of the same absent commands (`scripts/validate_kernel_ext_boundaries.py`, `tests/test_evidence_bundle_v1.py`). That is a pre-existing gap and is not repaired here. These references do not waive fresh required checks for the ACR commit.
 
 ### Installed evidence at the reviewed head
 
@@ -136,11 +145,9 @@ Run these checks on the revert candidate in its supported test environment, and 
 ```sh
 python -m pytest -q tests/providers/test_native_response.py tests/providers/test_openai_profile.py tests/compilation/test_server_compiler.py
 python -m pytest -q tests/rl/harness/test_headless_runner.py tests/rl/harness/test_policy_provider.py tests/rl/harness/test_runner_conductor.py tests/rl/harness/test_sandbox_docker.py tests/rl/harness/test_project_quota.py tests/rl/harness/test_private_docker_daemon.py tests/rl/harness/test_mount_namespace_broker.py
-python scripts/validate_kernel_ext_boundaries.py --json
-python scripts/run_conformance_matrix.py --schema-dir docs/conformance/schemas --fixtures-dir tests/fixtures/conformance_v1/fixtures
-python scripts/check_replay_determinism_gate.py --glob 'tests/fixtures/conformance_v1/fixtures/valid/bb.replay_determinism_report.v1.valid.json'
-python -m pytest -q tests/test_evidence_bundle_v1.py
 ```
+
+The required Product spine checks, Product compilation and Conformance matrix sync guard jobs must also execute and pass on the revert PR. The CT selection is computed by the workflow; do not substitute a hand-built scenario list. Where the kernel-extension boundary, replay determinism, evidence bundle or conformance gate jobs still skip for missing prerequisites, record them as not verified rather than passed.
 
 Keep affected installed runtimes disabled; reverting source does not replace a wheel or image already in custody. Build and admit any replacement under a new exact identity with its own installed proof. The previous baseline does not support headless request v3 or non-streaming requests. Callers depending on them must stop rather than fall back.
 
@@ -160,4 +167,4 @@ There is no database or schema migration to reverse. Preserve workspaces, manife
 
 Kyle's accepted execution handoff authorizes public implementation, PRs and protected-gated merges. It does not grant official verifier, private policy or recipient acceptance.
 
-`ProviderStandards8b` and `ProviderSpec8b` reviewed the full packet at `8b1e517a` and the exact repair delta to `2e032d5e`. Both found no new blocking source defect. Both kept full lifecycle, cancellation and late-publication qualification separate and unverified. Acceptance of this ACR commit remains pending. Final decision is withheld until its exact-head review and required CI pass.
+`ProviderStandards8b` and `ProviderSpec8b` reviewed the full packet at `8b1e517a` and the exact repair delta to `2e032d5e`. Both found no new blocking source defect. `ProviderStandards8b` recorded full lifecycle, cancellation and late-publication qualification as unverified and separate. `ProviderSpec8b` recorded campaign promotion as separate and incomplete. Acceptance of this ACR commit remains pending. Final decision is withheld until its exact-head review and required CI pass.
