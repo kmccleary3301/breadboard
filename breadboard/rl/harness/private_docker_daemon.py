@@ -401,6 +401,9 @@ def _default_launcher(
         stderr=subprocess.STDOUT,
         close_fds=True,
         start_new_session=True,
+        # Container mount parents must be traversable by the declared sandbox UID.
+        # Private authority roots and sockets retain their explicit 0700/0600 modes.
+        umask=0o022,
     )
     return _CapturedProcess(process, log_fd, log_limit_bytes)
 
