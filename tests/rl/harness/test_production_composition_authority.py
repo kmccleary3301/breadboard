@@ -48,6 +48,47 @@ def _digest(value: object) -> str:
     return "sha256:" + hashlib.sha256(payload).hexdigest()
 
 
+def test_project_quota_seccomp_rejects_inode_owner_escape_authority() -> None:
+    profile = {
+        "defaultAction": "SCMP_ACT_ERRNO",
+        "syscalls": [{
+            "names": ["ioctl"],
+            "action": "SCMP_ACT_ALLOW",
+            "args": [{"index": 1, "op": "SCMP_CMP_EQ", "value": 0x5401}],
+        }],
+    }
+    composition._validate_project_quota_seccomp(json.dumps(profile).encode())
+
+    # FSSETXATTR, native/compat SETFLAGS, and the high-bit alias that ioctl's
+    # unsigned-int command truncation maps back to FSSETXATTR.
+    for command in (0x401C5820, 0x40086602, 0x40046602, 0x1401C5820):
+        mutable = copy.deepcopy(profile)
+        mutable["syscalls"][0]["args"][0]["value"] = command
+        with pytest.raises(ValueError):
+            composition._validate_project_quota_seccomp(json.dumps(mutable).encode())
+    alternatives = copy.deepcopy(profile)
+    alternatives["syscalls"][0]["args"].append({
+        "index": 1, "op": "SCMP_CMP_EQ", "value": 0x401C5820,
+    })
+    with pytest.raises(ValueError):
+        composition._validate_project_quota_seccomp(json.dumps(alternatives).encode())
+
+
+    broad = copy.deepcopy(profile)
+    broad["syscalls"][0]["args"] = []
+    with pytest.raises(ValueError):
+        composition._validate_project_quota_seccomp(json.dumps(broad).encode())
+
+    inverse = copy.deepcopy(profile)
+    inverse["syscalls"][0]["args"][0]["op"] = "SCMP_CMP_NE"
+    with pytest.raises(ValueError):
+        composition._validate_project_quota_seccomp(json.dumps(inverse).encode())
+
+    profile["defaultAction"] = "SCMP_ACT_ALLOW"
+    with pytest.raises(ValueError):
+        composition._validate_project_quota_seccomp(json.dumps(profile).encode())
+
+
 def test_hmac_authenticator_binds_exact_unsigned_receipt_bytes() -> None:
     authenticator = HmacSha256ReceiptAuthenticator(key_id="production-receipt-key", key=b"k" * 32)
     unsigned = b'{"schema_version":"bb.rl.admission-receipt.v1"}'

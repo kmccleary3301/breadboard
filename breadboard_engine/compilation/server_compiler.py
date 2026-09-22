@@ -37,6 +37,7 @@ from breadboard.product.harness import validate as _harness_validation_module
 from breadboard_engine import e4_targets as _target_resources_module
 from breadboard_engine.compilation import contracts as _contracts_module
 from breadboard_engine.compilation.bundle import ManifestReader
+from breadboard_engine.compilation.provider_response import NativeResponsePolicy
 from breadboard_engine.compilation.contracts import (
     AGENT_CONFIG_SCHEMA_ID,
     CANONICALIZER_ID,
@@ -157,6 +158,16 @@ _PROVIDER_PARAM_FIELDS: Final[dict[str, set[str]]] = {
     "anthropic": {"temperature", "top_p", "top_k", "max_tokens", "max_output_tokens", "stop_sequences", "stream", "timeout_ms", "tool_choice"},
     "test": {"temperature", "top_p", "max_tokens", "max_output_tokens", "seed", "stream", "timeout_ms"},
 }
+_PROVIDER_RESPONSE_POLICY_FIELDS: Final = frozenset(
+    {
+        "schema_version",
+        "consumer_id",
+        "provider_profile_digest",
+        "max_response_bytes",
+        "max_stream_fragments",
+    }
+)
+
 
 # Schema and semantic policy versions are explicit identity inputs. Executable
 # compiler authority is derived separately from the live in-memory code objects.
@@ -173,6 +184,7 @@ _CONFIG_SCHEMA_DESCRIPTOR: Final = {
         adapter: sorted(fields)
         for adapter, fields in sorted(_PROVIDER_PARAM_FIELDS.items())
     },
+    "provider_response_policy_fields": sorted(_PROVIDER_RESPONSE_POLICY_FIELDS),
     "v1_mapping_digest": V1_MAPPING_TABLE_DIGEST,
 }
 _MANIFEST_SCHEMA_DESCRIPTOR: Final = {
@@ -1715,6 +1727,7 @@ def _compile_providers(config: dict[str, Any]) -> dict[str, Any]:
         "id", "adapter", "provider", "display_name", "context_length", "params",
         "routing", "metadata", "request_schema_id", "route_handle_id",
         "credential_handle_id", "policy_slot_id", "trainable_json_pointers",
+        "response_policy",
     }
     def normalize_routing(value: Any, routing_pointer: str) -> dict[str, Any]:
         mapping = _require_object(value, routing_pointer)
@@ -1826,6 +1839,24 @@ def _compile_providers(config: dict[str, Any]) -> dict[str, Any]:
             default={"fallback_model_ids": [], "disable_native_tools_on_probe_failure": False, "disable_stream_on_probe_failure": False},
             conflict_code=CompileErrorCode.PROVIDER_INVALID,
         )
+        response_policy: NativeResponsePolicy | None = None
+        if "response_policy" in model:
+            if adapter != "openai":
+                raise _error(
+                    CompileStage.SEMANTIC_VALIDATION,
+                    CompileErrorCode.PROVIDER_INVALID,
+                    instance_pointer=pointer + "/response_policy",
+                    details={"reason": "native_response_requires_openai_chat"},
+                )
+            try:
+                response_policy = NativeResponsePolicy.from_dict(model["response_policy"])
+            except ValueError as exc:
+                raise _error(
+                    CompileStage.SCHEMA,
+                    CompileErrorCode.PROVIDER_INVALID,
+                    instance_pointer=pointer + "/response_policy",
+                    details={"reason": str(exc)},
+                ) from exc
         policy_slot_id = _require_identifier(model.get("policy_slot_id", f"model:{model_id}"), pointer + "/policy_slot_id")
         trainable_pointers = model.get("trainable_json_pointers", [])
         if type(trainable_pointers) is not list or any(type(item) is not str or not item.startswith("/") for item in trainable_pointers):
@@ -1848,6 +1879,8 @@ def _compile_providers(config: dict[str, Any]) -> dict[str, Any]:
                 "policy_slot_id": policy_slot_id,
             }
         )
+        if response_policy is not None:
+            models[-1]["response_policy"] = response_policy.identity_dict()
     if default_model not in ids:
         raise _error(
             CompileStage.SEMANTIC_VALIDATION,
@@ -3598,7 +3631,6 @@ def _compile_e4_target_binding(
         raise _error(CompileStage.SCHEMA, CompileErrorCode.SCHEMA_TYPE_MISMATCH, instance_pointer="/e4_target")
     index_path, index_bytes, _ = ledger.resolve_one(root_path, "e4_target_index", target["index_ref"])
     descriptor_location: tuple[str, str] | None = None
-
     def read_resource(path: str) -> bytes:
         nonlocal descriptor_location
         if path == "index.json":
@@ -3620,7 +3652,9 @@ def _compile_e4_target_binding(
         frame = _require_object(strict_parse_payload(inputs_bytes, logical_path=inputs_path), "/e4_target/inputs")
         _closed_fields(frame, {"request_schema_version", "target_dynamic_fields"}, "/e4_target/inputs")
         if frame.get("request_schema_version") not in (
-            "bb.rl.headless-run-request.v1", "bb.rl.headless-run-request.v2"
+            "bb.rl.headless-run-request.v1",
+            "bb.rl.headless-run-request.v2",
+            "bb.rl.headless-run-request.v3",
         ):
             raise _error(CompileStage.SCHEMA, CompileErrorCode.SCHEMA_VERSION_UNSUPPORTED, instance_pointer="/e4_target/inputs/request_schema_version")
         dynamic_fields = _require_object(frame.get("target_dynamic_fields"), "/e4_target/inputs/target_dynamic_fields")

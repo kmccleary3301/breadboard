@@ -63,6 +63,7 @@ from .private_docker_daemon import (
     PinnedFileAuthority,
     PrivateDockerDaemonAuthority,
 )
+from .project_quota import ProjectQuotaStorageBackend
 from .runners.base import RunnerAdapterDescriptor, RunnerAdapterRegistry
 from .runners.conductor import CONDUCTOR_ADAPTER_ID, ConductorAdapter
 from .runners.terminal import TERMINAL_ADAPTER_ID, TerminalResponsesAdapter
@@ -574,6 +575,15 @@ class AuthorityBundleV1(_ExactModel):
 
 
 class StoresV1(_ExactModel):
+    """Pinned store roots and explicit workspace storage enforcement.
+
+    ``directory`` does not enforce a quota. ``project_quota`` requires Linux
+    x86_64, an existing project-quota filesystem and privileged quota control.
+    Production admission also requires hardened Docker and a default-deny
+    seccomp policy that excludes guest mutation of project IDs/inheritance.
+    The backend does not create or mount the containing filesystem.
+    """
+
     cas: DirectoryAuthorityRefV1
     locator: DirectoryAuthorityRefV1
     materialization_cache: DirectoryAuthorityRefV1
@@ -581,6 +591,7 @@ class StoresV1(_ExactModel):
     lease: DirectoryAuthorityRefV1
     security_profile: DirectoryAuthorityRefV1
     lease_ttl_seconds: int = Field(gt=0, le=86400)
+    workspace_storage_backend: Literal["directory", "project_quota"] = "directory"
 
     @model_validator(mode="after")
     def distinct_roots(self) -> "StoresV1":
@@ -1343,6 +1354,43 @@ class InstalledV1(_ExactModel):
         return self
 
 
+def _validate_project_quota_seccomp(data: bytes) -> None:
+    # In the initial user namespace, inode owners can change project IDs and
+    # inheritance flags. Quota accounting alone does not prevent that escape.
+    mutation_commands = {0x401C5820, 0x40086602, 0x40046602}
+    denied_actions = {
+        "SCMP_ACT_ERRNO", "SCMP_ACT_KILL", "SCMP_ACT_KILL_PROCESS",
+        "SCMP_ACT_KILL_THREAD", "SCMP_ACT_TRAP",
+    }
+    profile = json.loads(data)
+    if type(profile) is not dict or profile.get("defaultAction") not in denied_actions:
+        raise ValueError("project quotas require default-deny seccomp")
+    rules = profile.get("syscalls")
+    if type(rules) is not list:
+        raise ValueError("project quota seccomp syscall rules are missing")
+    for rule in rules:
+        if type(rule) is not dict or type(rule.get("names")) is not list:
+            raise ValueError("project quota seccomp syscall rule is invalid")
+        if "ioctl" not in rule["names"] or rule.get("action") in denied_actions:
+            continue
+        arguments = rule.get("args", [])
+        # runc treats repeated comparisons on one argument as OR alternatives.
+        argument = arguments[0] if type(arguments) is list and len(arguments) == 1 else None
+        if (
+            rule.get("action") != "SCMP_ACT_ALLOW"
+            or not (
+                type(argument) is dict
+                and type(argument.get("index")) is int
+                and argument["index"] == 1
+                and argument.get("op") == "SCMP_CMP_EQ"
+                and type(argument.get("value")) is int
+                and 0 <= argument["value"] < 2**64
+                and argument["value"] & 0xFFFFFFFF not in mutation_commands
+            )
+        ):
+            raise ValueError("project quota seccomp permits attribute mutation")
+
+
 class HarnessCompositionManifestV1(_ExactModel):
     schema_version: Literal["bb.rl.harness-composition.v1"]
     composition_id: str = Field(min_length=1, max_length=256)
@@ -1407,6 +1455,18 @@ class HarnessCompositionManifestV1(_ExactModel):
                 )
             )
         return tuple(bindings)
+
+    @model_validator(mode="after")
+    def project_quota_security(self) -> "HarnessCompositionManifestV1":
+        if self.stores.workspace_storage_backend == "project_quota":
+            if any(
+                runtime.runtime_class != c.RuntimeClass.HARDENED_DOCKER
+                for runtime in self.installed.runtimes
+            ):
+                raise ValueError("project quotas require hardened Docker execution")
+            for policy in self.installed.security_policies:
+                _validate_project_quota_seccomp(policy.seccomp_bytes)
+        return self
 
     @model_validator(mode="after")
     def cross_bind(self) -> "HarnessCompositionManifestV1":
@@ -3219,6 +3279,7 @@ class ProductionComposition:
         self._runtime_close_lock = asyncio.Lock()
         self._authority_close_lock = asyncio.Lock()
         self._runtime_closed = False
+        self._runtime_close_attempted = False
         self._closed = False
         self._close_task: asyncio.Task[None] | None = None
 
@@ -3248,7 +3309,9 @@ class ProductionComposition:
         return None if lifecycle is None else lifecycle.cleanup_receipt
 
     def observe_cleanup_inventory(self) -> ProductionCleanupInventory:
-        if not self._runtime_closed:
+        if self._runtime_close_lock.locked() or not (
+            self._runtime_closed or self._runtime_close_attempted
+        ):
             raise RuntimeError(
                 "cleanup inventory is unavailable before runtime close"
             )
@@ -3264,6 +3327,7 @@ class ProductionComposition:
                     if not self._runtime_callbacks:
                         self._runtime_closed = True
                         return
+                    self._runtime_close_attempted = True
                     callback = self._runtime_callbacks[-1]
                 try:
                     result = callback()
@@ -3965,26 +4029,38 @@ class _DirectoryIdentityGuard:
                 raise ValueError(f"{self._label} contains unadmitted profile content")
 
 
-class _PinnedDirectoryStorageBackend(DirectoryStorageBackend):
-    def __init__(self, guard: _DirectoryIdentityGuard) -> None:
+class _PinnedStorageBackend(DirectoryStorageBackend):
+    def __init__(
+        self, guard: _DirectoryIdentityGuard, backend: DirectoryStorageBackend
+    ) -> None:
         super().__init__()
         self._guard = guard
+        self._backend = backend
 
-    def allocate(self, **kwargs: Any) -> Any:
+    def bind_root(self, descriptor: int) -> None:
         self._guard.check()
-        return super().allocate(**kwargs)
+        self._backend.bind_root(descriptor)
 
-    def measure(self, backing: Any) -> Mapping[str, Any]:
-        self._guard.check()
-        return super().measure(backing)
+    def close_root(self) -> None:
+        self._backend.close_root()
 
-    def release(self, backing: Any) -> None:
+    def allocate(self, *, workspace_id: str, root: Path, max_bytes: int) -> Path:
         self._guard.check()
-        super().release(backing)
+        return self._backend.allocate(
+            workspace_id=workspace_id, root=root, max_bytes=max_bytes
+        )
 
-    def verify_absent(self, backing: Any) -> bool:
+    def measure(self, backing: Path) -> Mapping[str, Any]:
         self._guard.check()
-        return super().verify_absent(backing)
+        return self._backend.measure(backing)
+
+    def release(self, backing: Path) -> None:
+        self._guard.check()
+        self._backend.release(backing)
+
+    def verify_absent(self, backing: Path) -> bool:
+        self._guard.check()
+        return self._backend.verify_absent(backing)
 
 
 class _PinnedMaterializationStore(FilesystemMaterializationStore):
@@ -4220,7 +4296,12 @@ def _build_runtime_graph(
             source_reader=source_reader,
             clock=graph.clock,
             lease_ttl=timedelta(seconds=manifest.stores.lease_ttl_seconds),
-            storage_backend=_PinnedDirectoryStorageBackend(workspace_guard),
+            storage_backend=_PinnedStorageBackend(
+                workspace_guard,
+                ProjectQuotaStorageBackend()
+                if manifest.stores.workspace_storage_backend == "project_quota"
+                else DirectoryStorageBackend(),
+            ),
             random_bytes=token_bytes,
             authority_guard=cache_guard,
             workspace_guard=workspace_guard,
@@ -5017,9 +5098,13 @@ def load_production_composition(
                 [asdict(item) for item in manifest.evidence_bindings]
             ),
             store_authority_digests=tuple(
-                _projection_digest(item)
+                _projection_digest(
+                    {**item, "storage_backend": manifest.stores.workspace_storage_backend}
+                    if key == "workspace"
+                    else item
+                )
                 for key, item in sorted(manifest.stores.model_dump(mode="json").items())
-                if key != "lease_ttl_seconds"
+                if key not in {"lease_ttl_seconds", "workspace_storage_backend"}
             ),
             server_authority_digest=_projection_digest(
                 manifest.server.model_dump(mode="json")

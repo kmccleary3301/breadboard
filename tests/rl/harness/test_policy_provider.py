@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import threading
+from concurrent.futures import Future
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ import pytest
 
 from breadboard_engine.compilation.contracts import canonical_sha256
 from breadboard.rl.harness import contracts as c
+from breadboard.rl.harness import policy_provider as policy_provider_module
 from breadboard.rl.harness.policy_provider import (
     EpisodeOpenAICompletionsPolicyClient,
     EpisodeOpenAICompletionsPolicyResolver,
@@ -55,7 +57,14 @@ def _observation() -> c.PolicyCapabilityObservation:
             "max_context_tokens": 131_072,
             "max_output_tokens": 32_000,
             "policy_slot_count": 1,
-            "request_features": [],
+            "request_features": [
+                "enable_thinking",
+                "max_tokens",
+                "n",
+                "stream_options",
+                "streaming",
+                "strict_tools",
+            ],
         }
     )
     capability_digest = canonical_sha256(
@@ -415,6 +424,155 @@ async def test_profile_client_fails_closed_on_invalid_provider_action(
         await client.invoke(_request([{"role": "user", "content": "inspect"}]))
     assert raised.value.code == "policy_response_invalid"
     await client.close()
+
+
+@pytest.mark.asyncio
+async def test_failed_attempt_exhausts_budget_even_when_turn_is_reused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport = _Transport()
+    attempts = []
+    monkeypatch.setattr(
+        OpenAIChatRuntime,
+        "create_client_from_profile",
+        lambda _self, _profile, **_kwargs: transport,
+    )
+
+    def invoke(_self: Any, **_kwargs: Any) -> ProviderResult:
+        attempts.append("transport attempt")
+        raise OSError("injected transport failure")
+
+    monkeypatch.setattr(OpenAIChatRuntime, "invoke", invoke)
+    client = EpisodeOpenAICompletionsPolicyClient(
+        episode_id="episode-one",
+        effective_plan_digest=DIGEST,
+        observation=_observation(),
+        profile=_profile(),
+        max_requests=1,
+    )
+    request = _request([{"role": "user", "content": "inspect"}])
+    try:
+        with pytest.raises(RunnerDependencyError) as first:
+            await client.invoke(request)
+        assert first.value.code == "provider_invocation_failed"
+        with pytest.raises(RunnerDependencyError) as second:
+            await client.invoke(request)
+        assert second.value.code == "provider_request_budget_exhausted"
+        assert attempts == ["transport attempt"]
+        assert client.request_attempts == 1
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_close_waits_for_thread_after_its_future_has_completed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    completed = threading.Event()
+    release = threading.Event()
+    close_started = threading.Event()
+    owned_threads = []
+
+    class PausedCompletion(Future[Any]):
+        def set_result(self, result: Any) -> None:
+            super().set_result(result)
+            completed.set()
+            release.wait(timeout=10)
+
+    class ObservedTransport(_Transport):
+        def close(self) -> None:
+            super().close()
+            close_started.set()
+
+    transport = ObservedTransport()
+    monkeypatch.setattr(policy_provider_module, "Future", PausedCompletion)
+    monkeypatch.setattr(
+        OpenAIChatRuntime,
+        "create_client_from_profile",
+        lambda _self, _profile, **_kwargs: transport,
+    )
+
+    def invoke(_self: Any, **_kwargs: Any) -> ProviderResult:
+        owned_threads.append(threading.current_thread())
+        return ProviderResult(
+            messages=[ProviderMessage(role="assistant", content="done")],
+            raw_response={},
+        )
+
+    monkeypatch.setattr(OpenAIChatRuntime, "invoke", invoke)
+    profile = _profile()
+    client = EpisodeOpenAICompletionsPolicyClient(
+        episode_id="episode-one",
+        effective_plan_digest=DIGEST,
+        observation=_observation(),
+        profile=profile,
+    )
+    closing = None
+    try:
+        await client.invoke(_request([{"role": "user", "content": "inspect"}]))
+        assert await asyncio.to_thread(completed.wait, 1)
+        closing = asyncio.create_task(client.close())
+        assert await asyncio.to_thread(close_started.wait, 1)
+        assert owned_threads[0].is_alive()
+        assert not closing.done()
+        assert client.profile_identity == profile.identity_dict()
+        release.set()
+        await asyncio.wait_for(closing, 1)
+        assert not owned_threads[0].is_alive()
+    finally:
+        release.set()
+        if closing is not None:
+            await asyncio.wait_for(closing, 2)
+        else:
+            await client.close()
+
+
+@pytest.mark.asyncio
+async def test_transport_cleanup_failure_preserves_owned_profile_until_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailOnceTransport(_Transport):
+        attempts = 0
+
+        def close(self) -> None:
+            self.attempts += 1
+            if self.attempts == 1:
+                raise OSError("injected cleanup failure")
+            super().close()
+
+    transport = FailOnceTransport()
+    retired = []
+
+    async def on_close(client: EpisodeOpenAICompletionsPolicyClient) -> None:
+        retired.append(client)
+
+    monkeypatch.setattr(
+        OpenAIChatRuntime,
+        "create_client_from_profile",
+        lambda _self, _profile, **_kwargs: transport,
+    )
+    profile = _profile()
+    client = EpisodeOpenAICompletionsPolicyClient(
+        episode_id="episode-one",
+        effective_plan_digest=DIGEST,
+        observation=_observation(),
+        profile=profile,
+        on_close=on_close,
+    )
+    try:
+        with pytest.raises(RunnerDependencyError) as failure:
+            await client.close()
+        assert failure.value.code == "provider_cleanup_failed"
+        assert not transport.closed
+        assert retired == []
+        assert client.profile_identity == profile.identity_dict()
+        await client.close()
+        assert transport.closed
+        assert retired == [client]
+        with pytest.raises(RuntimeError):
+            _ = client.profile_identity
+    finally:
+        await client.close()
 
 
 @pytest.mark.asyncio

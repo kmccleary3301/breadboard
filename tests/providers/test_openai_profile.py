@@ -24,6 +24,7 @@ from breadboard_engine.provider.contracts import (
     ProviderRuntimeContext,
     ProviderRuntimeError,
 )
+from breadboard_engine.provider.profiles import OpenAICompletionsRequestPolicy
 from breadboard_engine.provider.routing import ProviderDescriptor
 from breadboard_engine.provider.runtimes.openai import OpenAIChatRuntime
 
@@ -60,8 +61,7 @@ def _runtime():
         )
     )
 
-
-def test_profile_builds_exact_qwen_stream_request_without_fallback():
+def test_profile_builds_legacy_stream_request_without_fallback():
     profile = _profile(sampling={"temperature": 0.2})
     tools = [
         {
@@ -104,6 +104,53 @@ def test_profile_builds_exact_qwen_stream_request_without_fallback():
     assert "store" not in request
     assert "provider" not in request
 
+
+
+def test_profile_builds_non_streaming_request_from_closed_policy():
+    profile = _profile(
+        model="fixture/opaque-model:01",
+        context_window=32_768,
+        max_output_tokens=1_024,
+        request_policy=OpenAICompletionsRequestPolicy(
+            mode="non_streaming",
+            include_usage=False,
+            max_token_field="max_completion_tokens",
+            strict_tools=None,
+            enable_thinking=None,
+        ),
+        capabilities={
+            "supports_non_streaming": True,
+            "supports_max_completion_tokens": True,
+            "supports_tools": True,
+            "supports_strict_tools": False,
+            "supports_stream_options": False,
+            "supports_thinking_control": False,
+        },
+    )
+    request = profile.chat_request(
+        [{"role": "user", "content": "hi"}],
+        [
+            {
+                "type": "function",
+                "function": {
+                    "name": "read",
+                    "parameters": {"type": "object"},
+                    "strict": True,
+                },
+            }
+        ],
+    )
+    assert request["stream"] is False
+    assert "stream_options" not in request
+    assert request["max_completion_tokens"] == 1_024
+    assert "max_tokens" not in request
+    assert "enable_thinking" not in request
+    assert "strict" not in request["tools"][0]["function"]
+
+
+def test_request_policy_rejects_usage_for_non_streaming():
+    with pytest.raises(ProviderContractError):
+        OpenAICompletionsRequestPolicy(mode="non_streaming")
 def test_profile_request_provenance_separates_requested_default_and_adapter_facts():
     profile = _profile()
     messages = [{"role": "system", "content": "sys"}]
@@ -149,13 +196,17 @@ def test_profile_request_provenance_separates_requested_default_and_adapter_fact
         "uncertainty": None,
     }
     assert provenance["stream"] == {
-        "status": "adapter",
-        "source": "openai_chat.profile",
+        "status": "effective",
+        "source": "lock.provider_profile.request_policy.mode",
         "requested": False,
         "effective": True,
         "uncertainty": None,
     }
-    assert provenance["tools[0].function.strict"]["status"] == "adapter"
+    assert provenance["tools[0].function.strict"]["status"] == "effective"
+    assert (
+        provenance["tools[0].function.strict"]["source"]
+        == "lock.provider_profile.request_policy.strict_tools"
+    )
     assert provenance["tools[0].function.strict"]["effective"] is False
     assert all(item.get("uncertainty") is None for item in provenance.values())
 
@@ -266,24 +317,25 @@ def test_profile_rejects_nonzero_retry_and_unsupported_tools():
         _profile(scoped_credential="")
     with pytest.raises(ProviderContractError):
         _profile(base_url="https://provider.example/v1?api_key=secret")
-    with pytest.raises(ProviderContractError):
-        _profile(
-            capabilities=OpenAICompletionsCapabilities(
-                supports_tools=False,
-                supports_strict_tools=True,
-                supports_stream_options=True,
-                supports_thinking_control=True,
-                supports_store=False,
-                supports_n=True,
-                supports_max_tokens=True,
-            )
+    profile_without_tools = _profile(
+        capabilities=OpenAICompletionsCapabilities(
+            supports_tools=False,
+            supports_strict_tools=True,
+            supports_stream_options=True,
+            supports_thinking_control=True,
+            supports_store=False,
+            supports_n=True,
+            supports_max_tokens=True,
         )
+    )
+    assert profile_without_tools.chat_request([], None)["stream"] is True
+    with pytest.raises(ProviderContractError):
+        profile_without_tools.chat_request([], [{"type": "function"}])
     with pytest.raises(ProviderContractError):
         _profile(caller_headers={"Authorization": "Bearer override"})
     with pytest.raises(ProviderContractError):
         _profile(caller_headers={"Host": "attacker.example"})
-    with pytest.raises(ProviderContractError):
-        _profile(context_window=1)
+    assert _profile(context_window=1).context_window == 1
     profile = _profile()
     with pytest.raises(ProviderContractError):
         profile.chat_request([("user", "bad")], None)

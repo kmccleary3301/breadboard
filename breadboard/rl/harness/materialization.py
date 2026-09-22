@@ -273,10 +273,10 @@ def _logical_path(value: str, *, allow_root: bool = False) -> str:
     return rendered
 
 
-def _check_path_set(paths: tuple[str, ...]) -> None:
+def _check_path_set(paths: tuple[str, ...], *, allow_root: bool = False) -> None:
     folded: dict[str, str] = {}
     for raw in paths:
-        path = _logical_path(raw)
+        path = _logical_path(raw, allow_root=allow_root)
         alias = path.casefold()
         if alias in folded:
             raise ValueError("mount_collision")
@@ -419,11 +419,14 @@ class MaterializationEntry:
     role: str
 
     def __post_init__(self) -> None:
-        _logical_path(self.target_logical_path)
-        if type(self.access) is not MountAccess or self.max_bytes <= 0:
-            raise ValueError("invalid materialization entry")
         if self.role not in {"repository", "dataset", "input", "mount", "setup_input"}:
             raise ValueError("invalid materialization role")
+        _logical_path(
+            self.target_logical_path,
+            allow_root=self.role == "repository",
+        )
+        if type(self.access) is not MountAccess or self.max_bytes <= 0:
+            raise ValueError("invalid materialization entry")
 
     def projection(self) -> dict[str, Any]:
         return {
@@ -462,7 +465,14 @@ class WorkspaceMaterializationPlan:
             )
         ):
             raise ValueError("materialization entries must be canonical")
-        _check_path_set(tuple(entry.target_logical_path for entry in entries))
+        _check_path_set(
+            tuple(entry.target_logical_path for entry in entries),
+            allow_root=True,
+        )
+        if any(entry.target_logical_path == "." for entry in entries) and (
+            len(entries) != 1 or entries[0].role != "repository"
+        ):
+            raise ValueError("root_repository_must_be_sole_entry")
         object.__setattr__(self, "entries", entries)
         for name in (
             "sandbox_projection",
@@ -1584,11 +1594,14 @@ class FilesystemMaterializationStore:
         root_owner: _DirFd | None = None,
         destination: str | None = None,
         destination_owner: _DirFd | None = None,
+        destination_fd: int | None = None,
         read_only: bool = False,
     ) -> None:
         root_owner = self._cache if root_owner is None else root_owner
         if destination is not None and destination_owner is None:
             raise ValueError("destination owner required")
+        if destination is not None and destination_fd is not None:
+            raise ValueError("destination path and descriptor are mutually exclusive")
         expected = {entry.logical_path: entry for entry in manifest.entries}
         seen: set[str] = set()
 
@@ -1715,15 +1728,30 @@ class FilesystemMaterializationStore:
         except OSError as exc:
             raise RuntimeError("materialization_tampered") from exc
         destination_root_fd: int | None = None
+        destination_before: tuple[int, int] | None = None
         try:
             root_before = os.fstat(root_fd)
             if not stat.S_ISDIR(root_before.st_mode):
                 raise RuntimeError("materialization_tampered")
-            if destination is not None:
+            if destination_fd is not None:
+                destination_metadata = os.fstat(destination_fd)
+                destination_before = (
+                    destination_metadata.st_dev,
+                    destination_metadata.st_ino,
+                )
+                if tuple(sorted(os.listdir(destination_fd))):
+                    raise RuntimeError("materialization_destination_not_empty")
+                destination_root_fd = os.dup(destination_fd)
+            elif destination is not None:
                 assert destination_owner is not None
                 destination_owner.mkdir(destination)
                 destination_root_fd = destination_owner.open_dir(destination)
             walk(root_fd, destination_root_fd, "")
+            if destination_fd is not None:
+                assert destination_before is not None
+                destination_metadata = os.fstat(destination_fd)
+                if (destination_metadata.st_dev, destination_metadata.st_ino) != destination_before:
+                    raise RuntimeError("materialization_destination_changed")
             if _metadata_identity(os.fstat(root_fd)) != _metadata_identity(root_before):
                 raise RuntimeError("materialization_tampered")
             if destination_root_fd is not None:
@@ -1734,9 +1762,13 @@ class FilesystemMaterializationStore:
             os.close(root_fd)
         if seen != set(expected):
             raise RuntimeError("materialization_tampered")
-        if destination is not None:
-            assert destination_owner is not None
-            destination_fd = destination_owner.open_dir(destination)
+        if destination is not None or destination_fd is not None:
+            if destination is not None:
+                assert destination_owner is not None
+                chmod_destination_fd = destination_owner.open_dir(destination)
+            else:
+                assert destination_fd is not None
+                chmod_destination_fd = os.dup(destination_fd)
             try:
                 directories = (
                     item for item in manifest.entries if item.kind == "directory"
@@ -1749,12 +1781,12 @@ class FilesystemMaterializationStore:
                     os.chmod(
                         item.logical_path,
                         0o500 if read_only else item.mode,
-                        dir_fd=destination_fd,
+                        dir_fd=chmod_destination_fd,
                         follow_symlinks=False,
                     )
-                os.fsync(destination_fd)
+                os.fsync(chmod_destination_fd)
             finally:
-                os.close(destination_fd)
+                os.close(chmod_destination_fd)
 
     def _publish_source(
         self, entry: MaterializationEntry, destination: str
@@ -1941,22 +1973,33 @@ class FilesystemMaterializationStore:
                     self._workspace.mkdir(workspace_id)
                     workspace = self.workspace_root / workspace_id
                 mounts: list[MaterializedMount] = []
+                workspace_fd: int | None = None
                 try:
+                    workspace_fd = self._workspace.open_dir(workspace_id)
                     for index, entry in enumerate(plan.entries):
-                        target = (
-                            workspace_id
-                            + "/"
-                            + _logical_path(entry.target_logical_path)
+                        target = _logical_path(
+                            entry.target_logical_path,
+                            allow_root=entry.role == "repository",
                         )
-                        parent = str(PurePosixPath(target).parent)
-                        self._workspace.mkdir(parent, parents=True)
-                        self._verify_tree(
-                            object_relative + f"/source-{index}",
-                            manifests[index],
-                            destination=target,
-                            destination_owner=self._workspace,
-                            read_only=entry.access is MountAccess.READ_ONLY,
-                        )
+                        if target == ".":
+                            assert entry.role == "repository"
+                            self._verify_tree(
+                                object_relative + f"/source-{index}",
+                                manifests[index],
+                                destination_fd=workspace_fd,
+                                read_only=entry.access is MountAccess.READ_ONLY,
+                            )
+                        else:
+                            target = workspace_id + "/" + target
+                            parent = str(PurePosixPath(target).parent)
+                            self._workspace.mkdir(parent, parents=True)
+                            self._verify_tree(
+                                object_relative + f"/source-{index}",
+                                manifests[index],
+                                destination=target,
+                                destination_owner=self._workspace,
+                                read_only=entry.access is MountAccess.READ_ONLY,
+                            )
                         mounts.append(
                             MaterializedMount(
                                 entry.target_logical_path,
@@ -1966,6 +2009,9 @@ class FilesystemMaterializationStore:
                             )
                         )
                 except BaseException:
+                    if workspace_fd is not None:
+                        os.close(workspace_fd)
+                        workspace_fd = None
                     if isinstance(self.storage_backend, DirectoryStorageBackend):
                         self.storage_backend.release(workspace)
                     else:
@@ -2022,7 +2068,7 @@ class FilesystemMaterializationStore:
                 )
                 payload["state"] = CacheLeaseState.ACTIVE.value
                 self._write_record(record_path, payload)
-                workspace_fd = self._workspace.open_dir(workspace_id)
+                assert workspace_fd is not None
                 workspace_metadata = os.fstat(workspace_fd)
                 materialized = MaterializedWorkspace(
                     receipt,
@@ -2033,6 +2079,7 @@ class FilesystemMaterializationStore:
                     workspace_fd,
                     (workspace_metadata.st_dev, workspace_metadata.st_ino),
                 )
+                workspace_fd = None
                 self._active_workspaces[lease_id] = materialized
                 return materialized
             except BaseException:
@@ -2067,6 +2114,8 @@ class FilesystemMaterializationStore:
             if existing is not None:
                 workspace._close_workspace_fd()
                 return existing
+            # Drop the inode pin before the backend verifies project-quota release.
+            workspace._close_workspace_fd()
             try:
                 if isinstance(self.storage_backend, DirectoryStorageBackend):
                     self.storage_backend.release(workspace.workspace_path)
@@ -2081,7 +2130,6 @@ class FilesystemMaterializationStore:
                 state = CacheLeaseState.RELEASED
             except FileNotFoundError:
                 state = CacheLeaseState.RELEASED
-            workspace._close_workspace_fd()
             self._active_workspaces.pop(workspace.cache_token.lease_id, None)
             record_path = self._record_path(workspace.cache_token.cache_key)
             payload = self._read_record(record_path)

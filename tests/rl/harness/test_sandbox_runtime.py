@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import stat
 import threading
@@ -1192,6 +1193,179 @@ async def test_post_launch_record_failure_retains_workspace_and_record_when_deta
     )
     assert len(list(harness.workspace_root.iterdir())) == 1
     assert len(list(harness.lease_root.glob("*.json"))) == 1
+
+
+async def test_detailed_runtime_cleanup_projects_primary_and_verifier_lease_contracts(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    runtime_steps = (
+        CleanupStepReceipt("runtime_stop", CleanupState.RELEASED, "stopped"),
+        CleanupStepReceipt("runtime_remove", CleanupState.RELEASED, "removed"),
+        CleanupStepReceipt("runtime_absence", CleanupState.RELEASED, "absent"),
+        CleanupStepReceipt("descriptor_staging", CleanupState.RELEASED, "unstaged"),
+    )
+    backend = RecordingBackend()
+    backend.handle_termination_receipts = runtime_steps
+    harness = RuntimeHarness(tmp_path, fixture, backend=backend)
+
+    primary = await harness.manager.open(fixture.request)
+    snapshot = await primary.seal_for_verifier()
+    verifier = await harness.manager.open_verifier(primary, snapshot)
+
+    expected_runtime_detail = [
+        {
+            "resource": step.resource,
+            "state": step.state.value,
+            "detail": step.detail,
+        }
+        for step in runtime_steps
+    ]
+
+    verifier_receipt = await verifier.close()
+    assert tuple(step.resource for step in verifier_receipt.steps) == (
+        "runtime",
+        "workspace",
+        "snapshot",
+        "lease_record",
+    )
+    assert verifier_receipt.state is CleanupState.RELEASED
+    assert json.loads(verifier_receipt.steps[0].detail) == expected_runtime_detail
+    assert not verifier.workspace.exists()
+    assert not (
+        harness.cache_root
+        / "snapshot-objects"
+        / snapshot.root_digest.removeprefix("sha256:")
+    ).exists()
+
+    primary_receipt = await primary.close()
+    assert tuple(step.resource for step in primary_receipt.steps) == (
+        "child_verifier",
+        "runtime",
+        "workspace",
+        "cache_holder",
+        "lease_record",
+    )
+    assert primary_receipt.state is CleanupState.RELEASED
+    assert json.loads(primary_receipt.steps[1].detail) == expected_runtime_detail
+    assert list(harness.workspace_root.iterdir()) == []
+    assert list(harness.lease_root.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "runtime_steps",
+    [
+        (),
+        (
+            CleanupStepReceipt("runtime_stop", CleanupState.RELEASED),
+            CleanupStepReceipt("runtime_remove", CleanupState.FAILED, "remove failed"),
+            CleanupStepReceipt(
+                "runtime_absence",
+                CleanupState.QUARANTINED,
+                "absence unproven",
+            ),
+        ),
+    ],
+    ids=("empty", "incomplete"),
+)
+async def test_empty_or_incomplete_primary_runtime_cleanup_retains_owned_storage(
+    tmp_path: Path,
+    runtime_steps: tuple[CleanupStepReceipt, ...],
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    backend = RecordingBackend()
+    backend.handle_termination_receipts = runtime_steps
+    harness = RuntimeHarness(tmp_path, fixture, backend=backend)
+
+    lease = await harness.manager.open(fixture.request)
+    receipt = await lease.close()
+
+    assert tuple(step.resource for step in receipt.steps) == (
+        "child_verifier",
+        "runtime",
+        "workspace",
+        "cache_holder",
+        "lease_record",
+    )
+    assert receipt.state is CleanupState.QUARANTINED
+    assert receipt.steps[1].state in {
+        CleanupState.FAILED,
+        CleanupState.QUARANTINED,
+    }
+    if runtime_steps:
+        detail = json.loads(receipt.steps[1].detail)
+        assert detail == [
+            {
+                "resource": step.resource,
+                "state": step.state.value,
+                "detail": step.detail,
+            }
+            for step in runtime_steps
+        ]
+    assert lease._materialized.workspace_path.exists()
+    assert (harness.lease_root / f"{lease.lease_id}.json").exists()
+
+    backend.handles[0].termination_receipts = (
+        CleanupStepReceipt("runtime", CleanupState.RELEASED),
+    )
+    assert (await lease.close()).state is CleanupState.RELEASED
+    assert list(harness.workspace_root.iterdir()) == []
+    assert list(harness.lease_root.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "runtime_steps",
+    [
+        (),
+        (
+            CleanupStepReceipt("runtime_stop", CleanupState.RELEASED),
+            CleanupStepReceipt("runtime_remove", CleanupState.FAILED, "remove failed"),
+        ),
+    ],
+    ids=("empty", "incomplete"),
+)
+async def test_empty_or_incomplete_verifier_runtime_cleanup_retains_owned_storage(
+    tmp_path: Path,
+    runtime_steps: tuple[CleanupStepReceipt, ...],
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    primary = await harness.manager.open(fixture.request)
+    snapshot = await primary.seal_for_verifier()
+    verifier = await harness.manager.open_verifier(primary, snapshot)
+    handle = harness.backend.handles[1]
+    handle.termination_receipts = runtime_steps
+    snapshot_object = (
+        harness.cache_root
+        / "snapshot-objects"
+        / snapshot.root_digest.removeprefix("sha256:")
+    )
+    record_path = harness.lease_root / f"{verifier.lease_id}.json"
+
+    receipt = await verifier.close()
+
+    assert tuple(step.resource for step in receipt.steps) == (
+        "runtime",
+        "workspace",
+        "snapshot",
+        "lease_record",
+    )
+    assert receipt.state is CleanupState.QUARANTINED
+    assert receipt.steps[0].state in {
+        CleanupState.FAILED,
+        CleanupState.QUARANTINED,
+    }
+    assert verifier.workspace.exists()
+    assert snapshot_object.exists()
+    assert record_path.exists()
+
+    handle.termination_receipts = (
+        CleanupStepReceipt("runtime", CleanupState.RELEASED),
+    )
+    assert (await verifier.close()).state is CleanupState.RELEASED
+    assert (await primary.close()).state is CleanupState.RELEASED
+    assert list(harness.workspace_root.iterdir()) == []
+    assert list(harness.lease_root.iterdir()) == []
 
 
 async def test_lease_directory_is_fsynced_after_record_replace_and_before_backend_start(

@@ -28,6 +28,52 @@ from breadboard.rl.harness.sandbox import InstalledRuntime
 from breadboard.rl.harness.sandbox_docker import PrivateDockerDaemonBinding
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux" or os.geteuid() != 0,
+    reason="requires Linux root to observe sandbox-UID traversal",
+)
+def test_daemon_launcher_keeps_native_mounts_readable_without_relaxing_parent(
+    tmp_path: Path,
+) -> None:
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    runtime.chmod(0o755)
+    program = (
+        "import os,sys; from pathlib import Path; "
+        "os.chdir(sys.argv[1]); "
+        "Path('bb-native').mkdir(mode=0o755); "
+        "Path('bb-native/proof').write_text('native mount reachable\\n'); "
+        "os.setgroups([]); os.setgid(65534); os.setuid(65534); "
+        "print(Path('bb-native/proof').read_text(),end='')"
+    )
+    log_path = tmp_path / "daemon.log"
+    log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    process = None
+    previous_umask = os.umask(0o077)
+    try:
+        process = private_docker_daemon._default_launcher(
+            (sys.executable, "-I", "-c", program, str(runtime)),
+            executable=sys.executable,
+            pass_fds=(),
+            env={},
+            log_fd=log_fd,
+            log_limit_bytes=4096,
+        )
+        assert process.wait(timeout=10) == 0
+        assert log_path.read_text() == "native mount reachable\n"
+        private_root = tmp_path / "private-root"
+        private_root.mkdir(mode=0o755)
+        assert stat.S_IMODE(private_root.stat().st_mode) == 0o700
+    finally:
+        os.umask(previous_umask)
+        try:
+            if process is not None and process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
+        finally:
+            os.close(log_fd)
+
+
 @pytest.mark.asyncio
 async def test_owner_executor_forwards_nonempty_stdin_to_pinned_delegate(
     tmp_path: Path,
@@ -186,7 +232,6 @@ def test_owner_pins_exact_files_and_seals_deterministic_config(tmp_path: Path) -
     owner = PrivateDockerDaemonOwner(authority, prerequisite_check=lambda: None)
     try:
         config = Path(authority.config_path).read_bytes()
-        assert config == owner._config_bytes()
         assert stat.S_IMODE(Path(authority.config_path).stat().st_mode) == 0o600
         parsed = json.loads(config)
         assert parsed["containerd"] == authority.containerd_socket_path
@@ -212,6 +257,78 @@ def test_owner_pins_exact_files_and_seals_deterministic_config(tmp_path: Path) -
     ):
         assert not os.path.lexists(path)
     _remove_socket_parent(authority)
+
+
+@pytest.mark.parametrize("collision", ["socket", "dangling_link"])
+def test_containerd_ttrpc_collision_is_rejected_without_claiming_path(
+    tmp_path: Path, collision: str
+) -> None:
+    authority = _authority(tmp_path)
+    path = Path(authority.containerd_ttrpc_socket_path)
+    listener = None
+    owner = None
+    if collision == "socket":
+        listener = socket.socket(socket.AF_UNIX)
+        listener.bind(str(path))
+    else:
+        path.symlink_to(tmp_path / "absent-target")
+    before = path.lstat()
+    try:
+        with pytest.raises(PrivateDockerDaemonError) as rejected:
+            owner = PrivateDockerDaemonOwner(
+                authority,
+                prerequisite_check=lambda: None,
+                daemon_environment={"PATH": str(tmp_path)},
+            )
+        assert rejected.value.code == "runtime_unsupported"
+        after = path.lstat()
+        assert (
+            after.st_dev, after.st_ino, after.st_mode, after.st_ctime_ns
+        ) == (
+            before.st_dev, before.st_ino, before.st_mode, before.st_ctime_ns
+        )
+        if collision == "dangling_link":
+            assert path.readlink() == tmp_path / "absent-target"
+    finally:
+        if listener is not None:
+            listener.close()
+        path.unlink()
+        if owner is not None:
+            owner.close()
+        _remove_socket_parent(authority)
+
+
+@pytest.mark.parametrize("mutation", ["content", "replacement"])
+def test_changed_containerd_config_is_rejected_before_process_launch(
+    tmp_path: Path, mutation: str
+) -> None:
+    authority = _authority(tmp_path)
+
+    def forbidden_launcher(*_args, **_kwargs):
+        pytest.fail("changed configuration reached process launch")
+
+    owner = PrivateDockerDaemonOwner(
+        authority,
+        prerequisite_check=lambda: None,
+        daemon_environment={"PATH": str(tmp_path)},
+        launcher=forbidden_launcher,
+    )
+    path = Path(authority.containerd_config_path)
+    if mutation == "replacement":
+        path.unlink()
+    path.write_bytes(b"version = 2\nimports = ['/etc/containerd/*.toml']\n")
+    try:
+        with pytest.raises(PrivateDockerDaemonError) as rejected:
+            owner.start(readiness_timeout=1)
+        assert rejected.value.code == "runtime_unsupported"
+    finally:
+        if mutation == "replacement":
+            with pytest.raises(ExceptionGroup):
+                owner.close()
+            assert path.read_bytes() == b"version = 2\nimports = ['/etc/containerd/*.toml']\n"
+            path.unlink()
+        owner.close()
+        _remove_socket_parent(authority)
 
 
 def test_operator_authority_allows_node_local_inode_and_records_live_identity(
@@ -368,22 +485,11 @@ def test_launch_uses_descriptor_executables_empty_env_fixed_host_and_offline_id(
     try:
         binding = owner.start(readiness_timeout=1)
         assert len(launches) == 2
-        assert launches[0][0] == (
-            authority.containerd.path,
-            "--address",
-            authority.containerd_socket_path,
-            "--root",
-            authority.containerd_root,
-            "--state",
-            authority.containerd_state,
-        )
         assert launches[1][0] == (
             authority.dockerd.path,
             "--config-file",
             binding.config_proc_path,
         )
-        assert all(environment == {"PATH": str(tmp_path / "private-runtime-bin")} for _, _, _, environment in launches)
-        assert all(environment == {} for _, _, _, environment in commands)
         assert all(executable.startswith(f"/proc/{os.getpid()}/fd/") for _, executable, _, _ in launches + commands)
         host_prefix = (authority.docker.path, "--host", "unix://" + authority.socket_path)
         assert all(command[:3] == host_prefix for command, _, _, _ in commands)

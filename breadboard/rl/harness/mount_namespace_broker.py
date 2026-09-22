@@ -48,6 +48,11 @@ _MS_RELATIME = 1 << 21
 _MS_PRIVATE = 1 << 18
 _MS_REC = 16384
 _MNT_DETACH = 2
+# Linux UAPI include/uapi/linux/fcntl.h; older Python build headers can
+# omit the names even when the running kernel supports descriptor sealing.
+_LINUX_F_ADD_SEALS = 1033
+_LINUX_F_GET_SEALS = 1034
+_LINUX_DESCRIPTOR_SEALS = 0x0001 | 0x0002 | 0x0004 | 0x0008
 _RUNTIME_AUTHORITY_LIMIT = 64 * 1024 * 1024
 _RUNTIME_TMPFS_OVERHEAD = 1024 * 1024
 _ERROR_PROJECTION_MAX_DEPTH = 8
@@ -503,13 +508,7 @@ def _sealed_payload_fd(payload: bytes) -> int:
                 raise OSError("Docker stdin descriptor write made no progress")
             written += count
         os.lseek(descriptor, 0, os.SEEK_SET)
-        required_seals = (
-            fcntl.F_SEAL_SEAL
-            | fcntl.F_SEAL_SHRINK
-            | fcntl.F_SEAL_GROW
-            | fcntl.F_SEAL_WRITE
-        )
-        fcntl.fcntl(descriptor, fcntl.F_ADD_SEALS, required_seals)
+        fcntl.fcntl(descriptor, _LINUX_F_ADD_SEALS, _LINUX_DESCRIPTOR_SEALS)
         metadata = os.fstat(descriptor)
         if metadata.st_size != len(payload):
             raise OSError("Docker stdin descriptor size changed")
@@ -533,13 +532,11 @@ def _read_sealed_payload_fd(
             "runtime_unsupported", "broker payload metadata is invalid"
         )
     metadata = os.fstat(descriptor)
-    required_seals = (
-        fcntl.F_SEAL_SEAL | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_GROW | fcntl.F_SEAL_WRITE
-    )
     if (
         not stat.S_ISREG(metadata.st_mode)
         or metadata.st_size != expected_size
-        or fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) & required_seals != required_seals
+        or fcntl.fcntl(descriptor, _LINUX_F_GET_SEALS) & _LINUX_DESCRIPTOR_SEALS
+        != _LINUX_DESCRIPTOR_SEALS
         or _digest_fd_exact(descriptor) != expected_digest
     ):
         raise MountNamespaceBrokerError(
@@ -881,11 +878,8 @@ def _new_output_descriptor() -> int:
 
 
 def _seal_output_descriptor(descriptor: int, size: int) -> None:
-    required_seals = (
-        fcntl.F_SEAL_SEAL | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_GROW | fcntl.F_SEAL_WRITE
-    )
     os.lseek(descriptor, 0, os.SEEK_SET)
-    fcntl.fcntl(descriptor, fcntl.F_ADD_SEALS, required_seals)
+    fcntl.fcntl(descriptor, _LINUX_F_ADD_SEALS, _LINUX_DESCRIPTOR_SEALS)
     metadata = os.fstat(descriptor)
     if metadata.st_size != size:
         raise OSError("Docker output descriptor size changed")
@@ -1041,13 +1035,11 @@ def _read_output_descriptor(descriptor: int, size: int) -> tuple[bytes, str]:
             "runtime_unsupported", "broker output descriptor size is invalid"
         )
     metadata = os.fstat(descriptor)
-    required_seals = (
-        fcntl.F_SEAL_SEAL | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_GROW | fcntl.F_SEAL_WRITE
-    )
     if (
         not stat.S_ISREG(metadata.st_mode)
         or metadata.st_size != size
-        or fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) & required_seals != required_seals
+        or fcntl.fcntl(descriptor, _LINUX_F_GET_SEALS) & _LINUX_DESCRIPTOR_SEALS
+        != _LINUX_DESCRIPTOR_SEALS
     ):
         raise MountNamespaceBrokerError(
             "runtime_unsupported", "broker output descriptor changed"
@@ -2280,7 +2272,7 @@ def _child_loop(
                         request.get("expected_inode"),
                     )
                     directory = request.get("directory")
-                    readonly = request.get("readonly", directory is False)
+                    readonly = request.get("readonly")
                     if type(directory) is not bool or type(readonly) is not bool:
                         raise ValueError("invalid stage type")
                     if (metadata.st_dev, metadata.st_ino) != expected:
@@ -2452,17 +2444,11 @@ def _child_loop(
                             raise ValueError("execute input authority is invalid")
                         input_fd = fds[1]
                         input_metadata = os.fstat(input_fd)
-                        required_seals = (
-                            fcntl.F_SEAL_SEAL
-                            | fcntl.F_SEAL_SHRINK
-                            | fcntl.F_SEAL_GROW
-                            | fcntl.F_SEAL_WRITE
-                        )
                         if (
                             not stat.S_ISREG(input_metadata.st_mode)
                             or input_metadata.st_size != input_size
-                            or fcntl.fcntl(input_fd, fcntl.F_GET_SEALS) & required_seals
-                            != required_seals
+                            or fcntl.fcntl(input_fd, _LINUX_F_GET_SEALS)
+                            & _LINUX_DESCRIPTOR_SEALS != _LINUX_DESCRIPTOR_SEALS
                             or _digest_fd_exact(input_fd) != input_digest
                         ):
                             raise OSError("execute input descriptor changed")
@@ -3388,13 +3374,13 @@ class MountNamespaceBroker:
             if self.containerd_observation is not None:
                 child = self.containerd_observation
                 containerd = self._journal_process(
-                    child.pid,
-                    child.starttime,
-                    executable_device=child.executable_device,
-                    executable_inode=child.executable_inode,
-                    executable_ctime_ns=child.executable_ctime_ns,
-                    executable_size=child.executable_size,
-                    executable_digest=child.executable_digest,
+                    child["pid"],
+                    child["starttime"],
+                    executable_device=child["executable_device"],
+                    executable_inode=child["executable_inode"],
+                    executable_ctime_ns=child["executable_ctime_ns"],
+                    executable_size=child["executable_size"],
+                    executable_digest=child["executable_digest"],
                 )
         stage_root = os.stat(observation.stage_root, follow_symlinks=False)
         stage_digest = _journal_digest(
@@ -3848,6 +3834,7 @@ class MountNamespaceBroker:
         expected_device: int,
         expected_inode: int,
         directory: bool,
+        readonly: bool,
         lease_id: str,
         destination: str,
     ) -> StagedDockerDescriptorMount:
@@ -3864,7 +3851,7 @@ class MountNamespaceBroker:
                 "expected_device": expected_device,
                 "expected_inode": expected_inode,
                 "lease_id": lease_id,
-                "readonly": not directory,
+                "readonly": readonly,
                 "authority_path": authority_path,
             },
             (descriptor,),
@@ -4118,6 +4105,7 @@ class MountNamespaceBroker:
                     ),
                     authority.pid_file,
                     authority.config_path,
+                    authority.containerd_config_path,
                     authority.exec_root,
                     authority.data_root,
                     authority.containerd_root,

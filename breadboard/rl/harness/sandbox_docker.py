@@ -10,7 +10,7 @@ import os
 import re
 import stat
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Protocol, Sequence
 
@@ -783,6 +783,194 @@ def _tmpfs_argument(destination: str, options: str) -> str:
     return f"{destination}:{options}"
 
 
+_NATIVE_ROOT_PREFIX = "/bb-native"
+
+
+def _root_repository_entry(plan: Any) -> Any | None:
+    entries = tuple(plan.materialization_plan.entries)
+    roots = tuple(entry for entry in entries if entry.target_logical_path == ".")
+    if not roots:
+        return None
+    if (
+        len(roots) != 1
+        or roots[0].role != "repository"
+        or len(entries) != 1
+    ):
+        raise DockerAdapterError(
+            "runtime_preflight_failed",
+            "workspace root requires a sole repository materialization entry",
+        )
+    return roots[0]
+
+
+def _expected_skeleton_readonly(plan: Any, *, role: str = "primary") -> bool:
+    if role == "verifier":
+        return True
+    root = _root_repository_entry(plan)
+    return root is None or root.access.value == "ro"
+
+
+def _validate_native_mount_authority(
+    plan: Any,
+    mounts: Sequence[tuple[Path, str, bool]],
+    *,
+    role: str,
+) -> None:
+    adapters = tuple(getattr(plan, "installed_tool_adapters", ()))
+    expected = (
+        set()
+        if role == "verifier"
+        else {_NATIVE_ROOT_PREFIX + f"/{index}" for index, _ in enumerate(adapters)}
+    )
+    native = {
+        destination: readonly
+        for _, destination, readonly in mounts
+        if destination.startswith(_NATIVE_ROOT_PREFIX + "/")
+    }
+    if set(native) != expected or any(not native[destination] for destination in expected):
+        raise DockerAdapterError(
+            "runtime_preflight_failed",
+            "Docker native tool mounts do not match the admitted plan",
+        )
+
+
+def _open_native_root_descriptor(binding: Any) -> int:
+    path = binding.runtime_root_path
+    if (
+        type(path) is not str
+        or not path.startswith("/")
+        or "\x00" in path
+        or os.path.normpath(path) != path
+        or any(part in {"", ".", ".."} for part in path.split("/")[1:])
+    ):
+        raise DockerAdapterError(
+            "runtime_preflight_failed",
+            "native tool runtime root path is not exact",
+        )
+    directory = -1
+    descriptor = -1
+    try:
+        directory = os.open(
+            "/",
+            os.O_RDONLY
+            | os.O_DIRECTORY
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_CLOEXEC", 0),
+        )
+        for component in path.split("/")[1:]:
+            descriptor = os.open(
+                component,
+                os.O_RDONLY
+                | os.O_DIRECTORY
+                | getattr(os, "O_NOFOLLOW", 0)
+                | getattr(os, "O_CLOEXEC", 0),
+                dir_fd=directory,
+            )
+            os.close(directory)
+            directory, descriptor = descriptor, -1
+        metadata = os.fstat(directory)
+        expected = (
+            binding.runtime_root_device,
+            binding.runtime_root_inode,
+            binding.runtime_root_owner_uid,
+            int(binding.runtime_root_mode, 8),
+        )
+        if (
+            not stat.S_ISDIR(metadata.st_mode)
+            or (
+                metadata.st_dev,
+                metadata.st_ino,
+                metadata.st_uid,
+                stat.S_IMODE(metadata.st_mode),
+            )
+            != expected
+        ):
+            raise DockerAdapterError(
+                "runtime_preflight_failed",
+                "native tool runtime root identity changed",
+            )
+        result = directory
+        directory = -1
+        return result
+    except DockerAdapterError:
+        raise
+    except OSError as exc:
+        raise DockerAdapterError(
+            "runtime_preflight_failed",
+            "native tool runtime root is unavailable",
+        ) from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if directory >= 0:
+            os.close(directory)
+
+
+def _validate_native_root_descriptor(binding: Any, descriptor: int) -> os.stat_result:
+    try:
+        metadata = os.fstat(descriptor)
+    except OSError as exc:
+        raise DockerAdapterError(
+            "runtime_preflight_failed",
+            "native tool runtime root descriptor is unavailable",
+        ) from exc
+    expected = (
+        binding.runtime_root_device,
+        binding.runtime_root_inode,
+        binding.runtime_root_owner_uid,
+        int(binding.runtime_root_mode, 8),
+    )
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or (
+            metadata.st_dev,
+            metadata.st_ino,
+            metadata.st_uid,
+            stat.S_IMODE(metadata.st_mode),
+        )
+        != expected
+    ):
+        raise DockerAdapterError(
+            "runtime_preflight_failed",
+            "native tool runtime root identity changed",
+        )
+    return metadata
+
+
+def _assign_workspace_identity(root_fd: int, *, uid: int, gid: int) -> None:
+    """Assign copied workspace contents, never cache or native-tool sources."""
+    device = os.fstat(root_fd).st_dev
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+
+    def visit(descriptor: int) -> None:
+        metadata = os.fstat(descriptor)
+        directory = stat.S_ISDIR(metadata.st_mode)
+        if metadata.st_dev != device or not (
+            directory or (stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1)
+        ):
+            raise DockerAdapterError(
+                "runtime_preflight_failed",
+                "workspace identity assignment encountered foreign or linked content",
+            )
+        if directory:
+            for name in os.listdir(descriptor):
+                child = os.open(name, flags, dir_fd=descriptor)
+                try:
+                    visit(child)
+                finally:
+                    os.close(child)
+        if (metadata.st_uid, metadata.st_gid) != (uid, gid):
+            os.fchown(descriptor, uid, gid)
+
+    try:
+        visit(root_fd)
+    except OSError as exc:
+        raise DockerAdapterError(
+            "runtime_preflight_failed",
+            "workspace could not be assigned to the admitted runtime identity",
+        ) from exc
+
+
 def _validate_mount_authority(
     mounts: Sequence[tuple[Path, str, bool]],
     tmpfs_mounts: Sequence[tuple[str, str]],
@@ -883,6 +1071,13 @@ def build_create_argv(plan: Any, *, lease_id: str, workspace_id: str, epoch: int
     resources = plan.resources
     if role not in {"primary", "verifier"}:
         raise DockerAdapterError("runtime_preflight_failed", "invalid container role")
+    expected_skeleton_readonly = _expected_skeleton_readonly(plan, role=role)
+    if type(skeleton_readonly) is not bool or skeleton_readonly != expected_skeleton_readonly:
+        raise DockerAdapterError(
+            "runtime_preflight_failed",
+            "workspace root permission does not match the repository grant",
+        )
+    _validate_native_mount_authority(plan, mounts, role=role)
     if (
         network.mode != "none"
         or network.docker_network != "none"
@@ -1026,7 +1221,8 @@ def _platform_version(payload: Mapping[str, Any]) -> str:
         raise DockerAdapterError("runtime_unsupported", "Docker server platform is unavailable")
     name = platform.get("Name")
     version = server.get("Version")
-    if type(name) is not str or not name or type(version) is not str or not version:
+    # Docker's product label may be empty; preserve it in the exact authority key.
+    if type(name) is not str or type(version) is not str or not version:
         raise DockerAdapterError("runtime_unsupported", "Docker server platform version is malformed")
     return f"{name}/{version}"
 
@@ -1094,6 +1290,22 @@ def _validate_identity(
     return container_id
 
 
+def _normalized_seccomp_profile(payload: str | bytes) -> str:
+    def object_from_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        value: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError("duplicate seccomp profile key")
+            value[key] = item
+        return value
+
+    profile = json.loads(payload, object_pairs_hook=object_from_pairs)
+    if type(profile) is not dict:
+        raise ValueError("seccomp profile must be an object")
+    # Preserve uint64 syscall arguments that are not exactly representable as binary64.
+    return json.dumps(profile, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
 def decode_docker_inspect(
     payload: bytes,
     plan: Any,
@@ -1103,7 +1315,6 @@ def decode_docker_inspect(
     labels: Mapping[str, str],
     skeleton_path: Path,
     mounts: Sequence[tuple[Path, str, bool]],
-    security_profile_path: Path,
     storage_bytes: int,
     skeleton_readonly: bool = True,
 ) -> dict[str, Any]:
@@ -1114,6 +1325,18 @@ def decode_docker_inspect(
         expected_name=container_name,
         expected_labels=labels,
     )
+    role = labels.get("bb.role")
+    if role not in {"primary", "verifier"}:
+        raise DockerAdapterError(
+            "runtime_measurement_mismatch",
+            "Docker inspect role binding is malformed",
+        )
+    if skeleton_readonly != _expected_skeleton_readonly(plan, role=role):
+        raise DockerAdapterError(
+            "runtime_measurement_mismatch",
+            "Docker inspect workspace permission contradicts the repository grant",
+        )
+    _validate_native_mount_authority(plan, mounts, role=role)
     config = _required_mapping(inspected, "Config")
     host = _required_mapping(inspected, "HostConfig")
     network_settings = _required_mapping(inspected, "NetworkSettings")
@@ -1136,7 +1359,7 @@ def decode_docker_inspect(
         or type(networks) is not dict
         or set(networks) != {"none"}
         or any(
-            key not in host or host.get(key) is not None
+            key not in host or host[key] not in (None, [])
             for key in ("Devices", "DeviceRequests", "DeviceCgroupRules")
         )
         or "Tmpfs" not in host
@@ -1146,10 +1369,23 @@ def decode_docker_inspect(
         raise DockerAdapterError(
             "runtime_measurement_mismatch", "Docker inspect security schema is not closed"
         )
-    expected_security = {
-        "no-new-privileges",
-        f"seccomp={security_profile_path}",
-    }
+    seccomp_options = [value for value in security_options if value.startswith("seccomp=")]
+    if len(seccomp_options) != 1:
+        raise DockerAdapterError(
+            "runtime_measurement_mismatch", "Docker inspect seccomp profile is ambiguous"
+        )
+    try:
+        observed_profile = _normalized_seccomp_profile(seccomp_options[0].removeprefix("seccomp="))
+        expected_profile = _normalized_seccomp_profile(plan.security_policy.seccomp_bytes)
+    except ValueError as exc:
+        raise DockerAdapterError(
+            "runtime_measurement_mismatch", "Docker inspect seccomp profile is malformed"
+        ) from exc
+    if observed_profile != expected_profile:
+        raise DockerAdapterError(
+            "runtime_measurement_mismatch", "Docker inspect seccomp profile contradicts the plan"
+        )
+    expected_security = {"no-new-privileges", seccomp_options[0]}
     lsm = plan.security_policy.apparmor_profile or plan.security_policy.selinux_label
     if plan.security_policy.apparmor_profile is not None:
         expected_security.add(f"apparmor={plan.security_policy.apparmor_profile}")
@@ -1303,6 +1539,8 @@ class StagedDockerDescriptorMount:
 
 
 class DockerDescriptorMountStager(Protocol):
+    """Stage descriptor authority with its admitted access mode, not a type default."""
+
     async def stage(
         self,
         descriptor: int,
@@ -1310,6 +1548,7 @@ class DockerDescriptorMountStager(Protocol):
         expected_device: int,
         expected_inode: int,
         directory: bool,
+        readonly: bool,
         lease_id: str,
         destination: str,
     ) -> StagedDockerDescriptorMount: ...
@@ -1776,12 +2015,17 @@ class DockerRuntimeAdapter:
 
     @staticmethod
     def _is_not_found(result: DockerCommandResult, reference: str) -> bool:
-        if result.timed_out or result.output_limited or result.returncode == 0 or result.stdout.strip():
+        if (
+            result.timed_out
+            or result.output_limited
+            or result.returncode != 1
+            or result.stdout.strip() not in {b"", b"[]"}
+        ):
             return False
-        stderr = result.stderr.strip()
-        return stderr in {
-            f"Error: No such object: {reference}".encode(),
-            f"Error response from daemon: No such container: {reference}".encode(),
+        prefix, _, absent_reference = result.stderr.strip().rpartition(b": ")
+        return absent_reference == reference.encode() and prefix.lower() in {
+            b"error: no such object",
+            b"error response from daemon: no such container",
         }
 
     async def _bound_container(
@@ -2148,6 +2392,9 @@ class DockerRuntimeHandle:
         staged_mounts: Sequence[StagedDockerDescriptorMount] = (),
         lease_id: str | None = None,
         launch_complete: bool = True,
+        native_root_records: Sequence[
+            tuple[int, Any, int, StagedDockerDescriptorMount]
+        ] = (),
         repository_at_workspace_root: bool = False,
     ) -> None:
         if type(repository_at_workspace_root) is not bool:
@@ -2163,6 +2410,7 @@ class DockerRuntimeHandle:
         self._cleanup_lock = asyncio.Lock()
         self._terminal_cleanup: tuple[Any, ...] | None = None
         self._held_fds = list(held_fds)
+        self._native_root_records = tuple(native_root_records)
         self._mount_stager = mount_stager
         self._staged_mounts = list(staged_mounts)
         self._lease_id = lease_id
@@ -2243,10 +2491,110 @@ class DockerRuntimeHandle:
         timeout_ms: int,
         output_limit: int,
     ) -> Mapping[str, Any]:
-        raise DockerAdapterError(
-            "runtime_unsupported",
-            "native tool bindings are not admitted to Docker runtimes",
+        from .sandbox import (
+            InstalledToolAdapter,
+            SandboxLaunchError,
+            _decode_native_tool_result,
+            _measure_native_file,
+            _native_member_path,
+            _validate_native_root,
         )
+
+        if self._lease_id is None or self.labels.get("bb.lease_id") != self._lease_id:
+            raise DockerAdapterError("lease_not_active", "container lease is not active")
+        if self.labels.get("bb.role") != "primary":
+            raise DockerAdapterError(
+                "tool_binding_projection_mismatch",
+                "native tools are not admitted to verifier runtimes",
+            )
+        if type(binding) is not InstalledToolAdapter or type(tool_id) is not str:
+            raise DockerAdapterError(
+                "tool_binding_projection_mismatch",
+                "native tool binding is not admitted",
+            )
+        admitted = tuple(
+            item
+            for item in getattr(self.plan, "installed_tool_adapters", ())
+            if item == binding
+        )
+        if len(admitted) != 1 or tool_id not in binding.tool_ids:
+            raise DockerAdapterError(
+                "tool_binding_projection_mismatch",
+                "native tool binding is not admitted",
+            )
+        if (
+            type(request_bytes) is not bytes
+            or not request_bytes
+            or type(timeout_ms) is not int
+            or timeout_ms <= 0
+            or timeout_ms > self.plan.limits.action_timeout_ms
+            or type(output_limit) is not int
+            or output_limit <= 0
+            or output_limit > self.plan.limits.observation_bytes
+            or len(request_bytes) > output_limit
+        ):
+            raise DockerAdapterError(
+                "runtime_preflight_failed",
+                "native tool request or execution envelope is invalid",
+            )
+        records = tuple(
+            record
+            for record in self._native_root_records
+            if record[1] == binding
+        )
+        plan_index = next(
+            (
+                index
+                for index, item in enumerate(
+                    getattr(self.plan, "installed_tool_adapters", ())
+                )
+                if item == binding
+            ),
+            None,
+        )
+        if plan_index is None or len(records) != 1 or records[0][0] != plan_index:
+            raise DockerAdapterError(
+                "tool_binding_projection_mismatch",
+                "native tool source mount is not exactly admitted",
+            )
+        _, _, root_fd, staged = records[0]
+        try:
+            _validate_native_root(binding)
+            _validate_native_root_descriptor(binding, root_fd)
+            staged.validate_descriptor(root_fd)
+            if self._mount_stager is None:
+                raise DockerAdapterError(
+                    "runtime_preflight_failed",
+                    "native tool source mount authority is unavailable",
+                )
+            await self._mount_stager.validate(staged, root_fd)
+            entrypoint = _native_member_path(
+                binding, binding.entrypoint_relative_path
+            )
+            executable = _native_member_path(
+                binding, binding.executable_relative_path
+            )
+            _measure_native_file(executable, binding.executable_digest)
+            _measure_native_file(entrypoint, binding.entrypoint_digest)
+        except DockerAdapterError:
+            raise
+        except SandboxLaunchError as exc:
+            raise DockerAdapterError(
+                exc.code,
+                "native tool source authority is unavailable",
+                details=exc.details,
+            ) from exc
+        root_path = f"{_NATIVE_ROOT_PREFIX}/{plan_index}"
+        result = await self._run(
+            (
+                f"{root_path}/{binding.executable_relative_path}",
+                f"{root_path}/{binding.entrypoint_relative_path}",
+            ),
+            timeout_ms=timeout_ms,
+            output_limit=output_limit,
+            input_bytes=request_bytes,
+        )
+        return _decode_native_tool_result(result, lease_id=self._lease_id)
 
     async def run_argv(
         self, argv: Sequence[str], *, timeout_ms: int, output_limit: int
@@ -2879,6 +3227,9 @@ class DockerSandboxBackend:
                 (context.snapshot_relative_path, f"{CONTAINER_WORKSPACE_ROOT}/snapshot", True),
                 (context.result_relative_path, f"{CONTAINER_WORKSPACE_ROOT}/result", False),
             )
+        root = _root_repository_entry(plan)
+        if root is not None:
+            return ()
         return tuple(
             (
                 entry.target_logical_path,
@@ -2887,6 +3238,7 @@ class DockerSandboxBackend:
             )
             for entry in plan.materialization_plan.entries
         )
+
     async def launch(
         self, plan: Any, workspace: Path, *, context: Any
     ) -> tuple[DockerRuntimeHandle, Any]:
@@ -2909,6 +3261,9 @@ class DockerSandboxBackend:
         labels: dict[str, str] = {}
         cleanup: tuple[tuple[str, str, str], ...] = ()
         staged_mounts: list[StagedDockerDescriptorMount] = []
+        native_root_records: list[
+            tuple[int, Any, int, StagedDockerDescriptorMount]
+        ] = []
         journal_bound = False
         try:
             residuals = await self._reconcile_quarantined()
@@ -2972,8 +3327,37 @@ class DockerSandboxBackend:
                 workspace_device=workspace_identity[0],
                 expected_identity=workspace_identity,
             )
-            skeleton_readonly = True
-            repository_at_workspace_root = False
+            if (workspace_metadata.st_uid, workspace_metadata.st_gid) != (
+                context.storage.owner_uid,
+                context.storage.owner_gid,
+            ):
+                raise DockerAdapterError(
+                    "runtime_preflight_failed",
+                    "workspace ownership differs from its launch authority",
+                )
+            _assign_workspace_identity(
+                workspace_fd,
+                uid=plan.security_policy.uid,
+                gid=plan.security_policy.gid,
+            )
+            workspace_metadata = _validate_mount_descriptor(
+                workspace_fd,
+                workspace_device=workspace_identity[0],
+                expected_identity=workspace_identity,
+            )
+            context = replace(
+                context,
+                storage=replace(
+                    context.storage,
+                    owner_uid=workspace_metadata.st_uid,
+                    owner_gid=workspace_metadata.st_gid,
+                ),
+            )
+            root_repository = (
+                _root_repository_entry(plan) if context.role == "primary" else None
+            )
+            skeleton_readonly = _expected_skeleton_readonly(plan, role=context.role)
+            repository_at_workspace_root = root_repository is not None
             skeleton_fd = workspace_fd
             skeleton_metadata = workspace_metadata
             admitted_mounts: list[tuple[int, str, bool, os.stat_result]] = []
@@ -2986,13 +3370,12 @@ class DockerSandboxBackend:
                 admitted_mounts.append(
                     (child_fd, destination, readonly, child_metadata)
                 )
-            observation = await self.adapter.preflight(plan)
-            _require_daemon_runtime_binding(observation, plan)
             workspace_stage = await self.mount_stager.stage(
                 skeleton_fd,
                 expected_device=skeleton_metadata.st_dev,
                 expected_inode=skeleton_metadata.st_ino,
                 directory=True,
+                readonly=skeleton_readonly,
                 lease_id=context.lease_id,
                 destination=CONTAINER_WORKSPACE_ROOT,
             )
@@ -3007,6 +3390,7 @@ class DockerSandboxBackend:
                     expected_device=child_metadata.st_dev,
                     expected_inode=child_metadata.st_ino,
                     directory=stat.S_ISDIR(child_metadata.st_mode),
+                    readonly=readonly,
                     lease_id=context.lease_id,
                     destination=destination,
                 )
@@ -3016,6 +3400,48 @@ class DockerSandboxBackend:
                 descriptor_mounts.append(
                     (Path(staged.source_path), destination, readonly)
                 )
+            if context.role == "primary":
+                from .sandbox import InstalledToolAdapter, _validate_native_root
+
+                for index, binding in enumerate(
+                    tuple(getattr(plan, "installed_tool_adapters", ()))
+                ):
+                    if type(binding) is not InstalledToolAdapter:
+                        raise DockerAdapterError(
+                            "tool_binding_projection_mismatch",
+                            "native tool binding authority is not exact",
+                        )
+                    try:
+                        _validate_native_root(binding)
+                    except BaseException as exc:
+                        code = getattr(exc, "code", "runtime_preflight_failed")
+                        raise DockerAdapterError(
+                            code,
+                            "native tool runtime root authority is unavailable",
+                        ) from exc
+                    root_fd = _open_native_root_descriptor(binding)
+                    held_fds.append(root_fd)
+                    root_metadata = _validate_native_root_descriptor(binding, root_fd)
+                    destination = f"{_NATIVE_ROOT_PREFIX}/{index}"
+                    staged = await self.mount_stager.stage(
+                        root_fd,
+                        expected_device=root_metadata.st_dev,
+                        expected_inode=root_metadata.st_ino,
+                        directory=True,
+                        readonly=True,
+                        lease_id=context.lease_id,
+                        destination=destination,
+                    )
+                    staged_mounts.append(staged)
+                    staged.validate_descriptor(root_fd)
+                    await self.mount_stager.validate(staged, root_fd)
+                    descriptor_mounts.append(
+                        (Path(staged.source_path), destination, True)
+                    )
+                    native_root_records.append((index, binding, root_fd, staged))
+            _validate_native_mount_authority(
+                plan, descriptor_mounts, role=context.role
+            )
             installed_profile = self._security_profile(plan)
             profile_fd = _openat2_beneath(
                 self._security_root_fd,
@@ -3033,6 +3459,7 @@ class DockerSandboxBackend:
                 expected_device=profile_metadata.st_dev,
                 expected_inode=profile_metadata.st_ino,
                 directory=False,
+                readonly=True,
                 lease_id=context.lease_id,
                 destination="/.breadboard/seccomp",
             )
@@ -3040,13 +3467,21 @@ class DockerSandboxBackend:
             profile_stage.validate_descriptor(profile_fd)
             await self.mount_stager.validate(profile_stage, profile_fd)
             profile_source = Path(profile_stage.source_path)
+            stage_descriptors = (
+                skeleton_fd,
+                *(item[0] for item in admitted_mounts),
+                *(item[2] for item in native_root_records),
+                profile_fd,
+            )
             for staged, descriptor in zip(
                 staged_mounts,
-                (skeleton_fd, *(item[0] for item in admitted_mounts), profile_fd),
+                stage_descriptors,
                 strict=True,
             ):
                 staged.validate_descriptor(descriptor)
                 await self.mount_stager.validate(staged, descriptor)
+            observation = await self.adapter.preflight(plan)
+            _require_daemon_runtime_binding(observation, plan)
             creation_attempted = True
             container_id, container_name, _ = await self.adapter.prepare(
                 plan, lease_id=context.lease_id, workspace_id=context.workspace_id,
@@ -3074,7 +3509,7 @@ class DockerSandboxBackend:
             inspect_payload = await self.adapter.inspect(plan, container_id)
             for staged, descriptor in zip(
                 staged_mounts,
-                (skeleton_fd, *(item[0] for item in admitted_mounts), profile_fd),
+                stage_descriptors,
                 strict=True,
             ):
                 staged.validate_descriptor(descriptor)
@@ -3083,7 +3518,6 @@ class DockerSandboxBackend:
                 inspect_payload, plan, container_id=container_id,
                 container_name=container_name, labels=labels,
                 skeleton_path=workspace_source, mounts=tuple(descriptor_mounts),
-                security_profile_path=profile_source,
                 storage_bytes=context.storage.quota_bytes,
                 skeleton_readonly=skeleton_readonly,
             )
@@ -3121,10 +3555,13 @@ class DockerSandboxBackend:
                 container_name=container_name, labels=labels, held_fds=held_fds,
                 mount_stager=self.mount_stager, staged_mounts=staged_mounts,
                 lease_id=context.lease_id,
+                native_root_records=tuple(native_root_records),
                 launch_complete=False,
                 repository_at_workspace_root=repository_at_workspace_root,
             )
-            repository_base_commit = await handle.measure_repository_base_commit()
+            repository_base_commit = None
+            if context.role == "primary":
+                repository_base_commit = await handle.measure_repository_base_commit()
             if repository_base_commit is not None:
                 if await handle.reset_repository_to_base() is not True:
                     raise DockerAdapterError(

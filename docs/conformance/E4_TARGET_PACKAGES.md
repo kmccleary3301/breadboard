@@ -79,10 +79,14 @@ historical v1 descriptor digest forms remain unchanged.
 
 Headless request v1 remains text-only and pairs with target v1. Explicit
 `bb.rl.headless-run-request.v2` accepts JSON values and pairs only with target v2.
+`bb.rl.headless-run-request.v3` requires an explicit, closed
+`provider.request_policy` and supports either target version. Target v1 still
+requires non-empty text inputs; target v2 retains its declared JSON schemas.
+Requests v1/v2 omit `request_policy` and use the historical streaming policy.
 Missing, null, empty, false and zero are distinct. `bind_e4_target_inputs` validates
 the selected declaration without filling omitted values. V1 frames retain JCS
-encoding; v2 byte identity preserves nested object order and numeric representation,
-with outer fields ordered by the declaration.
+encoding; v2/v3 byte identity preserves nested object order and numeric representation,
+with target v2 outer fields ordered by the declaration.
 This frame records supplied inputs, not constructor execution. An omitted
 `omission: default` field stays absent; its declared default remains bound in the
 verified configuration. An admitted source renderer applies omission/default

@@ -676,10 +676,62 @@ async def test_forged_snapshot_identity_starts_no_verifier_and_preserves_primary
     assert len(list(harness.workspace_root.iterdir())) == 1
     receipt = await primary.close()
     assert receipt.state is CleanupState.RELEASED
-    assert receipt.steps[0] == CleanupStepReceipt(
-        "child_verifier",
-        CleanupState.ALREADY_RELEASED,
+    assert receipt.steps[0].resource == "child_verifier"
+    assert receipt.steps[0].state is CleanupState.RELEASED
+    assert json.loads(receipt.steps[0].detail)["snapshot_steps"] == [
+        {"detail": "", "resource": "snapshot", "state": "released"},
+    ]
+    assert await harness.manager.close() == ()
+    assert list(harness.workspace_root.iterdir()) == []
+    assert list(harness.lease_root.iterdir()) == []
+
+
+async def test_primary_close_retains_owned_storage_when_snapshot_retirement_is_incomplete(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness, primary, snapshot = await _opened_snapshot(tmp_path)
+    snapshot_object = (
+        harness.cache_root
+        / "snapshot-objects"
+        / snapshot.root_digest.removeprefix("sha256:")
     )
+    primary_workspace = primary._materialized.workspace_path
+    record_path = harness.lease_root / f"{primary.lease_id}.json"
+    release_snapshot = harness.store.release_snapshot
+
+    def fail_release(*args: Any, **kwargs: Any) -> bool:
+        raise OSError("snapshot release failed")
+
+    monkeypatch.setattr(harness.store, "release_snapshot", fail_release)
+
+    first = await primary.close()
+
+    assert first.state is CleanupState.QUARANTINED
+    assert tuple(step.resource for step in first.steps) == (
+        "child_verifier",
+        "runtime",
+        "workspace",
+        "cache_holder",
+        "lease_record",
+    )
+    assert first.steps[0].state is CleanupState.FAILED
+    assert json.loads(first.steps[0].detail) == {
+        "incomplete_child_lease_ids": [],
+        "snapshot_steps": [
+            {"detail": "OSError", "resource": "snapshot", "state": "failed"},
+        ],
+    }
+    assert primary_workspace.exists()
+    assert snapshot_object.exists()
+    assert record_path.exists()
+
+    monkeypatch.setattr(harness.store, "release_snapshot", release_snapshot)
+    second = await primary.close()
+    assert second.state is CleanupState.RELEASED
+    assert not primary_workspace.exists()
+    assert not snapshot_object.exists()
+    assert not record_path.exists()
     assert await harness.manager.close() == ()
     assert list(harness.workspace_root.iterdir()) == []
     assert list(harness.lease_root.iterdir()) == []
@@ -820,6 +872,7 @@ async def test_post_seal_snapshot_mutation_starts_no_verifier_and_cleans_primary
     object_root = harness.cache_root / "snapshot-objects" / snapshot.root_digest.removeprefix(
         "sha256:"
     )
+    primary_workspace = primary._materialized.workspace_path
     candidate = object_root / "work" / "candidate.txt"
     candidate.chmod(0o600)
     candidate.write_bytes(b"tampered")
@@ -835,10 +888,22 @@ async def test_post_seal_snapshot_mutation_starts_no_verifier_and_cleans_primary
     assert list((harness.cache_root / "staging").iterdir()) == []
     receipt = await primary.close()
     assert receipt.state is CleanupState.RELEASED
-    assert receipt.steps[0] == CleanupStepReceipt(
+    assert tuple(step.resource for step in receipt.steps) == (
         "child_verifier",
-        CleanupState.ALREADY_RELEASED,
+        "runtime",
+        "workspace",
+        "cache_holder",
+        "lease_record",
     )
+    assert receipt.steps[0].state is CleanupState.RELEASED
+    assert json.loads(receipt.steps[0].detail) == {
+        "incomplete_child_lease_ids": [],
+        "snapshot_steps": [
+            {"detail": "", "resource": "snapshot", "state": "released"},
+        ],
+    }
+    assert not primary_workspace.exists()
+    assert not object_root.exists()
     assert await harness.manager.close() == ()
     assert list(harness.workspace_root.iterdir()) == []
     assert list(harness.lease_root.iterdir()) == []

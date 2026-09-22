@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import errno
 import hashlib
 import hmac
 import os
@@ -69,9 +70,9 @@ async def test_broker_executor_transports_stdin_by_sealed_descriptor(
             observed["expected_return_fds"] = expected_return_fds
             payload_fd = descriptors[1]
             observed["payload"] = os.pread(payload_fd, len(payload) + 1, 0)
-            observed["seals"] = broker_module.fcntl.fcntl(
-                payload_fd, broker_module.fcntl.F_GET_SEALS
-            )
+            with pytest.raises(OSError) as mutation:
+                os.write(payload_fd, b"changed")
+            assert mutation.value.errno == errno.EPERM
             stdout_fd = broker_module._sealed_payload_fd(output_payload)
             stderr_fd = broker_module._sealed_payload_fd(b"")
             return (
@@ -106,13 +107,6 @@ async def test_broker_executor_transports_stdin_by_sealed_descriptor(
     assert observed["payload"] == payload
     assert request["input_size"] == len(payload)
     assert request["input_digest"] == ("sha256:" + hashlib.sha256(payload).hexdigest())
-    required = (
-        broker_module.fcntl.F_SEAL_SEAL
-        | broker_module.fcntl.F_SEAL_SHRINK
-        | broker_module.fcntl.F_SEAL_GROW
-        | broker_module.fcntl.F_SEAL_WRITE
-    )
-    assert observed["seals"] & required == required
     assert observed["expected_return_fds"] == 2
     assert result.returncode == 0
     assert result.stdout == output_payload
@@ -314,21 +308,27 @@ def test_direct_docker_execution_reads_sealed_output_descriptors(
     not Path("/proc/self/fd").is_dir() or not hasattr(os, "memfd_create"),
     reason="descriptor execution transport requires Linux procfs",
 )
-def test_broker_bounded_executor_reads_sealed_stdin_descriptor() -> None:
+def test_broker_bounded_executor_reads_sealed_stdin_descriptor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in (
+        "F_ADD_SEALS", "F_GET_SEALS", "F_SEAL_SEAL",
+        "F_SEAL_SHRINK", "F_SEAL_GROW", "F_SEAL_WRITE",
+    ):
+        monkeypatch.delattr(broker_module.fcntl, name, raising=False)
     payload = b"y" * (512 * 1024)
-    executable_fd = os.open("/bin/cat", os.O_RDONLY)
-    input_fd = broker_module._sealed_payload_fd(payload)
-    try:
-        result = broker_module._execute_bounded(
-            ("/bin/cat",),
-            executable_fd=executable_fd,
-            timeout_ms=1_000,
-            output_limit=len(payload) + 1,
-            input_fd=input_fd,
-        )
-    finally:
-        os.close(input_fd)
-        os.close(executable_fd)
+    with open("/bin/cat", "rb") as executable:
+        input_fd = broker_module._sealed_payload_fd(payload)
+        try:
+            result = broker_module._execute_bounded(
+                ("/bin/cat",),
+                executable_fd=executable.fileno(),
+                timeout_ms=1_000,
+                output_limit=len(payload) + 1,
+                input_fd=input_fd,
+            )
+        finally:
+            os.close(input_fd)
 
     returncode, stdout, stderr, timed_out, output_limited = result
     assert returncode == 0
@@ -336,6 +336,32 @@ def test_broker_bounded_executor_reads_sealed_stdin_descriptor() -> None:
     assert stderr == b""
     assert timed_out is False
     assert output_limited is False
+
+
+@pytest.mark.skipif(
+    not hasattr(os, "memfd_create"),
+    reason="sealed descriptor validation requires Linux",
+)
+def test_broker_rejects_unsealed_input_and_output() -> None:
+    payload = b"unsealed payload"
+    descriptor = os.memfd_create(
+        "unsealed-broker-control", os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING
+    )
+    try:
+        os.write(descriptor, payload)
+        with pytest.raises(MountNamespaceBrokerError) as stdin_error:
+            broker_module._read_sealed_payload_fd(
+                descriptor,
+                expected_size=len(payload),
+                expected_digest="sha256:" + hashlib.sha256(payload).hexdigest(),
+                limit=len(payload),
+            )
+        assert stdin_error.value.code == "runtime_unsupported"
+        with pytest.raises(MountNamespaceBrokerError) as stdout_error:
+            broker_module._read_output_descriptor(descriptor, len(payload))
+        assert stdout_error.value.code == "runtime_unsupported"
+    finally:
+        os.close(descriptor)
 
 
 def test_exception_projection_retains_all_daemon_cleanup_leaves_without_secrets() -> (
@@ -544,8 +570,74 @@ def _real_broker(stage_root: Path) -> MountNamespaceBroker:
         raise
 
 
+def test_real_broker_seals_roundtrip_and_rejects_unsealed_stdin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in (
+        "F_ADD_SEALS", "F_GET_SEALS", "F_SEAL_SEAL",
+        "F_SEAL_SHRINK", "F_SEAL_GROW", "F_SEAL_WRITE",
+    ):
+        monkeypatch.delattr(broker_module.fcntl, name, raising=False)
+    broker = _real_broker(tmp_path / "stages")
+    descriptors: list[int] = []
+    payload = b"broker socket roundtrip\n"
+    try:
+        cancellation_read, cancellation_write = os.pipe()
+        descriptors.extend((cancellation_read, cancellation_write))
+        os.set_blocking(cancellation_read, False)
+        sealed = broker_module._sealed_payload_fd(payload)
+        descriptors.append(sealed)
+        unsealed = os.memfd_create(
+            "unsealed-rpc-control", os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING
+        )
+        descriptors.append(unsealed)
+        os.write(unsealed, payload)
+        os.lseek(unsealed, 0, os.SEEK_SET)
+        with open("/bin/cat", "rb") as executable:
+            request = {
+                "argv": ["/bin/cat"],
+                "digest": "sha256:" + hashlib.sha256(executable.read()).hexdigest(),
+                "environment": [],
+                "timeout_ms": 1_000,
+                "output_limit": len(payload) + 1,
+                "cancellation_descriptor": True,
+                "input_size": len(payload),
+                "input_digest": "sha256:" + hashlib.sha256(payload).hexdigest(),
+            }
+            result, outputs = broker._call(
+                "execute", request,
+                (executable.fileno(), sealed, cancellation_read),
+                expected_return_fds=2,
+            )
+            descriptors.extend(outputs)
+            assert result["returncode"] == 0
+            stdout, digest = broker_module._read_output_descriptor(
+                outputs[0], result["stdout_size"]
+            )
+            assert stdout == payload
+            assert digest == request["input_digest"]
+            with pytest.raises(OSError) as mutation:
+                os.pwrite(outputs[0], b"changed", 0)
+            assert mutation.value.errno == errno.EPERM
+            with pytest.raises(MountNamespaceBrokerError) as rejected:
+                _, unexpected_outputs = broker._call(
+                    "execute", request,
+                    (executable.fileno(), unsealed, cancellation_read),
+                    expected_return_fds=2,
+                )
+                descriptors.extend(unexpected_outputs)
+            assert rejected.value.code == "workspace_authority_mismatch"
+    finally:
+        for descriptor in descriptors:
+            os.close(descriptor)
+        if not broker._closed:
+            broker.close()
+    assert not os.path.lexists(tmp_path / "stages")
+
+
+@pytest.mark.parametrize("readonly", [False, True])
 def test_private_namespace_stage_validate_release_and_host_absence(
-    tmp_path: Path,
+    tmp_path: Path, readonly: bool,
 ) -> None:
     source = tmp_path / "workspace"
     source.mkdir(mode=0o700)
@@ -562,6 +654,7 @@ def test_private_namespace_stage_validate_release_and_host_absence(
                 expected_device=metadata.st_dev,
                 expected_inode=metadata.st_ino,
                 directory=True,
+                readonly=readonly,
                 lease_id="lease-1",
                 destination="/workspace",
             )
@@ -571,6 +664,16 @@ def test_private_namespace_stage_validate_release_and_host_absence(
         assert os.path.isdir(staged.source_path)
         assert os.listdir(staged.source_path) == []
         asyncio.run(broker.validate(staged, descriptor))
+        private_view = Path(f"/proc/{broker.pid}/root{staged.source_path}")
+        assert (private_view / "sentinel").read_bytes() == b"held"
+        if readonly:
+            with pytest.raises(OSError) as rejected:
+                (private_view / "write").write_bytes(b"rejected")
+            assert rejected.value.errno == errno.EROFS
+            assert not (source / "write").exists()
+        else:
+            (private_view / "write").write_bytes(b"allowed")
+            assert (source / "write").read_bytes() == b"allowed"
         asyncio.run(broker.release(staged))
         assert not os.path.lexists(staged.source_path)
         broker.close()
@@ -601,6 +704,7 @@ def test_stage_replacement_is_rejected_and_cleanup_is_quarantined(
                 expected_device=metadata.st_dev,
                 expected_inode=metadata.st_ino,
                 directory=False,
+                readonly=True,
                 lease_id="lease-2",
                 destination="/profile",
             )
@@ -675,6 +779,7 @@ def test_stage_publication_rejects_bind_time_authority_mutation(
                     expected_device=metadata.st_dev,
                     expected_inode=metadata.st_ino,
                     directory=False,
+                    readonly=True,
                     lease_id="race",
                     destination="/authority",
                 )
@@ -712,6 +817,7 @@ def test_wrong_descriptor_and_broker_crash_fail_closed(tmp_path: Path) -> None:
                 expected_device=metadata.st_dev,
                 expected_inode=metadata.st_ino,
                 directory=True,
+                readonly=False,
                 lease_id="lease-3",
                 destination="/workspace",
             )
@@ -1331,6 +1437,7 @@ def test_close_after_log_receipt_failure_reaps_and_closes_returned_fds(
         containerd_socket_path=os.fspath(tmp_path / "missing-containerd.sock"),
         pid_file=os.fspath(tmp_path / "missing.pid"),
         config_path=os.fspath(tmp_path / "missing.toml"),
+        containerd_config_path=os.fspath(tmp_path / "missing.toml.containerd.toml"),
         exec_root=os.fspath(tmp_path / "missing-exec"),
         data_root=os.fspath(tmp_path / "missing-data"),
         containerd_root=os.fspath(tmp_path / "missing-containerd-root"),
@@ -1481,6 +1588,7 @@ def test_non_graceful_close_identity_terminates_both_daemon_groups(
         containerd_socket_path=missing("containerd.sock"),
         pid_file=missing("docker.pid"),
         config_path=missing("docker.toml"),
+        containerd_config_path=missing("docker.toml.containerd.toml"),
         exec_root=missing("exec"),
         data_root=missing("data"),
         containerd_root=missing("containerd-root"),

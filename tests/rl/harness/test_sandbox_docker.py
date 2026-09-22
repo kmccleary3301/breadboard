@@ -26,8 +26,10 @@ from breadboard.rl.harness.materialization import (
     CleanupStepReceipt,
     DirectoryStorageBackend,
     FilesystemMaterializationStore,
+    MaterializationEntry,
 )
 from breadboard.rl.harness.sandbox import (
+    InstalledToolAdapter,
     RuntimeLaunchContext,
     RuntimePreparedIdentity,
     SandboxFault,
@@ -393,7 +395,6 @@ def _identity_inspect(
 def _docker_inspect_payload(
     plan: Any,
     skeleton: Path,
-    profile: Path,
     mounts: Sequence[tuple[Path, str, bool]],
     *,
     role: str = "primary",
@@ -425,12 +426,14 @@ def _docker_inspect_payload(
             "ReadonlyRootfs": True,
             "CapAdd": None,
             "CapDrop": ["ALL"],
-            "Devices": None,
+            "Devices": [],
             "DeviceRequests": None,
             "DeviceCgroupRules": None,
             "SecurityOpt": [
                 "no-new-privileges",
-                f"seccomp={profile}",
+                "seccomp=" + json.dumps(
+                    json.loads(plan.security_policy.seccomp_bytes), separators=(",", ":")
+                ),
                 f"apparmor={plan.security_policy.apparmor_profile}",
             ],
             "CpuPeriod": 100_000,
@@ -475,7 +478,8 @@ def _docker_inspect_bytes(inspected: Mapping[str, Any]) -> bytes:
 def _not_found(reference: str) -> DockerCommandResult:
     return _result(
         returncode=1,
-        stderr=f"Error: No such object: {reference}".encode("utf-8"),
+        stdout=b"[]\n",
+        stderr=f"error: no such object: {reference}\n".encode("utf-8"),
     )
 
 
@@ -506,7 +510,11 @@ def _docker_plan(tmp_path: Path, *, gvisor: bool = False) -> tuple[Any, Path, Pa
         oci_runtime_binary_digest=observe_binary_digest(oci_runtime),
         supported_platform_versions=("bb-test/test",),
     )
-    plan = replace(plan, runtime=runtime)
+    security = replace(plan.security_policy, uid=os.geteuid(), gid=os.getegid())
+    security = replace(
+        security, policy_digest=security.derive_digest(security.projection())
+    )
+    plan = replace(plan, runtime=runtime, security_policy=security)
     skeleton = tmp_path / "skeleton"
     skeleton.mkdir(mode=0o500)
     mounted = tmp_path / "private-work"
@@ -541,8 +549,8 @@ def _launch_context(
             authority_id=storage_authority_id,
             quota_enforced=quota_enforced,
             quota_bytes=effective_quota,
-            owner_uid=65534,
-            owner_gid=65534,
+            owner_uid=os.geteuid(),
+            owner_gid=os.getegid(),
         ),
         snapshot_relative_path="snapshot" if role == "verifier" else None,
         result_relative_path="result" if role == "verifier" else None,
@@ -623,6 +631,148 @@ async def _launch_docker_handle(
         labels=_binding_labels(plan),
     )
     return plan, executor, handle
+
+
+def _native_tool_handle(
+    tmp_path: Path, *, mount_stager: Any | None = None
+) -> tuple[
+    Any,
+    InstalledToolAdapter,
+    int,
+    Path,
+    Path,
+    DockerRuntimeHandle,
+    ScriptedDockerExecutor,
+]:
+    plan, _, _, _ = _docker_plan(tmp_path)
+    root = tmp_path / "native-runtime-root"
+    executable = root / "bin" / "runtime"
+    entrypoint = root / "entrypoint.mjs"
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"native executable")
+    entrypoint.write_bytes(b"native entrypoint")
+    root.chmod(0o700)
+    root_metadata = root.stat()
+    tool = plan.tool_bindings[0]
+    binding = InstalledToolAdapter(
+        adapter_id="native-test-adapter",
+        tool_ids=(tool.tool_id,),
+        runtime_root_path=str(root),
+        runtime_root_device=root_metadata.st_dev,
+        runtime_root_inode=root_metadata.st_ino,
+        runtime_root_owner_uid=root_metadata.st_uid,
+        runtime_root_mode=f"{stat.S_IMODE(root_metadata.st_mode):04o}",
+        manifest_digest=tool.implementation_digest,
+        executable_relative_path="bin/runtime",
+        entrypoint_relative_path="entrypoint.mjs",
+        executable_digest=digest(executable.read_bytes()),
+        entrypoint_digest=digest(entrypoint.read_bytes()),
+    )
+    plan = replace(plan, installed_tool_adapters=(binding,))
+    root_fd = os.open(
+        root,
+        os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0),
+    )
+    descriptor_metadata = os.fstat(root_fd)
+    staged = docker_module.StagedDockerDescriptorMount(
+        source_path="/staged/native-runtime-root",
+        source_device=descriptor_metadata.st_dev,
+        source_inode=descriptor_metadata.st_ino,
+        source_mode=stat.S_IFMT(descriptor_metadata.st_mode),
+        descriptor_device=descriptor_metadata.st_dev,
+        descriptor_inode=descriptor_metadata.st_ino,
+    )
+    if mount_stager is None:
+        class MountStager:
+            async def validate(self, _: Any, __: int) -> None:
+                return None
+
+        mount_stager = MountStager()
+    executor = ScriptedDockerExecutor()
+    handle = DockerRuntimeHandle(
+        adapter=_mechanics_adapter(plan, executor),
+        plan=plan,
+        container_id=CONTAINER_ID,
+        container_name="bb-primary-workspace-1",
+        labels=_binding_labels(plan),
+        mount_stager=mount_stager,
+        native_root_records=((0, binding, root_fd, staged),),
+        lease_id="lease-1",
+    )
+    return plan, binding, root_fd, root, entrypoint, handle, executor
+
+
+@pytest.mark.parametrize("mutation", ["root", "entrypoint"])
+@pytest.mark.asyncio
+async def test_native_authority_change_rejects_before_command_effect(
+    tmp_path: Path, mutation: str
+) -> None:
+    plan, binding, root_fd, root, entrypoint, handle, executor = _native_tool_handle(
+        tmp_path
+    )
+    try:
+        if mutation == "root":
+            replacement = tmp_path / "replaced-native-runtime-root"
+            root.rename(replacement)
+            root.mkdir(mode=0o700)
+        else:
+            entrypoint.write_bytes(b"changed native entrypoint")
+
+        with pytest.raises(DockerAdapterError) as captured:
+            await handle.run_native_tool(
+                binding,
+                binding.tool_ids[0],
+                b"{}",
+                timeout_ms=plan.limits.action_timeout_ms,
+                output_limit=plan.limits.observation_bytes,
+            )
+    finally:
+        os.close(root_fd)
+
+    assert captured.value.code == "runtime_preflight_failed"
+    assert executor.calls == []
+
+
+@pytest.mark.asyncio
+async def test_native_root_validation_cancellation_propagates_before_command_effect(
+    tmp_path: Path,
+) -> None:
+    class BlockingStager:
+        def __init__(self) -> None:
+            self.entered = asyncio.Event()
+
+        async def validate(self, _: Any, __: int) -> None:
+            self.entered.set()
+            await asyncio.Event().wait()
+
+    stager = BlockingStager()
+    plan, binding, root_fd, _, _, handle, executor = _native_tool_handle(
+        tmp_path, mount_stager=stager
+    )
+    operation = asyncio.create_task(
+        handle.run_native_tool(
+            binding,
+            binding.tool_ids[0],
+            b"{}",
+            timeout_ms=plan.limits.action_timeout_ms,
+            output_limit=plan.limits.observation_bytes,
+        )
+    )
+    try:
+        await asyncio.wait_for(stager.entered.wait(), 1)
+        operation.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await operation
+    finally:
+        if not operation.done():
+            operation.cancel()
+            try:
+                await operation
+            except asyncio.CancelledError:
+                pass
+        os.close(root_fd)
+
+    assert executor.calls == []
 
 
 @pytest.mark.asyncio
@@ -1212,102 +1362,88 @@ async def _exercise_nonadmissible_prepare_publish_start(
     return container_id, await adapter.inspect(plan, container_id)
 
 
-def test_create_argv_exactly_projects_closed_policy_in_deterministic_order(
-    tmp_path: Path,
+
+
+@pytest.mark.parametrize(
+    ("access", "skeleton_readonly"),
+    [
+        (c.MountAccess.READ_ONLY, True),
+        (c.MountAccess.READ_WRITE, False),
+    ],
+)
+def test_sole_root_repository_grant_controls_create_and_inspect_authority(
+    tmp_path: Path, access: c.MountAccess, skeleton_readonly: bool
 ) -> None:
-    plan, skeleton, profile, mounts = _docker_plan(tmp_path)
-    second = tmp_path / "readonly-input"
-    second.mkdir()
-    unsorted_mounts = (
-        (mounts[0][0], "/testbed/z-output", False),
-        (second, "/testbed/a-input", True),
+    plan, skeleton, profile, _ = _docker_plan(tmp_path)
+    plan = replace(
+        plan,
+        materialization_plan=replace(
+            plan.materialization_plan,
+            entries=(
+                MaterializationEntry(
+                    digest("sole-root-repository"),
+                    ".",
+                    access,
+                    4_096,
+                    "repository",
+                ),
+            ),
+        ),
     )
 
-    argv = build_create_argv(
+    create_argv = build_create_argv(
         plan,
-        lease_id="lease-123",
-        workspace_id="workspace-456",
-        epoch=7,
+        lease_id="lease-1",
+        workspace_id="workspace-1",
+        epoch=1,
         role="primary",
         skeleton_path=skeleton,
-        mounts=unsorted_mounts,
+        mounts=(),
         security_profile_path=profile,
+        skeleton_readonly=skeleton_readonly,
     )
+    workspace_mount = create_argv[create_argv.index("--mount") + 1]
+    assert (",readonly" in workspace_mount) is skeleton_readonly
 
-    assert argv == (
-        str(plan.runtime.executable_path),
-        "create",
-        "--name",
-        "bb-primary-workspace-456",
-        "--label",
-        "bb.lease_id=lease-123",
-        "--label",
-        f"bb.plan_digest={plan.effective_plan_digest}",
-        "--label",
-        "bb.epoch=7",
-        "--label",
-        "bb.workspace_id=workspace-456",
-        "--label",
-        "bb.role=primary",
-        "--runtime",
-        "runc",
-        "--network",
-        "none",
-        "--cgroupns",
-        "private",
-        "--ipc",
-        "private",
-        "--user",
-        "65534:65534",
-        "--read-only",
-        "--cap-drop",
-        "ALL",
-        "--security-opt",
-        "no-new-privileges",
-        "--security-opt",
-        f"seccomp={profile}",
-        "--security-opt",
-        "apparmor=bb-test",
-        "--pids-limit",
-        "32",
-        "--memory",
-        "32000000",
-        "--memory-swap",
-        "32000000",
-        "--cpu-period",
-        "100000",
-        "--cpu-quota",
-        "100000",
-        "--ulimit",
-        "nofile=128:128",
-        "--mount",
-        f"type=bind,src={skeleton},dst=/testbed,readonly",
-        "--mount",
-        f"type=bind,src={second},dst=/testbed/a-input,readonly",
-        "--mount",
-        f"type=bind,src={mounts[0][0]},dst=/testbed/z-output",
-        "--tmpfs",
-        "/tmp:rw,noexec,nosuid,size=1048576",
-        "--workdir",
-        "/testbed",
-        "--env",
-        "PATH=/usr/bin:/bin",
-        "--pull",
-        "never",
-        plan.image.image_digest,
-        *plan.runtime.idle_argv,
+    with pytest.raises(DockerAdapterError) as captured:
+        build_create_argv(
+            plan,
+            lease_id="lease-1",
+            workspace_id="workspace-1",
+            epoch=1,
+            role="primary",
+            skeleton_path=skeleton,
+            mounts=(),
+            security_profile_path=profile,
+            skeleton_readonly=not skeleton_readonly,
+        )
+    assert captured.value.code == "runtime_preflight_failed"
+
+    valid_payload = _docker_inspect_bytes(
+        _docker_inspect_payload(plan, skeleton, (), skeleton_readonly=skeleton_readonly,)
     )
-    joined = "\0".join(argv)
-    for forbidden in (
-        "--privileged",
-        "--device",
-        "docker.sock",
-        "--pid=host",
-        "--ipc=host",
-        "--rm",
-        "host.docker.internal",
-    ):
-        assert forbidden not in joined
+    decode_docker_inspect(valid_payload,
+    plan,
+    container_id=CONTAINER_ID,
+    container_name="bb-primary-workspace-1",
+    labels=_binding_labels(plan),
+    skeleton_path=skeleton,
+    mounts=(), storage_bytes=plan.resources.storage_bytes,
+    skeleton_readonly=skeleton_readonly,)
+
+    inconsistent_payload = _docker_inspect_bytes(
+        _docker_inspect_payload(plan, skeleton, (), skeleton_readonly=not skeleton_readonly,)
+    )
+    with pytest.raises(DockerAdapterError) as captured:
+        decode_docker_inspect(inconsistent_payload,
+        plan,
+        container_id=CONTAINER_ID,
+        container_name="bb-primary-workspace-1",
+        labels=_binding_labels(plan),
+        skeleton_path=skeleton,
+        mounts=(), storage_bytes=plan.resources.storage_bytes,
+        skeleton_readonly=skeleton_readonly,)
+    assert captured.value.code == "runtime_measurement_mismatch"
 
 
 async def test_prepare_validates_held_seccomp_fd_while_argv_uses_wrong_staged_placeholder(
@@ -2239,6 +2375,37 @@ async def test_installed_catalog_oci_identity_reaches_docker_preflight_unchanged
     assert executor.results == []
 
 
+@pytest.mark.parametrize("authorized", [True, False])
+async def test_empty_docker_product_label_requires_exact_version_authority(
+    tmp_path: Path, authorized: bool
+) -> None:
+    plan, _, _, _ = _docker_plan(tmp_path)
+    plan = replace(
+        plan,
+        runtime=replace(
+            plan.runtime,
+            supported_platform_versions=("/29.1.3" if authorized else "/other",),
+        ),
+    )
+    results = _preflight_success(plan)
+    results[0] = _result(
+        stdout=json.dumps(
+            {"Server": {"Platform": {"Name": ""}, "Version": "29.1.3"}}
+        ).encode("utf-8")
+    )
+    executor = ScriptedDockerExecutor(results)
+    adapter = _mechanics_adapter(plan, executor, environment=())
+
+    if authorized:
+        measured = await adapter.preflight(plan)
+        assert measured.platform_version == "/29.1.3"
+    else:
+        with pytest.raises(DockerAdapterError) as captured:
+            await adapter.preflight(plan)
+        assert captured.value.code == "runtime_unsupported"
+        assert [call[0][1] for call in executor.calls] == ["version"]
+
+
 @pytest.mark.parametrize(
     "supported_platform_versions",
     [(), ("bb-test/other",)],
@@ -2622,7 +2789,7 @@ async def test_prepared_identity_is_inspected_and_persisted_before_start(
         trace.append("persist")
 
     inspect_bytes = _docker_inspect_bytes(
-        _docker_inspect_payload(plan, skeleton, installed_profile, mounts)
+        _docker_inspect_payload(plan, skeleton, mounts)
     )
     executor = ScriptedDockerExecutor(
         [
@@ -3132,7 +3299,6 @@ async def test_descriptor_success_retains_fds_until_exact_container_absence(
         def __init__(self) -> None:
             self.mounts: tuple[tuple[Path, str, bool], ...] = ()
             self.skeleton = Path()
-            self.profile = Path()
             self.skeleton_readonly = True
 
         async def preflight(self, _: Any) -> None:
@@ -3142,7 +3308,6 @@ async def test_descriptor_success_retains_fds_until_exact_container_absence(
             trace.append("create")
             self.mounts = tuple(kwargs["mounts"])
             self.skeleton = kwargs["skeleton_path"]
-            self.profile = kwargs["security_profile_path"]
             self.skeleton_readonly = kwargs["skeleton_readonly"]
             profile = docker_module._bounded_regular_file_descriptor_bytes(
                 kwargs["security_profile_descriptor"],
@@ -3162,13 +3327,7 @@ async def test_descriptor_success_retains_fds_until_exact_container_absence(
             assert container_id == CONTAINER_ID
             trace.append("inspect")
             return _docker_inspect_bytes(
-                _docker_inspect_payload(
-                    plan,
-                    self.skeleton,
-                    self.profile,
-                    self.mounts,
-                    skeleton_readonly=self.skeleton_readonly,
-                )
+                _docker_inspect_payload(plan, self.skeleton, self.mounts, skeleton_readonly=self.skeleton_readonly,)
             )
 
         async def cleanup(self, _: Any, reference: str, **kwargs: Any) -> tuple[tuple[str, str, str], ...]:
@@ -3327,6 +3486,64 @@ async def test_verifier_backend_refuses_before_create_or_measurement(
     assert provider.calls == []
 
 
+def test_inspect_attests_embedded_seccomp_without_rounding_syscall_arguments(
+    tmp_path: Path,
+) -> None:
+    plan, skeleton, _, mounts = _docker_plan(tmp_path)
+    profile = {
+        "defaultAction": "SCMP_ACT_ERRNO",
+        "syscalls": [{
+            "names": ["write"],
+            "action": "SCMP_ACT_ALLOW",
+            "args": [{"index": 0, "value": 2**64 - 1, "op": "SCMP_CMP_EQ"}],
+        }],
+    }
+    raw_profile = json.dumps(profile, indent=2).encode()
+    policy = replace(
+        plan.security_policy,
+        seccomp_bytes=raw_profile,
+        seccomp_digest=digest(raw_profile),
+    )
+    policy = replace(policy, policy_digest=policy.derive_digest(policy.projection()))
+    plan = replace(plan, security_policy=policy)
+    inspected = _docker_inspect_payload(plan, skeleton, mounts)
+    host = inspected["HostConfig"]
+    for field in ("Devices", "DeviceRequests", "DeviceCgroupRules"):
+        host[field] = []
+    host["SecurityOpt"][1] = "seccomp=" + json.dumps(profile, sort_keys=True)
+
+    def measure() -> dict[str, Any]:
+        return decode_docker_inspect(
+            _docker_inspect_bytes(inspected),
+            plan,
+            container_id=CONTAINER_ID,
+            container_name="bb-primary-workspace-1",
+            labels=_binding_labels(plan),
+            skeleton_path=skeleton,
+            mounts=mounts,
+            storage_bytes=plan.resources.storage_bytes,
+        )
+
+    assert measurement_mismatches(
+        requested_measurement(plan, mounts, identity=_measurement_identity(plan)),
+        measure(),
+    ) == ()
+
+    profile["syscalls"][0]["args"][0]["value"] -= 1
+    host["SecurityOpt"][1] = "seccomp=" + json.dumps(profile)
+    with pytest.raises(DockerAdapterError) as changed:
+        measure()
+    assert changed.value.code == "runtime_measurement_mismatch"
+
+    profile["syscalls"][0]["args"][0]["value"] += 1
+    host["SecurityOpt"][1] = (
+        "seccomp=" + json.dumps(profile)[:-1] + ',"defaultAction":"SCMP_ACT_ERRNO"}'
+    )
+    with pytest.raises(DockerAdapterError) as duplicated:
+        measure()
+    assert duplicated.value.code == "runtime_measurement_mismatch"
+
+
 @pytest.mark.parametrize(
     ("case", "expected_mismatch"),
     [
@@ -3355,8 +3572,8 @@ def test_inspect_decoder_reports_each_effective_control_drift_from_observed_stat
     case: str,
     expected_mismatch: str,
 ) -> None:
-    plan, skeleton, profile, mounts = _docker_plan(tmp_path)
-    inspected = _docker_inspect_payload(plan, skeleton, profile, mounts)
+    plan, skeleton, _, mounts = _docker_plan(tmp_path)
+    inspected = _docker_inspect_payload(plan, skeleton, mounts)
     host = inspected["HostConfig"]
     config = inspected["Config"]
     storage_bytes = plan.resources.storage_bytes
@@ -3397,17 +3614,13 @@ def test_inspect_decoder_reports_each_effective_control_drift_from_observed_stat
     elif case == "missing-pids":
         del host["PidsLimit"]
 
-    measured = decode_docker_inspect(
-        _docker_inspect_bytes(inspected),
-        plan,
-        container_id=CONTAINER_ID,
-        container_name="bb-primary-workspace-1",
-        labels=_binding_labels(plan),
-        skeleton_path=skeleton,
-        mounts=mounts,
-        security_profile_path=profile,
-        storage_bytes=storage_bytes,
-    )
+    measured = decode_docker_inspect(_docker_inspect_bytes(inspected),
+    plan,
+    container_id=CONTAINER_ID,
+    container_name="bb-primary-workspace-1",
+    labels=_binding_labels(plan),
+    skeleton_path=skeleton,
+    mounts=mounts, storage_bytes=storage_bytes,)
 
     assert measurement_mismatches(
         requested_measurement(
@@ -3427,13 +3640,10 @@ def test_inspect_decoder_reports_each_effective_control_drift_from_observed_stat
         ("cap-add", "runtime_measurement_mismatch"),
         ("cap-drop", "runtime_measurement_mismatch"),
         ("missing-devices", "runtime_measurement_mismatch"),
-        ("list-devices", "runtime_measurement_mismatch"),
         ("nonempty-devices", "runtime_measurement_mismatch"),
         ("missing-device-requests", "runtime_measurement_mismatch"),
-        ("list-device-requests", "runtime_measurement_mismatch"),
         ("nonempty-device-requests", "runtime_measurement_mismatch"),
         ("missing-device-cgroup-rules", "runtime_measurement_mismatch"),
-        ("list-device-cgroup-rules", "runtime_measurement_mismatch"),
         ("nonempty-device-cgroup-rules", "runtime_measurement_mismatch"),
         ("missing-tmpfs", "runtime_measurement_mismatch"),
         ("wrong-tmpfs", "runtime_measurement_mismatch"),
@@ -3458,8 +3668,8 @@ def test_inspect_decoder_rejects_malformed_or_contradictory_closed_schema(
     case: str,
     expected_code: str,
 ) -> None:
-    plan, skeleton, profile, mounts = _docker_plan(tmp_path)
-    inspected = _docker_inspect_payload(plan, skeleton, profile, mounts)
+    plan, skeleton, _, mounts = _docker_plan(tmp_path)
+    inspected = _docker_inspect_payload(plan, skeleton, mounts)
     if case == "missing-host-config":
         del inspected["HostConfig"]
     elif case == "privileged":
@@ -3468,7 +3678,7 @@ def test_inspect_decoder_rejects_malformed_or_contradictory_closed_schema(
         inspected["HostConfig"]["CapAdd"] = ["SYS_ADMIN"]
     elif case == "cap-drop":
         inspected["HostConfig"]["CapDrop"] = []
-    elif case.startswith(("missing-device", "list-device", "nonempty-device")):
+    elif case.startswith(("missing-device", "nonempty-device")):
         field = {
             "devices": "Devices",
             "device-requests": "DeviceRequests",
@@ -3476,8 +3686,6 @@ def test_inspect_decoder_rejects_malformed_or_contradictory_closed_schema(
         }[case.partition("-")[2]]
         if case.startswith("missing-"):
             del inspected["HostConfig"][field]
-        elif case.startswith("list-"):
-            inspected["HostConfig"][field] = []
         else:
             inspected["HostConfig"][field] = ["host-authority"]
     elif case == "missing-tmpfs":
@@ -3516,17 +3724,13 @@ def test_inspect_decoder_rejects_malformed_or_contradictory_closed_schema(
         inspected["HostConfig"]["UTSMode"] = "host"
 
     with pytest.raises(DockerAdapterError) as captured:
-        decode_docker_inspect(
-            _docker_inspect_bytes(inspected),
-            plan,
-            container_id=CONTAINER_ID,
-            container_name="bb-primary-workspace-1",
-            labels=_binding_labels(plan),
-            skeleton_path=skeleton,
-            mounts=mounts,
-            security_profile_path=profile,
-            storage_bytes=plan.resources.storage_bytes,
-        )
+        decode_docker_inspect(_docker_inspect_bytes(inspected),
+        plan,
+        container_id=CONTAINER_ID,
+        container_name="bb-primary-workspace-1",
+        labels=_binding_labels(plan),
+        skeleton_path=skeleton,
+        mounts=mounts, storage_bytes=plan.resources.storage_bytes,)
 
     assert captured.value.code == expected_code
 
@@ -3868,11 +4072,14 @@ async def test_definite_exec_nonzero_does_not_fence_or_trigger_cleanup(
 @pytest.mark.parametrize(
     "inspect_result",
     [
-        _result(timed_out=True),
-        _result(output_limited=True),
+        replace(_not_found(CONTAINER_ID), timed_out=True),
+        replace(_not_found(CONTAINER_ID), output_limited=True),
         _result(returncode=1, stderr=b"Cannot connect to the Docker daemon"),
         _result(returncode=1, stderr=b"permission denied"),
         _result(returncode=1, stderr=b"not found"),
+        replace(_not_found(CONTAINER_ID), returncode=-9),
+        replace(_not_found(CONTAINER_ID), stdout=b'[{"Id":"unexpected"}]\n'),
+        _not_found("d" * 64),
     ],
 )
 async def test_unmeasurable_cleanup_inspect_quarantines_without_stop_or_remove(
@@ -3928,8 +4135,14 @@ async def test_concurrent_removal_normalizes_cleanup_and_retries_idempotently(
     executor = ScriptedDockerExecutor(
         [
             _result(stdout=_identity_inspect(plan)),
-            _not_found(CONTAINER_ID),
-            _not_found(CONTAINER_ID),
+            _result(
+                returncode=1,
+                stderr=f"Error response from daemon: No such container: {CONTAINER_ID}".encode(),
+            ),
+            _result(
+                returncode=1,
+                stderr=f"Error response from daemon: No such container: {CONTAINER_ID}".encode(),
+            ),
             _not_found(CONTAINER_ID),
             _not_found(CONTAINER_ID),
         ]

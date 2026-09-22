@@ -559,6 +559,112 @@ def test_full_ancestor_collision_rejects_before_cache_or_workspace_effects(
     assert reader.loads == []
 
 
+def test_mount_target_root_is_distinct_from_strict_source_paths() -> None:
+    source_digest = digest("root-contract")
+    grant = c.MountGrant(
+        source_artifact_digest=source_digest,
+        target_logical_path=".",
+        access=c.MountAccess.READ_ONLY,
+        max_bytes=4_096,
+    )
+    assert grant.target_logical_path == "."
+
+    for logical_path in (".", "./file", "../file", "/absolute"):
+        with pytest.raises(ValueError):
+            SourceManifestEntry(
+                logical_path=logical_path,
+                kind="file",
+                byte_count=1,
+                mode=0o644,
+                content_digest=digest(b"x"),
+            )
+
+
+def test_root_repository_must_be_the_sole_materialization_entry() -> None:
+    source_digest = digest("root-repository")
+    root = MaterializationEntry(
+        source_digest=source_digest,
+        target_logical_path=".",
+        access=c.MountAccess.READ_WRITE,
+        max_bytes=4_096,
+        role="repository",
+    )
+    sibling = _entry(digest("sibling"), "sibling")
+
+    with pytest.raises(ValueError, match="root_repository_must_be_sole_entry"):
+        make_materialization_plan(
+            make_effective_plan(),
+            entries=(root, sibling),
+        )
+
+    with pytest.raises(ValueError):
+        MaterializationEntry(
+            source_digest=source_digest,
+            target_logical_path=".",
+            access=c.MountAccess.READ_WRITE,
+            max_bytes=4_096,
+            role="input",
+        )
+
+    with pytest.raises(ValueError):
+        MaterializationEntry(
+            source_digest=source_digest,
+            target_logical_path="../escape",
+            access=c.MountAccess.READ_WRITE,
+            max_bytes=4_096,
+            role="repository",
+        )
+
+
+def test_root_repository_materialization_preserves_workspace_inode_and_snapshot_root(
+    tmp_path: Path,
+) -> None:
+    source_digest = digest("root-repository-tree")
+    reader = MemorySourceReader(
+        {
+            source_digest: {
+                ".git/config": b"[core]\n\trepositoryformatversion = 0\n",
+                "README.md": b"repository",
+            }
+        }
+    )
+    store, _, _ = _store(tmp_path, reader, FrozenClock())
+    plan = make_materialization_plan(
+        make_effective_plan(),
+        entries=(
+            MaterializationEntry(
+                source_digest=source_digest,
+                target_logical_path=".",
+                access=c.MountAccess.READ_WRITE,
+                max_bytes=4_096,
+                role="repository",
+            ),
+        ),
+    )
+
+    workspace = store.materialize(plan)
+    workspace_identity = workspace.workspace_path.stat().st_ino
+    assert workspace.workspace_path.joinpath(".git", "config").read_bytes().startswith(
+        b"[core]"
+    )
+    assert workspace.workspace_path.joinpath("README.md").read_bytes() == b"repository"
+    assert workspace.workspace_path.stat().st_ino == workspace_identity
+
+    (workspace.workspace_path / "proof.txt").write_text("proof", encoding="utf-8")
+    _, snapshot_path = _seal_snapshot(
+        store,
+        workspace,
+        max_depth=8,
+        max_files=16,
+        max_inodes=32,
+        max_bytes=4_096,
+    )
+    assert (snapshot_path / "proof.txt").read_text(encoding="utf-8") == "proof"
+
+    workspace.close()
+    store.close()
+
+
 def test_materialization_preserves_declared_modes_under_restrictive_umask(
     tmp_path: Path,
 ) -> None:
