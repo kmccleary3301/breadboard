@@ -41,7 +41,9 @@ def test_target_resources_load_outside_editable_checkout_cwd(
     monkeypatch.chdir(tmp_path)
 
     assert _resource_root() == TARGET_ROOT
-    assert list_e4_target_ids() == ("oh-my-pi@16.2.13", "pi@0.57.1")
+    assert list_e4_target_ids() == (
+        "mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "pi@0.57.1"
+    )
 
 
 def test_editable_source_root_accepts_only_absolute_local_file_urls(
@@ -94,7 +96,9 @@ def test_distribution_owner_match_does_not_resolve_symlink_aliases(
 
 
 def test_pinned_targets_load_with_exact_release_source_and_runtime_assets() -> None:
-    assert list_e4_target_ids() == ("oh-my-pi@16.2.13", "pi@0.57.1")
+    assert list_e4_target_ids() == (
+        "mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "pi@0.57.1"
+    )
 
     pi = load_e4_target("pi@0.57.1")
     assert pi.descriptor["upstream"] == {
