@@ -368,9 +368,17 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         *,
         context: ProviderRuntimeContext,
     ) -> Dict[str, Any]:
-        """Project the exact request used by a profile-bound invocation."""
+        """Project the exact request used by a profile-bound invocation.
+
+        Mini's messages are already its source client's wire messages, so they are
+        sent as given rather than rebuilt from BreadBoard's canonical message shape.
+        """
+        if context.extra.get("response_consumer_id") == MINI_RESPONSE_CONSUMER_ID:
+            chat_messages = [dict(message) for message in messages]
+        else:
+            chat_messages = self._convert_messages_to_chat(messages, context=context)
         return profile.chat_request(
-            self._convert_messages_to_chat(messages, context=context),
+            chat_messages,
             self._convert_tools_to_openai(tools),
         )
 

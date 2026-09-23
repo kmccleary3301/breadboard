@@ -773,13 +773,14 @@ class EpisodeOpenAICompletionsPolicyClient:
             stream = profile.request_policy.mode == "streaming"
             context = ProviderRuntimeContext(
                 None,
-                (
+                {},
+                stream=stream,
+                extra=(
                     {"response_consumer_id": MINI_RESPONSE_CONSUMER_ID}
                     if native_binding is not None
                     and native_binding.policy.consumer_id == MINI_RESPONSE_CONSUMER_ID
                     else {}
                 ),
-                stream=stream,
                 session_id=request.episode_id,
                 input_id=request.request_digest,
                 turn_id=str(request.turn),
@@ -1246,8 +1247,12 @@ def _responses_request_to_chat(
             or tools != [thaw_json(tool) for tool in target_projection.chat_tools]
         ):
             raise ProviderContractError("Mini request does not match its compiled source surface")
-        # No assistant splitting, argument decoding, null coercion or reordering.
-        return messages, tools
+        # No assistant splitting, argument decoding, null coercion or reordering: Mini's
+        # LitellmModel sends through litellm.completion, whose message validation drops
+        # only top-level null fields and keeps every other key verbatim.
+        from litellm.utils import validate_and_fix_openai_messages
+
+        return validate_and_fix_openai_messages(messages=messages), tools
     instructions = request.get("instructions")
     if type(instructions) is not str:
         raise ProviderContractError("policy request instructions must be text")
