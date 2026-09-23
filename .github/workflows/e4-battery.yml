@@ -8,6 +8,11 @@ on:
     paths:
       - "scripts/e4_parity/**"
       - "tests/e4_parity/**"
+      - "tests/rl/harness/test_pi_native_stream_conductor.py"
+      - "tests/fixtures/pi_0_73_1_node/**"
+      - "breadboard/rl/harness/pi_native_tools.py"
+      - "breadboard/rl/harness/pi_tools_0_73_1.mjs"
+      - "config/e4_targets/pi/0.73.1/**"
       - "contracts/kernel/**"
       - "config/e4_lanes/**"
 
@@ -40,6 +45,58 @@ jobs:
 
       - name: Run full literal E4 parity battery
         run: pytest -q tests/e4_parity
+  pi-native-stream:
+    name: pi-native-stream
+    runs-on: ubuntu-latest
+    env:
+      BB_WORKSPACE_ROOT: ${{ github.workspace }}/..
+      PI_CODING_AGENT_NODE_MODULES: ${{ github.workspace }}/tests/fixtures/pi_0_73_1_node/node_modules
+      BB_REQUIRE_PINNED_PI_NODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tests/fixtures/pi_0_73_1_node/package-lock.json
+
+      - name: Install pinned Pi 0.73.1 dependencies
+        working-directory: tests/fixtures/pi_0_73_1_node
+        run: npm ci --ignore-scripts
+
+      - name: Verify pinned Pi package and registry integrity
+        working-directory: tests/fixtures/pi_0_73_1_node
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const expectedIntegrity = "sha512-gXQh3SaZmWTfVMc4Ao5+LGbVeKvzyO7tolok0nLsZgq9nGjZx/EEU3NM8C+qUnB4Nvs2rswG5qOVgLzQkq0fHQ==";
+          const packageJson = JSON.parse(fs.readFileSync("node_modules/@mariozechner/pi-coding-agent/package.json", "utf8"));
+          const lock = JSON.parse(fs.readFileSync("package-lock.json", "utf8"));
+          const entry = lock.packages["node_modules/@mariozechner/pi-coding-agent"];
+          if (packageJson.version !== "0.73.1") throw new Error(`unexpected Pi version: ${packageJson.version}`);
+          if (!entry || entry.integrity !== expectedIntegrity) throw new Error("Pi lock integrity does not match the pinned attachment");
+          if (entry.resolved !== "https://registry.npmjs.org/@mariozechner/pi-coding-agent/-/pi-coding-agent-0.73.1.tgz") throw new Error("Pi lock does not resolve the registry tarball");
+          NODE
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Bootstrap Python test environment
+        run: |
+          python -m pip install -U pip
+          python -m pip install -r requirements.txt
+          python -m pip install -e .
+
+      - name: Run pinned Pi native-stream tests
+        run: >-
+          pytest -q
+          tests/rl/harness/test_pi_native_stream_conductor.py
+          tests/e4_parity/test_pi_0_73_1_prompt_materialization.py
+
 
   fixed-point-clean-checkout:
     name: Fixed-point clean checkout (${{ matrix.pass }})
