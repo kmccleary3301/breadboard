@@ -526,6 +526,14 @@ class OMPPreparedCall:
     error: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class OMPResponseResult:
+    assistant: dict[str, Any]
+    calls: tuple[ToolCall, ...]
+    stop_reason: str
+    quiescent: bool
+
+
 class OMPSemanticsState:
     """State protocol consumed by the shared native-stream Conductor loop."""
 
@@ -552,7 +560,7 @@ class OMPSemanticsState:
         self.stream_fn_issued = 0
         self.exit_status: str | None = None
         self.native_stop_reason: str | None = None
-        self._pending_calls: tuple[OMPPreparedCall, ...] = ()
+        self.recovery = TurnRecovery()
         self._pending_finish_reason: str | None = None
         self._closed = False
         self.effects: dict[str, Any] = {}
@@ -578,7 +586,7 @@ class OMPSemanticsState:
     def project_request(self) -> dict[str, Any]:
         return {"kind": "request", "messages": [dict(message) for message in self.messages], "tools": [dict(schema) for schema in self.tool_schemas]}
 
-    def prepare_response(self, response: NativeProviderResponse) -> tuple[dict[str, Any], tuple[ToolCall, ...]]:
+    def prepare_response(self, response: NativeProviderResponse) -> OMPResponseResult:
         if not isinstance(response, NativeProviderResponse):
             raise TypeError("response must be NativeProviderResponse")
         if self.stream_fn_issued <= self.request_count:
@@ -588,16 +596,43 @@ class OMPSemanticsState:
         self.native_stop_reason = finish_reason
         calls: tuple[ToolCall, ...] = ()
         if finish_reason not in {"error", "aborted"}:
-            calls = tuple(ToolCall(call.id, call.name, call.arguments, index) for index, call in enumerate(response.tool_calls))
-        content = response.content or ""
-        assistant: dict[str, Any] = {"role": "assistant", "content": content, "stopReason": finish_reason}
-        if calls:
-            assistant["tool_calls"] = [{"id": call.id, "name": call.name, "arguments": call.arguments} for call in calls]
+            calls = tuple(
+                ToolCall(call.id, call.name, call.arguments, index)
+                for index, call in enumerate(response.tool_calls)
+            )
+        blocks: list[dict[str, Any]] = []
+        if response.content:
+            blocks.append({"type": "text", "text": response.content})
+        for call in calls:
+            blocks.append({
+                "type": "toolCall",
+                "id": call.id,
+                "name": call.name,
+                "arguments": call.arguments,
+            })
+        assistant: dict[str, Any] = {
+            "role": "assistant",
+            "content": blocks,
+            "stopReason": finish_reason,
+        }
         self.messages.append(assistant)
         self._pending_finish_reason = finish_reason
         if not calls:
+            empty_stop = finish_reason == "stop" and not response.content
+            if empty_stop and self.recovery.recover_empty_turn({"content": "", "finish_reason": "stop"}):
+                self.messages.pop()
+                self.messages.append({
+                    "role": "developer",
+                    "content": self.recovery.reminders[-1],
+                    "synthetic": True,
+                })
+                self.exit_status = None
+                return OMPResponseResult(assistant, (), finish_reason, False)
+            self.recovery.accept_turn(assistant)
             self.exit_status = "Submitted" if finish_reason == "stop" else finish_reason
-        return assistant, calls
+        else:
+            self.recovery.accept_turn(assistant)
+        return OMPResponseResult(assistant, calls, finish_reason, not calls and self.exit_status is not None)
 
     def prepare_tools(self, calls: Sequence[ToolCall]) -> dict[str, Any]:
         prepared: list[OMPPreparedCall] = []
@@ -619,7 +654,7 @@ class OMPSemanticsState:
         return {
             "kind": "prepared",
             "calls": [{"id": item.id, "name": item.name, "arguments": item.arguments, **({"error": item.error} if item.error else {})} for item in prepared],
-            "history_calls": [{"id": item.id, "name": item.name} for item in prepared],
+            "history_calls": [{"id": item.id, "name": item.name, "arguments": item.arguments} for item in prepared],
         }
 
     def execute_batch(self) -> dict[str, Any]:
@@ -631,32 +666,75 @@ class OMPSemanticsState:
                 raw_results = [ToolResult(item.id, item.name, error="native worker unavailable") for item in valid]
             else:
                 raw_results = self.worker.execute_batch([{"id": item.id, "name": item.name, "arguments": item.arguments} for item in valid])
-            by_id = {item.id: item for item in raw_results}
-            results = [ToolResult(item.id, item.name, error=item.error, details={"phase": "prepare"}) if item.error else by_id.get(item.id, ToolResult(item.id, item.name, error="native result missing")) for item in self._pending_calls]
+            by_id = {
+                item.id if isinstance(item, ToolResult) else str(item.get("id", "")): item
+                for item in raw_results
+            }
+            results = [
+                ToolResult(item.id, item.name, error=item.error, details={"phase": "prepare"})
+                if item.error
+                else by_id.get(item.id, ToolResult(item.id, item.name, error="native result missing"))
+                for item in self._pending_calls
+            ]
         projected = []
         for index, result in enumerate(results):
             if isinstance(result, ToolResult):
-                projected.append({"id": result.id, "completion_index": index, "content": result.output, "details": dict(result.details), "isError": result.error is not None, "terminate": False})
+                projected.append({
+                    "id": result.id,
+                    "completion_index": result.completion_index if result.completion_index is not None else index,
+                    "content": result.output,
+                    "details": dict(result.details),
+                    "isError": result.error is not None,
+                    "terminate": False,
+                })
             else:
-                projected.append({"id": result.get("id", ""), "completion_index": index, **dict(result)})
-        return {"kind": "tool_results", "results": projected}
+                projected.append({"id": result.get("id", ""), "completion_index": result.get("completion_index", index), **dict(result)})
 
-    def commit_tool_results(self, calls: Sequence[ToolCall], results: Sequence[Mapping[str, Any] | ToolResult]) -> None:
+        return {"kind": "tool_results", "results": projected}
+    def commit_tool_results(
+        self,
+        calls: Sequence[ToolCall],
+        results: Sequence[Mapping[str, Any] | ToolResult],
+    ) -> None:
         if len(calls) != len(results):
             raise OMPPhaseError("tool result count does not match call count")
-        for result in results:
+        indexed = list(enumerate(results))
+        indexed.sort(
+            key=lambda item: (
+                item[1].get("completion_index", item[0])
+                if isinstance(item[1], Mapping)
+                else (
+                    item[1].completion_index
+                    if item[1].completion_index is not None
+                    else item[0]
+                )
+            )
+        )
+        for source_index, result in indexed:
+            call = calls[source_index]
             if isinstance(result, ToolResult):
-                self.messages.append({"role": "toolResult", "toolCallId": result.id, "toolName": result.name, "content": result.output, "isError": result.error is not None})
+                content: Any = [{"type": "text", "text": result.output}]
+                is_error = result.error is not None
+                tool_id, tool_name = result.id, result.name
             else:
-                self.messages.append({"role": "toolResult", **dict(result)})
+                raw = dict(result)
+                native_content = raw.get("content", "")
+                content = (
+                    native_content
+                    if isinstance(native_content, list)
+                    else [{"type": "text", "text": str(native_content)}]
+                )
+                is_error = bool(raw.get("isError", raw.get("is_error", False)))
+                tool_id, tool_name = call.id, call.name
+            self.messages.append({
+                "role": "toolResult",
+                "toolCallId": tool_id,
+                "toolName": tool_name,
+                "content": content,
+                "isError": is_error,
+            })
         self._pending_calls = ()
         self._pending_finish_reason = None
-
-    def close(self) -> dict[str, Any]:
-        self._closed = True
-        if self.worker is not None:
-            self.worker.stop()
-        return {"kind": "closed", "cleanup": {"processes": [], "all_dead": True}}
 
     def to_trace(self) -> dict[str, Any]:
         return {
@@ -677,6 +755,7 @@ __all__ = [
     "OMPSemanticsState",
     "OMPPhaseError",
     "OMPPreparedCall",
+    "OMPResponseResult",
     "PHASE_SCHEMA_VERSION",
     "EditStore",
     "NativeProviderResponse",

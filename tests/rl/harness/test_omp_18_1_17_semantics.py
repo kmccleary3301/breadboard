@@ -4,10 +4,12 @@ import asyncio
 
 import pytest
 
+from breadboard_engine.provider.native_response import NativeProviderResponse, NativeToolCall
 from breadboard.rl.harness.omp_native_tools import supplier_cli_invocation
 from breadboard.rl.harness.runners.omp_semantics import (
     EditStore,
     NoRetryPolicy,
+    OMPSemanticsState,
     SeenAnchorError,
     ToolCall,
     ToolResult,
@@ -134,3 +136,71 @@ def test_rerun4_six_case_replay_policy_matrix() -> None:
         calls = [ToolCall(case_id, "bash", {"command": f"printf {case_id}"})]
         result = asyncio.run(run_tool_batch(calls, reason, execute))
         assert bool(result) is (reason == "length" or should_dispatch)
+
+
+def test_omp_empty_stop_uses_bounded_native_recovery() -> None:
+    state = OMPSemanticsState(task="continue")
+    assert state.begin_query() is None
+    response = NativeProviderResponse(
+        binding_digest="binding",
+        request_digest="request",
+        response_id="empty",
+        model="capture",
+        content=None,
+        finish_reason="stop",
+    )
+    result = state.prepare_response(response)
+    assert result.quiescent is False
+    assert state.is_exited is False
+    assert state.messages[-1]["role"] == "developer"
+    assert "Attempt #1/3" in state.messages[-1]["content"]
+
+
+def test_omp_phase_state_commits_native_completion_order() -> None:
+    class Worker:
+        def execute_batch(self, calls: list[dict[str, object]]) -> list[dict[str, object]]:
+            return [
+                {"id": calls[0]["id"], "completion_index": 1, "content": "slow", "details": {}, "isError": False},
+                {"id": calls[1]["id"], "completion_index": 0, "content": "fast", "details": {}, "isError": False},
+            ]
+
+    state = OMPSemanticsState(task="do work", worker=Worker())
+    assert state.begin_query() is None
+    response = NativeProviderResponse(
+        binding_digest="binding",
+        request_digest="request",
+        response_id="response",
+        model="capture",
+        content=None,
+        finish_reason="tool_calls",
+        tool_calls=(
+            NativeToolCall("a", "bash", '{"command":"slow"}'),
+            NativeToolCall("b", "read", '{"path":"fast"}'),
+        ),
+    )
+    prepared_response = state.prepare_response(response)
+    assert [call.id for call in prepared_response.calls] == ["a", "b"]
+    state.prepare_tools(prepared_response.calls)
+    batch = state.execute_batch()
+    assert [item["id"] for item in batch["results"]] == ["a", "b"]
+    assert [item["completion_index"] for item in batch["results"]] == [1, 0]
+    state.commit_tool_results(prepared_response.calls, batch["results"])
+    assert [item["toolCallId"] for item in state.messages[-2:]] == ["b", "a"]
+
+
+def test_omp_request_cap_refuses_before_native_query() -> None:
+    state = OMPSemanticsState(task="bounded", request_cap=1)
+    assert state.begin_query() is None
+    state.prepare_response(NativeProviderResponse(
+        binding_digest="binding",
+        request_digest="request",
+        response_id="response",
+        model="capture",
+        content="done",
+        finish_reason="stop",
+    ))
+    refusal = state.begin_query()
+    assert refusal is not None
+    assert refusal["stopReason"] == "error"
+    assert state.request_count == 1
+    assert state.stream_fn_issued == 2

@@ -5,6 +5,8 @@ const RPC_SCHEMA = "bb.native-worker.rpc.v1";
 const PHASE_SCHEMA = "bb.omp-native.v1";
 const SOURCE_ROOT = "/opt/omp/source/oh-my-pi-3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec";
 const TOOL_NAMES = ["read", "bash", "edit", "write"] as const;
+let boundedDescriptions: Record<string, string> = {};
+
 
 type Call = { id: string; name: string; arguments: Record<string, unknown> };
 let session: any = null;
@@ -15,6 +17,12 @@ let workspace = "";
 async function initialize(payload: Record<string, any>) {
   if (payload.workspace === undefined || payload.scratch === undefined) throw new Error("initialize requires injected workspace and scratch");
   workspace = String(payload.workspace);
+  const descriptions = payload.advertisement?.tool_descriptions;
+  if (descriptions && typeof descriptions === "object" && !Array.isArray(descriptions)) {
+    boundedDescriptions = Object.fromEntries(
+      Object.entries(descriptions).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+    );
+  }
   // The pinned source root is deployment-selected; static source imports cannot
   // represent the verified runtime path used by the SIF installation.
   const { createAgentSession, Settings } = await import(`${SOURCE_ROOT}/packages/coding-agent/src/sdk.ts`);
@@ -41,7 +49,7 @@ async function initialize(payload: Record<string, any>) {
     schema_version: PHASE_SCHEMA,
     kind: "initialized",
     system_prompt: String(payload.advertisement?.system_prompt ?? ""),
-    tool_schemas: tools.map((tool: any) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters } })),
+    tool_schemas: tools.map((tool: any) => ({ type: "function", function: { name: tool.name, description: boundedDescriptions[tool.name] ?? String(tool.description ?? ""), parameters: tool.parameters } })),
     bootstrap: { consumer_id: "breadboard.oh-my-pi.v18.1.17", workspace, source_commit: SOURCE_ROOT.split("-").at(-1), settings: payload.advertisement?.settings ?? {} },
   };
 }
@@ -49,7 +57,7 @@ async function initialize(payload: Record<string, any>) {
 async function dispatch(operation: string, payload: Record<string, any>): Promise<Record<string, any>> {
   if (operation === "initialize") return initialize(payload);
   if (!session) throw new Error("worker must be initialized before phases");
-  if (operation === "project_request") return { schema_version: PHASE_SCHEMA, kind: "request", messages: payload.messages ?? [], tools: tools.map((tool: any) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters } })) };
+  if (operation === "project_request") return { schema_version: PHASE_SCHEMA, kind: "request", messages: payload.messages ?? [], tools: tools.map((tool: any) => ({ type: "function", function: { name: tool.name, description: boundedDescriptions[tool.name] ?? String(tool.description ?? ""), parameters: tool.parameters } })) };
   if (operation === "prepare_tools") {
     prepared = (payload.calls ?? []).map((call: any) => {
       const item: any = { id: String(call.id), name: String(call.name), arguments: call.arguments };
@@ -57,14 +65,20 @@ async function dispatch(operation: string, payload: Record<string, any>): Promis
       if (!item.arguments || typeof item.arguments !== "object" || Array.isArray(item.arguments)) item.error = item.error ?? "Invalid tool arguments: expected a JSON object";
       return item;
     });
-    return { schema_version: PHASE_SCHEMA, kind: "prepared", calls: prepared, history_calls: prepared.map(({ id, name }) => ({ id, name })) };
+    return { schema_version: PHASE_SCHEMA, kind: "prepared", calls: prepared, history_calls: prepared.map((call) => ({ id: call.id, name: call.name, arguments: call.arguments })) };
   }
   if (operation === "execute_batch") {
-    const completed: any[] = [];
+    const completed: Array<Record<string, unknown> & { source_index: number }> = [];
     await Promise.all(prepared.map(async (call, sourceIndex) => {
-      if (call.error) { completed.push({ id: call.id, completion_index: completed.length, content: call.error, details: { phase: "prepare" }, isError: true, source_index: sourceIndex }); return; }
+      if (call.error) {
+        completed.push({ id: call.id, completion_index: completed.length, content: call.error, details: { phase: "prepare" }, isError: true, source_index: sourceIndex });
+        return;
+      }
       const tool = tools.find((candidate: any) => candidate.name === call.name);
-      if (!tool) { completed.push({ id: call.id, completion_index: completed.length, content: `OMP tool is not admitted: ${call.name}`, details: {}, isError: true, source_index: sourceIndex }); return; }
+      if (!tool) {
+        completed.push({ id: call.id, completion_index: completed.length, content: `OMP tool is not admitted: ${call.name}`, details: {}, isError: true, source_index: sourceIndex });
+        return;
+      }
       try {
         const result = await tool.execute(call.id, call.arguments);
         completed.push({ id: call.id, completion_index: completed.length, content: result.content ?? [], details: result.details ?? {}, isError: Boolean(result.details?.isError), terminate: Boolean(result.details?.terminate), source_index: sourceIndex });
@@ -72,7 +86,7 @@ async function dispatch(operation: string, payload: Record<string, any>): Promis
         completed.push({ id: call.id, completion_index: completed.length, content: String(error), details: { phase: "execute" }, isError: true, source_index: sourceIndex });
       }
     }));
-    completed.sort((left, right) => left.completion_index - right.completion_index);
+    completed.sort((left, right) => left.source_index - right.source_index);
     return { schema_version: PHASE_SCHEMA, kind: "tool_results", results: completed.map(({ source_index, ...result }) => result) };
   }
   if (operation === "close") {

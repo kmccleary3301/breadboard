@@ -14,8 +14,7 @@ from types import MappingProxyType, ModuleType
 from typing import Any, Literal
 
 from breadboard_engine.compilation.provider_response import PI_RESPONSE_CONSUMER_ID
-from breadboard.rl.harness.runners import pi_semantics
-
+from breadboard.rl.harness.runners import omp_semantics, pi_semantics
 
 @dataclass(frozen=True, slots=True)
 class NativeStreamProfile:
@@ -43,6 +42,15 @@ def _pi_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> An
     return pi_semantics.PiSemanticsState(task=task, system_prompt=system_prompt)
 
 
+def _omp_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
+    return omp_semantics.OMPSemanticsState(
+        task=task,
+        system_prompt=system_prompt,
+        tool_schemas=bootstrap.get("tool_schemas", ()),
+        worker=bootstrap.get("worker"),
+    )
+
+
 NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
     PI_RESPONSE_CONSUMER_ID: NativeStreamProfile(
         consumer_id=PI_RESPONSE_CONSUMER_ID,
@@ -59,6 +67,20 @@ NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
         package_subpath="node_modules/@mariozechner/pi-coding-agent",
         state_module=pi_semantics,
         state_factory=_pi_state,
+    ),
+    omp_semantics.CONSUMER_ID: NativeStreamProfile(
+        consumer_id=omp_semantics.CONSUMER_ID,
+        target_id="oh-my-pi@18.1.17",
+        target_version=18,
+        phase_schema_version=omp_semantics.PHASE_SCHEMA_VERSION,
+        tool_order=omp_semantics.ALLOWED_TOOLS,
+        max_turns=8,
+        action_timeout_ms=40_000,
+        episode_timeout_seconds=120,
+        ack_policy="none",
+        incomplete_stop_reasons=frozenset({"error", "aborted"}),
+        state_module=omp_semantics,
+        state_factory=_omp_state,
     ),
 })
 

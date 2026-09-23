@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+from pathlib import Path
+import sys
+
 import pytest
 
-from breadboard.rl.harness.omp_native_tools import NativeToolWorker, deny_excluded_capabilities, pinned_worker_spec
+from breadboard.rl.harness.omp_native_tools import (
+    NativeToolWorker,
+    deny_excluded_capabilities,
+    pinned_worker_spec,
+    verified_tool_worker_path,
+)
 
 
 def test_native_worker_spec_binds_source_and_real_leaves() -> None:
@@ -12,7 +20,7 @@ def test_native_worker_spec_binds_source_and_real_leaves() -> None:
     assert "pi-natives EditStore/EditSession" in metadata["native_leaves"]
     assert "brush-core Shell" in metadata["native_leaves"]
 
-    assert "native-tool-worker.ts" not in spec.as_dict().get("native_entrypoint", "")
+
 def test_denial_happens_before_native_resolution() -> None:
     with pytest.raises(PermissionError):
         deny_excluded_capabilities({"path": "https://example.invalid"})
@@ -20,9 +28,83 @@ def test_denial_happens_before_native_resolution() -> None:
         deny_excluded_capabilities({"pty": True})
 
 
-def test_worker_refuses_unpinned_offline_execution() -> None:
-    worker = NativeToolWorker(cwd="/workspace/repo")
-    assert worker.start().command[0].endswith("bun")
-    with pytest.raises(RuntimeError):
-        worker.execute("bash", {"command": "echo hi"})
+def test_worker_resolves_verified_installed_entrypoint(tmp_path: Path) -> None:
+    worker = NativeToolWorker(cwd=str(tmp_path))
+    command = worker.start().command
+    assert command[1] == str(verified_tool_worker_path())
+    assert str(tmp_path) not in command[1]
     worker.stop()
+
+
+def test_worker_has_no_offline_execute_fallback() -> None:
+    assert not hasattr(NativeToolWorker(cwd="/workspace/repo"), "execute")
+
+
+def test_persistent_worker_phases_preserve_wire_order(tmp_path: Path) -> None:
+    script = tmp_path / "phase_worker.py"
+    script.write_text(
+        """
+import json
+import struct
+import sys
+while True:
+    header = sys.stdin.buffer.read(4)
+    if not header:
+        break
+    body = sys.stdin.buffer.read(struct.unpack('>I', header)[0])
+    request = json.loads(body)
+    operation = request['operation']
+    payload = request.get('payload', {})
+    if operation == 'initialize':
+        result = {'schema_version': 'bb.omp-native.v1', 'kind': 'initialized', 'system_prompt': '', 'tool_schemas': [], 'bootstrap': {}}
+    elif operation == 'prepare_tools':
+        result = {'schema_version': 'bb.omp-native.v1', 'kind': 'prepared', 'calls': payload.get('calls', []), 'history_calls': payload.get('calls', [])}
+    elif operation == 'execute_batch':
+        calls = payload.get('calls', [])
+        result = {'schema_version': 'bb.omp-native.v1', 'kind': 'tool_results', 'results': [{'id': call['id'], 'completion_index': 1 - index, 'content': 'ok', 'details': {}, 'isError': False} for index, call in enumerate(calls)]}
+    elif operation == 'close':
+        result = {'schema_version': 'bb.omp-native.v1', 'kind': 'closed', 'cleanup': {'processes': [], 'all_dead': True}}
+    else:
+        result = {'schema_version': 'bb.omp-native.v1', 'kind': 'request', 'messages': [], 'tools': []}
+    encoded = json.dumps({'schema_version': 'bb.native-worker.rpc.v1', 'request_id': request['request_id'], 'result': result}).encode()
+    sys.stdout.buffer.write(struct.pack('>I', len(encoded)) + encoded)
+    sys.stdout.buffer.flush()
+""".strip()
+    )
+
+    class TestSpec:
+        def tool_worker_command(self, *, cwd: str) -> tuple[str, ...]:
+            return (sys.executable, str(script), "--cwd", cwd)
+
+    worker = NativeToolWorker(cwd=str(tmp_path), spec=TestSpec())
+    assert worker.phase("initialize", {"workspace": str(tmp_path)})["kind"] == "initialized"
+    calls = [{"id": "a", "name": "read", "arguments": {}}, {"id": "b", "name": "bash", "arguments": {}}]
+    prepared = worker.phase("prepare_tools", {"calls": calls})
+    assert prepared["kind"] == "prepared"
+    completed = worker.phase("execute_batch", {"calls": calls})
+    assert [item["id"] for item in completed["results"]] == ["a", "b"]
+    assert [item["completion_index"] for item in completed["results"]] == [1, 0]
+    assert worker.close()["cleanup"]["all_dead"] is True
+
+
+@pytest.mark.skipif(
+    not Path(pinned_worker_spec().bun).is_file()
+    or not Path(pinned_worker_spec().source_root).is_dir(),
+    reason="pinned OMP runtime is unavailable on this host",
+)
+def test_real_pinned_worker_runs_initialize_and_close(tmp_path: Path) -> None:
+    worker = NativeToolWorker(cwd=str(tmp_path))
+    worker.start()
+    initialized = worker.phase(
+        "initialize",
+        {
+            "task": "read the workspace",
+            "model_config": {},
+            "advertisement": {"system_prompt": "", "tool_descriptions": {}},
+            "workspace": str(tmp_path),
+            "scratch": str(tmp_path / ".scratch"),
+        },
+    )
+    assert initialized["kind"] == "initialized"
+    closed = worker.close()
+    assert closed["cleanup"]["all_dead"] is True

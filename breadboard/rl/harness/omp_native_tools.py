@@ -8,7 +8,9 @@ and request/result projection without executing native code.
 from dataclasses import dataclass
 import importlib.resources
 import json
+import os
 from pathlib import Path
+import select
 import struct
 import subprocess
 from typing import Any, Mapping
@@ -23,6 +25,16 @@ OMP_ARCHIVE_SHA256 = "sha256:67822418bad69de015d28a1bbd45fa7be689fdce367dfa3d584
 OMP_LOCK_SHA256 = "sha256:9c0ed804704050ad4dbc3de84581694c7e505fdc39b0c13dea337300bae82a7e"
 
 ALLOWED_TOOLS = ("read", "bash", "edit", "write")
+
+def verified_tool_worker_path() -> Path:
+    """Return the package-installed worker, never a cwd-relative copy."""
+    resource = importlib.resources.files("breadboard.rl.harness.runners").joinpath(
+        "omp_native_tool_worker.ts"
+    )
+    path = Path(resource).resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"installed OMP phase worker is missing: {path}")
+    return path
 EXCLUDED_CAPABILITIES = frozenset({"url", "ssh", "pty", "archive", "sqlite", "image", "video", "pdf", "document", "internal-resource"})
 
 
@@ -50,9 +62,10 @@ class PinnedNativeWorkerSpec:
         """Invoke a worker entrypoint with the pinned Bun, never `/bin/sh`."""
         entry = str(Path(self.source_root) / entrypoint)
         return (self.bun, entry, *args)
+
     def tool_worker_command(self, *, cwd: str) -> tuple[str, ...]:
-        """Run controller-owned SDK composition; it never starts model.prompt."""
-        entry = str(Path(cwd) / OMP_TOOL_WORKER_RELATIVE)
+        """Run controller-owned SDK composition from the installed package."""
+        entry = str(verified_tool_worker_path())
         return (self.bun, entry, "--cwd", cwd)
 
     def as_dict(self) -> dict[str, Any]:
@@ -144,16 +157,26 @@ def deny_excluded_capabilities(arguments: Mapping[str, Any]) -> None:
     for key in ("pty", "async"):
         if arguments.get(key) is True:
             raise PermissionError(f"OMP capability denied: {key}")
+class NativeWorkerPhaseError(RuntimeError):
+    """A framed OMP phase failed in the pinned worker."""
 
 
 class NativeToolWorker:
-    """Lifecycle-owned adapter; real execution is intentionally explicit."""
+    """Persistent framed adapter for the source-owned OMP tool worker."""
 
-    def __init__(self, *, cwd: str, env: Mapping[str, str] | None = None, spec: PinnedNativeWorkerSpec | None = None):
+    def __init__(
+        self,
+        *,
+        cwd: str,
+        env: Mapping[str, str] | None = None,
+        spec: PinnedNativeWorkerSpec | None = None,
+    ):
         self.cwd = cwd
         self.env = dict(env or {})
         self.spec = spec or pinned_worker_spec()
         self.started = False
+        self._process: subprocess.Popen[bytes] | None = None
+        self._request_id = 0
 
     def invocation(self, entrypoint: str, args: tuple[str, ...] = ()) -> NativeInvocation:
         if not entrypoint or entrypoint.startswith("/"):
@@ -169,11 +192,97 @@ class NativeToolWorker:
             self.env,
         )
 
-    def stop(self) -> None:
-        self.started = False
+    def _ensure_process(self) -> subprocess.Popen[bytes]:
+        if self._process is not None:
+            return self._process
+        invocation = self.start()
+        environment = os.environ.copy()
+        environment.update(self.env)
+        self._process = subprocess.Popen(
+            invocation.command,
+            cwd=self.cwd,
+            env=environment,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        return self._process
 
-    def execute(self, *_args: Any, **_kwargs: Any) -> Any:
-        raise RuntimeError("native worker execution requires the pinned Bun/Rust assembly; offline controller has no shell fallback")
+    @staticmethod
+    def _read_frame(stream: Any, timeout: float) -> bytes:
+        ready, _, _ = select.select([stream], [], [], timeout)
+        if not ready:
+            raise NativeWorkerPhaseError("timed out waiting for native worker phase")
+        header = stream.read(4)
+        if len(header) != 4:
+            raise NativeWorkerPhaseError("native worker closed before phase response")
+        length = struct.unpack(">I", header)[0]
+        payload = stream.read(length)
+        if len(payload) != length:
+            raise NativeWorkerPhaseError("native worker returned a truncated phase frame")
+        return payload
+
+    def phase(
+        self,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_seconds: float = 35.0,
+    ) -> dict[str, Any]:
+        if operation not in {"initialize", "project_request", "prepare_tools", "execute_batch", "close"}:
+            raise ValueError(f"unknown OMP phase: {operation}")
+        process = self._ensure_process()
+        if process.stdin is None or process.stdout is None:
+            raise NativeWorkerPhaseError("native worker pipes are unavailable")
+        self._request_id += 1
+        request_id = self._request_id
+        body = json.dumps(
+            {
+                "schema_version": "bb.native-worker.rpc.v1",
+                "request_id": request_id,
+                "operation": operation,
+                "payload": dict(payload),
+            },
+            separators=(",", ":"),
+        ).encode()
+        process.stdin.write(struct.pack(">I", len(body)) + body)
+        process.stdin.flush()
+        response = json.loads(self._read_frame(process.stdout, timeout_seconds))
+        if response.get("schema_version") != "bb.native-worker.rpc.v1" or response.get("request_id") != request_id:
+            raise NativeWorkerPhaseError("native worker returned an invalid phase envelope")
+        if "error" in response:
+            error = response["error"]
+            raise NativeWorkerPhaseError(str(error.get("message", error)))
+        result = response.get("result")
+        if not isinstance(result, dict) or result.get("schema_version") != "bb.omp-native.v1":
+            raise NativeWorkerPhaseError("native worker returned an invalid OMP phase result")
+        return result
+
+    def execute_batch(self, calls: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+        prepared = self.phase("prepare_tools", {"calls": calls})
+        if prepared.get("kind") != "prepared":
+            raise NativeWorkerPhaseError("prepare_tools returned an invalid result")
+        result = self.phase("execute_batch", {})
+        if result.get("kind") != "tool_results" or not isinstance(result.get("results"), list):
+            raise NativeWorkerPhaseError("execute_batch returned an invalid result")
+        return [item for item in result["results"] if isinstance(item, dict)]
+
+    def close(self) -> dict[str, Any]:
+        try:
+            return self.phase("close", {})
+        finally:
+            self.stop()
+
+    def stop(self) -> None:
+        process = self._process
+        self._process = None
+        self.started = False
+        if process is None:
+            return
+        if process.poll() is None:
+            process.terminate()
+            process.wait(timeout=5)
+
 
 
 __all__ = [
@@ -181,6 +290,7 @@ __all__ = [
     "EXCLUDED_CAPABILITIES",
     "NativeInvocation",
     "NativeToolWorker",
+    "NativeWorkerPhaseError",
     "OMP_TOOL_WORKER_RELATIVE",
     "OMP_COMMIT",
     "OMP_LOCK_SHA256",
@@ -192,4 +302,5 @@ __all__ = [
     "pinned_worker_spec",
     "supplier_cli_invocation",
     "validate_native_tool_name",
+    "verified_tool_worker_path",
 ]
