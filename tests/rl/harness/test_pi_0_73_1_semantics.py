@@ -7,7 +7,6 @@ from breadboard.rl.harness.runners.pi_semantics import (
     PiSemanticsState,
     execute_pi_tool,
     parse_streaming_json,
-    prepare_edit_arguments,
 )
 from breadboard_engine.provider.native_response import NativeProviderResponse, NativeStreamFragment, NativeToolCall
 
@@ -16,7 +15,7 @@ def response(name: str, arguments: str, *, finish: str = "tool_calls", content: 
     return NativeProviderResponse("binding", "request", "response", "model", content, finish, (NativeToolCall("call", name, arguments),), stream_fragments=tuple(fragments))
 
 
-def test_stream_fragments_reconstruct_and_coerce_path(tmp_path: Path):
+def test_stream_fragments_reconstruct_and_native_validation(tmp_path: Path):
     fragments = (
         NativeStreamFragment("content", 0, "Streaming "),
         NativeStreamFragment("tool_arguments", 1, '{"path":', "call", "read"),
@@ -24,16 +23,16 @@ def test_stream_fragments_reconstruct_and_coerce_path(tmp_path: Path):
     )
     state = PiSemanticsState(task="read", cwd=tmp_path)
     result = state.consume_response(response("read", "", content=None, fragments=fragments))
-    assert result.calls[0].arguments == {"path": "123"}
     assert result.results[0].is_error
     assert "ENOENT" in result.results[0].content
     assert result.assistant["content"][0]["text"] == "Streaming "
 
 
-def test_prepare_edit_arguments_and_parallel_order(tmp_path: Path):
+def test_native_edit_prepare_and_parallel_order(tmp_path: Path):
     (tmp_path / "seed.txt").write_text("old\n")
-    prepared = prepare_edit_arguments({"path": "seed.txt", "edits": '[{"oldText":"old","newText":"new"}]'})
-    assert prepared["edits"] == [{"oldText": "old", "newText": "new"}]
+    edited = execute_pi_tool("edit", {"path": "seed.txt", "oldText": "old", "newText": "new"}, tmp_path)
+    assert not edited.is_error
+    assert (tmp_path / "seed.txt").read_text() == "new\n"
     state = PiSemanticsState(task="parallel", cwd=tmp_path)
     result = state.consume_response(
         NativeProviderResponse(

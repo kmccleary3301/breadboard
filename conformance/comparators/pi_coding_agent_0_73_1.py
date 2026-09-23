@@ -10,9 +10,10 @@ an equivalent source for messages. The supplier side is read from
 ``case_dir/trace.json`` and the receiver's ``http-transcript.jsonl``.
 
 Only these explicit normalizations are allowed: ``/capture/workspace`` and
-``/capture/home`` become ``<WORKSPACE>`` and ``<HOME>``; tool-call IDs and
-request/response timestamps become deterministic placeholders. No arbitrary
-placeholder or volatile-field removal is performed.
+``/capture/home`` become ``<WORKSPACE>`` and ``<HOME>``; request/response
+timestamps become ``<TIMESTAMP>``. Tool-call IDs are retained because they
+bind each observation to its originating call. No arbitrary placeholder or
+volatile-field removal is performed.
 """
 from __future__ import annotations
 
@@ -31,7 +32,6 @@ TRACE_SCHEMA_VERSION = "bb.e4.pi-canonical-episode.v1"
 NORMALIZATIONS = {
     "/capture/workspace": "<WORKSPACE>",
     "/capture/home": "<HOME>",
-    "tool_call_id": "<TOOL_CALL_ID>",
     "timestamp": "<TIMESTAMP>",
 }
 
@@ -52,8 +52,6 @@ def _normalize(value: Any, *, call_counter: list[int] | None = None) -> Any:
         for key, item in value.items():
             if key in {"timestamp", "created_at", "updated_at"}:
                 result[key] = "<TIMESTAMP>"
-            elif key in {"toolCallId", "tool_call_id", "id"} and isinstance(item, str) and ("tool" in key.lower() or item.startswith("pi-tool-")):
-                result[key] = "<TOOL_CALL_ID>"
             else:
                 result[key] = _normalize(item, call_counter=call_counter)
         return result
@@ -71,13 +69,12 @@ def _content_blocks(message: Mapping[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(block, Mapping):
             continue
         if block.get("type") == "toolCall":
-            blocks.append({"type": "toolCall", "id": "<TOOL_CALL_ID>", "name": block.get("name"), "arguments": _normalize(block.get("arguments", {}))})
+            blocks.append({"type": "toolCall", "id": block.get("id"), "name": block.get("name"), "arguments": _normalize(block.get("arguments", {}))})
         elif block.get("type") == "text":
             blocks.append({"type": "text", "text": block.get("text", "")})
         else:
             blocks.append(dict(_normalize(block)))
     return blocks
-
 
 def _canonical_messages(messages: Any) -> list[dict[str, Any]]:
     if not isinstance(messages, list):
@@ -92,7 +89,13 @@ def _canonical_messages(messages: Any) -> list[dict[str, Any]]:
         elif role in {"toolResult", "tool", "tool_result"}:
             content = message.get("content", [])
             text = "\n".join(str(item.get("text", "")) for item in content if isinstance(item, Mapping) and item.get("type") == "text") if isinstance(content, list) else str(content)
-            result.append({"role": "toolResult", "tool_name": message.get("toolName", message.get("name")), "content": text, "is_error": bool(message.get("isError", message.get("is_error", False)))})
+            result.append({
+                "role": "toolResult",
+                "tool_call_id": message.get("toolCallId", message.get("tool_call_id")),
+                "tool_name": message.get("toolName", message.get("name")),
+                "content": text,
+                "is_error": bool(message.get("isError", message.get("is_error", False))),
+            })
         elif role == "user":
             result.append({"role": "user", "content": _normalize(message.get("content", ""))})
     return result
@@ -110,7 +113,13 @@ def _from_events(events: Any) -> list[dict[str, Any]]:
                 messages.append(dict(event["message"]))
         elif event.get("type") == "tool_execution_end":
             result = event.get("result", {})
-            messages.append({"role": "toolResult", "toolName": event.get("toolName"), "content": result.get("content", []) if isinstance(result, Mapping) else result, "isError": event.get("isError", False)})
+            messages.append({
+                "role": "toolResult",
+                "toolCallId": event.get("toolCallId", event.get("tool_call_id")),
+                "toolName": event.get("toolName"),
+                "content": result.get("content", []) if isinstance(result, Mapping) else result,
+                "isError": event.get("isError", False),
+            })
     return _canonical_messages(messages)
 
 

@@ -5,9 +5,8 @@ The stream consumer reads exactly these fields from ``NativeProviderResponse``:
 ``name``, and raw ``arguments``), and ``stream_fragments`` (ordered values with
 ``kind``, ``index``, ``text``, optional ``call_id`` and ``name``).  Binding and
 request digests are retained in the request record but never interpreted here.
-The consumer reconstructs tool arguments from the ordered argument fragments,
-then applies Pi's partial-json repair, TypeBox-like primitive coercion, edit
-argument preparation, and ordered parallel tool execution.
+The consumer reconstructs tool arguments from ordered argument fragments and
+hands each call to the pinned Node worker for validation and execution.
 
 The generic host seam is deliberately small: a caller supplies one
 ``NativeProviderResponse`` for each admitted HTTP response, or a ``stream_fn``
@@ -17,19 +16,13 @@ locally and does not call the supplied stream function.
 """
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
-import subprocess
-import tempfile
-import threading
-import time
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping
 
 from breadboard_engine.provider.native_response import NativeProviderResponse
 
@@ -66,11 +59,13 @@ class PiToolResult:
     terminate: bool = False
 
     def as_message(self) -> dict[str, Any]:
+        native_content = self.details.get("native_content")
+        content = native_content if isinstance(native_content, list) and self.details.get("image_delivery") else [{"type": "text", "text": self.content}]
         return {
             "role": "toolResult",
             "toolCallId": self.call_id,
             "toolName": self.name,
-            "content": [{"type": "text", "text": self.content}],
+            "content": content,
             "isError": self.is_error,
         }
 
@@ -93,57 +88,8 @@ class PiRequestRecord:
     request_digest: str | None
 
 
-_MUTATION_LOCKS: dict[str, threading.Lock] = {}
-_MUTATION_LOCKS_GUARD = threading.Lock()
 
 
-@contextmanager
-def _mutation_queue(path: Path):
-    key = str(path.resolve())
-    with _MUTATION_LOCKS_GUARD:
-        lock = _MUTATION_LOCKS.setdefault(key, threading.Lock())
-    lock.acquire()
-    try:
-        yield
-    finally:
-        lock.release()
-        with _MUTATION_LOCKS_GUARD:
-            if not lock.locked() and _MUTATION_LOCKS.get(key) is lock:
-                _MUTATION_LOCKS.pop(key, None)
-
-
-def _js_string(value: Any) -> str:
-    if isinstance(value, str):
-        return value
-    if value is True:
-        return "true"
-    if value is False:
-        return "false"
-    if value is None:
-        return "null"
-    if isinstance(value, (int, float)):
-        return str(value)
-    return str(value)
-
-
-def _coerce_string(value: Any) -> Any:
-    if isinstance(value, (str, int, float, bool)):
-        return _js_string(value)
-    return value
-
-
-def _coerce_number(value: Any) -> Any:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return value
-    if isinstance(value, str):
-        try:
-            number = float(value)
-            return int(number) if number.is_integer() else number
-        except ValueError:
-            return value
-    return value
 
 
 def repair_json(value: str) -> str:
@@ -229,278 +175,85 @@ def parse_streaming_json(value: str | None) -> dict[str, Any]:
     return {}
 
 
-def prepare_edit_arguments(value: Any) -> Any:
-    """Apply Pi's legacy edit argument and JSON-string edits compatibility."""
-    if not isinstance(value, Mapping):
-        return value
-    args = dict(value)
-    if isinstance(args.get("edits"), str):
-        try:
-            parsed = json.loads(args["edits"])
-        except ValueError:
-            parsed = None
-        if isinstance(parsed, list):
-            args["edits"] = parsed
-    if isinstance(args.get("oldText"), str) and isinstance(args.get("newText"), str):
-        edits = list(args.get("edits")) if isinstance(args.get("edits"), list) else []
-        edits.append({"oldText": args["oldText"], "newText": args["newText"]})
-        args.pop("oldText", None)
-        args.pop("newText", None)
-        args["edits"] = edits
-    return args
 
 
-def _coerce_tool_arguments(name: str, args: Any) -> dict[str, Any]:
-    if not isinstance(args, Mapping):
-        raise ValueError("Tool arguments must be an object")
-    result = dict(args)
-    if name in {"read", "edit", "write"}:
-        if "path" in result:
-            result["path"] = _coerce_string(result["path"])
-    if name == "read":
-        for key in ("offset", "limit"):
-            if key in result:
-                result[key] = _coerce_number(result[key])
-    elif name == "write" and "content" in result:
-        result["content"] = _coerce_string(result["content"])
-    elif name == "bash":
-        if "command" in result:
-            result["command"] = _coerce_string(result["command"])
-        if "timeout" in result:
-            result["timeout"] = _coerce_number(result["timeout"])
-    elif name == "edit":
-        result = prepare_edit_arguments(result)
-    return result
-
-
-def _require_string(args: Mapping[str, Any], key: str) -> str:
-    value = args.get(key)
-    if not isinstance(value, str):
-        raise ValueError(f"{key}: expected string")
-    return value
-
-
-def _resolve_path(cwd: Path, value: str) -> Path:
-    path = Path(value)
-    return path if path.is_absolute() else cwd / path
-
-
-def _node_missing(path: Path) -> str:
-    return f"ENOENT: no such file or directory, access '{path}'"
-
-
-def _truncate_head(text: str, *, max_lines: int = DEFAULT_MAX_LINES, max_bytes: int = DEFAULT_MAX_BYTES) -> tuple[str, bool]:
-    lines = text.split("\n")
-    selected: list[str] = []
-    consumed = 0
-    truncated = False
-    for index, line in enumerate(lines):
-        candidate = line if not selected else "\n" + line
-        if len(selected) >= max_lines or consumed + len(candidate.encode("utf-8")) > max_bytes:
-            truncated = True
-            break
-        selected.append(line)
-        consumed += len(candidate.encode("utf-8"))
-    output = "\n".join(selected)
-    return output, truncated
-
-
-def _truncate_tail(text: str, *, max_lines: int = DEFAULT_MAX_LINES, max_bytes: int = DEFAULT_MAX_BYTES) -> tuple[str, bool]:
-    lines = text.split("\n")
-    truncated = len(lines) > max_lines
-    selected = lines[-max_lines:] if truncated else lines
-    output = "\n".join(selected)
-    while len(output.encode("utf-8")) > max_bytes and "\n" in output:
-        truncated = True
-        output = output.split("\n", 1)[1]
-    if len(output.encode("utf-8")) > max_bytes:
-        truncated = True
-        raw = output.encode("utf-8")[-max_bytes:]
-        while raw and raw[0] & 0xC0 == 0x80:
-            raw = raw[1:]
-        output = raw.decode("utf-8", "replace")
-    return output, truncated
-
-
-def _utf16_length(value: str) -> int:
-    return len(value.encode("utf-16-le")) // 2
-
-
-def _read_tool(cwd: Path, args: Mapping[str, Any], *, image_delivery: bool) -> tuple[str, Mapping[str, Any]]:
-    path = _require_string(args, "path")
-    absolute = _resolve_path(cwd, path)
-    if not absolute.exists():
-        raise FileNotFoundError(_node_missing(absolute))
-    if absolute.is_dir():
-        raise IsADirectoryError(f"EISDIR: illegal operation on a directory, read")
-    if absolute.suffix.lower() in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
-        if image_delivery:
-            return f"Read image file [{absolute.suffix[1:]}]", {"image_delivery": False}
-        return "[Image omitted: image delivery disabled]", {"image_delivery": False}
-    text = absolute.read_text(encoding="utf-8")
-    offset = args.get("offset")
-    limit = args.get("limit")
-    start = max(0, int(offset) - 1) if isinstance(offset, (int, float)) else 0
-    lines = text.split("\n")
-    if start >= len(lines):
-        raise ValueError(f"Offset {offset} is beyond end of file ({len(lines)} lines total)")
-    selected = "\n".join(lines[start : start + int(limit)]) if isinstance(limit, (int, float)) else "\n".join(lines[start:])
-    output, truncated = _truncate_head(selected)
-    if truncated:
-        shown = len(output.split("\n"))
-        end_line = start + shown
-        total = len(lines)
-        output += f"\n\n[Showing lines {start + 1}-{end_line} of {total}. Use offset={end_line + 1} to continue.]"
-    elif isinstance(limit, (int, float)) and start + int(limit) < len(lines):
-        remaining = len(lines) - start - int(limit)
-        output += f"\n\n[{remaining} more lines in file. Use offset={start + int(limit) + 1} to continue.]"
-    return output, {}
-
-
-def _write_tool(cwd: Path, args: Mapping[str, Any]) -> tuple[str, Mapping[str, Any]]:
-    path = _require_string(args, "path")
-    content = _require_string(args, "content")
-    absolute = _resolve_path(cwd, path)
-    with _mutation_queue(absolute):
-        absolute.parent.mkdir(parents=True, exist_ok=True)
-        absolute.write_text(content, encoding="utf-8")
-    return f"Successfully wrote {_utf16_length(content)} bytes to {path}", {}
-
-
-def _edit_tool(cwd: Path, args: Mapping[str, Any]) -> tuple[str, Mapping[str, Any]]:
-    path = _require_string(args, "path")
-    edits = args.get("edits")
-    if not isinstance(edits, list) or not edits:
-        raise ValueError("Edit tool input is invalid. edits must contain at least one replacement.")
-    absolute = _resolve_path(cwd, path)
-    with _mutation_queue(absolute):
-        if not absolute.exists():
-            raise FileNotFoundError(f"Could not edit file: {path}. Error code: ENOENT.")
-        raw = absolute.read_text(encoding="utf-8")
-        ending = "\r\n" if "\r\n" in raw else "\n"
-        content = raw.replace("\r\n", "\n").replace("\r", "\n")
-        normalized: list[tuple[str, str, int, int]] = []
-        for index, edit in enumerate(edits):
-            if not isinstance(edit, Mapping) or not isinstance(edit.get("oldText"), str) or not isinstance(edit.get("newText"), str):
-                raise ValueError(f"edits[{index}] must contain string oldText and newText")
-            old = edit["oldText"].replace("\r\n", "\n").replace("\r", "\n")
-            new = edit["newText"].replace("\r\n", "\n").replace("\r", "\n")
-            if not old:
-                raise ValueError(f"edits[{index}].oldText must not be empty in {path}.")
-            occurrences = content.count(old)
-            if occurrences == 0:
-                if len(edits) == 1:
-                    raise ValueError(f"Could not find the exact text in {path}. The old text must match exactly including all whitespace and newlines.")
-                raise ValueError(f"Could not find edits[{index}] in {path}. The oldText must match exactly including all whitespace and newlines.")
-            if occurrences > 1:
-                if len(edits) == 1:
-                    raise ValueError(f"Found {occurrences} occurrences of the text in {path}. The text must be unique. Please provide more context to make it unique.")
-                raise ValueError(f"Found {occurrences} occurrences of edits[{index}] in {path}. Each oldText must be unique. Please provide more context to make it unique.")
-            at = content.index(old)
-            normalized.append((old, new, at, at + len(old)))
-        for left, right in zip(sorted(normalized, key=lambda item: item[2]), sorted(normalized, key=lambda item: item[2])[1:]):
-            if right[2] < left[3]:
-                raise ValueError(f"Edits overlap in {path}. Each edit must target a separate region.")
-        for old, new, start, end in sorted(normalized, key=lambda item: item[2], reverse=True):
-            content = content[:start] + new + content[end:]
-        if content == raw.replace("\r\n", "\n").replace("\r", "\n"):
-            raise ValueError(f"No changes made to {path}. The replacements produced identical content.")
-        if ending == "\r\n":
-            content = content.replace("\n", "\r\n")
-        absolute.write_text(content, encoding="utf-8", newline="")
-    return f"Successfully replaced {len(edits)} block(s) in {path}.", {}
-
-
-def _bash_tool(cwd: Path, args: Mapping[str, Any]) -> tuple[str, Mapping[str, Any]]:
-    command = _require_string(args, "command")
-    timeout = args.get("timeout")
-    timeout_value = float(timeout) if isinstance(timeout, (int, float)) and timeout > 0 else None
+def execute_pi_tool(
+    name: str,
+    arguments: Mapping[str, Any] | Any,
+    cwd: str | os.PathLike[str],
+    *,
+    image_delivery: bool = False,
+    call_id: str = "",
+) -> PiToolResult:
+    """Execute one Pi tool through the pinned Node worker."""
     try:
-        proc = subprocess.Popen(
-            ["/bin/bash", "-lc", command],
-            cwd=str(cwd),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            env=os.environ.copy(),
+        from breadboard.rl.harness.pi_native_tools import execute_native_tool
+
+        result = execute_native_tool(name, arguments, cwd=cwd, image_delivery=image_delivery, call_id=call_id)
+        return PiToolResult(
+            call_id,
+            name,
+            str(result.get("text", "")),
+            bool(result.get("isError", False)),
+            result.get("details", {}),
+            bool(result.get("terminate", False)),
         )
-        try:
-            stdout, _ = proc.communicate(timeout=timeout_value)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            stdout, _ = proc.communicate()
-            text = stdout.decode("utf-8", "replace") if stdout else ""
-            raise PiSemanticsError(f"{text}\n\nCommand timed out after {timeout} seconds" if text else f"Command timed out after {timeout} seconds")
-    except OSError as exc:
-        raise PiSemanticsError(str(exc)) from exc
-    text = stdout.decode("utf-8", "replace") if stdout else ""
-    text = text.replace("\r", "")
-    display, truncated = _truncate_tail(text)
-    details: dict[str, Any] = {}
-    if truncated:
-        temp = tempfile.NamedTemporaryFile(prefix="pi-bash-", suffix=".log", delete=False)
-        temp.write(text.encode("utf-8"))
-        temp.close()
-        details["fullOutputPath"] = temp.name
-        lines = text.split("\n")
-        end = len(lines)
-        start = max(1, end - len(display.split("\n")) + 1)
-        if len(lines) > DEFAULT_MAX_LINES:
-            display += f"\n\n[Showing lines {start}-{end} of {len(lines)}. Full output: {temp.name}]"
-        else:
-            display += f"\n\n[Showing lines {start}-{end} ({DEFAULT_MAX_BYTES / 1024:.0f}KB limit). Full output: {temp.name}]"
-    if not display:
-        display = "(no output)"
-    if proc.returncode != 0:
-        raise PiSemanticsError(f"{display}\n\nCommand exited with code {proc.returncode}")
-    return display, details
-
-
-def execute_pi_tool(name: str, arguments: Mapping[str, Any] | Any, cwd: str | os.PathLike[str], *, image_delivery: bool = False) -> PiToolResult:
-    """Execute one Pi built-in tool with source-compatible result text."""
-    if name not in TOOL_NAMES:
-        return PiToolResult("", name, f"Tool {name} not found", True)
-    try:
-        args = _coerce_tool_arguments(name, arguments)
-        if name == "read":
-            content, details = _read_tool(Path(cwd), args, image_delivery=image_delivery)
-        elif name == "write":
-            content, details = _write_tool(Path(cwd), args)
-        elif name == "edit":
-            content, details = _edit_tool(Path(cwd), args)
-        else:
-            content, details = _bash_tool(Path(cwd), args)
-        return PiToolResult("", name, content, False, details)
     except Exception as exc:
-        return PiToolResult("", name, str(exc), True)
+        return PiToolResult(call_id, name, str(exc), True)
 
 
 def _fragment_tool_calls(response: NativeProviderResponse) -> tuple[PiToolCall, ...]:
-    calls_by_id: dict[str, dict[str, Any]] = {}
-    order: list[str] = []
-    for call in response.tool_calls:
-        calls_by_id[call.id] = {"id": call.id, "name": call.name, "arguments": call.arguments}
-        order.append(call.id)
-    fragment_args: dict[str, list[str]] = {}
-    fragment_names: dict[str, str] = {}
+    """Reassemble by the provider stream index, not by delayed IDs.
+
+    OpenAI-completions first keys blocks by ``tool_call.index`` and only uses
+    IDs as a secondary lookup. PR129's finalized fragments may carry an ID
+    only after the first argument delta, so anonymous groups are retained by
+    index and merged with their named call before validation.
+    """
+    calls = [
+        {"id": call.id, "name": call.name, "arguments": call.arguments}
+        for call in response.tool_calls
+    ]
+    by_id: dict[str, list[str]] = {}
+    anonymous: dict[int, list[str]] = {}
+    anonymous_names: dict[int, str] = {}
     for fragment in response.stream_fragments:
         if fragment.kind != "tool_arguments":
             continue
-        call_id = fragment.call_id or f"index:{fragment.index}"
-        fragment_args.setdefault(call_id, []).append(fragment.text)
-        if fragment.name:
-            fragment_names[call_id] = fragment.name
-    for call_id, pieces in fragment_args.items():
-        if call_id in calls_by_id:
-            calls_by_id[call_id]["arguments"] = "".join(pieces)
+        if fragment.call_id:
+            by_id.setdefault(fragment.call_id, []).append(fragment.text)
         else:
-            calls_by_id[call_id] = {"id": call_id, "name": fragment_names.get(call_id, ""), "arguments": "".join(pieces)}
-            order.append(call_id)
-    calls: list[PiToolCall] = []
-    for call_id in order:
-        raw = calls_by_id[call_id]
+            anonymous.setdefault(fragment.index, []).append(fragment.text)
+            if fragment.name:
+                anonymous_names.setdefault(fragment.index, fragment.name)
+    assigned_anonymous: set[int] = set()
+    for call in calls:
+        pieces = list(by_id.get(call["id"], ()))
+        for index in sorted(anonymous):
+            if index in assigned_anonymous:
+                continue
+            if anonymous_names.get(index) == call["name"]:
+                pieces.extend(anonymous[index])
+                assigned_anonymous.add(index)
+        if not pieces:
+            for index in sorted(anonymous):
+                if index not in assigned_anonymous:
+                    pieces.extend(anonymous[index])
+                    assigned_anonymous.add(index)
+                    break
+        if pieces:
+            call["arguments"] = "".join(pieces)
+    for call_id, pieces in by_id.items():
+        if not any(call["id"] == call_id for call in calls):
+            calls.append({"id": call_id, "name": "", "arguments": "".join(pieces)})
+    for index in sorted(anonymous):
+        if index not in assigned_anonymous:
+            calls.append({"id": f"index:{index}", "name": anonymous_names.get(index, ""), "arguments": "".join(anonymous[index])})
+    result: list[PiToolCall] = []
+    for raw in calls:
         parsed = parse_streaming_json(raw["arguments"])
-        calls.append(PiToolCall(raw["id"], raw["name"], _coerce_tool_arguments(raw["name"], parsed)))
-    return tuple(calls)
+        result.append(PiToolCall(raw["id"], raw["name"], parsed))
+    return tuple(result)
 
 
 def _content_from_response(response: NativeProviderResponse) -> str:
@@ -510,7 +263,14 @@ def _content_from_response(response: NativeProviderResponse) -> str:
 
 
 def _native_stop_reason(finish_reason: str) -> str:
-    return {"tool_calls": "toolUse", "stop": "stop", "length": "length", "content_filter": "error"}.get(finish_reason, finish_reason)
+    return {
+        "tool_calls": "toolUse",
+        "stop": "stop",
+        "length": "length",
+        "content_filter": "error",
+        "error": "error",
+        "aborted": "aborted",
+    }.get(finish_reason, finish_reason)
 
 
 class PiSemanticsState:
@@ -554,53 +314,121 @@ class PiSemanticsState:
         self.native_stop_reason = "error"
         return PiResponseResult(assistant, (), (), "error", True)
 
-    def request(self, stream_fn: Callable[..., NativeProviderResponse], request: Any = None) -> NativeProviderResponse | PiResponseResult:
-        """Issue one streamFn attempt; cap checks happen before calling it."""
+    def begin_query(self) -> PiResponseResult | None:
+        """Admit one provider query before transport performs network I/O.
+
+        A ``None`` result reserves the query slot.  Once the cap is reached,
+        the ninth attempt is recorded as unsent and returns Pi's terminal
+        request-limit response without invoking transport.
+        """
+        if self.stream_fn_issued > self.request_count:
+            raise PiSemanticsError("a provider query is already pending")
         self.stream_fn_issued += 1
         if self.request_count >= self.request_cap:
             self.request_records.append(PiRequestRecord(self.stream_fn_issued, False, None))
             return self._cap_response()
+        return None
+
+    def request(self, stream_fn: Callable[..., NativeProviderResponse], request: Any = None) -> NativeProviderResponse | PiResponseResult:
+        """Issue one streamFn attempt; cap checks happen before calling it."""
+        terminal = self.begin_query()
+        if terminal is not None:
+            return terminal
         response = stream_fn(request) if request is not None else stream_fn()
         if not isinstance(response, NativeProviderResponse):
             raise TypeError("stream_fn must return NativeProviderResponse")
-        self.request_count += 1
-        self.request_records.append(PiRequestRecord(self.stream_fn_issued, True, response.request_digest))
         return response
 
-    def consume_response(self, response: NativeProviderResponse) -> PiResponseResult:
-        """Consume one admitted native response and dispatch its ordered tool batch."""
+    def prepare_response(self, response: NativeProviderResponse) -> PiResponseResult:
+        """Commit an admitted assistant response without executing its tools."""
         if not isinstance(response, NativeProviderResponse):
             raise TypeError("response must be NativeProviderResponse")
         if self.request_count >= self.request_cap:
             return self._cap_response()
         self.request_count += 1
-        self.stream_fn_issued = max(self.stream_fn_issued, self.request_count)
-        calls = _fragment_tool_calls(response)
+        self.request_records.append(PiRequestRecord(self.stream_fn_issued, True, response.request_digest))
+        stop_reason = _native_stop_reason(response.finish_reason)
+        calls = () if response.finish_reason in {"error", "aborted"} else _fragment_tool_calls(response)
         content = _content_from_response(response)
         blocks: list[dict[str, Any]] = []
         if content:
             blocks.append({"type": "text", "text": content})
         for call in calls:
             blocks.append({"type": "toolCall", "id": call.id, "name": call.name, "arguments": call.arguments})
-        assistant = {"role": "assistant", "content": blocks, "stopReason": _native_stop_reason(response.finish_reason)}
+        assistant = {"role": "assistant", "content": blocks, "stopReason": stop_reason}
         self.messages.append(assistant)
+        self.native_stop_reason = stop_reason
         if not calls:
-            self.native_stop_reason = assistant["stopReason"]
-            self.exit_status = "Submitted" if assistant["stopReason"] == "stop" else assistant["stopReason"]
-            return PiResponseResult(assistant, (), (), assistant["stopReason"], True)
-        with ThreadPoolExecutor(max_workers=max(1, len(calls))) as executor:
-            pending = []
-            for call in calls:
-                pending.append(executor.submit(execute_pi_tool, call.name, call.arguments, self.cwd, image_delivery=self.image_delivery))
-            raw_results = [future.result() for future in pending]
-        results: list[PiToolResult] = []
-        for call, raw in zip(calls, raw_results):
-            result = PiToolResult(call.id, call.name, raw.content, raw.is_error, raw.details, raw.terminate)
-            results.append(result)
+            self.exit_status = "Submitted" if stop_reason == "stop" else stop_reason
+        return PiResponseResult(assistant, calls, (), stop_reason, not calls)
+
+    @staticmethod
+    def _result_from_port(call: PiToolCall, raw: PiToolResult | Mapping[str, Any]) -> PiToolResult:
+        if isinstance(raw, PiToolResult):
+            return PiToolResult(call.id, call.name, raw.content, raw.is_error, raw.details, raw.terminate)
+        content = raw.get("content", raw.get("text", ""))
+        if isinstance(content, list):
+            text = "".join(
+                str(part.get("text", "")) for part in content
+                if isinstance(part, Mapping) and part.get("type") == "text"
+            )
+            native_content: Any = content
+        else:
+            text = str(content)
+            native_content = [{"type": "text", "text": text}]
+        details = dict(raw.get("details", {})) if isinstance(raw.get("details"), Mapping) else {}
+        details.setdefault("native_content", native_content)
+        return PiToolResult(
+            call.id,
+            call.name,
+            text,
+            bool(raw.get("isError", raw.get("is_error", False))),
+            details,
+            bool(raw.get("terminate", False)),
+        )
+
+    def commit_tool_results(
+        self,
+        calls: Iterable[PiToolCall],
+        results: Iterable[PiToolResult | Mapping[str, Any]],
+    ) -> tuple[PiToolResult, ...]:
+        """Join sandbox results to calls in source order and commit history."""
+        ordered_calls = tuple(calls)
+        ordered_results = tuple(results)
+        if len(ordered_calls) != len(ordered_results):
+            raise PiSemanticsError("tool result count does not match tool call count")
+        committed = tuple(self._result_from_port(call, raw) for call, raw in zip(ordered_calls, ordered_results))
+        for result in committed:
             self.messages.append(result.as_message())
-        quiescent = assistant["stopReason"] not in {"toolUse", "tool_calls"}
-        self.native_stop_reason = assistant["stopReason"]
-        return PiResponseResult(assistant, calls, tuple(results), assistant["stopReason"], quiescent)
+        return committed
+
+    def consume_response(self, response: NativeProviderResponse) -> PiResponseResult:
+        """Offline wrapper: prepare a response, execute native tools, then commit."""
+        if self.stream_fn_issued <= self.request_count:
+            terminal = self.begin_query()
+            if terminal is not None:
+                return terminal
+        prepared = self.prepare_response(response)
+        if not prepared.calls:
+            return prepared
+        from breadboard.rl.harness.pi_native_tools import dispatch_native_tools
+
+        raw_results = dispatch_native_tools(
+            [
+                {"id": call.id, "name": call.name, "arguments": call.arguments}
+                for call in prepared.calls
+            ],
+            cwd=self.cwd,
+            image_delivery=self.image_delivery,
+        )
+        results = self.commit_tool_results(prepared.calls, raw_results)
+        return PiResponseResult(
+            prepared.assistant,
+            prepared.calls,
+            results,
+            prepared.stop_reason,
+            prepared.quiescent,
+        )
 
     def run_episode(
         self,
@@ -621,9 +449,6 @@ class PiSemanticsState:
                 if isinstance(outcome, PiResponseResult):
                     results.append(outcome)
                     break
-                # request() reserves the admitted slot; consume_response owns
-                # the actual response count and increments it once.
-                self.request_count -= 1
                 result = self.consume_response(outcome)
                 results.append(result)
                 if result.quiescent:
@@ -635,12 +460,9 @@ class PiSemanticsState:
                     response = next(iterator)
                 except StopIteration:
                     if self.request_count >= self.request_cap and results and not results[-1].quiescent:
-                        self.stream_fn_issued += 1
-                        results.append(self._cap_response())
-                    break
-                self.stream_fn_issued += 1
-                if self.request_count >= self.request_cap:
-                    results.append(self._cap_response())
+                        terminal = self.begin_query()
+                        if terminal is not None:
+                            results.append(terminal)
                     break
                 result = self.consume_response(response)
                 results.append(result)
@@ -706,7 +528,6 @@ __all__ = [
     "PiToolResult",
     "execute_pi_tool",
     "parse_streaming_json",
-    "prepare_edit_arguments",
     "repair_json",
     "run_episode",
 ]
