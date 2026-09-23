@@ -1,0 +1,34 @@
+{
+  "schema_version": "bb.e4.target.v1",
+  "target_id": "oh-my-pi@18.1.17",
+  "family": "oh_my_pi",
+  "version": "18.1.17",
+  "execution": {
+    "config_asset": "harness.yaml",
+    "system_prompt_asset": "prompts/system-prompt.md",
+    "tool_surface_asset": "tool-surface.json",
+    "input_declarations_asset": "input-declarations.json",
+    "native_worker_asset": "native-worker.json",
+    "semantic_policy_asset": "semantic-policy.json"
+  },
+  "upstream": {
+    "repository": "https://github.com/can1357/oh-my-pi.git",
+    "source": {
+      "commit": "3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec",
+      "directory": "packages/coding-agent",
+      "archive": "05_oh_my_pi_source_18.1.17_3b3a6dc9.zip",
+      "archive_sha256": "sha256:67822418bad69de015d28a1bbd45fa7be689fdce367dfa3d584bdfcfbfcb5587"
+    },
+    "package": {
+      "name": "@oh-my-pi/pi-coding-agent",
+      "version": "18.1.17",
+      "tarball": "06_oh_my_pi_npm_18.1.17.tgz",
+      "integrity": "sha512-kkKsQUAStT8O6z9vlDQMwQzMBzUBSxA5vBrGpONEdOrgSVzYMtVWxxm1t6uSVFpN9cophbTCFRV0wRAonc8XVw=="
+    }
+  },
+  "native": {
+    "worker": "breadboard.rl.harness.omp_native_tools:NativeToolWorker",
+    "leaves": ["pi-natives EditStore/EditSession", "brush-core Shell", "uutils"],
+    "offline_execution": false
+  }
+}

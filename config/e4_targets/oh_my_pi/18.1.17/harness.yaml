@@ -1,0 +1,33 @@
+schema_version: bb.e4.target_config.v1
+target_id: oh-my-pi@18.1.17
+prompt:
+  renderer: oh-my-pi-native-18.1.17
+  asset: prompts/system-prompt.md
+  dynamic_fields:
+    - task
+    - cwd
+    - date
+    - model
+    - contextFiles
+    - toolInfo
+    - toolInventory
+    - personality
+    - environment
+    - rules
+tools:
+  surface_asset: tool-surface.json
+  input_declarations: input-declarations.json
+  normalization:
+    search: grep
+    find: glob
+runtime:
+  bun: pinned:3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec
+  native_worker: native-worker.json
+  rust_edit: pi-natives.EditSession
+  shell: brush-core.Shell
+limits:
+  max_requests: 8
+  model_max_tokens: 2048
+  episode_wall_seconds: 120
+  request_wall_seconds: 60
+  action_watchdog_seconds: 40
