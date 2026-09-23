@@ -50,6 +50,9 @@ def test_supplier_projection_and_replay_projection_share_canonical_episode(tmp_p
 def test_packet_640_fixture_round_trips_and_rejects_tampered_request() -> None:
     fixture = Path(__file__).parent / "fixtures" / "openclaw_packet_640"
     expected = project_supplier_case(fixture)
+    receipt = json.loads((fixture / "case-receipt.json").read_text())
+    assert expected["request_count"] == receipt["receiver_request_count"] == 3
+    assert receipt["effects"]["marker.txt"]["sha256"] == expected["effects"]["marker.txt"]
     raw_requests = [
         json.loads(line)["body"]
         for line in (fixture / "receiver" / "http-transcript.jsonl").read_text().splitlines()
@@ -64,7 +67,6 @@ def test_packet_640_fixture_round_trips_and_rejects_tampered_request() -> None:
     })
     report = compare({"capture": {"trace": expected}, "replay": observed, "scope": {}})
     assert report["ok"] is True
-    assert expected["request_count"] == 3
     assert [call["name"] for call in expected["tool_calls"]] == ["write", "read"]
     assert expected["effects"]["marker.txt"] == (
         "sha256:f7a2b67b1ea18fb2bed758b564bb874610c2d875b07b08e0300d59f70a7bd958"
