@@ -3087,3 +3087,38 @@ def test_tmpfs_quota_mount_path_race_unmounts_only_covered_descriptor(
     assert all(target != os.fspath(root) for target, _detach in unmounted)
     assert authority._mounted is False
     assert authority._covered_descriptor == -1
+
+def test_workspace_seed_mount_starts_with_exact_file_mode_and_private_baseline(
+    tmp_path: Path,
+) -> None:
+    seed_digest = digest("workspace-seed")
+    reader = MemorySourceReader(
+        {seed_digest: {"AGENTS.md": b"seed\n"}},
+        modes={(seed_digest, "AGENTS.md"): 0o600},
+    )
+    store, _cache_root, workspace_root = _store(
+        tmp_path, reader, FrozenClock(), namespace=31_000
+    )
+    plan = make_materialization_plan(
+        make_effective_plan(),
+        entries=(
+            MaterializationEntry(
+                seed_digest,
+                ".",
+                c.MountAccess.READ_WRITE,
+                4_096,
+                "workspace_seed",
+            ),
+        ),
+    )
+    materialized = store.materialize(plan)
+    try:
+        assert sorted(path.name for path in materialized.workspace_path.iterdir()) == [
+            "AGENTS.md"
+        ]
+        assert stat.S_IMODE((materialized.workspace_path / "AGENTS.md").stat().st_mode) == 0o600
+        assert materialized.seed_baseline_path is not None
+        assert materialized.seed_baseline_path.is_dir()
+        assert not (materialized.workspace_path / ".git").exists()
+    finally:
+        materialized.close()

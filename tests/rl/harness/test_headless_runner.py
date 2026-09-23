@@ -22,6 +22,7 @@ from breadboard.rl.harness.headless import (
     HeadlessWorkspaceInput,
     _atomic_write,
     _project_headless_run,
+    _validate_repository_base_commit_binding,
     run_headless_request,
 )
 from breadboard.rl.harness.runners.base import freeze_json_object, thaw_json
@@ -30,6 +31,36 @@ from breadboard.rl.harness.qualification import (
     materialize_production_composition_fixture,
 )
 from tests.rl.harness.e4_compiler_test_helper import compile_pi_target
+def test_headless_workspace_mode_preserves_repository_identity_and_rejects_mixed_states() -> None:
+    task_image = "sha256:" + "0" * 64
+    legacy = HeadlessWorkspaceInput(
+        repository_snapshot_digest=None,
+        base_commit="1" * 40,
+        task_image_digest=task_image,
+    )
+    assert legacy.identity_dict() == {
+        "repository_snapshot_digest": None,
+        "base_commit": "1" * 40,
+        "task_image_digest": task_image,
+        "outer_isolation": None,
+    }
+    seeded = HeadlessWorkspaceInput(
+        workspace_mode="seeded",
+        workspace_directory_mode=0o755,
+        workspace_seed_digest="sha256:" + "1" * 64,
+        task_image_digest=task_image,
+    )
+    _validate_repository_base_commit_binding(
+        HeadlessRunRequest.model_construct(workspace=seeded),
+        {},
+    )
+    with pytest.raises(ValueError):
+        HeadlessWorkspaceInput(
+            workspace_mode="seeded",
+            base_commit="1" * 40,
+            task_image_digest=task_image,
+        )
+
 
 def test_atomic_result_publication_refuses_existing_destination(
     tmp_path: Path,

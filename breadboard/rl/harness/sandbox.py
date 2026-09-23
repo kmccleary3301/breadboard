@@ -53,6 +53,8 @@ from .runners.base import (
 from .native_session import NativeSession, NativeSessionError
 from .native_worker import MAX_FRAME_BYTES
 from .sandbox_docker import VERIFIER_RESULT_MAX_BYTES
+EMPTY_TREE_BASE_COMMIT = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
 
 VERIFIER_REQUEST_RELATIVE_PATH = "input/verifier-request.json"
 VERIFIER_REQUEST_SCHEMA_VERSION = "bb.rl.verifier-request.v1"
@@ -1399,7 +1401,24 @@ def build_sandbox_execution_plan(request: WorkspaceOpenRequest, registries: Regi
         required.append((plan.task.repository_snapshot_digest, "repository"))
     required += [(value, "dataset") for value in plan.task.dataset_digests]
     required += [(value, "input") for value in plan.task.input_artifact_digests]
-    required += [(value, "setup_input") for record in setup_records for value in record.input_digests]
+    if plan.task.repository_snapshot_digest is None:
+        root_mounts = tuple(
+            mount for mount in plan.sandbox.mounts if mount.target_logical_path == "."
+        )
+        if len(root_mounts) > 1:
+            raise SandboxPlanError(
+                "seed workspace has multiple root mounts", code="task_input_unmapped"
+            )
+        root_digests = {mount.source_artifact_digest for mount in root_mounts}
+        required = [
+            (digest, "workspace_seed" if role == "input" and digest in root_digests else role)
+            for digest, role in required
+        ]
+    required += [
+        (value, "setup_input")
+        for record in setup_records
+        for value in record.input_digests
+    ]
     if any(digest not in mounts_by_digest for digest, _ in required):
         raise SandboxPlanError("task or setup input has no admitted target", code="task_input_unmapped")
     role_by_digest = {digest: role for digest, role in required}
@@ -1502,8 +1521,19 @@ def _sealed_repository_diff(
     scratch_directory: Path,
     base_commit: str,
     plan: SandboxExecutionPlan,
+    empty_base: bool = False,
+    seed_baseline: Path | None = None,
 ) -> Mapping[str, Any]:
-    if (
+    seed_base = empty_base or seed_baseline is not None
+    if seed_base:
+        if (
+            re.fullmatch(r"sha256:[0-9a-f]{64}", base_commit) is None
+            and base_commit != EMPTY_TREE_BASE_COMMIT
+        ):
+            raise VerifierSnapshotError(
+                "workspace seed identity is invalid", code="snapshot_tampered"
+            )
+    elif (
         len(base_commit) != 40
         or base_commit != base_commit.lower()
         or any(character not in "0123456789abcdef" for character in base_commit)
@@ -1528,13 +1558,14 @@ def _sealed_repository_diff(
         environment: Mapping[str, str],
         stdout_limit: int,
         cwd: Path = repository,
+        input_data: bytes | None = None,
     ) -> tuple[int, bytes, bytes]:
         try:
             process = subprocess.Popen(
                 (pinned.proc_fd_path, *arguments),
                 cwd=cwd,
                 env=dict(environment),
-                stdin=subprocess.DEVNULL,
+                stdin=subprocess.PIPE if input_data is not None else subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 pass_fds=(pinned.fd,),
@@ -1550,6 +1581,9 @@ def _sealed_repository_diff(
             raise VerifierSnapshotError(
                 "sealed workspace diff pipes are unavailable", code="snapshot_tampered"
             )
+        if input_data is not None and process.stdin is not None:
+            process.stdin.write(input_data)
+            process.stdin.close()
         stdout = bytearray()
         stderr = bytearray()
         streams = {
@@ -1615,39 +1649,48 @@ def _sealed_repository_diff(
             selector.close()
             process.stdout.close()
             process.stderr.close()
+            if process.stdin is not None:
+                process.stdin.close()
             if process.poll() is None:
                 kill_process_group()
 
     try:
         identity = repository.stat(follow_symlinks=False)
-        source_git_directory = repository / ".git"
-        source_objects = source_git_directory / "objects"
-        if (
-            not stat.S_ISDIR(identity.st_mode)
-            or not source_git_directory.is_dir()
-            or not source_objects.is_dir()
-        ):
+        if not stat.S_ISDIR(identity.st_mode):
             raise VerifierSnapshotError(
                 "sealed workspace repository layout is unsupported",
                 code="snapshot_tampered",
             )
-        forbidden_object_authorities = (
-            source_objects / "info" / "alternates",
-            source_objects / "info" / "http-alternates",
-            source_git_directory / "info" / "grafts",
-            source_git_directory / "shallow",
-        )
-        if any(path.exists() for path in forbidden_object_authorities):
-            raise VerifierSnapshotError(
-                "sealed workspace contains external Git object authority",
-                code="snapshot_tampered",
+        source_git_directory = repository / ".git"
+        source_objects = source_git_directory / "objects"
+        if not seed_base:
+            if not source_git_directory.is_dir() or not source_objects.is_dir():
+                raise VerifierSnapshotError(
+                    "sealed workspace repository layout is unsupported",
+                    code="snapshot_tampered",
+                )
+            forbidden_object_authorities = (
+                source_objects / "info" / "alternates",
+                source_objects / "info" / "http-alternates",
+                source_git_directory / "info" / "grafts",
+                source_git_directory / "shallow",
             )
+            if any(path.exists() for path in forbidden_object_authorities):
+                raise VerifierSnapshotError(
+                    "sealed workspace contains external Git object authority",
+                    code="snapshot_tampered",
+                )
         for current, directories, files in os.walk(repository):
             current_path = Path(current)
-            if current_path == repository:
-                directories.remove(".git")
-                continue
-            if ".git" in directories or ".git" in files:
+            if ".git" in directories:
+                if not seed_base and current_path == repository:
+                    directories.remove(".git")
+                else:
+                    raise VerifierSnapshotError(
+                        "sealed workspace contains an embedded Git repository",
+                        code="snapshot_tampered",
+                    )
+            if ".git" in files:
                 raise VerifierSnapshotError(
                     "sealed workspace contains an embedded Git repository",
                     code="snapshot_tampered",
@@ -1672,6 +1715,12 @@ def _sealed_repository_diff(
                 "GIT_CONFIG_NOSYSTEM": "1",
                 "GIT_OPTIONAL_LOCKS": "0",
                 "GIT_TERMINAL_PROMPT": "0",
+                "GIT_AUTHOR_NAME": "BreadBoard Verifier",
+                "GIT_AUTHOR_EMAIL": "verifier@breadboard.invalid",
+                "GIT_AUTHOR_DATE": "1970-01-01T00:00:00+0000",
+                "GIT_COMMITTER_NAME": "BreadBoard Verifier",
+                "GIT_COMMITTER_EMAIL": "verifier@breadboard.invalid",
+                "GIT_COMMITTER_DATE": "1970-01-01T00:00:00+0000",
                 "HOME": temporary_text,
                 "LANG": "C",
                 "LC_ALL": "C",
@@ -1703,15 +1752,8 @@ def _sealed_repository_diff(
                 "* -text -filter -diff -working-tree-encoding -eol\n",
                 encoding="utf-8",
             )
-            environment = {
-                **base_environment,
-                "GIT_ALTERNATE_OBJECT_DIRECTORIES": str(source_objects),
-                "GIT_DIR": str(private_git_directory),
-                "GIT_INDEX_FILE": str(temporary / "index"),
-                "GIT_NO_REPLACE_OBJECTS": "1",
-                "GIT_OBJECT_DIRECTORY": str(private_git_directory / "objects"),
-                "GIT_WORK_TREE": str(repository),
-            }
+            if not seed_base:
+                environment["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = str(source_objects)
             common = (
                 "-c",
                 "core.autocrlf=false",
@@ -1722,17 +1764,66 @@ def _sealed_repository_diff(
                 "-c",
                 "diff.external=",
             )
+            base_tree = base_commit
+            if seed_baseline is not None:
+                baseline_environment = {
+                    **environment,
+                    "GIT_INDEX_FILE": str(temporary / "seed-index"),
+                    "GIT_WORK_TREE": str(seed_baseline),
+                }
+                returncode, _, stderr = invoke(
+                    (*common, "add", "--all", "--force", "--", "."),
+                    environment=baseline_environment,
+                    stdout_limit=64 * 1024,
+                )
+                if returncode != 0:
+                    raise VerifierSnapshotError(
+                        "sealed workspace seed preparation failed",
+                        code="snapshot_tampered",
+                        details={"stderr": stderr.decode("utf-8", "replace")[:4096]},
+                    )
+                returncode, stdout, stderr = invoke(
+                    (*common, "write-tree"),
+                    environment=baseline_environment,
+                    stdout_limit=64 * 1024,
+                )
+                if returncode != 0:
+                    raise VerifierSnapshotError(
+                        "sealed workspace seed tree failed",
+                        code="snapshot_tampered",
+                        details={"stderr": stderr.decode("utf-8", "replace")[:4096]},
+                    )
+                base_tree = stdout.decode("ascii", "replace").strip()
+            elif empty_base:
+                returncode, stdout, stderr = invoke(
+                    ("mktree",),
+                    environment=environment,
+                    stdout_limit=64 * 1024,
+                    cwd=temporary,
+                    input_data=b"",
+                )
+                if (
+                    returncode != 0
+                    or stdout.decode("ascii", "replace").strip() != EMPTY_TREE_BASE_COMMIT
+                ):
+                    raise VerifierSnapshotError(
+                        "sealed workspace empty-tree initialization failed",
+                        code="snapshot_tampered",
+                        details={"stderr": stderr.decode("utf-8", "replace")[:4096]},
+                    )
+            add_command = (
+                *common,
+                "add",
+                "--all",
+                "--force",
+                "--",
+                ".",
+            )
+            if not seed_base:
+                add_command += (":(top,exclude).git",)
             for command in (
-                (*common, "read-tree", base_commit),
-                (
-                    *common,
-                    "add",
-                    "--all",
-                    "--force",
-                    "--",
-                    ".",
-                    ":(top,exclude).git",
-                ),
+                (*common, "read-tree", base_tree),
+                add_command,
             ):
                 returncode, _, stderr = invoke(
                     command, environment=environment, stdout_limit=64 * 1024
@@ -1754,7 +1845,7 @@ def _sealed_repository_diff(
                     "--full-index",
                     "--no-renames",
                     "--ignore-submodules=none",
-                    base_commit,
+                    base_tree,
                     "--",
                     ".",
                 ),
@@ -3710,7 +3801,7 @@ class SandboxWorkspaceLease:
             type(item) is not str or not item or "\x00" in item for item in argv
         ):
             raise WorkspaceStateError(
-                "execution argv is invalid",
+                "argv is invalid",
                 code="runtime_preflight_failed",
                 lease_id=self.lease_id,
             )
@@ -3741,6 +3832,31 @@ class SandboxWorkspaceLease:
         self._assert_active()
         await self._begin_operation()
         try:
+            repositories = tuple(
+                entry
+                for entry in self.plan.materialization_plan.entries
+                if entry.role == "repository"
+            )
+            seeds = tuple(
+                entry
+                for entry in self.plan.materialization_plan.entries
+                if entry.role == "workspace_seed"
+            )
+            if not repositories and seeds:
+                if len(seeds) > 1:
+                    raise WorkspaceStateError(
+                        "workspace seed authority is not unique",
+                        code="workspace_escape",
+                        lease_id=self.lease_id,
+                    )
+                return await asyncio.to_thread(
+                    _sealed_repository_diff,
+                    repository=self._materialized.workspace_path,
+                    scratch_directory=self._manager.lease_root,
+                    base_commit=seeds[0].source_digest,
+                    plan=self.plan,
+                    seed_baseline=self._materialized.seed_baseline_path,
+                )
             remote_diff = getattr(self._runtime, "workspace_diff", None)
             if callable(remote_diff):
                 return await remote_diff()
@@ -3896,7 +4012,21 @@ class SandboxWorkspaceLease:
                 )
             base_commit = getattr(self._runtime, "repository_base_commit", None)
             relative_path = getattr(self._runtime, "repository_relative_path", None)
-            if (base_commit is None) != (relative_path is None):
+            seed_entries = tuple(
+                entry
+                for entry in self.plan.materialization_plan.entries
+                if entry.role == "workspace_seed"
+            )
+            if len(seed_entries) > 1:
+                self._state = WorkspaceLeaseState.QUARANTINED
+                raise VerifierSnapshotError(
+                    "workspace seed authority is not unique",
+                    code="snapshot_tampered",
+                    lease_id=self.lease_id,
+                )
+            if base_commit is None and seed_entries:
+                base_commit = seed_entries[0].source_digest
+            if (base_commit is None) != (relative_path is None) and not seed_entries:
                 self._state = WorkspaceLeaseState.QUARANTINED
                 raise VerifierSnapshotError(
                     "workspace base authority is incomplete",
@@ -3941,15 +4071,28 @@ class SandboxWorkspaceLease:
                 self._manager._snapshots[receipt.snapshot_id] = (receipt, path)
                 if base_commit is not None:
                     snapshot_repository = (
-                        path if relative_path == "." else path.joinpath(*_workspace_parts(relative_path))
+                        path
+                        if relative_path in {None, "."}
+                        else path.joinpath(*_workspace_parts(relative_path))
                     )
+                    seeded_base = bool(seed_entries)
                     diff_task = asyncio.create_task(
                         asyncio.to_thread(
                             _sealed_repository_diff,
                             repository=snapshot_repository,
-                            scratch_directory=self._materialized.workspace_path,
-                            base_commit=base_commit,
+                            scratch_directory=self._manager.lease_root,
+                            base_commit=(
+                                base_commit
+                                if base_commit is not None
+                                else EMPTY_TREE_BASE_COMMIT
+                            ),
                             plan=self.plan,
+                            empty_base=not seeded_base and relative_path is None,
+                            seed_baseline=(
+                                self._materialized.seed_baseline_path
+                                if seeded_base
+                                else None
+                            ),
                         )
                     )
                     try:
