@@ -970,6 +970,16 @@ def _decode_native_tool_result(
     result: Mapping[str, Any], *, lease_id: str | None
 ) -> Mapping[str, Any]:
     if result.get("returncode") != 0:
+        examined = _native_raw_output_limit(result)
+        if examined is not None:
+            # The helper's explicit outer error (mini_tools.RawOutputLimitExceeded):
+            # never an observation, never folded into a generic launch failure.
+            raise SandboxLaunchError(
+                "native tool raw output exceeded its limit",
+                code="native_output_limit_exceeded",
+                lease_id=lease_id,
+                details={"examined_bytes": examined},
+            )
         raise SandboxLaunchError(
             "native tool process exited unsuccessfully",
             code="runtime_launch_failed",
@@ -1011,6 +1021,26 @@ def _decode_native_tool_result(
             lease_id=lease_id,
         ) from exc
     return payload
+
+
+def _native_raw_output_limit(result: Mapping[str, Any]) -> int | None:
+    """Return examined bytes for the helper's raw-output outer error, else None."""
+    stdout = result.get("stdout")
+    if result.get("returncode") != 1 or type(stdout) is not str:
+        return None
+    try:
+        payload = json.loads(stdout)
+    except ValueError:
+        return None
+    if (
+        type(payload) is not dict
+        or set(payload) != {"outer_error", "raw_prefix_base64", "examined_bytes"}
+        or payload["outer_error"] != "raw_output_limit_exceeded"
+        or type(payload["examined_bytes"]) is not int
+        or payload["examined_bytes"] <= 0
+    ):
+        return None
+    return payload["examined_bytes"]
 
 @dataclass(frozen=True, slots=True)
 class SandboxExecutionPlan:

@@ -10,6 +10,8 @@ import shlex
 import subprocess
 import sys
 
+import pytest
+
 from breadboard.rl.harness import mini_tools
 from breadboard.rl.harness.mini_tools import (
     DEFAULT_RAW_OUTPUT_LIMIT,
@@ -173,3 +175,17 @@ def test_helper_raw_cap_retains_exact_prefix_on_failure(tmp_path: Path) -> None:
     assert base64.b64decode(failure["raw_prefix_base64"], validate=True) == (
         b"x" * DEFAULT_RAW_OUTPUT_LIMIT
     )
+
+    # The runtime keeps the explicit outer error distinct from a helper crash.
+    from breadboard.rl.harness.sandbox import SandboxLaunchError, _decode_native_tool_result
+
+    with pytest.raises(SandboxLaunchError) as captured:
+        _decode_native_tool_result(
+            {"returncode": result.returncode, "stdout": result.stdout, "stderr": result.stderr},
+            lease_id=None,
+        )
+    assert captured.value.code == "native_output_limit_exceeded"
+    assert captured.value.details["examined_bytes"] == DEFAULT_RAW_OUTPUT_LIMIT + 1
+    with pytest.raises(SandboxLaunchError) as crashed:
+        _decode_native_tool_result({"returncode": 1, "stdout": "", "stderr": "boom"}, lease_id=None)
+    assert crashed.value.code == "runtime_launch_failed"

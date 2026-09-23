@@ -1674,7 +1674,11 @@ class _ConductorSession:
                 except Exception as exc:
                     error = RunnerDependencyError(
                         "conductor tool invocation failed",
-                        code="tool_invoke_failed",
+                        code=(
+                            "native_output_limit_exceeded"
+                            if getattr(exc, "code", None) == "native_output_limit_exceeded"
+                            else "tool_invoke_failed"
+                        ),
                         **self._context(),
                     )
                     error.__cause__ = exc
