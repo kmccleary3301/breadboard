@@ -1750,7 +1750,6 @@ def _sealed_repository_diff(
             attributes_directory.mkdir(mode=0o700, exist_ok=True)
             (attributes_directory / "attributes").write_text(
                 "* -text -filter -diff -working-tree-encoding -eol\n",
-                encoding="utf-8",
             )
             environment = {
                 **base_environment,
@@ -1783,6 +1782,7 @@ def _sealed_repository_diff(
                     (*common, "add", "--all", "--force", "--", "."),
                     environment=baseline_environment,
                     stdout_limit=64 * 1024,
+                    cwd=seed_baseline,
                 )
                 if returncode != 0:
                     raise VerifierSnapshotError(
@@ -1794,6 +1794,7 @@ def _sealed_repository_diff(
                     (*common, "write-tree"),
                     environment=baseline_environment,
                     stdout_limit=64 * 1024,
+                    cwd=seed_baseline,
                 )
                 if returncode != 0:
                     raise VerifierSnapshotError(
