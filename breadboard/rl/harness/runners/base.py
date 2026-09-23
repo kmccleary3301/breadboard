@@ -1033,9 +1033,16 @@ class NativeRuntimeInputPort(Protocol):
 
 @runtime_checkable
 class NativeWorkspaceEffectsPort(Protocol):
-    """Trusted, BB-owned diff of the materialized policy workspace."""
+    """Trusted, BB-owned diff of the materialized policy workspace.
+
+    ``close_native_runtime`` retires every native process (the whole runtime,
+    not only worker-tracked groups) and must report ``all_dead`` before
+    ``measure_workspace_effects`` runs.
+    """
 
     async def begin_native_workspace_effects(self) -> None: ...
+
+    async def close_native_runtime(self) -> Mapping[str, Any]: ...
 
     async def measure_workspace_effects(self) -> Mapping[str, Mapping[str, Any]]: ...
 

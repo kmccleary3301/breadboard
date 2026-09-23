@@ -243,6 +243,8 @@ class _NativeWorkerPort:
             self.workspace,
             exclude_root_git=False,
             max_total_bytes=1 << 30,
+            max_inodes=1 << 16,
+            max_depth=64,
         )
         return snapshot
 
@@ -268,6 +270,15 @@ class _NativeWorkerPort:
         for path in self._effect_baseline.keys() - current.keys():
             changed[path] = {"exists": False}
         return changed
+
+    async def close_native_runtime(self) -> Mapping[str, Any]:
+        self.operations.append("retire_runtime")
+        process, self._process = self._process, None
+        if process is not None:
+            if process.returncode is None:
+                process.kill()
+            await process.wait()
+        return {"kind": "closed", "cleanup": {"all_dead": True, "steps": []}}
 
     @property
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]:
@@ -538,7 +549,7 @@ async def test_pi_native_stream_cap_batch_and_request_shape(tmp_path: Path) -> N
     assert sorted(event.call_id for event in observations[:3]) == ["a", "bad", "c"]
     assert sorted(event.ordinal for event in observations[:3]) == [0, 1, 2]
     assert observation_order[3:] == [(turn, 0) for turn in range(2, 9)]
-    assert operations[-3:-1] == ("close", "measure_effects")
+    assert operations[-3:] == ("close", "retire_runtime", "measure_effects")
     assert operations.count("measure_effects") == 1
     assert requests[0]["messages"][0] == {"role": "system", "content": system_prompt}
     assert result.termination is RunnerTermination.LIMITS_EXCEEDED

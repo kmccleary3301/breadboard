@@ -233,6 +233,7 @@ async def test_workspace_effects_measure_content_diff_and_supplier_utf8(tmp_path
         tool_bindings=(binding,),
         materialization_plan=SimpleNamespace(entries=(entry,)),
         resources=SimpleNamespace(storage_bytes=1 << 30),
+        security_policy=SimpleNamespace(snapshot_max_inodes=1 << 16, snapshot_max_depth=64),
     )
     async def begin() -> None:
         return None
@@ -305,6 +306,7 @@ async def test_close_native_runtime_drains_real_process_group_before_effect_scan
         tool_bindings=(binding,),
         materialization_plan=SimpleNamespace(entries=(entry,)),
         resources=SimpleNamespace(storage_bytes=1 << 30),
+        security_policy=SimpleNamespace(snapshot_max_inodes=1 << 16, snapshot_max_depth=64),
     )
     async def begin() -> None:
         return None
@@ -383,7 +385,7 @@ async def test_close_native_runtime_drains_real_process_group_before_effect_scan
                 pass
 
 
-_SCAN_BOUND = 1 << 30
+_SCAN_BOUNDS = {"max_total_bytes": 1 << 30, "max_inodes": 1 << 16, "max_depth": 64}
 
 
 def test_workspace_effect_scanner_rejects_root_symlink_swap(tmp_path: Path) -> None:
@@ -392,7 +394,7 @@ def test_workspace_effect_scanner_rejects_root_symlink_swap(tmp_path: Path) -> N
     snapshot, identity = sandbox_module._workspace_effect_snapshot(
         root,
         exclude_root_git=False,
-        max_total_bytes=_SCAN_BOUND,
+        **_SCAN_BOUNDS,
     )
     assert snapshot == {}
     moved = tmp_path / "workspace-real"
@@ -405,7 +407,7 @@ def test_workspace_effect_scanner_rejects_root_symlink_swap(tmp_path: Path) -> N
         sandbox_module._workspace_effect_snapshot(
             root,
             exclude_root_git=False,
-            max_total_bytes=_SCAN_BOUND,
+            **_SCAN_BOUNDS,
             expected_root_identity=identity,
         )
 
@@ -422,7 +424,7 @@ def test_workspace_effect_scanner_fails_closed_on_unsupported_nodes(
     else:
         os.mkfifo(root / "pipe")
     with pytest.raises(WorkspaceStateError, match="unauthorized"):
-        sandbox_module._workspace_effect_snapshot(root, exclude_root_git=False, max_total_bytes=_SCAN_BOUND)
+        sandbox_module._workspace_effect_snapshot(root, exclude_root_git=False, **_SCAN_BOUNDS)
 
 
 @pytest.mark.asyncio
@@ -460,7 +462,7 @@ async def test_workspace_effect_scanner_rejects_fifo_swap_before_open(
                 sandbox_module._workspace_effect_snapshot,
                 root,
                 exclude_root_git=False,
-                max_total_bytes=_SCAN_BOUND,
+                **_SCAN_BOUNDS,
             ),
             timeout=1,
         )
@@ -475,7 +477,7 @@ def test_workspace_effect_scanner_omits_content_for_oversize_file(tmp_path: Path
     snapshot, _ = sandbox_module._workspace_effect_snapshot(
         root,
         exclude_root_git=False,
-        max_total_bytes=_SCAN_BOUND,
+        **_SCAN_BOUNDS,
     )
     assert snapshot["large.bin"]["bytes"] == len(content)
     assert snapshot["large.bin"]["sha256"] == "sha256:" + hashlib.sha256(content).hexdigest()
@@ -494,7 +496,7 @@ async def test_workspace_effect_scanner_rejects_sparse_file_before_reading(tmp_p
                 sandbox_module._workspace_effect_snapshot,
                 root,
                 exclude_root_git=False,
-                max_total_bytes=_SCAN_BOUND,
+                **_SCAN_BOUNDS,
             ),
             timeout=5,
         )
@@ -509,15 +511,61 @@ def test_workspace_effect_scanner_bound_is_cumulative_and_inclusive(tmp_path: Pa
     snapshot, _ = sandbox_module._workspace_effect_snapshot(
         root,
         exclude_root_git=False,
-        max_total_bytes=1000,
+        **{**_SCAN_BOUNDS, "max_total_bytes": 1000},
     )
     assert sorted(snapshot) == ["a.txt", "b.txt"]
     with pytest.raises(WorkspaceStateError, match="admitted storage bound"):
         sandbox_module._workspace_effect_snapshot(
             root,
             exclude_root_git=False,
-            max_total_bytes=999,
+            **{**_SCAN_BOUNDS, "max_total_bytes": 999},
         )
+
+
+def test_workspace_effect_scanner_inode_ceiling_counts_empty_nodes(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    root.mkdir()
+    (root / ".git").mkdir()
+    for index in range(50):
+        (root / ".git" / f"object-{index}").touch()
+    (root / "empty").mkdir()
+    for index in range(3):
+        (root / "empty" / f"{index}.txt").touch()
+    # Four nodes: one directory plus three zero-byte files; root .git is excluded.
+    snapshot, _ = sandbox_module._workspace_effect_snapshot(
+        root,
+        exclude_root_git=True,
+        **{**_SCAN_BOUNDS, "max_inodes": 4},
+    )
+    assert sorted(snapshot) == ["empty/0.txt", "empty/1.txt", "empty/2.txt"]
+    (root / "empty" / "3.txt").touch()
+    with pytest.raises(WorkspaceStateError, match="traversal ceiling") as raised:
+        sandbox_module._workspace_effect_snapshot(
+            root,
+            exclude_root_git=True,
+            **{**_SCAN_BOUNDS, "max_inodes": 4},
+        )
+    assert raised.value.code == "output_limit_exceeded"
+
+
+def test_workspace_effect_scanner_rejects_nesting_beyond_depth_ceiling(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    nested = root / "a" / "b" / "c"
+    nested.mkdir(parents=True)
+    (nested / "leaf.txt").write_text("x", encoding="utf-8")
+    snapshot, _ = sandbox_module._workspace_effect_snapshot(
+        root,
+        exclude_root_git=False,
+        **{**_SCAN_BOUNDS, "max_depth": 3},
+    )
+    assert sorted(snapshot) == ["a/b/c/leaf.txt"]
+    with pytest.raises(WorkspaceStateError, match="traversal ceiling"):
+        sandbox_module._workspace_effect_snapshot(
+            root,
+            exclude_root_git=False,
+            **{**_SCAN_BOUNDS, "max_depth": 2},
+        )
+
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")

@@ -3752,6 +3752,7 @@ class _NativeCloseTestPort(RecordingToolPort):
         self.block_close = block_close
         self.close_entered = asyncio.Event()
         self.release_close = asyncio.Event()
+        self.runtime_all_dead = True
 
     def native_runtime_inputs(
         self,
@@ -3775,7 +3776,12 @@ class _NativeCloseTestPort(RecordingToolPort):
 
     async def measure_workspace_effects(self) -> Mapping[str, Mapping[str, Any]]:
         self.effect_measurements += 1
+        self.operations.append("measure_effects")
         return {}
+
+    async def close_native_runtime(self) -> Mapping[str, Any]:
+        self.operations.append("retire_runtime")
+        return {"kind": "closed", "cleanup": {"all_dead": self.runtime_all_dead, "steps": []}}
 
 
     async def invoke_native_phase(
@@ -4099,6 +4105,24 @@ async def test_native_stream_normal_path_closes_once(
     assert tools.operations.count("close") == 1
     assert tools.effect_admissions == 1
     assert tools.effect_measurements == 1
+    assert tools.operations[-3:] == ["close", "retire_runtime", "measure_effects"]
+
+
+async def test_native_stream_unverified_runtime_retirement_fails_before_effects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, _, tools, request = await _run_native_close_test_case(monkeypatch)
+    tools.runtime_all_dead = False
+    try:
+        with pytest.raises(RunnerProtocolError, match="cleanup is not verified") as captured:
+            await session.run(request)
+    finally:
+        await session.close()
+    assert captured.value.code == "native_response_invalid"
+    assert tools.operations.count("retire_runtime") == 1
+    assert tools.effect_measurements == 0
+
+
 class _OpenHandsTraceClient(RecordingPolicyClient):
     def __init__(self, observation: c.PolicyCapabilityObservation) -> None:
         super().__init__(observation)

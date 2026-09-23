@@ -2769,6 +2769,8 @@ def _workspace_effect_snapshot(
     *,
     exclude_root_git: bool,
     max_total_bytes: int,
+    max_inodes: int,
+    max_depth: int,
     expected_root_identity: tuple[int, int] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], tuple[int, int]]:
     """Hash one materialized policy workspace through no-follow dirfds.
@@ -2776,13 +2778,20 @@ def _workspace_effect_snapshot(
     Logical file sizes are checked against ``max_total_bytes`` (the lease's
     admitted storage bound) before any content is read, so sparse or
     oversized files fail closed instead of being hashed without bound.
+    Every visited node counts against ``max_inodes`` as it is listed and
+    nesting beyond ``max_depth`` is rejected (the security policy's snapshot
+    traversal ceilings), so empty-node floods cannot grow the scan unbounded.
     """
-    if type(max_total_bytes) is not int or max_total_bytes <= 0:
+    if any(
+        type(bound) is not int or bound < 0
+        for bound in (max_total_bytes, max_inodes, max_depth)
+    ) or max_total_bytes == 0:
         raise WorkspaceStateError(
-            "workspace effect byte bound is invalid",
+            "workspace effect traversal bound is invalid",
             code="workspace_authority_mismatch",
         )
     scanned_bytes = 0
+    visited_nodes = 0
     snapshot: dict[str, dict[str, Any]] = {}
     directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
     file_flags = (
@@ -2808,22 +2817,36 @@ def _workspace_effect_snapshot(
                 code="workspace_authority_mismatch",
             )
 
-        def walk(directory_fd: int, prefix: str) -> None:
-            nonlocal scanned_bytes
+        def walk(directory_fd: int, prefix: str, depth: int) -> None:
+            nonlocal scanned_bytes, visited_nodes
+            entries: list[os.DirEntry[str]] = []
             try:
                 with os.scandir(directory_fd) as iterator:
-                    entries = sorted(iterator, key=lambda entry: entry.name)
+                    for entry in iterator:
+                        if exclude_root_git and not prefix and entry.name == ".git":
+                            continue
+                        visited_nodes += 1
+                        if visited_nodes > max_inodes or depth > max_depth:
+                            raise WorkspaceStateError(
+                                "workspace effects exceed the admitted traversal ceiling",
+                                code="output_limit_exceeded",
+                                details={
+                                    "path": f"{prefix}/{entry.name}" if prefix else entry.name,
+                                    "visited_nodes": visited_nodes,
+                                    "max_inodes": max_inodes,
+                                    "depth": depth,
+                                    "max_depth": max_depth,
+                                },
+                            )
+                        entries.append(entry)
             except OSError as exc:
                 raise WorkspaceStateError(
                     "workspace effects cannot be measured",
                     code="workspace_authority_mismatch",
                 ) from exc
+            entries.sort(key=lambda entry: entry.name)
             for entry in entries:
                 relative = f"{prefix}/{entry.name}" if prefix else entry.name
-                if exclude_root_git and (
-                    relative == ".git" or relative.startswith(".git/")
-                ):
-                    continue
                 try:
                     metadata = entry.stat(follow_symlinks=False)
                 except OSError as exc:
@@ -2840,7 +2863,7 @@ def _workspace_effect_snapshot(
                             code="workspace_authority_mismatch",
                         ) from exc
                     try:
-                        walk(child_fd, relative)
+                        walk(child_fd, relative, depth + 1)
                     finally:
                         os.close(child_fd)
                     continue
@@ -2919,7 +2942,7 @@ def _workspace_effect_snapshot(
                     value["content_utf8"] = bytes(content).decode("utf-8", "replace")
                 snapshot[relative] = value
 
-        walk(root_fd, "")
+        walk(root_fd, "", 0)
         return snapshot, root_identity
     finally:
         os.close(root_fd)
@@ -2995,6 +3018,8 @@ class LeaseBackedRunnerWorkspace:
                 workspace_root,
                 exclude_root_git=workspace_mount.role == "repository",
                 max_total_bytes=lease.plan.resources.storage_bytes,
+                max_inodes=lease.plan.security_policy.snapshot_max_inodes,
+                max_depth=lease.plan.security_policy.snapshot_max_depth,
             )
             self.__effects_root = workspace_root
             self.__effects_exclude_root_git = workspace_mount.role == "repository"
@@ -3023,6 +3048,8 @@ class LeaseBackedRunnerWorkspace:
                 self.__effects_root,
                 exclude_root_git=self.__effects_exclude_root_git,
                 max_total_bytes=lease.plan.resources.storage_bytes,
+                max_inodes=lease.plan.security_policy.snapshot_max_inodes,
+                max_depth=lease.plan.security_policy.snapshot_max_depth,
                 expected_root_identity=self.__effects_root_identity,
             )
             return _changed_workspace_effects(self.__effects_baseline, current)

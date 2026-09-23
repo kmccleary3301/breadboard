@@ -2066,6 +2066,10 @@ class _ConductorSession:
                     try:
                         async with asyncio.timeout(limits.action_timeout_ms / 1000):
                             closed = await phase("close", {})
+                        # The worker only knows its own process groups; a descendant
+                        # that escaped via setsid could still write. Retire the whole
+                        # native runtime before any effect measurement.
+                        retired = await tools.close_native_runtime()
                     except RunnerError as exc:
                         self._record_native_cleanup_failure(None, exc)
                         raise
@@ -2082,10 +2086,17 @@ class _ConductorSession:
                         self._record_native_cleanup_failure(None, error)
                         raise error
                     cleanup = closed.get("cleanup")
+                    retired_cleanup = (
+                        retired.get("cleanup") if isinstance(retired, Mapping) else None
+                    )
                     if (
                         closed.get("kind") != "closed"
                         or type(cleanup) is not dict
                         or cleanup.get("all_dead") is not True
+                        or not isinstance(retired, Mapping)
+                        or retired.get("kind") != "closed"
+                        or not isinstance(retired_cleanup, Mapping)
+                        or retired_cleanup.get("all_dead") is not True
                     ):
                         error = RunnerProtocolError(
                             "native worker cleanup is not verified",
@@ -2459,13 +2470,7 @@ class _ConductorSession:
         async def close_once() -> Mapping[str, Any]:
             nonlocal native_runtime_close_task
             if native_runtime_close_task is None:
-                close_native_runtime = getattr(tools, "close_native_runtime", None)
-                if not callable(close_native_runtime):
-                    raise RunnerProtocolError(
-                        "OpenHands native runtime lacks a close operation",
-                        code="native_response_invalid", **self._context(),
-                    )
-                native_runtime_close_task = asyncio.create_task(close_native_runtime())
+                native_runtime_close_task = asyncio.create_task(tools.close_native_runtime())
             try:
                 return await asyncio.shield(native_runtime_close_task)
             except asyncio.CancelledError as cancellation:
