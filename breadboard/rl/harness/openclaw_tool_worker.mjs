@@ -51,11 +51,44 @@ async function bootstrapContext() {
   return buildBootstrapContextFiles(files, { maxChars: 20000, totalMaxChars: 60000 });
 }
 
+async function cleanupScope() {
+  const processTool = tools.get("process");
+  if (!processTool) return;
+  const listed = await processTool.execute("worker-cleanup-list", { action: "list" });
+  const sessions = listed?.details?.sessions || [];
+  for (const session of sessions) {
+    if (session?.sessionId && session.status === "running") {
+      await processTool.execute("worker-cleanup-kill", { action: "kill", sessionId: session.sessionId });
+    }
+  }
+}
+let shuttingDown = false;
+process.once("SIGTERM", async () => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  try {
+    await cleanupScope();
+  } finally {
+    process.exit(0);
+  }
+});
+process.once("SIGINT", async () => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  try {
+    await cleanupScope();
+  } finally {
+    process.exit(130);
+  }
+});
+
+
 async function handle(message) {
   const op = message?.op;
   if (op === "init") {
     if (typeof message.workspace !== "string" || !message.workspace) throw new Error("workspace is required");
     workspace = message.workspace;
+
     scopeKey = typeof message.scopeKey === "string" && message.scopeKey ? message.scopeKey : scopeKey;
     makeTools();
     return { ok: true, protocol: "bb.openclaw.tool-worker.jsonl.v1", tools: [...tools.keys()] };
@@ -86,3 +119,4 @@ for await (const line of rl) {
     reply({ ok: false, error: error instanceof Error ? error.message : String(error) });
   }
 }
+await cleanupScope();
