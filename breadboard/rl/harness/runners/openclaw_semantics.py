@@ -8,19 +8,15 @@ from __future__ import annotations
 
 import json
 import time
-import uuid
-from dataclasses import dataclass, field
-from typing import Any, Mapping, MutableSequence, Sequence
+from dataclasses import dataclass
+from typing import Any, Mapping, Sequence
 
 from breadboard.rl.harness.openclaw_native_tools import (
     BOOTSTRAP_ORDER,
-    EXEC_DEFAULT_TIMEOUT_SECONDS,
     MAX_LIVE_PROCESSES,
     OPENCLAW_SOURCE_COMMIT,
     OPENCLAW_VERSION,
-    PreparedToolCall,
     RecoveryDecision,
-    prepare_tool_calls,
     stop_before_recovery,
 )
 
@@ -72,26 +68,59 @@ def _validate_prepared_tool(name: str, arguments: Mapping[str, Any]) -> None:
 
 @dataclass(frozen=True)
 class NativeStreamFragment:
+    """One lossless native stream fragment."""
+
     kind: str
     index: int = 0
     text: str = ""
     call_id: str | None = None
     name: str | None = None
-    arguments: str | None = None
+    tool_index: int | None = None
+    fragment_id: str | None = None
+    fragment_type: str | None = None
 
     @classmethod
     def from_value(cls, value: Any) -> "NativeStreamFragment":
         if isinstance(value, NativeStreamFragment):
             return value
         if not isinstance(value, Mapping):
+            value = {
+                key: getattr(value, key, None)
+                for key in ("kind", "index", "text", "call_id", "name", "tool_index")
+            }
+        if not isinstance(value, Mapping):
             raise OpenClawSemanticsError("stream fragment must be an object")
+        raw_kind = str(value.get("kind", value.get("type", "")))
+        kind = (
+            "tool_arguments"
+            if raw_kind in {
+                "toolcall_start",
+                "tool_call_start",
+                "toolcall_delta",
+                "tool_call_delta",
+                "toolcall_end",
+                "tool_call_end",
+            }
+            else raw_kind
+        )
+        raw_id = value.get("id")
+        call_id = value.get("call_id", value.get("callId"))
+        if call_id is None and raw_id is not None and kind == "tool_arguments":
+            call_id = raw_id
+        raw_text = value.get("text", value.get("delta", value.get("content", "")))
+        if raw_text is None and value.get("arguments") is not None:
+            raw_text = value["arguments"]
         return cls(
-            kind=str(value.get("kind", value.get("type", ""))),
+            kind=kind,
             index=int(value.get("index", value.get("contentIndex", 0)) or 0),
-            text=str(value.get("text", value.get("delta", value.get("content", ""))) or ""),
-            call_id=(str(value["call_id"]) if value.get("call_id") is not None else (str(value["callId"]) if value.get("callId") is not None else None)),
-            name=(str(value["name"]) if value.get("name") is not None else None),
-            arguments=(str(value["arguments"]) if value.get("arguments") is not None else None),
+            text=str(raw_text or ""),
+            call_id=str(call_id) if call_id is not None else None,
+            name=str(value["name"]) if value.get("name") is not None else None,
+            tool_index=(
+                int(value["tool_index"]) if value.get("tool_index") is not None else None
+            ),
+            fragment_id=str(raw_id) if raw_id is not None else None,
+            fragment_type=str(value["type"]) if value.get("type") is not None else None,
         )
 
 
@@ -101,14 +130,21 @@ class FinalizedToolCall:
     name: str
     arguments: Mapping[str, Any]
     raw_arguments: Any = None
+    call_type: str | None = None
+    index: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result: dict[str, Any] = {
             "id": self.tool_call_id,
             "name": self.name,
             "arguments": dict(self.arguments),
             "raw_arguments": self.raw_arguments,
         }
+        if self.call_type is not None:
+            result["type"] = self.call_type
+        if self.index is not None:
+            result["index"] = self.index
+        return result
 
 
 @dataclass(frozen=True)
@@ -181,7 +217,12 @@ def _decode_tool_arguments(raw: Any) -> Mapping[str, Any]:
     return dict(decoded)
 
 
-def _call_fields(call: Any, index: int) -> tuple[str, str, Any]:
+def _call_fields(call: Any, index: int) -> tuple[str, str, Any, str | None, int | None]:
+    if not isinstance(call, Mapping):
+        call = {
+            key: getattr(call, key, None)
+            for key in ("id", "name", "arguments", "type", "index")
+        }
     if not isinstance(call, Mapping):
         raise OpenClawSemanticsError(f"tool call {index} must be an object")
     function = call.get("function") if isinstance(call.get("function"), Mapping) else call
@@ -190,67 +231,84 @@ def _call_fields(call: Any, index: int) -> tuple[str, str, Any]:
         raise OpenClawSemanticsError(f"tool call {index} has no name")
     raw = function.get("arguments", call.get("arguments", {}))
     call_id = call.get("id", call.get("tool_call_id", f"call_{index}"))
-    return str(call_id), name, raw
+    call_type = call.get("type")
+    call_index = call.get("index")
+    return str(call_id), name, raw, str(call_type) if call_type is not None else None, call_index
 
 
-def finalize_native_chat_response(response: Any, *, allow_silent_tool_promotion: bool = False) -> OpenClawParseResult:
-    """Finalize all fragments and validated tool calls before any dispatch."""
+def finalize_native_chat_response(
+    response: Any, *, allow_silent_tool_promotion: bool = False
+) -> OpenClawParseResult:
+    """Finalize lossless fragments before the worker receives raw arguments."""
     view = NativeProviderResponseView.from_value(response)
     fragments = tuple(NativeStreamFragment.from_value(item) for item in view.stream_fragments)
     text_parts: list[str] = []
     assembled: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
     for fragment in fragments:
-        if fragment.kind in {"text_delta", "text", "text_end"}:
+        if fragment.kind in {"content", "text_delta", "text", "text_end"}:
             text_parts.append(fragment.text)
-        elif fragment.kind in {"toolcall_start", "tool_call_start"}:
-            key = fragment.call_id or f"call_{fragment.index}"
-            assembled.setdefault(key, {"id": key, "name": fragment.name or "", "arguments": ""})
-        elif fragment.kind in {"toolcall_delta", "tool_call_delta"}:
-            key = fragment.call_id or f"call_{fragment.index}"
-            slot = assembled.setdefault(key, {"id": key, "name": fragment.name or "", "arguments": ""})
-            if fragment.name:
-                slot["name"] = fragment.name
-            slot["arguments"] = f"{slot.get('arguments', '')}{fragment.arguments if fragment.arguments is not None else fragment.text}"
-        elif fragment.kind in {"toolcall_end", "tool_call_end"}:
-            key = fragment.call_id or f"call_{fragment.index}"
-            slot = assembled.setdefault(key, {"id": key, "name": fragment.name or "", "arguments": ""})
-            if fragment.name:
-                slot["name"] = fragment.name
-            if fragment.arguments is not None:
-                slot["arguments"] = fragment.arguments
+            continue
+        if fragment.kind != "tool_arguments":
+            continue
+        key = (
+            f"tool_index:{fragment.tool_index}"
+            if fragment.tool_index is not None
+            else (f"call_id:{fragment.call_id}" if fragment.call_id else f"index:{fragment.index}")
+        )
+        slot = assembled.setdefault(
+            key,
+            {
+                "id": fragment.call_id or fragment.fragment_id or f"call_{fragment.index}",
+                "type": fragment.fragment_type,
+                "index": fragment.tool_index if fragment.tool_index is not None else fragment.index,
+                "name": fragment.name or "",
+                "arguments": "",
+            },
+        )
+        if key not in order:
+            order.append(key)
+        if fragment.call_id:
+            slot["id"] = fragment.call_id
+        if fragment.fragment_id:
+            slot["id"] = fragment.fragment_id
+        if fragment.fragment_type:
+            slot["type"] = fragment.fragment_type
+        if fragment.name:
+            slot["name"] = fragment.name
+        slot["arguments"] += fragment.text
 
     raw_calls: list[Any] = list(view.tool_calls)
-    if not raw_calls and assembled:
-        raw_calls = list(assembled.values())
-    if text_parts and not view.content:
-        content = "".join(text_parts)
-    else:
-        content = view.content
+    if not raw_calls and order:
+        raw_calls = [assembled[key] for key in order]
+    content = "".join(text_parts) if text_parts and not view.content else view.content
     finish_reason = str(view.finish_reason) if view.finish_reason is not None else None
     errors: list[str] = []
     calls: list[FinalizedToolCall] = []
     for index, raw_call in enumerate(raw_calls):
         try:
-            call_id, name, raw_arguments = _call_fields(raw_call, index)
+            call_id, name, raw_arguments, call_type, call_index = _call_fields(raw_call, index)
             args = _decode_tool_arguments(raw_arguments)
-            prepared = prepare_tool_calls(({"id": call_id, "name": name, "arguments": args},))[0]
-            _validate_prepared_tool(name, prepared.arguments)
-            calls.append(FinalizedToolCall(call_id, name, dict(prepared.arguments), raw_arguments))
+            _validate_prepared_tool(name, args)
+            calls.append(
+                FinalizedToolCall(
+                    call_id,
+                    name,
+                    dict(args),
+                    raw_arguments,
+                    call_type,
+                    int(call_index) if call_index is not None else None,
+                )
+            )
         except (KeyError, TypeError, ValueError, OpenClawSemanticsError) as exc:
             errors.append(str(exc))
     if calls and finish_reason not in {"tool_calls", "stop"}:
         errors.append("tool calls require a terminal finish_reason")
-
     executable = bool(calls) and not errors and finish_reason == "tool_calls"
-    # OpenClaw's explicit terminal stop can promote a fully confirmed silent
-    # tool call; an interrupted stream cannot borrow this behavior.
     if calls and not errors and finish_reason == "stop" and allow_silent_tool_promotion:
         executable = True
-    if errors:
+    if errors or finish_reason in {"error", "aborted"}:
         executable = False
-    if finish_reason in {"error", "aborted"}:
-        executable = False
-
     assistant = {
         "role": "assistant",
         "content": content,
@@ -273,7 +331,19 @@ def finalize_native_chat_response(response: Any, *, allow_silent_tool_promotion:
         finish_reason=finish_reason,
         native_stop_reason=view.native_stop_reason or finish_reason,
         usage=dict(view.usage) if isinstance(view.usage, Mapping) else None,
-        raw_fragments=tuple({"kind": f.kind, "index": f.index, "text": f.text, "call_id": f.call_id, "name": f.name, "arguments": f.arguments} for f in fragments),
+        raw_fragments=tuple(
+            {
+                "kind": f.kind,
+                "index": f.index,
+                "text": f.text,
+                "call_id": f.call_id,
+                "name": f.name,
+                "tool_index": f.tool_index,
+                **({"id": f.fragment_id} if f.fragment_id else {}),
+                **({"type": f.fragment_type} if f.fragment_type else {}),
+            }
+            for f in fragments
+        ),
         recovery=recovery,
     )
 
@@ -289,39 +359,99 @@ class OpenClawSemanticsState:
 
     def __init__(
         self,
-        *,
         task: str = "",
+        system_prompt: str = "",
+        bootstrap: Mapping[str, Any] | None = None,
+        *,
         max_requests: int = MAX_REQUESTS,
         episode_deadline_seconds: float = EPISODE_WALL_SECONDS,
         max_tool_admissions: int = TOOL_ADMISSIONS,
         started_at: float | None = None,
     ) -> None:
         self.task = task
+        self.system_prompt = system_prompt
+        self.bootstrap = dict(bootstrap or {})
         self.max_requests = max_requests
         self.episode_deadline_seconds = episode_deadline_seconds
         self.max_tool_admissions = max_tool_admissions
         self.started_at = time.monotonic() if started_at is None else started_at
         self.request_count = 0
+        self.refused_attempts = 0
         self.tool_admissions = 0
         self.history: list[dict[str, Any]] = []
+        if system_prompt:
+            self.history.append({"role": "system", "content": system_prompt})
+        if task:
+            self.history.append({"role": "user", "content": task})
         self.raw_responses: list[Mapping[str, Any]] = []
         self.terminal_kind: str | None = None
         self.native_stop_reason: str | None = None
         self.stop_reason: str | None = None
         self.recovery: RecoveryDecision | None = None
+        self._stream_fn_issued = False
+        self._terminal_message: dict[str, Any] | None = None
 
-    def begin_request(self) -> int:
+    @property
+    def messages(self) -> tuple[Mapping[str, Any], ...]:
+        return tuple(self.history)
+
+    @property
+    def is_exited(self) -> bool:
+        return self.terminal_kind is not None
+
+    @property
+    def exit_status(self) -> str | None:
+        return self.terminal_kind
+
+    @property
+    def stream_fn_issued(self) -> bool:
+        return self._stream_fn_issued
+
+    def begin_query(self) -> Mapping[str, Any] | None:
+        """Admit one provider stream, or return the local cap terminal."""
         if self.request_count >= self.max_requests:
+            self.refused_attempts += 1
             self.terminal_kind = "request_budget"
-            raise RequestLimitExceeded(f"OpenClaw request cap exceeded ({self.max_requests})")
+            self.native_stop_reason = "429"
+            self.stop_reason = "error"
+            self._terminal_message = {
+                "role": "assistant",
+                "content": "bbe4 capture request cap",
+                "isError": True,
+                "status": 429,
+                "error": "bbe4 capture request cap",
+                "finish_reason": "error",
+                "stop_reason": "429",
+            }
+            if self._terminal_message not in self.history:
+                self.history.append(dict(self._terminal_message))
+            return dict(self._terminal_message)
         if time.monotonic() - self.started_at >= self.episode_deadline_seconds:
             self.terminal_kind = "episode_timeout"
-            raise RequestLimitExceeded("OpenClaw episode deadline elapsed")
+            self.native_stop_reason = "timeout"
+            self.stop_reason = "aborted"
+            self._terminal_message = {
+                "role": "assistant",
+                "content": "OpenClaw episode deadline elapsed",
+                "isError": True,
+                "finish_reason": "aborted",
+                "stop_reason": "timeout",
+            }
+            self.history.append(dict(self._terminal_message))
+            return dict(self._terminal_message)
         self.request_count += 1
+        self._stream_fn_issued = True
+        return None
+
+    def begin_request(self) -> int:
+        """Compatibility helper for callers predating the native seam."""
+        terminal = self.begin_query()
+        if terminal is not None:
+            raise RequestLimitExceeded(str(terminal.get("error", terminal.get("content"))))
         return self.request_count
 
     def consume_native_response(self, response: Any) -> OpenClawParseResult:
-        """Generic streaming seam: finalized response in, tool batch/history out."""
+        """Finalize one native response; no tool effect occurs here."""
         result = finalize_native_chat_response(response)
         self.raw_responses.append(_as_mapping(response))
         self.history.extend(dict(message) for message in result.history_mutations)
@@ -334,28 +464,68 @@ class OpenClawSemanticsState:
             if self.tool_admissions + len(result.tool_batch.tool_calls) > self.max_tool_admissions:
                 self.terminal_kind = "tool_budget"
                 self.recovery = stop_before_recovery("tool-admission-budget", result.history_mutations)
-                raise ToolAdmissionExceeded(f"OpenClaw tool admission cap exceeded ({self.max_tool_admissions})")
+                raise ToolAdmissionExceeded(
+                    f"OpenClaw tool admission cap exceeded ({self.max_tool_admissions})"
+                )
             self.tool_admissions += len(result.tool_batch.tool_calls)
+        elif result.finish_reason in {"stop", "error", "aborted"} and not result.recovery:
+            self.terminal_kind = "stop" if result.finish_reason == "stop" else "provider_error"
         return result
 
-    def commit_tool_results(self, results: Sequence[Mapping[str, Any]]) -> tuple[Mapping[str, Any], ...]:
-        """Commit model-visible results in source call order, after effects settle."""
-        committed = tuple(dict(result) for result in results)
+    def prepare_response(self, response: Any) -> tuple[Mapping[str, Any], tuple[FinalizedToolCall, ...]]:
+        result = self.consume_native_response(response)
+        return result.assistant_message, result.tool_batch.tool_calls
+
+    def commit_tool_results(
+        self,
+        calls: Sequence[FinalizedToolCall] | Sequence[Mapping[str, Any]],
+        results: Sequence[Mapping[str, Any]] | None = None,
+    ) -> tuple[Mapping[str, Any], ...]:
+        """Commit settled effects in source call order after history append."""
+        if results is None:
+            committed = tuple(dict(result) for result in calls)
+        else:
+            by_id = {
+                str(result.get("tool_call_id", result.get("id", ""))): result
+                for result in results
+                if isinstance(result, Mapping)
+            }
+            committed_items: list[Mapping[str, Any]] = []
+            for call in calls:
+                call_id = (
+                    call.tool_call_id
+                    if isinstance(call, FinalizedToolCall)
+                    else str(call.get("id", call.get("tool_call_id", "")))
+                )
+                committed_items.append(dict(by_id.get(call_id, {})))
+            committed = tuple(committed_items)
         self.history.extend(committed)
         return committed
 
     def finish(self, kind: str = "stop") -> dict[str, Any]:
         self.terminal_kind = self.terminal_kind or kind
+        return self.to_trace()
+
+    def to_trace(self) -> dict[str, Any]:
         return {
             "kind": self.terminal_kind,
             "native_stop_reason": self.native_stop_reason,
             "request_count": self.request_count,
+            "refused_attempts": self.refused_attempts,
             "tool_admissions": self.tool_admissions,
+            "stream_fn_issued": self.stream_fn_issued,
             "history": [dict(message) for message in self.history],
         }
 
     def prepare_request_history(self) -> list[dict[str, Any]]:
-        return [{key: value for key, value in message.items() if key not in {"extra", "raw_fragments"}} for message in self.history]
+        return [
+            {
+                key: value
+                for key, value in message.items()
+                if key not in {"extra", "raw_fragments"}
+            }
+            for message in self.history
+        ]
 
 
 def _as_mapping(value: Any) -> Mapping[str, Any]:

@@ -202,6 +202,10 @@ def _results_from_requests(
                     for item in content
                 )
             call_id = message.get("tool_call_id", message.get("toolCallId"))
+            is_error = bool(message.get("is_error", message.get("isError", False)))
+            error_value = message.get("error")
+            if error_value is None and is_error:
+                error_value = str(content)
             results.append({
                 "tool_call_id": call_id,
                 "name": message.get(
@@ -209,7 +213,8 @@ def _results_from_requests(
                     message.get("tool_name", message.get("toolName", names.get(str(call_id)))),
                 ),
                 "content": content,
-                "error": message.get("is_error", message.get("isError", False)),
+                "isError": is_error,
+                "error": error_value,
             })
     return results
 
@@ -238,16 +243,27 @@ def _termination(scenario: Mapping[str, Any], request_count: int) -> dict[str, A
                     malformed |= not isinstance(decoded, Mapping)
     if failure:
         kind = "provider_failure"
+        native_stop_reason = last.get("finish_reason") if isinstance(last, Mapping) else "error"
+        error_value = None
     elif malformed:
         kind = "malformed_tool_call"
+        native_stop_reason = last.get("finish_reason") if isinstance(last, Mapping) else "tool_calls"
+        error_value = None
     elif scenario.get("max_requests") is not None:
         kind = "request_budget"
+        native_stop_reason = "429"
+        error_value = "bbe4 capture request cap"
     else:
         kind = "stop"
-    return {
+        native_stop_reason = last.get("finish_reason") if isinstance(last, Mapping) else None
+        error_value = None
+    termination = {
         "kind": kind,
-        "native_stop_reason": last.get("finish_reason") if isinstance(last, Mapping) else None,
+        "native_stop_reason": native_stop_reason,
     }
+    if error_value is not None:
+        termination.update({"isError": True, "status": 429, "error": error_value})
+    return termination
 
 
 def _effects(workspace: Path, scenario: Mapping[str, Any]) -> dict[str, str | None]:

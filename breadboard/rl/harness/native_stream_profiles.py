@@ -14,8 +14,7 @@ from types import MappingProxyType, ModuleType
 from typing import Any, Literal
 
 from breadboard_engine.compilation.provider_response import PI_RESPONSE_CONSUMER_ID
-from breadboard.rl.harness.runners import pi_semantics
-
+from breadboard.rl.harness.runners import openclaw_semantics, pi_semantics
 
 @dataclass(frozen=True, slots=True)
 class NativeStreamProfile:
@@ -43,6 +42,9 @@ def _pi_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> An
     return pi_semantics.PiSemanticsState(task=task, system_prompt=system_prompt)
 
 
+def _openclaw_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
+    return openclaw_semantics.OpenClawSemanticsState(task, system_prompt, bootstrap)
+
 NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
     PI_RESPONSE_CONSUMER_ID: NativeStreamProfile(
         consumer_id=PI_RESPONSE_CONSUMER_ID,
@@ -59,6 +61,20 @@ NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
         package_subpath="node_modules/@mariozechner/pi-coding-agent",
         state_module=pi_semantics,
         state_factory=_pi_state,
+    ),
+    openclaw_semantics.OPENCLAW_CONSUMER_ID: NativeStreamProfile(
+        consumer_id=openclaw_semantics.OPENCLAW_CONSUMER_ID,
+        target_id="openclaw@2026.9.4",
+        target_version=4,
+        phase_schema_version="bb.openclaw-native.v1",
+        tool_order=openclaw_semantics.OpenClawSemanticsState.tool_order,
+        max_turns=8,
+        action_timeout_ms=35_000,
+        episode_timeout_seconds=120,
+        ack_policy="after_history_commit",
+        incomplete_stop_reasons=frozenset({"error", "aborted", "length"}),
+        state_module=openclaw_semantics,
+        state_factory=_openclaw_state,
     ),
 })
 

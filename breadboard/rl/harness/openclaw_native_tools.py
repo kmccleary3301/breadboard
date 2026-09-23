@@ -11,11 +11,12 @@ import hashlib
 import json
 import os
 import re
+import struct
 import subprocess
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 OPENCLAW_SOURCE_COMMIT = "3a9d69db306cd7f081e06254cb89c4bcc14a7107"
 OPENCLAW_VERSION = "2026.9.4"
@@ -65,226 +66,8 @@ SOURCE_CITATIONS: Mapping[str, str] = {
     "recovery": "src/agents/sessions/agent-session-execution.ts:prepareRetry",
 }
 
-_XML_ARG_VALUE_SUFFIX = re.compile(r"</arg_value>>+$")
 
 
-def _normalize_path(value: str) -> str:
-    """Apply the source's harmless XML suffix repair without changing payloads."""
-    return _XML_ARG_VALUE_SUFFIX.sub("", value) if "</arg_value>" in value else value
-
-
-def execution_title_schema() -> dict[str, Any]:
-    """Return the optional source execution title schema (maxLength 120)."""
-    return {
-        "type": "string",
-        "maxLength": 120,
-        "description": "Every call: short purpose; never claim success. No secrets.",
-    }
-
-
-def _object(properties: Mapping[str, Any], required: Iterable[str] = ()) -> dict[str, Any]:
-    return {
-        "type": "object",
-        "properties": dict(properties),
-        "required": list(required),
-        "additionalProperties": True,
-    }
-
-
-TOOL_SCHEMAS: Mapping[str, dict[str, Any]] = {
-    "ls": _object(
-        {
-            "title": execution_title_schema(),
-            "path": {"type": "string", "description": "Directory path."},
-        }
-    ),
-    "read": _object(
-        {
-            "title": execution_title_schema(),
-            "path": {"type": "string", "description": "File path."},
-            "offset": {"type": "integer", "minimum": 1},
-            "limit": {"type": "integer", "minimum": 1},
-            "cursor": {"type": "integer", "minimum": 0},
-            "optional": {"type": "boolean"},
-        },
-        ("path",),
-    ),
-    "edit": _object(
-        {
-            "title": execution_title_schema(),
-            "path": {"type": "string", "description": "File path."},
-            "edits": {
-                "type": "array",
-                "items": _object(
-                    {
-                        "oldText": {"type": "string"},
-                        "newText": {"type": "string"},
-                    },
-                    ("oldText", "newText"),
-                ),
-            },
-            "oldText": {"type": "string"},
-            "newText": {"type": "string"},
-        },
-        ("path", "edits"),
-    ),
-    "write": _object(
-        {
-            "title": execution_title_schema(),
-            "path": {"type": "string", "description": "File path."},
-            "content": {"type": "string"},
-        },
-        ("path", "content"),
-    ),
-    "exec": _object(
-        {
-            "title": execution_title_schema(),
-            "command": {"type": "string", "description": "Shell command."},
-            "workdir": {"type": "string"},
-            "env": {"type": "object"},
-            "yieldMs": {"type": "number", "minimum": 0},
-            "background": {"type": "boolean"},
-            "timeoutSeconds": {"type": "number", "minimum": 0, "maximum": 30},
-            "pty": {"type": "boolean"},
-            "host": {"type": "string", "enum": ["auto", "gateway"]},
-        },
-        ("command",),
-    ),
-    "process": _object(
-        {
-            "title": execution_title_schema(),
-            "action": {
-                "type": "string",
-                "enum": [
-                    "list",
-                    "poll",
-                    "log",
-                    "write",
-                    "send-keys",
-                    "submit",
-                    "paste",
-                    "kill",
-                    "clear",
-                    "remove",
-                ],
-            },
-            "sessionId": {"type": "string"},
-            "data": {"type": "string"},
-            "keys": {"type": "array", "items": {"type": "string"}},
-            "hex": {"type": "array", "items": {"type": "string"}},
-            "literal": {"type": "string"},
-            "text": {"type": "string"},
-            "bracketed": {"type": "boolean"},
-            "eof": {"type": "boolean"},
-            "offset": {"type": "integer", "minimum": 0},
-            "limit": {"type": "integer", "minimum": 0},
-            "timeout": {"type": "number", "minimum": 0, "maximum": 30_000},
-        },
-        ("action",),
-    ),
-}
-
-
-def _copy_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
-    return dict(value or {})
-
-
-def prepare_edit_arguments(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
-    """Prepare edit arguments exactly at the native edit boundary.
-
-    ``edits`` may be a JSON string, and legacy ``oldText``/``newText`` are
-    folded into the array.  Unknown metadata is intentionally discarded from
-    the executable argument object while callers retain ``raw_arguments``.
-    """
-    args = _copy_mapping(arguments)
-    edits = args.get("edits")
-    if isinstance(edits, str):
-        try:
-            parsed = json.loads(edits)
-        except (TypeError, ValueError):
-            parsed = None
-        if isinstance(parsed, list):
-            edits = parsed
-    if isinstance(args.get("oldText"), str) and isinstance(args.get("newText"), str):
-        edits = list(edits) if isinstance(edits, list) else []
-        edits.append({"oldText": args["oldText"], "newText": args["newText"]})
-    if isinstance(edits, list):
-        normalized: list[Any] = []
-        for item in edits:
-            if isinstance(item, Mapping) and not isinstance(item, list):
-                normalized.append({"oldText": item.get("oldText"), "newText": item.get("newText")})
-            else:
-                normalized.append(item)
-        edits = normalized
-    return {"path": args.get("path"), "edits": edits}
-
-
-def prepare_tool_call(name: str, arguments: Mapping[str, Any] | None) -> dict[str, Any]:
-    """Apply source argument preparation before schema validation/effects."""
-    if name not in TOOL_SCHEMAS:
-        raise ValueError(f"Unknown OpenClaw tool {name!r}")
-    args = _copy_mapping(arguments)
-    # Optional titles are provider-facing metadata, not tool implementation args.
-    args.pop("title", None)
-    if name == "edit":
-        args = prepare_edit_arguments(args)
-    if "path" in args and isinstance(args["path"], str):
-        args["path"] = _normalize_path(args["path"])
-    if name == "exec":
-        if "timeout" in args:
-            raise ValueError('exec parameter "timeout" is unsupported; use "timeoutSeconds" instead')
-        if "yieldMs" in args and args["yieldMs"] is not None:
-            args["yieldMs"] = max(10, min(120_000, int(float(args["yieldMs"]))))
-        if "timeoutSeconds" in args and args["timeoutSeconds"] is not None:
-            timeout = float(args["timeoutSeconds"])
-            if timeout < 0 or timeout > EXEC_MAX_TIMEOUT_SECONDS:
-                raise ValueError("timeoutSeconds must be 0 or between 0 and 30 seconds")
-            args["timeoutSeconds"] = int(timeout) if timeout.is_integer() else timeout
-    if name == "process" and "timeout" in args and args["timeout"] is not None:
-        args["timeout"] = max(0, min(PROCESS_MAX_POLL_MS, int(float(args["timeout"]))))
-    return args
-
-
-@dataclass(frozen=True)
-class PreparedToolCall:
-    name: str
-    tool_call_id: str
-    raw_arguments: Mapping[str, Any]
-    arguments: Mapping[str, Any]
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "name": self.name,
-            "tool_call_id": self.tool_call_id,
-            "raw_arguments": dict(self.raw_arguments),
-            "arguments": dict(self.arguments),
-        }
-
-
-def prepare_tool_calls(tool_calls: Sequence[Mapping[str, Any]]) -> tuple[PreparedToolCall, ...]:
-    """Prepare a whole batch without executing any call."""
-    prepared: list[PreparedToolCall] = []
-    for index, call in enumerate(tool_calls):
-        name = call.get("name") or call.get("function", {}).get("name")
-        if not isinstance(name, str) or not name:
-            raise ValueError(f"tool call {index} has no tool name")
-        raw = call.get("arguments", call.get("function", {}).get("arguments", {}))
-        if isinstance(raw, str):
-            try:
-                raw = json.loads(raw)
-            except ValueError as exc:
-                raise ValueError(f"invalid {name} arguments: {exc}") from exc
-        if not isinstance(raw, Mapping):
-            raise ValueError(f"invalid {name} arguments: expected object")
-        prepared.append(
-            PreparedToolCall(
-                name=name,
-                tool_call_id=str(call.get("id", f"call_{index}")),
-                raw_arguments=dict(raw),
-                arguments=prepare_tool_call(name, raw),
-            )
-        )
-    return tuple(prepared)
 
 
 @dataclass(frozen=True)
@@ -498,54 +281,124 @@ class _NodeWorkerScope:
 
 
 class _OpenClawWorkerClient:
-    """Synchronous JSONL bridge to the pinned Node source-tool worker."""
+    """Synchronous phase bridge to the pinned Node OpenClaw source worker."""
 
-    def __init__(self, workspace: str | Path, *, node: str | None = None, dist: str | None = None) -> None:
+    def __init__(
+        self,
+        workspace: str | Path,
+        *,
+        node: str | None = None,
+        dist: str | None = None,
+    ) -> None:
         self.workspace = str(Path(workspace).resolve())
         self.node = node or os.environ.get("OPENCLAW_NODE", "node")
         self.dist = dist or os.environ.get("OPENCLAW_DIST", "/opt/openclaw/dist")
         if not Path(self.dist).is_dir():
-            candidates = sorted(Path("/tmp").glob("openclaw-npm-*/node_modules/openclaw/dist"))
-            if candidates:
-                self.dist = str(candidates[-1])
+            raise FileNotFoundError(f"pinned OpenClaw dist is unavailable: {self.dist}")
         worker = Path(__file__).with_name("openclaw_tool_worker.mjs")
-        env = {key: value for key, value in os.environ.items() if not _is_provider_auth_env(key)}
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if not _is_provider_auth_env(key)
+        }
         env["OPENCLAW_DIST"] = self.dist
         self._process = subprocess.Popen(
             [self.node, str(worker)],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            text=False,
             env=env,
             cwd=self.workspace,
-            bufsize=1,
+            bufsize=0,
         )
-        self._pending: dict[str, str] = {}
-        self._request({"op": "init", "workspace": self.workspace})
+        self._request_id = 0
+        self._pending: dict[str, str | None] = {}
+        self._bootstrap: tuple[Mapping[str, Any], ...] = ()
+        bootstrap_root = (
+            Path(__file__).resolve().parents[3]
+            / "config"
+            / "e4_targets"
+            / "openclaw"
+            / OPENCLAW_VERSION
+            / "bootstrap"
+        )
+        assets: list[dict[str, str]] = []
+        for name in ("AGENTS.md", "SOUL.md"):
+            content = (bootstrap_root / name).read_text(encoding="utf-8")
+            assets.append({"name": name, "content": content, "sha256": sha256_file(bootstrap_root / name)})
+        initialized = self._request(
+            {
+                "phase": "initialize",
+                "workspace": self.workspace,
+                "scopeKey": f"openclaw:e4:{os.getpid()}",
+                "bootstrap_assets": assets,
+                "system_prompt": "",
+            }
+        )
+        self._bootstrap = tuple(
+            item
+            for item in initialized.get("bootstrap", ())
+            if isinstance(item, Mapping)
+        )
 
     def _request(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         if self._process.stdin is None or self._process.stdout is None:
             raise RuntimeError("OpenClaw Node worker pipes are unavailable")
-        self._process.stdin.write(json.dumps(dict(payload), ensure_ascii=False) + "\n")
+        phase = payload.get("phase")
+        if not isinstance(phase, str) or not phase:
+            raise ValueError("OpenClaw native phase is required")
+        self._request_id += 1
+        command = {
+            "schema_version": "bb.native-worker.rpc.v1",
+            "request_id": self._request_id,
+            "operation": phase,
+            "payload": {key: value for key, value in payload.items() if key != "phase"},
+        }
+        encoded = json.dumps(command, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        self._process.stdin.write(struct.pack(">I", len(encoded)) + encoded)
         self._process.stdin.flush()
-        line = self._process.stdout.readline()
-        if not line:
-            details = self._process.stderr.read() if self._process.stderr is not None else ""
-            raise RuntimeError(f"OpenClaw Node worker exited: {details[-400:]}")
-        response = json.loads(line)
-        if not response.get("ok"):
-            raise ValueError(str(response.get("error", "OpenClaw Node worker request failed")))
-        return response
+        prefix = self._process.stdout.read(4)
+        if len(prefix) != 4:
+            details = self._process.stderr.read() if self._process.stderr is not None else b""
+            raise RuntimeError(
+                f"OpenClaw Node worker exited: {bytes(details)[-400:].decode(errors='replace')}"
+            )
+        length = struct.unpack(">I", prefix)[0]
+        if length > 16 * 1024 * 1024:
+            raise RuntimeError("OpenClaw native worker frame exceeds the limit")
+        body = self._process.stdout.read(length)
+        if len(body) != length:
+            raise RuntimeError("OpenClaw native worker returned a short frame")
+        response = json.loads(body.decode("utf-8"))
+        if response.get("request_id") != self._request_id:
+            raise ValueError("OpenClaw native worker request ID mismatch")
+        if "error" in response:
+            error = response["error"]
+            raise ValueError(str(error.get("message", error)) if isinstance(error, Mapping) else str(error))
+        result = response.get("result")
+        if not isinstance(result, Mapping):
+            raise ValueError("OpenClaw Node worker result is not an object")
+        return dict(result)
 
     def execute(self, name: str, arguments: Mapping[str, Any] | None = None) -> dict[str, Any]:
-        response = self._request({
-            "op": "tool",
-            "tool_call_id": str(uuid.uuid4()),
-            "name": name,
-            "arguments": dict(arguments or {}),
-        })
-        result = response.get("result")
+        call_id = str(uuid.uuid4())
+        prepared = self._request(
+            {
+                "phase": "prepare_tools",
+                "calls": [{"id": call_id, "name": name, "arguments": dict(arguments or {})}],
+            }
+        )
+        calls = prepared.get("calls")
+        if not isinstance(calls, Sequence) or not calls:
+            raise ValueError("OpenClaw source preparation returned no call")
+        results = self._request({"phase": "execute_batch"}).get("results")
+        if not isinstance(results, Sequence) or not results:
+            raise ValueError("OpenClaw source execution returned no result")
+        result = next(
+            (item for item in results if isinstance(item, Mapping) and item.get("id") == call_id),
+            results[0],
+        )
         if not isinstance(result, Mapping):
             raise ValueError("OpenClaw source tool returned a non-object result")
         details = result.get("details") if isinstance(result.get("details"), Mapping) else {}
@@ -558,40 +411,53 @@ class _OpenClawWorkerClient:
                 if isinstance(part, Mapping) and part.get("type") == "text"
             )
         normalized = dict(details)
+        normalized["isError"] = bool(result.get("isError"))
         normalized.setdefault("status", "completed")
         if name in {"read", "write", "edit", "ls"}:
             normalized.setdefault("content", text)
         elif text:
             normalized.setdefault("output", text)
-        ack = response.get("acknowledgement")
-        if isinstance(ack, Mapping) and isinstance(ack.get("token"), str):
-            normalized["acknowledgement"] = dict(ack)
+        delivery_id = result.get("delivery_id")
+        if isinstance(delivery_id, str):
             session_id = details.get("sessionId")
-            if name == "process" and details.get("status") in {"running", "completed"} and session_id:
-                self._pending[str(session_id)] = str(ack["token"])
-                normalized["pendingAcknowledgement"] = True
+            self._pending[delivery_id] = str(session_id) if session_id is not None else None
+            normalized["delivery_id"] = delivery_id
+            normalized["pendingAcknowledgement"] = True
         return normalized
 
-    def acknowledge(self, session_id: str) -> None:
-        token = self._pending.pop(str(session_id), None)
-        if token:
-            self._request({"op": "ack", "token": token})
+    def acknowledge(self, delivery_id: str, history_digest: str = "") -> None:
+        key = str(delivery_id)
+        if key not in self._pending:
+            matches = [pending_id for pending_id, session_id in self._pending.items() if session_id == key]
+            if not matches:
+                raise KeyError(f"unknown pending OpenClaw delivery {key}")
+            for pending_id in matches:
+                self.acknowledge(pending_id, history_digest)
+            return
+        self._request(
+            {
+                "phase": "ack",
+                "delivery_id": key,
+                "history_digest": history_digest,
+            }
+        )
+        del self._pending[key]
 
     def bootstrap(self) -> tuple[Mapping[str, Any], ...]:
-        response = self._request({"op": "bootstrap"})
-        context = response.get("context")
-        return tuple(item for item in context if isinstance(item, Mapping)) if isinstance(context, Sequence) else ()
+        return self._bootstrap
 
     def close(self) -> None:
         if self._process.poll() is None:
-            self._process.terminate()
+            result = self._request({"phase": "close"})
+            cleanup = result.get("cleanup")
+            if not isinstance(cleanup, Mapping) or cleanup.get("all_dead") is not True:
+                raise RuntimeError("OpenClaw worker close did not prove all processes dead")
+            self._process.stdin.close() if self._process.stdin is not None else None
             try:
                 self._process.wait(timeout=2)
             except subprocess.TimeoutExpired:
                 self._process.kill()
                 self._process.wait()
-
-
 
 class OpenClawNativeTools:
     """Contained facade over the pinned Node OpenClaw source-tool worker."""
@@ -606,16 +472,16 @@ class OpenClawNativeTools:
         self.workspace.mkdir(parents=True, exist_ok=True)
         self._worker = worker or _OpenClawWorkerClient(self.workspace)
         self.scope = _NodeWorkerScope(self._worker)
-
     def execute(self, name: str, arguments: Mapping[str, Any] | None = None) -> dict[str, Any]:
-        return self._worker.execute(name, prepare_tool_call(name, arguments))
+        # Arguments cross the source boundary unchanged.  OpenClaw's pinned
+        # Node factory owns preparation, validation, and effect admission.
+        return self._worker.execute(name, arguments)
 
-    def acknowledge_poll(self, session_id: str) -> None:
-        self._worker.acknowledge(session_id)
+    def acknowledge_poll(self, delivery_id: str, history_digest: str = "") -> None:
+        self._worker.acknowledge(delivery_id, history_digest)
 
     def bootstrap_context(self) -> tuple[Mapping[str, Any], ...]:
         return self._worker.bootstrap()
-
 
 @dataclass(frozen=True)
 class RecoveryDecision:
@@ -643,22 +509,30 @@ def native_worker_invocation() -> dict[str, Any]:
     """Tool-only Node worker command; no model loop, provider, or supplier process."""
     return {
         "command": ["node", "breadboard/rl/harness/openclaw_tool_worker.mjs"],
-        "protocol": "bb.openclaw.tool-worker.jsonl.v1",
+        "protocol": "bb.openclaw-native.v1",
+        "transport": "bb.native-worker.rpc.v1",
+        "phases": [
+            "initialize",
+            "project_request",
+            "prepare_tools",
+            "execute_batch",
+            "ack",
+            "close",
+        ],
         "runtime": "node >=24.16.0 <25 || >=26.1.0",
         "source_modules": [
             "core-coding-tools-DoP9tAh3.mjs",
-            "bash-tools-Cb_Bzn6B.mjs",
-            "resource-loader-Bu_pVD2t.mjs",
+            "bash-process-registry-DHrULGkz.mjs",
             "bootstrap-DYYMCrXY.mjs",
             "workspace-YW5Pl2cf.mjs",
         ],
         "source_commit": OPENCLAW_SOURCE_COMMIT,
         "worker_owns": [
-            "pinned source tool construction",
-            "tool effects",
-            "process scope",
-            "pending acknowledgements",
-            "bootstrap loader",
+            "verified pinned source tool construction",
+            "raw argument preparation and tool effects",
+            "process/PTY scope and independently observed cleanup",
+            "unique pending poll deliveries",
+            "bootstrap asset materialization",
         ],
         "breadboard_owns": [
             "model dispatch",

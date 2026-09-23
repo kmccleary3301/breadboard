@@ -97,9 +97,12 @@ OPENHANDS_NATIVE_TOOL_IDS: tuple[str, ...] = (
 )
 PI_CODING_AGENT_LOCAL_ADAPTER_ID: str = "pi-coding-agent.local.v0.73.1"
 PI_NATIVE_TOOL_IDS: tuple[str, ...] = ("bash", "edit", "read", "write")
+OPENCLAW_LOCAL_ADAPTER_ID: str = "openclaw.local.v2026.9.4"
+OPENCLAW_NATIVE_TOOL_IDS: tuple[str, ...] = ("edit", "exec", "ls", "process", "read", "write")
 NATIVE_PHASE_TOOL_IDS: Mapping[str, tuple[str, ...]] = MappingProxyType({
     OPENHANDS_SDK_LOCAL_ADAPTER_ID: OPENHANDS_NATIVE_TOOL_IDS,
     PI_CODING_AGENT_LOCAL_ADAPTER_ID: PI_NATIVE_TOOL_IDS,
+    OPENCLAW_LOCAL_ADAPTER_ID: OPENCLAW_NATIVE_TOOL_IDS,
 })
 MINI_SWE_AGENT_LOCAL_ADAPTER_ID: str = "mini-swe-agent.local.v2.4.6"
 MINI_SWE_AGENT_TOOL_ID: str = "bash"
@@ -2183,10 +2186,17 @@ class TrustedProcessHandle:
                 )
                 runtime_root = Path(binding.runtime_root_path)
                 environment = dict(self.plan.runtime.fixed_environment)
-                if binding.adapter_id == PI_CODING_AGENT_LOCAL_ADAPTER_ID:
-                    # Pinned framed worker imports Pi only from the sealed root.
-                    environment["PI_NATIVE_WORKER_FRAMED"] = "1"
-                    environment["PI_CODING_AGENT_NODE_MODULES"] = str(runtime_root / "node_modules")
+                if binding.adapter_id in {
+                    PI_CODING_AGENT_LOCAL_ADAPTER_ID,
+                    OPENCLAW_LOCAL_ADAPTER_ID,
+                }:
+                    # Pinned framed workers import supplier code only from the
+                    # sealed runtime root and never receive Python env wiring.
+                    if binding.adapter_id == PI_CODING_AGENT_LOCAL_ADAPTER_ID:
+                        environment["PI_NATIVE_WORKER_FRAMED"] = "1"
+                        environment["PI_CODING_AGENT_NODE_MODULES"] = str(runtime_root / "node_modules")
+                    else:
+                        environment["OPENCLAW_DIST"] = str(runtime_root / "dist")
                 else:
                     environment["PYTHONHOME"] = str(runtime_root / "python")
                     environment["PYTHONNOUSERSITE"] = "1"
@@ -6273,5 +6283,7 @@ __all__ = [
     "OPENHANDS_NATIVE_TOOL_IDS",
     "PI_CODING_AGENT_LOCAL_ADAPTER_ID",
     "PI_NATIVE_TOOL_IDS",
+    "OPENCLAW_LOCAL_ADAPTER_ID",
+    "OPENCLAW_NATIVE_TOOL_IDS",
     "NATIVE_PHASE_TOOL_IDS",
 ]

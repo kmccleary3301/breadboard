@@ -4,16 +4,24 @@
   "runtime": {"node": ">=24.16.0 <25 || >=26.1.0", "text_only_model": true, "host": "gateway", "sandbox": "breadboard_task_containment"},
   "agent_exec": {"isolated": true, "auth_env_only": true, "temporary_state": true, "max_requests": 8, "episode_deadline_seconds": 120, "request_timeout_seconds": 45, "output_tokens": 2048, "tool_admissions": 32, "max_live_processes": 4, "model_fallbacks_override": [], "compaction": false, "retry": false},
   "tools": {"ordered": ["ls", "read", "edit", "write", "exec", "process"], "optional_title": true, "exec_yield_ms": 10000, "exec_timeout_seconds": 30, "process_poll_max_ms": 30000, "pending_ack_after_durable_append": true},
-  "bootstrap": {"ordered": ["AGENTS.md", "SOUL.md", "IDENTITY.md", "USER.md", "BOOTSTRAP.md", "MEMORY.md"], "per_file_chars": 20000, "total_chars": 60000, "user_chars": 4000, "missing_markers": true},
+  "bootstrap": {"ordered": ["AGENTS.md", "SOUL.md", "IDENTITY.md", "USER.md", "BOOTSTRAP.md", "MEMORY.md"], "per_file_chars": 20000, "total_chars": 60000, "user_chars": 4000, "missing_markers": true, "fixed_assets": ["bootstrap/AGENTS.md", "bootstrap/SOUL.md"]},
   "native_worker": {
-    "protocol": "bb.openclaw.tool-worker.jsonl.v1",
+    "protocol": "bb.openclaw-native.v1",
+    "transport": "bb.native-worker.rpc.v1",
     "runtime": "node >=24.16.0 <25 || >=26.1.0",
     "entrypoint": "breadboard/rl/harness/openclaw_tool_worker.mjs",
     "argv": ["node", "breadboard/rl/harness/openclaw_tool_worker.mjs"],
-    "source_modules": ["core-coding-tools-DoP9tAh3.mjs", "bash-tools-Cb_Bzn6B.mjs", "resource-loader-Bu_pVD2t.mjs", "bootstrap-DYYMCrXY.mjs", "workspace-YW5Pl2cf.mjs"],
-    "request": {"tool_call_id": "string", "name": "ls|read|edit|write|exec|process", "arguments": "object"},
-    "response": {"ok": "boolean", "tool_call_id": "string", "result": "source_tool_result", "acknowledgement": "token_and_required"},
-    "owns": ["pinned OpenClaw tool construction", "tool effects", "process scope", "pending acknowledgements", "bootstrap loader"],
+    "phases": ["initialize", "project_request", "prepare_tools", "execute_batch", "ack", "close"],
+    "source_modules": ["core-coding-tools-DoP9tAh3.mjs", "bash-process-registry-DHrULGkz.mjs", "bootstrap-DYYMCrXY.mjs", "workspace-YW5Pl2cf.mjs"],
+    "source_module_digests": {
+      "core-coding-tools-DoP9tAh3.mjs": "sha256:403a72188e3378cc570691083fa9270c05e20dc7e2706c62c5c455457b50dca3",
+      "bash-process-registry-DHrULGkz.mjs": "sha256:6f8a65296ce1a1e07b0f3d94d2bf65f9e88c5a68b9d01df3eecc1f40f349627e",
+      "bootstrap-DYYMCrXY.mjs": "sha256:e87734ad3d2d4b614a317ddd57565df7ce800aff0b8eaafd565066d905d61e1c",
+      "workspace-YW5Pl2cf.mjs": "sha256:8201a6b4ee921ac2767e272924488ed7c56c9041d274070490a064968438d5cf"
+    },
+    "request": {"id": "string", "name": "ls|read|edit|write|exec|process", "arguments": "object"},
+    "response": {"schema_version": "bb.openclaw-native.v1", "kind": "phase-result"},
+    "owns": ["verified pinned OpenClaw tool construction", "raw argument preparation", "tool effects", "process/PTY scope", "unique pending poll deliveries", "bootstrap asset materialization"],
     "does_not_own": ["model requests", "history", "retry", "fallback", "compaction", "terminal arbitration"]
   }
 }

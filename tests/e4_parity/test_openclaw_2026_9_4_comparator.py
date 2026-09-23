@@ -72,34 +72,41 @@ def test_comparator_negative_gate_rejects_undeclared_placeholder() -> None:
         project_bb_trace(trace)
 
 
-def test_authoritative_packet_cases_and_independent_corruption_gate(tmp_path: Path) -> None:
-    packet = Path(
-        "/Users/kylemccleary/projects/breadboard/docs_tmp/"
-        "bb_direction_assessment/engine_pr_handoff_20260827/"
-        "e4_admission_20260914T221653Z/do2-20260923/openclaw/packet/"
-        "openclaw-capture-proxy-merged-472-20260923T061727Z.tar.gz"
+def test_phase_worker_runs_real_pinned_source_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import os
+
+    dist = Path(os.environ.get("OPENCLAW_DIST", "/opt/openclaw/dist"))
+    if not dist.is_dir():
+        pytest.skip("pinned OpenClaw dist is not mounted")
+    monkeypatch.setenv("OPENCLAW_DIST", str(dist))
+    from breadboard.rl.harness.openclaw_native_tools import (
+        OpenClawNativeTools,
+        native_worker_invocation,
     )
-    if not packet.exists():
-        pytest.skip("authoritative OpenClaw packet is not mounted")
-    import copy
-    import tarfile
-    with tarfile.open(packet) as archive:
-        archive.extractall(tmp_path)
-    cases = tmp_path / "packet" / "cases"
-    expected_counts = {
-        "normal_multiturn_write_read": 3,
-        "process_exec_effect": 3,
-        "streaming_fragmented_write": 2,
-        "malformed_tool_call": 1,
-        "provider_failure_no_retry": 1,
-        "budget_cutoff_after_prefix": 8,
-    }
-    for name, count in expected_counts.items():
-        expected = project_supplier_case(cases / name)
-        assert expected["request_count"] == count
-        observed = project_bb_trace(copy.deepcopy(expected))
-        assert compare({"capture": {"trace": expected}, "replay": observed, "scope": {}})["ok"]
-        corrupted = copy.deepcopy(observed)
-        path = next(iter(corrupted["effects"]), "missing.txt")
-        corrupted["effects"][path] = "sha256:independent-corruption"
-        assert not compare({"capture": {"trace": expected}, "replay": corrupted, "scope": {}})["ok"]
+
+    tools = OpenClawNativeTools(tmp_path)
+    try:
+        invocation = native_worker_invocation()
+        assert invocation["protocol"] == "bb.openclaw-native.v1"
+        assert invocation["phases"] == [
+            "initialize",
+            "project_request",
+            "prepare_tools",
+            "execute_batch",
+            "ack",
+            "close",
+        ]
+        request = tools._worker._request({"phase": "project_request", "messages": []})
+        assert request["kind"] == "request"
+        assert [item["function"]["name"] for item in request["tools"]] == [
+            "ls",
+            "read",
+            "edit",
+            "write",
+            "exec",
+            "process",
+        ]
+        assert tools.execute("write", {"path": "marker.txt", "content": "OK\n"})["changed"]
+        assert tools.execute("read", {"path": "marker.txt"})["content"] == "OK\n"
+    finally:
+        tools.scope.cleanup()

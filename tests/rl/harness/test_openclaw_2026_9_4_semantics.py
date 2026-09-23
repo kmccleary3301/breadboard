@@ -65,3 +65,47 @@ def test_generic_stream_consumer_returns_batch_and_history() -> None:
     assert result.tool_batch.tool_calls == ()
     assert result.history_mutations[0]["content"] == "done"
     assert state.prepare_request_history()[0]["role"] == "assistant"
+
+
+def test_request_cap_records_refused_ninth_attempt_without_dispatch() -> None:
+    state = OpenClawSemanticsState()
+    for _ in range(8):
+        assert state.begin_query() is None
+    terminal = state.begin_query()
+    assert terminal is not None
+    assert terminal["status"] == 429
+    assert terminal["isError"] is True
+    assert terminal["error"] == "bbe4 capture request cap"
+    assert state.request_count == 8
+    assert state.refused_attempts == 1
+    assert state.finish()["history"][-1]["isError"] is True
+
+
+def test_stream_index_delta_preserves_initial_identity() -> None:
+    result = finalize_native_chat_response(
+        {
+            "stream_fragments": [
+                {
+                    "kind": "tool_arguments",
+                    "index": 0,
+                    "tool_index": 2,
+                    "id": "call_original",
+                    "type": "function",
+                    "name": "write",
+                    "text": '{"path":"x",',
+                },
+                {
+                    "kind": "tool_arguments",
+                    "index": 1,
+                    "tool_index": 2,
+                    "text": '"content":"ok"}',
+                },
+            ],
+            "finish_reason": "tool_calls",
+        }
+    )
+    call = result.tool_batch.calls[0]
+    assert call.tool_call_id == "call_original"
+    assert call.call_type == "function"
+    assert call.index == 2
+    assert call.arguments == {"path": "x", "content": "ok"}

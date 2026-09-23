@@ -29,7 +29,7 @@ policy:
     protocol: native_tools
     decoder: breadboard.openclaw.2026.9.4
     repair: null
-    argument_processors: [edit_json_string, legacy_oldText_newText, path_xml_suffix]
+    argument_processors: []
     aliases: {}
     decode_entire_batch_before_dispatch: true
     require_terminal_finish_reason: true
