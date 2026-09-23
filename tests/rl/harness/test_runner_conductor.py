@@ -4020,6 +4020,29 @@ async def test_native_stream_cancellation_during_shielded_close_preserves_cancel
     assert cleanup.all_dead is False
     assert cleanup.error_code == "native_close_failed"
 
+async def test_session_binding_close_failure_is_structured_behind_cancel_failure() -> None:
+    from tests.rl.harness.test_runner_policy_runtime import (
+        CancelFailsDuringClosePolicyClient,
+    )
+
+    observation = _observation()
+    client = CancelFailsDuringClosePolicyClient(observation)
+    session, _, _, _, _, _ = await _open(client=client)
+    run_task = asyncio.create_task(session.run(ConductorRunRequest({"query": "work"})))
+    await _within_timeout(client.invoke_entered.wait())
+    client.close_error = RuntimeError("binding close sentinel")
+    close_task = asyncio.create_task(session.close())
+    await _within_timeout(client.cancel_entered.wait())
+    with pytest.raises(RunnerDependencyError):
+        await close_task
+    with pytest.raises((RunnerCancelled, asyncio.CancelledError)):
+        await run_task
+    outcome = session.native_cleanup_outcome
+    assert outcome.attempted is False
+    assert outcome.all_dead is None
+    assert outcome.error_code is None
+    assert outcome.binding_close_error_code == "policy_close_failed"
+
 
 async def test_native_stream_normal_path_closes_once(
     monkeypatch: pytest.MonkeyPatch,

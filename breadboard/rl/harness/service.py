@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from types import MappingProxyType
-from typing import Any, Callable, Generic, Mapping, Protocol, TypeVar
+from typing import Any, Callable, Generic, Mapping, Protocol, TypeVar, cast, runtime_checkable
 
 from breadboard_engine.compilation.contracts import canonical_json_bytes
 
@@ -88,6 +88,12 @@ from breadboard.rl.harness.sandbox import (
     build_sandbox_execution_plan,
 )
 from breadboard.artifacts.references import ArtifactRef
+
+@runtime_checkable
+class _NativeCleanupSession(Protocol):
+    @property
+    def native_cleanup_outcome(self) -> NativeCleanupOutcome:
+        ...
 
 
 class EpisodeLifecycleState(str, Enum):
@@ -1747,9 +1753,14 @@ class BreadBoardV2EpisodeService:
                 close_cancellation, close_error = await self._close_owned_session(
                     coordinator
                 )
+                native_session = coordinator.session
+                native_outcome = (
+                    cast(_NativeCleanupSession, native_session).native_cleanup_outcome
+                    if isinstance(native_session, _NativeCleanupSession)
+                    else None
+                )
                 native_cleanup_failure = _native_cleanup_failure(
-                    getattr(coordinator.session, "native_cleanup_outcome", None),
-                    "session_close",
+                    native_outcome, "session_close",
                 )
                 if native_cleanup_failure is not None:
                     coordinator.session_close_failure = native_cleanup_failure
@@ -3639,13 +3650,26 @@ def _native_cleanup_failure(
     outcome: NativeCleanupOutcome | object,
     boundary: str,
 ) -> SafeFailureFactV2 | None:
-    if type(outcome) is not NativeCleanupOutcome or not outcome.attempted:
+    if type(outcome) is not NativeCleanupOutcome:
         return None
-    if outcome.all_dead is True and outcome.error_code is None:
+    if (
+        not outcome.attempted
+        and outcome.binding_close_error_code is None
+    ):
+        return None
+    if (
+        outcome.all_dead is True
+        and outcome.error_code is None
+        and outcome.binding_close_error_code is None
+    ):
         return None
     return _v2_failure(
         "cleanup",
-        outcome.error_code or "native_cleanup_not_verified",
+        (
+            outcome.error_code
+            or outcome.binding_close_error_code
+            or "native_cleanup_not_verified"
+        ),
         "reconcile",
         boundary,
     )

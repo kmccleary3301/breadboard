@@ -114,6 +114,7 @@ class NativeCleanupOutcome:
     attempted: bool
     all_dead: bool | None
     error_code: str | None
+    binding_close_error_code: str | None
 
 @dataclass(frozen=True, slots=True)
 class ConductorRunRequest:
@@ -656,11 +657,10 @@ def _plan_error(request: RunnerOpenRequest, message: str, code: str) -> RunnerPl
         effective_plan_digest=request.effective_plan_digest,
     )
 
-
 def _note_cleanup_failure(primary: BaseException, cleanup: BaseException) -> None:
     """Keep a cleanup failure visible without replacing the primary error."""
     primary.add_note(
-        "native stream cleanup failed: "
+        "runner cleanup failed: "
         f"{type(cleanup).__name__}: {str(cleanup)[:256]}"
     )
 
@@ -1352,7 +1352,7 @@ class _ConductorSession:
         self._terminal_committing = False
         self._native_stream_close_callback: Any = None
         self._native_stream_close_started = False
-        self._native_cleanup_outcome = NativeCleanupOutcome(False, None, None)
+        self._native_cleanup_outcome = NativeCleanupOutcome(False, None, None, None)
 
     @property
     def native_cleanup_outcome(self) -> NativeCleanupOutcome:
@@ -1360,9 +1360,14 @@ class _ConductorSession:
 
     def _set_native_cleanup_outcome(
         self, *, attempted: bool, all_dead: bool | None, error_code: str | None,
+        binding_close_error_code: str | None = None,
     ) -> None:
+        prior = self._native_cleanup_outcome
         self._native_cleanup_outcome = NativeCleanupOutcome(
             attempted, all_dead, error_code,
+            prior.binding_close_error_code
+            if binding_close_error_code is None
+            else binding_close_error_code,
         )
 
     def _record_native_cleanup_failure(
@@ -1376,6 +1381,18 @@ class _ConductorSession:
         )
         if primary is not None:
             _note_cleanup_failure(primary, cleanup)
+
+    def _record_binding_close_failure(self, cleanup: BaseException) -> None:
+        error_code = getattr(cleanup, "code", None)
+        if not isinstance(error_code, str) or not error_code:
+            error_code = type(cleanup).__name__.lower()
+        outcome = self._native_cleanup_outcome
+        self._set_native_cleanup_outcome(
+            attempted=outcome.attempted,
+            all_dead=outcome.all_dead,
+            error_code=outcome.error_code,
+            binding_close_error_code=error_code,
+        )
 
     async def run(self, request: ConductorRunRequest) -> RunnerResult:
         async with self._lock:
@@ -1457,10 +1474,10 @@ class _ConductorSession:
             if primary is None:
                 primary = exc
             else:
+                self._record_binding_close_failure(exc)
                 _note_cleanup_failure(primary, exc)
         if primary is not None:
             raise primary
-
     async def _loop(self, request: ConductorRunRequest) -> RunnerResult:
         if self._projection.source_consumer_id == OPENHANDS_RESPONSE_CONSUMER_ID:
             async with asyncio.timeout(180):
