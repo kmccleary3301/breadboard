@@ -137,6 +137,7 @@ async def _run(*, fail_ack: bool = False) -> tuple[Any, FakeNativePort, list[tup
 async def test_hermes_result_carries_episode_id() -> None:
     result, _, _ = await _run()
     assert result.episode_id == "hermes-regression"
+    assert result.response["replay_trace"]["case_id"] == "hermes-regression"
 
 
 @pytest.mark.asyncio
