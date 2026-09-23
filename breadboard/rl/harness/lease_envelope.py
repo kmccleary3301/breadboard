@@ -399,6 +399,8 @@ def _mount_proc() -> None:
 
 
 def _verify_mount_view(workspace: str, scratch: str) -> tuple[str, tuple[str, ...]]:
+    workspace = os.path.abspath(workspace)
+    scratch = os.path.abspath(scratch)
     raw = _mountinfo()
     roots = tuple(sorted({workspace, scratch, "/tmp"}))
     entries: dict[str, list[bytes]] = {}
