@@ -2282,12 +2282,19 @@ class _ConductorSession:
             await commit(before, "assistant", turn)
             observations: list[FrozenJsonObject] = []
             if parsed.calls:
-                raw_by_id = {call.id: call.arguments for call in native.tool_calls}
-                for ordinal, call in enumerate(parsed.calls):
+                # parsed.calls is the ordered 1:1 projection of native.tool_calls;
+                # join by ordinal so duplicate provider IDs keep their own arguments.
+                raw_calls = native.tool_calls
+                if [raw.id for raw in raw_calls] != [call.id for call in parsed.calls]:
+                    raise RunnerProtocolError(
+                        "native tool-call projection changed call identity",
+                        code="native_response_invalid", **self._context(),
+                    )
+                for ordinal, (call, raw) in enumerate(zip(parsed.calls, raw_calls, strict=True)):
                     await self._checkpoint("before_action", turn=turn, call_id=call.id)
                     await self._emit(ToolCallEvent(
                         0, self._open_request.episode_id, self._open_request.effective_plan_digest,
-                        turn, ordinal, call.id, call.name, raw_by_id[call.id],
+                        turn, ordinal, call.id, call.name, raw.arguments,
                     ))
                 prepared = await phase("prepare_tools", {"calls": [
                     {"id": call.id, "name": call.name, "arguments": call.arguments}

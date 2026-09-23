@@ -32,6 +32,7 @@ from breadboard.rl.harness.runners.base import (
     RunnerTermination,
     RunnerToolBinding,
     SourceEventCommitEvent,
+    ToolCallEvent,
     ToolObservationEvent,
     thaw_json,
 )
@@ -562,6 +563,19 @@ async def test_pi_native_stream_cap_batch_and_request_shape(tmp_path: Path) -> N
         assert request["max_tokens"] == 2_048
         assert "strict" not in json.dumps(request)
 
+
+@pytest.mark.asyncio
+async def test_pi_native_stream_duplicate_call_ids_keep_ordinal_arguments(
+    tmp_path: Path,
+) -> None:
+    first = {"path": "first.txt", "content": "1\n"}
+    second = {"path": "second.txt", "content": "2\n"}
+    _, _, events, _, _ = await _run_episode(
+        tmp_path, [[("dup", "write", first), ("dup", "write", second)], []]
+    )
+    calls = [event for event in events if isinstance(event, ToolCallEvent)]
+    assert [(event.ordinal, event.call_id) for event in calls] == [(0, "dup"), (1, "dup")]
+    assert [json.loads(event.arguments_json) for event in calls] == [first, second]
 
 @pytest.mark.asyncio
 async def test_pi_native_stream_no_call_is_assistant_complete(tmp_path: Path) -> None:
