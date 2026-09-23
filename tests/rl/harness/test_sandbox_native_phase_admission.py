@@ -155,11 +155,13 @@ async def test_initialize_accepts_non_repository_writable_policy_workspace(
         tool_ids=("bash", "edit", "read", "write"),
         runtime_root_path="/sealed/pi",
     )
-    workspace_root = tmp_path / "seed"
-    workspace_root.mkdir()
+    workspace_root = tmp_path
+    lease_root = tmp_path / "leases"
+    lease_root.mkdir()
+    lease_root_fd = os.open(lease_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     entry = SimpleNamespace(
         role="workspace_seed",
-        target_logical_path="seed",
+        target_logical_path=".",
         access=SimpleNamespace(value="rw"),
     )
     plan = SimpleNamespace(
@@ -188,9 +190,11 @@ async def test_initialize_accepts_non_repository_writable_policy_workspace(
         captured.append(payload)
         return {"schema_version": "bb.pi-native.test.v1", "kind": "initialized"}
 
+    manager = SimpleNamespace(lease_root=lease_root, _lease_root_fd=lease_root_fd)
     lease = SimpleNamespace(
         lease_id="lease",
         plan=plan,
+        _manager=manager,
         _materialized=SimpleNamespace(workspace_path=tmp_path),
         _runtime=SimpleNamespace(invoke_native_phase=invoke),
         _begin_operation=begin,
@@ -210,10 +214,13 @@ async def test_initialize_accepts_non_repository_writable_policy_workspace(
         timeout_ms=1_000,
         package_subpath="node_modules/@mariozechner/pi-coding-agent",
     )
-
     assert result["kind"] == "initialized"
     assert captured[0]["workspace"] == str(workspace_root)
+    assert captured[0]["scratch"] == str(lease_root / "lease.native-scratch")
+    assert Path(captured[0]["scratch"]).parent == lease_root
+    assert Path(captured[0]["scratch"]).stat().st_mode & 0o777 == 0o700
     assert captured[0]["package_dir"] == "/sealed/pi/node_modules/@mariozechner/pi-coding-agent"
+    os.close(lease_root_fd)
 
 
 @pytest.mark.asyncio

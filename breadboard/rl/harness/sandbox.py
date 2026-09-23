@@ -2764,6 +2764,134 @@ def _sole_writable_policy_workspace_mount(
         )
     return entries[0]
 
+_NATIVE_SCRATCH_SUFFIX = ".native-scratch"
+
+
+def _native_scratch_name(lease_id: str) -> str:
+    return lease_id + _NATIVE_SCRATCH_SUFFIX
+
+
+def _native_scratch_path(manager: SandboxRuntimeManager, lease_id: str) -> Path:
+    return manager.lease_root / _native_scratch_name(lease_id)
+
+
+def _create_native_scratch(manager: SandboxRuntimeManager, lease_id: str) -> Path:
+    root_fd = manager._lease_root_fd
+    if root_fd is None:
+        raise WorkspaceStateError(
+            "native scratch authority is unavailable",
+            code="workspace_authority_mismatch",
+            lease_id=lease_id,
+        )
+    name = _native_scratch_name(lease_id)
+    os.mkdir(name, mode=0o700, dir_fd=root_fd)
+    try:
+        descriptor = os.open(
+            name,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=root_fd,
+        )
+        try:
+            metadata = os.fstat(descriptor)
+            if (
+                not stat.S_ISDIR(metadata.st_mode)
+                or metadata.st_uid != os.geteuid()
+                or stat.S_IMODE(metadata.st_mode) != 0o700
+            ):
+                raise WorkspaceStateError(
+                    "native scratch authority is invalid",
+                    code="workspace_authority_mismatch",
+                    lease_id=lease_id,
+                )
+        finally:
+            os.close(descriptor)
+    except BaseException:
+        try:
+            os.rmdir(name, dir_fd=root_fd)
+        except OSError:
+            pass
+        raise
+    return _native_scratch_path(manager, lease_id)
+
+
+def _native_scratch_present(manager: SandboxRuntimeManager, lease_id: str) -> bool:
+    root_fd = manager._lease_root_fd
+    if root_fd is None:
+        return False
+    try:
+        os.stat(
+            _native_scratch_name(lease_id),
+            dir_fd=root_fd,
+            follow_symlinks=False,
+        )
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def _remove_native_scratch(
+    manager: SandboxRuntimeManager,
+    lease_id: str,
+) -> CleanupStepReceipt:
+    root_fd = manager._lease_root_fd
+    if root_fd is None:
+        return CleanupStepReceipt(
+            "native_scratch", CleanupState.QUARANTINED, "lease_root_unavailable"
+        )
+    name = _native_scratch_name(lease_id)
+
+    def remove_directory(descriptor: int) -> None:
+        os.fchmod(descriptor, stat.S_IMODE(os.fstat(descriptor).st_mode) | 0o700)
+        for child_name in tuple(os.listdir(descriptor)):
+            metadata = os.stat(child_name, dir_fd=descriptor, follow_symlinks=False)
+            if stat.S_ISDIR(metadata.st_mode):
+                child = os.open(
+                    child_name,
+                    os.O_RDONLY
+                    | getattr(os, "O_DIRECTORY", 0)
+                    | getattr(os, "O_NOFOLLOW", 0),
+                    dir_fd=descriptor,
+                )
+                try:
+                    remove_directory(child)
+                finally:
+                    os.close(child)
+                os.rmdir(child_name, dir_fd=descriptor)
+            else:
+                os.unlink(child_name, dir_fd=descriptor)
+        os.fsync(descriptor)
+
+    try:
+        descriptor = os.open(
+            name,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=root_fd,
+        )
+    except FileNotFoundError:
+        return CleanupStepReceipt("native_scratch", CleanupState.ALREADY_RELEASED)
+    except BaseException as exc:
+        return CleanupStepReceipt(
+            "native_scratch", CleanupState.FAILED, type(exc).__name__
+        )
+    try:
+        remove_directory(descriptor)
+    except BaseException as exc:
+        return CleanupStepReceipt(
+            "native_scratch", CleanupState.FAILED, type(exc).__name__
+        )
+    finally:
+        os.close(descriptor)
+    try:
+        os.rmdir(name, dir_fd=root_fd)
+        os.fsync(root_fd)
+    except BaseException as exc:
+        return CleanupStepReceipt(
+            "native_scratch", CleanupState.FAILED, type(exc).__name__
+        )
+    return CleanupStepReceipt("native_scratch", CleanupState.RELEASED)
+
 def _workspace_effect_snapshot(
     root: Path,
     *,
@@ -3122,7 +3250,7 @@ class LeaseBackedRunnerWorkspace:
                 code="runtime_unsupported",
                 lease_id=self.__lease.lease_id,
             )
-        scratch = self.__lease._materialized.workspace_path / ".breadboard-native-scratch"
+        scratch = _native_scratch_path(self.__lease._manager, self.__lease.lease_id)
         available = {
             "cwd": str(self.__lease._resolve(workspace_mount.target_logical_path, writable=False)),
             "home": str(scratch / "home"),
@@ -3203,7 +3331,7 @@ class LeaseBackedRunnerWorkspace:
             if operation == "initialize":
                 workspace_mount = _sole_writable_policy_workspace_mount(lease)
                 workspace = lease._resolve(workspace_mount.target_logical_path, writable=True)
-                scratch = lease._materialized.workspace_path / ".breadboard-native-scratch"
+                scratch = _native_scratch_path(lease._manager, lease.lease_id)
                 try:
                     native_payload = _admit_native_phase_payload(
                         operation,
@@ -3221,20 +3349,15 @@ class LeaseBackedRunnerWorkspace:
                         lease_id=lease.lease_id,
                     ) from exc
                 try:
-                    scratch.mkdir(mode=0o700)
-                    metadata = scratch.stat(follow_symlinks=False)
+                    _create_native_scratch(lease._manager, lease.lease_id)
+                except WorkspaceStateError:
+                    raise
                 except OSError as exc:
                     raise WorkspaceStateError(
                         "native scratch authority is unavailable",
                         code="workspace_authority_mismatch",
                         lease_id=lease.lease_id,
                     ) from exc
-                if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) != 0o700:
-                    raise WorkspaceStateError(
-                        "native scratch authority is invalid",
-                        code="workspace_authority_mismatch",
-                        lease_id=lease.lease_id,
-                    )
             if operation == "execute":
                 tool_id = native_payload.get("tool_id")
                 if type(tool_id) is not str or tool_id not in adapter.tool_ids:
@@ -4012,11 +4135,21 @@ class VerifierWorkspaceLease:
             runtime_step = _runtime_to_lease_cleanup_step(
                 await self._runtime.terminate()
             )
-            steps = [runtime_step]
             runtime_released = runtime_step.state in {
                 CleanupState.RELEASED,
                 CleanupState.ALREADY_RELEASED,
             }
+            steps = [runtime_step]
+            if _native_scratch_present(self._manager, self.lease_id):
+                steps.append(
+                    _remove_native_scratch(self._manager, self.lease_id)
+                    if runtime_released
+                    else CleanupStepReceipt(
+                        "native_scratch",
+                        CleanupState.QUARANTINED,
+                        "dependent runtime cleanup incomplete",
+                    )
+                )
             if runtime_released:
                 try:
                     for root, dirs, files in os.walk(self.workspace, topdown=True, followlinks=False):
@@ -5140,9 +5273,19 @@ class SandboxRuntimeManager:
             steps.append(
                 CleanupStepReceipt("child_verifier", child_state, child_detail)
             )
-            steps.append(
-                _runtime_to_lease_cleanup_step(await lease._runtime.terminate())
-            )
+            runtime_step = _runtime_to_lease_cleanup_step(await lease._runtime.terminate())
+            steps.append(runtime_step)
+            if _native_scratch_present(self, lease.lease_id):
+                steps.append(
+                    _remove_native_scratch(self, lease.lease_id)
+                    if runtime_step.state
+                    in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
+                    else CleanupStepReceipt(
+                        "native_scratch",
+                        CleanupState.QUARANTINED,
+                        "dependent runtime cleanup incomplete",
+                    )
+                )
             dependencies_released = all(
                 step.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
                 for step in steps
@@ -5371,34 +5514,42 @@ class SandboxRuntimeManager:
             if self._lease_record_exists(lease_id):
                 self._release_lease_owner_lock(lease_id, unlink=False)
                 continue
+            scratch_step = (
+                _remove_native_scratch(self, lease_id)
+                if _native_scratch_present(self, lease_id)
+                else None
+            )
+            if scratch_step is not None and scratch_step.state not in {
+                CleanupState.RELEASED,
+                CleanupState.ALREADY_RELEASED,
+            }:
+                receipts.append(
+                    SandboxCleanupReceipt.from_steps(
+                        lease_id,
+                        (
+                            scratch_step,
+                            CleanupStepReceipt(
+                                "owner_lock",
+                                CleanupState.QUARANTINED,
+                                "native_scratch_cleanup_failed",
+                            ),
+                        ),
+                    )
+                )
+                continue
             try:
                 self._release_lease_owner_lock(lease_id, unlink=True)
                 os.fsync(self._lease_root_fd)
             except Exception:
-                receipts.append(
-                    SandboxCleanupReceipt.from_steps(
-                        lease_id,
-                        (
-                            CleanupStepReceipt(
-                                "owner_lock",
-                                CleanupState.QUARANTINED,
-                                "owner_lock_cleanup_failed",
-                            ),
-                        ),
-                    )
+                lock_step = CleanupStepReceipt(
+                    "owner_lock",
+                    CleanupState.QUARANTINED,
+                    "owner_lock_cleanup_failed",
                 )
             else:
-                receipts.append(
-                    SandboxCleanupReceipt.from_steps(
-                        lease_id,
-                        (
-                            CleanupStepReceipt(
-                                "owner_lock",
-                                CleanupState.RELEASED,
-                            ),
-                        ),
-                    )
-                )
+                lock_step = CleanupStepReceipt("owner_lock", CleanupState.RELEASED)
+            orphan_steps = ((scratch_step,) if scratch_step is not None else ()) + (lock_step,)
+            receipts.append(SandboxCleanupReceipt.from_steps(lease_id, orphan_steps))
         names = tuple(sorted(record_names))
         paths = [
             self.lease_root / name
@@ -5554,12 +5705,24 @@ class SandboxRuntimeManager:
             }
             backend = self.process_backend if runtime_authority_id in trusted_runtime_ids else self.docker_backend
             reconcile = getattr(backend, "reconcile", None) if backend is not None else None
+            scratch_present = _native_scratch_present(self, path.stem)
             if not callable(reconcile):
                 unavailable_steps = (
                     CleanupStepReceipt(
                         "runtime",
                         CleanupState.QUARANTINED,
                         "stale_identity_uncertain",
+                    ),
+                    *(
+                        (
+                            CleanupStepReceipt(
+                                "native_scratch",
+                                CleanupState.QUARANTINED,
+                                "stale_identity_uncertain",
+                            ),
+                        )
+                        if scratch_present
+                        else ()
                     ),
                     CleanupStepReceipt(
                         "workspace",
@@ -5585,12 +5748,30 @@ class SandboxRuntimeManager:
                 )
                 continue
             raw_steps = reconciliation_prefix + tuple(await reconcile(record))
+            runtime_steps = tuple(
+                step for step in raw_steps if step.resource == "runtime"
+            )
+            runtime_released = bool(runtime_steps) and all(
+                step.state
+                in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
+                for step in runtime_steps
+            )
+            if scratch_present:
+                raw_steps += (
+                    _remove_native_scratch(self, path.stem)
+                    if runtime_released
+                    else CleanupStepReceipt(
+                        "native_scratch",
+                        CleanupState.QUARANTINED,
+                        "dependent runtime cleanup incomplete",
+                    ),
+                )
             if (
                 {step.resource for step in raw_steps}
                 == (
                     {
                         "child_verifier",
-                        *(("snapshot",) if snapshot_step is not None else ()),
+                        *({"native_scratch"} if scratch_present else set()),
                         "runtime",
                         "workspace",
                         "cache_holder",
@@ -5599,6 +5780,7 @@ class SandboxRuntimeManager:
                     if role == "primary"
                     else {
                         *(("snapshot",) if snapshot_step is not None else ()),
+                        *({"native_scratch"} if scratch_present else set()),
                         "runtime",
                         "workspace",
                         "cache_holder",
@@ -5615,14 +5797,6 @@ class SandboxRuntimeManager:
                     str(record["lease_id"]), raw_steps
                 ))
                 continue
-            runtime_steps = tuple(
-                step for step in raw_steps if step.resource == "runtime"
-            )
-            runtime_released = bool(runtime_steps) and all(
-                step.state
-                in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
-                for step in runtime_steps
-            )
             steps = list(raw_steps)
             if (
                 runtime_released

@@ -3029,7 +3029,9 @@ class _ProductionCleanupProbe:
             )
         )
         active_leases = {
-            path.stem for path in lease_paths
+            path.stem
+            for path in lease_paths
+            if not path.name.endswith(".native-scratch")
         } | set(getattr(self._sandbox_runtime, "_leases", {})) | set(
             getattr(self._materialization, "_active_workspaces", {})
         )
@@ -3106,10 +3108,16 @@ class _ProductionCleanupProbe:
         )
         cgroup_values = tuple(sorted(os.fspath(path) for path in cgroup_paths))
         workspace_values = tuple(os.fspath(path) for path in workspace_paths)
+        scratch_paths = {
+            os.fspath(path)
+            for path in lease_paths
+            if path.name.endswith(".native-scratch")
+        }
         orphan_ids = tuple(
             sorted(
                 {
                     *active_leases,
+                    *scratch_paths,
                     *container_ids,
                     *(f"pid:{pid}" for pid in live_processes),
                     *cgroup_values,
