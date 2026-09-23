@@ -17,7 +17,7 @@ import time
 import uuid
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from importlib.resources import files
+from importlib.resources import files as resource_files
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Awaitable, Callable, Literal, Mapping, Protocol, Sequence
@@ -146,7 +146,7 @@ def _admit_native_phase_payload(
 
 
 def _read_sandbox_capability_matrix_resource() -> bytes:
-    resource = files(__package__).joinpath(SANDBOX_CAPABILITY_MATRIX_RESOURCE)
+    resource = resource_files(__package__).joinpath(SANDBOX_CAPABILITY_MATRIX_RESOURCE)
     limit = _MAX_SANDBOX_CAPABILITY_MATRIX_BYTES
     if isinstance(resource, Path):
         expected = os.stat(resource, follow_symlinks=False)
@@ -1753,7 +1753,7 @@ def _sealed_repository_diff(
                 encoding="utf-8",
             )
             if not seed_base:
-                environment["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = str(source_objects)
+                base_environment["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = str(source_objects)
             common = (
                 "-c",
                 "core.autocrlf=false",
@@ -1767,7 +1767,7 @@ def _sealed_repository_diff(
             base_tree = base_commit
             if seed_baseline is not None:
                 baseline_environment = {
-                    **environment,
+                    **base_environment,
                     "GIT_INDEX_FILE": str(temporary / "seed-index"),
                     "GIT_WORK_TREE": str(seed_baseline),
                 }
@@ -1797,7 +1797,7 @@ def _sealed_repository_diff(
             elif empty_base:
                 returncode, stdout, stderr = invoke(
                     ("mktree",),
-                    environment=environment,
+                    environment=base_environment,
                     stdout_limit=64 * 1024,
                     cwd=temporary,
                     input_data=b"",
@@ -1826,7 +1826,7 @@ def _sealed_repository_diff(
                 add_command,
             ):
                 returncode, _, stderr = invoke(
-                    command, environment=environment, stdout_limit=64 * 1024
+                    command, environment=base_environment, stdout_limit=64 * 1024
                 )
                 if returncode != 0:
                     raise VerifierSnapshotError(
@@ -1849,7 +1849,7 @@ def _sealed_repository_diff(
                     "--",
                     ".",
                 ),
-                environment=environment,
+                environment=base_environment,
                 stdout_limit=plan.limits.artifact_bytes_each,
             )
             if returncode != 0:

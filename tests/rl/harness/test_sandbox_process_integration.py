@@ -203,6 +203,82 @@ def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
         )
 
 
+
+
+def test_sealed_repository_diff_repository_mode_binds_alternate_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = tmp_path / "source"
+    scratch = tmp_path / "scratch"
+    repository.mkdir()
+    scratch.mkdir()
+    git_path = shutil.which("git")
+    assert git_path is not None
+
+    def git(*arguments: str) -> str:
+        completed = subprocess.run(
+            ("git", *arguments),
+            cwd=repository,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return completed.stdout.strip()
+
+    git("init", "--quiet")
+    (repository / "tracked.txt").write_text("before\n", encoding="utf-8")
+    git("add", ".")
+    git(
+        "-c",
+        "user.name=BreadBoard",
+        "-c",
+        "user.email=breadboard@example.invalid",
+        "commit",
+        "--quiet",
+        "-m",
+        "base",
+    )
+    base_commit = git("rev-parse", "HEAD")
+    (repository / "tracked.txt").write_text("after\n", encoding="utf-8")
+    class PinnedGit:
+        proc_fd_path = git_path
+        digest = "sha256:" + "0" * 64
+
+        def __init__(self) -> None:
+            self.fd = os.open(git_path, os.O_RDONLY)
+
+        def close(self) -> None:
+            os.close(self.fd)
+
+    monkeypatch.setattr(
+        "breadboard.rl.harness.sandbox._snapshot_installed_executable",
+        lambda _path, _expected_digest: PinnedGit(),
+    )
+    plan = type(
+        "RepositoryDiffPlan",
+        (),
+        {
+            "runtime": type(
+                "Runtime",
+                (),
+                {"fixed_environment": (("PATH", str(Path(git_path).parent)),)},
+            )(),
+            "limits": type(
+                "Limits",
+                (),
+                {"action_timeout_ms": 10_000, "artifact_bytes_each": 1024 * 1024},
+            )(),
+        },
+    )()
+    result = _sealed_repository_diff(
+        repository=repository,
+        scratch_directory=scratch,
+        base_commit=base_commit,
+        plan=plan,
+    )
+    assert "-before" in result["stdout"]
+    assert "+after" in result["stdout"]
 @requires_sealed_execution
 def test_sealed_workspace_seed_diff_captures_modification_and_marker_addition(
     tmp_path: Path,
@@ -214,6 +290,8 @@ def test_sealed_workspace_seed_diff_captures_modification_and_marker_addition(
     (baseline / "seed.txt").write_text("before\n", encoding="utf-8")
     shutil.copy2(baseline / "seed.txt", workspace / "seed.txt")
     (workspace / "seed.txt").write_text("after\n", encoding="utf-8")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
     (workspace / "marker.txt").write_text("marker\n", encoding="utf-8")
     git_path = shutil.which("git")
     assert git_path is not None
