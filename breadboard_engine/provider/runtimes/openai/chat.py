@@ -18,7 +18,7 @@ from ...contracts import (
     ProviderRuntimeError,
     sanitize_provider_result,
 )
-from ...contract_wire import canonical_json
+from ...contract_wire import ProviderContractError, canonical_json
 from ...native_response import NativeProviderResponse
 from ....compilation.provider_response import (
     CompiledNativeResponseBinding, MINI_RESPONSE_CONSUMER_ID, PI_RESPONSE_CONSUMER_ID,
@@ -444,6 +444,17 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                     details={"code": "native_request_digest_mismatch"},
                 )
             response = replace(response, request_body=sent_request)
+            try:
+                response.validate_bounds(
+                    max_response_bytes=binding.policy.max_response_bytes,
+                    max_stream_fragments=binding.policy.max_stream_fragments,
+                )
+            except ProviderContractError:
+                raise ProviderRuntimeError(
+                    "Chat Completions native response contract violation",
+                    kind="protocol",
+                    details={"code": "invalid_native_chat_response"},
+                ) from None
             response_payload = response.as_dict()
             safe_response, problems = redaction.scrub_structure(
                 response_payload, path="$.native_response"

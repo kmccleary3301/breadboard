@@ -154,12 +154,18 @@ def _receiver(*, response_payload: bytes | None = None):
         assert not thread.is_alive()
 
 
-def _native_manifest(profile, *, fragment_limit=64, name="native-response-fixture"):
+def _native_manifest(
+    profile,
+    *,
+    fragment_limit=64,
+    max_response_bytes=65_536,
+    name="native-response-fixture",
+):
     policy = {
         "schema_version": "bb.provider_native_response_policy.v1",
         "consumer_id": "breadboard.provider.recording.v1",
         "provider_profile_digest": profile_identity_digest(profile),
-        "max_response_bytes": 65_536,
+        "max_response_bytes": max_response_bytes,
         "max_stream_fragments": fragment_limit,
     }
     config = {
@@ -179,8 +185,18 @@ def _native_manifest(profile, *, fragment_limit=64, name="native-response-fixtur
     return manifest
 
 
-def _binding(profile, *, fragment_limit=64, authority_model_id="fixture-authority"):
-    manifest = _native_manifest(profile, fragment_limit=fragment_limit)
+def _binding(
+    profile,
+    *,
+    fragment_limit=64,
+    max_response_bytes=65_536,
+    authority_model_id="fixture-authority",
+):
+    manifest = _native_manifest(
+        profile,
+        fragment_limit=fragment_limit,
+        max_response_bytes=max_response_bytes,
+    )
     # Unit-fixture context identities, not a production capability observation.
     observation = canonical_sha256({"fixture": "native-http", "profile": profile.identity_dict()})
     plan = canonical_sha256({"fixture": "native-http", "manifest": manifest.compiled_manifest_digest})
@@ -490,6 +506,44 @@ def test_mini_nonstream_digest_is_of_the_body_actually_sent(tmp_path):
         assert response.request_digest == hashlib.sha256(
             wire_canonical_json(requests[0][2]).encode("utf-8")
         ).hexdigest()
+
+
+def test_native_response_bound_includes_attached_request_body():
+    with _receiver() as (base_url, credential, requests):
+        profile = _profile(base_url, credential, False)
+        runtime = _runtime()
+        high_binding = _binding(profile)
+        client = runtime.create_client_from_profile(profile, timeout_seconds=3)
+        try:
+            response = runtime.invoke_native(
+                client=client,
+                model=_MODEL,
+                messages=[{"role": "user", "content": "request body is attached"}],
+                tools=_TOOLS,
+                stream=False,
+                context=_context(profile, high_binding),
+                binding=high_binding,
+            )
+            response_without_request = response.as_dict()
+            response_without_request.pop("request_body", None)
+            max_response_bytes = len(
+                wire_canonical_json(response_without_request).encode("utf-8")
+            ) + 1
+            low_binding = _binding(profile, max_response_bytes=max_response_bytes)
+            with pytest.raises(ProviderRuntimeError) as failure:
+                runtime.invoke_native(
+                    client=client,
+                    model=_MODEL,
+                    messages=[{"role": "user", "content": "request body is attached"}],
+                    tools=_TOOLS,
+                    stream=False,
+                    context=_context(profile, low_binding),
+                    binding=low_binding,
+                )
+            assert failure.value.details["code"] == "invalid_native_chat_response"
+        finally:
+            client.close()
+        assert len(requests) == 2
 
 
 def test_native_fragment_limit_stops_retention_without_another_request():

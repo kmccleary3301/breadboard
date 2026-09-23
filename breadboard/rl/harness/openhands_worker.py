@@ -48,6 +48,7 @@ class _IPCTransport:
         if auth != f"Bearer {self._credential}":
             raise self._httpx.LocalProtocolError("native transport credential rejected")
         body = request.content
+        original_body = body
         try:
             document = json.loads(body)
         except (TypeError, ValueError, UnicodeDecodeError):
@@ -57,7 +58,18 @@ class _IPCTransport:
             body = json.dumps(document, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         if len(body) > FRAME_LIMIT:
             raise self._httpx.RequestError("native OpenHands request exceeds frame limit", request=request)
-        headers = [[name.decode("latin-1"), value.decode("latin-1")] for name, value in request.headers.raw]
+        headers: list[list[str]] = []
+        content_length_seen = False
+        for name, value in request.headers.raw:
+            decoded_name = name.decode("latin-1")
+            decoded_value = value.decode("latin-1")
+            if decoded_name.casefold() == "content-length":
+                if content_length_seen:
+                    continue
+                if body != original_body:
+                    decoded_value = str(len(body))
+                content_length_seen = True
+            headers.append([decoded_name, decoded_value])
         result = dict(self._request_result(request))
         result["http_request"] = {
             "method": method,
