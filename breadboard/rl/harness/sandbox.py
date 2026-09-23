@@ -78,6 +78,9 @@ _SANDBOX_CAPABILITY_KEYS = {
     "persistent_workspace",
     "isolated",
 }
+MINI_SWE_AGENT_LOCAL_ADAPTER_ID: str = "mini-swe-agent.local.v2.4.6"
+MINI_SWE_AGENT_TOOL_ID: str = "bash"
+
 
 
 def _read_sandbox_capability_matrix_resource() -> bytes:
@@ -967,6 +970,16 @@ def _decode_native_tool_result(
     result: Mapping[str, Any], *, lease_id: str | None
 ) -> Mapping[str, Any]:
     if result.get("returncode") != 0:
+        examined = _native_raw_output_limit(result)
+        if examined is not None:
+            # The helper's explicit outer error (mini_tools.RawOutputLimitExceeded):
+            # never an observation, never folded into a generic launch failure.
+            raise SandboxLaunchError(
+                "native tool raw output exceeded its limit",
+                code="native_output_limit_exceeded",
+                lease_id=lease_id,
+                details={"examined_bytes": examined},
+            )
         raise SandboxLaunchError(
             "native tool process exited unsuccessfully",
             code="runtime_launch_failed",
@@ -974,6 +987,7 @@ def _decode_native_tool_result(
             details={
                 "returncode": result.get("returncode"),
                 "stderr": result.get("stderr", ""),
+                "stdout": result.get("stdout", ""),
             },
         )
     stdout = result.get("stdout")
@@ -1007,6 +1021,26 @@ def _decode_native_tool_result(
             lease_id=lease_id,
         ) from exc
     return payload
+
+
+def _native_raw_output_limit(result: Mapping[str, Any]) -> int | None:
+    """Return examined bytes for the helper's raw-output outer error, else None."""
+    stdout = result.get("stdout")
+    if result.get("returncode") != 1 or type(stdout) is not str:
+        return None
+    try:
+        payload = json.loads(stdout)
+    except ValueError:
+        return None
+    if (
+        type(payload) is not dict
+        or set(payload) != {"outer_error", "raw_prefix_base64", "examined_bytes"}
+        or payload["outer_error"] != "raw_output_limit_exceeded"
+        or type(payload["examined_bytes"]) is not int
+        or payload["examined_bytes"] <= 0
+    ):
+        return None
+    return payload["examined_bytes"]
 
 @dataclass(frozen=True, slots=True)
 class SandboxExecutionPlan:
@@ -1289,6 +1323,14 @@ def build_sandbox_execution_plan(request: WorkspaceOpenRequest, registries: Regi
     }:
         raise SandboxPlanError(
             "native tool bindings are unsupported for this runtime class",
+            code="runtime_unsupported",
+        )
+    if any(
+        adapter.adapter_id == MINI_SWE_AGENT_LOCAL_ADAPTER_ID
+        for adapter in native_tool_adapters
+    ) and runtime.runtime_class is not RuntimeClass.TRUSTED_PROCESS:
+        raise SandboxPlanError(
+            "mini tool adapter requires trusted process runtime",
             code="runtime_unsupported",
         )
     mounts_by_digest = {mount.source_artifact_digest: mount for mount in plan.sandbox.mounts}
@@ -1928,20 +1970,41 @@ class TrustedProcessHandle:
         entrypoint_path = _native_member_path(binding, binding.entrypoint_relative_path)
         _measure_native_file(entrypoint_path, binding.entrypoint_digest)
         node = _snapshot_installed_executable(node_path, binding.executable_digest)
+        execution_environment = None
         try:
-            result = await self._run_pinned_argv(
-                (
+            if binding.adapter_id == MINI_SWE_AGENT_LOCAL_ADAPTER_ID:
+                execution_argv = (node.proc_fd_path, entrypoint_path)
+                if self.repository_relative_path not in (None, "."):
+                    # Same directory the sealed diff reads (seal_for_verifier).
+                    execution_argv = (
+                        self._executable.proc_fd_path,
+                        "-c",
+                        'cd -P -- "$1" || exit 126; shift; exec "$@"',
+                        "breadboard-mini-tool",
+                        self.repository_relative_path,
+                        *execution_argv,
+                    )
+                python_home = str(Path(node_path).parent.parent)
+                execution_environment = dict(self.plan.runtime.fixed_environment) | {
+                    "PYTHONHOME": python_home,
+                    "LD_LIBRARY_PATH": str(Path(python_home) / "lib"),
+                }
+            else:
+                execution_argv = (
                     self._executable.proc_fd_path,
                     "-lc",
                     'exec "$@"',
                     "breadboard-native-tool",
                     node.proc_fd_path,
                     entrypoint_path,
-                ),
+                )
+            result = await self._run_pinned_argv(
+                execution_argv,
                 timeout_ms=timeout_ms,
                 output_limit=output_limit,
                 input_bytes=request_bytes,
                 extra_fds=(node.fd,),
+                environment=execution_environment,
             )
         finally:
             node.close()
@@ -1997,6 +2060,7 @@ class TrustedProcessHandle:
         output_limit: int,
         input_bytes: bytes = b"",
         extra_fds: Sequence[int] = (),
+        environment: Mapping[str, str] | None = None,
     ) -> Mapping[str, Any]:
         if (
             not argv
@@ -2046,7 +2110,7 @@ class TrustedProcessHandle:
                     + tuple(extra_fds)
                     + (self._workspace_fd,),
                     preexec_fn=lambda: os.fchdir(self._workspace_fd),
-                    env=dict(self.plan.runtime.fixed_environment),
+                    env=environment if environment is not None else dict(self.plan.runtime.fixed_environment),
                     start_new_session=True,
                     stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE,
@@ -2483,14 +2547,49 @@ class LeaseBackedRunnerWorkspace:
                 code="tool_binding_projection_mismatch",
                 lease_id=lease.lease_id,
             )
+        bindings = tuple(
+            binding for binding in self.__tool_bindings if binding.tool_id == tool_id
+        )
+        native_bindings = tuple(
+            binding
+            for adapter in lease.plan.installed_tool_adapters
+            if tool_id in adapter.tool_ids
+            for binding in (adapter,)
+        )
+        is_mini = (
+            len(native_bindings) == 1
+            and native_bindings[0].adapter_id == MINI_SWE_AGENT_LOCAL_ADAPTER_ID
+        )
+        if is_mini:
+            if tool_id != MINI_SWE_AGENT_TOOL_ID:
+                raise WorkspaceStateError(
+                    "mini adapter admits bash tool only",
+                    code="tool_binding_projection_mismatch",
+                    lease_id=lease.lease_id,
+                )
+            if lease.plan.runtime.runtime_class is not RuntimeClass.TRUSTED_PROCESS:
+                raise WorkspaceStateError(
+                    "mini adapter is unsupported for this runtime class",
+                    code="runtime_unsupported",
+                    lease_id=lease.lease_id,
+                )
         try:
-            frozen_arguments = freeze_json_object(
-                arguments,
-                field_name="workspace tool arguments",
-                max_depth=8,
-                max_nodes=64,
-                max_encoded_bytes=lease.plan.limits.observation_bytes,
-            )
+            if is_mini:
+                frozen_arguments = freeze_json_object(
+                    arguments,
+                    field_name="workspace tool arguments",
+                    max_depth=lease.plan.limits.observation_bytes,
+                    max_nodes=lease.plan.limits.observation_bytes,
+                    max_encoded_bytes=lease.plan.limits.observation_bytes,
+                )
+            else:
+                frozen_arguments = freeze_json_object(
+                    arguments,
+                    field_name="workspace tool arguments",
+                    max_depth=8,
+                    max_nodes=64,
+                    max_encoded_bytes=lease.plan.limits.observation_bytes,
+                )
         except (JsonSnapshotError, TypeError, ValueError):
             raise WorkspaceStateError(
                 "tool arguments are invalid",
@@ -2499,15 +2598,6 @@ class LeaseBackedRunnerWorkspace:
             ) from None
         await lease._begin_operation()
         try:
-            bindings = tuple(
-                binding for binding in self.__tool_bindings if binding.tool_id == tool_id
-            )
-            native_bindings = tuple(
-                binding
-                for adapter in lease.plan.installed_tool_adapters
-                if tool_id in adapter.tool_ids
-                for binding in (adapter,)
-            )
             if len(bindings) != 1 and len(native_bindings) != 1:
                 raise WorkspaceStateError(
                     "tool is not exactly admitted",
@@ -2563,9 +2653,22 @@ class LeaseBackedRunnerWorkspace:
                     code="runtime_unsupported",
                     lease_id=lease.lease_id,
                 )
-            request_bytes = canonical_json_bytes(
-                {"tool_id": tool_id, "arguments": dict(frozen_arguments)}
-            )
+            if is_mini:
+                from .runners.base import thaw_json
+                request_bytes = json.dumps(
+                    {
+                        "tool_id": tool_id,
+                        "arguments": thaw_json(frozen_arguments),
+                        "environment": dict(lease.plan.runtime.fixed_environment),
+                    },
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                ).encode("utf-8")
+            else:
+                request_bytes = canonical_json_bytes(
+                    {"tool_id": tool_id, "arguments": dict(frozen_arguments)}
+                )
             return await lease._runtime.run_native_tool(
                 native_bindings[0],
                 tool_id,
@@ -2590,6 +2693,43 @@ class LeaseBackedRunnerWorkspace:
                                                   output_limit=lease.plan.limits.observation_bytes)
         finally:
             await lease._end_operation()
+
+    def mini_template_frame(self) -> Mapping[str, Any]:
+        lease = self.__lease
+        lease._assert_active()
+        adapters = tuple(
+            adapter
+            for adapter in lease.plan.installed_tool_adapters
+            if adapter.adapter_id == MINI_SWE_AGENT_LOCAL_ADAPTER_ID
+        )
+        if (
+            len(adapters) != 1
+            or lease.plan.runtime.runtime_class is not RuntimeClass.TRUSTED_PROCESS
+        ):
+            raise WorkspaceStateError(
+                "mini template frame requires admitted mini adapter and trusted process runtime",
+                code="runtime_unsupported",
+                lease_id=lease.lease_id,
+            )
+        import platform
+        from .mini_tools import MINI_ENVIRONMENT_OVERRIDES
+        env_overrides = dict(MINI_ENVIRONMENT_OVERRIDES)
+        # Mini's LocalEnvironment runs in the process cwd: the repository, as the
+        # sealed diff sees it, not the enclosing workspace root.
+        relative_path = getattr(lease._runtime, "repository_relative_path", None)
+        cwd = lease._materialized.workspace_path
+        if relative_path is not None and relative_path != ".":
+            cwd = cwd.joinpath(*_workspace_parts(relative_path))
+        # Upstream LocalEnvironment.get_template_vars is recursive_merge(config,
+        # platform.uname(), os.environ, kwargs): later wins, so the process
+        # environment (here the fixed environment) overrides platform facts.
+        return {
+            "cwd": str(cwd),
+            "env": env_overrides,
+            "timeout": 30,
+            **platform.uname()._asdict(),
+            **dict(lease.plan.runtime.fixed_environment),
+        }
 
     async def read_text(self, path: str, *, offset: int = 0, limit: int | None = None) -> Mapping[str, Any]:
         lease = self.__lease
@@ -4956,4 +5096,6 @@ __all__ = [
     "VerifierExecutionError", "VerifierSnapshotError", "VerifierWorkspaceLease",
     "WorkspaceStateError", "WorkspaceStorageIdentity", "build_sandbox_execution_plan",
     "load_sandbox_capability_matrix",
+    "MINI_SWE_AGENT_LOCAL_ADAPTER_ID",
+    "MINI_SWE_AGENT_TOOL_ID",
 ]

@@ -10,6 +10,7 @@ from types import MappingProxyType
 from typing import Any
 
 import yaml
+from jinja2 import StrictUndefined, Template
 
 from breadboard_engine.compilation.contracts import (
     DependencyEdge,
@@ -212,6 +213,46 @@ class E4TargetRendering:
     system_prompt: str
     ordered_tool_names: tuple[str, ...]
     tools: tuple[Mapping[str, Any], ...]
+    renderer_id: str = "breadboard.e4.legacy-string-template.v1"
+    runtime_profile: Mapping[str, Any] | None = None
+
+
+def _lower_mini_target(
+    package: E4TargetPackage,
+    harness: Mapping[str, Any],
+    dynamic_fields: Mapping[str, Any],
+) -> E4TargetRendering:
+    """Lower the pinned Mini recipe; runtime facts are supplied inside its lease."""
+    # This renderer implements one source composition, not arbitrary Mini configs.
+    # The descriptor transitively binds every serializer-produced source asset.
+    if (
+        package.target_id != "mini-swe-agent@2.4.6"
+        or sha256(package.descriptor_bytes).hexdigest()
+        != "191999cd6da077ad29d8413356a7e5e2c1ae98c8448759f8c8f29e81ebfca85e"
+        or dynamic_fields
+    ):
+        raise HarnessCompileError("Mini requires its pinned recipe and no caller template inputs")
+    native = json.loads(package.read_asset_text("native-config.json"))
+    system_prompt = Template(
+        native["agent"]["system_template"], undefined=StrictUndefined
+    ).render()
+    surface = json.loads(package.read_asset_text("tool-surface.json"))
+    tool = surface["tools"]["bash"]
+    descriptor = package.descriptor
+    overlay = descriptor["overlay"]
+    return E4TargetRendering(
+        target_id=package.target_id,
+        overlay_id=overlay["overlay_id"],
+        descriptor_digest=canonical_sha256(descriptor),
+        execution_config_digest=canonical_sha256(harness),
+        overlay_digest=canonical_sha256(overlay),
+        rendered_prompt_digest=canonical_sha256({"text": system_prompt}),
+        system_prompt=system_prompt,
+        ordered_tool_names=("bash",),
+        tools=(copy_harness_json({"name": "bash", **tool}, freeze=True),),
+        renderer_id="breadboard.mini-swe-agent.v2.4.6",
+        runtime_profile=copy_harness_json(native, freeze=True),
+    )
 
 
 def lower_e4_target(
@@ -250,6 +291,8 @@ def lower_e4_target(
             raise HarnessDefinitionValidationError(findings)
         if harness["schema_version"] != "bb.e4.target_config.v2":
             raise HarnessCompileError("E4 target configuration revision does not match")
+        if harness["renderer"]["selector"] == "breadboard.mini-swe-agent.v2.4.6":
+            return _lower_mini_target(package, harness, dynamic_fields)
         raise E4TargetCapabilityError(
             harness["renderer"]["selector"], tuple(harness["required_capabilities"])
         )

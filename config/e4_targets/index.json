@@ -1,6 +1,10 @@
 {
   "schema_version": "bb.e4.target_index.v1",
   "targets": {
+    "mini-swe-agent@2.4.6": {
+      "descriptor": "mini_swe_agent/2.4.6/target.json",
+      "sha256": "191999cd6da077ad29d8413356a7e5e2c1ae98c8448759f8c8f29e81ebfca85e"
+    },
     "oh-my-pi@16.2.13": {
       "descriptor": "oh_my_pi/16.2.13/target.json",
       "sha256": "537fb2659e6f8f619e0fd832d48d57c5f8c0da4b2356022b0ebecd6ccbb7a105"

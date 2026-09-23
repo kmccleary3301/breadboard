@@ -814,3 +814,33 @@ async def test_profile_resolver_rejects_observation_outside_owned_provider_profi
 
     assert error.value.code == "provider_route_authority_mismatch"
     await resolver.close()
+
+
+def test_mini_wire_messages_keep_source_client_fields() -> None:
+    from breadboard.rl.harness.policy_provider import _provider_descriptor
+    from breadboard_engine.compilation.provider_response import MINI_RESPONSE_CONSUMER_ID
+    from breadboard_engine.provider.contract_runtime import ProviderRuntimeContext
+
+    # Mini replays its committed assistant message; LiteLLM keeps provider fields.
+    assistant = {
+        "role": "assistant",
+        "content": "Grouped batch A.",
+        "provider_specific_fields": {"refusal": None},
+        "tool_calls": [
+            {"id": "call-0", "type": "function", "function": {"name": "bash", "arguments": "{}"}}
+        ],
+    }
+    messages = [{"role": "system", "content": "s"}, {"role": "user", "content": "u"}, assistant]
+    runtime = OpenAIChatRuntime(_provider_descriptor())
+    mini = runtime.profile_chat_request(
+        _profile(),
+        messages,
+        None,
+        context=ProviderRuntimeContext(None, {}, extra={"response_consumer_id": MINI_RESPONSE_CONSUMER_ID}),
+    )
+    generic = runtime.profile_chat_request(
+        _profile(), messages, None, context=ProviderRuntimeContext(None, {})
+    )
+
+    assert mini["messages"] == messages
+    assert "provider_specific_fields" not in generic["messages"][2]

@@ -198,6 +198,8 @@ def _write_h4_registry(
         path,
         {
             "schema_version": "bb.e4.comparator_registry.v1",
+            "registry_id": "e4_comparator_registry_fixture",
+            "generated_at_utc": "2026-07-03T00:00:00Z",
             "comparators": [
                 {
                     "comparator_id": "pi_stored_report_replay",
@@ -210,6 +212,51 @@ def _write_h4_registry(
             ],
         },
     )
+
+@pytest.mark.parametrize("invalid_kind", ["unknown_class", "missing_registry_id"])
+def test_compare_rejects_invalid_registry_before_comparator_dispatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invalid_kind: str,
+) -> None:
+    lane_id = f"h4_invalid_registry_{invalid_kind}"
+    lane, _ = _h4_lane(tmp_path, lane_id=lane_id)
+    registry_path = tmp_path / "comparator_registry.json"
+    module_name = f"{invalid_kind}_comparator"
+    _write_h4_registry(registry_path, lane_id=lane_id, module_name=module_name)
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    if invalid_kind == "unknown_class":
+        registry["comparators"][0]["comparator_class"] = "not_a_published_class"
+    else:
+        registry.pop("registry_id")
+    _write_json(registry_path, registry)
+
+    calls: list[object] = []
+    comparator_module = ModuleType(module_name)
+
+    def compare(_input: object) -> dict[str, object]:
+        calls.append(_input)
+        return {}
+
+    comparator_module.compare = compare
+    monkeypatch.setitem(sys.modules, module_name, comparator_module)
+    _patch_h2_lane_loading(monkeypatch, lane)
+    monkeypatch.setattr(run_lane, "ROOT", tmp_path)
+
+    result = run_lane.run_lane(
+        lane_id,
+        stage="compare",
+        out_dir=tmp_path / "scratch",
+        lane_def_dir=tmp_path / "unused-lane-defs",
+        inventory_path=tmp_path / "unused-inventory.json",
+        comparator_registry_path=registry_path,
+    )
+
+    assert calls == []
+    assert result["ok"] is False
+    stage = result["stages"][0]
+    assert stage["returncode"] == 1
+    assert "schema validation failed" in stage["detail"]
 
 def test_stored_replay_hashes_every_declared_artifact_in_manifest_order(
     tmp_path: Path,
@@ -1351,6 +1398,180 @@ def test_compare_rejects_invalid_report_without_overwriting_concrete_comparator_
     assert "bb.e4.comparator_report.v1" in result["stages"][0]["detail"]
     assert artifact_paths["comparator_ref"].read_bytes() == accepted_bytes
     assert not (scratch_root / "evidence" / lane_id / "comparator_report.json").exists()
+
+
+def test_compare_propagates_warning_from_registered_stored_report_comparator(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lane_id = "h4_warning_report_fixture"
+    lane, artifact_paths = _h4_lane(tmp_path, lane_id=lane_id)
+    _write_json(
+        artifact_paths["comparator_ref"],
+        {
+            "schema_version": "bb.e4.comparator_report.v1",
+            "lane_id": lane_id,
+            "config_id": lane["config_id"],
+            "assertions": [
+                {
+                    "assertion_id": "known_warning",
+                    "name": "known_warning",
+                    "status": "warned",
+                    "observed": {"warning": True},
+                    "expected": {"warning": False},
+                    "detail": "fixture warning",
+                }
+            ],
+            "details": [{"name": "known_warning", "status": "warned"}],
+            "passed": 0,
+            "failed": 0,
+            "warned": 1,
+        },
+    )
+    registry_path = tmp_path / "comparator_registry.json"
+    _write_h4_registry(
+        registry_path,
+        lane_id=lane_id,
+        module_name="conformance.comparators.stored_report",
+    )
+    _patch_h2_lane_loading(monkeypatch, lane)
+    monkeypatch.setattr(run_lane, "ROOT", tmp_path)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path))
+
+    result = run_lane.run_lane(
+        lane_id,
+        stage="compare",
+        out_dir=tmp_path / "scratch",
+        lane_def_dir=tmp_path / "unused-lane-defs",
+        inventory_path=tmp_path / "unused-inventory.json",
+        comparator_registry_path=registry_path,
+    )
+
+    assert result["ok"] is False
+    stage = result["stages"][0]
+    assert stage["returncode"] == 1
+    assert stage["outcome"] == "executed_fail"
+    assert stage["comparator_report"]["failed"] == 0
+    assert stage["comparator_report"]["warned"] == 1
+    report_path = _report_path(tmp_path, stage["report_ref"])
+    assert json.loads(report_path.read_text(encoding="utf-8")) == stage["comparator_report"]
+
+
+def test_all_stages_fail_and_block_claim_on_registered_semantic_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from conformance.comparators import semantic_replay
+
+    lane_id = "semantic_replay_oh_my_pi_p6_6_task_job_subagent"
+    lane, paths = _h4_lane(tmp_path, lane_id=lane_id)
+    probe_root = tmp_path / "docs" / "conformance" / "e4_target_support" / lane_id
+    scope = {
+        "network_observed": False,
+        "provider_authenticated_capture": False,
+        "provider_dispatch_observed": False,
+        "provider_parity_claimed": False,
+    }
+    probe = {
+        **scope,
+        "fetch_events": [{"sequence": 1}],
+        "target_captures": [
+            {"capture_kind": "joined_subagent"},
+            {"capture_kind": "detached_subagent"},
+        ],
+        "work_item_observations": [],
+        "job_manager_only_evidence": False,
+    }
+    captures = {
+        "joined_subagent_target_capture": {"capture_kind": "joined_subagent"},
+        "detached_subagent_target_capture": {"capture_kind": "detached_subagent"},
+        "target_probe_output": probe,
+    }
+    captured_artifacts = []
+    for role, payload in captures.items():
+        path = probe_root / f"{role}.json"
+        _write_json(path, payload)
+        captured_artifacts.append({
+            "role": role,
+            "path": str(path),
+            "sha256": "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest(),
+        })
+    _write_json(paths["capture_ref"], {"captured_artifacts": captured_artifacts})
+    replay = {
+        "normalized_records": [],
+        "input_hashes": {item["path"]: item["sha256"] for item in captured_artifacts},
+        "replay_summary": {**scope, "fetch_event_count": 1, "job_manager_only_evidence": False},
+    }
+    _write_json(paths["replay_ref"], replay)
+    lane["capture"]["strategy"] = "probe_argv"
+    lane["capture"]["argv"] = [
+        sys.executable, "-c",
+        "import sys; from pathlib import Path; "
+        "target = Path(sys.argv[3]); target.parent.mkdir(parents=True, exist_ok=True); "
+        "target.write_bytes(Path(sys.argv[1]).read_bytes())",
+        str(paths["capture_ref"]), "--json-out", str(tmp_path / "capture-result.json"),
+    ]
+    lane["replay"]["comparator_class"] = "semantic_replay"
+    lane["compare"] = {"comparator": "semantic_replay_v1", "config": {}}
+    lane["claim"] = {"scope": {"lane_id": lane_id}, "exclusions": []}
+    claim_marker = tmp_path / "claim-executed"
+    lane["reverify_command"] = _command([
+        sys.executable, "-c",
+        "import sys; from pathlib import Path; "
+        f"Path({str(claim_marker)!r}).touch(); "
+        "target = Path(sys.argv[2]); target.parent.mkdir(parents=True, exist_ok=True); "
+        "target.write_text('{\"ok\":true}\\n')",
+        "--json-out", str(tmp_path / "claim-result.json"),
+    ])
+    registry_path = run_lane.DEFAULT_COMPARATOR_REGISTRY
+    _patch_h2_lane_loading(monkeypatch, lane)
+    monkeypatch.setattr(run_lane, "ROOT", tmp_path)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.setattr(semantic_replay, "_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(semantic_replay, "OUTPUT_ROOT", tmp_path / "semantic-output")
+
+    baseline = run_lane.run_lane(
+        lane_id,
+        stage="all",
+        out_dir=tmp_path / "baseline",
+        lane_def_dir=tmp_path / "unused-lane-defs",
+        inventory_path=tmp_path / "unused-inventory.json",
+        comparator_registry_path=registry_path,
+    )
+    assert baseline["ok"] is True
+    assert next(
+        stage for stage in baseline["stages"] if stage["stage"] == "compare"
+    )["comparator_report"]["ok"] is True
+    assert claim_marker.exists()
+    claim_marker.unlink()
+
+    replay["replay_summary"]["fetch_event_count"] = 2
+    _write_json(paths["replay_ref"], replay)
+    result = run_lane.run_lane(
+        lane_id,
+        stage="all",
+        out_dir=tmp_path / "mismatch",
+        lane_def_dir=tmp_path / "unused-lane-defs",
+        inventory_path=tmp_path / "unused-inventory.json",
+        comparator_registry_path=registry_path,
+    )
+
+    assert result["ok"] is False
+    compare_stage = next(stage for stage in result["stages"] if stage["stage"] == "compare")
+    assert compare_stage["returncode"] == 1
+    assert compare_stage["outcome"] == "executed_fail"
+    report = compare_stage["comparator_report"]
+    assert report["ok"] is False
+    assert report["failed"] == 1
+    assert next(
+        item for item in report["assertions"]
+        if item["assertion_id"] == "provider_network_scope_matches_replay_summary"
+    )["status"] == "failed"
+    report_path = _report_path(tmp_path, compare_stage["report_ref"])
+    assert json.loads(report_path.read_text(encoding="utf-8")) == report
+    claim_stage = next(stage for stage in result["stages"] if stage["stage"] == "claim")
+    assert claim_stage["returncode"] == 1
+    assert not claim_marker.exists()
 
 
 def test_claim_uses_existing_comparator_report_and_disables_validator_rerun(

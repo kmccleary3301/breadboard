@@ -975,6 +975,19 @@ def build_f3_authority(spec: F3AuthorityInput, output_dir: str) -> str:
                 ),
             )
             closure = build_dependency_closure(bundle, root_entrypoint="main", edges=edges)
+            closure_bytes = closure.canonical_bytes()
+            closure_ref = cas.put_bytes(
+                closure_bytes,
+                artifact_id=closure.closure_digest,
+                media_type="application/json",
+            )
+            if (
+                closure_ref.sha256 != _digest(closure_bytes)
+                or closure_ref.media_type != "application/json"
+            ):
+                raise F3AuthorityAuthoringError(
+                    "dependency closure CAS publication mismatch"
+                )
             reader = ManifestReader(cas=cas, bundle=bundle, closure=closure)
             options = CompileOptions.from_dict(
                 {
@@ -1148,7 +1161,7 @@ def build_f3_authority(spec: F3AuthorityInput, output_dir: str) -> str:
             store.publish(kind=c.ArtifactKind.DIRECT_SELECTOR, canonical_bytes=selector_bytes)
             objects = {
                 "config-bundle.json": bundle.canonical_bytes(),
-                "config-closure.json": closure.canonical_bytes(),
+                "config-closure.json": closure_bytes,
                 "compiled-manifest.json": compiled_bytes,
                 "admission-policy.json": policy.canonical_bytes(),
                 "registry-snapshot.json": registries.canonical_bytes(),

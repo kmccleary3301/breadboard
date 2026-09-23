@@ -1,0 +1,16 @@
+{%- if output.output | length < 10000 -%}
+{
+  "returncode": {{ output.returncode }},
+  "output": {{ output.output | tojson }}
+  {%- if output.exception_info %}, "exception_info": {{ output.exception_info | tojson }}{% endif %}
+}
+{%- else -%}
+{
+  "returncode": {{ output.returncode }},
+  "output_head": {{ output.output[:5000] | tojson }},
+  "output_tail": {{ output.output[-5000:] | tojson }},
+  "elided_chars": {{ output.output | length - 10000 }},
+  "warning": "Output too long."
+  {%- if output.exception_info %}, "exception_info": {{ output.exception_info | tojson }}{% endif %}
+}
+{%- endif -%}

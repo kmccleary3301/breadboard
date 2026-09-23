@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 from builtins import ExceptionGroup
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
@@ -20,7 +20,7 @@ from ...contracts import (
 )
 from ...contract_wire import canonical_json
 from ...native_response import NativeProviderResponse
-from ....compilation.provider_response import CompiledNativeResponseBinding
+from ....compilation.provider_response import CompiledNativeResponseBinding, MINI_RESPONSE_CONSUMER_ID
 from ...model_role_options import openai_chat_role_options
 from ...sdk_bindings import provider_sdk_bindings
 from ....security import redaction
@@ -253,8 +253,16 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         profile_request = self.profile_chat_request(
             profile, messages, tools, context=context
         )
+        omit_stream = (
+            not stream and binding.policy.consumer_id == MINI_RESPONSE_CONSUMER_ID
+        )
+        sent_request = (
+            {key: value for key, value in profile_request.items() if key != "stream"}
+            if omit_stream
+            else profile_request
+        )
         request_digest = hashlib.sha256(
-            canonical_json(profile_request).encode("utf-8")
+            canonical_json(sent_request).encode("utf-8")
         ).hexdigest()
         request_messages = profile_request["messages"]
         request_tools = profile_request.get("tools")
@@ -292,9 +300,10 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                 call_kwargs: Dict[str, Any] = {
                     "model": model,
                     "messages": request_messages,
-                    "stream": False,
                     "extra_body": extra_body,
                 }
+                if not omit_stream:
+                    call_kwargs["stream"] = False
                 call_kwargs.update(profile_options)
                 if request_tools:
                     call_kwargs["tools"] = request_tools
@@ -305,6 +314,15 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                 except ProviderRuntimeError:
                     raise
                 except Exception as exc:
+                    if (
+                        binding.policy.consumer_id == MINI_RESPONSE_CONSUMER_ID
+                        and (
+                            isinstance(getattr(exc, "status_code", None), int)
+                            or exc.__class__.__name__
+                            in {"APIConnectionError", "APITimeoutError"}
+                        )
+                    ):
+                        raise
                     kind = (
                         "adapter"
                         if isinstance(exc, (AttributeError, TypeError))
@@ -326,6 +344,16 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                     max_response_bytes=binding.policy.max_response_bytes,
                     max_stream_fragments=binding.policy.max_stream_fragments,
                 )
+                if binding.policy.consumer_id == MINI_RESPONSE_CONSUMER_ID:
+                    # Mini consumes the SDK message as a whole, before argument parsing.
+                    # The recording consumer's existing projection stays byte-compatible.
+                    response = replace(
+                        response, raw_response=raw_response.model_dump(mode="json")
+                    )
+                    response.validate_bounds(
+                        max_response_bytes=binding.policy.max_response_bytes,
+                        max_stream_fragments=binding.policy.max_stream_fragments,
+                    )
             response_payload = response.as_dict()
             safe_response, problems = redaction.scrub_structure(
                 response_payload, path="$.native_response"
@@ -348,9 +376,17 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         *,
         context: ProviderRuntimeContext,
     ) -> Dict[str, Any]:
-        """Project the exact request used by a profile-bound invocation."""
+        """Project the exact request used by a profile-bound invocation.
+
+        Mini's messages are already its source client's wire messages, so they are
+        sent as given rather than rebuilt from BreadBoard's canonical message shape.
+        """
+        if context.extra.get("response_consumer_id") == MINI_RESPONSE_CONSUMER_ID:
+            chat_messages = [dict(message) for message in messages]
+        else:
+            chat_messages = self._convert_messages_to_chat(messages, context=context)
         return profile.chat_request(
-            self._convert_messages_to_chat(messages, context=context),
+            chat_messages,
             self._convert_tools_to_openai(tools),
         )
 
@@ -385,15 +421,20 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         stream: bool,
         context: ProviderRuntimeContext,
     ) -> Dict[str, Any]:
-        """Project the complete secret-free HTTP request body for evidence."""
         profile = context.provider_profile
         if profile is not None:
-            return self.profile_chat_request(
+            body = self.profile_chat_request(
                 profile,
                 messages,
                 tools,
                 context=context,
             )
+            if (
+                context.extra.get("response_consumer_id") == MINI_RESPONSE_CONSUMER_ID
+                and profile.request_policy.mode == "non_streaming"
+            ):
+                body.pop("stream", None)
+            return body
         request_messages = self._convert_messages_to_chat(messages, context=context)
         request_tools = self._convert_tools_to_openai(tools)
         role_request, extra_body = self._unbound_request_options(model, context)

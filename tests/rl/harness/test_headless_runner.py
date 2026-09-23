@@ -120,6 +120,20 @@ def test_headless_projection_preserves_evidence_without_fabricating_patches() ->
             {}, replace(run, workspace_diff=None), composition,
             expected_base_commit="0" * 40,
         )
+    cancelled_run = replace(
+        run, primary_disposition=EpisodePrimaryDisposition.CANCELLED,
+        response=None, termination=None, turn_count=0, workspace_diff=None,
+    )
+    cancelled: dict[str, Any] = {}
+    event_bytes, patch_bytes = _project_headless_run(
+        cancelled, cancelled_run, composition, expected_base_commit="0" * 40,
+    )
+    assert event_bytes == events
+    assert patch_bytes is None
+    assert cancelled["terminal"]["status"] == "cancelled"
+    assert cancelled["workspace_evidence"]["runner_event_ledger_digest"] == (
+        "sha256:" + hashlib.sha256(events).hexdigest()
+    )
     failed_run = replace(
         run, primary_disposition=EpisodePrimaryDisposition.FAILED,
         response=None, termination=None, turn_count=2, workspace_diff=None,

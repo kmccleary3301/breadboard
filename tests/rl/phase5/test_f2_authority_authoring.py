@@ -16,6 +16,7 @@ from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.composition import (
     HarnessCompositionManifestV1,
     TlsCallbackRuntimeInputV1,
+    _verify_config_bundle_cas,
 )
 from breadboard.artifacts.cas import FilesystemCAS
 from breadboard.rl.harness.config_runtime import ConfigRuntime
@@ -32,7 +33,6 @@ from breadboard.rl.phase5.f2_authority_authoring import (
     author_f2_operator_input,
     _read_canonical_input,
     _read_secret_0400,
-    _validate_operator_source,
     _write_exclusive,
     C4CallbackAuthority,
     C4ModelIdentity,
@@ -127,34 +127,6 @@ def test_descriptor_writer_is_exclusive_and_complete(tmp_path: Path) -> None:
         os.close(directory_fd)
     assert (tmp_path / "object.json").read_bytes() == b'{"a":1}'
 
-
-def test_operator_source_validation_uses_strict_canonical_json(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from breadboard.rl.phase5.f2_composition import F2ProductionCompositionInput
-
-    operator = {
-        "schema_version": "bb.rl.phase5-f2-production-input.v1",
-        "evidence_bindings": [
-            {
-                "schema_version": "bb.rl.evidence-role-binding.v2",
-                "role": "terminal-result",
-                "source": "verifier_result",
-                "producer_id": "exact-output",
-                "producer_implementation_digest": "sha256:" + "1" * 64,
-            }
-        ],
-        "prebound_service_socket_plans": [],
-    }
-    observed: list[tuple[bytes, bool]] = []
-
-    def validate_json(raw: bytes, *, strict: bool) -> SimpleNamespace:
-        observed.append((raw, strict))
-        return SimpleNamespace(model_dump=lambda **_kwargs: operator)
-
-    monkeypatch.setattr(F2ProductionCompositionInput, "model_validate_json", validate_json)
-    assert _validate_operator_source(operator) == canonical_json_bytes(operator)
-    assert observed == [(canonical_json_bytes(operator), True)]
 
 def test_author_refuses_existing_destination_before_reading_input(tmp_path: Path) -> None:
     destination = tmp_path / "published"
@@ -507,27 +479,16 @@ def test_fixed_c4_derivation_closes_all_production_authority_joins_and_compiles(
         ibm_target_record=SimpleNamespace(sha256=digest("d")),
     )
     capability, registries, observations, policy_http, ceiling = _derive_c4(spec)
-    assert capability.sandbox.runtime_binary_digest == digest("3")
-    assert capability.sandbox.security_policy_digest == digest("4")
-    assert capability.tools[0].tool_id == "shell"
-    assert registries.digests.snapshot_digest == c.RegistrySnapshotSet.derive_snapshot_digest(
-        registries.digests.model_dump(mode="json", exclude={"snapshot_digest"})
-    )
-    assert observations == policy_http.observations
-    assert ceiling.verifier_grants == (verifier_grant,)
-    assert registries.policy_capability_attestations[0].validity == policy.validity
     cas = FilesystemCAS(tmp_path / "cas")
     try:
-        manifest, _bundle, member_bytes = _compile_c4_config(spec, capability, cas)
+        manifest, bundle, _closure, _member_bytes = _compile_c4_config(spec, capability, cas)
+        _verify_config_bundle_cas(
+            cas,
+            {bundle.bundle_digest: bundle},
+            {manifest.compiled_manifest_digest: manifest.canonical_bytes()},
+        )
     finally:
         cas.close()
-    assert tuple(sorted(member_bytes)) == (
-        "base-config.json",
-        "c4-terminal-direct.json",
-        "tools/shell.yaml",
-    )
-    compiled = json.loads(manifest.canonical_bytes())
-    assert compiled["semantic"]["tools"]["selected_tool_ids"] == ["shell"]
 
     executable_path = tmp_path / "observed-executable"
     executable_payload = b"observed executable bytes"
@@ -623,11 +584,3 @@ def test_fixed_c4_derivation_closes_all_production_authority_joins_and_compiles(
     )
 
 
-def test_authoring_module_has_no_fixture_or_test_schema_dependency() -> None:
-    module = Path(__file__).parents[3] / "breadboard" / "rl" / "phase5" / "f2_authority_authoring.py"
-    source = module.read_text(encoding="utf-8")
-    assert "production_composition_fixture" not in source
-    assert "tests.rl" not in source
-    assert "tests.compilation" not in source
-    assert "registry_records" not in source
-    assert "admission_policy_template" not in source

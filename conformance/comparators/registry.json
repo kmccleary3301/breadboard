@@ -67,7 +67,7 @@
       "report_schema_version": "bb.e4.comparator_report.v1"
     },
     {
-      "comparator_class": "semantic_replay",
+      "comparator_class": "deterministic_replay",
       "comparator_id": "semantic_replay_v1",
       "entrypoint": {
         "callable": "compare",
@@ -80,6 +80,23 @@
       ],
       "lane_ids": [
         "semantic_replay_oh_my_pi_p6_6_task_job_subagent"
+      ],
+      "report_schema_version": "bb.e4.comparator_report.v1"
+    },
+    {
+      "comparator_class": "deterministic_replay",
+      "comparator_id": "mini_swe_agent_trace_v1",
+      "entrypoint": {
+        "callable": "compare",
+        "module": "conformance.comparators.mini_swe_agent"
+      },
+      "input_roles": [
+        "capture_ref",
+        "replay_ref",
+        "comparator_ref"
+      ],
+      "lane_ids": [
+        "mini_swe_agent_2_4_6_replay"
       ],
       "report_schema_version": "bb.e4.comparator_report.v1"
     },

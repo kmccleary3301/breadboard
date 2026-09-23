@@ -444,6 +444,8 @@ class V2RunResult:
     verifier_measurement_digest: str | None = None
     verifier_result_digest: str | None = None
     workspace_diff: Mapping[str, Any] | None = None
+    # Safe failure fact for unsuccessful in-process runs; None on success.
+    primary_failure: SafeFailureFactV2 | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1819,6 +1821,7 @@ class BreadBoardV2EpisodeService:
                     if coordinator.completed is not None
                     else None
                 ),
+                primary_failure=failure,
             )
             coordinator.run_result = result
             return result
@@ -1881,6 +1884,7 @@ class BreadBoardV2EpisodeService:
                     if coordinator.completed is not None
                     else None
                 ),
+                primary_failure=failure,
             )
             coordinator.run_result = result
             return result
@@ -2044,6 +2048,7 @@ class BreadBoardV2EpisodeService:
                     if coordinator.completed is not None
                     else None
                 ),
+                primary_failure=failure,
             )
             coordinator.run_result = result
             return result

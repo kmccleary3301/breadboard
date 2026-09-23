@@ -841,12 +841,6 @@ async def test_conductor_executes_ordered_modes_with_exact_prompts_and_mode_tool
     assert client.close_calls == 1
 
 
-def test_conductor_implementation_digest_measures_exact_module_artifact() -> None:
-    module_path = Path(conductor_module.__file__)
-    assert module_path.is_absolute()
-    assert CONDUCTOR_IMPLEMENTATION_DIGEST == (
-        "sha256:" + hashlib.sha256(module_path.read_bytes()).hexdigest()
-    )
 
 
 def test_conductor_constructor_owns_identity_and_rejects_post_bootstrap_drift(

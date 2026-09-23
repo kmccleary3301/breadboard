@@ -596,12 +596,33 @@ def build_f4_target_input(
                 source_bundle = ConfigBundleManifest.from_json(
                     Path(refs["config-bundle.json"].path).read_bytes()
                 )
+                source_closure_raw = Path(
+                    refs["config-closure.json"].path
+                ).read_bytes()
+                if (
+                    len(source_closure_raw) != refs["config-closure.json"].size_bytes
+                    or _d(source_closure_raw) != refs["config-closure.json"].sha256
+                ):
+                    raise F4AuthorityAuthoringError(
+                        "source config closure file authority mismatch"
+                    )
                 source_closure = DependencyClosureManifest.from_json(
-                    Path(refs["config-closure.json"].path).read_bytes()
+                    source_closure_raw
                 )
+                if source_closure.canonical_bytes() != source_closure_raw:
+                    raise F4AuthorityAuthoringError(
+                        "source config closure is not canonical"
+                    )
                 source_compiled = CompiledConfigManifest.from_json(
                     Path(refs["compiled-manifest.json"].path).read_bytes()
                 )
+                if (
+                    source_closure.closure_digest
+                    != source_compiled.inputs.closure_digest
+                ):
+                    raise F4AuthorityAuthoringError(
+                        "source compiled manifest does not bind config closure"
+                    )
                 source_receipt_raw = Path(
                     refs["admission-receipt.json"].path
                 ).read_bytes()
@@ -737,6 +758,18 @@ def build_f4_target_input(
                 rebuilt_bundle_raw = rebuilt_bundle.canonical_bytes()
                 rebuilt_closure_raw = rebuilt_closure.canonical_bytes()
                 rebuilt_compiled_raw = rebuilt_compiled.canonical_bytes()
+                closure_ref_cas = cas.put_bytes(
+                    rebuilt_closure_raw,
+                    artifact_id=rebuilt_closure.closure_digest,
+                    media_type="application/json",
+                )
+                if (
+                    closure_ref_cas.sha256 != _d(rebuilt_closure_raw)
+                    or closure_ref_cas.media_type != "application/json"
+                ):
+                    raise F4AuthorityAuthoringError(
+                        "rebuilt dependency closure CAS publication mismatch"
+                    )
                 rebuilt_bundle_path = (
                     artifacts / f"config-bundle-{variant.variant_id}.json"
                 )
@@ -918,7 +951,8 @@ def build_f4_target_input(
                     f"bundle/{variant.variant_id}", bundle_refs[index].sha256
                 )
                 closure_ref = _iref(
-                    f"closure/{variant.variant_id}", closure_refs[index].sha256
+                    f"closure/{variant.variant_id}",
+                    compiled_identities[index].closure_digest,
                 )
                 compiler_ref = _iref(
                     "compiler", receipts[index].compiled.compiler.canonical_digest()
@@ -1318,7 +1352,8 @@ def build_f4_target_input(
                             f"bundle/{variant.variant_id}", bundle_file.sha256
                         ),
                         dependency_closure_ref=_iref(
-                            f"closure/{variant.variant_id}", closure_file.sha256
+                            f"closure/{variant.variant_id}",
+                            plan.base_compiled.closure_digest,
                         ),
                         compiler_identity_ref=_iref(
                             "compiler", plan.base_compiled.compiler.canonical_digest()

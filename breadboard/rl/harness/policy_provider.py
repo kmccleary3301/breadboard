@@ -6,6 +6,8 @@ from builtins import BaseExceptionGroup
 from dataclasses import dataclass
 from concurrent.futures import Future
 import json
+import os
+import traceback
 import re
 import threading
 from typing import Any, overload
@@ -15,7 +17,11 @@ from breadboard_engine.compilation.contracts import (
     canonical_sha256,
     require_sha256,
 )
-from breadboard_engine.compilation.provider_response import CompiledNativeResponseBinding
+from breadboard_engine.compilation.provider_response import (
+    CompiledNativeResponseBinding,
+    MINI_RESPONSE_CONSUMER_ID,
+    admit_native_response_binding,
+)
 
 from breadboard_engine.provider.contracts import (
     OpenAICompletionsProviderProfile,
@@ -30,6 +36,7 @@ from breadboard_engine.provider.runtimes.openai.chat import OpenAIChatRuntime
 from .contracts import EffectiveExecutionPlan, PolicyBindingRef, PolicyCapabilityObservation
 from .runners.base import (
     FrozenJsonObject,
+    MiniProviderFailure,
     PolicyRuntimeClientPort,
     PolicyRuntimeInvokeRequest,
     PolicyRuntimeInvokeResult,
@@ -40,6 +47,50 @@ from .runners.base import (
     thaw_json,
 )
 from .service import PolicyRuntimeClientResolver
+
+
+def _mini_model_response(raw_response: Mapping[str, Any]) -> Any:
+    """Re-run LiteLLM's OpenAI response conversion for Mini's native consumer."""
+    from openai.types.chat import ChatCompletion
+    from litellm import ModelResponse
+    from litellm.litellm_core_utils.llm_response_utils.convert_dict_to_response import (
+        convert_to_model_response_object,
+    )
+
+    sdk_response = ChatCompletion.model_validate(thaw_json(raw_response))
+    return convert_to_model_response_object(
+        response_object=sdk_response.model_dump(),
+        model_response_object=ModelResponse(),
+    )
+
+
+def _mini_provider_exception(exception: Exception, *, model: str) -> MiniProviderFailure:
+    """Map an OpenAI SDK failure through the locked LiteLLM exception mapper."""
+    import litellm
+    from litellm.litellm_core_utils.exception_mapping_utils import exception_type
+
+    previous_suppress_debug_info = litellm.suppress_debug_info
+    # The mapper otherwise prints help text to stdout; it does not alter str(e).
+    litellm.suppress_debug_info = True
+    try:
+        exception_type(
+            model="openai/" + model,
+            original_exception=exception,
+            custom_llm_provider="openai",
+            completion_kwargs={},
+            extra_kwargs={},
+        )
+    except Exception as mapped:
+        return MiniProviderFailure(mapped, traceback.format_exc())
+    finally:
+        litellm.suppress_debug_info = previous_suppress_debug_info
+    raise RuntimeError("LiteLLM exception mapping returned without raising")
+
+
+def _is_mini_provider_exception(exception: BaseException) -> bool:
+    import openai
+
+    return isinstance(exception, (openai.APIStatusError, openai.APIConnectionError))
 
 
 def _provider_descriptor() -> ProviderDescriptor:
@@ -191,11 +242,21 @@ _TARGET_BINDING_DIGESTS = (
 
 def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
     binding = metadata.get("e4_target")
+    if not isinstance(binding, Mapping) or type(binding.get("version")) is not int:
+        raise ValueError("compiled semantics lack a supported E4 target binding")
+    version = binding["version"]
+    extra_fields = {"runtime_profile"} if version == 2 else set()
     if (
-        not isinstance(binding, Mapping)
-        or set(binding) != {*_TARGET_BINDING_FIELDS, "version", "tool_surface_digest", "harness_lock_digest"}
-        or type(binding.get("version")) is not int
-        or binding["version"] != 1
+        version not in (1, 2)
+        or set(binding) != {
+            *_TARGET_BINDING_FIELDS, "version", "tool_surface_digest",
+            "harness_lock_digest", *extra_fields,
+        }
+        or version == 2 and (
+            binding.get("renderer_id") != MINI_RESPONSE_CONSUMER_ID
+            or binding.get("target_id") != "mini-swe-agent@2.4.6"
+            or not isinstance(binding.get("runtime_profile"), Mapping)
+        )
     ):
         raise ValueError("compiled semantics lack a supported E4 target binding")
     for name in _TARGET_BINDING_FIELDS:
@@ -298,6 +359,8 @@ class E4TargetPolicyProjection:
     target_schema_version: str
     request_schema_version: str
     renderer_id: str
+    runtime_profile: FrozenJsonObject | None = None
+    source_manifest: CompiledConfigManifest | None = None
 
     @classmethod
     def from_compiled(
@@ -339,6 +402,11 @@ class E4TargetPolicyProjection:
                 freeze_json_object(tool, field_name="compiled E4 target tool")
                 for tool in chat_tools
             ),
+            runtime_profile=(
+                freeze_json_object(binding["runtime_profile"], field_name="compiled Mini profile")
+                if binding["version"] == 2 else None
+            ),
+            source_manifest=manifest if binding["version"] == 2 else None,
         )
 
     def identity_dict(self) -> dict[str, Any]:
@@ -353,6 +421,10 @@ class E4TargetPolicyProjection:
             "tool_surface_digest": canonical_sha256(
                 [thaw_json(tool) for tool in self.chat_tools]
             ),
+            **(
+                {"runtime_profile_digest": canonical_sha256(self.runtime_profile)}
+                if self.runtime_profile is not None else {}
+            ),
         }
 
     def validate_semantics(self, semantics: Mapping[str, Any]) -> None:
@@ -362,6 +434,8 @@ class E4TargetPolicyProjection:
         binding = _checked_target_binding(metadata)
         if any(binding[name] != getattr(self, name) for name in _TARGET_BINDING_FIELDS):
             raise ValueError("effective target binding differs from the requested target")
+        if binding.get("runtime_profile") != self.runtime_profile:
+            raise ValueError("effective runtime profile differs from the compiled target")
         # The selected plan owns its complete lock, including runtime configuration.
         # Bootstrap candidates may differ there while sharing this target projection.
         target_tools = tuple(thaw_json(tool) for tool in self.chat_tools)
@@ -412,6 +486,9 @@ class EpisodeOpenAICompletionsPolicyClient:
             raise TypeError(
                 "target_projection must be an exact E4TargetPolicyProjection"
             )
+        if target_projection is not None and target_projection.runtime_profile is not None:
+            if timeout_seconds != 45:
+                raise ValueError("Mini requires its source 45-second provider timeout")
         self._episode_id = episode_id
         self._effective_plan_digest = effective_plan_digest
         self._observation = observation
@@ -435,6 +512,72 @@ class EpisodeOpenAICompletionsPolicyClient:
         self._on_close = on_close
         self._max_requests = max_requests
         self._request_attempts = 0
+        self._native_binding: CompiledNativeResponseBinding | None = None
+        self._native_plan: EffectiveExecutionPlan | None = None
+        self._native_cost: Callable[[Mapping[str, Any]], float] | None = None
+
+    def bind_compiled_plan(self, plan: EffectiveExecutionPlan) -> Mapping[str, Any]:
+        """Join a source-native client to the actual selected compiled plan."""
+        target = self._target_projection
+        profile = self._profile
+        if (
+            self._native_binding is not None
+            or target is None
+            or target.renderer_id != MINI_RESPONSE_CONSUMER_ID
+            or target.source_manifest is None
+            or profile is None
+        ):
+            raise ValueError("native client lacks a fresh compiled target")
+        target.validate_semantics(plan.effective_semantics)
+        manifest = target.source_manifest
+        binding = admit_native_response_binding(
+            manifest.canonical_bytes(),
+            expected_compiler_input_digest=manifest.inputs.compiler_input_digest,
+            authority_model_id=self._observation.model_id,
+            profile=profile,
+            capability_observation_digest=self._observation.canonical_digest(),
+            episode_id=self._episode_id,
+            effective_plan_digest=self._effective_plan_digest,
+        )
+        if (
+            plan.canonical_digest() != self._effective_plan_digest
+            or plan.base_compiled.manifest_digest != binding.compiled_manifest_digest
+        ):
+            raise ValueError("native client source manifest differs from the effective plan")
+        # This is the pinned source's pricing hook, not a zero-cost assertion.
+        # Installation is a producer responsibility; missing dependencies fail admission.
+        from importlib.metadata import version
+        if version("litellm") != "1.101.0":
+            raise ValueError("Mini pricing requires the sealed LiteLLM 1.101.0 assembly")
+        if os.environ.get("LITELLM_LOCAL_MODEL_COST_MAP", "").lower() != "true":
+            raise ValueError("Mini requires the installed local-only pricing catalog")
+        import litellm
+        from litellm.litellm_core_utils.get_model_cost_map import get_model_cost_map_source_info
+
+        if get_model_cost_map_source_info() != {
+            "source": "local",
+            "url": None,
+            "is_env_forced": True,
+            "fallback_reason": None,
+        }:
+            raise ValueError("Mini pricing catalog was not loaded from its sealed assembly")
+
+        def native_cost(response: Any) -> float:
+            try:
+                cost = litellm.cost_calculator.completion_cost(
+                    response, model="openai/" + profile.model
+                )
+                if cost <= 0.0:
+                    raise ValueError(f"Cost must be > 0.0, got {cost}")
+            except Exception:
+                # Exact source cost_tracking=ignore_errors behavior.
+                cost = 0.0
+            return cost
+
+        self._native_binding = binding
+        self._native_plan = plan
+        self._native_cost = native_cost
+        return {**thaw_json(target.runtime_profile["model"]), "model_name": "openai/" + profile.model}
 
     @property
     def profile_identity(self) -> Mapping[str, Any]:
@@ -459,6 +602,34 @@ class EpisodeOpenAICompletionsPolicyClient:
     async def invoke(
         self, request: PolicyRuntimeInvokeRequest
     ) -> PolicyRuntimeInvokeResult:
+        target = self._target_projection
+        if target is not None and target.runtime_profile is not None:
+            if self._native_binding is None or self._native_plan is None or self._native_cost is None:
+                raise RunnerPolicyBindingError(
+                    "source-native provider client has no compiled-plan binding",
+                    code="native_response_binding_invalid",
+                    episode_id=self._episode_id,
+                    effective_plan_digest=self._effective_plan_digest,
+                )
+            result = await self.invoke_native(
+                request, binding=self._native_binding, effective_plan=self._native_plan
+            )
+            if result.raw_response is None:
+                raise RunnerProtocolError("Mini requires the original provider sample", code="native_response_invalid")
+            response = _mini_model_response(result.raw_response)
+            mini_response = {
+                "message": response.choices[0].message.model_dump(),
+                "response": response.model_dump(),
+                "response_json": response.model_dump(mode="json"),
+            }
+            payload = {
+                "native_response": result.as_dict(),
+                "mini_response": mini_response,
+                "cost": self._native_cost(response),
+            }
+            return PolicyRuntimeInvokeResult(
+                response_payload=payload, response_digest=canonical_sha256(payload)
+            )
         return await self._invoke(request, native_binding=None)
 
     async def invoke_native(
@@ -576,7 +747,14 @@ class EpisodeOpenAICompletionsPolicyClient:
             if native_binding is not None:
                 if (
                     type(native_binding) is not CompiledNativeResponseBinding
-                    or self._target_projection is not None
+                    or (
+                        self._target_projection is not None
+                        and (
+                            native_binding.policy.consumer_id != MINI_RESPONSE_CONSUMER_ID
+                            or self._target_projection.renderer_id != MINI_RESPONSE_CONSUMER_ID
+                            or native_binding != self._native_binding
+                        )
+                    )
                     or native_binding.authority_model_id != self._observation.model_id
                 ):
                     raise RunnerPolicyBindingError(
@@ -597,6 +775,12 @@ class EpisodeOpenAICompletionsPolicyClient:
                 None,
                 {},
                 stream=stream,
+                extra=(
+                    {"response_consumer_id": MINI_RESPONSE_CONSUMER_ID}
+                    if native_binding is not None
+                    and native_binding.policy.consumer_id == MINI_RESPONSE_CONSUMER_ID
+                    else {}
+                ),
                 session_id=request.episode_id,
                 input_id=request.request_digest,
                 turn_id=str(request.turn),
@@ -645,6 +829,13 @@ class EpisodeOpenAICompletionsPolicyClient:
                     try:
                         outcome = run()
                     except BaseException as exc:
+                        if (
+                            native_binding is not None
+                            and native_binding.policy.consumer_id == MINI_RESPONSE_CONSUMER_ID
+                            and isinstance(exc, Exception)
+                            and _is_mini_provider_exception(exc)
+                        ):
+                            exc = _mini_provider_exception(exc, model=profile.model)
                         active.set_exception(exc)
                     else:
                         active.set_result(outcome)
@@ -669,15 +860,18 @@ class EpisodeOpenAICompletionsPolicyClient:
                 raise
             except RunnerDependencyError:
                 raise
-            except Exception:
+            except Exception as exc:
                 if self._cancelled.is_set():
                     raise asyncio.CancelledError
-                raise RunnerDependencyError(
+                error = RunnerDependencyError(
                     "episode provider invocation failed",
                     code="provider_invocation_failed",
                     episode_id=request.episode_id,
                     effective_plan_digest=request.effective_plan_digest,
-                ) from None
+                )
+                if isinstance(exc, MiniProviderFailure):
+                    raise error from exc
+                raise error from None
             finally:
                 if active.done():
                     with self._state_lock:
@@ -1038,6 +1232,27 @@ def _responses_request_to_chat(
         raise ProviderContractError(
             "policy request model does not match the admitted policy observation"
         )
+    if target_projection is not None and target_projection.runtime_profile is not None:
+        if set(request) != {"model", "messages", "tools"}:
+            raise ProviderContractError("Mini request fields differ from its source protocol")
+        messages = request["messages"]
+        tools = request["tools"]
+        if (
+            type(messages) is not list
+            or len(messages) < 2
+            or any(type(message) is not dict or "extra" in message for message in messages)
+            or messages[0] != {"role": "system", "content": target_projection.system_prompt}
+            or messages[1].get("role") != "user"
+            or any(message.get("role") not in {"system", "user", "assistant", "tool"} for message in messages)
+            or tools != [thaw_json(tool) for tool in target_projection.chat_tools]
+        ):
+            raise ProviderContractError("Mini request does not match its compiled source surface")
+        # No assistant splitting, argument decoding, null coercion or reordering: Mini's
+        # LitellmModel sends through litellm.completion, whose message validation drops
+        # only top-level null fields and keeps every other key verbatim.
+        from litellm.utils import validate_and_fix_openai_messages
+
+        return validate_and_fix_openai_messages(messages=messages), tools
     instructions = request.get("instructions")
     if type(instructions) is not str:
         raise ProviderContractError("policy request instructions must be text")

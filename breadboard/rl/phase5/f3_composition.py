@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 from breadboard_engine.compilation.contracts import (
     CompiledConfigManifest,
     ConfigBundleManifest,
+    DependencyClosureManifest,
     canonical_json_bytes,
 )
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -689,6 +690,29 @@ def build_f3_production_composition(
         config_bundle = ConfigBundleManifest.from_json(copied["config-bundle.json"][1])
         if config_bundle.canonical_bytes() != copied["config-bundle.json"][1]:
             raise F3CompositionError("config bundle is not canonical")
+        closure_raw = copied["config-closure.json"][1]
+        closure = DependencyClosureManifest.from_json(closure_raw)
+        if (
+            closure.canonical_bytes() != closure_raw
+            or closure.closure_digest != compiled.inputs.closure_digest
+        ):
+            raise F3CompositionError(
+                "config closure does not bind the compiled manifest"
+            )
+        closure_cas = FilesystemCAS(parsed.stores.cas)
+        try:
+            closure_cas_ref = closure_cas.put_bytes(
+                closure_raw,
+                artifact_id=closure.closure_digest,
+                media_type="application/json",
+            )
+        finally:
+            closure_cas.close()
+        if (
+            closure_cas_ref.sha256 != sha256_bytes(closure_raw)
+            or closure_cas_ref.media_type != "application/json"
+        ):
+            raise F3CompositionError("config closure CAS publication mismatch")
         if (
             selector.admitted_set_root != admitted.canonical_digest()
             or selector.candidate.receipt_digest
