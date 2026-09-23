@@ -22,9 +22,30 @@ from breadboard_engine.provider.profiles import OpenAICompletionsProviderProfile
 NATIVE_RESPONSE_POLICY_SCHEMA_VERSION: Final = "bb.provider_native_response_policy.v1"
 NATIVE_RESPONSE_CONSUMER_ID: Final = "breadboard.provider.recording.v1"
 MINI_RESPONSE_CONSUMER_ID: Final = "breadboard.mini-swe-agent.v2.4.6"
+PI_RESPONSE_CONSUMER_ID: Final = "breadboard.pi-coding-agent.v0.73.1"
 NATIVE_RESPONSE_BINDING_SCHEMA_VERSION: Final = "bb.provider_native_response_binding.v1"
 MAX_NATIVE_RESPONSE_BYTES: Final = 16 * 1024 * 1024
 MAX_NATIVE_STREAM_FRAGMENTS: Final = 65_536
+
+_NATIVE_RESPONSE_CONSUMER_MODES: Final = {
+    NATIVE_RESPONSE_CONSUMER_ID: frozenset({"non_streaming", "streaming"}),
+    MINI_RESPONSE_CONSUMER_ID: frozenset({"non_streaming"}),
+    PI_RESPONSE_CONSUMER_ID: frozenset({"streaming"}),
+}
+
+
+def native_response_consumer_modes(consumer_id: str) -> frozenset[str]:
+    """Return the admitted request modes for one registered consumer."""
+    try:
+        return _NATIVE_RESPONSE_CONSUMER_MODES[consumer_id]
+    except KeyError:
+        raise NativeResponseBindingError(
+            "response_policy.consumer_id is unsupported"
+        ) from None
+
+
+def is_native_response_consumer_registered(consumer_id: str) -> bool:
+    return consumer_id in _NATIVE_RESPONSE_CONSUMER_MODES
 
 _POLICY_FIELDS: Final = frozenset(
     {
@@ -80,7 +101,7 @@ class NativeResponsePolicy:
             raise NativeResponseBindingError(
                 "response_policy.schema_version is unsupported"
             )
-        if self.consumer_id not in {NATIVE_RESPONSE_CONSUMER_ID, MINI_RESPONSE_CONSUMER_ID}:
+        if not is_native_response_consumer_registered(self.consumer_id):
             raise NativeResponseBindingError(
                 "response_policy.consumer_id is unsupported"
             )
@@ -258,12 +279,13 @@ def admit_native_response_binding(
     capability_observation_digest: str,
     episode_id: str,
     effective_plan_digest: str,
+    request_mode: str | None = None,
 ) -> CompiledNativeResponseBinding:
-    """Admit the recording consumer from a verified compiled manifest.
+    """Admit a registered native consumer for the profile's request mode.
 
     The manifest is revalidated through the public cached-manifest validator;
-    the selected model, adapter, policy, profile and context are then joined
-    without fallback or caller-supplied capability switches.
+    the selected model, adapter, policy, profile and context are joined without
+    fallback or caller-supplied capability switches.
     """
 
     if type(compiled_manifest) is not bytes:
@@ -278,6 +300,12 @@ def admit_native_response_binding(
     if not isinstance(profile, OpenAICompletionsProviderProfile):
         raise NativeResponseBindingError("profile must be OpenAICompletionsProviderProfile")
 
+    effective_mode = profile.request_policy.mode
+    if request_mode is not None:
+        if request_mode not in {"streaming", "non_streaming"}:
+            raise NativeResponseBindingError("request_mode is unsupported")
+        if request_mode != effective_mode:
+            raise NativeResponseBindingError("native response request mode differs from profile")
     # Keep this import local: server_compiler may use NativeResponsePolicy for
     # semantic input validation, while this binding remains its consumer.
     from breadboard_engine.compilation.server_compiler import verify_cached_manifest
@@ -318,15 +346,20 @@ def admit_native_response_binding(
         raise
     except (TypeError, ValueError, KeyError) as exc:
         raise NativeResponseBindingError("compiled native response policy is invalid") from exc
+    modes = native_response_consumer_modes(policy.consumer_id)
+    if effective_mode not in modes:
+        raise NativeResponseBindingError(
+            "native response consumer is not admitted for the profile request mode"
+        )
+    target = manifest.semantic.metadata.get("e4_target")
     if policy.consumer_id == MINI_RESPONSE_CONSUMER_ID:
-        target = manifest.semantic.metadata.get("e4_target")
         if (
             not isinstance(target, Mapping)
             or target.get("version") != 2
             or target.get("target_id") != "mini-swe-agent@2.4.6"
             or target.get("renderer_id") != MINI_RESPONSE_CONSUMER_ID
             or not isinstance(target.get("runtime_profile"), Mapping)
-            or profile.request_policy.mode != "non_streaming"
+            or effective_mode != "non_streaming"
             or profile.request_policy.max_token_field != "max_tokens"
             or profile.request_policy.strict_tools is not None
             or profile.request_policy.enable_thinking is not None
@@ -334,6 +367,19 @@ def admit_native_response_binding(
             or profile.sampling.as_dict() != {"temperature": 0.0, "n": 1}
         ):
             raise NativeResponseBindingError("Mini native response requires its compiled source profile")
+    elif policy.consumer_id == PI_RESPONSE_CONSUMER_ID:
+        if (
+            not isinstance(target, Mapping)
+            or target.get("version") != 2
+            or target.get("target_id") != "pi@0.73.1"
+            or target.get("renderer_id") != PI_RESPONSE_CONSUMER_ID
+            or not isinstance(target.get("runtime_profile"), Mapping)
+            or effective_mode != "streaming"
+            or profile.request_policy.max_token_field != "max_tokens"
+            or profile.request_policy.strict_tools is not False
+            or profile.max_output_tokens != 2048
+        ):
+            raise NativeResponseBindingError("Pi native response requires its compiled source profile")
     if profile_identity_digest(profile) != policy.provider_profile_digest:
         raise NativeResponseBindingError("profile identity does not match policy")
 
@@ -347,17 +393,19 @@ def admit_native_response_binding(
         compiled_model_digest=canonical_sha256(selected),
     )
 
-
 __all__ = [
     "CompiledNativeResponseBinding",
     "MAX_NATIVE_RESPONSE_BYTES",
     "MAX_NATIVE_STREAM_FRAGMENTS",
+    "MINI_RESPONSE_CONSUMER_ID",
     "NATIVE_RESPONSE_BINDING_SCHEMA_VERSION",
     "NATIVE_RESPONSE_CONSUMER_ID",
-    "MINI_RESPONSE_CONSUMER_ID",
     "NATIVE_RESPONSE_POLICY_SCHEMA_VERSION",
+    "PI_RESPONSE_CONSUMER_ID",
     "NativeResponseBindingError",
     "NativeResponsePolicy",
     "admit_native_response_binding",
+    "is_native_response_consumer_registered",
+    "native_response_consumer_modes",
     "profile_identity_digest",
 ]

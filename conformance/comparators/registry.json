@@ -102,6 +102,23 @@
     },
     {
       "comparator_class": "deterministic_replay",
+      "comparator_id": "pi_coding_agent_0_73_1_trace_v1",
+      "entrypoint": {
+        "callable": "compare",
+        "module": "conformance.comparators.pi_coding_agent_0_73_1"
+      },
+      "input_roles": [
+        "capture_ref",
+        "replay_ref",
+        "comparator_ref"
+      ],
+      "lane_ids": [
+        "pi_coding_agent_0_73_1_replay"
+      ],
+      "report_schema_version": "bb.e4.comparator_report.v1"
+    },
+    {
+      "comparator_class": "deterministic_replay",
       "comparator_id": "north_star_stored_report_replay",
       "entrypoint": {
         "callable": "compare",

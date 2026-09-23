@@ -20,7 +20,9 @@ from breadboard_engine.compilation.contracts import (
 from breadboard_engine.compilation.provider_response import (
     CompiledNativeResponseBinding,
     MINI_RESPONSE_CONSUMER_ID,
+    PI_RESPONSE_CONSUMER_ID,
     admit_native_response_binding,
+    is_native_response_consumer_registered,
 )
 
 from breadboard_engine.provider.contracts import (
@@ -246,6 +248,10 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
         raise ValueError("compiled semantics lack a supported E4 target binding")
     version = binding["version"]
     extra_fields = {"runtime_profile"} if version == 2 else set()
+    supported_v2_targets = {
+        MINI_RESPONSE_CONSUMER_ID: "mini-swe-agent@2.4.6",
+        PI_RESPONSE_CONSUMER_ID: "pi@0.73.1",
+    }
     if (
         version not in (1, 2)
         or set(binding) != {
@@ -253,8 +259,9 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
             "harness_lock_digest", *extra_fields,
         }
         or version == 2 and (
-            binding.get("renderer_id") != MINI_RESPONSE_CONSUMER_ID
-            or binding.get("target_id") != "mini-swe-agent@2.4.6"
+            binding.get("renderer_id") not in supported_v2_targets
+            or binding.get("target_id")
+            != supported_v2_targets.get(binding.get("renderer_id"))
             or not isinstance(binding.get("runtime_profile"), Mapping)
         )
     ):
@@ -488,7 +495,7 @@ class EpisodeOpenAICompletionsPolicyClient:
             )
         if target_projection is not None and target_projection.runtime_profile is not None:
             if timeout_seconds != 45:
-                raise ValueError("Mini requires its source 45-second provider timeout")
+                raise ValueError("source-native targets require their 45-second provider timeout")
         self._episode_id = episode_id
         self._effective_plan_digest = effective_plan_digest
         self._observation = observation
@@ -523,7 +530,7 @@ class EpisodeOpenAICompletionsPolicyClient:
         if (
             self._native_binding is not None
             or target is None
-            or target.renderer_id != MINI_RESPONSE_CONSUMER_ID
+            or not is_native_response_consumer_registered(target.renderer_id)
             or target.source_manifest is None
             or profile is None
         ):
@@ -544,6 +551,10 @@ class EpisodeOpenAICompletionsPolicyClient:
             or plan.base_compiled.manifest_digest != binding.compiled_manifest_digest
         ):
             raise ValueError("native client source manifest differs from the effective plan")
+        if target.renderer_id != MINI_RESPONSE_CONSUMER_ID:
+            self._native_binding = binding
+            self._native_plan = plan
+            return {**thaw_json(target.runtime_profile["model"]), "model_name": "openai/" + profile.model}
         # This is the pinned source's pricing hook, not a zero-cost assertion.
         # Installation is a producer responsibility; missing dependencies fail admission.
         from importlib.metadata import version
@@ -604,7 +615,7 @@ class EpisodeOpenAICompletionsPolicyClient:
     ) -> PolicyRuntimeInvokeResult:
         target = self._target_projection
         if target is not None and target.runtime_profile is not None:
-            if self._native_binding is None or self._native_plan is None or self._native_cost is None:
+            if self._native_binding is None or self._native_plan is None:
                 raise RunnerPolicyBindingError(
                     "source-native provider client has no compiled-plan binding",
                     code="native_response_binding_invalid",
@@ -614,6 +625,18 @@ class EpisodeOpenAICompletionsPolicyClient:
             result = await self.invoke_native(
                 request, binding=self._native_binding, effective_plan=self._native_plan
             )
+            if target.renderer_id == PI_RESPONSE_CONSUMER_ID:
+                payload = {"native_response": result.as_dict()}
+                return PolicyRuntimeInvokeResult(
+                    response_payload=payload, response_digest=canonical_sha256(payload)
+                )
+            if self._native_cost is None:
+                raise RunnerPolicyBindingError(
+                    "Mini provider client has no pricing hook",
+                    code="native_response_binding_invalid",
+                    episode_id=self._episode_id,
+                    effective_plan_digest=self._effective_plan_digest,
+                )
             if result.raw_response is None:
                 raise RunnerProtocolError("Mini requires the original provider sample", code="native_response_invalid")
             response = _mini_model_response(result.raw_response)
@@ -750,8 +773,11 @@ class EpisodeOpenAICompletionsPolicyClient:
                     or (
                         self._target_projection is not None
                         and (
-                            native_binding.policy.consumer_id != MINI_RESPONSE_CONSUMER_ID
-                            or self._target_projection.renderer_id != MINI_RESPONSE_CONSUMER_ID
+                            native_binding.policy.consumer_id
+                            != self._target_projection.renderer_id
+                            or not is_native_response_consumer_registered(
+                                self._target_projection.renderer_id
+                            )
                             or native_binding != self._native_binding
                         )
                     )
@@ -776,9 +802,11 @@ class EpisodeOpenAICompletionsPolicyClient:
                 {},
                 stream=stream,
                 extra=(
-                    {"response_consumer_id": MINI_RESPONSE_CONSUMER_ID}
+                    {"response_consumer_id": native_binding.policy.consumer_id}
                     if native_binding is not None
-                    and native_binding.policy.consumer_id == MINI_RESPONSE_CONSUMER_ID
+                    and is_native_response_consumer_registered(
+                        native_binding.policy.consumer_id
+                    )
                     else {}
                 ),
                 session_id=request.episode_id,
@@ -1234,7 +1262,7 @@ def _responses_request_to_chat(
         )
     if target_projection is not None and target_projection.runtime_profile is not None:
         if set(request) != {"model", "messages", "tools"}:
-            raise ProviderContractError("Mini request fields differ from its source protocol")
+            raise ProviderContractError("source-native request fields differ from its source protocol")
         messages = request["messages"]
         tools = request["tools"]
         if (
@@ -1246,7 +1274,9 @@ def _responses_request_to_chat(
             or any(message.get("role") not in {"system", "user", "assistant", "tool"} for message in messages)
             or tools != [thaw_json(tool) for tool in target_projection.chat_tools]
         ):
-            raise ProviderContractError("Mini request does not match its compiled source surface")
+            raise ProviderContractError("source-native request does not match its compiled source surface")
+        if target_projection.renderer_id != MINI_RESPONSE_CONSUMER_ID:
+            return messages, tools
         # No assistant splitting, argument decoding, null coercion or reordering: Mini's
         # LitellmModel sends through litellm.completion, whose message validation drops
         # only top-level null fields and keeps every other key verbatim.

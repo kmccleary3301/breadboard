@@ -188,6 +188,24 @@ def bind_e4_target_inputs(
         logical_path=f"{package.descriptor_path}:{execution['config_asset']}",
     )
     if (
+        type(configuration) is dict
+        and configuration.get("schema_version") == "bb.e4.target_config.v1"
+        and configuration.get("target_id") == "pi@0.73.1"
+    ):
+        prompt = configuration.get("prompt")
+        required = prompt.get("dynamic_fields") if isinstance(prompt, Mapping) else None
+        fields = copy_harness_json(dynamic_fields, freeze=False)
+        if (
+            not isinstance(required, list)
+            or any(type(name) is not str or not name for name in required)
+            or set(fields) != set(required)
+            or any(type(value) is not str or not value for value in fields.values())
+        ):
+            raise HarnessDefinitionValidationError(
+                {"target_dynamic_fields": "Pi dynamic fields do not match the target contract"}
+            )
+        return _encode_e4_target_input_frame(request_schema_version, fields)
+    if (
         type(configuration) is not dict
         or configuration.get("schema_version") != "bb.e4.target_config.v2"
         or configuration.get("target_id") != package.target_id
@@ -286,7 +304,7 @@ def lower_e4_target(
     )
     if type(harness) is not dict or harness.get("target_id") != target_id:
         raise ValueError("E4 target harness identity is invalid")
-    if target_version == "bb.e4.target.v2":
+    if target_version == "bb.e4.target.v2" and harness.get("schema_version") == "bb.e4.target_config.v2":
         if findings := validate_e4_target_document(harness):
             raise HarnessDefinitionValidationError(findings)
         if harness["schema_version"] != "bb.e4.target_config.v2":
@@ -298,10 +316,19 @@ def lower_e4_target(
         )
     if (
         harness.get("schema_version") != "bb.e4.target_config.v1"
-        or set(harness) != {
-            "schema_version", "target_id", "prompt", "tools",
-            "session", "thinking", "retry", "transport",
-        }
+        or (
+            set(harness) != {
+                "schema_version", "target_id", "prompt", "tools",
+                "session", "thinking", "retry", "transport",
+            }
+            and not (
+                target_id == "pi@0.73.1"
+                and set(harness) == {
+                    "schema_version", "target_id", "prompt", "tools",
+                    "session", "thinking", "retry", "stream", "transport",
+                }
+            )
+        )
     ):
         raise ValueError("E4 target configuration revision or fields are unsupported")
     retry = harness.get("retry")
@@ -316,7 +343,16 @@ def lower_e4_target(
         or retry["enabled"] is not False
         or type(retry["max_retries"]) is not int
         or retry["max_retries"] != 0
-        or harness.get("transport") != {"mode": "json"}
+        or (
+            harness.get("transport") != {"mode": "json"}
+            and not (
+                target_id == "pi@0.73.1"
+                and harness.get("transport") == {"mode": "native_response"}
+                and harness.get("stream") == {
+                    "enabled": True, "request_cap": 8, "max_tokens": 2048
+                }
+            )
+        )
     ):
         raise ValueError("E4 target runtime policy is unsupported")
     prompt_config = harness.get("prompt")
@@ -325,9 +361,16 @@ def lower_e4_target(
         raise ValueError("E4 target prompt and tool configuration is invalid")
     if (
         set(prompt_config) != {"renderer", "asset", "dynamic_fields"}
-        or prompt_config.get("renderer") != "pi-0.57.1"
+        or prompt_config.get("renderer") not in {"pi-0.57.1", "pi-0.73.1"}
         or prompt_config.get("asset") != prompt_asset
-        or set(tools_config) != {"ordered", "surface_asset"}
+        or (
+            set(tools_config) != {"ordered", "surface_asset"}
+            and not (
+                target_id == "pi@0.73.1"
+                and set(tools_config) == {"ordered", "surface_asset", "image_delivery"}
+                and tools_config.get("image_delivery") == "disabled"
+            )
+        )
         or tools_config.get("surface_asset") != tool_asset
     ):
         raise ValueError("E4 target renderer or asset references are unsupported")
@@ -389,6 +432,13 @@ def lower_e4_target(
     overlay_id = overlay.get("overlay_id")
     if type(overlay_id) is not str or not overlay_id:
         raise ValueError("E4 target overlay identity is invalid")
+    runtime_profile = None
+    renderer_id = "breadboard.e4.legacy-string-template.v1"
+    if target_id == "pi@0.73.1":
+        runtime_profile = copy_harness_json(
+            json.loads(package.read_asset_text("native-config.json")), freeze=True
+        )
+        renderer_id = "breadboard.pi-coding-agent.v0.73.1"
     return E4TargetRendering(
         target_id=target_id,
         overlay_id=overlay_id,
@@ -399,6 +449,8 @@ def lower_e4_target(
         system_prompt=rendered_prompt,
         ordered_tool_names=tuple(ordered_names),
         tools=tuple(tools),
+        renderer_id=renderer_id,
+        runtime_profile=runtime_profile,
     )
 
 
