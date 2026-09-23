@@ -657,6 +657,7 @@ async def test_openclaw_native_worker_ack_and_close_are_scope_verified(tmp_path:
         assert closed["cleanup"]["all_dead"] is True
         assert closed["cleanup"]["marker_before"][0]["pid"] > 1
         assert closed["cleanup"]["marker_after"] == []
+        assert closed["cleanup"]["process_groups"]
         assert all(group["group_probe_absent"] for group in closed["cleanup"]["process_groups"])
     finally:
         await worker.close()
