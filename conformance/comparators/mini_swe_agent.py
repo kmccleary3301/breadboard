@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Mapping
@@ -30,6 +31,7 @@ TRACE_REQUIRED_FIELDS = (
 # BreadBoard-only oracles read only the operator-recorded controls, never a
 # supplier-comparable trace field.
 ORACLE_ROOT = "controls"
+SHA256_RE = re.compile(r"sha256:[0-9a-f]{64}")
 # Volatile source values: a placeholder may replace only the named history extra field.
 FIELD_NORMALIZATIONS = {
     "timestamp:<TIMESTAMP>": ("<TIMESTAMP>", "timestamp"),
@@ -206,6 +208,9 @@ def _load_trace(
         errors.append(f"{expected_role} case {case_id!r} trace role must be {expected_role}")
     if trace.get("case_id") != case_id:
         errors.append(f"{expected_role} case {case_id!r} trace case_id must be {case_id}")
+    scenario_sha256 = trace.get("scenario_sha256")
+    if not isinstance(scenario_sha256, str) or SHA256_RE.fullmatch(scenario_sha256) is None:
+        errors.append(f"{expected_role} case {case_id!r} trace scenario_sha256 must be a sha256: digest")
     controls = trace.get("controls")
     if controls is not None and not isinstance(controls, Mapping):
         errors.append(f"{expected_role} case {case_id!r} trace controls must be an object")

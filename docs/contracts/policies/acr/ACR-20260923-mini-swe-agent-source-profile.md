@@ -104,10 +104,10 @@ The three cases:
 
 In `uv` Python 3.11 with the pinned requirements, the focused suites passed:
 
-- 567 with `litellm==1.101.0`; 565 plus 2 skipped without it.
+- 568 with `litellm==1.101.0`; 566 plus 2 skipped without it.
 - The provider suites.
 
-The suites cover the comparator, lane runner, lane definitions, targets, wheel packaging, Mini semantics, policy provider, Mini tools, sandbox runtime, runner conductor, headless and v2 service. `test_mini_wire_messages_keep_source_client_fields` fails on the pre-fix engine and passes after it. The comparator suite's scenario-hash, workspace-rule and trace-rooted-oracle rows fail against the pre-review comparator and pass after it.
+The suites cover the comparator, lane runner, lane definitions, targets, wheel packaging, Mini semantics, policy provider, Mini tools, sandbox runtime, runner conductor, headless and v2 service. `test_mini_wire_messages_keep_source_client_fields` fails on the pre-fix engine and passes after it. The comparator suite's scenario-hash, placeholder-scenario, workspace-rule and trace-rooted-oracle rows fail against the pre-review comparator and pass after it. A shared trace's `scenario_sha256` must be a `sha256:` digest, so a placeholder cannot stand in for it on both sides.
 
 ### Findings recorded, not changed here
 

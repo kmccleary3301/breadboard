@@ -249,10 +249,14 @@ def _workspace_rule(trace: dict[str, Any]) -> None:
     trace["normalizations"].append("workspace_root:<WORKSPACE>")
 
 
+def _placeholder_scenario(trace: dict[str, Any]) -> None:
+    trace["scenario_sha256"] = "<TIMESTAMP>"
+
+
 @pytest.mark.parametrize(
     "mutation",
-    [_mask_protocol_field, _unadmitted_rule, _declared_not_applied, _workspace_rule],
-    ids=["placeholder_outside_field", "unadmitted_rule", "declared_not_applied", "workspace_rule"],
+    [_mask_protocol_field, _unadmitted_rule, _declared_not_applied, _workspace_rule, _placeholder_scenario],
+    ids=["placeholder_outside_field", "unadmitted_rule", "declared_not_applied", "workspace_rule", "placeholder_scenario"],
 )
 def test_symmetric_normalization_abuse_invalidates_both_manifests(
     tmp_path: Path, mutation: Callable[[dict[str, Any]], None]
