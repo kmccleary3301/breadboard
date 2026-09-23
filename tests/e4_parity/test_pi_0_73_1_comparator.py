@@ -136,6 +136,32 @@ def test_supplier_read_description_with_wrong_sha_fails_closed(tmp_path: Path) -
         project_supplier_case(case)
 
 
+def test_supplier_request_tools_must_contain_exactly_one_read(tmp_path: Path) -> None:
+    trace, requests = _packet_trace_and_requests()
+    requests[0]["tools"] = []
+    case = tmp_path / "supplier-case"
+    (case / "receiver").mkdir(parents=True)
+    (case / "trace.json").write_text(json.dumps(trace), encoding="utf-8")
+    (case / "receiver" / "http-transcript.jsonl").write_text(json.dumps({"body": requests[0]}) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="exactly one read"):
+        project_supplier_case(case)
+
+
+@pytest.mark.parametrize("declaration", ["top_level", "runtime_inputs"])
+def test_supplier_declared_date_must_match_capture_constant(tmp_path: Path, declaration: str) -> None:
+    trace, requests = _packet_trace_and_requests()
+    if declaration == "top_level":
+        trace["current_date"] = "2099-01-01"
+    else:
+        trace["runtime_inputs"] = {"current_date": "2099-01-01"}
+    case = tmp_path / "supplier-case"
+    (case / "receiver").mkdir(parents=True)
+    (case / "trace.json").write_text(json.dumps(trace), encoding="utf-8")
+    (case / "receiver" / "http-transcript.jsonl").write_text(json.dumps({"body": requests[0]}) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="capture constant 2026-09-23"):
+        project_supplier_case(case)
+
+
 def test_unexpected_date_elsewhere_stays_raw_and_fails() -> None:
     bb_trace = _bb_trace_from_packet()
     bb_trace["requests"][0]["messages"][0]["content"] += "\nUnrelated date: 2027-04-05"

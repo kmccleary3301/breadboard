@@ -93,17 +93,17 @@ def _required_text(value: Any, field_name: str) -> str:
 
 
 def _supplier_runtime_inputs(trace: Mapping[str, Any]) -> _RuntimeInputs:
-    current_date: Any = trace.get("current_date")
-    if current_date is None:
-        declared = trace.get("runtime_inputs")
-        if isinstance(declared, Mapping) and "current_date" in declared:
-            current_date = declared["current_date"]
-    if current_date is None:
-        current_date = SUPPLIER_CURRENT_DATE
+    if "current_date" in trace and trace["current_date"] != SUPPLIER_CURRENT_DATE:
+        raise ValueError(f"supplier trace current_date must equal capture constant {SUPPLIER_CURRENT_DATE}")
+    runtime_inputs = trace.get("runtime_inputs")
+    if isinstance(runtime_inputs, Mapping) and "current_date" in runtime_inputs:
+        declared = runtime_inputs["current_date"]
+        if declared != SUPPLIER_CURRENT_DATE:
+            raise ValueError(f"supplier runtime_inputs.current_date must equal capture constant {SUPPLIER_CURRENT_DATE}")
     return _RuntimeInputs(
         workspace_root=SUPPLIER_WORKSPACE_ROOT,
         home_root=SUPPLIER_HOME_ROOT,
-        current_date=_required_text(current_date, "supplier current_date"),
+        current_date=SUPPLIER_CURRENT_DATE,
         package_dir=SUPPLIER_PACKAGE_DIR,
     )
 
@@ -319,15 +319,24 @@ def _apply_supplier_advertisement(requests: list[Mapping[str, Any]], counts: _Ru
     output: list[Mapping[str, Any]] = []
     for request_index, request in enumerate(requests):
         body = deepcopy(dict(request))
-        tools = body.get("tools", [])
-        if tools is not None and not isinstance(tools, list):
+        tools = body.get("tools")
+        if not isinstance(tools, list):
             raise ValueError(f"supplier request {request_index} tools must be a list")
-        for tool_index, tool in enumerate(tools or []):
+        read_count = 0
+        for tool_index, tool in enumerate(tools):
             if not isinstance(tool, Mapping):
-                continue
+                raise ValueError(f"supplier request {request_index} tool {tool_index} must be an object")
+            if tool.get("type") != "function":
+                raise ValueError(f"supplier request {request_index} tool {tool_index} type must be function")
             function = tool.get("function")
-            if not isinstance(function, Mapping) or function.get("name") != "read":
+            if not isinstance(function, Mapping):
+                raise ValueError(f"supplier request {request_index} tool {tool_index} function must be an object")
+            name = function.get("name")
+            if not isinstance(name, str):
+                raise ValueError(f"supplier request {request_index} tool {tool_index} function.name must be a string")
+            if name != "read":
                 continue
+            read_count += 1
             description = function.get("description")
             if type(description) is not str:
                 raise ValueError(f"supplier request {request_index} read description is missing")
@@ -342,6 +351,10 @@ def _apply_supplier_advertisement(requests: list[Mapping[str, Any]], counts: _Ru
             updated_tool["function"] = updated_function
             tools[tool_index] = updated_tool
             counts.add("advertisement_read_description")
+        if read_count != 1:
+            raise ValueError(
+                f"supplier request {request_index} tools must contain exactly one read function, observed {read_count}"
+            )
         messages = body.get("messages", [])
         if not isinstance(messages, list):
             raise ValueError(f"supplier request {request_index} messages must be a list")
