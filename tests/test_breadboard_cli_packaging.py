@@ -252,7 +252,7 @@ def test_built_wheel_clean_install_runs_public_surface_without_credentials(
     venv_python = venv / "bin" / "python"
     breadboard = venv / "bin" / "breadboard"
     subprocess.run(
-        ["uv", "pip", "install", "--python", str(venv_python), str(wheel)],
+        ["uv", "pip", "install", "--link-mode=copy", "--python", str(venv_python), str(wheel)],
         cwd=outside_repo,
         env=environment,
         check=True,
@@ -367,10 +367,11 @@ print(json.dumps({{
         [str(venv_python), "-I", "-c", probe],
         cwd=outside_repo,
         env=environment,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
     )
+    assert probe_result.returncode == 0, probe_result.stderr[-4000:]
     assert json.loads(probe_result.stdout) == {
         "distribution": "breadboard-harness-cli",
         "version": "0.0.0",
