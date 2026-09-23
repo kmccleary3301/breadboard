@@ -24,15 +24,16 @@ NATIVE_RESPONSE_CONSUMER_ID: Final = "breadboard.provider.recording.v1"
 MINI_RESPONSE_CONSUMER_ID: Final = "breadboard.mini-swe-agent.v2.4.6"
 PI_RESPONSE_CONSUMER_ID: Final = "breadboard.pi-coding-agent.v0.73.1"
 OPENHANDS_RESPONSE_CONSUMER_ID: Final = "breadboard.openhands-sdk.v1.47.0"
+OPENCLAW_RESPONSE_CONSUMER_ID: Final = "breadboard.openclaw.native-chat.v1"
 NATIVE_RESPONSE_BINDING_SCHEMA_VERSION: Final = "bb.provider_native_response_binding.v1"
 MAX_NATIVE_RESPONSE_BYTES: Final = 16 * 1024 * 1024
 MAX_NATIVE_STREAM_FRAGMENTS: Final = 65_536
-
 _NATIVE_RESPONSE_CONSUMER_MODES: Final = {
     NATIVE_RESPONSE_CONSUMER_ID: frozenset({"non_streaming", "streaming"}),
     MINI_RESPONSE_CONSUMER_ID: frozenset({"non_streaming"}),
     PI_RESPONSE_CONSUMER_ID: frozenset({"streaming"}),
     OPENHANDS_RESPONSE_CONSUMER_ID: frozenset({"non_streaming"}),
+    OPENCLAW_RESPONSE_CONSUMER_ID: frozenset({"streaming"}),
 }
 
 
@@ -426,6 +427,7 @@ __all__ = [
     "NATIVE_RESPONSE_BINDING_SCHEMA_VERSION",
     "NATIVE_RESPONSE_CONSUMER_ID",
     "OPENHANDS_RESPONSE_CONSUMER_ID",
+    "OPENCLAW_RESPONSE_CONSUMER_ID",
     "NATIVE_RESPONSE_POLICY_SCHEMA_VERSION",
     "PI_RESPONSE_CONSUMER_ID",
     "NativeResponseBindingError",

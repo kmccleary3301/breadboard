@@ -24,6 +24,7 @@ from breadboard_engine.compilation.provider_response import (
     MINI_RESPONSE_CONSUMER_ID,
     PI_RESPONSE_CONSUMER_ID,
     OPENHANDS_RESPONSE_CONSUMER_ID,
+    OPENCLAW_RESPONSE_CONSUMER_ID,
     admit_native_response_binding,
     is_native_response_consumer_registered,
 )
@@ -251,10 +252,10 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
     expected_fields = {
         *_TARGET_BINDING_FIELDS, "version", "tool_surface_digest", "harness_lock_digest", *extra_fields
     }
-    renderer_id = binding.get("renderer_id")
     deferred_targets = {
         OPENHANDS_RESPONSE_CONSUMER_ID: "openhands-sdk@1.47.0",
         PI_RESPONSE_CONSUMER_ID: "pi@0.73.1",
+        OPENCLAW_RESPONSE_CONSUMER_ID: "openclaw@2026.9.4",
     }
     if (
         version not in (1, 2, 3)
@@ -312,17 +313,19 @@ def _validate_request_features(
     required = set(profile.required_request_features(tools=tools))
     if (
         target_projection is not None
-        and target_projection.renderer_id == OPENHANDS_RESPONSE_CONSUMER_ID
+        and target_projection.renderer_id in {
+            OPENHANDS_RESPONSE_CONSUMER_ID,
+            OPENCLAW_RESPONSE_CONSUMER_ID,
+        }
     ):
-        # The SDK supplies raw HTTP instead of profile.chat_request(), which
-        # inserts n=1. The pinned SDK omits n; native admission rejects that key.
-        required.remove("n")
+        # Native source clients emit their own wire and omit profile-inserted n.
+        required.discard("n")
     elif (
         target_projection is not None
         and target_projection.renderer_id == PI_RESPONSE_CONSUMER_ID
     ):
         # Pi's buildParams removes n and adds store=false before transport.
-        required.remove("n")
+        required.discard("n")
         required.add("store")
     missing = required.difference(observation.capabilities.request_features)
     unsupported_tools = tools and (
@@ -614,8 +617,10 @@ class EpisodeOpenAICompletionsPolicyClient:
             self._native_binding is not None
             or target is None
             or target.renderer_id not in {
-                MINI_RESPONSE_CONSUMER_ID, OPENHANDS_RESPONSE_CONSUMER_ID,
+                MINI_RESPONSE_CONSUMER_ID,
+                OPENHANDS_RESPONSE_CONSUMER_ID,
                 PI_RESPONSE_CONSUMER_ID,
+                OPENCLAW_RESPONSE_CONSUMER_ID,
             }
             or target.source_manifest is None
             or profile is None
@@ -685,7 +690,10 @@ class EpisodeOpenAICompletionsPolicyClient:
                 **dict(model_config),
                 "model_name": "openai/" + profile.model,
             }
-        elif target.renderer_id == PI_RESPONSE_CONSUMER_ID:
+        elif target.renderer_id in {
+            PI_RESPONSE_CONSUMER_ID,
+            OPENCLAW_RESPONSE_CONSUMER_ID,
+        }:
             public_config = {
                 "id": profile.model,
                 "name": profile.model,
@@ -759,8 +767,11 @@ class EpisodeOpenAICompletionsPolicyClient:
         """Seal the admitted worker's bootstrap before the first stream."""
         target = self._target_projection
         if (
-            target is None or target.renderer_id != PI_RESPONSE_CONSUMER_ID
-            or self._native_binding is None
+            target is None
+            or target.renderer_id not in {
+                PI_RESPONSE_CONSUMER_ID,
+                OPENCLAW_RESPONSE_CONSUMER_ID,
+            }
             or self._native_stream_prompt is not None
             or self._request_attempts
             or type(system_prompt) is not str or not system_prompt
@@ -1275,7 +1286,10 @@ class EpisodeOpenAICompletionsPolicyClient:
             result = await self.invoke_native(
                 request, binding=self._native_binding, effective_plan=self._native_plan
             )
-            if target.renderer_id == PI_RESPONSE_CONSUMER_ID:
+            if target.renderer_id in {
+                PI_RESPONSE_CONSUMER_ID,
+                OPENCLAW_RESPONSE_CONSUMER_ID,
+            }:
                 payload = {"native_response": result.as_dict()}
                 return PolicyRuntimeInvokeResult(
                     response_payload=payload, response_digest=canonical_sha256(payload)

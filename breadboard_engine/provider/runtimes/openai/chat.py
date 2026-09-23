@@ -21,7 +21,10 @@ from ...contracts import (
 from ...contract_wire import ProviderContractError, canonical_json
 from ...native_response import NativeProviderResponse
 from ....compilation.provider_response import (
-    CompiledNativeResponseBinding, MINI_RESPONSE_CONSUMER_ID, PI_RESPONSE_CONSUMER_ID,
+    CompiledNativeResponseBinding,
+    MINI_RESPONSE_CONSUMER_ID,
+    PI_RESPONSE_CONSUMER_ID,
+    OPENCLAW_RESPONSE_CONSUMER_ID,
 )
 from ...model_role_options import openai_chat_role_options
 from ...sdk_bindings import provider_sdk_bindings
@@ -477,22 +480,23 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         *,
         context: ProviderRuntimeContext,
     ) -> Dict[str, Any]:
-        """Project the exact request used by a profile-bound invocation.
-
-        Native consumers supply their source client's wire messages rather than
-        BreadBoard's canonical message shape.
-        """
         consumer_id = context.extra.get("response_consumer_id")
-        if consumer_id in {MINI_RESPONSE_CONSUMER_ID, PI_RESPONSE_CONSUMER_ID}:
+        if consumer_id in {
+            MINI_RESPONSE_CONSUMER_ID,
+            PI_RESPONSE_CONSUMER_ID,
+            OPENCLAW_RESPONSE_CONSUMER_ID,
+        }:
             chat_messages = [dict(message) for message in messages]
         else:
             chat_messages = self._convert_messages_to_chat(messages, context=context)
         request = profile.chat_request(
             chat_messages,
-            tools if consumer_id == PI_RESPONSE_CONSUMER_ID else self._convert_tools_to_openai(tools),
+            tools
+            if consumer_id in {PI_RESPONSE_CONSUMER_ID, OPENCLAW_RESPONSE_CONSUMER_ID}
+            else self._convert_tools_to_openai(tools),
         )
-        if consumer_id == PI_RESPONSE_CONSUMER_ID:
-            # Pinned Pi buildParams omits n and disables storage for this binding.
+        if consumer_id in {PI_RESPONSE_CONSUMER_ID, OPENCLAW_RESPONSE_CONSUMER_ID}:
+            # Source buildParams omits n and disables provider-side storage.
             request.pop("n")
             request["store"] = False
         return request
