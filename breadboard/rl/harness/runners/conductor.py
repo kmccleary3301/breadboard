@@ -2429,6 +2429,7 @@ class _ConductorSession:
         state: FrozenJsonObject = freeze_json_object({}, field_name="source state")
         trace_requests: list[dict[str, Any]] = []
         trace_tool_calls: list[dict[str, Any]] = []
+        native_error_event_digests: dict[str, int] = {}
         trace_observations: list[dict[str, Any]] = []
         def decode_json_body(body_b64: Any) -> Any:
             if type(body_b64) is not str:
@@ -2454,6 +2455,27 @@ class _ConductorSession:
                 )
             return value
 
+        native_runtime_close_task: asyncio.Task[Mapping[str, Any]] | None = None
+
+        async def close_once() -> Mapping[str, Any]:
+            nonlocal native_runtime_close_task
+            if native_runtime_close_task is None:
+                close_native_runtime = getattr(tools, "close_native_runtime", None)
+                if not callable(close_native_runtime):
+                    raise RunnerProtocolError(
+                        "OpenHands native runtime lacks a close operation",
+                        code="native_response_invalid", **self._context(),
+                    )
+                native_runtime_close_task = asyncio.create_task(close_native_runtime())
+            try:
+                return await asyncio.shield(native_runtime_close_task)
+            except asyncio.CancelledError as cancellation:
+                try:
+                    await native_runtime_close_task
+                except BaseException:
+                    pass
+                raise cancellation
+
         async def commit_events(
             value: Mapping[str, Any], phase_name: str, turn: int | None,
         ) -> None:
@@ -2466,7 +2488,15 @@ class _ConductorSession:
                 )
             for event in delta:
                 kind = event.get("kind")
-                if isinstance(kind, str) and kind in {"AgentErrorEvent", "ConversationErrorEvent"}:
+                event_digest = canonical_sha256(event)
+                duplicate_native_error = native_error_event_digests.get(event_digest, 0)
+                if duplicate_native_error:
+                    native_error_event_digests[event_digest] = duplicate_native_error - 1
+                if (
+                    isinstance(kind, str)
+                    and kind in {"AgentErrorEvent", "ConversationErrorEvent"}
+                    and not duplicate_native_error
+                ):
                     trace_observations.append({
                         "event_kind": kind,
                         "tool_name": event.get("tool_name"),
@@ -2677,21 +2707,32 @@ class _ConductorSession:
                     max_nodes=limits.observation_bytes + 1,
                 )
                 native_observations = executed["observations"]
-                is_error = any(
-                    isinstance(item, Mapping)
-                    and "error" in str(item.get("kind", "")).lower()
-                    for item in native_observations
-                )
-                if len(native_observations) == 1 and isinstance(native_observations[0], Mapping):
-                    trace_result = native_observations[0].get("observation", native_observations[0])
-                else:
-                    trace_result = native_observations
-                trace_observations.append({
-                    "event_kind": "ObservationEvent",
-                    "tool_name": tool_id,
-                    "is_error": is_error,
-                    "result": trace_result,
-                })
+                for item in native_observations:
+                    if not isinstance(item, Mapping):
+                        continue
+                    event_kind = item.get("kind")
+                    if event_kind == "ObservationEvent":
+                        observation_value = item.get("observation")
+                        if not isinstance(observation_value, Mapping):
+                            observation_value = {"value": observation_value}
+                        trace_observations.append({
+                            "event_kind": event_kind,
+                            "tool_name": item.get("tool_name"),
+                            "is_error": bool(observation_value.get("is_error", False)),
+                            "result": observation_value,
+                        })
+                    elif event_kind in {"AgentErrorEvent", "ConversationErrorEvent"}:
+                        event_digest = canonical_sha256(item)
+                        native_error_event_digests[event_digest] = (
+                            native_error_event_digests.get(event_digest, 0) + 1
+                        )
+                        trace_observations.append({
+                            "event_kind": event_kind,
+                            "tool_name": item.get("tool_name"),
+                            "is_error": True,
+                            "error_text": item.get("error") or item.get("detail") or item.get("code"),
+                            "classification": item.get("classification"),
+                        })
                 observations.append(observation)
                 finished = tool_id == "finish"
                 await self._emit(ToolObservationEvent(
@@ -2722,6 +2763,18 @@ class _ConductorSession:
                 termination = RunnerTermination.POLICY_INCOMPLETE
                 break
         await self._checkpoint("after_loop", turn=len(self._turns))
+        closed = await close_once()
+        cleanup = closed.get("cleanup") if isinstance(closed, Mapping) else None
+        if (
+            not isinstance(closed, Mapping)
+            or closed.get("kind") != "closed"
+            or not isinstance(cleanup, Mapping)
+            or cleanup.get("all_dead") is not True
+        ):
+            raise RunnerProtocolError(
+                "native worker cleanup is not verified",
+                code="native_response_invalid", **self._context(),
+            )
         effects = await tools.measure_workspace_effects()
         if not isinstance(effects, Mapping):
             raise RunnerProtocolError(
@@ -2763,6 +2816,7 @@ class _ConductorSession:
                 "source_id": OPENHANDS_RESPONSE_CONSUMER_ID,
                 "events": history,
                 "state": state,
+                "cleanup": cleanup,
                 "replay_trace": replay_trace,
             },
             termination=termination, turn_count=len(self._turns),

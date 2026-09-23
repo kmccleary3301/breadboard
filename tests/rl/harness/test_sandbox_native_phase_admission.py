@@ -236,11 +236,21 @@ async def test_workspace_effects_measure_content_diff_and_supplier_utf8(tmp_path
         return None
     async def end() -> None:
         return None
+    close_calls = 0
+    async def terminate() -> tuple[object, ...]:
+        nonlocal close_calls
+        close_calls += 1
+        return (
+            sandbox_module.CleanupStepReceipt(
+                "runtime", sandbox_module.CleanupState.RELEASED
+            ),
+        )
     lease = SimpleNamespace(
         lease_id="lease",
         plan=plan,
         _materialized=SimpleNamespace(workspace_path=tmp_path),
         _begin_operation=begin,
+        _runtime=SimpleNamespace(terminate=terminate),
         _end_operation=end,
         _assert_active=lambda: None,
         _resolve=lambda logical_path, writable=False: workspace_root,
@@ -251,8 +261,11 @@ async def test_workspace_effects_measure_content_diff_and_supplier_utf8(tmp_path
     (workspace_root / "new.txt").write_text("new", encoding="utf-8")
     (workspace_root / "binary.bin").write_bytes(b"\xff\x00")
     (workspace_root / "deleted.txt").unlink()
-
+    closed = await workspace.close_native_runtime()
+    assert closed["cleanup"]["all_dead"] is True
+    assert close_calls == 1
     effects = await workspace.measure_workspace_effects()
+
 
     assert effects["keep.txt"] == {
         "exists": True,

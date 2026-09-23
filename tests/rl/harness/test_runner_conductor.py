@@ -4122,7 +4122,6 @@ class _OpenHandsTraceClient(RecordingPolicyClient):
     async def invoke(self, request: Any) -> PolicyRuntimeInvokeResult:
         self.requests.append(request)
         body = {
-            "id": "chatcmpl-test",
             "choices": [{"index": 0, "message": {"role": "assistant", "content": ""}, "finish_reason": "tool_calls"}],
         }
         self.http_response = {
@@ -4138,7 +4137,13 @@ class _OpenHandsTraceClient(RecordingPolicyClient):
 
 
 class _OpenHandsTracePort(RecordingToolPort):
-    def __init__(self, *, failure_status: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        failure_status: str | None = None,
+        native_observations: tuple[Mapping[str, Any], ...] | None = None,
+        commit_events: tuple[Mapping[str, Any], ...] = (),
+    ) -> None:
         super().__init__(tuple(
             _tool_binding(tool_id) for tool_id in sorted(
                 ("terminal", "file_editor", "task_tracker", "finish", "think"),
@@ -4148,6 +4153,18 @@ class _OpenHandsTracePort(RecordingToolPort):
         self.effect_admissions = 0
         self.effect_measurements = 0
         self.failure_status = failure_status
+        self.native_observations = (
+            native_observations
+            if native_observations is not None
+            else (
+                {
+                    "kind": "ObservationEvent",
+                    "tool_name": "finish",
+                    "observation": {"content": "done", "is_error": False},
+                },
+            )
+        )
+        self.commit_event_delta = commit_events
 
     async def begin_native_workspace_effects(self) -> None:
         self.effect_admissions += 1
@@ -4157,6 +4174,16 @@ class _OpenHandsTracePort(RecordingToolPort):
         self.effect_measurements += 1
         self.operations.append("measure_effects")
         return {}
+
+    async def close_native_runtime(self) -> Mapping[str, Any]:
+        self.operations.append("close")
+        return {
+            "kind": "closed",
+            "cleanup": {
+                "all_dead": True,
+                "steps": [{"resource": "runtime", "state": "released", "detail": ""}],
+            },
+        }
 
     async def invoke_native_phase(
         self,
@@ -4221,7 +4248,7 @@ class _OpenHandsTracePort(RecordingToolPort):
                 "kind": "executed",
                 "index": 0,
                 "tool_id": "finish",
-                "observations": ({"observation": {"content": "done"}},),
+                "observations": self.native_observations,
                 "event_delta": (),
                 "status": "RUNNING",
                 "iteration": 1,
@@ -4230,7 +4257,7 @@ class _OpenHandsTracePort(RecordingToolPort):
             return {
                 "schema_version": "bb.openhands-native.v1",
                 "kind": "committed",
-                "event_delta": (),
+                "event_delta": self.commit_event_delta,
                 "status": self.failure_status or "FINISHED",
                 "iteration": 1,
             }
@@ -4318,6 +4345,126 @@ async def test_openhands_trace_is_frozen_json_and_comparator_compatible() -> Non
     assert projected["observations"]
     assert tools.effect_admissions == 1
     assert tools.effect_measurements == 1
+    assert tools.operations.index("close") < tools.operations.index("measure_effects")
+    assert thaw_json(result.response["cleanup"])["all_dead"] is True
+
+
+async def test_openhands_error_observations_match_supplier_projection(tmp_path: Path) -> None:
+    from conformance.comparators.openhands_sdk import compare_cases, project_bb_trace
+
+    observation = _observation()
+    tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
+    semantic = _openhands_semantics(observation)
+    plan = _plan(
+        observation=observation,
+        semantics=semantic,
+        tools=tuple(_tool_grant(tool_id) for tool_id in sorted(tool_order)),
+        limit_updates={"max_turns": 16, "action_timeout_ms": 90_000},
+        implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
+    )
+    failed_observation = {
+        "kind": "ObservationEvent",
+        "tool_name": "terminal",
+        "observation": {
+            "kind": "TerminalObservation",
+            "is_error": True,
+            "content": "command exited with status 1",
+        },
+    }
+    agent_error = {
+        "kind": "AgentErrorEvent",
+        "tool_name": "terminal",
+        "error": "command failed",
+        "classification": {"kind": "agent_action", "retryable": True},
+    }
+    client = _OpenHandsTraceClient(observation)
+    tools = _OpenHandsTracePort(
+        native_observations=(failed_observation,),
+        commit_events=(agent_error,),
+    )
+    session, _, _, _, _, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=tools,
+    )
+    try:
+        result = await session.run(ConductorRunRequest({"prompt": "finish the task"}))
+    finally:
+        await session.close()
+    trace = thaw_json(result.response["replay_trace"])
+    projected = project_bb_trace(trace)
+    assert projected["observations"] == [
+        {
+            "event_kind": "ObservationEvent",
+            "tool_name": "terminal",
+            "is_error": True,
+            "result": {
+                "kind": "TerminalObservation",
+                "is_error": True,
+                "content": "command exited with status 1",
+            },
+        },
+        {
+            "event_kind": "AgentErrorEvent",
+            "tool_name": "terminal",
+            "is_error": True,
+            "error_text": "command failed",
+            "classification": {"kind": "agent_action", "retryable": True},
+        },
+    ]
+    supplier = {
+        "schema_version": "bb.e4.openhands-supplier-trace.v1",
+        "case_id": trace["case_id"],
+        "controls": {"http_attempts": len(trace["requests"])},
+        "requests": [
+            {"index": row["index"], "body": row["body"]}
+            for row in trace["requests"]
+        ],
+        "responses": [
+            {"index": row["index"], "response": row["response"]}
+            for row in trace["requests"]
+            if "response" in row
+        ],
+        "events": [
+            {
+                "kind": "ActionEvent",
+                "tool_name": call["tool_name"],
+                "security_risk": call["security_risk"],
+                "tool_call": {"arguments": call["arguments"]},
+            }
+            for call in trace["tool_calls"]
+        ] + [
+            (
+                {
+                    "kind": item["event_kind"],
+                    "tool_name": item["tool_name"],
+                    "observation": item["result"],
+                }
+                if item["event_kind"] == "ObservationEvent"
+                else {
+                    "kind": item["event_kind"],
+                    "tool_name": item["tool_name"],
+                    "error": item["error_text"],
+                    "classification": item["classification"],
+                }
+            )
+            for item in trace["observations"]
+        ],
+        "effects": trace["file_effects"],
+        "exit": {"status": trace["termination"]["kind"]},
+    }
+    (tmp_path / "workspace").mkdir()
+    (tmp_path / "trace.json").write_text(
+        json.dumps(supplier, ensure_ascii=False), encoding="utf-8"
+    )
+    report = compare_cases(tmp_path, trace)
+    assert report["ok"] is True
+    tampered = copy.deepcopy(trace)
+    tampered["observations"][0]["is_error"] = False
+    negative = compare_cases(tmp_path, tampered)
+    assert negative["ok"] is False
+    assert negative["failed"] >= 1
 
 
 @pytest.mark.parametrize("failure_status", ["ERROR", "STUCK"])

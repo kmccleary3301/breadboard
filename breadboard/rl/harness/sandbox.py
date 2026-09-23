@@ -2991,6 +2991,34 @@ class LeaseBackedRunnerWorkspace:
         finally:
             await lease._end_operation()
 
+    async def close_native_runtime(self) -> Mapping[str, Any]:
+        """Retire the native worker before workspace effects are measured."""
+        lease = self.__lease
+        lease._assert_active()
+        await lease._begin_operation()
+        try:
+            steps = await lease._runtime.terminate()
+            return {
+                "kind": "closed",
+                "cleanup": {
+                    "all_dead": bool(steps) and all(
+                        step.state
+                        in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
+                        for step in steps
+                    ),
+                    "steps": [
+                        {
+                            "resource": step.resource,
+                            "state": step.state.value,
+                            "detail": step.detail,
+                        }
+                        for step in steps
+                    ],
+                },
+            }
+        finally:
+            await lease._end_operation()
+
     def native_runtime_inputs(
         self,
         *,
