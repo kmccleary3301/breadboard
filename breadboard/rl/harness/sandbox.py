@@ -2298,15 +2298,20 @@ class TrustedProcessHandle:
                         code="workspace_authority_mismatch",
                         lease_id=self.lease_id,
                     )
+                launch_environment = (
+                    dict(self.plan.runtime.fixed_environment)
+                    if environment is None
+                    else dict(environment)
+                )
+                if self._envelope is not None:
+                    launch_environment["HOME"] = str(
+                        Path(self._envelope.scratch) / "home"
+                    )
                 if self._envelope is not None:
                     process = await spawn_envelope_process(
                         self._envelope,
                         argv=argv,
-                        environment=(
-                            dict(self.plan.runtime.fixed_environment)
-                            if environment is None
-                            else dict(environment)
-                        ),
+                        environment=launch_environment,
                         executable_fd=self._executable.fd,
                         command_fd=(
                             None
@@ -2690,6 +2695,7 @@ class TrustedProcessBackend:
                     )
                 scratch = workspace / ".breadboard-native-scratch"
                 scratch.mkdir(mode=0o700, exist_ok=True)
+                (scratch / "home").mkdir(mode=0o700, exist_ok=True)
                 envelope = await asyncio.to_thread(
                     launch_envelope,
                     lease_id=lease_id,
