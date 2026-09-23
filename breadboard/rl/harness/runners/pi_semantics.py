@@ -398,8 +398,14 @@ class PiSemanticsState:
         *,
         stream_fn: Callable[..., NativeProviderResponse] | None = None,
         requests: Iterable[Any] | None = None,
+        runtime_inputs: Mapping[str, Any],
     ) -> dict[str, Any]:
-        """Replay responses or call a stream function until Pi reaches quiescence."""
+        """Replay responses or call a stream function until Pi reaches quiescence.
+
+        ``runtime_inputs`` is the caller-owned ``{cwd, home, current_date,
+        package_dir}`` record the replay ran under; it is copied into the trace
+        unchanged so the comparator can apply its runtime-input rules.
+        """
         if responses is not None and stream_fn is not None:
             raise ValueError("provide responses or stream_fn, not both")
         results: list[PiResponseResult] = []
@@ -440,7 +446,7 @@ class PiSemanticsState:
         ]
         return self.to_trace(
             requests=requests,
-            runtime_inputs={},
+            runtime_inputs=runtime_inputs,
             effects=self.effects,
         )
 
@@ -478,10 +484,11 @@ def run_episode(
     cwd: str | os.PathLike[str] = ".",
     system_prompt: str = "",
     case_id: str | None = None,
+    runtime_inputs: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Convenience wrapper for deterministic offline replay."""
     state = PiSemanticsState(task=task, cwd=cwd, system_prompt=system_prompt, case_id=case_id)
-    return state.run_episode(responses)
+    return state.run_episode(responses, runtime_inputs=runtime_inputs)
 
 
 __all__ = [

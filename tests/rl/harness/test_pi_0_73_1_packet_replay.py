@@ -55,7 +55,15 @@ def test_pi_packet_case_replays_file_effects(case_id: str, tmp_path: Path):
     state = PiSemanticsState(
         task=trace["messages"][0]["content"][0]["text"], cwd=tmp_path, case_id=case_id
     )
-    replay = state.run_episode(_responses(trace))
+    replay = state.run_episode(
+        _responses(trace),
+        runtime_inputs={
+            "cwd": str(tmp_path),
+            "home": str(tmp_path / "home"),
+            "current_date": "2026-09-23",
+            "package_dir": str(tmp_path / "pi-package"),
+        },
+    )
     observed = {
         path.relative_to(tmp_path).as_posix(): "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
         for path in tmp_path.rglob("*")

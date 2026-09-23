@@ -9,6 +9,7 @@ from breadboard.rl.harness.runners.pi_semantics import (
     parse_streaming_json,
 )
 from breadboard_engine.provider.native_response import NativeProviderResponse, NativeStreamFragment, NativeToolCall
+from conformance.comparators.pi_coding_agent_0_73_1 import project_bb_trace
 
 
 def response(name: str, arguments: str, *, finish: str = "tool_calls", content: str | None = None, fragments=()):
@@ -64,7 +65,15 @@ def test_eighth_request_then_ninth_stream_attempt_is_local_error(tmp_path: Path)
     calls = []
     responses = [response("bash", json.dumps({"command": f"printf cap-{i}"})) for i in range(8)]
     state = PiSemanticsState(task="cap", cwd=tmp_path)
-    trace = state.run_episode(responses)
+    runtime_inputs = {
+        "cwd": str(tmp_path),
+        "home": str(tmp_path / "home"),
+        "current_date": "2026-09-23",
+        "package_dir": str(tmp_path / "pi-package"),
+    }
+    trace = state.run_episode(responses, runtime_inputs=runtime_inputs)
+    assert trace["runtime_inputs"] == runtime_inputs
+    project_bb_trace(trace)
     assert trace["request_count"] == 8
     assert trace["stream_fn_issued"] == 9
     assert trace["termination"]["native_stop_reason"] == "error"
