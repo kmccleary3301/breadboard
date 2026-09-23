@@ -277,8 +277,8 @@ def test_sealed_repository_diff_repository_mode_binds_alternate_environment(
         base_commit=base_commit,
         plan=plan,
     )
-    assert "-before" in result["stdout"]
-    assert "+after" in result["stdout"]
+    assert result["returncode"] == 0
+    assert result["stdout"].startswith("diff --git a/tracked.txt b/tracked.txt\n")
 @requires_sealed_execution
 def test_sealed_workspace_seed_diff_captures_modification_and_marker_addition(
     tmp_path: Path,

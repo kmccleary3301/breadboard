@@ -1752,8 +1752,16 @@ def _sealed_repository_diff(
                 "* -text -filter -diff -working-tree-encoding -eol\n",
                 encoding="utf-8",
             )
+            environment = {
+                **base_environment,
+                "GIT_DIR": str(private_git_directory),
+                "GIT_INDEX_FILE": str(temporary / "index"),
+                "GIT_NO_REPLACE_OBJECTS": "1",
+                "GIT_OBJECT_DIRECTORY": str(private_git_directory / "objects"),
+                "GIT_WORK_TREE": str(repository),
+            }
             if not seed_base:
-                base_environment["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = str(source_objects)
+                environment["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = str(source_objects)
             common = (
                 "-c",
                 "core.autocrlf=false",
@@ -1767,7 +1775,7 @@ def _sealed_repository_diff(
             base_tree = base_commit
             if seed_baseline is not None:
                 baseline_environment = {
-                    **base_environment,
+                    **environment,
                     "GIT_INDEX_FILE": str(temporary / "seed-index"),
                     "GIT_WORK_TREE": str(seed_baseline),
                 }
@@ -1797,7 +1805,7 @@ def _sealed_repository_diff(
             elif empty_base:
                 returncode, stdout, stderr = invoke(
                     ("mktree",),
-                    environment=base_environment,
+                    environment=environment,
                     stdout_limit=64 * 1024,
                     cwd=temporary,
                     input_data=b"",
@@ -1826,7 +1834,7 @@ def _sealed_repository_diff(
                 add_command,
             ):
                 returncode, _, stderr = invoke(
-                    command, environment=base_environment, stdout_limit=64 * 1024
+                    command, environment=environment, stdout_limit=64 * 1024
                 )
                 if returncode != 0:
                     raise VerifierSnapshotError(
@@ -1849,7 +1857,7 @@ def _sealed_repository_diff(
                     "--",
                     ".",
                 ),
-                environment=base_environment,
+                environment=environment,
                 stdout_limit=plan.limits.artifact_bytes_each,
             )
             if returncode != 0:
