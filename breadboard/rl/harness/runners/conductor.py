@@ -2029,6 +2029,7 @@ class _ConductorSession:
                 "native stream requires the owned headless prompt without caller context",
                 code="request_authority_invalid",
             )
+        await tools.begin_native_workspace_effects()
         model = self._projection.models[0]
 
         async def phase(operation: str, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -2421,6 +2422,7 @@ class _ConductorSession:
                 "OpenHands requires the owned headless prompt without caller context",
                 code="request_authority_invalid",
             )
+        await tools.begin_native_workspace_effects()
         model = self._projection.models[0]
         history: list[FrozenJsonObject] = []
         history_bytes = 2

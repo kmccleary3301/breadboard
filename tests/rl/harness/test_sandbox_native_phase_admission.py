@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import base64
 import hashlib
+import json
+import os
+import shutil
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -210,9 +215,7 @@ async def test_initialize_accepts_non_repository_writable_policy_workspace(
 
 
 @pytest.mark.asyncio
-async def test_workspace_effects_measure_content_diff_and_binary_without_text(
-    tmp_path: Path,
-) -> None:
+async def test_workspace_effects_measure_content_diff_and_supplier_utf8(tmp_path: Path) -> None:
     workspace_root = tmp_path / "seed"
     workspace_root.mkdir()
     (workspace_root / "keep.txt").write_text("before", encoding="utf-8")
@@ -242,6 +245,7 @@ async def test_workspace_effects_measure_content_diff_and_binary_without_text(
         _resolve=lambda logical_path, writable=False: workspace_root,
     )
     workspace = sandbox_module.LeaseBackedRunnerWorkspace(lease, "plan", (binding,))
+    await workspace.begin_native_workspace_effects()
     (workspace_root / "keep.txt").write_text("after", encoding="utf-8")
     (workspace_root / "new.txt").write_text("new", encoding="utf-8")
     (workspace_root / "binary.bin").write_bytes(b"\xff\x00")
@@ -255,10 +259,92 @@ async def test_workspace_effects_measure_content_diff_and_binary_without_text(
         "sha256": "sha256:" + hashlib.sha256(b"after").hexdigest(),
         "content_utf8": "after",
     }
-    assert effects["new.txt"]["content_utf8"] == "new"
     assert effects["deleted.txt"] == {"exists": False}
     assert effects["binary.bin"] == {
         "exists": True,
         "bytes": 2,
         "sha256": "sha256:" + hashlib.sha256(b"\xff\x00").hexdigest(),
+        "content_utf8": "\ufffd\x00",
     }
+
+
+def test_workspace_effect_scanner_rejects_root_symlink_swap(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    root.mkdir()
+    snapshot, identity = sandbox_module._workspace_effect_snapshot(
+        root,
+        exclude_root_git=False,
+    )
+    assert snapshot == {}
+    moved = tmp_path / "workspace-real"
+    root.rename(moved)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "escaped.txt").write_text("escape", encoding="utf-8")
+    root.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(WorkspaceStateError, match="root identity|effects"):
+        sandbox_module._workspace_effect_snapshot(
+            root,
+            exclude_root_git=False,
+            expected_root_identity=identity,
+        )
+
+
+@pytest.mark.parametrize("node_kind", ["symlink", "fifo"])
+def test_workspace_effect_scanner_fails_closed_on_unsupported_nodes(
+    tmp_path: Path,
+    node_kind: str,
+) -> None:
+    root = tmp_path / "workspace"
+    root.mkdir()
+    if node_kind == "symlink":
+        (root / "link").symlink_to(tmp_path / "target")
+    else:
+        os.mkfifo(root / "pipe")
+    with pytest.raises(WorkspaceStateError, match="unauthorized"):
+        sandbox_module._workspace_effect_snapshot(root, exclude_root_git=False)
+
+
+def test_workspace_effect_scanner_omits_content_for_oversize_file(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    root.mkdir()
+    content = b"x" * (sandbox_module.EFFECT_CONTENT_UTF8_MAX_BYTES + 1)
+    (root / "large.bin").write_bytes(content)
+    snapshot, _ = sandbox_module._workspace_effect_snapshot(
+        root,
+        exclude_root_git=False,
+    )
+    assert snapshot["large.bin"]["bytes"] == len(content)
+    assert snapshot["large.bin"]["sha256"] == "sha256:" + hashlib.sha256(content).hexdigest()
+    assert "content_utf8" not in snapshot["large.bin"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")
+def test_supplier_utf8_replacement_matches_node() -> None:
+    corpus = [
+        b"\x80",
+        b"\xc0\x80",
+        b"\xe0\x80\x80",
+        b"\xed\xa0\x80",
+        b"\xf0\x80\x80\x80",
+        b"\xe2\x82",
+        b"\xf0\x9f\x92",
+        b"\xef\xbf",
+        b"\x80\x80",
+        b"a\xed\xa0\x80b",
+    ]
+    encoded = [base64.b64encode(value).decode("ascii") for value in corpus]
+    script = (
+        "const values = JSON.parse(require('fs').readFileSync(0, 'utf8'));"
+        "console.log(JSON.stringify(values.map(value => "
+        "Buffer.from(value, 'base64').toString('utf8'))));"
+    )
+    completed = subprocess.run(
+        ["node", "-e", script],
+        input=json.dumps(encoded).encode("utf-8"),
+        capture_output=True,
+        check=True,
+    )
+    node_values = json.loads(completed.stdout)
+    python_values = [value.decode("utf-8", "replace") for value in corpus]
+    assert node_values == python_values

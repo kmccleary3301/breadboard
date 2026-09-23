@@ -7,7 +7,6 @@ called by ``native_worker.serve`` after the namespace and ownership bootstrap.
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 import os
 import secrets
@@ -122,7 +121,6 @@ class OpenHandsActor:
         self._prepared: list[Any] = []
         self._prepared_cursor = 0
         self._observations: dict[int, list[Any]] = {}
-        self._workspace_files: dict[str, str] = {}
         self._sample_error: dict[str, Any] | None = None
         self._native_response: Any = None
         self._native_error: BaseException | None = None
@@ -153,38 +151,6 @@ class OpenHandsActor:
         return value
 
 
-    @staticmethod
-    def _snapshot_workspace(root: Path) -> dict[str, str]:
-        result: dict[str, str] = {}
-        if not root.is_dir():
-            return result
-        for path in root.rglob("*"):
-            try:
-                if not path.is_file() or path.is_symlink():
-                    continue
-                relative = path.relative_to(root).as_posix()
-                if relative == ".breadboard-native-scratch" or relative.startswith(
-                    ".breadboard-native-scratch/"
-                ):
-                    continue
-                payload = path.read_bytes().replace(
-                    str(root).encode(), b"/opt/openhands/case/workspace"
-                )
-                result[relative] = "sha256:" + hashlib.sha256(payload).hexdigest()
-            except (OSError, ValueError):
-                continue
-        return result
-
-    def _workspace_effects(self) -> dict[str, str | None]:
-        workspace = self._sdk.get("workspace")
-        if not isinstance(workspace, str):
-            return {}
-        current = self._snapshot_workspace(Path(workspace))
-        effects: dict[str, str | None] = {}
-        for relative in sorted(set(self._workspace_files) | set(current)):
-            if self._workspace_files.get(relative) != current.get(relative):
-                effects[relative] = current.get(relative)
-        return effects
     @staticmethod
     def _bounded_message(value: Any, limit: int = 4096) -> str:
         return str(value)[:limit]
@@ -258,7 +224,6 @@ class OpenHandsActor:
         Path(workspace).mkdir(parents=True, exist_ok=True)
         Path(scratch).mkdir(parents=True, exist_ok=True)
         self._sdk["workspace"] = workspace
-        self._workspace_files = self._snapshot_workspace(Path(workspace))
         home = Path(scratch) / "home"
         config = Path(scratch) / "config"
         home.mkdir(parents=True, exist_ok=True)
@@ -621,7 +586,6 @@ class OpenHandsActor:
             "event_delta": self._take_events(),
             "status": self._status(),
             "iteration": self._iteration,
-            "file_effects": self._workspace_effects(),
         }
         self._prepared = []
         self._prepared_cursor = 0

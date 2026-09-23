@@ -17,7 +17,12 @@ roots, date, and package directory must be supplied in the top-level
 ``runtime_inputs`` object.  The ``effects`` mapping is the BB-owned
 content-hash diff ``{path: {exists, bytes, sha256, content_utf8?}}``; both
 supplier and BB records use this schema and root repository ``.git`` entries
-are excluded by the capture rule.  No arbitrary placeholder or volatile-field
+are excluded by the capture rule.  Supplier source
+``pi_capture_supplier.mjs:57-58`` reads bytes and calls Node
+``Buffer.toString("utf8")`` (replacement decoding).  Since that source has no
+content cap, BB declares a 64 KiB cap: ``content_utf8`` is compared only when
+both records are at or below the cap, while ``exists``, ``bytes``, and
+``sha256`` are always compared.  No arbitrary placeholder or volatile-field
 removal is performed.
 """
 from __future__ import annotations
@@ -35,6 +40,7 @@ LANE_ID = "pi_coding_agent_0_73_1_replay"
 CONFIG_ID = "pi_coding_agent_0_73_1_replay_v1"
 REPORT_SCHEMA_VERSION = "bb.e4.comparator_report.v1"
 TRACE_SCHEMA_VERSION = "bb.e4.pi-canonical-episode.v1"
+EFFECT_CONTENT_UTF8_MAX_BYTES = 64 * 1024
 
 SUPPLIER_WORKSPACE_ROOT = "/capture/workspace"
 SUPPLIER_HOME_ROOT = "/capture/home"
@@ -271,21 +277,24 @@ def _normalize_termination(termination: Mapping[str, Any]) -> dict[str, Any]:
         normalized["kind"] = "submitted"
     return normalized
 
-
 def _normalize_effects(
     effects: Any,
     runtime: _RuntimeInputs,
     counts: _RuleCounts,
 ) -> Any:
-    normalized = _normalize(effects, runtime, counts)
-    if not isinstance(normalized, Mapping):
-        return normalized
-    return {
-        path: value
-        for path, value in normalized.items()
-        if not (isinstance(path, str) and (path == ".git" or path.startswith(".git/")))
-    }
-
+    if not isinstance(effects, Mapping):
+        return effects
+    normalized: dict[str, Any] = {}
+    for path, value in effects.items():
+        if not isinstance(path, str):
+            raise ValueError("effect paths must be strings")
+        normalized_path = _normalize(path, runtime, counts)
+        if not isinstance(normalized_path, str):
+            raise ValueError("normalized effect paths must be strings")
+        if normalized_path == ".git" or normalized_path.startswith(".git/"):
+            continue
+        normalized[normalized_path] = value
+    return normalized
 
 def _project(trace: Mapping[str, Any], requests: list[Mapping[str, Any]], runtime: _RuntimeInputs, counts: _RuleCounts) -> dict[str, Any]:
     messages = _canonical_messages(trace.get("messages"), runtime, counts)
@@ -485,6 +494,35 @@ def _first_difference(expected: Any, observed: Any, path: str = "$") -> str | No
     return None
 
 
+def _drop_unbounded_effect_content(
+    expected: dict[str, Any],
+    observed: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    expected = deepcopy(expected)
+    observed = deepcopy(observed)
+    expected_effects = expected.get("effects")
+    observed_effects = observed.get("effects")
+    if not isinstance(expected_effects, Mapping) or not isinstance(observed_effects, Mapping):
+        return expected, observed
+    for path in set(expected_effects) | set(observed_effects):
+        expected_value = expected_effects.get(path)
+        observed_value = observed_effects.get(path)
+        values = (expected_value, observed_value)
+        if not any(
+            isinstance(value, Mapping)
+            and type(value.get("bytes")) is int
+            and value["bytes"] > EFFECT_CONTENT_UTF8_MAX_BYTES
+            for value in values
+        ):
+            continue
+        for effects, value in ((expected_effects, expected_value), (observed_effects, observed_value)):
+            if isinstance(value, Mapping) and "content_utf8" in value:
+                updated = dict(value)
+                updated.pop("content_utf8")
+                effects[path] = updated
+    return expected, observed
+
+
 class PiCodingAgent0731Comparator:
     comparator_id = COMPARATOR_ID
 
@@ -504,6 +542,7 @@ class PiCodingAgent0731Comparator:
             observed, observed_counts = _project_bb_trace(replay["path"])
         else:
             observed, observed_counts = _project_bb_trace(replay)
+        expected, observed = _drop_unbounded_effect_content(expected, observed)
         difference = _first_difference(expected, observed)
         return {
             "schema_version": REPORT_SCHEMA_VERSION,

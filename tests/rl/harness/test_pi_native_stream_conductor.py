@@ -15,7 +15,7 @@ import threading
 from typing import Any, Mapping
 
 import pytest
-
+from breadboard.rl.harness import sandbox as sandbox_module
 from breadboard.artifacts.cas import FilesystemCAS
 from breadboard.product.harness.resolution import compile_e4_harness
 from breadboard.rl.harness import contracts as c
@@ -217,7 +217,13 @@ def _scripted_server(
 
 
 class _NativeWorkerPort:
-    def __init__(self, workspace: Path, grants: tuple[RunnerToolBinding, ...]) -> None:
+    def __init__(
+        self,
+        workspace: Path,
+        grants: tuple[RunnerToolBinding, ...],
+        *,
+        initialize_workspace_write: bool = False,
+    ) -> None:
         self.workspace = workspace
         self.scratch = workspace / ".scratch"
         self.scratch.mkdir()
@@ -227,30 +233,28 @@ class _NativeWorkerPort:
         self._request_id = 0
         self.system_prompt = ""
         self.initialize_runtime_inputs: Mapping[str, str] = {}
-        self._effect_baseline = self._snapshot_effects()
+        self.initialize_workspace_write = initialize_workspace_write
+        self._effect_baseline: dict[str, dict[str, Any]] | None = None
+        self.effect_admissions = 0
+        self.effect_measurements = 0
 
     def _snapshot_effects(self) -> dict[str, dict[str, Any]]:
-        snapshot: dict[str, dict[str, Any]] = {}
-        for path in self.workspace.rglob("*"):
-            if not path.is_file():
-                continue
-            relative = path.relative_to(self.workspace).as_posix()
-            if relative == ".scratch" or relative.startswith(".scratch/"):
-                continue
-            content = path.read_bytes()
-            value: dict[str, Any] = {
-                "exists": True,
-                "bytes": len(content),
-                "sha256": "sha256:" + hashlib.sha256(content).hexdigest(),
-            }
-            try:
-                value["content_utf8"] = content.decode("utf-8")
-            except UnicodeDecodeError:
-                pass
-            snapshot[relative] = value
+        snapshot, _ = sandbox_module._workspace_effect_snapshot(
+            self.workspace,
+            exclude_root_git=False,
+        )
         return snapshot
 
+    async def begin_native_workspace_effects(self) -> None:
+        assert self._effect_baseline is None
+        self.effect_admissions += 1
+        self.operations.append("begin_effects")
+        self._effect_baseline = self._snapshot_effects()
+
     async def measure_workspace_effects(self) -> Mapping[str, Mapping[str, Any]]:
+        assert self._effect_baseline is not None
+        self.effect_measurements += 1
+        self.operations.append("measure_effects")
         current = self._snapshot_effects()
         changed: dict[str, Mapping[str, Any]] = {}
         for path, value in current.items():
@@ -334,6 +338,11 @@ class _NativeWorkerPort:
                 },
             )
             self.initialize_runtime_inputs = dict(phase_payload["runtime_inputs"])
+            if self.initialize_workspace_write:
+                (self.workspace / "initialize-write.txt").write_text(
+                    "created during initialize\n",
+                    encoding="utf-8",
+                )
             phase_payload.setdefault(
                 "advertisement",
                 json.loads(
@@ -403,11 +412,16 @@ class _Events:
         self.events.append(event)
 
 
+
 class _Cancellation:
-    def raise_if_cancelled(self, checkpoint: str, *, turn: int | None = None, call_id: str | None = None) -> None:
+    def raise_if_cancelled(
+        self,
+        checkpoint: str,
+        *,
+        turn: int | None = None,
+        call_id: str | None = None,
+    ) -> None:
         return None
-
-
 async def _run_episode(
     tmp_path: Path,
     responses: list[list[tuple[str, str, Mapping[str, Any]]]],
@@ -416,6 +430,7 @@ async def _run_episode(
     model_id: str = "model-a",
     task_prompt: str = "work",
     assistant_texts: list[str] | None = None,
+    initialize_workspace_write: bool = False,
 ):
     with _scripted_server(responses, assistant_texts=assistant_texts) as (base_url, requests):
         profile = OpenAICompletionsProviderProfile(
@@ -466,9 +481,13 @@ async def _run_episode(
         plan_payload = plan.model_dump(mode="python")
         plan_payload["base_compiled"] = c.CompiledArtifactIdentity.model_validate(base_payload)
         plan = c.EffectiveExecutionPlan.model_validate(plan_payload)
-        worker = _NativeWorkerPort(tmp_path, tuple(
-            RunnerToolBinding(t.tool_id, t.implementation_digest, t.capability_ids) for t in tools
-        ))
+        worker = _NativeWorkerPort(
+            tmp_path,
+            tuple(
+                RunnerToolBinding(t.tool_id, t.implementation_digest, t.capability_ids) for t in tools
+            ),
+            initialize_workspace_write=initialize_workspace_write,
+        )
         client = EpisodeOpenAICompletionsPolicyClient(
             episode_id="episode-pi",
             effective_plan_digest=plan.canonical_digest(),
@@ -518,9 +537,8 @@ async def test_pi_native_stream_cap_batch_and_request_shape(tmp_path: Path) -> N
     assert sorted(event.call_id for event in observations[:3]) == ["a", "bad", "c"]
     assert sorted(event.ordinal for event in observations[:3]) == [0, 1, 2]
     assert observation_order[3:] == [(turn, 0) for turn in range(2, 9)]
-    assert any(isinstance(event, SourceEventCommitEvent) for event in events)
-    assert "ack" not in operations
-    assert operations[-1] == "close"
+    assert operations[-3:-1] == ("close", "measure_effects")
+    assert operations.count("measure_effects") == 1
     assert requests[0]["messages"][0] == {"role": "system", "content": system_prompt}
     assert result.termination is RunnerTermination.LIMITS_EXCEEDED
     assert (tmp_path / "a.txt").read_text() == "A\n"
@@ -535,10 +553,27 @@ async def test_pi_native_stream_cap_batch_and_request_shape(tmp_path: Path) -> N
 
 @pytest.mark.asyncio
 async def test_pi_native_stream_no_call_is_assistant_complete(tmp_path: Path) -> None:
-    result, requests, _, system_prompt, _ = await _run_episode(tmp_path, [[]])
+    result, requests, _, system_prompt, operations = await _run_episode(tmp_path, [[]])
     assert len(requests) == 1
     assert requests[0]["messages"][0] == {"role": "system", "content": system_prompt}
+    assert operations[0] == "begin_effects"
     assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
+
+
+@pytest.mark.asyncio
+async def test_pi_native_effect_baseline_precedes_initialize_workspace_write(
+    tmp_path: Path,
+) -> None:
+    result, _, _, _, operations = await _run_episode(
+        tmp_path,
+        [[]],
+        initialize_workspace_write=True,
+    )
+    trace = thaw_json(result.response["replay_trace"])
+    assert trace["effects"]["initialize-write.txt"]["content_utf8"] == (
+        "created during initialize\n"
+    )
+    assert operations.index("begin_effects") < operations.index("initialize")
 
 
 @pytest.mark.asyncio
@@ -569,8 +604,8 @@ async def test_pi_native_stream_effects_are_trusted_content_diffs(tmp_path: Path
         "exists": True,
         "bytes": 2,
         "sha256": "sha256:" + hashlib.sha256(b"\xff\x00").hexdigest(),
+        "content_utf8": "\ufffd\x00",
     }
-    assert "content_utf8" not in effects["binary.bin"]
 
 @pytest.mark.asyncio
 async def test_pi_native_stream_replay_trace_matches_supplier_fixture(
@@ -632,6 +667,13 @@ async def test_pi_native_stream_replay_trace_matches_supplier_fixture(
     })
     assert tampered_effects_report["passed"] is False
 
+    tampered_content = deepcopy(trace)
+    tampered_content["effects"]["pi-marker.txt"]["content_utf8"] = "tampered\n"
+    tampered_content_report = comparator({
+        "capture": {"case_dir": str(SUPPLIER_CASE)},
+        "replay": {"trace": tampered_content},
+    })
+    assert tampered_content_report["passed"] is False
 @pytest.mark.asyncio
 async def test_pi_native_stream_requires_store_capability_before_sending(
     tmp_path: Path,

@@ -3747,6 +3747,8 @@ class _NativeCloseTestPort(RecordingToolPort):
         self.operations: list[str] = []
         self.malformed_execute = malformed_execute
         self.close_error = close_error
+        self.effect_admissions = 0
+        self.effect_measurements = 0
         self.block_close = block_close
         self.close_entered = asyncio.Event()
         self.release_close = asyncio.Event()
@@ -3767,8 +3769,14 @@ class _NativeCloseTestPort(RecordingToolPort):
             raise AssertionError("unexpected runtime input declaration")
         return {name: values[name] for name in input_names}
 
+    async def begin_native_workspace_effects(self) -> None:
+        self.effect_admissions += 1
+        self.operations.append("begin_effects")
+
     async def measure_workspace_effects(self) -> Mapping[str, Mapping[str, Any]]:
+        self.effect_measurements += 1
         return {}
+
 
     async def invoke_native_phase(
         self,
@@ -4089,6 +4097,8 @@ async def test_native_stream_normal_path_closes_once(
         await session.close()
     assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
     assert tools.operations.count("close") == 1
+    assert tools.effect_admissions == 1
+    assert tools.effect_measurements == 1
 class _OpenHandsTraceClient(RecordingPolicyClient):
     def __init__(self, observation: c.PolicyCapabilityObservation) -> None:
         super().__init__(observation)
@@ -4135,9 +4145,17 @@ class _OpenHandsTracePort(RecordingToolPort):
             )
         ))
         self.operations: list[str] = []
+        self.effect_admissions = 0
+        self.effect_measurements = 0
         self.failure_status = failure_status
 
+    async def begin_native_workspace_effects(self) -> None:
+        self.effect_admissions += 1
+        self.operations.append("begin_effects")
+
     async def measure_workspace_effects(self) -> Mapping[str, Mapping[str, Any]]:
+        self.effect_measurements += 1
+        self.operations.append("measure_effects")
         return {}
 
     async def invoke_native_phase(
@@ -4213,7 +4231,6 @@ class _OpenHandsTracePort(RecordingToolPort):
                 "schema_version": "bb.openhands-native.v1",
                 "kind": "committed",
                 "event_delta": (),
-                "file_effects": {},
                 "status": self.failure_status or "FINISHED",
                 "iteration": 1,
             }
@@ -4299,6 +4316,8 @@ async def test_openhands_trace_is_frozen_json_and_comparator_compatible() -> Non
     assert projected["request_count"] == 1
     assert projected["tool_calls"]
     assert projected["observations"]
+    assert tools.effect_admissions == 1
+    assert tools.effect_measurements == 1
 
 
 @pytest.mark.parametrize("failure_status", ["ERROR", "STUCK"])
@@ -4330,3 +4349,5 @@ async def test_openhands_native_error_returns_replay_trace(failure_status: str) 
     assert trace["termination"]["kind"] == failure_status.lower()
     assert trace["request_count"] == 1
     assert thaw_json(result.response["state"])["status"] == failure_status
+    assert tools.effect_admissions == 1
+    assert tools.effect_measurements == 1

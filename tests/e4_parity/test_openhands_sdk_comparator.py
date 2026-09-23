@@ -96,6 +96,13 @@ def test_undeclared_placeholder_is_rejected() -> None:
     assert "normalization" in report["errors"][0]
 
 
+
+def test_malformed_measured_effect_is_rejected() -> None:
+    trace = _replay("OH-01-normal-file-effect")[1]
+    trace["file_effects"]["malformed.txt"] = {"exists": True}
+    with pytest.raises(ValueError, match="requires"):
+        project_bb_trace(trace)
+
 def _volatile_trace() -> dict:
     return {
         "schema_version": "bb.e4.openhands-sdk-trace.v1",

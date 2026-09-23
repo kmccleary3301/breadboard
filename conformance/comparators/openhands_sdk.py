@@ -358,10 +358,10 @@ def _observation_projection(events: Sequence[Any], normalizer: _Normalizer) -> l
             )
     return observations
 
-def _project_effects(raw: Any) -> dict[str, str | None]:
+def _project_effects(raw: Any, *, allow_legacy: bool = False) -> dict[str, str | None]:
     files = raw.get("files", {}) if isinstance(raw, Mapping) and "files" in raw else raw
     if not isinstance(files, Mapping):
-        return {}
+        raise ValueError("file effects must be an object")
     result: dict[str, str | None] = {}
     for path, value in files.items():
         if not isinstance(path, str) or not path:
@@ -369,10 +369,28 @@ def _project_effects(raw: Any) -> dict[str, str | None]:
         if path == ".git" or path.startswith(".git/"):
             continue
         if isinstance(value, Mapping):
-            exists = value.get("exists", True)
-            if type(exists) is not bool:
-                raise ValueError(f"invalid file existence for {path!r}")
-            digest = None if not exists else value.get("sha256")
+            if type(value.get("exists")) is not bool:
+                raise ValueError(f"file effect {path!r} requires boolean exists")
+            exists = value["exists"]
+            if not exists:
+                if set(value) != {"exists"}:
+                    raise ValueError(f"absent file effect {path!r} has extra fields")
+                digest = None
+            else:
+                if allow_legacy and "bytes" not in value:
+                    if set(value) != {"exists", "sha256"}:
+                        raise ValueError(f"legacy file effect {path!r} has unexpected fields")
+                    digest = value.get("sha256")
+                else:
+                    if set(value) - {"exists", "bytes", "sha256", "content_utf8"}:
+                        raise ValueError(f"file effect {path!r} has unexpected fields")
+                    if type(value.get("bytes")) is not int or value["bytes"] < 0:
+                        raise ValueError(f"file effect {path!r} requires non-negative integer bytes")
+                    digest = value.get("sha256")
+                    if "content_utf8" in value and not isinstance(value["content_utf8"], str):
+                        raise ValueError(f"file effect {path!r} content_utf8 must be a string")
+                if not isinstance(digest, str) or SHA256_RE.fullmatch(digest) is None:
+                    raise ValueError(f"file effect {path!r} requires sha256")
         elif value is None or isinstance(value, str):
             digest = value
         else:
@@ -399,8 +417,13 @@ def _workspace_effects(case_dir: Path) -> dict[str, str]:
     return effects
 
 
-def _file_effects(trace: Mapping[str, Any], case_dir: Path) -> dict[str, str | None]:
-    result = _project_effects(trace.get("effects", {}))
+def _file_effects(
+    trace: Mapping[str, Any],
+    case_dir: Path,
+    *,
+    allow_legacy: bool = False,
+) -> dict[str, str | None]:
+    result = _project_effects(trace.get("effects", {}), allow_legacy=allow_legacy)
     for path, digest in _workspace_effects(case_dir).items():
         result.setdefault(path, digest)
     return result
@@ -452,11 +475,20 @@ def _canonical_from_trace(trace: Mapping[str, Any], case_dir: Path, *, role: str
         "requests": requests,
         "tool_calls": tool_calls,
         "observations": observations,
-        "file_effects": _file_effects(trace, case_dir),
+        "file_effects": _file_effects(trace, case_dir, allow_legacy=role == "supplier"),
         "termination": {"kind": kind, "native_stop_reason": normalizer.value(final_stop)},
         "request_count": len(request_rows),
     }
-    projected["normalizations"] = sorted(normalizer.applied)
+    projected["normalizations"] = sorted(
+        {
+            rule
+            for placeholder, rule in NORMALIZATION_BY_PLACEHOLDER.items()
+            if any(
+                placeholder in _json_value(projected.get(key))
+                for key in ("requests", "tool_calls", "observations", "file_effects", "termination")
+            )
+        }
+    )
     problems = _placeholder_problems(projected)
     if problems:
         raise ValueError("invalid normalization: " + "; ".join(problems))

@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from conformance.comparators.pi_coding_agent_0_73_1 import (
+    EFFECT_CONTENT_UTF8_MAX_BYTES,
     PiCodingAgent0731Comparator,
     project_bb_trace,
     project_supplier_case,
@@ -207,3 +208,32 @@ def test_comparator_rejects_non_supplier_case(tmp_path: Path) -> None:
     (tmp_path / "trace.json").write_text(json.dumps(trace), encoding="utf-8")
     with pytest.raises(ValueError, match="role=supplier"):
         project_supplier_case(tmp_path)
+
+
+def test_oversize_effect_content_is_ignored_but_digest_is_compared() -> None:
+    supplier, requests = _packet_trace_and_requests()
+    supplier = deepcopy(supplier)
+    supplier["role"] = "supplier"
+    oversized = {
+        "exists": True,
+        "bytes": EFFECT_CONTENT_UTF8_MAX_BYTES + 1,
+        "sha256": "sha256:" + ("a" * 64),
+        "content_utf8": "supplier content",
+    }
+    supplier.setdefault("effects", {})["oversize.txt"] = oversized
+    replay = _bb_trace_from_packet()
+    replay["effects"]["oversize.txt"] = {**oversized, "content_utf8": "different content"}
+    report = PiCodingAgent0731Comparator()(
+        {
+            "capture": {**supplier, "requests": requests},
+            "replay": replay,
+        }
+    )
+    assert report["passed"] is True
+    replay["effects"]["oversize.txt"]["sha256"] = "sha256:" + ("b" * 64)
+    assert PiCodingAgent0731Comparator()(
+        {
+            "capture": {**supplier, "requests": requests},
+            "replay": replay,
+        }
+    )["passed"] is False
