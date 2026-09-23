@@ -1,0 +1,19 @@
+{
+  "repository": "https://github.com/openclaw/openclaw",
+  "version": "2026.9.4",
+  "commit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+  "source_archive_sha256": "c3ce6ac1c1b5004c6dd530280fbe006cab37f6f829fde86be10d4840b86e085c",
+  "npm_archive_sha256": "4f1f656770461d4677dea755b1899cba12b912b06798c89a59e2f0c18688b761",
+  "native_loop": "BreadBoard owns model dispatch, history commit, recovery, and terminal arbitration; OpenClaw tool preparation/effects are exposed through openclaw_native_tools.py",
+  "citations": {
+    "tools": "src/agents/core-coding-tools.ts:createCoreCodingTools",
+    "title": "src/agents/schema/typebox.ts:executionTitleSchema",
+    "edit": "src/agents/sessions/tools/edit.ts:prepareEditArguments",
+    "bootstrap": "src/agents/workspace.ts:WORKSPACE_BOOTSTRAP_FILENAMES; src/agents/embedded-agent-helpers/bootstrap.ts:buildBootstrapContextFiles",
+    "exec": "src/agents/bash-tools.exec-run.ts:createExecTool",
+    "process": "src/agents/bash-tools.process.ts:resolvePollWaitMs; finishedPollResult",
+    "cleanup": "src/commands/agent-exec.ts:acquireScopeCleanup/processTree required-all",
+    "stream": "packages/agent-core/src/agent-stream-response.ts:finalizeAssistantMessage",
+    "recovery": "src/agents/sessions/agent-session-execution.ts:prepareRetry"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "assets": [],
+  "execution": {"config_asset": "harness.yaml", "system_prompt_asset": "prompts/system.j2", "tool_surface_asset": "tool-surface.json"},
+  "family": "openclaw",
+  "overlay": {"argv": [], "overlay_id": "breadboard.openclaw.headless.v2026.9.4", "settings": [{"name": "agent.max_requests", "value": 8}, {"name": "agent.episode_deadline_seconds", "value": 120}, {"name": "agent.model_fallbacks", "value": []}, {"name": "agent.compaction", "value": false}, {"name": "tools.exec_yield_ms", "value": 10000}, {"name": "tools.process_poll_max_ms", "value": 30000}]},
+  "schema_version": "bb.e4.target.v2",
+  "source_commit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+  "target_id": "openclaw@2026.9.4",
+  "version": "2026.9.4"
+}

@@ -1,0 +1,9 @@
+{
+  "profile": "openclaw@2026.9.4",
+  "source_commit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+  "runtime": {"node": ">=24.16.0 <25 || >=26.1.0", "text_only_model": true, "host": "gateway", "sandbox": "breadboard_task_containment"},
+  "agent_exec": {"isolated": true, "auth_env_only": true, "temporary_state": true, "max_requests": 8, "episode_deadline_seconds": 120, "request_timeout_seconds": 45, "output_tokens": 2048, "tool_admissions": 32, "max_live_processes": 4, "model_fallbacks_override": [], "compaction": false, "retry": false},
+  "tools": {"ordered": ["ls", "read", "edit", "write", "exec", "process"], "optional_title": true, "exec_yield_ms": 10000, "exec_timeout_seconds": 30, "process_poll_max_ms": 30000, "pending_ack_after_durable_append": true},
+  "bootstrap": {"ordered": ["AGENTS.md", "SOUL.md", "IDENTITY.md", "USER.md", "BOOTSTRAP.md", "MEMORY.md"], "per_file_chars": 20000, "total_chars": 60000, "user_chars": 4000, "missing_markers": true},
+  "native_worker_invocation": {"node": "/opt/openclaw-runtime/bin/node", "argv": ["/opt/openclaw/dist/index.js", "agent", "--local", "--json", "--timeout", "45", "--isolated", "--auth-env-only"], "invoked_by": "oracle_capture_only", "breadboard_loop": true}
+}

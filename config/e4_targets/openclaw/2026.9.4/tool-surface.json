@@ -1,0 +1,14 @@
+{
+  "target_id": "openclaw@2026.9.4",
+  "ordered_tools": ["ls", "read", "edit", "write", "exec", "process"],
+  "prompt_order": ["read", "write", "edit", "ls", "exec", "process"],
+  "optional_title": {"maxLength": 120, "required": false},
+  "tools": {
+    "ls": {"description": "List a directory", "parameters": {"type": "object", "properties": {"title": {"type": "string", "maxLength": 120}, "path": {"type": "string"}}, "additionalProperties": true}},
+    "read": {"description": "Read a file", "parameters": {"type": "object", "required": ["path"], "properties": {"title": {"type": "string", "maxLength": 120}, "path": {"type": "string"}, "offset": {"type": "integer", "minimum": 1}, "limit": {"type": "integer", "minimum": 1}, "cursor": {"type": "integer", "minimum": 0}, "optional": {"type": "boolean"}}, "additionalProperties": true}},
+    "edit": {"description": "Exact file edits", "parameters": {"type": "object", "required": ["path", "edits"], "properties": {"title": {"type": "string", "maxLength": 120}, "path": {"type": "string"}, "edits": {"type": "array"}, "oldText": {"type": "string"}, "newText": {"type": "string"}}, "additionalProperties": true}},
+    "write": {"description": "Write a file", "parameters": {"type": "object", "required": ["path", "content"], "properties": {"title": {"type": "string", "maxLength": 120}, "path": {"type": "string"}, "content": {"type": "string"}}, "additionalProperties": true}},
+    "exec": {"description": "Run shell; pty for TTY CLIs", "parameters": {"type": "object", "required": ["command"], "properties": {"title": {"type": "string", "maxLength": 120}, "command": {"type": "string"}, "workdir": {"type": "string"}, "env": {"type": "object"}, "yieldMs": {"type": "number", "minimum": 0}, "background": {"type": "boolean"}, "timeoutSeconds": {"type": "number", "minimum": 0, "maximum": 30}, "pty": {"type": "boolean"}}, "additionalProperties": true}},
+    "process": {"description": "Control background exec", "parameters": {"type": "object", "required": ["action"], "properties": {"title": {"type": "string", "maxLength": 120}, "action": {"type": "string", "enum": ["list", "poll", "log", "write", "send-keys", "submit", "paste", "kill", "clear", "remove"]}, "sessionId": {"type": "string"}, "data": {"type": "string"}, "timeout": {"type": "number", "minimum": 0, "maximum": 30000}}, "additionalProperties": true}}
+  }
+}
