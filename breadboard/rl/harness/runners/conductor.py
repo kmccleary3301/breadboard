@@ -2066,9 +2066,9 @@ class _ConductorSession:
                     try:
                         async with asyncio.timeout(limits.action_timeout_ms / 1000):
                             closed = await phase("close", {})
-                        # The worker only knows its own process groups; a descendant
-                        # that escaped via setsid could still write. Retire the whole
-                        # native runtime before any effect measurement.
+                        # The worker only knows its own process groups. Retire the
+                        # native runtime through the lease authority, as OpenHands
+                        # does, before any effect measurement.
                         retired = await tools.close_native_runtime()
                     except RunnerError as exc:
                         self._record_native_cleanup_failure(None, exc)

@@ -1035,9 +1035,12 @@ class NativeRuntimeInputPort(Protocol):
 class NativeWorkspaceEffectsPort(Protocol):
     """Trusted, BB-owned diff of the materialized policy workspace.
 
-    ``close_native_runtime`` retires every native process (the whole runtime,
-    not only worker-tracked groups) and must report ``all_dead`` before
-    ``measure_workspace_effects`` runs.
+    ``close_native_runtime`` retires the native runtime through the lease's
+    runtime authority (beyond worker-tracked groups) and must report
+    ``all_dead`` before ``measure_workspace_effects`` runs. Its reach is the
+    runtime class's containment: trusted-process drains only the process
+    groups the runtime tracks, so setsid escapees there are unconfined
+    (issue 27 residual debt).
     """
 
     async def begin_native_workspace_effects(self) -> None: ...
