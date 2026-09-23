@@ -7,6 +7,7 @@ called by ``native_worker.serve`` after the namespace and ownership bootstrap.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import secrets
@@ -114,6 +115,7 @@ class OpenHandsActor:
         self._prepared: list[Any] = []
         self._prepared_cursor = 0
         self._observations: dict[int, list[Any]] = {}
+        self._workspace_files: dict[str, str] = {}
         self._sample_error: dict[str, Any] | None = None
         self._native_response: Any = None
         self._native_error: BaseException | None = None
@@ -144,6 +146,35 @@ class OpenHandsActor:
         return value
 
 
+    @staticmethod
+    def _snapshot_workspace(root: Path) -> dict[str, str]:
+        result: dict[str, str] = {}
+        if not root.is_dir():
+            return result
+        for path in root.rglob("*"):
+            try:
+                if not path.is_file() or path.is_symlink():
+                    continue
+                relative = path.relative_to(root).as_posix()
+                if relative == ".breadboard-native-scratch" or relative.startswith(
+                    ".breadboard-native-scratch/"
+                ):
+                    continue
+                result[relative] = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+            except (OSError, ValueError):
+                continue
+        return result
+
+    def _workspace_effects(self) -> dict[str, str | None]:
+        workspace = self._sdk.get("workspace")
+        if not isinstance(workspace, str):
+            return {}
+        current = self._snapshot_workspace(Path(workspace))
+        effects: dict[str, str | None] = {}
+        for relative in sorted(set(self._workspace_files) | set(current)):
+            if self._workspace_files.get(relative) != current.get(relative):
+                effects[relative] = current.get(relative)
+        return effects
     @staticmethod
     def _bounded_message(value: Any, limit: int = 4096) -> str:
         return str(value)[:limit]
@@ -216,6 +247,8 @@ class OpenHandsActor:
             raise NativeWorkerError("caller-supplied path authority is forbidden")
         Path(workspace).mkdir(parents=True, exist_ok=True)
         Path(scratch).mkdir(parents=True, exist_ok=True)
+        self._sdk["workspace"] = workspace
+        self._workspace_files = self._snapshot_workspace(Path(workspace))
         home = Path(scratch) / "home"
         config = Path(scratch) / "config"
         home.mkdir(parents=True, exist_ok=True)
@@ -487,8 +520,6 @@ class OpenHandsActor:
                     "actions": [],
                     "source_error": self._sample_error,
                 }
-            return {"schema_version": SCHEMA_VERSION, "kind": "prepared", "event_delta": self._take_events(), "status": self._status(), "iteration": self._iteration, "actions": []}
-        response = self._native_response
         if response is None:
             return {"schema_version": SCHEMA_VERSION, "kind": "prepared", "event_delta": [], "status": self._status(), "iteration": self._iteration, "actions": []}
         self._native_response = None
@@ -520,8 +551,20 @@ class OpenHandsActor:
         finish_index = next((i for i, action in enumerate(actions) if action.tool_name == "finish"), None)
         self._prepared = actions[: finish_index + 1] if finish_index is not None else actions
         self._prepared_cursor = 0
-        prepared_output = [{"index": index, "tool_id": action.tool_name, "call_id": action.tool_call_id, "arguments": json.loads(action.tool_call.arguments)} for index, action in enumerate(self._prepared)]
-        return {"schema_version": SCHEMA_VERSION, "kind": "prepared", "event_delta": self._take_events(), "status": self._status(), "iteration": self._iteration, "actions": prepared_output}
+        def action_dump(action: Any, index: int) -> dict[str, Any]:
+            risk = getattr(action, "security_risk", None)
+            if hasattr(risk, "value"):
+                risk = risk.value
+            return {
+                "index": index,
+                "tool_id": action.tool_name,
+                "call_id": action.tool_call_id,
+                "arguments": json.loads(action.tool_call.arguments),
+                "security_risk": risk if isinstance(risk, str) else "UNKNOWN",
+            }
+        all_output = [action_dump(action, index) for index, action in enumerate(actions)]
+        prepared_output = all_output[: len(self._prepared)]
+        return {"schema_version": SCHEMA_VERSION, "kind": "prepared", "event_delta": self._take_events(), "status": self._status(), "iteration": self._iteration, "actions": prepared_output, "prepared_actions": all_output}
 
 
     def _execute(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -559,7 +602,14 @@ class OpenHandsActor:
                 source="environment", code="MaxIterationsReached",
                 detail=f"Agent reached maximum iterations limit ({MAX_ITERATIONS}).",
             ))
-        result = {"schema_version": SCHEMA_VERSION, "kind": "committed", "event_delta": self._take_events(), "status": self._status(), "iteration": self._iteration}
+        result = {
+            "schema_version": SCHEMA_VERSION,
+            "kind": "committed",
+            "event_delta": self._take_events(),
+            "status": self._status(),
+            "iteration": self._iteration,
+            "file_effects": self._workspace_effects(),
+        }
         self._prepared = []
         self._prepared_cursor = 0
         self._observations.clear()

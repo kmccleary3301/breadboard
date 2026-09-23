@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
+import base64
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from decimal import Decimal
@@ -1889,6 +1889,17 @@ class _ConductorSession:
         history: list[FrozenJsonObject] = []
         history_bytes = 2
         state: FrozenJsonObject = freeze_json_object({}, field_name="source state")
+        trace_requests: list[dict[str, Any]] = []
+        trace_tool_calls: list[dict[str, Any]] = []
+        trace_observations: list[dict[str, Any]] = []
+        trace_file_effects: dict[str, str | None] = {}
+        def decode_json_body(body_b64: Any) -> Any:
+            if type(body_b64) is not str:
+                return None
+            try:
+                return json.loads(base64.b64decode(body_b64, validate=True).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+                return None
 
         async def phase(
             operation: str, payload: Mapping[str, Any], *, timeout_ms: int,
@@ -1916,6 +1927,16 @@ class _ConductorSession:
                     "native event delta is invalid",
                     code="native_response_invalid", **self._context(),
                 )
+            for event in delta:
+                kind = event.get("kind")
+                if isinstance(kind, str) and "error" in kind.lower():
+                    trace_observations.append({
+                        "event_kind": kind,
+                        "tool_name": event.get("tool_name"),
+                        "is_error": True,
+                        "error_text": event.get("detail") or event.get("error") or event.get("message"),
+                        "classification": "native_error",
+                    })
             for event in delta:
                 history_bytes += _encoded_json_size(event) + (1 if history else 0)
                 if history_bytes > limits.transcript_bytes:
@@ -1970,6 +1991,16 @@ class _ConductorSession:
                         "native provider request is missing",
                         code="native_response_invalid", **self._context(),
                     )
+                request_body = decode_json_body(http_request.get("body_b64"))
+                if not isinstance(request_body, Mapping):
+                    raise RunnerProtocolError(
+                        "native provider request body is not JSON",
+                        code="native_response_invalid", **self._context(),
+                    )
+                trace_requests.append({
+                    "index": len(trace_requests),
+                    "body": request_body,
+                })
                 frozen_request = freeze_json_object(
                     self._binding.stage_native_http_request(http_request),
                     field_name="native policy request",
@@ -2011,6 +2042,11 @@ class _ConductorSession:
                         "policy response digest does not match the response payload",
                         code="policy_response_digest_mismatch", **self._context(),
                     )
+                public_response = response.get("native_http_response")
+                if isinstance(public_response, Mapping):
+                    decoded_response = decode_json_body(public_response.get("body_b64"))
+                    if isinstance(decoded_response, Mapping) and trace_requests:
+                        trace_requests[-1]["response"] = decoded_response
                 await self._emit(PolicyRuntimeResponseEvent(
                     0, self._open_request.episode_id,
                     self._open_request.effective_plan_digest, turn, 1,
@@ -2044,6 +2080,19 @@ class _ConductorSession:
                     "native prepared action list is invalid",
                     code="native_response_invalid", **self._context(),
                 )
+            prepared_all = prepared.get("prepared_actions", actions)
+            if not isinstance(prepared_all, tuple):
+                raise RunnerProtocolError(
+                    "native prepared action trace is invalid",
+                    code="native_response_invalid", **self._context(),
+                )
+            for action in prepared_all:
+                if isinstance(action, Mapping):
+                    trace_tool_calls.append({
+                        "tool_name": action.get("tool_id"),
+                        "arguments": action.get("arguments"),
+                        "security_risk": action.get("security_risk", "UNKNOWN"),
+                    })
             observations: list[FrozenJsonObject] = []
             finished = False
             for ordinal, action in enumerate(actions):
@@ -2090,6 +2139,19 @@ class _ConductorSession:
                     max_encoded_bytes=limits.observation_bytes,
                     max_nodes=limits.observation_bytes + 1,
                 )
+                native_observations = executed["observations"]
+                is_error = any(
+                    isinstance(item, Mapping)
+                    and "error" in str(item.get("kind", "")).lower()
+                    for item in native_observations
+                )
+                trace_observations.append({
+                    "event_kind": "ObservationEvent",
+                    "tool_name": tool_id,
+                    "is_error": is_error,
+                    "result": native_observations,
+                    "classification": "tool_error" if is_error else "tool_result",
+                })
                 observations.append(observation)
                 finished = tool_id == "finish"
                 await self._emit(ToolObservationEvent(
@@ -2104,6 +2166,11 @@ class _ConductorSession:
                     "native observation commit failed",
                     code="native_response_invalid", **self._context(),
                 )
+            committed_effects = committed.get("file_effects")
+            if isinstance(committed_effects, Mapping):
+                for path, digest in committed_effects.items():
+                    if isinstance(path, str) and (digest is None or isinstance(digest, str)):
+                        trace_file_effects[path] = digest
             await commit_events(committed, "observation_batch", turn)
             self._turns.append(RunnerTurn(turn, actions, tuple(observations)))
             if state["status"] == "FINISHED":
@@ -2120,11 +2187,29 @@ class _ConductorSession:
         await self._checkpoint("after_loop", turn=len(self._turns))
         await self._checkpoint("before_commit", turn=len(self._turns))
         await self._commit_termination(termination)
+        replay_trace = {
+            "schema_version": "bb.e4.openhands-sdk-trace.v1",
+            "case_id": self._open_request.episode_id,
+            "requests": trace_requests,
+            "tool_calls": trace_tool_calls,
+            "observations": trace_observations,
+            "file_effects": trace_file_effects,
+            "termination": {
+                "kind": termination.value,
+                "native_stop_reason": state.get("status"),
+            },
+            "request_count": len(trace_requests),
+        }
         return RunnerResult(
             episode_id=self._open_request.episode_id,
             effective_plan_digest=self._open_request.effective_plan_digest,
             original_request={"task_input": request.task_input, "context": request.context},
-            response={"source_id": OPENHANDS_RESPONSE_CONSUMER_ID, "events": history, "state": state},
+            response={
+                "source_id": OPENHANDS_RESPONSE_CONSUMER_ID,
+                "events": history,
+                "state": state,
+                "replay_trace": replay_trace,
+            },
             termination=termination, turn_count=len(self._turns),
             turns=tuple(self._turns), events=tuple(self._events),
         )
