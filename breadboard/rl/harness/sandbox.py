@@ -2808,21 +2808,6 @@ class LeaseBackedRunnerWorkspace:
                 workspace = lease._resolve(repositories[0].target_logical_path, writable=True)
                 scratch = lease._materialized.workspace_path / ".breadboard-native-scratch"
                 try:
-                    scratch.mkdir(mode=0o700)
-                    metadata = scratch.stat(follow_symlinks=False)
-                except OSError as exc:
-                    raise WorkspaceStateError(
-                        "native scratch authority is unavailable",
-                        code="workspace_authority_mismatch",
-                        lease_id=lease.lease_id,
-                    ) from exc
-                if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) != 0o700:
-                    raise WorkspaceStateError(
-                        "native scratch authority is invalid",
-                        code="workspace_authority_mismatch",
-                        lease_id=lease.lease_id,
-                    )
-                try:
                     native_payload = _admit_native_phase_payload(
                         operation,
                         thaw_json(frozen_payload),
@@ -2837,6 +2822,21 @@ class LeaseBackedRunnerWorkspace:
                         code=exc.code,
                         lease_id=lease.lease_id,
                     ) from exc
+                try:
+                    scratch.mkdir(mode=0o700)
+                    metadata = scratch.stat(follow_symlinks=False)
+                except OSError as exc:
+                    raise WorkspaceStateError(
+                        "native scratch authority is unavailable",
+                        code="workspace_authority_mismatch",
+                        lease_id=lease.lease_id,
+                    ) from exc
+                if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) != 0o700:
+                    raise WorkspaceStateError(
+                        "native scratch authority is invalid",
+                        code="workspace_authority_mismatch",
+                        lease_id=lease.lease_id,
+                    )
             else:
                 native_payload = _admit_native_phase_payload(
                     operation,
