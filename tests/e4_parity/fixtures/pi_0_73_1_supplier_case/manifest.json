@@ -1,0 +1,16 @@
+{
+  "schema_version": "bb.e4.pi-supplier-fixture-manifest.v1",
+  "source_packet_sha256": "sha256:c18adae060f9785753991f87d5acc1a03de45845e8afa0a0ed67c5812766a3f1",
+  "files": [
+    {
+      "path": "trace.json",
+      "member_path": "cases/normal_workspace_episode/trace.json",
+      "sha256": "sha256:31f9a355816a8320e97156cea7fa0bc4be115c4c95f0b197c2ae7c1cae3688ad"
+    },
+    {
+      "path": "receiver/http-transcript.jsonl",
+      "member_path": "cases/normal_workspace_episode/receiver/http-transcript.jsonl",
+      "sha256": "sha256:a74ba51b5f06e78ac5b4409c791f5927ebce28567ea145e06d4e81c42e49d6dd"
+    }
+  ]
+}

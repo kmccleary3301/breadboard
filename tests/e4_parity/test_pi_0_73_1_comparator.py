@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 import json
 from pathlib import Path
 
@@ -14,7 +15,8 @@ from conformance.comparators.pi_coding_agent_0_73_1 import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SUPPLIER_CASE = Path("/tmp/pipkt/packet/cases/normal_workspace_episode")
+SUPPLIER_CASE = REPO_ROOT / "tests" / "e4_parity" / "fixtures" / "pi_0_73_1_supplier_case"
+SUPPLIER_MANIFEST = SUPPLIER_CASE / "manifest.json"
 NATIVE_CONFIG = REPO_ROOT / "config" / "e4_targets" / "pi" / "0.73.1" / "native-config.json"
 BB_RUNTIME_INPUTS = {
     "cwd": "/leases/pi-0731/workspace-abc",
@@ -22,6 +24,22 @@ BB_RUNTIME_INPUTS = {
     "current_date": "2027-04-05",
     "package_dir": "/srv/pi-0731",
 }
+
+
+def _sha256(path: Path) -> str:
+    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_supplier_fixture_manifest_matches_pinned_packet_members() -> None:
+    manifest = json.loads(SUPPLIER_MANIFEST.read_text(encoding="utf-8"))
+    assert manifest["source_packet_sha256"] == (
+        "sha256:c18adae060f9785753991f87d5acc1a03de45845e8afa0a0ed67c5812766a3f1"
+    )
+    for entry in manifest["files"]:
+        path = SUPPLIER_CASE / entry["path"]
+        assert path.is_file()
+        assert _sha256(path) == entry["sha256"]
+        assert entry["member_path"].startswith("cases/normal_workspace_episode/")
 
 
 def _packet_trace_and_requests() -> tuple[dict, list[dict]]:
