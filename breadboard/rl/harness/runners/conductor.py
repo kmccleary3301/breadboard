@@ -34,6 +34,7 @@ from breadboard.rl.harness.runners.base import (
     NativeHTTPPolicyRuntimeClientPort,
     NativeSourceSessionPort,
     NativeRuntimeInputPort,
+    NativeWorkspaceEffectsPort,
     FrozenJsonObject,
     JsonSnapshotError,
     PolicyRequestEvent,
@@ -2010,6 +2011,7 @@ class _ConductorSession:
         if (
             not isinstance(tools, NativeSourceSessionPort)
             or not isinstance(tools, NativeRuntimeInputPort)
+            or not isinstance(tools, NativeWorkspaceEffectsPort)
             or self._binding.source_model_config is None
             or not isinstance(advertisement, Mapping)
             or limits.max_turns != profile.max_turns
@@ -2155,9 +2157,7 @@ class _ConductorSession:
             )
         self._binding.bind_native_stream(system_prompt, tuple(tool_schemas))
         state = profile.state_factory(task, system_prompt, bootstrap)
-
         trace_requests: list[dict[str, Any]] = []
-        trace_effects: dict[str, Any] = {}
 
         async def commit(
             start: int, phase_name: str, turn: int | None,
@@ -2323,19 +2323,6 @@ class _ConductorSession:
                         "native tool batch result is malformed",
                         code="native_response_invalid", **self._context(),
                     )
-                for raw in raw_results:
-                    details = raw.get("details")
-                    effects = details.get("effects") if isinstance(details, Mapping) else None
-                    if (
-                        not isinstance(details, Mapping)
-                        or not isinstance(effects, Mapping)
-                        or any(type(path) is not str or not path for path in effects)
-                    ):
-                        raise RunnerProtocolError(
-                            "native tool effect recording is malformed",
-                            code="native_response_invalid", **self._context(),
-                        )
-                    trace_effects.update(dict(effects))
                 # Results arrive in source order; observations follow the
                 # worker's measured completion order.
                 for ordinal in sorted(
@@ -2379,12 +2366,18 @@ class _ConductorSession:
         await self._checkpoint("after_loop", turn=len(self._turns))
         closed = await close_once()
         cleanup = closed["cleanup"]
+        effects = await tools.measure_workspace_effects()
+        if not isinstance(effects, Mapping):
+            raise RunnerProtocolError(
+                "native workspace effects are malformed",
+                code="native_response_invalid", **self._context(),
+            )
         await self._checkpoint("before_commit", turn=len(self._turns))
         await self._commit_termination(termination)
         replay_trace = state.to_trace(
             requests=trace_requests,
             runtime_inputs=runtime_inputs,
-            effects=trace_effects,
+            effects=effects,
         )
         return RunnerResult(
             episode_id=self._open_request.episode_id,
@@ -2408,6 +2401,7 @@ class _ConductorSession:
         tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
         if (
             not isinstance(tools, NativeSourceSessionPort)
+            or not isinstance(tools, NativeWorkspaceEffectsPort)
             or profile is None
             or model_config is None
             or limits.max_turns != 16
@@ -2434,7 +2428,6 @@ class _ConductorSession:
         trace_requests: list[dict[str, Any]] = []
         trace_tool_calls: list[dict[str, Any]] = []
         trace_observations: list[dict[str, Any]] = []
-        trace_file_effects: dict[str, str | None] = {}
         def decode_json_body(body_b64: Any) -> Any:
             if type(body_b64) is not str:
                 return None
@@ -2711,11 +2704,6 @@ class _ConductorSession:
                     "native observation commit failed",
                     code="native_response_invalid", **self._context(),
                 )
-            committed_effects = committed.get("file_effects")
-            if isinstance(committed_effects, Mapping):
-                for path, digest in committed_effects.items():
-                    if isinstance(path, str) and (digest is None or isinstance(digest, str)):
-                        trace_file_effects[path] = digest
             await commit_events(committed, "observation_batch", turn)
             self._turns.append(RunnerTurn(turn, actions, tuple(observations)))
             if state["status"] == "FINISHED":
@@ -2732,6 +2720,12 @@ class _ConductorSession:
                 termination = RunnerTermination.POLICY_INCOMPLETE
                 break
         await self._checkpoint("after_loop", turn=len(self._turns))
+        effects = await tools.measure_workspace_effects()
+        if not isinstance(effects, Mapping):
+            raise RunnerProtocolError(
+                "native workspace effects are malformed",
+                code="native_response_invalid", **self._context(),
+            )
         await self._checkpoint("before_commit", turn=len(self._turns))
         await self._commit_termination(termination)
         trace_kind = (
@@ -2752,7 +2746,7 @@ class _ConductorSession:
             "requests": trace_requests,
             "tool_calls": trace_tool_calls,
             "observations": trace_observations,
-            "file_effects": trace_file_effects,
+            "file_effects": effects,
             "request_count": len(trace_requests),
             "termination": {
                 "kind": trace_kind,

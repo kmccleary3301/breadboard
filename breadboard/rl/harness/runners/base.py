@@ -1032,6 +1032,13 @@ class NativeRuntimeInputPort(Protocol):
 
 
 @runtime_checkable
+class NativeWorkspaceEffectsPort(Protocol):
+    """Trusted, BB-owned diff of the materialized policy workspace."""
+
+    async def measure_workspace_effects(self) -> Mapping[str, Mapping[str, Any]]: ...
+
+
+@runtime_checkable
 class NativeHTTPPolicyRuntimeClientPort(CompiledPolicyRuntimeClientPort, Protocol):
     """Compiled provider authority for a source-native HTTP exchange."""
 

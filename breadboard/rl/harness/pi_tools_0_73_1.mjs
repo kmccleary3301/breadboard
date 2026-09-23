@@ -10,8 +10,8 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, stat } from "node:fs/promises";
-import { relative, resolve } from "node:path";
+import { mkdir } from "node:fs/promises";
+import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const MAX_REQUEST_BYTES = 1024 * 1024;
@@ -263,44 +263,12 @@ function prepareCall(call, defaultCwd) {
   return { request, tool, argumentsValue };
 }
 
-async function recordedFileEffect(prepared) {
-  if (!["write", "edit"].includes(prepared.request.toolId)) return null;
-  const rawPath = prepared.argumentsValue?.path ?? prepared.argumentsValue?.file_path;
-  if (typeof rawPath !== "string" || !rawPath) return null;
-  const absolutePath = resolve(prepared.request.cwd, rawPath);
-  const relativePath = relative(prepared.request.cwd, absolutePath).split("\\").join("/");
-  if (!relativePath || relativePath.startsWith("../") || relativePath === "..") return null;
-  try {
-    const bytes = await readFile(absolutePath);
-    const metadata = await stat(absolutePath);
-    return {
-      [relativePath]: {
-        exists: true,
-        bytes: metadata.size,
-        sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
-        content_utf8: bytes.toString("utf8"),
-      },
-    };
-  } catch (error) {
-    if (error?.code === "ENOENT") return {[relativePath]: {exists: false}};
-    throw error;
-  }
-}
 
 async function executePrepared(prepared, signal) {
   try {
     const result = await prepared.tool.execute(prepared.request.callId, prepared.argumentsValue, signal);
-    const effect = await recordedFileEffect(prepared);
     const details = result?.details && typeof result.details === "object" ? {...result.details} : {};
-    if (effect !== null) {
-      details.effects = effect;
-    } else if (
-      !details.effects
-      || typeof details.effects !== "object"
-      || Array.isArray(details.effects)
-    ) {
-      details.effects = {};
-    }
+    delete details.effects;
     return {
       content: Array.isArray(result?.content) ? result.content : [],
       details,
@@ -311,7 +279,7 @@ async function executePrepared(prepared, signal) {
     const message = error instanceof Error ? error.message : String(error);
     return {
       content: [{ type: "text", text: message }],
-      details: {effects: {}},
+      details: {},
       isError: true,
       terminate: false,
     };
@@ -616,7 +584,7 @@ async function executeOperation(operation, payload, signal) {
             id: call.id,
             completion_index: completionIndex++,
             content: [{ type: "text", text: call.error }],
-            details: {effects: {}},
+            details: {},
             isError: true,
             terminate: false,
           },

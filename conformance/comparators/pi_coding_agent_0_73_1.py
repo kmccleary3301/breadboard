@@ -14,8 +14,11 @@ Only these typed normalizations are allowed:
 
 Supplier roots and package directory are fixed capture-lane declarations. BB
 roots, date, and package directory must be supplied in the top-level
-``runtime_inputs`` object. No arbitrary placeholder or volatile-field removal
-is performed.
+``runtime_inputs`` object.  The ``effects`` mapping is the BB-owned
+content-hash diff ``{path: {exists, bytes, sha256, content_utf8?}}``; both
+supplier and BB records use this schema and root repository ``.git`` entries
+are excluded by the capture rule.  No arbitrary placeholder or volatile-field
+removal is performed.
 """
 from __future__ import annotations
 
@@ -269,6 +272,21 @@ def _normalize_termination(termination: Mapping[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _normalize_effects(
+    effects: Any,
+    runtime: _RuntimeInputs,
+    counts: _RuleCounts,
+) -> Any:
+    normalized = _normalize(effects, runtime, counts)
+    if not isinstance(normalized, Mapping):
+        return normalized
+    return {
+        path: value
+        for path, value in normalized.items()
+        if not (isinstance(path, str) and (path == ".git" or path.startswith(".git/")))
+    }
+
+
 def _project(trace: Mapping[str, Any], requests: list[Mapping[str, Any]], runtime: _RuntimeInputs, counts: _RuleCounts) -> dict[str, Any]:
     messages = _canonical_messages(trace.get("messages"), runtime, counts)
     if not messages:
@@ -292,7 +310,7 @@ def _project(trace: Mapping[str, Any], requests: list[Mapping[str, Any]], runtim
         "requests": _normalize(requests, runtime, counts),
         "tool_calls": calls,
         "observations": observations,
-        "effects": _normalize(trace.get("effects", {}), runtime, counts),
+        "effects": _normalize_effects(trace.get("effects", {}), runtime, counts),
         "termination": _normalize(_normalize_termination(termination), runtime, counts),
         "request_count": trace.get("request_count", len(requests)),
     }

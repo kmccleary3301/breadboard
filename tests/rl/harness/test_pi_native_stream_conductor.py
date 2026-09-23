@@ -227,6 +227,42 @@ class _NativeWorkerPort:
         self._request_id = 0
         self.system_prompt = ""
         self.initialize_runtime_inputs: Mapping[str, str] = {}
+        self._effect_baseline = self._snapshot_effects()
+
+    def _snapshot_effects(self) -> dict[str, dict[str, Any]]:
+        snapshot: dict[str, dict[str, Any]] = {}
+        for path in self.workspace.rglob("*"):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(self.workspace).as_posix()
+            if relative == ".scratch" or relative.startswith(".scratch/"):
+                continue
+            content = path.read_bytes()
+            value: dict[str, Any] = {
+                "exists": True,
+                "bytes": len(content),
+                "sha256": "sha256:" + hashlib.sha256(content).hexdigest(),
+            }
+            try:
+                value["content_utf8"] = content.decode("utf-8")
+            except UnicodeDecodeError:
+                pass
+            snapshot[relative] = value
+        return snapshot
+
+    async def measure_workspace_effects(self) -> Mapping[str, Mapping[str, Any]]:
+        current = self._snapshot_effects()
+        changed: dict[str, Mapping[str, Any]] = {}
+        for path, value in current.items():
+            baseline = self._effect_baseline.get(path)
+            if baseline is None or (
+                baseline["bytes"] != value["bytes"]
+                or baseline["sha256"] != value["sha256"]
+            ):
+                changed[path] = value
+        for path in self._effect_baseline.keys() - current.keys():
+            changed[path] = {"exists": False}
+        return changed
 
     @property
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]:
@@ -504,6 +540,38 @@ async def test_pi_native_stream_no_call_is_assistant_complete(tmp_path: Path) ->
     assert requests[0]["messages"][0] == {"role": "system", "content": system_prompt}
     assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
 
+
+@pytest.mark.asyncio
+async def test_pi_native_stream_effects_are_trusted_content_diffs(tmp_path: Path) -> None:
+    (tmp_path / "seed.txt").write_text("seed\n", encoding="utf-8")
+    result, _, _, _, _ = await _run_episode(
+        tmp_path,
+        [[(
+            "mutate",
+            "bash",
+            {
+                "command": (
+                    "printf data > result.txt; rm seed.txt; "
+                    "printf '\\377\\000' > binary.bin"
+                ),
+            },
+        )], []],
+    )
+    effects = thaw_json(result.response["replay_trace"])["effects"]
+    assert effects["result.txt"] == {
+        "exists": True,
+        "bytes": 4,
+        "sha256": "sha256:" + hashlib.sha256(b"data").hexdigest(),
+        "content_utf8": "data",
+    }
+    assert effects["seed.txt"] == {"exists": False}
+    assert effects["binary.bin"] == {
+        "exists": True,
+        "bytes": 2,
+        "sha256": "sha256:" + hashlib.sha256(b"\xff\x00").hexdigest(),
+    }
+    assert "content_utf8" not in effects["binary.bin"]
+
 @pytest.mark.asyncio
 async def test_pi_native_stream_replay_trace_matches_supplier_fixture(
     tmp_path: Path,
@@ -556,6 +624,13 @@ async def test_pi_native_stream_replay_trace_matches_supplier_fixture(
         "replay": {"trace": tampered},
     })
     assert tampered_report["passed"] is False
+    tampered_effects = deepcopy(trace)
+    tampered_effects["effects"]["pi-marker.txt"]["sha256"] = "sha256:" + ("0" * 64)
+    tampered_effects_report = comparator({
+        "capture": {"case_dir": str(SUPPLIER_CASE)},
+        "replay": {"trace": tampered_effects},
+    })
+    assert tampered_effects_report["passed"] is False
 
 @pytest.mark.asyncio
 async def test_pi_native_stream_requires_store_capability_before_sending(

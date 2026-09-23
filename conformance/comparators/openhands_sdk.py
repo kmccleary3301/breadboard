@@ -35,13 +35,18 @@ The BreadBoard port MUST emit a mapping with these fields for
     AgentErrorEvent and ConversationErrorEvent are represented here so their
     error text remains comparable.
 ``file_effects``
-    A path-to-digest map.  Values are ``sha256:<64 lowercase hex>`` for an
-    existing file and ``null`` for an expected absent file.
+    BB-owned measured records, ``{path: {exists, bytes, sha256,
+    content_utf8?}}``.  The comparator projects these records, and the
+    supplier's effect records, to the same path-to-digest map.
 ``termination``
     ``{kind, native_stop_reason}``, where ``native_stop_reason`` is the final
     model choice finish reason (or null).
 ``request_count``
     Number of real HTTP requests, equal to the number of request objects.
+
+The measured effects use only content hashes; mtime and worker-reported
+details are not accepted as authority.  A repository workspace's root
+``.git`` tree is excluded symmetrically from both sides.
 
 UUIDs, ISO timestamps, hostnames, temporary-directory suffixes, call IDs and
 response IDs are the only volatile values normalized.  A placeholder found in
@@ -353,6 +358,32 @@ def _observation_projection(events: Sequence[Any], normalizer: _Normalizer) -> l
             )
     return observations
 
+def _project_effects(raw: Any) -> dict[str, str | None]:
+    files = raw.get("files", {}) if isinstance(raw, Mapping) and "files" in raw else raw
+    if not isinstance(files, Mapping):
+        return {}
+    result: dict[str, str | None] = {}
+    for path, value in files.items():
+        if not isinstance(path, str) or not path:
+            raise ValueError(f"invalid file effect path: {path!r}")
+        if path == ".git" or path.startswith(".git/"):
+            continue
+        if isinstance(value, Mapping):
+            exists = value.get("exists", True)
+            if type(exists) is not bool:
+                raise ValueError(f"invalid file existence for {path!r}")
+            digest = None if not exists else value.get("sha256")
+        elif value is None or isinstance(value, str):
+            digest = value
+        else:
+            raise ValueError(f"invalid file effect for {path!r}: {value!r}")
+        if digest is not None and (
+            not isinstance(digest, str) or SHA256_RE.fullmatch(digest) is None
+        ):
+            raise ValueError(f"invalid file digest for {path!r}: {digest!r}")
+        result[path] = digest
+    return result
+
 
 def _workspace_effects(case_dir: Path) -> dict[str, str]:
     root = case_dir / "workspace"
@@ -360,26 +391,16 @@ def _workspace_effects(case_dir: Path) -> dict[str, str]:
         return {}
     effects: dict[str, str] = {}
     for path in sorted(item for item in root.rglob("*") if item.is_file()):
+        relative = path.relative_to(root).as_posix()
+        if relative == ".git" or relative.startswith(".git/"):
+            continue
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        effects[path.relative_to(root).as_posix()] = f"sha256:{digest}"
+        effects[relative] = f"sha256:{digest}"
     return effects
 
 
 def _file_effects(trace: Mapping[str, Any], case_dir: Path) -> dict[str, str | None]:
-    raw = trace.get("effects", {})
-    files = raw.get("files", {}) if isinstance(raw, Mapping) else {}
-    result: dict[str, str | None] = {}
-    if isinstance(files, Mapping):
-        for path, value in files.items():
-            if isinstance(value, Mapping):
-                digest = value.get("sha256") if value.get("exists", True) else None
-            elif isinstance(value, str):
-                digest = value
-            else:
-                digest = None
-            if digest is not None and (not isinstance(digest, str) or SHA256_RE.fullmatch(digest) is None):
-                raise ValueError(f"invalid file digest for {path!r}: {digest!r}")
-            result[str(path)] = digest
+    result = _project_effects(trace.get("effects", {}))
     for path, digest in _workspace_effects(case_dir).items():
         result.setdefault(path, digest)
     return result
@@ -478,7 +499,7 @@ def project_bb_trace(trace: Mapping[str, Any] | Path | str) -> dict[str, Any]:
         "requests": normalizer.value(value["requests"]),
         "tool_calls": normalizer.value(value["tool_calls"]),
         "observations": normalizer.value(value["observations"]),
-        "file_effects": normalizer.value(value["file_effects"]),
+        "file_effects": normalizer.value(_project_effects(value["file_effects"])),
         "termination": normalizer.value(value["termination"]),
         "request_count": value["request_count"],
     }

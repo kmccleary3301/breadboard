@@ -2764,6 +2764,103 @@ def _sole_writable_policy_workspace_mount(
     return entries[0]
 
 
+def _workspace_effect_snapshot(
+    root: Path,
+    *,
+    exclude_root_git: bool,
+) -> dict[str, dict[str, Any]]:
+    """Hash regular files below one materialized policy workspace mount."""
+    snapshot: dict[str, dict[str, Any]] = {}
+
+    def walk(directory: Path, prefix: str) -> None:
+        try:
+            with os.scandir(directory) as iterator:
+                entries = sorted(iterator, key=lambda entry: entry.name)
+        except OSError as exc:
+            raise WorkspaceStateError(
+                "workspace effects cannot be measured",
+                code="workspace_authority_mismatch",
+            ) from exc
+        for entry in entries:
+            relative = f"{prefix}/{entry.name}" if prefix else entry.name
+            if exclude_root_git and (
+                relative == ".git" or relative.startswith(".git/")
+            ):
+                continue
+            try:
+                metadata = entry.stat(follow_symlinks=False)
+            except OSError as exc:
+                raise WorkspaceStateError(
+                    "workspace effects cannot be measured",
+                    code="workspace_authority_mismatch",
+                ) from exc
+            if stat.S_ISDIR(metadata.st_mode):
+                walk(Path(entry.path), relative)
+                continue
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+                raise WorkspaceStateError(
+                    "workspace contains an unauthorized effect node",
+                    code="workspace_authority_mismatch",
+                )
+            descriptor = -1
+            content = bytearray()
+            digest = hashlib.sha256()
+            try:
+                descriptor = os.open(
+                    entry.path,
+                    os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                )
+                while True:
+                    chunk = os.read(descriptor, 1024 * 1024)
+                    if not chunk:
+                        break
+                    digest.update(chunk)
+                    content.extend(chunk)
+            except OSError as exc:
+                raise WorkspaceStateError(
+                    "workspace effects cannot be measured",
+                    code="workspace_authority_mismatch",
+                ) from exc
+            finally:
+                if descriptor >= 0:
+                    os.close(descriptor)
+            value: dict[str, Any] = {
+                "exists": True,
+                "bytes": len(content),
+                "sha256": "sha256:" + digest.hexdigest(),
+            }
+            try:
+                value["content_utf8"] = bytes(content).decode("utf-8")
+            except UnicodeDecodeError:
+                pass
+            snapshot[relative] = value
+    walk(root, "")
+    return snapshot
+
+def _workspace_effect_baseline(
+    snapshot: Mapping[str, Mapping[str, Any]],
+) -> dict[str, tuple[int, str]]:
+    return {
+        path: (value["bytes"], value["sha256"])
+        for path, value in snapshot.items()
+    }
+
+def _changed_workspace_effects(
+    baseline: Mapping[str, tuple[int, str]],
+    current: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Mapping[str, Any]]:
+    changed: dict[str, Mapping[str, Any]] = {}
+    for path, value in current.items():
+        identity = (value["bytes"], value["sha256"])
+        if baseline.get(path) != identity:
+            changed[path] = value
+    for path in baseline.keys() - current.keys():
+        changed[path] = {"exists": False}
+    return changed
+
+
+
+
 class LeaseBackedRunnerWorkspace:
     def __init__(self, lease: SandboxWorkspaceLease, effective_plan_digest: str,
                  tool_bindings: tuple[RunnerToolBinding, ...]) -> None:
@@ -2781,8 +2878,52 @@ class LeaseBackedRunnerWorkspace:
         self.__lease = lease
         self.__tool_bindings = bindings
 
+        workspace_mounts = tuple(
+            entry
+            for entry in lease.plan.materialization_plan.entries
+            if entry.access.value == "rw"
+        )
+        self.__effects_root: Path | None = None
+        self.__effects_exclude_root_git = False
+        self.__effects_baseline: dict[str, tuple[int, str]] = {}
+        if len(workspace_mounts) == 1:
+            workspace_mount = workspace_mounts[0]
+            workspace_root = lease._resolve(
+                workspace_mount.target_logical_path,
+                writable=True,
+            )
+            self.__effects_root = workspace_root
+            self.__effects_exclude_root_git = workspace_mount.role == "repository"
+            self.__effects_baseline = _workspace_effect_baseline(
+                _workspace_effect_snapshot(
+                    workspace_root,
+                    exclude_root_git=self.__effects_exclude_root_git,
+                )
+            )
     @property
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]: return self.__tool_bindings
+
+
+
+    async def measure_workspace_effects(self) -> Mapping[str, Mapping[str, Any]]:
+        lease = self.__lease
+        if self.__effects_root is None:
+            raise WorkspaceStateError(
+                "source-native workspace mount is not unique",
+                code="workspace_authority_mismatch",
+                lease_id=lease.lease_id,
+            )
+        lease._assert_active()
+        await lease._begin_operation()
+        try:
+            current = await asyncio.to_thread(
+                _workspace_effect_snapshot,
+                self.__effects_root,
+                exclude_root_git=self.__effects_exclude_root_git,
+            )
+            return _changed_workspace_effects(self.__effects_baseline, current)
+        finally:
+            await lease._end_operation()
 
     def native_runtime_inputs(
         self,

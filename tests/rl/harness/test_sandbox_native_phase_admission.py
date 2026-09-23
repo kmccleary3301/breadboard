@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -206,3 +207,58 @@ async def test_initialize_accepts_non_repository_writable_policy_workspace(
     assert result["kind"] == "initialized"
     assert captured[0]["workspace"] == str(workspace_root)
     assert captured[0]["package_dir"] == "/sealed/pi/node_modules/@mariozechner/pi-coding-agent"
+
+
+@pytest.mark.asyncio
+async def test_workspace_effects_measure_content_diff_and_binary_without_text(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "seed"
+    workspace_root.mkdir()
+    (workspace_root / "keep.txt").write_text("before", encoding="utf-8")
+    (workspace_root / "deleted.txt").write_text("gone", encoding="utf-8")
+    binding = RunnerToolBinding("read", "sha256:" + ("1" * 64), ())
+    entry = SimpleNamespace(
+        role="workspace_seed",
+        target_logical_path="seed",
+        access=SimpleNamespace(value="rw"),
+    )
+    plan = SimpleNamespace(
+        effective_plan_digest="plan",
+        tool_bindings=(binding,),
+        materialization_plan=SimpleNamespace(entries=(entry,)),
+    )
+    async def begin() -> None:
+        return None
+    async def end() -> None:
+        return None
+    lease = SimpleNamespace(
+        lease_id="lease",
+        plan=plan,
+        _materialized=SimpleNamespace(workspace_path=tmp_path),
+        _begin_operation=begin,
+        _end_operation=end,
+        _assert_active=lambda: None,
+        _resolve=lambda logical_path, writable=False: workspace_root,
+    )
+    workspace = sandbox_module.LeaseBackedRunnerWorkspace(lease, "plan", (binding,))
+    (workspace_root / "keep.txt").write_text("after", encoding="utf-8")
+    (workspace_root / "new.txt").write_text("new", encoding="utf-8")
+    (workspace_root / "binary.bin").write_bytes(b"\xff\x00")
+    (workspace_root / "deleted.txt").unlink()
+
+    effects = await workspace.measure_workspace_effects()
+
+    assert effects["keep.txt"] == {
+        "exists": True,
+        "bytes": 5,
+        "sha256": "sha256:" + hashlib.sha256(b"after").hexdigest(),
+        "content_utf8": "after",
+    }
+    assert effects["new.txt"]["content_utf8"] == "new"
+    assert effects["deleted.txt"] == {"exists": False}
+    assert effects["binary.bin"] == {
+        "exists": True,
+        "bytes": 2,
+        "sha256": "sha256:" + hashlib.sha256(b"\xff\x00").hexdigest(),
+    }
