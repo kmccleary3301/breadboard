@@ -10,8 +10,8 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdir, readFile, stat } from "node:fs/promises";
+import { relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const MAX_REQUEST_BYTES = 1024 * 1024;
@@ -263,12 +263,39 @@ function prepareCall(call, defaultCwd) {
   return { request, tool, argumentsValue };
 }
 
+async function recordedFileEffect(prepared) {
+  if (!["write", "edit"].includes(prepared.request.toolId)) return null;
+  const rawPath = prepared.argumentsValue?.path ?? prepared.argumentsValue?.file_path;
+  if (typeof rawPath !== "string" || !rawPath) return null;
+  const absolutePath = resolve(prepared.request.cwd, rawPath);
+  const relativePath = relative(prepared.request.cwd, absolutePath).split("\\").join("/");
+  if (!relativePath || relativePath.startsWith("../") || relativePath === "..") return null;
+  try {
+    const bytes = await readFile(absolutePath);
+    const metadata = await stat(absolutePath);
+    return {
+      [relativePath]: {
+        exists: true,
+        bytes: metadata.size,
+        sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+        content_utf8: bytes.toString("utf8"),
+      },
+    };
+  } catch (error) {
+    if (error?.code === "ENOENT") return {[relativePath]: {exists: false}};
+    throw error;
+  }
+}
+
 async function executePrepared(prepared, signal) {
   try {
     const result = await prepared.tool.execute(prepared.request.callId, prepared.argumentsValue, signal);
+    const effect = await recordedFileEffect(prepared);
+    const details = result?.details && typeof result.details === "object" ? {...result.details} : {};
+    if (effect !== null) details.effects = effect;
     return {
       content: Array.isArray(result?.content) ? result.content : [],
-      details: result?.details ?? {},
+      details,
       isError: false,
       terminate: false,
     };
@@ -315,8 +342,23 @@ async function initialize(payload) {
   const workspace = requiredString(payload, "workspace");
   const scratch = requiredString(payload, "scratch");
   const packageDir = requiredString(payload, "package_dir");
-  if ("current_date" in payload || "project_context" in payload) {
-    fail("initialize runtime inputs are worker-owned");
+  const runtimeInputs = payload.runtime_inputs;
+  if (
+    !runtimeInputs
+    || typeof runtimeInputs !== "object"
+    || Array.isArray(runtimeInputs)
+    || Object.keys(runtimeInputs).length !== 4
+    || Object.keys(runtimeInputs).some((key) => !["cwd", "home", "current_date", "package_dir"].includes(key))
+    || Object.values(runtimeInputs).some((value) => typeof value !== "string" || !value)
+  ) {
+    fail("initialize requires declared runtime_inputs");
+  }
+  if (
+    runtimeInputs.cwd !== workspace
+    || runtimeInputs.home !== resolve(scratch, "home")
+    || runtimeInputs.package_dir !== packageDir
+  ) {
+    fail("initialize runtime_inputs do not match worker authority");
   }
   const advertisement = payload.advertisement;
   if (!advertisement || typeof advertisement !== "object" || Array.isArray(advertisement)) {
@@ -397,7 +439,7 @@ async function initialize(payload) {
   let systemPrompt;
   let currentDate;
   try {
-    currentDate = new Date().toISOString().slice(0, 10);
+    currentDate = runtimeInputs.current_date;
     systemPrompt = buildSystemPrompt({
       cwd: workspace,
       contextFiles: projectContext,

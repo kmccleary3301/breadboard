@@ -434,6 +434,16 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                         max_response_bytes=binding.policy.max_response_bytes,
                         max_stream_fragments=binding.policy.max_stream_fragments,
                     )
+            if (
+                response.request_digest
+                != hashlib.sha256(canonical_json(sent_request).encode("utf-8")).hexdigest()
+            ):
+                raise ProviderRuntimeError(
+                    "native response request receipt does not match the sent body",
+                    kind="protocol",
+                    details={"code": "native_request_digest_mismatch"},
+                )
+            response = replace(response, request_body=sent_request)
             response_payload = response.as_dict()
             safe_response, problems = redaction.scrub_structure(
                 response_payload, path="$.native_response"

@@ -2099,10 +2099,30 @@ class _ConductorSession:
                 raise cancellation
 
 
+        declared_runtime_inputs = getattr(tools, "native_runtime_inputs", None)
+        runtime_inputs: dict[str, str] = {}
+        if isinstance(declared_runtime_inputs, Mapping):
+            required_runtime_input_names = ("cwd", "home", "current_date", "package_dir")
+            if (
+                set(declared_runtime_inputs) != set(required_runtime_input_names)
+                or any(
+                    type(declared_runtime_inputs[name]) is not str
+                    or not declared_runtime_inputs[name]
+                    for name in required_runtime_input_names
+                )
+            ):
+                raise RunnerProtocolError(
+                    "native stream runtime inputs are malformed",
+                    code="native_response_binding_invalid", **self._context(),
+                )
+            runtime_inputs = {
+                name: declared_runtime_inputs[name] for name in required_runtime_input_names
+            }
         initialized = await phase("initialize", {
             "task": task,
             "model_config": thaw_json(self._binding.source_model_config),
             "advertisement": thaw_json(advertisement),
+            **({"runtime_inputs": runtime_inputs} if runtime_inputs else {}),
         })
         self._native_stream_close_callback = close_once
         bootstrap = initialized.get("bootstrap")
@@ -2118,8 +2138,18 @@ class _ConductorSession:
                 "native stream bootstrap is malformed",
                 code="native_response_binding_invalid", **self._context(),
             )
+        if runtime_inputs and any(
+            bootstrap.get(name) != value for name, value in runtime_inputs.items()
+        ):
+            raise RunnerProtocolError(
+                "native stream bootstrap runtime inputs differ from declared inputs",
+                code="native_response_binding_invalid", **self._context(),
+            )
         self._binding.bind_native_stream(system_prompt, tuple(tool_schemas))
         state = profile.state_factory(task, system_prompt, bootstrap)
+
+        trace_requests: list[dict[str, Any]] = []
+        trace_effects: dict[str, Any] = {}
 
         async def commit(
             start: int, phase_name: str, turn: int | None,
@@ -2194,6 +2224,27 @@ class _ConductorSession:
                     "policy response digest does not match the response payload",
                     code="policy_response_digest_mismatch", **self._context(),
                 )
+            native_receipt = thaw_json(response.get("native_response"))
+            request_body = (
+                native_receipt.get("request_body")
+                if isinstance(native_receipt, Mapping)
+                else None
+            )
+            native_request_digest = (
+                native_receipt.get("request_digest")
+                if isinstance(native_receipt, Mapping)
+                else None
+            )
+            if (
+                not isinstance(request_body, Mapping)
+                or type(native_request_digest) is not str
+                or canonical_sha256(request_body).removeprefix("sha256:") != native_request_digest
+            ):
+                raise RunnerProtocolError(
+                    "native provider receipt lacks the exact sent request body",
+                    code="native_response_invalid", **self._context(),
+                )
+            trace_requests.append(dict(request_body))
             await self._emit(PolicyRuntimeResponseEvent(
                 0, self._open_request.episode_id, self._open_request.effective_plan_digest,
                 turn, 1, self._binding.binding_digest, model.policy_slot_id,
@@ -2264,6 +2315,20 @@ class _ConductorSession:
                         "native tool batch result is malformed",
                         code="native_response_invalid", **self._context(),
                     )
+                for raw in raw_results:
+                    details = raw.get("details")
+                    effects = details.get("effects") if isinstance(details, Mapping) else None
+                    if effects is None:
+                        continue
+                    if (
+                        not isinstance(effects, Mapping)
+                        or any(type(path) is not str or not path for path in effects)
+                    ):
+                        raise RunnerProtocolError(
+                            "native tool effect recording is malformed",
+                            code="native_response_invalid", **self._context(),
+                        )
+                    trace_effects.update(dict(effects))
                 # Results arrive in source order; observations follow the
                 # worker's measured completion order.
                 for ordinal in sorted(
@@ -2309,13 +2374,18 @@ class _ConductorSession:
         cleanup = closed["cleanup"]
         await self._checkpoint("before_commit", turn=len(self._turns))
         await self._commit_termination(termination)
+        replay_trace = state.to_trace(
+            requests=trace_requests,
+            runtime_inputs=runtime_inputs,
+            effects=trace_effects,
+        )
         return RunnerResult(
             episode_id=self._open_request.episode_id,
             effective_plan_digest=self._open_request.effective_plan_digest,
             original_request={"task_input": request.task_input, "context": request.context},
             response={
                 "source_id": consumer_id,
-                "replay_trace": state.to_trace(),
+                "replay_trace": replay_trace,
                 "bootstrap": bootstrap,
                 "cleanup": cleanup,
             },

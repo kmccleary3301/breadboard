@@ -16,7 +16,7 @@ import tempfile
 import time
 import uuid
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timezone
 from importlib.resources import files
 from pathlib import Path
 from types import MappingProxyType
@@ -2752,6 +2752,35 @@ class LeaseBackedRunnerWorkspace:
 
     @property
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]: return self.__tool_bindings
+
+    @property
+    def native_runtime_inputs(self) -> Mapping[str, str]:
+        repositories = tuple(
+            entry
+            for entry in self.__lease.plan.materialization_plan.entries
+            if entry.role == "repository"
+        )
+        adapters = tuple(
+            adapter
+            for adapter in self.__lease.plan.installed_tool_adapters
+            if adapter.adapter_id in NATIVE_PHASE_TOOL_IDS
+        )
+        if len(repositories) != 1 or len(adapters) != 1:
+            raise WorkspaceStateError(
+                "source-native runtime inputs are unavailable",
+                code="runtime_unsupported",
+                lease_id=self.__lease.lease_id,
+            )
+        scratch = self.__lease._materialized.workspace_path / ".breadboard-native-scratch"
+        return {
+            "cwd": str(self.__lease._resolve(repositories[0].target_logical_path, writable=False)),
+            "home": str(scratch / "home"),
+            "current_date": datetime.now(timezone.utc).date().isoformat(),
+            "package_dir": str(
+                Path(adapters[0].runtime_root_path)
+                / "node_modules/@mariozechner/pi-coding-agent"
+            ),
+        }
     async def invoke_native_phase(
         self,
         operation: str,

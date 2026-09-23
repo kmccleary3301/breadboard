@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 from contextlib import contextmanager
+from datetime import date
 import json
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -23,12 +25,15 @@ from breadboard.rl.harness.policy_provider import (
 )
 from breadboard.rl.harness.runners.base import (
     RunnerCancellationProbe,
+    RunnerDependencyError,
     RunnerEventSink,
     RunnerOpenRequest,
+    RunnerPolicyBindingError,
     RunnerTermination,
     RunnerToolBinding,
     SourceEventCommitEvent,
     ToolObservationEvent,
+    thaw_json,
 )
 from breadboard.rl.harness.runners.conductor import (
     CONDUCTOR_IMPLEMENTATION_DIGEST,
@@ -43,6 +48,9 @@ from breadboard_engine.provider.contracts import OpenAICompletionsProviderProfil
 from tests.compilation.test_server_compiler import _options
 from tests.rl.harness.test_runner_conductor import _digest, _tool_grant
 from tests.rl.harness.test_runner_policy_runtime import _observation, _plan, _policy_capabilities
+from conformance.comparators.pi_coding_agent_0_73_1 import PiCodingAgent0731Comparator
+
+SUPPLIER_CASE = Path(__file__).parents[2] / "e4_parity" / "fixtures" / "pi_0_73_1_supplier_case"
 
 _NODE_MODULES = Path(os.environ.get("PI_CODING_AGENT_NODE_MODULES", "/tmp/pi-node-0731/node_modules"))
 _PROMPT_TEMPLATE = Path(__file__).parents[3] / "config/e4_targets/pi/0.73.1/prompts/system-prompt.md"
@@ -52,7 +60,12 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _compile_target(tmp_path: Path, *, profile_digest: str) -> tuple[E4TargetPolicyProjection, Mapping[str, Any], c.CompiledConfigManifest]:
+def _compile_target(
+    tmp_path: Path,
+    *,
+    profile_digest: str,
+    model_id: str = "model-a",
+) -> tuple[E4TargetPolicyProjection, Mapping[str, Any], c.CompiledConfigManifest]:
     cas = FilesystemCAS(tmp_path / "target-cas")
     try:
         compiled = compile_e4_harness(
@@ -64,9 +77,9 @@ def _compile_target(tmp_path: Path, *, profile_digest: str) -> tuple[E4TargetPol
                 "workspace": {"root": "workspace"},
                 "provider_tools": {"use_native": True, "api_variant": "responses"},
                 "providers": {
-                    "default_model": "model-a",
+                    "default_model": model_id,
                     "models": [{
-                        "id": "model-a",
+                        "id": model_id,
                         "adapter": "openai",
                         "context_length": 32_768,
                         "route_handle_id": "route-a",
@@ -93,7 +106,12 @@ def _compile_target(tmp_path: Path, *, profile_digest: str) -> tuple[E4TargetPol
         cas.close()
 
 
-def _sse_tool_response(index: int, calls: list[tuple[str, str, Mapping[str, Any]]]) -> bytes:
+def _sse_tool_response(
+    index: int,
+    calls: list[tuple[str, str, Mapping[str, Any]]],
+    *,
+    assistant_text: str = "done",
+) -> bytes:
     chunks: list[dict[str, Any]] = []
     if calls:
         chunks.append(
@@ -106,6 +124,7 @@ def _sse_tool_response(index: int, calls: list[tuple[str, str, Mapping[str, Any]
                     "index": 0,
                     "delta": {
                         "role": "assistant",
+                        "content": assistant_text,
                         "tool_calls": [
                             {
                                 "index": ordinal,
@@ -128,7 +147,7 @@ def _sse_tool_response(index: int, calls: list[tuple[str, str, Mapping[str, Any]
                 "object": "chat.completion.chunk",
                 "created": index,
                 "model": "model-a",
-                "choices": [{"index": 0, "delta": {"role": "assistant", "content": "done"}, "finish_reason": None}],
+                "choices": [{"index": 0, "delta": {"role": "assistant", "content": assistant_text}, "finish_reason": None}],
             }
         )
         finish = "stop"
@@ -145,7 +164,11 @@ def _sse_tool_response(index: int, calls: list[tuple[str, str, Mapping[str, Any]
 
 
 @contextmanager
-def _scripted_server(responses: list[list[tuple[str, str, Mapping[str, Any]]]]):
+def _scripted_server(
+    responses: list[list[tuple[str, str, Mapping[str, Any]]]],
+    *,
+    assistant_texts: list[str] | None = None,
+):
     requests: list[dict[str, Any]] = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -159,7 +182,16 @@ def _scripted_server(responses: list[list[tuple[str, str, Mapping[str, Any]]]]):
             body = json.loads(self.rfile.read(length))
             requests.append(body)
             ordinal = len(requests) - 1
-            payload = _sse_tool_response(ordinal + 1, responses[min(ordinal, len(responses) - 1)])
+            assistant_text = (
+                assistant_texts[ordinal]
+                if assistant_texts is not None and ordinal < len(assistant_texts)
+                else "done"
+            )
+            payload = _sse_tool_response(
+                ordinal + 1,
+                responses[min(ordinal, len(responses) - 1)],
+                assistant_text=assistant_text,
+            )
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Content-Length", str(len(payload)))
@@ -194,6 +226,15 @@ class _NativeWorkerPort:
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]:
         return self._bindings
 
+    @property
+    def native_runtime_inputs(self) -> Mapping[str, str]:
+        return {
+            "cwd": str(self.workspace),
+            "home": str(self.scratch / "home"),
+            "current_date": date.today().isoformat(),
+            "package_dir": str(_NODE_MODULES / "@mariozechner" / "pi-coding-agent"),
+        }
+
     async def _ensure(self) -> None:
         if self._process is None:
             env = dict(os.environ)
@@ -219,6 +260,15 @@ class _NativeWorkerPort:
             phase_payload.setdefault("workspace", str(self.workspace))
             phase_payload.setdefault("scratch", str(self.scratch))
             phase_payload.setdefault("package_dir", str(_NODE_MODULES / "@mariozechner" / "pi-coding-agent"))
+            phase_payload.setdefault(
+                "runtime_inputs",
+                {
+                    "cwd": phase_payload["workspace"],
+                    "home": str(self.scratch / "home"),
+                    "current_date": date.today().isoformat(),
+                    "package_dir": phase_payload["package_dir"],
+                },
+            )
             phase_payload.setdefault(
                 "advertisement",
                 json.loads(
@@ -293,10 +343,18 @@ class _Cancellation:
         return None
 
 
-async def _run_episode(tmp_path: Path, responses: list[list[tuple[str, str, Mapping[str, Any]]]]):
-    with _scripted_server(responses) as (base_url, requests):
+async def _run_episode(
+    tmp_path: Path,
+    responses: list[list[tuple[str, str, Mapping[str, Any]]]],
+    *,
+    request_features: list[str] | None = None,
+    model_id: str = "model-a",
+    task_prompt: str = "work",
+    assistant_texts: list[str] | None = None,
+):
+    with _scripted_server(responses, assistant_texts=assistant_texts) as (base_url, requests):
         profile = OpenAICompletionsProviderProfile(
-            model="model-a",
+            model=model_id,
             scoped_credential="episode-secret",
             base_url=base_url,
             context_window=32_768,
@@ -313,11 +371,17 @@ async def _run_episode(tmp_path: Path, responses: list[list[tuple[str, str, Mapp
         projection, semantics, manifest = _compile_target(
             tmp_path,
             profile_digest=profile_identity_digest(profile),
+            model_id=model_id,
         )
         observation = _observation(
             provider_id="openai",
+            model_id=model_id,
             capabilities=_policy_capabilities(
-                request_features=["max_tokens", "n", "stream_options", "streaming"],
+                request_features=(
+                    request_features
+                    if request_features is not None
+                    else ["max_tokens", "n", "store", "stream_options", "streaming"]
+                ),
             ),
         )
         tools = tuple(_tool_grant(name) for name in ("bash", "edit", "read", "write"))
@@ -325,7 +389,7 @@ async def _run_episode(tmp_path: Path, responses: list[list[tuple[str, str, Mapp
             observation=observation,
             semantics=semantics,
             tools=tools,
-            policy_slot_ids=("model:model-a",),
+            policy_slot_ids=(f"model:{model_id}",),
             limit_updates={"max_turns": 8, "action_timeout_ms": 35_000},
             implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
         )
@@ -360,7 +424,9 @@ async def _run_episode(tmp_path: Path, responses: list[list[tuple[str, str, Mapp
             events=sink,
         )
         try:
-            result = await session.run(ConductorRunRequest(task_input={"prompt": "work"}, context={}))
+            result = await session.run(
+                ConductorRunRequest(task_input={"prompt": task_prompt}, context={})
+            )
         finally:
             await session.close()
             await worker.close()
@@ -405,6 +471,70 @@ async def test_pi_native_stream_no_call_is_assistant_complete(tmp_path: Path) ->
     assert len(requests) == 1
     assert requests[0]["messages"][0] == {"role": "system", "content": system_prompt}
     assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
+
+@pytest.mark.asyncio
+async def test_pi_native_stream_replay_trace_matches_supplier_fixture(
+    tmp_path: Path,
+) -> None:
+    responses = [
+        [(
+            "pi-tool-normal_workspace_episode-00-00",
+            "write",
+            {"path": "pi-marker.txt", "content": "pi-native-marker\n"},
+        )],
+        [(
+            "pi-tool-normal_workspace_episode-01-00",
+            "read",
+            {"path": "pi-marker.txt"},
+        )],
+        [(
+            "pi-tool-normal_workspace_episode-02-00",
+            "bash",
+            {"command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"},
+        )],
+        [],
+    ]
+    (tmp_path / "AGENTS.md").write_text(
+        "Pi capture fixture: use only the four admitted tools and leave requested effects in this workspace.\n",
+        encoding="utf-8",
+    )
+    result, _, _, _, _ = await _run_episode(
+        tmp_path,
+        responses,
+        model_id="gpt-4o-mini",
+        task_prompt="Create pi-marker.txt, read it back, then print the completion marker.",
+        assistant_texts=[
+            "Writing marker.",
+            "Reading marker.",
+            "Complete.",
+            "Final answer: pi normal complete.",
+        ],
+    )
+    trace = thaw_json(result.response["replay_trace"])
+    comparator = PiCodingAgent0731Comparator()
+    report = comparator({
+        "capture": {"case_dir": str(SUPPLIER_CASE)},
+        "replay": {"trace": trace},
+    })
+    assert report["passed"] is True, report["assertions"][0]["detail"]
+    tampered = deepcopy(trace)
+    tampered["requests"][0]["messages"][0]["content"] += " tampered"
+    tampered_report = comparator({
+        "capture": {"case_dir": str(SUPPLIER_CASE)},
+        "replay": {"trace": tampered},
+    })
+    assert tampered_report["passed"] is False
+
+@pytest.mark.asyncio
+async def test_pi_native_stream_requires_store_capability_before_sending(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(RunnerDependencyError, match="policy runtime invocation failed"):
+        await _run_episode(
+            tmp_path,
+            [[]],
+            request_features=["max_tokens", "n", "stream_options", "streaming"],
+        )
 
 
 @pytest.mark.asyncio

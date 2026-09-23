@@ -317,6 +317,13 @@ def _validate_request_features(
         # The SDK supplies raw HTTP instead of profile.chat_request(), which
         # inserts n=1. The pinned SDK omits n; native admission rejects that key.
         required.remove("n")
+    elif (
+        target_projection is not None
+        and target_projection.renderer_id == PI_RESPONSE_CONSUMER_ID
+    ):
+        # Pi's buildParams removes n and adds store=false before transport.
+        required.remove("n")
+        required.add("store")
     missing = required.difference(observation.capabilities.request_features)
     unsupported_tools = tools and (
         not observation.capabilities.tool_calling
