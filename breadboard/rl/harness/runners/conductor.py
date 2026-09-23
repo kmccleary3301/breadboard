@@ -2639,11 +2639,6 @@ class _ConductorSession:
                 candidate_digest, candidate_state,
             ))
             history, history_digest, state = candidate_history, candidate_digest, candidate_state
-            await tools.invoke_native_phase(
-                "history_ack",
-                {"history_digest": candidate_digest, "remaining_seconds": remaining()},
-                timeout_ms=max(1, int(min(40, remaining()) * 1000)),
-            )
 
         async def phase(
             operation: str, payload: Mapping[str, Any], phase_name: str,
@@ -2703,6 +2698,11 @@ class _ConductorSession:
                 )
                 if value["kind"] != "history_checkpoint":
                     return value
+                command = "history_ack"
+                command_payload = {
+                    "history_digest": history_digest,
+                    "remaining_seconds": remaining(),
+                }
                 if segment is not None:
                     progress += 1
                     if segment["kind"] == "sequential":
@@ -2961,6 +2961,13 @@ class _ConductorSession:
             "tool_results": history_tool_results(tuple(history)),
             "visible_corrections": visible_corrections(tuple(history)),
             "file_effects": trace_file_effects,
+            "runtime": {
+                "cwd": (
+                    initialized.get("source_runtime", {}).get("workspace")
+                    if isinstance(initialized.get("source_runtime"), Mapping)
+                    else None
+                ),
+            },
             "termination": {
                 "kind": "completed" if state["status"] == "FINISHED" else "stopped",
                 "native_stop_reason": native_stop_reason,
