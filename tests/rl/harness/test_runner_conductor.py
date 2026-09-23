@@ -4020,7 +4020,8 @@ async def test_native_stream_cancellation_during_shielded_close_preserves_cancel
     assert cleanup.all_dead is False
     assert cleanup.error_code == "native_close_failed"
 
-async def test_session_binding_close_failure_is_structured_behind_cancel_failure() -> None:
+async def test_non_native_binding_close_failure_keeps_session_close_fact() -> None:
+    from breadboard.rl.harness import service as service_module
     from tests.rl.harness.test_runner_policy_runtime import (
         CancelFailsDuringClosePolicyClient,
     )
@@ -4037,11 +4038,15 @@ async def test_session_binding_close_failure_is_structured_behind_cancel_failure
         await close_task
     with pytest.raises((RunnerCancelled, asyncio.CancelledError)):
         await run_task
-    outcome = session.native_cleanup_outcome
-    assert outcome.attempted is False
-    assert outcome.all_dead is None
-    assert outcome.error_code is None
-    assert outcome.binding_close_error_code == "policy_close_failed"
+
+    assert session.native_cleanup_outcome is None
+    legacy = service_module._failure_from_exception(
+        RunnerDependencyError("policy runtime close failed", code="policy_close_failed"),
+        "session_close",
+    )
+    assert legacy.category == "runtime"
+    assert legacy.code == "policy_close_failed"
+    assert service_module._native_cleanup_failure(None, "session_close") is None
 
 
 async def test_native_stream_normal_path_closes_once(

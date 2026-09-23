@@ -1355,7 +1355,9 @@ class _ConductorSession:
         self._native_cleanup_outcome = NativeCleanupOutcome(False, None, None, None)
 
     @property
-    def native_cleanup_outcome(self) -> NativeCleanupOutcome:
+    def native_cleanup_outcome(self) -> NativeCleanupOutcome | None:
+        if self._projection.source_consumer_id not in NATIVE_STREAM_PROFILES:
+            return None
         return self._native_cleanup_outcome
 
     def _set_native_cleanup_outcome(
@@ -1383,6 +1385,8 @@ class _ConductorSession:
             _note_cleanup_failure(primary, cleanup)
 
     def _record_binding_close_failure(self, cleanup: BaseException) -> None:
+        if self._projection.source_consumer_id not in NATIVE_STREAM_PROFILES:
+            return
         error_code = getattr(cleanup, "code", None)
         if not isinstance(error_code, str) or not error_code:
             error_code = type(cleanup).__name__.lower()

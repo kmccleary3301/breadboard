@@ -92,7 +92,7 @@ from breadboard.artifacts.references import ArtifactRef
 @runtime_checkable
 class _NativeCleanupSession(Protocol):
     @property
-    def native_cleanup_outcome(self) -> NativeCleanupOutcome:
+    def native_cleanup_outcome(self) -> NativeCleanupOutcome | None:
         ...
 
 
