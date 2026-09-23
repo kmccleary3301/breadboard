@@ -349,9 +349,12 @@ class SourceManifestEntry:
     content_digest: str | None = None
 
     def __post_init__(self) -> None:
-        _logical_path(self.logical_path)
         if self.kind not in {"file", "directory"}:
             raise ValueError("source manifest kind must be file or directory")
+        _logical_path(
+            self.logical_path,
+            allow_root=self.logical_path == "." and self.kind == "directory",
+        )
         if self.byte_count < 0 or self.mode < 0 or self.mode > 0o777:
             raise ValueError("invalid source manifest metadata")
         if self.kind == "file" and not (self.content_digest or "").startswith(
@@ -408,6 +411,86 @@ class SealedSourceManifest:
             "total_bytes": self.total_bytes,
             "total_files": self.total_files,
         }
+
+
+WORKSPACE_SEED_SCHEMA_VERSION = "bb.rl.workspace-seed-tree.v1"
+WORKSPACE_SEED_MEDIA_TYPE = "application/vnd.breadboard.workspace-seed-tree"
+
+
+def build_workspace_seed_artifact(
+    files: Mapping[str, bytes],
+    *,
+    file_modes: Mapping[str, int] | None = None,
+    directory_mode: int = 0o700,
+    cas: Any | None = None,
+) -> tuple[str, bytes]:
+    """Build and optionally publish one canonical seed-tree source artifact."""
+    if type(directory_mode) is not int or directory_mode < 0 or directory_mode > 0o777:
+        raise ValueError("workspace seed directory mode is invalid")
+    modes = {} if file_modes is None else dict(file_modes)
+    if any(path not in files for path in modes):
+        raise ValueError("workspace seed mode has no file")
+    normalized: dict[str, bytes] = {}
+    for path, content in files.items():
+        _logical_path(path)
+        if type(content) is not bytes:
+            raise TypeError("workspace seed content must be bytes")
+        mode = modes.get(path, 0o644)
+        if type(mode) is not int or mode < 0 or mode > 0o777:
+            raise ValueError("workspace seed file mode is invalid")
+        normalized[path] = content
+    directories = {
+        parent.as_posix()
+        for path in normalized
+        for parent in PurePosixPath(path).parents
+        if parent.as_posix() != "."
+    }
+    entries: list[SourceManifestEntry] = [
+        SourceManifestEntry(".", "directory", 0, directory_mode, None)
+    ]
+    entries.extend(
+        SourceManifestEntry(path, "directory", 0, 0o700, None)
+        for path in sorted(directories)
+    )
+    entries.extend(
+        SourceManifestEntry(
+            path,
+            "file",
+            len(content),
+            modes.get(path, 0o644),
+            _bytes_digest(content),
+        )
+        for path, content in sorted(normalized.items())
+    )
+    entries.sort(key=lambda item: item.logical_path)
+    identity = {
+        "schema_version": WORKSPACE_SEED_SCHEMA_VERSION,
+        "media_type": WORKSPACE_SEED_MEDIA_TYPE,
+        "directory_mode": directory_mode,
+        "entries": [entry.projection() for entry in entries],
+    }
+    seed_digest = _digest(identity)
+    manifest_payload = {
+        "schema_version": WORKSPACE_SEED_SCHEMA_VERSION,
+        "media_type": WORKSPACE_SEED_MEDIA_TYPE,
+        "source_digest": seed_digest,
+        "entries": [entry.projection() for entry in entries],
+        "total_bytes": sum(entry.byte_count for entry in entries),
+        "total_files": len(normalized),
+    }
+    manifest_bytes = canonical_json_bytes(manifest_payload)
+    if cas is not None:
+        for content in normalized.values():
+            cas.put_bytes(content, media_type="application/octet-stream")
+        cas.put_bytes(
+            manifest_bytes,
+            artifact_id=seed_digest,
+            media_type=WORKSPACE_SEED_MEDIA_TYPE,
+        )
+    return seed_digest, manifest_bytes
+
+
+EMPTY_WORKSPACE_SEED_DIGEST = build_workspace_seed_artifact({}, directory_mode=0o700)[0]
 
 
 @dataclass(frozen=True, slots=True)

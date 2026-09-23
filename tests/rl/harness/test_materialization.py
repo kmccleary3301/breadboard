@@ -22,10 +22,12 @@ from breadboard.rl.harness.materialization import (
     CacheLeaseState,
     CleanupState,
     CleanupStepReceipt,
+    EMPTY_WORKSPACE_SEED_DIGEST,
     FilesystemMaterializationStore,
     MaterializationEntry,
     MaterializationKey,
     SourceManifestEntry,
+    build_workspace_seed_artifact,
 )
 from tests.rl.harness.wp7_fixtures import (
     DeterministicRandom,
@@ -3122,3 +3124,29 @@ def test_workspace_seed_mount_starts_with_exact_file_mode_and_private_baseline(
         assert not (materialized.workspace_path / ".git").exists()
     finally:
         materialized.close()
+
+
+def test_workspace_seed_artifact_identity_is_pinned_and_paths_are_closed() -> None:
+    digest_value, payload = build_workspace_seed_artifact(
+        {"AGENTS.md": b"seed\n"},
+        file_modes={"AGENTS.md": 0o600},
+        directory_mode=0o700,
+    )
+    manifest = json.loads(payload)
+    assert manifest["source_digest"] == digest_value
+    assert manifest["entries"][0] == {
+        "path": ".",
+        "kind": "directory",
+        "bytes": 0,
+        "mode": 0o700,
+        "digest": None,
+    }
+    assert build_workspace_seed_artifact({}, directory_mode=0o700)[0] == (
+        EMPTY_WORKSPACE_SEED_DIGEST
+    )
+    with pytest.raises(ValueError):
+        build_workspace_seed_artifact({"../escape": b"x"})
+    with pytest.raises(ValueError):
+        build_workspace_seed_artifact({"/absolute": b"x"})
+    with pytest.raises(ValueError):
+        SourceManifestEntry("link", "symlink", 0, 0o777, None)
