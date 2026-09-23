@@ -292,9 +292,10 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                 call_kwargs: Dict[str, Any] = {
                     "model": model,
                     "messages": request_messages,
-                    "stream": False,
                     "extra_body": extra_body,
                 }
+                if binding.policy.consumer_id != MINI_RESPONSE_CONSUMER_ID:
+                    call_kwargs["stream"] = False
                 call_kwargs.update(profile_options)
                 if request_tools:
                     call_kwargs["tools"] = request_tools
@@ -305,6 +306,15 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                 except ProviderRuntimeError:
                     raise
                 except Exception as exc:
+                    if (
+                        binding.policy.consumer_id == MINI_RESPONSE_CONSUMER_ID
+                        and (
+                            isinstance(getattr(exc, "status_code", None), int)
+                            or exc.__class__.__name__
+                            in {"APIConnectionError", "APITimeoutError"}
+                        )
+                    ):
+                        raise
                     kind = (
                         "adapter"
                         if isinstance(exc, (AttributeError, TypeError))
@@ -395,15 +405,20 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         stream: bool,
         context: ProviderRuntimeContext,
     ) -> Dict[str, Any]:
-        """Project the complete secret-free HTTP request body for evidence."""
         profile = context.provider_profile
         if profile is not None:
-            return self.profile_chat_request(
+            body = self.profile_chat_request(
                 profile,
                 messages,
                 tools,
                 context=context,
             )
+            if (
+                context.extra.get("response_consumer_id") == MINI_RESPONSE_CONSUMER_ID
+                and profile.request_policy.mode == "non_streaming"
+            ):
+                body.pop("stream", None)
+            return body
         request_messages = self._convert_messages_to_chat(messages, context=context)
         request_tools = self._convert_tools_to_openai(tools)
         role_request, extra_body = self._unbound_request_options(model, context)

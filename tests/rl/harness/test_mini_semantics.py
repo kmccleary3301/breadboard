@@ -1,4 +1,5 @@
 from importlib.resources import files
+from pathlib import Path
 import json
 
 import pytest
@@ -145,3 +146,54 @@ def test_argument_values_and_order_survive_while_unused_keys_are_not_actions():
     assert prepared[-1]["reasoning_content"] == "source reasoning field"
     assert "extra" not in prepared[-1]
     assert "Keep {{ task }} literally in the issue text" in prepared[1]["content"]
+
+
+def test_litellm_native_projection_matches_supplier_abc_response():
+    pytest.importorskip("litellm")
+    from breadboard.rl.harness.policy_provider import _mini_model_response
+
+    fixture = json.loads(
+        (Path(__file__).parent / "fixtures" / "mini_litellm_probe.json").read_text()
+    )
+    response = _mini_model_response(fixture["raw"])
+    state = _state()
+    parsed = _consume(
+        state,
+        response.model_dump(),
+    )
+    assert parsed.message == {
+        **fixture["exp_msg"],
+        "extra": parsed.message["extra"],
+    }
+    assert parsed.message["extra"]["response"] == fixture["exp_resp"]
+
+
+def test_provider_429_maps_to_supplier_native_exit():
+    pytest.importorskip("litellm")
+    import httpx
+    import openai
+    from breadboard.rl.harness.policy_provider import (
+        _is_mini_provider_exception,
+        _mini_provider_exception,
+    )
+
+    request = httpx.Request("POST", "http://127.0.0.1/v1/chat/completions")
+    response = httpx.Response(
+        429, request=request, json={"error": {"message": "scripted rate limit"}}
+    )
+    raw = openai.RateLimitError("scripted rate limit", response=response, body=None)
+    assert _is_mini_provider_exception(raw)
+    failure = _mini_provider_exception(raw, model="bb-mini-scripted")
+
+    state = _state()
+    exit_message = state.commit_native_exit(
+        type(failure.exception).__name__,
+        exception_str=str(failure.exception),
+        traceback_text=failure.traceback_text,
+    )
+    # Supplier mci013 provider_failures exit message.
+    expected = "litellm.RateLimitError: RateLimitError: OpenAIException - scripted rate limit"
+    assert exit_message["content"] == expected
+    assert exit_message["extra"]["exit_status"] == "RateLimitError"
+    assert exit_message["extra"]["exception_str"] == expected
+    assert exit_message["extra"]["traceback"].startswith("Traceback (most recent call last):")

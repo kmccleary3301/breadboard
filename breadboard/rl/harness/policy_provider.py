@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from concurrent.futures import Future
 import json
 import os
+import traceback
 import re
 import threading
 from typing import Any, overload
@@ -35,6 +36,7 @@ from breadboard_engine.provider.runtimes.openai.chat import OpenAIChatRuntime
 from .contracts import EffectiveExecutionPlan, PolicyBindingRef, PolicyCapabilityObservation
 from .runners.base import (
     FrozenJsonObject,
+    MiniProviderFailure,
     PolicyRuntimeClientPort,
     PolicyRuntimeInvokeRequest,
     PolicyRuntimeInvokeResult,
@@ -45,6 +47,50 @@ from .runners.base import (
     thaw_json,
 )
 from .service import PolicyRuntimeClientResolver
+
+
+def _mini_model_response(raw_response: Mapping[str, Any]) -> Any:
+    """Re-run LiteLLM's OpenAI response conversion for Mini's native consumer."""
+    from openai.types.chat import ChatCompletion
+    from litellm import ModelResponse
+    from litellm.litellm_core_utils.llm_response_utils.convert_dict_to_response import (
+        convert_to_model_response_object,
+    )
+
+    sdk_response = ChatCompletion.model_validate(thaw_json(raw_response))
+    return convert_to_model_response_object(
+        response_object=sdk_response.model_dump(),
+        model_response_object=ModelResponse(),
+    )
+
+
+def _mini_provider_exception(exception: Exception, *, model: str) -> MiniProviderFailure:
+    """Map an OpenAI SDK failure through the locked LiteLLM exception mapper."""
+    import litellm
+    from litellm.litellm_core_utils.exception_mapping_utils import exception_type
+
+    previous_suppress_debug_info = litellm.suppress_debug_info
+    # The mapper otherwise prints help text to stdout; it does not alter str(e).
+    litellm.suppress_debug_info = True
+    try:
+        exception_type(
+            model="openai/" + model,
+            original_exception=exception,
+            custom_llm_provider="openai",
+            completion_kwargs={},
+            extra_kwargs={},
+        )
+    except Exception as mapped:
+        return MiniProviderFailure(mapped, traceback.format_exc())
+    finally:
+        litellm.suppress_debug_info = previous_suppress_debug_info
+    raise RuntimeError("LiteLLM exception mapping returned without raising")
+
+
+def _is_mini_provider_exception(exception: BaseException) -> bool:
+    import openai
+
+    return isinstance(exception, (openai.APIStatusError, openai.APIConnectionError))
 
 
 def _provider_descriptor() -> ProviderDescriptor:
@@ -516,10 +562,10 @@ class EpisodeOpenAICompletionsPolicyClient:
         }:
             raise ValueError("Mini pricing catalog was not loaded from its sealed assembly")
 
-        def native_cost(raw: Mapping[str, Any]) -> float:
+        def native_cost(response: Any) -> float:
             try:
                 cost = litellm.cost_calculator.completion_cost(
-                    litellm.ModelResponse(**thaw_json(raw)), model="openai/" + profile.model
+                    response, model="openai/" + profile.model
                 )
                 if cost <= 0.0:
                     raise ValueError(f"Cost must be > 0.0, got {cost}")
@@ -570,7 +616,17 @@ class EpisodeOpenAICompletionsPolicyClient:
             )
             if result.raw_response is None:
                 raise RunnerProtocolError("Mini requires the original provider sample", code="native_response_invalid")
-            payload = {"native_response": result.as_dict(), "cost": self._native_cost(result.raw_response)}
+            response = _mini_model_response(result.raw_response)
+            mini_response = {
+                "message": response.choices[0].message.model_dump(),
+                "response": response.model_dump(),
+                "response_json": response.model_dump(mode="json"),
+            }
+            payload = {
+                "native_response": result.as_dict(),
+                "mini_response": mini_response,
+                "cost": self._native_cost(response),
+            }
             return PolicyRuntimeInvokeResult(
                 response_payload=payload, response_digest=canonical_sha256(payload)
             )
@@ -717,7 +773,12 @@ class EpisodeOpenAICompletionsPolicyClient:
             stream = profile.request_policy.mode == "streaming"
             context = ProviderRuntimeContext(
                 None,
-                {},
+                (
+                    {"response_consumer_id": MINI_RESPONSE_CONSUMER_ID}
+                    if native_binding is not None
+                    and native_binding.policy.consumer_id == MINI_RESPONSE_CONSUMER_ID
+                    else {}
+                ),
                 stream=stream,
                 session_id=request.episode_id,
                 input_id=request.request_digest,
@@ -767,6 +828,13 @@ class EpisodeOpenAICompletionsPolicyClient:
                     try:
                         outcome = run()
                     except BaseException as exc:
+                        if (
+                            native_binding is not None
+                            and native_binding.policy.consumer_id == MINI_RESPONSE_CONSUMER_ID
+                            and isinstance(exc, Exception)
+                            and _is_mini_provider_exception(exc)
+                        ):
+                            exc = _mini_provider_exception(exc, model=profile.model)
                         active.set_exception(exc)
                     else:
                         active.set_result(outcome)
@@ -791,15 +859,18 @@ class EpisodeOpenAICompletionsPolicyClient:
                 raise
             except RunnerDependencyError:
                 raise
-            except Exception:
+            except Exception as exc:
                 if self._cancelled.is_set():
                     raise asyncio.CancelledError
-                raise RunnerDependencyError(
+                error = RunnerDependencyError(
                     "episode provider invocation failed",
                     code="provider_invocation_failed",
                     episode_id=request.episode_id,
                     effective_plan_digest=request.effective_plan_digest,
-                ) from None
+                )
+                if isinstance(exc, MiniProviderFailure):
+                    raise error from exc
+                raise error from None
             finally:
                 if active.done():
                     with self._state_lock:

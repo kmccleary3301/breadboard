@@ -27,6 +27,15 @@ TRACE_REQUIRED_FIELDS = (
     "counters",
     "normalizations",
 )
+ORACLE_ROOTS = (*TRACE_FIELDS, "controls")
+WORKSPACE_NORMALIZATION = "workspace_root:<WORKSPACE>"
+WORKSPACE_PLACEHOLDER = "<WORKSPACE>"
+# Volatile source values: a placeholder may replace only the named history extra field.
+FIELD_NORMALIZATIONS = {
+    "timestamp:<TIMESTAMP>": ("<TIMESTAMP>", "timestamp"),
+    "traceback:<TRACEBACK>": ("<TRACEBACK>", "traceback"),
+}
+ALLOWED_NORMALIZATIONS = frozenset({WORKSPACE_NORMALIZATION, *FIELD_NORMALIZATIONS})
 
 
 def _repo_root() -> Path:
@@ -48,7 +57,20 @@ def _json_value(value: Any) -> str:
         return repr(value)
 
 
+def _is_json_number(value: Any) -> bool:
+    return type(value) in (int, float)
+
+
 def _first_difference(expected: Any, observed: Any, path: str = "$") -> str | None:
+    # JSON Schema instance equality: numbers are equal when mathematically equal
+    # (0 == 0.0); booleans are never numbers.
+    if _is_json_number(expected) and _is_json_number(observed):
+        if expected == observed:
+            return None
+        return (
+            f"first difference at {path}: expected {_json_value(expected)}, "
+            f"observed {_json_value(observed)}"
+        )
     if type(expected) is not type(observed):
         return (
             f"first difference at {path}: expected {_json_value(expected)}, "
@@ -184,7 +206,95 @@ def _load_trace(
         errors.append(f"{expected_role} case {case_id!r} trace role must be {expected_role}")
     if trace.get("case_id") != case_id:
         errors.append(f"{expected_role} case {case_id!r} trace case_id must be {case_id}")
+    controls = trace.get("controls")
+    if controls is not None and not isinstance(controls, Mapping):
+        errors.append(f"{expected_role} case {case_id!r} trace controls must be an object")
+    errors.extend(
+        f"{expected_role} case {case_id!r} {problem}" for problem in _normalization_problems(trace)
+    )
     return trace, hash_error
+
+
+def _placeholder_sites(value: Any, path: tuple[Any, ...], sites: list[tuple[tuple[Any, ...], str]]) -> None:
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            _placeholder_sites(item, (*path, key), sites)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _placeholder_sites(item, (*path, index), sites)
+    elif isinstance(value, str):
+        sites.append((path, value))
+
+
+def _normalization_problems(trace: Mapping[str, Any]) -> list[str]:
+    """Reject undeclared, unapplied or misplaced normalization placeholders.
+
+    A placeholder hides a source value, so it is admitted only where its declared
+    rule allows it; it can never mask an arbitrary protocol field.
+    """
+    declared = trace.get("normalizations")
+    if not isinstance(declared, list) or any(type(item) is not str for item in declared):
+        return ["normalizations must be a list of strings"]
+    problems: list[str] = []
+    if len(set(declared)) != len(declared):
+        problems.append("normalizations must be unique")
+    unknown = sorted(set(declared) - ALLOWED_NORMALIZATIONS)
+    if unknown:
+        problems.append(f"normalizations not admitted: {', '.join(unknown)}")
+    sites: list[tuple[tuple[Any, ...], str]] = []
+    for field in (*TRACE_FIELDS, "controls"):
+        _placeholder_sites(trace.get(field), (field,), sites)
+    applied: set[str] = set()
+    for normalization, (placeholder, extra_field) in FIELD_NORMALIZATIONS.items():
+        for site, text in sites:
+            if placeholder not in text:
+                continue
+            allowed = (
+                text == placeholder
+                and len(site) == 4
+                and site[0] == "history"
+                and type(site[1]) is int
+                and site[2] == "extra"
+                and site[3] == extra_field
+            )
+            if not allowed:
+                problems.append(f"placeholder {placeholder} is not admitted at {site!r}")
+            applied.add(normalization)
+    if any(WORKSPACE_PLACEHOLDER in text for _, text in sites):
+        applied.add(WORKSPACE_NORMALIZATION)
+    for normalization in sorted(applied - set(declared)):
+        problems.append(f"normalization {normalization} is applied but undeclared")
+    for normalization in sorted((set(declared) & ALLOWED_NORMALIZATIONS) - applied):
+        problems.append(f"normalization {normalization} is declared but not applied")
+    return problems
+
+
+def _oracle_problem(oracle: Any) -> str | None:
+    if not isinstance(oracle, list) or not oracle:
+        return "oracle must be a non-empty list of {path, equals} expectations"
+    for expectation in oracle:
+        if not isinstance(expectation, Mapping) or set(expectation) != {"path", "equals"}:
+            return "each oracle expectation must contain exactly path and equals"
+        path = expectation["path"]
+        if (
+            not isinstance(path, list)
+            or not path
+            or path[0] not in ORACLE_ROOTS
+            or any(type(part) not in (str, int) for part in path)
+        ):
+            return f"oracle path {path!r} must be a list rooted at one of {', '.join(ORACLE_ROOTS)}"
+    return None
+
+
+def _resolve_path(value: Any, path: list[Any]) -> tuple[bool, Any]:
+    for part in path:
+        if isinstance(value, Mapping) and type(part) is str and part in value:
+            value = value[part]
+        elif isinstance(value, list) and type(part) is int and 0 <= part < len(value):
+            value = value[part]
+        else:
+            return False, None
+    return True, value
 
 
 def _manifest_data(
@@ -241,37 +351,14 @@ def _compare_case(
     case_id: str,
     expected: Mapping[str, Any],
     observed: Mapping[str, Any],
-    *,
-    oracle: bool = False,
 ) -> list[dict[str, Any]]:
     assertions: list[dict[str, Any]] = []
-    for field in TRACE_FIELDS:
-        assertion_id = f"{case_id}.{field}_equal"
-        if field not in expected:
-            assertions.append(
-                _assertion(
-                    assertion_id,
-                    "oracle key is declared",
-                    observed.get(field),
-                    f"oracle for {case_id!r} does not declare {field!r}",
-                )
-            )
-            continue
-        expected_value = expected[field]
+    for field in (*TRACE_FIELDS, "normalizations"):
+        expected_value = expected.get(field)
         observed_value = observed.get(field)
         difference = _first_difference(expected_value, observed_value, f"$.{field}")
-        assertions.append(_assertion(assertion_id, expected_value, observed_value, difference))
-    if not oracle:
-        expected_normalizations = expected.get("normalizations")
-        observed_normalizations = observed.get("normalizations")
-        difference = _first_difference(expected_normalizations, observed_normalizations, "$.normalizations")
         assertions.append(
-            _assertion(
-                f"{case_id}.normalizations_equal",
-                expected_normalizations,
-                observed_normalizations,
-                difference,
-            )
+            _assertion(f"{case_id}.{field}_equal", expected_value, observed_value, difference)
         )
     return assertions
 
@@ -279,9 +366,11 @@ def _compare_case(
 def compare(inp: ComparatorInput) -> dict[str, Any]:
     """Compare MiniComplete supplier and BreadBoard trace manifests exactly.
 
-    Trace fields are compared as decoded JSON values. The comparator deliberately
-    does not normalize paths or protocol values; captures must declare identical
-    normalizations before a pair can pass.
+    Trace fields are compared as decoded JSON values under JSON Schema instance
+    equality. The comparator applies no normalization itself: operators apply only
+    the admitted rules, each trace declares exactly the rules it applied, and a
+    placeholder outside its admitted field invalidates the manifest.
+    BreadBoard-only control cases are judged against concrete path expectations.
     """
     repo_root_value = inp.get("repo_root")
     repo_root = Path(repo_root_value) if repo_root_value is not None else _repo_root()
@@ -364,31 +453,33 @@ def compare(inp: ComparatorInput) -> dict[str, Any]:
 
     for case_id in sorted(breadboard_only_ids & replay_case_ids):
         declared = breadboard_only.get(case_id)
-        oracle = declared.get("oracle") if isinstance(declared, Mapping) and "oracle" in declared else declared
-        observed = replay_traces.get(case_id)
-        if not isinstance(oracle, Mapping):
+        oracle = declared.get("oracle") if isinstance(declared, Mapping) else None
+        problem = _oracle_problem(oracle)
+        if problem is not None:
             assertions.append(
-                _assertion(
-                    f"{case_id}.oracle_equal",
-                    "declared oracle object",
-                    oracle,
-                    f"breadboard_only oracle for {case_id!r} must be an object",
-                )
+                _assertion(f"{case_id}.oracle_valid", "declared oracle expectations", oracle, problem)
             )
             continue
+        observed = replay_traces.get(case_id)
         if observed is None:
             continue
-        oracle_observed = {key: observed.get(key) for key in oracle}
-        oracle_difference = _first_difference(dict(oracle), oracle_observed, "$.oracle")
-        assertions.append(
-            _assertion(
-                f"{case_id}.oracle_fields_equal",
-                dict(oracle),
-                oracle_observed,
-                oracle_difference,
+        for expectation in oracle:
+            path = expectation["path"]
+            label = "$." + ".".join(str(part) for part in path)
+            found, observed_value = _resolve_path(observed, path)
+            detail = (
+                _first_difference(expectation["equals"], observed_value, label)
+                if found
+                else f"first difference at {label}: expected {_json_value(expectation['equals'])}, observed <missing>"
             )
-        )
-        assertions.extend(_compare_case(case_id, oracle, observed, oracle=True))
+            assertions.append(
+                _assertion(
+                    f"{case_id}.oracle{label[1:]}",
+                    expectation["equals"],
+                    observed_value if found else "<missing>",
+                    detail,
+                )
+            )
 
     failed = sum(assertion["status"] == "failed" for assertion in assertions)
     warned = sum(assertion["status"] == "warned" for assertion in assertions)

@@ -39,6 +39,7 @@ from breadboard.rl.harness.runners.base import (
     RunnerCancellationProbe,
     RunnerCancellationRequestedEvent,
     RunnerCancelled,
+    MiniProviderFailure,
     RunnerCloseResult,
     RunnerDependencyError,
     RunnerError,
@@ -1459,6 +1460,20 @@ class _ConductorSession:
                     **self._context(),
                 )
                 await self._raise_error(error, turn=turn)
+            except Exception as exc:
+                failure = None if mini is None else _find_mini_provider_failure(exc)
+                if failure is not None:
+                    # Native DefaultAgent.handle_uncaught_exception, then the
+                    # typed outer failure propagates unchanged.
+                    committed = len(mini.messages)
+                    mapped = failure.exception
+                    mini.commit_native_exit(
+                        type(mapped).__name__,
+                        exception_str=str(mapped),
+                        traceback_text=failure.traceback_text,
+                    )
+                    await self._source_history_commit(mini, committed, "exit", turn=turn)
+                raise
             await self._checkpoint("after_policy", turn=turn)
             try:
                 response, _ = freeze_json_object_with_size(
@@ -1532,14 +1547,23 @@ class _ConductorSession:
             parsed = None
             if mini is not None:
                 native = response.get("native_response")
-                if not isinstance(native, Mapping) or not isinstance(native.get("raw_response"), Mapping):
+                converted = response.get("mini_response")
+                if (
+                    not isinstance(native, Mapping)
+                    or not isinstance(native.get("raw_response"), Mapping)
+                    or not isinstance(converted, Mapping)
+                    or not isinstance(converted.get("response"), Mapping)
+                    or not isinstance(converted.get("message"), Mapping)
+                ):
                     await self._raise_error(
                         RunnerProtocolError("Mini native sample is missing", code="native_response_invalid", **self._context()),
                         turn=turn,
                     )
                 before = len(mini.messages)
                 parsed = mini.parse_and_commit_response(
-                    native["raw_response"], cost=response["cost"], timestamp=time.time()
+                    converted["response"],
+                    response_json=converted.get("response_json"),
+                    cost=response["cost"], timestamp=time.time()
                 )
                 await self._source_history_commit(
                     mini, before, "format_error" if parsed.is_format_error else "assistant", turn=turn
@@ -1550,7 +1574,7 @@ class _ConductorSession:
                         termination = RunnerTermination.REPEATED_FORMAT_ERROR
                         break
                     continue
-                raw_calls = native["raw_response"]["choices"][0]["message"]["tool_calls"]
+                raw_calls = converted["message"].get("tool_calls") or ()
                 calls = tuple({
                     "name": call["function"]["name"],
                     "call_id": call["id"],
@@ -1930,6 +1954,18 @@ class _ConductorSession:
 
     def _state_error(self, code: str, message: str) -> RunnerStateError:
         return RunnerStateError(message, code=code, **self._context())
+
+
+def _find_mini_provider_failure(error: BaseException) -> MiniProviderFailure | None:
+    """Return the explicitly chained Mini provider failure, if any."""
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        if isinstance(current, MiniProviderFailure):
+            return current
+        seen.add(id(current))
+        current = current.__cause__
+    return None
 
 
 def _join_prompt_parts(*parts: str) -> str:

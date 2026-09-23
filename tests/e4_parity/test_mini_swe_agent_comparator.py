@@ -30,17 +30,22 @@ def _trace(role: str, case_id: str) -> dict[str, Any]:
         ],
         "history": [
             {"role": "assistant", "content": "working", "tool_calls": [{"id": "call-1", "name": "bash"}]},
-            {"role": "tool", "tool_call_id": "call-1", "content": "first"},
+            {"role": "tool", "tool_call_id": "call-1", "content": "<WORKSPACE>/first", "extra": {"timestamp": "<TIMESTAMP>"}},
             {"role": "tool", "tool_call_id": "call-2", "content": "second"},
         ],
         "exit": {"status": "submitted", "submission": "done"},
         "effects": {"files": {"result.txt": "sha256:" + "b" * 64}},
         "counters": {"model_calls": 1, "http_attempts": 1, "model_cost": 0.1},
-        "normalizations": ["workspace_root:<WORKSPACE>"],
+        "normalizations": ["workspace_root:<WORKSPACE>", "timestamp:<TIMESTAMP>"],
     }
 
 
-def _write_packet(root: Path, capture: dict[str, Any], replay: dict[str, Any]) -> None:
+def _write_packet(
+    root: Path,
+    capture: dict[str, Any],
+    replay: dict[str, Any],
+    breadboard_only: dict[str, Any] | None = None,
+) -> None:
     packet = root / ARTIFACTS_ROOT
     (packet / "capture").mkdir(parents=True, exist_ok=True)
     (packet / "replay").mkdir(parents=True, exist_ok=True)
@@ -54,6 +59,8 @@ def _write_packet(root: Path, capture: dict[str, Any], replay: dict[str, Any]) -
             trace_path.write_text(json.dumps(trace, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             cases[case_id] = {"path": f"{directory}/{case_id}.json", "sha256": _sha256(trace_path)}
         manifest = {"schema_version": "bb.e4.mini-trace-manifest.v1", "role": role, "cases": cases}
+        if role == "supplier" and breadboard_only is not None:
+            manifest["breadboard_only"] = breadboard_only
         manifest_name = "raw_capture_manifest.json" if role == "supplier" else "bb_replay_result.json"
         (packet / manifest_name).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     # run_lane requires the registered comparator_ref role to exist, although the
@@ -119,6 +126,9 @@ def _base_pair() -> tuple[dict[str, Any], dict[str, Any]]:
 def test_positive_pair_passes_through_actual_lane_command(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[2]
     capture, replay = _base_pair()
+    # JSON Schema instance equality: an integral float equals the integer.
+    capture["normal_grouped_batch"]["requests"][0]["body"]["temperature"] = 0
+    replay["normal_grouped_batch"]["requests"][0]["body"]["temperature"] = 0.0
     lane_def_dir, inventory, scratch = _prepare_lane(tmp_path, repo_root)
     _write_packet(scratch, capture, replay)
 
@@ -158,6 +168,10 @@ def _mutate_final_history(trace: dict[str, Any]) -> None:
     trace["exit"]["submission"] = "changed"
 
 
+def _mutate_bool_for_number(trace: dict[str, Any]) -> None:
+    trace["counters"]["http_attempts"] = True
+
+
 @pytest.mark.parametrize(
     ("mutation", "assertion_id"),
     [
@@ -166,8 +180,9 @@ def _mutate_final_history(trace: dict[str, Any]) -> None:
         (_mutate_shell_order, "normal_grouped_batch.history_equal"),
         (_mutate_retry_count, "normal_grouped_batch.counters_equal"),
         (_mutate_final_history, "normal_grouped_batch.exit_equal"),
+        (_mutate_bool_for_number, "normal_grouped_batch.counters_equal"),
     ],
-    ids=["batch_atomicity", "effect_commit_separation", "shell_order", "retry_count", "final_history"],
+    ids=["batch_atomicity", "effect_commit_separation", "shell_order", "retry_count", "final_history", "bool_is_not_number"],
 )
 def test_negative_mutations_fail_semantic_predicate_and_preserve_report(
     tmp_path: Path,
@@ -210,3 +225,69 @@ def test_stale_hash_fails_hash_assertion_specifically(tmp_path: Path) -> None:
     assert "expected sha256:000000" in next(
         a["detail"] for a in report["assertions"] if a["assertion_id"] == "replay_hashes_valid"
     )
+
+
+def _mask_protocol_field(trace: dict[str, Any]) -> None:
+    trace["requests"][0]["body"]["messages"][0]["content"] = "<TIMESTAMP>"
+
+
+def _unadmitted_rule(trace: dict[str, Any]) -> None:
+    trace["normalizations"].append("model_cost:<COST>")
+
+
+def _declared_not_applied(trace: dict[str, Any]) -> None:
+    trace["normalizations"].append("traceback:<TRACEBACK>")
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [_mask_protocol_field, _unadmitted_rule, _declared_not_applied],
+    ids=["placeholder_outside_field", "unadmitted_rule", "declared_not_applied"],
+)
+def test_symmetric_normalization_abuse_invalidates_both_manifests(
+    tmp_path: Path, mutation: Callable[[dict[str, Any]], None]
+) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    capture, replay = _base_pair()
+    mutation(capture["normal_grouped_batch"])
+    mutation(replay["normal_grouped_batch"])
+    lane_def_dir, inventory, scratch = _prepare_lane(tmp_path, repo_root)
+    _write_packet(scratch, capture, replay)
+
+    result = _lane_command(repo_root, scratch, lane_def_dir, inventory)
+
+    assert result.returncode == 1, result.stderr
+    failed = {a["assertion_id"] for a in _report(scratch)["assertions"] if a["status"] == "failed"}
+    assert {"capture_manifest_valid", "replay_manifest_valid"} <= failed
+    assert not any(item.endswith("_equal") for item in failed)
+
+
+@pytest.mark.parametrize(
+    ("oracle", "controls", "failed_assertion"),
+    [
+        ([{"path": ["controls", "cleanup", "disposition"], "equals": "released"}], {"cleanup": {"disposition": "released"}}, None),
+        ([{"path": ["controls", "cleanup", "disposition"], "equals": "released"}], {"cleanup": {"disposition": "leaked"}}, "shared_control_fault.oracle.controls.cleanup.disposition"),
+        ([{"path": ["controls", "cleanup", "disposition"], "equals": "released"}], {}, "shared_control_fault.oracle.controls.cleanup.disposition"),
+        ([], {"cleanup": {"disposition": "released"}}, "shared_control_fault.oracle_valid"),
+        ({"authenticated_cleanup": True}, {"cleanup": {"disposition": "released"}}, "shared_control_fault.oracle_valid"),
+    ],
+    ids=["observed_value_matches", "observed_value_differs", "observed_value_missing", "empty_oracle", "self_attested_oracle"],
+)
+def test_breadboard_only_case_is_judged_by_concrete_path_expectations(
+    tmp_path: Path, oracle: Any, controls: dict[str, Any], failed_assertion: str | None
+) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    capture, replay = _base_pair()
+    replay["shared_control_fault"] = _trace("breadboard", "shared_control_fault") | {"controls": controls}
+    lane_def_dir, inventory, scratch = _prepare_lane(tmp_path, repo_root)
+    _write_packet(scratch, capture, replay, {"shared_control_fault": {"oracle": oracle}})
+
+    result = _lane_command(repo_root, scratch, lane_def_dir, inventory)
+
+    failed = {a["assertion_id"] for a in _report(scratch)["assertions"] if a["status"] == "failed"}
+    if failed_assertion is None:
+        assert result.returncode == 0, result.stderr
+        assert failed == set()
+    else:
+        assert result.returncode == 1, result.stderr
+        assert failed == {failed_assertion}

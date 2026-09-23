@@ -313,10 +313,13 @@ class MiniSemanticsState:
         *,
         cost: float,
         timestamp: float,
+        response_json: Mapping[str, Any] | None = None,
     ) -> MiniParseResult:
-        """Parse whole-batch tool calls from exact SDK Chat completion JSON mapping.
+        """Parse whole-batch tool calls from an SDK-dumped Chat completion.
 
-        Preserves choices[0].message wholesale.
+        ``response`` is the Python-mode dump used for the assistant message.
+        Format-error persistence uses the JSON-mode dump when supplied, matching
+        Mini's LiteLLM model adapter.
         """
         choices = response.get("choices")
         if not choices or not isinstance(choices, Sequence):
@@ -343,7 +346,7 @@ class MiniSemanticsState:
             feedback_msg = dict(err.messages[0])
             extra = dict(feedback_msg.get("extra", {}))
             extra["cost"] = cost
-            extra["response"] = dict(response)
+            extra["response"] = dict(response if response_json is None else response_json)
             feedback_msg["extra"] = extra
             self.messages.append(feedback_msg)
 
@@ -419,19 +422,29 @@ class MiniSemanticsState:
         self,
         exit_status: str,
         submission: str = "",
+        *,
+        exception_str: str | None = None,
+        traceback_text: str | None = None,
     ) -> dict[str, Any]:
         """Commit a native exit entry without committing observation messages.
 
-        Content and extra follow DefaultAgent exact specifications.
+        Content and extra follow DefaultAgent exact specifications. Provider
+        failures additionally persist the mapped exception and traceback.
         """
         content = submission if exit_status == "Submitted" else exit_status
+        extra: dict[str, Any] = {
+            "exit_status": exit_status,
+            "submission": submission,
+        }
+        if exception_str is not None:
+            content = exception_str
+            extra["exception_str"] = exception_str
+        if traceback_text is not None:
+            extra["traceback"] = traceback_text
         exit_message = {
             "role": "exit",
             "content": content,
-            "extra": {
-                "exit_status": exit_status,
-                "submission": submission,
-            },
+            "extra": extra,
         }
         self.messages.append(exit_message)
         self.exit_status = exit_status

@@ -881,6 +881,19 @@ class RunnerDependencyError(RunnerError):
     category = "dependency"
 
 
+class MiniProviderFailure(Exception):
+    """Mini provider failure as the locked LiteLLM client would raise it.
+
+    Carries the mapped exception and its traceback so the conductor can commit
+    Mini's native uncaught-exception exit before the typed outer failure.
+    """
+
+    def __init__(self, exception: Exception, traceback_text: str) -> None:
+        super().__init__(str(exception))
+        self.exception = exception
+        self.traceback_text = traceback_text
+
+
 class RunnerEventSinkError(RunnerError):
     category = "event_sink"
 
