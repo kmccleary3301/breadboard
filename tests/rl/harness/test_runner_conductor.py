@@ -3751,6 +3751,22 @@ class _NativeCloseTestPort(RecordingToolPort):
         self.close_entered = asyncio.Event()
         self.release_close = asyncio.Event()
 
+    def native_runtime_inputs(
+        self,
+        *,
+        input_names: tuple[str, ...],
+        package_subpath: str,
+    ) -> Mapping[str, str]:
+        values = {
+            "cwd": "/native-test/workspace",
+            "home": "/native-test/home",
+            "current_date": "2026-09-23",
+            "package_dir": f"/native-test/{package_subpath}",
+        }
+        if set(input_names) != set(values):
+            raise AssertionError("unexpected runtime input declaration")
+        return {name: values[name] for name in input_names}
+
     async def invoke_native_phase(
         self,
         operation: str,
@@ -3758,15 +3774,16 @@ class _NativeCloseTestPort(RecordingToolPort):
         *,
         timeout_ms: int,
     ) -> Mapping[str, Any]:
-        del payload, timeout_ms
+        del timeout_ms
         self.operations.append(operation)
         if operation == "initialize":
+            runtime_inputs = payload["runtime_inputs"]
             return {
                 "schema_version": "bb.pi-native.test.v1",
                 "kind": "initialized",
                 "system_prompt": "system",
                 "tool_schemas": [],
-                "bootstrap": {},
+                "bootstrap": dict(runtime_inputs),
             }
         if operation == "project_request":
             return {
@@ -3857,6 +3874,8 @@ def _native_close_test_case(
         episode_timeout_seconds=5,
         ack_policy="none",
         incomplete_stop_reasons=frozenset({"error"}),
+        runtime_input_names=("cwd", "home", "current_date", "package_dir"),
+        package_subpath="node_modules/@mariozechner/pi-coding-agent",
         state_module=pi_semantics,
         state_factory=lambda task, system_prompt, bootstrap: pi_semantics.PiSemanticsState(
             task=task, system_prompt=system_prompt, request_cap=2,
@@ -3867,10 +3886,13 @@ def _native_close_test_case(
         "NATIVE_STREAM_PROFILES",
         {PI_RESPONSE_CONSUMER_ID: profile},
     )
+    request_body = {"model": model["model_id"], "messages": [], "tools": []}
+    request_digest = conductor_module.canonical_sha256(request_body).removeprefix("sha256:")
     first_response = {
         "native_response": {
             "binding_digest": _digest("native-binding"),
-            "request_digest": _digest("native-request-1"),
+            "request_digest": request_digest,
+            "request_body": request_body,
             "response_id": "native-response-1",
             "finish_reason": "tool_calls",
             "tool_calls": [{
@@ -3884,7 +3906,8 @@ def _native_close_test_case(
     final_response = {
         "native_response": {
             "binding_digest": _digest("native-binding"),
-            "request_digest": _digest("native-request-2"),
+            "request_digest": request_digest,
+            "request_body": request_body,
             "response_id": "native-response-2",
             "finish_reason": "stop",
             "content": "done",
