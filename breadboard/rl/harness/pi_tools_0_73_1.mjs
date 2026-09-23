@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 /**
- * stdin: one call ``{"tool_id", "arguments", "cwd", "call_id"}``, or a batch
- * ``{"calls":[...], "cwd"}``. stdout is exactly one JSON tool result, or a
- * ``{"results":[...]}`` batch in input order; diagnostics go to stderr.
+ * Pinned Pi 0.73.1 native tool worker.
  *
- * PI_CODING_AGENT_NODE_MODULES may point at the Node installation containing
- * the pinned @mariozechner/pi-coding-agent and @mariozechner/pi-ai packages.
+ * One-shot stdin accepts one call or {calls:[...]}; set
+ * PI_NATIVE_WORKER_FRAMED=1 for the persistent bb.native-worker.rpc.v1
+ * length-prefixed protocol.  In either mode tool preparation and execution
+ * run in the pinned Node process, and batch calls share Pi's mutation queue.
  */
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const MAX_REQUEST_BYTES = 1024 * 1024;
+const MAX_FRAME_BYTES = 16 * 1024 * 1024;
+const SCHEMA_VERSION = "bb.native-worker.rpc.v1";
 const TOOL_IDS = new Set(["read", "bash", "edit", "write"]);
 
 function packageImport(nodeModules, packageName, entry) {
@@ -21,14 +23,23 @@ function packageImport(nodeModules, packageName, entry) {
 const nodeModules = process.env.PI_CODING_AGENT_NODE_MODULES;
 const codingAgent = await packageImport(nodeModules, "@mariozechner/pi-coding-agent", "dist/index.js");
 const piAi = await packageImport(nodeModules, "@mariozechner/pi-ai", "dist/index.js");
+const promptModule = await packageImport(nodeModules, "@mariozechner/pi-coding-agent", "dist/core/system-prompt.js");
+const resourceModule = await packageImport(nodeModules, "@mariozechner/pi-coding-agent", "dist/core/resource-loader.js");
+const piCompletions = await packageImport(nodeModules, "@mariozechner/pi-ai", "dist/providers/openai-completions.js");
 const { createBashTool, createEditTool, createReadTool, createWriteTool } = codingAgent;
 const { validateToolArguments } = piAi;
+const { buildSystemPrompt } = promptModule;
+const { DefaultResourceLoader } = resourceModule;
+const { convertMessages } = piCompletions;
 const TOOL_FACTORIES = Object.freeze({
   bash: createBashTool,
   edit: createEditTool,
   read: createReadTool,
   write: createWriteTool,
 });
+let initializedState = null;
+let retainedPreparedBatch = null;
+let nextBatchId = 1;
 
 function fail(message) {
   throw new Error(message);
@@ -53,30 +64,35 @@ async function readRequest() {
 
 function validateCall(call, defaultCwd) {
   if (call === null || typeof call !== "object" || Array.isArray(call)) fail("call must be an object");
-  const toolId = call.tool_id;
+  const toolId = call.tool_id ?? call.toolId ?? call.name;
   if (typeof toolId !== "string" || !TOOL_IDS.has(toolId)) fail(`unknown tool_id: ${String(toolId)}`);
   const argumentsValue = call.arguments;
   if (argumentsValue === null || typeof argumentsValue !== "object" || Array.isArray(argumentsValue)) {
     fail("arguments must be a JSON object");
   }
   const cwd = typeof call.cwd === "string" && call.cwd ? call.cwd : defaultCwd;
-  const callId = typeof call.call_id === "string" && call.call_id ? call.call_id : "bb-native-call";
+  const callIdValue = call.call_id ?? call.callId ?? call.id;
+  const callId = typeof callIdValue === "string" && callIdValue ? callIdValue : "bb-native-call";
   return { toolId, argumentsValue, cwd, callId };
 }
 
-async function executeCall(call, defaultCwd, signal) {
+function prepareCall(call, defaultCwd) {
   const request = validateCall(call, defaultCwd);
   const tool = TOOL_FACTORIES[request.toolId](request.cwd);
+  const prepared = typeof tool.prepareArguments === "function"
+    ? tool.prepareArguments(request.argumentsValue)
+    : request.argumentsValue;
+  const argumentsValue = validateToolArguments(tool, {
+    id: request.callId,
+    name: request.toolId,
+    arguments: prepared,
+  });
+  return { request, tool, argumentsValue };
+}
+
+async function executePrepared(prepared, signal) {
   try {
-    const prepared = typeof tool.prepareArguments === "function"
-      ? tool.prepareArguments(request.argumentsValue)
-      : request.argumentsValue;
-    const argumentsValue = validateToolArguments(tool, {
-      id: request.callId,
-      name: request.toolId,
-      arguments: prepared,
-    });
-    const result = await tool.execute(request.callId, argumentsValue, signal);
+    const result = await prepared.tool.execute(prepared.request.callId, prepared.argumentsValue, signal);
     return {
       content: Array.isArray(result?.content) ? result.content : [],
       details: result?.details ?? {},
@@ -94,30 +110,257 @@ async function executeCall(call, defaultCwd, signal) {
   }
 }
 
-async function main() {
-  const input = await readRequest();
-  if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    fail("request must be a JSON object");
+async function executeCall(call, defaultCwd, signal) {
+  return executePrepared(prepareCall(call, defaultCwd), signal);
+}
+
+function requiredString(payload, key) {
+  const value = payload?.[key];
+  if (typeof value !== "string" || !value) fail(`initialize requires ${key}`);
+  return value;
+}
+
+function toolSchemas(workspace) {
+  return [...TOOL_IDS].map((name) => {
+    const tool = TOOL_FACTORIES[name](workspace);
+    return { name: tool.name, description: tool.description, parameters: tool.parameters };
+  });
+}
+
+async function initialize(payload) {
+  const workspace = requiredString(payload, "workspace");
+  const scratch = requiredString(payload, "scratch");
+  const loader = new DefaultResourceLoader({
+    cwd: workspace,
+    agentDir: scratch,
+    noExtensions: true,
+    noPromptTemplates: true,
+    noThemes: true,
+  });
+  await loader.reload();
+  const schemas = toolSchemas(workspace);
+  const snippets = Object.fromEntries([...TOOL_IDS].map((name) => {
+    const tool = TOOL_FACTORIES[name](workspace);
+    return [name, tool.promptSnippet ?? tool.description ?? ""];
+  }));
+  const promptGuidelines = [...TOOL_IDS].flatMap((name) => {
+    const tool = TOOL_FACTORIES[name](workspace);
+    return Array.isArray(tool.promptGuidelines) ? tool.promptGuidelines : [];
+  });
+  const oldTz = process.env.TZ;
+  process.env.TZ = "UTC";
+  let systemPrompt;
+  try {
+    systemPrompt = buildSystemPrompt({
+      cwd: workspace,
+      customPrompt: loader.getSystemPrompt(),
+      appendSystemPrompt: loader.getAppendSystemPrompt().join("\n\n") || undefined,
+      contextFiles: loader.getAgentsFiles().agentsFiles,
+      skills: loader.getSkills().skills,
+      selectedTools: [...TOOL_IDS],
+      toolSnippets: snippets,
+      promptGuidelines,
+    });
+  } finally {
+    if (oldTz === undefined) delete process.env.TZ;
+    else process.env.TZ = oldTz;
   }
-  const defaultCwd = typeof input.cwd === "string" && input.cwd ? input.cwd : process.cwd();
+  initializedState = {
+    workspace,
+    scratch,
+    systemPrompt,
+    schemas,
+    modelConfig: payload.model_config && typeof payload.model_config === "object" ? payload.model_config : {},
+    bootstrap: { task: payload.task ?? "", model_config: payload.model_config ?? {} },
+  };
+  retainedPreparedBatch = null;
+  return {
+    schema_version: "bb.pi-native.v1",
+    kind: "initialized",
+    system_prompt: systemPrompt,
+    tool_schemas: schemas,
+    bootstrap: initializedState.bootstrap,
+  };
+}
+
+function modelForProject(config) {
+  const source = config && typeof config === "object" ? config : {};
+  return {
+    id: String(source.id ?? source.model ?? "pi-0.73.1"),
+    name: String(source.name ?? source.id ?? source.model ?? "pi-0.73.1"),
+    api: "openai-completions",
+    provider: String(source.provider ?? "openai"),
+    baseUrl: String(source.base_url ?? source.baseUrl ?? ""),
+    reasoning: false,
+    input: Array.isArray(source.input) ? source.input : ["text"],
+    cost: source.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: Number(source.context_window ?? source.contextWindow ?? 128000),
+    maxTokens: Number(source.max_tokens ?? source.maxTokens ?? 4096),
+    compat: source.compat && typeof source.compat === "object" ? source.compat : {},
+  };
+}
+
+function projectRequest(payload) {
+  if (!initializedState) fail("project_request requires initialize");
+  if (!Array.isArray(payload?.messages)) fail("project_request requires messages");
+  const model = modelForProject(initializedState.modelConfig);
+  const acceptsImage = model.input.includes("image");
+  const messages = payload.messages.map((message) => {
+    if (acceptsImage || !Array.isArray(message?.content)) return message;
+    return {
+      ...message,
+      content: message.content.filter((part) => part?.type !== "image"),
+    };
+  });
+  const context = { systemPrompt: initializedState.systemPrompt, messages };
+  const outboundMessages = convertMessages(model, context, model.compat);
+  const tools = initializedState.schemas.map((tool) => ({
+    type: "function",
+    function: { name: tool.name, description: tool.description, parameters: tool.parameters, strict: model.compat.supportsStrictMode !== false },
+  }));
+  return { kind: "request", messages: outboundMessages, tools };
+}
+
+async function executeOperation(operation, payload, signal) {
+  const defaultCwd = initializedState?.workspace
+    ?? (typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd());
+  if (operation === "initialize") return initialize(payload);
+  if (operation === "bootstrap") {
+    if (!initializedState) return initialize(payload);
+    return {
+      schema_version: "bb.pi-native.v1",
+      kind: "initialized",
+      system_prompt: initializedState.systemPrompt,
+      tool_schemas: initializedState.schemas,
+      bootstrap: initializedState.bootstrap,
+    };
+  }
+  if (operation === "project_request") return projectRequest(payload);
+  if (operation === "prepare_tools") {
+    if (!Array.isArray(payload?.calls)) fail("prepare_tools requires calls");
+    const preparedInternal = [];
+    const calls = [];
+    const historyCalls = [];
+    const errors = [];
+    for (const call of payload.calls) {
+      try {
+        const value = prepareCall(call, defaultCwd);
+        const item = {
+          id: value.request.callId,
+          name: value.request.toolId,
+          arguments: value.argumentsValue,
+        };
+        preparedInternal.push({ ...item });
+        calls.push({ ...item });
+        historyCalls.push({ ...item });
+      } catch (error) {
+        const message = String(error?.message ?? error);
+        const item = {
+          id: String(call?.call_id ?? call?.callId ?? call?.id ?? ""),
+          name: String(call?.tool_id ?? call?.toolId ?? call?.name ?? ""),
+          arguments: call?.arguments ?? {},
+          error: message,
+        };
+        errors.push(message);
+        calls.push(item);
+        historyCalls.push({ id: item.id, name: item.name, arguments: item.arguments });
+      }
+    }
+    const batchId = `pi-prepared-${nextBatchId++}`;
+    retainedPreparedBatch = errors.length === 0 ? { batchId, prepared: preparedInternal } : null;
+    return { kind: "prepared", calls, ...(errors.length ? { errors } : {}), history_calls: historyCalls };
+  }
+  if (operation === "execute_batch") {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload) || Object.keys(payload).length !== 0) {
+      fail("execute_batch payload must be empty");
+    }
+    if (!retainedPreparedBatch) fail("execute_batch requires the retained prepared batch");
+    const results = await Promise.all(retainedPreparedBatch.prepared.map((call) => {
+      const request = validateCall(call, defaultCwd);
+      const tool = TOOL_FACTORIES[request.toolId](request.cwd);
+      return executePrepared({ request, tool, argumentsValue: call.arguments }, signal);
+    }));
+    retainedPreparedBatch = null;
+    return { kind: "tool_results", results };
+  }
+  const calls = operation === "batch" ? payload?.calls : null;
+  if (Array.isArray(calls)) {
+    const results = await Promise.all(calls.map((call) => executeCall(call, defaultCwd, signal)));
+    return { results };
+  }
+  return executeCall(payload, defaultCwd, signal);
+}
+
+async function mainOneShot() {
+  const input = await readRequest();
+  if (input === null || typeof input !== "object" || Array.isArray(input)) fail("request must be a JSON object");
   const controller = new AbortController();
   const abort = () => controller.abort();
   process.once("SIGINT", abort);
   process.once("SIGTERM", abort);
   try {
-    if (Array.isArray(input.calls)) {
-      const results = await Promise.all(input.calls.map((call) => executeCall(call, defaultCwd, controller.signal)));
-      process.stdout.write(`${JSON.stringify({ results })}\n`);
-      return;
-    }
-    process.stdout.write(`${JSON.stringify(await executeCall(input, defaultCwd, controller.signal))}\n`);
+    process.stdout.write(`${JSON.stringify(await executeOperation(input.operation ?? "execute", input, controller.signal))}\n`);
   } finally {
     process.removeListener("SIGINT", abort);
     process.removeListener("SIGTERM", abort);
   }
 }
 
-main().catch((error) => {
+let frameIterator;
+let frameBuffer = Buffer.alloc(0);
+async function readFrame() {
+  if (!frameIterator) frameIterator = process.stdin[Symbol.asyncIterator]();
+  while (frameBuffer.length < 4) {
+    const next = await frameIterator.next();
+    if (next.done) return null;
+    frameBuffer = Buffer.concat([frameBuffer, Buffer.from(next.value)]);
+    if (frameBuffer.length > MAX_FRAME_BYTES + 4) fail("native frame exceeds limit");
+  }
+  const size = frameBuffer.readUInt32BE(0);
+  if (size === 0 || size > MAX_FRAME_BYTES) fail("native frame length is invalid");
+  while (frameBuffer.length < size + 4) {
+    const next = await frameIterator.next();
+    if (next.done) fail("native frame ended early");
+    frameBuffer = Buffer.concat([frameBuffer, Buffer.from(next.value)]);
+  }
+  const body = frameBuffer.subarray(4, size + 4);
+  frameBuffer = frameBuffer.subarray(size + 4);
+  return JSON.parse(body.toString("utf8"));
+}
+
+function writeFrame(value) {
+  const body = Buffer.from(JSON.stringify(value), "utf8");
+  if (body.length > MAX_FRAME_BYTES) fail("native response exceeds frame limit");
+  process.stdout.write(Buffer.concat([Buffer.from([(body.length >>> 24) & 0xff, (body.length >>> 16) & 0xff, (body.length >>> 8) & 0xff, body.length & 0xff]), body]));
+}
+
+async function mainFramed() {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  process.once("SIGINT", abort);
+  process.once("SIGTERM", abort);
+  try {
+    while (true) {
+      const command = await readFrame();
+      if (command === null) return;
+      const requestId = command?.request_id;
+      try {
+        if (command?.schema_version !== SCHEMA_VERSION || !Number.isInteger(requestId) || requestId <= 0 || typeof command.operation !== "string" || !command.payload || typeof command.payload !== "object") {
+          fail("native command authority is invalid");
+        }
+        const result = await executeOperation(command.operation, command.payload, controller.signal);
+        writeFrame({ schema_version: SCHEMA_VERSION, request_id: requestId, result });
+      } catch (error) {
+        writeFrame({ schema_version: SCHEMA_VERSION, request_id: requestId, error: { type: error?.constructor?.name ?? "Error", message: String(error?.message ?? error).slice(0, 4096) } });
+      }
+    }
+  } finally {
+    process.removeListener("SIGINT", abort);
+    process.removeListener("SIGTERM", abort);
+  }
+}
+
+(process.env.PI_NATIVE_WORKER_FRAMED === "1" ? mainFramed() : mainOneShot()).catch((error) => {
   console.error(`pi-tools-0.73.1 protocol failure: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;
 });

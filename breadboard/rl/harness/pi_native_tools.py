@@ -120,7 +120,7 @@ def dispatch_native_tools(
         }
         for call in calls
     ]
-    result = _run_worker({"calls": normalized, "cwd": str(Path(cwd).resolve())}, cwd=cwd)
+    result = _run_worker({"operation": "batch", "calls": normalized, "cwd": str(Path(cwd).resolve())}, cwd=cwd)
     raw_results = result.get("results")
     if not isinstance(raw_results, list) or len(raw_results) != len(normalized):
         raise PiNativeWorkerError("native worker batch result count does not match request")

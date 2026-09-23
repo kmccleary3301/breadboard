@@ -22,7 +22,7 @@ def test_stream_fragments_reconstruct_and_native_validation(tmp_path: Path):
         NativeStreamFragment("tool_arguments", 2, "123}", "call", "read"),
     )
     state = PiSemanticsState(task="read", cwd=tmp_path)
-    result = state.consume_response(response("read", "", content=None, fragments=fragments))
+    result = state.consume_response(response("read", '{"path":123}', content=None, fragments=fragments))
     assert result.results[0].is_error
     assert "ENOENT" in result.results[0].content
     assert result.assistant["content"][0]["text"] == "Streaming "

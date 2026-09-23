@@ -203,56 +203,16 @@ def execute_pi_tool(
 
 
 def _fragment_tool_calls(response: NativeProviderResponse) -> tuple[PiToolCall, ...]:
-    """Reassemble by the provider stream index, not by delayed IDs.
+    """Project decoder-finalized tool calls without reassembling fragments.
 
-    OpenAI-completions first keys blocks by ``tool_call.index`` and only uses
-    IDs as a secondary lookup. PR129's finalized fragments may carry an ID
-    only after the first argument delta, so anonymous groups are retained by
-    index and merged with their named call before validation.
+    ``NativeStreamFragment.index`` is a global fragment ordinal.  The native
+    transport already joins argument deltas by provider tool index and fills
+    delayed IDs before constructing ``response.tool_calls``; rejoining here
+    would misassign same-name calls and reorder the model's batch.
     """
-    calls = [
-        {"id": call.id, "name": call.name, "arguments": call.arguments}
-        for call in response.tool_calls
-    ]
-    by_id: dict[str, list[str]] = {}
-    anonymous: dict[int, list[str]] = {}
-    anonymous_names: dict[int, str] = {}
-    for fragment in response.stream_fragments:
-        if fragment.kind != "tool_arguments":
-            continue
-        if fragment.call_id:
-            by_id.setdefault(fragment.call_id, []).append(fragment.text)
-        else:
-            anonymous.setdefault(fragment.index, []).append(fragment.text)
-            if fragment.name:
-                anonymous_names.setdefault(fragment.index, fragment.name)
-    assigned_anonymous: set[int] = set()
-    for call in calls:
-        pieces = list(by_id.get(call["id"], ()))
-        for index in sorted(anonymous):
-            if index in assigned_anonymous:
-                continue
-            if anonymous_names.get(index) == call["name"]:
-                pieces.extend(anonymous[index])
-                assigned_anonymous.add(index)
-        if not pieces:
-            for index in sorted(anonymous):
-                if index not in assigned_anonymous:
-                    pieces.extend(anonymous[index])
-                    assigned_anonymous.add(index)
-                    break
-        if pieces:
-            call["arguments"] = "".join(pieces)
-    for call_id, pieces in by_id.items():
-        if not any(call["id"] == call_id for call in calls):
-            calls.append({"id": call_id, "name": "", "arguments": "".join(pieces)})
-    for index in sorted(anonymous):
-        if index not in assigned_anonymous:
-            calls.append({"id": f"index:{index}", "name": anonymous_names.get(index, ""), "arguments": "".join(anonymous[index])})
     result: list[PiToolCall] = []
-    for raw in calls:
-        parsed = parse_streaming_json(raw["arguments"])
-        result.append(PiToolCall(raw["id"], raw["name"], parsed))
+    for call in response.tool_calls:
+        result.append(PiToolCall(call.id, call.name, parse_streaming_json(call.arguments)))
     return tuple(result)
 
 
