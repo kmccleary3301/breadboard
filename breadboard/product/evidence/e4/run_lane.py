@@ -30,6 +30,10 @@ from breadboard.product.evidence.e4.stage_contracts import (
     check_stage_report,
 )
 from breadboard.product.evidence.e4.tree_digest import digest_directory
+from breadboard_engine.conformance.c4_chain import (
+    C4ChainValidationError,
+    validate_comparator_registry,
+)
 from breadboard.product.evidence.e4.validators.registries import load_registry
 from breadboard.product.evidence.lane_lock import (
     LaneLockError,
@@ -331,7 +335,10 @@ def _comparator_entry(lane_def: Mapping[str, Any], registry_path: Path) -> Mappi
     if not isinstance(compare, Mapping) or not isinstance(compare.get("comparator"), str):
         raise LaneRunError(f"lane {lane_def['lane_id']!r} has no compare.comparator")
     comparator_id = str(compare["comparator"])
-    registry = _load_json(registry_path)
+    try:
+        registry = validate_comparator_registry(registry_path)
+    except C4ChainValidationError as exc:
+        raise LaneRunError(str(exc)) from exc
     comparators = registry.get("comparators")
     if not isinstance(comparators, list):
         raise LaneRunError(f"{registry_path} comparators must be a list")

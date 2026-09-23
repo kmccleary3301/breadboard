@@ -198,6 +198,8 @@ def _write_h4_registry(
         path,
         {
             "schema_version": "bb.e4.comparator_registry.v1",
+            "registry_id": "e4_comparator_registry_fixture",
+            "generated_at_utc": "2026-07-03T00:00:00Z",
             "comparators": [
                 {
                     "comparator_id": "pi_stored_report_replay",
@@ -210,6 +212,51 @@ def _write_h4_registry(
             ],
         },
     )
+
+@pytest.mark.parametrize("invalid_kind", ["unknown_class", "missing_registry_id"])
+def test_compare_rejects_invalid_registry_before_comparator_dispatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invalid_kind: str,
+) -> None:
+    lane_id = f"h4_invalid_registry_{invalid_kind}"
+    lane, _ = _h4_lane(tmp_path, lane_id=lane_id)
+    registry_path = tmp_path / "comparator_registry.json"
+    module_name = f"{invalid_kind}_comparator"
+    _write_h4_registry(registry_path, lane_id=lane_id, module_name=module_name)
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    if invalid_kind == "unknown_class":
+        registry["comparators"][0]["comparator_class"] = "not_a_published_class"
+    else:
+        registry.pop("registry_id")
+    _write_json(registry_path, registry)
+
+    calls: list[object] = []
+    comparator_module = ModuleType(module_name)
+
+    def compare(_input: object) -> dict[str, object]:
+        calls.append(_input)
+        return {}
+
+    comparator_module.compare = compare
+    monkeypatch.setitem(sys.modules, module_name, comparator_module)
+    _patch_h2_lane_loading(monkeypatch, lane)
+    monkeypatch.setattr(run_lane, "ROOT", tmp_path)
+
+    result = run_lane.run_lane(
+        lane_id,
+        stage="compare",
+        out_dir=tmp_path / "scratch",
+        lane_def_dir=tmp_path / "unused-lane-defs",
+        inventory_path=tmp_path / "unused-inventory.json",
+        comparator_registry_path=registry_path,
+    )
+
+    assert calls == []
+    assert result["ok"] is False
+    stage = result["stages"][0]
+    assert stage["returncode"] == 1
+    assert "schema validation failed" in stage["detail"]
 
 def test_stored_replay_hashes_every_declared_artifact_in_manifest_order(
     tmp_path: Path,
