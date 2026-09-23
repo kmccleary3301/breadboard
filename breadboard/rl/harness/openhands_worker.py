@@ -63,13 +63,17 @@ class _IPCTransport:
         for name, value in request.headers.raw:
             decoded_name = name.decode("latin-1")
             decoded_value = value.decode("latin-1")
-            if decoded_name.casefold() == "content-length":
+            header_kind = decoded_name.casefold()
+            if header_kind == "transfer-encoding":
+                continue
+            if header_kind == "content-length":
                 if content_length_seen:
                     continue
-                if body != original_body:
-                    decoded_value = str(len(body))
+                decoded_value = str(len(body))
                 content_length_seen = True
             headers.append([decoded_name, decoded_value])
+        if not content_length_seen:
+            headers.append(["Content-Length", str(len(body))])
         result = dict(self._request_result(request))
         result["http_request"] = {
             "method": method,
