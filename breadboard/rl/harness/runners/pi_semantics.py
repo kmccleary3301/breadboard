@@ -322,10 +322,11 @@ class PiSemanticsState:
             self.exit_status = "Submitted" if stop_reason == "stop" else stop_reason
         return PiResponseResult(assistant, calls, (), stop_reason, not calls)
 
-    @staticmethod
-    def _result_from_port(call: PiToolCall, raw: PiToolResult | Mapping[str, Any]) -> PiToolResult:
+    def _result_from_port(self, call: PiToolCall, raw: PiToolResult | Mapping[str, Any]) -> PiToolResult:
         if isinstance(raw, PiToolResult):
-            return PiToolResult(call.id, call.name, raw.content, raw.is_error, raw.details, raw.terminate)
+            details = dict(raw.details)
+            details.setdefault("image_delivery", self.image_delivery)
+            return PiToolResult(call.id, call.name, raw.content, raw.is_error, details, raw.terminate)
         content = raw.get("content", raw.get("text", ""))
         if isinstance(content, list):
             text = "".join(
@@ -337,7 +338,7 @@ class PiSemanticsState:
             text = str(content)
             native_content = [{"type": "text", "text": text}]
         details = dict(raw.get("details", {})) if isinstance(raw.get("details"), Mapping) else {}
-        details.setdefault("native_content", native_content)
+        details.setdefault("image_delivery", self.image_delivery)
         return PiToolResult(
             call.id,
             call.name,
