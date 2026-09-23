@@ -420,6 +420,8 @@ async def test_pi_native_stream_no_call_is_assistant_complete(tmp_path: Path) ->
         ("extra_prompt", "prompt keys"),
         ("removal_absent", "occur exactly once"),
         ("removal_twice", "occur exactly once"),
+        ("removal_duplicate", "duplicate"),
+        ("removal_overlap", "occur exactly once"),
     ],
 )
 async def test_pi_native_worker_rejects_invalid_advertisement(tmp_path: Path, case: str, message: str) -> None:
@@ -446,6 +448,12 @@ async def test_pi_native_worker_rejects_invalid_advertisement(tmp_path: Path, ca
         advertisement["prompt"]["remove_exact"] = ["not present in native prompt"]
     elif case == "removal_twice":
         advertisement["prompt"]["remove_exact"] = ["a"]
+    elif case == "removal_duplicate":
+        removal = advertisement["prompt"]["remove_exact"][0]
+        advertisement["prompt"]["remove_exact"] = [removal, removal]
+    elif case == "removal_overlap":
+        removal = advertisement["prompt"]["remove_exact"][0]
+        advertisement["prompt"]["remove_exact"] = [removal, removal[1:]]
     port = _NativeWorkerPort(workspace, ())
     try:
         with pytest.raises(RuntimeError, match=message):
@@ -533,5 +541,62 @@ async def test_pi_native_worker_close_skips_already_dead_process_group(tmp_path:
         await port.invoke_native_phase("execute_batch", {}, timeout_ms=5_000)
         closed = await port.invoke_native_phase("close", {}, timeout_ms=5_000)
         assert closed["cleanup"] == {"processes": [], "all_dead": True}
+    finally:
+        await port.close()
+
+
+@pytest.mark.asyncio
+async def test_pi_native_worker_preserves_late_detached_stdout_until_wait_grace(tmp_path: Path) -> None:
+    port = _NativeWorkerPort(tmp_path, ())
+    try:
+        await port.invoke_native_phase(
+            "initialize",
+            {
+                "task": "late output",
+                "model_config": {"id": "model-a", "provider": "openai", "input": ["text"]},
+            },
+            timeout_ms=5_000,
+        )
+        await port.invoke_native_phase(
+            "prepare_tools",
+            {"calls": [{"id": "late", "name": "bash", "arguments": {"command": "(sleep 0.05; printf late) &"}}]},
+            timeout_ms=5_000,
+        )
+        executed = await port.invoke_native_phase("execute_batch", {}, timeout_ms=5_000)
+        assert executed["results"][0]["content"][0]["text"] == "late"
+        await port.invoke_native_phase("close", {}, timeout_ms=5_000)
+    finally:
+        await port.close()
+
+
+@pytest.mark.asyncio
+async def test_pi_native_worker_leaves_detached_effect_until_close(tmp_path: Path) -> None:
+    marker = tmp_path / "marker"
+    port = _NativeWorkerPort(tmp_path, ())
+    try:
+        await port.invoke_native_phase(
+            "initialize",
+            {
+                "task": "late effect",
+                "model_config": {"id": "model-a", "provider": "openai", "input": ["text"]},
+            },
+            timeout_ms=5_000,
+        )
+        await port.invoke_native_phase(
+            "prepare_tools",
+            {
+                "calls": [{
+                    "id": "marker",
+                    "name": "bash",
+                    "arguments": {"command": f"(sleep 0.5; printf late > {marker}) & printf parent"},
+                }],
+            },
+            timeout_ms=5_000,
+        )
+        await port.invoke_native_phase("execute_batch", {}, timeout_ms=5_000)
+        await asyncio.sleep(0.7)
+        assert marker.read_text(encoding="utf-8") == "late"
+        closed = await port.invoke_native_phase("close", {}, timeout_ms=5_000)
+        assert closed["cleanup"]["all_dead"] is True
     finally:
         await port.close()

@@ -76,10 +76,7 @@ function markLeaderExit(entry) {
   if (entry.leaderExited) return;
   entry.leaderExited = true;
   entry.groupAliveAtExit = processGroupAlive(entry);
-  if (entry.groupAliveAtExit) {
-    entry.reportable = true;
-    signalProcessGroup(entry);
-  }
+  if (entry.groupAliveAtExit) entry.reportable = true;
 }
 
 function trackBashProcess(child) {
@@ -408,12 +405,15 @@ async function initialize(payload) {
       toolSnippets: snippets,
       promptGuidelines,
     });
+    const seenRemovals = new Set();
     for (const removal of removeExact) {
+      if (seenRemovals.has(removal)) {
+        fail("advertisement prompt removal is duplicate");
+      }
       if (systemPrompt.split(removal).length !== 2) {
         fail("advertisement prompt removal must occur exactly once");
       }
-    }
-    for (const removal of removeExact) {
+      seenRemovals.add(removal);
       systemPrompt = systemPrompt.replace(removal, "");
     }
   } finally {
