@@ -6,9 +6,9 @@
       "sha256": "sha256:316bea3871a3b577e422c4bed04fe170d2d2c166ef93fa64dc77b822571fc3c7"
     },
     {
-      "bytes": 2833,
+      "bytes": 2147,
       "path": "prompts/system-prompt.md",
-      "sha256": "sha256:9cc93887b282f661fb40af3d1ac9fe80c5188f6d19f4f736a4095f7204d61dff"
+      "sha256": "sha256:efef605630a3f79ed4ce9daaf8469a8f4db529cbdd5c4f37708b0d1047dcb12a"
     },
     {
       "bytes": 1654,
@@ -16,9 +16,9 @@
       "sha256": "sha256:e2ed9c0be966ad8efbe1f49e73d8a979fda19c2c3b48221453b3ac9b0e20944e"
     },
     {
-      "bytes": 2628,
+      "bytes": 3085,
       "path": "tool-surface.json",
-      "sha256": "sha256:7010673e8daa755ee15a46a84ce4036de1fea7d1a7e3ec289b986d728702eeb5"
+      "sha256": "sha256:cc9a6e8386f0caafe6c20e2e44552a32411c50b92b0bf75976ed7bc229dfb782"
     },
     {
       "bytes": 1070,
