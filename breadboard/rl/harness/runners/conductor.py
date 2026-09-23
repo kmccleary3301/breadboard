@@ -2725,18 +2725,20 @@ class _ConductorSession:
                 await commit_events({
                     "event_delta": (), "status": state["status"], "iteration": state["iteration"],
                 }, "exit", turn)
-                await self._raise_error(RunnerDependencyError(
-                    f"native OpenHands conversation ended with {state['status']}",
-                    code="native_source_failed", **self._context(),
-                ), turn=turn)
+                # A native source failure is a terminal incomplete policy, not
+                # a malformed BB protocol response. Keep the source status in
+                # the replay trace while committing the existing incomplete
+                # runner termination.
+                termination = RunnerTermination.POLICY_INCOMPLETE
+                break
         await self._checkpoint("after_loop", turn=len(self._turns))
         await self._checkpoint("before_commit", turn=len(self._turns))
         await self._commit_termination(termination)
         trace_kind = (
             "finished"
             if termination in {RunnerTermination.SUBMITTED, RunnerTermination.ASSISTANT_COMPLETE}
-            else "error"
-            if state.get("status") == "ERROR"
+            else str(state.get("status", "")).lower()
+            if state.get("status") in {"ERROR", "STUCK"}
             else termination.value
         )
         native_stop_reason = None

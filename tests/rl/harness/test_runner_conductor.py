@@ -4146,13 +4146,14 @@ class _OpenHandsTraceClient(RecordingPolicyClient):
 
 
 class _OpenHandsTracePort(RecordingToolPort):
-    def __init__(self) -> None:
+    def __init__(self, *, failure_status: str | None = None) -> None:
         super().__init__(tuple(
             _tool_binding(tool_id) for tool_id in sorted(
                 ("terminal", "file_editor", "task_tracker", "finish", "think"),
             )
         ))
         self.operations: list[str] = []
+        self.failure_status = failure_status
 
     async def invoke_native_phase(
         self,
@@ -4228,7 +4229,7 @@ class _OpenHandsTracePort(RecordingToolPort):
                 "kind": "committed",
                 "event_delta": (),
                 "file_effects": {},
-                "status": "FINISHED",
+                "status": self.failure_status or "FINISHED",
                 "iteration": 1,
             }
         raise AssertionError(operation)
@@ -4313,3 +4314,34 @@ async def test_openhands_trace_is_frozen_json_and_comparator_compatible() -> Non
     assert projected["request_count"] == 1
     assert projected["tool_calls"]
     assert projected["observations"]
+
+
+@pytest.mark.parametrize("failure_status", ["ERROR", "STUCK"])
+async def test_openhands_native_error_returns_replay_trace(failure_status: str) -> None:
+    observation = _observation()
+    tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
+    semantic = _openhands_semantics(observation)
+    plan = _plan(
+        observation=observation,
+        semantics=semantic,
+        tools=tuple(_tool_grant(tool_id) for tool_id in sorted(tool_order)),
+        limit_updates={"max_turns": 16, "action_timeout_ms": 90_000},
+        implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
+    )
+    client = _OpenHandsTraceClient(observation)
+    tools = _OpenHandsTracePort(failure_status=failure_status)
+    session, _, _, _, _, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=tools,
+    )
+    try:
+        result = await session.run(ConductorRunRequest({"prompt": "finish the task"}))
+    finally:
+        await session.close()
+    assert result.termination is RunnerTermination.POLICY_INCOMPLETE
+    trace = thaw_json(result.response["replay_trace"])
+    assert trace["termination"]["kind"] == failure_status.lower()
+    assert trace["request_count"] == 1
+    assert thaw_json(result.response["state"])["status"] == failure_status
