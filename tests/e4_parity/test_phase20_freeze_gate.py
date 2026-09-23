@@ -451,3 +451,34 @@ def test_bare_allowlist_hash_is_a_configuration_error(
         f"{SHORT_SCHEMA_ID}: expected an object with packet and sha256 fields"
         in captured.err
     )
+
+
+@pytest.mark.parametrize(
+    ("fields", "admitted"),
+    [
+        ({"kind": "target_support", "status": "compared", "points": 0}, True),
+        ({"kind": "target_support", "status": "accepted", "points": 0}, False),
+        ({"kind": "target_support", "status": "compared", "points": 5}, False),
+        ({"kind": "target_support", "status": "compared", "points": False}, False),
+    ],
+    ids=["pinned", "status_drift", "points_drift", "bool_is_not_zero"],
+)
+def test_admitted_lane_id_is_exempt_only_while_its_pins_hold(
+    freeze_repository: FreezeRepository,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    fields: dict[str, Any],
+    admitted: bool,
+) -> None:
+    lane_path = tmp_path / "config/e4_lanes/mini_swe_agent_2_4_6_replay.yaml"
+    lane_path.parent.mkdir(parents=True, exist_ok=True)
+    lane_path.write_text(
+        json.dumps({"lane_id": "mini_swe_agent_2_4_6_replay", **fields}) + "\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", str(lane_path)], cwd=tmp_path, check=True)
+
+    check_phase20_freeze.main()
+
+    lane_violation = "lane_ids: mini_swe_agent_2_4_6_replay (config/e4_lanes/mini_swe_agent_2_4_6_replay.yaml must keep"
+    assert (lane_violation not in capsys.readouterr().err) is admitted
