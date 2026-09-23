@@ -1,0 +1,54 @@
+{
+  "schema_version": "bb.e4.mini_source_profile_rollback_rehearsal.v1",
+  "scope": "isolated Git index restoration; no worktree, branch, runtime, deployment or evidence mutation",
+  "source_commit": "521edec7917a1e85b5d6f8ceb13ef892ae191d15",
+  "source_tree": "0ee2e7203a95c761c47528d95de57551d985dccf",
+  "stable_commit": "c39054e9afd1457060028148d45e96d0c98db9d6",
+  "stable_tree": "83415f73d57fb48d90d16962337fdd0053cf206d",
+  "patch": {
+    "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/bb_direction_assessment/engine_pr_handoff_20260827/e4_admission_20260914T221653Z/MINI_PR_FULL_REVERT_REHEARSAL.patch",
+    "bytes": 8189868,
+    "sha256": "3dc75ddffc430ae54b109b9b5fd01d57bbdfe63168f77c533f1fcae0df373959"
+  },
+  "environment": {
+    "GIT_INDEX_FILE": "/Users/kylemccleary/projects/breadboard/docs_tmp/bb_direction_assessment/engine_pr_handoff_20260827/e4_admission_20260914T221653Z/MINI_PR_ROLLBACK_REHEARSAL.index"
+  },
+  "cwd": "/Users/kylemccleary/projects/breadboard-e4src-mini-sif-20260919",
+  "commands": [
+    [
+      "git",
+      "read-tree",
+      "521edec7917a1e85b5d6f8ceb13ef892ae191d15"
+    ],
+    [
+      "git",
+      "apply",
+      "--cached",
+      "--reverse",
+      "--check",
+      "/Users/kylemccleary/projects/breadboard/docs_tmp/bb_direction_assessment/engine_pr_handoff_20260827/e4_admission_20260914T221653Z/MINI_PR_FULL_REVERT_REHEARSAL.patch"
+    ],
+    [
+      "git",
+      "apply",
+      "--cached",
+      "--reverse",
+      "/Users/kylemccleary/projects/breadboard/docs_tmp/bb_direction_assessment/engine_pr_handoff_20260827/e4_admission_20260914T221653Z/MINI_PR_FULL_REVERT_REHEARSAL.patch"
+    ],
+    [
+      "git",
+      "write-tree"
+    ]
+  ],
+  "result": {
+    "exit_code": 0,
+    "wall_seconds": 0.22,
+    "restored_tree": "83415f73d57fb48d90d16962337fdd0053cf206d",
+    "matches_stable_tree": true
+  },
+  "limitations": [
+    "No production rollback was executed.",
+    "No runtime, replay or deployment validation is inferred from the index rehearsal.",
+    "The receipt-only successor commit must receive its own protected checks and independent review."
+  ]
+}
