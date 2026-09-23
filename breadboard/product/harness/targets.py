@@ -272,7 +272,7 @@ def _lower_worker_target(
         ),
         "oh-my-pi@18.1.17": (
             "breadboard.oh-my-pi.v18.1.17",
-            "c982736f879391f2fce3a7838c134440484039a4d0b9c339dc7ae99b7b34cf77",
+            "09ffa5dc0a223063b1d1a05de45d127b2e5185e86428cbe49bb2ca9459b7431d",
         ),
     }
     recipe = recipes.get(package.target_id)
@@ -285,6 +285,18 @@ def _lower_worker_target(
         raise HarnessCompileError("native worker requires its pinned recipe and no caller template inputs")
     native = json.loads(package.read_asset_text("native-config.json"))
     surface = json.loads(package.read_asset_text("tool-surface.json"))
+    native["advertisement"] = {
+        "system_prompt": package.read_asset_text("prompts/system-prompt.md"),
+        "tool_descriptions": {
+            name: surface["tools"][name]["description"] for name in surface["ordered_tools"]
+        },
+        "capability_denials": native["capability_denials"],
+        "settings": {
+            "request_cap": native["request_cap"],
+            "model_max_tokens": native["model_max_tokens"],
+            "provider_attempts": native["provider_attempts"],
+        },
+    }
     order = tuple(surface["ordered_tools"])
     surface_tools = surface.get("tools")
     if (
@@ -537,11 +549,8 @@ def lower_e4_harness(
             raise HarnessCompileError("target tool schema cannot be represented by the compiler")
         properties = schema["properties"]
         required = schema["required"]
-        if (
-            any(type(name) is not str or name not in properties for name in required)
-            or tuple(name for name in properties if name in required) != required
-        ):
-            raise HarnessCompileError("target required-parameter order cannot be preserved")
+        if any(type(name) is not str or name not in properties for name in required):
+            raise HarnessCompileError("target required parameter is missing from properties")
         definition = {
             "id": tool["name"],
             "name": tool["name"],
@@ -551,6 +560,8 @@ def lower_e4_harness(
                 for name, parameter in properties.items()
             ],
         }
+        if tuple(name for name in properties if name in required) != required:
+            definition["required_order"] = list(required)
         if "additionalProperties" in schema:
             definition["provider_routing"] = {
                 "openai": {"additionalProperties": schema["additionalProperties"]}

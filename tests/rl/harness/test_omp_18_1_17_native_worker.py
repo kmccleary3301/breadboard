@@ -100,7 +100,19 @@ def test_real_pinned_worker_runs_initialize_and_close(tmp_path: Path) -> None:
         {
             "task": "read the workspace",
             "model_config": {},
-            "advertisement": {"system_prompt": "", "tool_descriptions": {}},
+            "advertisement": {
+                "system_prompt": "",
+                "tool_descriptions": {name: name for name in ("read", "bash", "edit", "write")},
+                "capability_denials": {
+                    capability: {
+                        "schema_version": "bb.omp-capability-denial.v1",
+                        "capability": capability,
+                        "message": f"OMP capability denied: {capability}",
+                        "source_ref": "test",
+                    }
+                    for capability in ("pty", "async")
+                },
+            },
             "workspace": str(tmp_path),
             "scratch": str(tmp_path / ".scratch"),
         },
@@ -108,3 +120,43 @@ def test_real_pinned_worker_runs_initialize_and_close(tmp_path: Path) -> None:
     assert initialized["kind"] == "initialized"
     closed = worker.close()
     assert closed["cleanup"]["all_dead"] is True
+
+
+@pytest.mark.skipif(
+    not Path(pinned_worker_spec().bun).is_file()
+    or not Path(pinned_worker_spec().source_root).is_dir(),
+    reason="pinned OMP runtime is unavailable on this host",
+)
+def test_real_pinned_worker_closes_background_brush_descendant(tmp_path: Path) -> None:
+    worker = NativeToolWorker(cwd=str(tmp_path))
+    worker.start()
+    advertisement = {
+        "system_prompt": "",
+        "tool_descriptions": {name: name for name in ("read", "bash", "edit", "write")},
+        "capability_denials": {
+            capability: {
+                "schema_version": "bb.omp-capability-denial.v1",
+                "capability": capability,
+                "message": f"OMP capability denied: {capability}",
+                "source_ref": "test",
+            }
+            for capability in ("pty", "async")
+        },
+    }
+    worker.phase(
+        "initialize",
+        {
+            "task": "background descendant cleanup",
+            "model_config": {},
+            "advertisement": advertisement,
+            "workspace": str(tmp_path),
+            "scratch": str(tmp_path / ".scratch"),
+        },
+    )
+    worker.execute_batch([{
+        "id": "bash-1",
+        "name": "bash",
+        "arguments": {"command": "sleep 30 & printf descendant > descendant_marker.txt"},
+    }])
+    closed = worker.close()
+    assert closed["cleanup"] == {"processes": [], "all_dead": True}

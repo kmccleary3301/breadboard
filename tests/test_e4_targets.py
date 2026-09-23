@@ -766,8 +766,9 @@ def test_omp_18_1_17_server_compile_binds_headless_v2(
 ) -> None:
     cas = FilesystemCAS(tmp_path / "cas")
     try:
+        omp = load_e4_target("oh-my-pi@18.1.17")
         compiled = compile_e4_harness(
-            load_e4_target("oh-my-pi@18.1.17"),
+            omp,
             {},
             {
                 "version": 2,
@@ -786,5 +787,73 @@ def test_omp_18_1_17_server_compile_binds_headless_v2(
         binding = compiled.manifest.semantic.metadata["e4_target"]
         assert binding["renderer_id"] == "breadboard.oh-my-pi.v18.1.17"
         assert binding["ordered_tool_names"] == ("read", "bash", "edit", "write")
+        surface = json.loads(omp.read_asset_text("tool-surface.json"))
+        actual_tools = []
+        for definition in compiled.manifest.semantic.to_canonical_obj()["tools"]["definitions"]:
+            parameters = {
+                "type": "object",
+                "properties": {
+                    item["name"]: item["schema"]
+                    for item in definition["parameters"]
+                },
+                "required": definition.get("required_order", [
+                    item["name"] for item in definition["parameters"] if item["required"]
+                ]),
+                "additionalProperties": definition["provider_routing"]["openai"]["additionalProperties"],
+            }
+            actual_tools.append({
+                "type": "function",
+                "function": {
+                    "name": definition["model_name"],
+                    "description": definition["description"],
+                    "parameters": parameters,
+                },
+            })
+        expected_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": surface["tools"][name]["description"],
+                    "parameters": {
+                        "type": "object",
+                        "properties": surface["tools"][name]["parameters"]["properties"],
+                        "required": surface["tools"][name]["parameters"]["required"],
+                        "additionalProperties": surface["tools"][name]["parameters"]["additionalProperties"],
+                    },
+                },
+            }
+            for name in surface["ordered_tools"]
+        ]
+        actual_projection = [
+            {
+                "name": item["function"]["name"],
+                "description": item["function"]["description"],
+                "property_names": list(item["function"]["parameters"]["properties"]),
+                "required": list(item["function"]["parameters"]["required"]),
+                "additionalProperties": item["function"]["parameters"]["additionalProperties"],
+            }
+            for item in actual_tools
+        ]
+        expected_projection = [
+            {
+                "name": item["function"]["name"],
+                "description": item["function"]["description"],
+                "property_names": list(item["function"]["parameters"]["properties"]),
+                "required": list(item["function"]["parameters"]["required"]),
+                "additionalProperties": item["function"]["parameters"]["additionalProperties"],
+            }
+            for item in expected_tools
+        ]
+        assert json.dumps(actual_projection, ensure_ascii=False) == json.dumps(
+            expected_projection, ensure_ascii=False
+        )
+        for actual, expected in zip(actual_tools, expected_tools):
+            assert actual["function"]["parameters"]["properties"] == expected["function"]["parameters"]["properties"]
+        assert [
+            item["function"]["parameters"]["required"] for item in actual_tools
+        ] == [
+            item["function"]["parameters"]["required"] for item in expected_tools
+        ]
     finally:
         cas.close()

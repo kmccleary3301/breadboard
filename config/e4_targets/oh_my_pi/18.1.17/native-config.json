@@ -13,5 +13,19 @@
   "provider_attempts": 1,
   "result_commit_order": "completion",
   "ack_policy": "none",
+  "capability_denials": {
+    "pty": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "pty",
+      "message": "OMP capability denied: pty",
+      "source_ref": "prompts/system-prompt.md:23"
+    },
+    "async": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "async",
+      "message": "OMP capability denied: async",
+      "source_ref": "prompts/system-prompt.md:23"
+    }
+  },
   "native_descriptions_artifact_sha256": "cd548ef0285e5fc3987d79a1a47c1bc64fe93e1e68c71c0dc6a8ee3b30de244b"
 }

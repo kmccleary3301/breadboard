@@ -188,6 +188,35 @@ def test_omp_phase_state_commits_native_completion_order() -> None:
     assert [item["toolCallId"] for item in state.messages[-2:]] == ["b", "a"]
 
 
+def test_omp_prepare_refuses_excluded_native_capabilities() -> None:
+    state = OMPSemanticsState(
+        task="deny excluded routes",
+        capability_denials={
+            "pty": {"capability": "pty", "message": "OMP capability denied: pty"},
+            "async": {"capability": "async", "message": "OMP capability denied: async"},
+        },
+    )
+    assert state.begin_query() is None
+    calls = (
+        NativeToolCall("pty", "bash", '{"command":"printf x","pty":true}'),
+        NativeToolCall("async", "bash", '{"command":"printf x","async":true}'),
+    )
+    state.prepare_response(NativeProviderResponse(
+        binding_digest="binding",
+        request_digest="request",
+        response_id="response",
+        model="capture",
+        content=None,
+        finish_reason="tool_calls",
+        tool_calls=calls,
+    ))
+    prepared = state.prepare_tools(calls)
+    assert [item["error"] for item in prepared["calls"]] == [
+        "OMP capability denied: pty",
+        "OMP capability denied: async",
+    ]
+
+
 def test_omp_request_cap_refuses_before_native_query() -> None:
     state = OMPSemanticsState(task="bounded", request_cap=1)
     assert state.begin_query() is None

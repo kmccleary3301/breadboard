@@ -11,34 +11,81 @@ def test_omp_target_assets_are_closed_and_four_tool() -> None:
     surface = json.loads((root / "tool-surface.json").read_text())
     policy = json.loads((root / "semantic-policy.json").read_text())
     assert target["target_id"] == "oh-my-pi@18.1.17"
+    native = json.loads((root / "native-config.json").read_text())
+    denials = native["capability_denials"]
+    for capability in ("pty", "async"):
+        entry = denials[capability]
+        assert entry == {
+            "schema_version": "bb.omp-capability-denial.v1",
+            "capability": capability,
+            "message": f"OMP capability denied: {capability}",
+            "source_ref": "prompts/system-prompt.md:23",
+        }
     assert surface["ordered_tools"] == ["read", "bash", "edit", "write"]
     assert policy["requests"]["retry_transport_attempts"] == 1
     assert policy["turn_recovery"]["max_corrective_continuations"] == 3
 
 
 
-def test_declared_tool_schemas_are_pinned_source_shapes() -> None:
+def test_declared_tool_schemas_are_pinned_packet_shapes() -> None:
     root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
     surface = json.loads((root / "tool-surface.json").read_text())
-    assert set(surface["tools"]) == {"read", "bash", "edit", "write"}
-    assert surface["tools"]["read"]["parameters"] == {
-        "type": "object",
-        "properties": {"path": {"type": "string"}},
-        "required": ["path"],
-    }
-    assert surface["tools"]["edit"]["parameters"] == {
-        "type": "object",
-        "properties": {"input": {"type": "string"}},
-        "required": ["input"],
-    }
-    assert surface["tools"]["write"]["parameters"] == {
-        "type": "object",
-        "properties": {
-            "path": {"type": "string"},
-            "content": {"type": "string"},
+    expected = {
+        "read": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "i": {"description": "concise intent", "type": "string"},
+                "path": {
+                    "description": "Local path, internal URI (e.g. skill://), or URL. Inline selectors are supported.",
+                    "type": "string",
+                },
+            },
+            "required": ["path", "i"],
         },
-        "required": ["path", "content"],
+        "bash": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "async": {"description": "run in background", "type": "boolean"},
+                "command": {"type": "string"},
+                "cwd": {"type": "string"},
+                "env": {
+                    "additionalProperties": {"type": "string"},
+                    "properties": {},
+                    "type": "object",
+                },
+                "i": {"description": "concise intent", "type": "string"},
+                "pty": {"type": "boolean"},
+                "timeout": {
+                    "description": "timeout in seconds; 0 disables the command deadline; nonzero values are clamped to 1-3600",
+                    "type": "number",
+                },
+            },
+            "required": ["command", "i"],
+        },
+        "edit": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "i": {"description": "concise intent", "type": "string"},
+                "input": {"type": "string"},
+            },
+            "required": ["input", "i"],
+        },
+        "write": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "content": {"description": "file content", "type": "string"},
+                "i": {"description": "concise intent", "type": "string"},
+                "path": {"description": "file path", "type": "string"},
+            },
+            "required": ["path", "content", "i"],
+        },
     }
+    assert set(surface["tools"]) == set(expected)
+    assert {name: surface["tools"][name]["parameters"] for name in expected} == expected
 
 
 def test_native_description_bytes_are_pinned() -> None:

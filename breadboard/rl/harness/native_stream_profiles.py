@@ -48,6 +48,7 @@ def _omp_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> A
         system_prompt=system_prompt,
         tool_schemas=bootstrap.get("tool_schemas", ()),
         worker=bootstrap.get("worker"),
+        capability_denials=bootstrap.get("capability_denials"),
     )
 
 

@@ -18,6 +18,8 @@ from difflib import SequenceMatcher
 from typing import Any, TypeVar
 
 from breadboard_engine.provider.native_response import NativeProviderResponse, NativeToolCall
+from ..omp_native_tools import deny_excluded_capabilities
+
 # xxHash32 constants from xxhash_rust::xxh32::xxh32 (seed 0 in the supplier).
 _P1 = 0x9E3779B1
 _P2 = 0x85EBCA77
@@ -546,6 +548,7 @@ class OMPSemanticsState:
         request_cap: int = OMP_REQUEST_CAP,
         worker: Any = None,
         case_id: str | None = None,
+        capability_denials: Mapping[str, Mapping[str, Any]] | None = None,
     ) -> None:
         if request_cap <= 0:
             raise ValueError("request_cap must be positive")
@@ -555,6 +558,11 @@ class OMPSemanticsState:
         self.request_cap = request_cap
         self.worker = worker
         self.case_id = case_id
+        self.capability_denials = {
+            str(key): dict(value)
+            for key, value in (capability_denials or {}).items()
+            if isinstance(value, Mapping)
+        }
         self.messages: list[dict[str, Any]] = [{"role": "user", "content": task}]
         self.request_count = 0
         self.stream_fn_issued = 0
@@ -647,6 +655,14 @@ class OMPSemanticsState:
             if not isinstance(arguments, Mapping):
                 error = error or "Invalid tool arguments: expected a JSON object"
                 arguments = {}
+            if error is None:
+                try:
+                    deny_excluded_capabilities(
+                        arguments,
+                        denial_policy=self.capability_denials,
+                    )
+                except PermissionError as exc:
+                    error = str(exc)
             if call.name not in ALLOWED_TOOLS:
                 error = f"OMP tool is not admitted: {call.name}"
             prepared.append(OMPPreparedCall(call.id, call.name, dict(arguments), error))

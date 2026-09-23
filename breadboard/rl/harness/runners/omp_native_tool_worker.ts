@@ -1,28 +1,129 @@
 #!/opt/omp/runtime/bun-linux-x64-baseline/bun
+import { readdir, readFile } from "node:fs/promises";
+
 // Persistent tool-only phase worker. The Conductor owns provider transport and
 // the model loop; this process only composes and executes the four SDK tools.
 const RPC_SCHEMA = "bb.native-worker.rpc.v1";
 const PHASE_SCHEMA = "bb.omp-native.v1";
 const SOURCE_ROOT = "/opt/omp/source/oh-my-pi-3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec";
 const TOOL_NAMES = ["read", "bash", "edit", "write"] as const;
-let boundedDescriptions: Record<string, string> = {};
-
-
 type Call = { id: string; name: string; arguments: Record<string, unknown> };
+let boundedDescriptions: Record<string, string> = {};
 let session: any = null;
 let tools: any[] = [];
 let prepared: Array<Call & { error?: string }> = [];
+
+function sleep(milliseconds: number): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  setTimeout(resolve, milliseconds);
+  return promise;
+}
+async function descendantPids(root: number): Promise<number[]> {
+  const parents = new Map<number, number>();
+  for (const entry of await readdir("/proc")) {
+    if (!/^\d+$/.test(entry)) continue;
+    try {
+      const stat = await readFile(`/proc/${entry}/stat`, "utf8");
+      const match = stat.match(/^\d+ \(.+\) \S+ (\d+)/);
+      if (match) parents.set(Number(entry), Number(match[1]));
+    } catch {
+      // Processes can exit while procfs is being sampled.
+    }
+  }
+  const found = new Set<number>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [pid, parent] of parents) {
+      if ((parent === root || found.has(parent)) && !found.has(pid)) {
+        found.add(pid);
+        changed = true;
+      }
+    }
+  }
+  return [...found];
+}
+
+async function reapDescendants(owned: number[] = []): Promise<number[]> {
+  const tracked = new Set(owned);
+  for (const pid of await descendantPids(process.pid)) tracked.add(pid);
+  const signal = (kind: "SIGTERM" | "SIGKILL") => {
+    for (const pid of tracked) {
+      try {
+        process.kill(pid, kind);
+      } catch {
+        // The descendant exited during cleanup.
+      }
+    }
+  };
+  signal("SIGTERM");
+  const deadline = Date.now() + 1000;
+  while (Date.now() < deadline) {
+    const remaining = [...tracked].filter((pid) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    if (!remaining.length) return [];
+    await sleep(20);
+  }
+  signal("SIGKILL");
+  await sleep(20);
+  return [...tracked].filter((pid) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
 let workspace = "";
+
+function requireAdvertisement(value: unknown): {
+  systemPrompt: string;
+  descriptions: Record<string, string>;
+  capabilityDenials: Record<string, Record<string, unknown>>;
+} {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("initialize requires advertisement");
+  const advertisement = value as Record<string, unknown>;
+  if (typeof advertisement.system_prompt !== "string") throw new Error("advertisement requires system_prompt");
+  const descriptions = advertisement.tool_descriptions;
+  if (!descriptions || typeof descriptions !== "object" || Array.isArray(descriptions)) {
+    throw new Error("advertisement requires tool_descriptions");
+  }
+  const typedDescriptions = descriptions as Record<string, unknown>;
+  const bounded: Record<string, string> = {};
+  for (const name of TOOL_NAMES) {
+    if (typeof typedDescriptions[name] !== "string") throw new Error(`advertisement missing tool description: ${name}`);
+    bounded[name] = typedDescriptions[name];
+  }
+  const rawDenials = advertisement.capability_denials;
+  if (!rawDenials || typeof rawDenials !== "object" || Array.isArray(rawDenials)) {
+    throw new Error("advertisement requires capability_denials");
+  }
+  const capabilityDenials = rawDenials as Record<string, Record<string, unknown>>;
+  for (const capability of ["pty", "async"]) {
+    const entry = capabilityDenials[capability];
+    if (
+      !entry || typeof entry !== "object" || Array.isArray(entry)
+      || entry.schema_version !== "bb.omp-capability-denial.v1"
+      || entry.capability !== capability
+      || typeof entry.message !== "string"
+      || typeof entry.source_ref !== "string"
+    ) throw new Error(`advertisement has invalid capability denial: ${capability}`);
+  }
+  return { systemPrompt: advertisement.system_prompt, descriptions: bounded, capabilityDenials };
+}
 
 async function initialize(payload: Record<string, any>) {
   if (payload.workspace === undefined || payload.scratch === undefined) throw new Error("initialize requires injected workspace and scratch");
+  const advertisement = requireAdvertisement(payload.advertisement);
   workspace = String(payload.workspace);
-  const descriptions = payload.advertisement?.tool_descriptions;
-  if (descriptions && typeof descriptions === "object" && !Array.isArray(descriptions)) {
-    boundedDescriptions = Object.fromEntries(
-      Object.entries(descriptions).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-    );
-  }
+  boundedDescriptions = advertisement.descriptions;
   // The pinned source root is deployment-selected; static source imports cannot
   // represent the verified runtime path used by the SIF installation.
   const { createAgentSession, Settings } = await import(`${SOURCE_ROOT}/packages/coding-agent/src/sdk.ts`);
@@ -48,16 +149,30 @@ async function initialize(payload: Record<string, any>) {
   return {
     schema_version: PHASE_SCHEMA,
     kind: "initialized",
-    system_prompt: String(payload.advertisement?.system_prompt ?? ""),
-    tool_schemas: tools.map((tool: any) => ({ type: "function", function: { name: tool.name, description: boundedDescriptions[tool.name] ?? String(tool.description ?? ""), parameters: tool.parameters } })),
-    bootstrap: { consumer_id: "breadboard.oh-my-pi.v18.1.17", workspace, source_commit: SOURCE_ROOT.split("-").at(-1), settings: payload.advertisement?.settings ?? {} },
+    system_prompt: advertisement.systemPrompt,
+    tool_schemas: tools.map((tool: any) => ({ type: "function", function: { name: tool.name, description: boundedDescriptions[tool.name], parameters: tool.parameters } })),
+    bootstrap: {
+      consumer_id: "breadboard.oh-my-pi.v18.1.17",
+      workspace,
+      source_commit: SOURCE_ROOT.split("-").at(-1),
+      settings: payload.advertisement.settings ?? {},
+      capability_denials: advertisement.capabilityDenials,
+    },
   };
 }
 
 async function dispatch(operation: string, payload: Record<string, any>): Promise<Record<string, any>> {
   if (operation === "initialize") return initialize(payload);
   if (!session) throw new Error("worker must be initialized before phases");
-  if (operation === "project_request") return { schema_version: PHASE_SCHEMA, kind: "request", messages: payload.messages ?? [], tools: tools.map((tool: any) => ({ type: "function", function: { name: tool.name, description: boundedDescriptions[tool.name] ?? String(tool.description ?? ""), parameters: tool.parameters } })) };
+  if (operation === "project_request") return {
+    schema_version: PHASE_SCHEMA,
+    kind: "request",
+    messages: payload.messages ?? [],
+    tools: tools.map((tool: any) => ({
+      type: "function",
+      function: { name: tool.name, description: boundedDescriptions[tool.name], parameters: tool.parameters },
+    })),
+  };
   if (operation === "prepare_tools") {
     prepared = (payload.calls ?? []).map((call: any) => {
       const item: any = { id: String(call.id), name: String(call.name), arguments: call.arguments };
@@ -90,10 +205,18 @@ async function dispatch(operation: string, payload: Record<string, any>): Promis
     return { schema_version: PHASE_SCHEMA, kind: "tool_results", results: completed.map(({ source_index, ...result }) => result) };
   }
   if (operation === "close") {
-    await session.dispose();
+    const owned = await descendantPids(process.pid);
+    let disposeError: unknown;
+    try {
+      await session.dispose();
+    } catch (error) {
+      disposeError = error;
+    }
     session = null;
     tools = [];
-    return { schema_version: PHASE_SCHEMA, kind: "closed", cleanup: { processes: [], all_dead: true } };
+    const processes = await reapDescendants(owned);
+    if (disposeError) throw disposeError;
+    return { schema_version: PHASE_SCHEMA, kind: "closed", cleanup: { processes, all_dead: processes.length === 0 } };
   }
   throw new Error(`unknown OMP phase: ${operation}`);
 }

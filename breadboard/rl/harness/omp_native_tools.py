@@ -141,7 +141,11 @@ def classify_capability(value: Any) -> str | None:
     return None
 
 
-def deny_excluded_capabilities(arguments: Mapping[str, Any]) -> None:
+def deny_excluded_capabilities(
+    arguments: Mapping[str, Any],
+    *,
+    denial_policy: Mapping[str, Mapping[str, Any]] | None = None,
+) -> None:
     for key in ("path", "paths", "cwd", "command", "env", "input"):
         value = arguments.get(key)
         values = value if isinstance(value, list) else [value]
@@ -156,7 +160,10 @@ def deny_excluded_capabilities(arguments: Mapping[str, Any]) -> None:
                     raise PermissionError(f"OMP capability denied before native resolution: {capability}")
     for key in ("pty", "async"):
         if arguments.get(key) is True:
-            raise PermissionError(f"OMP capability denied: {key}")
+            entry = (denial_policy or {}).get(key)
+            if not isinstance(entry, Mapping) or entry.get("capability") != key or type(entry.get("message")) is not str:
+                raise PermissionError(f"OMP capability denial policy unavailable: {key}")
+            raise PermissionError(entry["message"])
 class NativeWorkerPhaseError(RuntimeError):
     """A framed OMP phase failed in the pinned worker."""
 
