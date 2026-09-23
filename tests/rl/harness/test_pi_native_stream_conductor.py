@@ -27,6 +27,8 @@ from breadboard.rl.harness.runners.base import (
     RunnerOpenRequest,
     RunnerTermination,
     RunnerToolBinding,
+    SourceEventCommitEvent,
+    ToolObservationEvent,
 )
 from breadboard.rl.harness.runners.conductor import (
     CONDUCTOR_IMPLEMENTATION_DIGEST,
@@ -43,6 +45,7 @@ from tests.rl.harness.test_runner_conductor import _digest, _tool_grant
 from tests.rl.harness.test_runner_policy_runtime import _observation, _plan, _policy_capabilities
 
 _NODE_MODULES = Path(os.environ.get("PI_CODING_AGENT_NODE_MODULES", "/tmp/pi-node-0731/node_modules"))
+_PROMPT_TEMPLATE = Path(__file__).parents[3] / "config/e4_targets/pi/0.73.1/prompts/system-prompt.md"
 pytestmark = pytest.mark.skipif(
     not (_NODE_MODULES / "@mariozechner" / "pi-coding-agent" / "dist" / "index.js").is_file(),
     reason="pinned Pi 0.73.1 node_modules root is unavailable",
@@ -182,6 +185,7 @@ class _NativeWorkerPort:
         self.scratch = workspace / ".scratch"
         self.scratch.mkdir()
         self._bindings = grants
+        self.operations: list[str] = []
         self._process: asyncio.subprocess.Process | None = None
         self._request_id = 0
         self.system_prompt = ""
@@ -209,16 +213,18 @@ class _NativeWorkerPort:
         await self._ensure()
         assert self._process is not None and self._process.stdin is not None and self._process.stdout is not None
         self._request_id += 1
+        self.operations.append(operation)
         phase_payload = dict(payload)
         if operation == "initialize":
-            phase_payload.update({
-                "workspace": str(self.workspace),
-                "scratch": str(self.scratch),
-                "package_dir": str(_NODE_MODULES / "@mariozechner" / "pi-coding-agent"),
-                "advertisement": json.loads(
+            phase_payload.setdefault("workspace", str(self.workspace))
+            phase_payload.setdefault("scratch", str(self.scratch))
+            phase_payload.setdefault("package_dir", str(_NODE_MODULES / "@mariozechner" / "pi-coding-agent"))
+            phase_payload.setdefault(
+                "advertisement",
+                json.loads(
                     (Path(__file__).parents[3] / "config/e4_targets/pi/0.73.1/native-config.json").read_text()
                 )["advertisement"],
-            })
+            )
         command = {
             "schema_version": "bb.native-worker.rpc.v1",
             "request_id": self._request_id,
@@ -242,6 +248,7 @@ class _NativeWorkerPort:
         raise AssertionError("Pi native stream must use invoke_native_phase")
     async def close(self) -> None:
         if self._process is not None:
+            self.operations.append("close")
             if self._process.stdin is not None:
                 self._process.stdin.close()
             try:
@@ -250,6 +257,27 @@ class _NativeWorkerPort:
                 self._process.kill()
                 await self._process.wait()
             self._process = None
+
+
+def _render_sealed_prompt(bootstrap: Mapping[str, Any]) -> str:
+    context = "".join(
+        f"## {entry['path']}\n\n{entry['content']}\n\n"
+        for entry in bootstrap["project_context"]
+    )
+    replacements = {
+        "{{readme_path}}": f"{bootstrap['package_dir']}/README.md",
+        "{{docs_path}}": f"{bootstrap['package_dir']}/docs",
+        "{{examples_path}}": f"{bootstrap['package_dir']}/examples",
+        "{{project_context}}": context,
+        "{{current_date}}": bootstrap["current_date"],
+        "{{cwd}}": bootstrap["cwd"],
+    }
+    prompt = _PROMPT_TEMPLATE.read_text(encoding="utf-8")
+    for slot, value in replacements.items():
+        assert prompt.count(slot) == 1
+        prompt = prompt.replace(slot, value)
+    assert "{{" not in prompt
+    return prompt
 
 
 class _Events:
@@ -337,8 +365,9 @@ async def _run_episode(tmp_path: Path, responses: list[list[tuple[str, str, Mapp
             await session.close()
             await worker.close()
         system_prompt = worker.system_prompt
+        operations = tuple(worker.operations)
         await client.close()
-    return result, requests, sink.events, system_prompt
+    return result, requests, sink.events, system_prompt, operations
 
 
 @pytest.mark.asyncio
@@ -348,7 +377,16 @@ async def test_pi_native_stream_cap_batch_and_request_shape(tmp_path: Path) -> N
         ("bad", "edit", {"path": "missing.txt", "edits": []}),
         ("c", "write", {"path": "c.txt", "content": "C\n"}),
     ]] + [[("loop", "bash", {"command": "printf loop"})]] * 7
-    result, requests, _, system_prompt = await _run_episode(tmp_path, responses)
+    result, requests, events, system_prompt, operations = await _run_episode(tmp_path, responses)
+    observations = [event for event in events if isinstance(event, ToolObservationEvent)]
+    assert observations
+    observation_order = [(event.turn, event.ordinal) for event in observations]
+    assert sorted(event.call_id for event in observations[:3]) == ["a", "bad", "c"]
+    assert sorted(event.ordinal for event in observations[:3]) == [0, 1, 2]
+    assert observation_order[3:] == [(turn, 0) for turn in range(2, 9)]
+    assert any(isinstance(event, SourceEventCommitEvent) for event in events)
+    assert "ack" not in operations
+    assert operations[-1] == "close"
     assert requests[0]["messages"][0] == {"role": "system", "content": system_prompt}
     assert result.termination is RunnerTermination.LIMITS_EXCEEDED
     assert (tmp_path / "a.txt").read_text() == "A\n"
@@ -363,14 +401,61 @@ async def test_pi_native_stream_cap_batch_and_request_shape(tmp_path: Path) -> N
 
 @pytest.mark.asyncio
 async def test_pi_native_stream_no_call_is_assistant_complete(tmp_path: Path) -> None:
-    result, requests, _, system_prompt = await _run_episode(tmp_path, [[]])
+    result, requests, _, system_prompt, _ = await _run_episode(tmp_path, [[]])
     assert len(requests) == 1
     assert requests[0]["messages"][0] == {"role": "system", "content": system_prompt}
     assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("case", "message"),
+    [
+        ("empty", "advertisement"),
+        ("missing_sha", "native_sha256"),
+        ("wrong_sha", "hash mismatch"),
+        ("unknown_tool", "exactly read"),
+        ("removal_absent", "occur exactly once"),
+        ("removal_twice", "occur exactly once"),
+    ],
+)
+async def test_pi_native_worker_rejects_invalid_advertisement(tmp_path: Path, case: str, message: str) -> None:
+    workspace = tmp_path / case
+    workspace.mkdir()
+    advertisement = json.loads(
+        (Path(__file__).parents[3] / "config/e4_targets/pi/0.73.1/native-config.json").read_text()
+    )["advertisement"]
+    if case == "empty":
+        advertisement = {}
+    elif case == "missing_sha":
+        del advertisement["tools"]["read"]["native_sha256"]
+    elif case == "wrong_sha":
+        advertisement["tools"]["read"]["native_sha256"] = "sha256:" + ("0" * 64)
+    elif case == "unknown_tool":
+        advertisement["tools"]["bash"] = {"description": "unexpected", "native_sha256": "sha256:" + ("0" * 64)}
+    elif case == "removal_absent":
+        advertisement["prompt"]["remove_exact"] = ["not present in native prompt"]
+    elif case == "removal_twice":
+        advertisement["prompt"]["remove_exact"] = ["a"]
+    port = _NativeWorkerPort(workspace, ())
+    try:
+        with pytest.raises(RuntimeError, match=message):
+            await port.invoke_native_phase(
+                "initialize",
+                {
+                    "task": "invalid advertisement",
+                    "model_config": {"id": "model-a", "provider": "openai", "input": ["text"]},
+                    "advertisement": advertisement,
+                },
+                timeout_ms=5_000,
+            )
+    finally:
+        await port.close()
+
+
+@pytest.mark.asyncio
 async def test_pi_native_worker_preserves_source_order_and_completion_order(tmp_path: Path) -> None:
+    (tmp_path / "AGENTS.md").write_text("Pi native worker test context.\n", encoding="utf-8")
     port = _NativeWorkerPort(tmp_path, ())
     try:
         initialized = await port.invoke_native_phase(
@@ -389,6 +474,7 @@ async def test_pi_native_worker_preserves_source_order_and_completion_order(tmp_
         assert initialized["kind"] == "initialized"
         assert initialized["bootstrap"]["cwd"] == str(tmp_path)
         assert Path(initialized["bootstrap"]["home"]).parent == port.scratch
+        assert initialized["system_prompt"] == _render_sealed_prompt(initialized["bootstrap"])
         await port.invoke_native_phase(
             "prepare_tools",
             {
@@ -402,7 +488,14 @@ async def test_pi_native_worker_preserves_source_order_and_completion_order(tmp_
         executed = await port.invoke_native_phase("execute_batch", {}, timeout_ms=5_000)
         assert [result["id"] for result in executed["results"]] == ["slow", "fast"]
         assert [result["completion_index"] for result in executed["results"]] == [1, 0]
+        await port.invoke_native_phase(
+            "prepare_tools",
+            {"calls": [{"id": "background", "name": "bash", "arguments": {"command": "sleep 30 & printf bg"}}]},
+            timeout_ms=5_000,
+        )
+        await port.invoke_native_phase("execute_batch", {}, timeout_ms=5_000)
         closed = await port.invoke_native_phase("close", {}, timeout_ms=5_000)
         assert closed["cleanup"]["all_dead"] is True
+        assert closed["cleanup"]["processes"]
     finally:
         await port.close()

@@ -8,6 +8,8 @@
  * run in the pinned Node process, and batch calls share Pi's mutation queue.
  */
 import { createHash } from "node:crypto";
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -28,21 +30,132 @@ const piAi = await packageImport(nodeModules, "@mariozechner/pi-ai", "dist/index
 const openaiCompletions = await packageImport(nodeModules, "@mariozechner/pi-ai", "dist/providers/openai-completions.js");
 const promptModule = await packageImport(nodeModules, "@mariozechner/pi-coding-agent", "dist/core/system-prompt.js");
 const resourceModule = await packageImport(nodeModules, "@mariozechner/pi-coding-agent", "dist/core/resource-loader.js");
-const { createBashTool, createEditTool, createReadTool, createWriteTool } = codingAgent;
+const shellModule = await packageImport(nodeModules, "@mariozechner/pi-coding-agent", "dist/utils/shell.js");
+const childProcessModule = await packageImport(nodeModules, "@mariozechner/pi-coding-agent", "dist/utils/child-process.js");
+const {
+  createBashTool,
+  createBashToolDefinition,
+  createEditTool,
+  createEditToolDefinition,
+  createReadTool,
+  createReadToolDefinition,
+  createWriteTool,
+  createWriteToolDefinition,
+} = codingAgent;
 const { validateToolArguments } = piAi;
 const { convertMessages } = openaiCompletions;
 const { buildSystemPrompt } = promptModule;
 const { loadProjectContextFiles } = resourceModule;
+const { getShellConfig, getShellEnv, killProcessTree } = shellModule;
+const { waitForChildProcess } = childProcessModule;
+const trackedProcessGroups = new Map();
+
+function processGroupAlive(pid) {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
+function createTrackedBashTool(cwd) {
+  const operations = {
+    exec(command, execCwd, { onData, signal, timeout, env }) {
+      return new Promise((resolve, reject) => {
+        if (!existsSync(execCwd)) {
+          reject(new Error(`Working directory does not exist: ${execCwd}\nCannot execute bash commands.`));
+          return;
+        }
+        const { shell, args } = getShellConfig();
+        const child = spawn(shell, [...args, command], {
+          cwd: execCwd,
+          detached: process.platform !== "win32",
+          env: env ?? getShellEnv(),
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        const pid = child.pid;
+        if (pid) trackedProcessGroups.set(pid, { child });
+        let timedOut = false;
+        let timeoutHandle;
+        const onAbort = () => {
+          if (pid) killProcessTree(pid);
+        };
+        const cleanup = () => {
+          clearTimeout(timeoutHandle);
+          if (signal) signal.removeEventListener("abort", onAbort);
+          if (pid && !processGroupAlive(pid)) trackedProcessGroups.delete(pid);
+        };
+        if (pid && timeout !== undefined && timeout > 0) {
+          timeoutHandle = setTimeout(() => {
+            timedOut = true;
+            killProcessTree(pid);
+          }, timeout * 1000);
+        }
+        child.stdout?.on("data", onData);
+        child.stderr?.on("data", onData);
+        if (signal) {
+          if (signal.aborted) onAbort();
+          else signal.addEventListener("abort", onAbort, { once: true });
+        }
+        const done = waitForChildProcess(child)
+          .then((code) => {
+            cleanup();
+            if (signal?.aborted) {
+              reject(new Error("aborted"));
+              return;
+            }
+            if (timedOut) {
+              reject(new Error(`timeout:${timeout}`));
+              return;
+            }
+            resolve({ exitCode: code });
+          })
+          .catch((error) => {
+            cleanup();
+            reject(error);
+          });
+        if (pid) trackedProcessGroups.set(pid, { child, done });
+      });
+    },
+  };
+  return createBashTool(cwd, { operations });
+}
+
+async function waitForProcessGroupDead(pid) {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (!processGroupAlive(pid)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return !processGroupAlive(pid);
+}
+
+async function closeTrackedProcessGroups() {
+  const entries = [...trackedProcessGroups.entries()];
+  for (const [pid] of entries) killProcessTree(pid);
+  await Promise.allSettled(entries.map(([, entry]) => entry.done));
+  const processes = await Promise.all(entries.map(async ([pid]) => ({ pid, dead: await waitForProcessGroupDead(pid) })));
+  for (const [pid] of entries) {
+    if (!processGroupAlive(pid)) trackedProcessGroups.delete(pid);
+  }
+  return { processes, all_dead: processes.every(({ dead }) => dead) };
+}
+
 const TOOL_FACTORIES = Object.freeze({
-  bash: (cwd) => createBashTool(cwd),
+  bash: (cwd) => createTrackedBashTool(cwd),
   edit: (cwd) => createEditTool(cwd),
   read: (cwd) => createReadTool(cwd, { autoResizeImages: true }),
   write: (cwd) => createWriteTool(cwd),
 });
+const TOOL_DEFINITION_FACTORIES = Object.freeze({
+  bash: (cwd) => createBashToolDefinition(cwd),
+  edit: (cwd) => createEditToolDefinition(cwd),
+  read: (cwd) => createReadToolDefinition(cwd, { autoResizeImages: true }),
+  write: (cwd) => createWriteToolDefinition(cwd),
+});
 let initializedState = null;
 let retainedPreparedBatch = null;
 let nextBatchId = 1;
-
 function fail(message) {
   throw new Error(message);
 }
@@ -151,15 +264,35 @@ async function initialize(payload) {
   if (!advertisement || typeof advertisement !== "object" || Array.isArray(advertisement)) {
     fail("initialize requires advertisement");
   }
+  const advertisementTools = advertisement.tools;
+  if (!advertisementTools || typeof advertisementTools !== "object" || Array.isArray(advertisementTools)) {
+    fail("advertisement.tools must contain exactly read");
+  }
+  const advertisedToolNames = Object.keys(advertisementTools);
+  if (advertisedToolNames.length !== 1 || advertisedToolNames[0] !== "read") {
+    fail("advertisement.tools must contain exactly read");
+  }
+  const readAdvertisement = advertisementTools.read;
+  if (!readAdvertisement || typeof readAdvertisement !== "object" || Array.isArray(readAdvertisement)) {
+    fail("advertisement.tools.read must provide description and native_sha256");
+  }
+  if (typeof readAdvertisement.description !== "string" || typeof readAdvertisement.native_sha256 !== "string") {
+    fail("advertisement.tools.read must provide description and native_sha256");
+  }
+  if (!/^sha256:[0-9a-f]{64}$/.test(readAdvertisement.native_sha256)) {
+    fail("advertisement.tools.read native_sha256 must be sha256:<64 lowercase hex>");
+  }
+  const removeExact = advertisement.prompt?.remove_exact;
+  if (!Array.isArray(removeExact) || removeExact.length === 0 || removeExact.some((value) => typeof value !== "string" || !value)) {
+    fail("advertisement.prompt.remove_exact must be a non-empty string list");
+  }
   const modelConfig = payload.model_config;
   if (!modelConfig || typeof modelConfig !== "object" || Array.isArray(modelConfig)) {
     fail("initialize requires model_config");
   }
   const nativeDescriptionSha256 = originalDescriptionHashes(workspace);
-  for (const [name, overlay] of Object.entries(advertisement.tools ?? {})) {
-    if (!TOOL_IDS.has(name) || !overlay || typeof overlay !== "object") fail("advertisement tool overlay is invalid");
-    const expected = overlay.native_sha256;
-    if (expected !== `sha256:${nativeDescriptionSha256[name]}`) fail(`advertisement native description hash mismatch for ${name}`);
+  if (readAdvertisement.native_sha256 !== `sha256:${nativeDescriptionSha256.read}`) {
+    fail("advertisement native description hash mismatch for read");
   }
   const agentDir = resolve(scratch, "pi-agent");
   const home = resolve(scratch, "home");
@@ -172,12 +305,11 @@ async function initialize(payload) {
   const projectContext = loadProjectContextFiles({ cwd: workspace, agentDir });
   const schemas = toolSchemas(workspace, advertisement);
   const snippets = Object.fromEntries([...TOOL_IDS].map((name) => {
-    const tool = TOOL_FACTORIES[name](workspace);
-    const replacement = advertisement?.tools?.[name]?.description;
-    return [name, typeof replacement === "string" ? replacement : tool.promptSnippet ?? tool.description ?? ""];
+    const tool = TOOL_DEFINITION_FACTORIES[name](workspace);
+    return [name, tool.promptSnippet ?? tool.description ?? ""];
   }));
   const promptGuidelines = [...TOOL_IDS].flatMap((name) => {
-    const tool = TOOL_FACTORIES[name](workspace);
+    const tool = TOOL_DEFINITION_FACTORIES[name](workspace);
     return Array.isArray(tool.promptGuidelines) ? tool.promptGuidelines : [];
   });
   const oldTz = process.env.TZ;
@@ -195,10 +327,12 @@ async function initialize(payload) {
       toolSnippets: snippets,
       promptGuidelines,
     });
-    for (const removal of advertisement.prompt?.remove_exact ?? []) {
-      if (typeof removal !== "string" || systemPrompt.split(removal).length !== 2) {
-        fail("advertisement prompt removal did not match exactly once");
+    for (const removal of removeExact) {
+      if (systemPrompt.split(removal).length !== 2) {
+        fail("advertisement prompt removal must occur exactly once");
       }
+    }
+    for (const removal of removeExact) {
       systemPrompt = systemPrompt.replace(removal, "");
     }
   } finally {
@@ -333,7 +467,8 @@ async function executeOperation(operation, payload, signal) {
       fail("close payload must be empty");
     }
     retainedPreparedBatch = null;
-    return { schema_version: "bb.pi-native.v1", kind: "closed", cleanup: { processes: [], all_dead: true } };
+    const cleanup = await closeTrackedProcessGroups();
+    return { schema_version: "bb.pi-native.v1", kind: "closed", cleanup };
   }
   if (operation === "execute_batch") {
     if (!payload || typeof payload !== "object" || Array.isArray(payload) || Object.keys(payload).length !== 0) {
