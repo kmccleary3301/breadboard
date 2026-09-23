@@ -1,37 +1,45 @@
 from __future__ import annotations
 
+import asyncio
+from copy import deepcopy
 import hashlib
 import json
+import os
 from pathlib import Path
+from typing import Any, Mapping
 
 import pytest
 
+from conformance.comparators.pi_coding_agent_0_73_1 import PiCodingAgent0731Comparator
+from tests.rl.harness.test_pi_native_stream_conductor import _NativeWorkerPort
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PACKET_CASES_ROOT = Path("/tmp/pipkt/packet/cases")
+FIXTURE_PATH = Path(__file__).with_name("fixtures") / "pi_0_73_1_supplier_prompts.json"
+FIXTURE = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
 PROMPT_TEMPLATE = REPO_ROOT / "config" / "e4_targets" / "pi" / "0.73.1" / "prompts" / "system-prompt.md"
 NATIVE_CONFIG = REPO_ROOT / "config" / "e4_targets" / "pi" / "0.73.1" / "native-config.json"
 SUPPLIER_CWD = "/capture/workspace"
 SUPPLIER_DATE = "2026-09-23"
 SUPPLIER_PACKAGE_DIR = "/opt/pi/app"
 EXPECTED_PROMPT_SHA256 = "9da70352aa6a7f9920dc9d741dc9697d51bbc20850cd4f6751ff928d5d368025"
-PACKET_CASES = tuple(sorted(path for path in PACKET_CASES_ROOT.iterdir() if path.is_dir()))
+PROMPT_CASES: tuple[Mapping[str, Any], ...] = tuple(FIXTURE["cases"])
+_NODE_MODULES = Path(os.environ.get("PI_CODING_AGENT_NODE_MODULES", "/tmp/pi-node-0731/node_modules"))
 
 
-def _render_supplier_prompt(case_dir: Path) -> str:
+def _render_supplier_prompt(case: Mapping[str, Any]) -> str:
     """Mirror pi_tools_0_73_1.mjs initialize slots and native context formatting.
 
     The worker loads context at lines 172-173, derives package/date inputs at
     lines 184-197, and removes each exact advertisement string at lines
-    198-203.  The sealed prompt's six slots are rendered in that same order.
+    198-203. The sealed prompt's six slots are rendered in that same order.
     Native ``buildSystemPrompt`` formats each context item as ``## path``, a
     blank line, content, and two trailing newlines (resource-loader output is
     the ``{path, content}`` pair consumed by lines 107-109 of the package
     implementation).
     """
     template = PROMPT_TEMPLATE.read_text(encoding="utf-8")
-    context_content = (case_dir / "workspace" / "AGENTS.md").read_text(encoding="utf-8")
-    project_context = f"## {SUPPLIER_CWD}/AGENTS.md\n\n{context_content}\n\n"
+    project_context = f"## {SUPPLIER_CWD}/AGENTS.md\n\n{case['agents_md']}\n\n"
     replacements = {
         "{{readme_path}}": f"{SUPPLIER_PACKAGE_DIR}/README.md",
         "{{docs_path}}": f"{SUPPLIER_PACKAGE_DIR}/docs",
@@ -47,12 +55,8 @@ def _render_supplier_prompt(case_dir: Path) -> str:
     return template
 
 
-def _supplier_first_system_prompt_without_advertisement(case_dir: Path) -> str:
-    transcript = case_dir / "receiver" / "http-transcript.jsonl"
-    first_request = json.loads(transcript.read_text(encoding="utf-8").splitlines()[0])["body"]
-    system_messages = [message for message in first_request["messages"] if message.get("role") == "system"]
-    assert len(system_messages) == 1
-    prompt = system_messages[0]["content"]
+def _supplier_first_system_prompt_without_advertisement(case: Mapping[str, Any]) -> str:
+    prompt = case["first_request_system_content"]
     config = json.loads(NATIVE_CONFIG.read_text(encoding="utf-8"))
     for removal in config["advertisement"]["prompt"]["remove_exact"]:
         assert prompt.count(removal) == 1
@@ -60,10 +64,72 @@ def _supplier_first_system_prompt_without_advertisement(case_dir: Path) -> str:
     return prompt
 
 
-@pytest.mark.parametrize("case_dir", PACKET_CASES, ids=lambda path: path.name)
-def test_sealed_prompt_matches_every_supplier_packet_case(case_dir: Path) -> None:
-    assert PACKET_CASES, f"no supplier packet cases found under {PACKET_CASES_ROOT}"
-    rendered = _render_supplier_prompt(case_dir)
-    expected = _supplier_first_system_prompt_without_advertisement(case_dir)
+@pytest.mark.parametrize("case", PROMPT_CASES, ids=lambda case: case["case"])
+def test_sealed_prompt_matches_every_supplier_packet_case(case: Mapping[str, Any]) -> None:
+    rendered = _render_supplier_prompt(case)
+    expected = _supplier_first_system_prompt_without_advertisement(case)
     assert rendered == expected
     assert hashlib.sha256(rendered.encode("utf-8")).hexdigest() == EXPECTED_PROMPT_SHA256
+
+
+async def _initialize_worker(workspace: Path, advertisement: Mapping[str, Any]) -> Mapping[str, Any]:
+    port = _NativeWorkerPort(workspace, ())
+    try:
+        return await port.invoke_native_phase(
+            "initialize",
+            {
+                "task": "prompt materialization parity",
+                "package_dir": SUPPLIER_PACKAGE_DIR,
+                "advertisement": deepcopy(dict(advertisement)),
+                "model_config": {"id": "model-a", "provider": "openai", "input": ["text"]},
+            },
+            timeout_ms=10_000,
+        )
+    finally:
+        await port.close()
+
+
+@pytest.mark.skipif(
+    not (_NODE_MODULES / "@mariozechner" / "pi-coding-agent" / "dist" / "index.js").is_file(),
+    reason="pinned Pi 0.73.1 node_modules root is unavailable",
+)
+@pytest.mark.asyncio
+async def test_real_worker_prompt_matches_supplier_through_comparator(tmp_path: Path) -> None:
+    case = next(case for case in PROMPT_CASES if case["case"] == "normal_workspace_episode")
+    config = json.loads(NATIVE_CONFIG.read_text(encoding="utf-8"))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "AGENTS.md").write_text(case["agents_md"], encoding="utf-8")
+    initialized = await _initialize_worker(workspace, config["advertisement"])
+    bootstrap = initialized["bootstrap"]
+    assert bootstrap["current_date"] == SUPPLIER_DATE
+
+    supplier_tools = deepcopy(initialized["tool_schemas"])
+    native_read_description = FIXTURE["native_read_description"]
+    for tool in supplier_tools:
+        if tool["function"]["name"] == "read":
+            tool["function"]["description"] = native_read_description
+    supplier = {
+        "role": "supplier",
+        "messages": [{"role": "user", "content": "prompt materialization parity"}],
+        "requests": [{"messages": [{"role": "system", "content": case["first_request_system_content"]}], "tools": supplier_tools}],
+        "effects": {},
+        "termination": {"kind": "submitted", "native_stop_reason": "stop"},
+        "request_count": 1,
+    }
+    replay = {
+        "role": "replay",
+        "messages": [{"role": "user", "content": "prompt materialization parity"}],
+        "requests": [{"messages": [{"role": "system", "content": initialized["system_prompt"]}], "tools": initialized["tool_schemas"]}],
+        "runtime_inputs": {
+            "cwd": str(workspace),
+            "home": bootstrap["home"],
+            "current_date": bootstrap["current_date"],
+            "package_dir": SUPPLIER_PACKAGE_DIR,
+        },
+        "effects": {},
+        "termination": {"kind": "submitted", "native_stop_reason": "stop"},
+        "request_count": 1,
+    }
+    report = PiCodingAgent0731Comparator()({"capture": supplier, "replay": replay})
+    assert report["passed"], report["assertions"][0]["detail"]
