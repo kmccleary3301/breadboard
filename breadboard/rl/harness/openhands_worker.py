@@ -275,6 +275,8 @@ class OpenHandsActor:
         from openhands.tools import FileEditorTool, TaskTrackerTool, TerminalTool
         from openhands.sdk.tool import register_tool
         import openhands.tools.terminal.terminal.subprocess_terminal as subprocess_module
+        import openhands.tools.terminal.terminal.factory as terminal_factory
+        terminal_factory._is_tmux_available = lambda: False
 
         source_subprocess_terminal = subprocess_module.SubprocessTerminal
 
