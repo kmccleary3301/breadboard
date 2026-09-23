@@ -3740,11 +3740,15 @@ class _NativeCloseTestPort(RecordingToolPort):
         *,
         malformed_execute: bool = False,
         close_error: BaseException | None = None,
+        block_close: bool = False,
     ) -> None:
         super().__init__(bindings)
         self.operations: list[str] = []
         self.malformed_execute = malformed_execute
         self.close_error = close_error
+        self.block_close = block_close
+        self.close_entered = asyncio.Event()
+        self.release_close = asyncio.Event()
 
     async def invoke_native_phase(
         self,
@@ -3795,6 +3799,9 @@ class _NativeCloseTestPort(RecordingToolPort):
                 }],
             }
         if operation == "close":
+            self.close_entered.set()
+            if self.block_close:
+                await self.release_close.wait()
             if self.close_error is not None:
                 raise self.close_error
             return {
@@ -3962,8 +3969,10 @@ async def test_native_stream_close_failure_on_error_preserves_primary_and_record
     finally:
         await session.close()
     assert tools.operations.count("close") == 1
-    cleanup_failure = getattr(captured.value, "cleanup_failure", None)
-    assert isinstance(cleanup_failure, RunnerDependencyError)
+    cleanup = session.native_cleanup_outcome
+    assert cleanup.attempted is True
+    assert cleanup.all_dead is False
+    assert cleanup.error_code == "native_close_failed"
 
 
 async def test_native_stream_cancellation_during_provider_closes_and_propagates(
@@ -3972,15 +3981,44 @@ async def test_native_stream_cancellation_during_provider_closes_and_propagates(
     session, client, tools, request = await _run_native_close_test_case(
         monkeypatch, block_invoke=True,
     )
+    tools.block_close = True
+    tools.close_error = RuntimeError("close while cancelled")
     run_task = asyncio.create_task(session.run(request))
     await _within_timeout(client.invoke_entered.wait())
     run_task.cancel()
+    await _within_timeout(tools.close_entered.wait())
+    tools.release_close.set()
     try:
         with pytest.raises(asyncio.CancelledError):
             await run_task
     finally:
         await session.close()
     assert tools.operations.count("close") == 1
+    cleanup = session.native_cleanup_outcome
+    assert cleanup.attempted is True
+    assert cleanup.all_dead is False
+    assert cleanup.error_code == "native_close_failed"
+
+async def test_native_stream_cancellation_during_shielded_close_preserves_cancelled_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, _, tools, request = await _run_native_close_test_case(monkeypatch)
+    tools.block_close = True
+    tools.close_error = RuntimeError("shielded close sentinel")
+    run_task = asyncio.create_task(session.run(request))
+    await _within_timeout(tools.close_entered.wait())
+    run_task.cancel()
+    tools.release_close.set()
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            await run_task
+    finally:
+        await session.close()
+    assert tools.operations.count("close") == 1
+    cleanup = session.native_cleanup_outcome
+    assert cleanup.attempted is True
+    assert cleanup.all_dead is False
+    assert cleanup.error_code == "native_close_failed"
 
 
 async def test_native_stream_normal_path_closes_once(

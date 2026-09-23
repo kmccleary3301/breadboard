@@ -110,6 +110,12 @@ POLICY_RUNTIME_BINDING_SCHEMA_VERSION = "bb.rl.policy-runtime-binding.v1"
 
 
 @dataclass(frozen=True, slots=True)
+class NativeCleanupOutcome:
+    attempted: bool
+    all_dead: bool | None
+    error_code: str | None
+
+@dataclass(frozen=True, slots=True)
 class ConductorRunRequest:
     task_input: FrozenJsonObject
     context: FrozenJsonObject
@@ -651,19 +657,12 @@ def _plan_error(request: RunnerOpenRequest, message: str, code: str) -> RunnerPl
     )
 
 
-def _record_cleanup_failure(primary: BaseException, cleanup: BaseException) -> None:
+def _note_cleanup_failure(primary: BaseException, cleanup: BaseException) -> None:
     """Keep a cleanup failure visible without replacing the primary error."""
-    try:
-        prior = getattr(primary, "cleanup_failures", ())
-        if not isinstance(prior, tuple):
-            prior = (prior,)
-        setattr(primary, "cleanup_failures", (*prior, cleanup))
-        setattr(primary, "cleanup_failure", cleanup)
-    except BaseException:
-        primary.add_note(
-            "native stream cleanup failed: "
-            f"{type(cleanup).__name__}: {str(cleanup)[:256]}"
-        )
+    primary.add_note(
+        "native stream cleanup failed: "
+        f"{type(cleanup).__name__}: {str(cleanup)[:256]}"
+    )
 
 
 def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
@@ -1320,6 +1319,7 @@ class _ConductorSession:
         "_cancellation", "_turns", "_cancellation_published", "_binding_cancel_task",
         "_close_task", "_poison", "_terminal_committing",
         "_native_stream_close_callback", "_native_stream_close_started",
+        "_native_cleanup_outcome",
     )
 
     def __init__(
@@ -1352,6 +1352,30 @@ class _ConductorSession:
         self._terminal_committing = False
         self._native_stream_close_callback: Any = None
         self._native_stream_close_started = False
+        self._native_cleanup_outcome = NativeCleanupOutcome(False, None, None)
+
+    @property
+    def native_cleanup_outcome(self) -> NativeCleanupOutcome:
+        return self._native_cleanup_outcome
+
+    def _set_native_cleanup_outcome(
+        self, *, attempted: bool, all_dead: bool | None, error_code: str | None,
+    ) -> None:
+        self._native_cleanup_outcome = NativeCleanupOutcome(
+            attempted, all_dead, error_code,
+        )
+
+    def _record_native_cleanup_failure(
+        self, primary: BaseException | None, cleanup: BaseException,
+    ) -> None:
+        error_code = getattr(cleanup, "code", None)
+        if not isinstance(error_code, str) or not error_code:
+            error_code = type(cleanup).__name__.lower()
+        self._set_native_cleanup_outcome(
+            attempted=True, all_dead=False, error_code=error_code,
+        )
+        if primary is not None:
+            _note_cleanup_failure(primary, cleanup)
 
     async def run(self, request: ConductorRunRequest) -> RunnerResult:
         async with self._lock:
@@ -1433,7 +1457,7 @@ class _ConductorSession:
             if primary is None:
                 primary = exc
             else:
-                _record_cleanup_failure(primary, exc)
+                _note_cleanup_failure(primary, exc)
         if primary is not None:
             raise primary
 
@@ -1943,7 +1967,8 @@ class _ConductorSession:
                 try:
                     await callback()
                 except BaseException as cleanup:
-                    _record_cleanup_failure(primary, cleanup)
+                    if not isinstance(cleanup, asyncio.CancelledError):
+                        self._record_native_cleanup_failure(primary, cleanup)
             raise
         finally:
             self._native_stream_close_callback = None
@@ -2004,12 +2029,17 @@ class _ConductorSession:
             self._native_stream_close_started = True
             if close_task is None:
                 async def close_phase() -> dict[str, Any]:
+                    self._set_native_cleanup_outcome(
+                        attempted=True, all_dead=None, error_code=None,
+                    )
                     try:
                         async with asyncio.timeout(limits.action_timeout_ms / 1000):
                             closed = await phase("close", {})
-                    except RunnerError:
+                    except RunnerError as exc:
+                        self._record_native_cleanup_failure(None, exc)
                         raise
-                    except asyncio.CancelledError:
+                    except asyncio.CancelledError as exc:
+                        self._record_native_cleanup_failure(None, exc)
                         raise
                     except BaseException as exc:
                         error = RunnerDependencyError(
@@ -2018,6 +2048,7 @@ class _ConductorSession:
                             **self._context(),
                         )
                         error.__cause__ = exc
+                        self._record_native_cleanup_failure(None, error)
                         raise error
                     cleanup = closed.get("cleanup")
                     if (
@@ -2025,16 +2056,25 @@ class _ConductorSession:
                         or type(cleanup) is not dict
                         or cleanup.get("all_dead") is not True
                     ):
-                        raise RunnerProtocolError(
+                        error = RunnerProtocolError(
                             "native worker cleanup is not verified",
                             code="native_response_invalid", **self._context(),
                         )
+                        self._record_native_cleanup_failure(None, error)
+                        raise error
+                    self._set_native_cleanup_outcome(
+                        attempted=True, all_dead=True, error_code=None,
+                    )
                     return closed
                 close_task = asyncio.create_task(close_phase())
             try:
                 return await asyncio.shield(close_task)
             except asyncio.CancelledError as cancellation:
-                await close_task
+                try:
+                    await close_task
+                except BaseException as close_error:
+                    if not isinstance(close_error, asyncio.CancelledError):
+                        self._record_native_cleanup_failure(None, close_error)
                 raise cancellation
 
 

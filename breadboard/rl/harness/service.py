@@ -70,6 +70,7 @@ from breadboard.rl.harness.runners.base import (
 from breadboard.rl.harness.runners.conductor import (
     CONDUCTOR_ADAPTER_ID,
     ConductorRunRequest,
+    NativeCleanupOutcome,
     PolicyRuntimeBinding,
 )
 from breadboard.rl.harness.runners.terminal import (
@@ -1746,7 +1747,13 @@ class BreadBoardV2EpisodeService:
                 close_cancellation, close_error = await self._close_owned_session(
                     coordinator
                 )
-                if close_error is not None:
+                native_cleanup_failure = _native_cleanup_failure(
+                    getattr(coordinator.session, "native_cleanup_outcome", None),
+                    "session_close",
+                )
+                if native_cleanup_failure is not None:
+                    coordinator.session_close_failure = native_cleanup_failure
+                elif close_error is not None:
                     coordinator.session_close_failure = _failure_from_exception(
                         close_error, "session_close"
                     )
@@ -3627,6 +3634,22 @@ def _retryable_shutdown_failure(exc: BaseException) -> bool:
     if isinstance(exc, BaseExceptionGroup):
         return any(_retryable_shutdown_failure(item) for item in exc.exceptions)
     return False
+
+def _native_cleanup_failure(
+    outcome: NativeCleanupOutcome | object,
+    boundary: str,
+) -> SafeFailureFactV2 | None:
+    if type(outcome) is not NativeCleanupOutcome or not outcome.attempted:
+        return None
+    if outcome.all_dead is True and outcome.error_code is None:
+        return None
+    return _v2_failure(
+        "cleanup",
+        outcome.error_code or "native_cleanup_not_verified",
+        "reconcile",
+        boundary,
+    )
+
 
 
 def _failure_from_exception(
