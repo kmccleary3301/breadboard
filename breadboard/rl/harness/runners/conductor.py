@@ -33,6 +33,7 @@ from breadboard.rl.harness.runners.base import (
     MiniTemplateFramePort,
     NativeHTTPPolicyRuntimeClientPort,
     NativeSourceSessionPort,
+    NativeRuntimeInputPort,
     FrozenJsonObject,
     JsonSnapshotError,
     PolicyRequestEvent,
@@ -2008,6 +2009,7 @@ class _ConductorSession:
         )
         if (
             not isinstance(tools, NativeSourceSessionPort)
+            or not isinstance(tools, NativeRuntimeInputPort)
             or self._binding.source_model_config is None
             or not isinstance(advertisement, Mapping)
             or limits.max_turns != profile.max_turns
@@ -2099,30 +2101,31 @@ class _ConductorSession:
                 raise cancellation
 
 
-        declared_runtime_inputs = getattr(tools, "native_runtime_inputs", None)
-        runtime_inputs: dict[str, str] = {}
-        if isinstance(declared_runtime_inputs, Mapping):
-            required_runtime_input_names = ("cwd", "home", "current_date", "package_dir")
-            if (
-                set(declared_runtime_inputs) != set(required_runtime_input_names)
-                or any(
-                    type(declared_runtime_inputs[name]) is not str
-                    or not declared_runtime_inputs[name]
-                    for name in required_runtime_input_names
-                )
-            ):
-                raise RunnerProtocolError(
-                    "native stream runtime inputs are malformed",
-                    code="native_response_binding_invalid", **self._context(),
-                )
-            runtime_inputs = {
-                name: declared_runtime_inputs[name] for name in required_runtime_input_names
-            }
+        declared_runtime_inputs = tools.native_runtime_inputs(
+            input_names=profile.runtime_input_names,
+            package_subpath=profile.package_subpath,
+        )
+        if (
+            type(declared_runtime_inputs) is not dict
+            or set(declared_runtime_inputs) != set(profile.runtime_input_names)
+            or any(
+                type(declared_runtime_inputs[name]) is not str
+                or not declared_runtime_inputs[name]
+                for name in profile.runtime_input_names
+            )
+        ):
+            raise RunnerProtocolError(
+                "native stream runtime inputs are malformed",
+                code="native_response_binding_invalid", **self._context(),
+            )
+        runtime_inputs = {
+            name: declared_runtime_inputs[name] for name in profile.runtime_input_names
+        }
         initialized = await phase("initialize", {
             "task": task,
             "model_config": thaw_json(self._binding.source_model_config),
             "advertisement": thaw_json(advertisement),
-            **({"runtime_inputs": runtime_inputs} if runtime_inputs else {}),
+            "runtime_inputs": runtime_inputs,
         })
         self._native_stream_close_callback = close_once
         bootstrap = initialized.get("bootstrap")

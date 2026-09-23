@@ -2753,34 +2753,64 @@ class LeaseBackedRunnerWorkspace:
     @property
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]: return self.__tool_bindings
 
-    @property
-    def native_runtime_inputs(self) -> Mapping[str, str]:
-        repositories = tuple(
+    def native_runtime_inputs(
+        self,
+        *,
+        input_names: tuple[str, ...],
+        package_subpath: str,
+    ) -> Mapping[str, str]:
+        if (
+            type(input_names) is not tuple
+            or not input_names
+            or any(type(name) is not str or not name for name in input_names)
+            or len(set(input_names)) != len(input_names)
+            or type(package_subpath) is not str
+            or not package_subpath
+        ):
+            raise WorkspaceStateError(
+                "source-native runtime input declaration is invalid",
+                code="runtime_unsupported",
+                lease_id=self.__lease.lease_id,
+            )
+        package_path = Path(package_subpath)
+        if package_path.is_absolute() or ".." in package_path.parts:
+            raise WorkspaceStateError(
+                "source-native package subpath escapes adapter runtime root",
+                code="workspace_escape",
+                lease_id=self.__lease.lease_id,
+            )
+        writable_entries = tuple(
             entry
             for entry in self.__lease.plan.materialization_plan.entries
-            if entry.role == "repository"
+            if entry.access.value == "rw"
         )
         adapters = tuple(
             adapter
             for adapter in self.__lease.plan.installed_tool_adapters
             if adapter.adapter_id in NATIVE_PHASE_TOOL_IDS
         )
-        if len(repositories) != 1 or len(adapters) != 1:
+        if len(writable_entries) != 1 or len(adapters) != 1:
             raise WorkspaceStateError(
                 "source-native runtime inputs are unavailable",
                 code="runtime_unsupported",
                 lease_id=self.__lease.lease_id,
             )
         scratch = self.__lease._materialized.workspace_path / ".breadboard-native-scratch"
-        return {
-            "cwd": str(self.__lease._resolve(repositories[0].target_logical_path, writable=False)),
+        available = {
+            "cwd": str(self.__lease._resolve(writable_entries[0].target_logical_path, writable=False)),
             "home": str(scratch / "home"),
             "current_date": datetime.now(timezone.utc).date().isoformat(),
-            "package_dir": str(
-                Path(adapters[0].runtime_root_path)
-                / "node_modules/@mariozechner/pi-coding-agent"
-            ),
+            "package_dir": str(Path(adapters[0].runtime_root_path) / package_path),
         }
+        unknown = set(input_names) - set(available)
+        if unknown:
+            raise WorkspaceStateError(
+                "source-native runtime input is not supported",
+                code="runtime_unsupported",
+                lease_id=self.__lease.lease_id,
+            )
+        return {name: available[name] for name in input_names}
+
     async def invoke_native_phase(
         self,
         operation: str,

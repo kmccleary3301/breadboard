@@ -1019,6 +1019,18 @@ class NativeSourceSessionPort(Protocol):
 
 
 @runtime_checkable
+class NativeRuntimeInputPort(Protocol):
+    """Typed authority for profile-declared native worker runtime inputs."""
+
+    def native_runtime_inputs(
+        self,
+        *,
+        input_names: tuple[str, ...],
+        package_subpath: str,
+    ) -> Mapping[str, str]: ...
+
+
+@runtime_checkable
 class NativeHTTPPolicyRuntimeClientPort(CompiledPolicyRuntimeClientPort, Protocol):
     """Compiled provider authority for a source-native HTTP exchange."""
 

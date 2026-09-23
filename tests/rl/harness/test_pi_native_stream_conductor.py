@@ -221,19 +221,30 @@ class _NativeWorkerPort:
         self._process: asyncio.subprocess.Process | None = None
         self._request_id = 0
         self.system_prompt = ""
+        self.initialize_runtime_inputs: Mapping[str, str] = {}
 
     @property
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]:
         return self._bindings
 
-    @property
-    def native_runtime_inputs(self) -> Mapping[str, str]:
-        return {
+    def native_runtime_inputs(
+        self,
+        *,
+        input_names: tuple[str, ...],
+        package_subpath: str,
+    ) -> Mapping[str, str]:
+        package_root = Path(package_subpath)
+        if package_root.parts[:1] == ("node_modules",):
+            package_root = Path(*package_root.parts[1:])
+        values = {
             "cwd": str(self.workspace),
             "home": str(self.scratch / "home"),
             "current_date": date.today().isoformat(),
-            "package_dir": str(_NODE_MODULES / "@mariozechner" / "pi-coding-agent"),
+            "package_dir": str(_NODE_MODULES / package_root),
         }
+        if set(input_names) != set(values):
+            raise RuntimeError("unexpected runtime input declaration")
+        return {name: values[name] for name in input_names}
 
     async def _ensure(self) -> None:
         if self._process is None:
@@ -269,6 +280,7 @@ class _NativeWorkerPort:
                     "package_dir": phase_payload["package_dir"],
                 },
             )
+            self.initialize_runtime_inputs = dict(phase_payload["runtime_inputs"])
             phase_payload.setdefault(
                 "advertisement",
                 json.loads(
@@ -432,6 +444,9 @@ async def _run_episode(
             await worker.close()
         system_prompt = worker.system_prompt
         operations = tuple(worker.operations)
+        assert thaw_json(result.response["replay_trace"])["runtime_inputs"] == dict(
+            worker.initialize_runtime_inputs
+        )
         await client.close()
     return result, requests, sink.events, system_prompt, operations
 

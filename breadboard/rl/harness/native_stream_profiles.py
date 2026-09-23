@@ -31,6 +31,8 @@ class NativeStreamProfile:
     episode_timeout_seconds: int
     ack_policy: Literal["none", "after_history_commit"]
     incomplete_stop_reasons: frozenset[str]
+    runtime_input_names: tuple[str, ...]
+    package_subpath: str
     state_module: ModuleType
     # (task, system_prompt, bootstrap) -> profile semantics state.
     state_factory: Callable[[str, str, Mapping[str, Any]], Any]
@@ -53,6 +55,8 @@ NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
         episode_timeout_seconds=120,
         ack_policy="none",
         incomplete_stop_reasons=frozenset({"error", "aborted", "length"}),
+        runtime_input_names=("cwd", "home", "current_date", "package_dir"),
+        package_subpath="node_modules/@mariozechner/pi-coding-agent",
         state_module=pi_semantics,
         state_factory=_pi_state,
     ),
