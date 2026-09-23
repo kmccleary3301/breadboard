@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from breadboard.rl.harness import contracts as c
+from breadboard.rl.harness.lease_envelope import RuntimeContainment
 from breadboard.rl.harness.runners import conductor as conductor_module
 from breadboard.rl.harness.runners.base import (
     PolicyRequestEvent,
@@ -68,6 +69,7 @@ class RecordingToolPort:
         *,
         results: list[Mapping[str, Any]] | None = None,
     ) -> None:
+        self.containment = RuntimeContainment.UNCONFINED_TEST_ONLY
         self._bindings = bindings
         self.results = list(results or [])
         self.calls: list[tuple[str, dict[str, Any], int]] = []
