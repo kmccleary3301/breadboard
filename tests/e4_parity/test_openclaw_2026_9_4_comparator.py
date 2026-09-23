@@ -107,6 +107,28 @@ def test_comparator_rejects_non_identical_repeated_tool_snapshots() -> None:
             "request_count": 2,
         })
 
+
+def test_comparator_rejects_non_identical_repeated_result_snapshots() -> None:
+    first = {
+        "model": "gpt",
+        "messages": [
+            {"role": "assistant", "tool_calls": [{
+                "id": "call-1", "function": {"name": "read", "arguments": "{\"path\":\"a\"}"}
+            }]},
+            {"role": "tool", "tool_call_id": "call-1", "content": "first"},
+        ],
+        "tools": [],
+    }
+    second = json.loads(json.dumps(first))
+    second["messages"][1]["content"] = "second"
+    with pytest.raises(ComparatorError, match="repeated tool result call-1"):
+        project_bb_trace({
+            "requests": [first, second],
+            "effects": {},
+            "termination": {"kind": "stop", "native_stop_reason": "stop"},
+            "request_count": 2,
+        })
+
 def test_comparator_negative_gate_rejects_extra_tool_and_request_count() -> None:
     trace = {
         "requests": [],
