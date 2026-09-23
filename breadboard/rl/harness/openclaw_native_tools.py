@@ -509,7 +509,7 @@ class _OpenClawWorkerClient:
             if candidates:
                 self.dist = str(candidates[-1])
         worker = Path(__file__).with_name("openclaw_tool_worker.mjs")
-        env = os.environ.copy()
+        env = {key: value for key, value in os.environ.items() if not _is_provider_auth_env(key)}
         env["OPENCLAW_DIST"] = self.dist
         self._process = subprocess.Popen(
             [self.node, str(worker)],
