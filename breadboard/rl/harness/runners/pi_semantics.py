@@ -8,20 +8,19 @@ request digests are retained in the request record but never interpreted here.
 The consumer reconstructs tool arguments from ordered argument fragments and
 hands each call to the pinned Node worker for validation and execution.
 
-The generic host seam is deliberately small: a caller supplies one
-``NativeProviderResponse`` for each admitted HTTP response, or a ``stream_fn``
-that returns one.  ``PiSemanticsState.request()`` counts every streamFn seam
-attempt, while the ninth attempt at the public eight-request cap is handled
-locally and does not call the supplied stream function.
+BreadBoard's Conductor owns the loop.  It drives this state through
+``begin_query`` (the streamFn seam; the ninth attempt at the public
+eight-request cap is refused locally before any HTTP), ``prepare_response``,
+``commit_tool_results``, and ``to_trace``.  Request bodies, runtime inputs,
+and workspace effects are Conductor-owned facts passed into ``to_trace``.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
 import os
-from pathlib import Path
 import re
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any, Iterable, Mapping
 
 from breadboard_engine.provider.native_response import NativeProviderResponse
 
@@ -239,7 +238,6 @@ class PiSemanticsState:
         self,
         *,
         task: str = "",
-        cwd: str | os.PathLike[str] = ".",
         system_prompt: str = "",
         request_cap: int = DEFAULT_REQUEST_CAP,
         image_delivery: bool = False,
@@ -248,7 +246,6 @@ class PiSemanticsState:
         if request_cap <= 0:
             raise ValueError("request_cap must be positive")
         self.task = task
-        self.cwd = Path(cwd).resolve()
         self.system_prompt = system_prompt
         self.request_cap = request_cap
         self.image_delivery = image_delivery
@@ -257,7 +254,6 @@ class PiSemanticsState:
         self.stream_fn_issued = 0
         self.request_records: list[PiRequestRecord] = []
         self.messages: list[dict[str, Any]] = []
-        self.effects: dict[str, dict[str, Any]] = {}
         self.exit_status: str | None = None
         self.native_stop_reason: str | None = None
         self.messages.append({"role": "user", "content": [{"type": "text", "text": task}]})
@@ -287,16 +283,6 @@ class PiSemanticsState:
             self.request_records.append(PiRequestRecord(self.stream_fn_issued, False, None))
             return self._cap_response()
         return None
-
-    def request(self, stream_fn: Callable[..., NativeProviderResponse], request: Any = None) -> NativeProviderResponse | PiResponseResult:
-        """Issue one streamFn attempt; cap checks happen before calling it."""
-        terminal = self.begin_query()
-        if terminal is not None:
-            return terminal
-        response = stream_fn(request) if request is not None else stream_fn()
-        if not isinstance(response, NativeProviderResponse):
-            raise TypeError("stream_fn must return NativeProviderResponse")
-        return response
 
     def prepare_response(self, response: NativeProviderResponse) -> PiResponseResult:
         """Commit an admitted assistant response without executing its tools."""
@@ -364,92 +350,6 @@ class PiSemanticsState:
             self.messages.append(result.as_message())
         return committed
 
-    def consume_response(self, response: NativeProviderResponse) -> PiResponseResult:
-        """Offline wrapper: prepare a response, execute native tools, then commit."""
-        if self.stream_fn_issued <= self.request_count:
-            terminal = self.begin_query()
-            if terminal is not None:
-                return terminal
-        prepared = self.prepare_response(response)
-        if not prepared.calls:
-            return prepared
-        from breadboard.rl.harness.pi_native_tools import dispatch_native_tools
-
-        raw_results = dispatch_native_tools(
-            [
-                {"id": call.id, "name": call.name, "arguments": call.arguments}
-                for call in prepared.calls
-            ],
-            cwd=self.cwd,
-            image_delivery=self.image_delivery,
-        )
-        results = self.commit_tool_results(prepared.calls, raw_results)
-        return PiResponseResult(
-            prepared.assistant,
-            prepared.calls,
-            results,
-            prepared.stop_reason,
-            prepared.quiescent,
-        )
-
-    def run_episode(
-        self,
-        responses: Iterable[NativeProviderResponse] | None = None,
-        *,
-        stream_fn: Callable[..., NativeProviderResponse] | None = None,
-        requests: Iterable[Any] | None = None,
-        runtime_inputs: Mapping[str, Any],
-    ) -> dict[str, Any]:
-        """Replay responses or call a stream function until Pi reaches quiescence.
-
-        ``runtime_inputs`` is the caller-owned ``{cwd, home, current_date,
-        package_dir}`` record the replay ran under; it is copied into the trace
-        unchanged so the comparator can apply its runtime-input rules.
-        """
-        if responses is not None and stream_fn is not None:
-            raise ValueError("provide responses or stream_fn, not both")
-        results: list[PiResponseResult] = []
-        if stream_fn is not None:
-            iterator = iter(requests) if requests is not None else iter(())
-            while not self.is_exited:
-                request = next(iterator, None)
-                outcome = self.request(stream_fn, request)
-                if isinstance(outcome, PiResponseResult):
-                    results.append(outcome)
-                    break
-                result = self.consume_response(outcome)
-                results.append(result)
-                if result.quiescent:
-                    break
-        else:
-            iterator = iter(responses or ())
-            while not self.is_exited:
-                try:
-                    response = next(iterator)
-                except StopIteration:
-                    if self.request_count >= self.request_cap and results and not results[-1].quiescent:
-                        terminal = self.begin_query()
-                        if terminal is not None:
-                            results.append(terminal)
-                    break
-                result = self.consume_response(response)
-                results.append(result)
-                if result.quiescent:
-                    break
-        requests = [
-            {
-                "attempt": record.attempt,
-                "sent": record.sent,
-                "request_digest": record.request_digest,
-            }
-            for record in self.request_records
-        ]
-        return self.to_trace(
-            requests=requests,
-            runtime_inputs=runtime_inputs,
-            effects=self.effects,
-        )
-
     def to_trace(
         self,
         *,
@@ -477,20 +377,6 @@ class PiSemanticsState:
         }
 
 
-def run_episode(
-    responses: Iterable[NativeProviderResponse],
-    *,
-    task: str = "",
-    cwd: str | os.PathLike[str] = ".",
-    system_prompt: str = "",
-    case_id: str | None = None,
-    runtime_inputs: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Convenience wrapper for deterministic offline replay."""
-    state = PiSemanticsState(task=task, cwd=cwd, system_prompt=system_prompt, case_id=case_id)
-    return state.run_episode(responses, runtime_inputs=runtime_inputs)
-
-
 __all__ = [
     "COMPLETE_MARKER",
     "DEFAULT_REQUEST_CAP",
@@ -504,5 +390,4 @@ __all__ = [
     "execute_pi_tool",
     "parse_streaming_json",
     "repair_json",
-    "run_episode",
 ]
