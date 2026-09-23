@@ -449,6 +449,9 @@ async def test_openclaw_native_stream_cap_refuses_ninth_http_request(tmp_path: P
     assert result.termination is RunnerTermination.LIMITS_EXCEEDED
     assert len(requests) == 8
     assert requests[0]["messages"][0] == {"role": "system", "content": system_prompt}
+    assert [tool["function"]["name"] for tool in requests[0]["tools"]] == [
+        "edit", "exec", "ls", "process", "read", "write",
+    ]
     assert all(request.get("stream_options") == {"include_usage": True} for request in requests)
     assert all(request.get("store") is False for request in requests)
     assert all("n" not in request and "strict" not in request for request in requests)
@@ -460,20 +463,158 @@ async def test_openclaw_native_stream_cap_refuses_ninth_http_request(tmp_path: P
 async def test_openclaw_native_worker_ack_and_close_are_scope_verified(tmp_path: Path) -> None:
     worker = _NativeWorkerPort(tmp_path, ())
     try:
+        with pytest.raises(RuntimeError, match="advertisement.system_prompt"):
+            await worker.invoke_native_phase(
+                "initialize",
+                {"task": "phase contract", "model_config": {"id": "model-a", "provider": "openai"}},
+                timeout_ms=5_000,
+            )
+        with pytest.raises(RuntimeError, match="advertisement keys"):
+            await worker.invoke_native_phase(
+                "initialize",
+                {
+                    "task": "phase contract",
+                    "advertisement": {
+                        "prompt_removals": [],
+                        "system_prompt": "native prompt {{task}}",
+                        "tool_description_replacements": {},
+                        "tools": {"exec": {"description": "Run shell now; background continuation supported. Use yieldMs/background, then process for logs/status/input/intervention. Process confirms completion. TTY CLI/UI: pty=true. Quote arguments containing shell metacharacters, including URL query strings with `?` or `&`.", "native_sha256": "sha256:6a41ebbc7cd1fae376a497c1bb1662c40a5faa87e5f811bff3ae37e04fb20973"}},
+                        "capability_denials": {
+                            "ask": {
+                                "schema_version": "bb.openclaw-capability-denial.v1",
+                                "capability": "ask",
+                                "message": "denied",
+                                "source_ref": "decision:15",
+                            },
+                            "node": {
+                                "schema_version": "bb.openclaw-capability-denial.v1",
+                                "capability": "node",
+                                "message": "denied",
+                                "source_ref": "decision:15",
+                            }
+                        },
+                        "unexpected": True,
+                    },
+                    "model_config": {"id": "model-a", "provider": "openai"},
+                },
+                timeout_ms=5_000,
+            )
         initialized = await worker.invoke_native_phase(
             "initialize",
             {
                 "task": "phase contract",
+                "advertisement": {
+                    "prompt_removals": [],
+                    "system_prompt": "native prompt {{task}}",
+                    "tool_description_replacements": {},
+                    "tools": {"exec": {"description": "Run shell now; background continuation supported. Use yieldMs/background, then process for logs/status/input/intervention. Process confirms completion. TTY CLI/UI: pty=true. Quote arguments containing shell metacharacters, including URL query strings with `?` or `&`.", "native_sha256": "sha256:6a41ebbc7cd1fae376a497c1bb1662c40a5faa87e5f811bff3ae37e04fb20973"}},
+                    "capability_denials": {
+                        "ask": {
+                            "schema_version": "bb.openclaw-capability-denial.v1",
+                            "capability": "ask",
+                            "message": "denied",
+                            "source_ref": "decision:15",
+                        },
+                        "node": {
+                            "schema_version": "bb.openclaw-capability-denial.v1",
+                            "capability": "node",
+                            "message": "denied",
+                            "source_ref": "decision:15",
+                        }
+                    },
+                },
                 "model_config": {
                     "id": "model-a",
                     "provider": "openai",
+                    "api": "openai-completions",
                     "baseUrl": "http://127.0.0.1",
                     "input": ["text"],
+                    "contextWindow": 32_768,
+                    "maxTokens": 2_048,
+                    "compat": {
+                        "supportsStore": True,
+                        "supportsDeveloperRole": True,
+                        "supportsUsageInStreaming": True,
+                        "supportsStrictMode": False,
+                    },
                 },
             },
             timeout_ms=5_000,
         )
         assert initialized["kind"] == "initialized"
+        await worker.invoke_native_phase(
+            "prepare_tools",
+            {
+                "calls": [
+                    {
+                        "id": "node-denied",
+                        "name": "exec",
+                        "arguments": {
+                            "command": "touch node-denied.txt",
+                            "node": "remote",
+                        },
+                    }
+                ]
+            },
+            timeout_ms=5_000,
+        )
+        denied = await worker.invoke_native_phase("execute_batch", {}, timeout_ms=5_000)
+        assert denied["results"][0]["isError"] is True
+        assert denied["results"][0]["details"]["capability_denial"]["capability"] == "node"
+        assert not (tmp_path / "node-denied.txt").exists()
+        await worker.invoke_native_phase(
+            "prepare_tools",
+            {
+                "calls": [
+                    {
+                        "id": "ask-denied",
+                        "name": "exec",
+                        "arguments": {"command": "touch ask-denied.txt", "ask": "always"},
+                    }
+                ]
+            },
+            timeout_ms=5_000,
+        )
+        ask_denied = await worker.invoke_native_phase("execute_batch", {}, timeout_ms=5_000)
+        assert ask_denied["results"][0]["isError"] is True
+        assert ask_denied["results"][0]["details"]["capability_denial"]["capability"] == "ask"
+        assert not (tmp_path / "ask-denied.txt").exists()
+        for field, value, prefix, filename in (
+            ("host", "node", "exec host not allowed", "host-denied.txt"),
+            ("elevated", True, "elevated is not available", "elevated-denied.txt"),
+        ):
+            await worker.invoke_native_phase(
+                "prepare_tools",
+                {
+                    "calls": [
+                        {
+                            "id": f"{field}-denied",
+                            "name": "exec",
+                            "arguments": {"command": f"touch {filename}", field: value},
+                        }
+                    ]
+                },
+                timeout_ms=5_000,
+            )
+            native_denied = await worker.invoke_native_phase("execute_batch", {}, timeout_ms=5_000)
+            assert native_denied["results"][0]["isError"] is True
+            assert native_denied["results"][0]["content"][0]["text"].startswith(prefix)
+            assert not (tmp_path / filename).exists()
+        await worker.invoke_native_phase(
+            "prepare_tools",
+            {
+                "calls": [
+                    {
+                        "id": "pty-background",
+                        "name": "exec",
+                        "arguments": {"command": "sleep 2", "background": True, "pty": True},
+                    }
+                ]
+            },
+            timeout_ms=5_000,
+        )
+        pty_started = await worker.invoke_native_phase("execute_batch", {}, timeout_ms=5_000)
+        assert pty_started["results"][0]["details"]["status"] == "running"
         await worker.invoke_native_phase(
             "prepare_tools",
             {
@@ -514,5 +655,8 @@ async def test_openclaw_native_worker_ack_and_close_are_scope_verified(tmp_path:
         assert worker.operations[-1] == "ack"
         closed = await worker.invoke_native_phase("close", {}, timeout_ms=5_000)
         assert closed["cleanup"]["all_dead"] is True
+        assert closed["cleanup"]["marker_before"][0]["pid"] > 1
+        assert closed["cleanup"]["marker_after"] == []
+        assert all(group["group_probe_absent"] for group in closed["cleanup"]["process_groups"])
     finally:
         await worker.close()

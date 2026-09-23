@@ -1,20 +1,20 @@
 {
   "target_id": "openclaw@2026.9.4",
   "ordered_tools": [
-    "ls",
-    "read",
     "edit",
-    "write",
     "exec",
-    "process"
+    "ls",
+    "process",
+    "read",
+    "write"
   ],
   "prompt_order": [
-    "read",
-    "write",
     "edit",
-    "ls",
     "exec",
-    "process"
+    "ls",
+    "process",
+    "read",
+    "write"
   ],
   "optional_title": {
     "maxLength": 120,
@@ -38,8 +38,7 @@
             "type": "string",
             "description": "Filename cursor returned by the previous page."
           }
-        },
-        "required": []
+        }
       }
     },
     "read": {
@@ -134,7 +133,7 @@
       }
     },
     "exec": {
-      "description": "Run shell now; background continuation supported. Use yieldMs/background, then process for logs/status/input/intervention. Long run: automatic completion wake when enabled and output/failure occurs; otherwise process confirms completion. TTY CLI/UI/coding agent: pty=true. Quote arguments containing shell metacharacters, including URL query strings with `?` or `&`.",
+      "description": "Run shell now; background continuation supported. Use yieldMs/background, then process for logs/status/input/intervention. Process confirms completion. TTY CLI/UI: pty=true. Quote arguments containing shell metacharacters, including URL query strings with `?` or `&`.",
       "parameters": {
         "type": "object",
         "required": [
@@ -156,6 +155,11 @@
           },
           "env": {
             "type": "object",
+            "patternProperties": {
+              "^.*$": {
+                "type": "string"
+              }
+            },
             "description": "Literal overrides; no expansion. Omit to inherit."
           },
           "yieldMs": {

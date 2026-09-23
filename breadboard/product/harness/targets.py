@@ -272,7 +272,7 @@ def _lower_worker_target(
         ),
         "openclaw@2026.9.4": (
             "breadboard.openclaw.native-chat.v1",
-            "bfc6f1ad0a1c62571ffbdc0e23c07c5a48c52ac520a04f4d614f68d5556366a0",
+            "b3d17e8c322a92e4b922e5a771b47d20e70adb8dbd06559d079a42610528d6b1",
         ),
     }
     recipe = recipes.get(package.target_id)
@@ -289,11 +289,6 @@ def _lower_worker_target(
     compiler_tools = []
     for name in order:
         tool = {"name": name, **surface["tools"][name]}
-        # The registry emits an empty required list. Native HTTP uses the
-        # untouched source schemas in runtime_profile, including omissions.
-        tool["parameters"] = {
-            **tool["parameters"], "required": tool["parameters"].get("required", []),
-        }
         compiler_tools.append(copy_harness_json(tool, freeze=True))
     descriptor = package.descriptor
     overlay = descriptor["overlay"]
@@ -525,14 +520,15 @@ def lower_e4_harness(
     for ordinal, tool in enumerate(rendered.tools):
         schema = tool["parameters"]
         if (
-            set(schema) - {"type", "properties", "required", "additionalProperties"}
+            set(schema) - {"type", "properties", "patternProperties", "required", "additionalProperties"}
             or schema.get("type") != "object"
             or not isinstance(schema.get("properties"), Mapping)
-            or not isinstance(schema.get("required"), tuple)
         ):
             raise HarnessCompileError("target tool schema cannot be represented by the compiler")
         properties = schema["properties"]
-        required = schema["required"]
+        required = schema.get("required", ())
+        if not isinstance(required, tuple):
+            raise HarnessCompileError("target required-parameter order cannot be preserved")
         if (
             any(type(name) is not str or name not in properties for name in required)
             or tuple(name for name in properties if name in required) != required

@@ -9,12 +9,12 @@ prompt:
   dynamic_fields: []
 tools:
   ordered:
-  - ls
-  - read
   - edit
-  - write
   - exec
+  - ls
   - process
+  - read
+  - write
   surface_asset: tool-surface.json
   normalization:
     aliases: {}

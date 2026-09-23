@@ -9,6 +9,7 @@
 import { pathToFileURL } from "node:url";
 import { join, resolve, basename } from "node:path";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 
 const PROTOCOL = "bb.openclaw-native.v1";
@@ -18,18 +19,23 @@ const MODULE_DIGESTS = Object.freeze({
   "bootstrap-DYYMCrXY.mjs": "e87734ad3d2d4b614a317ddd57565df7ce800aff0b8eaafd565066d905d61e1c",
   "workspace-YW5Pl2cf.mjs": "8201a6b4ee921ac2767e272924488ed7c56c9041d274070490a064968438d5cf",
   "bash-process-registry-DHrULGkz.mjs": "6f8a65296ce1a1e07b0f3d94d2bf65f9e88c5a68b9d01df3eecc1f40f349627e",
+  "openai-transport-stream-D950WgL3.mjs": "83fd60ff0760bef6eeabcee42fd219f1213cc9ffe3f65666681f486775032d78",
 });
 const MAX_LIVE_PROCESSES = 4;
-const TOOL_ORDER = Object.freeze(["ls", "read", "edit", "write", "exec", "process"]);
+const TOOL_ORDER = Object.freeze(["edit", "exec", "ls", "process", "read", "write"]);
 
 let workspace = null;
 let scopeKey = "openclaw:e4";
 let tools = new Map();
 let sourceBootstrap = null;
 let sourceWorkspace = null;
+let sourceTransport = null;
+let modelConfig = null;
 let verifiedRegistryUrl = null;
 let prepared = null;
 let closing = false;
+let advertisedTools = new Map();
+let capabilityDenials = new Map();
 const pending = new Map();
 
 const sha256 = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
@@ -47,30 +53,67 @@ async function verifyAndLoad() {
   const core = await import(bytes["core-coding-tools-DoP9tAh3.mjs"]);
   sourceBootstrap = await import(bytes["bootstrap-DYYMCrXY.mjs"]);
   sourceWorkspace = await import(bytes["workspace-YW5Pl2cf.mjs"]);
-  return { createCoreCodingTools: core.t, buildBootstrapContextFiles: sourceBootstrap.n, loadWorkspaceBootstrapFiles: sourceWorkspace._ };
+  sourceTransport = await import(bytes["openai-transport-stream-D950WgL3.mjs"]);
+  return {
+    createCoreCodingTools: core.t,
+    buildBootstrapContextFiles: sourceBootstrap.n,
+    loadWorkspaceBootstrapFiles: sourceWorkspace._,
+    buildOpenAICompletionsParams: sourceTransport.t,
+  };
+}
+function exactKeys(value, expected, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+  const keys = Object.keys(value).sort();
+  const wanted = [...expected].sort();
+  if (keys.length !== wanted.length || keys.some((key, index) => key !== wanted[index])) {
+    throw new Error(`${label} keys are not the admitted set`);
+  }
 }
 
-function admittedSchema(value) {
-  if (Array.isArray(value)) return value.map(admittedSchema);
-  if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(([key]) => key !== "patternProperties")
-      .map(([key, entry]) => [key, admittedSchema(entry)]),
+function validateAdvertisement(value) {
+  exactKeys(value, ["prompt_removals", "system_prompt", "tool_description_replacements", "tools", "capability_denials"], "advertisement");
+  if (typeof value.system_prompt !== "string" || !value.system_prompt) {
+    throw new Error("advertisement.system_prompt is required");
+  }
+  if (!Array.isArray(value.prompt_removals) || value.prompt_removals.some((item) => typeof item !== "string")) {
+    throw new Error("advertisement.prompt_removals is invalid");
+  }
+  exactKeys(value.tool_description_replacements, [], "advertisement.tool_description_replacements");
+  exactKeys(value.tools, ["exec"], "advertisement.tools");
+  exactKeys(value.tools.exec, ["description", "native_sha256"], "advertisement.tools.exec");
+  if (typeof value.tools.exec.description !== "string" || typeof value.tools.exec.native_sha256 !== "string") {
+    throw new Error("advertisement.tools.exec is invalid");
+  }
+  exactKeys(value.capability_denials, ["ask", "node"], "advertisement.capability_denials");
+  for (const capability of ["ask", "node"]) {
+    const denial = value.capability_denials[capability];
+    exactKeys(denial, ["schema_version", "capability", "message", "source_ref"], `advertisement.capability_denials.${capability}`);
+    for (const key of ["schema_version", "capability", "message", "source_ref"]) {
+      if (typeof denial[key] !== "string" || !denial[key]) throw new Error(`advertisement.capability_denials.${capability}.${key} is invalid`);
+    }
+  }
+  advertisedTools = new Map(Object.entries(value.tools));
+  capabilityDenials = new Map(
+    ["ask", "node"].map((capability) => [capability, value.capability_denials[capability]]),
   );
+  return value;
 }
 
 function schemaFor(tool) {
   const schema = tool?.parameters ?? tool?.inputSchema ?? tool?.schema ?? { type: "object" };
-  const admitted = admittedSchema(schema);
-  if (tool.name === "ls" && !Object.hasOwn(admitted, "required")) admitted.required = [];
+  const overlay = advertisedTools.get(tool.name);
+  let description = text(tool.description);
+  if (overlay) {
+    if (`sha256:${sha256(Buffer.from(description, "utf8"))}` !== overlay.native_sha256) {
+      throw new Error(`advertisement native description hash mismatch for ${tool.name}`);
+    }
+    description = overlay.description;
+  }
   return {
     type: "function",
-    function: {
-      name: tool.name,
-      description: text(tool.description),
-      parameters: admitted,
-    },
+    function: { name: tool.name, description, parameters: schema },
   };
 }
 
@@ -96,6 +139,44 @@ function makeTools(createCoreCodingTools) {
   if (ordered.some((tool) => !tool)) throw new Error("pinned source tool factory did not produce the admitted six-tool set");
   tools = new Map(ordered.map((tool) => [tool.name, tool]));
   return ordered;
+}
+function toSourceHistory(messages) {
+  if (!Array.isArray(messages)) throw new Error("project_request messages must be an array");
+  return messages.map((message) => {
+    if (!message || typeof message !== "object") throw new Error("project_request message must be an object");
+    if (message.role !== "tool") return message;
+    const raw = Array.isArray(message.content)
+      ? message.content.map((part) => typeof part?.text === "string" ? part.text : text(part))
+      : [text(message.content)];
+    return {
+      role: "toolResult",
+      toolCallId: text(message.tool_call_id),
+      content: raw.map((value) => ({ type: "text", text: value })),
+      isError: Boolean(message.isError),
+    };
+  });
+}
+
+function projectSourceRequest(messages, buildOpenAICompletionsParams) {
+  if (!modelConfig || typeof modelConfig !== "object") throw new Error("model_config is required");
+  const system = messages[0];
+  if (!system || system.role !== "system" || typeof system.content !== "string") {
+    throw new Error("project_request requires a source system prompt");
+  }
+  const history = toSourceHistory(messages.slice(1));
+  const sourceTools = Array.from(tools.values()).map((tool) => {
+    const overlay = advertisedTools.get(tool.name);
+    return overlay ? { ...tool, description: overlay.description } : tool;
+  });
+  const params = buildOpenAICompletionsParams(
+    modelConfig,
+    { systemPrompt: system.content, messages: history, tools: sourceTools },
+    undefined,
+  );
+  return {
+    messages: params.messages,
+    tools: params.tools || [],
+  };
 }
 
 async function bootstrapContext(loadWorkspaceBootstrapFiles, buildBootstrapContextFiles) {
@@ -125,15 +206,93 @@ async function materializeBootstrapAssets(assets) {
   }
 }
 
+function processSnapshot() {
+  const result = spawnSync("ps", ["-axo", "pid=,ppid=,pgid=,command="], {
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  if (result.status !== 0) throw new Error(`OS process observer failed: ${text(result.stderr)}`);
+  return String(result.stdout || "").split("\n").flatMap((line) => {
+    const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/);
+    return match
+      ? [{ pid: Number(match[1]), ppid: Number(match[2]), pgid: Number(match[3]), argv: match[4] }]
+      : [];
+  });
+}
+
+function trackedProcessGroups(sessions) {
+  const leaders = new Set(
+    sessions
+      .map((session) => Number(session?.pid))
+      .filter((pid) => Number.isInteger(pid) && pid > 1),
+  );
+  const snapshot = processSnapshot();
+  const members = new Set(leaders);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const processInfo of snapshot) {
+      if (members.has(processInfo.ppid) && !members.has(processInfo.pid)) {
+        members.add(processInfo.pid);
+        changed = true;
+      }
+    }
+  }
+  const groups = new Map();
+  for (const processInfo of snapshot) {
+    if (members.has(processInfo.pid)) {
+      const group = groups.get(processInfo.pgid) || [];
+      group.push(processInfo.pid);
+      groups.set(processInfo.pgid, group);
+    }
+  }
+  return groups;
+}
+
+function groupIsAbsent(pgid) {
+  if (!Number.isInteger(pgid) || pgid <= 1) return false;
+  try {
+    process.kill(-pgid, 0);
+    return false;
+  } catch (error) {
+    return error?.code === "ESRCH";
+  }
+}
+
+async function markerObservation() {
+  const marker = `bb-openclaw-marker-${process.pid}-${Date.now()}-${crypto.randomUUID()}`;
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)", marker], {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+  await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
+  const before = processSnapshot().filter((item) => item.argv.includes(marker));
+  const leader = before.find((item) => item.pid === child.pid);
+  if (!leader || leader.pgid !== child.pid) {
+    throw new Error("OS process observer marker group was not proven");
+  }
+  process.kill(-leader.pgid, "SIGTERM");
+  let after = [];
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
+    after = processSnapshot().filter((item) => item.argv.includes(marker));
+    if (after.length === 0 && groupIsAbsent(leader.pgid)) break;
+  }
+  return { marker_before: before, marker_after: after };
+}
+
 async function cleanupScope() {
   const processTool = tools.get("process");
   const observed = [];
-  if (!processTool) return { processes: observed, all_dead: true };
+  if (!processTool) throw new Error("pinned process tool is unavailable");
+  const marker = await markerObservation();
   const list = async () => {
     const result = await processTool.execute("worker-cleanup-list", { action: "list" });
     return Array.isArray(result?.details?.sessions) ? result.details.sessions : [];
   };
   let sessions = await list();
+  const tracked = trackedProcessGroups(sessions);
   for (const session of sessions) {
     if (session?.sessionId) {
       observed.push({ sessionId: String(session.sessionId), before: session.status, pid: session.pid ?? null });
@@ -142,17 +301,31 @@ async function cleanupScope() {
       }
     }
   }
-  // Source's registry owns PTY descendants.  Wait for it, then independently
-  // observe the empty scope; ambiguous cleanup is not reported as clean.
+  // Source's registry owns PTY descendants.  OS observation proves that every
+  // tracked process group is absent; the registry's empty list alone is not a
+  // cleanup receipt.
   if (!verifiedRegistryUrl) throw new Error("pinned process registry was not verified");
   const registry = await import(verifiedRegistryUrl);
   if (typeof registry.x === "function") await registry.x(scopeKey);
   for (let attempt = 0; attempt < 20; attempt += 1) {
     sessions = await list();
     const live = sessions.filter((session) => session?.status === "running" || session?.status === "backgrounded");
-    if (live.length === 0) {
+    const snapshot = processSnapshot();
+    const groups = [...tracked.entries()].map(([pgid, members]) => ({
+      pgid,
+      leader_exit_observed: members.every((pid) => !snapshot.some((item) => item.pid === pid)),
+      group_probe_absent: groupIsAbsent(pgid),
+      remaining: snapshot.filter((item) => item.pgid === pgid).map((item) => item.pid),
+    }));
+    if (
+      live.length === 0
+      && marker.marker_after.length === 0
+      && groups.every((group) => group.leader_exit_observed && group.group_probe_absent && group.remaining.length === 0)
+    ) {
       return {
         processes: observed.map((item) => ({ ...item, after: "dead" })),
+        process_groups: groups,
+        ...marker,
         all_dead: true,
       };
     }
@@ -165,7 +338,7 @@ async function cleanupScope() {
       pid: session.pid ?? null,
     });
   }
-  return { processes: observed, all_dead: false };
+  return { processes: observed, process_groups: [...tracked.keys()].map((pgid) => ({ pgid })), ...marker, all_dead: false };
 }
 
 function deliveryId() { return `delivery_${crypto.randomUUID()}`; }
@@ -176,7 +349,13 @@ async function executePrepared() {
   for (let index = 0; index < prepared.length; index += 1) {
     const call = prepared[index];
     if (call.error) {
-      results.push({ id: call.id, completion_index: index, content: [{ type: "text", text: call.error }], details: {}, isError: true });
+      results.push({
+        id: call.id,
+        completion_index: index,
+        content: [{ type: "text", text: call.error }],
+        details: call.capability_denial ? { capability_denial: call.capability_denial } : {},
+        isError: true,
+      });
       continue;
     }
     const tool = tools.get(call.name);
@@ -211,14 +390,26 @@ async function executePrepared() {
   prepared = null;
   return { schema_version: PROTOCOL, kind: "tool_results", results };
 }
-
 async function handle(message) {
   const phase = message?.phase || message?.operation;
   if (phase === "initialize") {
     if (typeof message.workspace !== "string" || !message.workspace) throw new Error("workspace is required");
+    if (
+      !message.advertisement
+      || typeof message.advertisement !== "object"
+      || Array.isArray(message.advertisement)
+      || typeof message.advertisement.system_prompt !== "string"
+      || !message.advertisement.system_prompt
+    ) {
+      throw new Error("advertisement.system_prompt is required");
+    }
+    const advertisement = validateAdvertisement(message.advertisement);
     workspace = resolve(message.workspace);
     scopeKey = typeof message.scopeKey === "string" && message.scopeKey ? message.scopeKey : scopeKey;
-    const source = await verifyAndLoad();
+    if (message.model_config && (typeof message.model_config !== "object" || Array.isArray(message.model_config))) {
+      throw new Error("model_config must be an object");
+    }
+    modelConfig = message.model_config || null;
     let assets = message.bootstrap_assets;
     if (!Array.isArray(assets) && typeof message.package_dir === "string") {
       assets = [];
@@ -228,9 +419,9 @@ async function handle(message) {
       }
     }
     await materializeBootstrapAssets(assets);
+    const source = await verifyAndLoad();
     const ordered = makeTools(source.createCoreCodingTools);
     const bootstrapFiles = await bootstrapContext(source.loadWorkspaceBootstrapFiles, source.buildBootstrapContextFiles);
-    const advertisement = message.advertisement && typeof message.advertisement === "object" ? message.advertisement : {};
     return {
       schema_version: PROTOCOL,
       kind: "initialized",
@@ -242,7 +433,13 @@ async function handle(message) {
     };
   }
   if (!workspace || tools.size !== TOOL_ORDER.length) throw new Error("worker is not initialized");
-  if (phase === "project_request") return { schema_version: PROTOCOL, kind: "request", messages: Array.isArray(message.messages) ? message.messages : [], tools: TOOL_ORDER.map((name) => schemaFor(tools.get(name))) };
+  if (phase === "project_request") {
+    const projected = projectSourceRequest(
+      Array.isArray(message.messages) ? message.messages : [],
+      sourceTransport?.t,
+    );
+    return { schema_version: PROTOCOL, kind: "request", ...projected };
+  }
   if (phase === "prepare_tools") {
     if (!Array.isArray(message.calls)) throw new Error("prepare_tools calls must be an array");
     prepared = message.calls.map((call, index) => {
@@ -251,6 +448,19 @@ async function handle(message) {
       const tool = tools.get(call.name);
       if (!tool) return { id, name: call.name, arguments: call.arguments ?? {}, error: `undeclared tool ${call.name}` };
       if (!call.arguments || typeof call.arguments !== "object" || Array.isArray(call.arguments)) return { id, name: call.name, arguments: {}, error: "tool arguments must be an object" };
+      const deniedCapability = call.name === "exec"
+        ? ["ask", "node"].find((capability) => Object.prototype.hasOwnProperty.call(call.arguments, capability))
+        : undefined;
+      if (deniedCapability) {
+        const denial = capabilityDenials.get(deniedCapability);
+        return {
+          id,
+          name: call.name,
+          arguments: call.arguments,
+          error: denial.message,
+          capability_denial: denial,
+        };
+      }
       try {
         // This is the pinned source's prepareArguments hook.  Python never
         // rewrites the decoder-finalized arguments.

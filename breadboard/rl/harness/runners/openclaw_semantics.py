@@ -28,9 +28,22 @@ OUTPUT_TOKENS = 2048
 TOOL_ADMISSIONS = 32
 
 SOURCE_CITATIONS = {
-    "response_finalization": "packages/agent-core/src/agent-stream-response.ts:finalizeAssistantMessage",
-    "terminal_finish": "src/agents/sessions/agent-session-base.ts:direct Chat terminal finalization",
-    "tool_prepare": "src/agents/agent-tools.execution-preparer.ts:prepareToolCallArguments",
+    "response_finalization": (
+        "packages/agent-core/src/agent-stream-response.ts:302-380 "
+        "(finalizeAssistantMessage persists the final assistant message before tool execution)"
+    ),
+    "chat_history_conversion": (
+        "packages/ai/src/openai-completions-messages.ts:39-127,190-276 "
+        "(convertMessages maps assistant tool calls and toolResult messages)"
+    ),
+    "terminal_finish": (
+        "packages/agent-core/src/agent-stream-response.ts:302-380 "
+        "(done/error terminal events finalize the assistant response)"
+    ),
+    "tool_prepare": (
+        "src/agents/agent-tools.execution-preparer.ts:43-84 "
+        "(execution preparation fences launch behind transcript ownership)"
+    ),
     "recovery": "src/agents/sessions/agent-session-execution.ts:prepareRetry",
     "composition": "src/agents/core-coding-tools.ts:createCoreCodingTools",
 }
@@ -249,7 +262,11 @@ def _call_fields(call: Any, index: int) -> tuple[str, str, Any, str | None, int 
 def finalize_native_chat_response(
     response: Any, *, allow_silent_tool_promotion: bool = False
 ) -> OpenClawParseResult:
-    """Finalize lossless fragments before the worker receives raw arguments."""
+    """Finalize lossless fragments before the worker receives raw arguments.
+
+    Source: ``packages/agent-core/src/agent-stream-response.ts:302-380``;
+    assistant/tool replay follows ``packages/ai/src/openai-completions-messages.ts:190-276``.
+    """
     view = NativeProviderResponseView.from_value(response)
     fragments = tuple(NativeStreamFragment.from_value(item) for item in view.stream_fragments)
     text_parts: list[str] = []
@@ -379,7 +396,7 @@ class OpenClawSemanticsState:
     consumer_id = OPENCLAW_CONSUMER_ID
     source_commit = OPENCLAW_SOURCE_COMMIT
     source_version = OPENCLAW_VERSION
-    tool_order = ("ls", "read", "edit", "write", "exec", "process")
+    tool_order = ("edit", "exec", "ls", "process", "read", "write")
     bootstrap_order = BOOTSTRAP_ORDER
 
     def __init__(
@@ -505,7 +522,11 @@ class OpenClawSemanticsState:
         calls: Sequence[FinalizedToolCall] | Sequence[Mapping[str, Any]],
         results: Sequence[Mapping[str, Any]] | None = None,
     ) -> tuple[Mapping[str, Any], ...]:
-        """Commit settled effects in source call order after history append."""
+        """Commit settled effects in source call order after history append.
+
+        Source: ``packages/ai/src/openai-completions-messages.ts:254-276``
+        emits each ``toolResult`` as an OpenAI ``role=tool`` message.
+        """
         if results is None:
             committed = tuple(dict(result) for result in calls)
         else:

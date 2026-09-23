@@ -22,8 +22,8 @@ OPENCLAW_SOURCE_COMMIT = "3a9d69db306cd7f081e06254cb89c4bcc14a7107"
 OPENCLAW_VERSION = "2026.9.4"
 MAX_AGGREGATE_OUTPUT_CHARS = 200_000
 MAX_PENDING_OUTPUT_CHARS = 30_000
-TOOL_ORDER = ("ls", "read", "edit", "write", "exec", "process")
-PROMPT_TOOL_ORDER = ("read", "write", "edit", "ls", "exec", "process")
+TOOL_ORDER = ("edit", "exec", "ls", "process", "read", "write")
+PROMPT_TOOL_ORDER = TOOL_ORDER
 BOOTSTRAP_ORDER = ("AGENTS.md", "SOUL.md", "IDENTITY.md", "USER.md", "BOOTSTRAP.md", "MEMORY.md")
 BOOTSTRAP_MAX_CHARS = 20_000
 BOOTSTRAP_TOTAL_MAX_CHARS = 60_000
@@ -327,12 +327,40 @@ class _OpenClawWorkerClient:
         for name in ("AGENTS.md", "SOUL.md"):
             content = (bootstrap_root / name).read_text(encoding="utf-8")
             assets.append({"name": name, "content": content, "sha256": sha256_file(bootstrap_root / name)})
+        native_config_path = (
+            Path(__file__).resolve().parents[3]
+            / "config"
+            / "e4_targets"
+            / "openclaw"
+            / OPENCLAW_VERSION
+            / "native-config.json"
+        )
+        native_config = json.loads(native_config_path.read_text(encoding="utf-8"))
+        advertisement = native_config["advertisement"]
+        model_config = {
+            "id": "openclaw-tool-client",
+            "name": "openclaw-tool-client",
+            "api": "openai-completions",
+            "provider": "openai",
+            "baseUrl": "http://127.0.0.1",
+            "input": ["text"],
+            "contextWindow": 32_768,
+            "maxTokens": 2_048,
+            "compat": {
+                "supportsStore": True,
+                "supportsDeveloperRole": True,
+                "supportsUsageInStreaming": True,
+                "supportsStrictMode": False,
+            },
+        }
         initialized = self._request(
             {
                 "phase": "initialize",
                 "workspace": self.workspace,
                 "scopeKey": f"openclaw:e4:{os.getpid()}",
                 "bootstrap_assets": assets,
+                "advertisement": advertisement,
+                "model_config": model_config,
                 "system_prompt": "",
             }
         )

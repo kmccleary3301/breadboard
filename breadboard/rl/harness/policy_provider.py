@@ -112,7 +112,9 @@ def _provider_descriptor() -> ProviderDescriptor:
         api_key_env=None,
         default_headers={},
     )
-def _project_effective_chat_tool(definition: Mapping[str, Any]) -> dict[str, Any]:
+def _project_effective_chat_tool(
+    definition: Mapping[str, Any], *, omit_empty_required: bool = False,
+) -> dict[str, Any]:
     model_name = definition.get("model_name")
     description = definition.get("description")
     parameters = definition.get("parameters")
@@ -149,13 +151,9 @@ def _project_effective_chat_tool(definition: Mapping[str, Any]) -> dict[str, Any
     parameter_schema: dict[str, Any] = {
         "type": "object",
         "properties": properties,
-        "required": required,
     }
-    if any(
-        isinstance(value, Mapping) and value.get("additionalProperties") is True
-        for value in routing.values()
-    ):
-        parameter_schema["additionalProperties"] = True
+    if required or not omit_empty_required:
+        parameter_schema["required"] = required
     openai_routing = routing.get("openai")
     if isinstance(openai_routing, Mapping) and "additionalProperties" in openai_routing:
         additional_properties = openai_routing["additionalProperties"]
@@ -173,9 +171,8 @@ def _project_effective_chat_tool(definition: Mapping[str, Any]) -> dict[str, Any
 def _join_prompt_parts(*parts: str) -> str:
     return "\n\n".join(part for part in parts if part)
 
-
 def _target_mode_projections(
-    semantics: Mapping[str, Any],
+    semantics: Mapping[str, Any], *, omit_empty_required: bool = False,
 ) -> Iterator[tuple[str, str, tuple[dict[str, Any], ...]]]:
     prompts = semantics.get("prompts")
     providers = semantics.get("providers")
@@ -232,7 +229,9 @@ def _target_mode_projections(
         if any(tool_id not in definitions_by_id for tool_id in enabled_ids):
             raise ValueError("effective target mode references an undeclared tool")
         yield system_text, per_turn_text, tuple(
-            _project_effective_chat_tool(definitions_by_id[tool_id])
+            _project_effective_chat_tool(
+                definitions_by_id[tool_id], omit_empty_required=omit_empty_required,
+            )
             for tool_id in enabled_ids
         )
 
@@ -430,7 +429,9 @@ class E4TargetPolicyProjection:
         }
         system_prompt: str | None = None
         chat_tools: tuple[dict[str, Any], ...] | None = None
-        for system_text, per_turn_text, projected_tools in _target_mode_projections(view):
+        for system_text, per_turn_text, projected_tools in _target_mode_projections(
+            view, omit_empty_required=binding["renderer_id"] == OPENCLAW_RESPONSE_CONSUMER_ID,
+        ):
             if per_turn_text or (
                 system_prompt is not None
                 and (system_text != system_prompt or projected_tools != chat_tools)
@@ -513,7 +514,9 @@ class E4TargetPolicyProjection:
         if canonical_sha256(target_tools) != binding["tool_surface_digest"]:
             raise ValueError("effective target tool identity differs from the projection")
         deferred_prompt = binding["version"] == 3
-        for system_text, per_turn_text, projected_tools in _target_mode_projections(semantics):
+        for system_text, per_turn_text, projected_tools in _target_mode_projections(
+            semantics, omit_empty_required=self.renderer_id == OPENCLAW_RESPONSE_CONSUMER_ID,
+        ):
             if (
                 (
                     deferred_prompt
@@ -1942,21 +1945,31 @@ def _responses_request_to_chat(
         messages = request["messages"]
         tools = request["tools"]
         system_prompt = target_projection.system_prompt
-        if target_projection.renderer_id in {
-            PI_RESPONSE_CONSUMER_ID,
-            OPENCLAW_RESPONSE_CONSUMER_ID,
-        }:
+        if target_projection.renderer_id == PI_RESPONSE_CONSUMER_ID:
             if native_system_prompt is None:
                 raise ProviderContractError("native stream bootstrap has not been bound")
             system_prompt = native_system_prompt
+        elif target_projection.renderer_id == OPENCLAW_RESPONSE_CONSUMER_ID:
+            if native_system_prompt is None:
+                raise ProviderContractError("native stream bootstrap has not been bound")
+            system_prompt = None
+        expected_tools = [thaw_json(tool) for tool in target_projection.chat_tools]
+        if target_projection.renderer_id == OPENCLAW_RESPONSE_CONSUMER_ID:
+            for tool in expected_tools:
+                parameters = tool["function"]["parameters"]
+                if parameters.get("required") == []:
+                    del parameters["required"]
         if (
             type(messages) is not list
             or len(messages) < 2
             or any(type(message) is not dict or "extra" in message for message in messages)
-            or messages[0] != {"role": "system", "content": system_prompt}
+            or (
+                system_prompt is not None
+                and messages[0] != {"role": "system", "content": system_prompt}
+            )
             or messages[1].get("role") != "user"
             or any(message.get("role") not in {"system", "user", "assistant", "tool"} for message in messages)
-            or tools != [thaw_json(tool) for tool in target_projection.chat_tools]
+            or tools != expected_tools
         ):
             raise ProviderContractError("source-native request does not match its compiled source surface")
         if target_projection.renderer_id != MINI_RESPONSE_CONSUMER_ID:

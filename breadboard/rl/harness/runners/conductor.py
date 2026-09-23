@@ -1087,7 +1087,7 @@ def _resolve_pointer(value: Mapping[str, Any], pointer: str, request: RunnerOpen
 
 
 _SCHEMA_KEYWORDS = frozenset({
-    "type", "properties", "required", "additionalProperties", "items", "enum",
+    "type", "properties", "patternProperties", "required", "additionalProperties", "items", "enum",
     "const", "minLength", "maxLength", "pattern", "minimum", "maximum",
     "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minItems",
     "maxItems", "uniqueItems", "description", "default", "examples", "title",
@@ -1114,7 +1114,7 @@ def _admit_schema(schema: Mapping[str, Any], request: RunnerOpenRequest) -> None
         ):
             raise _plan_error(request, "compiled tool schema enum is invalid", "compiled_ir_mismatch")
 
-    object_keywords = {"properties", "required", "additionalProperties"} & set(schema)
+    object_keywords = {"properties", "patternProperties", "required", "additionalProperties"} & set(schema)
     array_keywords = {"items", "minItems", "maxItems", "uniqueItems"} & set(schema)
     string_keywords = {"minLength", "maxLength", "pattern"} & set(schema)
     numeric_keywords = {
@@ -1130,19 +1130,32 @@ def _admit_schema(schema: Mapping[str, Any], request: RunnerOpenRequest) -> None
 
     if object_keywords or schema_type == "object":
         properties = schema.get("properties", {})
+        pattern_properties = schema.get("patternProperties", {})
         required = schema.get("required", ())
         additional = schema.get("additionalProperties", False)
         if (
             not isinstance(properties, Mapping)
+            or not isinstance(pattern_properties, Mapping)
             or not isinstance(required, (list, tuple))
             or any(type(name) is not str or name not in properties for name in required)
             or len(set(required)) != len(required)
             or type(additional) is not bool
+            or any(type(pattern) is not str for pattern in pattern_properties)
         ):
             raise _plan_error(request, "compiled object schema is invalid", "compiled_ir_mismatch")
         for child in properties.values():
             if not isinstance(child, Mapping):
                 raise _plan_error(request, "compiled object property schema is invalid", "compiled_ir_mismatch")
+            _admit_schema(child, request)
+        for pattern, child in pattern_properties.items():
+            if not isinstance(child, Mapping):
+                raise _plan_error(request, "compiled pattern property schema is invalid", "compiled_ir_mismatch")
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                error = _plan_error(request, "compiled pattern property is invalid", "compiled_ir_mismatch")
+                error.__cause__ = exc
+                raise error
             _admit_schema(child, request)
     if "items" in schema:
         if not isinstance(schema["items"], Mapping):

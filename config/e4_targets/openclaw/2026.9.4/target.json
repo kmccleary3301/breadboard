@@ -3,7 +3,7 @@
     {
       "bytes": 3581,
       "path": "harness.yaml",
-      "sha256": "sha256:722b20200dd738aa3401fac90b08bc049e5be7b7484b49374c02687f1329df8b"
+      "sha256": "sha256:9070a2ab7b335e85eb26c49c421cc66a9a861af23ff53cf03a97f1c364173e2a"
     },
     {
       "bytes": 1031,
@@ -13,12 +13,12 @@
     {
       "bytes": 8562,
       "path": "tool-surface.json",
-      "sha256": "sha256:8a091468db2daef50b32e658e2bf051f5a55c54b55c2a3ec7364905495b809b7"
+      "sha256": "sha256:4b7a0fbb2ef2bbefa279cf50b6ed98b63ec9c2fa0f1044b5b165935dd2bdf010"
     },
     {
-      "bytes": 4360,
+      "bytes": 5376,
       "path": "native-config.json",
-      "sha256": "sha256:5cdbf0adbea101d0ae6b87aeb48a08312099bdae966a636283c3ec81d1a49c2e"
+      "sha256": "sha256:3a1b699f0c196bde01561a95ded9bce8c45e75fa6dbc7ef40e7938dc27e217d2"
     },
     {
       "bytes": 80,
