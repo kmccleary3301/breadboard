@@ -1,14 +1,14 @@
 {
   "schema_version": "bb.e4.mini_source_profile_rollback_rehearsal.v1",
   "scope": "isolated Git index restoration; no worktree, branch, runtime, deployment or evidence mutation",
-  "source_commit": "adbef763cb4152e14c08d05284349469cc673830",
-  "source_tree": "7105cb39b6641907c37b1c574897d69bc01f1738",
+  "source_commit": "075da4529259715ba383d5123cfd78cea2932ac0",
+  "source_tree": "4bd647555bb615e2dcdcb49e02018d171330a208",
   "stable_commit": "c39054e9afd1457060028148d45e96d0c98db9d6",
   "stable_tree": "83415f73d57fb48d90d16962337fdd0053cf206d",
   "patch": {
     "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/bb_direction_assessment/engine_pr_handoff_20260827/e4_admission_20260914T221653Z/MINI_PR_FULL_REVERT_REHEARSAL.patch",
-    "bytes": 8198195,
-    "sha256": "8c7e519f861fc4730d8f9c10c06ae83586f93d630bdea773a7843bc29dfb7f80"
+    "bytes": 8198803,
+    "sha256": "cef121be97cc44130cd668b2c238ec7ac3933191cd394d32380d233dd6115a91"
   },
   "environment": {
     "GIT_INDEX_FILE": "/Users/kylemccleary/projects/breadboard/docs_tmp/bb_direction_assessment/engine_pr_handoff_20260827/e4_admission_20260914T221653Z/MINI_PR_ROLLBACK_REHEARSAL.index"
@@ -18,7 +18,7 @@
     [
       "git",
       "read-tree",
-      "adbef763cb4152e14c08d05284349469cc673830"
+      "075da4529259715ba383d5123cfd78cea2932ac0"
     ],
     [
       "git",
@@ -42,7 +42,7 @@
   ],
   "result": {
     "exit_code": 0,
-    "wall_seconds": 0.15,
+    "wall_seconds": 0.16,
     "restored_tree": "83415f73d57fb48d90d16962337fdd0053cf206d",
     "matches_stable_tree": true
   },
