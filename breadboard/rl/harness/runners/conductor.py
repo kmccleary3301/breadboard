@@ -10,6 +10,7 @@ import json
 import math
 import re
 import time
+from collections.abc import Mapping
 from typing import Any
 
 from breadboard_engine.compilation.contracts import (
@@ -2455,6 +2456,107 @@ class _ConductorSession:
         history: list[FrozenJsonObject] = []
         history_digest = canonical_sha256(history)
         state: FrozenJsonObject = freeze_json_object({}, field_name="Hermes state")
+        trace_requests: list[dict[str, Any]] = []
+        trace_tool_calls: list[dict[str, Any]] = []
+        trace_file_effects: dict[str, str | None] = {}
+        trace_tool_call_keys: set[str] = set()
+
+        def parse_json_or_text(value: Any) -> Any:
+            if not isinstance(value, str):
+                return value
+            try:
+                return json.loads(value)
+            except json.JSONDecodeError:
+                return value
+
+        def project_message(message: Any) -> Any:
+            if not isinstance(message, Mapping):
+                return message
+            return {
+                str(key): value for key, value in message.items()
+                if key != "timestamp"
+            }
+
+        def project_request_body(body: Mapping[str, Any]) -> dict[str, Any]:
+            projected: dict[str, Any] = {
+                "model": body.get("model"),
+                "max_tokens": body.get("max_tokens"),
+                "stream": bool(body.get("stream", False)),
+                "messages": [
+                    project_message(message)
+                    for message in body.get("messages", [])
+                ],
+                "tools": body.get("tools", []),
+            }
+            for key in ("temperature", "top_p", "tool_choice"):
+                if key in body:
+                    projected[key] = body[key]
+            return projected
+
+        def project_response(response: Mapping[str, Any]) -> dict[str, Any]:
+            choices = response.get("choices", [])
+            return {
+                "choices": [
+                    {
+                        "index": choice.get("index"),
+                        "finish_reason": choice.get("finish_reason"),
+                        "message": project_message(choice.get("message")),
+                    }
+                    for choice in choices
+                    if isinstance(choice, Mapping)
+                ],
+            }
+
+        def history_tool_results(history_rows: tuple[FrozenJsonObject, ...]) -> list[dict[str, Any]]:
+            results: list[dict[str, Any]] = []
+            for item in history_rows:
+                if item.get("role") != "tool":
+                    continue
+                name = item.get("name") or item.get("tool_name")
+                content = item.get("content")
+                parsed = parse_json_or_text(content)
+                is_error = name == "NOT_A_TOOL" or (
+                    isinstance(content, str)
+                    and content.startswith("Tool '")
+                    and " does not exist." in content
+                )
+                results.append({
+                    "tool_name": name,
+                    "call_id": item.get("tool_call_id"),
+                    "is_error": is_error,
+                    "result": parsed,
+                })
+            return results
+
+        def visible_corrections(history_rows: tuple[FrozenJsonObject, ...]) -> list[Any]:
+            seen_initial_user = False
+            corrections: list[Any] = []
+            for item in history_rows:
+                if item.get("role") != "user":
+                    continue
+                if not seen_initial_user:
+                    seen_initial_user = True
+                    continue
+                corrections.append(parse_json_or_text(item.get("content")))
+            return corrections
+
+        def decode_json_body(body_b64: Any) -> Any:
+            if type(body_b64) is not str:
+                return None
+            try:
+                return json.loads(base64.b64decode(body_b64, validate=True).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+                return None
+
+        def raw_tool_calls(sample: Any) -> list[Mapping[str, Any]]:
+            if not isinstance(sample, Mapping):
+                return []
+            choices = sample.get("choices")
+            if not isinstance(choices, list) or not choices:
+                return []
+            message = choices[0].get("message") if isinstance(choices[0], Mapping) else None
+            calls = message.get("tool_calls") if isinstance(message, Mapping) else None
+            return [call for call in calls if isinstance(call, Mapping)] if isinstance(calls, list) else []
 
         def invalid(message: str) -> RunnerProtocolError:
             return RunnerProtocolError(message, code="native_response_invalid", **self._context())
@@ -2559,6 +2661,13 @@ class _ConductorSession:
                     max_encoded_bytes=16 * 1024 * 1024,
                     max_nodes=16 * 1024 * 1024 + 1,
                 )
+                effects = value.get("file_effects")
+                if isinstance(effects, Mapping):
+                    for path, digest in effects.items():
+                        if isinstance(path, str) and (
+                            digest is None or isinstance(digest, str)
+                        ):
+                            trace_file_effects[path] = digest
                 if (
                     value.get("schema_version") != "bb.hermes-native.v1"
                     or type(value.get("kind")) is not str
@@ -2593,11 +2702,6 @@ class _ConductorSession:
                     progress += 1
                     if segment["kind"] == "sequential":
                         watchdog = time.monotonic() + min(40, remaining())
-                await self._checkpoint(
-                    "after_action" if segment is not None else "before_policy", turn=turn,
-                )
-                command = "history_ack"
-                command_payload = {"history_digest": history_digest}
 
         initialized = await phase(
             "initialize", {"task": task, "model_config": model_config}, "initial", None,
@@ -2613,6 +2717,7 @@ class _ConductorSession:
         for turn in range(1, 9):
             await self._checkpoint("before_policy", turn=turn)
             sampled = await phase("sample", {}, "before_policy", turn)
+            raw_sample = decode_json_body(sampled.get("raw_response_b64"))
             if sampled.get("kind") == "sample_ready" and state["status"] != "RUNNING":
                 if state["status"] == "ERROR":
                     await self._raise_error(RunnerDependencyError(
@@ -2632,8 +2737,22 @@ class _ConductorSession:
             http_request = sampled.get("http_request")
             if not isinstance(http_request, Mapping):
                 raise invalid("Hermes serialized provider request is missing")
+            request_body = decode_json_body(http_request.get("body_b64"))
+            if not isinstance(request_body, Mapping):
+                raise invalid("Hermes provider request body is not JSON")
+            trace_requests.append({
+                "index": len(trace_requests),
+                "body": project_request_body(request_body),
+            })
             async with asyncio.timeout(min(45, remaining())):
                 receipt = await self._invoke_native_policy(http_request, model=model, turn=turn)
+            public_response = receipt.get("native_http_response")
+            decoded_response = (
+                decode_json_body(public_response.get("body_b64"))
+                if isinstance(public_response, Mapping) else None
+            )
+            if isinstance(decoded_response, Mapping):
+                trace_requests[-1]["response"] = project_response(decoded_response)
             sampled = await phase("provider_response", receipt, "before_policy", turn)
             if sampled.get("kind") != "sample_ready":
                 raise invalid("Hermes sample did not complete its SDK request")
@@ -2643,6 +2762,8 @@ class _ConductorSession:
             actions, segments = prepared.get("actions"), prepared.get("segments")
             if not isinstance(actions, tuple) or not isinstance(segments, tuple):
                 raise invalid("Hermes prepared actions or segments are invalid")
+            raw_calls = raw_tool_calls(raw_sample)
+            raw_used: set[int] = set()
             for index, action in enumerate(actions):
                 if (
                     not isinstance(action, Mapping)
@@ -2652,6 +2773,57 @@ class _ConductorSession:
                     or type(action.get("arguments_json")) is not str
                 ):
                     raise invalid("Hermes prepared action identity is invalid")
+                arguments = parse_json_or_text(action["arguments_json"])
+                raw_before_repair = None
+                for raw_index, raw_call in enumerate(raw_calls):
+                    if raw_index in raw_used or not isinstance(raw_call.get("function"), Mapping):
+                        continue
+                    raw_function = raw_call["function"]
+                    raw_arguments = raw_function.get("arguments")
+                    if parse_json_or_text(raw_arguments) == arguments:
+                        raw_before_repair = raw_call
+                        raw_used.add(raw_index)
+                        break
+                raw_function = (
+                    raw_before_repair.get("function")
+                    if isinstance(raw_before_repair, Mapping)
+                    else {}
+                )
+                raw_name = (
+                    raw_function.get("name")
+                    if isinstance(raw_function, Mapping)
+                    else action["tool_id"]
+                )
+                raw_arguments = (
+                    raw_function.get("arguments")
+                    if isinstance(raw_function, Mapping)
+                    else action["arguments_json"]
+                )
+                raw_id = (
+                    raw_before_repair.get("id")
+                    if isinstance(raw_before_repair, Mapping)
+                    else action["call_id"]
+                )
+                call_key = json.dumps(
+                    [action["tool_id"], arguments],
+                    ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+                )
+                if call_key in trace_tool_call_keys:
+                    continue
+                trace_tool_call_keys.add(call_key)
+                trace_tool_calls.append({
+                    "raw_sample": {
+                        "name": raw_name,
+                        "arguments": raw_arguments,
+                        "id": raw_id,
+                    },
+                    "raw_tool_name": raw_name,
+                    "repaired_name": action["tool_id"],
+                    "tool_name": action["tool_id"],
+                    "arguments": arguments,
+                    "raw_arguments": raw_arguments,
+                    "call_id": raw_id,
+                })
             scheduled: list[int] = []
             for index, segment in enumerate(segments):
                 if (
@@ -2703,6 +2875,7 @@ class _ConductorSession:
                         ):
                             raise invalid("Hermes observation is not in native source order")
                         observations.append(observation)
+                        result_value = observation.get("result")
                         await self._emit(ToolObservationEvent(
                             0, self._open_request.episode_id,
                             self._open_request.effective_plan_digest, turn, index,
@@ -2715,6 +2888,11 @@ class _ConductorSession:
                 committed = await phase("commit", {}, "observation_batch", turn)
                 if committed.get("kind") != "committed":
                     raise invalid("Hermes post-tool/recovery commit failed")
+                committed_effects = committed.get("file_effects")
+                if isinstance(committed_effects, Mapping):
+                    for path, digest in committed_effects.items():
+                        if isinstance(path, str) and (digest is None or isinstance(digest, str)):
+                            trace_file_effects[path] = digest
             self._turns.append(RunnerTurn(turn, actions, tuple(observations)))
             if state["status"] == "FINISHED":
                 termination = RunnerTermination.ASSISTANT_COMPLETE
@@ -2739,11 +2917,61 @@ class _ConductorSession:
         await self._checkpoint("after_loop", turn=len(self._turns))
         await self._checkpoint("before_commit", turn=len(self._turns))
         await self._commit_termination(termination)
+        system_messages: list[str] = []
+        for request_row in trace_requests:
+            body = request_row["body"]
+            for message in body.get("messages", ()):
+                if (
+                    isinstance(message, Mapping)
+                    and message.get("role") == "system"
+                    and isinstance(message.get("content"), str)
+                    and message["content"] not in system_messages
+                ):
+                    system_messages.append(message["content"])
+        last_response = trace_requests[-1].get("response") if trace_requests else None
+        choices = last_response.get("choices", ()) if isinstance(last_response, Mapping) else ()
+        native_stop_reason = (
+            choices[-1].get("finish_reason")
+            if choices and isinstance(choices[-1], Mapping)
+            else state.get("public_stop") or state.get("status")
+        )
+        replay_trace = {
+            "schema_version": "bb.e4.hermes-agent-trace.v1",
+            "case_id": self._open_request.episode_id,
+            "profile": "hermes",
+            "context": {
+                "system_messages": system_messages,
+                "agents_md": [
+                    content for content in system_messages if "AGENTS.md" in content
+                ],
+            },
+            "controls": {
+                "api_mode": "chat_completions",
+                "streaming": False,
+                "max_iterations": 8,
+                "advertised_tools": list(tool_order),
+            },
+            "requests": trace_requests,
+            "tool_calls": trace_tool_calls,
+            "tool_results": history_tool_results(tuple(history)),
+            "visible_corrections": visible_corrections(tuple(history)),
+            "file_effects": trace_file_effects,
+            "termination": {
+                "kind": "completed" if state["status"] == "FINISHED" else "stopped",
+                "native_stop_reason": native_stop_reason,
+            },
+            "request_count": len(trace_requests),
+            "normalizations": [],
+        }
         return RunnerResult(
-            episode_id=self._open_request.episode_id,
             effective_plan_digest=self._open_request.effective_plan_digest,
             original_request={"task_input": request.task_input, "context": request.context},
-            response={"source_id": HERMES_RESPONSE_CONSUMER_ID, "messages": history, "state": state},
+            response={
+                "source_id": HERMES_RESPONSE_CONSUMER_ID,
+                "messages": history,
+                "state": state,
+                "replay_trace": replay_trace,
+            },
             termination=termination, turn_count=len(self._turns),
             turns=tuple(self._turns), events=tuple(self._events),
         )

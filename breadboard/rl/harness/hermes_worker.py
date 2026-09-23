@@ -369,6 +369,7 @@ class HermesActor:
         self._segment_flushed = 0
         self._resource_facts: dict[str, Any] | None = None
         self._native_cleanup_returned = False
+        self._workspace_before: dict[str, str] = {}
         self._source_error: dict[str, str] | None = None
 
     @property
@@ -381,6 +382,25 @@ class HermesActor:
 
     def _remaining(self) -> float:
         return max(0.0, self._deadline - time.monotonic())
+    def _workspace_snapshot(self) -> dict[str, str]:
+        snapshot: dict[str, str] = {}
+        for path in self._workspace.rglob("*"):
+            if path.is_file() and not path.is_symlink():
+                try:
+                    relative = path.relative_to(self._workspace).as_posix()
+                    snapshot[relative] = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+                except (OSError, ValueError):
+                    continue
+        return snapshot
+
+    def _workspace_effects(self) -> dict[str, str | None]:
+        current = self._workspace_snapshot()
+        effects: dict[str, str | None] = {}
+        for path in sorted(set(self._workspace_before) | set(current)):
+            before, after = self._workspace_before.get(path), current.get(path)
+            if before != after:
+                effects[path] = after
+        return effects
 
     def _admit_deadline(self, payload: Mapping[str, Any]) -> None:
         remaining = payload["remaining_seconds"]
@@ -444,6 +464,7 @@ class HermesActor:
             "workspace/scratch must be absolute",
         )
         self._workspace = Path(workspace).resolve(strict=True)
+        self._workspace_before = self._workspace_snapshot()
         self._scratch = Path(scratch).resolve(strict=True)
         _require(
             self._workspace != self._scratch
@@ -759,6 +780,8 @@ class HermesActor:
                 "sdk_clients": list(self._sdk_clients),
             },
         }
+        if hasattr(self, "_workspace"):
+            result["file_effects"] = self._workspace_effects()
         if state is not None:
             result["native_counters"].update(
                 {
