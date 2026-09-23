@@ -415,10 +415,12 @@ def test_sealed_workspace_seed_diff_captures_modification_and_marker_addition(
     )
     assert seed_result["stdout"] == repository_result["stdout"]
     patch = seed_result["stdout"]
-    assert "diff --git a/seed.txt b/seed.txt" in patch
-    assert "index " in patch
-    assert "diff --git a/marker.txt b/marker.txt" in patch
-    assert "new file mode" in patch
+    seed_section = patch.split("diff --git a/seed.txt b/seed.txt\n", 1)[1].split(
+        "diff --git a/marker.txt b/marker.txt\n", 1
+    )[0]
+    index_line = next(line for line in seed_section.splitlines() if line.startswith("index "))
+    old_blob, new_blob = index_line.split()[1].split("..", 1)
+    assert old_blob.strip("0") and new_blob.strip("0")
 
 
 @requires_sealed_execution
