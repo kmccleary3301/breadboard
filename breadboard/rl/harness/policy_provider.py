@@ -146,6 +146,16 @@ def _project_effective_chat_tool(definition: Mapping[str, Any]) -> dict[str, Any
         properties[parameter["name"]] = schema
         if parameter.get("required") is True:
             required.append(parameter["name"])
+    required_order = definition.get("required_order")
+    if required_order is not None:
+        if (
+            not isinstance(required_order, tuple)
+            or any(type(name) is not str or not name for name in required_order)
+            or len(set(required_order)) != len(required_order)
+            or set(required_order) != set(required)
+        ):
+            raise ValueError("effective target tool required order is malformed")
+        required = list(required_order)
     parameter_schema: dict[str, Any] = {
         "type": "object",
         "properties": properties,
@@ -1945,10 +1955,26 @@ def _responses_request_to_chat(
         messages = request["messages"]
         tools = request["tools"]
         system_prompt = target_projection.system_prompt
-        if target_projection.renderer_id == PI_RESPONSE_CONSUMER_ID:
+        target_binding = (
+            target_projection.source_manifest.semantic.metadata.get("e4_target")
+            if target_projection.source_manifest is not None
+            else None
+        )
+        profile_version = (
+            target_binding.get("version")
+            if isinstance(target_binding, Mapping)
+            else None
+        )
+        deferred_native_prompt = (
+            profile_version == 3
+            and target_projection.rendered_prompt_digest is None
+        )
+        if deferred_native_prompt:
             if native_system_prompt is None:
                 raise ProviderContractError("native stream bootstrap has not been bound")
             system_prompt = native_system_prompt
+        elif native_system_prompt is not None:
+            raise ProviderContractError("native stream bootstrap is not admitted for this target")
         if (
             type(messages) is not list
             or len(messages) < 2

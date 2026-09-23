@@ -9,8 +9,10 @@ const SOURCE_ROOT = "/opt/omp/source/oh-my-pi-3b3a6dc9bbd85102ce19d0b1c11bf68709
 const TOOL_NAMES = ["read", "bash", "edit", "write"] as const;
 type Call = { id: string; name: string; arguments: Record<string, unknown> };
 let boundedDescriptions: Record<string, string> = {};
+let nativeSystemPrompt = "";
 let session: any = null;
 let tools: any[] = [];
+let irToJsonSchema: ((ir: unknown, options?: Record<string, unknown>) => Record<string, unknown>) | null = null;
 let prepared: Array<Call & { error?: string }> = [];
 
 function sleep(milliseconds: number): Promise<void> {
@@ -104,6 +106,15 @@ async function reapDescendants(owned: ProcessHandle[] = []): Promise<number[]> {
   return remaining.flatMap((pgid) => [...table.values()].filter((info) => info.pgid === pgid).map((info) => info.pid));
 }
 let workspace = "";
+let convertMessages: ((model: any, context: any, compat: any) => unknown[]) | null = null;
+const converterModel = {
+  id: "capture",
+  provider: "capture",
+  api: "openai-completions",
+  reasoning: false,
+  input: ["text"],
+  compat: {},
+};
 
 function exactRecord(value: unknown, label: string, required: readonly string[], optional: readonly string[] = []): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
@@ -146,14 +157,42 @@ function requireAdvertisement(value: unknown): {
   }
   return { systemPrompt: advertisement.system_prompt, descriptions: bounded, capabilityDenials };
 }
+function parametersFor(tool: any): Record<string, unknown> {
+  if (irToJsonSchema === null || typeof tool.parameters !== "function" || tool.parameters.ir === undefined) {
+    throw new Error(`tool schema is unavailable: ${tool.name}`);
+  }
+  const source = irToJsonSchema(tool.parameters.ir, { io: "input", dialect: null });
+  const properties = source.properties;
+  if (properties === null || typeof properties !== "object" || Array.isArray(properties)) {
+    throw new Error(`tool schema is not an object: ${tool.name}`);
+  }
+  const required = source.required;
+  if (required !== undefined && (!Array.isArray(required) || required.some((name) => typeof name !== "string"))) {
+    throw new Error(`tool schema required list is invalid: ${tool.name}`);
+  }
+  return {
+    ...source,
+    additionalProperties: false,
+    properties: {
+      i: { type: "string", description: "concise intent" },
+      ...properties,
+    },
+    required: [...(required ?? []), "i"],
+  };
+}
 async function initialize(payload: Record<string, any>) {
   if (payload.workspace === undefined || payload.scratch === undefined) throw new Error("initialize requires injected workspace and scratch");
   const advertisement = requireAdvertisement(payload.advertisement);
   workspace = String(payload.workspace);
+  nativeSystemPrompt = advertisement.systemPrompt;
   boundedDescriptions = advertisement.descriptions;
   // The pinned source root is deployment-selected; static source imports cannot
   // represent the verified runtime path used by the SIF installation.
   const { createAgentSession, Settings } = await import(`${SOURCE_ROOT}/packages/coding-agent/src/sdk.ts`);
+  const providerModule = await import(`${SOURCE_ROOT}/packages/ai/src/providers/openai-completions.ts`);
+  convertMessages = providerModule.convertMessages as typeof convertMessages;
+  const schemaModule = await import(`${SOURCE_ROOT}/packages/omptype/src/json-schema.ts`);
+  irToJsonSchema = schemaModule.irToJsonSchema as typeof irToJsonSchema;
   const { SessionManager } = await import(`${SOURCE_ROOT}/packages/coding-agent/src/session/session-manager.ts`);
   const settings = await Settings.init({ cwd: workspace, agentDir: String(payload.scratch), inMemory: true, configFiles: [], overrides: {
     "retry.enabled": false, "retry.fallbackChains": {}, "compaction.enabled": false,
@@ -177,7 +216,7 @@ async function initialize(payload: Record<string, any>) {
     schema_version: PHASE_SCHEMA,
     kind: "initialized",
     system_prompt: advertisement.systemPrompt,
-    tool_schemas: tools.map((tool: any) => ({ type: "function", function: { name: tool.name, description: boundedDescriptions[tool.name], parameters: tool.parameters } })),
+    tool_schemas: tools.map((tool: any) => ({ type: "function", function: { name: tool.name, description: boundedDescriptions[tool.name], parameters: parametersFor(tool) } })),
     bootstrap: {
       consumer_id: "breadboard.oh-my-pi.v18.1.17",
       workspace,
@@ -191,20 +230,40 @@ async function initialize(payload: Record<string, any>) {
 async function dispatch(operation: string, payload: Record<string, any>): Promise<Record<string, any>> {
   if (operation === "initialize") return initialize(payload);
   if (!session) throw new Error("worker must be initialized before phases");
-  if (operation === "project_request") return {
-    schema_version: PHASE_SCHEMA,
-    kind: "request",
-    messages: payload.messages ?? [],
-    tools: tools.map((tool: any) => ({
-      type: "function",
-      function: { name: tool.name, description: boundedDescriptions[tool.name], parameters: tool.parameters },
-    })),
-  };
+  if (operation === "project_request") {
+    if (convertMessages === null) throw new Error("pinned OMP provider converter is unavailable");
+    const model = session.agent.state.model ?? converterModel;
+    if (model.api !== "openai-completions") throw new Error(`pinned OMP provider converter requires an OpenAI Completions model: ${String(model.api)}`);
+    const messages = convertMessages(model, { systemPrompt: nativeSystemPrompt ? [nativeSystemPrompt] : [], messages: payload.messages ?? [] }, model.compat);
+    return {
+      schema_version: PHASE_SCHEMA,
+      kind: "request",
+      messages,
+      tools: tools.map((tool: any) => ({
+        type: "function",
+        function: { name: tool.name, description: boundedDescriptions[tool.name], parameters: parametersFor(tool) },
+      })),
+    };
+  }
   if (operation === "prepare_tools") {
     prepared = (payload.calls ?? []).map((call: any) => {
-      const item: any = { id: String(call.id), name: String(call.name), arguments: call.arguments };
+      let argumentsValue = call.arguments;
+      let error: string | undefined;
+      if (typeof argumentsValue === "string") {
+        try {
+          argumentsValue = JSON.parse(argumentsValue);
+        } catch {
+          error = "Invalid tool arguments: expected a JSON object";
+          argumentsValue = {};
+        }
+      }
+      if (!argumentsValue || typeof argumentsValue !== "object" || Array.isArray(argumentsValue)) {
+        error = error ?? "Invalid tool arguments: expected a JSON object";
+        argumentsValue = {};
+      }
+      const item: any = { id: String(call.id), name: String(call.name), arguments: argumentsValue };
       if (!TOOL_NAMES.includes(item.name)) item.error = `OMP tool is not admitted: ${item.name}`;
-      if (!item.arguments || typeof item.arguments !== "object" || Array.isArray(item.arguments)) item.error = item.error ?? "Invalid tool arguments: expected a JSON object";
+      if (error) item.error = item.error ?? error;
       return item;
     });
     return { schema_version: PHASE_SCHEMA, kind: "prepared", calls: prepared, history_calls: prepared.map((call) => ({ id: call.id, name: call.name, arguments: call.arguments })) };

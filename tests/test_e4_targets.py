@@ -7,9 +7,10 @@ import shutil
 from types import SimpleNamespace
 
 import pytest
-import yaml
 from breadboard.artifacts.cas import FilesystemCAS
 
+from breadboard_engine.compilation.contracts import canonical_sha256
+from breadboard.rl.harness.policy_provider import E4TargetPolicyProjection
 from breadboard_engine.e4_targets import (
     E4TargetError,
     _load_e4_target_from_root,
@@ -787,6 +788,13 @@ def test_omp_18_1_17_server_compile_binds_headless_v2(
         binding = compiled.manifest.semantic.metadata["e4_target"]
         assert binding["renderer_id"] == "breadboard.oh-my-pi.v18.1.17"
         assert binding["ordered_tool_names"] == ("read", "bash", "edit", "write")
+        lowered = lower_e4_target(omp, {})
+        source_digest = canonical_sha256([
+            {"type": "function", "function": tool} for tool in lowered.tools
+        ])
+        projection = E4TargetPolicyProjection.from_compiled(compiled.manifest)
+        assert source_digest == binding["tool_surface_digest"]
+        assert projection.identity_dict()["tool_surface_digest"] == source_digest
         surface = json.loads(omp.read_asset_text("tool-surface.json"))
         actual_tools = []
         for definition in compiled.manifest.semantic.to_canonical_obj()["tools"]["definitions"]:

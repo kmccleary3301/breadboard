@@ -126,6 +126,24 @@ def _profile(credential: str = "episode-secret") -> OpenAICompletionsProviderPro
         caller_headers={"X-Episode-ID": "episode-one"},
     )
 
+def test_target_tool_projection_preserves_required_order_and_rejects_drift() -> None:
+    definition = {
+        "model_name": "read",
+        "description": "Read",
+        "parameters": (
+            {"name": "i", "schema": {"type": "string"}, "validation_rules": {}, "required": True},
+            {"name": "path", "schema": {"type": "string"}, "validation_rules": {}, "required": True},
+        ),
+        "required_order": ("path", "i"),
+        "provider_routing": {"openai": {"additionalProperties": False}},
+    }
+    projected = policy_provider_module._project_effective_chat_tool(definition)
+    assert projected["function"]["parameters"]["required"] == ["path", "i"]
+
+    malformed = {**definition, "required_order": ("path",)}
+    with pytest.raises(ValueError, match="required order"):
+        policy_provider_module._project_effective_chat_tool(malformed)
+
 
 def _request(
     input_items: list[dict[str, Any]], *, turn: int = 1

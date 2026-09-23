@@ -23,6 +23,7 @@ class NativeStreamProfile:
     consumer_id: str
     target_id: str
     target_version: int
+    api_variant: Literal["responses", "chat", "chat_completions"]
     phase_schema_version: str
     tool_order: tuple[str, ...]
     max_turns: int
@@ -57,6 +58,7 @@ NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
         consumer_id=PI_RESPONSE_CONSUMER_ID,
         target_id="pi@0.73.1",
         target_version=3,
+        api_variant="responses",
         phase_schema_version="bb.pi-native.v1",
         tool_order=pi_semantics.TOOL_NAMES,
         max_turns=8,
@@ -72,7 +74,8 @@ NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
     omp_semantics.CONSUMER_ID: NativeStreamProfile(
         consumer_id=omp_semantics.CONSUMER_ID,
         target_id="oh-my-pi@18.1.17",
-        target_version=18,
+        target_version=3,
+        api_variant="chat_completions",
         phase_schema_version=omp_semantics.PHASE_SCHEMA_VERSION,
         tool_order=omp_semantics.ALLOWED_TOOLS,
         max_turns=8,

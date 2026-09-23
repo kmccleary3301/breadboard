@@ -392,10 +392,11 @@ def admit_native_response_binding(
     elif policy.consumer_id == OMP_RESPONSE_CONSUMER_ID:
         if (
             not isinstance(target, Mapping)
-            or target.get("version") != 2
+            or target.get("version") != 3
             or target.get("target_id") != "oh-my-pi@18.1.17"
             or target.get("renderer_id") != OMP_RESPONSE_CONSUMER_ID
             or not isinstance(target.get("runtime_profile"), Mapping)
+            or target.get("rendered_prompt_digest") is not None
             or effective_mode != "streaming"
             or profile.request_policy.max_token_field != "max_completion_tokens"
             or profile.request_policy.strict_tools is not None
