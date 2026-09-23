@@ -1930,13 +1930,13 @@ class _ConductorSession:
                 )
             for event in delta:
                 kind = event.get("kind")
-                if isinstance(kind, str) and "error" in kind.lower():
+                if isinstance(kind, str) and kind in {"AgentErrorEvent", "ConversationErrorEvent"}:
                     trace_observations.append({
                         "event_kind": kind,
                         "tool_name": event.get("tool_name"),
                         "is_error": True,
-                        "error_text": event.get("detail") or event.get("error") or event.get("message"),
-                        "classification": "native_error",
+                        "error_text": event.get("error") or event.get("detail") or event.get("code"),
+                        "classification": event.get("classification"),
                     })
             for event in delta:
                 history_bytes += _encoded_json_size(event) + (1 if history else 0)
@@ -2146,12 +2146,15 @@ class _ConductorSession:
                     and "error" in str(item.get("kind", "")).lower()
                     for item in native_observations
                 )
+                if len(native_observations) == 1 and isinstance(native_observations[0], Mapping):
+                    trace_result = native_observations[0].get("observation", native_observations[0])
+                else:
+                    trace_result = native_observations
                 trace_observations.append({
                     "event_kind": "ObservationEvent",
                     "tool_name": tool_id,
                     "is_error": is_error,
-                    "result": native_observations,
-                    "classification": "tool_error" if is_error else "tool_result",
+                    "result": trace_result,
                 })
                 observations.append(observation)
                 finished = tool_id == "finish"
@@ -2188,6 +2191,18 @@ class _ConductorSession:
         await self._checkpoint("after_loop", turn=len(self._turns))
         await self._checkpoint("before_commit", turn=len(self._turns))
         await self._commit_termination(termination)
+        trace_kind = (
+            "finished"
+            if termination in {RunnerTermination.SUBMITTED, RunnerTermination.ASSISTANT_COMPLETE}
+            else "error"
+            if state.get("status") == "ERROR"
+            else termination.value
+        )
+        native_stop_reason = None
+        if trace_requests:
+            choices = trace_requests[-1].get("response", {}).get("choices", ())
+            if choices:
+                native_stop_reason = choices[-1].get("finish_reason")
         replay_trace = {
             "schema_version": "bb.e4.openhands-sdk-trace.v1",
             "case_id": self._open_request.episode_id,
@@ -2196,10 +2211,18 @@ class _ConductorSession:
             "observations": trace_observations,
             "file_effects": trace_file_effects,
             "termination": {
-                "kind": termination.value,
-                "native_stop_reason": state.get("status"),
+                "kind": trace_kind,
+                "native_stop_reason": native_stop_reason,
             },
-            "request_count": len(trace_requests),
+            "normalizations": _trace_normalizations(
+                {
+                    "requests": trace_requests,
+                    "tool_calls": trace_tool_calls,
+                    "observations": trace_observations,
+                    "file_effects": trace_file_effects,
+                    "termination": {"kind": termination.value, "native_stop_reason": state.get("status")},
+                }
+            ),
         }
         return RunnerResult(
             episode_id=self._open_request.episode_id,
@@ -2292,6 +2315,8 @@ class _ConductorSession:
                     0, self._open_request.episode_id,
                     self._open_request.effective_plan_digest,
                     len(self._turns), termination,
+
+
                 )
             )
             async with self._lock:
@@ -2384,6 +2409,22 @@ class _ConductorSession:
 
     def _state_error(self, code: str, message: str) -> RunnerStateError:
         return RunnerStateError(message, code=code, **self._context())
+
+
+def _trace_normalizations(value: Mapping[str, Any]) -> list[str]:
+    encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    rules: list[str] = []
+    if re.search(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}", encoded):
+        rules.append("event_uuid:<EVENT_UUID>")
+    if "oh-capture-response-" in encoded:
+        rules.append("response_id:<RESPONSE_ID>")
+    if re.search(r"oh-capture-(?!response-)", encoded):
+        rules.append("call_id:<CALL_ID>")
+    if '"timestamp"' in encoded or re.search(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d", encoded):
+        rules.append("timestamp:<TIMESTAMP>")
+    if '"hostname"' in encoded or '"host_name"' in encoded:
+        rules.append("hostname:<HOSTNAME>")
+    return rules
 
 
 def _find_mini_provider_failure(error: BaseException) -> MiniProviderFailure | None:

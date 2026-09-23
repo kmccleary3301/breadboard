@@ -11,6 +11,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -21,7 +22,7 @@ from breadboard.rl.harness.openhands_worker import OpenHandsActor
 def _completion(case_id: str, index: int, step: dict[str, Any]) -> dict[str, Any]:
     calls = [
         {
-            "id": item.get("id", f"oh-bb-{case_id}-{index:02d}-{position:02d}"),
+            "id": item.get("id", f"oh-capture-{case_id}-{index:02d}-{position:02d}"),
             "type": "function",
             "function": {"name": item["name"], "arguments": item.get("arguments", "{}").replace("/workspace", step["_workspace"])},
         }
@@ -31,7 +32,7 @@ def _completion(case_id: str, index: int, step: dict[str, Any]) -> dict[str, Any
     if "reasoning_content" in step:
         message["reasoning_content"] = step["reasoning_content"]
     return {
-        "id": f"oh-bb-response-{case_id}-{index:02d}",
+        "id": f"oh-capture-response-{case_id}-{index:02d}",
         "object": "chat.completion",
         "created": 0,
         "model": "gpt-4o-mini",
@@ -76,6 +77,20 @@ def _sha(path: Path) -> str:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _normalizations(value: dict[str, Any]) -> list[str]:
+    encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    rules: list[str] = []
+    if re.search(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}", encoded):
+        rules.append("event_uuid:<EVENT_UUID>")
+    if "oh-capture-response-" in encoded:
+        rules.append("response_id:<RESPONSE_ID>")
+    if re.search(r"oh-capture-(?!response-)", encoded):
+        rules.append("call_id:<CALL_ID>")
+    if '"timestamp"' in encoded or re.search(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d", encoded):
+        rules.append("timestamp:<TIMESTAMP>")
+    if '"hostname"' in encoded or '"host_name"' in encoded:
+        rules.append("hostname:<HOSTNAME>")
+    return rules
 def run_case(case_id: str, case: dict[str, Any], output_root: Path) -> dict[str, Any]:
     output = output_root / case_id
     shutil.rmtree(output, ignore_errors=True)
@@ -113,20 +128,35 @@ def run_case(case_id: str, case: dict[str, Any], output_root: Path) -> dict[str,
             prepared = actor.dispatch("prepare", {})
             for action in prepared.get("prepared_actions", prepared.get("actions", ())):
                 tool_calls.append({"tool_name": action.get("tool_id"), "arguments": action.get("arguments"), "security_risk": action.get("security_risk", "UNKNOWN")})
+            for event in prepared.get("event_delta", ()):
+                if isinstance(event, dict) and event.get("kind") in {"AgentErrorEvent", "ConversationErrorEvent"}:
+                    observations.append({"event_kind": event["kind"], "tool_name": event.get("tool_name"), "is_error": True, "error_text": event.get("error") or event.get("detail") or event.get("code"), "classification": event.get("classification")})
             actions = prepared.get("actions", ())
             for action in actions:
                 executed = actor.dispatch("execute", {"index": action["index"], "tool_id": action["tool_id"]})
                 events = executed.get("observations", ())
                 is_error = any(isinstance(item, dict) and "error" in str(item.get("kind", "")).lower() for item in events)
-                observations.append({"event_kind": "ObservationEvent", "tool_name": action["tool_id"], "is_error": is_error, "result": events, "classification": "tool_error" if is_error else "tool_result"})
+                result = events[0].get("observation", events[0]) if len(events) == 1 and isinstance(events[0], dict) else events
+                observation = {"event_kind": "ObservationEvent", "tool_name": action["tool_id"], "is_error": is_error, "result": result}
+                observations.append(observation)
             committed = actor.dispatch("commit", {})
             file_effects.update(committed.get("file_effects", {}))
             status = committed.get("status")
             if status in {"FINISHED", "ERROR", "STUCK"}:
-                termination = "submitted" if status == "FINISHED" and actions and actions[-1].get("tool_id") == "finish" else ("assistant_complete" if status == "FINISHED" else "max_turns")
+                termination = "finished" if status == "FINISHED" else ("error" if status == "ERROR" else "stuck")
                 break
+        if status == "RUNNING":
+            status = "ERROR"
+            termination = "error"
+        for path in case.get("probe_paths", ()):
+            file_effects.setdefault(path, None)
     finally:
         actor.close()
+    native_stop_reason = None
+    if channel.requests:
+        choices = channel.requests[-1].get("response", {}).get("choices", ())
+        if choices:
+            native_stop_reason = choices[-1].get("finish_reason")
     trace = {
         "schema_version": "bb.e4.openhands-sdk-trace.v1",
         "case_id": case_id,
@@ -134,11 +164,12 @@ def run_case(case_id: str, case: dict[str, Any], output_root: Path) -> dict[str,
         "tool_calls": tool_calls,
         "observations": observations,
         "file_effects": file_effects,
-        "termination": {"kind": termination, "native_stop_reason": status},
+        "termination": {"kind": termination, "native_stop_reason": native_stop_reason},
         "request_count": len(channel.requests),
     }
+    trace["normalizations"] = _normalizations(trace)
     output.mkdir(parents=True, exist_ok=True)
-    (output / "bb_replay_trace.json").write_text(json.dumps(trace, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+    (output / "bb_replay_trace.json").write_text(json.dumps(trace, separators=(",", ":")) + "\n", encoding="utf-8")
     return trace
 
 
