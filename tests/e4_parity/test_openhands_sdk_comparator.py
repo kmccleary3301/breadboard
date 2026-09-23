@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 from pathlib import Path
+import shutil
 
 import pytest
 
@@ -14,16 +16,33 @@ CASES = tuple(sorted(path for path in FIXTURES.iterdir() if path.is_dir()))
 @pytest.mark.parametrize("case_dir", CASES, ids=lambda path: path.name)
 def test_supplier_projection_self_replays(case_dir: Path) -> None:
     supplier = project_supplier_case(case_dir)
-    replay = project_bb_trace(deepcopy(supplier))
+    replay = _as_bb_trace(supplier)
+    projected = project_bb_trace(deepcopy(replay))
     report = compare_cases(case_dir, replay)
+    assert projected["file_effects"] == supplier["file_effects"]
     assert report["ok"] is True
     assert report["failed"] == 0
+
+
+def _as_bb_trace(supplier: dict) -> dict:
+    replay = deepcopy(supplier)
+    replay["file_effects"] = {
+        path: (
+            {"exists": False}
+            if digest is None
+            else {"exists": True, "bytes": 0, "sha256": digest}
+        )
+        for path, digest in supplier["file_effects"].items()
+    }
+    return replay
 
 
 def _replay(case: str) -> tuple[Path, dict]:
     path = FIXTURES / case
     supplier = project_supplier_case(path)
-    return path, deepcopy(supplier)
+    return path, _as_bb_trace(supplier)
+
+
 
 
 def _drop_invalid_followup(trace: dict) -> None:
@@ -31,7 +50,11 @@ def _drop_invalid_followup(trace: dict) -> None:
 
 
 def _execute_cutoff_call(trace: dict) -> None:
-    trace["file_effects"]["must-not-exist.txt"] = "sha256:" + "a" * 64
+    trace["file_effects"]["must-not-exist.txt"] = {
+        "exists": True,
+        "bytes": 0,
+        "sha256": "sha256:" + "a" * 64,
+    }
 
 
 def _drop_corrective_nudge(trace: dict) -> None:
@@ -56,8 +79,14 @@ def _change_security_risk_placement(trace: dict) -> None:
 
 def _change_file_effect(trace: dict) -> None:
     path = next(iter(trace["file_effects"]))
-    if trace["file_effects"][path] is not None:
-        trace["file_effects"][path] = "sha256:" + "b" * 64
+    if trace["file_effects"][path]["exists"]:
+        trace["file_effects"][path] = {
+            "exists": True,
+            "bytes": 0,
+            "sha256": "sha256:" + "b" * 64,
+        }
+
+
 
 
 def _change_termination(trace: dict) -> None:
@@ -97,11 +126,48 @@ def test_undeclared_placeholder_is_rejected() -> None:
 
 
 
+
 def test_malformed_measured_effect_is_rejected() -> None:
     trace = _replay("OH-01-normal-file-effect")[1]
     trace["file_effects"]["malformed.txt"] = {"exists": True}
     with pytest.raises(ValueError, match="requires"):
         project_bb_trace(trace)
+
+
+def test_bb_scalar_effect_is_rejected() -> None:
+    trace = _replay("OH-01-normal-file-effect")[1]
+    trace["file_effects"]["scalar.txt"] = "sha256:" + ("a" * 64)
+    with pytest.raises(ValueError, match="must be an object"):
+        project_bb_trace(trace)
+
+
+def test_bb_supplier_wrapper_effect_shape_is_rejected() -> None:
+    trace = _replay("OH-01-normal-file-effect")[1]
+    trace["file_effects"] = {
+        "files": {
+            "wrapped.txt": {
+                "exists": True,
+                "bytes": 1,
+                "sha256": "sha256:" + ("a" * 64),
+            }
+        }
+    }
+    with pytest.raises(ValueError, match="boolean exists"):
+        project_bb_trace(trace)
+
+
+def test_supplier_legacy_scalar_effect_remains_accepted(tmp_path: Path) -> None:
+    source = FIXTURES / "OH-01-normal-file-effect"
+    case = tmp_path / source.name
+    shutil.copytree(source, case)
+    trace_path = case / "trace.json"
+    trace = json.loads(trace_path.read_text(encoding="utf-8"))
+    trace["effects"]["files"]["legacy.txt"] = "sha256:" + ("a" * 64)
+    trace_path.write_text(json.dumps(trace), encoding="utf-8")
+    projected = project_supplier_case(case)
+    assert projected["file_effects"]["legacy.txt"] == "sha256:" + ("a" * 64)
+
+
 
 def _volatile_trace() -> dict:
     return {

@@ -359,7 +359,11 @@ def _observation_projection(events: Sequence[Any], normalizer: _Normalizer) -> l
     return observations
 
 def _project_effects(raw: Any, *, allow_legacy: bool = False) -> dict[str, str | None]:
-    files = raw.get("files", {}) if isinstance(raw, Mapping) and "files" in raw else raw
+    files = (
+        raw.get("files", {})
+        if allow_legacy and isinstance(raw, Mapping) and "files" in raw
+        else raw
+    )
     if not isinstance(files, Mapping):
         raise ValueError("file effects must be an object")
     result: dict[str, str | None] = {}
@@ -391,10 +395,10 @@ def _project_effects(raw: Any, *, allow_legacy: bool = False) -> dict[str, str |
                         raise ValueError(f"file effect {path!r} content_utf8 must be a string")
                 if not isinstance(digest, str) or SHA256_RE.fullmatch(digest) is None:
                     raise ValueError(f"file effect {path!r} requires sha256")
-        elif value is None or isinstance(value, str):
+        elif allow_legacy and (value is None or isinstance(value, str)):
             digest = value
         else:
-            raise ValueError(f"invalid file effect for {path!r}: {value!r}")
+            raise ValueError(f"measured file effect {path!r} must be an object")
         if digest is not None and (
             not isinstance(digest, str) or SHA256_RE.fullmatch(digest) is None
         ):

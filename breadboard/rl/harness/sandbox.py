@@ -2773,6 +2773,12 @@ def _workspace_effect_snapshot(
     """Hash one materialized policy workspace through no-follow dirfds."""
     snapshot: dict[str, dict[str, Any]] = {}
     directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    file_flags = (
+        os.O_RDONLY
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+    )
 
     try:
         root_fd = os.open(root, directory_flags)
@@ -2837,9 +2843,20 @@ def _workspace_effect_snapshot(
                 try:
                     descriptor = os.open(
                         entry.name,
-                        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                        file_flags,
                         dir_fd=directory_fd,
                     )
+                    opened_metadata = os.fstat(descriptor)
+                    if (
+                        not stat.S_ISREG(opened_metadata.st_mode)
+                        or opened_metadata.st_dev != metadata.st_dev
+                        or opened_metadata.st_ino != metadata.st_ino
+                        or opened_metadata.st_nlink != 1
+                    ):
+                        raise WorkspaceStateError(
+                            "workspace effect node changed during measurement",
+                            code="workspace_authority_mismatch",
+                        )
                     while True:
                         chunk = os.read(descriptor, 1024 * 1024)
                         if not chunk:

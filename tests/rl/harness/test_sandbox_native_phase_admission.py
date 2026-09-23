@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -303,6 +304,47 @@ def test_workspace_effect_scanner_fails_closed_on_unsupported_nodes(
         os.mkfifo(root / "pipe")
     with pytest.raises(WorkspaceStateError, match="unauthorized"):
         sandbox_module._workspace_effect_snapshot(root, exclude_root_git=False)
+
+
+@pytest.mark.asyncio
+async def test_workspace_effect_scanner_rejects_fifo_swap_before_open(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "workspace"
+    root.mkdir()
+    victim = root / "victim"
+    victim.write_text("regular", encoding="utf-8")
+    original_open = os.open
+    swapped = False
+
+    def swapping_open(
+        path: os.PathLike[str] | str,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        nonlocal swapped
+        if dir_fd is not None and path == "victim" and not swapped:
+            victim.unlink()
+            os.mkfifo(victim)
+            swapped = True
+        if dir_fd is None:
+            return original_open(path, flags, mode)
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(sandbox_module.os, "open", swapping_open)
+    with pytest.raises(WorkspaceStateError, match="changed|unauthorized"):
+        await asyncio.wait_for(
+            asyncio.to_thread(
+                sandbox_module._workspace_effect_snapshot,
+                root,
+                exclude_root_git=False,
+            ),
+            timeout=1,
+        )
+    assert swapped
 
 
 def test_workspace_effect_scanner_omits_content_for_oversize_file(tmp_path: Path) -> None:
