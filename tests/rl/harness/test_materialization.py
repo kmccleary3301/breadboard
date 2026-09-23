@@ -3150,3 +3150,42 @@ def test_workspace_seed_artifact_identity_is_pinned_and_paths_are_closed() -> No
         build_workspace_seed_artifact({"/absolute": b"x"})
     with pytest.raises(ValueError):
         SourceManifestEntry("link", "symlink", 0, 0o777, None)
+
+
+def test_empty_workspace_seed_stays_byte_empty_through_seal(
+    tmp_path: Path,
+) -> None:
+    reader = MemorySourceReader({EMPTY_WORKSPACE_SEED_DIGEST: {}})
+    store, _cache_root, _workspace_root = _store(
+        tmp_path, reader, FrozenClock(), namespace=31_001
+    )
+    plan = make_materialization_plan(
+        make_effective_plan(),
+        entries=(
+            MaterializationEntry(
+                EMPTY_WORKSPACE_SEED_DIGEST,
+                ".",
+                c.MountAccess.READ_WRITE,
+                4_096,
+                "workspace_seed",
+            ),
+        ),
+    )
+    materialized = store.materialize(plan)
+    try:
+        assert list(materialized.workspace_path.iterdir()) == []
+        receipt, _snapshot_path = store.seal_snapshot(
+            materialized,
+            source_lease_id=materialized.receipt.cache_lease_id,
+            effective_plan_digest=materialized.receipt.effective_plan_digest,
+            task_digest=plan.subject_digest,
+            verifier_digest="sha256:" + "0" * 64,
+            max_depth=16,
+            max_files=16,
+            max_inodes=16,
+            max_bytes=4_096,
+        )
+        assert receipt.file_count == 0
+        assert receipt.byte_count == 0
+    finally:
+        materialized.close()

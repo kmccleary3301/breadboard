@@ -145,6 +145,19 @@ def test_headless_projection_preserves_evidence_without_fabricating_patches() ->
     assert json.loads(json.dumps(result))["terminal"]["response"] == {
         "output": [{"type": "message", "content": [{"type": "output_text", "text": "done"}]}]
     }
+    seed_digest = "sha256:" + "6" * 64
+    seeded_run = replace(
+        run,
+        workspace_diff={**run.workspace_diff, "base_commit": seed_digest},
+    )
+    seeded_result: dict[str, Any] = {}
+    _project_headless_run(
+        seeded_result,
+        seeded_run,
+        composition,
+        expected_base_commit=seed_digest,
+    )
+    assert seeded_result["workspace_evidence"]["patch_base_commit"] == seed_digest
 
     with pytest.raises(ValueError):
         _project_headless_run(
