@@ -262,6 +262,13 @@ def _from_events(events: Any, runtime: _RuntimeInputs, counts: _RuleCounts) -> l
     return _canonical_messages(messages, runtime, counts)
 
 
+def _normalize_termination(termination: Mapping[str, Any]) -> dict[str, Any]:
+    normalized = dict(termination)
+    if normalized.get("kind") == "Submitted":
+        normalized["kind"] = "submitted"
+    return normalized
+
+
 def _project(trace: Mapping[str, Any], requests: list[Mapping[str, Any]], runtime: _RuntimeInputs, counts: _RuleCounts) -> dict[str, Any]:
     messages = _canonical_messages(trace.get("messages"), runtime, counts)
     if not messages:
@@ -286,7 +293,7 @@ def _project(trace: Mapping[str, Any], requests: list[Mapping[str, Any]], runtim
         "tool_calls": calls,
         "observations": observations,
         "effects": _normalize(trace.get("effects", {}), runtime, counts),
-        "termination": _normalize(dict(termination), runtime, counts),
+        "termination": _normalize(_normalize_termination(termination), runtime, counts),
         "request_count": trace.get("request_count", len(requests)),
     }
 

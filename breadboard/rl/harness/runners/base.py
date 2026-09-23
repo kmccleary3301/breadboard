@@ -1015,6 +1015,7 @@ class NativeSourceSessionPort(Protocol):
         payload: Mapping[str, Any],
         *,
         timeout_ms: int,
+        package_subpath: str | None = None,
     ) -> Mapping[str, Any]: ...
 
 

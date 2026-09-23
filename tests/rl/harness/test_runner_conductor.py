@@ -3742,12 +3742,14 @@ class _NativeCloseTestPort(RecordingToolPort):
         malformed_execute: bool = False,
         close_error: BaseException | None = None,
         block_close: bool = False,
+        missing_effects: bool = False,
     ) -> None:
         super().__init__(bindings)
         self.operations: list[str] = []
         self.malformed_execute = malformed_execute
         self.close_error = close_error
         self.block_close = block_close
+        self.missing_effects = missing_effects
         self.close_entered = asyncio.Event()
         self.release_close = asyncio.Event()
 
@@ -3773,6 +3775,7 @@ class _NativeCloseTestPort(RecordingToolPort):
         payload: Mapping[str, Any],
         *,
         timeout_ms: int,
+        package_subpath: str | None = None,
     ) -> Mapping[str, Any]:
         del timeout_ms
         self.operations.append(operation)
@@ -3804,18 +3807,21 @@ class _NativeCloseTestPort(RecordingToolPort):
                     "kind": "tool_results",
                     "results": [{"id": "wrong-call-id", "completion_index": 0}],
                 }
-            return {
+            result = {
                 "schema_version": "bb.pi-native.test.v1",
                 "kind": "tool_results",
                 "results": [{
                     "id": "call-1",
                     "completion_index": 0,
                     "content": "ok",
-                    "details": {},
+                    "details": {"effects": {}},
                     "isError": False,
                     "terminate": False,
                 }],
             }
+            if self.missing_effects:
+                result["results"][0].pop("details")
+            return result
         if operation == "close":
             self.close_entered.set()
             if self.block_close:
@@ -3836,6 +3842,7 @@ def _native_close_test_case(
     malformed_execute: bool = False,
     close_error: BaseException | None = None,
     block_invoke: bool = False,
+    missing_effects: bool = False,
 ) -> tuple[Any, _NativeCloseTestClient, _NativeCloseTestPort]:
     from breadboard.rl.harness import native_stream_profiles
     from breadboard.rl.harness.runners import pi_semantics
@@ -3921,6 +3928,7 @@ def _native_close_test_case(
         (_tool_binding("read-file"),),
         malformed_execute=malformed_execute,
         close_error=close_error,
+        missing_effects=missing_effects,
     )
     plan = _plan(
         observation=observation,
@@ -3938,11 +3946,13 @@ async def _run_native_close_test_case(
     malformed_execute: bool = False,
     close_error: BaseException | None = None,
     block_invoke: bool = False,
+    missing_effects: bool = False,
 ) -> tuple[Any, _NativeCloseTestClient, _NativeCloseTestPort, Any]:
     plan, client, tools = _native_close_test_case(
         monkeypatch,
         malformed_execute=malformed_execute,
         close_error=close_error,
+        missing_effects=missing_effects,
         block_invoke=block_invoke,
     )
     session, _, _, _, _, _ = await _open(
@@ -3964,6 +3974,20 @@ async def test_native_stream_malformed_execute_closes_once_and_preserves_protoco
         await session.close()
     assert tools.operations.count("close") == 1
     assert captured.value.code == "native_response_invalid"
+
+
+async def test_native_stream_missing_effects_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, _, tools, request = await _run_native_close_test_case(
+        monkeypatch, missing_effects=True,
+    )
+    try:
+        with pytest.raises(RunnerProtocolError, match="effect recording"):
+            await session.run(request)
+    finally:
+        await session.close()
+    assert tools.operations.count("close") == 1
 
 
 async def test_native_stream_provider_failure_closes_once(

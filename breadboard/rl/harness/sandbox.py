@@ -107,6 +107,7 @@ def _admit_native_phase_payload(
     workspace: str | Path | None,
     scratch: str | Path | None,
     runtime_root: str | Path,
+    package_subpath: str | None = None,
 ) -> dict[str, Any]:
     admitted = dict(payload)
     if operation != "initialize":
@@ -116,14 +117,28 @@ def _admit_native_phase_payload(
             "native initialize cannot supply workspace authority",
             code="workspace_authority_mismatch",
         )
+    package_path: Path | None = None
+    if package_subpath is not None:
+        if type(package_subpath) is not str or not package_subpath:
+            raise WorkspaceStateError(
+                "native package subpath is invalid",
+                code="workspace_authority_mismatch",
+            )
+        package_path = Path(package_subpath)
+        if package_path.is_absolute() or ".." in package_path.parts:
+            raise WorkspaceStateError(
+                "native package subpath escapes adapter runtime root",
+                code="workspace_escape",
+            )
     if workspace is None or scratch is None:
         return admitted
     admitted["workspace"] = str(workspace)
     admitted["scratch"] = str(scratch)
-    if adapter_id == PI_CODING_AGENT_LOCAL_ADAPTER_ID:
-        admitted["package_dir"] = str(
-            Path(runtime_root) / "node_modules/@mariozechner/pi-coding-agent"
-        )
+    package_dir = (
+        None if package_path is None else str(Path(runtime_root) / package_path)
+    )
+    if package_dir is not None:
+        admitted["package_dir"] = package_dir
     return admitted
 
 
@@ -2732,6 +2747,22 @@ class TrustedProcessBackend:
             ),
         )
 
+def _sole_writable_policy_workspace_mount(
+    lease: SandboxWorkspaceLease,
+) -> MaterializationEntry:
+    entries = tuple(
+        entry
+        for entry in lease.plan.materialization_plan.entries
+        if entry.access.value == "rw"
+    )
+    if len(entries) != 1:
+        raise WorkspaceStateError(
+            "source-native workspace mount is not unique",
+            code="workspace_authority_mismatch",
+            lease_id=lease.lease_id,
+        )
+    return entries[0]
+
 
 class LeaseBackedRunnerWorkspace:
     def __init__(self, lease: SandboxWorkspaceLease, effective_plan_digest: str,
@@ -2779,17 +2810,13 @@ class LeaseBackedRunnerWorkspace:
                 code="workspace_escape",
                 lease_id=self.__lease.lease_id,
             )
-        writable_entries = tuple(
-            entry
-            for entry in self.__lease.plan.materialization_plan.entries
-            if entry.access.value == "rw"
-        )
+        workspace_mount = _sole_writable_policy_workspace_mount(self.__lease)
         adapters = tuple(
             adapter
             for adapter in self.__lease.plan.installed_tool_adapters
             if adapter.adapter_id in NATIVE_PHASE_TOOL_IDS
         )
-        if len(writable_entries) != 1 or len(adapters) != 1:
+        if len(adapters) != 1:
             raise WorkspaceStateError(
                 "source-native runtime inputs are unavailable",
                 code="runtime_unsupported",
@@ -2797,7 +2824,7 @@ class LeaseBackedRunnerWorkspace:
             )
         scratch = self.__lease._materialized.workspace_path / ".breadboard-native-scratch"
         available = {
-            "cwd": str(self.__lease._resolve(writable_entries[0].target_logical_path, writable=False)),
+            "cwd": str(self.__lease._resolve(workspace_mount.target_logical_path, writable=False)),
             "home": str(scratch / "home"),
             "current_date": datetime.now(timezone.utc).date().isoformat(),
             "package_dir": str(Path(adapters[0].runtime_root_path) / package_path),
@@ -2817,6 +2844,7 @@ class LeaseBackedRunnerWorkspace:
         payload: Mapping[str, Any],
         *,
         timeout_ms: int,
+        package_subpath: str | None = None,
     ) -> Mapping[str, Any]:
         lease = self.__lease
         await lease._begin_operation()
@@ -2864,6 +2892,7 @@ class LeaseBackedRunnerWorkspace:
                     workspace=None,
                     scratch=None,
                     runtime_root=adapter.runtime_root_path,
+                    package_subpath=package_subpath,
                 )
             except WorkspaceStateError as exc:
                 raise WorkspaceStateError(
@@ -2872,16 +2901,8 @@ class LeaseBackedRunnerWorkspace:
                     lease_id=lease.lease_id,
                 ) from exc
             if operation == "initialize":
-                repositories = tuple(
-                    entry for entry in lease.plan.materialization_plan.entries
-                    if entry.role == "repository"
-                )
-                if len(repositories) != 1:
-                    raise WorkspaceStateError(
-                        "source-native execution requires exactly one owned repository",
-                        code="workspace_authority_mismatch", lease_id=lease.lease_id,
-                    )
-                workspace = lease._resolve(repositories[0].target_logical_path, writable=True)
+                workspace_mount = _sole_writable_policy_workspace_mount(lease)
+                workspace = lease._resolve(workspace_mount.target_logical_path, writable=True)
                 scratch = lease._materialized.workspace_path / ".breadboard-native-scratch"
                 try:
                     native_payload = _admit_native_phase_payload(
@@ -2891,6 +2912,7 @@ class LeaseBackedRunnerWorkspace:
                         workspace=workspace,
                         scratch=scratch,
                         runtime_root=adapter.runtime_root_path,
+                        package_subpath=package_subpath,
                     )
                 except WorkspaceStateError as exc:
                     raise WorkspaceStateError(

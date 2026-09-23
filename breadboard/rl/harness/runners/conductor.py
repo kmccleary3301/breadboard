@@ -2031,7 +2031,12 @@ class _ConductorSession:
 
         async def phase(operation: str, payload: Mapping[str, Any]) -> dict[str, Any]:
             raw = await tools.invoke_native_phase(
-                operation, payload, timeout_ms=limits.action_timeout_ms,
+                operation,
+                payload,
+                timeout_ms=limits.action_timeout_ms,
+                package_subpath=(
+                    profile.package_subpath if operation == "initialize" else None
+                ),
             )
             frozen, _ = freeze_json_object_with_size(
                 raw, field_name="native stream phase",
@@ -2321,10 +2326,9 @@ class _ConductorSession:
                 for raw in raw_results:
                     details = raw.get("details")
                     effects = details.get("effects") if isinstance(details, Mapping) else None
-                    if effects is None:
-                        continue
                     if (
-                        not isinstance(effects, Mapping)
+                        not isinstance(details, Mapping)
+                        or not isinstance(effects, Mapping)
                         or any(type(path) is not str or not path for path in effects)
                     ):
                         raise RunnerProtocolError(

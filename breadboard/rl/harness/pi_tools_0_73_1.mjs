@@ -292,7 +292,15 @@ async function executePrepared(prepared, signal) {
     const result = await prepared.tool.execute(prepared.request.callId, prepared.argumentsValue, signal);
     const effect = await recordedFileEffect(prepared);
     const details = result?.details && typeof result.details === "object" ? {...result.details} : {};
-    if (effect !== null) details.effects = effect;
+    if (effect !== null) {
+      details.effects = effect;
+    } else if (
+      !details.effects
+      || typeof details.effects !== "object"
+      || Array.isArray(details.effects)
+    ) {
+      details.effects = {};
+    }
     return {
       content: Array.isArray(result?.content) ? result.content : [],
       details,
@@ -303,7 +311,7 @@ async function executePrepared(prepared, signal) {
     const message = error instanceof Error ? error.message : String(error);
     return {
       content: [{ type: "text", text: message }],
-      details: {},
+      details: {effects: {}},
       isError: true,
       terminate: false,
     };
@@ -608,7 +616,7 @@ async function executeOperation(operation, payload, signal) {
             id: call.id,
             completion_index: completionIndex++,
             content: [{ type: "text", text: call.error }],
-            details: {},
+            details: {effects: {}},
             isError: true,
             terminate: false,
           },

@@ -53,9 +53,14 @@ from conformance.comparators.pi_coding_agent_0_73_1 import PiCodingAgent0731Comp
 SUPPLIER_CASE = Path(__file__).parents[2] / "e4_parity" / "fixtures" / "pi_0_73_1_supplier_case"
 
 _NODE_MODULES = Path(os.environ.get("PI_CODING_AGENT_NODE_MODULES", "/tmp/pi-node-0731/node_modules"))
+_PINNED_PI_ENTRYPOINT = _NODE_MODULES / "@mariozechner" / "pi-coding-agent" / "dist" / "index.js"
+if os.environ.get("BB_REQUIRE_PINNED_PI_NODE") == "1" and not _PINNED_PI_ENTRYPOINT.is_file():
+    pytest.fail(
+        f"required pinned Pi 0.73.1 node_modules root is unavailable: {_NODE_MODULES}",
+    )
 _PROMPT_TEMPLATE = Path(__file__).parents[3] / "config/e4_targets/pi/0.73.1/prompts/system-prompt.md"
 pytestmark = pytest.mark.skipif(
-    not (_NODE_MODULES / "@mariozechner" / "pi-coding-agent" / "dist" / "index.js").is_file(),
+    not _PINNED_PI_ENTRYPOINT.is_file(),
     reason="pinned Pi 0.73.1 node_modules root is unavailable",
 )
 
@@ -261,7 +266,14 @@ class _NativeWorkerPort:
                 stderr=asyncio.subprocess.PIPE,
             )
 
-    async def invoke_native_phase(self, operation: str, payload: Mapping[str, Any], *, timeout_ms: int) -> Mapping[str, Any]:
+    async def invoke_native_phase(
+        self,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+        package_subpath: str | None = None,
+    ) -> Mapping[str, Any]:
         await self._ensure()
         assert self._process is not None and self._process.stdin is not None and self._process.stdout is not None
         self._request_id += 1
@@ -270,7 +282,12 @@ class _NativeWorkerPort:
         if operation == "initialize":
             phase_payload.setdefault("workspace", str(self.workspace))
             phase_payload.setdefault("scratch", str(self.scratch))
-            phase_payload.setdefault("package_dir", str(_NODE_MODULES / "@mariozechner" / "pi-coding-agent"))
+            package_dir = (
+                str(_NODE_MODULES / Path(package_subpath.removeprefix("node_modules/")))
+                if package_subpath is not None
+                else str(_NODE_MODULES / "@mariozechner" / "pi-coding-agent")
+            )
+            phase_payload.setdefault("package_dir", package_dir)
             phase_payload.setdefault(
                 "runtime_inputs",
                 {

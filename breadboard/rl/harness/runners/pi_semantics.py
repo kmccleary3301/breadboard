@@ -17,7 +17,6 @@ locally and does not call the supplied stream function.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -431,38 +430,29 @@ class PiSemanticsState:
                 results.append(result)
                 if result.quiescent:
                     break
-        self._capture_effects()
-        return self.to_trace()
-
-    def _capture_effects(self) -> None:
-        # Effects are scoped to the workspace and represented by relative paths.
-        for path in self.cwd.rglob("*"):
-            if not path.is_file() or path.name.startswith("."):
-                continue
-            relative = path.relative_to(self.cwd).as_posix()
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
-            self.effects[relative] = {"exists": True, "bytes": path.stat().st_size, "sha256": f"sha256:{digest}"}
+        requests = [
+            {
+                "attempt": record.attempt,
+                "sent": record.sent,
+                "request_digest": record.request_digest,
+            }
+            for record in self.request_records
+        ]
+        return self.to_trace(
+            requests=requests,
+            runtime_inputs={},
+            effects=self.effects,
+        )
 
     def to_trace(
         self,
         *,
-        requests: Iterable[Mapping[str, Any]] | None = None,
-        runtime_inputs: Mapping[str, Any] | None = None,
-        effects: Mapping[str, Any] | None = None,
+        requests: Iterable[Mapping[str, Any]],
+        runtime_inputs: Mapping[str, Any],
+        effects: Mapping[str, Any],
     ) -> dict[str, Any]:
-        request_values = (
-            [
-                {
-                    "attempt": record.attempt,
-                    "sent": record.sent,
-                    "request_digest": record.request_digest,
-                }
-                for record in self.request_records
-            ]
-            if requests is None
-            else [dict(request) for request in requests]
-        )
-        trace = {
+        request_values = [dict(request) for request in requests]
+        return {
             "schema_version": "bb.e4.pi-replay-trace.v1",
             "role": "replay",
             "profile": "pi",
@@ -471,16 +461,14 @@ class PiSemanticsState:
             "request_count": self.request_count,
             "stream_fn_issued": self.stream_fn_issued,
             "messages": self.messages,
-            "effects": self.effects if effects is None else dict(effects),
+            "effects": dict(effects),
             "termination": {
-                "kind": {"Submitted": "submitted"}.get(self.exit_status, self.exit_status or "running"),
+                "kind": self.exit_status or "running",
                 "native_stop_reason": self.native_stop_reason,
             },
             "requests": request_values,
+            "runtime_inputs": dict(runtime_inputs),
         }
-        if runtime_inputs is not None:
-            trace["runtime_inputs"] = dict(runtime_inputs)
-        return trace
 
 
 def run_episode(

@@ -27,6 +27,7 @@ def test_initialize_rejects_caller_supplied_authority(authority_key: str) -> Non
             workspace=Path("/lease/repository"),
             scratch=Path("/lease/scratch"),
             runtime_root=Path("/sealed/pi"),
+            package_subpath="node_modules/@mariozechner/pi-coding-agent",
         )
 
     assert captured.value.code == "workspace_authority_mismatch"
@@ -42,6 +43,7 @@ def test_initialize_injects_lease_authority_and_pinned_pi_package() -> None:
         adapter_id=PI_CODING_AGENT_LOCAL_ADAPTER_ID,
         workspace=Path("/lease/repository"),
         scratch=Path("/lease/scratch"),
+        package_subpath="node_modules/@mariozechner/pi-coding-agent",
         runtime_root=Path("/sealed/pi"),
     )
 
@@ -132,3 +134,75 @@ async def test_lease_rejects_authority_before_repository_selection(monkeypatch: 
 
     assert captured.value.code == "workspace_authority_mismatch"
     assert "cannot supply workspace authority" in str(captured.value)
+
+
+@pytest.mark.asyncio
+async def test_initialize_accepts_non_repository_writable_policy_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binding = RunnerToolBinding("read", "sha256:" + ("1" * 64), ())
+    adapter = SimpleNamespace(
+        adapter_id=PI_CODING_AGENT_LOCAL_ADAPTER_ID,
+        tool_ids=("bash", "edit", "read", "write"),
+        runtime_root_path="/sealed/pi",
+    )
+    workspace_root = tmp_path / "seed"
+    workspace_root.mkdir()
+    entry = SimpleNamespace(
+        role="workspace_seed",
+        target_logical_path="seed",
+        access=SimpleNamespace(value="rw"),
+    )
+    plan = SimpleNamespace(
+        effective_plan_digest="plan",
+        tool_bindings=(binding,),
+        installed_tool_adapters=(adapter,),
+        limits=SimpleNamespace(observation_bytes=4096),
+        materialization_plan=SimpleNamespace(entries=(entry,)),
+    )
+    captured: list[Mapping[str, object]] = []
+
+    async def begin() -> None:
+        return None
+
+    async def end() -> None:
+        return None
+
+    async def invoke(
+        _adapter: object,
+        _operation: str,
+        payload: Mapping[str, object],
+        *,
+        timeout_ms: int,
+    ) -> Mapping[str, object]:
+        del timeout_ms
+        captured.append(payload)
+        return {"schema_version": "bb.pi-native.test.v1", "kind": "initialized"}
+
+    lease = SimpleNamespace(
+        lease_id="lease",
+        plan=plan,
+        _materialized=SimpleNamespace(workspace_path=tmp_path),
+        _runtime=SimpleNamespace(invoke_native_phase=invoke),
+        _begin_operation=begin,
+        _end_operation=end,
+        _resolve=lambda logical_path, writable=False: tmp_path / logical_path,
+    )
+    monkeypatch.setattr(
+        sandbox_module.TrustedProcessHandle,
+        "_validate_native_binding",
+        staticmethod(lambda _plan, _adapter: None),
+    )
+    workspace = sandbox_module.LeaseBackedRunnerWorkspace(lease, "plan", (binding,))
+
+    result = await workspace.invoke_native_phase(
+        "initialize",
+        {"task": "owned"},
+        timeout_ms=1_000,
+        package_subpath="node_modules/@mariozechner/pi-coding-agent",
+    )
+
+    assert result["kind"] == "initialized"
+    assert captured[0]["workspace"] == str(workspace_root)
+    assert captured[0]["package_dir"] == "/sealed/pi/node_modules/@mariozechner/pi-coding-agent"

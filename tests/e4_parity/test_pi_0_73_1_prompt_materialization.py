@@ -25,6 +25,11 @@ SUPPLIER_PACKAGE_DIR = "/opt/pi/app"
 EXPECTED_PROMPT_SHA256 = "9da70352aa6a7f9920dc9d741dc9697d51bbc20850cd4f6751ff928d5d368025"
 PROMPT_CASES: tuple[Mapping[str, Any], ...] = tuple(FIXTURE["cases"])
 _NODE_MODULES = Path(os.environ.get("PI_CODING_AGENT_NODE_MODULES", "/tmp/pi-node-0731/node_modules"))
+_PINNED_PI_ENTRYPOINT = _NODE_MODULES / "@mariozechner" / "pi-coding-agent" / "dist" / "index.js"
+if os.environ.get("BB_REQUIRE_PINNED_PI_NODE") == "1" and not _PINNED_PI_ENTRYPOINT.is_file():
+    pytest.fail(
+        f"required pinned Pi 0.73.1 node_modules root is unavailable: {_NODE_MODULES}",
+    )
 
 
 def _render_supplier_prompt(case: Mapping[str, Any]) -> str:
