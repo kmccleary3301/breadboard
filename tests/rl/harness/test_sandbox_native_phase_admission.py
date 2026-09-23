@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import subprocess
+import signal
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -280,6 +281,104 @@ async def test_workspace_effects_measure_content_diff_and_supplier_utf8(tmp_path
         "sha256": "sha256:" + hashlib.sha256(b"\xff\x00").hexdigest(),
         "content_utf8": "\ufffd\x00",
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    not hasattr(os, "killpg") or not hasattr(os, "setsid"),
+    reason="process-group primitive is unavailable",
+)
+async def test_close_native_runtime_drains_real_process_group_before_effect_scan(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "seed"
+    workspace_root.mkdir()
+    binding = RunnerToolBinding("read", "sha256:" + ("1" * 64), ())
+    entry = SimpleNamespace(
+        role="workspace_seed",
+        target_logical_path="seed",
+        access=SimpleNamespace(value="rw"),
+    )
+    plan = SimpleNamespace(
+        effective_plan_digest="plan",
+        tool_bindings=(binding,),
+        materialization_plan=SimpleNamespace(entries=(entry,)),
+    )
+    async def begin() -> None:
+        return None
+    async def end() -> None:
+        return None
+    process = subprocess.Popen(
+        ["/bin/sh", "-c", "sleep 0.25; printf late > late.txt"],
+        cwd=workspace_root,
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    terminated = False
+
+    async def terminate() -> tuple[object, ...]:
+        nonlocal terminated
+        if terminated:
+            return (
+                sandbox_module.CleanupStepReceipt(
+                    "runtime", sandbox_module.CleanupState.ALREADY_RELEASED
+                ),
+            )
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            await asyncio.to_thread(process.wait, 1)
+        except subprocess.TimeoutExpired:
+            return (
+                sandbox_module.CleanupStepReceipt(
+                    "runtime", sandbox_module.CleanupState.FAILED, "survivor"
+                ),
+            )
+        terminated = True
+        return (
+            sandbox_module.CleanupStepReceipt(
+                "runtime", sandbox_module.CleanupState.RELEASED
+            ),
+        )
+
+    lease = SimpleNamespace(
+        lease_id="lease",
+        plan=plan,
+        _materialized=SimpleNamespace(workspace_path=tmp_path),
+        _begin_operation=begin,
+        _runtime=SimpleNamespace(terminate=terminate),
+        _end_operation=end,
+        _assert_active=lambda: None,
+        _resolve=lambda logical_path, writable=False: workspace_root,
+    )
+    workspace = sandbox_module.LeaseBackedRunnerWorkspace(lease, "plan", (binding,))
+    try:
+        await workspace.begin_native_workspace_effects()
+        await asyncio.sleep(0.03)
+        closed = await workspace.close_native_runtime()
+        assert closed["cleanup"]["all_dead"] is True
+        closed_again = await workspace.close_native_runtime()
+        assert closed_again["cleanup"]["all_dead"] is True
+        assert closed_again["cleanup"]["steps"][0]["state"] == "already_released"
+        effects = await workspace.measure_workspace_effects()
+        final_files = sorted(
+            path.relative_to(workspace_root).as_posix()
+            for path in workspace_root.rglob("*")
+            if path.is_file()
+        )
+        assert effects == {}
+        assert final_files == []
+        await asyncio.sleep(0.35)
+        assert not (workspace_root / "late.txt").exists()
+    finally:
+        if process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
 
 def test_workspace_effect_scanner_rejects_root_symlink_swap(tmp_path: Path) -> None:

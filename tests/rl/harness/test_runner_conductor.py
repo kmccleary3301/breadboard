@@ -4143,6 +4143,7 @@ class _OpenHandsTracePort(RecordingToolPort):
         failure_status: str | None = None,
         native_observations: tuple[Mapping[str, Any], ...] | None = None,
         commit_events: tuple[Mapping[str, Any], ...] = (),
+        cleanup_all_dead: bool = True,
     ) -> None:
         super().__init__(tuple(
             _tool_binding(tool_id) for tool_id in sorted(
@@ -4152,6 +4153,7 @@ class _OpenHandsTracePort(RecordingToolPort):
         self.operations: list[str] = []
         self.effect_admissions = 0
         self.effect_measurements = 0
+        self.cleanup_all_dead = cleanup_all_dead
         self.failure_status = failure_status
         self.native_observations = (
             native_observations
@@ -4164,7 +4166,10 @@ class _OpenHandsTracePort(RecordingToolPort):
                 },
             )
         )
-        self.commit_event_delta = commit_events
+        self.commit_event_delta = (
+            *self.native_observations,
+            *commit_events,
+        )
 
     async def begin_native_workspace_effects(self) -> None:
         self.effect_admissions += 1
@@ -4180,8 +4185,12 @@ class _OpenHandsTracePort(RecordingToolPort):
         return {
             "kind": "closed",
             "cleanup": {
-                "all_dead": True,
-                "steps": [{"resource": "runtime", "state": "released", "detail": ""}],
+                "all_dead": self.cleanup_all_dead,
+                "steps": [{
+                    "resource": "runtime",
+                    "state": "released" if self.cleanup_all_dead else "failed",
+                    "detail": "" if self.cleanup_all_dead else "survivor",
+                }],
             },
         }
 
@@ -4312,7 +4321,10 @@ def _openhands_semantics(observation: c.PolicyCapabilityObservation) -> dict[str
     return _sync_root_semantics(semantic)
 
 
-async def test_openhands_trace_is_frozen_json_and_comparator_compatible() -> None:
+@pytest.mark.parametrize("cleanup_all_dead", [True, False])
+async def test_openhands_trace_is_frozen_json_and_comparator_compatible(
+    cleanup_all_dead: bool,
+) -> None:
     observation = _observation()
     tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
     semantic = _openhands_semantics(observation)
@@ -4324,7 +4336,7 @@ async def test_openhands_trace_is_frozen_json_and_comparator_compatible() -> Non
         implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
     )
     client = _OpenHandsTraceClient(observation)
-    tools = _OpenHandsTracePort()
+    tools = _OpenHandsTracePort(cleanup_all_dead=cleanup_all_dead)
     session, _, _, _, _, _ = await _open(
         observation=observation,
         plan=plan,
@@ -4332,6 +4344,12 @@ async def test_openhands_trace_is_frozen_json_and_comparator_compatible() -> Non
         tools=tools,
     )
     try:
+        if not cleanup_all_dead:
+            with pytest.raises(RunnerProtocolError) as captured:
+                await session.run(ConductorRunRequest({"prompt": "finish the task"}))
+            assert captured.value.code == "native_response_invalid"
+            assert tools.effect_measurements == 0
+            return
         result = await session.run(ConductorRunRequest({"prompt": "finish the task"}))
     finally:
         await session.close()
@@ -4349,7 +4367,16 @@ async def test_openhands_trace_is_frozen_json_and_comparator_compatible() -> Non
     assert thaw_json(result.response["cleanup"])["all_dead"] is True
 
 
+
+
 async def test_openhands_error_observations_match_supplier_projection(tmp_path: Path) -> None:
+    """Compare independent SDK event shapes from OH-02 and OH-05 fixtures.
+
+    ``OH-02-invalid-call-continues/trace.json`` supplies the real
+    ``AgentErrorEvent`` shape.  ``OH-05-iteration-budget/trace.json`` supplies
+    the real ``TerminalObservation`` shape; its supplier event is independently
+    flipped to ``is_error: true`` here to exercise a failed action.
+    """
     from conformance.comparators.openhands_sdk import compare_cases, project_bb_trace
 
     observation = _observation()
@@ -4365,22 +4392,23 @@ async def test_openhands_error_observations_match_supplier_projection(tmp_path: 
     failed_observation = {
         "kind": "ObservationEvent",
         "tool_name": "terminal",
-        "observation": {
-            "kind": "TerminalObservation",
-            "is_error": True,
-            "content": "command exited with status 1",
-        },
+        "observation": {"kind": "TerminalObservation", "is_error": True},
     }
     agent_error = {
         "kind": "AgentErrorEvent",
-        "tool_name": "terminal",
-        "error": "command failed",
+        "id": "agent-error-1",
+        "tool_name": "file_editor",
+        "error": "invalid command",
         "classification": {"kind": "agent_action", "retryable": True},
+    }
+    second_agent_error = {
+        **agent_error,
+        "id": "agent-error-2",
     }
     client = _OpenHandsTraceClient(observation)
     tools = _OpenHandsTracePort(
         native_observations=(failed_observation,),
-        commit_events=(agent_error,),
+        commit_events=(agent_error, second_agent_error),
     )
     session, _, _, _, _, _ = await _open(
         observation=observation,
@@ -4399,60 +4427,55 @@ async def test_openhands_error_observations_match_supplier_projection(tmp_path: 
             "event_kind": "ObservationEvent",
             "tool_name": "terminal",
             "is_error": True,
-            "result": {
-                "kind": "TerminalObservation",
-                "is_error": True,
-                "content": "command exited with status 1",
-            },
+            "result": {"kind": "TerminalObservation", "is_error": True},
         },
         {
             "event_kind": "AgentErrorEvent",
-            "tool_name": "terminal",
+            "tool_name": "file_editor",
             "is_error": True,
-            "error_text": "command failed",
+            "error_text": "invalid command",
+            "classification": {"kind": "agent_action", "retryable": True},
+        },
+        {
+            "event_kind": "AgentErrorEvent",
+            "tool_name": "file_editor",
+            "is_error": True,
+            "error_text": "invalid command",
             "classification": {"kind": "agent_action", "retryable": True},
         },
     ]
     supplier = {
         "schema_version": "bb.e4.openhands-supplier-trace.v1",
-        "case_id": trace["case_id"],
-        "controls": {"http_attempts": len(trace["requests"])},
-        "requests": [
-            {"index": row["index"], "body": row["body"]}
-            for row in trace["requests"]
-        ],
-        "responses": [
-            {"index": row["index"], "response": row["response"]}
-            for row in trace["requests"]
-            if "response" in row
-        ],
+        "case_id": "episode-a",
+        "controls": {"http_attempts": 1},
+        "requests": [{"index": 0, "body": {"messages": []}}],
+        "responses": [{
+            "index": 0,
+            "response": {
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": ""},
+                    "finish_reason": "tool_calls",
+                }],
+            },
+        }],
         "events": [
             {
                 "kind": "ActionEvent",
-                "tool_name": call["tool_name"],
-                "security_risk": call["security_risk"],
-                "tool_call": {"arguments": call["arguments"]},
-            }
-            for call in trace["tool_calls"]
-        ] + [
-            (
-                {
-                    "kind": item["event_kind"],
-                    "tool_name": item["tool_name"],
-                    "observation": item["result"],
-                }
-                if item["event_kind"] == "ObservationEvent"
-                else {
-                    "kind": item["event_kind"],
-                    "tool_name": item["tool_name"],
-                    "error": item["error_text"],
-                    "classification": item["classification"],
-                }
-            )
-            for item in trace["observations"]
+                "tool_name": "finish",
+                "security_risk": "LOW",
+                "tool_call": {"arguments": {}},
+            },
+            {
+                "kind": "ObservationEvent",
+                "tool_name": "terminal",
+                "observation": {"kind": "TerminalObservation", "is_error": True},
+            },
+            agent_error,
+            second_agent_error,
         ],
-        "effects": trace["file_effects"],
-        "exit": {"status": trace["termination"]["kind"]},
+        "effects": {},
+        "exit": {"status": "finished"},
     }
     (tmp_path / "workspace").mkdir()
     (tmp_path / "trace.json").write_text(
@@ -4465,7 +4488,6 @@ async def test_openhands_error_observations_match_supplier_projection(tmp_path: 
     negative = compare_cases(tmp_path, tampered)
     assert negative["ok"] is False
     assert negative["failed"] >= 1
-
 
 @pytest.mark.parametrize("failure_status", ["ERROR", "STUCK"])
 async def test_openhands_native_error_returns_replay_trace(failure_status: str) -> None:

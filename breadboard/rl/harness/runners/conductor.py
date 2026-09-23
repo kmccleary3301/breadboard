@@ -2429,7 +2429,6 @@ class _ConductorSession:
         state: FrozenJsonObject = freeze_json_object({}, field_name="source state")
         trace_requests: list[dict[str, Any]] = []
         trace_tool_calls: list[dict[str, Any]] = []
-        native_error_event_digests: dict[str, int] = {}
         trace_observations: list[dict[str, Any]] = []
         def decode_json_body(body_b64: Any) -> Any:
             if type(body_b64) is not str:
@@ -2488,15 +2487,17 @@ class _ConductorSession:
                 )
             for event in delta:
                 kind = event.get("kind")
-                event_digest = canonical_sha256(event)
-                duplicate_native_error = native_error_event_digests.get(event_digest, 0)
-                if duplicate_native_error:
-                    native_error_event_digests[event_digest] = duplicate_native_error - 1
-                if (
-                    isinstance(kind, str)
-                    and kind in {"AgentErrorEvent", "ConversationErrorEvent"}
-                    and not duplicate_native_error
-                ):
+                if kind == "ObservationEvent":
+                    observation_value = event.get("observation")
+                    if not isinstance(observation_value, Mapping):
+                        observation_value = {"value": observation_value}
+                    trace_observations.append({
+                        "event_kind": kind,
+                        "tool_name": event.get("tool_name"),
+                        "is_error": bool(observation_value.get("is_error", False)),
+                        "result": observation_value,
+                    })
+                elif kind in {"AgentErrorEvent", "ConversationErrorEvent"}:
                     trace_observations.append({
                         "event_kind": kind,
                         "tool_name": event.get("tool_name"),
@@ -2706,33 +2707,6 @@ class _ConductorSession:
                     max_encoded_bytes=limits.observation_bytes,
                     max_nodes=limits.observation_bytes + 1,
                 )
-                native_observations = executed["observations"]
-                for item in native_observations:
-                    if not isinstance(item, Mapping):
-                        continue
-                    event_kind = item.get("kind")
-                    if event_kind == "ObservationEvent":
-                        observation_value = item.get("observation")
-                        if not isinstance(observation_value, Mapping):
-                            observation_value = {"value": observation_value}
-                        trace_observations.append({
-                            "event_kind": event_kind,
-                            "tool_name": item.get("tool_name"),
-                            "is_error": bool(observation_value.get("is_error", False)),
-                            "result": observation_value,
-                        })
-                    elif event_kind in {"AgentErrorEvent", "ConversationErrorEvent"}:
-                        event_digest = canonical_sha256(item)
-                        native_error_event_digests[event_digest] = (
-                            native_error_event_digests.get(event_digest, 0) + 1
-                        )
-                        trace_observations.append({
-                            "event_kind": event_kind,
-                            "tool_name": item.get("tool_name"),
-                            "is_error": True,
-                            "error_text": item.get("error") or item.get("detail") or item.get("code"),
-                            "classification": item.get("classification"),
-                        })
                 observations.append(observation)
                 finished = tool_id == "finish"
                 await self._emit(ToolObservationEvent(
