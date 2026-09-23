@@ -2216,11 +2216,6 @@ class FilesystemMaterializationStore:
                                 destination_owner=self._workspace,
                                 read_only=entry.access is MountAccess.READ_ONLY,
                             )
-                        if entry.target_logical_path == "." and entry.role == "repository":
-                            self._workspace.remove_tree(
-                                workspace_id + "/.breadboard-native-scratch",
-                                missing_ok=True,
-                            )
                         mounts.append(
                             MaterializedMount(
                                 entry.target_logical_path,
