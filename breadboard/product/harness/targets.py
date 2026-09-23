@@ -272,7 +272,7 @@ def _lower_worker_target(
         ),
         "oh-my-pi@18.1.17": (
             "breadboard.oh-my-pi.v18.1.17",
-            "304abf4ad52ae2798d9efdfd9e01e67189e825b9229471b351326d71e68ef126",
+            "c982736f879391f2fce3a7838c134440484039a4d0b9c339dc7ae99b7b34cf77",
         ),
     }
     recipe = recipes.get(package.target_id)
@@ -287,53 +287,11 @@ def _lower_worker_target(
     surface = json.loads(package.read_asset_text("tool-surface.json"))
     order = tuple(surface["ordered_tools"])
     surface_tools = surface.get("tools")
-    if not isinstance(surface_tools, Mapping):
-        descriptions = surface["bounded_descriptions"]
-        parameter_shapes = {
-            "read": {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "path": {"type": "string"},
-                    "i": {"type": "string", "description": "concise intent"},
-                },
-                "required": ["path", "i"],
-            },
-            "bash": {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "async": {"type": "boolean"},
-                    "command": {"type": "string"},
-                    "cwd": {"type": "string"},
-                    "env": {"type": "object", "additionalProperties": {"type": "string"}},
-                    "i": {"type": "string", "description": "concise intent"},
-                    "pty": {"type": "boolean"},
-                    "timeout": {"type": "number"},
-                },
-                "required": ["command", "i"],
-            },
-            "edit": {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {"input": {"type": "string"}, "i": {"type": "string"}},
-                "required": ["input", "i"],
-            },
-            "write": {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "path": {"type": "string"},
-                    "content": {"type": "string"},
-                    "i": {"type": "string", "description": "concise intent"},
-                },
-                "required": ["path", "content", "i"],
-            },
-        }
-        surface_tools = {
-            name: {"description": descriptions[name], "parameters": parameter_shapes[name]}
-            for name in order
-        }
+    if (
+        not isinstance(surface_tools, Mapping)
+        or set(surface_tools) != set(order)
+    ):
+        raise HarnessCompileError("native worker requires declared tool schemas")
     compiler_tools = []
     for name in order:
         tool = {"name": name, **surface_tools[name]}

@@ -16,6 +16,31 @@ def test_omp_target_assets_are_closed_and_four_tool() -> None:
     assert policy["turn_recovery"]["max_corrective_continuations"] == 3
 
 
+
+def test_declared_tool_schemas_are_pinned_source_shapes() -> None:
+    root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
+    surface = json.loads((root / "tool-surface.json").read_text())
+    assert set(surface["tools"]) == {"read", "bash", "edit", "write"}
+    assert surface["tools"]["read"]["parameters"] == {
+        "type": "object",
+        "properties": {"path": {"type": "string"}},
+        "required": ["path"],
+    }
+    assert surface["tools"]["edit"]["parameters"] == {
+        "type": "object",
+        "properties": {"input": {"type": "string"}},
+        "required": ["input"],
+    }
+    assert surface["tools"]["write"]["parameters"] == {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "content": {"type": "string"},
+        },
+        "required": ["path", "content"],
+    }
+
+
 def test_native_description_bytes_are_pinned() -> None:
     root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
     surface = json.loads((root / "tool-surface.json").read_text())
