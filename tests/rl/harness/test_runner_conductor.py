@@ -3707,3 +3707,289 @@ async def test_session_close_shares_redacted_cancelled_error_subclass_and_remain
     assert closed.value.code == "session_closed"
     assert client.requests == []
     assert client.close_calls == 1
+class _NativeCloseTestClient(RecordingPolicyClient):
+    def __init__(
+        self,
+        observation: c.PolicyCapabilityObservation,
+        responses: list[Mapping[str, Any]],
+    ) -> None:
+        super().__init__(observation, responses=responses)
+        self.native_stream_binding: tuple[str, tuple[Mapping[str, Any], ...]] | None = None
+        self.invoke_entered = asyncio.Event()
+        self.block_invoke = False
+
+    def bind_compiled_plan(self, plan: c.EffectiveExecutionPlan) -> Mapping[str, Any]:
+        return {"model_id": plan.effective_semantics["providers"]["default_model_id"]}
+
+    def bind_native_stream(
+        self, system_prompt: str, tools: tuple[Mapping[str, Any], ...],
+    ) -> None:
+        self.native_stream_binding = (system_prompt, tools)
+
+    async def invoke(self, request: Any) -> PolicyRuntimeInvokeResult:
+        self.invoke_entered.set()
+        if self.block_invoke:
+            await asyncio.Event().wait()
+        return await super().invoke(request)
+
+
+class _NativeCloseTestPort(RecordingToolPort):
+    def __init__(
+        self,
+        bindings: tuple[RunnerToolBinding, ...],
+        *,
+        malformed_execute: bool = False,
+        close_error: BaseException | None = None,
+    ) -> None:
+        super().__init__(bindings)
+        self.operations: list[str] = []
+        self.malformed_execute = malformed_execute
+        self.close_error = close_error
+
+    async def invoke_native_phase(
+        self,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+    ) -> Mapping[str, Any]:
+        del payload, timeout_ms
+        self.operations.append(operation)
+        if operation == "initialize":
+            return {
+                "schema_version": "bb.pi-native.test.v1",
+                "kind": "initialized",
+                "system_prompt": "system",
+                "tool_schemas": [],
+                "bootstrap": {},
+            }
+        if operation == "project_request":
+            return {
+                "schema_version": "bb.pi-native.test.v1",
+                "kind": "request",
+                "messages": [],
+                "tools": [],
+            }
+        if operation == "prepare_tools":
+            return {
+                "schema_version": "bb.pi-native.test.v1",
+                "kind": "prepared",
+            }
+        if operation == "execute_batch":
+            if self.malformed_execute:
+                return {
+                    "schema_version": "bb.pi-native.test.v1",
+                    "kind": "tool_results",
+                    "results": [{"id": "wrong-call-id", "completion_index": 0}],
+                }
+            return {
+                "schema_version": "bb.pi-native.test.v1",
+                "kind": "tool_results",
+                "results": [{
+                    "id": "call-1",
+                    "completion_index": 0,
+                    "content": "ok",
+                    "details": {},
+                    "isError": False,
+                    "terminate": False,
+                }],
+            }
+        if operation == "close":
+            if self.close_error is not None:
+                raise self.close_error
+            return {
+                "schema_version": "bb.pi-native.test.v1",
+                "kind": "closed",
+                "cleanup": {"processes": [], "all_dead": True},
+            }
+        raise AssertionError(operation)
+
+
+def _native_close_test_case(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    malformed_execute: bool = False,
+    close_error: BaseException | None = None,
+    block_invoke: bool = False,
+) -> tuple[Any, _NativeCloseTestClient, _NativeCloseTestPort]:
+    from breadboard.rl.harness import native_stream_profiles
+    from breadboard.rl.harness.runners import pi_semantics
+    from breadboard_engine.compilation.provider_response import PI_RESPONSE_CONSUMER_ID
+
+    observation = _observation()
+    semantics = _tool_semantics(observation)
+    runtime_profile = {"advertisement": {}}
+    semantics["metadata"] = {
+        "e4_target": {
+            "renderer_id": PI_RESPONSE_CONSUMER_ID,
+            "target_id": "pi@0.73.1",
+            "version": 3,
+            "runtime_profile": runtime_profile,
+        }
+    }
+    model = semantics["providers"]["models"][0]
+    model["params"] = {}
+    model["response_policy"] = {
+        "schema_version": "bb.provider_native_response_policy.v1",
+        "consumer_id": PI_RESPONSE_CONSUMER_ID,
+        "provider_profile_digest": _digest("native-provider"),
+        "max_response_bytes": 65_536,
+        "max_stream_fragments": 64,
+    }
+    semantics["providers"]["policy_slots"][0]["trainable_json_pointers"] = []
+    _sync_root_semantics(semantics)
+    profile = native_stream_profiles.NativeStreamProfile(
+        consumer_id=PI_RESPONSE_CONSUMER_ID,
+        target_id="pi@0.73.1",
+        target_version=3,
+        phase_schema_version="bb.pi-native.test.v1",
+        tool_order=("read-file",),
+        max_turns=1,
+        action_timeout_ms=100,
+        episode_timeout_seconds=5,
+        ack_policy="none",
+        incomplete_stop_reasons=frozenset({"error"}),
+        state_module=pi_semantics,
+        state_factory=lambda task, system_prompt, bootstrap: pi_semantics.PiSemanticsState(
+            task=task, system_prompt=system_prompt, request_cap=2,
+        ),
+    )
+    monkeypatch.setattr(
+        conductor_module,
+        "NATIVE_STREAM_PROFILES",
+        {PI_RESPONSE_CONSUMER_ID: profile},
+    )
+    first_response = {
+        "native_response": {
+            "binding_digest": _digest("native-binding"),
+            "request_digest": _digest("native-request-1"),
+            "response_id": "native-response-1",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": "call-1",
+                "name": "read_file",
+                "arguments": "{\"path\":\"src/main.py\"}",
+            }],
+            "stream_fragments": [],
+        }
+    }
+    final_response = {
+        "native_response": {
+            "binding_digest": _digest("native-binding"),
+            "request_digest": _digest("native-request-2"),
+            "response_id": "native-response-2",
+            "finish_reason": "stop",
+            "content": "done",
+            "tool_calls": [],
+            "stream_fragments": [],
+        }
+    }
+    client = _NativeCloseTestClient(observation, [first_response, final_response])
+    client.block_invoke = block_invoke
+    tools = _NativeCloseTestPort(
+        (_tool_binding("read-file"),),
+        malformed_execute=malformed_execute,
+        close_error=close_error,
+    )
+    plan = _plan(
+        observation=observation,
+        semantics=semantics,
+        tools=(_tool_grant("read-file"),),
+        limit_updates={"max_turns": 1, "action_timeout_ms": 100},
+        implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
+    )
+    return plan, client, tools
+
+
+async def _run_native_close_test_case(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    malformed_execute: bool = False,
+    close_error: BaseException | None = None,
+    block_invoke: bool = False,
+) -> tuple[Any, _NativeCloseTestClient, _NativeCloseTestPort, Any]:
+    plan, client, tools = _native_close_test_case(
+        monkeypatch,
+        malformed_execute=malformed_execute,
+        close_error=close_error,
+        block_invoke=block_invoke,
+    )
+    session, _, _, _, _, _ = await _open(
+        plan=plan, client=client, tools=tools,
+    )
+    return session, client, tools, ConductorRunRequest({"prompt": "task"})
+
+
+async def test_native_stream_malformed_execute_closes_once_and_preserves_protocol_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, _, tools, request = await _run_native_close_test_case(
+        monkeypatch, malformed_execute=True,
+    )
+    try:
+        with pytest.raises(RunnerProtocolError) as captured:
+            await session.run(request)
+    finally:
+        await session.close()
+    assert tools.operations.count("close") == 1
+    assert captured.value.code == "native_response_invalid"
+
+
+async def test_native_stream_provider_failure_closes_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, client, tools, request = await _run_native_close_test_case(monkeypatch)
+    client.invoke_error = RuntimeError("provider sentinel")
+    try:
+        with pytest.raises(RunnerDependencyError):
+            await session.run(request)
+    finally:
+        await session.close()
+    assert tools.operations.count("close") == 1
+
+
+async def test_native_stream_close_failure_on_error_preserves_primary_and_records_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, _, tools, request = await _run_native_close_test_case(
+        monkeypatch,
+        malformed_execute=True,
+        close_error=RuntimeError("close sentinel"),
+    )
+    try:
+        with pytest.raises(RunnerProtocolError) as captured:
+            await session.run(request)
+    finally:
+        await session.close()
+    assert tools.operations.count("close") == 1
+    cleanup_failure = getattr(captured.value, "cleanup_failure", None)
+    assert isinstance(cleanup_failure, RunnerDependencyError)
+
+
+async def test_native_stream_cancellation_during_provider_closes_and_propagates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, client, tools, request = await _run_native_close_test_case(
+        monkeypatch, block_invoke=True,
+    )
+    run_task = asyncio.create_task(session.run(request))
+    await _within_timeout(client.invoke_entered.wait())
+    run_task.cancel()
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            await run_task
+    finally:
+        await session.close()
+    assert tools.operations.count("close") == 1
+
+
+async def test_native_stream_normal_path_closes_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, _, tools, request = await _run_native_close_test_case(monkeypatch)
+    try:
+        result = await session.run(request)
+    finally:
+        await session.close()
+    assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
+    assert tools.operations.count("close") == 1

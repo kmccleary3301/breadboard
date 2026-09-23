@@ -651,6 +651,21 @@ def _plan_error(request: RunnerOpenRequest, message: str, code: str) -> RunnerPl
     )
 
 
+def _record_native_cleanup_failure(primary: BaseException, cleanup: BaseException) -> None:
+    """Keep a native close failure visible without replacing the run failure."""
+    try:
+        prior = getattr(primary, "cleanup_failures", ())
+        if not isinstance(prior, tuple):
+            prior = (prior,)
+        setattr(primary, "cleanup_failures", (*prior, cleanup))
+        setattr(primary, "cleanup_failure", cleanup)
+    except BaseException:
+        primary.add_note(
+            "native stream cleanup failed: "
+            f"{type(cleanup).__name__}: {str(cleanup)[:256]}"
+        )
+
+
 def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
     semantic = freeze_json_object(
         thaw_json(request.effective_plan.effective_semantics),
@@ -1304,6 +1319,7 @@ class _ConductorSession:
         "_projection", "_events", "_sequence", "_lock", "_emit_lock", "_phase",
         "_cancellation", "_turns", "_cancellation_published", "_binding_cancel_task",
         "_close_task", "_poison", "_terminal_committing",
+        "_native_stream_close_callback", "_native_stream_close_started",
     )
 
     def __init__(
@@ -1334,6 +1350,8 @@ class _ConductorSession:
         self._close_task: asyncio.Task[None] | None = None
         self._poison: RunnerEventSinkError | None = None
         self._terminal_committing = False
+        self._native_stream_close_callback: Any = None
+        self._native_stream_close_started = False
 
     async def run(self, request: ConductorRunRequest) -> RunnerResult:
         async with self._lock:
@@ -1913,6 +1931,25 @@ class _ConductorSession:
     async def _loop_native_stream(
         self, request: ConductorRunRequest, profile: native_stream_profiles.NativeStreamProfile,
     ) -> RunnerResult:
+        self._native_stream_close_callback = None
+        self._native_stream_close_started = False
+        try:
+            return await self._loop_native_stream_body(request, profile)
+        except BaseException as primary:
+            callback = self._native_stream_close_callback
+            if callback is not None and not self._native_stream_close_started:
+                try:
+                    await callback()
+                except BaseException as cleanup:
+                    _record_native_cleanup_failure(primary, cleanup)
+            raise
+        finally:
+            self._native_stream_close_callback = None
+            self._native_stream_close_started = False
+
+    async def _loop_native_stream_body(
+        self, request: ConductorRunRequest, profile: native_stream_profiles.NativeStreamProfile,
+    ) -> RunnerResult:
         """Drive native streamed source phases through the admitted lease."""
         limits = self._open_request.effective_plan.effective_capabilities.limits
         consumer_id = self._projection.source_consumer_id
@@ -1958,11 +1995,53 @@ class _ConductorSession:
                 )
             return thaw_json(frozen)
 
+        close_task: asyncio.Task[dict[str, Any]] | None = None
+
+        async def close_once() -> dict[str, Any]:
+            nonlocal close_task
+            self._native_stream_close_started = True
+            if close_task is None:
+                async def close_phase() -> dict[str, Any]:
+                    try:
+                        async with asyncio.timeout(limits.action_timeout_ms / 1000):
+                            closed = await phase("close", {})
+                    except RunnerError:
+                        raise
+                    except asyncio.CancelledError:
+                        raise
+                    except BaseException as exc:
+                        error = RunnerDependencyError(
+                            "native stream close failed",
+                            code="native_close_failed",
+                            **self._context(),
+                        )
+                        error.__cause__ = exc
+                        raise error
+                    cleanup = closed.get("cleanup")
+                    if (
+                        closed.get("kind") != "closed"
+                        or type(cleanup) is not dict
+                        or cleanup.get("all_dead") is not True
+                    ):
+                        raise RunnerProtocolError(
+                            "native worker cleanup is not verified",
+                            code="native_response_invalid", **self._context(),
+                        )
+                    return closed
+                close_task = asyncio.create_task(close_phase())
+            try:
+                return await asyncio.shield(close_task)
+            except asyncio.CancelledError as cancellation:
+                await close_task
+                raise cancellation
+
+
         initialized = await phase("initialize", {
             "task": task,
             "model_config": thaw_json(self._binding.source_model_config),
             "advertisement": thaw_json(advertisement),
         })
+        self._native_stream_close_callback = close_once
         bootstrap = initialized.get("bootstrap")
         system_prompt = initialized.get("system_prompt")
         tool_schemas = initialized.get("tool_schemas")
@@ -2163,17 +2242,8 @@ class _ConductorSession:
                     else RunnerTermination.ASSISTANT_COMPLETE
                 )
         await self._checkpoint("after_loop", turn=len(self._turns))
-        closed = await phase("close", {})
-        cleanup = closed.get("cleanup")
-        if (
-            closed.get("kind") != "closed"
-            or type(cleanup) is not dict
-            or cleanup.get("all_dead") is not True
-        ):
-            raise RunnerProtocolError(
-                "native worker cleanup is not verified",
-                code="native_response_invalid", **self._context(),
-            )
+        closed = await close_once()
+        cleanup = closed["cleanup"]
         await self._checkpoint("before_commit", turn=len(self._turns))
         await self._commit_termination(termination)
         return RunnerResult(
