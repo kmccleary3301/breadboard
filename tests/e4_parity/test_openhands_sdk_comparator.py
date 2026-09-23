@@ -94,3 +94,50 @@ def test_undeclared_placeholder_is_rejected() -> None:
     report = compare_cases(path, replay)
     assert report["ok"] is False
     assert "normalization" in report["errors"][0]
+
+
+def _volatile_trace() -> dict:
+    return {
+        "schema_version": "bb.e4.openhands-sdk-trace.v1",
+        "case_id": "volatile-case",
+        "requests": [{
+            "index": 0,
+            "body": {
+                "id": "oh-capture-response-abc",
+                "call_id": "call-abc",
+                "event_id": "123e4567-e89b-12d3-a456-426614174000",
+                "timestamp": "2026-09-23T12:34:56Z",
+            },
+        }],
+        "tool_calls": [{
+            "tool_name": "terminal",
+            "arguments": {"id": "call-abc"},
+            "security_risk": "LOW",
+        }],
+        "observations": [{
+            "event_kind": "ObservationEvent",
+            "tool_name": "terminal",
+            "is_error": False,
+            "result": {"timestamp": "2026-09-23T12:34:56Z"},
+        }],
+        "file_effects": {},
+        "termination": {"kind": "finished", "native_stop_reason": "stop"},
+        "request_count": 1,
+    }
+
+
+def test_raw_volatile_trace_derives_all_static_normalizations() -> None:
+    projected = project_bb_trace(_volatile_trace())
+    assert projected["normalizations"] == [
+        "call_id:<CALL_ID>",
+        "event_uuid:<EVENT_UUID>",
+        "response_id:<RESPONSE_ID>",
+        "timestamp:<TIMESTAMP>",
+    ]
+
+
+def test_undeclared_literal_placeholder_remains_rejected() -> None:
+    trace = _volatile_trace()
+    trace["requests"][0]["body"]["id"] = "<RESPONSE_ID>"
+    with pytest.raises(ValueError, match="normalization"):
+        project_bb_trace(trace)

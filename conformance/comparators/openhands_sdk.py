@@ -475,7 +475,6 @@ def project_bb_trace(trace: Mapping[str, Any] | Path | str) -> dict[str, Any]:
         "schema_version": TRACE_SCHEMA_VERSION,
         "role": "breadboard",
         "case_id": value["case_id"],
-        "normalizations": sorted(normalizer.applied),
         "requests": normalizer.value(value["requests"]),
         "tool_calls": normalizer.value(value["tool_calls"]),
         "observations": normalizer.value(value["observations"]),
@@ -483,6 +482,7 @@ def project_bb_trace(trace: Mapping[str, Any] | Path | str) -> dict[str, Any]:
         "termination": normalizer.value(value["termination"]),
         "request_count": value["request_count"],
     }
+    projected["normalizations"] = sorted(normalizer.applied)
     # Preserve declarations from a runtime trace and reject placeholders that
     # were already present without their declaration.
     declared = value.get("normalizations")
