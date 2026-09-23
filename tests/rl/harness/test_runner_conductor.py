@@ -8,7 +8,7 @@ import hashlib
 from pathlib import Path
 from collections.abc import Mapping
 from typing import Any
-
+from types import SimpleNamespace
 import pytest
 
 from breadboard.rl.harness import contracts as c
@@ -4550,3 +4550,35 @@ async def test_openhands_native_error_returns_replay_trace(failure_status: str) 
     assert thaw_json(result.response["state"])["status"] == failure_status
     assert tools.effect_admissions == 1
     assert tools.effect_measurements == 1
+
+def test_schema_admission_supports_mapping_additional_properties_with_bounds() -> None:
+    request = SimpleNamespace(
+        episode_id="schema-admission",
+        effective_plan_digest="sha256:" + "a" * 64,
+    )
+    schema = {
+        "type": "object",
+        "properties": {
+            "env": {
+                "type": "object",
+                "properties": {"PATH": {"type": "string"}},
+                "required": ["PATH"],
+                "additionalProperties": {"type": "string"},
+            },
+        },
+        "required": ["env"],
+        "additionalProperties": False,
+    }
+    conductor_module._admit_schema(schema, request)
+    assert list(schema["properties"]["env"]["properties"]) == ["PATH"]
+
+    for additional in ([], "string", None, {"unevaluatedProperties": False}):
+        invalid = {**schema, "additionalProperties": additional}
+        with pytest.raises(RunnerPlanError):
+            conductor_module._admit_schema(invalid, request)
+
+    nested: dict[str, Any] = {"type": "string"}
+    for _ in range(conductor_module._MAX_SCHEMA_DEPTH + 1):
+        nested = {"type": "array", "items": nested}
+    with pytest.raises(RunnerPlanError):
+        conductor_module._admit_schema(nested, request)

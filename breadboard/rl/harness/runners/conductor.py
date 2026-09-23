@@ -723,6 +723,11 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
                 OPENHANDS_RESPONSE_CONSUMER_ID: ("openhands-sdk@1.47.0", 3),
             }[source_consumer_id]
         )
+        expected_api_variant = (
+            stream_profile.api_variant
+            if stream_profile is not None
+            else "chat" if source_consumer_id == OPENHANDS_RESPONSE_CONSUMER_ID else "responses"
+        )
         if (
             target.get("target_id") != expected_target
             or target.get("version") != expected_version
@@ -746,9 +751,7 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
             and value not in (False, None, "", (), {})
             for key, value in provider_tools.items()
         )
-        or provider_tools.get("api_variant") != (
-            "chat" if source_consumer_id == OPENHANDS_RESPONSE_CONSUMER_ID else "responses"
-        )
+        or provider_tools.get("api_variant") != expected_api_variant
         or provider_tools.get("use_native") is not True
         or provider_tools.get("suppress_prompts", False) is not False
         or provider_tools.get("responses_stateful", False) is not False
@@ -1093,9 +1096,22 @@ _SCHEMA_KEYWORDS = frozenset({
     "maxItems", "uniqueItems", "description", "default", "examples", "title",
 })
 _SCHEMA_TYPES = frozenset({"object", "array", "string", "number", "integer", "boolean", "null"})
+_MAX_SCHEMA_DEPTH = 32
+_MAX_SCHEMA_NODES = 512
 
 
-def _admit_schema(schema: Mapping[str, Any], request: RunnerOpenRequest) -> None:
+def _admit_schema(
+    schema: Mapping[str, Any],
+    request: RunnerOpenRequest,
+    *,
+    _depth: int = 0,
+    _budget: list[int] | None = None,
+) -> None:
+    if _budget is None:
+        _budget = [0]
+    _budget[0] += 1
+    if _depth > _MAX_SCHEMA_DEPTH or _budget[0] > _MAX_SCHEMA_NODES:
+        raise _plan_error(request, "compiled tool schema is too deep or large", "compiled_ir_mismatch")
     if any(type(key) is not str or key not in _SCHEMA_KEYWORDS for key in schema):
         raise _plan_error(request, "compiled tool schema keyword is unsupported", "compiled_ir_mismatch")
     schema_type = schema.get("type")
@@ -1137,17 +1153,19 @@ def _admit_schema(schema: Mapping[str, Any], request: RunnerOpenRequest) -> None
             or not isinstance(required, (list, tuple))
             or any(type(name) is not str or name not in properties for name in required)
             or len(set(required)) != len(required)
-            or type(additional) is not bool
+            or (type(additional) is not bool and not isinstance(additional, Mapping))
         ):
             raise _plan_error(request, "compiled object schema is invalid", "compiled_ir_mismatch")
         for child in properties.values():
             if not isinstance(child, Mapping):
                 raise _plan_error(request, "compiled object property schema is invalid", "compiled_ir_mismatch")
-            _admit_schema(child, request)
+            _admit_schema(child, request, _depth=_depth + 1, _budget=_budget)
+        if isinstance(additional, Mapping):
+            _admit_schema(additional, request, _depth=_depth + 1, _budget=_budget)
     if "items" in schema:
         if not isinstance(schema["items"], Mapping):
             raise _plan_error(request, "compiled array item schema is invalid", "compiled_ir_mismatch")
-        _admit_schema(schema["items"], request)
+        _admit_schema(schema["items"], request, _depth=_depth + 1, _budget=_budget)
     if "pattern" in schema:
         if type(schema["pattern"]) is not str:
             raise _plan_error(request, "compiled schema pattern is invalid", "compiled_ir_mismatch")
