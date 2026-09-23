@@ -154,6 +154,31 @@ def _message_projection(message: Mapping[str, Any]) -> dict[str, Any]:
             continue
         projected[str(key)] = copy.deepcopy(value)
     return projected
+def _declared_workspace_root(trace: Mapping[str, Any], *, fallback: Path | None = None) -> str:
+    runtime = trace.get("runtime")
+    cwd = runtime.get("cwd") if isinstance(runtime, Mapping) else None
+    if isinstance(cwd, str) and cwd.startswith("/") and cwd:
+        return cwd.rstrip("/")
+    if fallback is not None:
+        return str(fallback.resolve())
+    raise ValueError("trace is missing declared runtime.cwd")
+
+
+def _replace_workspace(value: Any, root: str, changed: list[bool]) -> Any:
+    if isinstance(value, str):
+        if value == root:
+            changed[0] = True
+            return "<WORKSPACE>"
+        prefix = root + "/"
+        if value.startswith(prefix):
+            changed[0] = True
+            return "<WORKSPACE>" + value[len(root):]
+        return value
+    if isinstance(value, list):
+        return [_replace_workspace(item, root, changed) for item in value]
+    if isinstance(value, Mapping):
+        return {key: _replace_workspace(item, root, changed) for key, item in value.items()}
+    return value
 
 
 def _body_projection(body: Mapping[str, Any], advertised: Sequence[str]) -> dict[str, Any]:
@@ -383,6 +408,9 @@ def _canonical_from_supplier(trace: Mapping[str, Any], case_dir: Path) -> dict[s
         "role": "supplier",
         "case_id": trace.get("case_id") or case_dir.name,
         "profile": trace.get("profile"),
+        "runtime": {
+            "cwd": _declared_workspace_root(trace, fallback=case_dir / "workspace"),
+        },
         "context": _context_projection(requests),
         "controls": _controls_projection(trace, requests, advertised),
         "requests": requests,
@@ -476,7 +504,11 @@ def _assertion(assertion_id: str, expected: Any, observed: Any, detail: str | No
     }
 
 
-def _report(assertions: list[dict[str, Any]], errors: list[str] | None = None) -> dict[str, Any]:
+def _report(
+    assertions: list[dict[str, Any]],
+    errors: list[str] | None = None,
+    normalizations: list[str] | None = None,
+) -> dict[str, Any]:
     failed = sum(item["status"] == "failed" for item in assertions)
     return {
         "comparator_id": COMPARATOR_ID,
@@ -488,21 +520,55 @@ def _report(assertions: list[dict[str, Any]], errors: list[str] | None = None) -
         "passed": len(assertions) - failed,
         "failed": failed,
         "errors": errors or [],
+        "normalizations": normalizations or [],
         "assertions": assertions,
     }
 
 
-def compare_cases(supplier_case: Path | str | Mapping[str, Any], bb_trace: Mapping[str, Any] | Path | str) -> dict[str, Any]:
+def _supplier_input(
+    supplier_case: Path | str | Mapping[str, Any],
+) -> tuple[dict[str, Any], str]:
+    if isinstance(supplier_case, (Path, str)):
+        path = Path(supplier_case)
+        trace = _load_json(path / "trace.json")
+        if not isinstance(trace, Mapping):
+            raise ValueError("supplier trace must be an object")
+        if trace.get("schema_version") != SUPPLIER_TRACE_SCHEMA_VERSION:
+            raise ValueError(f"trace schema_version must be {SUPPLIER_TRACE_SCHEMA_VERSION}")
+        return _canonical_from_supplier(trace, path), _declared_workspace_root(
+            trace, fallback=path / "workspace"
+        )
+    if not isinstance(supplier_case, Mapping):
+        raise ValueError("supplier trace must be an object")
+    if supplier_case.get("schema_version") != SUPPLIER_TRACE_SCHEMA_VERSION:
+        raise ValueError(f"trace schema_version must be {SUPPLIER_TRACE_SCHEMA_VERSION}")
+    return _canonical_from_supplier(supplier_case, Path(".")), _declared_workspace_root(supplier_case)
+
+
+def compare_cases(
+    supplier_case: Path | str | Mapping[str, Any],
+    bb_trace: Mapping[str, Any] | Path | str,
+) -> dict[str, Any]:
+    normalizations: list[str] = []
     try:
-        expected = project_supplier_case(supplier_case) if isinstance(supplier_case, (Path, str)) else project_bb_trace(supplier_case)
-        observed = project_bb_trace(bb_trace)
+        expected, supplier_root = _supplier_input(supplier_case)
+        bb_value = _load_json(Path(bb_trace)) if isinstance(bb_trace, (Path, str)) else copy.deepcopy(bb_trace)
+        if not isinstance(bb_value, Mapping):
+            raise ValueError("BreadBoard trace must be an object")
+        observed_root = _declared_workspace_root(bb_value)
+        observed = project_bb_trace(bb_value)
+        expected_changed, observed_changed = [False], [False]
+        expected = _replace_workspace(expected, supplier_root, expected_changed)
+        observed = _replace_workspace(observed, observed_root, observed_changed)
+        if expected_changed[0] or observed_changed[0]:
+            normalizations.append("workspace_root:<WORKSPACE>")
     except (OSError, TypeError, ValueError) as exc:
-        return _report([], [str(exc)])
+        return _report([], [str(exc)], normalizations)
     assertions: list[dict[str, Any]] = []
     for field in _CANONICAL_FIELDS:
         difference = _first_difference(expected.get(field), observed.get(field), f"$.{field}")
         assertions.append(_assertion(f"{expected['case_id']}.{field}_equal", expected.get(field), observed.get(field), difference))
-    return _report(assertions)
+    return _report(assertions, normalizations=normalizations)
 
 
 class HermesAgentComparator:

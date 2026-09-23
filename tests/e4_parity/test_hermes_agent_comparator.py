@@ -160,3 +160,42 @@ def test_h06_stops_at_eight_requests_without_ninth() -> None:
         "kind": "stopped",
         "native_stop_reason": "tool_calls",
     }
+
+
+def _replace_strings(value: Any, old: str, new: str) -> Any:
+    if isinstance(value, str):
+        return value.replace(old, new)
+    if isinstance(value, list):
+        return [_replace_strings(item, old, new) for item in value]
+    if isinstance(value, dict):
+        return {key: _replace_strings(item, old, new) for key, item in value.items()}
+    return value
+
+
+def test_workspace_roots_are_typed_and_fail_closed() -> None:
+    case_dir, supplier = _replay("H-01-normal-memory-skill-write")
+    observed = _replace_strings(
+        supplier,
+        str(case_dir / "workspace"),
+        "/lease/workspace-abc/repository",
+    )
+    observed["runtime"] = {"cwd": "/lease/workspace-abc/repository"}
+    report = compare_cases(case_dir, observed)
+    assert report["ok"] is True
+    assert report["normalizations"] == ["workspace_root:<WORKSPACE>"]
+
+    outside = deepcopy(observed)
+    outside["requests"][0]["body"]["messages"][0]["content"] = "/outside/not-authorized"
+    assert compare_cases(case_dir, outside)["ok"] is False
+
+    relative_mismatch = deepcopy(observed)
+    relative_mismatch["requests"][0]["body"]["messages"][0]["content"] = (
+        "/lease/workspace-abc/repository/different.txt"
+    )
+    assert compare_cases(case_dir, relative_mismatch)["ok"] is False
+
+    missing_runtime = deepcopy(observed)
+    del missing_runtime["runtime"]
+    report = compare_cases(case_dir, missing_runtime)
+    assert report["ok"] is False
+    assert "runtime.cwd" in report["errors"][0]
