@@ -303,6 +303,8 @@ class PiSemanticsState:
         """Commit an admitted assistant response without executing its tools."""
         if not isinstance(response, NativeProviderResponse):
             raise TypeError("response must be NativeProviderResponse")
+        if self.stream_fn_issued <= self.request_count:
+            raise PiSemanticsError("response has no admitted provider query")
         if self.request_count >= self.request_cap:
             return self._cap_response()
         self.request_count += 1
