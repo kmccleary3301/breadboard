@@ -240,6 +240,23 @@ def _pidfd_is_dead(pidfd: int) -> bool:
     return bool(poller.poll(0))
 
 
+def _unshare_pid_namespace() -> None:
+    """Enter a new PID namespace for the next fork via libc ``unshare(2)``.
+
+    ``os.unshare`` exists only on Python 3.12+ and the project supports 3.11;
+    like ``mount_namespace_broker``, call the syscall through libc.
+    """
+    clone_newpid = 0x20000000  # CLONE_NEWPID
+    libc_unshare = getattr(ctypes.CDLL(None, use_errno=True), "unshare", None)
+    if libc_unshare is None:
+        raise WorkerBootstrapError("Linux unshare is unavailable")
+    libc_unshare.argtypes = [ctypes.c_int]
+    libc_unshare.restype = ctypes.c_int
+    if libc_unshare(clone_newpid) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error))
+
+
 def _run_factory(factory: Callable[..., Any], channel: WorkerChannel) -> Any:
     try:
         signature = inspect.signature(factory)
@@ -315,16 +332,15 @@ def serve(factory: Callable[..., Any]) -> None:
     """
     if not callable(factory):
         raise TypeError("factory must be callable")
-    if sys.platform != "linux" or not hasattr(os, "unshare") or not hasattr(os, "pidfd_open"):
-        raise WorkerBootstrapError("native worker requires Linux unshare and pidfd_open")
-    clone_newpid = getattr(os, "CLONE_NEWPID", 0x20000000)
+    if sys.platform != "linux" or not hasattr(os, "pidfd_open"):
+        raise WorkerBootstrapError("native worker requires Linux pidfd_open")
     parent_pid = os.getpid()
     try:
         parent_pidfd = os.pidfd_open(parent_pid)
     except OSError as exc:
         raise WorkerBootstrapError("could not open parent pidfd") from exc
     try:
-        os.unshare(clone_newpid)
+        _unshare_pid_namespace()
         child_pid = os.fork()
     except BaseException:
         os.close(parent_pidfd)
