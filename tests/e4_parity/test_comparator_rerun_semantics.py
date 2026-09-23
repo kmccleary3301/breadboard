@@ -5,9 +5,11 @@ import importlib
 import json
 from pathlib import Path
 from typing import Any, Mapping
-
 from conformance.comparators.stored_report import compare
-from conformance.comparators.openhands_sdk import project_supplier_case
+from conformance.comparators.openhands_sdk import (
+    compare as compare_openhands,
+    project_supplier_case,
+)
 from scripts.validate_e4_c4_chain import _diff_comparator_reports
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,6 +32,28 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return "sha256:" + digest.hexdigest()
+
+
+def _openhands_measured_bb_trace() -> dict[str, Any]:
+    supplier = project_supplier_case(OPENHANDS_CASE)
+    workspace = OPENHANDS_CASE / "workspace"
+    effects: dict[str, dict[str, Any]] = {}
+    for relative, digest in supplier["file_effects"].items():
+        if digest is None:
+            effects[relative] = {"exists": False}
+            continue
+        path = workspace / relative
+        content = path.read_bytes()
+        assert _sha256(path) == digest
+        effects[relative] = {
+            "exists": True,
+            "bytes": len(content),
+            "sha256": digest,
+            "content_utf8": content.decode("utf-8", "replace"),
+        }
+    replay = dict(supplier)
+    replay["file_effects"] = effects
+    return replay
 
 
 def _accepted_lanes() -> list[dict[str, Any]]:
@@ -152,7 +176,7 @@ def _registered_comparator_input(
     if comparator_id == "openhands_sdk_trace_v1":
         return {
             "supplier_case": str(OPENHANDS_CASE),
-            "bb_trace": project_supplier_case(OPENHANDS_CASE),
+            "bb_trace": _openhands_measured_bb_trace(),
         }
     if comparator_id == "semantic_replay_v1":
         return {
@@ -227,6 +251,19 @@ def test_each_registered_comparator_entrypoint_conforms_to_protocol(tmp_path: Pa
         assert report_schema_version == entry["report_schema_version"]
         assert isinstance(report["assertions"], list) and report["assertions"]
         assert {"assertion_id", "status", "observed", "expected"} <= set(report["assertions"][0])
+
+
+def test_rejected_openhands_bb_trace_reports_error() -> None:
+    replay = _openhands_measured_bb_trace()
+    replay["file_effects"]["marker.txt"] = "sha256:" + ("a" * 64)
+    report = compare_openhands(
+        {
+            "supplier_case": str(OPENHANDS_CASE),
+            "bb_trace": replay,
+        }
+    )
+    assert report["ok"] is False
+    assert report["errors"]
 
 
 def test_stored_report_comparator_is_deterministic_for_identical_inputs(tmp_path: Path) -> None:
