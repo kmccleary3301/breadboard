@@ -18,6 +18,7 @@ from breadboard.rl.harness import sandbox as sandbox_module
 from breadboard.rl.harness.materialization import (
     CleanupState,
     CleanupStepReceipt,
+    EMPTY_WORKSPACE_SEED_DIGEST,
     IsolationDisposition,
     SandboxCleanupReceipt,
     WorkspaceLeaseState,
@@ -108,7 +109,7 @@ async def test_seeded_workspace_has_no_policy_files_after_run_and_seal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fixture = make_runtime_fixture(with_writable_mount=True)
-    source_digest = digest("workspace-source")
+    source_digest = EMPTY_WORKSPACE_SEED_DIGEST
     seed_mount = c.MountGrant(
         source_artifact_digest=source_digest,
         target_logical_path=".",
