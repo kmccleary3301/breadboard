@@ -257,6 +257,7 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
         PI_RESPONSE_CONSUMER_ID: "pi@0.73.1",
         OPENCLAW_RESPONSE_CONSUMER_ID: "openclaw@2026.9.4",
     }
+    renderer_id = binding["renderer_id"]
     if (
         version not in (1, 2, 3)
         or set(binding) != expected_fields

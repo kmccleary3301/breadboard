@@ -346,6 +346,8 @@ def lower_e4_target(
     if target_version == "bb.e4.target.v2":
         if findings := validate_e4_target_document(harness):
             raise HarnessDefinitionValidationError(findings)
+        if harness["renderer"]["selector"] == "breadboard.mini-swe-agent.v2.4.6":
+            return _lower_mini_target(package, harness, dynamic_fields)
         if harness["renderer"]["selector"] in {
             "breadboard.openhands-sdk.v1.47.0",
             "breadboard.pi-coding-agent.v0.73.1",
