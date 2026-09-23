@@ -116,12 +116,12 @@ def _project_request_bodies(raw_requests: Sequence[Mapping[str, Any]]) -> list[d
     ]
 
 
+def _wire_identity(value: Mapping[str, Any]) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
 def _call_identity(call: Mapping[str, Any]) -> str:
-    return json.dumps(call, ensure_ascii=False, separators=(",", ":"))
-
-
-def _result_identity(result: Mapping[str, Any]) -> str:
-    return json.dumps(result, ensure_ascii=False, separators=(",", ":"))
+    return _wire_identity(call)
 
 
 def _tool_calls_from_requests(requests: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -149,7 +149,7 @@ def _tool_calls_from_requests(requests: Sequence[Mapping[str, Any]]) -> list[dic
                     "name": name,
                     "arguments": raw,
                 }
-                identity = _call_identity(projected)
+                identity = _call_identity(call)
                 previous = seen.get(projected["id"])
                 if previous is not None:
                     if previous != identity:
@@ -248,7 +248,7 @@ def _results_from_requests(
             if call_id is None:
                 results.append(projected)
                 continue
-            identity = _result_identity(projected)
+            identity = _wire_identity(message)
             previous = seen.get(str(call_id))
             if previous is not None:
                 if previous != identity:
@@ -422,23 +422,13 @@ def project_bb_trace(trace: Any) -> dict[str, Any]:
     value.setdefault("normalizations", {})
     raw_requests = value.get("requests")
     if isinstance(raw_requests, list):
-        requests = _project_request_bodies(
-            [request for request in raw_requests if isinstance(request, Mapping)]
-        )
+        if any(not isinstance(request, Mapping) for request in raw_requests):
+            raise ComparatorError("requests must contain only mapping bodies")
+        requests = _project_request_bodies(raw_requests)
         value["requests"] = requests
         calls = _tool_calls_from_requests(requests)
-        if calls:
-            value["tool_calls"] = calls
-            value["results"] = _results_from_requests(requests, calls)
-        elif "tool_calls" not in value and isinstance(value.get("events"), list):
-            value["tool_calls"] = [
-                event for event in value["events"]
-                if isinstance(event, Mapping) and event.get("type") == "tool_call"
-            ]
-            value["results"] = [
-                event for event in value["events"]
-                if isinstance(event, Mapping) and event.get("type") == "tool_result"
-            ]
+        value["tool_calls"] = calls
+        value["results"] = _results_from_requests(requests, calls)
     elif "tool_calls" not in value and isinstance(value.get("events"), list):
         value["tool_calls"] = [
             event for event in value["events"]
