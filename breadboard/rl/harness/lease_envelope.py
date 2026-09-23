@@ -22,6 +22,7 @@ from breadboard_engine.compilation.contracts import canonical_json_bytes
 
 from .mount_namespace_broker import (
     _CLONE_NEWNS,
+    _MS_BIND,
     _MS_NODEV,
     _MS_NOEXEC,
     _MS_NOSUID,
