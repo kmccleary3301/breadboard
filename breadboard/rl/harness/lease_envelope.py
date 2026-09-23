@@ -413,6 +413,16 @@ def _verify_mount_view(workspace: str, scratch: str) -> tuple[str, tuple[str, ..
         if fields is None or b"rw" not in fields[5].split(b","):
             raise OSError(f"envelope writable mount is absent: {path}")
     return _digest_mountinfo(raw), roots
+
+def _bind_path(source: str, target: str) -> None:
+    _libc_call(
+        "mount",
+        ctypes.c_char_p(os.fsencode(source)),
+        ctypes.c_char_p(os.fsencode(target)),
+        ctypes.c_char_p(None),
+        ctypes.c_ulong(_MS_BIND),
+        ctypes.c_char_p(None),
+    )
 def _setup_mount_view(
     workspace: str,
     scratch: str,
@@ -421,8 +431,8 @@ def _setup_mount_view(
     tmpfs_size_bytes: int,
 ) -> tuple[str, tuple[str, ...]]:
     _enter_private_mount_namespace()
-    _bind(workspace_fd, workspace, readonly=False)
-    _bind(scratch_fd, scratch, readonly=False)
+    _bind_path(workspace, workspace)
+    _bind_path(scratch, scratch)
     _remount_readonly("/")
     _mount_tmpfs("/tmp", tmpfs_size_bytes)
     _mount_proc()
