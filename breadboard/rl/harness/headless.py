@@ -1017,6 +1017,14 @@ def _project_headless_run(
         "reason": run.termination,
         "turn_count": run.turn_count,
         "response": None if run.response is None else thaw_json(run.response),
+        "run_failure": (
+            None
+            if run.primary_failure is None
+            else {
+                "category": run.primary_failure.category,
+                "code": run.primary_failure.code,
+            }
+        ),
     }
     result["evidence"] = {
         "completed_envelope_ref": _optional_ref(run.completed_envelope_ref),
