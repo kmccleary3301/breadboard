@@ -47,6 +47,7 @@ def test_target_resources_load_outside_editable_checkout_cwd(
     assert list_e4_target_ids() == (
         "mini-swe-agent@2.4.6",
         "oh-my-pi@16.2.13",
+        "openclaw@2026.9.4",
         "openhands-sdk@1.47.0",
         "pi@0.57.1",
         "pi@0.73.1",
@@ -103,6 +104,7 @@ def test_pinned_targets_load_with_exact_release_source_and_runtime_assets() -> N
     assert list_e4_target_ids() == (
         "mini-swe-agent@2.4.6",
         "oh-my-pi@16.2.13",
+        "openclaw@2026.9.4",
         "openhands-sdk@1.47.0",
         "pi@0.57.1",
         "pi@0.73.1",

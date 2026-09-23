@@ -270,6 +270,10 @@ def _lower_worker_target(
             "breadboard.pi-coding-agent.v0.73.1",
             "2834e64d081edede815bd1fa81d8ad423b5d0bd1c2e6466ca3ba5060c12a5003",
         ),
+        "openclaw@2026.9.4": (
+            "breadboard.openclaw.native-chat.v1",
+            "5f6c13a7e96690c1b38c4d12a722184cd73b9e71318a26a1e967189e43a511b9",
+        ),
     }
     recipe = recipes.get(package.target_id)
     if (
@@ -342,13 +346,10 @@ def lower_e4_target(
     if target_version == "bb.e4.target.v2":
         if findings := validate_e4_target_document(harness):
             raise HarnessDefinitionValidationError(findings)
-        if harness["schema_version"] != "bb.e4.target_config.v2":
-            raise HarnessCompileError("E4 target configuration revision does not match")
-        if harness["renderer"]["selector"] == "breadboard.mini-swe-agent.v2.4.6":
-            return _lower_mini_target(package, harness, dynamic_fields)
         if harness["renderer"]["selector"] in {
             "breadboard.openhands-sdk.v1.47.0",
             "breadboard.pi-coding-agent.v0.73.1",
+            "breadboard.openclaw.native-chat.v1",
         }:
             return _lower_worker_target(package, harness, dynamic_fields)
         raise E4TargetCapabilityError(

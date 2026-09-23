@@ -9,6 +9,10 @@
       "descriptor": "oh_my_pi/16.2.13/target.json",
       "sha256": "537fb2659e6f8f619e0fd832d48d57c5f8c0da4b2356022b0ebecd6ccbb7a105"
     },
+    "openclaw@2026.9.4": {
+      "descriptor": "openclaw/2026.9.4/target.json",
+      "sha256": "5f6c13a7e96690c1b38c4d12a722184cd73b9e71318a26a1e967189e43a511b9"
+    },
     "openhands-sdk@1.47.0": {
       "descriptor": "openhands_sdk/1.47.0/target.json",
       "sha256": "3d3dfae53ab307406804660577288a44a93476d4620be4d31739882a57cbe71a"
