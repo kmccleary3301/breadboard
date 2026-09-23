@@ -7,6 +7,13 @@ archive (commit 3a9d69db306cd7f081e06254cb89c4bcc14a7107).
 """
 from __future__ import annotations
 
+import errno
+import select
+try:
+    import pty
+except ImportError:  # pragma: no cover - non-POSIX fallback
+    pty = None
+
 import base64
 import hashlib
 import json
@@ -22,11 +29,28 @@ from typing import Any, Callable, Iterable, Mapping, MutableMapping, Sequence
 
 OPENCLAW_SOURCE_COMMIT = "3a9d69db306cd7f081e06254cb89c4bcc14a7107"
 OPENCLAW_VERSION = "2026.9.4"
+MAX_AGGREGATE_OUTPUT_CHARS = 200_000
+MAX_PENDING_OUTPUT_CHARS = 30_000
 TOOL_ORDER = ("ls", "read", "edit", "write", "exec", "process")
 PROMPT_TOOL_ORDER = ("read", "write", "edit", "ls", "exec", "process")
 BOOTSTRAP_ORDER = ("AGENTS.md", "SOUL.md", "IDENTITY.md", "USER.md", "BOOTSTRAP.md", "MEMORY.md")
 BOOTSTRAP_MAX_CHARS = 20_000
 BOOTSTRAP_TOTAL_MAX_CHARS = 60_000
+_PROVIDER_AUTH_ENV_MARKERS = (
+    "API_KEY",
+    "API_TOKEN",
+    "AUTH_TOKEN",
+    "ACCESS_TOKEN",
+    "GATEWAY_TOKEN",
+    "TOKEN",
+    "SECRET",
+    "PASSWORD",
+)
+
+
+def _is_provider_auth_env(name: str) -> bool:
+    upper = name.upper()
+    return any(marker in upper for marker in _PROVIDER_AUTH_ENV_MARKERS)
 USER_BOOTSTRAP_MAX_CHARS = 4_000
 MIN_BOOTSTRAP_FILE_BUDGET_CHARS = 64
 EXEC_YIELD_MS = 10_000
@@ -326,18 +350,120 @@ def load_bootstrap_files(workspace: str | Path) -> tuple[BootstrapFile, ...]:
 
 
 def _truncate_context(content: str, name: str, budget: int) -> str:
+    """Mirror pinned embedded-agent bootstrap trimming and policy digest."""
     trimmed = content.rstrip()
     if len(trimmed) <= budget:
         return trimmed
-    if budget <= 1:
-        return trimmed[:budget]
-    marker = f"\n[...truncated, read {name} for full content...]\n"
-    if len(marker) >= budget:
-        return trimmed[:budget]
-    body_budget = budget - len(marker)
-    head = max(1, int(body_budget * 0.75))
-    tail = max(0, body_budget - head)
-    return f"{trimmed[:head]}{marker}{trimmed[-tail:] if tail else ''}"[:budget]
+    budget = max(1, int(budget))
+    if name.lower() == "agents.md":
+        candidates: list[tuple[str, bool]] = []
+        previous: str | None = None
+        candidate_re = re.compile(
+            r"\b(?:AGENTS\.md|scoped|required|must|never|do not|before subtree|read scoped|"
+            r"owner|security|secret|credential|test|validation|command|commit|push|github|pr)\b"
+            r"|(?:🔴|禁止|嚴禁|不得|絕不|絕對不|切勿|必須|務必|一律|紅線)",
+            re.I,
+        )
+        for source_line in trimmed.splitlines():
+            line = re.sub(r"\s+", " ", source_line.strip())
+            if not line:
+                previous = None
+                continue
+            if re.match(r"^\s*(?:`{3,}|~{3,})", line):
+                previous = None
+                continue
+            candidate = bool(
+                re.match(r"^(?:#{1,6}|\s*[-*+]|\s*\d+[.)])\s+\S", line)
+                or candidate_re.search(line)
+            )
+            if candidate:
+                text = line if previous is None else f"{previous}\n{line}"
+                candidates.append((text[:240], bool(re.search(
+                    r"\b(?:AGENTS\.md|scoped|required|must|never|do not|before subtree|"
+                    r"read scoped|security|secret|credential)\b|(?:🔴|禁止|嚴禁|不得|絕不|絕對不|切勿)",
+                    line,
+                    re.I,
+                ))))
+                previous = None
+            else:
+                previous = line
+
+        def digest_for(limit: int) -> tuple[str, int]:
+            selected: list[str] = []
+            used = 0
+            for high in (True, False):
+                for text, priority in candidates:
+                    if priority != high or text in selected:
+                        continue
+                    extra = len(text) + (1 if selected else 0)
+                    if used + extra <= limit:
+                        selected.append(text)
+                        used += extra
+            return "\n".join(selected), max(0, len(candidates) - len(selected))
+
+        head = int(budget * 0.45)
+        tail = int(budget * 0.15)
+        digest_budget = int(budget * 0.35)
+
+        def render() -> str:
+            digest, omitted = digest_for(digest_budget)
+            parts = [
+                trimmed[:head],
+                "[...truncated, read AGENTS.md for full content...]",
+                "[Policy digest from AGENTS.md]" if digest else "",
+                digest,
+                f"[...{omitted} more policy lines omitted...]" if omitted else "",
+                f"…(truncated AGENTS.md: kept {head}+policy {len(digest)}+{tail} chars of {len(trimmed)})…",
+                trimmed[-tail:] if tail else "",
+            ]
+            return "\n".join(part for part in parts if part)
+
+        rendered = render()
+        while len(rendered) > budget and (tail > 0 or head > 1 or digest_budget > 0):
+            overflow = len(rendered) - budget
+            if tail:
+                tail = max(0, tail - overflow)
+            elif head > 1:
+                head = max(1, head - overflow)
+            else:
+                digest_budget = max(0, digest_budget - overflow)
+            rendered = render()
+        return rendered[:budget]
+
+    marker_template = lambda h, t: (
+        f"\n[...truncated, read {name} for full content...]\n"
+        f"…(truncated {name}: kept {h}+{t} chars of {len(trimmed)})…\n"
+    )
+    full_marker = marker_template(0, 0)
+    compact = len(full_marker) + 1 + 16 > budget
+    marker_template = (
+        (lambda h, t: f"[…truncated {h}+{t}/{len(trimmed)}]")
+        if compact
+        else marker_template
+    )
+    head = tail = 0
+    marker = marker_template(head, tail)
+    for _ in range(3):
+        separator = (1 if head else 0) + (1 if tail else 0) if "\n" in marker else 0
+        content_budget = max(0, budget - len(marker) - separator)
+        next_head = int(content_budget * 0.75)
+        next_tail = int(content_budget * 0.25)
+        next_marker = marker_template(next_head, next_tail)
+        if (next_head, next_tail, len(next_marker)) == (head, tail, len(marker)):
+            break
+        head, tail, marker = next_head, next_tail, next_marker
+    while head + tail + len(marker) + ((1 if head else 0) + (1 if tail else 0) if "\n" in marker else 0) > budget and (tail or head):
+        overflow = head + tail + len(marker) - budget
+        if tail:
+            tail = max(0, tail - overflow)
+        else:
+            head = max(0, head - overflow)
+        marker = marker_template(head, tail)
+    if not head and not tail and len(trimmed) and len(marker_template(1, 0)) + 1 <= budget:
+        head = 1
+        marker = marker_template(1, 0)
+    output = "\n".join(part for part in (trimmed[:head], marker, trimmed[-tail:] if tail else "") if part)
+    return output[:budget]
 
 
 def build_bootstrap_context(
@@ -376,6 +502,7 @@ class ManagedProcess:
     cwd: str
     started_at: float
     backgrounded: bool = True
+    pty_fd: int | None = None
     output: bytearray = field(default_factory=bytearray)
     pending_output: bytearray = field(default_factory=bytearray)
     ended_at: float | None = None
@@ -387,22 +514,39 @@ class ManagedProcess:
         return self.process.poll() is not None
 
     def refresh(self) -> None:
-        if self.process.stdout is not None:
-            # communicate() closes stdout on the foreground path; do not read
-            # that closed handle again while recording process settlement.
+        fd = self.pty_fd
+        if fd is None and self.process.stdout is not None and not self.process.stdout.closed:
             try:
-                closed = self.process.stdout.closed
-            except ValueError:
-                closed = True
-            if self.exited and not closed:
-                data = self.process.stdout.read() or b""
-                if data:
+                fd = self.process.stdout.fileno()
+            except (AttributeError, ValueError):
+                fd = None
+        if fd is not None:
+            try:
+                while select.select([fd], [], [], 0)[0]:
+                    data = os.read(fd, 65536)
+                    if not data:
+                        break
                     self.output.extend(data)
                     self.pending_output.extend(data)
+                    if len(self.output) > MAX_AGGREGATE_OUTPUT_CHARS:
+                        del self.output[:-MAX_AGGREGATE_OUTPUT_CHARS]
+                    if len(self.pending_output) > MAX_PENDING_OUTPUT_CHARS:
+                        del self.pending_output[:-MAX_PENDING_OUTPUT_CHARS]
+            except (BlockingIOError, OSError) as exc:
+                if not isinstance(exc, BlockingIOError) and getattr(exc, "errno", None) not in {errno.EAGAIN, errno.EIO}:
+                    raise
         code = self.process.poll()
         if code is not None and self.ended_at is None:
             self.exit_code = code
             self.ended_at = time.time()
+    def send_input(self, data: bytes) -> None:
+        if self.pty_fd is not None:
+            os.write(self.pty_fd, data)
+            return
+        if self.process.stdin is None:
+            raise ValueError("stdin is not writable")
+        self.process.stdin.write(data)
+        self.process.stdin.flush()
 
 
 @dataclass(frozen=True)
@@ -561,34 +705,83 @@ class OpenClawNativeTools:
             return {"status": "completed", "changed": False, "path": str(args.get("path"))}
         path.write_text(output, encoding="utf-8", newline="")
         return {"status": "completed", "changed": True, "path": str(args.get("path"))}
-
     def _exec(self, args: Mapping[str, Any]) -> dict[str, Any]:
         command = str(args.get("command") or "")
         if not command:
             raise ValueError("Provide a command to start.")
         cwd = self._path(str(args.get("workdir") or "."))
-        env = os.environ.copy()
+        env = {key: value for key, value in os.environ.items() if not _is_provider_auth_env(key)}
         requested_env = args.get("env")
         if isinstance(requested_env, Mapping):
-            env.update({str(key): str(value) for key, value in requested_env.items()})
+            env.update(
+                {
+                    str(key): str(value)
+                    for key, value in requested_env.items()
+                    if not _is_provider_auth_env(str(key))
+                }
+            )
+        pty_fd: int | None = None
+        warning: str | None = None
+        use_pty = bool(args.get("pty"))
+        stdin: Any = subprocess.PIPE
+        stdout: Any = subprocess.PIPE
+        stderr: Any = subprocess.STDOUT
+        if use_pty and pty is not None:
+            try:
+                pty_fd, slave = pty.openpty()
+                os.set_blocking(pty_fd, False)
+                stdin = slave
+                stdout = slave
+                stderr = slave
+            except OSError as exc:
+                warning = f"PTY spawn failed ({exc}); fell back to pipes."
+                pty_fd = None
+        elif use_pty:
+            warning = "PTY unavailable; fell back to pipes."
+        if self.scope._live_count() >= self.scope.max_live:
+            if pty_fd is not None:
+                os.close(pty_fd)
+                os.close(stdin)
+            raise RuntimeError(f"live exec process limit exceeded ({self.scope.max_live})")
         process = subprocess.Popen(
             ["/bin/sh", "-lc", command],
             cwd=str(cwd),
             env=env,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
             start_new_session=True,
         )
-        session = ManagedProcess(str(uuid.uuid4()), process, command, str(cwd), time.time())
+        if pty_fd is not None:
+            os.close(stdin)
+        session = ManagedProcess(str(uuid.uuid4()), process, command, str(cwd), time.time(), pty_fd=pty_fd)
         self.scope.register(session)
         yield_ms = 0 if args.get("background") is True else int(args.get("yieldMs", EXEC_YIELD_MS))
         timeout = args.get("timeoutSeconds", EXEC_DEFAULT_TIMEOUT_SECONDS)
         timeout_seconds = None if timeout == 0 else min(float(timeout), EXEC_MAX_TIMEOUT_SECONDS)
+        prefix: dict[str, Any] = {"status": "running", "sessionId": session.session_id, "pid": process.pid}
+        if warning:
+            prefix["warning"] = warning
         if args.get("background") is True:
-            # Explicit background wins immediately; settlement is observed by
-            # process poll and retained finished-session state.
-            return {"status": "running", "sessionId": session.session_id, "pid": process.pid}
+            return prefix
+        if pty_fd is not None:
+            deadline = time.monotonic() + (timeout_seconds if timeout_seconds is not None else 86_400)
+            while not session.exited and time.monotonic() < deadline:
+                session.refresh()
+                time.sleep(0.01)
+            session.refresh()
+            if not session.exited:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                return {**prefix, "status": "failed", "error": "Command timed out"}
+            return {
+                **prefix,
+                "status": "completed",
+                "output": bytes(session.output).decode(errors="replace"),
+                "exitCode": session.exit_code,
+            }
         try:
             if yield_ms > 0:
                 try:
@@ -596,30 +789,37 @@ class OpenClawNativeTools:
                     session.output.extend(output or b"")
                     session.pending_output.extend(output or b"")
                     session.refresh()
-                    return {"status": "completed", "sessionId": session.session_id, "output": (output or b"").decode(errors="replace"), "exitCode": process.returncode}
+                    return {
+                        **prefix,
+                        "status": "completed",
+                        "output": (output or b"").decode(errors="replace"),
+                        "exitCode": process.returncode,
+                    }
                 except subprocess.TimeoutExpired:
-                    return {"status": "running", "sessionId": session.session_id, "pid": process.pid}
-            if timeout_seconds is None:
-                output, _ = process.communicate()
-            else:
-                output, _ = process.communicate(timeout=timeout_seconds)
+                    return prefix
+            output, _ = process.communicate(timeout=timeout_seconds)
             session.output.extend(output or b"")
             session.pending_output.extend(output or b"")
             session.refresh()
-            return {"status": "completed", "sessionId": session.session_id, "output": (output or b"").decode(errors="replace"), "exitCode": process.returncode}
+            return {
+                **prefix,
+                "status": "completed",
+                "output": (output or b"").decode(errors="replace"),
+                "exitCode": process.returncode,
+            }
         except subprocess.TimeoutExpired:
-            # Native timeout is distinct from outer watchdog; terminate the tree.
             try:
                 os.killpg(process.pid, signal.SIGTERM)
             except ProcessLookupError:
                 pass
-            return {"status": "failed", "sessionId": session.session_id, "error": "Command timed out"}
-
+            return {**prefix, "status": "failed", "error": "Command timed out"}
     def _poll_delivery(self, record: ManagedProcess) -> PendingDelivery:
         record.refresh()
+        existing = self._pending.get(record.session_id)
+        if existing is not None:
+            return existing
         payload = bytes(record.pending_output)
         text = payload.decode(errors="replace").strip() or "(no new output)"
-        record.pending_output.clear()
         acknowledged = False
 
         def acknowledge() -> None:
@@ -627,9 +827,15 @@ class OpenClawNativeTools:
             if acknowledged:
                 return
             acknowledged = True
+            record.pending_output.clear()
             self._pending.pop(record.session_id, None)
 
-        delivery = PendingDelivery(record.session_id, text, {"status": "completed" if record.exited else "running", "sessionId": record.session_id}, acknowledge)
+        delivery = PendingDelivery(
+            record.session_id,
+            text,
+            {"status": "completed" if record.exited else "running", "sessionId": record.session_id},
+            acknowledge,
+        )
         self._pending[record.session_id] = delivery
         return delivery
 
@@ -642,8 +848,8 @@ class OpenClawNativeTools:
         self.scope.reap()
         action = args.get("action")
         if action == "list":
-            records = [*self.scope._records.values(), *self.scope._finished.values()]
-            records = [r for r in records if not r.removed]
+            records = {r.session_id: r for r in (*self.scope._records.values(), *self.scope._finished.values())}
+            records = [r for r in records.values() if not r.removed]
             return {"status": "completed", "sessions": [{"sessionId": r.session_id, "status": "completed" if r.exited else "running", "runtimeMs": int(((r.ended_at or time.time()) - r.started_at) * 1000), "command": r.command, "cwd": r.cwd} for r in records]}
         session_id = str(args.get("sessionId") or "")
         record = self.scope.get(session_id)
@@ -659,17 +865,31 @@ class OpenClawNativeTools:
             return {"status": delivery.details["status"], "sessionId": session_id, "output": delivery.text, "pendingAcknowledgement": True}
         if action == "log":
             record.refresh()
-            return {"status": "completed" if record.exited else "running", "sessionId": session_id, "output": bytes(record.output).decode(errors="replace")}
+            lines = bytes(record.output).decode(errors="replace").splitlines()
+            requested_limit = args.get("limit")
+            limit = int(requested_limit) if isinstance(requested_limit, (int, float)) else 200
+            limit = max(0, min(200, limit))
+            offset = int(args.get("offset", max(0, len(lines) - 200)) or 0)
+            page = lines[offset : offset + limit]
+            return {
+                "status": "completed" if record.exited else "running",
+                "sessionId": session_id,
+                "output": "\n".join(page),
+                "totalLines": len(lines),
+                "offset": offset,
+                "limit": limit,
+                "truncated": len(page) < len(lines),
+            }
         if action == "write":
-            if record.process.stdin is None:
-                return {"status": "failed", "error": "stdin is not writable"}
-            record.process.stdin.write(str(args.get("data", "")).encode())
-            record.process.stdin.flush()
-            if args.get("eof"):
+            try:
+                record.send_input(str(args.get("data", "")).encode())
+            except (OSError, ValueError) as exc:
+                return {"status": "failed", "error": str(exc)}
+            if args.get("eof") and record.process.stdin is not None:
                 record.process.stdin.close()
             return {"status": "running", "sessionId": session_id}
         if action in {"submit", "paste", "send-keys"}:
-            if record.process.stdin is None:
+            if record.pty_fd is None and record.process.stdin is None:
                 return {"status": "failed", "error": "stdin is not writable"}
             if action == "submit":
                 data = b"\r"
@@ -677,9 +897,25 @@ class OpenClawNativeTools:
                 text = str(args.get("text", ""))
                 data = ("\x1b[200~" + text + "\x1b[201~").encode() if args.get("bracketed", True) else text.encode()
             else:
-                data = str(args.get("literal", "")).encode()
-            record.process.stdin.write(data)
-            record.process.stdin.flush()
+                key_bytes = {
+                    "ENTER": b"\r", "RETURN": b"\r", "TAB": b"\t", "ESC": b"\x1b",
+                    "SPACE": b" ", "BACKSPACE": b"\x7f", "CTRL_C": b"\x03", "CTRL_D": b"\x04",
+                    "UP": b"\x1b[A", "DOWN": b"\x1b[B", "LEFT": b"\x1b[D", "RIGHT": b"\x1b[C",
+                }
+                chunks = [key_bytes[str(key).upper()] for key in (args.get("keys") or []) if str(key).upper() in key_bytes]
+                for raw_hex in args.get("hex") or []:
+                    try:
+                        chunks.append(bytes.fromhex(str(raw_hex)))
+                    except ValueError as exc:
+                        return {"status": "failed", "error": f"Invalid hex key: {raw_hex}"}
+                literal = args.get("literal")
+                if literal is not None:
+                    chunks.append(str(literal).encode())
+                data = b"".join(chunks)
+            try:
+                record.send_input(data)
+            except (OSError, ValueError) as exc:
+                return {"status": "failed", "error": str(exc)}
             return {"status": "running", "sessionId": session_id}
         if action == "kill":
             try:
@@ -687,13 +923,19 @@ class OpenClawNativeTools:
             except ProcessLookupError:
                 pass
             return {"status": "completed", "sessionId": session_id, "message": f"Termination requested for session {session_id}."}
-        if action in {"clear", "remove"}:
+        if action == "clear":
+            if not record.exited:
+                return {"status": "failed", "error": f"Session {session_id} is not finished."}
             record.removed = True
-            if action == "remove" and not record.exited:
+            return {"status": "completed", "sessionId": session_id}
+        if action == "remove":
+            if not record.exited:
                 try:
                     os.killpg(record.process.pid, signal.SIGTERM)
                 except ProcessLookupError:
                     pass
+                return {"status": "completed", "sessionId": session_id, "message": f"Removed session {session_id} (termination requested)."}
+            record.removed = True
             return {"status": "completed", "sessionId": session_id}
         return {"status": "failed", "error": f"Unknown process action {action}"}
 
@@ -721,28 +963,23 @@ def stop_before_recovery(
 
 
 def native_worker_invocation() -> dict[str, Any]:
-    """Exact pinned supplier invocation used only for oracle capture.
-
-    BreadBoard does not invoke the supplier loop.  If an installed Node worker
-    is selected, it must be this bounded one-shot command and must hand back
-    prepared tool effects rather than owning model/history/recovery policy.
-    """
+    """Tool-only worker command; no model loop, provider, or supplier process."""
     return {
-        "node": "/opt/openclaw-runtime/bin/node",
-        "argv": [
-            "/opt/openclaw/dist/index.js",
-            "agent",
-            "--local",
-            "--json",
-            "--timeout",
-            "45",
-            "--isolated",
-            "--auth-env-only",
-        ],
-        "node_range": ">=24.16.0 <25 || >=26.1.0",
+        "command": ["python", "-m", "breadboard.rl.harness.openclaw_tool_worker"],
+        "protocol": "bb.openclaw.tool-worker.jsonl.v1",
         "source_commit": OPENCLAW_SOURCE_COMMIT,
-        "worker_owns": ["tool preparation", "tool effects", "process scope", "pending acknowledgements"],
-        "breadboard_owns": ["model dispatch", "history commit", "recovery", "terminal arbitration"],
+        "worker_owns": [
+            "tool preparation",
+            "tool effects",
+            "process scope",
+            "pending acknowledgements",
+        ],
+        "breadboard_owns": [
+            "model dispatch",
+            "history commit",
+            "recovery",
+            "terminal arbitration",
+        ],
     }
 
 

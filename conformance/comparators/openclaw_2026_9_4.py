@@ -107,6 +107,33 @@ def _trace_requests_from_transcript(case_dir: Path) -> list[dict[str, Any]]:
             continue
         requests.append({"messages": body.get("messages", []), "tools": body.get("tools", [])})
     return requests
+def _tool_calls_from_requests(requests: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    calls: list[dict[str, Any]] = []
+    for request in requests:
+        for message in request.get("messages", []):
+            if not isinstance(message, Mapping) or message.get("role") != "assistant":
+                continue
+            for index, call in enumerate(message.get("tool_calls", ()) or ()):
+                if not isinstance(call, Mapping):
+                    continue
+                function = call.get("function") if isinstance(call.get("function"), Mapping) else call
+                name = function.get("name")
+                if not isinstance(name, str):
+                    continue
+                raw = function.get("arguments", call.get("arguments", {}))
+                if isinstance(raw, str):
+                    try:
+                        raw = json.loads(raw)
+                    except ValueError:
+                        pass
+                calls.append({
+                    "id": str(call.get("id", call.get("tool_call_id", f"call_{len(calls)}_{index}"))),
+                    "name": name,
+                    "arguments": raw,
+                })
+    return calls
+
+
 
 
 def _tool_calls_from_scenario(scenario: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -125,13 +152,11 @@ def _tool_calls_from_scenario(scenario: Mapping[str, Any]) -> list[dict[str, Any
                     args = json.loads(args)
                 except ValueError:
                     pass
-            calls.append(
-                {
-                    "id": str(call.get("id", f"call_{step_index}_{call_index}")),
-                    "name": name,
-                    "arguments": args,
-                }
-            )
+            calls.append({
+                "id": str(call.get("id", f"call_{step_index}_{call_index}")),
+                "name": name,
+                "arguments": args,
+            })
     return calls
 
 
@@ -157,6 +182,35 @@ def _results_from_scenario(
         elif call.get("name") == "exec":
             result["status"] = "completed"
         results.append(result)
+    return results
+
+
+def _results_from_requests(
+    requests: Sequence[Mapping[str, Any]], calls: Sequence[Mapping[str, Any]] = ()
+) -> list[dict[str, Any]]:
+    """Project actual model-visible tool messages from captured request bodies."""
+    names = {str(call.get("id")): call.get("name") for call in calls}
+    results: list[dict[str, Any]] = []
+    for request in requests:
+        for message in request.get("messages", []):
+            if not isinstance(message, Mapping) or message.get("role") not in {"tool", "toolResult"}:
+                continue
+            content = message.get("content", "")
+            if isinstance(content, list):
+                content = "\n".join(
+                    str(item.get("text", item)) if isinstance(item, Mapping) else str(item)
+                    for item in content
+                )
+            call_id = message.get("tool_call_id", message.get("toolCallId"))
+            results.append({
+                "tool_call_id": call_id,
+                "name": message.get(
+                    "name",
+                    message.get("tool_name", message.get("toolName", names.get(str(call_id)))),
+                ),
+                "content": content,
+                "error": message.get("is_error", message.get("isError", False)),
+            })
     return results
 
 
@@ -215,22 +269,16 @@ def _effects(workspace: Path, scenario: Mapping[str, Any]) -> dict[str, str | No
             effects[relative] = None
             continue
         effects[relative] = _sha256(target) if target.is_file() else None
+    # Include every non-bootstrap workspace effect so unexpected writes fail.
+    try:
+        for candidate in workspace.rglob("*"):
+            if candidate.is_file() and candidate.name not in {"AGENTS.md", "SOUL.md", "IDENTITY.md", "USER.md", "BOOTSTRAP.md", "MEMORY.md"}:
+                effects.setdefault(str(candidate.relative_to(workspace)), _sha256(candidate))
+    except OSError:
+        pass
     return effects
 
 
-def _termination(scenario: Mapping[str, Any], request_count: int) -> dict[str, Any]:
-    steps = scenario.get("steps", [])
-    last = steps[-1] if isinstance(steps, Sequence) and steps else {}
-    failure = any(isinstance(step, Mapping) and step.get("kind") == "http_error" for step in steps)
-    if failure:
-        kind = "provider_failure"
-    elif scenario.get("max_requests") is not None:
-        kind = "request_budget"
-    elif any(isinstance(step, Mapping) and step.get("finish_reason") == "tool_calls" for step in steps) and not any(isinstance(step, Mapping) and step.get("tool_calls") for step in steps):
-        kind = "malformed_tool_call"
-    else:
-        kind = "stop"
-    return {"kind": kind, "native_stop_reason": last.get("finish_reason") if isinstance(last, Mapping) else None}
 
 
 def _validate_trace(trace: Mapping[str, Any]) -> None:
@@ -279,14 +327,14 @@ def project_supplier_case(case_dir: str | Path) -> dict[str, Any]:
         closed = _load_json(root / "receiver" / "closed.json", {})
         request_count = int(closed.get("requests", 0)) if isinstance(closed, Mapping) else 0
         requests = [{"messages": [], "tools": []} for _ in range(request_count)]
-    calls = _tool_calls_from_scenario(scenario)
+    calls = _tool_calls_from_requests(requests) or _tool_calls_from_scenario(scenario)
     workspace = root / "workspace"
     trace = {
         "schema_version": TRACE_SCHEMA_VERSION,
         "source_commit": SOURCE_COMMIT,
         "requests": requests,
         "tool_calls": calls,
-        "results": _results_from_scenario(scenario, workspace, calls),
+        "results": _results_from_requests(requests, calls) or _results_from_scenario(scenario, workspace, calls),
         "effects": _effects(workspace, scenario),
         "termination": _termination(scenario, len(requests)),
         "request_count": len(requests),

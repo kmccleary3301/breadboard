@@ -5,5 +5,12 @@
   "agent_exec": {"isolated": true, "auth_env_only": true, "temporary_state": true, "max_requests": 8, "episode_deadline_seconds": 120, "request_timeout_seconds": 45, "output_tokens": 2048, "tool_admissions": 32, "max_live_processes": 4, "model_fallbacks_override": [], "compaction": false, "retry": false},
   "tools": {"ordered": ["ls", "read", "edit", "write", "exec", "process"], "optional_title": true, "exec_yield_ms": 10000, "exec_timeout_seconds": 30, "process_poll_max_ms": 30000, "pending_ack_after_durable_append": true},
   "bootstrap": {"ordered": ["AGENTS.md", "SOUL.md", "IDENTITY.md", "USER.md", "BOOTSTRAP.md", "MEMORY.md"], "per_file_chars": 20000, "total_chars": 60000, "user_chars": 4000, "missing_markers": true},
-  "native_worker_invocation": {"node": "/opt/openclaw-runtime/bin/node", "argv": ["/opt/openclaw/dist/index.js", "agent", "--local", "--json", "--timeout", "45", "--isolated", "--auth-env-only"], "invoked_by": "oracle_capture_only", "breadboard_loop": true}
+  "native_worker": {
+    "protocol": "bb.openclaw.tool-worker.jsonl.v1",
+    "entrypoint": "python -m breadboard.rl.harness.openclaw_tool_worker",
+    "request": {"tool_call_id": "string", "name": "ls|read|edit|write|exec|process", "arguments": "object"},
+    "response": {"ok": "boolean", "tool_call_id": "string", "result": "object", "error": "string"},
+    "owns": ["tool preparation", "tool effects", "process scope", "pending acknowledgements"],
+    "does_not_own": ["model requests", "history", "retry", "fallback", "compaction", "terminal arbitration"]
+  }
 }
