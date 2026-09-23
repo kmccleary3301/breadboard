@@ -77,6 +77,14 @@
       "status": "passed"
     },
     {
+      "assertion_id": "abc_submit.scenario_sha256_equal",
+      "detail": "observed value equals expected value",
+      "expected": "sha256:f3666592d4200b83c53d6f9fd03ff4bfb1b309d6a4165dff8221168989ea2e65",
+      "name": "abc_submit.scenario_sha256_equal",
+      "observed": "sha256:f3666592d4200b83c53d6f9fd03ff4bfb1b309d6a4165dff8221168989ea2e65",
+      "status": "passed"
+    },
+    {
       "assertion_id": "abc_submit.requests_equal",
       "detail": "observed value equals expected value",
       "expected": [
@@ -488,6 +496,14 @@
       "observed": [
         "timestamp:<TIMESTAMP>"
       ],
+      "status": "passed"
+    },
+    {
+      "assertion_id": "cost_malformed.scenario_sha256_equal",
+      "detail": "observed value equals expected value",
+      "expected": "sha256:ca119fa165135fd6360535e971501717c35ad2f1dbf0ae128493deabe0d1589e",
+      "name": "cost_malformed.scenario_sha256_equal",
+      "observed": "sha256:ca119fa165135fd6360535e971501717c35ad2f1dbf0ae128493deabe0d1589e",
       "status": "passed"
     },
     {
@@ -1006,6 +1022,14 @@
       "observed": [
         "timestamp:<TIMESTAMP>"
       ],
+      "status": "passed"
+    },
+    {
+      "assertion_id": "eighth_call_guard.scenario_sha256_equal",
+      "detail": "observed value equals expected value",
+      "expected": "sha256:7317d40473718fe21b6c6abe256cb8aef98cbdb255f3ddfe2cdff35a00394555",
+      "name": "eighth_call_guard.scenario_sha256_equal",
+      "observed": "sha256:7317d40473718fe21b6c6abe256cb8aef98cbdb255f3ddfe2cdff35a00394555",
       "status": "passed"
     },
     {
@@ -4283,6 +4307,14 @@
       "status": "passed"
     },
     {
+      "assertion_id": "error_streak_reset.scenario_sha256_equal",
+      "detail": "observed value equals expected value",
+      "expected": "sha256:d683b9b4e4ee731e97977ecfd6fe67f5c4223d36d5700945c3756a9754299bc1",
+      "name": "error_streak_reset.scenario_sha256_equal",
+      "observed": "sha256:d683b9b4e4ee731e97977ecfd6fe67f5c4223d36d5700945c3756a9754299bc1",
+      "status": "passed"
+    },
+    {
       "assertion_id": "error_streak_reset.requests_equal",
       "detail": "observed value equals expected value",
       "expected": [
@@ -5529,6 +5561,14 @@
       "status": "passed"
     },
     {
+      "assertion_id": "malformed_second_call.scenario_sha256_equal",
+      "detail": "observed value equals expected value",
+      "expected": "sha256:6488752549fdd2fc921ea974a09e0054128998d2206d8c5508d043c63bfa62c2",
+      "name": "malformed_second_call.scenario_sha256_equal",
+      "observed": "sha256:6488752549fdd2fc921ea974a09e0054128998d2206d8c5508d043c63bfa62c2",
+      "status": "passed"
+    },
+    {
       "assertion_id": "malformed_second_call.requests_equal",
       "detail": "observed value equals expected value",
       "expected": [
@@ -6377,6 +6417,14 @@
       "status": "passed"
     },
     {
+      "assertion_id": "native_command_timeout.scenario_sha256_equal",
+      "detail": "observed value equals expected value",
+      "expected": "sha256:0443dc84416218b74a9fd863b952e67559a1a59efa41eae4d3fa7830f8880c08",
+      "name": "native_command_timeout.scenario_sha256_equal",
+      "observed": "sha256:0443dc84416218b74a9fd863b952e67559a1a59efa41eae4d3fa7830f8880c08",
+      "status": "passed"
+    },
+    {
       "assertion_id": "native_command_timeout.requests_equal",
       "detail": "observed value equals expected value",
       "expected": [
@@ -6994,6 +7042,14 @@
       "observed": [
         "timestamp:<TIMESTAMP>"
       ],
+      "status": "passed"
+    },
+    {
+      "assertion_id": "native_name_value.scenario_sha256_equal",
+      "detail": "observed value equals expected value",
+      "expected": "sha256:1f9d2731d6424c7941122b24949d7bb4228d56e2e517c0c9b73691a2df79184d",
+      "name": "native_name_value.scenario_sha256_equal",
+      "observed": "sha256:1f9d2731d6424c7941122b24949d7bb4228d56e2e517c0c9b73691a2df79184d",
       "status": "passed"
     },
     {
@@ -8541,6 +8597,14 @@
       "status": "passed"
     },
     {
+      "assertion_id": "normal_grouped_batch.scenario_sha256_equal",
+      "detail": "observed value equals expected value",
+      "expected": "sha256:2a62980904d7b61e5723703c15249ec8b53cf3a83d9791dcc49e6d00e501fc01",
+      "name": "normal_grouped_batch.scenario_sha256_equal",
+      "observed": "sha256:2a62980904d7b61e5723703c15249ec8b53cf3a83d9791dcc49e6d00e501fc01",
+      "status": "passed"
+    },
+    {
       "assertion_id": "normal_grouped_batch.requests_equal",
       "detail": "observed value equals expected value",
       "expected": [
@@ -9603,6 +9667,14 @@
       "status": "passed"
     },
     {
+      "assertion_id": "output_boundary.scenario_sha256_equal",
+      "detail": "observed value equals expected value",
+      "expected": "sha256:1fd56f570fd7aa85b7d043e8f12a01b14fccf16cf3eb75ed8634e0265030b4d7",
+      "name": "output_boundary.scenario_sha256_equal",
+      "observed": "sha256:1fd56f570fd7aa85b7d043e8f12a01b14fccf16cf3eb75ed8634e0265030b4d7",
+      "status": "passed"
+    },
+    {
       "assertion_id": "output_boundary.requests_equal",
       "detail": "observed value equals expected value",
       "expected": [
@@ -10269,6 +10341,14 @@
       "status": "passed"
     },
     {
+      "assertion_id": "provider_failures.scenario_sha256_equal",
+      "detail": "observed value equals expected value",
+      "expected": "sha256:39b151a3e552a1700d47722b07e87fea86e4b795016837eef2363de74726d1a7",
+      "name": "provider_failures.scenario_sha256_equal",
+      "observed": "sha256:39b151a3e552a1700d47722b07e87fea86e4b795016837eef2363de74726d1a7",
+      "status": "passed"
+    },
+    {
       "assertion_id": "provider_failures.requests_equal",
       "detail": "observed value equals expected value",
       "expected": [
@@ -10461,6 +10541,14 @@
       "status": "passed"
     },
     {
+      "assertion_id": "provider_timeout.scenario_sha256_equal",
+      "detail": "observed value equals expected value",
+      "expected": "sha256:92304b1f6cbaa45115f7b1b6cd1d60aa25818a0c0f30434cf51134884b914f0e",
+      "name": "provider_timeout.scenario_sha256_equal",
+      "observed": "sha256:92304b1f6cbaa45115f7b1b6cd1d60aa25818a0c0f30434cf51134884b914f0e",
+      "status": "passed"
+    },
+    {
       "assertion_id": "provider_timeout.requests_equal",
       "detail": "observed value equals expected value",
       "expected": [
@@ -10650,6 +10738,14 @@
       "observed": [
         "traceback:<TRACEBACK>"
       ],
+      "status": "passed"
+    },
+    {
+      "assertion_id": "raw_cap_at_limit.scenario_sha256_equal",
+      "detail": "observed value equals expected value",
+      "expected": "sha256:d5272d8ad4b5dba4c2975ede0648f5a8a466a52f3d1eaa7df29413204abc947d",
+      "name": "raw_cap_at_limit.scenario_sha256_equal",
+      "observed": "sha256:d5272d8ad4b5dba4c2975ede0648f5a8a466a52f3d1eaa7df29413204abc947d",
       "status": "passed"
     },
     {
@@ -11262,6 +11358,14 @@
       "observed": [
         "timestamp:<TIMESTAMP>"
       ],
+      "status": "passed"
+    },
+    {
+      "assertion_id": "submission_guard_empty_payload.scenario_sha256_equal",
+      "detail": "observed value equals expected value",
+      "expected": "sha256:c56b15adb084074ae1a46fd87283897242494bd7b70673b5d9fc6134ba2b2363",
+      "name": "submission_guard_empty_payload.scenario_sha256_equal",
+      "observed": "sha256:c56b15adb084074ae1a46fd87283897242494bd7b70673b5d9fc6134ba2b2363",
       "status": "passed"
     },
     {
@@ -12211,6 +12315,14 @@
       "status": "passed"
     },
     {
+      "assertion_id": "three_errors_feedback.scenario_sha256_equal",
+      "detail": "observed value equals expected value",
+      "expected": "sha256:498c888da5346894e20ae5e1ccd2e633dff7632b25beec68429ba60e30226060",
+      "name": "three_errors_feedback.scenario_sha256_equal",
+      "observed": "sha256:498c888da5346894e20ae5e1ccd2e633dff7632b25beec68429ba60e30226060",
+      "status": "passed"
+    },
+    {
       "assertion_id": "three_errors_feedback.requests_equal",
       "detail": "observed value equals expected value",
       "expected": [
@@ -12895,10 +13007,10 @@
       "status": "passed"
     },
     {
-      "assertion_id": "raw_cap_over_limit.oracle.counters.http_attempts",
+      "assertion_id": "raw_cap_over_limit.oracle.controls.http_attempts",
       "detail": "observed value equals expected value",
       "expected": 1,
-      "name": "raw_cap_over_limit.oracle.counters.http_attempts",
+      "name": "raw_cap_over_limit.oracle.controls.http_attempts",
       "observed": 1,
       "status": "passed"
     },
@@ -12995,10 +13107,10 @@
       "status": "passed"
     },
     {
-      "assertion_id": "shared_control_fault.oracle.counters.http_attempts",
+      "assertion_id": "shared_control_fault.oracle.controls.http_attempts",
       "detail": "observed value equals expected value",
       "expected": 1,
-      "name": "shared_control_fault.oracle.counters.http_attempts",
+      "name": "shared_control_fault.oracle.controls.http_attempts",
       "observed": 1,
       "status": "passed"
     },
@@ -13047,25 +13159,11 @@
       "status": "passed"
     },
     {
-      "assertion_id": "workspace_effect_sealed.oracle.effects.files.workspace_probe.txt",
+      "assertion_id": "workspace_effect_sealed.oracle.controls.sealed_effects.files.workspace_probe.txt",
       "detail": "observed value equals expected value",
       "expected": "sha256:4b68ab3847feda7d6c62c1fbcbeebfa35eab7351ed5e78f4ddadea5df64b8015",
-      "name": "workspace_effect_sealed.oracle.effects.files.workspace_probe.txt",
+      "name": "workspace_effect_sealed.oracle.controls.sealed_effects.files.workspace_probe.txt",
       "observed": "sha256:4b68ab3847feda7d6c62c1fbcbeebfa35eab7351ed5e78f4ddadea5df64b8015",
-      "status": "passed"
-    },
-    {
-      "assertion_id": "workspace_effect_sealed.oracle.exit",
-      "detail": "observed value equals expected value",
-      "expected": {
-        "status": "Submitted",
-        "submission": "workspace probe sealed\n"
-      },
-      "name": "workspace_effect_sealed.oracle.exit",
-      "observed": {
-        "status": "Submitted",
-        "submission": "workspace probe sealed\n"
-      },
       "status": "passed"
     },
     {
@@ -13114,6 +13212,11 @@
       "status": "passed"
     },
     {
+      "assertion_id": "abc_submit.scenario_sha256_equal",
+      "detail": "observed value equals expected value",
+      "status": "passed"
+    },
+    {
       "assertion_id": "abc_submit.requests_equal",
       "detail": "observed value equals expected value",
       "status": "passed"
@@ -13140,6 +13243,11 @@
     },
     {
       "assertion_id": "abc_submit.normalizations_equal",
+      "detail": "observed value equals expected value",
+      "status": "passed"
+    },
+    {
+      "assertion_id": "cost_malformed.scenario_sha256_equal",
       "detail": "observed value equals expected value",
       "status": "passed"
     },
@@ -13174,6 +13282,11 @@
       "status": "passed"
     },
     {
+      "assertion_id": "eighth_call_guard.scenario_sha256_equal",
+      "detail": "observed value equals expected value",
+      "status": "passed"
+    },
+    {
       "assertion_id": "eighth_call_guard.requests_equal",
       "detail": "observed value equals expected value",
       "status": "passed"
@@ -13200,6 +13313,11 @@
     },
     {
       "assertion_id": "eighth_call_guard.normalizations_equal",
+      "detail": "observed value equals expected value",
+      "status": "passed"
+    },
+    {
+      "assertion_id": "error_streak_reset.scenario_sha256_equal",
       "detail": "observed value equals expected value",
       "status": "passed"
     },
@@ -13234,6 +13352,11 @@
       "status": "passed"
     },
     {
+      "assertion_id": "malformed_second_call.scenario_sha256_equal",
+      "detail": "observed value equals expected value",
+      "status": "passed"
+    },
+    {
       "assertion_id": "malformed_second_call.requests_equal",
       "detail": "observed value equals expected value",
       "status": "passed"
@@ -13260,6 +13383,11 @@
     },
     {
       "assertion_id": "malformed_second_call.normalizations_equal",
+      "detail": "observed value equals expected value",
+      "status": "passed"
+    },
+    {
+      "assertion_id": "native_command_timeout.scenario_sha256_equal",
       "detail": "observed value equals expected value",
       "status": "passed"
     },
@@ -13294,6 +13422,11 @@
       "status": "passed"
     },
     {
+      "assertion_id": "native_name_value.scenario_sha256_equal",
+      "detail": "observed value equals expected value",
+      "status": "passed"
+    },
+    {
       "assertion_id": "native_name_value.requests_equal",
       "detail": "observed value equals expected value",
       "status": "passed"
@@ -13320,6 +13453,11 @@
     },
     {
       "assertion_id": "native_name_value.normalizations_equal",
+      "detail": "observed value equals expected value",
+      "status": "passed"
+    },
+    {
+      "assertion_id": "normal_grouped_batch.scenario_sha256_equal",
       "detail": "observed value equals expected value",
       "status": "passed"
     },
@@ -13354,6 +13492,11 @@
       "status": "passed"
     },
     {
+      "assertion_id": "output_boundary.scenario_sha256_equal",
+      "detail": "observed value equals expected value",
+      "status": "passed"
+    },
+    {
       "assertion_id": "output_boundary.requests_equal",
       "detail": "observed value equals expected value",
       "status": "passed"
@@ -13380,6 +13523,11 @@
     },
     {
       "assertion_id": "output_boundary.normalizations_equal",
+      "detail": "observed value equals expected value",
+      "status": "passed"
+    },
+    {
+      "assertion_id": "provider_failures.scenario_sha256_equal",
       "detail": "observed value equals expected value",
       "status": "passed"
     },
@@ -13414,6 +13562,11 @@
       "status": "passed"
     },
     {
+      "assertion_id": "provider_timeout.scenario_sha256_equal",
+      "detail": "observed value equals expected value",
+      "status": "passed"
+    },
+    {
       "assertion_id": "provider_timeout.requests_equal",
       "detail": "observed value equals expected value",
       "status": "passed"
@@ -13440,6 +13593,11 @@
     },
     {
       "assertion_id": "provider_timeout.normalizations_equal",
+      "detail": "observed value equals expected value",
+      "status": "passed"
+    },
+    {
+      "assertion_id": "raw_cap_at_limit.scenario_sha256_equal",
       "detail": "observed value equals expected value",
       "status": "passed"
     },
@@ -13474,6 +13632,11 @@
       "status": "passed"
     },
     {
+      "assertion_id": "submission_guard_empty_payload.scenario_sha256_equal",
+      "detail": "observed value equals expected value",
+      "status": "passed"
+    },
+    {
       "assertion_id": "submission_guard_empty_payload.requests_equal",
       "detail": "observed value equals expected value",
       "status": "passed"
@@ -13500,6 +13663,11 @@
     },
     {
       "assertion_id": "submission_guard_empty_payload.normalizations_equal",
+      "detail": "observed value equals expected value",
+      "status": "passed"
+    },
+    {
+      "assertion_id": "three_errors_feedback.scenario_sha256_equal",
       "detail": "observed value equals expected value",
       "status": "passed"
     },
@@ -13559,7 +13727,7 @@
       "status": "passed"
     },
     {
-      "assertion_id": "raw_cap_over_limit.oracle.counters.http_attempts",
+      "assertion_id": "raw_cap_over_limit.oracle.controls.http_attempts",
       "detail": "observed value equals expected value",
       "status": "passed"
     },
@@ -13609,7 +13777,7 @@
       "status": "passed"
     },
     {
-      "assertion_id": "shared_control_fault.oracle.counters.http_attempts",
+      "assertion_id": "shared_control_fault.oracle.controls.http_attempts",
       "detail": "observed value equals expected value",
       "status": "passed"
     },
@@ -13634,12 +13802,7 @@
       "status": "passed"
     },
     {
-      "assertion_id": "workspace_effect_sealed.oracle.effects.files.workspace_probe.txt",
-      "detail": "observed value equals expected value",
-      "status": "passed"
-    },
-    {
-      "assertion_id": "workspace_effect_sealed.oracle.exit",
+      "assertion_id": "workspace_effect_sealed.oracle.controls.sealed_effects.files.workspace_probe.txt",
       "detail": "observed value equals expected value",
       "status": "passed"
     },
@@ -13656,10 +13819,10 @@
   ],
   "errors": [],
   "failed": 0,
-  "generated_at_utc": "2026-09-23T03:42:55Z",
+  "generated_at_utc": "2026-09-23T04:14:03Z",
   "lane_id": "mini_swe_agent_2_4_6_replay",
   "ok": true,
-  "passed": 113,
+  "passed": 126,
   "schema_version": "bb.e4.comparator_report.v1",
   "scope": {
     "behaviors": [

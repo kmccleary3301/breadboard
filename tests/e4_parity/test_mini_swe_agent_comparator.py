@@ -30,13 +30,13 @@ def _trace(role: str, case_id: str) -> dict[str, Any]:
         ],
         "history": [
             {"role": "assistant", "content": "working", "tool_calls": [{"id": "call-1", "name": "bash"}]},
-            {"role": "tool", "tool_call_id": "call-1", "content": "<WORKSPACE>/first", "extra": {"timestamp": "<TIMESTAMP>"}},
+            {"role": "tool", "tool_call_id": "call-1", "content": "first", "extra": {"timestamp": "<TIMESTAMP>"}},
             {"role": "tool", "tool_call_id": "call-2", "content": "second"},
         ],
         "exit": {"status": "submitted", "submission": "done"},
         "effects": {"files": {"result.txt": "sha256:" + "b" * 64}},
         "counters": {"model_calls": 1, "http_attempts": 1, "model_cost": 0.1},
-        "normalizations": ["workspace_root:<WORKSPACE>", "timestamp:<TIMESTAMP>"],
+        "normalizations": ["timestamp:<TIMESTAMP>"],
     }
 
 
@@ -172,6 +172,10 @@ def _mutate_bool_for_number(trace: dict[str, Any]) -> None:
     trace["counters"]["http_attempts"] = True
 
 
+def _mutate_scenario(trace: dict[str, Any]) -> None:
+    trace["scenario_sha256"] = "sha256:" + "d" * 64
+
+
 @pytest.mark.parametrize(
     ("mutation", "assertion_id"),
     [
@@ -181,8 +185,9 @@ def _mutate_bool_for_number(trace: dict[str, Any]) -> None:
         (_mutate_retry_count, "normal_grouped_batch.counters_equal"),
         (_mutate_final_history, "normal_grouped_batch.exit_equal"),
         (_mutate_bool_for_number, "normal_grouped_batch.counters_equal"),
+        (_mutate_scenario, "normal_grouped_batch.scenario_sha256_equal"),
     ],
-    ids=["batch_atomicity", "effect_commit_separation", "shell_order", "retry_count", "final_history", "bool_is_not_number"],
+    ids=["batch_atomicity", "effect_commit_separation", "shell_order", "retry_count", "final_history", "bool_is_not_number", "different_scenario"],
 )
 def test_negative_mutations_fail_semantic_predicate_and_preserve_report(
     tmp_path: Path,
@@ -239,10 +244,15 @@ def _declared_not_applied(trace: dict[str, Any]) -> None:
     trace["normalizations"].append("traceback:<TRACEBACK>")
 
 
+def _workspace_rule(trace: dict[str, Any]) -> None:
+    trace["history"][1]["content"] = "<WORKSPACE>/first"
+    trace["normalizations"].append("workspace_root:<WORKSPACE>")
+
+
 @pytest.mark.parametrize(
     "mutation",
-    [_mask_protocol_field, _unadmitted_rule, _declared_not_applied],
-    ids=["placeholder_outside_field", "unadmitted_rule", "declared_not_applied"],
+    [_mask_protocol_field, _unadmitted_rule, _declared_not_applied, _workspace_rule],
+    ids=["placeholder_outside_field", "unadmitted_rule", "declared_not_applied", "workspace_rule"],
 )
 def test_symmetric_normalization_abuse_invalidates_both_manifests(
     tmp_path: Path, mutation: Callable[[dict[str, Any]], None]
@@ -270,8 +280,9 @@ def test_symmetric_normalization_abuse_invalidates_both_manifests(
         ([{"path": ["controls", "cleanup", "disposition"], "equals": "released"}], {}, "shared_control_fault.oracle.controls.cleanup.disposition"),
         ([], {"cleanup": {"disposition": "released"}}, "shared_control_fault.oracle_valid"),
         ({"authenticated_cleanup": True}, {"cleanup": {"disposition": "released"}}, "shared_control_fault.oracle_valid"),
+        ([{"path": ["counters", "http_attempts"], "equals": 1}], {}, "shared_control_fault.oracle_valid"),
     ],
-    ids=["observed_value_matches", "observed_value_differs", "observed_value_missing", "empty_oracle", "self_attested_oracle"],
+    ids=["observed_value_matches", "observed_value_differs", "observed_value_missing", "empty_oracle", "self_attested_oracle", "trace_rooted_oracle"],
 )
 def test_breadboard_only_case_is_judged_by_concrete_path_expectations(
     tmp_path: Path, oracle: Any, controls: dict[str, Any], failed_assertion: str | None

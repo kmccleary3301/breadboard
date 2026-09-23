@@ -27,15 +27,15 @@ TRACE_REQUIRED_FIELDS = (
     "counters",
     "normalizations",
 )
-ORACLE_ROOTS = (*TRACE_FIELDS, "controls")
-WORKSPACE_NORMALIZATION = "workspace_root:<WORKSPACE>"
-WORKSPACE_PLACEHOLDER = "<WORKSPACE>"
+# BreadBoard-only oracles read only the operator-recorded controls, never a
+# supplier-comparable trace field.
+ORACLE_ROOT = "controls"
 # Volatile source values: a placeholder may replace only the named history extra field.
 FIELD_NORMALIZATIONS = {
     "timestamp:<TIMESTAMP>": ("<TIMESTAMP>", "timestamp"),
     "traceback:<TRACEBACK>": ("<TRACEBACK>", "traceback"),
 }
-ALLOWED_NORMALIZATIONS = frozenset({WORKSPACE_NORMALIZATION, *FIELD_NORMALIZATIONS})
+ALLOWED_NORMALIZATIONS = frozenset(FIELD_NORMALIZATIONS)
 
 
 def _repo_root() -> Path:
@@ -260,8 +260,6 @@ def _normalization_problems(trace: Mapping[str, Any]) -> list[str]:
             if not allowed:
                 problems.append(f"placeholder {placeholder} is not admitted at {site!r}")
             applied.add(normalization)
-    if any(WORKSPACE_PLACEHOLDER in text for _, text in sites):
-        applied.add(WORKSPACE_NORMALIZATION)
     for normalization in sorted(applied - set(declared)):
         problems.append(f"normalization {normalization} is applied but undeclared")
     for normalization in sorted((set(declared) & ALLOWED_NORMALIZATIONS) - applied):
@@ -279,10 +277,10 @@ def _oracle_problem(oracle: Any) -> str | None:
         if (
             not isinstance(path, list)
             or not path
-            or path[0] not in ORACLE_ROOTS
+            or path[0] != ORACLE_ROOT
             or any(type(part) not in (str, int) for part in path)
         ):
-            return f"oracle path {path!r} must be a list rooted at one of {', '.join(ORACLE_ROOTS)}"
+            return f"oracle path {path!r} must be a list rooted at {ORACLE_ROOT}"
     return None
 
 
@@ -353,7 +351,8 @@ def _compare_case(
     observed: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
     assertions: list[dict[str, Any]] = []
-    for field in (*TRACE_FIELDS, "normalizations"):
+    # The shared scenario hash binds both roles to the same scripted case.
+    for field in ("scenario_sha256", *TRACE_FIELDS, "normalizations"):
         expected_value = expected.get(field)
         observed_value = observed.get(field)
         difference = _first_difference(expected_value, observed_value, f"$.{field}")
