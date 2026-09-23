@@ -155,7 +155,8 @@ async def test_initialize_accepts_non_repository_writable_policy_workspace(
         tool_ids=("bash", "edit", "read", "write"),
         runtime_root_path="/sealed/pi",
     )
-    workspace_root = tmp_path
+    workspace_root = tmp_path / "seed"
+    workspace_root.mkdir()
     lease_root = tmp_path / "leases"
     lease_root.mkdir()
     lease_root_fd = os.open(lease_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -195,11 +196,11 @@ async def test_initialize_accepts_non_repository_writable_policy_workspace(
         lease_id="lease",
         plan=plan,
         _manager=manager,
-        _materialized=SimpleNamespace(workspace_path=tmp_path),
+        _materialized=SimpleNamespace(workspace_path=workspace_root),
         _runtime=SimpleNamespace(invoke_native_phase=invoke),
         _begin_operation=begin,
         _end_operation=end,
-        _resolve=lambda logical_path, writable=False: tmp_path / logical_path,
+        _resolve=lambda logical_path, writable=False: workspace_root / logical_path,
     )
     monkeypatch.setattr(
         sandbox_module.TrustedProcessHandle,
@@ -208,19 +209,24 @@ async def test_initialize_accepts_non_repository_writable_policy_workspace(
     )
     workspace = sandbox_module.LeaseBackedRunnerWorkspace(lease, "plan", (binding,))
 
-    result = await workspace.invoke_native_phase(
-        "initialize",
-        {"task": "owned"},
-        timeout_ms=1_000,
-        package_subpath="node_modules/@mariozechner/pi-coding-agent",
-    )
+    try:
+        result = await workspace.invoke_native_phase(
+            "initialize",
+            {"task": "owned"},
+            timeout_ms=1_000,
+            package_subpath="node_modules/@mariozechner/pi-coding-agent",
+        )
+    finally:
+        os.close(lease_root_fd)
     assert result["kind"] == "initialized"
     assert captured[0]["workspace"] == str(workspace_root)
-    assert captured[0]["scratch"] == str(lease_root / "lease.native-scratch")
-    assert Path(captured[0]["scratch"]).parent == lease_root
-    assert Path(captured[0]["scratch"]).stat().st_mode & 0o777 == 0o700
+    scratch = Path(str(captured[0]["scratch"]))
+    assert scratch == lease_root / "lease.native-scratch"
+    assert not scratch.is_relative_to(workspace_root)
+    assert scratch.stat().st_mode & 0o777 == 0o700
+    # With the policy mount at ".", nothing runner-private lands in the measured tree.
+    assert list(workspace_root.iterdir()) == []
     assert captured[0]["package_dir"] == "/sealed/pi/node_modules/@mariozechner/pi-coding-agent"
-    os.close(lease_root_fd)
 
 
 @pytest.mark.asyncio
