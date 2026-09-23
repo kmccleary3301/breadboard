@@ -13,15 +13,18 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 import inspect
 import re
+import json
 from difflib import SequenceMatcher
 from typing import Any, TypeVar
 
+from breadboard_engine.provider.native_response import NativeProviderResponse, NativeToolCall
 # xxHash32 constants from xxhash_rust::xxh32::xxh32 (seed 0 in the supplier).
 _P1 = 0x9E3779B1
 _P2 = 0x85EBCA77
 _P3 = 0xC2B2AE3D
 _P4 = 0x27D4EB2F
 _P5 = 0x165667B1
+ALLOWED_TOOLS = ("read", "bash", "edit", "write")
 _MASK = 0xFFFFFFFF
 
 EMPTY_STOP_REMINDER_TEMPLATE = (
@@ -244,14 +247,14 @@ def seen_anchor_lines(body: str) -> list[int]:
 def enforce_seen_lines(
     store: EditStore,
     path: str,
-    expected_tag: str,
+    expected_content: str,
     anchors: Iterable[int],
     *,
     reveal_cap: int = 40,
     reveal_columns: int = 512,
 ) -> None:
-    """Apply native seen-line behavior; absent/empty provenance is a bypass."""
-    snapshot = store.by_content(path, expected_tag) or store.by_hash(path, expected_tag)
+    """Apply native seen-line provenance by retained content, never by tag."""
+    snapshot = store.by_content(path, expected_content)
     if snapshot is None or snapshot.seen_lines is None or not snapshot.seen_lines:
         return
     requested = list(dict.fromkeys(int(line) for line in anchors))
@@ -266,7 +269,7 @@ def enforce_seen_lines(
             revealed[line] = value[:reveal_columns] + ("…" if len(value) > reveal_columns else "")
     truncated = len(unseen) > len(revealed) or any(len(snapshot.text.split("\n")[line - 1]) > reveal_columns for line in unseen[: len(revealed)] if 1 <= line <= len(snapshot.text.split("\n")))
     if not truncated:
-        store.record_seen_lines(path, expected_tag, revealed)
+        snapshot.seen_lines = set(snapshot.seen_lines or ()) | set(revealed)
     raise SeenAnchorError(path, unseen, revealed, truncated)
 
 
@@ -505,23 +508,179 @@ def append_wall_time_notice(output: str, wall_time_ms: float) -> str:
     return f"{output or '(no output)'}\n\n{notice}"
 
 
-@dataclass(frozen=True)
-class NativeProviderResponse:
-    """Shared provider seam with PiComplete; transport stays outside runners."""
 
-    binding_digest: str
-    request_digest: str
-    response_id: str | None
-    content: str
-    finish_reason: str
-    stream_fragments: tuple[Mapping[str, Any], ...] = ()
+PHASE_SCHEMA_VERSION = "bb.omp-native.v1"
+CONSUMER_ID = "breadboard.oh-my-pi.v18.1.17"
+OMP_REQUEST_CAP = 8
 
+
+class OMPPhaseError(RuntimeError):
+    """A profile phase was requested out of order or with invalid state."""
+
+
+@dataclass(frozen=True, slots=True)
+class OMPPreparedCall:
+    id: str
+    name: str
+    arguments: Any
+    error: str | None = None
+
+
+class OMPSemanticsState:
+    """State protocol consumed by the shared native-stream Conductor loop."""
+
+    def __init__(
+        self,
+        *,
+        task: str = "",
+        system_prompt: str = "",
+        tool_schemas: Sequence[Mapping[str, Any]] = (),
+        request_cap: int = OMP_REQUEST_CAP,
+        worker: Any = None,
+        case_id: str | None = None,
+    ) -> None:
+        if request_cap <= 0:
+            raise ValueError("request_cap must be positive")
+        self.task = task
+        self.system_prompt = system_prompt
+        self.tool_schemas = tuple(dict(schema) for schema in tool_schemas)
+        self.request_cap = request_cap
+        self.worker = worker
+        self.case_id = case_id
+        self.messages: list[dict[str, Any]] = [{"role": "user", "content": task}]
+        self.request_count = 0
+        self.stream_fn_issued = 0
+        self.exit_status: str | None = None
+        self.native_stop_reason: str | None = None
+        self._pending_calls: tuple[OMPPreparedCall, ...] = ()
+        self._pending_finish_reason: str | None = None
+        self._closed = False
+        self.effects: dict[str, Any] = {}
+
+    @property
+    def is_exited(self) -> bool:
+        return self.exit_status is not None
+
+    def begin_query(self) -> dict[str, Any] | None:
+        if self._closed:
+            raise OMPPhaseError("query after close")
+        if self.stream_fn_issued > self.request_count:
+            raise OMPPhaseError("provider query is already pending")
+        self.stream_fn_issued += 1
+        if self.request_count >= self.request_cap:
+            self.exit_status = "RequestLimitExceeded"
+            self.native_stop_reason = "error"
+            refusal = {"role": "assistant", "content": "", "stopReason": "error", "isError": True}
+            self.messages.append(refusal)
+            return refusal
+        return None
+
+    def project_request(self) -> dict[str, Any]:
+        return {"kind": "request", "messages": [dict(message) for message in self.messages], "tools": [dict(schema) for schema in self.tool_schemas]}
+
+    def prepare_response(self, response: NativeProviderResponse) -> tuple[dict[str, Any], tuple[ToolCall, ...]]:
+        if not isinstance(response, NativeProviderResponse):
+            raise TypeError("response must be NativeProviderResponse")
+        if self.stream_fn_issued <= self.request_count:
+            raise OMPPhaseError("response has no admitted provider query")
+        self.request_count += 1
+        finish_reason = response.finish_reason
+        self.native_stop_reason = finish_reason
+        calls: tuple[ToolCall, ...] = ()
+        if finish_reason not in {"error", "aborted"}:
+            calls = tuple(ToolCall(call.id, call.name, call.arguments, index) for index, call in enumerate(response.tool_calls))
+        content = response.content or ""
+        assistant: dict[str, Any] = {"role": "assistant", "content": content, "stopReason": finish_reason}
+        if calls:
+            assistant["tool_calls"] = [{"id": call.id, "name": call.name, "arguments": call.arguments} for call in calls]
+        self.messages.append(assistant)
+        self._pending_finish_reason = finish_reason
+        if not calls:
+            self.exit_status = "Submitted" if finish_reason == "stop" else finish_reason
+        return assistant, calls
+
+    def prepare_tools(self, calls: Sequence[ToolCall]) -> dict[str, Any]:
+        prepared: list[OMPPreparedCall] = []
+        for call in calls:
+            arguments = call.arguments
+            error: str | None = None
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except (TypeError, ValueError):
+                    error = "Invalid tool arguments: expected a JSON object"
+            if not isinstance(arguments, Mapping):
+                error = error or "Invalid tool arguments: expected a JSON object"
+                arguments = {}
+            if call.name not in ALLOWED_TOOLS:
+                error = f"OMP tool is not admitted: {call.name}"
+            prepared.append(OMPPreparedCall(call.id, call.name, dict(arguments), error))
+        self._pending_calls = tuple(prepared)
+        return {
+            "kind": "prepared",
+            "calls": [{"id": item.id, "name": item.name, "arguments": item.arguments, **({"error": item.error} if item.error else {})} for item in prepared],
+            "history_calls": [{"id": item.id, "name": item.name} for item in prepared],
+        }
+
+    def execute_batch(self) -> dict[str, Any]:
+        if self._pending_finish_reason == "length":
+            results: list[Any] = [ToolResult.skipped_result(ToolCall(item.id, item.name, item.arguments)) for item in self._pending_calls]
+        else:
+            valid = [item for item in self._pending_calls if item.error is None]
+            if self.worker is None:
+                raw_results = [ToolResult(item.id, item.name, error="native worker unavailable") for item in valid]
+            else:
+                raw_results = self.worker.execute_batch([{"id": item.id, "name": item.name, "arguments": item.arguments} for item in valid])
+            by_id = {item.id: item for item in raw_results}
+            results = [ToolResult(item.id, item.name, error=item.error, details={"phase": "prepare"}) if item.error else by_id.get(item.id, ToolResult(item.id, item.name, error="native result missing")) for item in self._pending_calls]
+        projected = []
+        for index, result in enumerate(results):
+            if isinstance(result, ToolResult):
+                projected.append({"id": result.id, "completion_index": index, "content": result.output, "details": dict(result.details), "isError": result.error is not None, "terminate": False})
+            else:
+                projected.append({"id": result.get("id", ""), "completion_index": index, **dict(result)})
+        return {"kind": "tool_results", "results": projected}
+
+    def commit_tool_results(self, calls: Sequence[ToolCall], results: Sequence[Mapping[str, Any] | ToolResult]) -> None:
+        if len(calls) != len(results):
+            raise OMPPhaseError("tool result count does not match call count")
+        for result in results:
+            if isinstance(result, ToolResult):
+                self.messages.append({"role": "toolResult", "toolCallId": result.id, "toolName": result.name, "content": result.output, "isError": result.error is not None})
+            else:
+                self.messages.append({"role": "toolResult", **dict(result)})
+        self._pending_calls = ()
+        self._pending_finish_reason = None
+
+    def close(self) -> dict[str, Any]:
+        self._closed = True
+        if self.worker is not None:
+            self.worker.stop()
+        return {"kind": "closed", "cleanup": {"processes": [], "all_dead": True}}
+
+    def to_trace(self) -> dict[str, Any]:
+        return {
+            "schema_version": "bb.e4.omp-replay-trace.v1",
+            "profile": "omp",
+            "consumer_id": CONSUMER_ID,
+            "case_id": self.case_id,
+            "request_count": self.request_count,
+            "stream_fn_issued": self.stream_fn_issued,
+            "messages": self.messages,
+            "effects": self.effects,
+            "termination": {"kind": self.exit_status or "running", "native_stop_reason": self.native_stop_reason},
+        }
 __all__ = [
+    "ALLOWED_TOOLS",
+    "CONSUMER_ID",
     "EMPTY_STOP_REMINDER_TEMPLATE",
+    "OMPSemanticsState",
+    "OMPPhaseError",
+    "OMPPreparedCall",
+    "PHASE_SCHEMA_VERSION",
     "EditStore",
     "NativeProviderResponse",
     "NoRetryPolicy",
-    "RetryDecision",
     "SeenAnchorError",
     "Snapshot",
     "ToolCall",

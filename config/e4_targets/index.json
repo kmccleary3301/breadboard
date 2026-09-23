@@ -20,6 +20,10 @@
     "pi@0.73.1": {
       "descriptor": "pi/0.73.1/target.json",
       "sha256": "2834e64d081edede815bd1fa81d8ad423b5d0bd1c2e6466ca3ba5060c12a5003"
+    },
+    "oh-my-pi@18.1.17": {
+      "descriptor": "oh_my_pi/18.1.17/target.json",
+      "sha256": "2ac4f8c51d1acf9186c58fed606fa410633d628f2f322f470761900163f4f8ea"
     }
   }
 }

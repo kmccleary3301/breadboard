@@ -1,0 +1,17 @@
+{
+  "consumer_id": "breadboard.oh-my-pi.v18.1.17",
+  "phase_schema": "bb.omp-native.v1",
+  "worker_protocol": "bb.native-worker.rpc.v1",
+  "worker": "breadboard.rl.harness.omp_native_tools:NativeToolWorker",
+  "tool_worker_entrypoint": "breadboard/rl/harness/runners/omp_native_tool_worker.ts",
+  "tool_names": ["read", "bash", "edit", "write"],
+  "source_commit": "3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec",
+  "source_root": "/opt/omp/source/oh-my-pi-3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec",
+  "bun": "/opt/omp/runtime/bun-linux-x64-baseline/bun",
+  "request_cap": 8,
+  "model_max_tokens": 2048,
+  "provider_attempts": 1,
+  "result_commit_order": "completion",
+  "ack_policy": "none",
+  "native_descriptions_artifact_sha256": "cd548ef0285e5fc3987d79a1a47c1bc64fe93e1e68c71c0dc6a8ee3b30de244b"
+}

@@ -27,14 +27,14 @@ def test_hashline_tag_is_xxh32_low16_and_trailing_display_space_insensitive() ->
 
 def test_seen_gate_checks_only_collected_anchors_and_empty_set_bypasses() -> None:
     store = EditStore()
-    tag = store.record("f.txt", "one\ntwo\nthree\n", seen_lines=[1])
+    store.record("f.txt", "one\ntwo\nthree\n", seen_lines=[1])
     with pytest.raises(SeenAnchorError) as raised:
-        enforce_seen_lines(store, "f.txt", tag, [1, 2])
+        enforce_seen_lines(store, "f.txt", "one\ntwo\nthree\n", [1, 2])
     assert raised.value.unseen == (2,)
 
     empty = EditStore()
-    empty_tag = empty.record("f.txt", "one\ntwo\n", seen_lines=[])
-    enforce_seen_lines(empty, "f.txt", empty_tag, [99])
+    empty.record("f.txt", "one\ntwo\n", seen_lines=[])
+    enforce_seen_lines(empty, "f.txt", "one\ntwo\n", [99])
 
 
 def test_length_cutoff_synthetic_results_never_invoke_executor() -> None:

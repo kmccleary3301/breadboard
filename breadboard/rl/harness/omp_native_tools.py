@@ -5,12 +5,13 @@ A production controller must launch the pinned Bun workspace and load its real
 Rust/NAPI leaves. Offline tests can validate the command, settings, admission,
 and request/result projection without executing native code.
 """
-from __future__ import annotations
-
 from dataclasses import dataclass
+import importlib.resources
+import json
 from pathlib import Path
+import struct
+import subprocess
 from typing import Any, Mapping
-
 OMP_COMMIT = "3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec"
 OMP_SOURCE_ROOT = f"oh-my-pi-{OMP_COMMIT}"
 OMP_CLI_RELATIVE = "packages/coding-agent/src/cli.ts"

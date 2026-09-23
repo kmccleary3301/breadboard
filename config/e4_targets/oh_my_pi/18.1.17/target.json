@@ -1,34 +1,32 @@
 {
-  "schema_version": "bb.e4.target.v1",
-  "target_id": "oh-my-pi@18.1.17",
-  "family": "oh_my_pi",
-  "version": "18.1.17",
+  "assets": [
+    {"bytes": 4489, "path": "harness.yaml", "sha256": "sha256:c6349f648038810f7dbb54e90dc6cd923aeca602afddedd9fa16317f5c607d1d"},
+    {"bytes": 4110, "path": "prompts/system-prompt.md", "sha256": "sha256:54c6e1ceccf67708d9211ee6e943b23c75ec94ff0791894febe897e6a7543c20"},
+    {"bytes": 798, "path": "native-config.json", "sha256": "sha256:00c6183ec06106b5b592740dfcff38b0d68e377aba3d579014f41d269e93e2d9"},
+    {"bytes": 14966, "path": "tool-surface.json", "sha256": "sha256:d11431c17c1e200247526b8cd3fedc7fdc05605f71e44b7b6015a876c126c37b"},
+    {"bytes": 1144, "path": "LICENSE.txt", "sha256": "sha256:16c45f9d667442781f03fa198914cc39abcaa48ec5ed8f644643e554ca2fbf63"},
+    {"bytes": 602, "path": "source.json", "sha256": "sha256:a1948e5e223e806025bf5d302dfda8abed98268c66e6a90cdacb7e32479df036"}
+  ],
   "execution": {
     "config_asset": "harness.yaml",
     "system_prompt_asset": "prompts/system-prompt.md",
-    "tool_surface_asset": "tool-surface.json",
-    "input_declarations_asset": "input-declarations.json",
-    "native_worker_asset": "native-worker.json",
-    "semantic_policy_asset": "semantic-policy.json"
+    "tool_surface_asset": "tool-surface.json"
   },
-  "upstream": {
-    "repository": "https://github.com/can1357/oh-my-pi.git",
-    "source": {
-      "commit": "3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec",
-      "directory": "packages/coding-agent",
-      "archive": "05_oh_my_pi_source_18.1.17_3b3a6dc9.zip",
-      "archive_sha256": "sha256:67822418bad69de015d28a1bbd45fa7be689fdce367dfa3d584bdfcfbfcb5587"
-    },
-    "package": {
-      "name": "@oh-my-pi/pi-coding-agent",
-      "version": "18.1.17",
-      "tarball": "06_oh_my_pi_npm_18.1.17.tgz",
-      "integrity": "sha512-kkKsQUAStT8O6z9vlDQMwQzMBzUBSxA5vBrGpONEdOrgSVzYMtVWxxm1t6uSVFpN9cophbTCFRV0wRAonc8XVw=="
-    }
+  "family": "oh_my_pi",
+  "overlay": {
+    "argv": ["--tools", "read,bash,edit,write", "--thinking", "off", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-session"],
+    "overlay_id": "breadboard.oh-my-pi.headless.v18.1.17",
+    "settings": [
+      {"name": "agent.request_cap", "value": 8},
+      {"name": "model.thinking_level", "value": "off"},
+      {"name": "model.stream", "value": true},
+      {"name": "model.max_tokens", "value": 2048},
+      {"name": "model.timeout_seconds", "value": 120},
+      {"name": "model.retry_enabled", "value": false},
+      {"name": "model.images_enabled", "value": false}
+    ]
   },
-  "native": {
-    "worker": "breadboard.rl.harness.omp_native_tools:NativeToolWorker",
-    "leaves": ["pi-natives EditStore/EditSession", "brush-core Shell", "uutils"],
-    "offline_execution": false
-  }
+  "schema_version": "bb.e4.target.v2",
+  "target_id": "oh-my-pi@18.1.17",
+  "version": "18.1.17"
 }
