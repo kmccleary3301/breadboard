@@ -651,8 +651,8 @@ def _plan_error(request: RunnerOpenRequest, message: str, code: str) -> RunnerPl
     )
 
 
-def _record_native_cleanup_failure(primary: BaseException, cleanup: BaseException) -> None:
-    """Keep a native close failure visible without replacing the run failure."""
+def _record_cleanup_failure(primary: BaseException, cleanup: BaseException) -> None:
+    """Keep a cleanup failure visible without replacing the primary error."""
     try:
         prior = getattr(primary, "cleanup_failures", ())
         if not isinstance(prior, tuple):
@@ -1432,6 +1432,8 @@ class _ConductorSession:
         except BaseException as exc:
             if primary is None:
                 primary = exc
+            else:
+                _record_cleanup_failure(primary, exc)
         if primary is not None:
             raise primary
 
@@ -1941,7 +1943,7 @@ class _ConductorSession:
                 try:
                     await callback()
                 except BaseException as cleanup:
-                    _record_native_cleanup_failure(primary, cleanup)
+                    _record_cleanup_failure(primary, cleanup)
             raise
         finally:
             self._native_stream_close_callback = None
