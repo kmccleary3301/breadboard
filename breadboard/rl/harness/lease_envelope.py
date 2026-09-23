@@ -848,8 +848,16 @@ def launch_envelope(
 ) -> EnvelopeLaunch:
     if os.name != "posix" or not Path("/proc/self/ns").is_dir():
         raise OSError(errno.ENOTSUP, "Linux namespaces are required for containment")
-    scratch_fd = os.open(scratch, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
-    control_parent, control_child = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+    workspace_path_fd = os.open(
+        f"/proc/self/fd/{workspace_fd}",
+        os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC,
+    )
+    scratch_fd = os.open(
+        scratch, os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC
+    )
+    control_parent, control_child = socket.socketpair(
+        socket.AF_UNIX, socket.SOCK_SEQPACKET
+    )
     control_parent.setsockopt(socket.SOL_SOCKET, socket.SO_PASSCRED, 1)
     pid = os.fork()
     if pid == 0:
@@ -858,15 +866,16 @@ def launch_envelope(
             control_child.detach(),
             lease_id=lease_id,
             runtime_id=runtime_id,
+            workspace_fd=os.dup(workspace_path_fd),
             workspace=str(workspace),
             scratch=str(scratch),
-            workspace_fd=os.dup(workspace_fd),
             scratch_fd=scratch_fd,
             authenticator=authenticator,
             tmpfs_size_bytes=tmpfs_size_bytes,
         )
         os._exit(70)
     control_child.close()
+    os.close(workspace_path_fd)
     os.close(scratch_fd)
     try:
         message, ancdata, _flags, _address = control_parent.recvmsg(
