@@ -104,8 +104,8 @@ def _admit_native_phase_payload(
     payload: Mapping[str, Any],
     *,
     adapter_id: str,
-    workspace: str | Path,
-    scratch: str | Path,
+    workspace: str | Path | None,
+    scratch: str | Path | None,
     runtime_root: str | Path,
 ) -> dict[str, Any]:
     admitted = dict(payload)
@@ -116,6 +116,8 @@ def _admit_native_phase_payload(
             "native initialize cannot supply workspace authority",
             code="workspace_authority_mismatch",
         )
+    if workspace is None or scratch is None:
+        return admitted
     admitted["workspace"] = str(workspace)
     admitted["scratch"] = str(scratch)
     if adapter_id == PI_CODING_AGENT_LOCAL_ADAPTER_ID:
@@ -2795,6 +2797,21 @@ class LeaseBackedRunnerWorkspace:
                     code="runtime_preflight_failed",
                     lease_id=lease.lease_id,
                 ) from exc
+            try:
+                native_payload = _admit_native_phase_payload(
+                    operation,
+                    thaw_json(frozen_payload),
+                    adapter_id=adapter.adapter_id,
+                    workspace=None,
+                    scratch=None,
+                    runtime_root=adapter.runtime_root_path,
+                )
+            except WorkspaceStateError as exc:
+                raise WorkspaceStateError(
+                    str(exc),
+                    code=exc.code,
+                    lease_id=lease.lease_id,
+                ) from exc
             if operation == "initialize":
                 repositories = tuple(
                     entry for entry in lease.plan.materialization_plan.entries
@@ -2810,7 +2827,7 @@ class LeaseBackedRunnerWorkspace:
                 try:
                     native_payload = _admit_native_phase_payload(
                         operation,
-                        thaw_json(frozen_payload),
+                        native_payload,
                         adapter_id=adapter.adapter_id,
                         workspace=workspace,
                         scratch=scratch,
@@ -2837,15 +2854,6 @@ class LeaseBackedRunnerWorkspace:
                         code="workspace_authority_mismatch",
                         lease_id=lease.lease_id,
                     )
-            else:
-                native_payload = _admit_native_phase_payload(
-                    operation,
-                    thaw_json(frozen_payload),
-                    adapter_id=adapter.adapter_id,
-                    workspace="",
-                    scratch="",
-                    runtime_root=adapter.runtime_root_path,
-                )
             if operation == "execute":
                 tool_id = native_payload.get("tool_id")
                 if type(tool_id) is not str or tool_id not in adapter.tool_ids:

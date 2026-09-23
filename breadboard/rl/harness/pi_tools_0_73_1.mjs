@@ -46,17 +46,72 @@ const { validateToolArguments } = piAi;
 const { convertMessages } = openaiCompletions;
 const { buildSystemPrompt } = promptModule;
 const { loadProjectContextFiles } = resourceModule;
-const { getShellConfig, getShellEnv, killProcessTree } = shellModule;
+const { getShellConfig, getShellEnv } = shellModule;
 const { waitForChildProcess } = childProcessModule;
-const trackedProcessGroups = new Map();
+const trackedProcessGroups = new Set();
 
-function processGroupAlive(pid) {
+function processGroupAlive(entry) {
+  if (entry.pgid === null) return false;
   try {
-    process.kill(-pid, 0);
+    process.kill(-entry.pgid, 0);
     return true;
   } catch (error) {
     return error?.code === "EPERM";
   }
+}
+
+function signalProcessGroup(entry) {
+  if (entry.pgid === null) return false;
+  try {
+    process.kill(-entry.pgid, "SIGKILL");
+    entry.signalSent = true;
+    return true;
+  } catch (error) {
+    if (error?.code === "ESRCH") return false;
+    return false;
+  }
+}
+
+function markLeaderExit(entry) {
+  if (entry.leaderExited) return;
+  entry.leaderExited = true;
+  entry.groupAliveAtExit = processGroupAlive(entry);
+  if (entry.groupAliveAtExit) {
+    entry.reportable = true;
+    signalProcessGroup(entry);
+  }
+}
+
+function trackBashProcess(child) {
+  if (!child.pid) return null;
+  const entry = {
+    child,
+    pid: child.pid,
+    pgid: process.platform === "win32" ? null : child.pid,
+    done: null,
+    leaderExited: false,
+    groupAliveAtExit: false,
+    reportable: false,
+    signalSent: false,
+  };
+  trackedProcessGroups.add(entry);
+  child.once("exit", () => markLeaderExit(entry));
+  return entry;
+}
+
+function maybeForgetProcess(entry) {
+  if (entry.leaderExited && !entry.groupAliveAtExit) trackedProcessGroups.delete(entry);
+}
+
+function requestProcessGroupTermination(entry) {
+  if (entry.leaderExited) {
+    if (entry.groupAliveAtExit && !entry.signalSent && processGroupAlive(entry)) {
+      signalProcessGroup(entry);
+    }
+    return;
+  }
+  entry.reportable = true;
+  signalProcessGroup(entry);
 }
 
 function createTrackedBashTool(cwd) {
@@ -74,22 +129,21 @@ function createTrackedBashTool(cwd) {
           env: env ?? getShellEnv(),
           stdio: ["ignore", "pipe", "pipe"],
         });
-        const pid = child.pid;
-        if (pid) trackedProcessGroups.set(pid, { child });
+        const entry = trackBashProcess(child);
         let timedOut = false;
         let timeoutHandle;
         const onAbort = () => {
-          if (pid) killProcessTree(pid);
+          if (entry) requestProcessGroupTermination(entry);
         };
         const cleanup = () => {
           clearTimeout(timeoutHandle);
           if (signal) signal.removeEventListener("abort", onAbort);
-          if (pid && !processGroupAlive(pid)) trackedProcessGroups.delete(pid);
+          if (entry) maybeForgetProcess(entry);
         };
-        if (pid && timeout !== undefined && timeout > 0) {
+        if (entry && timeout !== undefined && timeout > 0) {
           timeoutHandle = setTimeout(() => {
             timedOut = true;
-            killProcessTree(pid);
+            requestProcessGroupTermination(entry);
           }, timeout * 1000);
         }
         child.stdout?.on("data", onData);
@@ -115,28 +169,35 @@ function createTrackedBashTool(cwd) {
             cleanup();
             reject(error);
           });
-        if (pid) trackedProcessGroups.set(pid, { child, done });
+        if (entry) entry.done = done;
       });
     },
   };
   return createBashTool(cwd, { operations });
 }
 
-async function waitForProcessGroupDead(pid) {
+async function waitForProcessGroupDead(entry) {
+  if (!entry.leaderExited) return false;
   for (let attempt = 0; attempt < 50; attempt += 1) {
-    if (!processGroupAlive(pid)) return true;
+    if (!processGroupAlive(entry)) return true;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  return !processGroupAlive(pid);
+  return !processGroupAlive(entry);
 }
 
 async function closeTrackedProcessGroups() {
-  const entries = [...trackedProcessGroups.entries()];
-  for (const [pid] of entries) killProcessTree(pid);
-  await Promise.allSettled(entries.map(([, entry]) => entry.done));
-  const processes = await Promise.all(entries.map(async ([pid]) => ({ pid, dead: await waitForProcessGroupDead(pid) })));
-  for (const [pid] of entries) {
-    if (!processGroupAlive(pid)) trackedProcessGroups.delete(pid);
+  const entries = [...trackedProcessGroups];
+  for (const entry of entries) requestProcessGroupTermination(entry);
+  await Promise.allSettled(entries.map((entry) => entry.done));
+  const processes = [];
+  for (const entry of entries) {
+    if (!entry.reportable) {
+      trackedProcessGroups.delete(entry);
+      continue;
+    }
+    const dead = await waitForProcessGroupDead(entry);
+    processes.push({ pid: entry.pid, pgid: entry.pgid, dead });
+    if (dead) trackedProcessGroups.delete(entry);
   }
   return { processes, all_dead: processes.every(({ dead }) => dead) };
 }
@@ -264,6 +325,10 @@ async function initialize(payload) {
   if (!advertisement || typeof advertisement !== "object" || Array.isArray(advertisement)) {
     fail("initialize requires advertisement");
   }
+  const advertisementKeys = Object.keys(advertisement);
+  if (advertisementKeys.length !== 2 || !advertisementKeys.includes("tools") || !advertisementKeys.includes("prompt")) {
+    fail("advertisement keys must be exactly tools and prompt");
+  }
   const advertisementTools = advertisement.tools;
   if (!advertisementTools || typeof advertisementTools !== "object" || Array.isArray(advertisementTools)) {
     fail("advertisement.tools must contain exactly read");
@@ -274,7 +339,15 @@ async function initialize(payload) {
   }
   const readAdvertisement = advertisementTools.read;
   if (!readAdvertisement || typeof readAdvertisement !== "object" || Array.isArray(readAdvertisement)) {
-    fail("advertisement.tools.read must provide description and native_sha256");
+    fail("advertisement.tools.read keys must be exactly description and native_sha256");
+  }
+  const readAdvertisementKeys = Object.keys(readAdvertisement);
+  if (
+    readAdvertisementKeys.length !== 2
+    || !readAdvertisementKeys.includes("description")
+    || !readAdvertisementKeys.includes("native_sha256")
+  ) {
+    fail("advertisement.tools.read keys must be exactly description and native_sha256");
   }
   if (typeof readAdvertisement.description !== "string" || typeof readAdvertisement.native_sha256 !== "string") {
     fail("advertisement.tools.read must provide description and native_sha256");
@@ -282,7 +355,15 @@ async function initialize(payload) {
   if (!/^sha256:[0-9a-f]{64}$/.test(readAdvertisement.native_sha256)) {
     fail("advertisement.tools.read native_sha256 must be sha256:<64 lowercase hex>");
   }
-  const removeExact = advertisement.prompt?.remove_exact;
+  const advertisementPrompt = advertisement.prompt;
+  if (!advertisementPrompt || typeof advertisementPrompt !== "object" || Array.isArray(advertisementPrompt)) {
+    fail("advertisement.prompt keys must be exactly remove_exact");
+  }
+  const promptKeys = Object.keys(advertisementPrompt);
+  if (promptKeys.length !== 1 || promptKeys[0] !== "remove_exact") {
+    fail("advertisement.prompt keys must be exactly remove_exact");
+  }
+  const removeExact = advertisementPrompt.remove_exact;
   if (!Array.isArray(removeExact) || removeExact.length === 0 || removeExact.some((value) => typeof value !== "string" || !value)) {
     fail("advertisement.prompt.remove_exact must be a non-empty string list");
   }

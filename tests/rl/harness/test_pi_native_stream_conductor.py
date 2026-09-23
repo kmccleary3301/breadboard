@@ -415,6 +415,9 @@ async def test_pi_native_stream_no_call_is_assistant_complete(tmp_path: Path) ->
         ("missing_sha", "native_sha256"),
         ("wrong_sha", "hash mismatch"),
         ("unknown_tool", "exactly read"),
+        ("extra_top", "advertisement keys"),
+        ("extra_read", "read keys"),
+        ("extra_prompt", "prompt keys"),
         ("removal_absent", "occur exactly once"),
         ("removal_twice", "occur exactly once"),
     ],
@@ -433,6 +436,12 @@ async def test_pi_native_worker_rejects_invalid_advertisement(tmp_path: Path, ca
         advertisement["tools"]["read"]["native_sha256"] = "sha256:" + ("0" * 64)
     elif case == "unknown_tool":
         advertisement["tools"]["bash"] = {"description": "unexpected", "native_sha256": "sha256:" + ("0" * 64)}
+    elif case == "extra_top":
+        advertisement["extra"] = True
+    elif case == "extra_read":
+        advertisement["tools"]["read"]["extra"] = True
+    elif case == "extra_prompt":
+        advertisement["prompt"]["extra"] = True
     elif case == "removal_absent":
         advertisement["prompt"]["remove_exact"] = ["not present in native prompt"]
     elif case == "removal_twice":
@@ -500,5 +509,29 @@ async def test_pi_native_worker_preserves_source_order_and_completion_order(tmp_
         for process in closed["cleanup"]["processes"]:
             with pytest.raises(ProcessLookupError):
                 os.kill(process["pid"], 0)
+    finally:
+        await port.close()
+
+
+@pytest.mark.asyncio
+async def test_pi_native_worker_close_skips_already_dead_process_group(tmp_path: Path) -> None:
+    port = _NativeWorkerPort(tmp_path, ())
+    try:
+        await port.invoke_native_phase(
+            "initialize",
+            {
+                "task": "dead process group",
+                "model_config": {"id": "model-a", "provider": "openai", "input": ["text"]},
+            },
+            timeout_ms=5_000,
+        )
+        await port.invoke_native_phase(
+            "prepare_tools",
+            {"calls": [{"id": "done", "name": "bash", "arguments": {"command": "printf done"}}]},
+            timeout_ms=5_000,
+        )
+        await port.invoke_native_phase("execute_batch", {}, timeout_ms=5_000)
+        closed = await port.invoke_native_phase("close", {}, timeout_ms=5_000)
+        assert closed["cleanup"] == {"processes": [], "all_dead": True}
     finally:
         await port.close()

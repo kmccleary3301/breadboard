@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from breadboard.rl.harness import sandbox as sandbox_module
+from breadboard.rl.harness.runners.base import RunnerToolBinding
 from breadboard.rl.harness.sandbox import (
     OPENHANDS_SDK_LOCAL_ADAPTER_ID,
     PI_CODING_AGENT_LOCAL_ADAPTER_ID,
@@ -83,3 +86,49 @@ def test_adapter_without_package_dir_does_not_receive_pi_package_path() -> None:
     assert admitted["workspace"] == "/lease/repository"
     assert admitted["scratch"] == "/lease/scratch"
     assert "package_dir" not in admitted
+
+
+@pytest.mark.asyncio
+async def test_lease_rejects_authority_before_repository_selection(monkeypatch: pytest.MonkeyPatch) -> None:
+    binding = RunnerToolBinding("read", "sha256:" + ("1" * 64), ())
+    adapter = SimpleNamespace(
+        adapter_id=PI_CODING_AGENT_LOCAL_ADAPTER_ID,
+        tool_ids=("bash", "edit", "read", "write"),
+        runtime_root_path="/sealed/pi",
+    )
+    plan = SimpleNamespace(
+        effective_plan_digest="plan",
+        tool_bindings=(binding,),
+        installed_tool_adapters=(adapter,),
+        limits=SimpleNamespace(observation_bytes=4096),
+        materialization_plan=SimpleNamespace(entries=()),
+    )
+
+    async def begin() -> None:
+        return None
+
+    async def end() -> None:
+        return None
+
+    lease = SimpleNamespace(
+        lease_id="lease",
+        plan=plan,
+        _begin_operation=begin,
+        _end_operation=end,
+    )
+    monkeypatch.setattr(
+        sandbox_module.TrustedProcessHandle,
+        "_validate_native_binding",
+        staticmethod(lambda _plan, _adapter: None),
+    )
+    workspace = sandbox_module.LeaseBackedRunnerWorkspace(lease, "plan", (binding,))
+
+    with pytest.raises(WorkspaceStateError) as captured:
+        await workspace.invoke_native_phase(
+            "initialize",
+            {"workspace": "caller-owned"},
+            timeout_ms=1_000,
+        )
+
+    assert captured.value.code == "workspace_authority_mismatch"
+    assert "cannot supply workspace authority" in str(captured.value)
