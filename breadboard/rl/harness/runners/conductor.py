@@ -2674,19 +2674,11 @@ class _ConductorSession:
             "tool_calls": trace_tool_calls,
             "observations": trace_observations,
             "file_effects": trace_file_effects,
+            "request_count": len(trace_requests),
             "termination": {
                 "kind": trace_kind,
                 "native_stop_reason": native_stop_reason,
             },
-            "normalizations": _trace_normalizations(
-                {
-                    "requests": trace_requests,
-                    "tool_calls": trace_tool_calls,
-                    "observations": trace_observations,
-                    "file_effects": trace_file_effects,
-                    "termination": {"kind": termination.value, "native_stop_reason": state.get("status")},
-                }
-            ),
         }
         return RunnerResult(
             episode_id=self._open_request.episode_id,
@@ -2870,25 +2862,9 @@ class _ConductorSession:
             "effective_plan_digest": self._open_request.effective_plan_digest,
             "events_so_far": tuple(self._events),
         }
-
     def _state_error(self, code: str, message: str) -> RunnerStateError:
         return RunnerStateError(message, code=code, **self._context())
 
-
-def _trace_normalizations(value: Mapping[str, Any]) -> list[str]:
-    encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-    rules: list[str] = []
-    if re.search(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}", encoded):
-        rules.append("event_uuid:<EVENT_UUID>")
-    if "oh-capture-response-" in encoded:
-        rules.append("response_id:<RESPONSE_ID>")
-    if re.search(r"oh-capture-(?!response-)", encoded):
-        rules.append("call_id:<CALL_ID>")
-    if '"timestamp"' in encoded or re.search(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d", encoded):
-        rules.append("timestamp:<TIMESTAMP>")
-    if '"hostname"' in encoded or '"host_name"' in encoded:
-        rules.append("hostname:<HOSTNAME>")
-    return rules
 
 
 def _find_mini_provider_failure(error: BaseException) -> MiniProviderFailure | None:

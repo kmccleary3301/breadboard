@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import copy
 import json
 import hashlib
@@ -4059,3 +4060,209 @@ async def test_native_stream_normal_path_closes_once(
         await session.close()
     assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
     assert tools.operations.count("close") == 1
+class _OpenHandsTraceClient(RecordingPolicyClient):
+    def __init__(self, observation: c.PolicyCapabilityObservation) -> None:
+        super().__init__(observation)
+        self.native_tools: tuple[Mapping[str, Any], ...] = ()
+        self.http_response: Mapping[str, Any] | None = None
+
+    def bind_compiled_plan(self, plan: c.EffectiveExecutionPlan) -> Mapping[str, Any]:
+        return {"model_id": plan.effective_semantics["providers"]["default_model_id"]}
+
+    def bind_native_tools(self, tools: tuple[Mapping[str, Any], ...]) -> None:
+        self.native_tools = tools
+
+    def stage_native_http_request(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
+        return request
+
+    def take_native_http_response(self, response_digest: str) -> Mapping[str, Any]:
+        del response_digest
+        assert self.http_response is not None
+        return self.http_response
+
+    async def invoke(self, request: Any) -> PolicyRuntimeInvokeResult:
+        self.requests.append(request)
+        body = {
+            "id": "chatcmpl-test",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": ""}, "finish_reason": "tool_calls"}],
+        }
+        self.http_response = {
+            "status_code": 200,
+            "headers": {},
+            "body_b64": base64.b64encode(json.dumps(body).encode()).decode(),
+        }
+        response = {"native_http_response": self.http_response}
+        return PolicyRuntimeInvokeResult(
+            response_payload=response,
+            response_digest=_independent_digest(response),
+        )
+
+
+class _OpenHandsTracePort(RecordingToolPort):
+    def __init__(self) -> None:
+        super().__init__(tuple(
+            _tool_binding(tool_id) for tool_id in sorted(
+                ("terminal", "file_editor", "task_tracker", "finish", "think"),
+            )
+        ))
+        self.operations: list[str] = []
+
+    async def invoke_native_phase(
+        self,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+    ) -> Mapping[str, Any]:
+        del payload, timeout_ms
+        self.operations.append(operation)
+        if operation == "initialize":
+            return {
+                "schema_version": "bb.openhands-native.v1",
+                "kind": "initialized",
+                "tool_schemas": ({"type": "function", "name": "finish"},),
+                "event_delta": (),
+                "status": "IDLE",
+                "iteration": 0,
+            }
+        if operation == "sample":
+            return {
+                "schema_version": "bb.openhands-native.v1",
+                "kind": "provider_request",
+                "http_request": {
+                    "method": "POST",
+                    "url": "https://provider.invalid/chat",
+                    "headers": {},
+                    "body_b64": base64.b64encode(b'{"messages":[]}').decode(),
+                },
+                "event_delta": (),
+                "status": "RUNNING",
+                "iteration": 1,
+            }
+        if operation == "provider_response":
+            return {
+                "schema_version": "bb.openhands-native.v1",
+                "kind": "sample_ready",
+                "event_delta": (),
+                "status": "RUNNING",
+                "iteration": 1,
+            }
+        if operation == "prepare":
+            action = {
+                "index": 0,
+                "call_id": "finish-call",
+                "tool_id": "finish",
+                "arguments": {},
+                "security_risk": "LOW",
+            }
+            return {
+                "schema_version": "bb.openhands-native.v1",
+                "kind": "prepared",
+                "actions": (action,),
+                "prepared_actions": (action,),
+                "event_delta": (),
+                "status": "RUNNING",
+                "iteration": 1,
+            }
+        if operation == "execute":
+            return {
+                "schema_version": "bb.openhands-native.v1",
+                "kind": "executed",
+                "index": 0,
+                "tool_id": "finish",
+                "observations": ({"observation": {"content": "done"}},),
+                "event_delta": (),
+                "status": "RUNNING",
+                "iteration": 1,
+            }
+        if operation == "commit":
+            return {
+                "schema_version": "bb.openhands-native.v1",
+                "kind": "committed",
+                "event_delta": (),
+                "file_effects": {},
+                "status": "FINISHED",
+                "iteration": 1,
+            }
+        raise AssertionError(operation)
+
+
+def _openhands_semantics(observation: c.PolicyCapabilityObservation) -> dict[str, Any]:
+    semantic = _tool_semantics(observation)
+    tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
+    selected = tuple(sorted(tool_order))
+    definitions: list[dict[str, Any]] = []
+    for tool_id in selected:
+        definition = copy.deepcopy(semantic["tools"]["definitions"][0])
+        definition["tool_id"] = tool_id
+        definition["model_name"] = tool_id
+        definitions.append(definition)
+    semantic["tools"]["definitions"] = definitions
+    semantic["tools"]["selected_tool_ids"] = list(selected)
+    semantic["tools"]["aliases"] = []
+    variant = semantic["prompts"]["variants"][0]
+    variant["effective_tool_ids"] = list(tool_order)
+    variant["tool_catalog"]["effective_tool_ids"] = list(tool_order)
+    variant["tool_catalog"]["text"] = "TOOL CATALOG: " + ", ".join(tool_order)
+    variant["tool_catalog"]["text_digest"] = _digest(variant["tool_catalog"]["text"])
+    variant["tool_set_digest"] = _independent_digest(
+        {"schema": "bb.tool-set.v1", "tool_ids": list(tool_order)}
+    )
+    semantic["modes"][0]["enabled_tool_ids"] = list(tool_order)
+    semantic["loop"]["sequence"] = [{"condition": None, "mode_id": "build"}]
+    semantic["metadata"] = {
+        "e4_target": {
+            "renderer_id": "breadboard.openhands-sdk.v1.47.0",
+            "target_id": "openhands-sdk@1.47.0",
+            "version": 3,
+            "runtime_profile": {"agent": {}, "model": {}},
+        }
+    }
+    semantic["providers"]["provider_tools"].update({
+        "api_variant": "chat",
+        "responses_use_developer_role": False,
+    })
+    model = semantic["providers"]["models"][0]
+    model["params"] = {}
+    model["response_policy"] = {
+        "schema_version": "bb.provider_native_response_policy.v1",
+        "consumer_id": "breadboard.openhands-sdk.v1.47.0",
+        "provider_profile_digest": _digest("openhands-provider"),
+        "max_response_bytes": 65_536,
+        "max_stream_fragments": 64,
+    }
+    semantic["providers"]["policy_slots"][0]["trainable_json_pointers"] = []
+    return _sync_root_semantics(semantic)
+
+
+async def test_openhands_trace_is_frozen_json_and_comparator_compatible() -> None:
+    observation = _observation()
+    tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
+    semantic = _openhands_semantics(observation)
+    plan = _plan(
+        observation=observation,
+        semantics=semantic,
+        tools=tuple(_tool_grant(tool_id) for tool_id in sorted(tool_order)),
+        limit_updates={"max_turns": 16, "action_timeout_ms": 90_000},
+        implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
+    )
+    client = _OpenHandsTraceClient(observation)
+    tools = _OpenHandsTracePort()
+    session, _, _, _, _, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=tools,
+    )
+    try:
+        result = await session.run(ConductorRunRequest({"prompt": "finish the task"}))
+    finally:
+        await session.close()
+    trace = thaw_json(result.response["replay_trace"])
+    json.dumps(trace, ensure_ascii=False, allow_nan=False)
+    assert "normalizations" not in trace
+    from conformance.comparators.openhands_sdk import project_bb_trace
+    projected = project_bb_trace(trace)
+    assert projected["request_count"] == 1
+    assert projected["tool_calls"]
+    assert projected["observations"]
