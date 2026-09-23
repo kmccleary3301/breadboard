@@ -160,7 +160,10 @@ class OpenHandsActor:
                     ".breadboard-native-scratch/"
                 ):
                     continue
-                result[relative] = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+                payload = path.read_bytes().replace(
+                    str(root).encode(), b"/opt/openhands/case/workspace"
+                )
+                result[relative] = "sha256:" + hashlib.sha256(payload).hexdigest()
             except (OSError, ValueError):
                 continue
         return result

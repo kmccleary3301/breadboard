@@ -88,6 +88,8 @@ def _normalizations(value: dict[str, Any]) -> list[str]:
         rules.append("call_id:<CALL_ID>")
     if '"timestamp"' in encoded or re.search(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d", encoded):
         rules.append("timestamp:<TIMESTAMP>")
+    if re.search(r"/workspace(?:/|[\"'])", encoded):
+        rules.append("workspace:<WORKSPACE>")
     if '"hostname"' in encoded or '"host_name"' in encoded:
         rules.append("hostname:<HOSTNAME>")
     return rules
@@ -126,19 +128,49 @@ def run_case(case_id: str, case: dict[str, Any], output_root: Path) -> dict[str,
         for _ in range(int(case.get("max_iteration_per_run", 16))):
             actor.dispatch("sample", {})
             prepared = actor.dispatch("prepare", {})
-            for action in prepared.get("prepared_actions", prepared.get("actions", ())):
-                tool_calls.append({"tool_name": action.get("tool_id"), "arguments": action.get("arguments"), "security_risk": action.get("security_risk", "UNKNOWN")})
+            actions = prepared.get("actions", ())
+            valid = list(actions)
+            response_calls = (
+                channel.requests[-1].get("response", {}).get("choices", [{}])[0]
+                .get("message", {}).get("tool_calls", ())
+            )
+            for call in response_calls:
+                function = call.get("function", {}) if isinstance(call, dict) else {}
+                arguments = function.get("arguments", "{}")
+                try:
+                    arguments = json.loads(arguments)
+                except (TypeError, json.JSONDecodeError):
+                    pass
+                tool_name = function.get("name")
+                match = next(
+                    (
+                        action for action in valid
+                        if action.get("tool_id") == tool_name and action.get("arguments") == arguments
+                    ),
+                    None,
+                )
+                if match is not None:
+                    valid.remove(match)
+                tool_calls.append({
+                    "tool_name": tool_name,
+                    "arguments": arguments,
+                    "security_risk": (match or {}).get("security_risk", "UNKNOWN"),
+                })
             for event in prepared.get("event_delta", ()):
                 if isinstance(event, dict) and event.get("kind") in {"AgentErrorEvent", "ConversationErrorEvent"}:
-                    observations.append({"event_kind": event["kind"], "tool_name": event.get("tool_name"), "is_error": True, "error_text": event.get("error") or event.get("detail") or event.get("code"), "classification": event.get("classification")})
-            actions = prepared.get("actions", ())
+                    observations.append({
+                        "event_kind": event["kind"],
+                        "tool_name": event.get("tool_name"),
+                        "is_error": True,
+                        "error_text": event.get("error") or event.get("detail") or event.get("code"),
+                        "classification": event.get("classification"),
+                    })
             for action in actions:
                 executed = actor.dispatch("execute", {"index": action["index"], "tool_id": action["tool_id"]})
                 events = executed.get("observations", ())
                 is_error = any(isinstance(item, dict) and "error" in str(item.get("kind", "")).lower() for item in events)
                 result = events[0].get("observation", events[0]) if len(events) == 1 and isinstance(events[0], dict) else events
-                observation = {"event_kind": "ObservationEvent", "tool_name": action["tool_id"], "is_error": is_error, "result": result}
-                observations.append(observation)
+                observations.append({"event_kind": "ObservationEvent", "tool_name": action["tool_id"], "is_error": is_error, "result": result})
             committed = actor.dispatch("commit", {})
             file_effects.update(committed.get("file_effects", {}))
             status = committed.get("status")
@@ -148,6 +180,13 @@ def run_case(case_id: str, case: dict[str, Any], output_root: Path) -> dict[str,
         if status == "RUNNING":
             status = "ERROR"
             termination = "error"
+            observations.append({
+                "event_kind": "ConversationErrorEvent",
+                "tool_name": None,
+                "is_error": True,
+                "error_text": f"Agent reached maximum iterations limit ({case.get('max_iteration_per_run')}).",
+                "classification": {"error_id": None, "kind": "agent_action", "retryable": False, "user_action": "none"},
+            })
         for path in case.get("probe_paths", ()):
             file_effects.setdefault(path, None)
     finally:

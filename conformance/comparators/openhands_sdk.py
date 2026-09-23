@@ -1,5 +1,9 @@
 """Deterministic OpenHands SDK 1.47.0 episode comparison.
 
+JSON object member order is intentionally not a discriminator; ordered arrays and
+wire message/tool list order remain significant. Workspace roots are replaced
+only from the case-recorded roots, never by wildcard regexes.
+
 The supplier input is a case directory containing ``trace.json`` and, when
 available, ``receiver/http-transcript.jsonl`` plus ``workspace/``.  The
 projector counts only transcript rows with a ``body`` (the receiver records a
@@ -68,6 +72,7 @@ ISO_TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?
 CALL_ID_RE = re.compile(r"^(?:oh-capture|call[-_])[A-Za-z0-9_.-]+$")
 RESPONSE_ID_RE = re.compile(r"^oh-capture-response-[A-Za-z0-9_.-]+$")
 TMP_SUFFIX_RE = re.compile(r"^(.*(?:/tmp|/private/tmp)/[^/]*?)(?:_[A-Za-z0-9]{6,})(/.*)?$")
+WORKSPACE_PATH_RE = re.compile(r"^(.+/workspace)(?:/.*)?$")
 SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 NORMALIZATION_BY_PLACEHOLDER = {
@@ -77,6 +82,7 @@ NORMALIZATION_BY_PLACEHOLDER = {
     "<TMP_DIR_SUFFIX>": "tmp_dir_suffix:<TMP_DIR_SUFFIX>",
     "<CALL_ID>": "call_id:<CALL_ID>",
     "<RESPONSE_ID>": "response_id:<RESPONSE_ID>",
+    "<WORKSPACE>": "workspace:<WORKSPACE>",
 }
 ALLOWED_NORMALIZATIONS = frozenset(NORMALIZATION_BY_PLACEHOLDER.values())
 PLACEHOLDERS = tuple(NORMALIZATION_BY_PLACEHOLDER)
@@ -94,7 +100,7 @@ def _json_value(value: Any) -> str:
 
 
 def _first_difference(expected: Any, observed: Any, path: str = "$") -> str | None:
-    """Return a useful ordered-JSON difference (object key order is semantic)."""
+    """Return a useful JSON difference; object member order is not semantic."""
     if _is_number(expected) and _is_number(observed):
         if expected == observed:
             return None
@@ -102,11 +108,11 @@ def _first_difference(expected: Any, observed: Any, path: str = "$") -> str | No
     if type(expected) is not type(observed):
         return f"first difference at {path}: expected {_json_value(expected)}, observed {_json_value(observed)} (types differ)"
     if isinstance(expected, Mapping):
-        expected_keys = list(expected)
-        observed_keys = list(observed)
+        expected_keys = set(expected)
+        observed_keys = set(observed)
         if expected_keys != observed_keys:
-            return f"first difference at {path}: expected keys {_json_value(expected_keys)}, observed {_json_value(observed_keys)}"
-        for key in expected_keys:
+            return f"first difference at {path}: expected keys {_json_value(sorted(expected_keys))}, observed {_json_value(sorted(observed_keys))}"
+        for key in expected:
             difference = _first_difference(expected[key], observed[key], f"{path}.{key}")
             if difference:
                 return difference
@@ -124,9 +130,27 @@ def _first_difference(expected: Any, observed: Any, path: str = "$") -> str | No
     return None
 
 
+def _workspace_roots(value: Any) -> tuple[str, ...]:
+    roots: set[str] = set()
+    def walk(item: Any) -> None:
+        if isinstance(item, Mapping):
+            for child in item.values():
+                walk(child)
+        elif isinstance(item, list):
+            for child in item:
+                walk(child)
+        elif isinstance(item, str):
+            match = WORKSPACE_PATH_RE.match(item)
+            if match:
+                roots.add(match.group(1))
+    walk(value)
+    return tuple(sorted(roots, key=len, reverse=True))
+
+
 class _Normalizer:
-    def __init__(self) -> None:
+    def __init__(self, workspace_roots: Sequence[str] = ()) -> None:
         self.applied: set[str] = set()
+        self.workspace_roots = tuple(workspace_roots)
 
     def _mark(self, placeholder: str) -> str:
         self.applied.add(NORMALIZATION_BY_PLACEHOLDER[placeholder])
@@ -141,6 +165,12 @@ class _Normalizer:
             return value
         if value in PLACEHOLDERS:
             return value
+        for root in self.workspace_roots:
+            if value == root:
+                return self._mark("<WORKSPACE>")
+            if value.startswith(root + "/"):
+                self._mark("<WORKSPACE>")
+                return "<WORKSPACE>" + value[len(root):]
         if key in {"hostname", "host_name"}:
             return self._mark("<HOSTNAME>")
         if key in {"timestamp", "created_at", "updated_at"} or ISO_TIMESTAMP_RE.fullmatch(value):
@@ -356,13 +386,13 @@ def _file_effects(trace: Mapping[str, Any], case_dir: Path) -> dict[str, str | N
 
 
 def _canonical_from_trace(trace: Mapping[str, Any], case_dir: Path, *, role: str) -> dict[str, Any]:
-    normalizer = _Normalizer()
     request_rows, response_rows = _request_rows(trace, case_dir)
     response_by_index = {
         row.get("index"): row["response"]
         for row in response_rows
         if isinstance(row.get("response"), Mapping)
     }
+    normalizer = _Normalizer(_workspace_roots(trace))
     requests: list[dict[str, Any]] = []
     for row in request_rows:
         item: dict[str, Any] = {
@@ -440,7 +470,7 @@ def project_bb_trace(trace: Mapping[str, Any] | Path | str) -> dict[str, Any]:
         raise ValueError("BreadBoard trace missing fields: " + ", ".join(missing))
     if value.get("schema_version") not in {None, TRACE_SCHEMA_VERSION}:
         raise ValueError(f"BreadBoard trace schema_version must be {TRACE_SCHEMA_VERSION}")
-    normalizer = _Normalizer()
+    normalizer = _Normalizer(_workspace_roots(value))
     projected = {
         "schema_version": TRACE_SCHEMA_VERSION,
         "role": "breadboard",
