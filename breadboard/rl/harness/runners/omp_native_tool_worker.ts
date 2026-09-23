@@ -18,107 +18,134 @@ function sleep(milliseconds: number): Promise<void> {
   setTimeout(resolve, milliseconds);
   return promise;
 }
-async function descendantPids(root: number): Promise<number[]> {
-  const parents = new Map<number, number>();
+type ProcessHandle = { pid: number; pgid: number };
+type ProcessInfo = ProcessHandle & { ppid: number; state: string };
+
+async function processTable(): Promise<Map<number, ProcessInfo>> {
+  const table = new Map<number, ProcessInfo>();
   for (const entry of await readdir("/proc")) {
     if (!/^\d+$/.test(entry)) continue;
     try {
       const stat = await readFile(`/proc/${entry}/stat`, "utf8");
-      const match = stat.match(/^\d+ \(.+\) \S+ (\d+)/);
-      if (match) parents.set(Number(entry), Number(match[1]));
+      const match = stat.match(/^(\d+) \(.+\) (\S+) (\d+) (\d+)/);
+      if (match) {
+        table.set(Number(match[1]), {
+          pid: Number(match[1]),
+          state: match[2],
+          ppid: Number(match[3]),
+          pgid: Number(match[4]),
+        });
+      }
     } catch {
       // Processes can exit while procfs is being sampled.
     }
   }
+  return table;
+}
+
+async function descendantHandles(root: number): Promise<ProcessHandle[]> {
+  const table = await processTable();
   const found = new Set<number>();
   let changed = true;
   while (changed) {
     changed = false;
-    for (const [pid, parent] of parents) {
-      if ((parent === root || found.has(parent)) && !found.has(pid)) {
-        found.add(pid);
+    for (const info of table.values()) {
+      if ((info.ppid === root || found.has(info.ppid)) && !found.has(info.pid)) {
+        found.add(info.pid);
         changed = true;
       }
     }
   }
-  return [...found];
+  return [...found].flatMap((pid) => {
+    const info = table.get(pid);
+    return info ? [{ pid: info.pid, pgid: info.pgid }] : [];
+  });
 }
 
-async function reapDescendants(owned: number[] = []): Promise<number[]> {
-  const tracked = new Set(owned);
-  for (const pid of await descendantPids(process.pid)) tracked.add(pid);
-  const signal = (kind: "SIGTERM" | "SIGKILL") => {
-    for (const pid of tracked) {
-      try {
-        process.kill(pid, kind);
-      } catch {
-        // The descendant exited during cleanup.
-      }
+function provenGroups(handles: ProcessHandle[], table: Map<number, ProcessInfo>): number[] {
+  const own = table.get(process.pid)?.pgid;
+  return [...new Set(handles.map((handle) => handle.pgid))].filter((pgid) => {
+    if (!pgid || pgid === own) return false;
+    const members = [...table.values()].filter((info) => info.pgid === pgid);
+    return handles.some((handle) => handle.pgid === pgid && members.some((member) => member.pid === handle.pid));
+  });
+}
+
+function signalGroups(groups: number[], kind: "SIGTERM" | "SIGKILL"): void {
+  for (const pgid of groups) {
+    try {
+      process.kill(-pgid, kind);
+    } catch {
+      // The group leader exited during cleanup.
     }
-  };
-  signal("SIGTERM");
-  const deadline = Date.now() + 1000;
+  }
+}
+
+async function remainingGroups(groups: number[]): Promise<number[]> {
+  const table = await processTable();
+  return groups.filter((pgid) => [...table.values()].some((info) => info.pgid === pgid));
+}
+
+async function reapDescendants(owned: ProcessHandle[] = []): Promise<number[]> {
+  const handles = new Map<number, ProcessHandle>();
+  for (const handle of owned) handles.set(handle.pid, handle);
+  for (const handle of await descendantHandles(process.pid)) handles.set(handle.pid, handle);
+  const groups = provenGroups([...handles.values()], await processTable());
+  signalGroups(groups, "SIGTERM");
+  const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
-    const remaining = [...tracked].filter((pid) => {
-      try {
-        process.kill(pid, 0);
-        return true;
-      } catch {
-        return false;
-      }
-    });
+    const remaining = await remainingGroups(groups);
     if (!remaining.length) return [];
     await sleep(20);
   }
-  signal("SIGKILL");
-  await sleep(20);
-  return [...tracked].filter((pid) => {
-    try {
-      process.kill(pid, 0);
-      return true;
-    } catch {
-      return false;
-    }
-  });
+  await sleep(50);
+  const remaining = await remainingGroups(groups);
+  const table = await processTable();
+  return remaining.flatMap((pgid) => [...table.values()].filter((info) => info.pgid === pgid).map((info) => info.pid));
 }
 let workspace = "";
+
+function exactRecord(value: unknown, label: string, required: readonly string[], optional: readonly string[] = []): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
+  const record = value as Record<string, unknown>;
+  const allowed = new Set([...required, ...optional]);
+  const actual = Object.keys(record);
+  if (actual.some((key) => !allowed.has(key)) || required.some((key) => !Object.hasOwn(record, key))) {
+    throw new Error(`${label} has invalid keys`);
+  }
+  return record;
+}
 
 function requireAdvertisement(value: unknown): {
   systemPrompt: string;
   descriptions: Record<string, string>;
   capabilityDenials: Record<string, Record<string, unknown>>;
 } {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("initialize requires advertisement");
-  const advertisement = value as Record<string, unknown>;
-  if (typeof advertisement.system_prompt !== "string") throw new Error("advertisement requires system_prompt");
-  const descriptions = advertisement.tool_descriptions;
-  if (!descriptions || typeof descriptions !== "object" || Array.isArray(descriptions)) {
-    throw new Error("advertisement requires tool_descriptions");
-  }
-  const typedDescriptions = descriptions as Record<string, unknown>;
+  const advertisement = exactRecord(value, "advertisement", ["system_prompt", "tool_descriptions", "capability_denials"], ["settings"]);
+  if (typeof advertisement.system_prompt !== "string") throw new Error("advertisement.system_prompt must be a string");
+  const typedDescriptions = exactRecord(advertisement.tool_descriptions, "advertisement.tool_descriptions", TOOL_NAMES);
   const bounded: Record<string, string> = {};
   for (const name of TOOL_NAMES) {
-    if (typeof typedDescriptions[name] !== "string") throw new Error(`advertisement missing tool description: ${name}`);
-    bounded[name] = typedDescriptions[name];
+    if (typeof typedDescriptions[name] !== "string") throw new Error(`advertisement tool description must be a string: ${name}`);
+    bounded[name] = typedDescriptions[name] as string;
   }
-  const rawDenials = advertisement.capability_denials;
-  if (!rawDenials || typeof rawDenials !== "object" || Array.isArray(rawDenials)) {
-    throw new Error("advertisement requires capability_denials");
-  }
-  const capabilityDenials = rawDenials as Record<string, Record<string, unknown>>;
+  const rawDenials = exactRecord(advertisement.capability_denials, "advertisement.capability_denials", ["pty", "async"]);
+  const capabilityDenials: Record<string, Record<string, unknown>> = {};
   for (const capability of ["pty", "async"]) {
-    const entry = capabilityDenials[capability];
+    const entry = exactRecord(rawDenials[capability], `advertisement.capability_denials.${capability}`, ["schema_version", "capability", "message", "source_ref"]);
     if (
-      !entry || typeof entry !== "object" || Array.isArray(entry)
-      || entry.schema_version !== "bb.omp-capability-denial.v1"
+      entry.schema_version !== "bb.omp-capability-denial.v1"
       || entry.capability !== capability
       || typeof entry.message !== "string"
       || typeof entry.source_ref !== "string"
     ) throw new Error(`advertisement has invalid capability denial: ${capability}`);
+    capabilityDenials[capability] = entry;
+  }
+  if (advertisement.settings !== undefined) {
+    exactRecord(advertisement.settings, "advertisement.settings", ["request_cap", "model_max_tokens", "provider_attempts"]);
   }
   return { systemPrompt: advertisement.system_prompt, descriptions: bounded, capabilityDenials };
 }
-
 async function initialize(payload: Record<string, any>) {
   if (payload.workspace === undefined || payload.scratch === undefined) throw new Error("initialize requires injected workspace and scratch");
   const advertisement = requireAdvertisement(payload.advertisement);
@@ -205,7 +232,7 @@ async function dispatch(operation: string, payload: Record<string, any>): Promis
     return { schema_version: PHASE_SCHEMA, kind: "tool_results", results: completed.map(({ source_index, ...result }) => result) };
   }
   if (operation === "close") {
-    const owned = await descendantPids(process.pid);
+    const owned = await descendantHandles(process.pid);
     let disposeError: unknown;
     try {
       await session.dispose();

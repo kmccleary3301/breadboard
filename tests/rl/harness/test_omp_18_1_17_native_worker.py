@@ -7,6 +7,7 @@ import pytest
 
 from breadboard.rl.harness.omp_native_tools import (
     NativeToolWorker,
+    NativeWorkerPhaseError,
     deny_excluded_capabilities,
     pinned_worker_spec,
     verified_tool_worker_path,
@@ -160,3 +161,49 @@ def test_real_pinned_worker_closes_background_brush_descendant(tmp_path: Path) -
     }])
     closed = worker.close()
     assert closed["cleanup"] == {"processes": [], "all_dead": True}
+
+
+@pytest.mark.skipif(
+    not Path(pinned_worker_spec().bun).is_file()
+    or not Path(pinned_worker_spec().source_root).is_dir(),
+    reason="pinned OMP runtime is unavailable on this host",
+)
+@pytest.mark.parametrize("mutation", ["top", "descriptions", "denials", "denial_entry", "settings"])
+def test_real_pinned_worker_rejects_advertisement_extra_keys(tmp_path: Path, mutation: str) -> None:
+    denial = {
+        "schema_version": "bb.omp-capability-denial.v1",
+        "capability": "pty",
+        "message": "OMP capability denied: pty",
+        "source_ref": "test",
+    }
+    advertisement = {
+        "system_prompt": "",
+        "tool_descriptions": {name: name for name in ("read", "bash", "edit", "write")},
+        "capability_denials": {
+            "pty": denial,
+            "async": {**denial, "capability": "async", "message": "OMP capability denied: async"},
+        },
+    }
+    if mutation == "top":
+        advertisement["extra"] = True
+    elif mutation == "descriptions":
+        advertisement["tool_descriptions"]["extra"] = "not admitted"
+    elif mutation == "denials":
+        advertisement["capability_denials"]["extra"] = denial
+    elif mutation == "denial_entry":
+        advertisement["capability_denials"]["pty"]["extra"] = True
+    else:
+        advertisement["settings"] = {"request_cap": 8, "model_max_tokens": 2048, "provider_attempts": 1, "extra": True}
+    worker = NativeToolWorker(cwd=str(tmp_path))
+    try:
+        with pytest.raises(NativeWorkerPhaseError, match="invalid keys"):
+            worker.phase(
+                "initialize",
+                {
+                    "advertisement": advertisement,
+                    "workspace": str(tmp_path),
+                    "scratch": str(tmp_path / ".scratch"),
+                },
+            )
+    finally:
+        worker.stop()
