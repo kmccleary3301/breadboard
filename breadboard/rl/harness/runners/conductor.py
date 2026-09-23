@@ -22,6 +22,12 @@ from breadboard_engine.compilation.provider_response import (
     NativeResponsePolicy,
 )
 from breadboard.rl.harness.contracts import PolicyCapabilityObservation
+from breadboard.rl.harness.contracts import RuntimeClass
+from breadboard.rl.harness.lease_envelope import (
+    ContainmentReceiptError,
+    RuntimeContainment,
+    verify_containment_receipt,
+)
 from breadboard.rl.harness.runner_identity import measure_module_artifact
 from breadboard.rl.harness import native_stream_consumers, native_stream_profiles
 from breadboard.rl.harness.native_stream_profiles import NATIVE_STREAM_PROFILES
@@ -1303,6 +1309,29 @@ class ConductorAdapter:
             installed = None
         if installed != expected:
             raise _plan_error(request, "tool port bindings do not exactly match plan grants", "tool_grant_mismatch")
+        if (
+            request.effective_plan.sandbox.runtime_class is RuntimeClass.TRUSTED_PROCESS
+            and getattr(workspace, "containment", RuntimeContainment.ATTESTED)
+            is RuntimeContainment.ATTESTED
+        ):
+            receipt = getattr(workspace, "containment_receipt", None)
+            authenticator = getattr(workspace, "containment_authenticator", None)
+            lease_id = getattr(workspace, "containment_lease_id", None)
+            try:
+                if receipt is None or authenticator is None or not isinstance(lease_id, str):
+                    raise ContainmentReceiptError("containment receipt is missing")
+                verify_containment_receipt(
+                    receipt,
+                    lease_id=lease_id,
+                    runtime_id=request.effective_plan.sandbox.runtime_id,
+                    authenticator=authenticator,
+                )
+            except ContainmentReceiptError as exc:
+                raise _plan_error(
+                    request,
+                    "trusted-process workspace containment receipt was rejected",
+                    "containment_receipt_invalid",
+                ) from exc
         await policy.claim()
         return _ConductorSession(
             open_request=request,

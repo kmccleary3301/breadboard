@@ -31,6 +31,7 @@ from breadboard.rl.harness.runners.terminal import (
     TerminalRunRequest,
 )
 from breadboard.rl.harness.sandbox import (
+    RuntimeContainment,
     SandboxLaunchError,
     RuntimeLaunchContext,
     SandboxRuntimeManager,
@@ -206,8 +207,11 @@ async def test_process_backend_binds_identity_recorder_before_base_measurement(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fixture = make_runtime_fixture(with_writable_mount=True)
-    plan = build_sandbox_execution_plan(
-        fixture.request, fixture.registries, fixture.authorities
+    plan = replace(
+        build_sandbox_execution_plan(
+            fixture.request, fixture.registries, fixture.authorities
+        ),
+        containment=RuntimeContainment.UNCONFINED_TEST_ONLY,
     )
     workspace = tmp_path / "workspace"
     workspace.mkdir()

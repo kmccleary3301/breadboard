@@ -36,6 +36,7 @@ from .policy_provider import (
 from .runner_identity import measure_module_artifact
 from .runners.base import freeze_json_object, thaw_json
 from .service import EpisodePrimaryDisposition, V2RunResult
+from .lease_envelope import RuntimeContainment
 
 
 _MAX_REQUEST_BYTES = 4 * 1024 * 1024
@@ -55,6 +56,7 @@ class HeadlessWorkspaceInput(BaseModel):
     )
     base_commit: str = Field(pattern=_GIT_COMMIT_PATTERN)
     task_image_digest: str = Field(pattern=_DIGEST_PATTERN)
+    containment: Literal["attested", "unconfined_test_only"] = "attested"
     outer_isolation: Literal["apptainer"] | None = None
 
 
@@ -411,10 +413,11 @@ async def run_headless_request(
     try:
         if (
             request.expected_sandbox.runtime_class is c.RuntimeClass.TRUSTED_PROCESS
-            and request.workspace.outer_isolation != "apptainer"
+            and request.workspace.containment
+            != RuntimeContainment.ATTESTED.value
         ):
             raise ValueError(
-                "headless trusted-process execution requires outer Apptainer isolation"
+                "headless trusted-process execution rejects the unconfined lane"
             )
         composition_secrets = _secret_file_bindings(
             secret_files,

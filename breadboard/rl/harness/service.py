@@ -80,12 +80,18 @@ from breadboard.rl.harness.runners.terminal import (
     TerminalRunRequest,
 )
 from breadboard.rl.harness.sandbox import (
+    SandboxAttestationError,
     SandboxExecutionPlan,
     SandboxFault,
     SandboxRuntimeManager,
     SandboxWorkspaceLease,
     VerifierWorkspaceLease,
     build_sandbox_execution_plan,
+)
+from breadboard.rl.harness.lease_envelope import (
+    ContainmentReceiptError,
+    RuntimeContainment,
+    verify_containment_receipt,
 )
 from breadboard.artifacts.references import ArtifactRef
 
@@ -1481,6 +1487,32 @@ class BreadBoardV2EpisodeService:
                 self._observe_episode_authority(coordinator)
                 self._raise_fault_injection(coordinator, V2FaultBoundary.PRE_ALLOCATION)
             lease = await self._dependencies.sandbox_runtime.open(workspace_request)
+            if (
+                sandbox_plan.runtime.runtime_class is RuntimeClass.TRUSTED_PROCESS
+                and sandbox_plan.containment is RuntimeContainment.ATTESTED
+            ):
+                receipt = getattr(lease, "containment_receipt", None)
+                authenticator = getattr(
+                    self._dependencies.sandbox_runtime,
+                    "_containment_authenticator",
+                    None,
+                )
+                try:
+                    if receipt is None or authenticator is None:
+                        raise ContainmentReceiptError("containment receipt is missing")
+                    verify_containment_receipt(
+                        receipt,
+                        lease_id=lease.lease_id,
+                        runtime_id=sandbox_plan.runtime.runtime_id,
+                        authenticator=authenticator,
+                    )
+                except ContainmentReceiptError as exc:
+                    await lease.close()
+                    raise SandboxAttestationError(
+                        "trusted process containment receipt was rejected",
+                        code="containment_receipt_invalid",
+                        lease_id=lease.lease_id,
+                    ) from exc
         except BaseException as exc:
             failure = _failure_from_exception(exc, "allocation")
             coordinator.primary_disposition = (

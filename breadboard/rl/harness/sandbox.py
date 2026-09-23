@@ -53,6 +53,14 @@ from .runners.base import (
 from .native_session import NativeSession, NativeSessionError
 from .native_worker import MAX_FRAME_BYTES
 from .sandbox_docker import VERIFIER_RESULT_MAX_BYTES
+from .lease_envelope import (
+    ContainmentReceipt,
+    ContainmentReceiptError,
+    EnvelopeLaunch,
+    RuntimeContainment,
+    launch_envelope,
+    spawn_envelope_process,
+)
 
 VERIFIER_REQUEST_RELATIVE_PATH = "input/verifier-request.json"
 VERIFIER_REQUEST_SCHEMA_VERSION = "bb.rl.verifier-request.v1"
@@ -1120,6 +1128,7 @@ class SandboxExecutionPlan:
     tool_bindings: tuple[RunnerToolBinding, ...]
     isolation_disposition: IsolationDisposition
     installed_tool_adapters: tuple[InstalledToolAdapter, ...] = ()
+    containment: RuntimeContainment = RuntimeContainment.ATTESTED
 
 
 @dataclass(frozen=True, slots=True)
@@ -1179,6 +1188,7 @@ class RuntimeLaunchContext:
     record_process_identity: (
         Callable[[str, Mapping[str, Any] | None], None] | None
     ) = None
+    containment_authenticator: Any | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -1496,6 +1506,8 @@ class RuntimeHandle(Protocol):
     async def run_argv(
         self, argv: Sequence[str], *, timeout_ms: int, output_limit: int
     ) -> Mapping[str, Any]: ...
+    containment_receipt: ContainmentReceipt | None
+    teardown_receipt: ContainmentReceipt | None
 def _sealed_repository_diff(
     *,
     repository: Path,
@@ -1800,6 +1812,7 @@ class TrustedProcessHandle:
         workspace_fd: int,
         workspace_identity: tuple[int, int],
         command_executable: _PinnedExecutable | None = None,
+        envelope: EnvelopeLaunch | None = None,
     ) -> None:
         self.plan = plan
         self.workspace = workspace
@@ -1810,6 +1823,11 @@ class TrustedProcessHandle:
         self._git_executable = git_executable
         self._workspace_fd = workspace_fd
         self._workspace_identity = workspace_identity
+        self._envelope = envelope
+        self.containment_receipt: ContainmentReceipt | None = (
+            None if envelope is None else envelope.receipt
+        )
+        self.teardown_receipt: ContainmentReceipt | None = None
         self._groups: dict[int, Mapping[str, Any]] = {}
         self._native_session: NativeSession | None = None
         self._native_session_lock = asyncio.Lock()
@@ -2263,7 +2281,7 @@ class TrustedProcessHandle:
         extra_fds: Sequence[int] = (),
         environment: Mapping[str, str] | None = None,
     ) -> asyncio.subprocess.Process:
-        process: asyncio.subprocess.Process | None = None
+        process: Any = None
         identity_published = False
         try:
             async with self._launch_lock:
@@ -2280,50 +2298,71 @@ class TrustedProcessHandle:
                         code="workspace_authority_mismatch",
                         lease_id=self.lease_id,
                     )
-                process = await asyncio.create_subprocess_exec(
-                    self._executable.proc_fd_path,
-                    "-c",
-                    'printf B; kill -STOP $$; exec "$@"',
-                    "breadboard-bootstrap",
-                    *argv,
-                    executable=self._executable.proc_fd_path,
-                    pass_fds=tuple(
-                        executable.fd
-                        for executable in (
-                            self._executable,
-                            self._command_executable,
-                        )
-                        if executable is not None
+                if self._envelope is not None:
+                    process = await spawn_envelope_process(
+                        self._envelope,
+                        argv=argv,
+                        environment=(
+                            dict(self.plan.runtime.fixed_environment)
+                            if environment is None
+                            else dict(environment)
+                        ),
+                        executable_fd=self._executable.fd,
+                        command_fd=(
+                            None
+                            if self._command_executable is None
+                            else self._command_executable.fd
+                        ),
+                        extra_fds=extra_fds,
+                        cwd_fd=self._workspace_fd,
+                        timeout_ms=timeout_ms,
                     )
-                    + tuple(extra_fds)
-                    + (self._workspace_fd,),
-                    preexec_fn=lambda: os.fchdir(self._workspace_fd),
-                    env=(
-                        dict(self.plan.runtime.fixed_environment)
-                        if environment is None
-                        else dict(environment)
-                    ),
-                    start_new_session=True,
-                    stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
+                else:
+                    process = await asyncio.create_subprocess_exec(
+                        self._executable.proc_fd_path,
+                        "-c",
+                        'printf B; kill -STOP $$; exec "$@"',
+                        "breadboard-bootstrap",
+                        *argv,
+                        executable=self._executable.proc_fd_path,
+                        pass_fds=tuple(
+                            executable.fd
+                            for executable in (
+                                self._executable,
+                                self._command_executable,
+                            )
+                            if executable is not None
+                        )
+                        + tuple(extra_fds)
+                        + (self._workspace_fd,),
+                        preexec_fn=lambda: os.fchdir(self._workspace_fd),
+                        env=(
+                            dict(self.plan.runtime.fixed_environment)
+                            if environment is None
+                            else dict(environment)
+                        ),
+                        start_new_session=True,
+                        stdin=asyncio.subprocess.PIPE,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
                 if process.stdout is None:
                     raise RuntimeError("trusted process bootstrap pipe is unavailable")
                 loop = asyncio.get_running_loop()
                 deadline = loop.time() + timeout_ms / 1000
-                try:
-                    marker = await asyncio.wait_for(
-                        process.stdout.readexactly(1),
-                        min(timeout_ms / 1000, 1.0),
-                    )
-                except (asyncio.IncompleteReadError, asyncio.TimeoutError) as exc:
-                    raise SandboxLaunchError(
-                        "trusted process bootstrap did not become ready",
-                        code="runtime_preflight_failed", lease_id=self.lease_id,
-                    ) from exc
-                if marker != b"B":
-                    raise RuntimeError("trusted process bootstrap failed")
+                if self._envelope is None:
+                    try:
+                        marker = await asyncio.wait_for(
+                            process.stdout.readexactly(1),
+                            min(timeout_ms / 1000, 1.0),
+                        )
+                    except (asyncio.IncompleteReadError, asyncio.TimeoutError) as exc:
+                        raise SandboxLaunchError(
+                            "trusted process bootstrap did not become ready",
+                            code="runtime_preflight_failed", lease_id=self.lease_id,
+                        ) from exc
+                    if marker != b"B":
+                        raise RuntimeError("trusted process bootstrap failed")
                 stop_deadline = min(deadline, loop.time() + 0.25)
                 while True:
                     fields = self._proc_fields(process.pid)
@@ -2564,6 +2603,16 @@ class TrustedProcessHandle:
                 recorder = getattr(self, "_identity_recorder", None)
                 if recorder is not None:
                     recorder(f"process-group-{process_group}", None)
+        if self._envelope is not None:
+            try:
+                self.teardown_receipt = await self._envelope.terminate()
+                if (
+                    self.teardown_receipt.outcome is None
+                    or not all(self.teardown_receipt.outcome.values())
+                ):
+                    failed = True
+            except BaseException:
+                failed = True
         async with self._launch_lock:
             if not failed and not self._groups:
                 self._executable.close()
@@ -2631,6 +2680,32 @@ class TrustedProcessBackend:
                         plan.runtime.measured_binary_digest,
                     )
                     interpreter.close()
+            envelope: EnvelopeLaunch | None = None
+            if plan.containment is RuntimeContainment.ATTESTED:
+                if context.containment_authenticator is None:
+                    raise SandboxLaunchError(
+                        "attested trusted process requires a receipt authenticator",
+                        code="runtime_preflight_failed",
+                        lease_id=lease_id,
+                    )
+                scratch = workspace / ".breadboard-native-scratch"
+                scratch.mkdir(mode=0o700, exist_ok=True)
+                envelope = await asyncio.to_thread(
+                    launch_envelope,
+                    lease_id=lease_id,
+                    runtime_id=plan.runtime.runtime_id,
+                    workspace=workspace,
+                    scratch=scratch,
+                    workspace_fd=context.workspace_fd,
+                    authenticator=context.containment_authenticator,
+                    tmpfs_size_bytes=plan.resources.storage_bytes,
+                )
+            elif plan.containment is not RuntimeContainment.UNCONFINED_TEST_ONLY:
+                raise SandboxLaunchError(
+                    "trusted process containment disposition is invalid",
+                    code="runtime_preflight_failed",
+                    lease_id=lease_id,
+                )
             handle = TrustedProcessHandle(
                 plan,
                 workspace,
@@ -2640,6 +2715,7 @@ class TrustedProcessBackend:
                 context.workspace_fd,
                 context.workspace_identity,
                 command_executable,
+                envelope,
             )
             if context.record_process_identity is None:
                 raise SandboxLaunchError(
@@ -3122,6 +3198,19 @@ class LeaseBackedRunnerWorkspace:
         self.__effects_root_identity: tuple[int, int] | None = None
     @property
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]: return self.__tool_bindings
+    @property
+    def containment_receipt(self) -> ContainmentReceipt | None:
+        return self.__lease.containment_receipt
+
+    @property
+    def containment_authenticator(self) -> Any | None:
+        return getattr(self.__lease._manager, "_containment_authenticator", None)
+    @property
+    def containment_lease_id(self) -> str:
+        return self.__lease.lease_id
+    @property
+    def containment(self) -> RuntimeContainment:
+        return self.__lease.plan.containment
 
 
 
@@ -3702,6 +3791,13 @@ class SandboxWorkspaceLease:
     @property
     def cleanup_receipt(self) -> SandboxCleanupReceipt | None:
         return self._latest_cleanup
+    @property
+    def containment_receipt(self) -> ContainmentReceipt | None:
+        return getattr(self._runtime, "containment_receipt", None)
+
+    @property
+    def teardown_receipt(self) -> ContainmentReceipt | None:
+        return getattr(self._runtime, "teardown_receipt", None)
     async def execute(
         self, argv: Sequence[str], *, timeout_ms: int | None = None
     ) -> Mapping[str, Any]:
@@ -4152,26 +4248,51 @@ class VerifierWorkspaceLease:
                 )
             if runtime_released:
                 try:
-                    for root, dirs, files in os.walk(self.workspace, topdown=True, followlinks=False):
+                    for root, dirs, files in os.walk(
+                        self.workspace, topdown=True, followlinks=False
+                    ):
                         root_path = Path(root)
                         os.chmod(root_path, 0o700, follow_symlinks=False)
                         for name in dirs + files:
                             candidate = root_path / name
                             if candidate.is_symlink():
                                 continue
-                            os.chmod(candidate, 0o700 if candidate.is_dir() else 0o600,
-                                     follow_symlinks=False)
-                    await asyncio.to_thread(self._manager.materialization_store.storage_backend.release, self.workspace)
-                    absent = self._manager.materialization_store.storage_backend.verify_absent(self.workspace)
-                    steps.append(CleanupStepReceipt("workspace", CleanupState.RELEASED if absent else CleanupState.FAILED))
+                            os.chmod(
+                                candidate,
+                                0o700 if candidate.is_dir() else 0o600,
+                                follow_symlinks=False,
+                            )
+                    await asyncio.to_thread(
+                        self._manager.materialization_store.storage_backend.release,
+                        self.workspace,
+                    )
+                    absent = self._manager.materialization_store.storage_backend.verify_absent(
+                        self.workspace
+                    )
+                    steps.append(
+                        CleanupStepReceipt(
+                            "workspace",
+                            CleanupState.RELEASED if absent else CleanupState.FAILED,
+                        )
+                    )
                 except FileNotFoundError:
-                    steps.append(CleanupStepReceipt("workspace", CleanupState.ALREADY_RELEASED))
+                    steps.append(
+                        CleanupStepReceipt("workspace", CleanupState.ALREADY_RELEASED)
+                    )
                 except Exception as exc:
-                    steps.append(CleanupStepReceipt("workspace", CleanupState.FAILED, type(exc).__name__))
+                    steps.append(
+                        CleanupStepReceipt(
+                            "workspace", CleanupState.FAILED, type(exc).__name__
+                        )
+                    )
             else:
-                steps.append(CleanupStepReceipt(
-                    "workspace", CleanupState.QUARANTINED, "dependent runtime cleanup incomplete"
-                ))
+                steps.append(
+                    CleanupStepReceipt(
+                        "workspace",
+                        CleanupState.QUARANTINED,
+                        "dependent runtime cleanup incomplete",
+                    )
+                )
             dependencies_released = all(
                 step.state in {
                     CleanupState.RELEASED,
@@ -4228,7 +4349,8 @@ class SandboxRuntimeManager:
                  materialization_store: FilesystemMaterializationStore,
                  lease_root: str | Path, process_backend: RuntimeBackend,
                  docker_backend: RuntimeBackend | None, random_bytes: Any,
-                 lease_root_fd: int | None = None) -> None:
+                 lease_root_fd: int | None = None,
+                 containment_authenticator: Any | None = None) -> None:
         self.registries = registries; self.installed_authorities = installed_authorities
         self.materialization_store = materialization_store
         supplied_lease_root = Path(lease_root).resolve(strict=True)
@@ -4252,6 +4374,7 @@ class SandboxRuntimeManager:
             raise
         self.lease_root = supplied_lease_root
         self.process_backend = process_backend; self.docker_backend = docker_backend
+        self._containment_authenticator = containment_authenticator
         self._random_bytes = random_bytes; self._leases: dict[str, SandboxWorkspaceLease] = {}
         self._snapshots: dict[str, tuple[VerifierSnapshotReceipt, Path]] = {}
         self._pending_launch_cleanups: dict[str, _PendingLaunchCleanup] = {}
@@ -4361,6 +4484,7 @@ class SandboxRuntimeManager:
             workspace_fd=workspace_fd,
             workspace_identity=workspace_identity,
             owner_token=owner_token,
+            containment_authenticator=self._containment_authenticator,
         )
 
     def _claim_lease_owner_lock(self, lease_id: str) -> bool:

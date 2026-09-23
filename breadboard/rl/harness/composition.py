@@ -79,6 +79,8 @@ from .sandbox import (
     SandboxRuntimeManager,
     SandboxSecurityPolicy,
     TrustedProcessBackend,
+    RuntimeContainment,
+    SandboxLaunchError,
 )
 from .sandbox_docker import (
     DockerRuntimeAdapter,
@@ -4175,9 +4177,14 @@ class _PinnedMaterializationStore(FilesystemMaterializationStore):
 class _PinnedTrustedProcessBackend(TrustedProcessBackend):
     def __init__(self, guard: _DirectoryIdentityGuard) -> None:
         self._guard = guard
-
     async def launch(self, *args: Any, **kwargs: Any) -> Any:
         self._guard.check_empty()
+        plan = args[0] if args else kwargs.get("plan")
+        if getattr(plan, "containment", RuntimeContainment.ATTESTED) is not RuntimeContainment.ATTESTED:
+            raise SandboxLaunchError(
+                "production composition rejects unconfined trusted-process execution",
+                code="runtime_preflight_failed",
+            )
         return await super().launch(*args, **kwargs)
 
     async def reconcile(self, record: Mapping[str, Any]) -> Any:
@@ -4512,6 +4519,7 @@ def _build_runtime_graph(
             random_bytes=token_bytes,
             authority_guard=lease_guard,
             lease_root_fd=directory_fds["lease"],
+            containment_authenticator=graph.authenticator,
         )
     )
     rollback.own(sandbox_manager.abort_bootstrap)
