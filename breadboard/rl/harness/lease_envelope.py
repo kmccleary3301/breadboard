@@ -421,9 +421,9 @@ def _setup_mount_view(
     tmpfs_size_bytes: int,
 ) -> tuple[str, tuple[str, ...]]:
     _enter_private_mount_namespace()
-    _remount_readonly("/")
     _bind(workspace_fd, workspace, readonly=False)
     _bind(scratch_fd, scratch, readonly=False)
+    _remount_readonly("/")
     _mount_tmpfs("/tmp", tmpfs_size_bytes)
     _mount_proc()
     return _verify_mount_view(workspace, scratch)
