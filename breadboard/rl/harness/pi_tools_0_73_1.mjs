@@ -314,7 +314,6 @@ async function readFrame() {
     const next = await frameIterator.next();
     if (next.done) return null;
     frameBuffer = Buffer.concat([frameBuffer, Buffer.from(next.value)]);
-    if (frameBuffer.length > MAX_FRAME_BYTES + 4) fail("native frame exceeds limit");
   }
   const size = frameBuffer.readUInt32BE(0);
   if (size === 0 || size > MAX_FRAME_BYTES) fail("native frame length is invalid");
