@@ -146,6 +146,12 @@ def test_headless_projection_preserves_evidence_without_fabricating_patches() ->
         "output": [{"type": "message", "content": [{"type": "output_text", "text": "done"}]}]
     }
     seed_digest = "sha256:" + "6" * 64
+    seeded_workspace = HeadlessWorkspaceInput(
+        workspace_mode="seeded",
+        workspace_seed_digest=seed_digest,
+        task_image_digest="sha256:" + "7" * 64,
+    )
+    assert seeded_workspace.workspace_mode == "seeded"
     seeded_run = replace(
         run,
         workspace_diff={**run.workspace_diff, "base_commit": seed_digest},
