@@ -20,8 +20,11 @@ from ...contracts import (
 )
 from ...contract_wire import ProviderContractError, canonical_json
 from ...native_response import NativeProviderResponse
+from ...contract_wire import canonical_json
 from ....compilation.provider_response import (
-    CompiledNativeResponseBinding, MINI_RESPONSE_CONSUMER_ID, PI_RESPONSE_CONSUMER_ID,
+    CompiledNativeResponseBinding,
+    PI_RESPONSE_CONSUMER_ID,
+    OMP_RESPONSE_CONSUMER_ID,
 )
 from ...model_role_options import openai_chat_role_options
 from ...sdk_bindings import provider_sdk_bindings
@@ -483,16 +486,16 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         BreadBoard's canonical message shape.
         """
         consumer_id = context.extra.get("response_consumer_id")
-        if consumer_id in {MINI_RESPONSE_CONSUMER_ID, PI_RESPONSE_CONSUMER_ID}:
+        if consumer_id in {MINI_RESPONSE_CONSUMER_ID, PI_RESPONSE_CONSUMER_ID, OMP_RESPONSE_CONSUMER_ID}:
             chat_messages = [dict(message) for message in messages]
         else:
             chat_messages = self._convert_messages_to_chat(messages, context=context)
         request = profile.chat_request(
             chat_messages,
-            tools if consumer_id == PI_RESPONSE_CONSUMER_ID else self._convert_tools_to_openai(tools),
+            tools if consumer_id in {PI_RESPONSE_CONSUMER_ID, OMP_RESPONSE_CONSUMER_ID} else self._convert_tools_to_openai(tools),
         )
-        if consumer_id == PI_RESPONSE_CONSUMER_ID:
-            # Pinned Pi buildParams omits n and disables storage for this binding.
+        if consumer_id in {PI_RESPONSE_CONSUMER_ID, OMP_RESPONSE_CONSUMER_ID}:
+            # Pinned coding-agent SDKs omit n and disable storage for this binding.
             request.pop("n")
             request["store"] = False
         return request

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from pathlib import Path
 
+from breadboard.product.evidence.e4.run_lane import _comparator_entry
+from breadboard_engine.conformance.c4_chain import _load_comparator_callable
 from conformance.comparators.oh_my_pi_18_1_17 import compare, project_bb_trace, project_supplier_case
 
 
@@ -39,3 +42,17 @@ def test_negative_gate_rejects_completion_order_mutation_and_effect_mutation() -
     report = compare({"capture": supplier, "replay": replay})
     assert report["ok"] is False
     assert report["failed"] >= 2
+
+
+def test_omp_comparator_loads_through_lane_registry() -> None:
+    root = Path(__file__).resolve().parents[2]
+    entry = _comparator_entry(
+        {
+            "lane_id": "oh_my_pi_18_1_17_replay",
+            "compare": {"comparator": "oh_my_pi_18_1_17_trace_v1"},
+        },
+        root / "conformance/comparators/registry.json",
+    )
+    loaded = _load_comparator_callable(entry)
+    assert loaded is compare
+    assert entry["comparator_id"] == "oh_my_pi_18_1_17_trace_v1"

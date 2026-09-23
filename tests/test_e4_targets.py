@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 import yaml
+from breadboard.artifacts.cas import FilesystemCAS
 
 from breadboard_engine.e4_targets import (
     E4TargetError,
@@ -18,11 +19,13 @@ from breadboard_engine.e4_targets import (
     list_e4_target_ids,
     load_e4_target,
 )
-
+from breadboard.product.harness.resolution import compile_e4_harness
 from breadboard.product.harness.targets import (
     bind_e4_target_inputs,
+    lower_e4_target,
     serialize_e4_target_inputs,
 )
+from tests.compilation.test_server_compiler import _options
 from breadboard.product.harness.validate import (
     HarnessDefinitionValidationError,
     validate_e4_target_document,
@@ -47,6 +50,7 @@ def test_target_resources_load_outside_editable_checkout_cwd(
     assert list_e4_target_ids() == (
         "mini-swe-agent@2.4.6",
         "oh-my-pi@16.2.13",
+        "oh-my-pi@18.1.17",
         "openhands-sdk@1.47.0",
         "pi@0.57.1",
         "pi@0.73.1",
@@ -99,10 +103,10 @@ def test_distribution_owner_match_does_not_resolve_symlink_aliases(
     assert _location_key(alias) != _location_key(loader)
 
 
-def test_pinned_targets_load_with_exact_release_source_and_runtime_assets() -> None:
     assert list_e4_target_ids() == (
         "mini-swe-agent@2.4.6",
         "oh-my-pi@16.2.13",
+        "oh-my-pi@18.1.17",
         "openhands-sdk@1.47.0",
         "pi@0.57.1",
         "pi@0.73.1",
@@ -747,3 +751,40 @@ def test_v2_input_identity_preserves_numeric_form_and_nested_key_order() -> None
         "second",
         "first",
     ]
+
+
+def test_omp_18_1_17_loads_and_lowers_native_worker_recipe() -> None:
+    omp = load_e4_target("oh-my-pi@18.1.17")
+    lowered = lower_e4_target(omp, {})
+    assert lowered.renderer_id == "breadboard.oh-my-pi.v18.1.17"
+    assert lowered.ordered_tool_names == ("read", "bash", "edit", "write")
+    assert lowered.runtime_profile["consumer_id"] == "breadboard.oh-my-pi.v18.1.17"
+
+
+def test_omp_18_1_17_server_compile_binds_headless_v2(
+    tmp_path: Path,
+) -> None:
+    cas = FilesystemCAS(tmp_path / "cas")
+    try:
+        compiled = compile_e4_harness(
+            load_e4_target("oh-my-pi@18.1.17"),
+            {},
+            {
+                "version": 2,
+                "profile": {"name": "omp-server-compile"},
+                "workspace": {"root": "workspace"},
+                "provider_tools": {"use_native": True},
+                "providers": {
+                    "default_model": "test-model",
+                    "models": [{"id": "test-model", "adapter": "openai", "params": {}}],
+                },
+            },
+            cas=cas,
+            options=_options(),
+            request_schema_version="bb.rl.headless-run-request.v2",
+        )
+        binding = compiled.manifest.semantic.metadata["e4_target"]
+        assert binding["renderer_id"] == "breadboard.oh-my-pi.v18.1.17"
+        assert binding["ordered_tool_names"] == ("read", "bash", "edit", "write")
+    finally:
+        cas.close()

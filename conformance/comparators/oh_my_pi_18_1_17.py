@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-COMPARATOR_ID = "oh_my_pi_18_1_17_episode_v1"
+COMPARATOR_ID = "oh_my_pi_18_1_17_trace_v1"
 REPORT_SCHEMA_VERSION = "bb.e4.comparator_report.v1"
 CANONICAL_SCHEMA_VERSION = "bb.e4.omp-episode.v1"
 _ALLOWED_PLACEHOLDERS = {

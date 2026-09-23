@@ -23,7 +23,7 @@
     },
     "oh-my-pi@18.1.17": {
       "descriptor": "oh_my_pi/18.1.17/target.json",
-      "sha256": "2ac4f8c51d1acf9186c58fed606fa410633d628f2f322f470761900163f4f8ea"
+      "sha256": "304abf4ad52ae2798d9efdfd9e01e67189e825b9229471b351326d71e68ef126"
     }
   }
 }

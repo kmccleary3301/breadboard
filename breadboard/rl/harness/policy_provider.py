@@ -23,6 +23,7 @@ from breadboard_engine.compilation.provider_response import (
     CompiledNativeResponseBinding,
     MINI_RESPONSE_CONSUMER_ID,
     PI_RESPONSE_CONSUMER_ID,
+    OMP_RESPONSE_CONSUMER_ID,
     OPENHANDS_RESPONSE_CONSUMER_ID,
     admit_native_response_binding,
     is_native_response_consumer_registered,
@@ -255,6 +256,7 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
     deferred_targets = {
         OPENHANDS_RESPONSE_CONSUMER_ID: "openhands-sdk@1.47.0",
         PI_RESPONSE_CONSUMER_ID: "pi@0.73.1",
+        OMP_RESPONSE_CONSUMER_ID: "oh-my-pi@18.1.17",
     }
     if (
         version not in (1, 2, 3)
@@ -614,8 +616,10 @@ class EpisodeOpenAICompletionsPolicyClient:
             self._native_binding is not None
             or target is None
             or target.renderer_id not in {
-                MINI_RESPONSE_CONSUMER_ID, OPENHANDS_RESPONSE_CONSUMER_ID,
+                MINI_RESPONSE_CONSUMER_ID,
+                OPENHANDS_RESPONSE_CONSUMER_ID,
                 PI_RESPONSE_CONSUMER_ID,
+                OMP_RESPONSE_CONSUMER_ID,
             }
             or target.source_manifest is None
             or profile is None
@@ -704,6 +708,25 @@ class EpisodeOpenAICompletionsPolicyClient:
                     "supportsStrictMode": False,
                 },
             }
+        elif target.renderer_id == OMP_RESPONSE_CONSUMER_ID:
+            public_config = {
+                "id": profile.model,
+                "name": profile.model,
+                "api": "openai-completions",
+                "provider": "openai",
+                "baseUrl": profile.base_url,
+                "reasoning": False,
+                "input": ["text"],
+                "contextWindow": profile.context_window,
+                "maxTokens": profile.max_output_tokens,
+                "compat": {
+                    "supportsStore": True,
+                    "supportsDeveloperRole": True,
+                    "supportsUsageInStreaming": True,
+                    "maxTokensField": "max_completion_tokens",
+                    "supportsStrictMode": False,
+                },
+            }
         else:
             self._native_cost = None
             runtime_profile = thaw_json(target.runtime_profile)
@@ -759,7 +782,7 @@ class EpisodeOpenAICompletionsPolicyClient:
         """Seal the admitted worker's bootstrap before the first stream."""
         target = self._target_projection
         if (
-            target is None or target.renderer_id != PI_RESPONSE_CONSUMER_ID
+            target is None or target.renderer_id not in {PI_RESPONSE_CONSUMER_ID, OMP_RESPONSE_CONSUMER_ID}
             or self._native_binding is None
             or self._native_stream_prompt is not None
             or self._request_attempts
@@ -1275,7 +1298,7 @@ class EpisodeOpenAICompletionsPolicyClient:
             result = await self.invoke_native(
                 request, binding=self._native_binding, effective_plan=self._native_plan
             )
-            if target.renderer_id == PI_RESPONSE_CONSUMER_ID:
+            if target.renderer_id in {PI_RESPONSE_CONSUMER_ID, OMP_RESPONSE_CONSUMER_ID}:
                 payload = {"native_response": result.as_dict()}
                 return PolicyRuntimeInvokeResult(
                     response_payload=payload, response_digest=canonical_sha256(payload)

@@ -266,8 +266,10 @@ class NativeToolWorker:
         if result.get("kind") != "tool_results" or not isinstance(result.get("results"), list):
             raise NativeWorkerPhaseError("execute_batch returned an invalid result")
         return [item for item in result["results"] if isinstance(item, dict)]
-
     def close(self) -> dict[str, Any]:
+        if self._process is None:
+            self.stop()
+            return {"kind": "closed", "cleanup": {"processes": [], "all_dead": True}}
         try:
             return self.phase("close", {})
         finally:

@@ -737,6 +737,7 @@ class OMPSemanticsState:
         self._pending_finish_reason = None
 
     def to_trace(self) -> dict[str, Any]:
+        cap_stopped = self.exit_status == "RequestLimitExceeded"
         return {
             "schema_version": "bb.e4.omp-replay-trace.v1",
             "profile": "omp",
@@ -744,6 +745,12 @@ class OMPSemanticsState:
             "case_id": self.case_id,
             "request_count": self.request_count,
             "stream_fn_issued": self.stream_fn_issued,
+            "request_guard": {
+                "limit": self.request_cap,
+                "issued": self.request_count,
+                "stopped": cap_stopped,
+                "reason": "capture request cap" if cap_stopped else None,
+            },
             "messages": self.messages,
             "effects": self.effects,
             "termination": {"kind": self.exit_status or "running", "native_stop_reason": self.native_stop_reason},

@@ -1,6 +1,6 @@
 {
   "assets": [
-    {"bytes": 4489, "path": "harness.yaml", "sha256": "sha256:c6349f648038810f7dbb54e90dc6cd923aeca602afddedd9fa16317f5c607d1d"},
+    {"bytes": 4495, "path": "harness.yaml", "sha256": "sha256:ac7d3b739a4602e995957b6896295c48d0997a61d173a53e1d01445eb5208980"},
     {"bytes": 4110, "path": "prompts/system-prompt.md", "sha256": "sha256:54c6e1ceccf67708d9211ee6e943b23c75ec94ff0791894febe897e6a7543c20"},
     {"bytes": 798, "path": "native-config.json", "sha256": "sha256:00c6183ec06106b5b592740dfcff38b0d68e377aba3d579014f41d269e93e2d9"},
     {"bytes": 14966, "path": "tool-surface.json", "sha256": "sha256:d11431c17c1e200247526b8cd3fedc7fdc05605f71e44b7b6015a876c126c37b"},

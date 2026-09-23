@@ -1,6 +1,6 @@
 schema_version: bb.e4.target_config.v2
 target_id: oh-my-pi@18.1.17
-semantic_revision: bb.e4.omp-semantics.v1
+semantic_revision: bb.e4.target-semantics.v2
 renderer:
   selector: breadboard.oh-my-pi.v18.1.17
   revision: breadboard.oh-my-pi.v18.1.17
@@ -17,7 +17,7 @@ tools:
   normalization:
     aliases: {}
 policy:
-  revision: bb.e4.omp-policy.v1
+  revision: bb.e4.target-policy.v2
   provider:
     api: openai_chat_completions
     stream: true

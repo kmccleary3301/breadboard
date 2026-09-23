@@ -104,6 +104,42 @@ def test_profile_builds_legacy_stream_request_without_fallback():
     assert "store" not in request
     assert "provider" not in request
 
+def test_omp_profile_projects_rerun5_wire_shape() -> None:
+    profile = _profile(
+        max_output_tokens=2048,
+        request_policy={
+            "mode": "streaming",
+            "include_usage": True,
+            "max_token_field": "max_completion_tokens",
+            "strict_tools": None,
+            "enable_thinking": None,
+        },
+        capabilities={
+            "supports_store": True,
+            "supports_max_completion_tokens": True,
+            "supports_strict_tools": False,
+            "supports_thinking_control": False,
+        },
+    )
+    runtime = _runtime()
+    context = ProviderRuntimeContext(
+        types.SimpleNamespace(workspace="/workspace", get_provider_metadata=lambda *_: None),
+        {},
+        extra={"response_consumer_id": "breadboard.oh-my-pi.v18.1.17"},
+        provider_profile=profile,
+    )
+    request = runtime.profile_chat_request(
+        profile,
+        [{"role": "user", "content": "do"}],
+        None,
+        context=context,
+    )
+    assert request["max_completion_tokens"] == 2048
+    assert request["stream"] is True
+    assert request["stream_options"] == {"include_usage": True}
+    assert request["store"] is False
+    assert "n" not in request
+
 
 
 def test_profile_builds_non_streaming_request_from_closed_policy():

@@ -23,15 +23,18 @@ NATIVE_RESPONSE_POLICY_SCHEMA_VERSION: Final = "bb.provider_native_response_poli
 NATIVE_RESPONSE_CONSUMER_ID: Final = "breadboard.provider.recording.v1"
 MINI_RESPONSE_CONSUMER_ID: Final = "breadboard.mini-swe-agent.v2.4.6"
 PI_RESPONSE_CONSUMER_ID: Final = "breadboard.pi-coding-agent.v0.73.1"
+OMP_RESPONSE_CONSUMER_ID: Final = "breadboard.oh-my-pi.v18.1.17"
 OPENHANDS_RESPONSE_CONSUMER_ID: Final = "breadboard.openhands-sdk.v1.47.0"
 NATIVE_RESPONSE_BINDING_SCHEMA_VERSION: Final = "bb.provider_native_response_binding.v1"
 MAX_NATIVE_RESPONSE_BYTES: Final = 16 * 1024 * 1024
 MAX_NATIVE_STREAM_FRAGMENTS: Final = 65_536
 
+
 _NATIVE_RESPONSE_CONSUMER_MODES: Final = {
     NATIVE_RESPONSE_CONSUMER_ID: frozenset({"non_streaming", "streaming"}),
     MINI_RESPONSE_CONSUMER_ID: frozenset({"non_streaming"}),
     PI_RESPONSE_CONSUMER_ID: frozenset({"streaming"}),
+    OMP_RESPONSE_CONSUMER_ID: frozenset({"streaming"}),
     OPENHANDS_RESPONSE_CONSUMER_ID: frozenset({"non_streaming"}),
 }
 
@@ -386,6 +389,23 @@ def admit_native_response_binding(
             or not profile.capabilities.supports_store
         ):
             raise NativeResponseBindingError("Pi native response requires its compiled source profile")
+    elif policy.consumer_id == OMP_RESPONSE_CONSUMER_ID:
+        if (
+            not isinstance(target, Mapping)
+            or target.get("version") != 2
+            or target.get("target_id") != "oh-my-pi@18.1.17"
+            or target.get("renderer_id") != OMP_RESPONSE_CONSUMER_ID
+            or not isinstance(target.get("runtime_profile"), Mapping)
+            or effective_mode != "streaming"
+            or profile.request_policy.max_token_field != "max_completion_tokens"
+            or profile.request_policy.strict_tools is not None
+            or profile.max_output_tokens != 2048
+            or profile.request_policy.enable_thinking is not None
+            or not profile.request_policy.include_usage
+            or profile.sampling.as_dict() != {"n": 1}
+            or not profile.capabilities.supports_store
+        ):
+            raise NativeResponseBindingError("Oh My Pi native response requires its compiled source profile")
     elif policy.consumer_id == OPENHANDS_RESPONSE_CONSUMER_ID:
         target = manifest.semantic.metadata.get("e4_target")
         # Profile identity includes n=1 even though the source SDK omits n on wire.
@@ -425,9 +445,9 @@ __all__ = [
     "MINI_RESPONSE_CONSUMER_ID",
     "NATIVE_RESPONSE_BINDING_SCHEMA_VERSION",
     "NATIVE_RESPONSE_CONSUMER_ID",
+    "OMP_RESPONSE_CONSUMER_ID",
     "OPENHANDS_RESPONSE_CONSUMER_ID",
     "NATIVE_RESPONSE_POLICY_SCHEMA_VERSION",
-    "PI_RESPONSE_CONSUMER_ID",
     "NativeResponseBindingError",
     "NativeResponsePolicy",
     "admit_native_response_binding",

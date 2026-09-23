@@ -270,6 +270,10 @@ def _lower_worker_target(
             "breadboard.pi-coding-agent.v0.73.1",
             "2834e64d081edede815bd1fa81d8ad423b5d0bd1c2e6466ca3ba5060c12a5003",
         ),
+        "oh-my-pi@18.1.17": (
+            "breadboard.oh-my-pi.v18.1.17",
+            "304abf4ad52ae2798d9efdfd9e01e67189e825b9229471b351326d71e68ef126",
+        ),
     }
     recipe = recipes.get(package.target_id)
     if (
@@ -282,9 +286,57 @@ def _lower_worker_target(
     native = json.loads(package.read_asset_text("native-config.json"))
     surface = json.loads(package.read_asset_text("tool-surface.json"))
     order = tuple(surface["ordered_tools"])
+    surface_tools = surface.get("tools")
+    if not isinstance(surface_tools, Mapping):
+        descriptions = surface["bounded_descriptions"]
+        parameter_shapes = {
+            "read": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "path": {"type": "string"},
+                    "i": {"type": "string", "description": "concise intent"},
+                },
+                "required": ["path", "i"],
+            },
+            "bash": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "async": {"type": "boolean"},
+                    "command": {"type": "string"},
+                    "cwd": {"type": "string"},
+                    "env": {"type": "object", "additionalProperties": {"type": "string"}},
+                    "i": {"type": "string", "description": "concise intent"},
+                    "pty": {"type": "boolean"},
+                    "timeout": {"type": "number"},
+                },
+                "required": ["command", "i"],
+            },
+            "edit": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {"input": {"type": "string"}, "i": {"type": "string"}},
+                "required": ["input", "i"],
+            },
+            "write": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                    "i": {"type": "string", "description": "concise intent"},
+                },
+                "required": ["path", "content", "i"],
+            },
+        }
+        surface_tools = {
+            name: {"description": descriptions[name], "parameters": parameter_shapes[name]}
+            for name in order
+        }
     compiler_tools = []
     for name in order:
-        tool = {"name": name, **surface["tools"][name]}
+        tool = {"name": name, **surface_tools[name]}
         # The registry emits an empty required list. Native HTTP uses the
         # untouched source schemas in runtime_profile, including omissions.
         tool["parameters"] = {
@@ -342,13 +394,12 @@ def lower_e4_target(
     if target_version == "bb.e4.target.v2":
         if findings := validate_e4_target_document(harness):
             raise HarnessDefinitionValidationError(findings)
-        if harness["schema_version"] != "bb.e4.target_config.v2":
-            raise HarnessCompileError("E4 target configuration revision does not match")
         if harness["renderer"]["selector"] == "breadboard.mini-swe-agent.v2.4.6":
             return _lower_mini_target(package, harness, dynamic_fields)
         if harness["renderer"]["selector"] in {
             "breadboard.openhands-sdk.v1.47.0",
             "breadboard.pi-coding-agent.v0.73.1",
+            "breadboard.oh-my-pi.v18.1.17",
         }:
             return _lower_worker_target(package, harness, dynamic_fields)
         raise E4TargetCapabilityError(
