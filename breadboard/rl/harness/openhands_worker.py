@@ -520,6 +520,7 @@ class OpenHandsActor:
                     "actions": [],
                     "source_error": self._sample_error,
                 }
+        response = self._native_response
         if response is None:
             return {"schema_version": SCHEMA_VERSION, "kind": "prepared", "event_delta": [], "status": self._status(), "iteration": self._iteration, "actions": []}
         self._native_response = None
