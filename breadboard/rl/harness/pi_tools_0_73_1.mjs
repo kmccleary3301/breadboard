@@ -7,6 +7,8 @@
  * length-prefixed protocol.  In either mode tool preparation and execution
  * run in the pinned Node process, and batch calls share Pi's mutation queue.
  */
+import { createHash } from "node:crypto";
+import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -23,19 +25,19 @@ function packageImport(nodeModules, packageName, entry) {
 const nodeModules = process.env.PI_CODING_AGENT_NODE_MODULES;
 const codingAgent = await packageImport(nodeModules, "@mariozechner/pi-coding-agent", "dist/index.js");
 const piAi = await packageImport(nodeModules, "@mariozechner/pi-ai", "dist/index.js");
+const openaiCompletions = await packageImport(nodeModules, "@mariozechner/pi-ai", "dist/providers/openai-completions.js");
 const promptModule = await packageImport(nodeModules, "@mariozechner/pi-coding-agent", "dist/core/system-prompt.js");
 const resourceModule = await packageImport(nodeModules, "@mariozechner/pi-coding-agent", "dist/core/resource-loader.js");
-const piCompletions = await packageImport(nodeModules, "@mariozechner/pi-ai", "dist/providers/openai-completions.js");
 const { createBashTool, createEditTool, createReadTool, createWriteTool } = codingAgent;
 const { validateToolArguments } = piAi;
+const { convertMessages } = openaiCompletions;
 const { buildSystemPrompt } = promptModule;
-const { DefaultResourceLoader } = resourceModule;
-const { convertMessages } = piCompletions;
+const { loadProjectContextFiles } = resourceModule;
 const TOOL_FACTORIES = Object.freeze({
-  bash: createBashTool,
-  edit: createEditTool,
-  read: createReadTool,
-  write: createWriteTool,
+  bash: (cwd) => createBashTool(cwd),
+  edit: (cwd) => createEditTool(cwd),
+  read: (cwd) => createReadTool(cwd, { autoResizeImages: true }),
+  write: (cwd) => createWriteTool(cwd),
 });
 let initializedState = null;
 let retainedPreparedBatch = null;
@@ -120,58 +122,111 @@ function requiredString(payload, key) {
   return value;
 }
 
-function toolSchemas(workspace) {
+function toolSchemas(workspace, advertisement) {
   return [...TOOL_IDS].map((name) => {
     const tool = TOOL_FACTORIES[name](workspace);
-    return { name: tool.name, description: tool.description, parameters: tool.parameters };
+    const replacement = advertisement?.tools?.[name]?.description;
+    const description = typeof replacement === "string" ? replacement : tool.description;
+    return {
+      type: "function",
+      function: { name: tool.name, description, parameters: tool.parameters },
+    };
   });
 }
 
+function originalDescriptionHashes(workspace) {
+  return Object.fromEntries([...TOOL_IDS].map((name) => {
+    const description = TOOL_FACTORIES[name](workspace).description ?? "";
+    return [name, createHash("sha256").update(description, "utf8").digest("hex")];
+  }));
+}
 async function initialize(payload) {
   const workspace = requiredString(payload, "workspace");
   const scratch = requiredString(payload, "scratch");
-  const loader = new DefaultResourceLoader({
-    cwd: workspace,
-    agentDir: scratch,
-    noExtensions: true,
-    noPromptTemplates: true,
-    noThemes: true,
-  });
-  await loader.reload();
-  const schemas = toolSchemas(workspace);
+  const packageDir = requiredString(payload, "package_dir");
+  if ("current_date" in payload || "project_context" in payload) {
+    fail("initialize runtime inputs are worker-owned");
+  }
+  const advertisement = payload.advertisement;
+  if (!advertisement || typeof advertisement !== "object" || Array.isArray(advertisement)) {
+    fail("initialize requires advertisement");
+  }
+  const modelConfig = payload.model_config;
+  if (!modelConfig || typeof modelConfig !== "object" || Array.isArray(modelConfig)) {
+    fail("initialize requires model_config");
+  }
+  const nativeDescriptionSha256 = originalDescriptionHashes(workspace);
+  for (const [name, overlay] of Object.entries(advertisement.tools ?? {})) {
+    if (!TOOL_IDS.has(name) || !overlay || typeof overlay !== "object") fail("advertisement tool overlay is invalid");
+    const expected = overlay.native_sha256;
+    if (expected !== `sha256:${nativeDescriptionSha256[name]}`) fail(`advertisement native description hash mismatch for ${name}`);
+  }
+  const agentDir = resolve(scratch, "pi-agent");
+  const home = resolve(scratch, "home");
+  const tmpdir = resolve(scratch, "tmp");
+  await mkdir(agentDir);
+  await mkdir(home);
+  await mkdir(tmpdir);
+  process.env.HOME = home;
+  process.env.TMPDIR = tmpdir;
+  const projectContext = loadProjectContextFiles({ cwd: workspace, agentDir });
+  const schemas = toolSchemas(workspace, advertisement);
   const snippets = Object.fromEntries([...TOOL_IDS].map((name) => {
     const tool = TOOL_FACTORIES[name](workspace);
-    return [name, tool.promptSnippet ?? tool.description ?? ""];
+    const replacement = advertisement?.tools?.[name]?.description;
+    return [name, typeof replacement === "string" ? replacement : tool.promptSnippet ?? tool.description ?? ""];
   }));
   const promptGuidelines = [...TOOL_IDS].flatMap((name) => {
     const tool = TOOL_FACTORIES[name](workspace);
     return Array.isArray(tool.promptGuidelines) ? tool.promptGuidelines : [];
   });
   const oldTz = process.env.TZ;
+  const oldPackageDir = process.env.PI_PACKAGE_DIR;
   process.env.TZ = "UTC";
+  process.env.PI_PACKAGE_DIR = packageDir;
   let systemPrompt;
+  let currentDate;
   try {
+    currentDate = new Date().toISOString().slice(0, 10);
     systemPrompt = buildSystemPrompt({
       cwd: workspace,
-      customPrompt: loader.getSystemPrompt(),
-      appendSystemPrompt: loader.getAppendSystemPrompt().join("\n\n") || undefined,
-      contextFiles: loader.getAgentsFiles().agentsFiles,
-      skills: loader.getSkills().skills,
+      contextFiles: projectContext,
       selectedTools: [...TOOL_IDS],
       toolSnippets: snippets,
       promptGuidelines,
     });
+    for (const removal of advertisement.prompt?.remove_exact ?? []) {
+      if (typeof removal !== "string" || systemPrompt.split(removal).length !== 2) {
+        fail("advertisement prompt removal did not match exactly once");
+      }
+      systemPrompt = systemPrompt.replace(removal, "");
+    }
   } finally {
     if (oldTz === undefined) delete process.env.TZ;
     else process.env.TZ = oldTz;
+    if (oldPackageDir === undefined) delete process.env.PI_PACKAGE_DIR;
+    else process.env.PI_PACKAGE_DIR = oldPackageDir;
   }
   initializedState = {
     workspace,
     scratch,
+    home,
     systemPrompt,
     schemas,
-    modelConfig: payload.model_config && typeof payload.model_config === "object" ? payload.model_config : {},
-    bootstrap: { task: payload.task ?? "", model_config: payload.model_config ?? {} },
+    modelConfig,
+    bootstrap: {
+      task: payload.task ?? "",
+      model_config: modelConfig,
+      cwd: workspace,
+      home,
+      current_date: currentDate,
+      project_context: projectContext,
+      package_dir: packageDir,
+      native_description_sha256: Object.fromEntries(
+        Object.entries(nativeDescriptionSha256).map(([name, hash]) => [name, `sha256:${hash}`]),
+      ),
+      advertisement,
+    },
   };
   retainedPreparedBatch = null;
   return {
@@ -214,13 +269,9 @@ function projectRequest(payload) {
   });
   const context = { systemPrompt: initializedState.systemPrompt, messages };
   const outboundMessages = convertMessages(model, context, model.compat);
-  const tools = initializedState.schemas.map((tool) => ({
-    type: "function",
-    function: { name: tool.name, description: tool.description, parameters: tool.parameters, strict: model.compat.supportsStrictMode !== false },
-  }));
-  return { kind: "request", messages: outboundMessages, tools };
+  const tools = initializedState.schemas;
+  return { schema_version: "bb.pi-native.v1", kind: "request", messages: outboundMessages, tools };
 }
-
 async function executeOperation(operation, payload, signal) {
   const defaultCwd = initializedState?.workspace
     ?? (typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd());
@@ -262,26 +313,67 @@ async function executeOperation(operation, payload, signal) {
           error: message,
         };
         errors.push(message);
+        preparedInternal.push({ ...item });
         calls.push(item);
         historyCalls.push({ id: item.id, name: item.name, arguments: item.arguments });
       }
     }
     const batchId = `pi-prepared-${nextBatchId++}`;
-    retainedPreparedBatch = errors.length === 0 ? { batchId, prepared: preparedInternal } : null;
-    return { kind: "prepared", calls, ...(errors.length ? { errors } : {}), history_calls: historyCalls };
+    retainedPreparedBatch = { batchId, prepared: preparedInternal };
+    return {
+      schema_version: "bb.pi-native.v1",
+      kind: "prepared",
+      calls,
+      ...(errors.length ? { errors } : {}),
+      history_calls: historyCalls,
+    };
+  }
+  if (operation === "close") {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload) || Object.keys(payload).length !== 0) {
+      fail("close payload must be empty");
+    }
+    retainedPreparedBatch = null;
+    return { schema_version: "bb.pi-native.v1", kind: "closed", cleanup: { processes: [], all_dead: true } };
   }
   if (operation === "execute_batch") {
     if (!payload || typeof payload !== "object" || Array.isArray(payload) || Object.keys(payload).length !== 0) {
       fail("execute_batch payload must be empty");
     }
     if (!retainedPreparedBatch) fail("execute_batch requires the retained prepared batch");
-    const results = await Promise.all(retainedPreparedBatch.prepared.map((call) => {
+    let completionIndex = 0;
+    const completedPreparationErrors = [];
+    for (const [sourceIndex, call] of retainedPreparedBatch.prepared.entries()) {
+      if (call.error) {
+        completedPreparationErrors.push({
+          sourceIndex,
+          result: {
+            id: call.id,
+            completion_index: completionIndex++,
+            content: [{ type: "text", text: call.error }],
+            details: {},
+            isError: true,
+            terminate: false,
+          },
+        });
+      }
+    }
+    const validCalls = retainedPreparedBatch.prepared
+      .map((call, sourceIndex) => ({ call, sourceIndex }))
+      .filter(({ call }) => !call.error);
+    const completedValid = await Promise.all(validCalls.map(async ({ call, sourceIndex }) => {
       const request = validateCall(call, defaultCwd);
       const tool = TOOL_FACTORIES[request.toolId](request.cwd);
-      return executePrepared({ request, tool, argumentsValue: call.arguments }, signal);
+      const result = await executePrepared({ request, tool, argumentsValue: call.arguments }, signal);
+      return {
+        sourceIndex,
+        result: { id: call.id, completion_index: completionIndex++, ...result },
+      };
     }));
+    const results = [...completedPreparationErrors, ...completedValid]
+      .sort((left, right) => left.sourceIndex - right.sourceIndex)
+      .map((entry) => entry.result);
     retainedPreparedBatch = null;
-    return { kind: "tool_results", results };
+    return { schema_version: "bb.pi-native.v1", kind: "tool_results", results };
   }
   const calls = operation === "batch" ? payload?.calls : null;
   if (Array.isArray(calls)) {
