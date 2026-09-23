@@ -69,6 +69,8 @@ from .runners.base import RunnerAdapterDescriptor, RunnerAdapterRegistry
 from .runners.conductor import CONDUCTOR_ADAPTER_ID, ConductorAdapter
 from .runners.terminal import TERMINAL_ADAPTER_ID, TerminalResponsesAdapter
 from .sandbox import (
+    OPENHANDS_NATIVE_TOOL_IDS,
+    OPENHANDS_SDK_LOCAL_ADAPTER_ID,
     InstalledImage,
     InstalledRuntime,
     InstalledSandboxAuthoritySet,
@@ -288,6 +290,11 @@ class InstalledToolAdapterV1(_ExactModel):
             for tool_id in self.tool_ids
         ):
             raise ValueError("installed tool adapter tool IDs are invalid")
+        if (
+            self.adapter_id == OPENHANDS_SDK_LOCAL_ADAPTER_ID
+            and self.tool_ids != OPENHANDS_NATIVE_TOOL_IDS
+        ):
+            raise ValueError("OpenHands native adapter requires its exact source tool set")
         if self.manifest_ref.media_type != _NATIVE_TOOL_SOURCE_REF_MEDIA_TYPE:
             raise ValueError("native tool source manifest media type is not exact")
         return self
@@ -3775,17 +3782,18 @@ def _validate_installed_registry_graph(
     native_tool_adapters: Sequence[InstalledToolAdapter] = (),
 ) -> None:
     capabilities = tuple(item.effective_capabilities for item in receipts)
+    installed_native_tools = {
+        (tool_id, adapter.manifest_digest)
+        for adapter in native_tool_adapters
+        for tool_id in adapter.tool_ids
+    }
     reachable_native_tools = {
         (tool.tool_id, tool.implementation_digest)
         for capability in capabilities
         if capability.runner.adapter_id != TERMINAL_ADAPTER_ID
         for tool in capability.tools
         if tool.tool_id != "terminal"
-    }
-    installed_native_tools = {
-        (tool_id, adapter.manifest_digest)
-        for adapter in native_tool_adapters
-        for tool_id in adapter.tool_ids
+        or (tool.tool_id, tool.implementation_digest) in installed_native_tools
     }
     registered_tools = {
         (record.grant.tool_id, record.grant.implementation_digest)

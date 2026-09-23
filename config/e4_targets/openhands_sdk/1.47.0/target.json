@@ -1,0 +1,98 @@
+{
+  "assets": [
+    {
+      "bytes": 4345,
+      "path": "harness.yaml",
+      "sha256": "sha256:61db63f42ae32096b1fe13e72ed555b6491225ed9319443d4f068bf46b2a22f8"
+    },
+    {
+      "bytes": 15235,
+      "path": "prompts/captured-system.txt",
+      "sha256": "sha256:ec7656c1a1975904653d8cba87e41ae5d493d110ce1607b6d8b5476e254b6d3a"
+    },
+    {
+      "bytes": 65367,
+      "path": "prompts/source-registry.json",
+      "sha256": "sha256:366b4c1250862af2ab3b16e7e4b58a6945adc19621838edc749528b805dc45c9"
+    },
+    {
+      "bytes": 22312,
+      "path": "native-config.json",
+      "sha256": "sha256:92b7abfbb780114dfcf9288a2ba66ea9edd9be2ecd3956df541c904377473894"
+    },
+    {
+      "bytes": 19357,
+      "path": "tool-surface.json",
+      "sha256": "sha256:03f4bcb96bc5831e526b2743ef58f68c0f08d83c377209260abbcb2e34ff9d38"
+    },
+    {
+      "bytes": 1079,
+      "path": "LICENSE.txt",
+      "sha256": "sha256:14a9b631c658eee682c6c2973525fbdf808c3457176bc47513052c559cc5ce86"
+    },
+    {
+      "bytes": 2580,
+      "path": "source.json",
+      "sha256": "sha256:83b889fd491c3e5e90b2513c092ba4f2110cf4ef5d383c853daa878e9efd126e"
+    }
+  ],
+  "execution": {
+    "config_asset": "harness.yaml",
+    "system_prompt_asset": "prompts/captured-system.txt",
+    "tool_surface_asset": "tool-surface.json"
+  },
+  "family": "openhands_sdk",
+  "overlay": {
+    "argv": [],
+    "overlay_id": "breadboard.openhands-sdk.headless.v1.47.0",
+    "settings": [
+      {
+        "name": "conversation.max_iteration_per_run",
+        "value": 16
+      },
+      {
+        "name": "conversation.stuck_detection",
+        "value": true
+      },
+      {
+        "name": "conversation.max_budget_per_run",
+        "value": null
+      },
+      {
+        "name": "llm.num_retries",
+        "value": 0
+      },
+      {
+        "name": "llm.timeout",
+        "value": 45
+      },
+      {
+        "name": "llm.max_output_tokens",
+        "value": 2048
+      },
+      {
+        "name": "llm.temperature",
+        "value": 0
+      },
+      {
+        "name": "llm.reasoning_effort",
+        "value": "none"
+      },
+      {
+        "name": "llm.disable_vision",
+        "value": true
+      },
+      {
+        "name": "llm.log_completions",
+        "value": false
+      },
+      {
+        "name": "LITELLM_LOCAL_MODEL_COST_MAP",
+        "value": "True"
+      }
+    ]
+  },
+  "schema_version": "bb.e4.target.v2",
+  "target_id": "openhands-sdk@1.47.0",
+  "version": "1.47.0"
+}

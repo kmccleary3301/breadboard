@@ -1,0 +1,56 @@
+{
+  "repository": "https://github.com/OpenHands/software-agent-sdk",
+  "commit": "50080b58d35b4824fda25fca2345d80bcd08aeff",
+  "archive_sha256": "793c7353ec4c595d6a524edd90332e7e94c0f9474b4813ea0bd566c223cddadb",
+  "capture_receipt": "OPENHANDS_SOURCE_CAPTURE_RESULT_04.json",
+  "capture_receipt_sha256": "72313dd20c8e5b0295e51d946cfb2c3a96bcf6125def15a386558f68c0761f30",
+  "capture_model": "openai/asset-generation-probe",
+  "capture_workspace": "/opt/openhands-preparation/workspace",
+  "capture_scope": "source initialization only; prompt and file_editor description are rendered again inside each owned lease",
+  "source_registry_files": [
+    {
+      "path": "openhands-sdk/openhands/sdk/context/prompts/__init__.py",
+      "sha256": "72d7d238d9d5889fe04af95cbea886afe34de080915d5e361ef27a385ef4b270"
+    },
+    {
+      "path": "openhands-sdk/openhands/sdk/context/prompts/presets.py",
+      "sha256": "ed3539b563863f13f0bdacccc5a6ce9aefa1ea6df60415d5fefe273c6d995ce2"
+    },
+    {
+      "path": "openhands-sdk/openhands/sdk/context/prompts/prompt.py",
+      "sha256": "8411f63ef8095c4827851d77d3c7c8f9943fe99bea105af8cca7a4957b87f4a4"
+    },
+    {
+      "path": "openhands-sdk/openhands/sdk/context/prompts/registry.py",
+      "sha256": "b9b21d22a6993804b572acbfcb0672f8b85d8c2c05b9a5c45461fdc360a2f70d"
+    },
+    {
+      "path": "openhands-sdk/openhands/sdk/context/prompts/section.py",
+      "sha256": "9c1846172e10bca5edfa32bc87beb26980ab1204be108b76f64a6871f7afb6e4"
+    },
+    {
+      "path": "openhands-sdk/openhands/sdk/context/prompts/sections/__init__.py",
+      "sha256": "0318fb3c75af18fcfa0f867e86981f5649ce55d5cef4ce55542f86e23e8fc374"
+    },
+    {
+      "path": "openhands-sdk/openhands/sdk/context/prompts/sections/dynamic.py",
+      "sha256": "ae06b7f20e18dc20bdfcdfc34b695adbfeb8d750c3483025833146962a22fad2"
+    },
+    {
+      "path": "openhands-sdk/openhands/sdk/context/prompts/sections/planning.py",
+      "sha256": "2a00ce3b1ca89a8d91eb15ea25ce030e0d8ac2312fb1d18b7e5970041dfd1793"
+    },
+    {
+      "path": "openhands-sdk/openhands/sdk/context/prompts/sections/static.py",
+      "sha256": "c05dcec76c0f5a327c0b48c56c72ffc5ba1b74ff558168230bd961a225ccfd9b"
+    },
+    {
+      "path": "openhands-sdk/openhands/sdk/context/prompts/templates/ask_agent_template.j2",
+      "sha256": "551296745d954c9fd3cb06b2fd67b1a7cfca94d80090c13de1e65e95b6ec1192"
+    },
+    {
+      "path": "openhands-sdk/openhands/sdk/context/prompts/templates/skill_knowledge_info.j2",
+      "sha256": "6e8a84b0022ccc9d82cbb65ced47c52dbc125e01726d9e2653c602096fb35d87"
+    }
+  ]
+}

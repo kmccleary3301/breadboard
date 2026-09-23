@@ -50,6 +50,8 @@ from .runners.base import (
     RunnerToolBinding,
     freeze_json_object,
 )
+from .native_session import NativeSession, NativeSessionError
+from .native_worker import MAX_FRAME_BYTES
 from .sandbox_docker import VERIFIER_RESULT_MAX_BYTES
 
 VERIFIER_REQUEST_RELATIVE_PATH = "input/verifier-request.json"
@@ -78,6 +80,15 @@ _SANDBOX_CAPABILITY_KEYS = {
     "persistent_workspace",
     "isolated",
 }
+
+OPENHANDS_SDK_LOCAL_ADAPTER_ID: str = "openhands-sdk.local.v1.47.0"
+OPENHANDS_NATIVE_TOOL_IDS: tuple[str, ...] = (
+    "file_editor",
+    "finish",
+    "task_tracker",
+    "terminal",
+    "think",
+)
 MINI_SWE_AGENT_LOCAL_ADAPTER_ID: str = "mini-swe-agent.local.v2.4.6"
 MINI_SWE_AGENT_TOOL_ID: str = "bash"
 
@@ -1412,6 +1423,15 @@ class RuntimeHandle(Protocol):
         input_bytes: bytes = b"",
     ) -> Mapping[str, Any]: ...
 
+
+    async def invoke_native_phase(
+        self,
+        binding: InstalledToolAdapter,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+    ) -> Mapping[str, Any]: ...
     async def run_native_tool(
         self,
         binding: InstalledToolAdapter,
@@ -1742,6 +1762,8 @@ class TrustedProcessHandle:
         self._workspace_fd = workspace_fd
         self._workspace_identity = workspace_identity
         self._groups: dict[int, Mapping[str, Any]] = {}
+        self._native_session: NativeSession | None = None
+        self._native_session_lock = asyncio.Lock()
         self._launch_lock = asyncio.Lock()
         self._closing = False
         self._closed = False
@@ -1929,6 +1951,134 @@ class TrustedProcessHandle:
             await cleanup
             raise
 
+    @staticmethod
+    def _validate_openhands_binding(
+        plan: SandboxExecutionPlan,
+        binding: InstalledToolAdapter,
+    ) -> None:
+        if (
+            type(binding) is not InstalledToolAdapter
+            or binding.adapter_id != OPENHANDS_SDK_LOCAL_ADAPTER_ID
+            or tuple(binding.tool_ids) != OPENHANDS_NATIVE_TOOL_IDS
+            or plan.runtime.runtime_class is not RuntimeClass.TRUSTED_PROCESS
+            or len(plan.installed_tool_adapters) != 1
+            or plan.installed_tool_adapters[0] != binding
+        ):
+            raise SandboxLaunchError(
+                "OpenHands native session is not admitted",
+                code="runtime_unsupported",
+            )
+        compiled = tuple(plan.tool_bindings)
+        if (
+            len(compiled) != len(OPENHANDS_NATIVE_TOOL_IDS)
+            or tuple(item.tool_id for item in compiled) != OPENHANDS_NATIVE_TOOL_IDS
+            or any(
+                item.implementation_digest != binding.manifest_digest
+                for item in compiled
+            )
+        ):
+            raise SandboxLaunchError(
+                "OpenHands native tool bindings are not exact",
+                code="tool_binding_projection_mismatch",
+            )
+
+    async def invoke_native_phase(
+        self,
+        binding: InstalledToolAdapter,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+    ) -> Mapping[str, Any]:
+        self._validate_openhands_binding(self.plan, binding)
+        if type(operation) is not str or not operation or "\x00" in operation:
+            raise SandboxLaunchError(
+                "native operation is invalid",
+                code="runtime_preflight_failed",
+                lease_id=self.lease_id,
+            )
+        if not isinstance(payload, Mapping):
+            raise SandboxLaunchError(
+                "native payload is invalid",
+                code="runtime_preflight_failed",
+                lease_id=self.lease_id,
+            )
+        if (
+            type(timeout_ms) is not int
+            or timeout_ms <= 0
+            or timeout_ms > self.plan.limits.action_timeout_ms
+        ):
+            raise SandboxLaunchError(
+                "native timeout exceeds admitted ceiling",
+                code="runtime_preflight_failed",
+                lease_id=self.lease_id,
+            )
+        async with self._native_session_lock:
+            session = self._native_session
+            if session is None:
+                _validate_native_root(binding)
+                node_path = _native_member_path(
+                    binding, binding.executable_relative_path
+                )
+                entrypoint_path = _native_member_path(
+                    binding, binding.entrypoint_relative_path
+                )
+                _measure_native_file(entrypoint_path, binding.entrypoint_digest)
+                node = _snapshot_installed_executable(
+                    node_path, binding.executable_digest
+                )
+                process: asyncio.subprocess.Process | None = None
+                try:
+                    process = await self._start_stopped_process(
+                        (
+                            self._executable.proc_fd_path,
+                            "-lc",
+                            'exec "$@"',
+                            "breadboard-openhands-worker",
+                            node.proc_fd_path,
+                            entrypoint_path,
+                        ),
+                        timeout_ms=min(timeout_ms, self.plan.limits.setup_timeout_ms),
+                        extra_fds=(node.fd,),
+                        environment={
+                            **dict(self.plan.runtime.fixed_environment),
+                            "PYTHONHOME": str(Path(binding.runtime_root_path) / "python"),
+                            "PYTHONNOUSERSITE": "1",
+                            "LD_LIBRARY_PATH": str(Path(binding.runtime_root_path) / "python/lib"),
+                        },
+                    )
+
+                    async def retire() -> bool:
+                        assert process is not None
+                        return await self._cleanup_process_shielded(
+                            process, clear_identity=True
+                        )
+
+                    session = NativeSession(
+                        process,
+                        max_frame_bytes=MAX_FRAME_BYTES,
+                        retire_callback=retire,
+                    )
+                    self._native_session = session
+                except BaseException:
+                    if process is not None and self._native_session is None:
+                        await self._cleanup_process_shielded(
+                            process, clear_identity=True
+                        )
+                    raise
+                finally:
+                    node.close()
+        try:
+            return await session.invoke_native_phase(
+                operation, payload, timeout_ms=timeout_ms
+            )
+        except NativeSessionError as exc:
+            raise SandboxLaunchError(
+                str(exc),
+                code=exc.code,
+                lease_id=self.lease_id,
+            ) from exc
+
     async def run_shell(
         self,
         command: str,
@@ -2051,6 +2201,104 @@ class TrustedProcessHandle:
             timeout_ms=timeout_ms,
             output_limit=output_limit,
         )
+    async def _start_stopped_process(
+        self,
+        argv: Sequence[str],
+        *,
+        timeout_ms: int,
+        extra_fds: Sequence[int] = (),
+        environment: Mapping[str, str] | None = None,
+    ) -> asyncio.subprocess.Process:
+        process: asyncio.subprocess.Process | None = None
+        identity_published = False
+        try:
+            async with self._launch_lock:
+                if self._closing or self._closed:
+                    raise WorkspaceStateError(
+                        "runtime is not active",
+                        code="lease_not_active",
+                        lease_id=self.lease_id,
+                    )
+                metadata = os.fstat(self._workspace_fd)
+                if (metadata.st_dev, metadata.st_ino) != self._workspace_identity:
+                    raise WorkspaceStateError(
+                        "workspace descriptor identity changed",
+                        code="workspace_authority_mismatch",
+                        lease_id=self.lease_id,
+                    )
+                process = await asyncio.create_subprocess_exec(
+                    self._executable.proc_fd_path,
+                    "-c",
+                    'printf B; kill -STOP $$; exec "$@"',
+                    "breadboard-bootstrap",
+                    *argv,
+                    executable=self._executable.proc_fd_path,
+                    pass_fds=tuple(
+                        executable.fd
+                        for executable in (
+                            self._executable,
+                            self._command_executable,
+                        )
+                        if executable is not None
+                    )
+                    + tuple(extra_fds)
+                    + (self._workspace_fd,),
+                    preexec_fn=lambda: os.fchdir(self._workspace_fd),
+                    env=(
+                        dict(self.plan.runtime.fixed_environment)
+                        if environment is None
+                        else dict(environment)
+                    ),
+                    start_new_session=True,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                if process.stdout is None:
+                    raise RuntimeError("trusted process bootstrap pipe is unavailable")
+                loop = asyncio.get_running_loop()
+                deadline = loop.time() + timeout_ms / 1000
+                try:
+                    marker = await asyncio.wait_for(
+                        process.stdout.readexactly(1),
+                        min(timeout_ms / 1000, 1.0),
+                    )
+                except (asyncio.IncompleteReadError, asyncio.TimeoutError) as exc:
+                    raise SandboxLaunchError(
+                        "trusted process bootstrap did not become ready",
+                        code="runtime_preflight_failed", lease_id=self.lease_id,
+                    ) from exc
+                if marker != b"B":
+                    raise RuntimeError("trusted process bootstrap failed")
+                stop_deadline = min(deadline, loop.time() + 0.25)
+                while True:
+                    fields = self._proc_fields(process.pid)
+                    if fields[0] in {"T", "t"}:
+                        break
+                    if loop.time() >= stop_deadline:
+                        raise RuntimeError(
+                            "trusted process did not stop before admission"
+                        )
+                    await asyncio.sleep(0.001)
+                identity = self._observe_group_identity(process.pid)
+                process_group = int(identity["process_group_id"])
+                self._groups[process_group] = identity
+                recorder = getattr(self, "_identity_recorder", None)
+                if recorder is None:
+                    raise RuntimeError(
+                        "trusted process identity recorder is unavailable"
+                    )
+                identity_published = True
+                recorder(f"process-group-{process_group}", identity)
+                os.kill(process.pid, signal.SIGCONT)
+                return process
+        except BaseException:
+            if process is not None:
+                await self._cleanup_process_shielded(
+                    process, clear_identity=identity_published
+                )
+            raise
+
 
     async def _run_pinned_argv(
         self,
@@ -2074,88 +2322,13 @@ class TrustedProcessHandle:
                 code="runtime_preflight_failed",
                 lease_id=self.lease_id,
             )
-        process: asyncio.subprocess.Process | None = None
-        identity_published = False
-        try:
-            async with self._launch_lock:
-                if self._closing or self._closed:
-                    raise WorkspaceStateError(
-                        "runtime is not active",
-                        code="lease_not_active",
-                        lease_id=self.lease_id,
-                    )
-                metadata = os.fstat(self._workspace_fd)
-                if (metadata.st_dev, metadata.st_ino) != self._workspace_identity:
-                    raise WorkspaceStateError(
-                        "workspace descriptor identity changed",
-                        code="workspace_authority_mismatch",
-                        lease_id=self.lease_id,
-                    )
-                bootstrap = 'printf B; kill -STOP $$; exec "$@"'
-                process = await asyncio.create_subprocess_exec(
-                    self._executable.proc_fd_path,
-                    "-c",
-                    bootstrap,
-                    "breadboard-bootstrap",
-                    *argv,
-                    executable=self._executable.proc_fd_path,
-                    pass_fds=tuple(
-                        executable.fd
-                        for executable in (
-                            self._executable,
-                            self._command_executable,
-                        )
-                        if executable is not None
-                    )
-                    + tuple(extra_fds)
-                    + (self._workspace_fd,),
-                    preexec_fn=lambda: os.fchdir(self._workspace_fd),
-                    env=environment if environment is not None else dict(self.plan.runtime.fixed_environment),
-                    start_new_session=True,
-                    stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                if process.stdout is None:
-                    raise RuntimeError("trusted process bootstrap pipe is unavailable")
-                loop = asyncio.get_running_loop()
-                deadline = loop.time() + timeout_ms / 1000
-                try:
-                    marker = await asyncio.wait_for(
-                        process.stdout.readexactly(1),
-                        min(timeout_ms / 1000, 1.0),
-                    )
-                except (asyncio.IncompleteReadError, asyncio.TimeoutError):
-                    raise RuntimeError("trusted process bootstrap failed") from None
-                if marker != b"B":
-                    raise RuntimeError("trusted process bootstrap failed")
-                stop_deadline = min(deadline, loop.time() + 0.25)
-                while True:
-                    fields = self._proc_fields(process.pid)
-                    if fields[0] in {"T", "t"}:
-                        break
-                    if loop.time() >= stop_deadline:
-                        raise RuntimeError(
-                            "trusted process did not stop before admission"
-                        )
-                    await asyncio.sleep(0.001)
-                identity = self._observe_group_identity(process.pid)
-                process_group = int(identity["process_group_id"])
-                self._groups[process_group] = identity
-                recorder = getattr(self, "_identity_recorder", None)
-                if recorder is None:
-                    raise RuntimeError(
-                        "trusted process identity recorder is unavailable"
-                    )
-                recorder(f"process-group-{process_group}", identity)
-                identity_published = True
-                os.kill(process.pid, signal.SIGCONT)
-        except BaseException:
-            if process is not None:
-                await self._cleanup_process_shielded(
-                    process, clear_identity=identity_published
-                )
-            raise
+        process = await self._start_stopped_process(
+            argv,
+            timeout_ms=timeout_ms,
+            extra_fds=extra_fds,
+            environment=environment,
+        )
+        deadline = asyncio.get_running_loop().time() + timeout_ms / 1000
 
         total = 0
         count_lock = asyncio.Lock()
@@ -2321,6 +2494,14 @@ class TrustedProcessHandle:
                 return (CleanupStepReceipt("runtime", CleanupState.ALREADY_RELEASED),)
             self._closing = True
         failed = False
+        async with self._native_session_lock:
+            native_session = self._native_session
+            self._native_session = None
+        if native_session is not None:
+            try:
+                await native_session.close()
+            except BaseException:
+                failed = True
         for process_group, identity in tuple(self._groups.items()):
             if not await self._drain_group(process_group, identity):
                 failed = True
@@ -2533,6 +2714,108 @@ class LeaseBackedRunnerWorkspace:
 
     @property
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]: return self.__tool_bindings
+    async def invoke_native_phase(
+        self,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+    ) -> Mapping[str, Any]:
+        lease = self.__lease
+        await lease._begin_operation()
+        try:
+            adapters = tuple(
+                adapter
+                for adapter in lease.plan.installed_tool_adapters
+                if adapter.adapter_id == OPENHANDS_SDK_LOCAL_ADAPTER_ID
+            )
+            if len(adapters) != 1:
+                raise WorkspaceStateError(
+                    "OpenHands native adapter is not exactly installed",
+                    code="runtime_unsupported",
+                    lease_id=lease.lease_id,
+                )
+            adapter = adapters[0]
+            try:
+                TrustedProcessHandle._validate_openhands_binding(lease.plan, adapter)
+            except SandboxRuntimeError as exc:
+                raise WorkspaceStateError(
+                    str(exc),
+                    code=exc.code,
+                    lease_id=lease.lease_id,
+                ) from exc
+            try:
+                from .runners.base import thaw_json
+                frozen_payload = freeze_json_object(
+                    payload,
+                    field_name="native phase payload",
+                    max_depth=8,
+                    max_nodes=lease.plan.limits.observation_bytes + 1,
+                    max_encoded_bytes=lease.plan.limits.observation_bytes,
+                )
+            except (JsonSnapshotError, TypeError, ValueError) as exc:
+                raise WorkspaceStateError(
+                    "native phase payload is invalid",
+                    code="runtime_preflight_failed",
+                    lease_id=lease.lease_id,
+                ) from exc
+            if operation == "initialize":
+                if "workspace" in frozen_payload or "scratch" in frozen_payload:
+                    raise WorkspaceStateError(
+                        "native initialize cannot supply workspace authority",
+                        code="workspace_authority_mismatch",
+                        lease_id=lease.lease_id,
+                    )
+                repositories = tuple(
+                    entry for entry in lease.plan.materialization_plan.entries
+                    if entry.role == "repository"
+                )
+                if len(repositories) != 1:
+                    raise WorkspaceStateError(
+                        "OpenHands requires exactly one owned repository",
+                        code="workspace_authority_mismatch", lease_id=lease.lease_id,
+                    )
+                workspace = lease._resolve(repositories[0].target_logical_path, writable=True)
+                scratch = lease._materialized.workspace_path / ".breadboard-native-scratch"
+                try:
+                    scratch.mkdir(mode=0o700)
+                    metadata = scratch.stat(follow_symlinks=False)
+                except OSError as exc:
+                    raise WorkspaceStateError(
+                        "native scratch authority is unavailable",
+                        code="workspace_authority_mismatch",
+                        lease_id=lease.lease_id,
+                    ) from exc
+                if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) != 0o700:
+                    raise WorkspaceStateError(
+                        "native scratch authority is invalid",
+                        code="workspace_authority_mismatch",
+                        lease_id=lease.lease_id,
+                    )
+                native_payload = {
+                    **thaw_json(frozen_payload),
+                    "workspace": str(workspace),
+                    "scratch": str(scratch),
+                }
+            else:
+                native_payload = thaw_json(frozen_payload)
+            if operation == "execute":
+                tool_id = native_payload.get("tool_id")
+                if type(tool_id) is not str or tool_id not in adapter.tool_ids:
+                    raise WorkspaceStateError(
+                        "native execute tool identity is not admitted",
+                        code="tool_binding_projection_mismatch",
+                        lease_id=lease.lease_id,
+                    )
+            return await lease._runtime.invoke_native_phase(
+                adapter,
+                operation,
+                native_payload,
+                timeout_ms=timeout_ms,
+            )
+        finally:
+            await lease._end_operation()
+
     async def invoke_tool(
         self,
         tool_id: str,
@@ -5098,4 +5381,6 @@ __all__ = [
     "load_sandbox_capability_matrix",
     "MINI_SWE_AGENT_LOCAL_ADAPTER_ID",
     "MINI_SWE_AGENT_TOOL_ID",
+    "OPENHANDS_SDK_LOCAL_ADAPTER_ID",
+    "OPENHANDS_NATIVE_TOOL_IDS",
 ]

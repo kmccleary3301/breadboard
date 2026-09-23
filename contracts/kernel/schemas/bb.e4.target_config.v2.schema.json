@@ -286,7 +286,8 @@
           "$ref": "#/$defs/selector"
         },
         "max_consecutive_format_errors": {
-          "type": "integer",
+          "type": ["integer", "null"],
+          "description": "Null delegates error termination to the selected source consumer.",
           "minimum": 0
         }
       }

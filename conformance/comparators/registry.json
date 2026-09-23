@@ -119,6 +119,23 @@
     },
     {
       "comparator_class": "deterministic_replay",
+      "comparator_id": "openhands_sdk_trace_v1",
+      "entrypoint": {
+        "callable": "compare",
+        "module": "conformance.comparators.openhands_sdk"
+      },
+      "input_roles": [
+        "capture_ref",
+        "replay_ref",
+        "comparator_ref"
+      ],
+      "lane_ids": [
+        "openhands_sdk_1_47_0_replay"
+      ],
+      "report_schema_version": "bb.e4.comparator_report.v1"
+    },
+    {
+      "comparator_class": "deterministic_replay",
       "comparator_id": "north_star_stored_report_replay",
       "entrypoint": {
         "callable": "compare",
