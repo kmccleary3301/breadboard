@@ -113,6 +113,7 @@ def native_response_from_dict(value: Mapping[str, Any]) -> NativeProviderRespons
         tool_calls=calls,
         usage=value.get("usage"),
         raw_response=value.get("raw_response"),
+        stream_fragments=fragments,
         request_body=value.get("request_body"),
     )
 
