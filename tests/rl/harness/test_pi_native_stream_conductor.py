@@ -497,5 +497,8 @@ async def test_pi_native_worker_preserves_source_order_and_completion_order(tmp_
         closed = await port.invoke_native_phase("close", {}, timeout_ms=5_000)
         assert closed["cleanup"]["all_dead"] is True
         assert closed["cleanup"]["processes"]
+        for process in closed["cleanup"]["processes"]:
+            with pytest.raises(ProcessLookupError):
+                os.kill(process["pid"], 0)
     finally:
         await port.close()

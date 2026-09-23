@@ -99,6 +99,31 @@ MINI_SWE_AGENT_LOCAL_ADAPTER_ID: str = "mini-swe-agent.local.v2.4.6"
 MINI_SWE_AGENT_TOOL_ID: str = "bash"
 
 
+def _admit_native_phase_payload(
+    operation: str,
+    payload: Mapping[str, Any],
+    *,
+    adapter_id: str,
+    workspace: str | Path,
+    scratch: str | Path,
+    runtime_root: str | Path,
+) -> dict[str, Any]:
+    admitted = dict(payload)
+    if operation != "initialize":
+        return admitted
+    if {"workspace", "scratch", "package_dir"} & set(admitted):
+        raise WorkspaceStateError(
+            "native initialize cannot supply workspace authority",
+            code="workspace_authority_mismatch",
+        )
+    admitted["workspace"] = str(workspace)
+    admitted["scratch"] = str(scratch)
+    if adapter_id == PI_CODING_AGENT_LOCAL_ADAPTER_ID:
+        admitted["package_dir"] = str(
+            Path(runtime_root) / "node_modules/@mariozechner/pi-coding-agent"
+        )
+    return admitted
+
 
 def _read_sandbox_capability_matrix_resource() -> bytes:
     resource = files(__package__).joinpath(SANDBOX_CAPABILITY_MATRIX_RESOURCE)
@@ -2771,12 +2796,6 @@ class LeaseBackedRunnerWorkspace:
                     lease_id=lease.lease_id,
                 ) from exc
             if operation == "initialize":
-                if {"workspace", "scratch", "package_dir"} & set(frozen_payload):
-                    raise WorkspaceStateError(
-                        "native initialize cannot supply workspace authority",
-                        code="workspace_authority_mismatch",
-                        lease_id=lease.lease_id,
-                    )
                 repositories = tuple(
                     entry for entry in lease.plan.materialization_plan.entries
                     if entry.role == "repository"
@@ -2803,19 +2822,30 @@ class LeaseBackedRunnerWorkspace:
                         code="workspace_authority_mismatch",
                         lease_id=lease.lease_id,
                     )
-                native_payload = {
-                    **thaw_json(frozen_payload),
-                    "workspace": str(workspace),
-                    "scratch": str(scratch),
-                }
-                if adapter.adapter_id == PI_CODING_AGENT_LOCAL_ADAPTER_ID:
-                    # Pi reads documentation paths from its installed package.
-                    native_payload["package_dir"] = str(
-                        Path(adapter.runtime_root_path)
-                        / "node_modules/@mariozechner/pi-coding-agent"
+                try:
+                    native_payload = _admit_native_phase_payload(
+                        operation,
+                        thaw_json(frozen_payload),
+                        adapter_id=adapter.adapter_id,
+                        workspace=workspace,
+                        scratch=scratch,
+                        runtime_root=adapter.runtime_root_path,
                     )
+                except WorkspaceStateError as exc:
+                    raise WorkspaceStateError(
+                        str(exc),
+                        code=exc.code,
+                        lease_id=lease.lease_id,
+                    ) from exc
             else:
-                native_payload = thaw_json(frozen_payload)
+                native_payload = _admit_native_phase_payload(
+                    operation,
+                    thaw_json(frozen_payload),
+                    adapter_id=adapter.adapter_id,
+                    workspace="",
+                    scratch="",
+                    runtime_root=adapter.runtime_root_path,
+                )
             if operation == "execute":
                 tool_id = native_payload.get("tool_id")
                 if type(tool_id) is not str or tool_id not in adapter.tool_ids:
