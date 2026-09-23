@@ -7,10 +7,13 @@
   "bootstrap": {"ordered": ["AGENTS.md", "SOUL.md", "IDENTITY.md", "USER.md", "BOOTSTRAP.md", "MEMORY.md"], "per_file_chars": 20000, "total_chars": 60000, "user_chars": 4000, "missing_markers": true},
   "native_worker": {
     "protocol": "bb.openclaw.tool-worker.jsonl.v1",
-    "entrypoint": "python -m breadboard.rl.harness.openclaw_tool_worker",
+    "runtime": "node >=24.16.0 <25 || >=26.1.0",
+    "entrypoint": "breadboard/rl/harness/openclaw_tool_worker.mjs",
+    "argv": ["node", "breadboard/rl/harness/openclaw_tool_worker.mjs"],
+    "source_modules": ["core-coding-tools-DoP9tAh3.mjs", "bash-tools-Cb_Bzn6B.mjs", "resource-loader-Bu_pVD2t.mjs", "bootstrap-DYYMCrXY.mjs", "workspace-YW5Pl2cf.mjs"],
     "request": {"tool_call_id": "string", "name": "ls|read|edit|write|exec|process", "arguments": "object"},
-    "response": {"ok": "boolean", "tool_call_id": "string", "result": "object", "error": "string"},
-    "owns": ["tool preparation", "tool effects", "process scope", "pending acknowledgements"],
+    "response": {"ok": "boolean", "tool_call_id": "string", "result": "source_tool_result", "acknowledgement": "token_and_required"},
+    "owns": ["pinned OpenClaw tool construction", "tool effects", "process scope", "pending acknowledgements", "bootstrap loader"],
     "does_not_own": ["model requests", "history", "retry", "fallback", "compaction", "terminal arbitration"]
   }
 }

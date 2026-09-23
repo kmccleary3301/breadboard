@@ -7,25 +7,15 @@ archive (commit 3a9d69db306cd7f081e06254cb89c4bcc14a7107).
 """
 from __future__ import annotations
 
-import errno
-import select
-try:
-    import pty
-except ImportError:  # pragma: no cover - non-POSIX fallback
-    pty = None
-
-import base64
 import hashlib
 import json
 import os
 import re
-import signal
 import subprocess
-import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, MutableMapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 OPENCLAW_SOURCE_COMMIT = "3a9d69db306cd7f081e06254cb89c4bcc14a7107"
 OPENCLAW_VERSION = "2026.9.4"
@@ -494,450 +484,137 @@ def build_bootstrap_context(
     return tuple(result)
 
 
-@dataclass
-class ManagedProcess:
-    session_id: str
-    process: subprocess.Popen[bytes]
-    command: str
-    cwd: str
-    started_at: float
-    backgrounded: bool = True
-    pty_fd: int | None = None
-    output: bytearray = field(default_factory=bytearray)
-    pending_output: bytearray = field(default_factory=bytearray)
-    ended_at: float | None = None
-    exit_code: int | None = None
-    removed: bool = False
-
-    @property
-    def exited(self) -> bool:
-        return self.process.poll() is not None
-
-    def refresh(self) -> None:
-        fd = self.pty_fd
-        if fd is None and self.process.stdout is not None and not self.process.stdout.closed:
-            try:
-                fd = self.process.stdout.fileno()
-            except (AttributeError, ValueError):
-                fd = None
-        if fd is not None:
-            try:
-                while select.select([fd], [], [], 0)[0]:
-                    data = os.read(fd, 65536)
-                    if not data:
-                        break
-                    self.output.extend(data)
-                    self.pending_output.extend(data)
-                    if len(self.output) > MAX_AGGREGATE_OUTPUT_CHARS:
-                        del self.output[:-MAX_AGGREGATE_OUTPUT_CHARS]
-                    if len(self.pending_output) > MAX_PENDING_OUTPUT_CHARS:
-                        del self.pending_output[:-MAX_PENDING_OUTPUT_CHARS]
-            except (BlockingIOError, OSError) as exc:
-                if not isinstance(exc, BlockingIOError) and getattr(exc, "errno", None) not in {errno.EAGAIN, errno.EIO}:
-                    raise
-        code = self.process.poll()
-        if code is not None and self.ended_at is None:
-            self.exit_code = code
-            self.ended_at = time.time()
-    def send_input(self, data: bytes) -> None:
-        if self.pty_fd is not None:
-            os.write(self.pty_fd, data)
-            return
-        if self.process.stdin is None:
-            raise ValueError("stdin is not writable")
-        self.process.stdin.write(data)
-        self.process.stdin.flush()
-
-
-@dataclass(frozen=True)
-class PendingDelivery:
-    session_id: str
-    text: str
-    details: Mapping[str, Any]
-    _ack: Callable[[], None] = field(repr=False, compare=False)
-
-    def acknowledge(self) -> None:
-        self._ack()
-
-
-class ProcessScope:
-    """Owns all processes for one disposable agent-exec episode."""
-
-    def __init__(self, scope_key: str | None = None, max_live: int = MAX_LIVE_PROCESSES):
-        self.scope_key = scope_key or f"agent-exec:{uuid.uuid4()}"
-        self.max_live = max_live
-        self._records: MutableMapping[str, ManagedProcess] = {}
-        self._finished: MutableMapping[str, ManagedProcess] = {}
-
-    def _live_count(self) -> int:
-        return sum(not record.exited for record in self._records.values() if not record.removed)
-
-    def register(self, record: ManagedProcess) -> None:
-        if self._live_count() >= self.max_live:
-            raise RuntimeError(f"live exec process limit exceeded ({self.max_live})")
-        self._records[record.session_id] = record
-
-    def get(self, session_id: str) -> ManagedProcess | None:
-        record = self._records.get(session_id) or self._finished.get(session_id)
-        if record is None or record.removed:
-            return None
-        return record
-
-    def reap(self) -> None:
-        for record in tuple(self._records.values()):
-            record.refresh()
-            if record.exited:
-                self._finished[record.session_id] = record
+class _NodeWorkerScope:
+    def __init__(self, worker: "_OpenClawWorkerClient") -> None:
+        self._worker = worker
 
     def cleanup(self) -> None:
-        """Required-all process-tree cleanup; absence is independently checked."""
-        self.reap()
-        errors: list[str] = []
-        for record in tuple(self._records.values()):
-            if record.exited:
-                continue
-            try:
-                os.killpg(record.process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            except OSError as exc:
-                errors.append(f"{record.session_id}: {exc}")
-        deadline = time.monotonic() + 2.0
-        while time.monotonic() < deadline:
-            self.reap()
-            if all(record.exited for record in self._records.values()):
-                break
-            time.sleep(0.01)
-        for record in tuple(self._records.values()):
-            if record.exited:
-                continue
-            try:
-                os.killpg(record.process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            except OSError as exc:
-                errors.append(f"{record.session_id}: {exc}")
-        self.reap()
-        survivors = [record.session_id for record in self._records.values() if not record.exited]
-        if survivors:
-            errors.append(f"processes still live after required-all cleanup: {survivors}")
-        if errors:
-            raise RuntimeError("; ".join(errors))
-
-    def __enter__(self) -> "ProcessScope":
+        self._worker.close()
+    def __enter__(self) -> "_NodeWorkerScope":
         return self
 
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
         self.cleanup()
 
 
-class OpenClawNativeTools:
-    """Contained native tool implementation used by replay and focused tests."""
+class _OpenClawWorkerClient:
+    """Synchronous JSONL bridge to the pinned Node source-tool worker."""
 
-    def __init__(self, workspace: str | Path, *, scope: ProcessScope | None = None):
-        self.workspace = Path(workspace).resolve()
-        self.workspace.mkdir(parents=True, exist_ok=True)
-        self.scope = scope or ProcessScope()
-        self._pending: dict[str, PendingDelivery] = {}
+    def __init__(self, workspace: str | Path, *, node: str | None = None, dist: str | None = None) -> None:
+        self.workspace = str(Path(workspace).resolve())
+        self.node = node or os.environ.get("OPENCLAW_NODE", "node")
+        self.dist = dist or os.environ.get("OPENCLAW_DIST", "/opt/openclaw/dist")
+        if not Path(self.dist).is_dir():
+            candidates = sorted(Path("/tmp").glob("openclaw-npm-*/node_modules/openclaw/dist"))
+            if candidates:
+                self.dist = str(candidates[-1])
+        worker = Path(__file__).with_name("openclaw_tool_worker.mjs")
+        env = os.environ.copy()
+        env["OPENCLAW_DIST"] = self.dist
+        self._process = subprocess.Popen(
+            [self.node, str(worker)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+            cwd=self.workspace,
+            bufsize=1,
+        )
+        self._pending: dict[str, str] = {}
+        self._request({"op": "init", "workspace": self.workspace})
 
-    def _path(self, value: str) -> Path:
-        raw = _normalize_path(value)
-        candidate = Path(raw[1:] if raw.startswith("@") else raw)
-        resolved = (self.workspace / candidate).resolve() if not candidate.is_absolute() else candidate.resolve()
-        try:
-            resolved.relative_to(self.workspace)
-        except ValueError as exc:
-            raise PermissionError(f"Path escapes workspace: {value}") from exc
-        return resolved
+    def _request(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        if self._process.stdin is None or self._process.stdout is None:
+            raise RuntimeError("OpenClaw Node worker pipes are unavailable")
+        self._process.stdin.write(json.dumps(dict(payload), ensure_ascii=False) + "\n")
+        self._process.stdin.flush()
+        line = self._process.stdout.readline()
+        if not line:
+            details = self._process.stderr.read() if self._process.stderr is not None else ""
+            raise RuntimeError(f"OpenClaw Node worker exited: {details[-400:]}")
+        response = json.loads(line)
+        if not response.get("ok"):
+            raise ValueError(str(response.get("error", "OpenClaw Node worker request failed")))
+        return response
 
     def execute(self, name: str, arguments: Mapping[str, Any] | None = None) -> dict[str, Any]:
-        args = prepare_tool_call(name, arguments)
-        if name == "ls":
-            path = self._path(str(args.get("path") or "."))
-            entries = sorted(path.iterdir(), key=lambda item: item.name)
-            return {"status": "completed", "entries": [item.name + ("/" if item.is_dir() else "") for item in entries]}
-        if name == "read":
-            path = self._path(str(args["path"]))
-            if path.is_dir():
-                raise IsADirectoryError(f"Read requires a file: {path}")
-            text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
-            offset = int(args.get("offset", 1) or 1)
-            limit = args.get("limit")
-            lines = text.splitlines(keepends=True)
-            selected = lines[max(0, offset - 1) : (max(0, offset - 1) + int(limit) if limit is not None else None)]
-            return {"status": "completed", "path": str(args["path"]), "content": "".join(selected)}
-        if name == "write":
-            path = self._path(str(args["path"]))
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(str(args.get("content", "")), encoding="utf-8", newline="")
-            return {"status": "completed", "changed": True, "path": str(args["path"])}
-        if name == "edit":
-            return self._edit(args)
-        if name == "exec":
-            return self._exec(args)
-        if name == "process":
-            return self._process(args)
-        raise ValueError(f"Unknown OpenClaw tool {name!r}")
-
-    def _edit(self, args: Mapping[str, Any]) -> dict[str, Any]:
-        path = self._path(str(args.get("path") or ""))
-        edits = args.get("edits")
-        if not isinstance(edits, list) or not edits:
-            raise ValueError("Edit tool input is invalid. edits must contain at least one replacement.")
-        original = path.read_text(encoding="utf-8")
-        spans: list[tuple[int, int, str]] = []
-        for edit in edits:
-            if not isinstance(edit, Mapping) or not isinstance(edit.get("oldText"), str) or not isinstance(edit.get("newText"), str):
-                raise ValueError("Edit replacement must contain oldText and newText strings")
-            old = edit["oldText"]
-            matches = [m.start() for m in re.finditer(re.escape(old), original)]
-            if len(matches) != 1:
-                raise ValueError(f"Could not find the exact text in {args.get('path')}: expected one match")
-            start = matches[0]
-            spans.append((start, start + len(old), edit["newText"]))
-        spans.sort()
-        if any(right > next_left for (_, right, _), (next_left, _, _) in zip(spans, spans[1:])):
-            raise ValueError("Edit replacements must be non-overlapping")
-        output = original
-        for start, end, new in reversed(spans):
-            output = output[:start] + new + output[end:]
-        if output == original:
-            return {"status": "completed", "changed": False, "path": str(args.get("path"))}
-        path.write_text(output, encoding="utf-8", newline="")
-        return {"status": "completed", "changed": True, "path": str(args.get("path"))}
-    def _exec(self, args: Mapping[str, Any]) -> dict[str, Any]:
-        command = str(args.get("command") or "")
-        if not command:
-            raise ValueError("Provide a command to start.")
-        cwd = self._path(str(args.get("workdir") or "."))
-        env = {key: value for key, value in os.environ.items() if not _is_provider_auth_env(key)}
-        requested_env = args.get("env")
-        if isinstance(requested_env, Mapping):
-            env.update(
-                {
-                    str(key): str(value)
-                    for key, value in requested_env.items()
-                    if not _is_provider_auth_env(str(key))
-                }
+        response = self._request({
+            "op": "tool",
+            "tool_call_id": str(uuid.uuid4()),
+            "name": name,
+            "arguments": dict(arguments or {}),
+        })
+        result = response.get("result")
+        if not isinstance(result, Mapping):
+            raise ValueError("OpenClaw source tool returned a non-object result")
+        details = result.get("details") if isinstance(result.get("details"), Mapping) else {}
+        content = result.get("content")
+        text = ""
+        if isinstance(content, Sequence) and not isinstance(content, (str, bytes)):
+            text = "\n".join(
+                str(part.get("text", ""))
+                for part in content
+                if isinstance(part, Mapping) and part.get("type") == "text"
             )
-        pty_fd: int | None = None
-        warning: str | None = None
-        use_pty = bool(args.get("pty"))
-        stdin: Any = subprocess.PIPE
-        stdout: Any = subprocess.PIPE
-        stderr: Any = subprocess.STDOUT
-        if use_pty and pty is not None:
-            try:
-                pty_fd, slave = pty.openpty()
-                os.set_blocking(pty_fd, False)
-                stdin = slave
-                stdout = slave
-                stderr = slave
-            except OSError as exc:
-                warning = f"PTY spawn failed ({exc}); fell back to pipes."
-                pty_fd = None
-        elif use_pty:
-            warning = "PTY unavailable; fell back to pipes."
-        if self.scope._live_count() >= self.scope.max_live:
-            if pty_fd is not None:
-                os.close(pty_fd)
-                os.close(stdin)
-            raise RuntimeError(f"live exec process limit exceeded ({self.scope.max_live})")
-        process = subprocess.Popen(
-            ["/bin/sh", "-lc", command],
-            cwd=str(cwd),
-            env=env,
-            stdin=stdin,
-            stdout=stdout,
-            stderr=stderr,
-            start_new_session=True,
-        )
-        if pty_fd is not None:
-            os.close(stdin)
-        session = ManagedProcess(str(uuid.uuid4()), process, command, str(cwd), time.time(), pty_fd=pty_fd)
-        self.scope.register(session)
-        yield_ms = 0 if args.get("background") is True else int(args.get("yieldMs", EXEC_YIELD_MS))
-        timeout = args.get("timeoutSeconds", EXEC_DEFAULT_TIMEOUT_SECONDS)
-        timeout_seconds = None if timeout == 0 else min(float(timeout), EXEC_MAX_TIMEOUT_SECONDS)
-        prefix: dict[str, Any] = {"status": "running", "sessionId": session.session_id, "pid": process.pid}
-        if warning:
-            prefix["warning"] = warning
-        if args.get("background") is True:
-            return prefix
-        if pty_fd is not None:
-            deadline = time.monotonic() + (timeout_seconds if timeout_seconds is not None else 86_400)
-            while not session.exited and time.monotonic() < deadline:
-                session.refresh()
-                time.sleep(0.01)
-            session.refresh()
-            if not session.exited:
-                try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-                return {**prefix, "status": "failed", "error": "Command timed out"}
-            return {
-                **prefix,
-                "status": "completed",
-                "output": bytes(session.output).decode(errors="replace"),
-                "exitCode": session.exit_code,
-            }
-        try:
-            if yield_ms > 0:
-                try:
-                    output, _ = process.communicate(timeout=yield_ms / 1000)
-                    session.output.extend(output or b"")
-                    session.pending_output.extend(output or b"")
-                    session.refresh()
-                    return {
-                        **prefix,
-                        "status": "completed",
-                        "output": (output or b"").decode(errors="replace"),
-                        "exitCode": process.returncode,
-                    }
-                except subprocess.TimeoutExpired:
-                    return prefix
-            output, _ = process.communicate(timeout=timeout_seconds)
-            session.output.extend(output or b"")
-            session.pending_output.extend(output or b"")
-            session.refresh()
-            return {
-                **prefix,
-                "status": "completed",
-                "output": (output or b"").decode(errors="replace"),
-                "exitCode": process.returncode,
-            }
-        except subprocess.TimeoutExpired:
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            return {**prefix, "status": "failed", "error": "Command timed out"}
-    def _poll_delivery(self, record: ManagedProcess) -> PendingDelivery:
-        record.refresh()
-        existing = self._pending.get(record.session_id)
-        if existing is not None:
-            return existing
-        payload = bytes(record.pending_output)
-        text = payload.decode(errors="replace").strip() or "(no new output)"
-        acknowledged = False
+        normalized = dict(details)
+        normalized.setdefault("status", "completed")
+        if name in {"read", "write", "edit", "ls"}:
+            normalized.setdefault("content", text)
+        elif text:
+            normalized.setdefault("output", text)
+        ack = response.get("acknowledgement")
+        if isinstance(ack, Mapping) and isinstance(ack.get("token"), str):
+            normalized["acknowledgement"] = dict(ack)
+            session_id = details.get("sessionId")
+            if name == "process" and details.get("status") in {"running", "completed"} and session_id:
+                self._pending[str(session_id)] = str(ack["token"])
+                normalized["pendingAcknowledgement"] = True
+        return normalized
 
-        def acknowledge() -> None:
-            nonlocal acknowledged
-            if acknowledged:
-                return
-            acknowledged = True
-            record.pending_output.clear()
-            self._pending.pop(record.session_id, None)
+    def acknowledge(self, session_id: str) -> None:
+        token = self._pending.pop(str(session_id), None)
+        if token:
+            self._request({"op": "ack", "token": token})
 
-        delivery = PendingDelivery(
-            record.session_id,
-            text,
-            {"status": "completed" if record.exited else "running", "sessionId": record.session_id},
-            acknowledge,
-        )
-        self._pending[record.session_id] = delivery
-        return delivery
+    def bootstrap(self) -> tuple[Mapping[str, Any], ...]:
+        response = self._request({"op": "bootstrap"})
+        context = response.get("context")
+        return tuple(item for item in context if isinstance(item, Mapping)) if isinstance(context, Sequence) else ()
+
+    def close(self) -> None:
+        if self._process.poll() is None:
+            self._process.terminate()
+            try:
+                self._process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self._process.kill()
+                self._process.wait()
+
+
+
+class OpenClawNativeTools:
+    """Contained facade over the pinned Node OpenClaw source-tool worker."""
+
+    def __init__(
+        self,
+        workspace: str | Path,
+        *,
+        worker: _OpenClawWorkerClient | None = None,
+    ) -> None:
+        self.workspace = Path(workspace).resolve()
+        self.workspace.mkdir(parents=True, exist_ok=True)
+        self._worker = worker or _OpenClawWorkerClient(self.workspace)
+        self.scope = _NodeWorkerScope(self._worker)
+
+    def execute(self, name: str, arguments: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        return self._worker.execute(name, prepare_tool_call(name, arguments))
 
     def acknowledge_poll(self, session_id: str) -> None:
-        delivery = self._pending.get(session_id)
-        if delivery:
-            delivery.acknowledge()
+        self._worker.acknowledge(session_id)
 
-    def _process(self, args: Mapping[str, Any]) -> dict[str, Any]:
-        self.scope.reap()
-        action = args.get("action")
-        if action == "list":
-            records = {r.session_id: r for r in (*self.scope._records.values(), *self.scope._finished.values())}
-            records = [r for r in records.values() if not r.removed]
-            return {"status": "completed", "sessions": [{"sessionId": r.session_id, "status": "completed" if r.exited else "running", "runtimeMs": int(((r.ended_at or time.time()) - r.started_at) * 1000), "command": r.command, "cwd": r.cwd} for r in records]}
-        session_id = str(args.get("sessionId") or "")
-        record = self.scope.get(session_id)
-        if record is None:
-            return {"status": "failed", "error": f"No session found for {session_id}"}
-        if action == "poll":
-            wait_ms = max(0, min(PROCESS_MAX_POLL_MS, int(float(args.get("timeout", 0) or 0))))
-            deadline = time.monotonic() + wait_ms / 1000
-            while wait_ms and not record.exited and not record.pending_output and time.monotonic() < deadline:
-                time.sleep(min(0.25, max(0, deadline - time.monotonic())))
-                record.refresh()
-            delivery = self._poll_delivery(record)
-            return {"status": delivery.details["status"], "sessionId": session_id, "output": delivery.text, "pendingAcknowledgement": True}
-        if action == "log":
-            record.refresh()
-            lines = bytes(record.output).decode(errors="replace").splitlines()
-            requested_limit = args.get("limit")
-            limit = int(requested_limit) if isinstance(requested_limit, (int, float)) else 200
-            limit = max(0, min(200, limit))
-            offset = int(args.get("offset", max(0, len(lines) - 200)) or 0)
-            page = lines[offset : offset + limit]
-            return {
-                "status": "completed" if record.exited else "running",
-                "sessionId": session_id,
-                "output": "\n".join(page),
-                "totalLines": len(lines),
-                "offset": offset,
-                "limit": limit,
-                "truncated": len(page) < len(lines),
-            }
-        if action == "write":
-            try:
-                record.send_input(str(args.get("data", "")).encode())
-            except (OSError, ValueError) as exc:
-                return {"status": "failed", "error": str(exc)}
-            if args.get("eof") and record.process.stdin is not None:
-                record.process.stdin.close()
-            return {"status": "running", "sessionId": session_id}
-        if action in {"submit", "paste", "send-keys"}:
-            if record.pty_fd is None and record.process.stdin is None:
-                return {"status": "failed", "error": "stdin is not writable"}
-            if action == "submit":
-                data = b"\r"
-            elif action == "paste":
-                text = str(args.get("text", ""))
-                data = ("\x1b[200~" + text + "\x1b[201~").encode() if args.get("bracketed", True) else text.encode()
-            else:
-                key_bytes = {
-                    "ENTER": b"\r", "RETURN": b"\r", "TAB": b"\t", "ESC": b"\x1b",
-                    "SPACE": b" ", "BACKSPACE": b"\x7f", "CTRL_C": b"\x03", "CTRL_D": b"\x04",
-                    "UP": b"\x1b[A", "DOWN": b"\x1b[B", "LEFT": b"\x1b[D", "RIGHT": b"\x1b[C",
-                }
-                chunks = [key_bytes[str(key).upper()] for key in (args.get("keys") or []) if str(key).upper() in key_bytes]
-                for raw_hex in args.get("hex") or []:
-                    try:
-                        chunks.append(bytes.fromhex(str(raw_hex)))
-                    except ValueError as exc:
-                        return {"status": "failed", "error": f"Invalid hex key: {raw_hex}"}
-                literal = args.get("literal")
-                if literal is not None:
-                    chunks.append(str(literal).encode())
-                data = b"".join(chunks)
-            try:
-                record.send_input(data)
-            except (OSError, ValueError) as exc:
-                return {"status": "failed", "error": str(exc)}
-            return {"status": "running", "sessionId": session_id}
-        if action == "kill":
-            try:
-                os.killpg(record.process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            return {"status": "completed", "sessionId": session_id, "message": f"Termination requested for session {session_id}."}
-        if action == "clear":
-            if not record.exited:
-                return {"status": "failed", "error": f"Session {session_id} is not finished."}
-            record.removed = True
-            return {"status": "completed", "sessionId": session_id}
-        if action == "remove":
-            if not record.exited:
-                try:
-                    os.killpg(record.process.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-                return {"status": "completed", "sessionId": session_id, "message": f"Removed session {session_id} (termination requested)."}
-            record.removed = True
-            return {"status": "completed", "sessionId": session_id}
-        return {"status": "failed", "error": f"Unknown process action {action}"}
+    def bootstrap_context(self) -> tuple[Mapping[str, Any], ...]:
+        return self._worker.bootstrap()
 
 
 @dataclass(frozen=True)
@@ -963,16 +640,25 @@ def stop_before_recovery(
 
 
 def native_worker_invocation() -> dict[str, Any]:
-    """Tool-only worker command; no model loop, provider, or supplier process."""
+    """Tool-only Node worker command; no model loop, provider, or supplier process."""
     return {
-        "command": ["python", "-m", "breadboard.rl.harness.openclaw_tool_worker"],
+        "command": ["node", "breadboard/rl/harness/openclaw_tool_worker.mjs"],
         "protocol": "bb.openclaw.tool-worker.jsonl.v1",
+        "runtime": "node >=24.16.0 <25 || >=26.1.0",
+        "source_modules": [
+            "core-coding-tools-DoP9tAh3.mjs",
+            "bash-tools-Cb_Bzn6B.mjs",
+            "resource-loader-Bu_pVD2t.mjs",
+            "bootstrap-DYYMCrXY.mjs",
+            "workspace-YW5Pl2cf.mjs",
+        ],
         "source_commit": OPENCLAW_SOURCE_COMMIT,
         "worker_owns": [
-            "tool preparation",
+            "pinned source tool construction",
             "tool effects",
             "process scope",
             "pending acknowledgements",
+            "bootstrap loader",
         ],
         "breadboard_owns": [
             "model dispatch",
