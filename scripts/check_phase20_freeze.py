@@ -223,6 +223,12 @@ ALLOWED_LANE_SOURCE_PATHS = {
     "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.lock.json",
 }
 
+# Evidence-only lane IDs admitted after the freeze; each names its authority.
+ALLOWED_LANE_IDS = {
+    "oh_my_pi_p6_6_task_job_subagent_v2",  # NS05B; runtime surface remains frozen.
+    "mini_swe_agent_2_4_6_replay",  # AM33; compared, 0 points.
+}
+
 # Packet M1 owns closeout files. The pattern is deliberately restricted to root-level
 # files that identify both the M track and the otherwise-frozen governance surface.
 M_TRACK_GOVERNANCE_FILE = re.compile(
@@ -609,7 +615,7 @@ def _added_values(
 
     lane_id_additions = _string_set(current.get("lane_ids"), "lane_ids") - _string_set(
         baseline.get("lane_ids"), "lane_ids"
-    ) - {"oh_my_pi_p6_6_task_job_subagent_v2"}  # NS05B evidence-only lane; runtime surface remains frozen.
+    ) - ALLOWED_LANE_IDS
     lane_kind_additions = _string_set(current.get("lane_kinds"), "lane_kinds") - _string_set(
         baseline.get("lane_kinds"), "lane_kinds"
     )

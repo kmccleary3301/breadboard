@@ -513,3 +513,11 @@ spellings through exact-pointer convention allowances, not a whole-schema
 exemption. Historical v1 resource/index bytes and the freeze baseline are
 unchanged. This correction remains subject to fresh artifact, CI and independent
 review gates; it does not authorize runtime or recipient acceptance.
+
+## Amendment 33 - 2026-09-23 - mini-swe-agent 2.4.6 evidence lane
+
+**Authorization:** Kyle's AM32 acceptance of the E4 execution plan and the standing-approval rule cited in AM26. The plan has each new profile runtime admitted by its own packet after AM32's compiler admission. This packet is `ACR-20260923-mini-swe-agent-source-profile`.
+
+**Consumer and gap:** the mini-swe-agent 2.4.6 profile needs an executable lane that compares BreadBoard's replay with an independent supplier capture. The frozen lane inventory has no lane for that profile, and the freeze gate rejects the ID.
+
+**Scope:** `scripts/check_phase20_freeze.py` admits exactly one lane ID, `mini_swe_agent_2_4_6_replay`, which uses the existing `lane_def_legacy` kind and comparator protocol. The lane is evidence-only: its status is `compared` and it carries 0 points. It adds no lane kind, schema ID, SDK package, ledger or scorecard. The freeze baseline is unchanged. Claim, acceptance and points remain external gates; the other E4 profiles need their own amendments.

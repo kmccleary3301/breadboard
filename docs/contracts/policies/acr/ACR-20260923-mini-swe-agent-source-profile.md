@@ -29,6 +29,7 @@ The required outcome is exact trace equality on every supplier-comparable case, 
 - `V2RunResult.primary_failure` and the `terminal.run_failure` projection in `service.py` and `headless.py`.
 - The `mini_swe_agent_trace_v1` comparator, schema-checked comparator registry admission, and lane `config/e4_lanes/mini_swe_agent_2_4_6_replay.yaml`.
 - The wheel-input fix for the target package in `setup.py`.
+- Phase 20 freeze admission of the lane ID alone (`SPEC_AMENDMENTS.md` AM33, `scripts/check_phase20_freeze.py`). The script index records the new comparator test as a `run_lane.py` caller.
 - Kernel danger-zone change? yes
 - Outside scope:
   - the other five E4 profiles
