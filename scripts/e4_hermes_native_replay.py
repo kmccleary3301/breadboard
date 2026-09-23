@@ -36,6 +36,7 @@ REPLAY=$ROOT/replay
 SIF=$ROOT/images/hermes-public.sif
 REPO=$REPLAY/repo
 PACKET=$REPLAY/hermes-supplier-capture-packet-rerun3.tar.gz
+rm -rf "$REPLAY/out" "$REPLAY/packet" "$REPLAY/bb-deps"
 mkdir -p "$REPLAY/out" "$REPLAY/packet" "$REPLAY/bb-deps"
 sha256sum "$ROOT/images/hermes-supplier.sif" | grep -F '{SIF_SHA256}'
 sha256sum "$PACKET" | grep -F '{PACKET_SHA256}'

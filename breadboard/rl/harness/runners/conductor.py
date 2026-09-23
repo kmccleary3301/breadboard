@@ -2639,6 +2639,11 @@ class _ConductorSession:
                 candidate_digest, candidate_state,
             ))
             history, history_digest, state = candidate_history, candidate_digest, candidate_state
+            await tools.invoke_native_phase(
+                "history_ack",
+                {"history_digest": candidate_digest, "remaining_seconds": remaining()},
+                timeout_ms=max(1, int(min(40, remaining()) * 1000)),
+            )
 
         async def phase(
             operation: str, payload: Mapping[str, Any], phase_name: str,
@@ -2964,6 +2969,7 @@ class _ConductorSession:
             "normalizations": [],
         }
         return RunnerResult(
+            episode_id=self._open_request.episode_id,
             effective_plan_digest=self._open_request.effective_plan_digest,
             original_request={"task_input": request.task_input, "context": request.context},
             response={
