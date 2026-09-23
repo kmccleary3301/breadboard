@@ -176,6 +176,11 @@ class OpenClawToolBatch:
 
 @dataclass(frozen=True)
 class OpenClawParseResult:
+    """Adapter for source-finalized assistant/tool history.
+
+    Source: ``packages/agent-core/src/agent-stream-response.ts:302-380``
+    and ``packages/ai/src/openai-completions-messages.ts:190-276``.
+    """
     assistant_message: Mapping[str, Any]
     tool_batch: OpenClawToolBatch
     history_mutations: tuple[Mapping[str, Any], ...]
@@ -338,6 +343,7 @@ def finalize_native_chat_response(
         executable = False
     assistant_content: Any = content
     if calls:
+        # Source toolCall block replay: packages/ai/src/openai-completions-messages.ts:190-238.
         blocks: list[dict[str, Any]] = []
         if content:
             blocks.append({"type": "text", "text": content})
@@ -493,7 +499,10 @@ class OpenClawSemanticsState:
         return self.request_count
 
     def consume_native_response(self, response: Any) -> OpenClawParseResult:
-        """Finalize one native response; no tool effect occurs here."""
+        """Persist source-finalized response before any tool result commit.
+
+        Source: ``packages/agent-core/src/agent-stream-response.ts:302-380``.
+        """
         result = finalize_native_chat_response(response)
         self.raw_responses.append(_as_mapping(response))
         self.history.extend(dict(message) for message in result.history_mutations)
