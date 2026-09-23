@@ -4369,15 +4369,51 @@ async def test_openhands_trace_is_frozen_json_and_comparator_compatible(
 
 
 
-async def test_openhands_error_observations_match_supplier_projection(tmp_path: Path) -> None:
-    """Compare independent SDK event shapes from OH-02 and OH-05 fixtures.
 
-    ``OH-02-invalid-call-continues/trace.json`` supplies the real
-    ``AgentErrorEvent`` shape.  ``OH-05-iteration-budget/trace.json`` supplies
-    the real ``TerminalObservation`` shape; its supplier event is independently
-    flipped to ``is_error: true`` here to exercise a failed action.
+async def test_openhands_error_observations_match_supplier_projection(tmp_path: Path) -> None:
+    """Compare the committed OH-02 and OH-05 event objects without fabrication.
+
+    ``OH-02-invalid-call-continues/trace.json#/events/2`` is the real
+    ``AgentErrorEvent``.  ``OH-05-iteration-budget/trace.json#/events/1`` is
+    the real ``ObservationEvent`` with a ``TerminalObservation``; only its
+    supplier-side ``/observation/is_error`` value is flipped to true.
     """
-    from conformance.comparators.openhands_sdk import compare_cases, project_bb_trace
+    from conformance.comparators.openhands_sdk import (
+        compare_cases,
+        project_bb_trace,
+        project_supplier_case,
+    )
+
+    fixtures = Path(__file__).resolve().parents[2] / "e4_parity" / "fixtures" / "openhands_sdk"
+    oh2_path = fixtures / "OH-02-invalid-call-continues" / "trace.json"
+    oh5_path = fixtures / "OH-05-iteration-budget" / "trace.json"
+    assert oh2_path.is_file()
+    assert oh5_path.is_file()
+    oh2 = json.loads(oh2_path.read_text(encoding="utf-8"))
+    oh5 = json.loads(oh5_path.read_text(encoding="utf-8"))
+    oh2_events = oh2.get("events")
+    oh5_events = oh5.get("events")
+    assert isinstance(oh2_events, list)
+    assert isinstance(oh5_events, list)
+    agent_index = next(
+        index for index, event in enumerate(oh2_events)
+        if event.get("kind") == "AgentErrorEvent"
+    )
+    observation_index = next(
+        index for index, event in enumerate(oh5_events)
+        if (
+            event.get("kind") == "ObservationEvent"
+            and event.get("observation", {}).get("kind") == "TerminalObservation"
+        )
+    )
+    assert agent_index == 2
+    assert observation_index == 1
+    agent_error = copy.deepcopy(oh2_events[agent_index])
+    agent_error["id"] = "agent-error-1"
+    second_agent_error = copy.deepcopy(agent_error)
+    second_agent_error["id"] = "agent-error-2"
+    failed_observation = copy.deepcopy(oh5_events[observation_index])
+    failed_observation["observation"]["is_error"] = True
 
     observation = _observation()
     tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
@@ -4389,22 +4425,6 @@ async def test_openhands_error_observations_match_supplier_projection(tmp_path: 
         limit_updates={"max_turns": 16, "action_timeout_ms": 90_000},
         implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
     )
-    failed_observation = {
-        "kind": "ObservationEvent",
-        "tool_name": "terminal",
-        "observation": {"kind": "TerminalObservation", "is_error": True},
-    }
-    agent_error = {
-        "kind": "AgentErrorEvent",
-        "id": "agent-error-1",
-        "tool_name": "file_editor",
-        "error": "invalid command",
-        "classification": {"kind": "agent_action", "retryable": True},
-    }
-    second_agent_error = {
-        **agent_error,
-        "id": "agent-error-2",
-    }
     client = _OpenHandsTraceClient(observation)
     tools = _OpenHandsTracePort(
         native_observations=(failed_observation,),
@@ -4422,28 +4442,12 @@ async def test_openhands_error_observations_match_supplier_projection(tmp_path: 
         await session.close()
     trace = thaw_json(result.response["replay_trace"])
     projected = project_bb_trace(trace)
-    assert projected["observations"] == [
-        {
-            "event_kind": "ObservationEvent",
-            "tool_name": "terminal",
-            "is_error": True,
-            "result": {"kind": "TerminalObservation", "is_error": True},
-        },
-        {
-            "event_kind": "AgentErrorEvent",
-            "tool_name": "file_editor",
-            "is_error": True,
-            "error_text": "invalid command",
-            "classification": {"kind": "agent_action", "retryable": True},
-        },
-        {
-            "event_kind": "AgentErrorEvent",
-            "tool_name": "file_editor",
-            "is_error": True,
-            "error_text": "invalid command",
-            "classification": {"kind": "agent_action", "retryable": True},
-        },
-    ]
+    assert projected["observations"][0]["is_error"] is True
+    assert sum(
+        event["event_kind"] == "AgentErrorEvent"
+        for event in projected["observations"]
+    ) == 2
+
     supplier = {
         "schema_version": "bb.e4.openhands-supplier-trace.v1",
         "case_id": "episode-a",
@@ -4466,13 +4470,9 @@ async def test_openhands_error_observations_match_supplier_projection(tmp_path: 
                 "security_risk": "LOW",
                 "tool_call": {"arguments": {}},
             },
-            {
-                "kind": "ObservationEvent",
-                "tool_name": "terminal",
-                "observation": {"kind": "TerminalObservation", "is_error": True},
-            },
-            agent_error,
-            second_agent_error,
+            copy.deepcopy(failed_observation),
+            copy.deepcopy(agent_error),
+            copy.deepcopy(second_agent_error),
         ],
         "effects": {},
         "exit": {"status": "finished"},
@@ -4481,8 +4481,14 @@ async def test_openhands_error_observations_match_supplier_projection(tmp_path: 
     (tmp_path / "trace.json").write_text(
         json.dumps(supplier, ensure_ascii=False), encoding="utf-8"
     )
+    expected = project_supplier_case(tmp_path)
     report = compare_cases(tmp_path, trace)
     assert report["ok"] is True
+    assert expected["observations"][0]["is_error"] is True
+    assert sum(
+        event["event_kind"] == "AgentErrorEvent"
+        for event in expected["observations"]
+    ) == 2
     tampered = copy.deepcopy(trace)
     tampered["observations"][0]["is_error"] = False
     negative = compare_cases(tmp_path, tampered)
