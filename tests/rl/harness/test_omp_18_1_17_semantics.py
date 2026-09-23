@@ -233,11 +233,16 @@ def test_omp_request_cap_refuses_before_native_query() -> None:
     assert refusal["stopReason"] == "error"
     assert state.request_count == 1
     assert state.stream_fn_issued == 2
-    guard = state.to_trace()["request_guard"]
+    trace = state.to_trace(
+        requests=[{"model": "capture"}],
+        runtime_inputs={"cwd": "/workspace", "home": "/home/capture", "current_date": "2026-09-23", "package_dir": "/packages"},
+        effects={},
+    )
     assert state.messages[-1] == {
         "role": "assistant",
         "content": "",
         "stopReason": "error",
         "isError": True,
     }
-    assert guard == {"limit": 1, "issued": 1, "stopped": True, "reason": "capture request cap"}
+    assert trace["request_count"] == 1
+    assert trace["exit"] == {"kind": "RequestLimitExceeded", "native_stop_reason": "error"}

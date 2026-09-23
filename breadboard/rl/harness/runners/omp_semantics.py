@@ -572,8 +572,6 @@ class OMPSemanticsState:
         self._pending_finish_reason: str | None = None
         self._closed = False
         self.effects: dict[str, Any] = {}
-        self._tool_calls: list[dict[str, Any]] = []
-        self._tool_results: list[dict[str, Any]] = []
 
     @property
     def is_exited(self) -> bool:
@@ -617,12 +615,6 @@ class OMPSemanticsState:
         for call in calls:
             blocks.append({
                 "type": "toolCall",
-                "id": call.id,
-                "name": call.name,
-                "arguments": call.arguments,
-            })
-            self._tool_calls.append({
-                "index": call.index,
                 "id": call.id,
                 "name": call.name,
                 "arguments": call.arguments,
@@ -741,14 +733,6 @@ class OMPSemanticsState:
                 content: Any = [{"type": "text", "text": result.output}]
                 is_error = result.error is not None
                 tool_id, tool_name = result.id, result.name
-                self._tool_results.append({
-                    "index": len(self._tool_results),
-                    "tool_call_id": tool_id,
-                    "tool_name": tool_name,
-                    "output": result.output,
-                    "error": result.error,
-                    "skipped": result.skipped,
-                })
             else:
                 raw = dict(result)
                 native_content = raw.get("content", "")
@@ -759,17 +743,6 @@ class OMPSemanticsState:
                 )
                 is_error = bool(raw.get("isError", raw.get("is_error", False)))
                 tool_id, tool_name = call.id, call.name
-                error = raw.get("error")
-                if error is None and is_error:
-                    error = native_content
-                self._tool_results.append({
-                    "index": len(self._tool_results),
-                    "tool_call_id": tool_id,
-                    "tool_name": tool_name,
-                    "output": native_content,
-                    "error": error,
-                    "skipped": bool(raw.get("skipped", False)),
-                })
             self.messages.append({
                 "role": "toolResult",
                 "toolCallId": tool_id,
@@ -783,41 +756,25 @@ class OMPSemanticsState:
     def to_trace(
         self,
         *,
-        requests: Sequence[Mapping[str, Any]] | None = None,
-        runtime_inputs: Mapping[str, str] | None = None,
-        effects: Mapping[str, Any] | None = None,
+        requests: Sequence[Mapping[str, Any]],
+        runtime_inputs: Mapping[str, str],
+        effects: Mapping[str, Any],
     ) -> dict[str, Any]:
-        cap_stopped = self.exit_status == "RequestLimitExceeded"
-        request_bodies = (
-            [dict(body) for body in requests]
-            if requests is not None
-            else []
-        )
         termination = {
             "kind": self.exit_status or "running",
             "native_stop_reason": self.native_stop_reason,
         }
+        request_bodies = [dict(body) for body in requests]
         return {
             "schema_version": "bb.e4.omp-replay-trace.v1",
             "profile": "omp",
             "consumer_id": CONSUMER_ID,
             "case_id": self.case_id,
-            "request_count": len(request_bodies) if requests is not None else self.request_count,
-            "request_guard": {
-                "limit": self.request_cap,
-                "issued": self.request_count,
-                "stopped": cap_stopped,
-                "reason": "capture request cap" if cap_stopped else None,
-            },
-            "messages": self.messages,
-            "events": self.messages,
+            "request_count": len(request_bodies),
             "requests": request_bodies,
-            "tool_calls": list(self._tool_calls),
-            "results": list(self._tool_results),
-            "runtime_inputs": dict(runtime_inputs or {}),
-            "effects": dict(effects if effects is not None else self.effects),
+            "runtime_inputs": dict(runtime_inputs),
+            "effects": dict(effects),
             "exit": termination,
-            "termination": termination,
         }
 __all__ = [
     "ALLOWED_TOOLS",

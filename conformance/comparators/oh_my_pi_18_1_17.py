@@ -103,27 +103,72 @@ def _requests(trace: Mapping[str, Any], declared: set[str]) -> list[dict[str, An
             }
         )
     return result
+def _request_messages(trace: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    messages: list[Mapping[str, Any]] = []
+    raw_requests = trace.get("requests", trace.get("request_bodies", []))
+    if not isinstance(raw_requests, list):
+        return messages
+    for item in raw_requests:
+        body = item.get("body", item) if isinstance(item, Mapping) else item
+        if not isinstance(body, Mapping):
+            continue
+        raw_messages = body.get("messages", [])
+        if isinstance(raw_messages, list):
+            messages.extend(message for message in raw_messages if isinstance(message, Mapping))
+    return messages
+
+
+def _source_messages(trace: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    messages = _request_messages(trace)
+    for field in ("history", "events", "messages"):
+        raw = trace.get(field)
+        if isinstance(raw, list):
+            messages.extend(item for item in raw if isinstance(item, Mapping))
+    return messages
+
+
+def _wire_identity(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=False)
 
 
 def _tool_calls(trace: Mapping[str, Any], declared: set[str]) -> list[dict[str, Any]]:
     candidates: list[Any] = []
-    if isinstance(trace.get("tool_calls"), list):
-        candidates.extend(trace["tool_calls"])
+    explicit = trace.get("tool_calls")
+    if isinstance(explicit, list):
+        candidates.extend(explicit)
     else:
-        history = trace.get("history", trace.get("events", []))
-        if isinstance(history, list):
-            for message in history:
-                if not isinstance(message, Mapping):
-                    continue
-                calls = message.get("tool_calls", message.get("toolCalls", []))
-                if isinstance(calls, list):
-                    candidates.extend(calls)
-                if message.get("type") in {"tool_call", "toolCall"}:
-                    candidates.append(message)
+        messages = _source_messages(trace)
+        for message in messages:
+            calls = message.get("tool_calls", message.get("toolCalls", []))
+            if isinstance(calls, list):
+                candidates.extend(calls)
+            blocks = message.get("content")
+            if isinstance(blocks, list):
+                candidates.extend(
+                    {
+                        "id": block.get("id"),
+                        "name": block.get("name"),
+                        "arguments": block.get("arguments", {}),
+                    }
+                    for block in blocks
+                    if isinstance(block, Mapping) and block.get("type") in {"toolCall", "tool_call"}
+                )
+            if message.get("type") in {"tool_call", "toolCall"}:
+                candidates.append(message)
     output: list[dict[str, Any]] = []
+    seen: dict[str, str] = {}
     for index, call in enumerate(candidates):
         if not isinstance(call, Mapping):
             continue
+        call_id = call.get("id", call.get("tool_call_id"))
+        identity = _wire_identity(call)
+        if call_id is not None:
+            prior = seen.get(str(call_id))
+            if prior is not None:
+                if prior != identity:
+                    raise ValueError(f"tool call {call_id!r} repeated with non-identical wire payload")
+                continue
+            seen[str(call_id)] = identity
         function = call.get("function") if isinstance(call.get("function"), Mapping) else {}
         name = call.get("name", function.get("name", ""))
         arguments = call.get("arguments", function.get("arguments", {}))
@@ -135,8 +180,8 @@ def _tool_calls(trace: Mapping[str, Any], declared: set[str]) -> list[dict[str, 
                 pass
         output.append(
             {
-                "index": call.get("index", index),
-                "id": call.get("id", call.get("tool_call_id")),
+                "index": call.get("index", len(output)),
+                "id": call_id,
                 "name": name,
                 "arguments": _normalize(arguments, declared=declared),
             }
@@ -146,22 +191,34 @@ def _tool_calls(trace: Mapping[str, Any], declared: set[str]) -> list[dict[str, 
 
 def _results(trace: Mapping[str, Any], declared: set[str]) -> list[dict[str, Any]]:
     raw = trace.get("results", trace.get("tool_results"))
-    if not isinstance(raw, list):
-        raw = []
-        history = trace.get("history", [])
-        if isinstance(history, list):
-            raw = [message for message in history if isinstance(message, Mapping) and message.get("role") in {"tool", "toolResult", "tool_result"}]
+    candidates: list[Any] = list(raw) if isinstance(raw, list) else []
+    if not candidates:
+        candidates.extend(
+            message
+            for message in _source_messages(trace)
+            if message.get("role") in {"tool", "toolResult", "tool_result"}
+        )
     result: list[dict[str, Any]] = []
-    for index, item in enumerate(raw):
+    seen: dict[str, str] = {}
+    for index, item in enumerate(candidates):
         if not isinstance(item, Mapping):
             item = {"output": item}
+        result_id = item.get("tool_call_id", item.get("toolCallId", item.get("id")))
+        identity = _wire_identity(item)
+        if result_id is not None:
+            prior = seen.get(str(result_id))
+            if prior is not None:
+                if prior != identity:
+                    raise ValueError(f"tool result {result_id!r} repeated with non-identical wire payload")
+                continue
+            seen[str(result_id)] = identity
         error = item.get("error")
         if error is None and item.get("isError"):
             error = item.get("content", item.get("output", ""))
         result.append(
             {
-                "index": item.get("index", index),
-                "id": item.get("tool_call_id", item.get("toolCallId", item.get("id"))),
+                "index": item.get("index", len(result)),
+                "id": result_id,
                 "name": item.get("tool_name", item.get("toolName", item.get("name"))),
                 "output": _normalize(item.get("output", item.get("content", "")), declared=declared),
                 "error": _normalize(error, declared=declared),
@@ -180,14 +237,6 @@ def _effects(case_dir: Path | None, trace: Mapping[str, Any]) -> dict[str, str |
                 effects[str(path)] = value.get("sha256")
             elif value is None or isinstance(value, str):
                 effects[str(path)] = value
-    if case_dir is not None:
-        workspace = case_dir / "workspace"
-        probe = trace.get("probe_paths", ())
-        if isinstance(probe, list):
-            for raw_path in probe:
-                path = str(raw_path)
-                target = workspace / path
-                effects.setdefault(path, _sha256(target) if target.is_file() else None)
     return dict(sorted(effects.items()))
 
 
@@ -199,6 +248,10 @@ def _termination(trace: Mapping[str, Any]) -> dict[str, Any]:
     kind = exit_value.get("kind", trace.get("termination", trace.get("termination_kind")))
     if kind is None:
         kind = "timed_out" if trace.get("timed_out") else ("submitted" if trace.get("exit_code") == 0 else "error")
+    if kind == "Submitted":
+        kind = "submitted"
+    elif kind == "RequestLimitExceeded":
+        kind = "request_limit_exceeded"
     return {"kind": kind, "native_stop_reason": reason}
 
 
@@ -216,11 +269,29 @@ def _project(trace: Mapping[str, Any], case_dir: Path | None = None) -> dict[str
     }
     return episode
 
+def _supplier_trace(path: Path) -> dict[str, Any]:
+    trace = _load(path)
+    if not path.is_dir() or isinstance(trace.get("requests"), list):
+        return trace
+    transcript = path / "receiver" / "http-transcript.jsonl"
+    if not transcript.is_file():
+        return trace
+    requests: list[dict[str, Any]] = []
+    for line in transcript.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if isinstance(row, Mapping) and isinstance(row.get("body"), Mapping):
+            requests.append({"index": len(requests), "body": dict(row["body"])})
+    if requests:
+        trace["requests"] = requests
+    return trace
+
 
 def project_supplier_case(case_dir: str | Path) -> dict[str, Any]:
     """Project a supplier capture directory to the canonical episode."""
     path = Path(case_dir)
-    trace = _load(path)
+    trace = _supplier_trace(path)
     return _project(trace, path if path.is_dir() else path.parent)
 
 
@@ -270,8 +341,20 @@ class OhMyPi18Comparator:
     def __call__(self, inp: Mapping[str, Any]) -> dict[str, Any]:
         capture = inp.get("capture") or inp.get("supplier")
         replay = inp.get("replay") or inp.get("breadboard")
-        expected = project_supplier_case(capture) if isinstance(capture, (str, Path)) else _project(capture or {})
-        observed = project_bb_trace(replay) if isinstance(replay, (str, Path)) else _project(replay or {})
+        try:
+            expected = project_supplier_case(capture) if isinstance(capture, (str, Path)) else _project(capture or {})
+            observed = project_bb_trace(replay) if isinstance(replay, (str, Path)) else _project(replay or {})
+        except (OSError, TypeError, ValueError) as exc:
+            return {
+                "schema_version": REPORT_SCHEMA_VERSION,
+                "comparator_id": COMPARATOR_ID,
+                "assertions": [],
+                "passed": 0,
+                "failed": 0,
+                "warned": 0,
+                "errors": [str(exc)],
+                "ok": False,
+            }
         return self.compare_episodes(expected, observed)
 
     compare = __call__
