@@ -36,6 +36,7 @@ _WHEEL_INPUT_PATHS = (
     "breadboard_sdk",
     "config/e4_targets/index.json",
     "config/e4_targets/notices",
+    "config/e4_targets/mini_swe_agent/2.4.6",
     "config/e4_targets/oh_my_pi/16.2.13",
     "config/e4_targets/pi/0.57.1",
     "config/product",
