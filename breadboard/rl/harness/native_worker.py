@@ -240,21 +240,49 @@ def _pidfd_is_dead(pidfd: int) -> bool:
     return bool(poller.poll(0))
 
 
-def _unshare_pid_namespace() -> None:
-    """Enter a new PID namespace for the next fork via libc ``unshare(2)``.
+_CLONE_NEWUSER = 0x10000000
+_CLONE_NEWPID = 0x20000000
 
-    ``os.unshare`` exists only on Python 3.12+ and the project supports 3.11;
-    like ``mount_namespace_broker``, call the syscall through libc.
-    """
-    clone_newpid = 0x20000000  # CLONE_NEWPID
+
+def _libc_unshare(flags: int) -> int:
+    """Call libc ``unshare(2)``; return 0 or the errno."""
     libc_unshare = getattr(ctypes.CDLL(None, use_errno=True), "unshare", None)
     if libc_unshare is None:
         raise WorkerBootstrapError("Linux unshare is unavailable")
     libc_unshare.argtypes = [ctypes.c_int]
     libc_unshare.restype = ctypes.c_int
-    if libc_unshare(clone_newpid) != 0:
-        error = ctypes.get_errno()
+    return 0 if libc_unshare(flags) == 0 else ctypes.get_errno()
+
+
+def _unshare_pid_namespace() -> None:
+    """Enter a new PID namespace for the next fork via libc ``unshare(2)``.
+
+    ``os.unshare`` exists only on Python 3.12+ and the project supports 3.11;
+    like ``mount_namespace_broker``, call the syscall through libc.  A caller
+    without CAP_SYS_ADMIN (EPERM) instead creates an owned user namespace with
+    an identity uid/gid map and the PID namespace inside it; kernels that deny
+    unprivileged user namespaces still fail closed.  The caller must be
+    single-threaded, which ``serve`` is before it forks.
+    """
+    error = _libc_unshare(_CLONE_NEWPID)
+    if error == 0:
+        return
+    if error != errno.EPERM:
         raise OSError(error, os.strerror(error))
+    uid, gid = os.getuid(), os.getgid()
+    error = _libc_unshare(_CLONE_NEWUSER | _CLONE_NEWPID)
+    if error != 0:
+        raise WorkerBootstrapError(
+            "native worker PID namespace requires CAP_SYS_ADMIN or unprivileged "
+            f"user namespaces: {os.strerror(error)}"
+        )
+    for path, content in (
+        ("/proc/self/setgroups", "deny"),
+        ("/proc/self/uid_map", f"{uid} {uid} 1"),
+        ("/proc/self/gid_map", f"{gid} {gid} 1"),
+    ):
+        with open(path, "w", encoding="ascii") as handle:
+            handle.write(content)
 
 
 def _run_factory(factory: Callable[..., Any], channel: WorkerChannel) -> Any:
