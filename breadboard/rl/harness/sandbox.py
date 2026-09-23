@@ -1974,6 +1974,16 @@ class TrustedProcessHandle:
         try:
             if binding.adapter_id == MINI_SWE_AGENT_LOCAL_ADAPTER_ID:
                 execution_argv = (node.proc_fd_path, entrypoint_path)
+                if self.repository_relative_path not in (None, "."):
+                    # Same directory the sealed diff reads (seal_for_verifier).
+                    execution_argv = (
+                        self._executable.proc_fd_path,
+                        "-c",
+                        'cd -P -- "$1" || exit 126; shift; exec "$@"',
+                        "breadboard-mini-tool",
+                        self.repository_relative_path,
+                        *execution_argv,
+                    )
                 python_home = str(Path(node_path).parent.parent)
                 execution_environment = dict(self.plan.runtime.fixed_environment) | {
                     "PYTHONHOME": python_home,
@@ -2704,8 +2714,14 @@ class LeaseBackedRunnerWorkspace:
         import platform
         from .mini_tools import MINI_ENVIRONMENT_OVERRIDES
         env_overrides = dict(MINI_ENVIRONMENT_OVERRIDES)
+        # Mini's LocalEnvironment runs in the process cwd: the repository, as the
+        # sealed diff sees it, not the enclosing workspace root.
+        relative_path = getattr(lease._runtime, "repository_relative_path", None)
+        cwd = lease._materialized.workspace_path
+        if relative_path is not None and relative_path != ".":
+            cwd = cwd.joinpath(*_workspace_parts(relative_path))
         return {
-            "cwd": str(lease._materialized.workspace_path),
+            "cwd": str(cwd),
             "env": env_overrides,
             "timeout": 30,
             **platform.uname()._asdict(),
