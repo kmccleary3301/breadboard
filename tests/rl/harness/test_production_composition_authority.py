@@ -582,6 +582,72 @@ def _real_target_manifest(
         cas.close()
 
 
+@pytest.mark.parametrize(
+    ("target", "reconstructs"),
+    [("pi@0.57.1", True), ("mini-swe-agent@2.4.6", False)],
+)
+def test_store_without_closure_alias_loads_only_by_exact_reconstruction(
+    tmp_path: Path, target: str, reconstructs: bool
+) -> None:
+    # Stores written before producers published the closure alias hold only the
+    # bundle and external members. They load when provenance rebuilds the exact
+    # compiled closure; Mini's declared asset order cannot be rebuilt that way.
+    cas = FilesystemCAS(tmp_path / "current")
+    legacy_cas = FilesystemCAS(tmp_path / "legacy")
+    try:
+        compiled = compile_e4_harness(
+            load_e4_target(target),
+            {} if target.startswith("mini") else {
+                "readme_path": "README.md",
+                "docs_path": "docs",
+                "examples_path": "examples",
+                "current_date_time": "2026-09-14T00:00:00Z",
+                "cwd": "/workspace",
+            },
+            {
+                "version": 2,
+                "profile": {"name": "legacy-store"},
+                "workspace": {"root": "workspace"},
+                "provider_tools": {"use_native": True},
+                "providers": {
+                    "default_model": "test-model",
+                    "models": [{"id": "test-model", "adapter": "openai", "params": {}}],
+                },
+            },
+            cas=cas,
+            options=_options(),
+            **(
+                {"request_schema_version": "bb.rl.headless-run-request.v2"}
+                if target.startswith("mini") else {}
+            ),
+        )
+        stored = {entry.artifact_id: entry.media_type for entry in compiled.bundle.entries}
+        stored.update(
+            (member.artifact_id, member.media_type)
+            for member in compiled.closure.members
+            if member.source == "external"
+        )
+        for artifact_id, media_type in stored.items():
+            legacy_cas.put_bytes(
+                cas.get_bytes(artifact_id),
+                artifact_id=artifact_id,
+                media_type=media_type,
+            )
+        assert not legacy_cas.has(compiled.closure.closure_digest)
+        bundles = {compiled.bundle.bundle_digest: compiled.bundle}
+        manifests = {
+            compiled.manifest.compiled_manifest_digest: compiled.manifest.canonical_bytes()
+        }
+        if reconstructs:
+            composition._verify_config_bundle_cas(legacy_cas, bundles, manifests)
+        else:
+            with pytest.raises(ValueError, match="closure authority mismatch"):
+                composition._verify_config_bundle_cas(legacy_cas, bundles, manifests)
+    finally:
+        legacy_cas.close()
+        cas.close()
+
+
 def test_declared_target_dependency_order_survives_admission(tmp_path: Path) -> None:
     cas = FilesystemCAS(tmp_path / "original")
     altered_cas = FilesystemCAS(tmp_path / "altered")

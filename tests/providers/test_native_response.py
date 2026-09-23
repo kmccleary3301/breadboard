@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import secrets
 import threading
@@ -16,12 +17,16 @@ from breadboard.rl.harness.runners.base import (
     freeze_json_object,
 )
 
+from breadboard.artifacts.cas import FilesystemCAS
+from breadboard.product.harness.resolution import compile_e4_harness
 from breadboard_engine.compilation.contracts import bytes_sha256, canonical_sha256
 from breadboard_engine.compilation.provider_response import (
+    MINI_RESPONSE_CONSUMER_ID,
     NativeResponseBindingError,
     admit_native_response_binding,
     profile_identity_digest,
 )
+from breadboard_engine.provider.contract_wire import canonical_json as wire_canonical_json
 from breadboard_engine.provider.contracts import (
     OpenAICompletionsProviderProfile,
     ProviderContractError,
@@ -31,7 +36,8 @@ from breadboard_engine.provider.contracts import (
 from breadboard_engine.provider.native_response import NativeRecordingConsumer
 from breadboard_engine.provider.runtimes.openai.chat import OpenAIChatRuntime
 from breadboard_engine.provider.routing import ProviderDescriptor
-from tests.compilation.test_server_compiler import _compile
+from breadboard_engine.e4_targets import load_e4_target
+from tests.compilation.test_server_compiler import _compile, _options
 from tests.rl.harness.test_policy_provider import _observation as _owned_observation
 from tests.rl.harness.test_runner_policy_runtime import _plan as _execution_plan
 
@@ -128,9 +134,9 @@ def _receiver(*, response_payload: bytes | None = None):
             requests.append((self.path, authenticated, body))
             payload = response_payload
             if payload is None:
-                payload = _stream_body() if body["stream"] else json.dumps(_response_body()).encode()
+                payload = _stream_body() if body.get("stream") else json.dumps(_response_body()).encode()
             self.send_response(200 if authenticated else 401)
-            self.send_header("Content-Type", "text/event-stream" if body["stream"] else "application/json")
+            self.send_header("Content-Type", "text/event-stream" if body.get("stream") else "application/json")
             self.send_header("Content-Length", str(len(payload)))
             self.send_header("Connection", "close")
             self.end_headers()
@@ -413,6 +419,77 @@ def test_compiled_native_response_precedes_argument_normalization(streaming):
             assert body["model"] == _MODEL
             assert body["stream"] is streaming
             assert ("stream_options" in body) is streaming
+
+
+def test_mini_nonstream_digest_is_of_the_body_actually_sent(tmp_path):
+    with _receiver() as (base_url, credential, requests):
+        profile = OpenAICompletionsProviderProfile(
+            model=_MODEL, scoped_credential=credential, base_url=base_url,
+            context_window=32_768, max_output_tokens=2048,
+            sampling={"temperature": 0.0, "n": 1},
+            request_policy={
+                "mode": "non_streaming", "include_usage": False,
+                "strict_tools": None, "enable_thinking": None,
+            },
+            capabilities={"supports_non_streaming": True},
+        )
+        cas = FilesystemCAS(tmp_path / "cas")
+        try:
+            manifest = compile_e4_harness(
+                load_e4_target("mini-swe-agent@2.4.6"),
+                {},
+                {
+                    "version": 2,
+                    "profile": {"name": "mini-request-digest"},
+                    "workspace": {"root": "workspace"},
+                    "provider_tools": {"use_native": True},
+                    "providers": {
+                        "default_model": "fixture-authority",
+                        "models": [{
+                            "id": "fixture-authority", "adapter": "openai",
+                            "context_length": profile.context_window, "params": {},
+                            "response_policy": {
+                                "schema_version": "bb.provider_native_response_policy.v1",
+                                "consumer_id": MINI_RESPONSE_CONSUMER_ID,
+                                "provider_profile_digest": profile_identity_digest(profile),
+                                "max_response_bytes": 65_536,
+                                "max_stream_fragments": 1,
+                            },
+                        }],
+                    },
+                },
+                cas=cas,
+                options=_options(),
+                request_schema_version="bb.rl.headless-run-request.v2",
+            ).manifest
+        finally:
+            cas.close()
+        binding = admit_native_response_binding(
+            manifest.canonical_bytes(),
+            expected_compiler_input_digest=manifest.inputs.compiler_input_digest,
+            authority_model_id="fixture-authority",
+            profile=profile,
+            capability_observation_digest=canonical_sha256({"fixture": "mini-digest"}),
+            episode_id="native-episode",
+            effective_plan_digest=canonical_sha256({"fixture": "mini-digest-plan"}),
+        )
+        runtime = _runtime()
+        client = runtime.create_client_from_profile(profile, timeout_seconds=3)
+        try:
+            response = runtime.invoke_native(
+                client=client, model=_MODEL,
+                messages=[{"role": "user", "content": "sample native calls"}],
+                tools=_TOOLS, stream=False,
+                context=_context(profile, binding), binding=binding,
+            )
+        finally:
+            client.close()
+        assert len(requests) == 1
+        assert "stream" not in requests[0][2]
+        # temperature=0.0 needs the wire encoder the runtime hashes with.
+        assert response.request_digest == hashlib.sha256(
+            wire_canonical_json(requests[0][2]).encode("utf-8")
+        ).hexdigest()
 
 
 def test_native_fragment_limit_stops_retention_without_another_request():

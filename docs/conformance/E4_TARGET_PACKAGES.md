@@ -58,9 +58,13 @@ Other composition authors must publish the same original closure. The artifact
 ID is a semantic-digest alias, not the payload byte digest: the serialized object
 also includes its `closure_digest`. Production loading checks both CAS byte
 integrity and the parsed canonical closure identity, bundle binding, provenance
-and member authority. It does not reconstruct edge ordinals from path-sorted
-source provenance. F2 production authoring input v2 therefore requires an
-explicit `authority.config_closure` artifact.
+and member authority. A store written before producers published this alias is
+loaded by rebuilding the closure from compiled provenance, with edge ordinals in
+provenance order; it is admitted only if the rebuilt closure reproduces the
+compiled closure digest exactly. A declared order that provenance cannot express,
+such as Mini's target assets, fails that check, so such stores need the published
+closure. F2 production authoring input v2 therefore requires an explicit
+`authority.config_closure` artifact.
 
 `E4TargetPolicyProjection.from_compiled` reads compiler output; it does not load or
 render package files. Headless and SWE consumers select equivalent projections

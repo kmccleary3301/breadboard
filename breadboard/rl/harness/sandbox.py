@@ -2720,6 +2720,9 @@ class LeaseBackedRunnerWorkspace:
         cwd = lease._materialized.workspace_path
         if relative_path is not None and relative_path != ".":
             cwd = cwd.joinpath(*_workspace_parts(relative_path))
+        # Upstream LocalEnvironment.get_template_vars is recursive_merge(config,
+        # platform.uname(), os.environ, kwargs): later wins, so the process
+        # environment (here the fixed environment) overrides platform facts.
         return {
             "cwd": str(cwd),
             "env": env_overrides,

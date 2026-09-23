@@ -253,8 +253,16 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         profile_request = self.profile_chat_request(
             profile, messages, tools, context=context
         )
+        omit_stream = (
+            not stream and binding.policy.consumer_id == MINI_RESPONSE_CONSUMER_ID
+        )
+        sent_request = (
+            {key: value for key, value in profile_request.items() if key != "stream"}
+            if omit_stream
+            else profile_request
+        )
         request_digest = hashlib.sha256(
-            canonical_json(profile_request).encode("utf-8")
+            canonical_json(sent_request).encode("utf-8")
         ).hexdigest()
         request_messages = profile_request["messages"]
         request_tools = profile_request.get("tools")
@@ -294,7 +302,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                     "messages": request_messages,
                     "extra_body": extra_body,
                 }
-                if binding.policy.consumer_id != MINI_RESPONSE_CONSUMER_ID:
+                if not omit_stream:
                     call_kwargs["stream"] = False
                 call_kwargs.update(profile_options)
                 if request_tools:

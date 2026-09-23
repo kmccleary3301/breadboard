@@ -20,12 +20,14 @@ from secrets import token_bytes
 from types import MappingProxyType
 from typing import Any, Literal, Mapping, Protocol, Sequence
 
-from breadboard_engine.compilation.bundle import ManifestReader
+from breadboard_engine.compilation.bundle import ManifestReader, build_dependency_closure
 from breadboard_engine.compilation.contracts import (
+    ClosureMember,
     CompiledConfig,
     CompiledConfigManifest,
     ConfigBundleManifest,
     DependencyClosureManifest,
+    DependencyEdge,
 )
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -3918,6 +3920,79 @@ def _validate_installed_registry_graph(
             raise ValueError("installed verifier registry authority mismatch")
 
 
+def _published_closure(
+    cas: FilesystemCAS, compiled: CompiledConfigManifest
+) -> DependencyClosureManifest:
+    closure_ref = cas.get_ref(compiled.inputs.closure_digest)
+    if closure_ref.media_type != "application/json":
+        raise ValueError("compiled dependency closure media type mismatch")
+    closure_bytes = cas.get_bytes(closure_ref, max_bytes=_MAX_AUTHORITY_BYTES)
+    closure = DependencyClosureManifest.from_json(closure_bytes)
+    if closure.canonical_bytes() != closure_bytes:
+        raise ValueError("compiled dependency closure authority mismatch")
+    return closure
+
+
+def _reconstructed_closure(
+    bundle: ConfigBundleManifest, compiled: CompiledConfigManifest
+) -> DependencyClosureManifest:
+    """Rebuild the closure of a store written before the closure alias existed.
+
+    Edge ordinals follow provenance order. A closure whose declared order differs
+    cannot reproduce the compiled closure digest and is rejected by the caller.
+    """
+    bundled_paths = {entry.logical_path for entry in bundle.entries}
+    edge_values: list[DependencyEdge] = []
+    edge_ordinals: dict[tuple[str, str], int] = {}
+    for item in compiled.source_dependencies:
+        if item.from_logical_path is None or item.raw_reference is None:
+            continue
+        key = (item.from_logical_path, item.dependency_kind)
+        ordinal = edge_ordinals.get(key, 0)
+        edge_ordinals[key] = ordinal + 1
+        edge_values.append(
+            DependencyEdge(
+                from_path=item.from_logical_path,
+                kind=item.dependency_kind,
+                raw_ref=item.raw_reference,
+                logical_path=item.logical_path,
+                ordinal=ordinal,
+            )
+        )
+    entrypoint = next(
+        (
+            item.name
+            for item in bundle.entrypoints
+            if item.logical_path == compiled.inputs.entrypoint
+        ),
+        None,
+    )
+    if entrypoint is None:
+        raise ValueError("compiled entrypoint is absent from config bundle")
+    return build_dependency_closure(
+        bundle,
+        root_entrypoint=entrypoint,
+        member_paths=tuple(
+            item.logical_path
+            for item in compiled.source_dependencies
+            if item.logical_path in bundled_paths
+        ),
+        edges=tuple(edge_values),
+        external_members=tuple(
+            ClosureMember(
+                logical_path=item.logical_path,
+                artifact_id=item.blob_digest,
+                blob_digest=item.blob_digest,
+                size_bytes=item.size_bytes,
+                media_type=item.media_type,
+                source="external",
+            )
+            for item in compiled.source_dependencies
+            if item.logical_path not in bundled_paths
+        ),
+    )
+
+
 def _verify_config_bundle_cas(
     cas: FilesystemCAS,
     bundles: Mapping[str, ConfigBundleManifest],
@@ -3934,14 +4009,13 @@ def _verify_config_bundle_cas(
         raise ValueError("compiled manifest config bundle set mismatch")
     for compiled in parsed_manifests:
         bundle = bundles[compiled.inputs.bundle_digest]
-        closure_ref = cas.get_ref(compiled.inputs.closure_digest)
-        if closure_ref.media_type != "application/json":
-            raise ValueError("compiled dependency closure media type mismatch")
-        closure_bytes = cas.get_bytes(closure_ref, max_bytes=_MAX_AUTHORITY_BYTES)
-        closure = DependencyClosureManifest.from_json(closure_bytes)
+        closure = (
+            _published_closure(cas, compiled)
+            if cas.has(compiled.inputs.closure_digest)
+            else _reconstructed_closure(bundle, compiled)
+        )
         if (
             closure.closure_digest != compiled.inputs.closure_digest
-            or closure.canonical_bytes() != closure_bytes
             or closure.root_entrypoint != compiled.inputs.entrypoint
         ):
             raise ValueError("compiled dependency closure authority mismatch")
