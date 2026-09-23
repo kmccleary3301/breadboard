@@ -1,0 +1,32 @@
+schema_version: bb.e4.target_config.v1
+target_id: pi@0.73.1
+prompt:
+  renderer: pi-0.73.1
+  asset: prompts/system-prompt.md
+  dynamic_fields:
+    - current_date
+    - cwd
+    - project_context
+tools:
+  ordered:
+    - read
+    - bash
+    - edit
+    - write
+  surface_asset: tool-surface.json
+  image_delivery: disabled
+session:
+  persistence: disabled
+  extensions: disabled
+  skills: disabled
+  prompt_templates: disabled
+thinking: off
+retry:
+  enabled: false
+  max_retries: 0
+stream:
+  enabled: true
+  request_cap: 8
+  max_tokens: 2048
+transport:
+  mode: native_response

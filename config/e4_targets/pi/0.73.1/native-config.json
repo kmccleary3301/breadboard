@@ -1,0 +1,31 @@
+{
+  "profile": "pi",
+  "target_id": "pi@0.73.1",
+  "package": "@mariozechner/pi-coding-agent@0.73.1",
+  "source_commit": "781152fc24841dc54b22284514604048ebe5e2c9",
+  "agent": {
+    "request_cap": 8,
+    "thinking_level": "off",
+    "compaction_enabled": false,
+    "retry_enabled": false,
+    "max_retries": 0,
+    "tool_execution": "parallel",
+    "quiescence": "stop_when_no_tool_calls"
+  },
+  "model": {
+    "stream": true,
+    "stream_options": {"include_usage": true},
+    "max_tokens": 2048,
+    "timeout_seconds": 45,
+    "images_enabled": false
+  },
+  "tools": {
+    "ordered": ["read", "bash", "edit", "write"],
+    "image_delivery": false,
+    "read": {"max_lines": 2000, "max_bytes": 51200},
+    "bash": {"max_lines": 2000, "max_bytes": 51200, "temp_file_on_truncate": true},
+    "edit": {"prepare_legacy_arguments": true, "prepare_json_string_edits": true},
+    "write": {"creates_parent_directories": true}
+  },
+  "workspace": {"extensions": false, "skills": false, "prompt_templates": false, "sessions": false}
+}
