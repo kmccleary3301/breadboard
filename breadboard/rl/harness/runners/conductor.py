@@ -2560,6 +2560,13 @@ class _ConductorSession:
 
         def invalid(message: str) -> RunnerProtocolError:
             return RunnerProtocolError(message, code="native_response_invalid", **self._context())
+        declared_workspace = tools.declared_workspace
+        if (
+            type(declared_workspace) is not str
+            or not declared_workspace
+            or not declared_workspace.startswith("/")
+        ):
+            raise invalid("Hermes declared workspace is invalid")
 
         def remaining() -> float:
             seconds = deadline - time.monotonic()
@@ -2711,6 +2718,18 @@ class _ConductorSession:
         initialized = await phase(
             "initialize", {"task": task, "model_config": model_config}, "initial", None,
         )
+        source_runtime = initialized.get("source_runtime")
+        worker_workspace = (
+            source_runtime.get("workspace")
+            if isinstance(source_runtime, Mapping)
+            else None
+        )
+        if worker_workspace != declared_workspace:
+            raise RunnerProtocolError(
+                "Hermes worker workspace differs from declared workspace",
+                code="workspace_authority_mismatch",
+                **self._context(),
+            )
         if (
             initialized.get("kind") != "initialized"
             or state["status"] != "RUNNING" or state["iteration"] != 0
@@ -2961,13 +2980,7 @@ class _ConductorSession:
             "tool_results": history_tool_results(tuple(history)),
             "visible_corrections": visible_corrections(tuple(history)),
             "file_effects": trace_file_effects,
-            "runtime": {
-                "cwd": (
-                    initialized.get("source_runtime", {}).get("workspace")
-                    if isinstance(initialized.get("source_runtime"), Mapping)
-                    else None
-                ),
-            },
+            "runtime": {"cwd": declared_workspace},
             "termination": {
                 "kind": "completed" if state["status"] == "FINISHED" else "stopped",
                 "native_stop_reason": native_stop_reason,

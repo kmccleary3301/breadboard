@@ -1009,6 +1009,9 @@ class CompiledPolicyRuntimeClientPort(PolicyRuntimeClientPort, Protocol):
 @runtime_checkable
 class NativeSourceSessionPort(Protocol):
     """Lease-owned persistent source-native phase session."""
+    @property
+    def declared_workspace(self) -> str: ...
+
 
     async def invoke_native_phase(
         self,

@@ -29,6 +29,10 @@ class FakeNativePort:
     @property
     def tool_bindings(self) -> tuple[Any, ...]:
         return ()
+    @property
+    def declared_workspace(self) -> str:
+        return "/workspace"
+
 
     async def invoke_native_phase(
         self, operation: str, payload: Mapping[str, Any], *, timeout_ms: int,
@@ -56,12 +60,12 @@ class FakeNativePort:
             "iteration": 0,
         }
 
-    @staticmethod
-    def _initialized() -> dict[str, Any]:
+    def _initialized(self) -> dict[str, Any]:
         return {
             "schema_version": "bb.hermes-native.v1", "kind": "initialized",
             "event_delta": (), "history_digest": _DIGEST, "status": "RUNNING",
             "iteration": 0, "tool_schemas": tuple({} for _ in _TOOL_ORDER),
+            "source_runtime": {"workspace": "/workspace"},
         }
 
     @staticmethod

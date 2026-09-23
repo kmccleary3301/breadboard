@@ -3339,8 +3339,10 @@ class LeaseBackedRunnerWorkspace:
         self.__effects_root_identity: tuple[int, int] | None = None
     @property
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]: return self.__tool_bindings
-
-
+    @property
+    def declared_workspace(self) -> str:
+        workspace_mount = _sole_writable_policy_workspace_mount(self.__lease)
+        return str(self.__lease._resolve(workspace_mount.target_logical_path, writable=True))
 
     async def begin_native_workspace_effects(self) -> None:
         lease = self.__lease
@@ -3546,8 +3548,7 @@ class LeaseBackedRunnerWorkspace:
                     lease_id=lease.lease_id,
                 ) from exc
             if operation == "initialize":
-                workspace_mount = _sole_writable_policy_workspace_mount(lease)
-                workspace = lease._resolve(workspace_mount.target_logical_path, writable=True)
+                workspace = Path(self.declared_workspace)
                 scratch = _native_scratch_path(lease._manager, lease.lease_id)
                 try:
                     native_payload = _admit_native_phase_payload(
