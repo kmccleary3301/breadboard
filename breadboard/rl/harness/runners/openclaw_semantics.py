@@ -568,15 +568,49 @@ class OpenClawSemanticsState:
         self.terminal_kind = self.terminal_kind or kind
         return self.to_trace()
 
-    def to_trace(self) -> dict[str, Any]:
+    def to_trace(
+        self,
+        *,
+        requests: Sequence[Mapping[str, Any]] | None = None,
+        runtime_inputs: Mapping[str, Any] | None = None,
+        effects: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Return raw source facts for the profile-agnostic replay seam.
+
+        Request bodies are copied without projecting model/tool fields; the
+        comparator owns the shared supplier/BB projection.  ``runtime_inputs``
+        and ``effects`` are supplied by the conductor from declared typed
+        inputs and recorded tool effects, respectively.
+        """
+        sent_requests = (
+            [dict(request) for request in requests]
+            if requests is not None
+            else []
+        )
+        request_count = len(sent_requests) if requests is not None else self.request_count
+        termination = {
+            "kind": self.terminal_kind or "running",
+            "native_stop_reason": self.native_stop_reason,
+        }
+        messages = [dict(message) for message in self.history]
         return {
+            "schema_version": "bb.e4.openclaw-episode.v1",
+            "source_commit": self.source_commit,
+            "messages": messages,
+            "events": [],
+            "requests": sent_requests,
+            "runtime_inputs": dict(runtime_inputs or {}),
+            "effects": dict(effects or {}),
+            "termination": termination,
+            "request_count": request_count,
+            "normalizations": {},
+            # Compatibility fields retained for direct semantics callers.
             "kind": self.terminal_kind,
             "native_stop_reason": self.native_stop_reason,
-            "request_count": self.request_count,
             "refused_attempts": self.refused_attempts,
             "tool_admissions": self.tool_admissions,
             "stream_fn_issued": self.stream_fn_issued,
-            "history": [dict(message) for message in self.history],
+            "history": messages,
         }
 
     def prepare_request_history(self) -> list[dict[str, Any]]:

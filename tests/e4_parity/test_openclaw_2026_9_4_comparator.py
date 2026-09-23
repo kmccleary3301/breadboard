@@ -46,6 +46,67 @@ def test_supplier_projection_and_replay_projection_share_canonical_episode(tmp_p
     assert expected["effects"]["marker.txt"].startswith("sha256:")
 
 
+
+def test_packet_640_fixture_round_trips_and_rejects_tampered_request() -> None:
+    fixture = Path(__file__).parent / "fixtures" / "openclaw_packet_640"
+    expected = project_supplier_case(fixture)
+    raw_requests = [
+        json.loads(line)["body"]
+        for line in (fixture / "receiver" / "http-transcript.jsonl").read_text().splitlines()
+        if "body" in json.loads(line)
+    ]
+    assert raw_requests and "model" in raw_requests[0]
+    observed = project_bb_trace({
+        "requests": raw_requests,
+        "effects": expected["effects"],
+        "termination": expected["termination"],
+        "request_count": len(raw_requests),
+    })
+    report = compare({"capture": {"trace": expected}, "replay": observed, "scope": {}})
+    assert report["ok"] is True
+    assert expected["request_count"] == 3
+    assert [call["name"] for call in expected["tool_calls"]] == ["write", "read"]
+    assert expected["effects"]["marker.txt"] == (
+        "sha256:f7a2b67b1ea18fb2bed758b564bb874610c2d875b07b08e0300d59f70a7bd958"
+    )
+
+    tampered = json.loads(json.dumps(raw_requests))
+    tampered[0]["messages"][0]["content"] = "tampered"
+    rejected = compare({
+        "capture": {"trace": expected},
+        "replay": {
+            "requests": tampered,
+            "effects": expected["effects"],
+            "termination": expected["termination"],
+            "request_count": len(tampered),
+        },
+        "scope": {},
+    })
+    assert rejected["ok"] is False
+    assert any(
+        assertion["assertion_id"] == "episode_equal" and assertion["status"] == "failed"
+        for assertion in rejected["assertions"]
+    )
+
+
+def test_comparator_rejects_non_identical_repeated_tool_snapshots() -> None:
+    first = {
+        "model": "gpt",
+        "messages": [{"role": "assistant", "tool_calls": [{
+            "id": "call-1", "function": {"name": "read", "arguments": "{\"path\":\"a\"}"}
+        }]}],
+        "tools": [],
+    }
+    second = json.loads(json.dumps(first))
+    second["messages"][0]["tool_calls"][0]["function"]["arguments"] = "{\"path\":\"b\"}"
+    with pytest.raises(ComparatorError, match="repeated tool call call-1"):
+        project_bb_trace({
+            "requests": [first, second],
+            "effects": {},
+            "termination": {"kind": "stop", "native_stop_reason": "stop"},
+            "request_count": 2,
+        })
+
 def test_comparator_negative_gate_rejects_extra_tool_and_request_count() -> None:
     trace = {
         "requests": [],

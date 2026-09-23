@@ -103,12 +103,30 @@ def _trace_requests_from_transcript(case_dir: Path) -> list[dict[str, Any]]:
     requests: list[dict[str, Any]] = []
     for row in rows:
         body = row.get("body")
-        if not isinstance(body, Mapping):
-            continue
-        requests.append({"messages": body.get("messages", []), "tools": body.get("tools", [])})
+        if isinstance(body, Mapping):
+            requests.append(dict(body))
     return requests
+
+
+def _project_request_bodies(raw_requests: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Project sent wire bodies to the canonical request contract."""
+    return [
+        {"messages": body.get("messages", []), "tools": body.get("tools", [])}
+        for body in raw_requests
+    ]
+
+
+def _call_identity(call: Mapping[str, Any]) -> str:
+    return json.dumps(call, ensure_ascii=False, separators=(",", ":"))
+
+
+def _result_identity(result: Mapping[str, Any]) -> str:
+    return json.dumps(result, ensure_ascii=False, separators=(",", ":"))
+
+
 def _tool_calls_from_requests(requests: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     calls: list[dict[str, Any]] = []
+    seen: dict[str, str] = {}
     for request in requests:
         for message in request.get("messages", []):
             if not isinstance(message, Mapping) or message.get("role") != "assistant":
@@ -126,11 +144,21 @@ def _tool_calls_from_requests(requests: Sequence[Mapping[str, Any]]) -> list[dic
                         raw = json.loads(raw)
                     except ValueError:
                         pass
-                calls.append({
+                projected = {
                     "id": str(call.get("id", call.get("tool_call_id", f"call_{len(calls)}_{index}"))),
                     "name": name,
                     "arguments": raw,
-                })
+                }
+                identity = _call_identity(projected)
+                previous = seen.get(projected["id"])
+                if previous is not None:
+                    if previous != identity:
+                        raise ComparatorError(
+                            f"repeated tool call {projected['id']} differs across request snapshots"
+                        )
+                    continue
+                seen[projected["id"]] = identity
+                calls.append(projected)
     return calls
 
 
@@ -188,9 +216,10 @@ def _results_from_scenario(
 def _results_from_requests(
     requests: Sequence[Mapping[str, Any]], calls: Sequence[Mapping[str, Any]] = ()
 ) -> list[dict[str, Any]]:
-    """Project actual model-visible tool messages from captured request bodies."""
+    """Project unique model-visible tool messages from captured request bodies."""
     names = {str(call.get("id")): call.get("name") for call in calls}
     results: list[dict[str, Any]] = []
+    seen: dict[str, str] = {}
     for request in requests:
         for message in request.get("messages", []):
             if not isinstance(message, Mapping) or message.get("role") not in {"tool", "toolResult"}:
@@ -206,7 +235,7 @@ def _results_from_requests(
             error_value = message.get("error")
             if error_value is None and is_error:
                 error_value = str(content)
-            results.append({
+            projected = {
                 "tool_call_id": call_id,
                 "name": message.get(
                     "name",
@@ -215,7 +244,20 @@ def _results_from_requests(
                 "content": content,
                 "isError": is_error,
                 "error": error_value,
-            })
+            }
+            if call_id is None:
+                results.append(projected)
+                continue
+            identity = _result_identity(projected)
+            previous = seen.get(str(call_id))
+            if previous is not None:
+                if previous != identity:
+                    raise ComparatorError(
+                        f"repeated tool result {call_id} differs across request snapshots"
+                    )
+                continue
+            seen[str(call_id)] = identity
+            results.append(projected)
     return results
 
 
@@ -338,11 +380,12 @@ def project_supplier_case(case_dir: str | Path) -> dict[str, Any]:
     scenario = _load_json(root / "scenario.json", {})
     if not isinstance(scenario, Mapping):
         raise ComparatorError(f"invalid scenario at {root / 'scenario.json'}")
-    requests = _trace_requests_from_transcript(root)
-    if not requests:
+    raw_requests = _trace_requests_from_transcript(root)
+    if not raw_requests:
         closed = _load_json(root / "receiver" / "closed.json", {})
         request_count = int(closed.get("requests", 0)) if isinstance(closed, Mapping) else 0
-        requests = [{"messages": [], "tools": []} for _ in range(request_count)]
+        raw_requests = [{"messages": [], "tools": []} for _ in range(request_count)]
+    requests = _project_request_bodies(raw_requests)
     calls = _tool_calls_from_requests(requests) or _tool_calls_from_scenario(scenario)
     workspace = root / "workspace"
     trace = {
@@ -370,17 +413,41 @@ def _load_trace_input(trace: Any) -> Mapping[str, Any]:
         return loaded
     raise ComparatorError("trace must be a mapping or JSON path")
 
-
 def project_bb_trace(trace: Any) -> dict[str, Any]:
     """Project a BreadBoard trace object/file into the same canonical episode."""
     value = _load_trace_input(trace)
-    # Accept the event-rich replay form while retaining ordered source arrays.
     if "episode" in value and isinstance(value["episode"], Mapping):
         value = value["episode"]
-    if "tool_calls" not in value and isinstance(value.get("events"), list):
-        calls = [event for event in value["events"] if isinstance(event, Mapping) and event.get("type") == "tool_call"]
-        results = [event for event in value["events"] if isinstance(event, Mapping) and event.get("type") == "tool_result"]
-        value = {**value, "tool_calls": calls, "results": results}
+    value = dict(value)
+    value.setdefault("normalizations", {})
+    raw_requests = value.get("requests")
+    if isinstance(raw_requests, list):
+        requests = _project_request_bodies(
+            [request for request in raw_requests if isinstance(request, Mapping)]
+        )
+        value["requests"] = requests
+        calls = _tool_calls_from_requests(requests)
+        if calls:
+            value["tool_calls"] = calls
+            value["results"] = _results_from_requests(requests, calls)
+        elif "tool_calls" not in value and isinstance(value.get("events"), list):
+            value["tool_calls"] = [
+                event for event in value["events"]
+                if isinstance(event, Mapping) and event.get("type") == "tool_call"
+            ]
+            value["results"] = [
+                event for event in value["events"]
+                if isinstance(event, Mapping) and event.get("type") == "tool_result"
+            ]
+    elif "tool_calls" not in value and isinstance(value.get("events"), list):
+        value["tool_calls"] = [
+            event for event in value["events"]
+            if isinstance(event, Mapping) and event.get("type") == "tool_call"
+        ]
+        value["results"] = [
+            event for event in value["events"]
+            if isinstance(event, Mapping) and event.get("type") == "tool_result"
+        ]
     return _canonicalize(value)
 
 

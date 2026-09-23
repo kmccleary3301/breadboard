@@ -67,6 +67,29 @@ def test_generic_stream_consumer_returns_batch_and_history() -> None:
     assert state.prepare_request_history()[0]["role"] == "assistant"
 
 
+
+def test_to_trace_preserves_raw_requests_inputs_and_effects() -> None:
+    state = OpenClawSemanticsState()
+    body = {
+        "model": "openclaw-model",
+        "messages": [{"role": "user", "content": "task"}],
+        "tools": [{"type": "function", "function": {"name": "read"}}],
+        "stream": True,
+    }
+    trace = state.to_trace(
+        requests=[body],
+        runtime_inputs={"cwd": "/workspace", "current_date": "2026-09-23"},
+        effects={"marker.txt": "sha256:abc"},
+    )
+    assert trace["requests"] == [body]
+    assert trace["runtime_inputs"] == {
+        "cwd": "/workspace",
+        "current_date": "2026-09-23",
+    }
+    assert trace["effects"] == {"marker.txt": "sha256:abc"}
+    assert trace["request_count"] == 1
+    assert trace["termination"] == {"kind": "running", "native_stop_reason": None}
+
 def test_request_cap_records_refused_ninth_attempt_without_dispatch() -> None:
     state = OpenClawSemanticsState()
     for _ in range(8):
