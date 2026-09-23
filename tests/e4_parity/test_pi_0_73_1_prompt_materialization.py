@@ -77,19 +77,28 @@ def test_sealed_prompt_matches_every_supplier_packet_case(case: Mapping[str, Any
     assert hashlib.sha256(rendered.encode("utf-8")).hexdigest() == EXPECTED_PROMPT_SHA256
 
 
-async def _initialize_worker(workspace: Path, advertisement: Mapping[str, Any]) -> Mapping[str, Any]:
+async def _initialize_worker(
+    workspace: Path,
+    advertisement: Mapping[str, Any],
+    *,
+    current_date: str | None = None,
+) -> Mapping[str, Any]:
     port = _NativeWorkerPort(workspace, ())
+    payload: dict[str, Any] = {
+        "task": "prompt materialization parity",
+        "package_dir": SUPPLIER_PACKAGE_DIR,
+        "advertisement": deepcopy(dict(advertisement)),
+        "model_config": {"id": "model-a", "provider": "openai", "input": ["text"]},
+    }
+    if current_date is not None:
+        payload["runtime_inputs"] = {
+            "cwd": str(port.workspace),
+            "home": str(port.scratch / "home"),
+            "current_date": current_date,
+            "package_dir": SUPPLIER_PACKAGE_DIR,
+        }
     try:
-        return await port.invoke_native_phase(
-            "initialize",
-            {
-                "task": "prompt materialization parity",
-                "package_dir": SUPPLIER_PACKAGE_DIR,
-                "advertisement": deepcopy(dict(advertisement)),
-                "model_config": {"id": "model-a", "provider": "openai", "input": ["text"]},
-            },
-            timeout_ms=10_000,
-        )
+        return await port.invoke_native_phase("initialize", payload, timeout_ms=10_000)
     finally:
         await port.close()
 
@@ -107,7 +116,7 @@ async def test_real_worker_prompt_matches_supplier_through_comparator(tmp_path: 
     (workspace / "AGENTS.md").write_text(case["agents_md"], encoding="utf-8")
     initialized = await _initialize_worker(workspace, config["advertisement"])
     bootstrap = initialized["bootstrap"]
-    assert bootstrap["current_date"] == SUPPLIER_DATE
+    assert f"\nCurrent date: {bootstrap['current_date']}\n" in initialized["system_prompt"]
 
     supplier_tools = deepcopy(initialized["tool_schemas"])
     native_read_description = FIXTURE["native_read_description"]
@@ -138,3 +147,16 @@ async def test_real_worker_prompt_matches_supplier_through_comparator(tmp_path: 
     }
     report = PiCodingAgent0731Comparator()({"capture": supplier, "replay": replay})
     assert report["passed"], report["assertions"][0]["detail"]
+
+
+@pytest.mark.skipif(
+    not (_NODE_MODULES / "@mariozechner" / "pi-coding-agent" / "dist" / "index.js").is_file(),
+    reason="pinned Pi 0.73.1 node_modules root is unavailable",
+)
+@pytest.mark.asyncio
+async def test_real_worker_rejects_prompt_date_that_differs_from_declared_input(tmp_path: Path) -> None:
+    config = json.loads(NATIVE_CONFIG.read_text(encoding="utf-8"))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    with pytest.raises(RuntimeError, match="current date does not match declared"):
+        await _initialize_worker(workspace, config["advertisement"], current_date="1999-01-01")

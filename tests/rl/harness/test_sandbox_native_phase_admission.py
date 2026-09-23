@@ -232,6 +232,7 @@ async def test_workspace_effects_measure_content_diff_and_supplier_utf8(tmp_path
         effective_plan_digest="plan",
         tool_bindings=(binding,),
         materialization_plan=SimpleNamespace(entries=(entry,)),
+        resources=SimpleNamespace(storage_bytes=1 << 30),
     )
     async def begin() -> None:
         return None
@@ -303,6 +304,7 @@ async def test_close_native_runtime_drains_real_process_group_before_effect_scan
         effective_plan_digest="plan",
         tool_bindings=(binding,),
         materialization_plan=SimpleNamespace(entries=(entry,)),
+        resources=SimpleNamespace(storage_bytes=1 << 30),
     )
     async def begin() -> None:
         return None
@@ -381,12 +383,16 @@ async def test_close_native_runtime_drains_real_process_group_before_effect_scan
                 pass
 
 
+_SCAN_BOUND = 1 << 30
+
+
 def test_workspace_effect_scanner_rejects_root_symlink_swap(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     root.mkdir()
     snapshot, identity = sandbox_module._workspace_effect_snapshot(
         root,
         exclude_root_git=False,
+        max_total_bytes=_SCAN_BOUND,
     )
     assert snapshot == {}
     moved = tmp_path / "workspace-real"
@@ -399,6 +405,7 @@ def test_workspace_effect_scanner_rejects_root_symlink_swap(tmp_path: Path) -> N
         sandbox_module._workspace_effect_snapshot(
             root,
             exclude_root_git=False,
+            max_total_bytes=_SCAN_BOUND,
             expected_root_identity=identity,
         )
 
@@ -415,7 +422,7 @@ def test_workspace_effect_scanner_fails_closed_on_unsupported_nodes(
     else:
         os.mkfifo(root / "pipe")
     with pytest.raises(WorkspaceStateError, match="unauthorized"):
-        sandbox_module._workspace_effect_snapshot(root, exclude_root_git=False)
+        sandbox_module._workspace_effect_snapshot(root, exclude_root_git=False, max_total_bytes=_SCAN_BOUND)
 
 
 @pytest.mark.asyncio
@@ -453,6 +460,7 @@ async def test_workspace_effect_scanner_rejects_fifo_swap_before_open(
                 sandbox_module._workspace_effect_snapshot,
                 root,
                 exclude_root_git=False,
+                max_total_bytes=_SCAN_BOUND,
             ),
             timeout=1,
         )
@@ -467,10 +475,49 @@ def test_workspace_effect_scanner_omits_content_for_oversize_file(tmp_path: Path
     snapshot, _ = sandbox_module._workspace_effect_snapshot(
         root,
         exclude_root_git=False,
+        max_total_bytes=_SCAN_BOUND,
     )
     assert snapshot["large.bin"]["bytes"] == len(content)
     assert snapshot["large.bin"]["sha256"] == "sha256:" + hashlib.sha256(content).hexdigest()
     assert "content_utf8" not in snapshot["large.bin"]
+
+
+@pytest.mark.asyncio
+async def test_workspace_effect_scanner_rejects_sparse_file_before_reading(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    root.mkdir()
+    with open(root / "result.bin", "wb") as handle:
+        handle.truncate(1 << 40)
+    with pytest.raises(WorkspaceStateError, match="admitted storage bound") as raised:
+        await asyncio.wait_for(
+            asyncio.to_thread(
+                sandbox_module._workspace_effect_snapshot,
+                root,
+                exclude_root_git=False,
+                max_total_bytes=_SCAN_BOUND,
+            ),
+            timeout=5,
+        )
+    assert raised.value.code == "output_limit_exceeded"
+
+
+def test_workspace_effect_scanner_bound_is_cumulative_and_inclusive(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    root.mkdir()
+    (root / "a.txt").write_bytes(b"a" * 500)
+    (root / "b.txt").write_bytes(b"b" * 500)
+    snapshot, _ = sandbox_module._workspace_effect_snapshot(
+        root,
+        exclude_root_git=False,
+        max_total_bytes=1000,
+    )
+    assert sorted(snapshot) == ["a.txt", "b.txt"]
+    with pytest.raises(WorkspaceStateError, match="admitted storage bound"):
+        sandbox_module._workspace_effect_snapshot(
+            root,
+            exclude_root_git=False,
+            max_total_bytes=999,
+        )
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node is unavailable")

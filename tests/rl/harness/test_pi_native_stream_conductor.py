@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 from contextlib import contextmanager
-from datetime import date
+from datetime import datetime, timezone
 import json
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -242,6 +242,7 @@ class _NativeWorkerPort:
         snapshot, _ = sandbox_module._workspace_effect_snapshot(
             self.workspace,
             exclude_root_git=False,
+            max_total_bytes=1 << 30,
         )
         return snapshot
 
@@ -284,7 +285,7 @@ class _NativeWorkerPort:
         values = {
             "cwd": str(self.workspace),
             "home": str(self.scratch / "home"),
-            "current_date": date.today().isoformat(),
+            "current_date": datetime.now(timezone.utc).date().isoformat(),
             "package_dir": str(_NODE_MODULES / package_root),
         }
         if set(input_names) != set(values):
@@ -333,7 +334,7 @@ class _NativeWorkerPort:
                 {
                     "cwd": phase_payload["workspace"],
                     "home": str(self.scratch / "home"),
-                    "current_date": date.today().isoformat(),
+                    "current_date": datetime.now(timezone.utc).date().isoformat(),
                     "package_dir": phase_payload["package_dir"],
                 },
             )

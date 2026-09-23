@@ -2768,9 +2768,21 @@ def _workspace_effect_snapshot(
     root: Path,
     *,
     exclude_root_git: bool,
+    max_total_bytes: int,
     expected_root_identity: tuple[int, int] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], tuple[int, int]]:
-    """Hash one materialized policy workspace through no-follow dirfds."""
+    """Hash one materialized policy workspace through no-follow dirfds.
+
+    Logical file sizes are checked against ``max_total_bytes`` (the lease's
+    admitted storage bound) before any content is read, so sparse or
+    oversized files fail closed instead of being hashed without bound.
+    """
+    if type(max_total_bytes) is not int or max_total_bytes <= 0:
+        raise WorkspaceStateError(
+            "workspace effect byte bound is invalid",
+            code="workspace_authority_mismatch",
+        )
+    scanned_bytes = 0
     snapshot: dict[str, dict[str, Any]] = {}
     directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
     file_flags = (
@@ -2797,6 +2809,7 @@ def _workspace_effect_snapshot(
             )
 
         def walk(directory_fd: int, prefix: str) -> None:
+            nonlocal scanned_bytes
             try:
                 with os.scandir(directory_fd) as iterator:
                     entries = sorted(iterator, key=lambda entry: entry.name)
@@ -2857,15 +2870,38 @@ def _workspace_effect_snapshot(
                             "workspace effect node changed during measurement",
                             code="workspace_authority_mismatch",
                         )
+                    logical_size = opened_metadata.st_size
+                    if logical_size > max_total_bytes - scanned_bytes:
+                        raise WorkspaceStateError(
+                            "workspace effects exceed the admitted storage bound",
+                            code="output_limit_exceeded",
+                            details={
+                                "path": relative,
+                                "logical_bytes": logical_size,
+                                "scanned_bytes": scanned_bytes,
+                                "max_total_bytes": max_total_bytes,
+                            },
+                        )
                     while True:
                         chunk = os.read(descriptor, 1024 * 1024)
                         if not chunk:
                             break
-                        digest.update(chunk)
-                        if total_bytes < EFFECT_CONTENT_UTF8_MAX_BYTES:
-                            remaining = EFFECT_CONTENT_UTF8_MAX_BYTES - total_bytes
-                            content.extend(chunk[:remaining])
                         total_bytes += len(chunk)
+                        if total_bytes > logical_size:
+                            raise WorkspaceStateError(
+                                "workspace effect node changed during measurement",
+                                code="workspace_authority_mismatch",
+                            )
+                        digest.update(chunk)
+                        consumed = total_bytes - len(chunk)
+                        if consumed < EFFECT_CONTENT_UTF8_MAX_BYTES:
+                            content.extend(chunk[: EFFECT_CONTENT_UTF8_MAX_BYTES - consumed])
+                    if total_bytes != logical_size:
+                        raise WorkspaceStateError(
+                            "workspace effect node changed during measurement",
+                            code="workspace_authority_mismatch",
+                        )
+                    scanned_bytes += total_bytes
                 except OSError as exc:
                     raise WorkspaceStateError(
                         "workspace effects cannot be measured",
@@ -2958,6 +2994,7 @@ class LeaseBackedRunnerWorkspace:
                 _workspace_effect_snapshot,
                 workspace_root,
                 exclude_root_git=workspace_mount.role == "repository",
+                max_total_bytes=lease.plan.resources.storage_bytes,
             )
             self.__effects_root = workspace_root
             self.__effects_exclude_root_git = workspace_mount.role == "repository"
@@ -2985,6 +3022,7 @@ class LeaseBackedRunnerWorkspace:
                 _workspace_effect_snapshot,
                 self.__effects_root,
                 exclude_root_git=self.__effects_exclude_root_git,
+                max_total_bytes=lease.plan.resources.storage_bytes,
                 expected_root_identity=self.__effects_root_identity,
             )
             return _changed_workspace_effects(self.__effects_baseline, current)

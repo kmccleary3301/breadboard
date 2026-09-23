@@ -423,6 +423,13 @@ async function initialize(payload) {
       toolSnippets: snippets,
       promptGuidelines,
     });
+    // Pinned supplier buildSystemPrompt reads the wall clock itself; fail closed
+    // if it rendered a date other than the declared runtime input (e.g. a UTC
+    // midnight crossing between declaration and initialize).
+    const renderedDate = /\nCurrent date: ([^\n]*)\nCurrent working directory: [^\n]*$/.exec(systemPrompt);
+    if (!renderedDate || renderedDate[1] !== currentDate) {
+      fail("rendered Pi prompt current date does not match declared runtime_inputs.current_date");
+    }
     const seenRemovals = new Set();
     for (const removal of removeExact) {
       if (seenRemovals.has(removal)) {
