@@ -65,7 +65,7 @@ NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
     openclaw_semantics.OPENCLAW_CONSUMER_ID: NativeStreamProfile(
         consumer_id=openclaw_semantics.OPENCLAW_CONSUMER_ID,
         target_id="openclaw@2026.9.4",
-        target_version=4,
+        target_version=3,
         phase_schema_version="bb.openclaw-native.v1",
         tool_order=openclaw_semantics.OpenClawSemanticsState.tool_order,
         max_turns=8,

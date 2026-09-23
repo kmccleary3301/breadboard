@@ -11,14 +11,14 @@
       "sha256": "sha256:50d72b68d170383107dde0da5f9fcf095f5069f184ea0916fc90af8c567004c3"
     },
     {
-      "bytes": 2377,
+      "bytes": 8562,
       "path": "tool-surface.json",
-      "sha256": "sha256:9ccc7bcbd438afb478250264d9f5a1fbcf3477315ab1df784d511f82596cd491"
+      "sha256": "sha256:8a091468db2daef50b32e658e2bf051f5a55c54b55c2a3ec7364905495b809b7"
     },
     {
-      "bytes": 2786,
+      "bytes": 4360,
       "path": "native-config.json",
-      "sha256": "sha256:9648853ce1ccdada619a220f8b9cd7f32edea970d4b25cd8ac611784dc4d7e01"
+      "sha256": "sha256:5cdbf0adbea101d0ae6b87aeb48a08312099bdae966a636283c3ec81d1a49c2e"
     },
     {
       "bytes": 80,

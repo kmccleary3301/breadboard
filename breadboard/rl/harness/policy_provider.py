@@ -151,6 +151,11 @@ def _project_effective_chat_tool(definition: Mapping[str, Any]) -> dict[str, Any
         "properties": properties,
         "required": required,
     }
+    if any(
+        isinstance(value, Mapping) and value.get("additionalProperties") is True
+        for value in routing.values()
+    ):
+        parameter_schema["additionalProperties"] = True
     openai_routing = routing.get("openai")
     if isinstance(openai_routing, Mapping) and "additionalProperties" in openai_routing:
         additional_properties = openai_routing["additionalProperties"]
@@ -1937,7 +1942,10 @@ def _responses_request_to_chat(
         messages = request["messages"]
         tools = request["tools"]
         system_prompt = target_projection.system_prompt
-        if target_projection.renderer_id == PI_RESPONSE_CONSUMER_ID:
+        if target_projection.renderer_id in {
+            PI_RESPONSE_CONSUMER_ID,
+            OPENCLAW_RESPONSE_CONSUMER_ID,
+        }:
             if native_system_prompt is None:
                 raise ProviderContractError("native stream bootstrap has not been bound")
             system_prompt = native_system_prompt

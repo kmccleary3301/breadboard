@@ -133,6 +133,9 @@ class FinalizedToolCall:
     call_type: str | None = None
     index: int | None = None
 
+    @property
+    def id(self) -> str:
+        return self.tool_call_id
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {
             "id": self.tool_call_id,
@@ -168,6 +171,13 @@ class OpenClawParseResult:
     usage: Mapping[str, Any] | None = None
     raw_fragments: tuple[Mapping[str, Any], ...] = ()
     recovery: RecoveryDecision | None = None
+    @property
+    def assistant(self) -> Mapping[str, Any]:
+        return self.assistant_message
+
+    @property
+    def calls(self) -> tuple[FinalizedToolCall, ...]:
+        return self.tool_batch.tool_calls
 
 
 @dataclass(frozen=True)
@@ -309,9 +319,24 @@ def finalize_native_chat_response(
         executable = True
     if errors or finish_reason in {"error", "aborted"}:
         executable = False
+    assistant_content: Any = content
+    if calls:
+        blocks: list[dict[str, Any]] = []
+        if content:
+            blocks.append({"type": "text", "text": content})
+        blocks.extend(
+            {
+                "type": "toolCall",
+                "id": call.id,
+                "name": call.name,
+                "arguments": dict(call.arguments),
+            }
+            for call in calls
+        )
+        assistant_content = blocks
     assistant = {
         "role": "assistant",
-        "content": content,
+        "content": assistant_content,
         "tool_calls": [call.to_dict() for call in calls],
         "finish_reason": finish_reason,
         "stop_reason": view.native_stop_reason or finish_reason,
@@ -472,9 +497,8 @@ class OpenClawSemanticsState:
             self.terminal_kind = "stop" if result.finish_reason == "stop" else "provider_error"
         return result
 
-    def prepare_response(self, response: Any) -> tuple[Mapping[str, Any], tuple[FinalizedToolCall, ...]]:
-        result = self.consume_native_response(response)
-        return result.assistant_message, result.tool_batch.tool_calls
+    def prepare_response(self, response: Any) -> OpenClawParseResult:
+        return self.consume_native_response(response)
 
     def commit_tool_results(
         self,
@@ -497,7 +521,15 @@ class OpenClawSemanticsState:
                     if isinstance(call, FinalizedToolCall)
                     else str(call.get("id", call.get("tool_call_id", "")))
                 )
-                committed_items.append(dict(by_id.get(call_id, {})))
+                raw = dict(by_id.get(call_id, {}))
+                if raw.get("role") != "tool":
+                    content = raw.get("content", raw.get("text", ""))
+                    raw = {
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": content if isinstance(content, (str, list)) else str(content),
+                    }
+                committed_items.append(raw)
             committed = tuple(committed_items)
         self.history.extend(committed)
         return committed

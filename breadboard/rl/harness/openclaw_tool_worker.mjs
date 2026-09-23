@@ -50,9 +50,28 @@ async function verifyAndLoad() {
   return { createCoreCodingTools: core.t, buildBootstrapContextFiles: sourceBootstrap.n, loadWorkspaceBootstrapFiles: sourceWorkspace._ };
 }
 
+function admittedSchema(value) {
+  if (Array.isArray(value)) return value.map(admittedSchema);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => key !== "patternProperties")
+      .map(([key, entry]) => [key, admittedSchema(entry)]),
+  );
+}
+
 function schemaFor(tool) {
   const schema = tool?.parameters ?? tool?.inputSchema ?? tool?.schema ?? { type: "object" };
-  return { type: "function", function: { name: tool.name, description: text(tool.description), parameters: schema } };
+  const admitted = admittedSchema(schema);
+  if (tool.name === "ls" && !Object.hasOwn(admitted, "required")) admitted.required = [];
+  return {
+    type: "function",
+    function: {
+      name: tool.name,
+      description: text(tool.description),
+      parameters: admitted,
+    },
+  };
 }
 
 function makeTools(createCoreCodingTools) {
@@ -210,14 +229,15 @@ async function handle(message) {
     }
     await materializeBootstrapAssets(assets);
     const ordered = makeTools(source.createCoreCodingTools);
-    const bootstrap = await bootstrapContext(source.loadWorkspaceBootstrapFiles, source.buildBootstrapContextFiles);
+    const bootstrapFiles = await bootstrapContext(source.loadWorkspaceBootstrapFiles, source.buildBootstrapContextFiles);
     const advertisement = message.advertisement && typeof message.advertisement === "object" ? message.advertisement : {};
     return {
       schema_version: PROTOCOL,
       kind: "initialized",
-      system_prompt: text(message.system_prompt || advertisement.system_prompt),
+      system_prompt: text(message.system_prompt || advertisement.system_prompt)
+        .replaceAll("{{task}}", text(message.task)),
       tool_schemas: ordered.map(schemaFor),
-      bootstrap,
+      bootstrap: { files: bootstrapFiles },
       tools: TOOL_ORDER,
     };
   }
