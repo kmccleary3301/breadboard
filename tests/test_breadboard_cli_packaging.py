@@ -279,6 +279,7 @@ from breadboard.product.harness.templates import (
     minimal_template_path,
 )
 from breadboard.product.operation_catalog import product_operation_catalog
+from breadboard.rl.harness.pi_native_tools import _WORKER
 from breadboard_engine.compilation.primitive_records import get_spec
 from breadboard_engine.e4_targets import (
     _resource_root,
@@ -337,7 +338,14 @@ assert generated["catalog_id"] == "bb.public_operation_catalog.v2"
 assert files("breadboard_sdk.generated").joinpath("public_bindings.py").is_file()
 target_ids = list_e4_target_ids()
 assert target_ids == ("mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "openhands-sdk@1.47.0", "pi@0.57.1", "pi@0.73.1")
+for target_id in target_ids:
+    target = load_e4_target(target_id)
+    for asset in target.descriptor["assets"]:
+        asset_path = asset["path"]
+        assert isinstance(target.read_asset_bytes(asset_path), bytes)
 pi_target = load_e4_target("pi@0.57.1")
+pi_073_worker = Path(_WORKER).resolve()
+assert pi_073_worker.is_file() and pi_073_worker.is_relative_to(site_root)
 omp_target = load_e4_target("oh-my-pi@16.2.13")
 assert pi_target.descriptor["upstream"]["package"]["integrity"].startswith("sha512-")
 assert omp_target.descriptor["upstream"]["source"]["commit"] == (
