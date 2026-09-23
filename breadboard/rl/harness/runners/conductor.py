@@ -19,14 +19,17 @@ from breadboard_engine.compilation.contracts import (
 from breadboard_engine.compilation.provider_response import (
     MINI_RESPONSE_CONSUMER_ID,
     OPENHANDS_RESPONSE_CONSUMER_ID,
+    PI_RESPONSE_CONSUMER_ID,
     NativeResponsePolicy,
 )
 from breadboard.rl.harness.contracts import PolicyCapabilityObservation
 from breadboard.rl.harness.runner_identity import measure_module_artifact
-from breadboard.rl.harness.runners import mini_semantics
+from breadboard.rl.harness import native_stream_consumers
+from breadboard.rl.harness.runners import mini_semantics, pi_semantics
 from breadboard.rl.harness.runners.base import (
     ConductorToolPort,
     CompiledPolicyRuntimeClientPort,
+    NativeStreamPolicyRuntimeClientPort,
     MiniTemplateFramePort,
     NativeHTTPPolicyRuntimeClientPort,
     NativeSourceSessionPort,
@@ -85,9 +88,13 @@ _EVENT_SINK_SESSION: ContextVar[object | None] = ContextVar(
 
 _CONDUCTOR_MODULE_IDENTITY = measure_module_artifact(__file__)
 _MINI_MODULE_IDENTITY = measure_module_artifact(mini_semantics.__file__)
+_PI_MODULE_IDENTITY = measure_module_artifact(pi_semantics.__file__)
+_STREAM_MODULE_IDENTITY = measure_module_artifact(native_stream_consumers.__file__)
 CONDUCTOR_IMPLEMENTATION_DIGEST = canonical_sha256({
     "conductor": _CONDUCTOR_MODULE_IDENTITY.digest,
     "mini_semantics": _MINI_MODULE_IDENTITY.digest,
+    "pi_semantics": _PI_MODULE_IDENTITY.digest,
+    "native_stream_consumers": _STREAM_MODULE_IDENTITY.digest,
 })
 
 
@@ -269,7 +276,7 @@ class PolicyRuntimeBinding:
         metadata = plan.effective_semantics.get("metadata")
         target = metadata.get("e4_target") if isinstance(metadata, Mapping) else None
         if isinstance(target, Mapping) and target.get("renderer_id") in {
-            MINI_RESPONSE_CONSUMER_ID, OPENHANDS_RESPONSE_CONSUMER_ID,
+            MINI_RESPONSE_CONSUMER_ID, OPENHANDS_RESPONSE_CONSUMER_ID, PI_RESPONSE_CONSUMER_ID,
         }:
             if not isinstance(client, CompiledPolicyRuntimeClientPort):
                 raise RunnerPolicyBindingError(
@@ -300,6 +307,22 @@ class PolicyRuntimeBinding:
                 effective_plan_digest=self._effective_plan_digest,
             )
         self._client.bind_native_tools(tools)
+
+    def bind_native_stream(
+        self, system_prompt: str, tools: tuple[Mapping[str, Any], ...],
+    ) -> None:
+        if (
+            self._source_consumer_id != PI_RESPONSE_CONSUMER_ID
+            or self._state != "claimed"
+            or not isinstance(self._client, NativeStreamPolicyRuntimeClientPort)
+        ):
+            raise RunnerPolicyBindingError(
+                "native stream bootstrap requires an active compiled stream binding",
+                code="native_response_binding_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        self._client.bind_native_stream(system_prompt, tools)
 
     def stage_native_http_request(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
         if (
@@ -664,14 +687,14 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
     source_profile = None
     source_consumer_id = None
     if isinstance(target, Mapping) and target.get("renderer_id") in {
-        MINI_RESPONSE_CONSUMER_ID, OPENHANDS_RESPONSE_CONSUMER_ID,
+        MINI_RESPONSE_CONSUMER_ID, OPENHANDS_RESPONSE_CONSUMER_ID, PI_RESPONSE_CONSUMER_ID,
     }:
         source_consumer_id = target["renderer_id"]
-        expected_target, expected_version = (
-            ("mini-swe-agent@2.4.6", 2)
-            if source_consumer_id == MINI_RESPONSE_CONSUMER_ID
-            else ("openhands-sdk@1.47.0", 3)
-        )
+        expected_target, expected_version = {
+            MINI_RESPONSE_CONSUMER_ID: ("mini-swe-agent@2.4.6", 2),
+            OPENHANDS_RESPONSE_CONSUMER_ID: ("openhands-sdk@1.47.0", 3),
+            PI_RESPONSE_CONSUMER_ID: ("pi@0.73.1", 3),
+        }[source_consumer_id]
         if (
             target.get("target_id") != expected_target
             or target.get("version") != expected_version
@@ -1159,7 +1182,12 @@ class ConductorAdapter:
         if runtime_abi != CONDUCTOR_RUNTIME_ABI:
             raise ValueError("conductor adapter accepts only its exact runtime ABI")
         measured = measure_module_artifact(__file__)
-        if measured != _CONDUCTOR_MODULE_IDENTITY or measure_module_artifact(mini_semantics.__file__) != _MINI_MODULE_IDENTITY:
+        if (
+            measured != _CONDUCTOR_MODULE_IDENTITY
+            or measure_module_artifact(mini_semantics.__file__) != _MINI_MODULE_IDENTITY
+            or measure_module_artifact(pi_semantics.__file__) != _PI_MODULE_IDENTITY
+            or measure_module_artifact(native_stream_consumers.__file__) != _STREAM_MODULE_IDENTITY
+        ):
             raise RuntimeError("conductor module artifact changed after bootstrap")
         self._descriptor = RunnerAdapterDescriptor(
             adapter_id=CONDUCTOR_ADAPTER_ID,
@@ -1356,6 +1384,7 @@ class _ConductorSession:
     async def _close_once(self) -> None:
         async with self._lock:
             running = self._phase == "running" and not self._terminal_committing
+
         primary: BaseException | None = None
         if running:
             try:
@@ -1374,6 +1403,9 @@ class _ConductorSession:
         if self._projection.source_consumer_id == OPENHANDS_RESPONSE_CONSUMER_ID:
             async with asyncio.timeout(180):
                 return await self._loop_openhands(request)
+        if self._projection.source_consumer_id == PI_RESPONSE_CONSUMER_ID:
+            async with asyncio.timeout(120):
+                return await self._loop_native_stream(request)
         transcript: list[Any] = []
         limits = self._open_request.effective_plan.effective_capabilities.limits
         transcript_size = _encoded_json_size(request.task_input) + _encoded_json_size(request.context)
@@ -1857,6 +1889,239 @@ class _ConductorSession:
             turn_count=len(self._turns),
             turns=tuple(self._turns),
             events=tuple(self._events),
+        )
+
+    async def _loop_native_stream(self, request: ConductorRunRequest) -> RunnerResult:
+        """Drive native streamed source phases through the admitted lease."""
+        limits = self._open_request.effective_plan.effective_capabilities.limits
+        consumer_id = self._projection.source_consumer_id
+        tools = self._tools
+        if (
+            not isinstance(tools, NativeSourceSessionPort)
+            or self._binding.source_model_config is None
+            or limits.max_turns != 8
+            or limits.action_timeout_ms != 35_000
+            or len(self._projection.models) != 1
+            or len(self._projection.modes) != 1
+            or self._projection.models[0].params
+            or tuple(self._projection.modes[0].tool_ids) != pi_semantics.TOOL_NAMES
+            or consumer_id != PI_RESPONSE_CONSUMER_ID
+        ):
+            raise _plan_error(self._open_request, "native stream runtime controls differ", "compiled_ir_mismatch")
+        task = request.task_input.get("prompt")
+        if set(request.task_input) != {"prompt"} or type(task) is not str or request.context:
+            raise RunnerRequestError(
+                "native stream requires the owned headless prompt without caller context",
+                code="request_authority_invalid",
+            )
+        model = self._projection.models[0]
+
+        async def phase(operation: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+            raw = await tools.invoke_native_phase(
+                operation, payload, timeout_ms=limits.action_timeout_ms,
+            )
+            frozen, _ = freeze_json_object_with_size(
+                raw, field_name="native stream phase",
+                max_encoded_bytes=16 * 1024 * 1024,
+                max_nodes=16 * 1024 * 1024 + 1,
+            )
+            if frozen.get("schema_version") != "bb.pi-native.v1":
+                raise RunnerProtocolError(
+                    "native stream phase revision is invalid",
+                    code="native_response_invalid", **self._context(),
+                )
+            return thaw_json(frozen)
+
+        initialized = await phase("initialize", {
+            "task": task, "model_config": thaw_json(self._binding.source_model_config),
+        })
+        system_prompt = initialized.get("system_prompt")
+        tool_schemas = initialized.get("tool_schemas")
+        if (
+            initialized.get("kind") != "initialized"
+            or type(system_prompt) is not str
+            or type(tool_schemas) is not list
+        ):
+            raise RunnerProtocolError(
+                "native stream bootstrap is malformed",
+                code="native_response_binding_invalid", **self._context(),
+            )
+        self._binding.bind_native_stream(system_prompt, tuple(tool_schemas))
+        state = pi_semantics.PiSemanticsState(task=task, system_prompt=system_prompt)
+
+        async def commit(
+            start: int, phase_name: str, turn: int | None,
+            events: list[Mapping[str, Any]] | None = None,
+        ) -> None:
+            if _encoded_json_size(state.messages) > limits.transcript_bytes:
+                raise RunnerProtocolError(
+                    "source transcript limit exceeded",
+                    code="transcript_limit_exceeded", **self._context(),
+                )
+            await self._emit(SourceEventCommitEvent(
+                0, self._open_request.episode_id, self._open_request.effective_plan_digest,
+                turn, consumer_id, phase_name,
+                tuple(state.messages[start:] if events is None else events),
+                canonical_sha256(state.messages),
+                {
+                    "request_count": state.request_count,
+                    "stream_fn_issued": state.stream_fn_issued,
+                    "native_stop_reason": state.native_stop_reason,
+                    "public_stop": state.exit_status,
+                },
+            ))
+
+        await commit(0, "initial", None)
+        termination = RunnerTermination.POLICY_INCOMPLETE
+        while not state.is_exited:
+            turn = len(self._turns) + 1
+            await self._checkpoint("before_policy", turn=turn)
+            before = len(state.messages)
+            if state.begin_query() is not None:
+                # Pi's streamFn seam refuses the ninth query before any HTTP.
+                await commit(before, "exit", len(self._turns) or None)
+                termination = RunnerTermination.LIMITS_EXCEEDED
+                break
+            projected = await phase("project_request", {"messages": state.messages})
+            if projected.get("kind") != "request":
+                raise RunnerProtocolError(
+                    "native request projection failed",
+                    code="policy_request_invalid", **self._context(),
+                )
+            frozen_request = freeze_json_object({
+                "model": model.model_id,
+                "messages": projected.get("messages"),
+                "tools": projected.get("tools"),
+            }, field_name="native policy request")
+            request_digest = canonical_sha256(frozen_request)
+            await self._emit(PolicyRequestEvent(
+                0, self._open_request.episode_id, self._open_request.effective_plan_digest,
+                turn, frozen_request,
+            ))
+            await self._emit(PolicyRuntimeRequestEvent(
+                0, self._open_request.episode_id, self._open_request.effective_plan_digest,
+                turn, 1, self._binding.binding_digest,
+                self._binding.policy_capability_observation_digest, model.policy_slot_id,
+                request_digest, self._binding.first_request_digest or request_digest,
+                model.trainable_values,
+            ))
+            await self._checkpoint("before_policy", turn=turn)
+            result = await self._binding.invoke(PolicyRuntimeInvokeRequest(
+                episode_id=self._open_request.episode_id,
+                effective_plan_digest=self._open_request.effective_plan_digest,
+                binding_digest=self._binding.binding_digest, policy_slot_id=model.policy_slot_id,
+                request_digest=request_digest, request_payload=frozen_request, turn=turn, attempt=1,
+            ))
+            await self._checkpoint("after_policy", turn=turn)
+            response, _ = freeze_json_object_with_size(
+                result.response_payload, field_name="native policy response",
+                max_encoded_bytes=16 * 1024 * 1024, max_nodes=16 * 1024 * 1024 + 1,
+            )
+            if canonical_sha256(response) != result.response_digest:
+                raise RunnerProtocolError(
+                    "policy response digest does not match the response payload",
+                    code="policy_response_digest_mismatch", **self._context(),
+                )
+            await self._emit(PolicyRuntimeResponseEvent(
+                0, self._open_request.episode_id, self._open_request.effective_plan_digest,
+                turn, 1, self._binding.binding_digest, model.policy_slot_id,
+                request_digest, result.response_digest,
+            ))
+            await self._emit(PolicyResponseEvent(
+                0, self._open_request.episode_id, self._open_request.effective_plan_digest,
+                turn, response, (),
+            ))
+            native = native_stream_consumers.native_response_from_dict(
+                thaw_json(response["native_response"])
+            )
+            before = len(state.messages)
+            parsed = state.prepare_response(native)
+            await commit(before, "assistant", turn)
+            observations: list[FrozenJsonObject] = []
+            if parsed.calls:
+                raw_by_id = {call.id: call.arguments for call in native.tool_calls}
+                for ordinal, call in enumerate(parsed.calls):
+                    await self._checkpoint("before_action", turn=turn, call_id=call.id)
+                    await self._emit(ToolCallEvent(
+                        0, self._open_request.episode_id, self._open_request.effective_plan_digest,
+                        turn, ordinal, call.id, call.name, raw_by_id[call.id],
+                    ))
+                prepared = await phase("prepare_tools", {"calls": [
+                    {"id": call.id, "name": call.name, "arguments": call.arguments}
+                    for call in parsed.calls
+                ]})
+                if prepared.get("kind") != "prepared":
+                    raise RunnerProtocolError(
+                        "native batch preparation failed",
+                        code="native_response_invalid", **self._context(),
+                    )
+                history_calls = prepared.get("history_calls")
+                if history_calls is not None:
+                    if (
+                        type(history_calls) is not list
+                        or any(type(item) is not dict for item in history_calls)
+                        or [(item.get("id"), item.get("name")) for item in history_calls]
+                        != [(call.id, call.name) for call in parsed.calls]
+                    ):
+                        raise RunnerProtocolError(
+                            "native prepared history identity changed",
+                            code="native_response_invalid", **self._context(),
+                        )
+                    blocks = [block for block in parsed.assistant["content"] if block["type"] == "toolCall"]
+                    for block, prepared_call in zip(blocks, history_calls, strict=True):
+                        block["arguments"] = prepared_call["arguments"]
+                    await commit(len(state.messages), "assistant", turn, events=[
+                        {"kind": "assistant_prepared", "message": parsed.assistant},
+                    ])
+                await self._checkpoint("before_action", turn=turn)
+                completed = await phase("execute_batch", {})
+                raw_results = completed.get("results")
+                if (
+                    completed.get("kind") != "tool_results"
+                    or type(raw_results) is not list
+                    or len(raw_results) != len(parsed.calls)
+                    or any(type(item) is not dict for item in raw_results)
+                ):
+                    raise RunnerProtocolError(
+                        "native tool batch result is malformed",
+                        code="native_response_invalid", **self._context(),
+                    )
+                for ordinal, (call, raw) in enumerate(zip(parsed.calls, raw_results, strict=True)):
+                    observation, _ = freeze_json_object_with_size(
+                        raw, field_name="native tool observation",
+                        max_encoded_bytes=limits.observation_bytes,
+                        max_nodes=limits.observation_bytes + 1,
+                    )
+                    observations.append(observation)
+                    await self._emit(ToolObservationEvent(
+                        0, self._open_request.episode_id, self._open_request.effective_plan_digest,
+                        turn, ordinal, call.id, call.name, observation, False,
+                    ))
+                    await self._checkpoint("after_action", turn=turn, call_id=call.id)
+                before = len(state.messages)
+                state.commit_tool_results(parsed.calls, raw_results)
+                await commit(before, "observation_batch", turn)
+            self._turns.append(RunnerTurn(turn, (), tuple(observations)))
+            if state.is_exited:
+                termination = (
+                    RunnerTermination.POLICY_INCOMPLETE
+                    if state.native_stop_reason in {"error", "aborted", "length"}
+                    else RunnerTermination.ASSISTANT_COMPLETE
+                )
+        await self._checkpoint("after_loop", turn=len(self._turns))
+        await self._checkpoint("before_commit", turn=len(self._turns))
+        await self._commit_termination(termination)
+        return RunnerResult(
+            episode_id=self._open_request.episode_id,
+            effective_plan_digest=self._open_request.effective_plan_digest,
+            original_request={"task_input": request.task_input, "context": request.context},
+            response={
+                "source_id": consumer_id,
+                "replay_trace": state.to_trace(),
+                "bootstrap": initialized.get("bootstrap"),
+            },
+            termination=termination, turn_count=len(self._turns),
+            turns=tuple(self._turns), events=tuple(self._events),
         )
 
     async def _loop_openhands(self, request: ConductorRunRequest) -> RunnerResult:

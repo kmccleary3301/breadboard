@@ -1,32 +1,169 @@
-schema_version: bb.e4.target_config.v1
+schema_version: bb.e4.target_config.v2
 target_id: pi@0.73.1
+semantic_revision: bb.e4.target-semantics.v2
+renderer:
+  selector: breadboard.pi-coding-agent.v0.73.1
+  revision: breadboard.pi-coding-agent.v0.73.1
 prompt:
-  renderer: pi-0.73.1
   asset: prompts/system-prompt.md
-  dynamic_fields:
-    - current_date
-    - cwd
-    - project_context
+  dynamic_fields: []
 tools:
   ordered:
-    - read
-    - bash
-    - edit
-    - write
+  - read
+  - bash
+  - edit
+  - write
   surface_asset: tool-surface.json
-  image_delivery: disabled
-session:
-  persistence: disabled
-  extensions: disabled
-  skills: disabled
-  prompt_templates: disabled
-thinking: off
-retry:
-  enabled: false
-  max_retries: 0
-stream:
-  enabled: true
-  request_cap: 8
-  max_tokens: 2048
-transport:
-  mode: native_response
+  normalization:
+    aliases: {}
+policy:
+  revision: bb.e4.target-policy.v2
+  provider:
+    api: openai_chat_completions
+    stream: true
+    samples: 1
+    provider_attempts: 1
+    fallback: false
+    compaction: false
+    request_timeout_seconds: 45
+  action:
+    protocol: native_tools
+    decoder: breadboard.pi-coding-agent.v0.73.1
+    repair: null
+    argument_processors: []
+    aliases: {}
+    decode_entire_batch_before_dispatch: true
+    require_nonempty_calls: false
+    malformed: native_per_call_error_then_continue
+    empty_reply: native_quiescence
+    max_consecutive_format_errors: null
+  execution:
+    scheduler: parallel_prepare_dispatch_ordered_join
+    history_commit: assistant_then_native_preparation_then_ordered_tool_results
+    terminal_policy: native_quiescence_error_or_public_request_cap
+    bounded_controls:
+      max_model_calls: 8
+      episode_wall_seconds: 120
+      single_tool_wall_seconds: 35
+      raw_evidence_bytes_per_outcome: 1048576
+      max_active_episodes: 1
+      samples_per_call: 1
+  observations:
+    renderer: breadboard.pi-coding-agent.v0.73.1
+    preserve_raw_outcome: true
+    preserve_model_render: true
+    commit_at_source_boundary: true
+  authority:
+    workspace_root: workspace
+    containment: task_provided_isolated_substrate
+    interaction: noninteractive
+    network_tools: false
+    subagents: false
+  claim_exclusions:
+  - interactive_agent
+  - model_image_delivery
+  - provider_retries
+  - model_fallback
+  - compaction
+  - network_tools
+  - subagents
+  - extensions
+  - skills
+  - persistent_sessions
+inputs:
+  revision: bb.e4.target-inputs.v2
+  fields:
+  - name: task
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: bb.rl.headless-run-request/prompt
+    omission: required
+    value_schema:
+      type: string
+  - name: cwd
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: owned_lease/repository_root
+    omission: required
+    value_schema:
+      type: string
+  - name: current_date
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: owned_worker/UTC_calendar_date
+    omission: required
+    value_schema:
+      type: string
+  - name: project_context
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: pi@781152fc24841dc54b22284514604048ebe5e2c9/packages/coding-agent/src/core/resource-loader.ts
+    omission: required
+    value_schema:
+      type: array
+      items:
+        type: object
+        properties:
+          path:
+            type: string
+          content:
+            type: string
+        required:
+        - path
+        - content
+        additionalProperties: false
+  - name: package_dir
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: installed_runtime/pi_documentation_bundle
+    omission: required
+    value_schema:
+      type: string
+  order:
+  - task
+  - cwd
+  - current_date
+  - project_context
+  - package_dir
+materialization:
+  revision: bb.e4.target-materialization.v2
+  assets:
+  - path: harness.yaml
+    role: config
+    required: true
+    source_ref: pi@781152fc24841dc54b22284514604048ebe5e2c9/packages/coding-agent/src/core/sdk.ts
+  - path: prompts/system-prompt.md
+    role: prompt
+    required: true
+    source_ref: pi@781152fc24841dc54b22284514604048ebe5e2c9/packages/coding-agent/src/core/system-prompt.ts
+  - path: native-config.json
+    role: runtime
+    required: true
+    source_ref: pi@781152fc24841dc54b22284514604048ebe5e2c9/packages/coding-agent/src/core/sdk.ts
+  - path: tool-surface.json
+    role: tool_surface
+    required: true
+    source_ref: pi@781152fc24841dc54b22284514604048ebe5e2c9/packages/coding-agent/src/core/tools/index.ts
+  - path: LICENSE.txt
+    role: license
+    required: true
+    source_ref: pi@781152fc24841dc54b22284514604048ebe5e2c9/packages/coding-agent/src/core/sdk.ts
+  - path: source.json
+    role: source
+    required: true
+    source_ref: pi@781152fc24841dc54b22284514604048ebe5e2c9/packages/coding-agent/src/core/sdk.ts
+  order:
+  - harness.yaml
+  - prompts/system-prompt.md
+  - native-config.json
+  - tool-surface.json
+  - LICENSE.txt
+  - source.json
+required_capabilities:
+- provider_native_response.v1
+- native_source_session.v1

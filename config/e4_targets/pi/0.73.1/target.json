@@ -1,11 +1,35 @@
 {
   "assets": [
-    {"bytes": 572, "path": "harness.yaml", "sha256": "sha256:885066cda0f073e6876e85f7346da4a36b34406078869507f4c4767e318414c6"},
-    {"bytes": 2896, "path": "prompts/system-prompt.md", "sha256": "sha256:4a9f2d6e5977f05d63595e59edef9a3bb6ed90e6f4e862e2eeb6a32737df8619"},
-    {"bytes": 1028, "path": "native-config.json", "sha256": "sha256:a8b12e434d1cf0ca708b1c517c429238681a87987319daf40c17d7967943b328"},
-    {"bytes": 2590, "path": "tool-surface.json", "sha256": "sha256:90a7d55a4f021a93b0b6216a2e56651f90e3c831685d3803974bbef253d4bcee"},
-    {"bytes": 1070, "path": "LICENSE.txt", "sha256": "sha256:4f6a1985796db5225e3b1e59972bd47e07a27a0748427cb3d3c8fbf39f9311f0"},
-    {"bytes": 1095, "path": "source.json", "sha256": "sha256:8b017d0a7501788f5b8660a3eee27bf12b14ab57a95426c912d8d9446618a308"}
+    {
+      "bytes": 4587,
+      "path": "harness.yaml",
+      "sha256": "sha256:316bea3871a3b577e422c4bed04fe170d2d2c166ef93fa64dc77b822571fc3c7"
+    },
+    {
+      "bytes": 2896,
+      "path": "prompts/system-prompt.md",
+      "sha256": "sha256:4a9f2d6e5977f05d63595e59edef9a3bb6ed90e6f4e862e2eeb6a32737df8619"
+    },
+    {
+      "bytes": 1028,
+      "path": "native-config.json",
+      "sha256": "sha256:a8b12e434d1cf0ca708b1c517c429238681a87987319daf40c17d7967943b328"
+    },
+    {
+      "bytes": 2590,
+      "path": "tool-surface.json",
+      "sha256": "sha256:90a7d55a4f021a93b0b6216a2e56651f90e3c831685d3803974bbef253d4bcee"
+    },
+    {
+      "bytes": 1070,
+      "path": "LICENSE.txt",
+      "sha256": "sha256:4f6a1985796db5225e3b1e59972bd47e07a27a0748427cb3d3c8fbf39f9311f0"
+    },
+    {
+      "bytes": 1095,
+      "path": "source.json",
+      "sha256": "sha256:8b017d0a7501788f5b8660a3eee27bf12b14ab57a95426c912d8d9446618a308"
+    }
   ],
   "execution": {
     "config_asset": "harness.yaml",
@@ -14,16 +38,46 @@
   },
   "family": "pi",
   "overlay": {
-    "argv": ["--tools", "read,bash,edit,write", "--thinking", "off", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-session"],
+    "argv": [
+      "--tools",
+      "read,bash,edit,write",
+      "--thinking",
+      "off",
+      "--no-extensions",
+      "--no-skills",
+      "--no-prompt-templates",
+      "--no-session"
+    ],
     "overlay_id": "breadboard.pi.headless.v0.73.1",
     "settings": [
-      {"name": "agent.request_cap", "value": 8},
-      {"name": "model.thinking_level", "value": "off"},
-      {"name": "model.stream", "value": true},
-      {"name": "model.max_tokens", "value": 2048},
-      {"name": "model.timeout_seconds", "value": 45},
-      {"name": "model.retry_enabled", "value": false},
-      {"name": "model.images_enabled", "value": false}
+      {
+        "name": "agent.request_cap",
+        "value": 8
+      },
+      {
+        "name": "model.thinking_level",
+        "value": "off"
+      },
+      {
+        "name": "model.stream",
+        "value": true
+      },
+      {
+        "name": "model.max_tokens",
+        "value": 2048
+      },
+      {
+        "name": "model.timeout_seconds",
+        "value": 45
+      },
+      {
+        "name": "model.retry_enabled",
+        "value": false
+      },
+      {
+        "name": "model.images_enabled",
+        "value": false
+      }
     ]
   },
   "schema_version": "bb.e4.target.v2",

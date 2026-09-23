@@ -252,8 +252,8 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
         *_TARGET_BINDING_FIELDS, "version", "tool_surface_digest", "harness_lock_digest", *extra_fields
     }
     renderer_id = binding.get("renderer_id")
-    supported_v2_targets = {
-        MINI_RESPONSE_CONSUMER_ID: "mini-swe-agent@2.4.6",
+    deferred_targets = {
+        OPENHANDS_RESPONSE_CONSUMER_ID: "openhands-sdk@1.47.0",
         PI_RESPONSE_CONSUMER_ID: "pi@0.73.1",
     }
     if (
@@ -263,14 +263,14 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
         and renderer_id != "breadboard.e4.legacy-string-template.v1"
         or version == 2
         and (
-            renderer_id not in supported_v2_targets
-            or binding.get("target_id") != supported_v2_targets.get(renderer_id)
+            renderer_id != MINI_RESPONSE_CONSUMER_ID
+            or binding.get("target_id") != "mini-swe-agent@2.4.6"
             or not isinstance(binding.get("runtime_profile"), Mapping)
         )
         or version == 3
         and (
-            renderer_id != OPENHANDS_RESPONSE_CONSUMER_ID
-            or binding.get("target_id") != "openhands-sdk@1.47.0"
+            renderer_id not in deferred_targets
+            or binding.get("target_id") != deferred_targets.get(renderer_id)
             or not isinstance(binding.get("runtime_profile"), Mapping)
             or binding.get("rendered_prompt_digest") is not None
         )
@@ -282,7 +282,7 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
         value = binding[name]
         if name == "rendered_prompt_digest" and version == 3:
             if value is not None:
-                raise ValueError("deferred OpenHands prompt digest must be null")
+                raise ValueError("deferred native prompt digest must be null")
             continue
         if type(value) is not str or not value:
             raise ValueError("compiled target identity is malformed")
@@ -597,6 +597,7 @@ class EpisodeOpenAICompletionsPolicyClient:
         self._native_pending: _PendingNativeHTTPRequest | None = None
         self._native_private_responses: dict[str, Mapping[str, Any]] = {}
         self._native_tool_schemas: tuple[Mapping[str, Any], ...] | None = None
+        self._native_stream_prompt: str | None = None
 
     def bind_compiled_plan(self, plan: EffectiveExecutionPlan) -> Mapping[str, Any]:
         """Join a source-native client to the actual selected compiled plan."""
@@ -677,6 +678,25 @@ class EpisodeOpenAICompletionsPolicyClient:
                 **dict(model_config),
                 "model_name": "openai/" + profile.model,
             }
+        elif target.renderer_id == PI_RESPONSE_CONSUMER_ID:
+            public_config = {
+                "id": profile.model,
+                "name": profile.model,
+                "api": "openai-completions",
+                "provider": "openai",
+                "baseUrl": profile.base_url,
+                "reasoning": False,
+                "input": ["text"],
+                "contextWindow": profile.context_window,
+                "maxTokens": profile.max_output_tokens,
+                "compat": {
+                    "supportsStore": True,
+                    "supportsDeveloperRole": True,
+                    "supportsUsageInStreaming": True,
+                    "maxTokensField": "max_tokens",
+                    "supportsStrictMode": False,
+                },
+            }
         else:
             self._native_cost = None
             runtime_profile = thaw_json(target.runtime_profile)
@@ -725,6 +745,27 @@ class EpisodeOpenAICompletionsPolicyClient:
                 raise ValueError("native tools differ from the compiled source recipe")
             snapshots.append(snapshot)
         self._native_tool_schemas = tuple(snapshots)
+
+    def bind_native_stream(
+        self, system_prompt: str, tools: tuple[Mapping[str, Any], ...],
+    ) -> None:
+        """Seal the admitted worker's bootstrap before the first stream."""
+        target = self._target_projection
+        if (
+            target is None or target.renderer_id != PI_RESPONSE_CONSUMER_ID
+            or self._native_binding is None
+            or self._native_stream_prompt is not None
+            or self._request_attempts
+            or type(system_prompt) is not str or not system_prompt
+            or type(tools) is not tuple
+            or canonical_sha256(tools) != canonical_sha256(target.chat_tools)
+        ):
+            raise RunnerPolicyBindingError(
+                "native stream bootstrap differs from its compiled source binding",
+                code="native_response_binding_invalid",
+                episode_id=self._episode_id, effective_plan_digest=self._effective_plan_digest,
+            )
+        self._native_stream_prompt = system_prompt
 
     def stage_native_http_request(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
         """Admit exactly one source SDK HTTP request without exposing its headers."""
@@ -1352,6 +1393,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                     thaw_json(request.request_payload),
                     expected_model_id=self._observation.model_id,
                     target_projection=self._target_projection,
+                    native_system_prompt=self._native_stream_prompt,
                 )
             except (ProviderContractError, TypeError, ValueError) as exc:
                 error = RunnerProtocolError(
@@ -1859,6 +1901,7 @@ def _responses_request_to_chat(
     *,
     expected_model_id: str,
     target_projection: E4TargetPolicyProjection | None = None,
+    native_system_prompt: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]] | None]:
     if type(request) is not dict:
         raise TypeError("policy request must be an exact object")
@@ -1871,11 +1914,16 @@ def _responses_request_to_chat(
             raise ProviderContractError("source-native request fields differ from its source protocol")
         messages = request["messages"]
         tools = request["tools"]
+        system_prompt = target_projection.system_prompt
+        if target_projection.renderer_id == PI_RESPONSE_CONSUMER_ID:
+            if native_system_prompt is None:
+                raise ProviderContractError("native stream bootstrap has not been bound")
+            system_prompt = native_system_prompt
         if (
             type(messages) is not list
             or len(messages) < 2
             or any(type(message) is not dict or "extra" in message for message in messages)
-            or messages[0] != {"role": "system", "content": target_projection.system_prompt}
+            or messages[0] != {"role": "system", "content": system_prompt}
             or messages[1].get("role") != "user"
             or any(message.get("role") not in {"system", "user", "assistant", "tool"} for message in messages)
             or tools != [thaw_json(tool) for tool in target_projection.chat_tools]

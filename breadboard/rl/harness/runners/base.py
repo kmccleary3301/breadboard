@@ -1037,6 +1037,15 @@ class NativeHTTPPolicyRuntimeClientPort(CompiledPolicyRuntimeClientPort, Protoco
 
 
 @runtime_checkable
+class NativeStreamPolicyRuntimeClientPort(CompiledPolicyRuntimeClientPort, Protocol):
+    """Bind a measured source prompt and tools before native streaming."""
+
+    def bind_native_stream(
+        self, system_prompt: str, tools: tuple[Mapping[str, Any], ...],
+    ) -> None: ...
+
+
+@runtime_checkable
 class MiniTemplateFramePort(Protocol):
     """Runtime-owned template facts for the pinned Mini local environment."""
 

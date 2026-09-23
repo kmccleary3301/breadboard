@@ -372,14 +372,18 @@ def admit_native_response_binding(
     elif policy.consumer_id == PI_RESPONSE_CONSUMER_ID:
         if (
             not isinstance(target, Mapping)
-            or target.get("version") != 2
+            or target.get("version") != 3
             or target.get("target_id") != "pi@0.73.1"
             or target.get("renderer_id") != PI_RESPONSE_CONSUMER_ID
             or not isinstance(target.get("runtime_profile"), Mapping)
             or effective_mode != "streaming"
             or profile.request_policy.max_token_field != "max_tokens"
-            or profile.request_policy.strict_tools is not False
+            or profile.request_policy.strict_tools is not None
             or profile.max_output_tokens != 2048
+            or profile.request_policy.enable_thinking is not None
+            or not profile.request_policy.include_usage
+            or profile.sampling.as_dict() != {"n": 1}
+            or not profile.capabilities.supports_store
         ):
             raise NativeResponseBindingError("Pi native response requires its compiled source profile")
     elif policy.consumer_id == OPENHANDS_RESPONSE_CONSUMER_ID:

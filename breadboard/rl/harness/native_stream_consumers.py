@@ -2,7 +2,7 @@
 
 Transport and compiler admission retain immutable ``NativeProviderResponse``
 values.  Profile consumers own the only lossy boundary: reconstruction,
-validation, tool dispatch, history mutations, and terminal arbitration.
+validation, history mutations, and terminal arbitration. Effects remain in the lease.
 """
 from __future__ import annotations
 
@@ -124,7 +124,7 @@ def consume_pi_response(state: Any, response: NativeProviderResponse) -> NativeR
     if not isinstance(state, PiSemanticsState):
         raise TypeError("Pi consumer requires PiSemanticsState")
     before = len(state.messages)
-    result = state.consume_response(response)
+    result = state.prepare_response(response)
     mutations = tuple(state.messages[before:])
     calls = tuple(
         NativeToolBatchCall(call.id, call.name, call.arguments)
@@ -134,7 +134,7 @@ def consume_pi_response(state: Any, response: NativeProviderResponse) -> NativeR
         tool_batch=calls,
         history_mutations=mutations,
         terminal=NativeTerminalMetadata(
-            native_stop_reason=response.finish_reason,
+            native_stop_reason=state.native_stop_reason,
             public_stop=state.exit_status,
             terminal=state.is_exited,
         ),

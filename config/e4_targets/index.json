@@ -16,11 +16,10 @@
     "pi@0.57.1": {
       "descriptor": "pi/0.57.1/target.json",
       "sha256": "0131e41b0ffbbd0800fd332b769de2603caf4716382989a50c9e47a8f8d2441c"
-    }
-    ,
+    },
     "pi@0.73.1": {
       "descriptor": "pi/0.73.1/target.json",
-      "sha256": "00afb8517634c62e623b52981682b902148db91bdf9e8e6fc1458ff8c935bad8"
+      "sha256": "97b92f13717cf06413cf76f1d985c582c2e1c0f476a04db8cefddc55311221e8"
     }
   }
 }
