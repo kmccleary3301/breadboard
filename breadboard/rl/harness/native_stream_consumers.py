@@ -99,6 +99,7 @@ def native_response_from_dict(value: Mapping[str, Any]) -> NativeProviderRespons
             item["text"],
             item.get("call_id"),
             item.get("name"),
+            item.get("tool_index"),
         )
         for item in raw_fragments
     )

@@ -268,7 +268,7 @@ def _lower_worker_target(
         ),
         "pi@0.73.1": (
             "breadboard.pi-coding-agent.v0.73.1",
-            "97b92f13717cf06413cf76f1d985c582c2e1c0f476a04db8cefddc55311221e8",
+            "caf78da8b41737ed70003440c80274adff2ad88ff8131e12c26fdee90f792270",
         ),
     }
     recipe = recipes.get(package.target_id)

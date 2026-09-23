@@ -86,6 +86,8 @@ class NativeStreamFragment:
     text: str
     call_id: str | None = None
     name: str | None = None
+    # Source stream ``tool_calls[].index``; ``index`` is the global ordinal.
+    tool_index: int | None = None
 
     def __post_init__(self) -> None:
         if self.kind not in {"content", "tool_arguments"}:
@@ -105,7 +107,11 @@ class NativeStreamFragment:
                 _require_text(
                     self.name, "native stream fragment name", max_length=_MAX_ID_LENGTH
                 )
-        elif self.call_id is not None or self.name is not None:
+            if self.tool_index is not None and (
+                type(self.tool_index) is not int or self.tool_index < 0
+            ):
+                raise ProviderContractError("native stream fragment tool_index is invalid")
+        elif self.call_id is not None or self.name is not None or self.tool_index is not None:
             raise ProviderContractError("content fragments cannot carry tool identity")
 
     @property
@@ -118,6 +124,8 @@ class NativeStreamFragment:
             result["call_id"] = self.call_id
         if self.name is not None:
             result["name"] = self.name
+        if self.tool_index is not None:
+            result["tool_index"] = self.tool_index
         return result
 
 

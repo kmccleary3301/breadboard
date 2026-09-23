@@ -19,13 +19,13 @@ from breadboard_engine.compilation.contracts import (
 from breadboard_engine.compilation.provider_response import (
     MINI_RESPONSE_CONSUMER_ID,
     OPENHANDS_RESPONSE_CONSUMER_ID,
-    PI_RESPONSE_CONSUMER_ID,
     NativeResponsePolicy,
 )
 from breadboard.rl.harness.contracts import PolicyCapabilityObservation
 from breadboard.rl.harness.runner_identity import measure_module_artifact
-from breadboard.rl.harness import native_stream_consumers
-from breadboard.rl.harness.runners import mini_semantics, pi_semantics
+from breadboard.rl.harness import native_stream_consumers, native_stream_profiles
+from breadboard.rl.harness.native_stream_profiles import NATIVE_STREAM_PROFILES
+from breadboard.rl.harness.runners import mini_semantics
 from breadboard.rl.harness.runners.base import (
     ConductorToolPort,
     CompiledPolicyRuntimeClientPort,
@@ -88,13 +88,19 @@ _EVENT_SINK_SESSION: ContextVar[object | None] = ContextVar(
 
 _CONDUCTOR_MODULE_IDENTITY = measure_module_artifact(__file__)
 _MINI_MODULE_IDENTITY = measure_module_artifact(mini_semantics.__file__)
-_PI_MODULE_IDENTITY = measure_module_artifact(pi_semantics.__file__)
 _STREAM_MODULE_IDENTITY = measure_module_artifact(native_stream_consumers.__file__)
+_PROFILE_MODULE_IDENTITIES = (
+    measure_module_artifact(native_stream_profiles.__file__),
+    *(
+        measure_module_artifact(profile.state_module.__file__)
+        for profile in NATIVE_STREAM_PROFILES.values()
+    ),
+)
 CONDUCTOR_IMPLEMENTATION_DIGEST = canonical_sha256({
     "conductor": _CONDUCTOR_MODULE_IDENTITY.digest,
     "mini_semantics": _MINI_MODULE_IDENTITY.digest,
-    "pi_semantics": _PI_MODULE_IDENTITY.digest,
     "native_stream_consumers": _STREAM_MODULE_IDENTITY.digest,
+    "native_stream_profiles": [identity.digest for identity in _PROFILE_MODULE_IDENTITIES],
 })
 
 
@@ -275,9 +281,10 @@ class PolicyRuntimeBinding:
         self._source_consumer_id: str | None = None
         metadata = plan.effective_semantics.get("metadata")
         target = metadata.get("e4_target") if isinstance(metadata, Mapping) else None
-        if isinstance(target, Mapping) and target.get("renderer_id") in {
-            MINI_RESPONSE_CONSUMER_ID, OPENHANDS_RESPONSE_CONSUMER_ID, PI_RESPONSE_CONSUMER_ID,
-        }:
+        if isinstance(target, Mapping) and (
+            target.get("renderer_id") in {MINI_RESPONSE_CONSUMER_ID, OPENHANDS_RESPONSE_CONSUMER_ID}
+            or target.get("renderer_id") in NATIVE_STREAM_PROFILES
+        ):
             if not isinstance(client, CompiledPolicyRuntimeClientPort):
                 raise RunnerPolicyBindingError(
                     "source-native target requires a compiled native provider client",
@@ -312,7 +319,7 @@ class PolicyRuntimeBinding:
         self, system_prompt: str, tools: tuple[Mapping[str, Any], ...],
     ) -> None:
         if (
-            self._source_consumer_id != PI_RESPONSE_CONSUMER_ID
+            self._source_consumer_id not in NATIVE_STREAM_PROFILES
             or self._state != "claimed"
             or not isinstance(self._client, NativeStreamPolicyRuntimeClientPort)
         ):
@@ -686,15 +693,20 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
     target = metadata.get("e4_target") if isinstance(metadata, Mapping) else None
     source_profile = None
     source_consumer_id = None
-    if isinstance(target, Mapping) and target.get("renderer_id") in {
-        MINI_RESPONSE_CONSUMER_ID, OPENHANDS_RESPONSE_CONSUMER_ID, PI_RESPONSE_CONSUMER_ID,
-    }:
+    if isinstance(target, Mapping) and (
+        target.get("renderer_id") in {MINI_RESPONSE_CONSUMER_ID, OPENHANDS_RESPONSE_CONSUMER_ID}
+        or target.get("renderer_id") in NATIVE_STREAM_PROFILES
+    ):
         source_consumer_id = target["renderer_id"]
-        expected_target, expected_version = {
-            MINI_RESPONSE_CONSUMER_ID: ("mini-swe-agent@2.4.6", 2),
-            OPENHANDS_RESPONSE_CONSUMER_ID: ("openhands-sdk@1.47.0", 3),
-            PI_RESPONSE_CONSUMER_ID: ("pi@0.73.1", 3),
-        }[source_consumer_id]
+        stream_profile = NATIVE_STREAM_PROFILES.get(source_consumer_id)
+        expected_target, expected_version = (
+            (stream_profile.target_id, stream_profile.target_version)
+            if stream_profile is not None
+            else {
+                MINI_RESPONSE_CONSUMER_ID: ("mini-swe-agent@2.4.6", 2),
+                OPENHANDS_RESPONSE_CONSUMER_ID: ("openhands-sdk@1.47.0", 3),
+            }[source_consumer_id]
+        )
         if (
             target.get("target_id") != expected_target
             or target.get("version") != expected_version
@@ -1185,8 +1197,14 @@ class ConductorAdapter:
         if (
             measured != _CONDUCTOR_MODULE_IDENTITY
             or measure_module_artifact(mini_semantics.__file__) != _MINI_MODULE_IDENTITY
-            or measure_module_artifact(pi_semantics.__file__) != _PI_MODULE_IDENTITY
             or measure_module_artifact(native_stream_consumers.__file__) != _STREAM_MODULE_IDENTITY
+            or (
+                measure_module_artifact(native_stream_profiles.__file__),
+                *(
+                    measure_module_artifact(profile.state_module.__file__)
+                    for profile in NATIVE_STREAM_PROFILES.values()
+                ),
+            ) != _PROFILE_MODULE_IDENTITIES
         ):
             raise RuntimeError("conductor module artifact changed after bootstrap")
         self._descriptor = RunnerAdapterDescriptor(
@@ -1403,9 +1421,10 @@ class _ConductorSession:
         if self._projection.source_consumer_id == OPENHANDS_RESPONSE_CONSUMER_ID:
             async with asyncio.timeout(180):
                 return await self._loop_openhands(request)
-        if self._projection.source_consumer_id == PI_RESPONSE_CONSUMER_ID:
-            async with asyncio.timeout(120):
-                return await self._loop_native_stream(request)
+        stream_profile = NATIVE_STREAM_PROFILES.get(self._projection.source_consumer_id)
+        if stream_profile is not None:
+            async with asyncio.timeout(stream_profile.episode_timeout_seconds):
+                return await self._loop_native_stream(request, stream_profile)
         transcript: list[Any] = []
         limits = self._open_request.effective_plan.effective_capabilities.limits
         transcript_size = _encoded_json_size(request.task_input) + _encoded_json_size(request.context)
@@ -1891,21 +1910,28 @@ class _ConductorSession:
             events=tuple(self._events),
         )
 
-    async def _loop_native_stream(self, request: ConductorRunRequest) -> RunnerResult:
+    async def _loop_native_stream(
+        self, request: ConductorRunRequest, profile: native_stream_profiles.NativeStreamProfile,
+    ) -> RunnerResult:
         """Drive native streamed source phases through the admitted lease."""
         limits = self._open_request.effective_plan.effective_capabilities.limits
         consumer_id = self._projection.source_consumer_id
         tools = self._tools
+        source_profile = self._projection.source_profile
+        advertisement = (
+            source_profile.get("advertisement") if isinstance(source_profile, Mapping) else None
+        )
         if (
             not isinstance(tools, NativeSourceSessionPort)
             or self._binding.source_model_config is None
-            or limits.max_turns != 8
-            or limits.action_timeout_ms != 35_000
+            or not isinstance(advertisement, Mapping)
+            or limits.max_turns != profile.max_turns
+            or limits.action_timeout_ms != profile.action_timeout_ms
             or len(self._projection.models) != 1
             or len(self._projection.modes) != 1
             or self._projection.models[0].params
-            or tuple(self._projection.modes[0].tool_ids) != pi_semantics.TOOL_NAMES
-            or consumer_id != PI_RESPONSE_CONSUMER_ID
+            or tuple(self._projection.modes[0].tool_ids) != profile.tool_order
+            or consumer_id != profile.consumer_id
         ):
             raise _plan_error(self._open_request, "native stream runtime controls differ", "compiled_ir_mismatch")
         task = request.task_input.get("prompt")
@@ -1925,7 +1951,7 @@ class _ConductorSession:
                 max_encoded_bytes=16 * 1024 * 1024,
                 max_nodes=16 * 1024 * 1024 + 1,
             )
-            if frozen.get("schema_version") != "bb.pi-native.v1":
+            if frozen.get("schema_version") != profile.phase_schema_version:
                 raise RunnerProtocolError(
                     "native stream phase revision is invalid",
                     code="native_response_invalid", **self._context(),
@@ -1933,21 +1959,25 @@ class _ConductorSession:
             return thaw_json(frozen)
 
         initialized = await phase("initialize", {
-            "task": task, "model_config": thaw_json(self._binding.source_model_config),
+            "task": task,
+            "model_config": thaw_json(self._binding.source_model_config),
+            "advertisement": thaw_json(advertisement),
         })
+        bootstrap = initialized.get("bootstrap")
         system_prompt = initialized.get("system_prompt")
         tool_schemas = initialized.get("tool_schemas")
         if (
             initialized.get("kind") != "initialized"
             or type(system_prompt) is not str
             or type(tool_schemas) is not list
+            or type(bootstrap) is not dict
         ):
             raise RunnerProtocolError(
                 "native stream bootstrap is malformed",
                 code="native_response_binding_invalid", **self._context(),
             )
         self._binding.bind_native_stream(system_prompt, tuple(tool_schemas))
-        state = pi_semantics.PiSemanticsState(task=task, system_prompt=system_prompt)
+        state = profile.state_factory(task, system_prompt, bootstrap)
 
         async def commit(
             start: int, phase_name: str, turn: int | None,
@@ -2081,12 +2111,23 @@ class _ConductorSession:
                     or type(raw_results) is not list
                     or len(raw_results) != len(parsed.calls)
                     or any(type(item) is not dict for item in raw_results)
+                    or [item.get("id") for item in raw_results] != [call.id for call in parsed.calls]
+                    or sorted(
+                        item.get("completion_index")
+                        if type(item.get("completion_index")) is int else -1
+                        for item in raw_results
+                    ) != list(range(len(raw_results)))
                 ):
                     raise RunnerProtocolError(
                         "native tool batch result is malformed",
                         code="native_response_invalid", **self._context(),
                     )
-                for ordinal, (call, raw) in enumerate(zip(parsed.calls, raw_results, strict=True)):
+                # Results arrive in source order; observations follow the
+                # worker's measured completion order.
+                for ordinal in sorted(
+                    range(len(raw_results)), key=lambda index: raw_results[index]["completion_index"],
+                ):
+                    call, raw = parsed.calls[ordinal], raw_results[ordinal]
                     observation, _ = freeze_json_object_with_size(
                         raw, field_name="native tool observation",
                         max_encoded_bytes=limits.observation_bytes,
@@ -2101,14 +2142,38 @@ class _ConductorSession:
                 before = len(state.messages)
                 state.commit_tool_results(parsed.calls, raw_results)
                 await commit(before, "observation_batch", turn)
+                if profile.ack_policy == "after_history_commit":
+                    history_digest = canonical_sha256(state.messages)
+                    for raw in raw_results:
+                        if "delivery_id" not in raw:
+                            continue
+                        acked = await phase("ack", {
+                            "delivery_id": raw["delivery_id"], "history_digest": history_digest,
+                        })
+                        if acked.get("kind") != "acked" or acked.get("delivery_id") != raw["delivery_id"]:
+                            raise RunnerProtocolError(
+                                "native delivery acknowledgement failed",
+                                code="native_response_invalid", **self._context(),
+                            )
             self._turns.append(RunnerTurn(turn, (), tuple(observations)))
             if state.is_exited:
                 termination = (
                     RunnerTermination.POLICY_INCOMPLETE
-                    if state.native_stop_reason in {"error", "aborted", "length"}
+                    if state.native_stop_reason in profile.incomplete_stop_reasons
                     else RunnerTermination.ASSISTANT_COMPLETE
                 )
         await self._checkpoint("after_loop", turn=len(self._turns))
+        closed = await phase("close", {})
+        cleanup = closed.get("cleanup")
+        if (
+            closed.get("kind") != "closed"
+            or type(cleanup) is not dict
+            or cleanup.get("all_dead") is not True
+        ):
+            raise RunnerProtocolError(
+                "native worker cleanup is not verified",
+                code="native_response_invalid", **self._context(),
+            )
         await self._checkpoint("before_commit", turn=len(self._turns))
         await self._commit_termination(termination)
         return RunnerResult(
@@ -2118,7 +2183,8 @@ class _ConductorSession:
             response={
                 "source_id": consumer_id,
                 "replay_trace": state.to_trace(),
-                "bootstrap": initialized.get("bootstrap"),
+                "bootstrap": bootstrap,
+                "cleanup": cleanup,
             },
             termination=termination, turn_count=len(self._turns),
             turns=tuple(self._turns), events=tuple(self._events),

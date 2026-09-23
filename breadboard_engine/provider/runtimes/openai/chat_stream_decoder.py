@@ -322,6 +322,7 @@ class OpenAIChatStreamDecoder:
                     text=text,
                     call_id=tool_state.call_id,
                     name=tool_state.name,
+                    tool_index=tool_index,
                 )
             )
         usage = None

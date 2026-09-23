@@ -6,19 +6,19 @@
       "sha256": "sha256:316bea3871a3b577e422c4bed04fe170d2d2c166ef93fa64dc77b822571fc3c7"
     },
     {
-      "bytes": 2896,
+      "bytes": 2833,
       "path": "prompts/system-prompt.md",
-      "sha256": "sha256:4a9f2d6e5977f05d63595e59edef9a3bb6ed90e6f4e862e2eeb6a32737df8619"
+      "sha256": "sha256:9cc93887b282f661fb40af3d1ac9fe80c5188f6d19f4f736a4095f7204d61dff"
     },
     {
-      "bytes": 1028,
+      "bytes": 1654,
       "path": "native-config.json",
-      "sha256": "sha256:a8b12e434d1cf0ca708b1c517c429238681a87987319daf40c17d7967943b328"
+      "sha256": "sha256:e2ed9c0be966ad8efbe1f49e73d8a979fda19c2c3b48221453b3ac9b0e20944e"
     },
     {
-      "bytes": 2590,
+      "bytes": 2628,
       "path": "tool-surface.json",
-      "sha256": "sha256:90a7d55a4f021a93b0b6216a2e56651f90e3c831685d3803974bbef253d4bcee"
+      "sha256": "sha256:7010673e8daa755ee15a46a84ce4036de1fea7d1a7e3ec289b986d728702eeb5"
     },
     {
       "bytes": 1070,

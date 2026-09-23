@@ -89,6 +89,12 @@ OPENHANDS_NATIVE_TOOL_IDS: tuple[str, ...] = (
     "terminal",
     "think",
 )
+PI_CODING_AGENT_LOCAL_ADAPTER_ID: str = "pi-coding-agent.local.v0.73.1"
+PI_NATIVE_TOOL_IDS: tuple[str, ...] = ("bash", "edit", "read", "write")
+NATIVE_PHASE_TOOL_IDS: Mapping[str, tuple[str, ...]] = MappingProxyType({
+    OPENHANDS_SDK_LOCAL_ADAPTER_ID: OPENHANDS_NATIVE_TOOL_IDS,
+    PI_CODING_AGENT_LOCAL_ADAPTER_ID: PI_NATIVE_TOOL_IDS,
+})
 MINI_SWE_AGENT_LOCAL_ADAPTER_ID: str = "mini-swe-agent.local.v2.4.6"
 MINI_SWE_AGENT_TOOL_ID: str = "bash"
 
@@ -1952,33 +1958,33 @@ class TrustedProcessHandle:
             raise
 
     @staticmethod
-    def _validate_openhands_binding(
+    def _validate_native_binding(
         plan: SandboxExecutionPlan,
         binding: InstalledToolAdapter,
     ) -> None:
         if (
             type(binding) is not InstalledToolAdapter
-            or binding.adapter_id != OPENHANDS_SDK_LOCAL_ADAPTER_ID
-            or tuple(binding.tool_ids) != OPENHANDS_NATIVE_TOOL_IDS
+            or binding.adapter_id not in NATIVE_PHASE_TOOL_IDS
+            or tuple(binding.tool_ids) != NATIVE_PHASE_TOOL_IDS[binding.adapter_id]
             or plan.runtime.runtime_class is not RuntimeClass.TRUSTED_PROCESS
             or len(plan.installed_tool_adapters) != 1
             or plan.installed_tool_adapters[0] != binding
         ):
             raise SandboxLaunchError(
-                "OpenHands native session is not admitted",
+                "source-native session is not admitted",
                 code="runtime_unsupported",
             )
         compiled = tuple(plan.tool_bindings)
         if (
-            len(compiled) != len(OPENHANDS_NATIVE_TOOL_IDS)
-            or tuple(item.tool_id for item in compiled) != OPENHANDS_NATIVE_TOOL_IDS
+            len(compiled) != len(binding.tool_ids)
+            or tuple(item.tool_id for item in compiled) != tuple(binding.tool_ids)
             or any(
                 item.implementation_digest != binding.manifest_digest
                 for item in compiled
             )
         ):
             raise SandboxLaunchError(
-                "OpenHands native tool bindings are not exact",
+                "source-native tool bindings are not exact",
                 code="tool_binding_projection_mismatch",
             )
 
@@ -1990,7 +1996,7 @@ class TrustedProcessHandle:
         *,
         timeout_ms: int,
     ) -> Mapping[str, Any]:
-        self._validate_openhands_binding(self.plan, binding)
+        self._validate_native_binding(self.plan, binding)
         if type(operation) is not str or not operation or "\x00" in operation:
             raise SandboxLaunchError(
                 "native operation is invalid",
@@ -2027,6 +2033,16 @@ class TrustedProcessHandle:
                 node = _snapshot_installed_executable(
                     node_path, binding.executable_digest
                 )
+                runtime_root = Path(binding.runtime_root_path)
+                environment = dict(self.plan.runtime.fixed_environment)
+                if binding.adapter_id == PI_CODING_AGENT_LOCAL_ADAPTER_ID:
+                    # Pinned framed worker imports Pi only from the sealed root.
+                    environment["PI_NATIVE_WORKER_FRAMED"] = "1"
+                    environment["PI_CODING_AGENT_NODE_MODULES"] = str(runtime_root / "node_modules")
+                else:
+                    environment["PYTHONHOME"] = str(runtime_root / "python")
+                    environment["PYTHONNOUSERSITE"] = "1"
+                    environment["LD_LIBRARY_PATH"] = str(runtime_root / "python/lib")
                 process: asyncio.subprocess.Process | None = None
                 try:
                     process = await self._start_stopped_process(
@@ -2034,18 +2050,13 @@ class TrustedProcessHandle:
                             self._executable.proc_fd_path,
                             "-lc",
                             'exec "$@"',
-                            "breadboard-openhands-worker",
+                            "breadboard-native-worker",
                             node.proc_fd_path,
                             entrypoint_path,
                         ),
                         timeout_ms=min(timeout_ms, self.plan.limits.setup_timeout_ms),
                         extra_fds=(node.fd,),
-                        environment={
-                            **dict(self.plan.runtime.fixed_environment),
-                            "PYTHONHOME": str(Path(binding.runtime_root_path) / "python"),
-                            "PYTHONNOUSERSITE": "1",
-                            "LD_LIBRARY_PATH": str(Path(binding.runtime_root_path) / "python/lib"),
-                        },
+                        environment=environment,
                     )
 
                     async def retire() -> bool:
@@ -2727,17 +2738,17 @@ class LeaseBackedRunnerWorkspace:
             adapters = tuple(
                 adapter
                 for adapter in lease.plan.installed_tool_adapters
-                if adapter.adapter_id == OPENHANDS_SDK_LOCAL_ADAPTER_ID
+                if adapter.adapter_id in NATIVE_PHASE_TOOL_IDS
             )
             if len(adapters) != 1:
                 raise WorkspaceStateError(
-                    "OpenHands native adapter is not exactly installed",
+                    "source-native adapter is not exactly installed",
                     code="runtime_unsupported",
                     lease_id=lease.lease_id,
                 )
             adapter = adapters[0]
             try:
-                TrustedProcessHandle._validate_openhands_binding(lease.plan, adapter)
+                TrustedProcessHandle._validate_native_binding(lease.plan, adapter)
             except SandboxRuntimeError as exc:
                 raise WorkspaceStateError(
                     str(exc),
@@ -2760,7 +2771,7 @@ class LeaseBackedRunnerWorkspace:
                     lease_id=lease.lease_id,
                 ) from exc
             if operation == "initialize":
-                if "workspace" in frozen_payload or "scratch" in frozen_payload:
+                if {"workspace", "scratch", "package_dir"} & set(frozen_payload):
                     raise WorkspaceStateError(
                         "native initialize cannot supply workspace authority",
                         code="workspace_authority_mismatch",
@@ -2772,7 +2783,7 @@ class LeaseBackedRunnerWorkspace:
                 )
                 if len(repositories) != 1:
                     raise WorkspaceStateError(
-                        "OpenHands requires exactly one owned repository",
+                        "source-native execution requires exactly one owned repository",
                         code="workspace_authority_mismatch", lease_id=lease.lease_id,
                     )
                 workspace = lease._resolve(repositories[0].target_logical_path, writable=True)
@@ -2797,6 +2808,12 @@ class LeaseBackedRunnerWorkspace:
                     "workspace": str(workspace),
                     "scratch": str(scratch),
                 }
+                if adapter.adapter_id == PI_CODING_AGENT_LOCAL_ADAPTER_ID:
+                    # Pi reads documentation paths from its installed package.
+                    native_payload["package_dir"] = str(
+                        Path(adapter.runtime_root_path)
+                        / "node_modules/@mariozechner/pi-coding-agent"
+                    )
             else:
                 native_payload = thaw_json(frozen_payload)
             if operation == "execute":
@@ -5383,4 +5400,7 @@ __all__ = [
     "MINI_SWE_AGENT_TOOL_ID",
     "OPENHANDS_SDK_LOCAL_ADAPTER_ID",
     "OPENHANDS_NATIVE_TOOL_IDS",
+    "PI_CODING_AGENT_LOCAL_ADAPTER_ID",
+    "PI_NATIVE_TOOL_IDS",
+    "NATIVE_PHASE_TOOL_IDS",
 ]

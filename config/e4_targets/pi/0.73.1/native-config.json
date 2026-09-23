@@ -27,5 +27,6 @@
     "edit": {"prepare_legacy_arguments": true, "prepare_json_string_edits": true},
     "write": {"creates_parent_directories": true}
   },
-  "workspace": {"extensions": false, "skills": false, "prompt_templates": false, "sessions": false}
+  "workspace": {"extensions": false, "skills": false, "prompt_templates": false, "sessions": false},
+  "advertisement": {"tools": {"read": {"description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp). Model image delivery is disabled; images are not sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.", "native_sha256": "sha256:f8a1d7cf1ecfe02b1b5865c93387e6a5891e5079117b4fe18614b6f912521727"}}, "prompt": {"remove_exact": ["\n\nIn addition to the tools above, you may have access to other custom tools depending on the project."]}}
 }
