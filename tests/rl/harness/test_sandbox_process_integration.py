@@ -47,6 +47,8 @@ from breadboard.rl.harness.sandbox import (
     _snapshot_installed_executable,
 )
 from breadboard.rl.harness.lease_envelope import _spawn_one
+from breadboard.rl.harness import lease_envelope
+from breadboard.rl.harness.composition import HmacSha256ReceiptAuthenticator
 from tests.rl.harness.test_runner_terminal import (
     RecordingEventSink,
     ScriptedCancellationProbe,
@@ -93,6 +95,34 @@ def test_envelope_rejects_non_string_environment_before_fork() -> None:
     }
     with pytest.raises(OSError, match="environment is invalid"):
         _spawn_one(None, message, [], object())
+
+def test_containment_receipt_preserves_writable_roots_through_teardown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        lease_envelope,
+        "_namespace_inodes",
+        lambda: {"pid": 1, "mnt": 2, "user": 3, "net": 4},
+    )
+    monkeypatch.setattr(lease_envelope, "_mountinfo", lambda: b"mount observation")
+    authenticator = HmacSha256ReceiptAuthenticator(
+        key_id="test-containment", key=b"k" * 32
+    )
+    receipt = lease_envelope.mint_containment_receipt(
+        lease_id="lease", runtime_id="runtime", mode="userns",
+        writable_roots=("/scratch", "/workspace"),
+        authenticator=authenticator,
+    )
+    assert receipt.writable_roots == ("/scratch", "/workspace")
+    assert lease_envelope.verify_containment_receipt(
+        receipt.to_mapping(), lease_id="lease", runtime_id="runtime",
+        authenticator=authenticator,
+    ).writable_roots == receipt.writable_roots
+    completed = lease_envelope.add_teardown_outcome(
+        receipt, pid1_reaped=True, all_dead=True, authenticator=authenticator,
+    )
+    assert completed.writable_roots == receipt.writable_roots
+
 
 
 @requires_sealed_execution
