@@ -471,12 +471,15 @@ def _setup_mount_view(
     tmpfs_size_bytes: int,
 ) -> tuple[str, tuple[str, ...]]:
     _enter_private_mount_namespace()
-    _bind_path(workspace, workspace)
-    _bind_path(scratch, scratch)
+    _mount_tmpfs("/tmp", tmpfs_size_bytes)
+    for path in (workspace, scratch):
+        path = os.path.abspath(path)
+        os.makedirs(path, mode=0o700, exist_ok=True)
+    _bind_path(f"/proc/self/fd/{workspace_fd}", workspace)
+    _bind_path(f"/proc/self/fd/{scratch_fd}", scratch)
     _verify_bind_identity(workspace_fd, workspace)
     _verify_bind_identity(scratch_fd, scratch)
     _remount_readonly("/")
-    _mount_tmpfs("/tmp", tmpfs_size_bytes)
     _mount_proc()
     return _verify_mount_view(workspace, scratch)
 
