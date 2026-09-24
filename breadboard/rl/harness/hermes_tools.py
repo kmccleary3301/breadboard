@@ -512,69 +512,6 @@ class HermesToolRuntime:
                 raise HermesToolRuntimeError(
                     f"native tool schema cannot be copied: {name}"
                 )
-            function = schema.get("function")
-            target = function if isinstance(function, dict) else schema
-            if name == "read_file":
-                description = target.get("description")
-                if (
-                    isinstance(description, str)
-                    and "Documents auto-extract" in description
-                ):
-                    prefix, _, remainder = description.partition(
-                        "Documents auto-extract"
-                    )
-                    _, marker, suffix = remainder.partition("Cannot read")
-                    target["description"] = (
-                        prefix
-                        + "Document extraction is disabled in this bounded profile. "
-                        + (marker + suffix if marker else "")
-                    )
-            parameters = target.get("parameters")
-            if isinstance(parameters, dict):
-                properties = parameters.get("properties")
-                if isinstance(properties, dict):
-                    for hidden in _HIDDEN_CAPABILITIES:
-                        properties.pop(hidden, None)
-                required = parameters.get("required")
-                if isinstance(required, list):
-                    parameters["required"] = [
-                        item for item in required if item not in _HIDDEN_CAPABILITIES
-                    ]
-            if name == "terminal":
-                if isinstance(parameters, dict):
-                    properties = parameters.get("properties")
-                    if isinstance(properties, dict):
-                        for hidden in _TERMINAL_SCHEMA_HIDDEN:
-                            properties.pop(hidden, None)
-                    required = parameters.get("required")
-                    if isinstance(required, list):
-                        parameters["required"] = [
-                            item
-                            for item in required
-                            if item not in _TERMINAL_SCHEMA_HIDDEN
-                        ]
-                    timeout_schema = (
-                        properties.get("timeout")
-                        if isinstance(properties, dict)
-                        else None
-                    )
-                    if isinstance(timeout_schema, dict):
-                        maximum = timeout_schema.get("maximum")
-                        if isinstance(maximum, (int, float)) and not isinstance(
-                            maximum, bool
-                        ):
-                            maximum = min(float(maximum), TERMINAL_SECONDS)
-                        else:
-                            maximum = TERMINAL_SECONDS
-                        timeout_schema["maximum"] = (
-                            int(maximum) if float(maximum).is_integer() else maximum
-                        )
-                description = target.get("description")
-                if isinstance(description, str):
-                    target["description"] = (
-                        description
-                        + " Bounded profile: foreground commands only; timeout is at most 30 seconds."
-                    )
             bounded.append(schema)
         return bounded
 

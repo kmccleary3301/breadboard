@@ -89,6 +89,38 @@ def _changed_termination(trace: dict[str, Any]) -> None:
     trace["termination"]["kind"] = "finished"
 
 
+def _changed_max_tokens(trace: dict[str, Any]) -> None:
+    trace["controls"]["max_tokens"] = 1024
+
+
+def _changed_provider_deadline(trace: dict[str, Any]) -> None:
+    trace["controls"]["provider_deadline"] = 60
+    trace["controls"]["provider_timeout"] = 60
+
+
+def _changed_native_deadline(trace: dict[str, Any]) -> None:
+    trace["controls"]["native_deadline"] = 10
+    trace["controls"]["tool_deadline"] = 10
+
+
+def _changed_watchdog_deadline(trace: dict[str, Any]) -> None:
+    trace["controls"]["watchdog_deadline"] = 15
+    trace["controls"]["watchdog"] = 15
+
+
+def _changed_terminal_deadline(trace: dict[str, Any]) -> None:
+    trace["controls"]["terminal_deadline"] = 10
+    trace["controls"]["terminal_timeout"] = 10
+
+
+def _changed_fallback(trace: dict[str, Any]) -> None:
+    trace["controls"]["fallback"] = True
+
+
+def _changed_retry(trace: dict[str, Any]) -> None:
+    trace["controls"]["api_max_retries"] = 0
+
+
 @pytest.mark.parametrize(
     ("case_name", "mutation"),
     [
@@ -103,6 +135,13 @@ def _changed_termination(trace: dict[str, Any]) -> None:
         ("H-06-request-budget-stop", _ninth_request),
         ("H-01-normal-memory-skill-write", _changed_effect),
         ("H-05-terminal-lifecycle", _changed_termination),
+        ("H-01-normal-memory-skill-write", _changed_max_tokens),
+        ("H-01-normal-memory-skill-write", _changed_provider_deadline),
+        ("H-01-normal-memory-skill-write", _changed_native_deadline),
+        ("H-01-normal-memory-skill-write", _changed_watchdog_deadline),
+        ("H-01-normal-memory-skill-write", _changed_terminal_deadline),
+        ("H-01-normal-memory-skill-write", _changed_fallback),
+        ("H-01-normal-memory-skill-write", _changed_retry),
     ],
     ids=[
         "extra_tool_advertised",
@@ -116,6 +155,13 @@ def _changed_termination(trace: dict[str, Any]) -> None:
         "ninth_request",
         "changed_effect",
         "changed_termination",
+        "changed_max_tokens",
+        "changed_provider_deadline",
+        "changed_native_deadline",
+        "changed_watchdog_deadline",
+        "changed_terminal_deadline",
+        "changed_fallback",
+        "changed_retry",
     ],
 )
 def test_negative_gate_fails_comparison(
@@ -199,3 +245,15 @@ def test_workspace_roots_are_typed_and_fail_closed() -> None:
     report = compare_cases(case_dir, missing_runtime)
     assert report["ok"] is False
     assert "runtime.cwd" in report["errors"][0]
+
+
+def test_comparator_rejects_name_only_tool_schemas() -> None:
+    case_dir, replay = _replay("H-01-normal-memory-skill-write")
+    replay["requests"][0]["body"]["tools"] = [
+        {"type": "function", "function": {"name": t["function"]["name"]}}
+        for t in replay["requests"][0]["body"]["tools"]
+    ]
+    report = compare_cases(case_dir, replay)
+    assert report["ok"] is False
+    assert report["failed"] >= 1
+    assert any("tools" in a.get("detail", "") for a in report["assertions"] if a["status"] == "failed")

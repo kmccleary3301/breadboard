@@ -384,15 +384,26 @@ def _controls_projection(trace: Mapping[str, Any], requests: Sequence[Mapping[st
         raise ValueError("trace.controls must be an object")
     body_count = len(requests)
     attempts = controls.get("http_attempts")
-    if type(attempts) is not int or attempts != body_count:
+    if attempts is not None and (type(attempts) is not int or attempts != body_count):
         raise ValueError(f"controls.http_attempts={attempts!r} but found {body_count} request bodies")
     return {
-        "api_mode": controls.get("api_mode"),
+        "api_mode": controls.get("api_mode", "chat_completions"),
         "streaming": bool(controls.get("streaming", False)),
-        "max_iterations": controls.get("max_iterations"),
+        "max_iterations": controls.get("max_iterations", 8),
+        "max_tokens": controls.get("max_tokens", 2048),
+        "provider_deadline": controls.get("provider_deadline", controls.get("provider_timeout", 45)),
+        "provider_timeout": controls.get("provider_timeout", controls.get("provider_deadline", 45)),
+        "native_deadline": controls.get("native_deadline", controls.get("tool_deadline", 35)),
+        "tool_deadline": controls.get("tool_deadline", controls.get("native_deadline", 35)),
+        "watchdog_deadline": controls.get("watchdog_deadline", controls.get("watchdog", 40)),
+        "watchdog": controls.get("watchdog", controls.get("watchdog_deadline", 40)),
+        "terminal_deadline": controls.get("terminal_deadline", controls.get("terminal_timeout", 30)),
+        "terminal_timeout": controls.get("terminal_timeout", controls.get("terminal_deadline", 30)),
+        "retry": bool(controls.get("retry", False)) or (controls.get("api_max_retries", 1) > 0),
+        "api_max_retries": controls.get("api_max_retries", 1),
+        "fallback": bool(controls.get("fallback", False)),
         "advertised_tools": list(advertised),
     }
-
 
 def _canonical_from_supplier(trace: Mapping[str, Any], case_dir: Path) -> dict[str, Any]:
     raw_rows = trace.get("requests")
@@ -483,9 +494,13 @@ def project_bb_trace(trace: Mapping[str, Any] | Path | str) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise ValueError("BreadBoard trace must be an object")
     _validate_canonical(value)
+    raw_rows = value.get("requests")
+    requests = _request_projection([row for row in raw_rows if isinstance(row, Mapping)]) if isinstance(raw_rows, list) else []
+    advertised = _advertised_tools(requests)
     projected = {"schema_version": TRACE_SCHEMA_VERSION, "role": "breadboard"}
     for field in _CANONICAL_FIELDS:
         projected[field] = copy.deepcopy(value[field])
+    projected["controls"] = _controls_projection(value, requests, advertised)
     declared = value.get("normalizations", [])
     if not isinstance(declared, list) or any(type(item) is not str for item in declared):
         raise ValueError("normalizations must be a list of strings")

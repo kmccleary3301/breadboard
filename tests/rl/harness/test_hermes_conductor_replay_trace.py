@@ -137,7 +137,7 @@ class FixtureNativePort:
                     "initialized",
                     status="RUNNING",
                     iteration=0,
-                    tool_schemas=tuple({} for _ in TOOL_ORDER),
+                    tool_schemas=tuple(copy.deepcopy(self.requests[0]["body"]["tools"])),
                     source_runtime={"workspace": str(self.worker_workspace)},
                 )
             return self._result(
@@ -375,11 +375,34 @@ async def test_conductor_trace_matches_committed_rerun3_fixture() -> None:
         "repaired.txt": "sha256:aa6083f3a3c96f3860a4977f429ed51841511a3716ea3537472fea4365781e2b"
     }
 
+    packet_trace = json.loads((FIXTURE / "trace.json").read_text())
+    expected_tools = packet_trace["requests"][0]["body"]["tools"]
+    assert len(expected_tools) == 7
+    assert trace["requests"][0]["body"]["tools"] == expected_tools
+    for tool in trace["requests"][0]["body"]["tools"]:
+        assert "description" in tool["function"]
+        assert "parameters" in tool["function"]
+        assert "properties" in tool["function"]["parameters"]
+
     tampered = copy.deepcopy(conductor_module.thaw_json(trace))
     tampered["requests"][0]["body"]["messages"][1]["content"] += " tampered"
     report = compare_cases(FIXTURE, tampered)
     assert report["ok"] is False
     assert report["failed"] > 0
+
+
+@pytest.mark.asyncio
+async def test_conductor_rejects_name_only_tool_schemas_fixture() -> None:
+    trace = await _run_fixture()
+    name_only_trace = copy.deepcopy(conductor_module.thaw_json(trace))
+    name_only_trace["requests"][0]["body"]["tools"] = [
+        {"type": "function", "function": {"name": name}}
+        for name in TOOL_ORDER
+    ]
+    report = compare_cases(FIXTURE, name_only_trace)
+    assert report["ok"] is False
+    assert report["failed"] > 0
+    assert any("tools" in a.get("detail", "") for a in report["assertions"] if a["status"] == "failed")
 
 
 @pytest.mark.asyncio
