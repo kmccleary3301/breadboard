@@ -14,6 +14,7 @@ import re
 import struct
 import subprocess
 import uuid
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -367,6 +368,13 @@ class _OpenClawWorkerClient:
                 "bootstrap_assets": assets,
                 "advertisement": advertisement,
                 "model_config": model_config,
+                "runtime_inputs": {
+                    "cwd": self.workspace,
+                    "home": str(Path.home()),
+                    "current_date": datetime.now(timezone.utc).date().isoformat(),
+                    "package_dir": self.dist,
+                    "session_id": uuid.uuid4().hex,
+                },
                 "system_prompt": "",
             }
         )

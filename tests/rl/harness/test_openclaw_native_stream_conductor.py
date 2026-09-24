@@ -218,7 +218,7 @@ def _scripted_server(responses: list[list[tuple[str, str, Mapping[str, Any]]]] |
 class _NativeWorkerPort:
     def __init__(self, workspace: Path, grants: tuple[RunnerToolBinding, ...]) -> None:
         self.workspace = workspace
-        self.scratch = workspace / ".scratch"
+        self.scratch = workspace.parent / f"{workspace.name}-scratch"
         self.scratch.mkdir()
         (self.scratch / "home").mkdir(exist_ok=True)
         self._bindings = grants
@@ -278,6 +278,7 @@ class _NativeWorkerPort:
             "home": str(self.scratch / "home"),
             "current_date": datetime.now(timezone.utc).date().isoformat(),
             "package_dir": str(_NODE_DIST),
+            "session_id": "bbe4-" + hashlib.sha256(str(self.workspace).encode()).hexdigest()[:32],
         }
         if set(input_names) != set(values):
             raise RuntimeError("unexpected runtime input declaration")
@@ -302,8 +303,13 @@ class _NativeWorkerPort:
 
     async def _ensure(self) -> None:
         if self._process is None:
-            env = dict(os.environ)
-            env["OPENCLAW_DIST"] = str(_NODE_DIST)
+            env = {
+                "OPENCLAW_DIST": str(_NODE_DIST),
+                "OPENCLAW_STATE_DIR": str(self.scratch / "state"),
+                "HOME": str(self.scratch / "home"),
+                "PATH": os.environ["PATH"],
+                "TZ": "UTC",
+            }
             self._process = await asyncio.create_subprocess_exec(
                 "node",
                 "--import",
@@ -341,6 +347,13 @@ class _NativeWorkerPort:
                     "scopeKey": "openclaw-conductor-test",
                     "bootstrap_assets": self._bootstrap_assets(),
                 }
+            )
+            phase_payload.setdefault(
+                "runtime_inputs",
+                self.native_runtime_inputs(
+                    input_names=("cwd", "home", "current_date", "package_dir", "session_id"),
+                    package_subpath=".",
+                ),
             )
         command = {
             "schema_version": "bb.native-worker.rpc.v1",
@@ -525,7 +538,12 @@ async def test_openclaw_native_stream_cap_refuses_ninth_http_request(tmp_path: P
     result, requests, _, system_prompt, operations = await _run_episode(tmp_path, responses)
     assert result.termination is RunnerTermination.LIMITS_EXCEEDED
     assert len(requests) == 8
-    assert requests[0]["messages"][0] == {"role": "system", "content": system_prompt}
+    system_on_wire = requests[0]["messages"][0]
+    assert system_on_wire["role"] == "system"
+    assert system_on_wire["content"].startswith("<!-- openclaw:attempt:STABLE -->\n")
+    assert "Runtime: agent=" in system_prompt
+    assert "Runtime: agent=" not in system_on_wire["content"]
+    assert "OPENCLAW-RELOCATABLE-BOUNDARY" not in system_on_wire["content"]
     assert [tool["function"]["name"] for tool in requests[0]["tools"]] == [
         "edit", "exec", "ls", "process", "read", "write",
     ]
@@ -760,6 +778,36 @@ async def test_openclaw_finalization_failure_fails_closed(tmp_path: Path) -> Non
             worker_factory=lambda path, bindings: FailedFinalizerPort(path, bindings),
         )
     assert exc.value.code == "native_finalization_failed"
+
+@pytest.mark.asyncio
+async def test_openclaw_initialization_materializes_pinned_system_prompt(tmp_path: Path) -> None:
+    worker = _NativeWorkerPort(tmp_path, ())
+    config = json.loads(
+        (Path(__file__).parents[3] / "config/e4_targets/openclaw/2026.9.4/native-config.json").read_bytes()
+    )
+    try:
+        initialized = await worker.invoke_native_phase(
+            "initialize",
+            {
+                "task": "inspect workspace",
+                "advertisement": config["advertisement"],
+                "model_config": {"id": "gpt-4o-mini", "provider": "openai"},
+                "runtime_inputs": worker.native_runtime_inputs(
+                    input_names=("cwd", "home", "current_date", "package_dir", "session_id"),
+                    package_subpath=".",
+                ),
+            },
+            timeout_ms=15_000,
+        )
+        prompt = initialized["system_prompt"]
+        assert prompt.startswith("<!-- openclaw:attempt:STABLE -->\n")
+        assert "session=agent:main:explicit:bbe4-" in prompt
+        assert "## Tooling\nTools policy-filtered." in prompt
+        assert "<available_skills>" in prompt
+        assert "## Workspace Files (injected)" in prompt
+    finally:
+        await worker.close()
+
 
 @pytest.mark.asyncio
 async def test_openclaw_native_worker_ack_and_close_are_scope_verified(tmp_path: Path) -> None:

@@ -12,6 +12,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import { classifyAgentExecResult, errorEnvelope, exitCodeForEnvelope, formatErrorMessage } from "openclaw:pinned-agent-exec";
+const pinnedAttemptPrompt = "openclaw:pinned-attempt-prompt";
 
 const PROTOCOL = "bb.openclaw-native.v1";
 const finalizationOnly = process.argv.length === 3 && process.argv[2] === "--finalize-only";
@@ -25,6 +26,12 @@ const MODULE_DIGESTS = Object.freeze({
   "tool-execution-context-C6v2UVPI.mjs": "17e1286b50ee915fa28d5741614a48295994c978e4a64b77ea6b163f674a0082",
   "internal-hooks-DUPhyX-W.mjs": "7288bc46b3e51f1c86e225b14d6baa84d34a806fad0cb37234c4ee5e34b49218",
   "agent-exec-BAuhpelg.mjs": "2e39dbc961337936860849aaaed6a26b734d0c20648093f2bc51a46ebfe9526d",
+  "system-prompt-params-BOlFEPMI.mjs": "7e0ba21cff0c164955a15eb8cdeb3ea1a118e55e9f0e97bf8dd44f2c6bda1a4d",
+  "workspace-skill-loader-BjTKGaFi.mjs": "230a877bb70d41abf0bbf6af7882e2a2d8060e56eafc4c259e1b853395292f9d",
+  "workspace-skill-prompt-D3wdQJbf.mjs": "fecd404cab8af6391fbe52ef7797b8eeaadc63a5104b47b36f69a3583aed36da",
+  "sandbox-info-BDS1M4pk.mjs": "470df328a0d4575ad72d011ae9b43ef8dcddc727fd30dcb97b5e920050c64266",
+  "provider-runtime-Cf3GwX2b.mjs": "24f24a500e815424e823afa3fc606ced8be03b0e3490be4b9e1ccafb24c0b9a9",
+  "builtin-openclaw-B-H-7lKk.mjs": "0a8c813e535c92d03f69bc58381518ba0e6ac6e46f3adda54138c5f668340ea8",
 });
 const MAX_LIVE_PROCESSES = 4;
 const TOOL_ORDER = Object.freeze(["edit", "exec", "ls", "process", "read", "write"]);
@@ -36,6 +43,11 @@ let sourceBootstrap = null;
 let sourceWorkspace = null;
 let sourceTransport = null;
 let modelConfig = null;
+let sourceSkills = null;
+let sourceSkillsPrompt = null;
+let sourceRuntimePrompt = null;
+let sourceProviderPrompt = null;
+let sourceAttemptPrompt = null;
 let sourceExecutionContext = null;
 let sourceAcknowledgeResult = null;
 let builtTools = [];
@@ -66,6 +78,11 @@ async function verifyAndLoad() {
   sourceExecutionContext = await import(bytes["tool-execution-context-C6v2UVPI.mjs"]);
   sourceAcknowledgeResult = (await import(bytes["internal-hooks-DUPhyX-W.mjs"])).t;
   sourceTransport = await import(bytes["openai-transport-stream-D950WgL3.mjs"]);
+  sourceSkills = (await import(bytes["workspace-skill-loader-BjTKGaFi.mjs"])).i;
+  sourceSkillsPrompt = (await import(bytes["workspace-skill-prompt-D3wdQJbf.mjs"])).n;
+  sourceRuntimePrompt = (await import(bytes["sandbox-info-BDS1M4pk.mjs"])).i;
+  sourceAttemptPrompt = (await import(pinnedAttemptPrompt)).buildAttemptSystemPrompt;
+  sourceProviderPrompt = (await import(bytes["provider-runtime-Cf3GwX2b.mjs"])).z;
   return {
     createCoreCodingTools: core.t,
     buildBootstrapContextFiles: sourceBootstrap.n,
@@ -203,6 +220,57 @@ function projectSourceRequest(messages, buildOpenAICompletionsParams) {
 async function bootstrapContext(loadWorkspaceBootstrapFiles, buildBootstrapContextFiles) {
   const files = await loadWorkspaceBootstrapFiles(workspace);
   return buildBootstrapContextFiles(files, { maxChars: 20000, totalMaxChars: 60000 });
+}
+async function materializeSourcePrompt(ordered, contextFiles, runtimeInputs, packageDir) {
+  const modelId = modelConfig?.id;
+  const provider = modelConfig?.provider;
+  if (typeof modelId !== "string" || !modelId || typeof provider !== "string" || !provider) {
+    throw new Error("model_config provider and id are required for pinned prompt");
+  }
+  const packageRoot = packageDir.endsWith("/dist") ? resolve(packageDir, "..") : packageDir;
+  const config = {
+    agents: { defaults: { model: { primary: `${provider}/${modelId}` }, workspace } },
+    tools: { allow: TOOL_ORDER },
+  };
+  const sessionId = runtimeInputs.session_id;
+  if (typeof sessionId !== "string" || !sessionId) throw new Error("declared session_id is required");
+  const sessionKey = `agent:main:explicit:${sessionId}`;
+  const { runtimeInfo, userTimezone, userDate } = await sourceRuntimePrompt({
+    config, agentId: "main", workspaceDir: workspace, cwd: workspace,
+    sessionKey, sessionId, model: `${provider}/${modelId}`,
+  });
+  const entries = sourceSkills(workspace, {
+    agentId: "main", config, bundledSkillsDir: join(packageRoot, "skills"),
+  });
+  const skillsPrompt = sourceSkillsPrompt({ workspaceDir: workspace, agentId: "main", config, entries });
+  const embeddedSystemPrompt = {
+    config, agentId: "main", workspaceDir: workspace, runtimeCwd: workspace,
+    reasoningLevel: "off", skillsPrompt,
+    docsPath: join(packageRoot, "docs"),
+    promptMode: "full", promptSurface: "openclaw_main",
+    runtimeInfo, userTimezone, userDate, contextFiles,
+    tools: ordered, includeMemorySection: true,
+  };
+  const prompt = sourceAttemptPrompt({
+    isRawModelRun: false,
+    embeddedSystemPrompt,
+    transformProviderSystemPrompt: sourceProviderPrompt,
+    providerTransform: {
+      provider, config, workspaceDir: workspace,
+      context: { config, workspaceDir: workspace, provider, modelId, promptMode: "full", agentId: "main" },
+    },
+  }).systemPrompt;
+  return {
+    prompt,
+    runtimeFacts: {
+      host: runtimeInfo.host,
+      os: runtimeInfo.os,
+      arch: runtimeInfo.arch,
+      node: runtimeInfo.node,
+      session_id: sessionId,
+      current_date: userDate,
+    },
+  };
 }
 
 function safeBootstrapPath(name) {
@@ -503,7 +571,7 @@ async function handle(message) {
     }
     modelConfig = message.model_config || null;
     let assets = message.bootstrap_assets;
-    const packageDir = typeof message.package_dir === "string" && message.package_dir ? message.package_dir : runtimeInputs.package_dir;
+    const packageDir = typeof message.package_dir === "string" && message.package_dir ? message.package_dir : runtimeInputs.package_dir || DIST;
     if (!Array.isArray(assets) && typeof packageDir === "string") {
       assets = [];
       for (const name of ["AGENTS.md", "SOUL.md"]) {
@@ -511,17 +579,22 @@ async function handle(message) {
         assets.push({ name, content, sha256: `sha256:${sha256(Buffer.from(content, "utf8"))}` });
       }
     }
+    if (typeof runtimeInputs.home === "string" && runtimeInputs.home) process.env.HOME = runtimeInputs.home;
+    if (typeof message.scratch === "string" && message.scratch) {
+      process.env.OPENCLAW_STATE_DIR = join(message.scratch, "state");
+    }
     await materializeBootstrapAssets(assets);
     const source = await verifyAndLoad();
     const ordered = makeTools(source.createCoreCodingTools);
+    await sourceWorkspace.d({ dir: workspace, ensureBootstrapFiles: true });
     const bootstrapFiles = await bootstrapContext(source.loadWorkspaceBootstrapFiles, source.buildBootstrapContextFiles);
+    const { prompt: systemPrompt, runtimeFacts } = await materializeSourcePrompt(ordered, bootstrapFiles, runtimeInputs, packageDir);
     return {
       schema_version: PROTOCOL,
       kind: "initialized",
-      system_prompt: text(message.system_prompt || advertisement.system_prompt)
-        .replaceAll("{{task}}", text(message.task)),
+      system_prompt: systemPrompt,
       tool_schemas: ordered.map(schemaFor),
-      bootstrap: { files: bootstrapFiles, ...runtimeInputs },
+      bootstrap: { files: bootstrapFiles, runtime_facts: runtimeFacts, ...runtimeInputs },
       tools: TOOL_ORDER,
     };
   }

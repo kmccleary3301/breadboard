@@ -3598,6 +3598,7 @@ class LeaseBackedRunnerWorkspace:
             "home": str(scratch / "home"),
             "current_date": datetime.now(timezone.utc).date().isoformat(),
             "package_dir": str(Path(adapters[0].runtime_root_path) / package_path),
+            "session_id": self.__lease.lease_id,
         }
         unknown = set(input_names) - set(available)
         if unknown:
