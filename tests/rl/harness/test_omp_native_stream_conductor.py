@@ -4,7 +4,9 @@ import asyncio
 from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
+import threading
 import json
 import os
 from pathlib import Path
@@ -24,9 +26,8 @@ from breadboard_engine.compilation.provider_response import OMP_RESPONSE_CONSUME
 from breadboard_engine.e4_targets import load_e4_target
 from breadboard_engine.provider.contracts import OpenAICompletionsProviderProfile
 from conformance.comparators.oh_my_pi_18_1_17 import OhMyPi18Comparator
-from tests.compilation.test_server_compiler import _options
+from tests.rl.harness.test_pi_native_stream_conductor import _scripted_server, _sse_tool_response
 from tests.e4_parity.test_omp_18_1_17_rerun5_replay import _response_tool_calls
-from tests.rl.harness.test_pi_native_stream_conductor import _scripted_server
 from tests.rl.harness.test_runner_conductor import _tool_grant
 from tests.rl.harness.test_runner_policy_runtime import _observation, _plan, _policy_capabilities
 
@@ -41,6 +42,47 @@ PACKET = Path(
 )
 OMP_AVAILABLE = Path(pinned_worker_spec().bun).is_file() and Path(pinned_worker_spec().source_root).is_dir()
 pytestmark = pytest.mark.skipif(not OMP_AVAILABLE, reason="pinned OMP runtime is unavailable")
+
+@contextmanager
+def _omp_scripted_server(
+    responses: list[list[tuple[str, str, Mapping[str, Any]]]],
+    *,
+    assistant_texts: list[str],
+):
+    requests: list[dict[str, Any]] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, *_args: Any) -> None:
+            pass
+
+        def do_POST(self) -> None:  # noqa: N802
+            length = int(self.headers.get("Content-Length", "0"))
+            requests.append(json.loads(self.rfile.read(length)))
+            ordinal = len(requests) - 1
+            payload = _sse_tool_response(
+                ordinal + 1,
+                responses[min(ordinal, len(responses) - 1)],
+                assistant_text=assistant_texts[ordinal],
+            ).replace(b'"model":"model-a"', b'"model":"capture"')
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(payload)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/v1", requests
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+        assert not thread.is_alive()
 
 
 def _compile_target(tmp_path: Path, model_id: str, provider_profile_digest: str) -> tuple[Any, Mapping[str, Any], Any]:
@@ -196,7 +238,7 @@ async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates
         ))
         assert finish_reason is not None
     model_id = "capture"
-    with _scripted_server(responses, assistant_texts=assistant_texts) as (base_url, _requests):
+    with _omp_scripted_server(responses, assistant_texts=assistant_texts) as (base_url, _requests):
         profile = OpenAICompletionsProviderProfile(
             model=model_id,
             scoped_credential="episode-secret",
