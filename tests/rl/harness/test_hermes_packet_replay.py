@@ -12,12 +12,12 @@ import scripts.e4_hermes_native_replay as replay
 from scripts.e4_hermes_native_replay import do2_job_spec
 
 
-PACKET = Path("/packet/hermes-supplier-capture-packet-rerun3.tar.gz")
 SEALED_CASES = Path(
     "/Users/kylemccleary/projects/breadboard/docs_tmp/bb_direction_assessment/"
     "engine_pr_handoff_20260827/e4_admission_20260914T221653Z/"
     "do2-20260923/hermes/kit/hermes_capture_cases.json"
 )
+PACKET = SEALED_CASES.parent.parent / "packet" / "hermes-supplier-capture-packet-rerun3.tar.gz"
 
 
 def test_do2_spec_pins_the_public_hermes_replay_inputs_and_outputs(

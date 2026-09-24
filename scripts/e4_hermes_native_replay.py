@@ -7,10 +7,12 @@ import json
 import re
 import subprocess
 import tempfile
+import tarfile
 from pathlib import Path
 from typing import Any
 
 PACKET_SHA256 = "870fc991ddf72271766b90f113921d1c0bfff3fb58090550691bac1fd9a780d6"
+KIT_CASES_SHA256 = "77c8ee29682d92d18c3b5081015fa57a7109b7b5e7bd19f4814940b6d86cd362"
 SUPPLIER_SIF_SHA256 = "70455f244b35912f319363c05c9e163f119c0235656124a797c0aad950103033"
 SOURCE_COMMIT = "939e45c91d751fadd94dcd1b873ac3cb44846213"
 CASE_OUTPUTS = ("bb-trace.json", "comparator-report.json", "receiver/http-transcript.jsonl")
@@ -25,18 +27,69 @@ KIT_PATHS = (
     )),
 )
 
+class HermesReplaySealError(ValueError):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
 def _sealed_cases(path: Path) -> tuple[str, ...]:
-    value = json.loads(path.read_bytes())
-    if value.get("schema_version") != "bb.e4.hermes-capture-cases.v1" or value.get("profile") != "hermes":
-        raise ValueError("Hermes sealed case-set manifest is invalid")
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise HermesReplaySealError("kit_missing", "Hermes sealed case manifest is unreadable") from exc
+    if hashlib.sha256(raw).hexdigest() != KIT_CASES_SHA256:
+        raise HermesReplaySealError("kit_digest_mismatch", "Hermes case manifest digest differs from pinned kit")
+    try:
+        value = json.loads(raw)
+    except (ValueError, UnicodeError) as exc:
+        raise HermesReplaySealError("kit_invalid", "Hermes sealed case manifest is invalid") from exc
+    if type(value) is not dict or value.get("schema_version") != "bb.e4.hermes-capture-cases.v1" or value.get("profile") != "hermes":
+        raise HermesReplaySealError("kit_invalid", "Hermes sealed case manifest is invalid")
     cases = value.get("cases")
-    if not isinstance(cases, dict) or not cases or any(
-        not isinstance(case_id, str) or not isinstance(case, dict)
+    if type(cases) is not dict or not cases or any(
+        type(case_id) is not str or type(case) is not dict
         or case.get("case_id") != case_id
         for case_id, case in cases.items()
     ):
-        raise ValueError("Hermes sealed case-set entries are invalid")
-    return tuple(sorted(cases))
+        raise HermesReplaySealError("kit_invalid", "Hermes sealed case entries are invalid")
+    return tuple(cases)
+
+
+def _packet_cases(packet: Path) -> tuple[str, ...]:
+    try:
+        with packet.open("rb") as source:
+            digest = hashlib.file_digest(source, "sha256").hexdigest()
+    except OSError as exc:
+        raise HermesReplaySealError("packet_missing", "Hermes pinned packet is unreadable") from exc
+    if digest != PACKET_SHA256:
+        raise HermesReplaySealError("packet_digest_mismatch", "Hermes packet digest differs from pinned capture")
+    try:
+        with tarfile.open(packet, "r:gz") as archive:
+            manifest = archive.extractfile("hermes-supplier-capture-packet/captures/runner-result.json")
+            if manifest is None:
+                raise ValueError("runner result is not a regular archive member")
+            value = json.load(manifest)
+    except (OSError, tarfile.TarError, KeyError, ValueError, UnicodeError) as exc:
+        raise HermesReplaySealError("packet_invalid", "Hermes pinned runner result is invalid") from exc
+    records = value.get("cases") if type(value) is dict else None
+    if type(records) is not list or not records or any(
+        type(record) is not dict or type(record.get("case_id")) is not str
+        or not record["case_id"]
+        for record in records
+    ):
+        raise HermesReplaySealError("packet_invalid", "Hermes pinned runner result cases are invalid")
+    case_ids = tuple(record["case_id"] for record in records)
+    if len(set(case_ids)) != len(case_ids):
+        raise HermesReplaySealError("packet_invalid", "Hermes pinned runner result repeats a case")
+    return case_ids
+
+
+def sealed_case_ids(case_path: Path, packet: Path) -> tuple[str, ...]:
+    cases = _sealed_cases(case_path)
+    if cases != _packet_cases(packet):
+        raise HermesReplaySealError("case_id_mismatch", "Hermes kit case IDs differ from pinned packet order")
+    return cases
 
 
 def _checkout_commit() -> str:
@@ -89,18 +142,18 @@ def do2_job_spec(
     if any(not path.is_file() for path in kit_paths.values()):
         raise ValueError(f"kit tree missing required operator in {kit_root}")
     head_commit = _checkout_commit()
+    packet = packet.resolve()
+    cases = sealed_case_ids(kit_paths["hermes_capture_cases.json"], packet)
     bundle = bundle.resolve()
     bundle_sha256 = _prepare_bundle(head_commit, bundle)
     verify_local_bundle(bundle, head_commit)
     composer_sha = hashlib.sha256(kit_paths["hermes_sif_compose.py"].read_bytes()).hexdigest()
-    cases = _sealed_cases(kit_paths["hermes_capture_cases.json"])
     expected_sidecar = Path(
         f"/root/bbe4-do2-20260923/hermes/images/hermes-public-{head_commit[:12]}-{composer_sha[:12]}.sif.json"
     )
     if sidecar is not None and sidecar != expected_sidecar:
         raise ValueError("sidecar path differs from sealed public SIF name")
     sidecar = expected_sidecar
-    packet = packet.resolve()
     wheelhouse = wheelhouse.resolve()
     sbatch = f"""#!/bin/bash
 #SBATCH --job-name=bb-e4-hermes-public-replay
@@ -143,6 +196,12 @@ PY
 SIF=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["sif_path"])' "$SIDECAR")
 SIF_SHA=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["sif_sha256"])' "$SIDECAR")
 tar -xzf "$PACKET" -C "$REPLAY/packet"
+PYTHONPATH="$REPO" python3 - "$REPLAY/operators/hermes_capture_cases.json" "$PACKET" <<'PY'
+import sys
+from pathlib import Path
+from scripts.e4_hermes_native_replay import sealed_case_ids
+sealed_case_ids(Path(sys.argv[1]), Path(sys.argv[2]))
+PY
 python3 -m pip install --no-index --find-links "$REPLAY/wheelhouse" --target "$REPLAY/bb-deps" -r "$REPLAY/bb_mini_reqs.txt"
 apptainer exec --containall --cleanenv --net --network none \\
   --bind "$REPO:/bb:ro" --bind "$REPLAY/packet:/packet:ro" \\
