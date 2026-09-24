@@ -12,6 +12,7 @@ from typing import Any, Mapping
 import pytest
 
 from breadboard.rl.harness.runners import conductor as conductor_module
+from breadboard_engine.compilation.provider_response import HERMES_RESPONSE_CONSUMER_ID
 from breadboard.rl.harness.runners.base import (
     RunnerProtocolError,
     RunnerTerminationEvent,
@@ -376,6 +377,7 @@ async def _run_fixture(
         ),
     )
     session._projection = SimpleNamespace(
+        source_consumer_id=HERMES_RESPONSE_CONSUMER_ID,
         source_profile={"advertisement": {}, "schema_overlay": {"read_file": {}, "terminal": {}}},
         models=(SimpleNamespace(params={}, policy_slot_id="slot"),),
         modes=(SimpleNamespace(tool_ids=TOOL_ORDER),),
@@ -385,10 +387,11 @@ async def _run_fixture(
     session._turns = []
     session._events = []
     session._policy_responses: list[int] = []
-    result = await session._loop_hermes(
+    result = await session._loop_native_stream_body(
         conductor_module.ConductorRunRequest({
             "prompt": trace["requests"][0]["body"]["messages"][1]["content"]
-        })
+        }),
+        conductor_module.NATIVE_STREAM_PROFILES[HERMES_RESPONSE_CONSUMER_ID],
     )
     return conductor_module.thaw_json(result.response["replay_trace"]), port
 

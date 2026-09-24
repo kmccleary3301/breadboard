@@ -19,7 +19,6 @@ from breadboard_engine.compilation.contracts import (
     canonical_sha256,
 )
 from breadboard_engine.compilation.provider_response import (
-    HERMES_RESPONSE_CONSUMER_ID,
     NATIVE_CHAT_RESPONSE_TARGETS,
     MINI_RESPONSE_CONSUMER_ID,
     OPENHANDS_RESPONSE_CONSUMER_ID,
@@ -1496,9 +1495,6 @@ class _ConductorSession:
         if self._projection.source_consumer_id == OPENHANDS_RESPONSE_CONSUMER_ID:
             async with asyncio.timeout(180):
                 return await self._loop_openhands(request)
-        if self._projection.source_consumer_id == HERMES_RESPONSE_CONSUMER_ID:
-            async with asyncio.timeout(120):
-                return await self._loop_hermes(request)
         stream_profile = NATIVE_STREAM_PROFILES.get(self._projection.source_consumer_id)
         if stream_profile is not None:
             async with asyncio.timeout(stream_profile.episode_timeout_seconds):
@@ -2058,7 +2054,13 @@ class _ConductorSession:
     async def _loop_native_stream_body(
         self, request: ConductorRunRequest, profile: native_stream_profiles.NativeStreamProfile,
     ) -> RunnerResult:
-        """Drive native streamed source phases through the admitted lease."""
+        """Drive declared native source phases through the admitted lease."""
+        if profile.phase_mode == "checkpointed":
+            return await self._loop_checkpointed_native(request, profile)
+        if profile.phase_mode != "streaming" or profile.state_factory is None:
+            raise _plan_error(
+                self._open_request, "native phase mode is invalid", "compiled_ir_mismatch",
+            )
         limits = self._open_request.effective_plan.effective_capabilities.limits
         consumer_id = self._projection.source_consumer_id
         tools = self._tools
@@ -2403,42 +2405,45 @@ class _ConductorSession:
             termination=termination, turn_count=len(self._turns),
             turns=tuple(self._turns), events=tuple(self._events),
         )
-    async def _loop_hermes(self, request: ConductorRunRequest) -> RunnerResult:
+    async def _loop_checkpointed_native(
+        self, request: ConductorRunRequest, profile: native_stream_profiles.NativeStreamProfile,
+    ) -> RunnerResult:
         limits = self._open_request.effective_plan.effective_capabilities.limits
         tools = self._tools
         model_config = self._binding.source_model_config
-        tool_order = (
-            "patch", "read_file", "search_files", "skill_view",
-            "skills_list", "terminal", "write_file",
-        )
+        tool_order = profile.tool_order
         if (
             not isinstance(tools, NativeSourceSessionPort)
             or not isinstance(tools, NativeWorkspaceEffectsPort)
             or self._projection.source_profile is None
-            or not isinstance(self._projection.source_profile.get("schema_overlay"), Mapping)
+            or any(
+                not isinstance(self._projection.source_profile.get(name), Mapping)
+                for name in profile.sealed_initialize_fields
+            )
             or model_config is None
-            or limits.max_turns != 8
-            or limits.action_timeout_ms != 40_000
+            or limits.max_turns != profile.max_turns
+            or limits.action_timeout_ms != profile.action_timeout_ms
             or len(self._projection.models) != 1
             or len(self._projection.modes) != 1
             or tuple(self._projection.modes[0].tool_ids) != tool_order
+            or self._projection.source_consumer_id != profile.consumer_id
             or self._projection.models[0].params
         ):
             raise _plan_error(
-                self._open_request, "Hermes source runtime controls differ",
+                self._open_request, "checkpointed native source runtime controls differ",
                 "compiled_ir_mismatch",
             )
         task = request.task_input.get("prompt")
         if set(request.task_input) != {"prompt"} or type(task) is not str or request.context:
             raise RunnerRequestError(
-                "Hermes requires the owned headless prompt without caller context",
+                "checkpointed native source requires the owned headless prompt without caller context",
                 code="request_authority_invalid",
             )
         model = self._projection.models[0]
-        deadline = time.monotonic() + 120
+        deadline = time.monotonic() + profile.episode_timeout_seconds
         history: list[FrozenJsonObject] = []
         history_digest = canonical_sha256(history)
-        state: FrozenJsonObject = freeze_json_object({}, field_name="Hermes state")
+        state: FrozenJsonObject = freeze_json_object({}, field_name="native source state")
         trace_requests: list[dict[str, Any]] = []
         trace_tool_calls: list[dict[str, Any]] = []
         trace_tool_call_keys: set[str] = set()
@@ -2548,12 +2553,12 @@ class _ConductorSession:
             or not declared_workspace
             or not declared_workspace.startswith("/")
         ):
-            raise invalid("Hermes declared workspace is invalid")
+            raise invalid("native declared workspace is invalid")
 
         def remaining() -> float:
             seconds = deadline - time.monotonic()
             if seconds <= 0:
-                raise TimeoutError("Hermes episode deadline elapsed")
+                raise TimeoutError("native episode deadline elapsed")
             return seconds
 
         async def commit_history(
@@ -2563,7 +2568,7 @@ class _ConductorSession:
             nonlocal history, history_digest, state
             delta = value.get("event_delta")
             if not isinstance(delta, tuple):
-                raise invalid("Hermes history delta is not an array")
+                raise invalid("native history delta is not an array")
             candidate_history, candidate_digest = history, history_digest
             for revision in delta:
                 if (
@@ -2581,52 +2586,47 @@ class _ConductorSession:
                     or any(not isinstance(row, Mapping) for row in revision["insert"])
                     or revision.get("before_digest") != candidate_digest
                 ):
-                    raise invalid("Hermes history revision does not match its committed prefix")
+                    raise invalid("native history revision does not match its committed prefix")
                 candidate_history = [
                     *candidate_history[:revision["start"]], *revision["insert"],
                 ]
                 encoded_history = canonical_json_bytes(candidate_history)
                 if len(encoded_history) > limits.transcript_bytes:
                     raise RunnerProtocolError(
-                        "Hermes source history exceeds the transcript limit",
+                        "native source history exceeds the transcript limit",
                         code="transcript_limit_exceeded", **self._context(),
                     )
                 candidate_digest = bytes_sha256(encoded_history)
                 if candidate_digest != revision["after_digest"]:
-                    raise invalid("Hermes history revision digest differs")
+                    raise invalid("native history revision digest differs")
             if checkpoint_call_id is not None and (
                 len(candidate_history) <= len(history)
                 or candidate_history[-1].get("role") != "tool"
                 or candidate_history[-1].get("tool_call_id") != checkpoint_call_id
             ):
-                raise invalid("Hermes checkpoint did not append the next source result")
+                raise invalid("native checkpoint did not append the next source result")
             status, iteration = value.get("status"), value.get("iteration")
             if (
                 status not in {"RUNNING", "FINISHED", "ERROR", "STOPPED"}
                 or type(iteration) is not int
-                or not 0 <= iteration <= 8
+                or not 0 <= iteration <= profile.max_turns
                 or value.get("history_digest") != candidate_digest
             ):
-                raise invalid("Hermes source state or history digest is invalid")
+                raise invalid("native source state or history digest is invalid")
             candidate_state = freeze_json_object({
                 "status": status, "iteration": iteration, "source_kind": value["kind"],
                 **{
                     name: value[name]
-                    for name in (
-                        "source_exit", "public_stop", "source_runtime", "source_error",
-                        "phase", "native_counters", "proposal", "segment_index", "action_index",
-                        "source_result_metadata", "resource_facts",
-                    )
+                    for name in profile.checkpoint_state_fields
                     if name in value
                 },
-            }, field_name="Hermes source state")
+            }, field_name="native source state")
             # Neither the local committed prefix nor the worker's acknowledgement
             # advances if canonical publication fails.
-            await self._emit(SourceEventCommitEvent(
-                0, self._open_request.episode_id, self._open_request.effective_plan_digest,
-                turn, HERMES_RESPONSE_CONSUMER_ID, phase_name, delta,
+            await self._native_commit_source(
+                turn, profile.consumer_id, phase_name, delta,
                 candidate_digest, candidate_state,
-            ))
+            )
             history, history_digest, state = candidate_history, candidate_digest, candidate_state
 
         async def phase(
@@ -2636,25 +2636,25 @@ class _ConductorSession:
         ) -> FrozenJsonObject:
             command = operation
             command_payload = {**payload, "remaining_seconds": remaining()}
-            watchdog = time.monotonic() + min(40, remaining())
+            watchdog = time.monotonic() + min(profile.phase_watchdog_seconds, remaining())
             progress = 0
             while True:
                 seconds = min(watchdog - time.monotonic(), remaining())
                 if seconds <= 0:
-                    raise TimeoutError("Hermes native action watchdog elapsed")
+                    raise TimeoutError("native action watchdog elapsed")
                 raw = await tools.invoke_native_phase(
                     command, command_payload, timeout_ms=max(1, int(seconds * 1000)),
                 )
                 value, _ = freeze_json_object_with_size(
-                    raw, field_name="Hermes phase result",
+                    raw, field_name="native phase result",
                     max_encoded_bytes=16 * 1024 * 1024,
                     max_nodes=16 * 1024 * 1024 + 1,
                 )
                 if (
-                    value.get("schema_version") != "bb.hermes-native.v1"
+                    value.get("schema_version") != profile.phase_schema_version
                     or type(value.get("kind")) is not str
                 ):
-                    raise invalid("Hermes phase result revision is invalid")
+                    raise invalid("native phase result revision is invalid")
                 checkpoint_call_id = None
                 if value["kind"] == "history_checkpoint":
                     if segment is not None:
@@ -2666,15 +2666,15 @@ class _ConductorSession:
                             or type(value.get("action_index")) is not int
                             or value["action_index"] != indices[progress]
                         ):
-                            raise invalid("Hermes checkpoint result order differs")
+                            raise invalid("native checkpoint result order differs")
                         checkpoint_call_id = actions[indices[progress]]["call_id"]
                     elif "segment_index" in value or "action_index" in value:
-                        raise invalid("Hermes non-execution checkpoint carries action authority")
+                        raise invalid("native non-execution checkpoint carries action authority")
                 elif (
                     segment is not None and value.get("status") == "RUNNING"
                     and progress != len(segment["action_indices"])
                 ):
-                    raise invalid("Hermes segment omitted a canonical result checkpoint")
+                    raise invalid("native segment omitted a canonical result checkpoint")
                 await commit_history(
                     value, phase_name, turn, checkpoint_call_id=checkpoint_call_id,
                 )
@@ -2688,13 +2688,16 @@ class _ConductorSession:
                 if segment is not None:
                     progress += 1
                     if segment["kind"] == "sequential":
-                        watchdog = time.monotonic() + min(40, remaining())
+                        watchdog = time.monotonic() + min(profile.phase_watchdog_seconds, remaining())
 
         await tools.begin_native_workspace_effects()
         initialized = await phase(
             "initialize", {
                 "task": task, "model_config": model_config,
-                "schema_overlay": self._projection.source_profile["schema_overlay"],
+                **{
+                    name: self._projection.source_profile[name]
+                    for name in profile.sealed_initialize_fields
+                },
             }, "initial", None,
         )
         source_runtime = initialized.get("source_runtime")
@@ -2705,7 +2708,7 @@ class _ConductorSession:
         )
         if worker_workspace != declared_workspace:
             raise RunnerProtocolError(
-                "Hermes worker workspace differs from declared workspace",
+                "native worker workspace differs from declared workspace",
                 code="workspace_authority_mismatch",
                 **self._context(),
             )
@@ -2714,40 +2717,39 @@ class _ConductorSession:
             or state["status"] != "RUNNING" or state["iteration"] != 0
             or not isinstance(initialized.get("tool_schemas"), tuple)
         ):
-            raise invalid("Hermes did not initialize its complete native tool surface")
+            raise invalid("native worker did not initialize its complete tool surface")
         self._binding.bind_native_tools(initialized["tool_schemas"])
         termination = RunnerTermination.MAX_TURNS
-        for turn in range(1, 9):
+        for turn in range(1, profile.max_turns + 1):
             await self._checkpoint("before_policy", turn=turn)
             sampled = await phase("sample", {}, "before_policy", turn)
             raw_sample = decode_json_body(sampled.get("raw_response_b64"))
             if sampled.get("kind") == "sample_ready" and state["status"] != "RUNNING":
                 if state["status"] == "ERROR":
                     await self._raise_error(RunnerDependencyError(
-                        "native Hermes source phase failed before a provider request",
+                        "native source phase failed before a provider request",
                         code="native_source_failed", **self._context(),
                     ), turn=turn)
-                termination = (
-                    RunnerTermination.ASSISTANT_COMPLETE
-                    if state["status"] == "FINISHED"
-                    else RunnerTermination.MAX_TURNS
-                    if state.get("public_stop") == "request_cap"
-                    else RunnerTermination.POLICY_INCOMPLETE
+                termination = self._native_stop_termination(
+                    state.get("public_stop") if state.get("public_stop") in profile.limit_stop_reasons
+                    else "stopped" if state["status"] == "STOPPED" else None,
+                    profile.incomplete_stop_reasons | {"stopped"},
+                    profile.limit_stop_reasons,
                 )
                 break
             if sampled.get("kind") != "provider_request":
-                raise invalid("Hermes sample did not produce its single provider request")
+                raise invalid("native sample did not produce its single provider request")
             http_request = sampled.get("http_request")
             if not isinstance(http_request, Mapping):
-                raise invalid("Hermes serialized provider request is missing")
+                raise invalid("native serialized provider request is missing")
             request_body = decode_json_body(http_request.get("body_b64"))
             if not isinstance(request_body, Mapping):
-                raise invalid("Hermes provider request body is not JSON")
+                raise invalid("native provider request body is not JSON")
             trace_requests.append({
                 "index": len(trace_requests),
                 "body": project_request_body(request_body),
             })
-            async with asyncio.timeout(min(45, remaining())):
+            async with asyncio.timeout(min(profile.provider_timeout_seconds, remaining())):
                 receipt = await self._invoke_native_policy(http_request, model=model, turn=turn)
             public_response = receipt if "body_b64" in receipt else receipt.get("native_http_response")
             decoded_response = (
@@ -2758,13 +2760,13 @@ class _ConductorSession:
                 trace_requests[-1]["response"] = project_response(decoded_response)
             sampled = await phase("provider_response", receipt, "before_policy", turn)
             if sampled.get("kind") != "sample_ready":
-                raise invalid("Hermes sample did not complete its SDK request")
+                raise invalid("native sample did not complete its SDK request")
             prepared = await phase("prepare", {}, "assistant", turn)
             if prepared.get("kind") != "prepared":
-                raise invalid("Hermes response preparation failed")
+                raise invalid("native response preparation failed")
             actions, segments = prepared.get("actions"), prepared.get("segments")
             if not isinstance(actions, tuple) or not isinstance(segments, tuple):
-                raise invalid("Hermes prepared actions or segments are invalid")
+                raise invalid("native prepared actions or segments are invalid")
             raw_calls = raw_tool_calls(raw_sample)
             raw_used: set[int] = set()
             for index, action in enumerate(actions):
@@ -2775,7 +2777,7 @@ class _ConductorSession:
                     or type(action.get("call_id")) is not str or not action["call_id"]
                     or type(action.get("arguments_json")) is not str
                 ):
-                    raise invalid("Hermes prepared action identity is invalid")
+                    raise invalid("native prepared action identity is invalid")
                 arguments = parse_json_or_text(action["arguments_json"])
                 raw_before_repair = None
                 for raw_index, raw_call in enumerate(raw_calls):
@@ -2837,10 +2839,10 @@ class _ConductorSession:
                     or not segment["action_indices"]
                     or any(type(item) is not int for item in segment["action_indices"])
                 ):
-                    raise invalid("Hermes source segment plan is invalid")
+                    raise invalid("native source segment plan is invalid")
                 scheduled.extend(segment["action_indices"])
             if scheduled != list(range(len(actions))):
-                raise invalid("Hermes source plan does not cover each surviving action once")
+                raise invalid("native source plan does not cover each surviving action once")
             observations: list[FrozenJsonObject] = []
             if state["status"] == "RUNNING":
                 for segment in segments:
@@ -2848,11 +2850,10 @@ class _ConductorSession:
                     for index in indices:
                         action = actions[index]
                         await self._checkpoint("before_action", turn=turn, call_id=action["call_id"])
-                        await self._emit(ToolCallEvent(
-                            0, self._open_request.episode_id,
-                            self._open_request.effective_plan_digest, turn, index,
-                            action["call_id"], action["tool_id"], action["arguments_json"],
-                        ))
+                        await self._native_tool_call(
+                            turn, index, action["call_id"], action["tool_id"],
+                            action["arguments_json"],
+                        )
                     executed = await phase(
                         "execute_segment", {"index": segment["index"]}, "observation", turn,
                         segment=segment, actions=actions,
@@ -2865,7 +2866,7 @@ class _ConductorSession:
                         or not isinstance(observed, tuple) or len(observed) > len(indices)
                         or state["status"] == "RUNNING" and len(observed) != len(indices)
                     ):
-                        raise invalid("Hermes source segment result is invalid")
+                        raise invalid("native source segment result is invalid")
                     for position, observation in enumerate(observed):
                         index = indices[position]
                         action = actions[index]
@@ -2876,42 +2877,36 @@ class _ConductorSession:
                             or observation.get("tool_id") != action["tool_id"]
                             or observation.get("call_id") != action["call_id"]
                         ):
-                            raise invalid("Hermes observation is not in native source order")
+                            raise invalid("native observation is not in source order")
                         observations.append(observation)
-                        result_value = observation.get("result")
-                        await self._emit(ToolObservationEvent(
-                            0, self._open_request.episode_id,
-                            self._open_request.effective_plan_digest, turn, index,
-                            action["call_id"], action["tool_id"], observation, False,
-                        ))
+                        await self._native_tool_observation(
+                            turn, index, action["call_id"], action["tool_id"], observation,
+                        )
                         await self._checkpoint("after_action", turn=turn, call_id=action["call_id"])
                     if state["status"] != "RUNNING":
                         break
             if state["status"] == "RUNNING" and segments:
                 committed = await phase("commit", {}, "observation_batch", turn)
                 if committed.get("kind") != "committed":
-                    raise invalid("Hermes post-tool/recovery commit failed")
+                    raise invalid("native post-tool/recovery commit failed")
             self._turns.append(RunnerTurn(turn, actions, tuple(observations)))
-            if state["status"] == "FINISHED":
-                termination = RunnerTermination.ASSISTANT_COMPLETE
-                break
-            if state["status"] == "STOPPED":
-                termination = (
-                    RunnerTermination.MAX_TURNS
-                    if state.get("public_stop") == "request_cap"
-                    else RunnerTermination.POLICY_INCOMPLETE
+            if state["status"] in {"FINISHED", "STOPPED"}:
+                termination = self._native_stop_termination(
+                    state.get("public_stop") if state.get("public_stop") in profile.limit_stop_reasons
+                    else "stopped" if state["status"] == "STOPPED" else None,
+                    profile.incomplete_stop_reasons | {"stopped"},
+                    profile.limit_stop_reasons,
                 )
                 break
             if state["status"] == "ERROR":
                 await self._raise_error(RunnerDependencyError(
-                    "native Hermes source phase failed",
+                    "native source phase failed",
                     code="native_source_failed", **self._context(),
                 ), turn=turn)
-        await self._emit(SourceEventCommitEvent(
-            0, self._open_request.episode_id, self._open_request.effective_plan_digest,
-            len(self._turns), HERMES_RESPONSE_CONSUMER_ID, "exit", (),
+        await self._native_commit_source(
+            len(self._turns), profile.consumer_id, "exit", (),
             history_digest, state,
-        ))
+        )
         retired = await tools.close_native_runtime()
         if (
             not isinstance(retired, Mapping)
@@ -2920,9 +2915,7 @@ class _ConductorSession:
             or retired["cleanup"].get("all_dead") is not True
         ):
             raise invalid("native runtime cleanup is not verified")
-        measured_effects = await tools.measure_workspace_effects()
-        if not isinstance(measured_effects, Mapping):
-            raise invalid("native workspace effects are malformed")
+        measured_effects = await self._native_effects()
         trace_file_effects: dict[str, str | None] = {}
         for path, value in measured_effects.items():
             if (
@@ -2954,9 +2947,9 @@ class _ConductorSession:
             else state.get("public_stop") or state.get("status")
         )
         replay_trace = {
-            "schema_version": "bb.e4.hermes-agent-trace.v1",
+            "schema_version": profile.trace_schema_version,
             "case_id": self._open_request.episode_id,
-            "profile": "hermes",
+            "profile": profile.trace_profile_name,
             "context": {
                 "system_messages": system_messages,
                 "agents_md": [
@@ -2964,22 +2957,8 @@ class _ConductorSession:
                 ],
             },
             "controls": {
-                "api_mode": "chat_completions",
-                "streaming": False,
-                "max_iterations": 8,
-                "max_tokens": 2048,
+                **profile.trace_controls,
                 "http_attempts": len(trace_requests),
-                "provider_deadline": 45,
-                "provider_timeout": 45,
-                "native_deadline": 35,
-                "tool_deadline": 35,
-                "watchdog_deadline": 40,
-                "watchdog": 40,
-                "terminal_deadline": 30,
-                "terminal_timeout": 30,
-                "retry": True,
-                "api_max_retries": 1,
-                "fallback": False,
                 "advertised_tools": list(tool_order),
             },
             "requests": trace_requests,
@@ -3000,7 +2979,7 @@ class _ConductorSession:
             effective_plan_digest=self._open_request.effective_plan_digest,
             original_request={"task_input": request.task_input, "context": request.context},
             response={
-                "source_id": HERMES_RESPONSE_CONSUMER_ID,
+                "source_id": profile.consumer_id,
                 "messages": history,
                 "state": state,
                 "replay_trace": replay_trace,
@@ -3566,7 +3545,10 @@ class _ConductorSession:
     async def _publish_locked(self, event: RunnerEvent) -> None:
         sequenced = replace(event, sequence=self._sequence)
         native_event_size = 0
-        if self._projection.source_consumer_id == HERMES_RESPONSE_CONSUMER_ID:
+        if (
+            (profile := NATIVE_STREAM_PROFILES.get(self._projection.source_consumer_id))
+            is not None and profile.journal_byte_limit
+        ):
             native_event_size = _encoded_json_size({
                 field.name: getattr(sequenced, field.name) for field in fields(sequenced)
             })
@@ -3575,7 +3557,7 @@ class _ConductorSession:
                 > self._open_request.effective_plan.effective_capabilities.limits.transcript_bytes
             ):
                 raise RunnerProtocolError(
-                    "Hermes canonical journal exceeds the transcript limit",
+                    "native canonical journal exceeds the transcript limit",
                     code="transcript_limit_exceeded", **self._context(),
                 )
         token = _EVENT_SINK_SESSION.set(self)

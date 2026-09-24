@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from breadboard_engine.compilation.provider_response import HERMES_RESPONSE_CONSUMER_ID
 from breadboard.rl.harness.runners import conductor as conductor_module
 from breadboard.rl.harness.hermes_tools import HermesToolRuntime, HermesToolRuntimeError, TOOL_NAMES
 from breadboard.rl.harness.runners.base import (
@@ -140,6 +141,7 @@ async def _run(*, fail_ack: bool = False, overlay: bool = True) -> tuple[Any, Fa
         effective_plan=SimpleNamespace(effective_capabilities=SimpleNamespace(limits=limits)),
     )
     session._projection = SimpleNamespace(
+        source_consumer_id=HERMES_RESPONSE_CONSUMER_ID,
         source_profile={"advertisement": {}, **({"schema_overlay": {"read_file": {}, "terminal": {}}} if overlay else {})},
         models=(SimpleNamespace(params={}, policy_slot_id="slot"),),
         modes=(SimpleNamespace(tool_ids=_TOOL_ORDER),),
@@ -149,7 +151,10 @@ async def _run(*, fail_ack: bool = False, overlay: bool = True) -> tuple[Any, Fa
     session._turns = [RunnerTurn(1, (), ())]
     session._events = []
 
-    result = await session._loop_hermes(conductor_module.ConductorRunRequest({"prompt": "test"}))
+    result = await session._loop_native_stream_body(
+        conductor_module.ConductorRunRequest({"prompt": "test"}),
+        conductor_module.NATIVE_STREAM_PROFILES[HERMES_RESPONSE_CONSUMER_ID],
+    )
     if overlay:
         assert tools.schema_overlay == {"read_file": {}, "terminal": {}}
     return result, tools, log
