@@ -3,9 +3,11 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Mapping
 from conformance.comparators.stored_report import compare
+from conformance.comparators.hermes_agent import project_supplier_case as project_hermes_supplier_case
 from conformance.comparators.openhands_sdk import (
     compare as compare_openhands,
     project_supplier_case,
@@ -16,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 INVENTORY_PATH = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"
 REGISTRY_PATH = ROOT / "conformance" / "comparators" / "registry.json"
 OPENHANDS_CASE = ROOT / "tests" / "e4_parity" / "fixtures" / "openhands_sdk" / "OH-01-normal-file-effect"
+HERMES_CASE = ROOT / "tests" / "e4_parity" / "fixtures" / "hermes_agent" / "H-01-normal-memory-skill-write"
 
 def _load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -173,6 +176,19 @@ def _registered_comparator_input(
                 "replay_ref": replay_manifest_path,
             },
         }
+    if comparator_id == "hermes_agent_trace_v1":
+        replay = deepcopy(project_hermes_supplier_case(HERMES_CASE))
+        overlay = _load_json(
+            ROOT / "config" / "e4_targets" / "hermes_agent" / "2026.9.11" / "native-config.json"
+        )["schema_overlay"]
+        for request in replay["requests"]:
+            for index, schema in enumerate(request["body"]["tools"]):
+                name = schema["function"]["name"]
+                if name in overlay:
+                    request["body"]["tools"][index] = json.loads(
+                        overlay[name]["approved_schema_json"]
+                    )
+        return {"supplier_case": str(HERMES_CASE), "bb_trace": replay}
     if comparator_id == "openhands_sdk_trace_v1":
         return {
             "supplier_case": str(OPENHANDS_CASE),
@@ -246,6 +262,8 @@ def test_each_registered_comparator_entrypoint_conforms_to_protocol(tmp_path: Pa
         report = comparator(
             _registered_comparator_input(entry["comparator_id"], comparator_path, tmp_path)
         )
+        if entry["comparator_id"] == "hermes_agent_trace_v1":
+            assert report["ok"] is True
         assert isinstance(report, dict)
         report_schema_version = report.get("schema_version", report.get("report_schema_version"))
         assert report_schema_version == entry["report_schema_version"]

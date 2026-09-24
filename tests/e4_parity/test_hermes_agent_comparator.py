@@ -4,6 +4,7 @@ import io
 import hashlib
 
 import json
+import os
 import tarfile
 import shutil
 from copy import deepcopy
@@ -33,11 +34,9 @@ PACKET_TRACE_SHA256 = {
     "H-05-terminal-lifecycle": "b0b801a0b7affa832aa381b40cfa140d0efb89e8e8f499a656c8c175e47bf36e",
     "H-06-request-budget-stop": "bd65f26d9003fd3bd3346ba8f198a42663b901bb0489ee75c601316fe8130c72",
 }
-E_HERMES = Path(
-    "/Users/kylemccleary/projects/breadboard/docs_tmp/bb_direction_assessment/"
-    "engine_pr_handoff_20260827/e4_admission_20260914T221653Z/"
-    "do2-20260923/hermes"
-)
+SEALED_FIXTURES = Path(os.environ.get("BB_WORKSPACE_ROOT", Path(__file__).resolve().parents[2])) / "docs_tmp/e4_immutable_inputs/hermes"
+KIT_CASES = SEALED_FIXTURES / "hermes_capture_cases.json"
+PACKET = SEALED_FIXTURES / "hermes-supplier-capture-packet-rerun3.tar.gz"
 TARGET_CONFIG = Path(__file__).resolve().parents[2] / "config/e4_targets/hermes_agent/2026.9.11/native-config.json"
 
 
@@ -364,6 +363,13 @@ def test_comparator_rejects_name_only_tool_schemas() -> None:
     assert any("tools" in a.get("detail", "") for a in report["assertions"] if a["status"] == "failed")
 
 
+def _sealed_packet() -> Path:
+    assert hashlib.sha256(PACKET.read_bytes()).hexdigest() == (
+        "870fc991ddf72271766b90f113921d1c0bfff3fb58090550691bac1fd9a780d6"
+    )
+    return PACKET
+
+
 def _replay_kit(tmp_path: Path) -> Path:
     kit_root = tmp_path / "kit"
     capture = kit_root / "do2-20260923" / "hermes" / "kit"
@@ -376,9 +382,11 @@ def _replay_kit(tmp_path: Path) -> Path:
         "hermes_capture_cases.json",
     ):
         (capture / name).touch()
-    (capture / "hermes_capture_cases.json").write_bytes(
-        (E_HERMES / "kit" / "hermes_capture_cases.json").read_bytes()
+    cases_bytes = KIT_CASES.read_bytes()
+    assert hashlib.sha256(cases_bytes).hexdigest() == (
+        "77c8ee29682d92d18c3b5081015fa57a7109b7b5e7bd19f4814940b6d86cd362"
     )
+    (capture / "hermes_capture_cases.json").write_bytes(cases_bytes)
     return kit_root
 
 def test_replay_spec_retrieves_every_packet_case_and_receiver_receipt(
@@ -387,7 +395,7 @@ def test_replay_spec_retrieves_every_packet_case_and_receiver_receipt(
     monkeypatch.setattr(e4_hermes_native_replay, "_checkout_commit", lambda: "a" * 40)
     monkeypatch.setattr(e4_hermes_native_replay, "_prepare_bundle", lambda head, bundle: "f" * 64)
     monkeypatch.setattr(e4_hermes_native_replay, "verify_local_bundle", lambda bundle, head: None)
-    packet = E_HERMES / "packet" / "hermes-supplier-capture-packet-rerun3.tar.gz"
+    packet = _sealed_packet()
     with tarfile.open(packet, "r:gz") as archive:
         manifest = archive.extractfile("hermes-supplier-capture-packet/captures/runner-result.json")
         assert manifest is not None
@@ -429,7 +437,7 @@ def test_replay_spec_refuses_unsealed_case_manifest(
             renamed["case_id"] = "H-06-other-budget-stop"
             payload["cases"]["H-06-other-budget-stop"] = renamed
         cases_path.write_text(json.dumps(payload), encoding="utf-8")
-    packet = E_HERMES / "packet" / "hermes-supplier-capture-packet-rerun3.tar.gz"
+    packet = _sealed_packet()
     with pytest.raises(ValueError, match="case|digest") as refused:
         e4_hermes_native_replay.do2_job_spec(
             packet, tmp_path / "out", kit_root=kit,
@@ -443,7 +451,7 @@ def test_replay_spec_rejects_packet_with_unpinned_bytes(
 ) -> None:
     monkeypatch.setattr(e4_hermes_native_replay, "_checkout_commit", lambda: "a" * 40)
     packet = tmp_path / "packet.tar.gz"
-    original = E_HERMES / "packet" / "hermes-supplier-capture-packet-rerun3.tar.gz"
+    original = _sealed_packet()
     packet.write_bytes(original.read_bytes() + b"tampered")
     with pytest.raises(e4_hermes_native_replay.HermesReplaySealError) as refused:
         e4_hermes_native_replay.do2_job_spec(
@@ -457,7 +465,7 @@ def test_replay_spec_rejects_packet_order_even_with_a_new_trusted_packet_digest(
 ) -> None:
     monkeypatch.setattr(e4_hermes_native_replay, "_checkout_commit", lambda: "a" * 40)
     packet = tmp_path / "reordered.tar.gz"
-    original = E_HERMES / "packet" / "hermes-supplier-capture-packet-rerun3.tar.gz"
+    original = _sealed_packet()
     member_path = "hermes-supplier-capture-packet/captures/runner-result.json"
     with tarfile.open(original, "r:gz") as source, tarfile.open(packet, "w:gz") as changed:
         for member in source:
@@ -493,7 +501,7 @@ def test_replay_spec_records_git_head_instead_of_stale_literal(monkeypatch: pyte
     monkeypatch.setattr(e4_hermes_native_replay.subprocess, "run", git_run, raising=False)
     monkeypatch.setattr(e4_hermes_native_replay, "_prepare_bundle", lambda head, bundle: "f" * 64)
     monkeypatch.setattr(e4_hermes_native_replay, "verify_local_bundle", lambda bundle, head: None)
-    packet = E_HERMES / "packet" / "hermes-supplier-capture-packet-rerun3.tar.gz"
+    packet = _sealed_packet()
     spec = e4_hermes_native_replay.do2_job_spec(packet, tmp_path / "out", kit_root=_replay_kit(tmp_path))
     assert spec["source"]["commit"] == head
     assert f"'{head}'" in spec["sbatch_script"] and '--base-commit "$1"' in spec["sbatch_script"]
@@ -531,7 +539,7 @@ def test_replay_spec_uses_checkout_and_explicit_kit_not_current_directory(
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     monkeypatch.chdir(elsewhere)
-    packet = E_HERMES / "packet" / "hermes-supplier-capture-packet-rerun3.tar.gz"
+    packet = _sealed_packet()
     spec = e4_hermes_native_replay.do2_job_spec(packet, tmp_path / "out", kit_root=kit_root)
     uploaded = {entry["remote"].split("/")[-1]: entry["local"] for entry in spec["puts"]}
     assert Path(uploaded["hermes-head.bundle"]) == Path("/tmp/hermes-conductor-head.bundle").resolve()

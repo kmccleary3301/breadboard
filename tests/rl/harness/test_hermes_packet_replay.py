@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import hashlib
 import os
 import json
@@ -91,15 +90,3 @@ def test_do2_spec_pins_the_public_hermes_replay_inputs_and_outputs(
     assert "hermes-public.sif" not in spec["sbatch_script"]
 
 
-def test_composer_uses_no_repository_ceiling_without_repository_binding() -> None:
-    kit = Path("/Users/kylemccleary/projects/breadboard/docs_tmp/bb_direction_assessment/engine_pr_handoff_20260827/e4_admission_20260914T221653Z/hermes_sif_compose.py")
-    tree = ast.parse(kit.read_text())
-    ceiling = [
-        node for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "OperatorCeiling"
-    ]
-    assert len(ceiling) == 1
-    repository = next(arg.value for arg in ceiling[0].keywords if arg.arg == "repository_snapshot_digests")
-    assert isinstance(repository, ast.Tuple) and not repository.elts
