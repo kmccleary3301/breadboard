@@ -48,6 +48,7 @@ class HistoricalV1EpisodeReader:
     """
 
     def __init__(self, store: HistoricalArtifactStore | None = None) -> None:
+        owns_store = store is None
         if store is None:
             configured = os.environ.get("BREADBOARD_HARNESS_ARTIFACT_ROOT")
             artifact_root = (
@@ -56,7 +57,12 @@ class HistoricalV1EpisodeReader:
                 else Path.home() / ".breadboard" / "rl-harness" / "artifacts"
             )
             store = FilesystemCAS(artifact_root)
+        self._owns_store = owns_store
         self._store = store
+
+    def close(self) -> None:
+        if self._owns_store:
+            self._store.close()
 
     async def get(self, episode_id: str) -> HistoricalV1Episode:
         if _EPISODE_ID.fullmatch(episode_id) is None:

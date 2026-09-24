@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import inspect
 from collections.abc import Mapping
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
@@ -22,6 +23,16 @@ from breadboard_engine.compilation.provider_response import (
     NativeResponsePolicy,
 )
 from breadboard.rl.harness.contracts import PolicyCapabilityObservation
+from breadboard.rl.harness.contracts import RuntimeClass
+from breadboard.rl.harness.lease_envelope import (
+    AdmittedLeaseLedger,
+    AdmittedLeaseRecord,
+    ContainmentReceiptError,
+    ReceiptAuthenticator,
+    RuntimeContainment,
+    _receipt_guard,
+    verify_containment_receipt,
+)
 from breadboard.rl.harness.runner_identity import measure_module_artifact
 from breadboard.rl.harness import native_stream_consumers, native_stream_profiles
 from breadboard.rl.harness.native_stream_profiles import NATIVE_STREAM_PROFILES
@@ -1204,9 +1215,16 @@ def _admit_schema(schema: Mapping[str, Any], request: RunnerOpenRequest) -> None
 
 
 class ConductorAdapter:
-    __slots__ = ("_descriptor",)
+    __slots__ = ("_descriptor", "_containment_authenticator", "_admitted_lease_ledger", "_allow_unconfined_test_only")
 
-    def __init__(self, runtime_abi: str) -> None:
+    def __init__(
+        self,
+        runtime_abi: str,
+        *,
+        containment_authenticator: ReceiptAuthenticator | None = None,
+        admitted_lease_ledger: AdmittedLeaseLedger | None = None,
+        allow_unconfined_test_only: bool = False,
+    ) -> None:
         if runtime_abi != CONDUCTOR_RUNTIME_ABI:
             raise ValueError("conductor adapter accepts only its exact runtime ABI")
         measured = measure_module_artifact(__file__)
@@ -1228,6 +1246,9 @@ class ConductorAdapter:
             runtime_abi=runtime_abi,
             implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
         )
+        self._containment_authenticator = containment_authenticator
+        self._admitted_lease_ledger = admitted_lease_ledger
+        self._allow_unconfined_test_only = allow_unconfined_test_only
 
     @property
     def descriptor(self) -> RunnerAdapterDescriptor:
@@ -1303,6 +1324,44 @@ class ConductorAdapter:
             installed = None
         if installed != expected:
             raise _plan_error(request, "tool port bindings do not exactly match plan grants", "tool_grant_mismatch")
+        if request.effective_plan.sandbox.runtime_class is RuntimeClass.TRUSTED_PROCESS:
+            receipt = getattr(workspace, "containment_receipt", None)
+            lease_id = getattr(workspace, "containment_lease_id", None)
+            try:
+                if (
+                    getattr(workspace, "containment", None)
+                    is RuntimeContainment.UNCONFINED_TEST_ONLY
+                    and not self._allow_unconfined_test_only
+                ):
+                    raise ContainmentReceiptError("unconfined trusted-process workspace is not admitted")
+                if (
+                    receipt is None or self._containment_authenticator is None
+                    or self._admitted_lease_ledger is None or not isinstance(lease_id, str)
+                ):
+                    raise ContainmentReceiptError("containment receipt or admitted lease is missing")
+                with _receipt_guard():
+                    verified = verify_containment_receipt(
+                        receipt,
+                        lease_id=lease_id,
+                        runtime_id=request.effective_plan.sandbox.runtime_id,
+                        authenticator=self._containment_authenticator,
+                    )
+                    presented_bytes = verified.canonical_bytes()
+                    admitted = self._admitted_lease_ledger.lookup(lease_id)
+                    if (
+                        type(admitted) is not AdmittedLeaseRecord
+                        or admitted.lease_id != lease_id
+                        or admitted.runtime_id != request.effective_plan.sandbox.runtime_id
+                        or admitted.receipt_bytes != presented_bytes
+                        or admitted.receipt_signature != verified.signature
+                    ):
+                        raise ContainmentReceiptError("containment lease is not live and exact")
+            except ContainmentReceiptError as exc:
+                raise _plan_error(
+                    request,
+                    "trusted-process workspace containment receipt was rejected",
+                    "containment_receipt_invalid",
+                ) from exc
         await policy.claim()
         return _ConductorSession(
             open_request=request,
@@ -2279,6 +2338,10 @@ class _ConductorSession:
             )
             before = len(state.messages)
             parsed = state.prepare_response(native)
+            if inspect.isawaitable(parsed):
+                # Profiles whose response preparation runs a pinned worker
+                # are awaited so the episode deadline can cancel them.
+                parsed = await parsed
             await commit(before, "assistant", turn)
             observations: list[FrozenJsonObject] = []
             if parsed.calls:

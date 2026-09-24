@@ -43,6 +43,7 @@ from .evidence import (
     FilesystemEpisodeLocatorStore,
     V2EvidenceAuthority,
 )
+from .history import HistoricalV1EpisodeReader
 from .materialization import (
     DirectoryStorageBackend,
     FilesystemMaterializationStore,
@@ -80,6 +81,8 @@ from .sandbox import (
     SandboxRuntimeManager,
     SandboxSecurityPolicy,
     TrustedProcessBackend,
+    RuntimeContainment,
+    SandboxLaunchError,
 )
 from .sandbox_docker import (
     DockerRuntimeAdapter,
@@ -4203,9 +4206,14 @@ class _PinnedMaterializationStore(FilesystemMaterializationStore):
 class _PinnedTrustedProcessBackend(TrustedProcessBackend):
     def __init__(self, guard: _DirectoryIdentityGuard) -> None:
         self._guard = guard
-
     async def launch(self, *args: Any, **kwargs: Any) -> Any:
         self._guard.check_empty()
+        plan = args[0] if args else kwargs.get("plan")
+        if getattr(plan, "containment", RuntimeContainment.ATTESTED) is not RuntimeContainment.ATTESTED:
+            raise SandboxLaunchError(
+                "production composition rejects unconfined trusted-process execution",
+                code="runtime_preflight_failed",
+            )
         return await super().launch(*args, **kwargs)
 
     async def reconcile(self, record: Mapping[str, Any]) -> Any:
@@ -4362,18 +4370,6 @@ def _build_runtime_graph(
         verifiers=manifest.installed.verifiers,
         tool_adapters=tuple(native_tool_adapters),
     )
-    adapters = []
-    for descriptor in manifest.installed.runner_adapters:
-        if descriptor.adapter_id == CONDUCTOR_ADAPTER_ID:
-            adapter = ConductorAdapter(descriptor.runtime_abi)
-        elif descriptor.adapter_id == TERMINAL_ADAPTER_ID:
-            adapter = TerminalResponsesAdapter(descriptor.runtime_abi)
-        else:
-            raise ValueError("runner adapter is not installed by the closed switch")
-        if adapter.descriptor != descriptor:
-            raise ValueError("runner adapter descriptor mismatch")
-        adapters.append(adapter)
-    runner_registry = RunnerAdapterRegistry(adapters)
 
     source_reader = _CASMaterializationSourceReader(graph.cas)
     cache_guard = _DirectoryIdentityGuard(
@@ -4540,12 +4536,29 @@ def _build_runtime_graph(
             random_bytes=token_bytes,
             authority_guard=lease_guard,
             lease_root_fd=directory_fds["lease"],
+            containment_authenticator=graph.authenticator,
         )
     )
     rollback.own(sandbox_manager.abort_bootstrap)
     rollback.attempt(
         lambda: revalidate_directory("lease", str(sandbox_manager.lease_root))
     )
+    adapters = []
+    for descriptor in manifest.installed.runner_adapters:
+        if descriptor.adapter_id == CONDUCTOR_ADAPTER_ID:
+            adapter = ConductorAdapter(
+                descriptor.runtime_abi,
+                containment_authenticator=graph.authenticator,
+                admitted_lease_ledger=sandbox_manager.admitted_lease_ledger,
+            )
+        elif descriptor.adapter_id == TERMINAL_ADAPTER_ID:
+            adapter = TerminalResponsesAdapter(descriptor.runtime_abi)
+        else:
+            raise ValueError("runner adapter is not installed by the closed switch")
+        if adapter.descriptor != descriptor:
+            raise ValueError("runner adapter descriptor mismatch")
+        adapters.append(adapter)
+    runner_registry = RunnerAdapterRegistry(adapters)
     cleanup_probe = _ProductionCleanupProbe(
         manifest=manifest,
         materialization=materialization,
@@ -4674,8 +4687,11 @@ def _build_runtime_graph(
         if len(api_specs) != 1:
             raise ValueError("exactly one API bearer authority is required")
         api_token = pinned[api_specs[0].handle_id].data.decode("utf-8")
+        history_reader = rollback.attempt(HistoricalV1EpisodeReader)
+        rollback.own(history_reader.close)
         app = create_app(
             service,
+            history=history_reader,
             auth_token=api_token,
             allow_unauthenticated_loopback=False,
         )
@@ -4697,6 +4713,7 @@ def _build_runtime_graph(
         service,
         (
             materialization.close,
+            history_reader.close,
             locator.close,
             policy_resolver.close,
             *(() if private_daemon_owner is None else (private_daemon_owner.close,)),
