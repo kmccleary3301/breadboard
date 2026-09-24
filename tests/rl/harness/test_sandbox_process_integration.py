@@ -10,6 +10,7 @@ import os
 import socket
 import shlex
 import signal
+import struct
 import shutil
 import subprocess
 import sys
@@ -260,6 +261,27 @@ def test_spawn_refuses_to_name_control_channels_in_argv(
 ) -> None:
     with pytest.raises(OSError, match=reason):
         _spawn_one(None, _spawn_message(**overrides), list(range(40, 50)), object())
+
+
+@pytest.mark.skipif(
+    not hasattr(socket, "SCM_CREDENTIALS"), reason="SCM_CREDENTIALS is Linux-only"
+)
+def test_admission_without_a_self_pinned_pidfd_is_refused() -> None:
+    # A bare PID can be recycled after an adversarial SIGKILL and reap; only
+    # the child's own pidfd identifies it.
+    host, child = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+    with host, child:
+        host.setsockopt(socket.SOL_SOCKET, socket.SO_PASSCRED, 1)
+        child.sendmsg(
+            [b"B"],
+            [(
+                socket.SOL_SOCKET,
+                socket.SCM_CREDENTIALS,
+                struct.pack("3i", os.getpid(), os.getuid(), os.getgid()),
+            )],
+        )
+        with pytest.raises(OSError, match="pin its identity"):
+            lease_envelope._recv_ready_status(host)
 
 
 

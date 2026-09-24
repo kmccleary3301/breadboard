@@ -933,6 +933,10 @@ def _spawn_one(
             for fd in fds:
                 os.set_inheritable(fd, True)
             status_sock = socket.socket(fileno=status_fd)
+            # The child pins its own identity: a pidfd opened by the process
+            # on itself cannot name a recycled PID, even if the child is later
+            # killed and reaped before the host attests it.
+            self_pidfd = os.pidfd_open(os.getpid(), 0)
             status_sock.sendmsg(
                 [b"B"],
                 [
@@ -940,9 +944,11 @@ def _spawn_one(
                         socket.SOL_SOCKET,
                         socket.SCM_CREDENTIALS,
                         struct.pack("3i", os.getpid(), os.getuid(), os.getgid()),
-                    )
+                    ),
+                    (socket.SOL_SOCKET, socket.SCM_RIGHTS, struct.pack("i", self_pidfd)),
                 ],
             )
+            os.close(self_pidfd)
             if os.read(fds[gate_index], 1) != b"G":
                 raise OSError("envelope exec gate was not admitted")
             os.close(fds[gate_index])
@@ -1097,31 +1103,6 @@ def _launcher_main(
         os._exit(70)
 
 
-def _open_attested_pidfd(
-    pid: int,
-    credentials: tuple[int, int, int],
-    pid_namespace_inode: int,
-) -> int:
-    if not hasattr(os, "pidfd_open"):
-        raise OSError(errno.ENOTSUP, "pidfd_open is unavailable")
-    pidfd = os.pidfd_open(pid, 0)
-    try:
-        if os.stat(f"/proc/{pid}/ns/pid").st_ino != pid_namespace_inode:
-            raise OSError("attested child PID namespace identity changed")
-        uid = gid = None
-        for line in Path(f"/proc/{pid}/status").read_text(encoding="ascii").splitlines():
-            if line.startswith("Uid:"):
-                uid = int(line.split()[1])
-            elif line.startswith("Gid:"):
-                gid = int(line.split()[1])
-        if uid != credentials[1] or gid != credentials[2]:
-            raise OSError("attested child credentials changed")
-        return pidfd
-    except BaseException:
-        os.close(pidfd)
-        raise
-
-
 
 def _pidfd_pid(pidfd: int) -> int:
     for line in Path(f"/proc/self/fdinfo/{pidfd}").read_text(encoding="ascii").splitlines():
@@ -1130,12 +1111,12 @@ def _pidfd_pid(pidfd: int) -> int:
     raise OSError(errno.ENOTSUP, "pidfd fdinfo does not report a Pid")
 
 
-def _verify_pid1_descriptor(
+def _verify_attested_pidfd(
     pidfd: int,
     credentials: tuple[int, int, int],
     pid_namespace_inode: int,
 ) -> None:
-    """Check a launcher-pinned PID1 pidfd names the attested supervisor.
+    """Check a self- or launcher-pinned pidfd names the attested process.
 
     A pidfd keeps its process identity across PID reuse; the Pid field turns
     -1 once that process is reaped, so an equal Pid before and after the
@@ -1143,9 +1124,9 @@ def _verify_pid1_descriptor(
     """
     pid = credentials[0]
     if _pidfd_pid(pidfd) != pid:
-        raise OSError(errno.ESRCH, "envelope PID1 descriptor does not name the live supervisor")
+        raise OSError(errno.ESRCH, "envelope pidfd does not name the attested live process")
     if os.stat(f"/proc/{pid}/ns/pid").st_ino != pid_namespace_inode:
-        raise OSError("attested PID1 namespace identity changed")
+        raise OSError("attested process PID namespace identity changed")
     uid = gid = None
     for line in Path(f"/proc/{pid}/status").read_text(encoding="ascii").splitlines():
         if line.startswith("Uid:"):
@@ -1153,9 +1134,9 @@ def _verify_pid1_descriptor(
         elif line.startswith("Gid:"):
             gid = int(line.split()[1])
     if uid != credentials[1] or gid != credentials[2]:
-        raise OSError("attested PID1 credentials changed")
+        raise OSError("attested process credentials changed")
     if _pidfd_pid(pidfd) != pid:
-        raise OSError(errno.ESRCH, "envelope PID1 exited during attestation")
+        raise OSError(errno.ESRCH, "attested process exited during attestation")
 
 def _pidfd_send_signal(pidfd: int, sig: int) -> None:
     sender = getattr(os, "pidfd_send_signal", None)
@@ -1289,24 +1270,39 @@ async def _pipe_writer(fd: int) -> Any:
     return asyncio.StreamWriter(transport, protocol, None, loop)
 
 
-def _recv_ready_status(status: socket.socket) -> tuple[int, int, int]:
-    payload, ancdata, _flags, _address = status.recvmsg(
-        1, socket.CMSG_SPACE(3 * struct.calcsize("i"))
+def _recv_ready_status(status: socket.socket) -> tuple[tuple[int, int, int], int]:
+    """Receive the admission byte, the child's credentials and its self-pidfd."""
+    payload, ancdata, flags, _address = status.recvmsg(
+        1,
+        socket.CMSG_SPACE(3 * struct.calcsize("i"))
+        + socket.CMSG_SPACE(struct.calcsize("i")),
     )
-    if payload != b"B":
-        raise OSError("envelope child did not stop at admission")
     credentials = None
+    received: list[int] = []
     for level, kind, data in ancdata:
-        if (
-            level == socket.SOL_SOCKET
-            and kind == socket.SCM_CREDENTIALS
-            and len(data) >= 12
-        ):
+        if level != socket.SOL_SOCKET:
+            continue
+        if kind == socket.SCM_CREDENTIALS and len(data) >= 12:
             credentials = struct.unpack("3i", data[:12])
-            break
-    if credentials is None or credentials[0] <= 0:
-        raise OSError("envelope child credentials are missing")
-    return credentials
+        elif kind == socket.SCM_RIGHTS:
+            usable = len(data) - len(data) % struct.calcsize("i")
+            received.extend(struct.unpack(f"{usable // 4}i", data[:usable]))
+    try:
+        if flags & socket.MSG_CTRUNC:
+            raise OSError("envelope admission control data was truncated")
+        if payload != b"B":
+            raise OSError("envelope child did not stop at admission")
+        if credentials is None or credentials[0] <= 0:
+            raise OSError("envelope child credentials are missing")
+        if len(received) != 1:
+            raise OSError("envelope child did not pin its identity descriptor")
+    except BaseException:
+        for fd in received:
+            os.close(fd)
+        raise
+    return credentials, received[0]
+
+
 def _resolve_host_pid(supervisor_pid: int, namespace_pid: int) -> int:
     """Resolve a child PID from the supervisor's PID namespace to the host.
 
@@ -1447,16 +1443,12 @@ async def spawn_envelope_process(
                 pass
     pidfd = -1
     try:
-        credentials = await asyncio.wait_for(
+        credentials, pidfd = await asyncio.wait_for(
             asyncio.to_thread(_recv_ready_status, status_host),
             max(0.001, timeout_ms / 1000),
         )
         pid, _uid, _gid = credentials
-        pidfd = _open_attested_pidfd(
-            pid,
-            credentials,
-            envelope.receipt.pid_namespace_inode,
-        )
+        _verify_attested_pidfd(pidfd, credentials, envelope.receipt.pid_namespace_inode)
         stdout = await _pipe_reader(stdout_r)
         stderr = await _pipe_reader(stderr_r)
         stdin = await _pipe_writer(stdin_w)
@@ -1675,7 +1667,7 @@ def launch_envelope(
             raise OSError("envelope supervisor credentials are missing")
         if type(pid1_pid) is not int or pid1_pid != credentials[0]:
             raise OSError("envelope PID1 descriptor does not match the supervisor")
-        _verify_pid1_descriptor(pid1_fd, credentials, receipt.pid_namespace_inode)
+        _verify_attested_pidfd(pid1_fd, credentials, receipt.pid_namespace_inode)
         launch = EnvelopeLaunch(
             control_parent,
             pid,
