@@ -3897,7 +3897,11 @@ def _native_close_test_case(
         package_subpath="node_modules/@mariozechner/pi-coding-agent",
         state_module=pi_semantics,
         state_factory=lambda task, system_prompt, bootstrap: pi_semantics.PiSemanticsState(
-            task=task, system_prompt=system_prompt, request_cap=2,
+            task=task,
+            system_prompt=system_prompt,
+            request_cap=2,
+            model_id="model-a",
+            provider="openai",
         ),
     )
     monkeypatch.setattr(

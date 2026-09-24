@@ -287,7 +287,17 @@ async function executePrepared(prepared, signal) {
 }
 
 async function executeCall(call, defaultCwd, signal) {
-  return executePrepared(prepareCall(call, defaultCwd), signal);
+  try {
+    return await executePrepared(prepareCall(call, defaultCwd), signal);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      content: [{ type: "text", text: message }],
+      details: {},
+      isError: true,
+      terminate: false,
+    };
+  }
 }
 
 function requiredString(payload, key) {
@@ -555,7 +565,7 @@ async function executeOperation(operation, payload, signal) {
         const item = {
           id: String(call?.call_id ?? call?.callId ?? call?.id ?? ""),
           name: String(call?.tool_id ?? call?.toolId ?? call?.name ?? ""),
-          arguments: call?.arguments ?? {},
+          arguments: call?.arguments !== undefined ? call.arguments : {},
           error: message,
         };
         errors.push(message);

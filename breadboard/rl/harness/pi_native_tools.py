@@ -91,12 +91,11 @@ def execute_native_tool(
     call_id: str = "",
 ) -> dict[str, Any]:
     """Execute one source-derived Pi tool through the Node worker."""
-    if not isinstance(arguments, Mapping):
-        arguments = {}
     result = _run_worker(
         {
+            "operation": "execute",
             "tool_id": tool_id,
-            "arguments": dict(arguments),
+            "arguments": arguments,
             "cwd": str(Path(cwd).resolve()),
             "call_id": call_id,
         },
@@ -115,7 +114,7 @@ def dispatch_native_tools(
     normalized = [
         {
             "tool_id": str(call.get("name", call.get("tool_id", ""))),
-            "arguments": dict(call.get("arguments", {})) if isinstance(call.get("arguments", {}), Mapping) else {},
+            "arguments": call.get("arguments"),
             "call_id": str(call.get("id", call.get("call_id", ""))),
         }
         for call in calls

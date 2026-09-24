@@ -294,39 +294,48 @@ def _apply_request_limit_cause(
     request_cap: int | None,
     counts: _RuleCounts,
 ) -> dict[str, Any]:
-    if request_cap is None or trace.get("request_count") != request_cap:
+    if not isinstance(request_cap, int) or request_cap <= 0:
         return termination
-    qualifies = termination.get("kind") == "RequestLimitExceeded" and trace.get("role") == "replay"
-    if trace.get("role") == "supplier":
-        raw_messages = trace.get("messages")
-        last_assistant = (
-            next(
-                (
-                    item
-                    for item in reversed(raw_messages)
-                    if isinstance(item, Mapping) and item.get("role") == "assistant"
-                ),
-                None,
-            )
-            if isinstance(raw_messages, list)
-            else None
+    request_count = trace.get("request_count")
+    if not isinstance(request_count, int) or request_count != request_cap:
+        return termination
+    stream_fn_issued = trace.get("stream_fn_issued")
+    if not isinstance(stream_fn_issued, int) or stream_fn_issued != request_cap + 1:
+        return termination
+
+    raw_messages = trace.get("messages")
+    if not isinstance(raw_messages, list) or not raw_messages:
+        return termination
+    terminal_message = raw_messages[-1]
+    if not isinstance(terminal_message, Mapping):
+        return termination
+    if terminal_message.get("role") != "assistant":
+        return termination
+    terminal_stop = terminal_message.get("stopReason", terminal_message.get("stop_reason"))
+    if terminal_stop != "error":
+        return termination
+    if termination.get("native_stop_reason") != "error":
+        return termination
+    if _content_blocks(terminal_message) != [{"type": "text", "text": ""}]:
+        return termination
+
+    role = trace.get("role")
+    qualifies = False
+    if role == "supplier":
+        raw_error = terminal_message.get("errorMessage")
+        qualifies = (
+            isinstance(raw_error, str)
+            and raw_error.startswith("PI_CAPTURE_REQUEST_LIMIT:")
         )
-        raw_stop = (
-            last_assistant.get("stopReason", last_assistant.get("stop_reason"))
-            if isinstance(last_assistant, Mapping)
-            else None
-        )
-        raw_error = last_assistant.get("errorMessage") if isinstance(last_assistant, Mapping) else None
-        qualifies = raw_stop == "error" and isinstance(raw_error, str) and raw_error.startswith(
-            "PI_CAPTURE_REQUEST_LIMIT:"
-        )
+    elif role == "replay":
+        qualifies = termination.get("kind") in {"RequestLimitExceeded", "error"}
     if not qualifies:
         return termination
+
     normalized = dict(termination)
     normalized["kind"] = "request_limit"
     counts.add("request_limit_cause")
     return normalized
-
 
 
 def _normalize_effects(

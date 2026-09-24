@@ -13,7 +13,9 @@ from conformance.comparators.pi_coding_agent_0_73_1 import (
     project_bb_trace,
     project_supplier_case,
 )
-
+from breadboard.rl.harness.pi_native_tools import dispatch_native_tools
+from breadboard.rl.harness.runners.pi_semantics import PiSemanticsState
+from breadboard_engine.provider.native_response import NativeProviderResponse, NativeToolCall
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SUPPLIER_CASE = REPO_ROOT / "tests" / "e4_parity" / "fixtures" / "pi_0_73_1_supplier_case"
@@ -67,8 +69,7 @@ def _inverse_runtime_values(value):
     return value
 
 
-def _bb_trace_from_packet() -> dict:
-    trace, requests = _packet_trace_and_requests()
+def _bb_requests(requests: list[dict]) -> list[dict]:
     config = json.loads(NATIVE_CONFIG.read_text(encoding="utf-8"))
     advertisement = config["advertisement"]
     narrowed_read_description = advertisement["tools"]["read"]["description"]
@@ -86,13 +87,17 @@ def _bb_trace_from_packet() -> dict:
                     assert message["content"].count(exact) == 1
                     message["content"] = message["content"].replace(exact, "", 1)
         bb_requests.append(request)
+    return bb_requests
+
+
+def _bb_trace_from_packet() -> dict:
+    trace, requests = _packet_trace_and_requests()
     return {
         **trace,
         "role": "replay",
-        "requests": bb_requests,
+        "requests": _bb_requests(requests),
         "runtime_inputs": dict(BB_RUNTIME_INPUTS),
     }
-
 
 def _report(bb_trace: dict) -> dict:
     return PiCodingAgent0731Comparator()({"capture": {"case_dir": str(SUPPLIER_CASE)}, "replay": bb_trace})
@@ -105,8 +110,9 @@ def _request_limit_case(tmp_path: Path) -> tuple[Path, dict]:
     last_assistant = next(message for message in reversed(trace["messages"]) if message.get("role") == "assistant")
     last_assistant["stopReason"] = "error"
     last_assistant["errorMessage"] = "PI_CAPTURE_REQUEST_LIMIT: eight model requests issued"
+    last_assistant["content"] = [{"type": "text", "text": ""}]
     case = tmp_path / "request-limit-case"
-    (case / "receiver").mkdir(parents=True)
+    (case / "receiver").mkdir(parents=True, exist_ok=True)
     (case / "trace.json").write_text(json.dumps(trace), encoding="utf-8")
     (case / "scenario.json").write_text(json.dumps({"steps": [{} for _ in requests]}), encoding="utf-8")
     (case / "receiver" / "http-transcript.jsonl").write_text(
@@ -116,21 +122,63 @@ def _request_limit_case(tmp_path: Path) -> tuple[Path, dict]:
     return case, trace
 
 
-def _request_limit_bb_trace(case: Path, supplier_trace: dict) -> dict:
+def _replay_request_limit_bb_trace(case: Path, supplier_trace: dict) -> dict:
+    requests = [
+        json.loads(line)["body"]
+        for line in (case / "receiver" / "http-transcript.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    bb_requests = _bb_requests(requests)
+    work_dir = case / "work"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    task = supplier_trace.get("task", "execute task")
+    state = PiSemanticsState(
+        task=task,
+        request_cap=len(requests),
+        model_id="gpt-4o-mini",
+        provider="openai",
+        api="openai-completions",
+    )
+    assistant_messages = [
+        msg for msg in supplier_trace.get("messages", [])
+        if msg.get("role") == "assistant"
+    ]
+    for i in range(len(requests)):
+        msg = assistant_messages[i]
+        tool_calls = []
+        for b in msg.get("content", []):
+            if b.get("type") == "toolCall":
+                tool_calls.append(
+                    NativeToolCall(b["id"], b["name"], json.dumps(b.get("arguments", {})))
+                )
+        finish = "tool_calls" if tool_calls else msg.get("stopReason", "stop")
+        resp = NativeProviderResponse(
+            "binding", "request", "response", "gpt-4o-mini", None, finish, tuple(tool_calls)
+        )
+        assert state.begin_query() is None
+        prep = state.prepare_response(resp)
+        if prep.calls:
+            raw = dispatch_native_tools(
+                [{"id": c.id, "name": c.name, "arguments": c.arguments} for c in prep.calls],
+                cwd=work_dir,
+            )
+            state.commit_tool_results(prep.calls, raw)
+
+    terminal = state.begin_query()
+    assert terminal is not None
+    assert state.exit_status == "RequestLimitExceeded"
+    assert state.stream_fn_issued == len(requests) + 1
+
     expected = project_supplier_case(case)
-    return {
-        **supplier_trace,
-        "role": "replay",
-        "requests": expected["requests"],
-        "effects": expected["effects"],
-        "runtime_inputs": dict(BB_RUNTIME_INPUTS),
-        "termination": {"kind": "RequestLimitExceeded", "native_stop_reason": "error"},
-    }
+    return state.to_trace(
+        requests=bb_requests,
+        runtime_inputs=BB_RUNTIME_INPUTS,
+        effects=expected["effects"],
+    )
 
 
 def test_request_limit_cause_matches_real_shaped_pair(tmp_path: Path) -> None:
     case, supplier_trace = _request_limit_case(tmp_path)
-    bb_trace = _request_limit_bb_trace(case, supplier_trace)
+    bb_trace = _replay_request_limit_bb_trace(case, supplier_trace)
     report = PiCodingAgent0731Comparator()(
         {"capture": {"case_dir": str(case)}, "replay": bb_trace}
     )
@@ -143,7 +191,7 @@ def test_request_limit_cause_matches_real_shaped_pair(tmp_path: Path) -> None:
 
 def test_request_limit_cause_requires_declared_count(tmp_path: Path) -> None:
     case, supplier_trace = _request_limit_case(tmp_path)
-    bb_trace = _request_limit_bb_trace(case, supplier_trace)
+    bb_trace = _replay_request_limit_bb_trace(case, supplier_trace)
     bb_trace["request_count"] -= 1
     report = PiCodingAgent0731Comparator()(
         {"capture": {"case_dir": str(case)}, "replay": bb_trace}
@@ -155,12 +203,28 @@ def test_request_limit_cause_requires_supplier_literal(tmp_path: Path) -> None:
     case, supplier_trace = _request_limit_case(tmp_path)
     supplier_trace["messages"][-1]["errorMessage"] = "different failure"
     case.joinpath("trace.json").write_text(json.dumps(supplier_trace), encoding="utf-8")
-    bb_trace = _request_limit_bb_trace(case, supplier_trace)
+    bb_trace = _replay_request_limit_bb_trace(case, supplier_trace)
     report = PiCodingAgent0731Comparator()(
         {"capture": {"case_dir": str(case)}, "replay": bb_trace}
     )
     assert report["passed"] is False
 
+
+def test_request_limit_counterfeit_missing_refused_attempt_fails(tmp_path: Path) -> None:
+    case, supplier_trace = _request_limit_case(tmp_path)
+    bb_trace = _replay_request_limit_bb_trace(case, supplier_trace)
+    counterfeit = deepcopy(bb_trace)
+    counterfeit["messages"] = [
+        msg for msg in counterfeit["messages"]
+        if not (isinstance(msg, dict) and msg.get("role") == "assistant" and msg.get("stopReason") == "error")
+    ]
+    counterfeit["stream_fn_issued"] = len(case.joinpath("receiver", "http-transcript.jsonl").read_text(encoding="utf-8").splitlines())
+    counterfeit["request_count"] = counterfeit["stream_fn_issued"]
+    counterfeit["termination"] = {"kind": "RequestLimitExceeded", "native_stop_reason": "error"}
+    report = PiCodingAgent0731Comparator()(
+        {"capture": {"case_dir": str(case)}, "replay": counterfeit}
+    )
+    assert report["passed"] is False
 
 def test_real_packet_inverse_runtime_and_advertisement_rules_match() -> None:
     """A BB-shaped trace made from a real packet is a comparator unit fixture."""
