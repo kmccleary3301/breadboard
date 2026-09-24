@@ -3,7 +3,7 @@
   "targets": {
     "hermes-agent@2026.9.11": {
       "descriptor": "hermes_agent/2026.9.11/target.json",
-      "sha256": "a357a3aeaa2e694a192e1d5bc4e0a4bbfe8ddca264ad3d9f52b929d025371177"
+      "sha256": "cf207f06ecbb1ff1219f44b9824c33b43d9a58307899fa465f03ee067436e6b6"
     },
     "mini-swe-agent@2.4.6": {
       "descriptor": "mini_swe_agent/2.4.6/target.json",

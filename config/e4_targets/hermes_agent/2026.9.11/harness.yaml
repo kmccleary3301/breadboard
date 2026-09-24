@@ -147,11 +147,13 @@ materialization:
   - path: prompts/captured-system.txt
     role: prompt
     required: true
-    source_ref: hermes-agent@939e45c91d751fadd94dcd1b873ac3cb44846213:agent/system_prompt.py; controlled producer request 0
+    source_ref: hermes-agent@939e45c91d751fadd94dcd1b873ac3cb44846213:agent/system_prompt.py;
+      controlled producer request 0
   - path: prompts/source-registry.json
     role: source
     required: true
-    source_ref: hermes-agent@939e45c91d751fadd94dcd1b873ac3cb44846213 pinned source archive
+    source_ref: hermes-agent@939e45c91d751fadd94dcd1b873ac3cb44846213 pinned source
+      archive
   - path: native-config.json
     role: runtime
     required: true
@@ -159,7 +161,8 @@ materialization:
   - path: tool-surface.json
     role: tool_surface
     required: true
-    source_ref: hermes-agent@939e45c91d751fadd94dcd1b873ac3cb44846213; HERMES_NATIVE_ASSEMBLY_RESULT_06.json request 0
+    source_ref: hermes-agent@939e45c91d751fadd94dcd1b873ac3cb44846213; HERMES_NATIVE_ASSEMBLY_RESULT_06.json
+      request 0
   - path: LICENSE.txt
     role: license
     required: true
