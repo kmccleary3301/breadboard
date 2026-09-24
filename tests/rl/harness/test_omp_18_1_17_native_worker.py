@@ -114,6 +114,17 @@ function splitImageQuestion(value) {
   return question ? value.slice(0, index) : value;
 }
 
+function extractUriScheme(value) {
+  const hierarchical = value.match(/^([a-z][a-z0-9+.-]*):\/\//i);
+  if (hierarchical) return hierarchical[1].toLowerCase();
+  const opaque = value.match(/^([a-z][a-z0-9+.-]*):(.+)$/is);
+  if (!opaque) return undefined;
+  const [, scheme, rest] = opaque;
+  if (scheme.length === 1 || scheme.includes(".")) return undefined;
+  if (/^(?:raw|conflicts|-?\d+(?:[-+]\d+)?(?:,\d+(?:[-+]\d+)?)?)(?::(?:raw|conflicts|-?\d+(?:[-+]\d+)?(?:,\d+(?:[-+]\d+)?)?))*$/i.test(rest)) return undefined;
+  return scheme.toLowerCase();
+}
+
 function matches(capability, value) {
   const route = policy[capability]?.route;
   if (!route) return false;
@@ -129,14 +140,18 @@ function classify(value) {
   candidate = splitImageQuestion(candidate);
   if (isReadableUrlPath(candidate)) return "url";
   if (pathTargetsSsh(candidate)) return "ssh";
-  const internal = candidate.match(/^([a-z][a-z0-9+.-]*):\/\//i)?.[1]?.toLowerCase();
+  const internal = extractUriScheme(candidate);
   if (internal) {
     const schemes = new Set((policy["internal-resource"]?.route?.schemes ?? []).map(item => item.toLowerCase()));
-    if (internal === "local" && schemes.has(internal)) {
-      const parsed = new URL(candidate);
-      if (parsed.pathname) candidate = decodeURIComponent(parsed.pathname);
-      else return "internal-resource";
-    } else if (schemes.has(internal)) {
+    if (schemes.has(internal)) {
+      if (internal === "local") {
+        const parsed = new URL(candidate);
+        if (parsed.pathname) candidate = decodeURIComponent(parsed.pathname);
+        else return "internal-resource";
+      } else {
+        return "internal-resource";
+      }
+    } else if (!["file", "http", "https", "ssh"].includes(internal) && schemes.has("mcp")) {
       return "internal-resource";
     }
   }
@@ -207,6 +222,10 @@ def test_denial_happens_before_native_resolution() -> None:
         ("file:///tmp/x%2Fname.sqlite", "sqlite"),
         ("@agent://foo", "internal-resource"),
         ("@AGENT://foo", "internal-resource"),
+        ("custom://resource", "internal-resource"),
+        ("CUSTOM:opaque", "internal-resource"),
+        ("urn:example:document", "internal-resource"),
+        ("foo.ts:50", None),
     ],
 )
 def test_route_matchers_follow_source_path_forms(value: str, expected: str | None) -> None:
@@ -265,6 +284,10 @@ def test_route_classification_differential_matches_pinned_bun(tmp_path: Path) ->
         "skill://item",
         "vault://item",
         "xd://item",
+        "custom://resource",
+        "CUSTOM:opaque",
+        "urn:example:document",
+        "foo.ts:50",
         "ordinary.txt",
         "state.sqlite.backup",
     ]

@@ -203,6 +203,26 @@ def _route_extension(candidate: str, extensions: list[Any]) -> bool:
         for extension in extensions
     )
 
+def _extract_uri_scheme(value: str) -> str | None:
+    """Mirror internal-urls/parse.ts extractUriScheme."""
+    hierarchical = re.match(r"^([a-z][a-z0-9+.-]*):\/\/", value, re.I)
+    if hierarchical:
+        return hierarchical.group(1).lower()
+    opaque = re.match(r"^([a-z][a-z0-9+.-]*):(.+)$", value, re.I | re.S)
+    if not opaque:
+        return None
+    scheme, rest = opaque.groups()
+    if len(scheme) == 1 or "." in scheme:
+        return None
+    if re.fullmatch(
+        r"(?:raw|conflicts|-?\d+(?:[-+]\d+)?(?:,\d+(?:[-+]\d+)?)*)"
+        r"(?::(?:raw|conflicts|-?\d+(?:[-+]\d+)?(?:,\d+(?:[-+]\d+)?)*))*",
+        rest,
+        re.I,
+    ):
+        return None
+    return scheme.lower()
+
 
 def _ordered_read_candidate(value: str) -> str:
     """Apply the pinned Linux read.ts pre-routing normalization in order."""
@@ -260,28 +280,36 @@ def classify_capability(
     if entry_matches("ssh", candidate):
         return "ssh"
 
-    # read.ts:1318-1368 routes internal URLs; local:// files continue through
-    # archive/SQLite/PDF/image/document routing after resolving to a file.
-    internal_match = re.match(r"^([a-z][a-z0-9+.-]*):\/\/", candidate, re.I)
-    if internal_match:
-        scheme = internal_match.group(1).lower()
+    # read.ts:1318-1368 asks InternalUrlRouter.canResolve after the URL
+    # parser. Registered schemes use the static policy set; unknown schemes
+    # fall through to the pinned MCP resource handler when it is registered.
+    internal = _extract_uri_scheme(candidate)
+    if internal:
         internal_entry = policy.get("internal-resource")
         internal_schemes = (
-            internal_entry.get("route", {}).get("schemes", [])
+            {
+                str(item).lower()
+                for item in internal_entry.get("route", {}).get("schemes", [])
+            }
             if isinstance(internal_entry, Mapping)
-            else []
+            else set()
         )
-        if scheme == "local" and scheme in {str(item).lower() for item in internal_schemes}:
-            local_path = urlsplit(candidate).path
-            if local_path:
-                candidate = unquote(local_path)
+        if internal in internal_schemes:
+            if internal == "local":
+                local_path = urlsplit(candidate).path
+                if local_path:
+                    candidate = unquote(local_path)
+                else:
+                    return "internal-resource"
             else:
                 return "internal-resource"
-        elif scheme in {str(item).lower() for item in internal_schemes}:
+        elif internal not in {"file", "http", "https", "ssh"} and "mcp" in internal_schemes:
             return "internal-resource"
 
     # path-utils.ts:177-181 resolveReadPath performs the same Linux expansion
     # before filesystem route resolution (Windows-only branches are no-ops).
+    if re.match(r"^file:\/\/", candidate, re.I):
+        return None
     candidate = _expand_linux_path(candidate)
 
     # read.ts:1380-1412 preserves literal precedence, then checks these
