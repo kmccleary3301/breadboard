@@ -10,12 +10,16 @@ from conformance.comparators.openhands_sdk import (
     compare as compare_openhands,
     project_supplier_case,
 )
+from conformance.comparators.openclaw_2026_9_4 import (
+    project_supplier_case as project_openclaw_supplier_case,
+)
 from scripts.validate_e4_c4_chain import _diff_comparator_reports
 
 ROOT = Path(__file__).resolve().parents[2]
 INVENTORY_PATH = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"
 REGISTRY_PATH = ROOT / "conformance" / "comparators" / "registry.json"
 OPENHANDS_CASE = ROOT / "tests" / "e4_parity" / "fixtures" / "openhands_sdk" / "OH-01-normal-file-effect"
+OPENCLAW_CASE = ROOT / "tests" / "e4_parity" / "fixtures" / "openclaw_packet_640"
 
 def _load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -178,6 +182,12 @@ def _registered_comparator_input(
             "supplier_case": str(OPENHANDS_CASE),
             "bb_trace": _openhands_measured_bb_trace(),
         }
+    if comparator_id == "openclaw_2026_9_4_trace_v1":
+        return {
+            "capture": str(OPENCLAW_CASE),
+            "replay": project_openclaw_supplier_case(OPENCLAW_CASE),
+            "scope": {},
+        }
     if comparator_id == "semantic_replay_v1":
         return {
             "capture": {"captured_artifacts": []},
@@ -243,14 +253,26 @@ def test_each_registered_comparator_entrypoint_conforms_to_protocol(tmp_path: Pa
         entrypoint = entry["entrypoint"]
         module = importlib.import_module(entrypoint["module"])
         comparator = getattr(module, entrypoint["callable"])
-        report = comparator(
-            _registered_comparator_input(entry["comparator_id"], comparator_path, tmp_path)
+        comparator_input = _registered_comparator_input(
+            entry["comparator_id"], comparator_path, tmp_path
         )
+        report = comparator(comparator_input)
         assert isinstance(report, dict)
         report_schema_version = report.get("schema_version", report.get("report_schema_version"))
         assert report_schema_version == entry["report_schema_version"]
         assert isinstance(report["assertions"], list) and report["assertions"]
         assert {"assertion_id", "status", "observed", "expected"} <= set(report["assertions"][0])
+        if entry["comparator_id"] == "openclaw_2026_9_4_trace_v1":
+            assert report["ok"] is True
+            tampered = json.loads(json.dumps(comparator_input["replay"]))
+            tampered["effects"]["marker.txt"] = None
+            rejected = comparator({**comparator_input, "replay": tampered})
+            assert rejected["ok"] is False
+            assert any(
+                assertion["assertion_id"] == "effects_equal"
+                and assertion["status"] == "failed"
+                for assertion in rejected["assertions"]
+            )
 
 
 def test_rejected_openhands_bb_trace_reports_error() -> None:
