@@ -11,7 +11,7 @@
     },
     "openhands-sdk@1.47.0": {
       "descriptor": "openhands_sdk/1.47.0/target.json",
-      "sha256": "6a0631b9a9c4ce6284eb855bd4c06713554893f6f13dd9e4849a06b39c3b5e27"
+      "sha256": "8df535e010d344658393836920e031c43762e43af34d28b9c3cb3012e4c19910"
     },
     "pi@0.57.1": {
       "descriptor": "pi/0.57.1/target.json",

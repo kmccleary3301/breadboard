@@ -353,3 +353,38 @@ print(json.dumps(body))
     worker_norm = json.loads(json.dumps(worker_body).replace(str(ws), "<WORKSPACE>"))
     worker_norm["prompt_cache_key"] = supplier_norm.get("prompt_cache_key")
     assert worker_norm == supplier_norm
+
+
+def test_sealed_openhands_versions_match_supplier_requirements_lock() -> None:
+    """Verify that sealed native-config versions match the supplier's pinned requirements.lock exactly.
+
+    Cites supplier rerun2 requirements.lock:90,104 for litellm and openai, reading the lock file
+    dynamically rather than comparing against hardcoded literals.
+    """
+    import json
+    from pathlib import Path
+    from breadboard_engine.e4_targets import load_e4_target
+
+    lock_candidates = [
+        Path("/Users/kylemccleary/projects/breadboard/docs_tmp/bb_direction_assessment/engine_pr_handoff_20260827/e4_admission_20260914T221653Z/do2-20260923/openhands/packet/openhands-supplier-capture-packet-rerun2/requirements.lock"),
+        Path(__file__).resolve().parents[3] / "openhands/packet/openhands-supplier-capture-packet-rerun2/requirements.lock",
+    ]
+    lock_path = next((p for p in lock_candidates if p.is_file()), None)
+    if lock_path is None:
+        pytest.skip("supplier requirements.lock not available")
+
+    locked_versions = {}
+    for line in lock_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "==" in line:
+            pkg, _, ver = line.partition("==")
+            locked_versions[pkg.strip().lower()] = ver.strip()
+
+    target = load_e4_target("openhands-sdk@1.47.0")
+    native_config = json.loads(target.read_asset_text("native-config.json"))
+    sealed_versions = native_config["versions"]
+
+    assert sealed_versions["litellm"] == locked_versions["litellm"]
+    assert sealed_versions["openai"] == locked_versions["openai"]

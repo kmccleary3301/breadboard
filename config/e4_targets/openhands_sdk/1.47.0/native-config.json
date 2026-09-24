@@ -4,8 +4,8 @@
   "versions": {
     "openhands-sdk": "1.47.0",
     "openhands-tools": "1.47.0",
-    "litellm": "1.93.0",
-    "openai": "2.33.0"
+    "litellm": "1.102.1",
+    "openai": "2.26.0"
   },
   "agent": {
     "tools": [
