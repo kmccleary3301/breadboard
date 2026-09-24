@@ -81,8 +81,7 @@ def _omp_scripted_server(
         yield f"http://127.0.0.1:{server.server_port}/v1", requests
     finally:
         server.shutdown()
-        server.server_close()
-        print("OMP_E2E_REQUESTS", json.dumps(requests, sort_keys=True))
+        print("OMP_E2E_REQUEST_COUNT", len(requests))
         thread.join(timeout=3)
         assert not thread.is_alive()
 
