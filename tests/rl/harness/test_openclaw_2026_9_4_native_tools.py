@@ -63,6 +63,44 @@ def test_poll_replays_unacknowledged_output_until_history_commit(tmp_path: Path)
         tools.scope.cleanup()
 
 
+def test_parallel_native_batch_commits_source_order_with_observed_completion(tmp_path: Path) -> None:
+    tools = OpenClawNativeTools(tmp_path)
+    try:
+        tools._worker._request({
+            "phase": "prepare_tools",
+            "calls": [
+                {"id": "slow", "name": "exec", "arguments": {"command": "sleep 0.7; printf SLOW"}},
+                {"id": "fast", "name": "exec", "arguments": {"command": "printf FAST"}},
+            ],
+        })
+        results = tools._worker._request({"phase": "execute_batch"})["results"]
+        assert [item["id"] for item in results] == ["slow", "fast"]
+        assert [item["isError"] for item in results] == [False, False]
+        assert [item["completion_index"] for item in results] == [1, 0]
+        assert "SLOW" in results[0]["content"][0]["text"]
+        assert "FAST" in results[1]["content"][0]["text"]
+    finally:
+        tools.scope.cleanup()
+
+
+def test_parallel_exec_reservations_enforce_live_process_cap(tmp_path: Path) -> None:
+    tools = OpenClawNativeTools(tmp_path)
+    try:
+        tools._worker._request({
+            "phase": "prepare_tools",
+            "calls": [
+                {"id": str(index), "name": "exec", "arguments": {"command": "sleep 0.4; printf DONE"}}
+                for index in range(5)
+            ],
+        })
+        results = tools._worker._request({"phase": "execute_batch"})["results"]
+        assert [item["isError"] for item in results] == [False] * 4 + [True]
+        assert results[4]["details"]["status"] == "rejected"
+        assert sorted(item["completion_index"] for item in results) == list(range(5))
+    finally:
+        tools.scope.cleanup()
+
+
 def test_exec_timeout_admission_rejects_over_thirty_seconds(tmp_path: Path) -> None:
     tools = OpenClawNativeTools(tmp_path)
     try:

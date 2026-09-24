@@ -372,51 +372,67 @@ async function cleanupScope() {
 
 function deliveryId() { return `delivery_${crypto.randomUUID()}`; }
 
+async function liveProcessCount() {
+  const listed = await tools.get("process").execute("worker-live-limit", { action: "list" });
+  const sessions = Array.isArray(listed?.details?.sessions) ? listed.details.sessions : [];
+  return sessions.filter((session) => session?.status === "running" || session?.status === "backgrounded").length;
+}
+
 async function executePrepared() {
   if (!prepared) throw new Error("execute_batch requires prepare_tools");
-  const results = [];
-  for (let index = 0; index < prepared.length; index += 1) {
-    const call = prepared[index];
+  const calls = prepared;
+  const context = preparedContext;
+  const sequential = calls.some((call) => tools.get(call.name)?.executionMode === "sequential");
+  const listed = calls.some((call) => call.name === "exec" && !call.error)
+    ? await tools.get("process").execute("worker-live-limit", { action: "list" })
+    : null;
+  const sessions = Array.isArray(listed?.details?.sessions) ? listed.details.sessions : [];
+  const live = sessions.filter((session) => session?.status === "running" || session?.status === "backgrounded").length;
+  let reserved = 0;
+  let completionIndex = 0;
+  const run = async (call) => {
     if (call.error) {
-      results.push({
+      return {
         id: call.id,
-        completion_index: index,
+        completion_index: completionIndex++,
         content: [{ type: "text", text: call.error }],
         details: call.capability_denial ? { capability_denial: call.capability_denial } : {},
         isError: true,
-      });
-      continue;
+      };
     }
     const tool = tools.get(call.name);
     if (!tool) {
-      results.push({ id: call.id, completion_index: index, content: [{ type: "text", text: `undeclared tool ${call.name}` }], details: {}, isError: true });
-      continue;
+      return { id: call.id, completion_index: completionIndex++, content: [{ type: "text", text: `undeclared tool ${call.name}` }], details: {}, isError: true };
     }
+    if (call.name === "exec" && (sequential ? await liveProcessCount() : live + reserved) >= MAX_LIVE_PROCESSES) {
+      return { id: call.id, completion_index: completionIndex++, content: [{ type: "text", text: `OpenClaw live process cap exceeded (${MAX_LIVE_PROCESSES})` }], details: { status: "rejected", maxLiveProcesses: MAX_LIVE_PROCESSES }, isError: true };
+    }
+    if (call.name === "exec") reserved += 1;
     try {
-      if (call.name === "exec") {
-        const listed = await tools.get("process").execute("worker-live-limit", { action: "list" });
-        const sessions = Array.isArray(listed?.details?.sessions) ? listed.details.sessions : [];
-        const live = sessions.filter((session) => session?.status === "running" || session?.status === "backgrounded").length;
-        if (live >= MAX_LIVE_PROCESSES) {
-          results.push({ id: call.id, completion_index: index, content: [{ type: "text", text: `OpenClaw live process cap exceeded (${MAX_LIVE_PROCESSES})` }], details: { status: "rejected", maxLiveProcesses: MAX_LIVE_PROCESSES }, isError: true });
-          continue;
-        }
-      }
-      const result = await sourceExecutionContext.n({ assistantMessage: preparedContext.assistantMessage }, () => tool.execute(call.id, call.arguments));
+      const result = await sourceExecutionContext.n({ assistantMessage: context.assistantMessage }, () => tool.execute(call.id, call.arguments));
       const details = result?.details && typeof result.details === "object" ? result.details : {};
-      const status = details.status;
-      const item = { id: call.id, completion_index: index, content: result?.content ?? [], details, isError: Boolean(result?.isError) };
+      const item = { id: call.id, completion_index: completionIndex++, content: result?.content ?? [], details, isError: Boolean(result?.isError) };
       if (call.name === "process" && call.arguments?.action === "poll" && details.sessionId) {
         const id = deliveryId();
         pending.set(id, { sessionId: String(details.sessionId), result });
         item.delivery_id = id;
       }
-      results.push(item);
+      return item;
     } catch (error) {
-      results.push({ id: call.id, completion_index: index, content: [{ type: "text", text: text(error?.message || error) }], details: {}, isError: true });
+      return { id: call.id, completion_index: completionIndex++, content: [{ type: "text", text: text(error?.message || error) }], details: {}, isError: true };
+    } finally {
+      if (call.name === "exec" && sequential) reserved -= 1;
     }
+  };
+  let results;
+  if (sequential) {
+    results = [];
+    for (const call of calls) results.push(await run(call));
+  } else {
+    results = await Promise.all(calls.map(run));
   }
   prepared = null;
+  preparedContext = null;
   return { schema_version: PROTOCOL, kind: "tool_results", results };
 }
 
