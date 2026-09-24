@@ -93,6 +93,8 @@ Scope follows the issue-33 ruling of 2026-09-24. Canonical JSON rejects integers
 | `breadboard/rl/harness/project_quota.py` `measure()` (440) | Device/inode integers are dropped by the sole consumer (`sandbox.py` 4590-4625 reads authority, quota and owner only); `materialization.py` 1434 discards the result; `composition.py` delegates. |
 | `breadboard/rl/harness/private_docker_daemon.py` | `PinnedFileObservation`, `PrivateContainerdObservation` and the binding are in-memory or unsigned IPC; they reach persistence only through the converted supervisor journal. |
 | `breadboard/rl/harness/mount_namespace_broker.py` IPC, progress and error details | Unsigned, unpersisted `json.dumps` IPC between parent and broker child. |
+| `breadboard/rl/harness/lease_envelope.py` `ContainmentReceipt` namespaces (from main `0d7e80b9`) | Reaches `canonical_json_bytes` through the signed containment receipt, but the values are nsfs namespace numbers read from `/proc/self/ns/*` links. The kernel stores them as `unsigned int inum` in `struct ns_common`, so they are always below 2^32 and fall inside the exact binary64 domain. No conversion; this is not an arbitrary-filesystem `st_ino`. Its `source_identity`/`target_identity` tuples are in-memory comparisons. |
+| `breadboard/rl/harness/sandbox.py` `root_device` descriptor checks (from main `0d7e80b9`) | In-memory `st_dev` equality against the root descriptor; never serialized. |
 
 ### Out of scope, follow-up `issue-33b`
 
