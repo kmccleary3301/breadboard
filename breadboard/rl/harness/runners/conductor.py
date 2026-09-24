@@ -2396,31 +2396,131 @@ class _ConductorSession:
                     else RunnerTermination.ASSISTANT_COMPLETE
                 )
         await self._checkpoint("after_loop", turn=len(self._turns))
-        closed = await close_once()
-        cleanup = closed["cleanup"]
+        classified: dict[str, Any] | None = None
+        if profile.classify_result_phase is not None and hasattr(state, "to_classification_payload"):
+            payload = state.to_classification_payload(
+                termination=termination,
+                model_config=thaw_json(self._binding.source_model_config),
+                session_id=self._open_request.episode_id,
+            )
+            raw_classified = await phase(
+                profile.classify_result_phase,
+                payload,
+            )
+            if (
+                not isinstance(raw_classified, Mapping)
+                or raw_classified.get("kind") != "classified_result"
+                or not isinstance(raw_classified.get("envelope"), Mapping)
+            ):
+                raise RunnerProtocolError(
+                    "native stream classification is malformed",
+                    code="native_response_invalid",
+                    **self._context(),
+                )
+            classified = thaw_json(raw_classified)
+
+        cleanup_exception: BaseException | None = None
+        closed: Mapping[str, Any] = {}
+        try:
+            closed = await close_once()
+        except BaseException as exc:
+            cleanup_exception = exc
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+
+        cleanup = closed.get("cleanup") if isinstance(closed, Mapping) else None
         effects = await tools.measure_workspace_effects()
         if not isinstance(effects, Mapping):
             raise RunnerProtocolError(
                 "native workspace effects are malformed",
                 code="native_response_invalid", **self._context(),
             )
+
+        final_envelope: dict[str, Any] | None = None
+        if classified is not None:
+            pre_cleanup_envelope = dict(classified["envelope"])
+            pre_cleanup_exit_code = int(
+                classified.get("exit_code", 0 if pre_cleanup_envelope.get("ok") else 1)
+            )
+            cleanup_ok = (
+                cleanup_exception is None
+                and isinstance(cleanup, Mapping)
+                and cleanup.get("all_dead") is True
+                and self._native_cleanup_outcome.all_dead is True
+                and self._native_cleanup_outcome.error_code is None
+            )
+            if not cleanup_ok:
+                cleanup_msg = (
+                    str(cleanup_exception)
+                    if cleanup_exception is not None
+                    else "native process scope did not reach independently observed death"
+                )
+                err_msg = (
+                    f"Agent runtime clean up did not settle; state ownership retained until this process exits: {cleanup_msg}"
+                )
+                if pre_cleanup_envelope.get("ok"):
+                    final_envelope = {
+                        "ok": False,
+                        "status": "error",
+                        "final": "",
+                        "payloads": [],
+                        "model": None,
+                        "provider": None,
+                        "sessionId": pre_cleanup_envelope.get("sessionId", ""),
+                        "error": {
+                            "message": err_msg,
+                            "kind": "exception",
+                        },
+                        "exit_code": 1,
+                    }
+                else:
+                    final_envelope = dict(pre_cleanup_envelope)
+                    final_envelope["exit_code"] = pre_cleanup_exit_code
+                    final_envelope["cleanup_error"] = {
+                        "message": err_msg,
+                        "kind": "exception",
+                    }
+            else:
+                final_envelope = dict(pre_cleanup_envelope)
+                final_envelope["exit_code"] = pre_cleanup_exit_code
+
         await self._checkpoint("before_commit", turn=len(self._turns))
         await self._commit_termination(termination)
-        replay_trace = state.to_trace(
-            requests=trace_requests,
-            runtime_inputs=runtime_inputs,
-            effects=effects,
-        )
+        try:
+            replay_trace = state.to_trace(
+                requests=trace_requests,
+                runtime_inputs=runtime_inputs,
+                effects=effects,
+                classification=classified,
+                final_envelope=final_envelope,
+            )
+        except TypeError:
+            replay_trace = state.to_trace(
+                requests=trace_requests,
+                runtime_inputs=runtime_inputs,
+                effects=effects,
+            )
+            if classified is not None:
+                replay_trace["classification"] = dict(classified)
+            if final_envelope is not None:
+                replay_trace["final_envelope"] = dict(final_envelope)
+                replay_trace["envelope"] = dict(final_envelope)
+        response: dict[str, Any] = {
+            "source_id": consumer_id,
+            "replay_trace": replay_trace,
+            "bootstrap": bootstrap,
+            "cleanup": cleanup,
+        }
+        if classified is not None:
+            response["classification"] = classified
+        if final_envelope is not None:
+            response["final_envelope"] = final_envelope
+            response["envelope"] = final_envelope
         return RunnerResult(
             episode_id=self._open_request.episode_id,
             effective_plan_digest=self._open_request.effective_plan_digest,
             original_request={"task_input": request.task_input, "context": request.context},
-            response={
-                "source_id": consumer_id,
-                "replay_trace": replay_trace,
-                "bootstrap": bootstrap,
-                "cleanup": cleanup,
-            },
+            response=response,
             termination=termination, turn_count=len(self._turns),
             turns=tuple(self._turns), events=tuple(self._events),
         )

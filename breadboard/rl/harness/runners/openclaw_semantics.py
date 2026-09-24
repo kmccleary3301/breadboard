@@ -548,12 +548,124 @@ class OpenClawSemanticsState:
         self.terminal_kind = self.terminal_kind or kind
         return self.to_trace()
 
+    def to_classification_payload(
+        self,
+        *,
+        termination: Any = None,
+        model_config: Any = None,
+        session_id: str = "",
+    ) -> dict[str, Any]:
+        """Produce the terminal state payload for the native worker's classify_result phase."""
+        is_timeout = (
+            self.terminal_kind == "episode_timeout"
+            or self.native_stop_reason == "timeout"
+            or (hasattr(termination, "name") and termination.name == "TIMEOUT")
+        )
+        is_budget = (
+            self.terminal_kind == "request_budget"
+            or self.native_stop_reason == "429"
+        )
+        is_error = (
+            self.stop_reason == "error"
+            or self.terminal_kind in {"provider_error", "request_budget"}
+            or (hasattr(termination, "name") and termination.name in {"LIMITS_EXCEEDED", "REPEATED_FORMAT_ERROR"})
+        )
+        stop_reason = (
+            "timeout"
+            if is_timeout
+            else ("error" if is_error else (self.native_stop_reason or self.stop_reason or "completed"))
+        )
+
+        payloads: list[dict[str, Any]] = []
+        last_assistant_text = ""
+        for message in self.history:
+            role = message.get("role")
+            if role == "assistant":
+                content = message.get("content")
+                if isinstance(content, str) and content:
+                    payloads.append({"text": content})
+                    last_assistant_text = content
+                reasoning = message.get("reasoning")
+                if isinstance(reasoning, str) and reasoning:
+                    payloads.append({"text": reasoning, "isReasoning": True})
+                commentary = message.get("commentary")
+                if isinstance(commentary, str) and commentary:
+                    payloads.append({"text": commentary, "isCommentary": True})
+            elif role == "tool":
+                if message.get("isError"):
+                    content = message.get("content", "")
+                    payloads.append({"text": str(content), "isError": True})
+
+        total_calls = 0
+        counts: dict[str, int] = {}
+        for message in self.history:
+            if message.get("role") == "assistant" and isinstance(message.get("tool_calls"), list):
+                for call in message["tool_calls"]:
+                    name = (
+                        call.get("function", {}).get("name")
+                        if isinstance(call.get("function"), Mapping)
+                        else call.get("name", "")
+                    )
+                    if name:
+                        total_calls += 1
+                        counts[name] = counts.get(name, 0) + 1
+        tool_summary = {"totalCalls": total_calls, "toolCounts": counts} if total_calls > 0 else None
+
+        usage: dict[str, Any] | None = None
+        for resp in reversed(self.raw_responses):
+            if isinstance(resp, Mapping) and "usage" in resp and isinstance(resp["usage"], Mapping):
+                u = resp["usage"]
+                usage = {
+                    "promptTokens": u.get("prompt_tokens", u.get("promptTokens", 0)),
+                    "completionTokens": u.get("completion_tokens", u.get("completionTokens", 0)),
+                    "totalTokens": u.get("total_tokens", u.get("totalTokens", 0)),
+                }
+                break
+
+        error_obj: dict[str, Any] | None = None
+        if is_timeout:
+            error_obj = {"message": "Agent run timed out", "kind": "timeout"}
+        elif is_budget:
+            error_obj = {"message": "bbe4 capture request cap", "kind": "agent_error"}
+        elif is_error:
+            error_obj = {"message": "Agent run failed", "kind": "agent_error"}
+
+        meta: dict[str, Any] = {
+            "durationMs": int((time.monotonic() - self.started_at) * 1000),
+            "stopReason": stop_reason,
+            "agentMeta": {
+                "model": model_config.get("id") if isinstance(model_config, Mapping) else None,
+                "provider": model_config.get("provider") if isinstance(model_config, Mapping) else None,
+                "sessionId": session_id or getattr(self, "session_id", ""),
+            },
+        }
+        if is_timeout:
+            meta["timeoutPhase"] = "action"
+        if error_obj is not None:
+            meta["error"] = error_obj
+        if last_assistant_text:
+            meta["finalAssistantVisibleText"] = last_assistant_text
+        if usage is not None:
+            meta["agentMeta"]["usage"] = usage
+        if tool_summary is not None:
+            meta["toolSummary"] = tool_summary
+
+        return {
+            "result": {
+                "payloads": payloads,
+                "meta": meta,
+            },
+            "fallback_exhausted": False,
+        }
+
     def to_trace(
         self,
         *,
         requests: Sequence[Mapping[str, Any]] | None = None,
         runtime_inputs: Mapping[str, Any] | None = None,
         effects: Mapping[str, Any] | None = None,
+        classification: Mapping[str, Any] | None = None,
+        final_envelope: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Return raw source facts for the profile-agnostic replay seam.
 
@@ -573,7 +685,7 @@ class OpenClawSemanticsState:
             "native_stop_reason": self.native_stop_reason,
         }
         messages = [dict(message) for message in self.history]
-        return {
+        trace: dict[str, Any] = {
             "schema_version": "bb.e4.openclaw-episode.v1",
             "source_commit": self.source_commit,
             "messages": messages,
@@ -592,7 +704,12 @@ class OpenClawSemanticsState:
             "stream_fn_issued": self.stream_fn_issued,
             "history": messages,
         }
-
+        if classification is not None:
+            trace["classification"] = dict(classification)
+        if final_envelope is not None:
+            trace["final_envelope"] = dict(final_envelope)
+            trace["envelope"] = dict(final_envelope)
+        return trace
     def prepare_request_history(self) -> list[dict[str, Any]]:
         return [
             {

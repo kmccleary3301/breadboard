@@ -417,6 +417,12 @@ def _canonicalize(trace: Mapping[str, Any]) -> dict[str, Any]:
         "termination": _normalize_declared(trace.get("termination", {}), declared, ("termination",)),
         "request_count": int(trace.get("request_count", 0)),
     }
+    if "classification" in trace:
+        canonical["classification"] = _normalize_declared(trace["classification"], declared, ("classification",))
+    if "envelope" in trace:
+        canonical["envelope"] = _normalize_declared(trace["envelope"], declared, ("envelope",))
+    elif "final_envelope" in trace:
+        canonical["envelope"] = _normalize_declared(trace["final_envelope"], declared, ("envelope",))
     if "normalizations" in trace:
         canonical["normalizations"] = trace["normalizations"]
     _validate_trace(canonical)
@@ -448,8 +454,15 @@ def project_supplier_case(case_dir: str | Path) -> dict[str, Any]:
         "request_count": len(requests),
         "normalizations": scenario.get("normalizations", {}),
     }
+    receipt = _load_json(root / "case-receipt.json", {})
+    if isinstance(receipt, Mapping):
+        if "classification" in receipt:
+            trace["classification"] = receipt["classification"]
+        if "envelope" in receipt:
+            trace["envelope"] = receipt["envelope"]
+        elif "final_envelope" in receipt:
+            trace["envelope"] = receipt["final_envelope"]
     return _canonicalize(trace)
-
 
 def _load_trace_input(trace: Any) -> Mapping[str, Any]:
     if isinstance(trace, Mapping):

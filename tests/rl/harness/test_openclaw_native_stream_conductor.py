@@ -9,8 +9,9 @@ import os
 from pathlib import Path
 import struct
 import threading
-from typing import Any, Mapping
-
+from typing import Any, Callable, Mapping
+from datetime import datetime, timezone
+from breadboard.rl.harness import sandbox as sandbox_module
 import pytest
 
 from breadboard.artifacts.cas import FilesystemCAS
@@ -217,12 +218,68 @@ class _NativeWorkerPort:
         self.workspace = workspace
         self.scratch = workspace / ".scratch"
         self.scratch.mkdir()
+        (self.scratch / "home").mkdir(exist_ok=True)
         self._bindings = grants
         self._process: asyncio.subprocess.Process | None = None
         self._request_id = 0
         self.system_prompt = ""
         self.operations: list[str] = []
+        self._effect_baseline: dict[str, dict[str, Any]] | None = None
 
+    def _snapshot_effects(self) -> dict[str, dict[str, Any]]:
+        snapshot, _ = sandbox_module._workspace_effect_snapshot(
+            self.workspace,
+            exclude_root_git=False,
+            max_total_bytes=1 << 30,
+            max_inodes=1 << 16,
+            max_depth=64,
+        )
+        return snapshot
+
+    async def begin_native_workspace_effects(self) -> None:
+        self.operations.append("begin_effects")
+        self._effect_baseline = self._snapshot_effects()
+
+    async def measure_workspace_effects(self) -> Mapping[str, Mapping[str, Any]]:
+        self.operations.append("measure_effects")
+        current = self._snapshot_effects()
+        changed: dict[str, Mapping[str, Any]] = {}
+        for path, value in current.items():
+            baseline = self._effect_baseline.get(path) if self._effect_baseline else None
+            if baseline is None or (
+                baseline["bytes"] != value["bytes"]
+                or baseline["sha256"] != value["sha256"]
+            ):
+                changed[path] = value
+        if self._effect_baseline:
+            for path in self._effect_baseline.keys() - current.keys():
+                changed[path] = {"exists": False}
+        return changed
+
+    async def close_native_runtime(self) -> Mapping[str, Any]:
+        self.operations.append("retire_runtime")
+        process, self._process = self._process, None
+        if process is not None:
+            if process.returncode is None:
+                process.kill()
+            await process.wait()
+        return {"kind": "closed", "cleanup": {"all_dead": True, "steps": []}}
+
+    def native_runtime_inputs(
+        self,
+        *,
+        input_names: tuple[str, ...],
+        package_subpath: str,
+    ) -> Mapping[str, str]:
+        values = {
+            "cwd": str(self.workspace),
+            "home": str(self.scratch / "home"),
+            "current_date": datetime.now(timezone.utc).date().isoformat(),
+            "package_dir": str(_NODE_DIST),
+        }
+        if set(input_names) != set(values):
+            raise RuntimeError("unexpected runtime input declaration")
+        return {name: values[name] for name in input_names}
     @property
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]:
         return self._bindings
@@ -261,6 +318,7 @@ class _NativeWorkerPort:
         payload: Mapping[str, Any],
         *,
         timeout_ms: int,
+        package_subpath: str | None = None,
     ) -> Mapping[str, Any]:
         await self._ensure()
         assert (
@@ -341,6 +399,8 @@ class _Cancellation:
 async def _run_episode(
     tmp_path: Path,
     responses: list[list[tuple[str, str, Mapping[str, Any]]]],
+    *,
+    worker_factory: Callable[[Path, tuple[RunnerToolBinding, ...]], _NativeWorkerPort] | None = None,
 ):
     with _scripted_server(responses) as (base_url, requests):
         profile = OpenAICompletionsProviderProfile(
@@ -400,12 +460,14 @@ async def _run_episode(
         plan_payload = plan.model_dump(mode="python")
         plan_payload["base_compiled"] = c.CompiledArtifactIdentity.model_validate(base_payload)
         plan = c.EffectiveExecutionPlan.model_validate(plan_payload)
-        worker = _NativeWorkerPort(
-            tmp_path,
-            tuple(
-                RunnerToolBinding(t.tool_id, t.implementation_digest, t.capability_ids)
-                for t in tools
-            ),
+        bindings = tuple(
+            RunnerToolBinding(t.tool_id, t.implementation_digest, t.capability_ids)
+            for t in tools
+        )
+        worker = (
+            worker_factory(tmp_path, bindings)
+            if worker_factory is not None
+            else _NativeWorkerPort(tmp_path, bindings)
         )
         client = EpisodeOpenAICompletionsPolicyClient(
             episode_id="episode-openclaw",
@@ -455,9 +517,60 @@ async def test_openclaw_native_stream_cap_refuses_ninth_http_request(tmp_path: P
     assert all(request.get("stream_options") == {"include_usage": True} for request in requests)
     assert all(request.get("store") is False for request in requests)
     assert all("n" not in request and "strict" not in request for request in requests)
-    assert operations[-1] == "close"
+    assert operations[-4:] == ("classify_result", "close", "retire_runtime", "measure_effects")
     assert all((tmp_path / f"turn-{index}.txt").read_text() == "ok\n" for index in range(8))
 
+
+@pytest.mark.asyncio
+async def test_openclaw_native_stream_classification_and_cleanup_envelope(tmp_path: Path) -> None:
+    # 1. Normal run: pre-cleanup ok and post-cleanup ok envelope match
+    result, requests, _, _, operations = await _run_episode(tmp_path, [[]])
+    assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
+    assert operations[-4:] == ("classify_result", "close", "retire_runtime", "measure_effects")
+    classified = result.response["classification"]
+    final_env = result.response["final_envelope"]
+    assert classified["envelope"]["status"] == "ok"
+    assert classified["envelope"]["ok"] is True
+    assert classified["exit_code"] == 0
+    assert final_env["status"] == "ok"
+    assert final_env["ok"] is True
+    assert final_env["exit_code"] == 0
+    assert result.response["replay_trace"]["classification"] == classified
+    assert result.response["replay_trace"]["final_envelope"] == final_env
+    assert result.response["replay_trace"]["envelope"] == final_env
+
+    # 2. Cleanup failure replaces success envelope per agent-exec.ts:500-559
+    class FailingCleanupWorkerPort(_NativeWorkerPort):
+        async def close_native_runtime(self) -> Mapping[str, Any]:
+            self.operations.append("retire_runtime")
+            process, self._process = self._process, None
+            if process is not None:
+                process.kill()
+                await process.wait()
+            # Intentionally report all_dead=False to simulate cleanup failure
+            return {"kind": "closed", "cleanup": {"all_dead": False, "steps": []}}
+
+    fail_path = tmp_path / "cleanup_fail"
+    fail_path.mkdir()
+    fail_result, _, _, _, _ = await _run_episode(
+        fail_path,
+        [[]],
+        worker_factory=lambda path, bindings: FailingCleanupWorkerPort(path, bindings),
+    )
+    pre_env = fail_result.response["classification"]["envelope"]
+    post_env = fail_result.response["final_envelope"]
+    # Pre-cleanup envelope was ok
+    assert pre_env["ok"] is True
+    assert pre_env["status"] == "ok"
+    # Post-cleanup envelope was replaced by error envelope
+    assert post_env["ok"] is False
+    assert post_env["status"] == "error"
+    assert post_env["final"] == ""
+    assert list(post_env["payloads"]) == []
+    assert post_env["exit_code"] == 1
+    assert "Agent runtime clean up did not settle; state ownership retained until this process exits" in post_env["error"]["message"]
+    assert fail_result.response["replay_trace"]["classification"]["envelope"]["ok"] is True
+    assert fail_result.response["replay_trace"]["final_envelope"]["ok"] is False
 
 @pytest.mark.asyncio
 async def test_openclaw_native_worker_ack_and_close_are_scope_verified(tmp_path: Path) -> None:
