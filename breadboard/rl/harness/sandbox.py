@@ -52,6 +52,7 @@ from .runners.base import (
     JsonSnapshotError,
     RunnerToolBinding,
     freeze_json_object,
+    thaw_json,
 )
 from .native_session import NativeSession, NativeSessionError
 from .native_worker import MAX_FRAME_BYTES
@@ -3371,6 +3372,7 @@ class LeaseBackedRunnerWorkspace:
         self.__effects_exclude_root_git = False
         self.__effects_baseline: dict[str, tuple[int, str]] | None = None
         self.__effects_root_identity: tuple[int, int] | None = None
+        self.__native_runtime_retired = False
     @property
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]: return self.__tool_bindings
 
@@ -3442,6 +3444,7 @@ class LeaseBackedRunnerWorkspace:
         await lease._begin_operation()
         try:
             steps = await lease._runtime.terminate()
+            self.__native_runtime_retired = True
             return {
                 "kind": "closed",
                 "cleanup": {
@@ -3462,6 +3465,94 @@ class LeaseBackedRunnerWorkspace:
             }
         finally:
             await lease._end_operation()
+
+    async def invoke_native_finalization_phase(
+        self,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+    ) -> Mapping[str, Any]:
+        """Run a sealed, credential-free phase after the native runtime retires."""
+        lease = self.__lease
+        lease._assert_active()
+        if not self.__native_runtime_retired:
+            raise WorkspaceStateError(
+                "native runtime must be retired before finalization",
+                code="runtime_preflight_failed",
+                lease_id=lease.lease_id,
+            )
+        if type(operation) is not str or not operation or "\x00" in operation:
+            raise WorkspaceStateError(
+                "native finalization operation is invalid",
+                code="runtime_preflight_failed",
+                lease_id=lease.lease_id,
+            )
+        if type(timeout_ms) is not int or not 0 < timeout_ms <= lease.plan.limits.action_timeout_ms:
+            raise WorkspaceStateError(
+                "native finalization timeout is invalid",
+                code="runtime_preflight_failed",
+                lease_id=lease.lease_id,
+            )
+        frozen_payload = freeze_json_object(
+            payload,
+            field_name="native finalization payload",
+            max_depth=8,
+            max_nodes=lease.plan.limits.observation_bytes + 1,
+            max_encoded_bytes=lease.plan.limits.observation_bytes,
+        )
+        adapters = tuple(
+            adapter for adapter in lease.plan.installed_tool_adapters
+            if adapter.adapter_id in NATIVE_PHASE_TOOL_IDS
+        )
+        if len(adapters) != 1:
+            raise WorkspaceStateError(
+                "source-native finalizer adapter is unavailable",
+                code="runtime_unsupported",
+                lease_id=lease.lease_id,
+            )
+        binding = adapters[0]
+        TrustedProcessHandle._validate_native_binding(lease.plan, binding)
+        _validate_native_root(binding)
+        entrypoint = _native_member_path(binding, binding.entrypoint_relative_path)
+        _measure_native_file(entrypoint, binding.entrypoint_digest)
+        node = _snapshot_installed_executable(
+            _native_member_path(binding, binding.executable_relative_path),
+            binding.executable_digest,
+        )
+        session: NativeSession | None = None
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *_native_worker_argv(binding, node.proc_fd_path),
+                "--finalize-only",
+                cwd=binding.runtime_root_path,
+                env={},
+                pass_fds=(node.fd,),
+                start_new_session=True,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            session = NativeSession(process, max_frame_bytes=MAX_FRAME_BYTES)
+            return await session.invoke_native_phase(
+                operation, thaw_json(frozen_payload), timeout_ms=timeout_ms,
+            )
+        except NativeSessionError as exc:
+            raise WorkspaceStateError(
+                "native finalization failed",
+                code="native_finalization_failed",
+                lease_id=lease.lease_id,
+            ) from exc
+        except OSError as exc:
+            raise WorkspaceStateError(
+                "native finalizer could not launch",
+                code="native_finalization_failed",
+                lease_id=lease.lease_id,
+            ) from exc
+        finally:
+            if session is not None:
+                await session.close()
+            node.close()
 
     def native_runtime_inputs(
         self,
