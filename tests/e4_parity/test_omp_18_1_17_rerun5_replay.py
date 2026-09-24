@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import os
 from pathlib import Path
 import tarfile
 from typing import Any
@@ -10,12 +12,13 @@ import pytest
 
 from breadboard.rl.harness.runners.omp_semantics import ToolCall, ToolResult, run_tool_batch
 from conformance.comparators.oh_my_pi_18_1_17 import project_bb_trace
-
-PACKET_SHA256 = "cf8937d3f359021e9c86b9c2190dbc2a2ffadc07f175cb84bb1910a65d2b54f0"
 PACKET = Path(
-    "/Users/kylemccleary/projects/breadboard/docs_tmp/bb_direction_assessment/"
-    "engine_pr_handoff_20260827/e4_admission_20260914T221653Z/do2-20260923/"
-    "omp/packet/omp_supplier_capture_packet_rerun5.tar.gz"
+    os.environ.get(
+        "BB_OMP_RERUN5_PACKET",
+        "/Users/kylemccleary/projects/breadboard/docs_tmp/bb_direction_assessment/"
+        "engine_pr_handoff_20260827/e4_admission_20260914T221653Z/do2-20260923/"
+        "omp/packet/omp_supplier_capture_packet_rerun5.tar.gz",
+    )
 )
 CASE_IDS = (
     "normal_multiturn",

@@ -12,6 +12,24 @@ from breadboard.rl.harness.omp_native_tools import (
     pinned_worker_spec,
     verified_tool_worker_path,
 )
+def _authority_payload(tmp_path: Path) -> dict[str, object]:
+    scratch = tmp_path / ".scratch"
+    package_dir = tmp_path / "package"
+    (scratch / "home").mkdir(parents=True)
+    package_dir.mkdir()
+    runtime_inputs = {
+        "cwd": str(tmp_path),
+        "home": str(scratch / "home"),
+        "current_date": "2026-09-23",
+        "package_dir": str(package_dir),
+    }
+    return {
+        "workspace": str(tmp_path),
+        "scratch": str(scratch),
+        "package_dir": str(package_dir),
+        "runtime_inputs": runtime_inputs,
+    }
+
 
 
 def test_native_worker_spec_binds_source_and_real_leaves() -> None:
@@ -114,8 +132,7 @@ def test_real_pinned_worker_runs_initialize_and_close(tmp_path: Path) -> None:
                     for capability in ("pty", "async")
                 },
             },
-            "workspace": str(tmp_path),
-            "scratch": str(tmp_path / ".scratch"),
+            **_authority_payload(tmp_path),
         },
     )
     assert initialized["kind"] == "initialized"
@@ -151,7 +168,7 @@ def test_real_pinned_worker_closes_background_brush_descendant(tmp_path: Path) -
             "model_config": {},
             "advertisement": advertisement,
             "workspace": str(tmp_path),
-            "scratch": str(tmp_path / ".scratch"),
+            **_authority_payload(tmp_path),
         },
     )
     worker.execute_batch([{
@@ -201,8 +218,7 @@ def test_real_pinned_worker_rejects_advertisement_extra_keys(tmp_path: Path, mut
                 "initialize",
                 {
                     "advertisement": advertisement,
-                    "workspace": str(tmp_path),
-                    "scratch": str(tmp_path / ".scratch"),
+                    **_authority_payload(tmp_path),
                 },
             )
     finally:
