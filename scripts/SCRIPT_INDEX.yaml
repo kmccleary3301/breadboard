@@ -997,7 +997,7 @@ entries:
   - path: scripts/e4_hermes_native_replay.py
     class: live-wired
     owner: kmccleary3301
-    callers: [tests/rl/harness/test_hermes_packet_replay.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/rl/harness/test_hermes_packet_replay.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/__init__.py
     class: live-wired
