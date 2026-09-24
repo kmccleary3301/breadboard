@@ -406,6 +406,25 @@ async def test_omp_conductor_partitions_declared_denials_before_worker(
         if expected_worker_ids:
             assert [call["id"] for call in execute_batches[0]["calls"]] == expected_worker_ids
         assert len(requests) == 2
+        second_assistant = [
+            message for message in requests[1]["messages"]
+            if message.get("role") == "assistant"
+        ]
+        print(
+            "OMP_R4_SECOND_REQUEST_ASSISTANT "
+            + json.dumps(second_assistant, sort_keys=True, separators=(",", ":"))
+        )
+        assert second_assistant
+        assert all("tool_calls" in message for message in second_assistant)
+        assistant_calls = [
+            call
+            for message in second_assistant
+            for call in message["tool_calls"]
+        ]
+        assert [call["function"]["arguments"] for call in assistant_calls] == [
+            json.dumps(arguments, separators=(",", ":"))
+            for _, _, arguments in first_response
+        ]
         tool_messages = [
             message for message in requests[1]["messages"]
             if message.get("role") in {"tool", "toolResult", "tool_result"}
