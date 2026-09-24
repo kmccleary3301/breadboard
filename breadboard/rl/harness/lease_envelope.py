@@ -651,6 +651,16 @@ def _verify_bind_identity(source_fd: int, target: str) -> None:
             f"source={source_identity!r} target={target_identity!r}",
         )
 
+def _prepare_lease_mountpoint(target: str, tmp_root: str = "/tmp") -> None:
+    """Recreate a mountpoint hidden by the fresh lease-private /tmp tmpfs.
+
+    Only directories inside the freshly mounted, symlink-free tmpfs are
+    created; a target outside it must already exist on the read-only view.
+    """
+    if os.path.commonpath((target, tmp_root)) != tmp_root or target == tmp_root:
+        return
+    os.makedirs(target, mode=0o700, exist_ok=True)
+
 def _setup_mount_view(
     workspace: str,
     scratch: str,
@@ -669,6 +679,8 @@ def _setup_mount_view(
         _remount_tree_readonly("/")
         tmp_size, scratch_size = _tmpfs_budgets(tmpfs_size_bytes)
         _mount_tmpfs("/tmp", tmp_size)
+        _prepare_lease_mountpoint(workspace)
+        _prepare_lease_mountpoint(scratch)
         _move_mount(workspace_tree_fd, workspace)
         os.close(workspace_tree_fd)
         workspace_tree_fd = -1

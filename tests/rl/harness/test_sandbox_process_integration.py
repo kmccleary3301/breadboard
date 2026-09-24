@@ -165,6 +165,19 @@ def test_spawn_worker_releases_exec_readiness_writer_before_waiting(
     assert observed == [b"E", b""]
 
 
+def test_lease_mountpoints_are_recreated_only_inside_private_tmp(tmp_path: Path) -> None:
+    tmp_root = tmp_path / "tmp"
+    tmp_root.mkdir()
+    workspace = tmp_root / "pytest-of-root" / "workspaces" / "lease"
+    lease_envelope._prepare_lease_mountpoint(str(workspace), str(tmp_root))
+    assert workspace.is_dir()
+    assert workspace.stat().st_mode & 0o777 == 0o700
+    outside = tmp_path / "host" / "workspace"
+    lease_envelope._prepare_lease_mountpoint(str(outside), str(tmp_root))
+    lease_envelope._prepare_lease_mountpoint(str(tmp_root), str(tmp_root))
+    assert not outside.exists()
+
+
 @requires_sealed_execution
 async def test_fast_direct_elf_exec_without_sleep(tmp_path: Path) -> None:
     fixture = make_runtime_fixture(with_writable_mount=True, runtime_install_root=tmp_path / "runtime")
