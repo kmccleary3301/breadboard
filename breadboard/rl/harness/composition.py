@@ -274,9 +274,25 @@ class InstalledToolAdapterV1(_ExactModel):
     manifest_ref: ArtifactFileRefV1
     executable_relative_path: str
     entrypoint_relative_path: str
+    argv: tuple[str, ...] | None = None
 
     _executable_path = field_validator("executable_relative_path")(_relative)
     _entrypoint_path = field_validator("entrypoint_relative_path")(_relative)
+    @model_validator(mode="after")
+    def exact_argv(self) -> "InstalledToolAdapterV1":
+        if self.argv is None:
+            return self
+        if not self.argv or self.argv[0] != PurePosixPath(self.executable_relative_path).name:
+            raise ValueError("native tool argv must begin with its admitted executable")
+        if self.argv[-1] != self.entrypoint_relative_path:
+            raise ValueError("native tool argv must end with its admitted entrypoint")
+        index = 1
+        while index < len(self.argv) - 1:
+            if self.argv[index] != "--import" or index + 1 >= len(self.argv) - 1:
+                raise ValueError("native tool argv contains an unsupported interpreter flag")
+            _relative(self.argv[index + 1].removeprefix("./"))
+            index += 2
+        return self
 
     @model_validator(mode="after")
     def exact_tools(self) -> "InstalledToolAdapterV1":
@@ -3717,6 +3733,12 @@ def _validate_native_tool_closure(
             or entrypoint.kind != "file"
         ):
             raise ValueError("native tool executable or entrypoint is not covered")
+        for argument in (descriptor.argv or ())[1:-1]:
+            if argument == "--import":
+                continue
+            member = entries.get(argument.removeprefix("./"))
+            if member is None or member.kind != "file" or not member.content_digest:
+                raise ValueError("native tool argv import is not covered by its sealed manifest")
         return executable.content_digest or "", entrypoint.content_digest or ""
     finally:
         os.close(root_fd)
@@ -3756,6 +3778,11 @@ def _load_native_tool_bindings(
                 entrypoint_relative_path=descriptor.entrypoint_relative_path,
                 executable_digest=executable_digest,
                 entrypoint_digest=entrypoint_digest,
+                argv=descriptor.argv,
+                argv_file_digests=tuple(
+                    (argument.removeprefix("./"), next(item.content_digest or "" for item in source_manifest.entries if item.logical_path == argument.removeprefix("./")))
+                    for argument in (descriptor.argv or ())[1:-1] if argument != "--import"
+                ),
             )
         )
     return tuple(bindings)

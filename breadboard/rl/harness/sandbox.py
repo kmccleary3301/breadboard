@@ -899,6 +899,8 @@ class InstalledToolAdapter:
     entrypoint_relative_path: str
     executable_digest: str
     entrypoint_digest: str
+    argv: tuple[str, ...] | None = None
+    argv_file_digests: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -933,6 +935,25 @@ class InstalledToolAdapter:
             raise ValueError("native tool adapter authority is not exact")
         if self.executable_relative_path == self.entrypoint_relative_path:
             raise ValueError("native tool executable and entrypoint must be distinct")
+        if self.argv is not None:
+            if (
+                type(self.argv) is not tuple
+                or not self.argv
+                or self.argv[0] != Path(self.executable_relative_path).name
+                or self.argv[-1] != self.entrypoint_relative_path
+                or len(self.argv[1:-1]) != 2 * len(self.argv_file_digests)
+                or any(
+                    self.argv[index] != "--import"
+                    or not _exact_relative_path(self.argv[index + 1].removeprefix("./"))
+                    for index in range(1, len(self.argv) - 1, 2)
+                )
+                or tuple(path for path, _ in self.argv_file_digests)
+                != tuple(self.argv[index].removeprefix("./") for index in range(2, len(self.argv) - 1, 2))
+                or any(not _exact_sha256_digest(digest) for _, digest in self.argv_file_digests)
+            ):
+                raise ValueError("native tool argv authority is not exact")
+        elif self.argv_file_digests:
+            raise ValueError("native tool argv digest has no declared argument")
 
 
 @dataclass(frozen=True, slots=True)
@@ -970,6 +991,19 @@ def _native_member_path(binding: InstalledToolAdapter, relative_path: str) -> st
             code="runtime_preflight_failed",
         )
     return str(Path(binding.runtime_root_path) / relative_path)
+
+
+def _native_worker_argv(binding: InstalledToolAdapter, executable: str) -> tuple[str, ...]:
+    """Resolve admitted interpreter flags and sealed import files at launch."""
+    if binding.argv is None:
+        return executable, _native_member_path(binding, binding.entrypoint_relative_path)
+    arguments: list[str] = [executable]
+    for path, digest in binding.argv_file_digests:
+        member = _native_member_path(binding, path)
+        _measure_native_file(member, digest)
+        arguments.extend(("--import", member))
+    arguments.append(_native_member_path(binding, binding.entrypoint_relative_path))
+    return tuple(arguments)
 
 
 def _validate_native_root(binding: InstalledToolAdapter) -> None:
@@ -2209,8 +2243,7 @@ class TrustedProcessHandle:
                             "-lc",
                             'exec "$@"',
                             "breadboard-native-worker",
-                            node.proc_fd_path,
-                            entrypoint_path,
+                            *_native_worker_argv(binding, node.proc_fd_path),
                         ),
                         timeout_ms=min(timeout_ms, self.plan.limits.setup_timeout_ms),
                         extra_fds=(node.fd,),
