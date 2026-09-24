@@ -479,28 +479,43 @@ def _setup_mount_view(
     tmpfs_size_bytes: int,
 ) -> tuple[str, tuple[str, ...]]:
     _enter_private_mount_namespace()
-    workspace_source_fd = os.open(
-        f"/proc/self/fd/{workspace_fd}", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC
-    )
-    scratch_source_fd = os.open(
-        f"/proc/self/fd/{scratch_fd}", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC
-    )
+    staging_root = f"/dev/shm/.breadboard-envelope-{os.getpid()}"
+    workspace_stage = f"{staging_root}/workspace"
+    scratch_stage = f"{staging_root}/scratch"
+    workspace_staged = False
+    scratch_staged = False
     try:
+        os.makedirs(staging_root, mode=0o700)
+        os.mkdir(workspace_stage, mode=0o700)
+        os.mkdir(scratch_stage, mode=0o700)
+        _bind_path(os.path.abspath(workspace), workspace_stage)
+        workspace_staged = True
+        _bind_path(os.path.abspath(scratch), scratch_stage)
+        scratch_staged = True
         _mount_tmpfs("/tmp", tmpfs_size_bytes)
         for path in (workspace, scratch):
             os.makedirs(os.path.abspath(path), mode=0o700, exist_ok=True)
-        _bind_path(
-            f"/proc/self/fd/{workspace_source_fd}", os.path.abspath(workspace)
-        )
-        _bind_path(f"/proc/self/fd/{scratch_source_fd}", os.path.abspath(scratch))
+        _bind_path(workspace_stage, os.path.abspath(workspace))
+        _bind_path(scratch_stage, os.path.abspath(scratch))
+        _verify_bind_identity(workspace_fd, os.path.abspath(workspace))
+        _verify_bind_identity(scratch_fd, os.path.abspath(scratch))
+        _remount_readonly("/")
+        _mount_proc()
+        return _verify_mount_view(workspace, scratch)
     finally:
-        os.close(workspace_source_fd)
-        os.close(scratch_source_fd)
-    _verify_bind_identity(workspace_fd, os.path.abspath(workspace))
-    _verify_bind_identity(scratch_fd, os.path.abspath(scratch))
-    _remount_readonly("/")
-    _mount_proc()
-    return _verify_mount_view(workspace, scratch)
+        for staged, path in (
+            (scratch_staged, scratch_stage),
+            (workspace_staged, workspace_stage),
+        ):
+            if staged:
+                try:
+                    _unbind_path(path)
+                except OSError:
+                    pass
+            try:
+                os.rmdir(path)
+            except FileNotFoundError:
+                pass
 
 
 def _supervisor_main(
