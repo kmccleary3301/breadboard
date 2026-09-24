@@ -1988,6 +1988,53 @@ class _ConductorSession:
             events=tuple(self._events),
         )
 
+    async def _native_commit_source(
+        self, turn: int | None, consumer_id: str, phase_name: str,
+        events: tuple[Mapping[str, Any], ...], digest: str,
+        state: Mapping[str, Any],
+    ) -> None:
+        await self._emit(SourceEventCommitEvent(
+            0, self._open_request.episode_id, self._open_request.effective_plan_digest,
+            turn, consumer_id, phase_name, events, digest, state,
+        ))
+
+    async def _native_effects(self) -> Mapping[str, Mapping[str, Any]]:
+        effects = await self._tools.measure_workspace_effects()
+        if not isinstance(effects, Mapping):
+            raise RunnerProtocolError(
+                "native workspace effects are malformed",
+                code="native_response_invalid", **self._context(),
+            )
+        return effects
+
+    async def _native_tool_call(
+        self, turn: int, ordinal: int, call_id: str, name: str, arguments: str,
+    ) -> None:
+        await self._emit(ToolCallEvent(
+            0, self._open_request.episode_id, self._open_request.effective_plan_digest,
+            turn, ordinal, call_id, name, arguments,
+        ))
+
+    async def _native_tool_observation(
+        self, turn: int, ordinal: int, call_id: str, name: str,
+        observation: Mapping[str, Any],
+    ) -> None:
+        await self._emit(ToolObservationEvent(
+            0, self._open_request.episode_id, self._open_request.effective_plan_digest,
+            turn, ordinal, call_id, name, observation, False,
+        ))
+
+    @staticmethod
+    def _native_stop_termination(
+        reason: str | None, incomplete_reasons: frozenset[str],
+        limit_reasons: frozenset[str] = frozenset(),
+    ) -> RunnerTermination:
+        if reason in limit_reasons:
+            return RunnerTermination.MAX_TURNS
+        if reason in incomplete_reasons:
+            return RunnerTermination.POLICY_INCOMPLETE
+        return RunnerTermination.ASSISTANT_COMPLETE
+
     async def _loop_native_stream(
         self, request: ConductorRunRequest, profile: native_stream_profiles.NativeStreamProfile,
     ) -> RunnerResult:
@@ -2191,18 +2238,16 @@ class _ConductorSession:
                     "source transcript limit exceeded",
                     code="transcript_limit_exceeded", **self._context(),
                 )
-            await self._emit(SourceEventCommitEvent(
-                0, self._open_request.episode_id, self._open_request.effective_plan_digest,
+            await self._native_commit_source(
                 turn, consumer_id, phase_name,
                 tuple(state.messages[start:] if events is None else events),
-                canonical_sha256(state.messages),
-                {
+                canonical_sha256(state.messages), {
                     "request_count": state.request_count,
                     "stream_fn_issued": state.stream_fn_issued,
                     "native_stop_reason": state.native_stop_reason,
                     "public_stop": state.exit_status,
                 },
-            ))
+            )
 
         await commit(0, "initial", None)
         termination = RunnerTermination.POLICY_INCOMPLETE
@@ -2226,65 +2271,10 @@ class _ConductorSession:
                 "messages": projected.get("messages"),
                 "tools": projected.get("tools"),
             }, field_name="native policy request")
-            request_digest = canonical_sha256(frozen_request)
-            await self._emit(PolicyRequestEvent(
-                0, self._open_request.episode_id, self._open_request.effective_plan_digest,
-                turn, frozen_request,
-            ))
-            await self._emit(PolicyRuntimeRequestEvent(
-                0, self._open_request.episode_id, self._open_request.effective_plan_digest,
-                turn, 1, self._binding.binding_digest,
-                self._binding.policy_capability_observation_digest, model.policy_slot_id,
-                request_digest, self._binding.first_request_digest or request_digest,
-                model.trainable_values,
-            ))
-            await self._checkpoint("before_policy", turn=turn)
-            result = await self._binding.invoke(PolicyRuntimeInvokeRequest(
-                episode_id=self._open_request.episode_id,
-                effective_plan_digest=self._open_request.effective_plan_digest,
-                binding_digest=self._binding.binding_digest, policy_slot_id=model.policy_slot_id,
-                request_digest=request_digest, request_payload=frozen_request, turn=turn, attempt=1,
-            ))
-            await self._checkpoint("after_policy", turn=turn)
-            response, _ = freeze_json_object_with_size(
-                result.response_payload, field_name="native policy response",
-                max_encoded_bytes=16 * 1024 * 1024, max_nodes=16 * 1024 * 1024 + 1,
+            response, request_body = await self._native_policy_exchange(
+                frozen_request, model=model, turn=turn, require_receipt=True,
             )
-            if canonical_sha256(response) != result.response_digest:
-                raise RunnerProtocolError(
-                    "policy response digest does not match the response payload",
-                    code="policy_response_digest_mismatch", **self._context(),
-                )
-            native_receipt = thaw_json(response.get("native_response"))
-            request_body = (
-                native_receipt.get("request_body")
-                if isinstance(native_receipt, Mapping)
-                else None
-            )
-            native_request_digest = (
-                native_receipt.get("request_digest")
-                if isinstance(native_receipt, Mapping)
-                else None
-            )
-            if (
-                not isinstance(request_body, Mapping)
-                or type(native_request_digest) is not str
-                or canonical_sha256(request_body).removeprefix("sha256:") != native_request_digest
-            ):
-                raise RunnerProtocolError(
-                    "native provider receipt lacks the exact sent request body",
-                    code="native_response_invalid", **self._context(),
-                )
             trace_requests.append(dict(request_body))
-            await self._emit(PolicyRuntimeResponseEvent(
-                0, self._open_request.episode_id, self._open_request.effective_plan_digest,
-                turn, 1, self._binding.binding_digest, model.policy_slot_id,
-                request_digest, result.response_digest,
-            ))
-            await self._emit(PolicyResponseEvent(
-                0, self._open_request.episode_id, self._open_request.effective_plan_digest,
-                turn, response, (),
-            ))
             native = native_stream_consumers.native_response_from_dict(
                 thaw_json(response["native_response"])
             )
@@ -2303,10 +2293,9 @@ class _ConductorSession:
                     )
                 for ordinal, (call, raw) in enumerate(zip(parsed.calls, raw_calls, strict=True)):
                     await self._checkpoint("before_action", turn=turn, call_id=call.id)
-                    await self._emit(ToolCallEvent(
-                        0, self._open_request.episode_id, self._open_request.effective_plan_digest,
+                    await self._native_tool_call(
                         turn, ordinal, call.id, call.name, raw.arguments,
-                    ))
+                    )
                 prepared = await phase("prepare_tools", {"calls": [
                     {"id": call.id, "name": call.name, "arguments": call.arguments}
                     for call in parsed.calls
@@ -2365,10 +2354,9 @@ class _ConductorSession:
                         max_nodes=limits.observation_bytes + 1,
                     )
                     observations.append(observation)
-                    await self._emit(ToolObservationEvent(
-                        0, self._open_request.episode_id, self._open_request.effective_plan_digest,
-                        turn, ordinal, call.id, call.name, observation, False,
-                    ))
+                    await self._native_tool_observation(
+                        turn, ordinal, call.id, call.name, observation,
+                    )
                     await self._checkpoint("after_action", turn=turn, call_id=call.id)
                 before = len(state.messages)
                 state.commit_tool_results(parsed.calls, raw_results)
@@ -2388,20 +2376,13 @@ class _ConductorSession:
                             )
             self._turns.append(RunnerTurn(turn, (), tuple(observations)))
             if state.is_exited:
-                termination = (
-                    RunnerTermination.POLICY_INCOMPLETE
-                    if state.native_stop_reason in profile.incomplete_stop_reasons
-                    else RunnerTermination.ASSISTANT_COMPLETE
+                termination = self._native_stop_termination(
+                    state.native_stop_reason, profile.incomplete_stop_reasons,
                 )
         await self._checkpoint("after_loop", turn=len(self._turns))
         closed = await close_once()
         cleanup = closed["cleanup"]
-        effects = await tools.measure_workspace_effects()
-        if not isinstance(effects, Mapping):
-            raise RunnerProtocolError(
-                "native workspace effects are malformed",
-                code="native_response_invalid", **self._context(),
-            )
+        effects = await self._native_effects()
         await self._checkpoint("before_commit", turn=len(self._turns))
         await self._commit_termination(termination)
         replay_trace = state.to_trace(
@@ -3028,14 +3009,10 @@ class _ConductorSession:
             turns=tuple(self._turns), events=tuple(self._events),
         )
 
-    async def _invoke_native_policy(
-        self, http_request: Mapping[str, Any], *, model: _ModelProjection, turn: int,
-    ) -> Mapping[str, Any]:
-        """Persist the serialized SDK exchange before releasing its response."""
-        frozen_request = freeze_json_object(
-            self._binding.stage_native_http_request(http_request),
-            field_name="native policy request",
-        )
+    async def _native_policy_exchange(
+        self, frozen_request: FrozenJsonObject, *, model: _ModelProjection,
+        turn: int, require_receipt: bool,
+    ) -> tuple[FrozenJsonObject, Mapping[str, Any] | str]:
         request_digest = canonical_sha256(frozen_request)
         await self._emit(PolicyRequestEvent(
             0, self._open_request.episode_id,
@@ -3071,6 +3048,27 @@ class _ConductorSession:
                 "policy response digest does not match the response payload",
                 code="policy_response_digest_mismatch", **self._context(),
             )
+        receipt_body: Mapping[str, Any] | str = response_digest
+        if require_receipt:
+            native_receipt = thaw_json(response.get("native_response"))
+            request_body = (
+                native_receipt.get("request_body")
+                if isinstance(native_receipt, Mapping) else None
+            )
+            native_request_digest = (
+                native_receipt.get("request_digest")
+                if isinstance(native_receipt, Mapping) else None
+            )
+            if (
+                not isinstance(request_body, Mapping)
+                or type(native_request_digest) is not str
+                or canonical_sha256(request_body).removeprefix("sha256:") != native_request_digest
+            ):
+                raise RunnerProtocolError(
+                    "native provider receipt lacks the exact sent request body",
+                    code="native_response_invalid", **self._context(),
+                )
+            receipt_body = request_body
         await self._emit(PolicyRuntimeResponseEvent(
             0, self._open_request.episode_id,
             self._open_request.effective_plan_digest, turn, 1,
@@ -3081,7 +3079,20 @@ class _ConductorSession:
             0, self._open_request.episode_id,
             self._open_request.effective_plan_digest, turn, response, (),
         ))
-        return self._binding.take_native_http_response(response_digest)
+        return response, receipt_body
+
+    async def _invoke_native_policy(
+        self, http_request: Mapping[str, Any], *, model: _ModelProjection, turn: int,
+    ) -> Mapping[str, Any]:
+        """Persist the serialized SDK exchange before releasing its response."""
+        frozen_request = freeze_json_object(
+            self._binding.stage_native_http_request(http_request),
+            field_name="native policy request",
+        )
+        _, digest = await self._native_policy_exchange(
+            frozen_request, model=model, turn=turn, require_receipt=False,
+        )
+        return self._binding.take_native_http_response(digest)
     async def _loop_openhands(self, request: ConductorRunRequest) -> RunnerResult:
         limits = self._open_request.effective_plan.effective_capabilities.limits
         profile = self._projection.source_profile
