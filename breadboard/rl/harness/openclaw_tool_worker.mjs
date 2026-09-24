@@ -9,6 +9,7 @@
 import { pathToFileURL } from "node:url";
 import { join, resolve, basename } from "node:path";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { accessSync, constants as fsConstants } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import { classifyAgentExecResult, errorEnvelope, exitCodeForEnvelope, formatErrorMessage } from "openclaw:pinned-agent-exec";
@@ -384,18 +385,57 @@ function groupIsAbsent(pgid) {
   }
 }
 
+class OpenClawMarkerObservationError extends Error {
+  constructor(message, options) {
+    super(message, options);
+    this.name = "OpenClawMarkerObservationError";
+  }
+}
+
+function markerExecutable() {
+  // Sealed launches are Linux-only; elsewhere execPath is the worker's image.
+  if (process.platform !== "linux") return process.execPath;
+  // A sealed launch runs a memfd, so execPath is "/memfd:... (deleted)".  The
+  // kernel's /proc/self/exe link still executes that same sealed image.
+  const image = "/proc/self/exe";
+  try {
+    accessSync(image, fsConstants.X_OK);
+  } catch (error) {
+    throw new OpenClawMarkerObservationError(
+      `OS process observer marker image is not executable: ${text(error?.message ?? error)}`,
+      { cause: error },
+    );
+  }
+  return image;
+}
+
+function spawnMarker(marker) {
+  const executable = markerExecutable();
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn(executable, ["-e", "setInterval(() => {}, 1000)", marker], {
+      detached: true,
+      stdio: "ignore",
+    });
+    // Without a listener a spawn failure is an uncaught crash, not a receipt.
+    child.on("error", (error) => rejectPromise(new OpenClawMarkerObservationError(
+      `OS process observer marker spawn failed: ${text(error?.message ?? error)}`,
+      { cause: error },
+    )));
+    child.once("spawn", () => {
+      child.unref();
+      resolvePromise(child);
+    });
+  });
+}
+
 async function markerObservation() {
   const marker = `bb-openclaw-marker-${process.pid}-${Date.now()}-${crypto.randomUUID()}`;
-  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)", marker], {
-    detached: true,
-    stdio: "ignore",
-  });
-  child.unref();
+  const child = await spawnMarker(marker);
   await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
   const before = processSnapshot().filter((item) => item.argv.includes(marker));
   const leader = before.find((item) => item.pid === child.pid);
   if (!leader || leader.pgid !== child.pid) {
-    throw new Error("OS process observer marker group was not proven");
+    throw new OpenClawMarkerObservationError("OS process observer marker group was not proven");
   }
   process.kill(-leader.pgid, "SIGTERM");
   let after = [];
@@ -814,7 +854,10 @@ async function dispatch(command) {
     writeFrame({
       schema_version: "bb.native-worker.rpc.v1",
       request_id: command.request_id,
-      error: { type: "OpenClawWorkerError", message },
+      error: {
+        type: error instanceof OpenClawMarkerObservationError ? error.name : "OpenClawWorkerError",
+        message,
+      },
     });
   }
 }

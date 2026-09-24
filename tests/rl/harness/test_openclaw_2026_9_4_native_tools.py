@@ -4,7 +4,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 import json
 import os
+import shutil
+import struct
 import subprocess
+import sys
 import tarfile
 
 import pytest
@@ -14,6 +17,7 @@ from breadboard.rl.harness.openclaw_native_tools import (
     EXEC_YIELD_MS,
     PROCESS_MAX_POLL_MS,
     OpenClawNativeTools,
+    _OpenClawWorkerClient,
     build_bootstrap_context,
     load_bootstrap_files,
     materialize_baseline_bootstrap,
@@ -294,3 +298,106 @@ def test_classify_result_semantics_and_envelope_invariants(tmp_path: Path, messa
         assert fallback_res["envelope"]["final"] == "fallback visible text"
     finally:
         tools.scope.cleanup()
+
+
+def _node_image() -> Path:
+    return Path(shutil.which(os.environ.get("OPENCLAW_NODE", "node")) or "node").resolve()
+
+
+def _raw_phase(worker: _OpenClawWorkerClient, operation: str) -> dict:
+    # The facade's _request drops the fatal envelope's type, so read the frame.
+    process = worker._process
+    worker._request_id += 1
+    body = json.dumps({
+        "schema_version": "bb.native-worker.rpc.v1",
+        "request_id": worker._request_id,
+        "operation": operation,
+        "payload": {},
+    }).encode("utf-8")
+    process.stdin.write(struct.pack(">I", len(body)) + body)
+    process.stdin.flush()
+    prefix = process.stdout.read(4)
+    assert len(prefix) == 4, process.stderr.read().decode(errors="replace")[-800:]
+    frame = json.loads(process.stdout.read(struct.unpack(">I", prefix)[0]))
+    assert frame["request_id"] == worker._request_id
+    return frame
+
+
+def _retire(worker: _OpenClawWorkerClient) -> None:
+    worker._process.stdin.close()
+    try:
+        worker._process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        worker._process.kill()
+        worker._process.wait()
+
+
+@pytest.mark.skipif(sys.platform == "linux", reason="Linux spawns the marker from /proc/self/exe")
+def test_marker_spawn_failure_is_a_typed_error_not_a_worker_crash(tmp_path: Path, message_timestamp_ms: str) -> None:
+    # Off Linux the marker runs process.execPath.  Deleting the launch path
+    # reproduces the ENOENT that crashed sealed memfd workers at close.
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    node = tmp_path / "node"
+    try:
+        os.link(_node_image(), node)
+    except OSError:
+        shutil.copy2(_node_image(), node)
+    worker = _OpenClawWorkerClient(workspace, message_timestamp_ms=message_timestamp_ms, node=str(node))
+    tools = OpenClawNativeTools(workspace, message_timestamp_ms, worker=worker)
+    try:
+        node.unlink()
+        failed = _raw_phase(worker, "close")
+        assert failed["error"]["type"] == "OpenClawMarkerObservationError"
+        assert "ENOENT" in failed["error"]["message"]
+        # The failed observation is a response, not a crash: phases still run.
+        tools.execute("write", {"path": "after.txt", "content": "alive\n"})
+        assert (workspace / "after.txt").read_text() == "alive\n"
+    finally:
+        _retire(worker)
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="sealed memfd launches are Linux-only")
+def test_marker_runs_the_sealed_worker_image_under_memfd_launch(tmp_path: Path, message_timestamp_ms: str) -> None:
+    import fcntl
+
+    sealed = os.memfd_create("breadboard-runtime", os.MFD_ALLOW_SEALING)
+    worker = None
+    try:
+        with _node_image().open("rb") as handle:
+            while chunk := handle.read(1024 * 1024):
+                view = memoryview(chunk)
+                while view:
+                    view = view[os.write(sealed, view):]
+        fcntl.fcntl(
+            sealed,
+            fcntl.F_ADD_SEALS,
+            fcntl.F_SEAL_SEAL | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_GROW | fcntl.F_SEAL_WRITE,
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        # As in the product's proc-fd launch, the worker's execPath is the
+        # deleted memfd name, which no process can spawn by path.
+        worker = _OpenClawWorkerClient(
+            workspace,
+            message_timestamp_ms=message_timestamp_ms,
+            node=f"/proc/{os.getpid()}/fd/{sealed}",
+        )
+        OpenClawNativeTools(workspace, message_timestamp_ms, worker=worker)
+        worker_pid = worker._process.pid
+        image = os.fstat(sealed)
+        launched = os.stat(f"/proc/{worker_pid}/exe")
+        assert (launched.st_dev, launched.st_ino) == (image.st_dev, image.st_ino)
+        assert os.readlink(f"/proc/{worker_pid}/exe") == "/memfd:breadboard-runtime (deleted)"
+        closed = _raw_phase(worker, "close")
+        cleanup = closed["result"]["cleanup"]
+        assert cleanup["all_dead"] is True
+        [marker] = cleanup["marker_before"]
+        # The worker's own sealed image, reached through the kernel link.
+        assert marker["ppid"] == worker_pid
+        assert marker["argv"].startswith("/proc/self/exe -e ")
+        assert cleanup["marker_after"] == []
+    finally:
+        if worker is not None:
+            _retire(worker)
+        os.close(sealed)
