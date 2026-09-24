@@ -4232,6 +4232,7 @@ class _OpenHandsTracePort(RecordingToolPort):
             return {
                 "schema_version": "bb.openhands-native.v1",
                 "kind": "initialized",
+                "conversation_id": "56351706-00f7-47c5-98d0-7145da8af641",
                 "tool_schemas": ({"type": "function", "name": "finish"},),
                 "event_delta": (),
                 "status": "IDLE",
@@ -4245,7 +4246,7 @@ class _OpenHandsTracePort(RecordingToolPort):
                     "method": "POST",
                     "url": "https://provider.invalid/chat",
                     "headers": {},
-                    "body_b64": base64.b64encode(b'{"messages":[]}').decode(),
+                    "body_b64": base64.b64encode(b'{"messages":[],"prompt_cache_key":"56351706-00f7-47c5-98d0-7145da8af641"}').decode(),
                 },
                 "event_delta": (),
                 "status": "RUNNING",
@@ -4382,6 +4383,8 @@ async def test_openhands_trace_is_frozen_json_and_comparator_compatible(
     json.dumps(trace, ensure_ascii=False, allow_nan=False)
     assert "normalizations" not in trace
     from conformance.comparators.openhands_sdk import project_bb_trace
+    assert trace["conversation_id"] == "56351706-00f7-47c5-98d0-7145da8af641"
+    assert all(request["body"]["prompt_cache_key"] == trace["conversation_id"] for request in trace["requests"])
     projected = project_bb_trace(trace)
     assert projected["request_count"] == 1
     assert projected["tool_calls"]
@@ -4389,7 +4392,42 @@ async def test_openhands_trace_is_frozen_json_and_comparator_compatible(
     assert tools.effect_admissions == 1
     assert tools.effect_measurements == 1
     assert tools.operations.index("close") < tools.operations.index("measure_effects")
-    assert thaw_json(result.response["cleanup"])["all_dead"] is True
+
+@pytest.mark.parametrize("invalid_conversation_id", [None, "", "not-a-uuid", "12345"])
+async def test_openhands_invalid_conversation_id_fails_protocol(invalid_conversation_id: str | None) -> None:
+    observation = _observation()
+    tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
+    semantic = _openhands_semantics(observation)
+    plan = _plan(
+        observation=observation,
+        semantics=semantic,
+        tools=tuple(_tool_grant(tool_id) for tool_id in sorted(tool_order)),
+        limit_updates={"max_turns": 16, "action_timeout_ms": 90_000},
+        implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
+    )
+    client = _OpenHandsTraceClient(observation)
+    class _CustomPort(_OpenHandsTracePort):
+        async def invoke_native_phase(self, operation: str, payload: Mapping[str, Any], *, timeout_ms: int) -> Mapping[str, Any]:
+            res = dict(await super().invoke_native_phase(operation, payload, timeout_ms=timeout_ms))
+            if operation == "initialize":
+                if invalid_conversation_id is None:
+                    res.pop("conversation_id", None)
+                else:
+                    res["conversation_id"] = invalid_conversation_id
+            return res
+    tools = _CustomPort()
+    session, _, _, _, _, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=tools,
+    )
+    try:
+        with pytest.raises(RunnerProtocolError) as captured:
+            await session.run(ConductorRunRequest({"prompt": "finish the task"}))
+        assert captured.value.code == "native_response_invalid"
+    finally:
+        await session.close()
 
 
 

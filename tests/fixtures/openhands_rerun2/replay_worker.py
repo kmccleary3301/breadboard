@@ -61,7 +61,7 @@ def main(root: Path, temporary: Path):
         actor = OpenHandsActor(channel)
         status = None
         try:
-            actor.dispatch('initialize', {
+            init_reply = actor.dispatch('initialize', {
                 'task': case['task'],
                 'model_config': {
                     'model_name': 'openai/gpt-4o-mini',
@@ -73,7 +73,7 @@ def main(root: Path, temporary: Path):
                 'scratch': str(scratch),
                 'max_iteration_per_run': case.get('max_iteration_per_run', 16),
             })
-            conversation_id = str(actor._conversation.state.id)
+            conversation_id = str(init_reply['conversation_id'])
             for _ in range(case.get('max_iteration_per_run', 16)):
                 actor.dispatch('sample', {})
                 prepared = actor.dispatch('prepare', {})

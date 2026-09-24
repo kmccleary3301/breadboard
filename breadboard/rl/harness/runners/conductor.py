@@ -110,6 +110,8 @@ CONDUCTOR_ADAPTER_ID = "breadboard.conductor.v1"
 CONDUCTOR_RUNTIME_ABI = "breadboard.conductor.v1"
 POLICY_RUNTIME_BINDING_SCHEMA_VERSION = "bb.rl.policy-runtime-binding.v1"
 
+_CANONICAL_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
 
 @dataclass(frozen=True, slots=True)
 class NativeCleanupOutcome:
@@ -2564,6 +2566,15 @@ class _ConductorSession:
                 "native tools differ from the compiled source recipe",
                 code="native_response_binding_invalid", **self._context(),
             )
+        conversation_id = initialized.get("conversation_id")
+        if (
+            type(conversation_id) is not str
+            or _CANONICAL_UUID_RE.fullmatch(conversation_id) is None
+        ):
+            raise RunnerProtocolError(
+                "native conversation id is not a canonical UUID",
+                code="native_response_invalid", **self._context(),
+            )
         self._binding.bind_native_tools(initialized["tool_schemas"])
         await commit_events(initialized, "initial", None)
         termination = RunnerTermination.MAX_TURNS
@@ -2791,6 +2802,7 @@ class _ConductorSession:
         replay_trace = {
             "schema_version": "bb.e4.openhands-sdk-trace.v1",
             "case_id": self._open_request.episode_id,
+            "conversation_id": conversation_id,
             "requests": trace_requests,
             "tool_calls": trace_tool_calls,
             "observations": trace_observations,

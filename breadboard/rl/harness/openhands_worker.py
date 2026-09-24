@@ -404,6 +404,7 @@ class OpenHandsActor:
         return {
             "schema_version": SCHEMA_VERSION,
             "kind": "initialized",
+            "conversation_id": str(self._conversation.state.id),
             "event_delta": self._take_events(),
             "status": self._status(),
             "iteration": self._iteration,
