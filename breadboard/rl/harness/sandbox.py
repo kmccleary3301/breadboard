@@ -2681,14 +2681,6 @@ class TrustedProcessHandle:
                 await native_session.close()
             except BaseException:
                 failed = True
-        for process_group, identity in tuple(self._groups.items()):
-            if not await self._drain_group(process_group, identity):
-                failed = True
-            else:
-                self._groups.pop(process_group, None)
-                recorder = getattr(self, "_identity_recorder", None)
-                if recorder is not None:
-                    recorder(f"process-group-{process_group}", None)
         if self._envelope is not None:
             try:
                 self.teardown_receipt = await self._envelope.terminate()
@@ -2699,6 +2691,14 @@ class TrustedProcessHandle:
                     failed = True
             except BaseException:
                 failed = True
+        for process_group, identity in tuple(self._groups.items()):
+            if not await self._drain_group(process_group, identity):
+                failed = True
+            else:
+                self._groups.pop(process_group, None)
+                recorder = getattr(self, "_identity_recorder", None)
+                if recorder is not None:
+                    recorder(f"process-group-{process_group}", None)
         async with self._launch_lock:
             if not failed and not self._groups:
                 self._executable.close()
