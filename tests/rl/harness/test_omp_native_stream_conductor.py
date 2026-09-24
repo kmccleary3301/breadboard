@@ -18,8 +18,7 @@ from breadboard.product.harness.resolution import compile_e4_harness
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.omp_native_tools import NativeToolWorker, pinned_worker_spec
 from breadboard.rl.harness.policy_provider import EpisodeOpenAICompletionsPolicyClient
-from breadboard.rl.harness.runners.base import RunnerOpenRequest, RunnerTermination, RunnerToolBinding, thaw_json
-from breadboard.rl.harness.runners.conductor import CONDUCTOR_IMPLEMENTATION_DIGEST, ConductorAdapter, ConductorRunRequest, PolicyRuntimeBinding
+from breadboard.rl.harness.runners.conductor import CONDUCTOR_IMPLEMENTATION_DIGEST, CONDUCTOR_RUNTIME_ABI, ConductorAdapter, ConductorRunRequest, PolicyRuntimeBinding
 from breadboard_engine.compilation.provider_response import OMP_RESPONSE_CONSUMER_ID, profile_identity_digest
 from breadboard_engine.e4_targets import load_e4_target
 from breadboard_engine.provider.contracts import OpenAICompletionsProviderProfile
@@ -217,7 +216,7 @@ async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates
         tools = _OMPWorkspacePort(workspace, tmp_path / "scratch")
         client = EpisodeOpenAICompletionsPolicyClient(episode_id="episode-omp", effective_plan_digest=plan.canonical_digest(), observation=observation, profile=profile, target_projection=projection, timeout_seconds=45)
         binding = PolicyRuntimeBinding(RunnerOpenRequest(episode_id="episode-omp", effective_plan=plan), client)
-        session = await ConductorAdapter("breadboard.conductor.v2").open(RunnerOpenRequest(episode_id="episode-omp", effective_plan=plan), policy=binding, workspace=tools, cancellation=type("C", (), {"raise_if_cancelled": lambda *args, **kwargs: None})(), events=type("E", (), {"emit": lambda self, event: asyncio.sleep(0)})())
+        session = await ConductorAdapter(CONDUCTOR_RUNTIME_ABI).open(RunnerOpenRequest(episode_id="episode-omp", effective_plan=plan), policy=binding, workspace=tools, cancellation=type("C", (), {"raise_if_cancelled": lambda *args, **kwargs: None})(), events=type("E", (), {"emit": lambda self, event: asyncio.sleep(0)})())
         try:
             result = await session.run(ConductorRunRequest(task_input={"prompt": task}, context={}))
         finally:
