@@ -11,6 +11,7 @@ from typing import Any, Callable
 import pytest
 
 from breadboard.rl.harness.hermes_tools import HermesToolRuntime, HermesToolRuntimeError
+from scripts import e4_hermes_native_replay
 
 from conformance.comparators.hermes_agent import (
     TRACE_SCHEMA_VERSION,
@@ -353,3 +354,123 @@ def test_comparator_rejects_name_only_tool_schemas() -> None:
     assert report["ok"] is False
     assert report["failed"] >= 1
     assert any("tools" in a.get("detail", "") for a in report["assertions"] if a["status"] == "failed")
+
+
+def _replay_kit(tmp_path: Path) -> Path:
+    kit_root = tmp_path / "kit"
+    capture = kit_root / "do2-20260923" / "hermes" / "kit"
+    capture.mkdir(parents=True)
+    (kit_root / "hermes_sif_compose.py").touch()
+    for name in (
+        "hermes_capture_breadboard.py",
+        "hermes_capture_probe.py",
+        "hermes_capture_receiver.py",
+        "hermes_capture_cases.json",
+    ):
+        (capture / name).touch()
+    return kit_root
+
+
+def test_replay_spec_records_git_head_instead_of_stale_literal(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    head = "a" * 40
+
+    def git_run(command: list[str], **kwargs: Any) -> Any:
+        return SimpleNamespace(returncode=0, stdout="" if "status" in command else head + "\n", stderr="")
+
+    monkeypatch.setattr(e4_hermes_native_replay.subprocess, "run", git_run, raising=False)
+    spec = e4_hermes_native_replay.do2_job_spec(tmp_path / "packet", tmp_path / "out", kit_root=_replay_kit(tmp_path))
+    assert spec["source"]["commit"] == head
+    assert f"--base-commit {head}" in spec["sbatch_script"]
+    assert 'SLURM_JOB_ID="$SLURM_JOB_ID"' in spec["sbatch_script"]
+
+
+@pytest.mark.parametrize(
+    ("git_stdout", "returncode"),
+    [(" M breadboard/rl/harness/hermes_worker.py", 0), ("", 1)],
+    ids=["dirty-checkout", "missing-head"],
+)
+def test_replay_spec_rejects_non_committed_checkout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, git_stdout: str, returncode: int,
+) -> None:
+    def git_run(command: list[str], **kwargs: Any) -> Any:
+        if "status" in command and returncode == 1:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        return SimpleNamespace(returncode=returncode, stdout=git_stdout, stderr="git error")
+
+    monkeypatch.setattr(e4_hermes_native_replay.subprocess, "run", git_run, raising=False)
+    with pytest.raises(ValueError, match="checkout|HEAD|dirty"):
+        e4_hermes_native_replay.do2_job_spec(
+            tmp_path / "packet", tmp_path / "out", kit_root=_replay_kit(tmp_path),
+        )
+
+
+def test_replay_spec_uses_checkout_and_explicit_kit_not_current_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    head = "b" * 40
+    monkeypatch.setattr(e4_hermes_native_replay, "_checkout_commit", lambda: head, raising=False)
+    kit_root = _replay_kit(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    spec = e4_hermes_native_replay.do2_job_spec(tmp_path / "packet", tmp_path / "out", kit_root=kit_root)
+    uploaded = {entry["remote"].split("/")[-1]: entry["local"] for entry in spec["puts"]}
+    source = Path(e4_hermes_native_replay.__file__).resolve().parents[1]
+    assert uploaded["breadboard"] == str(source / "breadboard")
+    assert uploaded["conformance"] == str(source / "conformance")
+    assert uploaded["hermes_capture_breadboard.py"] == str(kit_root / "do2-20260923" / "hermes" / "kit" / "hermes_capture_breadboard.py")
+
+
+def test_replay_spec_rejects_missing_kit_tree(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(e4_hermes_native_replay, "_checkout_commit", lambda: "b" * 40, raising=False)
+    with pytest.raises(ValueError, match="kit"):
+        e4_hermes_native_replay.do2_job_spec(
+            tmp_path / "packet", tmp_path / "out", kit_root=tmp_path / "missing",
+        )
+
+
+def test_replay_spec_rejects_missing_source_tree(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(e4_hermes_native_replay, "_checkout_commit", lambda: "b" * 40, raising=False)
+    monkeypatch.setattr(e4_hermes_native_replay, "__file__", str(tmp_path / "missing" / "scripts" / "replay.py"))
+    with pytest.raises(ValueError, match="source"):
+        e4_hermes_native_replay.do2_job_spec(
+            tmp_path / "packet", tmp_path / "out", kit_root=_replay_kit(tmp_path),
+        )
+
+
+def test_mapping_trace_report_hashes_canonical_input_bytes() -> None:
+    case_dir, replay = _replay("H-01-normal-memory-skill-write")
+    raw = json.dumps(replay, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    report = compare_cases(case_dir, replay)
+    assert report["ok"] is True
+    assert report["mode"] == "fixture"
+    assert report["bb_trace_sha256"] == "sha256:" + hashlib.sha256(raw).hexdigest()
+    assert "job_id" not in report
+
+
+def test_installed_replay_without_job_id_fails_even_when_trace_matches(tmp_path: Path) -> None:
+    case_dir, replay = _replay("H-01-normal-memory-skill-write")
+    trace_path = tmp_path / "bb-trace.json"
+    trace_path.write_text(json.dumps(replay), encoding="utf-8")
+    report = compare_cases(case_dir, trace_path, installed_replay=True)
+    assert report["ok"] is False
+    assert any("job_id" in error for error in report["errors"])
+
+
+def test_path_trace_report_hashes_original_bytes(tmp_path: Path) -> None:
+    case_dir, replay = _replay("H-01-normal-memory-skill-write")
+    raw = json.dumps(replay, indent=2, ensure_ascii=False).encode("utf-8") + b"\n"
+    trace_path = tmp_path / "bb-trace.json"
+    trace_path.write_bytes(raw)
+    report = compare_cases(case_dir, trace_path, installed_replay=True, job_id="456789")
+    assert report["ok"] is True
+    assert report["mode"] == "installed-replay"
+    assert report["job_id"] == "456789"
+    assert report["bb_trace_sha256"] == "sha256:" + hashlib.sha256(raw).hexdigest()
+
+
+def test_installed_replay_requires_persisted_trace() -> None:
+    case_dir, replay = _replay("H-01-normal-memory-skill-write")
+    report = compare_cases(case_dir, replay, installed_replay=True, job_id="456789")
+    assert report["ok"] is False
+    assert any("path" in error for error in report["errors"])

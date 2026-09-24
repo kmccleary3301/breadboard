@@ -604,13 +604,15 @@ def _report(
     source_derived_controls: Sequence[str] = (),
     bb_trace_sha256: str | None = None,
     job_id: str | None = None,
+    mode: str = "fixture",
 ) -> dict[str, Any]:
     failed = sum(item["status"] == "failed" for item in assertions)
-    return {
+    report = {
         "comparator_id": COMPARATOR_ID,
         "report_schema_version": REPORT_SCHEMA_VERSION,
         "lane_id": LANE_ID,
         "config_id": CONFIG_ID,
+        "mode": mode,
         "generated_at_utc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "ok": failed == 0 and not errors,
         "passed": len(assertions) - failed,
@@ -619,10 +621,13 @@ def _report(
         "normalizations": normalizations or [],
         "gaps": gaps or [],
         "source_derived_controls": list(source_derived_controls),
-        "bb_trace_sha256": bb_trace_sha256,
-        "job_id": job_id,
         "assertions": assertions,
     }
+    if bb_trace_sha256 is not None:
+        report["bb_trace_sha256"] = bb_trace_sha256
+    if job_id is not None:
+        report["job_id"] = job_id
+    return report
 
 
 def _supplier_input(
@@ -648,24 +653,37 @@ def _supplier_input(
 def compare_cases(
     supplier_case: Path | str | Mapping[str, Any],
     bb_trace: Mapping[str, Any] | Path | str,
+    *,
+    installed_replay: bool = False,
+    job_id: str | None = None,
 ) -> dict[str, Any]:
     normalizations: list[str] = []
     trace_hash: str | None = None
-    job_id: str | None = None
+    mode = "installed-replay" if installed_replay else "fixture"
     try:
         expected, supplier_root = _supplier_input(supplier_case)
+        if installed_replay and not isinstance(bb_trace, (Path, str)):
+            raise ValueError("installed replay requires a persisted BreadBoard trace path")
         if isinstance(bb_trace, (Path, str)):
             raw = Path(bb_trace).read_bytes()
-            trace_hash = "sha256:" + hashlib.sha256(raw).hexdigest()
-            bb_value = json.loads(raw)
         else:
-            bb_value = copy.deepcopy(bb_trace)
+            raw = json.dumps(
+                bb_trace, separators=(",", ":"), ensure_ascii=False, allow_nan=False,
+            ).encode("utf-8")
+        trace_hash = "sha256:" + hashlib.sha256(raw).hexdigest()
+        bb_value = json.loads(raw)
         if not isinstance(bb_value, Mapping):
             raise ValueError("BreadBoard trace must be an object")
         candidate_job = bb_value.get("job_id")
-        if candidate_job is not None and not isinstance(candidate_job, str):
-            raise ValueError("BreadBoard job_id must be a string")
-        job_id = candidate_job
+        if candidate_job is not None and (not isinstance(candidate_job, str) or not candidate_job.strip()):
+            raise ValueError("BreadBoard job_id must be a nonempty string")
+        if job_id is not None and (not isinstance(job_id, str) or not job_id.strip()):
+            raise ValueError("replay job_id must be a nonempty string")
+        if job_id is not None and candidate_job is not None and job_id != candidate_job:
+            raise ValueError("replay job_id differs from BreadBoard trace job_id")
+        job_id = job_id or candidate_job
+        if installed_replay and job_id is None:
+            raise ValueError("installed replay requires job_id from trace or replay metadata")
         observed_root = _declared_workspace_root(bb_value)
         observed = project_bb_trace(bb_value)
         expected_changed, observed_changed = [False], [False]
@@ -674,7 +692,7 @@ def compare_cases(
         if expected_changed[0] or observed_changed[0]:
             normalizations.append("workspace_root:<WORKSPACE>")
     except (OSError, TypeError, ValueError) as exc:
-        return _report([], [str(exc)], normalizations)
+        return _report([], [str(exc)], normalizations, bb_trace_sha256=trace_hash, job_id=job_id, mode=mode)
     assertions: list[dict[str, Any]] = []
     overlay_config = _load_json(
         Path(__file__).resolve().parents[2] / "config/e4_targets/hermes_agent/2026.9.11/native-config.json"
@@ -690,7 +708,7 @@ def compare_cases(
         assertions, normalizations=normalizations,
         gaps=[{"id": _SCHEMA_GAP, "evidence": "source-derived"}] if used_overlay else [],
         source_derived_controls=_PACKET_ABSENT_CONTROLS,
-        bb_trace_sha256=trace_hash, job_id=job_id,
+        bb_trace_sha256=trace_hash, job_id=job_id, mode=mode,
     )
 
 
