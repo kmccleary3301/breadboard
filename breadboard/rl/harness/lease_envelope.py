@@ -676,7 +676,7 @@ def _spawn_one(_control: socket.socket, message: Mapping[str, Any], fds: list[in
                 status_fd=status_fd,
                 argv=argv,
             )
-            env = {str(key): str(value) for key, value in message["environment"].items()}
+            os.set_inheritable(exec_fd, False)
             os.set_inheritable(status_fd, False)
             try:
                 _execveat_fd(exec_fd, argv, env)
