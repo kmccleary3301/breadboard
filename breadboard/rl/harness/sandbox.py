@@ -1189,6 +1189,7 @@ class RuntimeLaunchContext:
         Callable[[str, Mapping[str, Any] | None], None] | None
     ) = None
     containment_authenticator: Any | None = None
+    native_scratch_path: Path | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -2693,7 +2694,13 @@ class TrustedProcessBackend:
                         code="runtime_preflight_failed",
                         lease_id=lease_id,
                     )
-                scratch = workspace / ".breadboard-native-scratch"
+                scratch = context.native_scratch_path
+                if scratch is None:
+                    raise SandboxLaunchError(
+                        "attested trusted process native scratch is unavailable",
+                        code="runtime_preflight_failed",
+                        lease_id=lease_id,
+                    )
                 scratch.mkdir(mode=0o700, exist_ok=True)
                 (scratch / "home").mkdir(mode=0o700, exist_ok=True)
                 envelope = await asyncio.to_thread(
@@ -4485,6 +4492,12 @@ class SandboxRuntimeManager:
             result_relative_path=None if role == "primary" else "result",
             publish_prepared_identity=lambda identity, lease_id=lease_id:
                 self._publish_runtime_identity(lease_id, identity),
+            native_scratch_path=(
+                _native_scratch_path(self, lease_id)
+                if plan.runtime.runtime_class is RuntimeClass.TRUSTED_PROCESS
+                and plan.containment is RuntimeContainment.ATTESTED
+                else None
+            ),
             record_process_identity=lambda resource_id, identity, lease_id=lease_id:
                 self._record_process_identity(lease_id, resource_id, identity),
             workspace_fd=workspace_fd,
@@ -4959,6 +4972,17 @@ class SandboxRuntimeManager:
                     cleanup_steps.append(CleanupStepReceipt(
                         "cache_holder", CleanupState.QUARANTINED, "dependent runtime cleanup incomplete"
                     ))
+                scratch_present = _native_scratch_present(self, lease_id)
+                if scratch_present:
+                    cleanup_steps.append(
+                        _remove_native_scratch(self, lease_id)
+                        if runtime_released
+                        else CleanupStepReceipt(
+                            "native_scratch",
+                            CleanupState.QUARANTINED,
+                            "dependent runtime cleanup incomplete",
+                        )
+                    )
                 dependencies_released = all(
                     step.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
                     for step in cleanup_steps
@@ -5328,6 +5352,17 @@ class SandboxRuntimeManager:
                         "workspace", CleanupState.QUARANTINED,
                         "dependent runtime cleanup incomplete",
                     ))
+                scratch_present = _native_scratch_present(self, lease_id)
+                if scratch_present:
+                    cleanup_steps.append(
+                        _remove_native_scratch(self, lease_id)
+                        if runtime_released
+                        else CleanupStepReceipt(
+                            "native_scratch",
+                            CleanupState.QUARANTINED,
+                            "dependent runtime cleanup incomplete",
+                        )
+                    )
                 dependencies_released = all(
                     step.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
                     for step in cleanup_steps
