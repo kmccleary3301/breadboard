@@ -35,7 +35,7 @@ class NativeStreamProfile:
     state_module: ModuleType
     # (task, system_prompt, bootstrap) -> profile semantics state.
     state_factory: Callable[[str, str, Mapping[str, Any]], Any]
-
+    classify_result_phase: str | None = None
 
 def _pi_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
     del bootstrap
@@ -77,6 +77,7 @@ NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
         package_subpath=".",
         state_module=openclaw_semantics,
         state_factory=_openclaw_state,
+        classify_result_phase="classify_result",
     ),
 })
 

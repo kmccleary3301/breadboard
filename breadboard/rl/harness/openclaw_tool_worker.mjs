@@ -20,6 +20,7 @@ const MODULE_DIGESTS = Object.freeze({
   "workspace-YW5Pl2cf.mjs": "8201a6b4ee921ac2767e272924488ed7c56c9041d274070490a064968438d5cf",
   "bash-process-registry-DHrULGkz.mjs": "6f8a65296ce1a1e07b0f3d94d2bf65f9e88c5a68b9d01df3eecc1f40f349627e",
   "openai-transport-stream-D950WgL3.mjs": "83fd60ff0760bef6eeabcee42fd219f1213cc9ffe3f65666681f486775032d78",
+  "agent-exec-BAuhpelg.mjs": "2e39dbc961337936860849aaaed6a26b734d0c20648093f2bc51a46ebfe9526d",
 });
 const MAX_LIVE_PROCESSES = 4;
 const TOOL_ORDER = Object.freeze(["edit", "exec", "ls", "process", "read", "write"]);
@@ -31,7 +32,10 @@ let sourceBootstrap = null;
 let sourceWorkspace = null;
 let sourceTransport = null;
 let modelConfig = null;
+let builtTools = [];
 let verifiedRegistryUrl = null;
+let classifyAgentExecResultFn = null;
+let exitCodeForEnvelopeFn = null;
 let prepared = null;
 let closing = false;
 let advertisedTools = new Map();
@@ -54,6 +58,15 @@ async function verifyAndLoad() {
   sourceBootstrap = await import(bytes["bootstrap-DYYMCrXY.mjs"]);
   sourceWorkspace = await import(bytes["workspace-YW5Pl2cf.mjs"]);
   sourceTransport = await import(bytes["openai-transport-stream-D950WgL3.mjs"]);
+  const agentExecPath = join(DIST, "agent-exec-BAuhpelg.mjs");
+  const agentExecPayload = await readFile(agentExecPath, "utf8");
+  const match = agentExecPayload.match(/\/\/#region src\/commands\/agent-exec-result\.ts([\s\S]*?)\/\/#endregion/);
+  if (!match) throw new Error("pinned OpenClaw classifyAgentExecResult region not found");
+  const classifierCode = match[1] + "\nfunction exitCodeForEnvelope(envelope) { return envelope.status === \"ok\" ? 0 : envelope.status === \"timeout\" ? 2 : 1; }\nreturn { classifyAgentExecResult, exitCodeForEnvelope };";
+  const classifierFn = new Function(classifierCode);
+  const extracted = classifierFn();
+  classifyAgentExecResultFn = extracted.classifyAgentExecResult;
+  exitCodeForEnvelopeFn = extracted.exitCodeForEnvelope;
   return {
     createCoreCodingTools: core.t,
     buildBootstrapContextFiles: sourceBootstrap.n,
@@ -135,6 +148,7 @@ function makeTools(createCoreCodingTools) {
     },
     processDefaults: { scopeKey },
   });
+  builtTools = built;
   const ordered = TOOL_ORDER.map((name) => built.find((tool) => tool.name === name));
   if (ordered.some((tool) => !tool)) throw new Error("pinned source tool factory did not produce the admitted six-tool set");
   tools = new Map(ordered.map((tool) => [tool.name, tool]));
@@ -160,22 +174,29 @@ function toSourceHistory(messages) {
 function projectSourceRequest(messages, buildOpenAICompletionsParams) {
   if (!modelConfig || typeof modelConfig !== "object") throw new Error("model_config is required");
   const system = messages[0];
-  if (!system || system.role !== "system" || typeof system.content !== "string") {
-    throw new Error("project_request requires a source system prompt");
-  }
-  const history = toSourceHistory(messages.slice(1));
-  const sourceTools = Array.from(tools.values()).map((tool) => {
+  const systemPrompt = (system && system.role === "system" && typeof system.content === "string")
+    ? system.content
+    : "";
+  const history = toSourceHistory(system && system.role === "system" ? messages.slice(1) : messages);
+  const baseTools = builtTools && builtTools.length ? builtTools : Array.from(tools.values());
+  const sourceTools = baseTools.map((tool) => {
     const overlay = advertisedTools.get(tool.name);
     return overlay ? { ...tool, description: overlay.description } : tool;
   });
-  const params = buildOpenAICompletionsParams(
-    modelConfig,
-    { systemPrompt: system.content, messages: history, tools: sourceTools },
-    undefined,
-  );
+  if (typeof buildOpenAICompletionsParams === "function" && systemPrompt) {
+    const params = buildOpenAICompletionsParams(
+      modelConfig,
+      { systemPrompt, messages: history, tools: sourceTools },
+      undefined,
+    );
+    return {
+      messages: params.messages || [],
+      tools: params.tools || [],
+    };
+  }
   return {
-    messages: params.messages,
-    tools: params.tools || [],
+    messages,
+    tools: baseTools.map(schemaFor),
   };
 }
 
@@ -390,10 +411,65 @@ async function executePrepared() {
   prepared = null;
   return { schema_version: PROTOCOL, kind: "tool_results", results };
 }
+
+function buildRunResultFromTerminalState(message) {
+  const messages = Array.isArray(message.messages) ? message.messages : [];
+  const payloads = [];
+  let lastAssistantText = "";
+  for (const msg of messages) {
+    if (msg.role === "assistant") {
+      if (typeof msg.content === "string" && msg.content) {
+        payloads.push({ text: msg.content });
+        lastAssistantText = msg.content;
+      }
+      if (typeof msg.reasoning === "string" && msg.reasoning) {
+        payloads.push({ text: msg.reasoning, isReasoning: true });
+      }
+      if (typeof msg.commentary === "string" && msg.commentary) {
+        payloads.push({ text: msg.commentary, isCommentary: true });
+      }
+    } else if (msg.role === "tool") {
+      if (msg.isError) {
+        payloads.push({ text: text(msg.content), isError: true });
+      }
+    }
+  }
+  const stopReason = message.stop_reason || message.native_stop_reason || (message.timeout ? "timeout" : "stop");
+  const isTimeout = message.timeout === true || stopReason === "timeout" || message.termination === "timeout";
+  const isError = Boolean(message.error || message.isError || stopReason === "error" || message.termination === "error");
+  const errorObj = message.error
+    ? (typeof message.error === "object" ? message.error : { message: String(message.error), kind: "agent_error" })
+    : undefined;
+  const modelCfg = message.model_config || modelConfig;
+  return {
+    payloads: Array.isArray(message.payloads) ? message.payloads : payloads,
+    meta: {
+      durationMs: Number(message.duration_ms) || 0,
+      stopReason: isTimeout ? "timeout" : isError ? "error" : stopReason,
+      timeoutPhase: isTimeout ? (message.timeout_phase || "action") : undefined,
+      aborted: Boolean(message.aborted),
+      error: errorObj,
+      finalAssistantVisibleText: message.final_text || (lastAssistantText ? lastAssistantText.trimEnd() : undefined),
+      agentMeta: {
+        model: modelCfg?.id || modelCfg?.model || null,
+        provider: modelCfg?.provider || null,
+        sessionId: message.session_id || scopeKey || "",
+        usage: message.usage || undefined,
+        costUsd: message.cost_usd,
+        assistantTurns: message.assistant_turns,
+        bridgeCalls: message.bridge_calls,
+      },
+      toolSummary: message.tool_summary || undefined,
+    },
+  };
+}
+
 async function handle(message) {
   const phase = message?.phase || message?.operation;
   if (phase === "initialize") {
-    if (typeof message.workspace !== "string" || !message.workspace) throw new Error("workspace is required");
+    const runtimeInputs = message.runtime_inputs && typeof message.runtime_inputs === "object" ? message.runtime_inputs : {};
+    const workspacePath = typeof message.workspace === "string" && message.workspace ? message.workspace : runtimeInputs.cwd;
+    if (typeof workspacePath !== "string" || !workspacePath) throw new Error("workspace is required");
     if (
       !message.advertisement
       || typeof message.advertisement !== "object"
@@ -404,17 +480,18 @@ async function handle(message) {
       throw new Error("advertisement.system_prompt is required");
     }
     const advertisement = validateAdvertisement(message.advertisement);
-    workspace = resolve(message.workspace);
+    workspace = resolve(workspacePath);
     scopeKey = typeof message.scopeKey === "string" && message.scopeKey ? message.scopeKey : scopeKey;
     if (message.model_config && (typeof message.model_config !== "object" || Array.isArray(message.model_config))) {
       throw new Error("model_config must be an object");
     }
     modelConfig = message.model_config || null;
     let assets = message.bootstrap_assets;
-    if (!Array.isArray(assets) && typeof message.package_dir === "string") {
+    const packageDir = typeof message.package_dir === "string" && message.package_dir ? message.package_dir : runtimeInputs.package_dir;
+    if (!Array.isArray(assets) && typeof packageDir === "string") {
       assets = [];
       for (const name of ["AGENTS.md", "SOUL.md"]) {
-        const content = await readFile(join(message.package_dir, "bootstrap", name), "utf8");
+        const content = await readFile(join(packageDir, "bootstrap", name), "utf8");
         assets.push({ name, content, sha256: `sha256:${sha256(Buffer.from(content, "utf8"))}` });
       }
     }
@@ -428,7 +505,7 @@ async function handle(message) {
       system_prompt: text(message.system_prompt || advertisement.system_prompt)
         .replaceAll("{{task}}", text(message.task)),
       tool_schemas: ordered.map(schemaFor),
-      bootstrap: { files: bootstrapFiles },
+      bootstrap: { files: bootstrapFiles, ...runtimeInputs },
       tools: TOOL_ORDER,
     };
   }
@@ -487,6 +564,24 @@ async function handle(message) {
     const record = pending.get(id);
     pending.delete(id);
     return { schema_version: PROTOCOL, kind: "acknowledged", delivery_id: id, session_id: record.sessionId, history_digest: text(message.history_digest) };
+  }
+  if (phase === "classify_result") {
+    if (!classifyAgentExecResultFn) throw new Error("classifier is not initialized");
+    const runResult = message.result && typeof message.result === "object"
+      ? message.result
+      : buildRunResultFromTerminalState(message);
+    const envelope = classifyAgentExecResultFn(
+      runResult,
+      Boolean(message.fallback_exhausted || message.fallbackExhausted),
+      message.projected_error_payload || message.projectedErrorPayload,
+    );
+    const exitCode = exitCodeForEnvelopeFn(envelope);
+    return {
+      schema_version: PROTOCOL,
+      kind: "classified_result",
+      envelope,
+      exit_code: exitCode,
+    };
   }
   if (phase === "close") {
     if (closing) throw new Error("worker close already requested");
