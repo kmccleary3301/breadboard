@@ -50,6 +50,14 @@ This adds a versioned target and streaming consumer. Within that target, the fin
 - The danger-zone ACR guard must accept the complete PR changed-file list; the kernel contract-pack checker must accept its manifest. DO-2 installed SIF replay on Linux x64 is **PENDING**. No DO-2 result or production acceptance is asserted here.
 - At this corrective head, the removed supplier-content overrides in `test_omp_native_stream_conductor.py` leave its local comparison environment-gated. Bun successfully bundled the worker TypeScript locally, but the macOS export lacks `@oh-my-pi/pi-ai/dialect` and native darwin leaves: direct source rendering and six-case installed request parity cannot be asserted from this host. The sealed supplier's first system message is 9,831 bytes, SHA-256 `975caab28fb212c4ff1642ce2ab5a46936205f9b04a9b96938cd04a971030491`. Independent review and the Linux x64 installed replay must compare the actual BB-produced system and reminder bytes without overrides.
 
+### Declared gaps
+
+| Gap id | Pinned behaviour | BB behaviour | Enforcement |
+| --- | --- | --- | --- |
+| `omp-done-without-finish-reason` | `openai-completions.ts:692-694,1406-1422` finalizes a stream that ends with `[DONE]` but no `finish_reason` as `stop`; only EOF without either throws `incomplete-stream`. | openai 3.13.0 `_streaming.py:64` breaks on `[DONE]`, so BB cannot tell `[DONE]` from a clean EOF. With the OMP profile's `accepts_truncated_stream`, both become `stream_truncated`. | The OMP comparator fails closed on a supplier row with `broken: false` and no finish chunk. The OMP target has no gap field, so this ACR is the only declaration. |
+
+Truncated streams (item 6): the OMP profile alone opts into `NativeStreamTermination`. BB then replays pinned `agent-loop.ts:1318-1359,1843-1848`: it keeps the cut call, pairs it with an undispatched placeholder error result, records `{"stream_termination": {reason, chunks}}` with a null native stop, exits `Submitted`, and ends the run `POLICY_INCOMPLETE`. The kept call's arguments stay as raw sampled text, where pinned uses `parseStreamingJson`. No later request can observe that difference.
+
 ## 6) Rollout Plan
 
 Keep the OMP target bound to its pinned source, consumer identity, declared capability denials, and native worker. Resolve the ACR guard and contract-pack checks for this documentation-only commit. Require applicable CI and the separate installed DO-2 Linux x64 replay before any qualification or promotion. The existing local-vm-linux evidence cannot substitute for that replay.
