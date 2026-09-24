@@ -3240,6 +3240,21 @@ def test_workspace_seed_artifact_identity_is_pinned_and_paths_are_closed() -> No
         SourceManifestEntry("link", "symlink", 0, 0o777, None)
 
 
+@pytest.mark.parametrize(
+    "files",
+    [
+        {"a": b"file", "a/b": b"nested"},
+        {"A": b"upper", "a": b"lower"},
+        {"A": b"file", "a/b": b"nested"},
+    ],
+)
+def test_workspace_seed_rejects_file_path_collisions_before_publication(
+    files: dict[str, bytes],
+) -> None:
+    with pytest.raises(ValueError, match="workspace seed"):
+        build_workspace_seed_artifact(files)
+
+
 def test_empty_workspace_seed_stays_byte_empty_through_seal(
     tmp_path: Path,
 ) -> None:

@@ -475,6 +475,21 @@ def build_workspace_seed_artifact(
         if type(mode) is not int or mode < 0 or mode > 0o777:
             raise ValueError("workspace seed file mode is invalid")
         normalized[path] = content
+    normalized_paths = tuple(sorted(normalized))
+    folded_paths: dict[str, str] = {}
+    for path in normalized_paths:
+        folded = path.casefold()
+        previous = folded_paths.setdefault(folded, path)
+        if previous != path:
+            raise ValueError("workspace seed paths collide case-insensitively")
+    for path in normalized_paths:
+        for parent in PurePosixPath(path).parents:
+            if parent.as_posix() == ".":
+                continue
+            if parent.as_posix() in normalized:
+                raise ValueError("workspace seed file is an ancestor of another file")
+            if parent.as_posix().casefold() in folded_paths:
+                raise ValueError("workspace seed file is a case-insensitive ancestor")
     directories = {
         parent.as_posix()
         for path in normalized
