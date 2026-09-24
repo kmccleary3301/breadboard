@@ -13,6 +13,7 @@ import stat
 import struct
 import time
 import threading
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
