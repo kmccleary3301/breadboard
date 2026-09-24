@@ -684,6 +684,15 @@ class OpenClawSemanticsState:
             "kind": self.terminal_kind or "running",
             "native_stop_reason": self.native_stop_reason,
         }
+        if self.refused_attempts > 0 or self.terminal_kind == "request_budget":
+            refusal = {
+                "status": 429,
+                "message": "bbe4 capture request cap",
+                "isError": True,
+            }
+            termination["refusal"] = refusal
+            termination["isError"] = True
+
         messages = [dict(message) for message in self.history]
         trace: dict[str, Any] = {
             "schema_version": "bb.e4.openclaw-episode.v1",
@@ -704,6 +713,13 @@ class OpenClawSemanticsState:
             "stream_fn_issued": self.stream_fn_issued,
             "history": messages,
         }
+        if self.refused_attempts > 0 or self.terminal_kind == "request_budget":
+            trace["refusal"] = {
+                "status": 429,
+                "message": "bbe4 capture request cap",
+                "isError": True,
+            }
+            trace["isError"] = True
         if classification is not None:
             trace["classification"] = dict(classification)
         if final_envelope is not None:

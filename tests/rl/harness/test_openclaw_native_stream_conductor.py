@@ -518,8 +518,20 @@ async def test_openclaw_native_stream_cap_refuses_ninth_http_request(tmp_path: P
     assert all(request.get("store") is False for request in requests)
     assert all("n" not in request and "strict" not in request for request in requests)
     assert operations[-4:] == ("classify_result", "close", "retire_runtime", "measure_effects")
+    replay_trace = result.response["replay_trace"]
+    assert replay_trace["refusal"] == {
+        "status": 429,
+        "message": "bbe4 capture request cap",
+        "isError": True,
+    }
+    assert replay_trace["isError"] is True
+    assert replay_trace["termination"]["refusal"] == {
+        "status": 429,
+        "message": "bbe4 capture request cap",
+        "isError": True,
+    }
+    assert replay_trace["termination"]["isError"] is True
     assert all((tmp_path / f"turn-{index}.txt").read_text() == "ok\n" for index in range(8))
-
 
 @pytest.mark.asyncio
 async def test_openclaw_native_stream_classification_and_cleanup_envelope(tmp_path: Path) -> None:
