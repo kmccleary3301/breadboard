@@ -114,6 +114,43 @@ async def _created(monkeypatch: pytest.MonkeyPatch):
     return service, case, preflights, created
 
 
+async def test_public_service_rejects_verifier_without_containment_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, case, _, created = await _created(monkeypatch)
+    case.sandbox.verifier.containment_receipt = None
+    try:
+        result = await service.run(
+            case.request.episode_id,
+            create_fingerprint=created.response.create_fingerprint,
+            task_input={"case": "counterfeit-verifier"},
+            context={},
+        )
+        assert result.response.primary_disposition is EpisodePrimaryDisposition.FAILED
+        assert "verifier.execute" not in case.calls
+        assert "verifier.close" in case.calls
+    finally:
+        await service.close()
+
+
+async def test_public_service_does_not_close_success_without_teardown_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, case, _, created = await _created(monkeypatch)
+    case.sandbox.lease.emit_teardown_receipt = False
+    try:
+        result = await service.run(
+            case.request.episode_id,
+            create_fingerprint=created.response.create_fingerprint,
+            task_input={"case": "counterfeit-teardown"},
+            context={},
+        )
+        assert result.response.closed_envelope_ref is None
+        assert case.sandbox.lease.teardown_receipt is None
+    finally:
+        await service.close()
+
+
 async def test_v2_materializes_the_terminal_request_selected_by_the_effective_plan() -> None:
     request = ConductorRunRequest(
         {
@@ -1347,15 +1384,16 @@ async def test_verifier_close_task_is_owned_observed_and_joined_before_shutdown(
     loop = asyncio.get_running_loop()
     previous_handler = loop.get_exception_handler()
     original_cancel = service.cancel
+    original_verifier_close = case.sandbox.verifier.close
     publish_closed = repository.publish_closed
 
     async def blocked_verifier_close():
-        case.calls.append("verifier.close")
         verifier_close_entered.set()
         await verifier_close_release.wait()
         if close_fails:
+            case.calls.append("verifier.close")
             raise _CodedFailure("verifier_close_failed")
-        return case.sandbox.verifier.close_receipt
+        return await original_verifier_close()
 
     async def observe_shutdown_cancel(episode_id, reason):
         result = await original_cancel(episode_id, reason)
@@ -1460,14 +1498,17 @@ async def test_terminal_verifier_close_racing_parent_cancel_retains_cancellation
     loop_failures: list[dict[str, object]] = []
     loop = asyncio.get_running_loop()
     previous_handler = loop.get_exception_handler()
+    original_verifier_close = case.sandbox.verifier.close
 
     async def terminal_verifier_close():
-        case.calls.append("verifier.close")
+        if child_outcome == "cancel":
+            case.calls.append("verifier.close")
         verifier_close_entered.set()
         await verifier_close_release.wait()
         if child_outcome == "failure":
+            case.calls.append("verifier.close")
             raise _CodedFailure("verifier_close_failed")
-        return case.sandbox.verifier.close_receipt
+        return await original_verifier_close()
 
     monkeypatch.setattr(case.sandbox.verifier, "close", terminal_verifier_close)
     loop.set_exception_handler(lambda _loop, context: loop_failures.append(context))

@@ -54,6 +54,8 @@ from tests.rl.harness.wp7_fixtures import (
     replace_plan_capabilities,
 )
 
+from tests.rl.harness.v2_service_fixtures import signed_containment_receipt
+from breadboard.rl.harness.lease_envelope import add_teardown_outcome
 
 class RecordingHandle:
     def __init__(self) -> None:
@@ -72,6 +74,11 @@ class RecordingHandle:
         self.release_run: asyncio.Event | None = None
         self.terminate_entered: asyncio.Event | None = None
         self.release_terminate: asyncio.Event | None = None
+        self.containment_receipt = None
+        self.teardown_receipt = None
+        self.containment_authenticator = None
+        self.omit_teardown_receipt = False
+        self.teardown_all_dead = True
 
     async def run_shell(
         self, command: str, *, timeout_ms: int, output_limit: int
@@ -90,6 +97,13 @@ class RecordingHandle:
         return self.result
 
     async def terminate(self) -> tuple[Any, ...]:
+        if self.containment_receipt is not None and not self.omit_teardown_receipt:
+            self.teardown_receipt = add_teardown_outcome(
+                self.containment_receipt,
+                pid1_reaped=True,
+                all_dead=self.teardown_all_dead,
+                authenticator=self.containment_authenticator,
+            )
         self.terminate_calls += 1
         if self.terminate_entered is not None:
             self.terminate_entered.set()
@@ -111,6 +125,10 @@ class RecordingBackend:
         self.launch_entered: asyncio.Event | None = None
         self.release_launch: asyncio.Event | None = None
 
+        self.containment_authenticator = None
+        self.omit_receipt_roles: set[str] = set()
+        self.omit_teardown_receipt = False
+        self.teardown_all_dead = True
     async def launch(
         self,
         plan: Any,
@@ -130,6 +148,16 @@ class RecordingBackend:
         handle = RecordingHandle()
         handle.termination_receipts = self.handle_termination_receipts
         self.handles.append(handle)
+        handle.containment_authenticator = self.containment_authenticator
+        handle.omit_teardown_receipt = self.omit_teardown_receipt
+        handle.teardown_all_dead = self.teardown_all_dead
+        if (
+            plan.runtime.runtime_class is c.RuntimeClass.TRUSTED_PROCESS
+            and context.role not in self.omit_receipt_roles
+        ):
+            handle.containment_receipt = signed_containment_receipt(
+                lease_id, plan.runtime.runtime_id, self.containment_authenticator
+            )
         requested = {
             "runtime": plan.runtime.runtime_id,
             "image": plan.image.image_digest,
@@ -201,6 +229,47 @@ class RuntimeHarness:
             ),
             random_bytes=DeterministicRandom(2_000),
         )
+        self.backend.containment_authenticator = self.manager._containment_authenticator
+
+async def test_public_manager_rejects_missing_primary_containment_receipt(tmp_path: Path) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.backend.omit_receipt_roles.add("primary")
+    with pytest.raises(SandboxAttestationError) as caught:
+        await harness.manager.open(fixture.request)
+    assert caught.value.code == "containment_receipt_invalid"
+    assert harness.backend.handles[0].terminate_calls == 1
+    await harness.manager.close()
+
+async def test_public_manager_rejects_missing_verifier_containment_receipt(tmp_path: Path) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.backend.omit_receipt_roles.add("verifier")
+    primary = await harness.manager.open(fixture.request)
+    try:
+        snapshot = await primary.seal_for_verifier()
+        with pytest.raises(SandboxAttestationError) as caught:
+            await harness.manager.open_verifier(primary, snapshot)
+        assert caught.value.code == "containment_receipt_invalid"
+        assert harness.backend.handles[-1].terminate_calls == 1
+    finally:
+        await primary.close()
+        await harness.manager.close()
+
+
+@pytest.mark.parametrize("omit_receipt", [True, False], ids=["missing", "failed-outcome"])
+async def test_public_manager_fails_closed_without_signed_teardown(
+    tmp_path: Path, omit_receipt: bool
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.backend.omit_teardown_receipt = omit_receipt
+    harness.backend.teardown_all_dead = False
+    primary = await harness.manager.open(fixture.request)
+    receipt = await primary.close()
+    assert receipt.state not in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
+    assert (primary.teardown_receipt is None) is omit_receipt
+    await harness.manager.close()
 
 
 def _primary_runtime_index(fixture: RuntimeFixture) -> int:

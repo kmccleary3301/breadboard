@@ -455,6 +455,10 @@ class DeterministicVerifier:
             "lease_record",
             lease_id="verifier-lease",
         )
+        self.plan = SimpleNamespace(runtime=SimpleNamespace(
+            runtime_class=RuntimeClass.TRUSTED_PROCESS, runtime_id="deterministic_fake"
+        ))
+        self.emit_teardown_receipt = True
         self.containment_receipt: ContainmentReceipt | None = None
         self.teardown_receipt: ContainmentReceipt | None = None
         self.measurement = {"measurement": ref("verifier-measurement").sha256}
@@ -467,7 +471,7 @@ class DeterministicVerifier:
 
     async def close(self) -> SandboxCleanupReceipt:
         self.calls.append("verifier.close")
-        if self.containment_receipt is not None:
+        if self.containment_receipt is not None and self.emit_teardown_receipt:
             self.teardown_receipt = add_teardown_outcome(
                 self.containment_receipt, pid1_reaped=True, all_dead=True,
                 authenticator=self._containment_authenticator,
@@ -489,6 +493,7 @@ class DeterministicLease:
         )
         self.close_receipt = released_receipt(self.lease_id)
         self.containment_receipt: ContainmentReceipt | None = None
+        self.emit_teardown_receipt = True
         self.teardown_receipt: ContainmentReceipt | None = None
         self.close_error: BaseException | None = None
         self.close_entered = asyncio.Event()
@@ -535,7 +540,7 @@ class DeterministicLease:
             await self.close_release.wait()
         if self.close_error is not None:
             raise self.close_error
-        if self.containment_receipt is not None:
+        if self.containment_receipt is not None and self.emit_teardown_receipt:
             self.teardown_receipt = add_teardown_outcome(
                 self.containment_receipt, pid1_reaped=True, all_dead=True,
                 authenticator=self._containment_authenticator,

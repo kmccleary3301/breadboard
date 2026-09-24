@@ -60,6 +60,7 @@ from .lease_envelope import (
     EnvelopeLaunch,
     RuntimeContainment,
     launch_envelope,
+    verify_containment_receipt,
     spawn_envelope_process,
 )
 
@@ -4185,6 +4186,14 @@ class VerifierWorkspaceLease:
         self._cleanup: SandboxCleanupReceipt | None = None
 
         self._close_task: asyncio.Task[SandboxCleanupReceipt] | None = None
+    @property
+    def containment_receipt(self) -> ContainmentReceipt | None:
+        return getattr(self._runtime, "containment_receipt", None)
+
+    @property
+    def teardown_receipt(self) -> ContainmentReceipt | None:
+        return getattr(self._runtime, "teardown_receipt", None)
+
     async def execute(self) -> Mapping[str, Any]:
         task = asyncio.current_task()
         if task is None:
@@ -4312,8 +4321,9 @@ class VerifierWorkspaceLease:
                 return self._cleanup
             while self._active_operation_tasks:
                 await self._operations_drained.wait()
-            runtime_step = _runtime_to_lease_cleanup_step(
-                await self._runtime.terminate()
+            runtime_step = self._manager._verified_runtime_cleanup_step(
+                self.plan, self.lease_id, self._runtime,
+                await self._runtime.terminate(),
             )
             runtime_released = runtime_step.state in {
                 CleanupState.RELEASED,
@@ -4467,6 +4477,52 @@ class SandboxRuntimeManager:
         self._reconcile_lock = asyncio.Lock()
         self._close_task: asyncio.Future[list[SandboxCleanupReceipt]] | None = None
         self._last_close_receipts: tuple[SandboxCleanupReceipt, ...] | None = None
+
+    def _verify_runtime_containment(
+        self, plan: SandboxExecutionPlan, lease_id: str, runtime: RuntimeHandle
+    ) -> None:
+        if plan.runtime.runtime_class is not RuntimeClass.TRUSTED_PROCESS:
+            return
+        try:
+            if self._containment_authenticator is None:
+                raise ContainmentReceiptError("containment authenticator is missing")
+            verify_containment_receipt(
+                getattr(runtime, "containment_receipt", None),
+                lease_id=lease_id,
+                runtime_id=plan.runtime.runtime_id,
+                authenticator=self._containment_authenticator,
+            )
+        except (ContainmentReceiptError, TypeError, AttributeError) as exc:
+            raise SandboxAttestationError(
+                "trusted process containment receipt was rejected",
+                code="containment_receipt_invalid",
+                lease_id=lease_id,
+            ) from exc
+
+    def _verified_runtime_cleanup_step(
+        self,
+        plan: SandboxExecutionPlan,
+        lease_id: str,
+        runtime: RuntimeHandle,
+        steps: Sequence[CleanupStepReceipt],
+    ) -> CleanupStepReceipt:
+        runtime_step = _runtime_to_lease_cleanup_step(steps)
+        if plan.runtime.runtime_class is RuntimeClass.TRUSTED_PROCESS:
+            try:
+                if self._containment_authenticator is None:
+                    raise ContainmentReceiptError("containment authenticator is missing")
+                verify_containment_receipt(
+                    getattr(runtime, "teardown_receipt", None),
+                    lease_id=lease_id,
+                    runtime_id=plan.runtime.runtime_id,
+                    authenticator=self._containment_authenticator,
+                    require_teardown=True,
+                )
+            except (ContainmentReceiptError, TypeError, AttributeError):
+                return CleanupStepReceipt(
+                    "runtime", CleanupState.FAILED, "containment_receipt_invalid"
+                )
+        return runtime_step
 
     def abort_bootstrap(self) -> None:
         """Release constructor-owned descriptors before any lease can be admitted."""
@@ -4954,6 +5010,7 @@ class SandboxRuntimeManager:
                 runtime, measurement = await backend.launch(
                     plan, materialized.workspace_path, context=context
                 )
+                self._verify_runtime_containment(plan, lease_id, runtime)
                 if measurement.mismatch:
                     raise SandboxAttestationError("runtime measurement mismatch", code="runtime_measurement_mismatch",
                                                   lease_id=lease_id)
@@ -5320,6 +5377,7 @@ class SandboxRuntimeManager:
                 launched, measurement = await backend.launch(
                     verifier_plan, workspace, context=context
                 )
+                self._verify_runtime_containment(verifier_plan, lease_id, launched)
                 if measurement.mismatch:
                     raise SandboxAttestationError("verifier runtime measurement mismatch", code="runtime_measurement_mismatch",
                                                   lease_id=lease_id)
@@ -5509,7 +5567,10 @@ class SandboxRuntimeManager:
             steps.append(
                 CleanupStepReceipt("child_verifier", child_state, child_detail)
             )
-            runtime_step = _runtime_to_lease_cleanup_step(await lease._runtime.terminate())
+            runtime_step = self._verified_runtime_cleanup_step(
+                lease.plan, lease.lease_id, lease._runtime,
+                await lease._runtime.terminate(),
+            )
             steps.append(runtime_step)
             if _native_scratch_present(self, lease.lease_id):
                 steps.append(
