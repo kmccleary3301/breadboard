@@ -731,4 +731,5 @@ process.stdin.on("end", async () => {
   finishInput();
 });
 await inputDone;
-await shutdown(0);
+if (finalizationOnly) process.stdout.end();
+else await shutdown(0);

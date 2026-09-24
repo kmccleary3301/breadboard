@@ -666,6 +666,8 @@ class OpenClawSemanticsState:
         effects: Mapping[str, Any] | None = None,
         classification: Mapping[str, Any] | None = None,
         final_envelope: Mapping[str, Any] | None = None,
+        command_result: Mapping[str, Any] | None = None,
+        runtime_error: str | None = None,
     ) -> dict[str, Any]:
         """Return raw source facts for the profile-agnostic replay seam.
 
@@ -725,6 +727,10 @@ class OpenClawSemanticsState:
         if final_envelope is not None:
             trace["final_envelope"] = dict(final_envelope)
             trace["envelope"] = dict(final_envelope)
+        if command_result is not None:
+            trace["command_result"] = dict(command_result)
+        if runtime_error is not None:
+            trace["runtime_error"] = runtime_error
         return trace
     def prepare_request_history(self) -> list[dict[str, Any]]:
         return [

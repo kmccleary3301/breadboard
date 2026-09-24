@@ -33,6 +33,7 @@ from breadboard.rl.harness.runners.base import (
     MiniTemplateFramePort,
     NativeHTTPPolicyRuntimeClientPort,
     NativeSourceSessionPort,
+    NativeFinalizationPhasePort,
     NativeRuntimeInputPort,
     NativeWorkspaceEffectsPort,
     FrozenJsonObject,
@@ -2025,6 +2026,7 @@ class _ConductorSession:
             not isinstance(tools, NativeSourceSessionPort)
             or not isinstance(tools, NativeRuntimeInputPort)
             or not isinstance(tools, NativeWorkspaceEffectsPort)
+            or (profile.finalize_result_phase is not None and not isinstance(tools, NativeFinalizationPhasePort))
             or self._binding.source_model_config is None
             or not isinstance(advertisement, Mapping)
             or limits.max_turns != profile.max_turns
@@ -2437,11 +2439,9 @@ class _ConductorSession:
             )
 
         final_envelope: dict[str, Any] | None = None
-        if classified is not None:
-            pre_cleanup_envelope = dict(classified["envelope"])
-            pre_cleanup_exit_code = int(
-                classified.get("exit_code", 0 if pre_cleanup_envelope.get("ok") else 1)
-            )
+        command_result: dict[str, Any] | None = None
+        runtime_error: str | None = None
+        if classified is not None and profile.finalize_result_phase is not None:
             cleanup_ok = (
                 cleanup_exception is None
                 and isinstance(cleanup, Mapping)
@@ -2449,62 +2449,62 @@ class _ConductorSession:
                 and self._native_cleanup_outcome.all_dead is True
                 and self._native_cleanup_outcome.error_code is None
             )
-            if not cleanup_ok:
-                cleanup_msg = (
+            cleanup_msg = (
+                None if cleanup_ok else (
                     str(cleanup_exception)
                     if cleanup_exception is not None
                     else "native process scope did not reach independently observed death"
                 )
-                err_msg = (
-                    f"Agent runtime clean up did not settle; state ownership retained until this process exits: {cleanup_msg}"
+            )
+            try:
+                raw_finalized = await tools.invoke_native_finalization_phase(
+                    profile.finalize_result_phase,
+                    {
+                        "envelope": classified["envelope"],
+                        "sessionId": self._open_request.episode_id,
+                        "toolCalls": state.tool_admissions,
+                        "cleanup_error_message": cleanup_msg,
+                    },
+                    timeout_ms=limits.action_timeout_ms,
                 )
-                if pre_cleanup_envelope.get("ok"):
-                    final_envelope = {
-                        "ok": False,
-                        "status": "error",
-                        "final": "",
-                        "payloads": [],
-                        "model": None,
-                        "provider": None,
-                        "sessionId": pre_cleanup_envelope.get("sessionId", ""),
-                        "error": {
-                            "message": err_msg,
-                            "kind": "exception",
-                        },
-                        "exit_code": 1,
-                    }
-                else:
-                    final_envelope = dict(pre_cleanup_envelope)
-                    final_envelope["exit_code"] = pre_cleanup_exit_code
-                    final_envelope["cleanup_error"] = {
-                        "message": err_msg,
-                        "kind": "exception",
-                    }
-            else:
-                final_envelope = dict(pre_cleanup_envelope)
-                final_envelope["exit_code"] = pre_cleanup_exit_code
+            except Exception as exc:
+                raise RunnerDependencyError(
+                    "native command finalization failed",
+                    code="native_finalization_failed",
+                    **self._context(),
+                ) from exc
+            if (
+                not isinstance(raw_finalized, Mapping)
+                or raw_finalized.get("schema_version") != profile.phase_schema_version
+                or raw_finalized.get("kind") != "finalized_command_result"
+                or not isinstance(raw_finalized.get("command_result"), Mapping)
+                or not isinstance(raw_finalized["command_result"].get("envelope"), Mapping)
+                or type(raw_finalized["command_result"].get("exitCode")) is not int
+                or type(raw_finalized["command_result"].get("toolCalls")) is not int
+                or raw_finalized["command_result"]["toolCalls"] != state.tool_admissions
+                or "runtime_error" not in raw_finalized
+                or raw_finalized.get("runtime_error") is not None
+                and type(raw_finalized.get("runtime_error")) is not str
+            ):
+                raise RunnerProtocolError(
+                    "native command finalization is malformed",
+                    code="native_response_invalid", **self._context(),
+                )
+            command_result = thaw_json(raw_finalized["command_result"])
+            final_envelope = command_result["envelope"]
+            runtime_error = raw_finalized.get("runtime_error")
 
         await self._checkpoint("before_commit", turn=len(self._turns))
         await self._commit_termination(termination)
-        try:
-            replay_trace = state.to_trace(
-                requests=trace_requests,
-                runtime_inputs=runtime_inputs,
-                effects=effects,
-                classification=classified,
-                final_envelope=final_envelope,
-            )
-        except TypeError:
-            replay_trace = state.to_trace(
-                requests=trace_requests,
-                runtime_inputs=runtime_inputs,
-                effects=effects,
-            )
-            if classified is not None:
-                replay_trace["classification"] = dict(classified)
-            if final_envelope is not None:
-                replay_trace["final_envelope"] = dict(final_envelope)
-                replay_trace["envelope"] = dict(final_envelope)
+        replay_trace = state.to_trace(
+            requests=trace_requests,
+            runtime_inputs=runtime_inputs,
+            effects=effects,
+            classification=classified,
+            final_envelope=final_envelope,
+            command_result=command_result,
+            runtime_error=runtime_error,
+        )
         response: dict[str, Any] = {
             "source_id": consumer_id,
             "replay_trace": replay_trace,
@@ -2516,6 +2516,10 @@ class _ConductorSession:
         if final_envelope is not None:
             response["final_envelope"] = final_envelope
             response["envelope"] = final_envelope
+        if command_result is not None:
+            response["command_result"] = command_result
+        if runtime_error is not None:
+            response["runtime_error"] = runtime_error
         return RunnerResult(
             episode_id=self._open_request.episode_id,
             effective_plan_digest=self._open_request.effective_plan_digest,

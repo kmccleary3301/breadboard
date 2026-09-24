@@ -3444,7 +3444,6 @@ class LeaseBackedRunnerWorkspace:
         await lease._begin_operation()
         try:
             steps = await lease._runtime.terminate()
-            self.__native_runtime_retired = True
             return {
                 "kind": "closed",
                 "cleanup": {
@@ -3464,6 +3463,7 @@ class LeaseBackedRunnerWorkspace:
                 },
             }
         finally:
+            self.__native_runtime_retired = True
             await lease._end_operation()
 
     async def invoke_native_finalization_phase(
@@ -3473,12 +3473,12 @@ class LeaseBackedRunnerWorkspace:
         *,
         timeout_ms: int,
     ) -> Mapping[str, Any]:
-        """Run a sealed, credential-free phase after the native runtime retires."""
+        """Run a sealed, credential-free phase after cleanup has settled."""
         lease = self.__lease
         lease._assert_active()
         if not self.__native_runtime_retired:
             raise WorkspaceStateError(
-                "native runtime must be retired before finalization",
+                "native runtime cleanup must settle before finalization",
                 code="runtime_preflight_failed",
                 lease_id=lease.lease_id,
             )

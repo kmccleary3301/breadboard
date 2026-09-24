@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import re
 import os
 from pathlib import Path
+import shutil
 import struct
 import threading
 from typing import Any, Callable, Mapping
@@ -24,6 +25,7 @@ from breadboard.rl.harness.policy_provider import (
 )
 from breadboard.rl.harness.runners.base import (
     RunnerCancellationProbe,
+    RunnerDependencyError,
     RunnerEventSink,
     RunnerOpenRequest,
     RunnerTermination,
@@ -366,6 +368,17 @@ class _NativeWorkerPort:
         if operation == "initialize":
             self.system_prompt = result["system_prompt"]
         return result
+    async def invoke_native_finalization_phase(
+        self,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+    ) -> Mapping[str, Any]:
+        assert self._process is None
+        assert operation == "finalize_command_result"
+        self.operations.append(operation)
+        return await _invoke_finalize_only(payload)
 
     async def close(self) -> None:
         if self._process is not None:
@@ -519,7 +532,7 @@ async def test_openclaw_native_stream_cap_refuses_ninth_http_request(tmp_path: P
     assert all(request.get("stream_options") == {"include_usage": True} for request in requests)
     assert all(request.get("store") is False for request in requests)
     assert all("n" not in request and "strict" not in request for request in requests)
-    assert operations[-4:] == ("classify_result", "close", "retire_runtime", "measure_effects")
+    assert operations[-5:] == ("classify_result", "close", "retire_runtime", "measure_effects", "finalize_command_result")
     replay_trace = result.response["replay_trace"]
     assert replay_trace["refusal"] == {
         "status": 429,
@@ -554,12 +567,109 @@ async def test_openclaw_conductor_commits_poll_before_ack(tmp_path: Path) -> Non
     assert any("ACK_MARKER" in str(msg.get("content")) for msg in requests[-1]["messages"] if msg.get("tool_call_id") == "poll-1")
 
 
+async def _invoke_finalize_only(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    process = await asyncio.create_subprocess_exec(
+        shutil.which("node") or "node",
+        "--import",
+        str(_WORKER.with_name("openclaw_classifier_loader.mjs")),
+        str(_WORKER),
+        "--finalize-only",
+        cwd=_NODE_DIST.parent,
+        env={},
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    command = {
+        "schema_version": "bb.native-worker.rpc.v1",
+        "request_id": 1,
+        "operation": "finalize_command_result",
+        "payload": dict(payload),
+    }
+    body = json.dumps(command, separators=(",", ":")).encode()
+    assert process.stdin is not None and process.stdout is not None
+    process.stdin.write(struct.pack(">I", len(body)) + body)
+    await process.stdin.drain()
+    process.stdin.close()
+    try:
+        header = await asyncio.wait_for(process.stdout.readexactly(4), 10)
+        size = struct.unpack(">I", header)[0]
+        result = json.loads((await asyncio.wait_for(process.stdout.readexactly(size), 10)).decode())
+        await asyncio.wait_for(process.wait(), 10)
+    finally:
+        if process.returncode is None:
+            process.kill()
+            await process.wait()
+    if "error" in result:
+        raise RuntimeError(result["error"])
+    assert process.returncode == 0
+    return result["result"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("envelope", "cleanup_error_message", "expected_exit_code", "expected_runtime_error"),
+    [
+        (
+            {"ok": True, "status": "ok", "sessionId": "session-1", "final": "done", "payloads": []},
+            "native process scope did not reach independently observed death",
+            1,
+            None,
+        ),
+        (
+            {"ok": False, "status": "timeout", "sessionId": "session-1", "error": {"message": "timed out", "kind": "timeout"}},
+            "native process scope did not reach independently observed death",
+            2,
+            "Agent exec cleanup failed: native process scope did not reach independently observed death",
+        ),
+        (
+            {"ok": True, "status": "ok", "sessionId": "session-1", "final": "done", "payloads": []},
+            None,
+            0,
+            None,
+        ),
+    ],
+)
+async def test_openclaw_worker_finalizes_pinned_command_result(
+    envelope: dict[str, Any],
+    cleanup_error_message: str | None,
+    expected_exit_code: int,
+    expected_runtime_error: str | None,
+) -> None:
+    result = await _invoke_finalize_only({
+        "envelope": envelope,
+        "sessionId": "session-1",
+        "toolCalls": 3,
+        "cleanup_error_message": cleanup_error_message,
+    })
+
+    command_result = result["command_result"]
+    assert command_result["toolCalls"] == 3
+    assert command_result["exitCode"] == expected_exit_code
+    assert result["runtime_error"] == expected_runtime_error
+    if cleanup_error_message is None or not envelope["ok"]:
+        assert command_result["envelope"] == envelope
+    else:
+        assert command_result["envelope"] == {
+            "ok": False,
+            "status": "error",
+            "final": "",
+            "payloads": [],
+            "model": None,
+            "provider": None,
+            "sessionId": "session-1",
+            "error": {
+                "message": "Agent exec cleanup failed: native process scope did not reach independently observed death",
+                "kind": "exception",
+            },
+        }
+
 @pytest.mark.asyncio
 async def test_openclaw_native_stream_classification_and_cleanup_envelope(tmp_path: Path) -> None:
     # 1. Normal run: pre-cleanup ok and post-cleanup ok envelope match
     result, requests, _, _, operations = await _run_episode(tmp_path, [[]])
     assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
-    assert operations[-4:] == ("classify_result", "close", "retire_runtime", "measure_effects")
+    assert operations[-5:] == ("classify_result", "close", "retire_runtime", "measure_effects", "finalize_command_result")
     classified = result.response["classification"]
     final_env = result.response["final_envelope"]
     assert classified["envelope"]["status"] == "ok"
@@ -567,7 +677,7 @@ async def test_openclaw_native_stream_classification_and_cleanup_envelope(tmp_pa
     assert classified["exit_code"] == 0
     assert final_env["status"] == "ok"
     assert final_env["ok"] is True
-    assert result.response["command_result"] == {"envelope": final_env, "exitCode": 0}
+    assert result.response["command_result"] == {"envelope": final_env, "exitCode": 0, "toolCalls": 0}
     assert result.response["replay_trace"]["classification"] == classified
     assert result.response["replay_trace"]["final_envelope"] == final_env
     assert result.response["replay_trace"]["envelope"] == final_env
@@ -602,11 +712,54 @@ async def test_openclaw_native_stream_classification_and_cleanup_envelope(tmp_pa
     assert list(post_env["payloads"]) == []
     assert "exit_code" not in post_env
     assert post_env["error"]["message"] == (
-        "Agent exec cleanup failed: native process scope did not reach independently observed death"
+        "Agent exec cleanup failed: native worker cleanup is not verified"
     )
-    assert fail_result.response["command_result"] == {"envelope": post_env, "exitCode": 1}
+    assert fail_result.response["command_result"] == {"envelope": post_env, "exitCode": 1, "toolCalls": 0}
     assert fail_result.response["replay_trace"]["classification"]["envelope"]["ok"] is True
     assert fail_result.response["replay_trace"]["final_envelope"]["ok"] is False
+
+@pytest.mark.asyncio
+async def test_openclaw_failed_envelope_survives_cleanup_failure(tmp_path: Path) -> None:
+    class FailingCleanupWorkerPort(_NativeWorkerPort):
+        async def close_native_runtime(self) -> Mapping[str, Any]:
+            await super().close_native_runtime()
+            return {"kind": "closed", "cleanup": {"all_dead": False, "steps": []}}
+
+    responses = [
+        [(f"call-{index}", "write", {"path": f"turn-{index}.txt", "content": "ok\n"})]
+        for index in range(8)
+    ]
+    result, _, _, _, _ = await _run_episode(
+        tmp_path,
+        responses,
+        worker_factory=lambda path, bindings: FailingCleanupWorkerPort(path, bindings),
+    )
+    before = result.response["classification"]["envelope"]
+    command_result = result.response["command_result"]
+    assert before["ok"] is False
+    assert command_result["envelope"] == before
+    assert command_result["toolCalls"] == 8
+    assert result.response["runtime_error"] == (
+        "Agent exec cleanup failed: native worker cleanup is not verified"
+    )
+
+
+
+@pytest.mark.asyncio
+async def test_openclaw_finalization_failure_fails_closed(tmp_path: Path) -> None:
+    class FailedFinalizerPort(_NativeWorkerPort):
+        async def invoke_native_finalization_phase(
+            self, operation: str, payload: Mapping[str, Any], *, timeout_ms: int,
+        ) -> Mapping[str, Any]:
+            raise RuntimeError("pinned finalizer is unavailable")
+
+    with pytest.raises(RunnerDependencyError, match="native command finalization failed") as exc:
+        await _run_episode(
+            tmp_path,
+            [[]],
+            worker_factory=lambda path, bindings: FailedFinalizerPort(path, bindings),
+        )
+    assert exc.value.code == "native_finalization_failed"
 
 @pytest.mark.asyncio
 async def test_openclaw_native_worker_ack_and_close_are_scope_verified(tmp_path: Path) -> None:
