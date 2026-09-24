@@ -26,7 +26,7 @@ from breadboard_engine.compilation.provider_response import OMP_RESPONSE_CONSUME
 from breadboard_engine.e4_targets import load_e4_target
 from breadboard_engine.provider.contracts import OpenAICompletionsProviderProfile
 from conformance.comparators.oh_my_pi_18_1_17 import OhMyPi18Comparator
-from tests.rl.harness.test_pi_native_stream_conductor import _scripted_server, _sse_tool_response
+from tests.compilation.test_server_compiler import _options
 from tests.e4_parity.test_omp_18_1_17_rerun5_replay import _response_tool_calls
 from tests.rl.harness.test_runner_conductor import _tool_grant
 from tests.rl.harness.test_runner_policy_runtime import _observation, _plan, _policy_capabilities
