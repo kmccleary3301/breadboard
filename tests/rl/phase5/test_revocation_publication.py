@@ -20,6 +20,7 @@ from scripts.rl_phase5.g4_bind_mount_attack import (
     request_preconfigured_bind_replace,
 )
 
+from breadboard_engine.compilation.contracts import canonical_json_bytes
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.composition import HmacSha256ReceiptAuthenticator
 from breadboard.rl.phase5.f2_authority_authoring import (
@@ -1620,21 +1621,22 @@ def test_production_publisher_rejects_structural_authority_and_external_lock(
 
 
 def test_monotonic_witness_requires_exact_pinned_authority_identity() -> None:
+    squashfs_inode = "9223372036854805903"
     identity = MonotonicRevocationAuthorityIdentity(
-        schema_version="bb.rl.monotonic-revocation-authority-identity.v1",
+        schema_version="bb.rl.monotonic-revocation-authority-identity.v2",
         authority_id=_d("a"),
-        root_device=1,
-        root_inode=2,
+        root_device="1",
+        root_inode=squashfs_inode,
         root_uid=0,
         root_gid=0,
         root_flags=4,
-        config_device=1,
-        config_inode=4,
+        config_device="1",
+        config_inode="4",
         config_uid=0,
         config_gid=0,
         config_flags=8,
-        lock_device=1,
-        lock_inode=3,
+        lock_device="0",
+        lock_inode="3",
         lock_uid=0,
         lock_gid=0,
         lock_flags=8,
@@ -1648,10 +1650,33 @@ def test_monotonic_witness_requires_exact_pinned_authority_identity() -> None:
     assert MonotonicRevocationWitness.model_validate_json(
         witness.canonical_bytes(), strict=True
     ) == witness
+    assert (
+        json.loads(canonical_json_bytes(witness.model_dump(mode="json")))[
+            "monotonic_authority"
+        ]["root_inode"]
+        == squashfs_inode
+    )
     document = witness.model_dump(mode="json")
     document.pop("monotonic_authority")
     with pytest.raises(ValueError):
         MonotonicRevocationWitness.model_validate(document, strict=True)
+    legacy = identity.model_dump(mode="json")
+    legacy["schema_version"] = "bb.rl.monotonic-revocation-authority-identity.v1"
+    with pytest.raises(ValueError):
+        MonotonicRevocationAuthorityIdentity.model_validate(legacy, strict=True)
+    for field, value in (
+        ("root_inode", int(squashfs_inode)),
+        ("root_device", 1),
+        ("config_inode", "04"),
+        ("lock_inode", "0"),
+        ("lock_device", "-1"),
+        ("config_device", "1e3"),
+        ("root_inode", ""),
+    ):
+        invalid = identity.model_dump(mode="json")
+        invalid[field] = value
+        with pytest.raises(ValueError):
+            MonotonicRevocationAuthorityIdentity.model_validate(invalid, strict=True)
 
 
 def test_privileged_concrete_authority_commits_1_through_11_and_restarts() -> None:
