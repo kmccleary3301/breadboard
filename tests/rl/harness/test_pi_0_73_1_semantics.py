@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pytest
 from pathlib import Path
 
 from breadboard.rl.harness.pi_native_tools import dispatch_native_tools
@@ -272,3 +273,11 @@ def test_parse_streaming_json_differential_against_pinned_node() -> None:
             f"Differential mismatch at index {idx} for candidate {candidate!r}: "
             f"python={py_res!r} != node={node_res['val']!r}"
         )
+
+
+def test_argument_parsing_fails_closed_without_pinned_worker(monkeypatch) -> None:
+    from breadboard.rl.harness.pi_native_tools import PiNativeWorkerError
+
+    monkeypatch.setenv("PI_NODE", "/usr/bin/false")
+    with pytest.raises(PiNativeWorkerError):
+        parse_streaming_json('{"path":"x"}')

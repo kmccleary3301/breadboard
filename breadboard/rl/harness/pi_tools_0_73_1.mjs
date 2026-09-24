@@ -534,24 +534,12 @@ async function executeOperation(operation, payload, signal) {
     };
   }
   if (operation === "project_request") return projectRequest(payload);
-  if (operation === "parse_streaming_json") {
-    const text = typeof payload?.text === "string" ? payload.text : "";
-    let result = {};
-    try {
-      result = parseStreamingJson(text);
-    } catch {
-      result = {};
-    }
-    return { schema_version: "bb.pi-native.v1", kind: "parsed_streaming_json", result };
-  }
   if (operation === "parse_streaming_json_batch") {
-    const inputs = Array.isArray(payload?.inputs) ? payload.inputs : [];
-    const results = inputs.map((input) => {
-      try {
-        return parseStreamingJson(typeof input === "string" ? input : "");
-      } catch {
-        return {};
-      }
+    if (!Array.isArray(payload?.inputs)) fail("parse_streaming_json_batch requires inputs");
+    const results = payload.inputs.map((input) => {
+      if (input !== null && typeof input !== "string") fail("streaming JSON input must be a string or null");
+      // Pinned parseStreamingJson owns every fallback, including {} for empty input.
+      return parseStreamingJson(input ?? undefined);
     });
     return { schema_version: "bb.pi-native.v1", kind: "parsed_streaming_json_batch", results };
   }

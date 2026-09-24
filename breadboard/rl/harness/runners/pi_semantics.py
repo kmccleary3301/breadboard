@@ -91,18 +91,10 @@ class PiRequestRecord:
 
 
 def parse_streaming_json(partial_json: str | None) -> Any:
-    """Parse streaming JSON using the pinned Pi Node worker."""
-    if not partial_json or not str(partial_json).strip():
-        return {}
-    try:
-        from breadboard.rl.harness.pi_native_tools import parse_streaming_json as _worker_parse
+    """Parse one argument text with the pinned Pi ``parseStreamingJson``."""
+    from breadboard.rl.harness.pi_native_tools import parse_streaming_json_batch
 
-        return _worker_parse(partial_json)
-    except Exception:
-        try:
-            return json.loads(partial_json)
-        except Exception:
-            return {}
+    return parse_streaming_json_batch([partial_json])[0]
 
 
 def execute_pi_tool(
@@ -138,10 +130,14 @@ def _fragment_tool_calls(response: NativeProviderResponse) -> tuple[PiToolCall, 
     delayed IDs before constructing ``response.tool_calls``; rejoining here
     would misassign same-name calls and reorder the model's batch.
     """
-    result: list[PiToolCall] = []
-    for call in response.tool_calls:
-        result.append(PiToolCall(call.id, call.name, parse_streaming_json(call.arguments)))
-    return tuple(result)
+    from breadboard.rl.harness.pi_native_tools import parse_streaming_json_batch
+
+    calls = tuple(response.tool_calls)
+    parsed = parse_streaming_json_batch([call.arguments for call in calls])
+    return tuple(
+        PiToolCall(call.id, call.name, arguments)
+        for call, arguments in zip(calls, parsed, strict=True)
+    )
 
 
 def _content_from_response(response: NativeProviderResponse) -> str:

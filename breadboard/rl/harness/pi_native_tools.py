@@ -128,32 +128,24 @@ def dispatch_native_tools(
         for call, raw in zip(normalized, raw_results)
     ]
 
-def parse_streaming_json(text: str | None, *, cwd: str | os.PathLike[str] | None = None) -> Any:
-    """Parse potentially incomplete streaming JSON using the pinned Node worker."""
-    if not text or not str(text).strip():
-        return {}
-    target_cwd = cwd or Path.cwd()
-    result = _run_worker(
-        {"operation": "parse_streaming_json", "text": str(text)},
-        cwd=target_cwd,
-    )
-    return result.get("result", {})
-
-
-def parse_streaming_json_batch(texts: Sequence[str | None], *, cwd: str | os.PathLike[str] | None = None) -> list[Any]:
-    """Parse multiple streaming JSON inputs in one worker process."""
-    if not texts:
+def parse_streaming_json_batch(
+    texts: Sequence[str | None], *, cwd: str | os.PathLike[str] | None = None
+) -> list[Any]:
+    """Parse argument texts with pinned ``parseStreamingJson`` in one worker process."""
+    inputs = list(texts)
+    if not inputs:
         return []
-    target_cwd = cwd or Path.cwd()
-    inputs = [str(t) if t is not None else "" for t in texts]
+    if any(text is not None and not isinstance(text, str) for text in inputs):
+        raise PiNativeWorkerError("streaming JSON input must be a string or None")
     result = _run_worker(
         {"operation": "parse_streaming_json_batch", "inputs": inputs},
-        cwd=target_cwd,
+        cwd=cwd or Path.cwd(),
     )
     results = result.get("results")
-    if isinstance(results, list):
-        return results
-    return [parse_streaming_json(t, cwd=target_cwd) for t in texts]
+    if not isinstance(results, list) or len(results) != len(inputs):
+        raise PiNativeWorkerError("native worker parse result count does not match request")
+    return results
+
 
 def main() -> int:
     raw = sys.stdin.buffer.read(_MAX_REQUEST_BYTES + 1)
