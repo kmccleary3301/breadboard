@@ -2652,3 +2652,72 @@ async def test_publish_closed_and_durable_quarantine_dual_failure_surfaces_excep
     assert case.repository.quarantine_inputs[-1].failure.code == (
         "closed_publication_failed"
     )
+async def test_native_scratch_cleanup_receipt_released_avoids_quarantine_and_failed_quarantines(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from tests.rl.harness.test_sandbox_runtime import RuntimeHarness, make_runtime_fixture
+    import breadboard.rl.harness.sandbox as sandbox_module
+
+    # 1. Obtain a real _close_lease receipt containing native_scratch
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    lease = await harness.manager.open(fixture.request)
+    scratch = sandbox_module._create_native_scratch(harness.manager, lease.lease_id)
+    (scratch / "home").mkdir()
+    (scratch / "home" / "marker").write_text("scratch")
+    real_receipt = await lease.close()
+
+    assert CleanupStepReceipt("native_scratch", CleanupState.RELEASED) in real_receipt.steps
+
+    # Under 1a1668bf, _cleanup_released(real_receipt) is False because native_scratch is omitted from allowed_resources
+    assert service_module._cleanup_released(real_receipt) is True
+
+    # Test closing cleanup with the real receipt released avoids quarantine
+    service, case, _, created = await _created(monkeypatch)
+    coordinator = service._coordinators[case.request.episode_id]
+    await service._finish_cleanup(coordinator, real_receipt, primary_failure=None)
+
+    cleanup_quarantine = [
+        q for q in case.repository.quarantine_inputs
+        if q.failure.code == "cleanup_not_released"
+    ]
+    assert len(cleanup_quarantine) == 0
+
+    # 2. native_scratch FAILED receipt -> quarantine
+    failed_steps = tuple(
+        CleanupStepReceipt("native_scratch", CleanupState.FAILED, "scratch cleanup failed")
+        if step.resource == "native_scratch"
+        else step
+        for step in real_receipt.steps
+    )
+    failed_receipt = SandboxCleanupReceipt.from_steps(real_receipt.lease_id, failed_steps)
+    assert service_module._cleanup_released(failed_receipt) is False
+
+    service2, case2, _, created2 = await _created(monkeypatch)
+    coordinator2 = service2._coordinators[case2.request.episode_id]
+    await service2._finish_cleanup(coordinator2, failed_receipt, primary_failure=None)
+
+    assert any(
+        q.failure.code == "cleanup_not_released"
+        for q in case2.repository.quarantine_inputs
+    )
+
+    # 3. native_scratch QUARANTINED receipt -> quarantine
+    quarantined_steps = tuple(
+        CleanupStepReceipt("native_scratch", CleanupState.QUARANTINED, "scratch cleanup quarantined")
+        if step.resource == "native_scratch"
+        else step
+        for step in real_receipt.steps
+    )
+    quarantined_receipt = SandboxCleanupReceipt.from_steps(real_receipt.lease_id, quarantined_steps)
+    assert service_module._cleanup_released(quarantined_receipt) is False
+
+    service3, case3, _, created3 = await _created(monkeypatch)
+    coordinator3 = service3._coordinators[case3.request.episode_id]
+    await service3._finish_cleanup(coordinator3, quarantined_receipt, primary_failure=None)
+
+    assert any(
+        q.failure.code == "cleanup_not_released"
+        for q in case3.repository.quarantine_inputs
+    )
