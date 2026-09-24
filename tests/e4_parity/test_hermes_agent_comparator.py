@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 import json
 from copy import deepcopy
 from pathlib import Path
@@ -19,7 +21,22 @@ from conformance.comparators.hermes_agent import (
 
 FIXTURES = Path(__file__).parent / "fixtures" / "hermes_agent"
 CASES = tuple(sorted(path for path in FIXTURES.iterdir() if path.is_dir()))
+PACKET_TRACE_SHA256 = {
+    "H-01-normal-memory-skill-write": "fe1f1d43161e2b5df36ec9226bf2d78be8a6540493e0d20661c3d3652d42a307",
+    "H-02-mixed-invalid-name": "83866a6d4e2a95470569fba1cbb8843d53471cc52e6dd97677a80260ba1fed23",
+    "H-03-visible-empty-recovery": "270e7f13668ed301936e9b02800b2e810a938f99d500495900eac3606fa473be",
+    "H-04-name-repair-duplicate": "aaed681f1c5f4bead25a118091197fb67120427ecefec5db0a242ea06da27c55",
+    "H-05-terminal-lifecycle": "b0b801a0b7affa832aa381b40cfa140d0efb89e8e8f499a656c8c175e47bf36e",
+    "H-06-request-budget-stop": "bd65f26d9003fd3bd3346ba8f198a42663b901bb0489ee75c601316fe8130c72",
+}
 TARGET_CONFIG = Path(__file__).resolve().parents[2] / "config/e4_targets/hermes_agent/2026.9.11/native-config.json"
+
+
+@pytest.mark.parametrize("case_dir", CASES, ids=lambda path: path.name)
+def test_fixture_bytes_match_original_packet(case_dir: Path) -> None:
+    assert hashlib.sha256((case_dir / "trace.json").read_bytes()).hexdigest() == (
+        PACKET_TRACE_SHA256[case_dir.name]
+    )
 
 
 def test_declared_schema_overlay_advertises_only_bounded_tools(tmp_path: Path) -> None:
