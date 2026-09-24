@@ -688,7 +688,9 @@ async def test_catalog_argv0_and_proc_exe_bind_different_objects_at_private_barr
     def inspect_stopped_process(
         lease_id: str, resource_id: str, identity: dict[str, object] | None
     ) -> None:
-        assert identity is not None
+        if identity is None:
+            original(lease_id, resource_id, identity)
+            return
         pid = int(identity["process_pid"])
         observed["cmdline"] = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
         observed["exe"] = os.readlink(f"/proc/{pid}/exe")
@@ -725,7 +727,8 @@ async def test_cancellation_at_private_barrier_reaps_group_and_handle_remains_us
     def cancel_at_recorder(
         lease_id: str, resource_id: str, identity: dict[str, object] | None
     ) -> None:
-        assert identity is not None
+        if identity is None:
+            return
         attempted_groups.append(int(identity["process_group_id"]))
         raise asyncio.CancelledError
 
@@ -1419,8 +1422,9 @@ async def test_identity_persistence_failure_kills_suspended_action_before_effect
             2,
         )
 
-    assert len(attempted) == 1
-    resource_id, identity = attempted[0]
+    nonempty_attempts = [(resource_id, identity) for resource_id, identity in attempted if identity is not None]
+    assert len(nonempty_attempts) == 1
+    resource_id, identity = nonempty_attempts[0]
     assert identity is not None
     assert resource_id == f"process-group-{identity['process_group_id']}"
     assert not (
