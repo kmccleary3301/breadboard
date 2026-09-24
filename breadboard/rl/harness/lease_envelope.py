@@ -613,7 +613,6 @@ def _spawn_one(_control: socket.socket, message: Mapping[str, Any], fds: list[in
                     )
                 ],
             )
-            status_sock.detach()
             if os.read(fds[gate_index], 1) != b"G":
                 raise OSError("envelope exec gate was not admitted")
             os.close(fds[gate_index])
@@ -622,7 +621,21 @@ def _spawn_one(_control: socket.socket, message: Mapping[str, Any], fds: list[in
             if isinstance(argv0_path, str) and argv0_path:
                 argv[0] = argv0_path
             env = {str(key): str(value) for key, value in message["environment"].items()}
-            _execveat_fd(fds[exec_index], argv, env)
+            os.set_inheritable(status_fd, False)
+            try:
+                _execveat_fd(fds[exec_index], argv, env)
+            except OSError as exc:
+                os.set_inheritable(status_fd, True)
+                _send_frame(
+                    status_sock,
+                    {
+                        "kind": "exec_error",
+                        "errno": exc.errno,
+                        "message": str(exc),
+                    },
+                )
+                raise
+            os._exit(127)
         except BaseException:
             os._exit(127)
     while True:
@@ -711,6 +724,7 @@ class EnvelopeProcess:
         self._status = status
         self.returncode: int | None = None
         self._wait_task: Any = None
+        self.exec_error: Mapping[str, Any] | None = None
 
     async def wait(self) -> int:
         if self._wait_task is None:
@@ -722,7 +736,10 @@ class EnvelopeProcess:
         except (EOFError, OSError):
             self.returncode = -signal.SIGKILL
         else:
-            if message.get("kind") != "done" or type(message.get("returncode")) is not int:
+            if message.get("kind") == "exec_error":
+                self.exec_error = message
+                self.returncode = 127
+            elif message.get("kind") != "done" or type(message.get("returncode")) is not int:
                 self.returncode = -signal.SIGKILL
             else:
                 self.returncode = message["returncode"]

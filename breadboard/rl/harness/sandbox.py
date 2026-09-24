@@ -2535,6 +2535,13 @@ class TrustedProcessHandle:
             async with asyncio.timeout_at(deadline):
                 stdout, stderr, _, _ = await asyncio.gather(*stream_tasks, wait_task)
             stream_result = (stdout, stderr)
+            exec_error = getattr(process, "exec_error", None)
+            if exec_error is not None:
+                primary_error = SandboxLaunchError(
+                    "attested executable failed during admission",
+                    code="runtime_preflight_failed",
+                    lease_id=self.lease_id,
+                )
         except TimeoutError as exc:
             primary_error = SandboxLaunchError(
                 "process action timed out",
