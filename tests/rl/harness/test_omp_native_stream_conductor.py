@@ -372,7 +372,11 @@ async def test_omp_conductor_partitions_declared_denials_before_worker(
                 RunnerToolBinding(tool.tool_id, tool.implementation_digest, tuple(tool.capability_ids))
                 for tool in plan.effective_capabilities.tools
             ),
-            system_prompt_override=projection.system_prompt,
+            system_prompt_override=(
+                Path(__file__).resolve().parents[3]
+                .joinpath("config/e4_targets/oh_my_pi/18.1.17/prompts/system-prompt.md")
+                .read_text(encoding="utf-8")
+            ),
             request_bodies=[],
             phase_log=phase_log,
         )
