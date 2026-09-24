@@ -12,8 +12,7 @@ import socket
 import stat
 import struct
 import time
-import re
-from dataclasses import dataclass
+import threading
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -531,6 +530,63 @@ def _setup_mount_view(
                 os.close(tree_fd)
 
 
+class _ChildReaper:
+    """Continuously reap namespace children while preserving leader statuses."""
+
+    def __init__(self) -> None:
+        self._condition = threading.Condition()
+        self._forking = False
+        self._leaders: set[int] = set()
+        self._statuses: dict[int, int] = {}
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def prepare_fork(self) -> None:
+        self._condition.acquire()
+        self._forking = True
+
+    def register_forked_child(self, pid: int) -> None:
+        self._leaders.add(pid)
+        self._forking = False
+        self._condition.notify_all()
+        self._condition.release()
+
+    def abort_fork(self) -> None:
+        self._forking = False
+        self._condition.notify_all()
+        self._condition.release()
+    def wait_for_leader(self, pid: int) -> int:
+        with self._condition:
+            while pid not in self._statuses:
+                self._condition.wait()
+            status = self._statuses.pop(pid)
+            self._leaders.discard(pid)
+            return status
+
+    def _run(self) -> None:
+        while True:
+            with self._condition:
+                if self._forking:
+                    self._condition.wait(timeout=0.01)
+                    continue
+            try:
+                pid, status = os.waitpid(-1, os.WNOHANG)
+            except ChildProcessError:
+                time.sleep(0.01)
+                continue
+            except InterruptedError:
+                continue
+            if pid == 0:
+                time.sleep(0.005)
+                continue
+            with self._condition:
+                if pid in self._leaders:
+                    self._statuses[pid] = status
+                    self._condition.notify_all()
+
+
 def _supervisor_main(
     sock: socket.socket,
     *,
@@ -591,14 +647,19 @@ def _supervisor_main(
             signature=authenticator.sign(receipt.canonical_bytes()),
         )
         _send_credentials(sock, {"kind": "ready", "receipt": receipt.to_mapping()})
+        reaper = _ChildReaper()
+        reaper.start()
         while True:
             message, fds = _recv_frame(sock)
+            if message.get("kind") == "reap":
+                _send_frame(sock, {"kind": "reaped"})
+                continue
             if message.get("kind") != "spawn":
                 for fd in fds:
                     os.close(fd)
                 raise OSError("unknown envelope request")
             try:
-                _spawn_one(sock, message, fds)
+                _spawn_one(sock, message, fds, reaper)
             finally:
                 for fd in fds:
                     try:
@@ -607,13 +668,21 @@ def _supervisor_main(
                         pass
     except BaseException as exc:
         try:
-            _send_credentials(sock, {"kind": "error", "error": type(exc).__name__, "message": str(exc)})
+            _send_credentials(
+                sock,
+                {"kind": "error", "error": type(exc).__name__, "message": str(exc)},
+            )
         except BaseException:
             pass
         os._exit(70)
 
 
-def _spawn_one(_control: socket.socket, message: Mapping[str, Any], fds: list[int]) -> None:
+def _spawn_one(
+    _control: socket.socket,
+    message: Mapping[str, Any],
+    fds: list[int],
+    reaper: _ChildReaper,
+) -> None:
     count = message.get("fd_count")
     if type(count) is not int or count != len(fds):
         raise OSError("envelope spawn descriptor count is invalid")
@@ -648,7 +717,12 @@ def _spawn_one(_control: socket.socket, message: Mapping[str, Any], fds: list[in
     ):
         raise OSError("envelope spawn descriptor index is invalid")
     status_fd = fds[status_index]
-    child = os.fork()
+    reaper.prepare_fork()
+    try:
+        child = os.fork()
+    except BaseException:
+        reaper.abort_fork()
+        raise
     if child == 0:
         try:
             os.setsid()
@@ -715,10 +789,7 @@ def _spawn_one(_control: socket.socket, message: Mapping[str, Any], fds: list[in
             except BaseException:
                 pass
             os._exit(127)
-    while True:
-        waited, status = os.waitpid(child, 0)
-        if waited == child:
-            break
+    status = reaper.wait_for_leader(child)
     if os.WIFEXITED(status):
         code = os.WEXITSTATUS(status)
     elif os.WIFSIGNALED(status):
