@@ -7,6 +7,7 @@ import errno
 import fcntl
 import json
 import os
+import socket
 import shlex
 import signal
 import shutil
@@ -112,6 +113,56 @@ def test_exec_handshake_requires_readiness_then_close_on_exec() -> None:
             lease_envelope._read_exec_pipe(read_fd)
     finally:
         os.close(read_fd)
+
+
+def test_spawn_worker_releases_exec_readiness_writer_before_waiting(
+    tmp_path: Path,
+) -> None:
+    status_parent, status_child = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+    ready_r, ready_w = os.pipe()
+    gate_r, gate_w = os.pipe()
+    os.write(gate_w, b"X")
+    null_r = os.open(os.devnull, os.O_RDONLY)
+    null_w = os.open(os.devnull, os.O_WRONLY)
+    exec_fd = os.open(os.devnull, os.O_RDONLY)
+    cwd_fd = os.open(tmp_path, os.O_RDONLY)
+    fds = [status_child.detach(), null_r, null_w, null_w, cwd_fd, exec_fd, exec_fd, gate_r, ready_w]
+    message = {
+        "fd_count": len(fds),
+        "status_index": 0,
+        "stdio_indices": [1, 2, 3],
+        "cwd_index": 4,
+        "executable_index": 5,
+        "exec_index": 6,
+        "gate_index": 7,
+        "exec_ready_index": 8,
+        "environment": {},
+        "argv": ["/nonexistent"],
+    }
+    observed: list[bytes | None] = []
+
+    class _Reaper:
+        def set_leader(self, pid: int) -> None:
+            self.pid = pid
+
+        def wait_for_leader(self, pid: int) -> int:
+            _, status = os.waitpid(pid, 0)
+            os.set_blocking(ready_r, False)
+            observed.append(os.read(ready_r, 1))
+            try:
+                observed.append(os.read(ready_r, 1))
+            except BlockingIOError:
+                observed.append(None)
+            return status
+
+    try:
+        _spawn_one(None, message, fds, _Reaper())
+    finally:
+        for fd in (fds[0], ready_r, gate_w, null_r, null_w, exec_fd, cwd_fd, gate_r):
+            os.close(fd)
+        status_parent.close()
+    # Child reported failure, then the pipe reaches EOF: no worker-held writer.
+    assert observed == [b"E", b""]
 
 
 @requires_sealed_execution

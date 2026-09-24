@@ -956,6 +956,9 @@ def _spawn_one(
             except BaseException:
                 pass
             os._exit(127)
+    # The worker must not hold the readiness writer: the client reads EOF on
+    # successful exec only once every copy outside the exec'd image is closed.
+    os.close(exec_ready_fd)
     reaper.set_leader(child)
     status = reaper.wait_for_leader(child)
     if os.WIFEXITED(status):
