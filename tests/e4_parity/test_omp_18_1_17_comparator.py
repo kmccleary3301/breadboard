@@ -44,6 +44,19 @@ def test_negative_gate_rejects_completion_order_mutation_and_effect_mutation() -
     assert report["failed"] >= 2
 
 
+def test_capture_unavailable_stop_reason_is_explicit_and_tamper_gated() -> None:
+    supplier = _trace()
+    supplier["exit"] = {"kind": "Submitted", "native_stop_reason": None}
+    supplier["native_stop_reason_source"] = "capture_unavailable"
+    replay = deepcopy(supplier)
+    replay["exit"]["native_stop_reason"] = "stop"
+    assert compare({"capture": supplier, "replay": replay})["ok"] is True
+    replay["exit"]["native_stop_reason"] = "length"
+    report = compare({"capture": supplier, "replay": replay})
+    assert report["ok"] is False
+    assert "capture-unavailable" in report["errors"][0]
+
+
 def test_omp_comparator_loads_through_lane_registry() -> None:
     root = Path(__file__).resolve().parents[2]
     entry = _comparator_entry(

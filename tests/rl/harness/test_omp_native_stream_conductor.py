@@ -297,7 +297,6 @@ async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates
             await session.close()
             await client.close()
         trace = thaw_json(result.response["replay_trace"])
-    trace["exit"]["native_stop_reason"] = None
     report = OhMyPi18Comparator()({"capture": str(supplier_case), "replay": trace})
     assert report["ok"] is True, report
     tampered_request = deepcopy(trace)

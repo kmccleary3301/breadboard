@@ -774,6 +774,7 @@ class OMPSemanticsState:
             "requests": request_bodies,
             "runtime_inputs": dict(runtime_inputs),
             "effects": dict(effects),
+            "native_stop_reason_source": "capture_unavailable",
             "exit": termination,
         }
 __all__ = [

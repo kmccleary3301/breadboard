@@ -240,6 +240,9 @@ def _effects(case_dir: Path | None, trace: Mapping[str, Any]) -> dict[str, str |
     return dict(sorted(effects.items()))
 
 
+_NATIVE_STOP_REASON_CAPTURE_UNAVAILABLE = "capture_unavailable"
+
+
 def _termination(trace: Mapping[str, Any]) -> dict[str, Any]:
     exit_value = trace.get("exit", {})
     if not isinstance(exit_value, Mapping):
@@ -252,6 +255,10 @@ def _termination(trace: Mapping[str, Any]) -> dict[str, Any]:
         kind = "submitted"
     if kind == "RequestLimitExceeded":
         kind = "request_limit_exceeded"
+    if trace.get("native_stop_reason_source") == _NATIVE_STOP_REASON_CAPTURE_UNAVAILABLE:
+        if reason not in {None, "stop"}:
+            raise ValueError("native stop reason contradicts capture-unavailable source")
+        reason = None
     return {"kind": kind, "native_stop_reason": reason}
 
 
@@ -305,6 +312,8 @@ def project_supplier_case(case_dir: str | Path) -> dict[str, Any]:
     """Project a supplier capture directory to the canonical episode."""
     path = Path(case_dir)
     trace = _supplier_trace(path)
+    if "native_stop_reason_source" not in trace:
+        trace["native_stop_reason_source"] = _NATIVE_STOP_REASON_CAPTURE_UNAVAILABLE
     return _project(trace, path if path.is_dir() else path.parent)
 
 
