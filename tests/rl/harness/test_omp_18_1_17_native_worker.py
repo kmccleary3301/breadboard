@@ -56,10 +56,13 @@ def _source_registry_sets() -> dict[str, set[str]]:
     mime = _pinned_source("packages/utils/src/mime.ts")
     mime_values = re.search(r"SUPPORTED_IMAGE_MIME_TYPES = new Set\(\[([^\]]+)\]\)", mime).group(1)
     image_mime_types = set(re.findall(r'"([^"]+)"', mime_values))
+    read_tool = _pinned_source("packages/coding-agent/src/tools/read.ts")
+    svg_match = re.search(r"only supports \.(\w+) and \.(\w+) files", read_tool)
+    assert svg_match is not None
     image_extensions = {
         "." + mime_type.removeprefix("image/").replace("jpeg", "jpg")
         for mime_type in image_mime_types
-    } | {".jpeg", ".svg", ".svgz"}
+    } | {".jpeg", *(f".{suffix}" for suffix in svg_match.groups())}
 
     sqlite = _pinned_source("packages/coding-agent/src/tools/sqlite-reader.ts")
     sqlite_pattern = re.search(r"SQLITE_PATH_PATTERN = /([^/]+)/", sqlite).group(1)
@@ -78,6 +81,16 @@ def _source_registry_sets() -> dict[str, set[str]]:
         "image": image_extensions,
         "sqlite": sqlite_extensions,
     }
+
+
+def _source_route_patterns() -> tuple[list[str], list[str]]:
+    source = _pinned_source("packages/coding-agent/src/tools/path-utils.ts")
+    ssh_body = source.split("export function pathTargetsSsh", 1)[1].split("}", 1)[0]
+    url_body = source.split("export function isReadableUrlPath", 1)[1].split("}", 1)[0]
+    pattern = r"/((?:\\.|[^/])+)/i\.test"
+    return (re.findall(pattern, url_body), re.findall(pattern, ssh_body))
+
+
 def _authority_payload(tmp_path: Path) -> dict[str, object]:
     scratch = tmp_path / ".scratch"
     package_dir = tmp_path / "package"
@@ -145,8 +158,9 @@ def test_route_declarations_match_parsed_pinned_omp_registries() -> None:
     parsed = _source_registry_sets()
     for capability, expected in parsed.items():
         assert set(policy[capability]["route"]["extensions" if capability != "internal-resource" else "schemes"]) == expected
-    assert policy["url"]["route"]["patterns"] == [r"^https?:\/\/?", r"^www\."]
-    assert policy["ssh"]["route"]["patterns"] == [r"ssh:\/\/"]
+    url_patterns, ssh_patterns = _source_route_patterns()
+    assert policy["url"]["route"]["patterns"] == url_patterns
+    assert policy["ssh"]["route"]["patterns"] == ssh_patterns
 
 def test_worker_resolves_verified_installed_entrypoint(tmp_path: Path) -> None:
     worker = NativeToolWorker(cwd=str(tmp_path))
