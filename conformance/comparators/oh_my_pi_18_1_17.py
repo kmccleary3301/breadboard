@@ -302,50 +302,76 @@ def _effects(case_dir: Path | None, trace: Mapping[str, Any]) -> dict[str, str]:
 
 
 _NATIVE_STOP_REASON_UNAVAILABLE = object()
+_STREAM_TERMINATIONS = frozenset({"stream_truncated", "transport_error"})
 
 
-def _wire_finish_reasons(trace: Mapping[str, Any]) -> list[str]:
+def _response_token(raw: Any, index: int) -> dict[str, str]:
+    """Reduce one native response record to its termination token.
+
+    A response that reached a finish chunk yields ``{"finish_reason": reason}``.
+    A response whose stream ended without one is recorded as
+    ``{"stream_termination": {"reason": ..., "chunks": [...]}}`` and yields
+    ``{"stream_termination": reason}``. That record carries no other field, so
+    it can never also claim a ``finish_reason`` or ``choices``.
+    """
+    if not isinstance(raw, Mapping) or not raw:
+        raise ValueError(f"native response wire record {index} is malformed")
+    if "stream_termination" in raw:
+        extra = sorted(str(key) for key in raw if key != "stream_termination")
+        if extra:
+            raise ValueError(f"native response wire record {index} carries {extra} beside stream_termination")
+        termination = raw["stream_termination"]
+        if (
+            not isinstance(termination, Mapping)
+            or set(termination) != {"reason", "chunks"}
+            or not isinstance(termination["reason"], str)
+            or termination["reason"] not in _STREAM_TERMINATIONS
+            or not isinstance(termination["chunks"], list)
+            or not termination["chunks"]
+            or not all(isinstance(chunk, Mapping) for chunk in termination["chunks"])
+        ):
+            raise ValueError(f"native response wire record {index} has invalid stream_termination")
+        return {"stream_termination": termination["reason"]}
+    reasons: list[str] = []
+    choices = raw.get("choices")
+    if isinstance(choices, list):
+        for choice in choices:
+            if isinstance(choice, Mapping) and isinstance(choice.get("finish_reason"), str):
+                if not choice["finish_reason"]:
+                    raise ValueError(f"native response wire record {index} has invalid finish_reason")
+                reasons.append(choice["finish_reason"])
+    if "finish_reason" in raw:
+        reason = raw["finish_reason"]
+        if not isinstance(reason, str) or not reason:
+            raise ValueError(f"native response wire record {index} has invalid finish_reason")
+        reasons.append(reason)
+    if not reasons:
+        raise ValueError(f"native response wire record {index} is missing finish_reason")
+    return {"finish_reason": reasons[-1]}
+
+
+def _response_tokens(trace: Mapping[str, Any]) -> list[dict[str, str]]:
     raw_responses = trace.get("native_responses")
     if not isinstance(raw_responses, list):
         raise ValueError("BB trace must carry native_responses for every request")
-    reasons: list[str] = []
-    for index, raw in enumerate(raw_responses):
-        if not isinstance(raw, Mapping) or not raw:
-            raise ValueError(f"native response wire record {index} is malformed")
-        record_reasons: list[str] = []
-        choices = raw.get("choices")
-        if isinstance(choices, list):
-            for choice in choices:
-                if isinstance(choice, Mapping) and isinstance(choice.get("finish_reason"), str):
-                    if not choice["finish_reason"]:
-                        raise ValueError(f"native response wire record {index} has invalid finish_reason")
-                    record_reasons.append(choice["finish_reason"])
-        if "finish_reason" in raw:
-            reason = raw["finish_reason"]
-            if not isinstance(reason, str) or not reason:
-                raise ValueError(f"native response wire record {index} has invalid finish_reason")
-            record_reasons.append(reason)
-        if not record_reasons:
-            raise ValueError(f"native response wire record {index} is missing finish_reason")
-        reasons.append(record_reasons[-1])
-    return reasons
+    return [_response_token(raw, index) for index, raw in enumerate(raw_responses)]
 
 
 def _wire_stop_reason(trace: Mapping[str, Any]) -> str | None | object:
     if not isinstance(trace.get("native_responses"), list):
         return _NATIVE_STOP_REASON_UNAVAILABLE
-    reasons = _wire_finish_reasons(trace)
-    return reasons[-1] if reasons else None
+    tokens = _response_tokens(trace)
+    return tokens[-1].get("finish_reason") if tokens else None
 
 
 def _validate_native_responses(
     trace: Mapping[str, Any],
     request_count: int,
-) -> list[str]:
+) -> list[dict[str, str]]:
     raw_responses = trace.get("native_responses")
     if not isinstance(raw_responses, list) or len(raw_responses) != request_count:
         raise ValueError("BB trace must carry exactly one native_responses record per request")
-    return _wire_finish_reasons(trace)
+    return _response_tokens(trace)
 
 def _termination(trace: Mapping[str, Any], *, supplier_capture: bool = False) -> dict[str, Any]:
     if not supplier_capture and "native_stop_reason_source" in trace:
@@ -423,7 +449,7 @@ def _supplier_trace(path: Path) -> dict[str, Any]:
         return trace
     requests: list[dict[str, Any]] = []
     native_responses: list[Mapping[str, Any]] = []
-    for line in transcript.read_text(encoding="utf-8").splitlines():
+    for line_number, line in enumerate(transcript.read_text(encoding="utf-8").splitlines(), start=1):
         if not line.strip():
             continue
         row = json.loads(line)
@@ -444,8 +470,24 @@ def _supplier_trace(path: Path) -> dict[str, Any]:
                     for choice in choices:
                         if isinstance(choice, Mapping) and isinstance(choice.get("finish_reason"), str) and choice["finish_reason"]:
                             reasons.append(choice["finish_reason"])
+            # The kit receiver (kit/omp_capture_receiver.py) records exactly the
+            # events it sent and ``broken = kind == "broken_stream"``. send_sse
+            # writes [DONE] only when the row is not broken, and
+            # break_mid_arguments returns before the finish chunk. So a broken
+            # row without a finish chunk is a cut stream. A row that is not
+            # broken but has no finish chunk ended on [DONE] alone, which BB's
+            # openai client never surfaces; that gap fails closed.
             if reasons:
                 native_responses.append({"finish_reason": reasons[-1]})
+            elif row.get("broken") is True:
+                native_responses.append(
+                    {"stream_termination": {"reason": "stream_truncated", "chunks": list(events)}}
+                )
+            else:
+                raise ValueError(
+                    f"supplier transcript line {line_number} is not a broken stream but has no finish chunk"
+                    " (omp-done-without-finish-reason)"
+                )
     if requests and not isinstance(trace.get("requests"), list):
         trace["requests"] = requests
     if native_responses:
@@ -538,8 +580,8 @@ class OhMyPi18Comparator:
                 else None,
             )
             report = self.compare_episodes(expected, observed)
-            supplier_reasons = (
-                _wire_finish_reasons(capture_value)
+            supplier_tokens = (
+                _response_tokens(capture_value)
                 if (
                     isinstance(capture_value.get("native_responses"), list)
                     and len(capture_value["native_responses"])
@@ -547,17 +589,18 @@ class OhMyPi18Comparator:
                 )
                 else None
             )
-            if supplier_reasons is not None:
-                observed_reasons = _wire_finish_reasons(replay_value)
+            if supplier_tokens is not None:
                 assertion = _assertion(
-                    "native_response_finish_reasons_equal",
-                    supplier_reasons,
-                    observed_reasons,
+                    "native_response_terminations_equal",
+                    supplier_tokens,
+                    _response_tokens(replay_value),
                 )
                 report["assertions"].append(assertion)
                 if assertion["status"] == "failed":
                     report["failed"] += 1
-                    report["passed"] -= 1
+                else:
+                    report["passed"] += 1
+                report["ok"] = report["failed"] == 0
             return report
         except (OSError, TypeError, ValueError) as exc:
             return {

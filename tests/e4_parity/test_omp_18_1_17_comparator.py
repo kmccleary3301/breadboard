@@ -401,3 +401,89 @@ def test_malformed_effect_is_not_read_as_absent(value: object, error: str) -> No
     report = compare(traces)
     assert report["ok"] is False
     assert error in report["errors"][0]
+
+
+# Job-1203 stream_fragments_broken. The supplier side is the sealed capture,
+# copied verbatim: trace.json (sha256 0c62b9bf…2b086) and
+# receiver/http-transcript.jsonl (sha256 e9990125…0db5b), one broken:true row
+# with 4 events and no finish chunk. BB produced no trace for this case, so its
+# side is HAND-BUILT per the item-6 product design (see the fixture hand_edits).
+BROKEN_FIXTURES = Path(__file__).parent / "fixtures" / "omp_18_1_17_broken_stream"
+
+
+def _broken_bb_trace() -> dict:
+    fixture = json.loads((BROKEN_FIXTURES / "bb-trace-hand-built.json").read_text(encoding="utf-8"))
+    assert fixture["fixture"].startswith("HAND-BUILT")
+    return fixture["trace"]
+
+
+def _broken_supplier_case(tmp_path: Path, mutate: Callable[[dict], None]) -> Path:
+    """Copy the sealed supplier case with its one transcript row changed by ``mutate``."""
+    source = BROKEN_FIXTURES / "supplier"
+    case = tmp_path / "supplier"
+    (case / "receiver").mkdir(parents=True)
+    (case / "trace.json").write_bytes((source / "trace.json").read_bytes())
+    row = json.loads((source / "receiver" / "http-transcript.jsonl").read_text(encoding="utf-8"))
+    mutate(row)
+    (case / "receiver" / "http-transcript.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+    return case
+
+
+def _failed(report: dict) -> list[str]:
+    return [item["assertion_id"] for item in report["assertions"] if item["status"] == "failed"]
+
+
+def test_bb_truncated_stream_equals_supplier_broken_case() -> None:
+    supplier = BROKEN_FIXTURES / "supplier"
+    bb = _broken_bb_trace()
+    # Supplier exit_code 0 maps to submitted; BB records Submitted and, having
+    # received no finish chunk, no native stop reason.
+    termination = {"kind": "submitted", "native_stop_reason": None}
+    assert project_supplier_case(supplier)["termination"] == termination
+    assert project_bb_trace(bb)["termination"] == termination
+    report = compare({"capture": supplier, "replay": bb})
+    assert report["ok"] is True, report
+    assert report["passed"] == len(report["assertions"])
+    tokens = next(item for item in report["assertions"] if item["assertion_id"] == "native_response_terminations_equal")
+    assert tokens["expected"] == [{"stream_termination": "stream_truncated"}]
+
+
+def _with_finish_chunk(row: dict) -> None:
+    """The row as the kit sends a stream that is not cut: finish chunk, then [DONE]."""
+    last = row["events"][-1]
+    row["events"].append({**last, "choices": [{"delta": {}, "finish_reason": "tool_calls", "index": 0}]})
+    row["broken"] = False
+
+
+def test_bb_truncation_does_not_equal_supplier_finish_reason(tmp_path: Path) -> None:
+    report = compare({"capture": _broken_supplier_case(tmp_path, _with_finish_chunk), "replay": _broken_bb_trace()})
+    assert report["ok"] is False
+    assert _failed(report) == ["episode.termination_equal", "native_response_terminations_equal"]
+
+
+def test_transport_error_does_not_equal_stream_truncated() -> None:
+    bb = _broken_bb_trace()
+    bb["native_responses"][0]["stream_termination"]["reason"] = "transport_error"
+    report = compare({"capture": BROKEN_FIXTURES / "supplier", "replay": bb})
+    assert report["ok"] is False
+    assert _failed(report) == ["native_response_terminations_equal"]
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [{"finish_reason": "tool_calls"}, {"choices": [{"index": 0, "finish_reason": "tool_calls"}]}],
+    ids=["finish_reason", "choices"],
+)
+def test_record_with_stream_termination_and_finish_reason_fails_closed(extra: dict) -> None:
+    bb = _broken_bb_trace()
+    bb["native_responses"][0].update(extra)
+    report = compare({"capture": BROKEN_FIXTURES / "supplier", "replay": bb})
+    assert report["ok"] is False
+    assert "beside stream_termination" in report["errors"][0]
+
+
+def test_supplier_row_not_broken_without_finish_chunk_fails_closed(tmp_path: Path) -> None:
+    supplier = _broken_supplier_case(tmp_path, lambda row: row.update(broken=False))
+    report = compare({"capture": supplier, "replay": _broken_bb_trace()})
+    assert report["ok"] is False
+    assert "omp-done-without-finish-reason" in report["errors"][0]
