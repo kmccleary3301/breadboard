@@ -164,6 +164,7 @@ class RuntimeHarness:
         *,
         backend: RecordingBackend | None = None,
     ) -> None:
+        tmp_path.mkdir(parents=True, exist_ok=True)
         self.fixture = fixture
         self.clock = FrozenClock()
         self.source_digest = digest("workspace-source")
