@@ -37,7 +37,7 @@
   - `test_unreleased_native_scratch_never_claims_closed[FAILED|QUARANTINED]` requires quarantine with `cleanup_not_released` and no closed publication.
   - The test fixture repository mirrors the evidence rule through the same `_PRIMARY_OPTIONAL_CLEANUP_RESOURCES` constant.
   - `tests/rl/harness/test_v2_service.py` plus `tests/rl/harness/test_evidence.py`: 271 passed.
-  - `scripts/rl_phase5/run_f5_target_faults.py` keeps its exact-set check; its fixed fault cases do not create native scratch.
+  - `scripts/rl_phase5/run_f5_target_faults.py` applies the same optional-resource rule through the shared constant, so its closed-cleanup oracle cannot diverge from evidence validation.
 - Required replay/parity checks: the installed native replays of the E4 profiles must end without `cleanup_not_released` quarantine.
 - Required conformance/ablation checks: `scripts/check_danger_zone_acr.py` on the changed-file list.
 - Required evidence bundles to refresh: none. Previously published closed envelopes had no `native_scratch` step, so they validate unchanged.
