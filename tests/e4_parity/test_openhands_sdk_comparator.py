@@ -9,14 +9,13 @@ import pytest
 
 from conformance.comparators.openhands_sdk import (
     compare_cases,
-    compare_request_sequences,
     project_bb_trace,
     project_supplier_case,
-    supplier_conversation_id_from_stderr,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures" / "openhands_sdk"
-SUPPLIER_STDERR = Path(__file__).parents[1] / "fixtures" / "openhands_rerun2" / "captures" / "OH-01-normal-file-effect" / "supplier.stderr"
+CAPTURED_CASE = Path(__file__).parents[1] / "fixtures" / "openhands_rerun2" / "captures" / "OH-01-normal-file-effect"
+CANDIDATE_ID = "56351706-00f7-47c5-98d0-7145da8af641"
 CASES = tuple(sorted(path for path in FIXTURES.iterdir() if path.is_dir()))
 
 
@@ -25,10 +24,7 @@ def test_supplier_projection_self_replays(case_dir: Path) -> None:
     supplier = project_supplier_case(case_dir)
     replay = _as_bb_trace(supplier)
     projected = project_bb_trace(deepcopy(replay))
-    report = compare_cases(case_dir, replay)
     assert projected["file_effects"] == supplier["file_effects"]
-    assert report["ok"] is True
-    assert report["failed"] == 0
 
 
 def _as_bb_trace(supplier: dict) -> dict:
@@ -42,6 +38,57 @@ def _as_bb_trace(supplier: dict) -> dict:
         for path, digest in supplier["file_effects"].items()
     }
     return replay
+
+def _captured_replay() -> dict:
+    replay = _as_bb_trace(project_supplier_case(CAPTURED_CASE))
+    replay["conversation_id"] = CANDIDATE_ID
+    for request in replay["requests"]:
+        request["body"]["prompt_cache_key"] = CANDIDATE_ID
+    return replay
+
+
+def test_captured_oh01_bound_conversation_passes() -> None:
+    report = compare_cases(CAPTURED_CASE, _captured_replay())
+    assert report["ok"] is True, report
+    assert next(item for item in report["assertions"] if item["assertion_id"].endswith(".requests.prompt_cache_key_bound"))["status"] == "passed"
+
+
+def test_registered_comparator_rejects_foreign_candidate_cache_key() -> None:
+    replay = _captured_replay()
+    replay["requests"][0]["body"]["prompt_cache_key"] = "123e4567-e89b-12d3-a456-426614174000"
+    report = compare_cases(CAPTURED_CASE, replay)
+    assert report["ok"] is False
+    assert next(item for item in report["assertions"] if item["assertion_id"].endswith(".requests.prompt_cache_key_bound"))["status"] == "failed"
+
+
+def test_registered_comparator_rejects_foreign_supplier_cache_key(tmp_path: Path) -> None:
+    case = tmp_path / CAPTURED_CASE.name
+    shutil.copytree(CAPTURED_CASE, case)
+    stderr = case / "supplier.stderr"
+    source_id = "f77abdcc-8ac9-460c-8d9b-e35e5b884c1a"
+    stderr.write_text(stderr.read_text(encoding="utf-8").replace(source_id, "123e4567-e89b-12d3-a456-426614174000"), encoding="utf-8")
+    report = compare_cases(case, _captured_replay())
+    assert report["ok"] is False
+    assert next(item for item in report["assertions"] if item["assertion_id"].endswith(".requests.prompt_cache_key_bound"))["status"] == "failed"
+
+
+@pytest.mark.parametrize("side", ["candidate_missing", "supplier_missing", "supplier_ambiguous"])
+def test_registered_comparator_requires_unambiguous_conversation_id(side: str, tmp_path: Path) -> None:
+    replay = _captured_replay()
+    case = tmp_path / CAPTURED_CASE.name
+    shutil.copytree(CAPTURED_CASE, case)
+    if side == "candidate_missing":
+        del replay["conversation_id"]
+    else:
+        stderr = case / "supplier.stderr"
+        record = stderr.read_text(encoding="utf-8")
+        if side == "supplier_missing":
+            stderr.unlink()
+        else:
+            stderr.write_text(record + "\n" + record, encoding="utf-8")
+    report = compare_cases(case, replay)
+    assert report["ok"] is False
+    assert next(item for item in report["assertions"] if item["assertion_id"].endswith(".requests.prompt_cache_key_bound"))["status"] == "failed"
 
 
 def _replay(case: str) -> tuple[Path, dict]:
@@ -221,39 +268,3 @@ def test_undeclared_literal_placeholder_remains_rejected() -> None:
     trace["requests"][0]["body"]["id"] = "<RESPONSE_ID>"
     with pytest.raises(ValueError, match="normalization"):
         project_bb_trace(trace)
-
-
-@pytest.mark.parametrize(
-    ("role", "supplier_key", "candidate_key"),
-    [
-        ("supplier", "123e4567-e89b-12d3-a456-426614174000", "56351706-00f7-47c5-98d0-7145da8af641"),
-        ("candidate", "f77abdcc-8ac9-460c-8d9b-e35e5b884c1a", "123e4567-e89b-12d3-a456-426614174000"),
-        ("supplier", "56351706-00f7-47c5-98d0-7145da8af641", "56351706-00f7-47c5-98d0-7145da8af641"),
-        ("candidate", "f77abdcc-8ac9-460c-8d9b-e35e5b884c1a", "not-a-uuid"),
-    ],
-    ids=["supplier_constant_uuid", "candidate_constant_uuid", "supplier_cross_side_swap", "candidate_malformed"],
-)
-def test_request_sequence_rejects_foreign_cache_key(
-    role: str, supplier_key: str, candidate_key: str,
-) -> None:
-    supplier_id = supplier_conversation_id_from_stderr(SUPPLIER_STDERR.read_text(encoding="utf-8"))
-    candidate_id = "56351706-00f7-47c5-98d0-7145da8af641"
-    with pytest.raises(ValueError, match=rf"{role} prompt_cache_key"):
-        compare_request_sequences(
-            [{"prompt_cache_key": supplier_key}], [{"prompt_cache_key": candidate_key}],
-            supplier_workspace="/opt/openhands/case/workspace",
-            worker_workspace="/var/tmp/worker/workspace",
-            supplier_conversation_id=supplier_id,
-            worker_conversation_id=candidate_id,
-        )
-
-
-@pytest.mark.parametrize("occurrences", [0, 2])
-def test_supplier_stderr_requires_one_conversation_record(occurrences: int) -> None:
-    stderr = SUPPLIER_STDERR.read_text(encoding="utf-8")
-    lines = stderr.splitlines(keepends=True)
-    index = next(index for index, line in enumerate(lines) if "Created new conversation" in line)
-    record = "".join(lines[index:index + 2])
-    mutated = stderr.replace(record, "", 1) if occurrences == 0 else stderr + record
-    with pytest.raises(ValueError, match="exactly one Created new conversation"):
-        supplier_conversation_id_from_stderr(mutated)

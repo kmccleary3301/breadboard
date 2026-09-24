@@ -17,6 +17,8 @@ The BreadBoard port MUST emit a mapping with these fields for
     ``bb.e4.openhands-sdk-trace.v1``.
 ``case_id``
     Supplier case identifier.
+``conversation_id``
+    BB's independently observed conversation state ID, before normalization.
 ``normalizations``
     A list of exactly the normalization rules applied.  The admitted rules
     are ``event_uuid:<EVENT_UUID>``, ``timestamp:<TIMESTAMP>``,
@@ -125,6 +127,33 @@ def _request_workspace(value: Any, root: str) -> Any:
     return value
 
 
+def _bind_prompt_cache_keys(
+    supplier_bodies: Sequence[Mapping[str, Any]],
+    worker_bodies: Sequence[Mapping[str, Any]],
+    supplier_conversation_id: str,
+    worker_conversation_id: str,
+) -> None:
+    if len(supplier_bodies) != len(worker_bodies):
+        raise ValueError(
+            f"request count differs: supplier {len(supplier_bodies)}, worker {len(worker_bodies)}"
+        )
+    for role, conversation_id in (
+        ("supplier", supplier_conversation_id),
+        ("candidate", worker_conversation_id),
+    ):
+        try:
+            _prompt_cache_key(conversation_id)
+        except ValueError as exc:
+            raise ValueError(f"{role} conversation_id must be a UUID") from exc
+    for index, (supplier, worker) in enumerate(zip(supplier_bodies, worker_bodies)):
+        for role, body, conversation_id in (
+            ("supplier", supplier, supplier_conversation_id),
+            ("candidate", worker, worker_conversation_id),
+        ):
+            if not isinstance(body, Mapping) or body.get("prompt_cache_key") != conversation_id:
+                raise ValueError(f"request {index}: {role} prompt_cache_key differs from its conversation ID")
+
+
 def compare_request_sequences(
     supplier_bodies: Sequence[Mapping[str, Any]],
     worker_bodies: Sequence[Mapping[str, Any]],
@@ -135,22 +164,18 @@ def compare_request_sequences(
     worker_conversation_id: str,
 ) -> list[str | None]:
     """Compare every ordered SDK request with symmetric typed workspace/key rules."""
-    if len(supplier_bodies) != len(worker_bodies):
-        raise ValueError(
-            f"request count differs: supplier {len(supplier_bodies)}, worker {len(worker_bodies)}"
-        )
-    _prompt_cache_key(supplier_conversation_id)
-    _prompt_cache_key(worker_conversation_id)
+    _bind_prompt_cache_keys(
+        supplier_bodies, worker_bodies, supplier_conversation_id, worker_conversation_id
+    )
     results: list[str | None] = []
     for index, (supplier, worker) in enumerate(zip(supplier_bodies, worker_bodies)):
-        normalized = []
-        for role, body, root, conversation_id in (
-            ("supplier", supplier, supplier_workspace, supplier_conversation_id),
-            ("candidate", worker, worker_workspace, worker_conversation_id),
-        ):
-            if body.get("prompt_cache_key") != conversation_id:
-                raise ValueError(f"request {index}: {role} prompt_cache_key differs from its conversation ID")
-            normalized.append(_request_workspace(_Normalizer().value(body), root))
+        normalized = [
+            _request_workspace(_Normalizer().value(body), root)
+            for body, root in (
+                (supplier, supplier_workspace),
+                (worker, worker_workspace),
+            )
+        ]
         results.append(_first_difference(normalized[0], normalized[1], f"$.requests[{index}].body"))
     return results
 
@@ -647,17 +672,46 @@ def _report(assertions: list[dict[str, Any]], errors: list[str] | None = None) -
 
 
 def compare_cases(supplier_case: Path | str | Mapping[str, Any], bb_trace: Mapping[str, Any] | Path | str) -> dict[str, Any]:
-    errors: list[str] = []
     try:
         expected = project_supplier_case(supplier_case) if isinstance(supplier_case, (Path, str)) else project_bb_trace(supplier_case)
         observed = project_bb_trace(bb_trace)
     except (OSError, TypeError, ValueError) as exc:
         return _report([], [str(exc)])
     assertions: list[dict[str, Any]] = []
+    try:
+        if not isinstance(supplier_case, (Path, str)):
+            raise ValueError("supplier case directory with supplier.stderr is required")
+        supplier_path = Path(supplier_case)
+        supplier_id = supplier_conversation_id_from_stderr(
+            (supplier_path / "supplier.stderr").read_text(encoding="utf-8")
+        )
+        supplier_trace = _load_json(supplier_path / "trace.json")
+        supplier_rows, _ = _request_rows(supplier_trace, supplier_path)
+        candidate_trace = _load_json(Path(bb_trace)) if isinstance(bb_trace, (Path, str)) else bb_trace
+        if not isinstance(candidate_trace, Mapping):
+            raise ValueError("candidate trace must be an object")
+        candidate_rows = candidate_trace["requests"]
+        if not isinstance(candidate_rows, list):
+            raise ValueError("candidate requests must be a list")
+        _bind_prompt_cache_keys(
+            [row["body"] for row in supplier_rows],
+            [row["body"] for row in candidate_rows],
+            supplier_id,
+            candidate_trace.get("conversation_id"),
+        )
+        binding_difference = None
+    except (OSError, UnicodeError, KeyError, TypeError, ValueError) as exc:
+        binding_difference = str(exc)
+    assertions.append(_assertion(
+        f"{expected['case_id']}.requests.prompt_cache_key_bound",
+        "each side's request key equals its own conversation ID",
+        "bound" if binding_difference is None else "unbound",
+        binding_difference,
+    ))
     for field in ("case_id", "requests", "tool_calls", "observations", "file_effects", "termination", "request_count"):
         difference = _first_difference(expected.get(field), observed.get(field), f"$.{field}")
         assertions.append(_assertion(f"{expected['case_id']}.{field}_equal", expected.get(field), observed.get(field), difference))
-    return _report(assertions, errors)
+    return _report(assertions)
 
 
 class OpenHandsSDKComparator:
