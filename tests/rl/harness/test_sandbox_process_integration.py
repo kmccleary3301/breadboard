@@ -692,9 +692,15 @@ async def test_catalog_argv0_and_proc_exe_bind_different_objects_at_private_barr
             original(lease_id, resource_id, identity)
             return
         pid = int(identity["process_pid"])
+        status = Path(f"/proc/{pid}/status").read_text()
+        observed["tracer_pid"] = next(
+            line.split()[1] for line in status.splitlines() if line.startswith("TracerPid:")
+        )
+        observed["state"] = next(
+            line.split()[1] for line in status.splitlines() if line.startswith("State:")
+        )[0]
         observed["cmdline"] = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
         observed["exe"] = os.readlink(f"/proc/{pid}/exe")
-        observed["state"] = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
         original(lease_id, resource_id, identity)
 
     monkeypatch.setattr(
@@ -705,6 +711,7 @@ async def test_catalog_argv0_and_proc_exe_bind_different_objects_at_private_barr
     )
 
     assert observed["cmdline"][0].decode() == runtime_path
+    assert observed["tracer_pid"] == "0"
     assert observed["state"] in {"T", "t"}
     assert observed["exe"].startswith("/memfd:breadboard-runtime")
     assert result["stdout"] == "argv-proof"

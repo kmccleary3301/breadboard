@@ -612,8 +612,7 @@ def _spawn_one(_control: socket.socket, message: Mapping[str, Any], fds: list[in
             and os.WSTOPSIG(status) == signal.SIGTRAP
             and (status >> 16) == _PTRACE_EVENT_EXEC
         ):
-            os.kill(child, signal.SIGSTOP)
-            _ptrace(_PTRACE_DETACH, child)
+            _ptrace(_PTRACE_DETACH, child, int(signal.SIGSTOP))
             break
     status_sock = socket.socket(fileno=status_fd)
     status_sock.sendmsg(
