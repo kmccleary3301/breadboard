@@ -28,14 +28,13 @@ def _source_registry_sets() -> dict[str, set[str]]:
             imports[name.strip()] = module
     constructor = router.split("constructor() {", 1)[1].split("\n\t}", 1)[0]
     handlers = re.findall(r"this\.register\(new (\w+ProtocolHandler)\(\)\)", constructor)
-    internal = {
-        re.search(
-            r'readonly scheme = "([^"]+)"',
-            _pinned_source(f"packages/coding-agent/src/internal-urls/{imports[handler]}.ts"),
-        ).group(1)
-        for handler in handlers
-        if handler != "SshProtocolHandler"
-    }
+    internal = set()
+    for handler in handlers:
+        handler_source = _pinned_source(f"packages/coding-agent/src/internal-urls/{imports[handler]}.ts")
+        class_body = handler_source.split(f"class {handler}", 1)[1]
+        scheme = re.search(r'readonly scheme = "([^"]+)"', class_body).group(1)
+        if handler != "SshProtocolHandler":
+            internal.add(scheme)
 
     archive = _pinned_source("packages/utils/src/ar/registry.ts")
     archive_block = archive.split("const FORMAT_EXTENSIONS", 1)[1].split("};", 1)[0]
