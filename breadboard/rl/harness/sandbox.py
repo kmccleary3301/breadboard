@@ -2735,6 +2735,12 @@ class TrustedProcessBackend:
                 plan.runtime.executable_path,
                 plan.runtime.measured_binary_digest,
             )
+            if executable.execution_format != "elf":
+                raise SandboxLaunchError(
+                    "trusted process executable must be an ELF binary",
+                    code="runtime_preflight_failed",
+                    lease_id=lease_id,
+                )
             if context.role == "verifier":
                 if (
                     plan.verifier.runtime_id != plan.runtime.runtime_id
