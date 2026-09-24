@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
@@ -22,6 +22,8 @@ from breadboard.rl.harness.materialization import (
     SandboxCleanupReceipt,
     VerifierSnapshotReceipt,
 )
+from breadboard.rl.harness.lease_envelope import ContainmentReceipt, WritableMount
+from breadboard.rl.harness.composition import HmacSha256ReceiptAuthenticator
 from breadboard.rl.harness.sandbox import RuntimeClass
 from breadboard.rl.harness.runners.conductor import CONDUCTOR_IMPLEMENTATION_DIGEST
 from breadboard.rl.harness.runners.base import (
@@ -133,6 +135,27 @@ def cleanup_receipt_projection(
         "state": receipt.state.value,
     }
 
+
+def signed_containment_receipt(
+    lease_id: str, runtime_id: str, authenticator: HmacSha256ReceiptAuthenticator
+) -> ContainmentReceipt:
+    unsigned = ContainmentReceipt(
+        schema_version="bb.containment-receipt.v2",
+        lease_id=lease_id,
+        runtime_id=runtime_id,
+        mode="userns",
+        pid_namespace_inode=1,
+        mount_namespace_inode=2,
+        user_namespace_inode=3,
+        network_namespace_inode=4,
+        mountinfo_sha256="sha256:" + "0" * 64,
+        writable_mounts=(WritableMount("/workspace", "bind", None, "workspace_bind"),),
+        created_at="2026-09-24T00:00:00Z",
+        key_id=authenticator.key_id,
+        algorithm=authenticator.algorithm,
+        signature=b"\0" * 32,
+    )
+    return replace(unsigned, signature=authenticator.sign(unsigned.canonical_bytes()))
 
 def deterministic_sandbox_plan() -> Any:
     return SimpleNamespace(
