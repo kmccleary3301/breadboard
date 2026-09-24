@@ -709,6 +709,9 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
     target = metadata.get("e4_target") if isinstance(metadata, Mapping) else None
     source_profile = None
     source_consumer_id = None
+    expected_api_variant = (
+        "chat" if source_consumer_id == OPENHANDS_RESPONSE_CONSUMER_ID else "responses"
+    )
     if isinstance(target, Mapping) and (
         target.get("renderer_id") in {MINI_RESPONSE_CONSUMER_ID, OPENHANDS_RESPONSE_CONSUMER_ID}
         or target.get("renderer_id") in NATIVE_STREAM_PROFILES

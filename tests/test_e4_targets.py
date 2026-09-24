@@ -5,8 +5,10 @@ import json
 from pathlib import Path
 import shutil
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
+import yaml
 from breadboard.artifacts.cas import FilesystemCAS
 
 from breadboard_engine.compilation.contracts import canonical_sha256
@@ -35,6 +37,30 @@ from breadboard.product.harness.validate import (
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET_ROOT = ROOT / "config" / "e4_targets"
+
+_MAIN_LOWERED_TARGET_DIGESTS = {
+    "mini-swe-agent@2.4.6": "sha256:3bf6fb7672e1e1b3d99385fbd0f002913091d77dc9bd46e239a4656f8644400d",
+    "openhands-sdk@1.47.0": "sha256:92800becc84ef7e7aae5b98b49dd37119227ec24e1546ab1765fe63208fb4676",
+    "pi@0.73.1": "sha256:9c8dff35df9ae2efbff39bc7b11533cb9900500963d9efb157689dd1551f90db",
+}
+
+
+def _lowered_target_digest(lowered: Any) -> str:
+    return canonical_sha256(
+        {
+            "target_id": lowered.target_id,
+            "overlay_id": lowered.overlay_id,
+            "descriptor_digest": lowered.descriptor_digest,
+            "execution_config_digest": lowered.execution_config_digest,
+            "overlay_digest": lowered.overlay_digest,
+            "rendered_prompt_digest": lowered.rendered_prompt_digest,
+            "system_prompt": lowered.system_prompt,
+            "ordered_tool_names": lowered.ordered_tool_names,
+            "tools": lowered.tools,
+            "renderer_id": lowered.renderer_id,
+            "runtime_profile": lowered.runtime_profile,
+        }
+    )
 
 
 def test_target_resources_bind_to_loader_distribution_root() -> None:
@@ -752,6 +778,12 @@ def test_v2_input_identity_preserves_numeric_form_and_nested_key_order() -> None
         "second",
         "first",
     ]
+
+@pytest.mark.parametrize("target_id", tuple(_MAIN_LOWERED_TARGET_DIGESTS))
+def test_existing_target_lowering_matches_main_byte_identity(target_id: str) -> None:
+    lowered = lower_e4_target(load_e4_target(target_id), {})
+
+    assert _lowered_target_digest(lowered) == _MAIN_LOWERED_TARGET_DIGESTS[target_id]
 
 
 def test_omp_18_1_17_loads_and_lowers_native_worker_recipe() -> None:

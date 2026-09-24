@@ -1711,6 +1711,18 @@ async def test_conductor_session_is_one_shot_and_closed_session_cannot_run() -> 
     assert closed_sink.events == []
 
 
+async def test_conductor_non_target_plan_requires_responses_api_variant() -> None:
+    observation = _observation()
+    client = RecordingPolicyClient(observation)
+    session, _, _, _, _, _ = await _open(observation=observation, client=client)
+
+    result = await session.run(ConductorRunRequest({"query": "non-target"}))
+
+    assert result.episode_id == "episode-a"
+    assert len(client.requests) == 1
+    await session.close()
+
+
 async def test_conductor_resolves_every_compiled_alias_and_model_name_to_the_admitted_tool_id() -> None:
     observation = _observation()
     semantic = _tool_semantics(observation)
@@ -3884,6 +3896,7 @@ def _native_close_test_case(
     _sync_root_semantics(semantics)
     profile = native_stream_profiles.NativeStreamProfile(
         consumer_id=PI_RESPONSE_CONSUMER_ID,
+        api_variant="responses",
         target_id="pi@0.73.1",
         target_version=3,
         phase_schema_version="bb.pi-native.test.v1",
@@ -3904,6 +3917,14 @@ def _native_close_test_case(
         conductor_module,
         "NATIVE_STREAM_PROFILES",
         {PI_RESPONSE_CONSUMER_ID: profile},
+    )
+    monkeypatch.setattr(
+        conductor_module,
+        "_PROFILE_MODULE_IDENTITIES",
+        (
+            conductor_module.measure_module_artifact(native_stream_profiles.__file__),
+            conductor_module.measure_module_artifact(pi_semantics.__file__),
+        ),
     )
     request_body = {"model": model["model_id"], "messages": [], "tools": []}
     request_digest = conductor_module.canonical_sha256(request_body).removeprefix("sha256:")

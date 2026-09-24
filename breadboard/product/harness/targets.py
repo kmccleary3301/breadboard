@@ -285,18 +285,24 @@ def _lower_worker_target(
         raise HarnessCompileError("native worker requires its pinned recipe and no caller template inputs")
     native = json.loads(package.read_asset_text("native-config.json"))
     surface = json.loads(package.read_asset_text("tool-surface.json"))
-    native["advertisement"] = {
-        "system_prompt": package.read_asset_text("prompts/system-prompt.md"),
-        "tool_descriptions": {
-            name: surface["tools"][name]["description"] for name in surface["ordered_tools"]
-        },
-        "capability_denials": native["capability_denials"],
-        "settings": {
-            "request_cap": native["request_cap"],
-            "model_max_tokens": native["model_max_tokens"],
-            "provider_attempts": native["provider_attempts"],
-        },
-    }
+    if package.target_id == "oh-my-pi@18.1.17":
+        required_native_fields = (
+            "capability_denials", "request_cap", "model_max_tokens", "provider_attempts",
+        )
+        if any(key not in native for key in required_native_fields):
+            raise HarnessCompileError("OMP native config is missing admitted advertisement fields")
+        native["advertisement"] = {
+            "system_prompt": package.read_asset_text("prompts/system-prompt.md"),
+            "tool_descriptions": {
+                name: surface["tools"][name]["description"] for name in surface["ordered_tools"]
+            },
+            "capability_denials": native["capability_denials"],
+            "settings": {
+                "request_cap": native["request_cap"],
+                "model_max_tokens": native["model_max_tokens"],
+                "provider_attempts": native["provider_attempts"],
+            },
+        }
     order = tuple(surface["ordered_tools"])
     surface_tools = surface.get("tools")
     if (
