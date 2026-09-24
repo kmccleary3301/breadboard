@@ -15,6 +15,7 @@ let capabilityDenials: Record<string, Record<string, unknown>> = {};
 let session: any = null;
 let tools: any[] = [];
 let irToJsonSchema: ((ir: unknown, options?: Record<string, unknown>) => Record<string, unknown>) | null = null;
+let validateToolArguments: ((tool: unknown, call: { type: "toolCall"; id: string; name: string; arguments: unknown }) => Record<string, unknown>) | null = null;
 let workspace = "";
 let runtimeInputs: Record<string, string> = {};
 let convertMessages: ((model: any, context: any, compat: any) => unknown[]) | null = null;
@@ -416,6 +417,7 @@ async function initialize(payload: Record<string, any>) {
     "packages/coding-agent/src/prompts/system/date-cwd-reminder.md": "624bf012a8960a5546eb5b555e63221a87612a3dcd608f84976c66ab48a92769",
     "packages/ai/src/providers/openai-completions.ts": "8492ebc5f6fc0e024a310f13aa00487f7f41d34dd28f3e91a29633b88610cd60",
     "packages/omptype/src/json-schema.ts": "827b4718ab1c92bce0156e44749e25843024c445b2fd32ce6ed9f574e1408cf7",
+    "packages/ai/src/utils/validation.ts": "55de91a79bdb24d9c9a8069d8f373661652c392dcc88f8078ed8a3992d200563",
   })) {
     if (await sha256File(`${pinnedSourceRoot}/${relativePath}`) !== digest) {
       throw new Error(`pinned OMP request source verification failed for ${relativePath}`);
@@ -428,6 +430,8 @@ async function initialize(payload: Record<string, any>) {
   convertMessages = providerModule.convertMessages as typeof convertMessages;
   const schemaModule = await import(`${pinnedSourceRoot}/packages/omptype/src/json-schema.ts`);
   irToJsonSchema = schemaModule.irToJsonSchema as typeof irToJsonSchema;
+  const validatorModule = await import(`${pinnedSourceRoot}/packages/ai/src/utils/validation.ts`);
+  validateToolArguments = validatorModule.validateToolArguments as typeof validateToolArguments;
   const { SessionManager } = await import(`${pinnedSourceRoot}/packages/coding-agent/src/session/session-manager.ts`);
   const { DateCwdReminderInjector } = await import(`${pinnedSourceRoot}/packages/coding-agent/src/session/date-cwd-reminder.ts`);
   reminderInjector = new DateCwdReminderInjector();
@@ -514,30 +518,42 @@ async function dispatch(operation: string, payload: Record<string, any>): Promis
     };
   }
   if (operation === "prepare_tools") {
-    prepared = await Promise.all((payload.calls ?? []).map(async (call: any) => {
+    if (validateToolArguments === null) throw new Error("pinned OMP tool validator is unavailable");
+    prepared = await Promise.all((payload.calls ?? []).map(async (call: { id: string; name: string; arguments: unknown }) => {
       let argumentsValue = call.arguments;
-      let error: string | undefined;
       if (typeof argumentsValue === "string") {
         try {
           argumentsValue = JSON.parse(argumentsValue);
         } catch {
-          error = "Invalid tool arguments: expected a JSON object";
+          // Pinned stream parsing can finalize a partial object without its
+          // required field; leave schema validation in charge of the error.
           argumentsValue = {};
         }
       }
-      if (!argumentsValue || typeof argumentsValue !== "object" || Array.isArray(argumentsValue)) {
-        error = error ?? "Invalid tool arguments: expected a JSON object";
-        argumentsValue = {};
+      const item: Call & { error?: string; route?: PinnedRoute } = {
+        id: String(call.id),
+        name: String(call.name),
+        arguments: argumentsValue !== null && typeof argumentsValue === "object" && !Array.isArray(argumentsValue)
+          ? argumentsValue as Record<string, unknown> : {},
+      };
+      const tool = tools.find((candidate: { name: string }) => candidate.name === item.name);
+      if (!tool) {
+        item.error = `OMP tool is not admitted: ${item.name}`;
+        return item;
       }
-      let route: PinnedRoute | undefined;
-      if (!error) {
-        const admission = await pinnedCallAdmission(String(call.name), argumentsValue);
-        error = admission.error;
-        route = admission.route;
+      const admission = await pinnedCallAdmission(item.name, item.arguments);
+      item.route = admission.route;
+      if (admission.error) {
+        item.error = admission.error;
+        return item;
       }
-      const item: any = { id: String(call.id), name: String(call.name), arguments: argumentsValue, route };
-      if (!TOOL_NAMES.includes(item.name)) item.error = `OMP tool is not admitted: ${item.name}`;
-      if (error) item.error = item.error ?? error;
+      try {
+        item.arguments = validateToolArguments(tool, {
+          type: "toolCall", id: item.id, name: item.name, arguments: argumentsValue,
+        });
+      } catch (error) {
+        item.error = error instanceof Error ? error.message : String(error);
+      }
       return item;
     }));
     return { schema_version: PHASE_SCHEMA, kind: "prepared", calls: prepared, history_calls: prepared.map((call) => ({ id: call.id, name: call.name, arguments: call.arguments })) };

@@ -536,6 +536,46 @@ def test_real_pinned_worker_runs_initialize_and_close(tmp_path: Path) -> None:
     or not Path(_runtime_spec().source_root).is_dir(),
     reason="pinned OMP runtime is unavailable on this host",
 )
+def test_real_pinned_worker_validates_partial_bash_call_before_execution(tmp_path: Path) -> None:
+    worker = NativeToolWorker(cwd=str(tmp_path), spec=_runtime_spec())
+    marker = tmp_path / "must-not-exist"
+    try:
+        worker.start()
+        worker.phase("initialize", {
+            "task": "check arguments",
+            "model_config": {},
+            "advertisement": {
+                "bounded_description_policy": _description_policy(),
+                "capability_denials": {
+                    name: {
+                        "schema_version": "bb.omp-capability-denial.v1",
+                        "capability": name,
+                        "message": f"OMP capability denied: {name}",
+                        "source_ref": "test",
+                    }
+                    for name in ("pty", "async")
+                },
+            },
+            **_authority_payload(tmp_path),
+        })
+        prepared = worker.phase("prepare_tools", {"calls": [{
+            "id": "malformed", "name": "bash", "arguments": '{"command":',
+        }]})
+        assert prepared["calls"][0]["arguments"] == {}
+        assert "command must be a string (was missing)" in prepared["calls"][0]["error"]
+        completed = worker.phase("execute_batch", {"calls": prepared["calls"]})
+        assert completed["results"][0]["isError"] is True
+        assert "Received arguments:\n{}" in completed["results"][0]["content"]
+        assert not marker.exists()
+    finally:
+        worker.stop()
+
+
+@pytest.mark.skipif(
+    not Path(_runtime_spec().bun).is_file()
+    or not Path(_runtime_spec().source_root).is_dir(),
+    reason="pinned OMP runtime is unavailable on this host",
+)
 @pytest.mark.parametrize("capability", ["pty", "async"])
 def test_real_pinned_worker_denies_excluded_bash_capabilities(
     tmp_path: Path,
