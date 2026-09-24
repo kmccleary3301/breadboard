@@ -130,7 +130,7 @@ def _normalize_at_prefix(value: str) -> str:
         or without_at.startswith(("~/", "~\\"))
         or re.match(r"^[A-Za-z]:", without_at)
         or any(
-            without_at.startswith(prefix)
+            without_at.lower().startswith(prefix)
             for prefix in (
                 "agent://", "artifact://", "skill://", "rule://",
                 "security://", "local:", "mcp://",
@@ -152,7 +152,7 @@ def _expand_linux_path(value: str) -> str:
     # is a no-op for this Linux target.
     if value.lower().startswith("file://"):
         parsed = urlsplit(value)
-        if parsed.netloc not in ("", "localhost"):
+        if parsed.netloc.lower() not in ("", "localhost"):
             return value
         value = unquote(parsed.path)
     # path-utils.ts:163-173, expandTilde (with the Linux home supplied by the
@@ -196,7 +196,7 @@ def _repair_collapsed_url(value: str) -> str:
 
 def _route_extension(candidate: str, extensions: list[Any]) -> bool:
     # read.ts:1380-1412 resolves archive/sqlite before ordinary file dispatch.
-    base = candidate.lower().split("?", 1)[0]
+    base = candidate.lower()
     return any(
         isinstance(extension, str)
         and re.search(re.escape(extension.lower()) + r"(?=[:?]|$)", base)
@@ -206,10 +206,10 @@ def _route_extension(candidate: str, extensions: list[Any]) -> bool:
 
 def _ordered_read_candidate(value: str) -> str:
     """Apply the pinned Linux read.ts pre-routing normalization in order."""
-    candidate = value
-    # read.ts:1268-1275: only lowercase file:// invokes expandPath.
-    if candidate.startswith("file://"):
-        candidate = _expand_linux_path(candidate)
+    # path-utils.ts:167-181 expandPath is the source-owned path normalizer;
+    # applying it before routing also handles case variants and @-prefixed
+    # internal URLs without a policy bypass.
+    candidate = _expand_linux_path(value)
     candidate, _ = _split_image_question(candidate)
     return candidate
 def classify_capability(

@@ -101,7 +101,7 @@ const input = JSON.parse(await Bun.stdin.text());
 const policy = input.policy;
 
 function routeExtension(value, extensions) {
-  const base = value.toLowerCase().split("?", 1)[0];
+  const base = value.toLowerCase();
   return extensions.some(extension => typeof extension === "string" && new RegExp(`${extension.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=[:?]|$)`, "i").test(base));
 }
 
@@ -125,14 +125,13 @@ function matches(capability, value) {
 }
 
 function classify(value) {
-  let candidate = value;
-  if (candidate.startsWith("file://")) candidate = expandPath(candidate);
+  let candidate = expandPath(value);
   candidate = splitImageQuestion(candidate);
   if (isReadableUrlPath(candidate)) return "url";
   if (pathTargetsSsh(candidate)) return "ssh";
   const internal = candidate.match(/^([a-z][a-z0-9+.-]*):\/\//i)?.[1]?.toLowerCase();
   if (internal) {
-    const schemes = new Set(policy["internal-resource"]?.route?.schemes ?? []);
+    const schemes = new Set((policy["internal-resource"]?.route?.schemes ?? []).map(item => item.toLowerCase()));
     if (internal === "local" && schemes.has(internal)) {
       const parsed = new URL(candidate);
       if (parsed.pathname) candidate = decodeURIComponent(parsed.pathname);
@@ -201,6 +200,13 @@ def test_denial_happens_before_native_resolution() -> None:
         ("ssh:host/path", None),
         ("prefix/ssh://host/path", "ssh"),
         ("https%3A%2F%2Fexample.invalid", None),
+        ("file://LOCALHOST/tmp/state%2Esqlite", "sqlite"),
+        ("FILE://LOCALHOST/tmp/state%2Esqlite", "sqlite"),
+        ("file:///tmp/x%3Fname.sqlite", "sqlite"),
+        ("file:///tmp/x%23name.sqlite", "sqlite"),
+        ("file:///tmp/x%2Fname.sqlite", "sqlite"),
+        ("@agent://foo", "internal-resource"),
+        ("@AGENT://foo", "internal-resource"),
     ],
 )
 def test_route_matchers_follow_source_path_forms(value: str, expected: str | None) -> None:
@@ -217,7 +223,11 @@ def test_route_classification_differential_matches_pinned_bun(tmp_path: Path) ->
     values = [
         "file:///tmp/state.sqlite",
         "file:///tmp/state%2Esqlite:users",
-        "FILE:///tmp/state.sqlite",
+        "file://LOCALHOST/tmp/state%2Esqlite",
+        "FILE://LOCALHOST/tmp/state%2Esqlite",
+        "file:///tmp/x%3Fname.sqlite",
+        "file:///tmp/x%23name.sqlite",
+        "file:///tmp/x%2Fname.sqlite",
         "file:///tmp/archive.tar.gz:member",
         "file:///tmp/read.pdf:1",
         "file:///tmp/image.png",
@@ -225,6 +235,8 @@ def test_route_classification_differential_matches_pinned_bun(tmp_path: Path) ->
         "file:///tmp/report.docx",
         "@/tmp/state.sqlite",
         "@local:///tmp/state.sqlite:users",
+        "@agent://foo",
+        "@AGENT://foo",
         "\u00a0/tmp/state.sqlite",
         "~/.cache/state.sqlite",
         ":/tmp/state.sqlite",
