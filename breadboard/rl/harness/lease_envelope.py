@@ -12,6 +12,7 @@ import socket
 import stat
 import struct
 import time
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -577,7 +578,7 @@ def _spawn_one(_control: socket.socket, message: Mapping[str, Any], fds: list[in
             )
             status_sock.detach()
             os.kill(os.getpid(), signal.SIGSTOP)
-            argv = tuple(message["argv"])
+            argv = _rewrite_received_fd_paths(tuple(message["argv"]), fds)
             env = {str(key): str(value) for key, value in message["environment"].items()}
             os.execvpe(argv[0], argv, env)
         except BaseException:
@@ -862,6 +863,19 @@ def _rewrite_fd_paths(argv: Sequence[str], mapping: Mapping[int, int]) -> tuple[
             value = value.replace(f"/proc/self/fd/{source}", f"/proc/self/fd/{target}")
         result.append(value)
     return tuple(result)
+
+
+def _rewrite_received_fd_paths(argv: Sequence[str], fds: Sequence[int]) -> tuple[str, ...]:
+    def replace(match: re.Match[str]) -> str:
+        index = int(match.group(1))
+        if index >= len(fds):
+            return match.group(0)
+        return f"/proc/self/fd/{fds[index]}"
+
+    return tuple(
+        re.sub(r"/proc/self/fd/([0-9]+)", replace, str(item))
+        for item in argv
+    )
 
 
 def launch_envelope(
