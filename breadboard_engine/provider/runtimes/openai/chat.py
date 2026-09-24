@@ -20,9 +20,9 @@ from ...contracts import (
 )
 from ...contract_wire import ProviderContractError, canonical_json
 from ...native_response import NativeProviderResponse
-from ...contract_wire import canonical_json
 from ....compilation.provider_response import (
     CompiledNativeResponseBinding,
+    MINI_RESPONSE_CONSUMER_ID,
     PI_RESPONSE_CONSUMER_ID,
     OMP_RESPONSE_CONSUMER_ID,
 )
