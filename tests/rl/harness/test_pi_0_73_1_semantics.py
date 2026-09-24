@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import os
+import time
 import pytest
 from pathlib import Path
 
@@ -14,6 +17,19 @@ from breadboard.rl.harness.runners.pi_semantics import (
 from breadboard_engine.provider.native_response import NativeProviderResponse, NativeStreamFragment, NativeToolCall
 
 
+def _parse(text):
+    return asyncio.run(parse_streaming_json(text))
+
+
+async def _parse_async(text):
+    return await parse_streaming_json(text)
+
+
+def _prepare(state, response):
+    return asyncio.run(state.prepare_response(response))
+
+
+
 def response(name: str, arguments: str, *, finish: str = "tool_calls", content: str | None = None, fragments=()):
     return NativeProviderResponse("binding", "request", "response", "model", content, finish, (NativeToolCall("call", name, arguments),), stream_fragments=tuple(fragments))
 
@@ -21,7 +37,7 @@ def response(name: str, arguments: str, *, finish: str = "tool_calls", content: 
 def admit_and_execute(state: PiSemanticsState, native: NativeProviderResponse, cwd: Path) -> PiResponseResult:
     """Drive one turn in the Conductor's order: admit, prepare, execute, commit."""
     assert state.begin_query() is None
-    prepared = state.prepare_response(native)
+    prepared = _prepare(state, native)
     raw_results = dispatch_native_tools(
         [{"id": call.id, "name": call.name, "arguments": call.arguments} for call in prepared.calls],
         cwd=cwd,
@@ -82,7 +98,7 @@ def test_eighth_request_then_ninth_stream_attempt_is_local_error():
     state = PiSemanticsState(task="cap", model_id="model-a", provider="openai")
     for index in range(8):
         assert state.begin_query() is None
-        prepared = state.prepare_response(response("bash", json.dumps({"command": f"printf cap-{index}"})))
+        prepared = _prepare(state, response("bash", json.dumps({"command": f"printf cap-{index}"})))
         state.commit_tool_results(prepared.calls, [{"content": f"cap-{index}"}])
     terminal = state.begin_query()
     assert terminal is not None
@@ -95,16 +111,16 @@ def test_eighth_request_then_ninth_stream_attempt_is_local_error():
 
 
 def test_partial_json_repair_and_plain_tools():
-    assert parse_streaming_json('{"path":"x') == {"path": "x"}
-    assert parse_streaming_json('{"path":123}') == {"path": 123}
-    assert parse_streaming_json("[]") == []
-    assert parse_streaming_json("42") == 42
-    assert parse_streaming_json("null") is None
-    assert parse_streaming_json('{"outer":{"command":"echo "oops""},"other":1}') == {
+    assert _parse('{"path":"x') == {"path": "x"}
+    assert _parse('{"path":123}') == {"path": 123}
+    assert _parse("[]") == []
+    assert _parse("42") == 42
+    assert _parse("null") is None
+    assert _parse('{"outer":{"command":"echo "oops""},"other":1}') == {
         "outer": {"command": "echo "}
     }
-    assert parse_streaming_json('{"n":0.') == {}
-    assert parse_streaming_json('"recovered\\') == "recovered"
+    assert _parse('{"n":0.') == {}
+    assert _parse('"recovered\\') == "recovered"
 
 
 def test_tool_execution_preserves_non_object_arguments(tmp_path: Path):
@@ -125,7 +141,7 @@ def test_receiver_argument_with_unescaped_shell_quotes_matches_pinned_partial_js
     receiver_arguments = (
         r'''{"command":"printf 'cwd='; pwd; printf 'state=%s\n' "${PI_CAPTURE_STATE-unset}""}'''
     )
-    assert parse_streaming_json(receiver_arguments) == {
+    assert _parse(receiver_arguments) == {
         "command": "printf 'cwd='; pwd; printf 'state=%s\n' ",
     }
 
@@ -266,7 +282,7 @@ def test_parse_streaming_json_differential_against_pinned_node() -> None:
 
     from breadboard.rl.harness.pi_native_tools import parse_streaming_json_batch
 
-    py_results = parse_streaming_json_batch(corpus)
+    py_results = asyncio.run(parse_streaming_json_batch(corpus))
     for idx, (candidate, node_res, py_res) in enumerate(zip(corpus, node_results, py_results)):
         assert node_res["ok"], f"Node parseStreamingJson threw: {node_res.get('err')}"
         assert py_res == node_res["val"], (
@@ -281,8 +297,26 @@ def test_argument_parsing_fails_closed_without_pinned_worker(monkeypatch, node) 
 
     monkeypatch.setenv("PI_NODE", node)
     with pytest.raises(PiNativeWorkerError):
-        parse_streaming_json('{"path":"x"}')
+        _parse('{"path":"x"}')
 
 
 def test_argument_parsing_preserves_lone_surrogates() -> None:
-    assert parse_streaming_json('{"a":"\ud83d"}') == {"a": "\ud83d"}
+    assert _parse('{"a":"\ud83d"}') == {"a": "\ud83d"}
+
+
+def test_argument_parsing_cancellation_kills_the_worker(monkeypatch, tmp_path) -> None:
+    pidfile = tmp_path / "worker.pid"
+    node = tmp_path / "stalled-node"
+    node.write_text(f"#!/bin/sh\necho $$ > {pidfile}\nexec sleep 30\n")
+    node.chmod(0o755)
+    monkeypatch.setenv("PI_NODE", str(node))
+
+    async def scenario() -> float:
+        start = time.monotonic()
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(_parse_async('{"path":"x"}'), timeout=0.5)
+        return time.monotonic() - start
+
+    assert asyncio.run(scenario()) < 5
+    with pytest.raises(ProcessLookupError):
+        os.kill(int(pidfile.read_text()), 0)

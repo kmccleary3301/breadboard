@@ -90,11 +90,11 @@ class PiRequestRecord:
 
 
 
-def parse_streaming_json(partial_json: str | None) -> Any:
+async def parse_streaming_json(partial_json: str | None) -> Any:
     """Parse one argument text with the pinned Pi ``parseStreamingJson``."""
     from breadboard.rl.harness.pi_native_tools import parse_streaming_json_batch
 
-    return parse_streaming_json_batch([partial_json])[0]
+    return (await parse_streaming_json_batch([partial_json]))[0]
 
 
 def execute_pi_tool(
@@ -122,7 +122,7 @@ def execute_pi_tool(
         return PiToolResult(call_id, name, str(exc), True)
 
 
-def _fragment_tool_calls(response: NativeProviderResponse) -> tuple[PiToolCall, ...]:
+async def _fragment_tool_calls(response: NativeProviderResponse) -> tuple[PiToolCall, ...]:
     """Project decoder-finalized tool calls without reassembling fragments.
 
     ``NativeStreamFragment.index`` is a global fragment ordinal.  The native
@@ -133,7 +133,7 @@ def _fragment_tool_calls(response: NativeProviderResponse) -> tuple[PiToolCall, 
     from breadboard.rl.harness.pi_native_tools import parse_streaming_json_batch
 
     calls = tuple(response.tool_calls)
-    parsed = parse_streaming_json_batch([call.arguments for call in calls])
+    parsed = await parse_streaming_json_batch([call.arguments for call in calls])
     return tuple(
         PiToolCall(call.id, call.name, arguments)
         for call, arguments in zip(calls, parsed, strict=True)
@@ -230,18 +230,26 @@ class PiSemanticsState:
             return self._cap_response()
         return None
 
-    def prepare_response(self, response: NativeProviderResponse) -> PiResponseResult:
-        """Commit an admitted assistant response without executing its tools."""
+    async def prepare_response(self, response: NativeProviderResponse) -> PiResponseResult:
+        """Commit an admitted assistant response without executing its tools.
+
+        Argument parsing runs in the pinned worker without blocking the event
+        loop; cancellation kills the worker before any state is committed.
+        """
         if not isinstance(response, NativeProviderResponse):
             raise TypeError("response must be NativeProviderResponse")
         if self.stream_fn_issued <= self.request_count:
             raise PiSemanticsError("response has no admitted provider query")
         if self.request_count >= self.request_cap:
             return self._cap_response()
+        calls = (
+            ()
+            if response.finish_reason in {"error", "aborted"}
+            else await _fragment_tool_calls(response)
+        )
         self.request_count += 1
         self.request_records.append(PiRequestRecord(self.stream_fn_issued, True, response.request_digest))
         stop_reason = _native_stop_reason(response.finish_reason)
-        calls = () if response.finish_reason in {"error", "aborted"} else _fragment_tool_calls(response)
         content = _content_from_response(response)
         blocks: list[dict[str, Any]] = []
         if content:

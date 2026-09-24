@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from copy import deepcopy
 import hashlib
 import json
@@ -155,7 +156,7 @@ def _replay_request_limit_bb_trace(case: Path, supplier_trace: dict) -> dict:
             "binding", "request", "response", "gpt-4o-mini", None, finish, tuple(tool_calls)
         )
         assert state.begin_query() is None
-        prep = state.prepare_response(resp)
+        prep = asyncio.run(state.prepare_response(resp))
         if prep.calls:
             raw = dispatch_native_tools(
                 [{"id": c.id, "name": c.name, "arguments": c.arguments} for c in prep.calls],
