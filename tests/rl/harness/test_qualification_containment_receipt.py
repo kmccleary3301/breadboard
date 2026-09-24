@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import Mapping
 from copy import deepcopy
@@ -431,6 +432,192 @@ async def test_receipt_schema_type_swaps_are_typed_at_parser_and_admission(tmp_p
             with pytest.raises(RunnerPlanError) as caught:
                 await _open_with_ledger(adapter, tools, runtime_id="trusted-process")
             assert caught.value.code == "containment_receipt_invalid", name
+    finally:
+        await lease.close()
+        await harness.manager.close()
+
+
+@pytest.mark.asyncio
+async def test_receipt_json_boundary_rejects_subclasses_and_hostile_objects(tmp_path: Path) -> None:
+    class StrSubclass(str):
+        pass
+
+    class IntSubclass(int):
+        pass
+
+    class DictSubclass(dict):
+        pass
+
+    class ListSubclass(list):
+        pass
+
+    class OutcomeItemsBoom(Mapping):
+        def __iter__(self):
+            return iter(("pid1_reaped", "all_dead"))
+
+        def __len__(self) -> int:
+            return 2
+
+        def __getitem__(self, key: str) -> bool:
+            return True
+
+        def items(self):
+            raise RuntimeError("outcome items exploded")
+
+    class CancelledOutcome(OutcomeItemsBoom):
+        def __getitem__(self, key: str) -> bool:
+            raise asyncio.CancelledError("receipt object cancelled")
+
+    class ExplodingMapping(Mapping):
+        def __init__(self, source: Mapping[str, Any]) -> None:
+            self.source = source
+
+        def __iter__(self):
+            raise RuntimeError("mapping iteration exploded")
+
+        def __len__(self) -> int:
+            return len(self.source)
+
+        def __getitem__(self, key: str) -> Any:
+            return self.source[key]
+
+    class ForgedKey(str):
+        def __eq__(self, other: object) -> bool:
+            return other == "lease_id"
+
+        def __hash__(self) -> int:
+            return hash("lease_id")
+
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    lease = await harness.manager.open(fixture.request)
+    try:
+        original = lease.containment_receipt
+        authenticator = harness.manager._containment_authenticator
+        adapter = ConductorAdapter(
+            CONDUCTOR_RUNTIME_ABI,
+            containment_authenticator=authenticator,
+            admitted_lease_ledger=harness.manager.admitted_lease_ledger,
+        )
+        base = original.to_mapping()
+        for presented in (base, original):
+            assert verify_containment_receipt(
+                presented,
+                lease_id=lease.lease_id,
+                runtime_id="trusted-process",
+                authenticator=authenticator,
+            ) == original
+            tools = RecordingToolPort()
+            tools.containment_lease_id = lease.lease_id
+            tools.containment_receipt = presented
+            session = await _open_with_ledger(adapter, tools, runtime_id="trusted-process")
+            await session.close()
+
+        def nodes(value: Any, path: tuple[str | int, ...] = ()):
+            yield path, value
+            if type(value) is dict:
+                for key, child in value.items():
+                    yield from nodes(child, (*path, key))
+            elif type(value) is list:
+                for index, child in enumerate(value):
+                    yield from nodes(child, (*path, index))
+
+        def set_node(root: Any, path: tuple[str | int, ...], replacement: Any) -> Any:
+            if not path:
+                return replacement
+            cursor = root
+            for step in path[:-1]:
+                cursor = cursor[step]
+            cursor[path[-1]] = replacement
+            return root
+
+        mutations: list[tuple[str, Any]] = []
+        teardown = add_teardown_outcome(
+            original, pid1_reaped=True, all_dead=True, authenticator=authenticator
+        ).to_mapping()
+        two_mounts = deepcopy(base)
+        two_mounts["writable_mounts"].insert(
+            0, WritableMount("/scratch", "tmpfs", 4096, "lease_tmpfs").to_mapping()
+        )
+        ContainmentReceipt.from_mapping(two_mounts)
+        for label, source in (
+            ("admission", base), ("teardown", teardown), ("two_mounts", two_mounts)
+        ):
+            for path, value in nodes(source):
+                if type(value) is dict:
+                    mutations.append((
+                        f"{label}.dict:{path}",
+                        set_node(deepcopy(source), path, DictSubclass(value)),
+                    ))
+                    for key in value:
+                        changed = deepcopy(source)
+                        target = changed
+                        for step in path:
+                            target = target[step]
+                        target[StrSubclass(key)] = target.pop(key)
+                        mutations.append((f"{label}.key:{path}:{key}", changed))
+                elif type(value) is list:
+                    mutations.append((
+                        f"{label}.list:{path}",
+                        set_node(deepcopy(source), path, ListSubclass(value)),
+                    ))
+                elif type(value) is str:
+                    mutations.append((
+                        f"{label}.str:{path}",
+                        set_node(deepcopy(source), path, StrSubclass(value)),
+                    ))
+                elif type(value) is int:
+                    mutations.append((
+                        f"{label}.int:{path}",
+                        set_node(deepcopy(source), path, IntSubclass(value)),
+                    ))
+                    mutations.append((
+                        f"{label}.bool-as-int:{path}",
+                        set_node(deepcopy(source), path, True),
+                    ))
+        deep: dict[str, Any] = {}
+        cursor = deep
+        for _ in range(40):
+            cursor["next"] = {}
+            cursor = cursor["next"]
+        mutations.append(("over-depth", set_node(deepcopy(base), ("namespaces", "pid"), deep)))
+        mutations.append(("raising-mapping", ExplodingMapping(base)))
+        forged = deepcopy(base)
+        forged[ForgedKey("not_lease_id")] = forged.pop("lease_id")
+        mutations.append(("forged-str-key", forged))
+
+        for name, presented in mutations:
+            with pytest.raises(ContainmentReceiptError) as parsed:
+                ContainmentReceipt.from_mapping(presented)
+            assert parsed.value.code == "containment_receipt_invalid", name
+            tools = RecordingToolPort()
+            tools.containment_lease_id = lease.lease_id
+            tools.containment_receipt = presented
+            with pytest.raises(RunnerPlanError) as admitted:
+                await _open_with_ledger(adapter, tools, runtime_id="trusted-process")
+            assert admitted.value.code == "containment_receipt_invalid", name
+
+        hostile = replace(original, outcome=OutcomeItemsBoom())
+        with pytest.raises(ContainmentReceiptError):
+            verify_containment_receipt(
+                hostile,
+                lease_id=lease.lease_id,
+                runtime_id="trusted-process",
+                authenticator=authenticator,
+            )
+        with pytest.raises(asyncio.CancelledError):
+            verify_containment_receipt(
+                replace(original, outcome=CancelledOutcome()),
+                lease_id=lease.lease_id,
+                runtime_id="trusted-process",
+                authenticator=authenticator,
+            )
+        tools = RecordingToolPort()
+        tools.containment_lease_id = lease.lease_id
+        tools.containment_receipt = hostile
+        with pytest.raises(RunnerPlanError) as admitted:
+            await _open_with_ledger(adapter, tools, runtime_id="trusted-process")
+        assert admitted.value.code == "containment_receipt_invalid"
     finally:
         await lease.close()
         await harness.manager.close()

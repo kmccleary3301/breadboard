@@ -13,11 +13,12 @@ import stat
 import struct
 import re
 import select
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Iterator, Mapping, Protocol, Sequence
 
 from breadboard_engine.compilation.contracts import canonical_json_bytes
 
@@ -209,6 +210,31 @@ class WritableMount:
         }
 
 
+@contextmanager
+def _receipt_guard() -> Iterator[None]:
+    try:
+        yield
+    except ContainmentReceiptError:
+        raise
+    except Exception as exc:
+        raise ContainmentReceiptError("containment receipt is malformed") from exc
+
+
+def _plain_receipt_json(value: Any, depth: int = 0) -> Any:
+    if depth > 32:
+        raise ContainmentReceiptError("containment receipt nesting is too deep")
+    if type(value) is dict:
+        for key in value:
+            if type(key) is not str:
+                raise ContainmentReceiptError("containment receipt keys must be strings")
+        return {key: _plain_receipt_json(item, depth + 1) for key, item in value.items()}
+    if type(value) is list:
+        return [_plain_receipt_json(item, depth + 1) for item in value]
+    if type(value) in (str, int, bool) or value is None:
+        return value
+    raise ContainmentReceiptError("containment receipt value is not plain JSON")
+
+
 @dataclass(frozen=True, slots=True)
 class ContainmentReceipt:
     schema_version: str
@@ -258,9 +284,12 @@ class ContainmentReceipt:
         return _receipt_unsigned(self.unsigned_mapping())
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "ContainmentReceipt":
-        try:
-            if not isinstance(value, Mapping):
+    def from_mapping(cls, value: Mapping[str, Any] | ContainmentReceipt) -> "ContainmentReceipt":
+        with _receipt_guard():
+            if type(value) is ContainmentReceipt:
+                value = value.to_mapping()
+            value = _plain_receipt_json(value)
+            if type(value) is not dict:
                 raise ContainmentReceiptError("containment receipt is not an object")
             required = {
                 "schema", "lease_id", "runtime_id", "mode", "namespaces",
@@ -270,17 +299,17 @@ class ContainmentReceipt:
             if set(value) not in (required, required | {"outcome"}):
                 raise ContainmentReceiptError("containment receipt keys are invalid")
             namespaces = value["namespaces"]
-            if not isinstance(namespaces, Mapping) or set(namespaces) != {"pid", "mnt", "user", "net"}:
+            if type(namespaces) is not dict or set(namespaces) != {"pid", "mnt", "user", "net"}:
                 raise ContainmentReceiptError("containment receipt namespace keys are invalid")
             raw_mounts = value["writable_mounts"]
             mount_keys = {"path", "fstype", "size_bytes", "source"}
             if type(raw_mounts) is not list or any(
-                not isinstance(mount, Mapping) or set(mount) != mount_keys for mount in raw_mounts
+                type(mount) is not dict or set(mount) != mount_keys for mount in raw_mounts
             ):
                 raise ContainmentReceiptError("containment receipt writable mount keys are invalid")
             outcome_raw = value["outcome"] if "outcome" in value else None
             if "outcome" in value and (
-                not isinstance(outcome_raw, Mapping)
+                type(outcome_raw) is not dict
                 or set(outcome_raw) != {"pid1_reaped", "all_dead"}
             ):
                 raise ContainmentReceiptError("containment receipt outcome keys are invalid")
@@ -306,10 +335,6 @@ class ContainmentReceipt:
             )
             _validate_receipt_shape(receipt)
             return receipt
-        except ContainmentReceiptError:
-            raise
-        except Exception as exc:
-            raise ContainmentReceiptError("containment receipt is malformed") from exc
 
 
 def _validate_receipt_shape(receipt: ContainmentReceipt) -> None:
@@ -436,7 +461,7 @@ def add_teardown_outcome(
     all_dead: bool,
     authenticator: ReceiptAuthenticator,
 ) -> ContainmentReceipt:
-    _validate_receipt_shape(receipt)
+    receipt = ContainmentReceipt.from_mapping(receipt)
     if receipt.outcome is not None:
         raise ContainmentReceiptError("teardown outcome already exists")
     unsigned = ContainmentReceipt(
@@ -483,21 +508,21 @@ def verify_containment_receipt(
     authenticator: ReceiptAuthenticator,
     require_teardown: bool = False,
 ) -> ContainmentReceipt:
-    parsed = receipt if isinstance(receipt, ContainmentReceipt) else ContainmentReceipt.from_mapping(receipt)
-    _validate_receipt_shape(parsed)
-    if parsed.lease_id != lease_id:
-        raise ContainmentReceiptError("containment receipt lease mismatch")
-    if parsed.runtime_id != runtime_id:
-        raise ContainmentReceiptError("containment receipt runtime mismatch")
-    if parsed.key_id != authenticator.key_id or parsed.algorithm != authenticator.algorithm:
-        raise ContainmentReceiptError("containment receipt signer mismatch")
-    if not authenticator.verify(parsed.canonical_bytes(), parsed.signature):
-        raise ContainmentReceiptError("containment receipt signature mismatch")
-    if require_teardown and parsed.outcome is None:
-        raise ContainmentReceiptError("containment teardown receipt is missing")
-    if parsed.outcome is not None and not all(parsed.outcome.values()):
-        raise ContainmentReceiptError("containment teardown outcome is incomplete")
-    return parsed
+    with _receipt_guard():
+        parsed = ContainmentReceipt.from_mapping(receipt)
+        if parsed.lease_id != lease_id:
+            raise ContainmentReceiptError("containment receipt lease mismatch")
+        if parsed.runtime_id != runtime_id:
+            raise ContainmentReceiptError("containment receipt runtime mismatch")
+        if parsed.key_id != authenticator.key_id or parsed.algorithm != authenticator.algorithm:
+            raise ContainmentReceiptError("containment receipt signer mismatch")
+        if not authenticator.verify(parsed.canonical_bytes(), parsed.signature):
+            raise ContainmentReceiptError("containment receipt signature mismatch")
+        if require_teardown and parsed.outcome is None:
+            raise ContainmentReceiptError("containment teardown receipt is missing")
+        if parsed.outcome is not None and not all(parsed.outcome.values()):
+            raise ContainmentReceiptError("containment teardown outcome is incomplete")
+        return parsed
 
 
 def _send_frame(sock: socket.socket, payload: Mapping[str, Any], fds: Sequence[int] = ()) -> None:

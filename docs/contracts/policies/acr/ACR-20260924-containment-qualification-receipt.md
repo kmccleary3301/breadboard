@@ -28,6 +28,7 @@ Headless requests formerly accepted `outer_isolation`; that declaration did not 
 - Cross-harness behavior: trusted-process sessions require a valid lease-bound receipt, including injected backends.
 - Non-trusted-process runtimes remain subject to their existing isolation gates.
 - Trust boundary: a signed receipt alone does not establish manager admission. Composer injection supplies the independently populated, lookup-only lease ledger to the adapter; workspace-provided claims and a genuine signer without admission are insufficient. Python object introspection into private lease/manager internals is outside this threat model; secrecy of the HMAC signer is not the admission boundary.
+- Receipt boundary: mappings and receipt objects are copied through one bounded, exact-type plain-JSON walker before schema key checks, signature verification, or admission ledger comparison. Invalid keys, subclasses, hostile objects, and excessive nesting produce `containment_receipt_invalid`; exceptions outside `Exception` propagate.
 
 ## 4) Change Classification
 
@@ -38,6 +39,7 @@ Headless requests formerly accepted `outer_isolation`; that declaration did not 
 ## 5) Evidence and Validation Plan
 
 - Regression tests exercise missing primary and verifier admission receipts, a genuine composer-signed counterfeit without admission, exact-match modification and post-teardown replay, unconfined conductor and headless entrypoints, a 36-case cleanup/teardown receipt matrix, and repeat-five composition descriptor stability.
+- Receipt regressions cover schema-derived nested subclass and bool/int mutations, forged string keys, hostile outcome and mapping objects, excessive nesting, and genuine mapping/object admission controls.
 - Headless tests reject obsolete `outer_isolation` in workspace and run requests.
 - These local focused tests do not establish a Linux installed qualification or live containment claim; those require separate capture/replay and installed evidence.
 

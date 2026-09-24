@@ -15,7 +15,6 @@ from typing import Any, Protocol, runtime_checkable
 from breadboard_engine.compilation.contracts import (
     bytes_sha256,
     canonical_sha256,
-    canonical_json_bytes,
 )
 from breadboard_engine.compilation.provider_response import (
     MINI_RESPONSE_CONSUMER_ID,
@@ -27,10 +26,10 @@ from breadboard.rl.harness.contracts import RuntimeClass
 from breadboard.rl.harness.lease_envelope import (
     AdmittedLeaseLedger,
     AdmittedLeaseRecord,
-    ContainmentReceipt,
     ContainmentReceiptError,
     ReceiptAuthenticator,
     RuntimeContainment,
+    _receipt_guard,
     verify_containment_receipt,
 )
 from breadboard.rl.harness.runner_identity import measure_module_artifact
@@ -1339,28 +1338,23 @@ class ConductorAdapter:
                     or self._admitted_lease_ledger is None or not isinstance(lease_id, str)
                 ):
                     raise ContainmentReceiptError("containment receipt or admitted lease is missing")
-                verified = verify_containment_receipt(
-                    receipt,
-                    lease_id=lease_id,
-                    runtime_id=request.effective_plan.sandbox.runtime_id,
-                    authenticator=self._containment_authenticator,
-                )
-                presented = receipt.to_mapping() if isinstance(receipt, ContainmentReceipt) else receipt
-                try:
-                    presented_bytes = canonical_json_bytes({
-                        key: value for key, value in presented.items() if key != "signature"
-                    })
-                except Exception as exc:
-                    raise ContainmentReceiptError("containment receipt cannot be serialized") from exc
-                admitted = self._admitted_lease_ledger.lookup(lease_id)
-                if (
-                    type(admitted) is not AdmittedLeaseRecord
-                    or admitted.lease_id != lease_id
-                    or admitted.runtime_id != request.effective_plan.sandbox.runtime_id
-                    or admitted.receipt_bytes != presented_bytes
-                    or admitted.receipt_signature != verified.signature
-                ):
-                    raise ContainmentReceiptError("containment lease is not live and exact")
+                with _receipt_guard():
+                    verified = verify_containment_receipt(
+                        receipt,
+                        lease_id=lease_id,
+                        runtime_id=request.effective_plan.sandbox.runtime_id,
+                        authenticator=self._containment_authenticator,
+                    )
+                    presented_bytes = verified.canonical_bytes()
+                    admitted = self._admitted_lease_ledger.lookup(lease_id)
+                    if (
+                        type(admitted) is not AdmittedLeaseRecord
+                        or admitted.lease_id != lease_id
+                        or admitted.runtime_id != request.effective_plan.sandbox.runtime_id
+                        or admitted.receipt_bytes != presented_bytes
+                        or admitted.receipt_signature != verified.signature
+                    ):
+                        raise ContainmentReceiptError("containment lease is not live and exact")
             except ContainmentReceiptError as exc:
                 raise _plan_error(
                     request,
