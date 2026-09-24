@@ -20,14 +20,8 @@ let workspace = "";
 let runtimeInputs: Record<string, string> = {};
 let convertMessages: ((model: any, context: any, compat: any) => unknown[]) | null = null;
 let reminderInjector: { transform: (context: { systemPrompt: string[]; messages: unknown[] }, date: string, cwd: string) => unknown } | null = null;
-const converterModel = {
-  id: "capture",
-  provider: "capture",
-  api: "openai-completions",
-  reasoning: false,
-  input: ["text"],
-  compat: {},
-};
+// Conductor owns transport, so the pinned registry never sends this key.
+const WORKER_API_KEY = "omp-tool-worker-key";
 
 async function sha256File(path: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", await Bun.file(path).arrayBuffer());
@@ -274,8 +268,13 @@ async function classifyPinnedRead(value: unknown): Promise<PinnedRoute> {
 function requireAdvertisement(value: unknown): {
   descriptionPolicy: Record<string, Record<string, unknown>>;
   capabilityDenials: Record<string, Record<string, unknown>>;
+  providerId: string;
 } {
-  const advertisement = exactRecord(value, "advertisement", ["bounded_description_policy", "capability_denials"], ["settings"]);
+  const advertisement = exactRecord(value, "advertisement", ["bounded_description_policy", "capability_denials", "model_registry"], ["settings"]);
+  const registry = exactRecord(advertisement.model_registry, "advertisement.model_registry", ["provider_id"]);
+  if (typeof registry.provider_id !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(registry.provider_id)) {
+    throw new Error("advertisement.model_registry.provider_id must be a route label token");
+  }
   const rawPolicy = exactRecord(advertisement.bounded_description_policy, "advertisement.bounded_description_policy", TOOL_NAMES);
   const descriptionPolicy: Record<string, Record<string, unknown>> = {};
   for (const name of TOOL_NAMES) {
@@ -319,7 +318,36 @@ function requireAdvertisement(value: unknown): {
 
     exactRecord(advertisement.settings, "advertisement.settings", ["request_cap", "model_max_tokens", "provider_attempts"]);
   }
-  return { descriptionPolicy, capabilityDenials };
+  return { descriptionPolicy, capabilityDenials, providerId: registry.provider_id };
+}
+
+// The lease binds the route and model. Its provider names the wire protocol
+// family and its compat is not consumed: pinned resolveModelPolicy derives
+// compat from the registered provider id and route.
+function requireLeaseModel(value: unknown): { baseUrl: string; definition: Record<string, unknown> } {
+  const model = exactRecord(
+    value,
+    "model_config",
+    ["id", "name", "api", "baseUrl", "reasoning", "input", "contextWindow", "maxTokens"],
+    ["provider", "compat"],
+  );
+  if (
+    typeof model.id !== "string" || !model.id
+    || typeof model.name !== "string" || !model.name
+    || model.api !== "openai-completions"
+    || typeof model.baseUrl !== "string" || !model.baseUrl
+    || typeof model.reasoning !== "boolean"
+    || !Array.isArray(model.input) || model.input.some((entry) => typeof entry !== "string")
+    || !Number.isSafeInteger(model.contextWindow) || (model.contextWindow as number) <= 0
+    || !Number.isSafeInteger(model.maxTokens) || (model.maxTokens as number) <= 0
+  ) throw new Error("model_config is not a bound OpenAI Completions lease model");
+  return {
+    baseUrl: model.baseUrl as string,
+    definition: {
+      id: model.id, name: model.name, reasoning: model.reasoning, input: model.input,
+      contextWindow: model.contextWindow, maxTokens: model.maxTokens,
+    },
+  };
 }
 
 function deniedCapability(argumentsValue: Record<string, unknown>): string | undefined {
@@ -389,6 +417,7 @@ async function initialize(payload: Record<string, any>) {
     throw new Error("initialize workspace authority does not match runtime_inputs");
   }
   const advertisement = requireAdvertisement(payload.advertisement);
+  const leaseModel = requireLeaseModel(payload.model_config);
   capabilityDenials = advertisement.capabilityDenials;
   workspace = runtimeInputs.cwd;
   process.env.HOME = runtimeInputs.home;
@@ -418,14 +447,28 @@ async function initialize(payload: Record<string, any>) {
     "packages/ai/src/providers/openai-completions.ts": "8492ebc5f6fc0e024a310f13aa00487f7f41d34dd28f3e91a29633b88610cd60",
     "packages/omptype/src/json-schema.ts": "827b4718ab1c92bce0156e44749e25843024c445b2fd32ce6ed9f574e1408cf7",
     "packages/ai/src/utils/validation.ts": "55de91a79bdb24d9c9a8069d8f373661652c392dcc88f8078ed8a3992d200563",
+    "packages/catalog/src/hosts.ts": "5d404265744877b04aa82b7edd1596d9c20f9faacf7018227939c594d3b9c262",
+    "packages/coding-agent/src/config/model-registry.ts": "7d2158bba572adc98b7288f21819020a233622e34d633d12c93bbce76f0ce915",
+    "packages/ai/src/auth-storage.ts": "e663b1cb5997db912ca0b93689a43186aee1adf50b1bb9bf20003be85f82323d",
   })) {
     if (await sha256File(`${pinnedSourceRoot}/${relativePath}`) !== digest) {
       throw new Error(`pinned OMP request source verification failed for ${relativePath}`);
     }
   }
+  // A known-host provider id would make pinned compat resolution assert that
+  // host for the BreadBoard route. hosts.ts has no imports, so this refusal
+  // precedes loading the SDK graph.
+  const { KNOWN_HOSTS, modelMatchesHost } = await import(`${pinnedSourceRoot}/packages/catalog/src/hosts.ts`);
+  for (const host of Object.keys(KNOWN_HOSTS)) {
+    if (advertisement.providerId === host || modelMatchesHost({ provider: advertisement.providerId, baseUrl: "" }, host)) {
+      throw new Error(`advertisement.model_registry.provider_id names pinned known host ${host}`);
+    }
+  }
   // The pinned source root is deployment-selected; static source imports cannot
   // represent the verified runtime path used by the SIF installation.
   const { createAgentSession, Settings } = await import(`${pinnedSourceRoot}/packages/coding-agent/src/sdk.ts`);
+  const { ModelRegistry } = await import(`${pinnedSourceRoot}/packages/coding-agent/src/config/model-registry.ts`);
+  const { AuthStorage } = await import(`${pinnedSourceRoot}/packages/ai/src/auth-storage.ts`);
   const providerModule = await import(`${pinnedSourceRoot}/packages/ai/src/providers/openai-completions.ts`);
   convertMessages = providerModule.convertMessages as typeof convertMessages;
   const schemaModule = await import(`${pinnedSourceRoot}/packages/omptype/src/json-schema.ts`);
@@ -445,14 +488,24 @@ async function initialize(payload: Record<string, any>) {
     "edit.blockAutoGenerated": true, "shellMinimizer.enabled": false,
   } });
   const manager = SessionManager.inMemory(workspace);
+  const authStorage = await AuthStorage.create(":memory:");
+  const modelRegistry = new ModelRegistry(authStorage, `${payload.scratch}/models.yml`, { settings });
+  modelRegistry.registerProvider(advertisement.providerId, {
+    baseUrl: leaseModel.baseUrl,
+    api: "openai-completions",
+    apiKey: WORKER_API_KEY,
+    models: [leaseModel.definition],
+  });
+  const model = modelRegistry.find(advertisement.providerId, leaseModel.definition.id);
+  if (!model) throw new Error("pinned OMP model registry did not bind the lease model");
   const created = await createAgentSession({
-    cwd: workspace, agentDir: String(payload.scratch), modelPattern: "capture/capture", thinkingLevel: "off",
+    cwd: workspace, agentDir: String(payload.scratch), authStorage, modelRegistry, model, thinkingLevel: "off",
     toolNames: [...TOOL_NAMES], restrictToolNames: true, allowRestrictedCustomTools: false,
     settings, sessionManager: manager, contextFiles: [], skills: [], rules: [], promptTemplates: [],
     slashCommands: [], customTools: [], extensions: [], additionalExtensionPaths: [],
     disableExtensionDiscovery: true, enableMCP: false, enableLsp: false, enableIrc: false,
     skipPythonPreflight: true, hasUI: false, interactivePrompts: false,
-    rebindModelAfterDiscovery: false, getApiKey: async () => "omp-tool-worker-key",
+    rebindModelAfterDiscovery: false, getApiKey: async () => WORKER_API_KEY,
   });
   session = created.session;
   nativeSystemPrompt = session.agent.state.systemPrompt;
@@ -503,7 +556,8 @@ async function dispatch(operation: string, payload: Record<string, any>): Promis
   if (!session) throw new Error("worker must be initialized before phases");
   if (operation === "project_request") {
     if (convertMessages === null) throw new Error("pinned OMP provider converter is unavailable");
-    const model = session.agent.state.model ?? converterModel;
+    const model = session.agent.state.model;
+    if (!model) throw new Error("pinned OMP session model is unavailable");
     if (model.api !== "openai-completions") throw new Error(`pinned OMP provider converter requires an OpenAI Completions model: ${String(model.api)}`);
     if (reminderInjector === null) throw new Error("pinned OMP date/cwd reminder is unavailable");
     const messages = convertMessages(model, reminderInjector.transform({ systemPrompt: nativeSystemPrompt, messages: payload.messages ?? [] }, runtimeInputs.current_date, workspace), model.compat);

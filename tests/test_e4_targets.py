@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 from pathlib import Path
@@ -23,6 +24,7 @@ from breadboard_engine.e4_targets import (
     load_e4_target,
 )
 from breadboard.product.harness.resolution import compile_e4_harness
+from breadboard.product.harness.compile import HarnessCompileError
 from breadboard.product.harness.targets import (
     bind_e4_target_inputs,
     lower_e4_target,
@@ -792,6 +794,31 @@ def test_omp_18_1_17_loads_and_lowers_native_worker_recipe() -> None:
     assert lowered.renderer_id == "breadboard.oh-my-pi.v18.1.17"
     assert lowered.ordered_tool_names == ("read", "bash", "edit", "write")
     assert lowered.runtime_profile["consumer_id"] == "breadboard.oh-my-pi.v18.1.17"
+
+
+@pytest.mark.parametrize(
+    "registry",
+    [
+        {"provider_id": "openai"},
+        {"provider_id": "Breadboard-Route"},
+        {"provider_id": ""},
+        {"provider_id": "breadboard-route", "extra": True},
+        {},
+    ],
+)
+def test_omp_18_1_17_rejects_provider_route_label_that_is_not_a_custom_route(
+    registry: dict[str, object],
+) -> None:
+    omp = load_e4_target("oh-my-pi@18.1.17")
+    native = json.loads(omp.read_asset_text("native-config.json"))
+    assert native["model_registry"] == {"provider_id": "breadboard-route"}
+    native["model_registry"] = registry
+    # Keep the pinned descriptor so lowering reaches the native-config checks.
+    mutated = dataclasses.replace(
+        omp, assets={**omp.assets, "native-config.json": json.dumps(native).encode("utf-8")}
+    )
+    with pytest.raises(HarnessCompileError, match="model_registry.provider_id"):
+        lower_e4_target(mutated, {})
 
 
 def test_omp_18_1_17_server_compile_binds_headless_v2(

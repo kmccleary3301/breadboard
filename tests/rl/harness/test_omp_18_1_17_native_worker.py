@@ -250,6 +250,45 @@ def _authority_payload(tmp_path: Path) -> dict[str, object]:
     }
 
 
+def _model_registry() -> dict[str, object]:
+    root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
+    return json.loads((root / "native-config.json").read_text(encoding="utf-8"))["model_registry"]
+
+
+def _lease_model() -> dict[str, object]:
+    """The OMP lease model_config shape bound by policy_provider."""
+    return {
+        "id": "capture",
+        "name": "capture",
+        "api": "openai-completions",
+        "provider": "openai",
+        "baseUrl": "http://127.0.0.1:9/v1",
+        "reasoning": False,
+        "input": ["text"],
+        "contextWindow": 32768,
+        "maxTokens": 2048,
+        "compat": {
+            "supportsStore": True,
+            "supportsDeveloperRole": True,
+            "supportsUsageInStreaming": True,
+            "maxTokensField": "max_completion_tokens",
+            "supportsStrictMode": False,
+        },
+    }
+
+
+def _test_denials() -> dict[str, dict[str, str]]:
+    return {
+        capability: {
+            "schema_version": "bb.omp-capability-denial.v1",
+            "capability": capability,
+            "message": f"OMP capability denied: {capability}",
+            "source_ref": "test",
+        }
+        for capability in ("pty", "async")
+    }
+
+
 
 def test_native_worker_spec_binds_source_and_real_leaves() -> None:
     spec = pinned_worker_spec()
@@ -302,9 +341,10 @@ def test_real_pinned_worker_classifies_fuzz_overadmission_fixtures(tmp_path: Pat
             "initialize",
             {
                 "task": "classify pinned read routes",
-                "model_config": {},
+                "model_config": _lease_model(),
                 "advertisement": {
                     "bounded_description_policy": _description_policy(),
+                    "model_registry": _model_registry(),
                     "capability_denials": denials,
                 },
                 **_authority_payload(tmp_path),
@@ -364,9 +404,10 @@ def test_real_pinned_worker_rejects_tampered_classifier_module(tmp_path: Path) -
                 "initialize",
                 {
                     "task": "reject tampered source",
-                    "model_config": {},
+                    "model_config": _lease_model(),
                     "advertisement": {
                         "bounded_description_policy": _description_policy(),
+                        "model_registry": _model_registry(),
                         "capability_denials": {
                             capability: {
                                 "schema_version": "bb.omp-capability-denial.v1",
@@ -402,9 +443,10 @@ def test_real_pinned_worker_rejects_unknown_classifier_module(tmp_path: Path) ->
                 "initialize",
                 {
                     "task": "reject unknown classifier module",
-                    "model_config": {},
+                    "model_config": _lease_model(),
                     "advertisement": {
                         "bounded_description_policy": _description_policy(),
+                        "model_registry": _model_registry(),
                         "capability_denials": {
                             capability: {
                                 "schema_version": "bb.omp-capability-denial.v1",
@@ -510,9 +552,10 @@ def test_real_pinned_worker_runs_initialize_and_close(tmp_path: Path) -> None:
         "initialize",
         {
             "task": "read the workspace",
-            "model_config": {},
+            "model_config": _lease_model(),
             "advertisement": {
                 "bounded_description_policy": _description_policy(),
+                "model_registry": _model_registry(),
                 "capability_denials": {
                     capability: {
                         "schema_version": "bb.omp-capability-denial.v1",
@@ -543,9 +586,10 @@ def test_real_pinned_worker_validates_partial_bash_call_before_execution(tmp_pat
         worker.start()
         worker.phase("initialize", {
             "task": "check arguments",
-            "model_config": {},
+            "model_config": _lease_model(),
             "advertisement": {
                 "bounded_description_policy": _description_policy(),
+                "model_registry": _model_registry(),
                 "capability_denials": {
                     name: {
                         "schema_version": "bb.omp-capability-denial.v1",
@@ -584,6 +628,7 @@ def test_real_pinned_worker_denies_excluded_bash_capabilities(
     worker = NativeToolWorker(cwd=str(tmp_path), spec=_runtime_spec())
     advertisement = {
         "bounded_description_policy": _description_policy(),
+        "model_registry": _model_registry(),
         "capability_denials": {
             name: {
                 "schema_version": "bb.omp-capability-denial.v1",
@@ -600,7 +645,7 @@ def test_real_pinned_worker_denies_excluded_bash_capabilities(
             "initialize",
             {
                 "task": "deny excluded capability",
-                "model_config": {},
+                "model_config": _lease_model(),
                 "advertisement": advertisement,
                 **_authority_payload(tmp_path),
             },
@@ -635,6 +680,7 @@ def test_real_pinned_worker_closes_background_brush_descendant(tmp_path: Path) -
     worker.start()
     advertisement = {
         "bounded_description_policy": _description_policy(),
+        "model_registry": _model_registry(),
         "capability_denials": {
             capability: {
                 "schema_version": "bb.omp-capability-denial.v1",
@@ -649,7 +695,7 @@ def test_real_pinned_worker_closes_background_brush_descendant(tmp_path: Path) -
         "initialize",
         {
             "task": "background descendant cleanup",
-            "model_config": {},
+            "model_config": _lease_model(),
             "advertisement": advertisement,
             "workspace": str(tmp_path),
             **_authority_payload(tmp_path),
@@ -679,6 +725,7 @@ def test_real_pinned_worker_rejects_advertisement_extra_keys(tmp_path: Path, mut
     }
     advertisement = {
         "bounded_description_policy": _description_policy(),
+        "model_registry": _model_registry(),
         "capability_denials": {
             "pty": denial,
             "async": {**denial, "capability": "async", "message": "OMP capability denied: async"},
@@ -705,5 +752,123 @@ def test_real_pinned_worker_rejects_advertisement_extra_keys(tmp_path: Path, mut
                     **_authority_payload(tmp_path),
                 },
             )
+    finally:
+        worker.stop()
+
+
+@pytest.mark.skipif(
+    not Path(_runtime_spec().bun).is_file()
+    or not Path(_runtime_spec().source_root).is_dir(),
+    reason="pinned OMP runtime is unavailable on this host",
+)
+@pytest.mark.parametrize(
+    ("provider_id", "host"),
+    [("openai", "openai"), ("azure", "azureOpenAI"), ("xiaomi-token-plan-cn", "xiaomi")],
+)
+def test_real_pinned_worker_rejects_known_host_provider_id(tmp_path: Path, provider_id: str, host: str) -> None:
+    worker = NativeToolWorker(cwd=str(tmp_path), spec=_runtime_spec())
+    try:
+        worker.start()
+        with pytest.raises(NativeWorkerPhaseError, match=rf"names pinned known host {host}\b"):
+            worker.phase(
+                "initialize",
+                {
+                    "task": "reject known-host provider id",
+                    "model_config": _lease_model(),
+                    "advertisement": {
+                        "bounded_description_policy": _description_policy(),
+                        "model_registry": {"provider_id": provider_id},
+                        "capability_denials": _test_denials(),
+                    },
+                    **_authority_payload(tmp_path),
+                },
+            )
+    finally:
+        worker.stop()
+
+
+_PINNED_COMPAT_SCRIPT = """
+const payload = JSON.parse(await Bun.stdin.text());
+const { buildModel } = await import(`${payload.root}/packages/catalog/src/build.ts`);
+process.stdout.write(JSON.stringify(payload.providers.map((provider) => {
+  const { compat } = buildModel({ ...payload.model, provider, api: "openai-completions", baseUrl: payload.baseUrl });
+  return [compat.supportsMultipleSystemMessages, compat.supportsDeveloperRole];
+})));
+"""
+
+
+@pytest.mark.skipif(
+    _differential_bun() is None or not _differential_source_root().is_dir(),
+    reason="bun or pinned OMP source is unavailable on this host",
+)
+def test_pinned_compat_treats_declared_route_provider_as_custom_host(tmp_path: Path) -> None:
+    source_root = _differential_source_root()
+    # catalog/src/build.ts reaches pi-utils only through utils.ts.
+    shim = tmp_path / "resolve" / "@oh-my-pi" / "pi-utils"
+    shim.mkdir(parents=True)
+    (shim / "package.json").write_text('{"type":"module","exports":"./index.ts"}', encoding="utf-8")
+    (shim / "index.ts").write_text(
+        f"export {{ isRecord }} from {json.dumps(str(source_root / 'packages/utils/src/type-guards.ts'))};\n"
+        f"export {{ wrapFetchForExtraCa }} from {json.dumps(str(source_root / 'packages/utils/src/tls-fetch.ts'))};\n",
+        encoding="utf-8",
+    )
+    script = tmp_path / "compat.ts"
+    script.write_text(_PINNED_COMPAT_SCRIPT, encoding="utf-8")
+    lease = _lease_model()
+    completed = subprocess.run(
+        [str(_differential_bun()), str(script)],
+        input=json.dumps({
+            "root": str(source_root),
+            # "openai" is the lease protocol family; pinned compat reads it as the OpenAI host.
+            "providers": [_model_registry()["provider_id"], "openai"],
+            "model": {key: lease[key] for key in ("id", "name", "reasoning", "input", "contextWindow", "maxTokens")},
+            "baseUrl": lease["baseUrl"],
+        }),
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={**os.environ, "NODE_PATH": str(tmp_path / "resolve")},
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout) == [[False, False], [True, True]]
+
+
+_INSTALLED_SPEC = pinned_worker_spec()
+
+
+@pytest.mark.skipif(
+    not Path(_INSTALLED_SPEC.bun).is_file()
+    or not any((Path(_INSTALLED_SPEC.source_root) / "packages/natives/native").glob("pi_natives.linux-x64-*.node")),
+    reason="installed /opt/omp runtime with pinned natives is unavailable on this host",
+)
+def test_installed_worker_renders_route_model_line_with_pinned_compat(tmp_path: Path) -> None:
+    lease = _lease_model()
+    worker = NativeToolWorker(cwd=str(tmp_path), spec=_INSTALLED_SPEC)
+    try:
+        worker.start()
+        initialized = worker.phase(
+            "initialize",
+            {
+                "task": "render the bound model identity",
+                "model_config": lease,
+                "advertisement": {
+                    "bounded_description_policy": _description_policy(),
+                    "model_registry": _model_registry(),
+                    "capability_denials": _test_denials(),
+                },
+                **_authority_payload(tmp_path),
+            },
+        )
+        model_lines = [line for line in initialized["system_prompt"].splitlines() if line.startswith("- Model:")]
+        assert model_lines == [f"- Model: {_model_registry()['provider_id']}/{lease['id']}"]
+        request = worker.phase(
+            "project_request",
+            {"messages": [{"role": "user", "content": [{"type": "text", "text": "do task"}], "timestamp": 0}]},
+        )
+        # A custom host coalesces the system prompt into one system message.
+        roles = [message["role"] for message in request["messages"]]
+        assert roles.count("system") == 1 and "developer" not in roles
+        assert request["messages"][0] == {"role": "system", "content": initialized["system_prompt"]}
     finally:
         worker.stop()

@@ -55,6 +55,9 @@
   "request_cap": 8,
   "model_max_tokens": 2048,
   "provider_attempts": 1,
+  "model_registry": {
+    "provider_id": "breadboard-route"
+  },
   "result_commit_order": "completion",
   "ack_policy": "none",
   "capability_denials": {

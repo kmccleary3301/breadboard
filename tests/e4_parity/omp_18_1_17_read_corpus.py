@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 
 from breadboard.rl.harness.omp_native_tools import NativeToolWorker, PinnedNativeWorkerSpec
+from tests.rl.harness.test_omp_18_1_17_native_worker import _lease_model
 
 
 def main() -> None:
@@ -45,9 +46,10 @@ def main() -> None:
     named = {}
     try:
         worker.phase("initialize", {
-            "task": "classify pinned source-observed read corpus", "model_config": {},
+            "task": "classify pinned source-observed read corpus", "model_config": _lease_model(),
             "advertisement": {
                 "bounded_description_policy": description_policy,
+                "model_registry": config["model_registry"],
                 "capability_denials": config["capability_denials"],
             },
             "workspace": str(base), "scratch": str(scratch), "package_dir": str(package_dir),

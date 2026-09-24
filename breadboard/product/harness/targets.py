@@ -18,6 +18,7 @@ from breadboard_engine.compilation.contracts import (
     canonical_sha256,
 )
 from breadboard_engine.e4_targets import E4TargetPackage, read_e4_target
+from breadboard_engine.provider_broker.catalog import get_provider_catalog_entry
 
 from .compile import HarnessCompilation, HarnessCompileError, compile_harness_definition
 from .lock import copy_harness_json
@@ -272,7 +273,7 @@ def _lower_worker_target(
         ),
         "oh-my-pi@18.1.17": (
             "breadboard.oh-my-pi.v18.1.17",
-            "67c6ee4da60208301d94ca3546e8b19cbd3d5ac43d18be37f71eac271251a66e",
+            "fe47b49bc0d5ff05e981559d2f3f87070b816e3f3ba263b70f6ad4e7554b8a4f",
         ),
     }
     recipe = recipes.get(package.target_id)
@@ -288,9 +289,23 @@ def _lower_worker_target(
     if package.target_id == "oh-my-pi@18.1.17":
         required_native_fields = (
             "capability_denials", "request_cap", "model_max_tokens", "provider_attempts",
+            "model_registry",
         )
         if any(key not in native for key in required_native_fields):
             raise HarnessCompileError("OMP native config is missing admitted advertisement fields")
+        registry = native["model_registry"]
+        provider_id = registry.get("provider_id") if isinstance(registry, Mapping) else None
+        # The route label becomes the pinned registry provider id, which pinned
+        # compat resolution matches against known hosts; a catalogued provider
+        # id would assert that host. The worker also checks pinned hosts.ts.
+        if (
+            not isinstance(registry, Mapping)
+            or set(registry) != {"provider_id"}
+            or not isinstance(provider_id, str)
+            or re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", provider_id) is None
+            or get_provider_catalog_entry(provider_id) is not None
+        ):
+            raise HarnessCompileError("OMP model_registry.provider_id must be a non-provider route label")
         provenance = surface["native_description_provenance"]
         if provenance["artifact_sha256"] != native["native_descriptions_artifact_sha256"]:
             raise HarnessCompileError("OMP native description policy differs from its pinned artifact")
@@ -304,6 +319,7 @@ def _lower_worker_target(
                 for name in surface["ordered_tools"]
             },
             "capability_denials": native["capability_denials"],
+            "model_registry": {"provider_id": provider_id},
             "settings": {
                 "request_cap": native["request_cap"],
                 "model_max_tokens": native["model_max_tokens"],
