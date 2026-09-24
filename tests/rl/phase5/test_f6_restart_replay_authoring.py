@@ -205,8 +205,8 @@ def test_builds_closed_canonical_f6_input_with_exact_episode_id_delta(
     }
     for source in target.production.secret_files.values():
         observed = os.stat(source.path, follow_symlinks=False)
-        assert source.identity.device == observed.st_dev
-        assert source.identity.inode == observed.st_ino
+        assert source.identity.device == str(observed.st_dev)
+        assert source.identity.inode == str(observed.st_ino)
         assert source.identity.size_bytes == observed.st_size
         assert source.identity.mtime_ns == str(observed.st_mtime_ns)
         assert source.identity.ctime_ns == str(observed.st_ctime_ns)
@@ -226,7 +226,7 @@ def test_builds_closed_canonical_f6_input_with_exact_episode_id_delta(
     assert descriptor.original_request_sha256 == sha256_bytes(request_path.read_bytes())
     output_stat = output.stat(follow_symlinks=False)
     assert stat.S_IMODE(output_stat.st_mode) == 0o400
-    assert descriptor.target_input_identity.inode == output_stat.st_ino
+    assert descriptor.target_input_identity.inode == str(output_stat.st_ino)
     assert descriptor.target_input_identity.ctime_ns == str(output_stat.st_ctime_ns)
     assert not Path(target.report_path).exists()
 
