@@ -580,6 +580,24 @@ async def test_pi_native_stream_cap_batch_and_request_shape(tmp_path: Path) -> N
         assert "strict" not in json.dumps(request)
 
 
+
+
+@pytest.mark.asyncio
+async def test_pi_native_stream_preserves_supplier_wire_tool_id_bytes(
+    tmp_path: Path,
+) -> None:
+    call_id = "pi-tool-parallel_valid_invalid_valid-00-00"
+    _, requests, _, _, _ = await _run_episode(
+        tmp_path,
+        [[(call_id, "write", {"path": "parallel-a.txt", "content": "A\n"})], []],
+    )
+    assistant = next(
+        message
+        for message in requests[1]["messages"]
+        if message.get("role") == "assistant" and message.get("tool_calls")
+    )
+    assert assistant["tool_calls"][0]["id"] == call_id
+
 @pytest.mark.asyncio
 async def test_pi_native_stream_duplicate_call_ids_keep_ordinal_arguments(
     tmp_path: Path,
@@ -716,6 +734,116 @@ async def test_pi_native_stream_replay_trace_matches_supplier_fixture(
         "replay": {"trace": tampered_content},
     })
     assert tampered_content_report["passed"] is False
+
+@pytest.mark.asyncio
+async def test_pi_native_stream_replay_trace_matches_supplier_request_limit_fixture(
+    tmp_path: Path,
+) -> None:
+    supplier_dir = tmp_path / "supplier_cap_case"
+    supplier_dir.mkdir(parents=True)
+    (supplier_dir / "receiver").mkdir()
+
+    sup_trace = json.loads((SUPPLIER_CASE / "trace.json").read_text(encoding="utf-8"))
+    sup_requests = [
+        json.loads(line)["body"]
+        for line in (SUPPLIER_CASE / "receiver" / "http-transcript.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    extended_requests = [sup_requests[0], sup_requests[1], sup_requests[2]]
+    extended_messages = list(sup_trace["messages"])
+    extended_messages.pop()
+
+    assistant_texts = ["Writing marker.", "Reading marker.", "Complete."] + [f"Loop {t}." for t in range(3, 8)]
+
+    for turn in range(3, 8):
+        base_req = deepcopy(sup_requests[2])
+        req_msgs = [deepcopy(sup_requests[0]["messages"][0]), deepcopy(sup_requests[0]["messages"][1])]
+        turn_idx = 0
+        for m in extended_messages[1:]:
+            if m["role"] == "assistant":
+                tc = []
+                for b in m.get("content", []):
+                    if b.get("type") == "toolCall":
+                        tc.append({
+                            "id": b["id"],
+                            "type": "function",
+                            "function": {"name": b["name"], "arguments": json.dumps(b.get("arguments", {}), separators=(",", ":"))},
+                        })
+                req_msgs.append({"role": "assistant", "content": assistant_texts[turn_idx], "tool_calls": tc})
+                turn_idx += 1
+            elif m["role"] == "toolResult":
+                req_msgs.append({"role": "tool", "tool_call_id": m["toolCallId"], "content": m["content"][0]["text"]})
+        base_req["messages"] = req_msgs
+        extended_requests.append(base_req)
+
+        call_id = f"pi-tool-cap-{turn:02d}-00"
+        extended_messages.append({
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": assistant_texts[turn]},
+                {"type": "toolCall", "id": call_id, "name": "bash", "arguments": {"command": "printf loop"}},
+            ],
+            "stopReason": "toolUse",
+        })
+        extended_messages.append({
+            "role": "toolResult",
+            "toolCallId": call_id,
+            "toolName": "bash",
+            "content": [{"type": "text", "text": "loop"}],
+            "isError": False,
+        })
+
+    extended_messages.append({
+        "role": "assistant",
+        "content": [{"type": "text", "text": ""}],
+        "stopReason": "error",
+        "errorMessage": "PI_CAPTURE_REQUEST_LIMIT: eight model requests issued",
+    })
+
+    sup_trace["messages"] = extended_messages
+    sup_trace["request_count"] = 8
+    sup_trace["stream_fn_issued"] = 9
+    sup_trace["case_id"] = "request_cap_eight"
+    (supplier_dir / "trace.json").write_text(json.dumps(sup_trace), encoding="utf-8")
+    (supplier_dir / "scenario.json").write_text(json.dumps({"steps": [{} for _ in range(8)]}), encoding="utf-8")
+    (supplier_dir / "receiver" / "http-transcript.jsonl").write_text(
+        "\n".join(json.dumps({"body": req}) for req in extended_requests) + "\n",
+        encoding="utf-8",
+    )
+
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "AGENTS.md").write_text(
+        "Pi capture fixture: use only the four admitted tools and leave requested effects in this workspace.\n",
+        encoding="utf-8",
+    )
+    responses = [
+        [("pi-tool-normal_workspace_episode-00-00", "write", {"path": "pi-marker.txt", "content": "pi-native-marker\n"})],
+        [("pi-tool-normal_workspace_episode-01-00", "read", {"path": "pi-marker.txt"})],
+        [("pi-tool-normal_workspace_episode-02-00", "bash", {"command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"})],
+    ] + [[(f"pi-tool-cap-{turn:02d}-00", "bash", {"command": "printf loop"})] for turn in range(3, 8)]
+
+    result, requests, events, system_prompt, operations = await _run_episode(
+        work,
+        responses,
+        model_id="gpt-4o-mini",
+        task_prompt="Create pi-marker.txt, read it back, then print the completion marker.",
+        assistant_texts=assistant_texts,
+    )
+    trace = thaw_json(result.response["replay_trace"])
+    assert trace["termination"]["kind"] == "RequestLimitExceeded"
+    assert trace["request_count"] == 8
+    assert trace["stream_fn_issued"] == 9
+
+    comparator = PiCodingAgent0731Comparator()
+    report = comparator({
+        "capture": {"case_dir": str(supplier_dir)},
+        "replay": {"trace": trace},
+    })
+    assert report["passed"] is True, report["assertions"][0]["detail"]
+    assert [item for item in report["normalizations"] if item["rule"] == "request_limit_cause"] == [
+        {"side": "supplier", "rule": "request_limit_cause", "count": 1},
+        {"side": "bb", "rule": "request_limit_cause", "count": 1},
+    ]
 @pytest.mark.asyncio
 async def test_pi_native_stream_requires_store_capability_before_sending(
     tmp_path: Path,
@@ -787,6 +915,46 @@ async def test_pi_native_worker_rejects_invalid_advertisement(tmp_path: Path, ca
                 },
                 timeout_ms=5_000,
             )
+    finally:
+        await port.close()
+
+
+@pytest.mark.asyncio
+async def test_pi_native_worker_history_keeps_sampled_argument_value(
+    tmp_path: Path,
+) -> None:
+    port = _NativeWorkerPort(tmp_path, ())
+    try:
+        initialized = await port.invoke_native_phase(
+            "initialize",
+            {
+                "task": "raw argument history",
+                "model_config": {
+                    "id": "model-a",
+                    "provider": "openai",
+                    "base_url": "http://127.0.0.1",
+                    "input": ["text"],
+                },
+            },
+            timeout_ms=5_000,
+        )
+        assert initialized["kind"] == "initialized"
+        prepared = await port.invoke_native_phase(
+            "prepare_tools",
+            {
+                "calls": [
+                    {
+                        "id": "raw-number",
+                        "name": "read",
+                        "arguments": {"path": 123},
+                    },
+                ],
+            },
+            timeout_ms=5_000,
+        )
+        assert prepared["history_calls"] == [
+            {"id": "raw-number", "name": "read", "arguments": {"path": 123}},
+        ]
     finally:
         await port.close()
 

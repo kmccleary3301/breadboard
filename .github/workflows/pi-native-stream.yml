@@ -58,4 +58,5 @@ jobs:
         run: >-
           pytest -q
           tests/rl/harness/test_pi_native_stream_conductor.py
+          tests/e4_parity/test_pi_0_73_1_comparator.py
           tests/e4_parity/test_pi_0_73_1_prompt_materialization.py

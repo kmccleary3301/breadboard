@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import inspect
 from collections.abc import Mapping
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
@@ -2337,6 +2338,10 @@ class _ConductorSession:
             )
             before = len(state.messages)
             parsed = state.prepare_response(native)
+            if inspect.isawaitable(parsed):
+                # Profiles whose response preparation runs a pinned worker
+                # are awaited so the episode deadline can cancel them.
+                parsed = await parsed
             await commit(before, "assistant", turn)
             observations: list[FrozenJsonObject] = []
             if parsed.calls:
