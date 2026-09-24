@@ -2650,6 +2650,8 @@ class TrustedProcessHandle:
     async def terminate(self) -> tuple[CleanupStepReceipt, ...]:
         async with self._terminate_lock:
             if self._terminate_task is None:
+                async with self._launch_lock:
+                    self._closing = True
                 self._terminate_task = asyncio.create_task(self._terminate_once())
             task = self._terminate_task
         return await asyncio.shield(task)
@@ -2658,7 +2660,6 @@ class TrustedProcessHandle:
         async with self._launch_lock:
             if self._closed:
                 return (CleanupStepReceipt("runtime", CleanupState.ALREADY_RELEASED),)
-            self._closing = True
         failed = False
         async with self._native_session_lock:
             native_session = self._native_session
