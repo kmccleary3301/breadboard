@@ -9,6 +9,23 @@ const TOOL_NAMES = ["read", "bash", "edit", "write"] as const;
 type Call = { id: string; name: string; arguments: Record<string, unknown> };
 type RouteClassifier = { sourceRoot: string; lockSha256: string; moduleDigests: Map<string, string> };
 let pinnedSourceRoot = "";
+let boundedDescriptions: Record<string, string> = {};
+let nativeSystemPrompt = "";
+let capabilityDenials: Record<string, Record<string, unknown>> = {};
+let session: any = null;
+let tools: any[] = [];
+let irToJsonSchema: ((ir: unknown, options?: Record<string, unknown>) => Record<string, unknown>) | null = null;
+let workspace = "";
+let runtimeInputs: Record<string, string> = {};
+let convertMessages: ((model: any, context: any, compat: any) => unknown[]) | null = null;
+const converterModel = {
+  id: "capture",
+  provider: "capture",
+  api: "openai-completions",
+  reasoning: false,
+  input: ["text"],
+  compat: {},
+};
 
 async function sha256File(path: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", await Bun.file(path).arrayBuffer());
@@ -121,17 +138,6 @@ async function reapDescendants(owned: ProcessHandle[] = []): Promise<number[]> {
   const table = await processTable();
   return remaining.flatMap((pgid) => [...table.values()].filter((info) => info.pgid === pgid).map((info) => info.pid));
 }
-let workspace = "";
-let runtimeInputs: Record<string, string> = {};
-let convertMessages: ((model: any, context: any, compat: any) => unknown[]) | null = null;
-const converterModel = {
-  id: "capture",
-  provider: "capture",
-  api: "openai-completions",
-  reasoning: false,
-  input: ["text"],
-  compat: {},
-};
 
 function exactRecord(value: unknown, label: string, required: readonly string[], optional: readonly string[] = []): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
@@ -167,6 +173,18 @@ function digestHex(value: unknown, label: string): string {
   return value.slice("sha256:".length);
 }
 
+const ROUTE_CLASSIFIER_MODULE_NAMES = [
+  "path-utils.ts",
+  "read-path-resolution.ts",
+  "read-archive.ts",
+  "read-sqlite.ts",
+  "read-pdf.ts",
+  "video.ts",
+  "mime.ts",
+  "markit.ts",
+  "router.ts",
+] as const;
+
 function requireRouteClassifier(value: unknown): RouteClassifier {
   const classifier = exactRecord(
     value,
@@ -177,16 +195,15 @@ function requireRouteClassifier(value: unknown): RouteClassifier {
     throw new Error("route_classifier has invalid schema or source_root");
   }
   digestHex(classifier.source_archive_sha256, "route_classifier.source_archive_sha256");
-  const rawModules = exactRecord(classifier.modules, "route_classifier.modules", []);
+  const rawModules = exactRecord(classifier.modules, "route_classifier.modules", ROUTE_CLASSIFIER_MODULE_NAMES);
   const moduleDigests = new Map<string, string>();
-  for (const [name, raw] of Object.entries(rawModules)) {
-    const module = exactRecord(raw, `route_classifier.modules.${name}`, ["path", "sha256"]);
+  for (const name of ROUTE_CLASSIFIER_MODULE_NAMES) {
+    const module = exactRecord(rawModules[name], `route_classifier.modules.${name}`, ["path", "sha256"]);
     if (typeof module.path !== "string" || !module.path || module.path.startsWith("/") || module.path.includes("..")) {
       throw new Error(`route_classifier.modules.${name}.path is invalid`);
     }
     moduleDigests.set(module.path, digestHex(module.sha256, `route_classifier.modules.${name}.sha256`));
   }
-  if (!moduleDigests.size) throw new Error("route_classifier.modules must not be empty");
   return {
     sourceRoot: classifier.source_root,
     lockSha256: digestHex(classifier.lock_sha256, "route_classifier.lock_sha256"),
@@ -333,7 +350,7 @@ async function pinnedCallAdmission(name: string, argumentsValue: Record<string, 
     if (!entry || entry.capability !== capability || typeof entry.message !== "string") {
       return { error: `OMP capability denial policy unavailable: ${capability}`, route };
     }
-    return { route };
+    return { error: entry.message, route };
   } catch (error) {
     return { error: `OMP pinned read classification failed closed: ${String(error)}` };
   }
@@ -373,6 +390,12 @@ async function initialize(payload: Record<string, any>) {
   ) {
     throw new Error("initialize workspace authority does not match runtime_inputs");
   }
+  const advertisement = requireAdvertisement(payload.advertisement);
+  capabilityDenials = advertisement.capabilityDenials;
+  workspace = runtimeInputs.cwd;
+  process.env.HOME = runtimeInputs.home;
+  nativeSystemPrompt = advertisement.systemPrompt;
+  boundedDescriptions = advertisement.descriptions;
   const routeClassifier = requireRouteClassifier(payload.route_classifier);
   pinnedSourceRoot = routeClassifier.sourceRoot;
   const expectedFiles = new Map(routeClassifier.moduleDigests);

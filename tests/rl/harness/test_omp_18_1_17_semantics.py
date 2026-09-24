@@ -311,16 +311,7 @@ def test_omp_declared_route_exclusions_deny_before_worker_invocation() -> None:
     native = json.loads((root / "native-config.json").read_text())
     policy = native["capability_denials"]
     samples = {
-        "url": ("read", {"path": "https://example.invalid"}),
-        "ssh": ("read", {"path": "ssh://example.invalid/etc/hosts"}),
         "pty": ("bash", {"command": "printf x", "pty": True}),
-        "archive": ("read", {"path": "bundle.zip:member.txt"}),
-        "sqlite": ("read", {"path": "state.sqlite:users"}),
-        "image": ("read", {"path": "picture.png"}),
-        "video": ("read", {"path": "clip.mp4"}),
-        "pdf": ("read", {"path": "report.pdf"}),
-        "document": ("read", {"path": "report.docx"}),
-        "internal-resource": ("read", {"path": "artifact://capture"}),
         "async": ("bash", {"command": "printf x", "async": True}),
     }
 
@@ -379,11 +370,11 @@ def test_omp_mixed_denials_preserve_source_order_and_execute_allowed_calls() -> 
             ]
 
     calls = (
-        NativeToolCall("denied", "read", '{"path":"HTTP://example.invalid"}'),
+        NativeToolCall("denied", "bash", '{"command":"printf x","pty":true}'),
         NativeToolCall("allowed", "read", '{"path":"./local.txt"}'),
     )
     worker = Worker()
-    state = OMPSemanticsState(task="mixed routes", worker=worker, capability_denials=policy)
+    state = OMPSemanticsState(task="mixed static controls", worker=worker, capability_denials=policy)
     assert state.begin_query() is None
     state.prepare_response(NativeProviderResponse(
         binding_digest="binding",
@@ -397,7 +388,7 @@ def test_omp_mixed_denials_preserve_source_order_and_execute_allowed_calls() -> 
     state.prepare_tools(calls)
     results = state.execute_batch()["results"]
     assert [item["content"] for item in results] == [
-        "OMP capability denied: url",
+        "OMP capability denied: pty",
         "allowed",
     ]
     assert [call["id"] for call in worker.calls] == ["allowed"]

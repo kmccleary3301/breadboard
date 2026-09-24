@@ -354,6 +354,45 @@ def test_real_pinned_worker_rejects_tampered_classifier_module(tmp_path: Path) -
     finally:
         worker.stop()
 
+@pytest.mark.skipif(
+    not Path(pinned_worker_spec().bun).is_file()
+    or not Path(pinned_worker_spec().source_root).is_dir(),
+    reason="pinned OMP runtime/source is unavailable on this host",
+)
+def test_real_pinned_worker_rejects_unknown_classifier_module(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
+    config = json.loads((root / "native-config.json").read_text(encoding="utf-8"))
+    classifier = json.loads(json.dumps(config["route_classifier"]))
+    classifier["modules"]["unknown.ts"] = next(iter(classifier["modules"].values()))
+    worker = NativeToolWorker(cwd=str(tmp_path))
+    try:
+        worker.start()
+        with pytest.raises(NativeWorkerPhaseError, match="route_classifier.modules has invalid keys"):
+            worker.phase(
+                "initialize",
+                {
+                    "task": "reject unknown classifier module",
+                    "model_config": {},
+                    "advertisement": {
+                        "system_prompt": "",
+                        "tool_descriptions": {name: name for name in ("read", "bash", "edit", "write")},
+                        "capability_denials": {
+                            capability: {
+                                "schema_version": "bb.omp-capability-denial.v1",
+                                "capability": capability,
+                                "message": f"OMP capability denied: {capability}",
+                                "source_ref": "test",
+                            }
+                            for capability in ("pty", "async")
+                        },
+                    },
+                    "route_classifier": classifier,
+                    **_authority_payload(tmp_path),
+                },
+            )
+    finally:
+        worker.stop()
+
 
 
 
