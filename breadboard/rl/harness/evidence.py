@@ -54,6 +54,9 @@ _PRIMARY_CLEANUP_RESOURCES = (
     "cache_holder",
     "lease_record",
 )
+# Present only for leases whose native phase created per-lease scratch
+# (``SandboxRuntimeManager._close_lease``); it must still be released.
+_PRIMARY_OPTIONAL_CLEANUP_RESOURCES = ("native_scratch",)
 _VERIFIER_CLEANUP_RESOURCES = ("runtime", "workspace", "snapshot", "lease_record")
 _SCHEMA_MEDIA = "application/vnd.breadboard.evidence+json"
 
@@ -4949,10 +4952,15 @@ def _validate_cleanup_projection(
             )
         resources.append(resource)
     expected = tuple(required_resources)
+    optional = (
+        _PRIMARY_OPTIONAL_CLEANUP_RESOURCES
+        if expected == _PRIMARY_CLEANUP_RESOURCES
+        else ()
+    )
     if (
         len(expected) != len(set(expected))
         or len(resources) != len(set(resources))
-        or set(resources) != set(expected)
+        or not set(expected) <= set(resources) <= set(expected) | set(optional)
     ):
         raise EvidenceValidationError(
             "cleanup receipt resource set is incomplete or ambiguous"

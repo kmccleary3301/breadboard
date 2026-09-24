@@ -2652,3 +2652,84 @@ async def test_publish_closed_and_durable_quarantine_dual_failure_surfaces_excep
     assert case.repository.quarantine_inputs[-1].failure.code == (
         "closed_publication_failed"
     )
+
+
+async def _real_native_scratch_close_steps(tmp_path: Path) -> tuple[CleanupStepReceipt, ...]:
+    from tests.rl.harness.test_sandbox_runtime import RuntimeHarness, make_runtime_fixture
+    import breadboard.rl.harness.sandbox as sandbox_module
+
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    lease = await harness.manager.open(fixture.request)
+    scratch = sandbox_module._create_native_scratch(harness.manager, lease.lease_id)
+    (scratch / "home").mkdir()
+    (scratch / "home" / "marker").write_text("scratch")
+    receipt = await lease.close()
+    assert CleanupStepReceipt("native_scratch", CleanupState.RELEASED) in receipt.steps
+    return receipt.steps
+
+
+async def test_released_native_scratch_lease_publishes_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from breadboard.rl.harness import evidence as evidence_module
+
+    steps = await _real_native_scratch_close_steps(tmp_path)
+    service, case, _, created = await _created(monkeypatch)
+    receipt = SandboxCleanupReceipt.from_steps(case.sandbox.lease.lease_id, steps)
+    case.sandbox.lease.close_receipt = receipt
+
+    outcome = await service.run(
+        case.request.episode_id,
+        create_fingerprint=created.response.create_fingerprint,
+        task_input={"case": "native-scratch"},
+    )
+    state = await service.get_state(case.request.episode_id)
+
+    assert outcome.response.primary_disposition is EpisodePrimaryDisposition.SUCCEEDED
+    assert outcome.response.closed_envelope_ref is not None
+    assert state.state is EpisodeLifecycleState.CLOSED
+    assert not case.repository.quarantine_inputs
+    assert len(case.repository.closed_inputs) == 1
+    # The production closed-publication validator accepts the same receipt, and
+    # verifier leases still do not admit native_scratch.
+    projected = evidence_module._json_value(receipt)
+    evidence_module._validate_cleanup_projection(projected, expected_lease_id=receipt.lease_id)
+    with pytest.raises(evidence_module.EvidenceValidationError):
+        evidence_module._validate_cleanup_projection(
+            projected,
+            expected_lease_id=receipt.lease_id,
+            required_resources=evidence_module._VERIFIER_CLEANUP_RESOURCES,
+        )
+
+
+@pytest.mark.parametrize("scratch_state", (CleanupState.FAILED, CleanupState.QUARANTINED))
+async def test_unreleased_native_scratch_never_claims_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    scratch_state: CleanupState,
+) -> None:
+    steps = await _real_native_scratch_close_steps(tmp_path)
+    service, case, _, created = await _created(monkeypatch)
+    case.sandbox.lease.close_receipt = SandboxCleanupReceipt.from_steps(
+        case.sandbox.lease.lease_id,
+        tuple(
+            CleanupStepReceipt("native_scratch", scratch_state, "scratch not released")
+            if step.resource == "native_scratch"
+            else step
+            for step in steps
+        ),
+    )
+
+    outcome = await service.run(
+        case.request.episode_id,
+        create_fingerprint=created.response.create_fingerprint,
+        task_input={"case": "native-scratch-unreleased"},
+    )
+    state = await service.get_state(case.request.episode_id)
+
+    assert outcome.response.closed_envelope_ref is None
+    assert state.state is EpisodeLifecycleState.QUARANTINED
+    assert not case.repository.closed_inputs
+    assert case.repository.quarantine_inputs[-1].failure.code == "cleanup_not_released"
