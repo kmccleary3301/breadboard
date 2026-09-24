@@ -8,6 +8,49 @@
   "source_commit": "3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec",
   "source_root": "/opt/omp/source/oh-my-pi-3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec",
   "bun": "/opt/omp/runtime/bun-linux-x64-baseline/bun",
+  "route_classifier": {
+    "source_root": "/opt/omp/source/oh-my-pi-3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec",
+    "source_archive_sha256": "sha256:67822418bad69de015d28a1bbd45fa7be689fdce367dfa3d584bdfcfbfcb5587",
+    "lock_sha256": "sha256:9c0ed804704050ad4dbc3de84581694c7e505fdc39b0c13dea337300bae82a7e",
+    "modules": {
+      "path-utils.ts": {
+        "path": "packages/coding-agent/src/tools/path-utils.ts",
+        "sha256": "sha256:3ff2792ea8bd9c419636fbf1720b15c80fbc344660345babc49f50e4750055d4"
+      },
+      "read-path-resolution.ts": {
+        "path": "packages/coding-agent/src/tools/read-path-resolution.ts",
+        "sha256": "sha256:19e69ff4f51ce4611f28af226960d174cd7aa9f23a959dd4c063e0ebad2174a7"
+      },
+      "read-archive.ts": {
+        "path": "packages/coding-agent/src/tools/read-archive.ts",
+        "sha256": "sha256:6cf188322b0ea8b5ae33ceb235a137872c56a6364bd24f49e7e42bc837317237"
+      },
+      "read-sqlite.ts": {
+        "path": "packages/coding-agent/src/tools/read-sqlite.ts",
+        "sha256": "sha256:57e10eec3c260049ec55ef8f439b667c50aaa8ea7491b5b896b7347cb19ed681"
+      },
+      "read-pdf.ts": {
+        "path": "packages/coding-agent/src/tools/read-pdf.ts",
+        "sha256": "sha256:6dfd6cb0748c56ba17fd8117b01ca5ac0235d41cd8ffbdd5594eea6a7850690c"
+      },
+      "video.ts": {
+        "path": "packages/coding-agent/src/utils/video.ts",
+        "sha256": "sha256:ffa43e82c2806d82fbc500bff7d89cb9fb28e5a2d35e858fb5dc0bfc31134935"
+      },
+      "mime.ts": {
+        "path": "packages/utils/src/mime.ts",
+        "sha256": "sha256:9920289e1f9b41a6fc68c0b8dc9d067041545d3c19045aa374e7ed04c3ff9bb3"
+      },
+      "markit.ts": {
+        "path": "packages/coding-agent/src/utils/markit.ts",
+        "sha256": "sha256:838535e94738d83a4283c49f9b67268073bcd0fdf9f220057f41e5a6dfe6ca86"
+      },
+      "router.ts": {
+        "path": "packages/coding-agent/src/internal-urls/router.ts",
+        "sha256": "sha256:60b440c968ab77c3e9e881a04772261ca0f0ed9f4a7be999ac94afb6a473cb84"
+      }
+    }
+  },
   "request_cap": 8,
   "model_max_tokens": 2048,
   "provider_attempts": 1,
