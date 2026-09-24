@@ -42,7 +42,7 @@ const {
   createWriteTool,
   createWriteToolDefinition,
 } = codingAgent;
-const { validateToolArguments } = piAi;
+const { validateToolArguments, parseStreamingJson } = piAi;
 const { convertMessages } = openaiCompletions;
 const { buildSystemPrompt } = promptModule;
 const { loadProjectContextFiles } = resourceModule;
@@ -534,6 +534,27 @@ async function executeOperation(operation, payload, signal) {
     };
   }
   if (operation === "project_request") return projectRequest(payload);
+  if (operation === "parse_streaming_json") {
+    const text = typeof payload?.text === "string" ? payload.text : "";
+    let result = {};
+    try {
+      result = parseStreamingJson(text);
+    } catch {
+      result = {};
+    }
+    return { schema_version: "bb.pi-native.v1", kind: "parsed_streaming_json", result };
+  }
+  if (operation === "parse_streaming_json_batch") {
+    const inputs = Array.isArray(payload?.inputs) ? payload.inputs : [];
+    const results = inputs.map((input) => {
+      try {
+        return parseStreamingJson(typeof input === "string" ? input : "");
+      } catch {
+        return {};
+      }
+    });
+    return { schema_version: "bb.pi-native.v1", kind: "parsed_streaming_json_batch", results };
+  }
   if (operation === "prepare_tools") {
     if (!Array.isArray(payload?.calls)) fail("prepare_tools requires calls");
     const preparedInternal = [];

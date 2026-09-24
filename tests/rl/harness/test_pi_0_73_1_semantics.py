@@ -263,9 +263,11 @@ def test_parse_streaming_json_differential_against_pinned_node() -> None:
     node_results = json.loads(proc.stdout)
     assert len(node_results) == len(corpus)
 
-    for idx, (candidate, node_res) in enumerate(zip(corpus, node_results)):
+    from breadboard.rl.harness.pi_native_tools import parse_streaming_json_batch
+
+    py_results = parse_streaming_json_batch(corpus)
+    for idx, (candidate, node_res, py_res) in enumerate(zip(corpus, node_results, py_results)):
         assert node_res["ok"], f"Node parseStreamingJson threw: {node_res.get('err')}"
-        py_res = parse_streaming_json(candidate)
         assert py_res == node_res["val"], (
             f"Differential mismatch at index {idx} for candidate {candidate!r}: "
             f"python={py_res!r} != node={node_res['val']!r}"

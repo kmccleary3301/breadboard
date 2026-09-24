@@ -128,6 +128,33 @@ def dispatch_native_tools(
         for call, raw in zip(normalized, raw_results)
     ]
 
+def parse_streaming_json(text: str | None, *, cwd: str | os.PathLike[str] | None = None) -> Any:
+    """Parse potentially incomplete streaming JSON using the pinned Node worker."""
+    if not text or not str(text).strip():
+        return {}
+    target_cwd = cwd or Path.cwd()
+    result = _run_worker(
+        {"operation": "parse_streaming_json", "text": str(text)},
+        cwd=target_cwd,
+    )
+    return result.get("result", {})
+
+
+def parse_streaming_json_batch(texts: Sequence[str | None], *, cwd: str | os.PathLike[str] | None = None) -> list[Any]:
+    """Parse multiple streaming JSON inputs in one worker process."""
+    if not texts:
+        return []
+    target_cwd = cwd or Path.cwd()
+    inputs = [str(t) if t is not None else "" for t in texts]
+    result = _run_worker(
+        {"operation": "parse_streaming_json_batch", "inputs": inputs},
+        cwd=target_cwd,
+    )
+    results = result.get("results")
+    if isinstance(results, list):
+        return results
+    return [parse_streaming_json(t, cwd=target_cwd) for t in texts]
+
 def main() -> int:
     raw = sys.stdin.buffer.read(_MAX_REQUEST_BYTES + 1)
     if len(raw) > _MAX_REQUEST_BYTES:
