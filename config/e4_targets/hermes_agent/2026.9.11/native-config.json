@@ -470,7 +470,7 @@
     },
     {
       "function": {
-        "description": "Read a text file with line numbers and pagination. Use this instead of cat/head/tail in terminal. Output format: 'LINE_NUM|CONTENT'. Suggests similar filenames if not found. Use offset and limit for large files. Reads exceeding ~100K characters are truncated on a line boundary and return a next_offset; continue with offset to read the rest. Documents auto-extract to readable text: .ipynb, Office (.docx/.xlsx/.pptx and legacy .doc/.ppt/.xls), PDF (text layer), OpenDocument, RTF, EPUB. Cannot read images/binary — use vision_analyze for images.",
+        "description": "Read a text file with line numbers and pagination. Use this instead of cat/head/tail in terminal. Output format: 'LINE_NUM|CONTENT'. Suggests similar filenames if not found. Use offset and limit for large files. Reads exceeding ~100K characters are truncated on a line boundary and return a next_offset; continue with offset to read the rest. Cannot read images/binary — use vision_analyze for images.",
         "name": "read_file",
         "parameters": {
           "properties": {
@@ -611,42 +611,19 @@
     },
     {
       "function": {
-        "description": "Execute shell commands. The host OS, shell, and terminal backend are stated in your environment section — write commands for THAT platform. Filesystem, current working directory, and exported environment variables persist between calls.\n\nDo NOT use cat/head/tail (use read_file), grep/rg/find/ls (use search_files), sed/awk (use patch), or echo/heredoc file creation (use write_file). Reserve terminal for: builds, installs, git, processes, scripts, network, package managers — anything that needs a shell. Output is auto-truncated with the full text saved to a file — never pipe through tail/head to shorten it.\nEnvironment state persists: activate a virtualenv or export variables once per session, not before every command.\n\nForeground (default): returns INSTANTLY when the command finishes, even with a high timeout — set timeout generously for long builds.\nBackground: set background=true (returns a session_id); add notify=true for bounded tasks, leave silent only for servers/daemons that never exit. After starting a server, verify readiness with a health check in a separate call (no blind sleep loops); manage with process(action=\"poll\"/\"wait\").\nWorking directory: use 'workdir' for per-command cwd; when a command changes the session cwd (cd, pushd), trust the result's \"cwd\" field instead of prefixing every command with 'cd'.\nPTY: pty=true + background=true for interactive CLIs (they hang without a terminal); drive them with process(action=\"write\"/\"submit\"). Local backend only.\n",
+        "description": "Execute shell commands. The host OS, shell, and terminal backend are stated in your environment section — write commands for THAT platform. Filesystem, current working directory, and exported environment variables persist between calls.\n\nDo NOT use cat/head/tail (use read_file), grep/rg/find/ls (use search_files), sed/awk (use patch), or echo/heredoc file creation (use write_file). Reserve terminal for: builds, installs, git, processes, scripts, network, package managers — anything that needs a shell. Output is auto-truncated with the full text saved to a file — never pipe through tail/head to shorten it.\nEnvironment state persists: activate a virtualenv or export variables once per session, not before every command.\n\nForeground only: commands have a maximum 30-second timeout and return when finished.\nWorking directory: use 'workdir' for per-command cwd; when a command changes the session cwd (cd, pushd), trust the result's \"cwd\" field instead of prefixing every command with 'cd'.\n\n",
         "name": "terminal",
         "parameters": {
           "properties": {
-            "background": {
-              "default": false,
-              "description": "Run in the background, returning a session_id. Pair with notify=true for anything with a defined end (tests, builds, deploys) — without it the process runs silently. Only servers/watchers/daemons that never exit should stay silent. Short commands: prefer foreground with a generous timeout.",
-              "type": "boolean"
-            },
             "command": {
               "description": "The shell command to execute",
               "type": "string"
             },
-            "notify": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                }
-              ],
-              "description": "With background=true: notify=true fires exactly one notification when the process exits (the right choice for nearly every bounded task — builds, tests, deploys). notify=['pattern', ...] instead notifies when a line matches a pattern — ONLY for one-shot readiness signals on processes that never exit (e.g. ['Application startup complete']); rate-limited and auto-disabled if it over-fires. Omit for silent daemons."
-            },
-            "pty": {
-              "default": false,
-              "description": "With background=true: run in a pseudo-terminal for interactive CLI tools (Codex, Claude Code, Python REPL). Local backend only. Default: false.",
-              "type": "boolean"
-            },
             "timeout": {
-              "description": "Max seconds to wait (default: 180, foreground max: 600). Returns INSTANTLY when command finishes — set high for long tasks, you won't wait unnecessarily. A foreground timeout above 600s runs the command as a tracked background process with notify_on_complete=true instead (the result says so; do not re-run it).",
+              "description": "Maximum foreground execution time in seconds (default and maximum: 30). Commands exceeding 30 seconds are denied before execution.",
               "minimum": 1,
-              "type": "integer"
+              "type": "integer",
+              "maximum": 30
             },
             "workdir": {
               "description": "Working directory for this command (absolute path). Defaults to the session working directory.",
@@ -692,5 +669,17 @@
     "source_asset": "SOURCE-LICENSE.txt",
     "source_scope": "pinned Hermes source files embedded in prompts/source-registry.json",
     "source_sha256": "821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6"
+  },
+  "schema_overlay": {
+    "read_file": {
+      "native_sha256": "48ae36dea296b223e2066b8d1df481eff982fcbd0c997119479afc0c2ce5e2a1",
+      "approved_schema_json": "{\"function\":{\"description\":\"Read a text file with line numbers and pagination. Use this instead of cat/head/tail in terminal. Output format: 'LINE_NUM|CONTENT'. Suggests similar filenames if not found. Use offset and limit for large files. Reads exceeding ~100K characters are truncated on a line boundary and return a next_offset; continue with offset to read the rest. Cannot read images/binary — use vision_analyze for images.\",\"name\":\"read_file\",\"parameters\":{\"properties\":{\"limit\":{\"default\":2000,\"description\":\"Maximum number of lines to read (default: 2000, max: 2000). Reads are additionally capped at a ~100K-character budget with a next_offset continuation.\",\"maximum\":2000,\"type\":\"integer\"},\"offset\":{\"default\":1,\"description\":\"Line number to start reading from (1-indexed, default: 1)\",\"minimum\":1,\"type\":\"integer\"},\"path\":{\"description\":\"Path to the file to read (absolute, relative, or ~/path)\",\"type\":\"string\"}},\"required\":[\"path\"],\"type\":\"object\"}},\"type\":\"function\"}",
+      "approved_sha256": "c28bdb5f620175bc176b49af8cf362b0cd974f6f5768e9579922177161e84bd2"
+    },
+    "terminal": {
+      "native_sha256": "d161d8a900beb4ff898949c8bc59d852e86a9f9f5a5d7909053d7e80ac0ecacf",
+      "approved_schema_json": "{\"function\":{\"description\":\"Execute shell commands. The host OS, shell, and terminal backend are stated in your environment section — write commands for THAT platform. Filesystem, current working directory, and exported environment variables persist between calls.\\n\\nDo NOT use cat/head/tail (use read_file), grep/rg/find/ls (use search_files), sed/awk (use patch), or echo/heredoc file creation (use write_file). Reserve terminal for: builds, installs, git, processes, scripts, network, package managers — anything that needs a shell. Output is auto-truncated with the full text saved to a file — never pipe through tail/head to shorten it.\\nEnvironment state persists: activate a virtualenv or export variables once per session, not before every command.\\n\\nForeground only: commands have a maximum 30-second timeout and return when finished.\\nWorking directory: use 'workdir' for per-command cwd; when a command changes the session cwd (cd, pushd), trust the result's \\\"cwd\\\" field instead of prefixing every command with 'cd'.\\n\\n\",\"name\":\"terminal\",\"parameters\":{\"properties\":{\"command\":{\"description\":\"The shell command to execute\",\"type\":\"string\"},\"timeout\":{\"description\":\"Maximum foreground execution time in seconds (default and maximum: 30). Commands exceeding 30 seconds are denied before execution.\",\"maximum\":30,\"minimum\":1,\"type\":\"integer\"},\"workdir\":{\"description\":\"Working directory for this command (absolute path). Defaults to the session working directory.\",\"type\":\"string\"}},\"required\":[\"command\"],\"type\":\"object\"}},\"type\":\"function\"}",
+      "approved_sha256": "74f09491be123036e327583b240577cf277e5814c83823f8c34515a3c418a0a0"
+    }
   }
 }

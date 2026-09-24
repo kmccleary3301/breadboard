@@ -37,6 +37,12 @@ MAX_OBSERVATION_BYTES = 16 * 1024 * 1024
 NATIVE_TOOL_SECONDS = 35.0
 TERMINAL_SECONDS = 30.0
 
+def _schema_bytes(schema: Mapping[str, Any]) -> bytes:
+    return json.dumps(
+        schema, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+
+
 # These are source patch parser targets; the ordinary ``path`` argument is not
 # a substitute for checking every parsed operation endpoint.
 _HIDDEN_CAPABILITIES = frozenset(
@@ -201,12 +207,16 @@ class HermesToolRuntime:
         scratch: Path,
         hermes_home: Path,
         remaining: Callable[[], float],
+        schema_overlay: Mapping[str, Any],
     ) -> None:
         self.state = state
         self.workspace = _canonical_root(Path(workspace))
         self.scratch = _canonical_root(Path(scratch))
         self.hermes_home = _canonical_root(Path(hermes_home))
         self._remaining = remaining
+        if not isinstance(schema_overlay, Mapping) or set(schema_overlay) != {"read_file", "terminal"}:
+            raise HermesToolRuntimeError("declared native schema overlay is missing or incomplete")
+        self._schema_overlay = schema_overlay
         self._environment: Any | None = None
         self._task_id: str | None = None
         self._owns_registry_entry = False
@@ -512,6 +522,29 @@ class HermesToolRuntime:
                 raise HermesToolRuntimeError(
                     f"native tool schema cannot be copied: {name}"
                 )
+            if name in self._schema_overlay:
+                declaration = self._schema_overlay[name]
+                if not isinstance(declaration, Mapping):
+                    raise HermesToolRuntimeError(f"invalid schema overlay declaration: {name}")
+                native_digest = hashlib.sha256(_schema_bytes(schema)).hexdigest()
+                if native_digest != declaration.get("native_sha256"):
+                    raise HermesToolRuntimeError(f"native tool schema differs from overlay pin: {name}")
+                approved_json = declaration.get("approved_schema_json")
+                if not isinstance(approved_json, str) or hashlib.sha256(
+                    approved_json.encode("utf-8")
+                ).hexdigest() != declaration.get("approved_sha256"):
+                    raise HermesToolRuntimeError(f"approved tool schema differs from overlay pin: {name}")
+                try:
+                    approved = json.loads(approved_json)
+                except json.JSONDecodeError as exc:
+                    raise HermesToolRuntimeError(f"invalid approved tool schema: {name}") from exc
+                if (
+                    not isinstance(approved, dict)
+                    or _schema_bytes(approved) != approved_json.encode("utf-8")
+                    or _tool_name(approved) != name
+                ):
+                    raise HermesToolRuntimeError(f"invalid approved tool schema: {name}")
+                schema = approved
             bounded.append(schema)
         return bounded
 

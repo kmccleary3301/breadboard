@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Callable
 
 import pytest
+
+from breadboard.rl.harness.hermes_tools import HermesToolRuntime, HermesToolRuntimeError
 
 from conformance.comparators.hermes_agent import (
     TRACE_SCHEMA_VERSION,
@@ -15,6 +19,28 @@ from conformance.comparators.hermes_agent import (
 
 FIXTURES = Path(__file__).parent / "fixtures" / "hermes_agent"
 CASES = tuple(sorted(path for path in FIXTURES.iterdir() if path.is_dir()))
+TARGET_CONFIG = Path(__file__).resolve().parents[2] / "config/e4_targets/hermes_agent/2026.9.11/native-config.json"
+
+
+def test_declared_schema_overlay_advertises_only_bounded_tools(tmp_path: Path) -> None:
+    config = json.loads(TARGET_CONFIG.read_bytes())
+    source = deepcopy(json.loads((FIXTURES / "H-01-normal-memory-skill-write/trace.json").read_bytes())["requests"][0]["body"]["tools"])
+    state = SimpleNamespace(tools=source)
+    runtime = HermesToolRuntime(
+        state, workspace=tmp_path, scratch=tmp_path, hermes_home=tmp_path,
+        remaining=lambda: 120, schema_overlay=config["schema_overlay"],
+    )
+    schemas = runtime._bounded_tool_schemas()
+    by_name = {schema["function"]["name"]: schema["function"] for schema in schemas}
+    assert "Documents auto-extract" not in by_name["read_file"]["description"]
+    terminal = by_name["terminal"]
+    assert not {"background", "pty", "notify"} & terminal["parameters"]["properties"].keys()
+    assert "30" in terminal["parameters"]["properties"]["timeout"]["description"]
+    assert "600" not in terminal["description"] + terminal["parameters"]["properties"]["timeout"]["description"]
+    source[-2]["function"]["description"] += " unauthorized"
+    with pytest.raises(HermesToolRuntimeError, match="schema"):
+        runtime._bounded_tool_schemas()
+
 
 
 @pytest.mark.parametrize("case_dir", CASES, ids=lambda path: path.name)

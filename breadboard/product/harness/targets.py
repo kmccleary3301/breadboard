@@ -39,7 +39,7 @@ _NATIVE_WORKER_RECIPES = MappingProxyType({
     ),
     "hermes-agent@2026.9.11": (
         "breadboard.hermes-agent.v2026.9.11",
-        "cf207f06ecbb1ff1219f44b9824c33b43d9a58307899fa465f03ee067436e6b6",
+        "36dbabb294042943df6c6f5415eebbe4097f660bc99af1d91f052d76da7eca88",
     ),
 })
 
