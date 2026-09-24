@@ -2382,6 +2382,46 @@ class TrustedProcessHandle:
                         ) from exc
                     if marker != b"B":
                         raise RuntimeError("trusted process bootstrap failed")
+                if self._envelope is not None:
+                    identity = self._observe_group_identity(process.pid)
+                    process_group = int(identity["process_group_id"])
+                    self._groups[process_group] = identity
+                    recorder = getattr(self, "_identity_recorder", None)
+                    if recorder is None:
+                        raise RuntimeError(
+                            "trusted process identity recorder is unavailable"
+                        )
+                    process.admit()
+                    identity_published = True
+                    admitted_executable = self._executable
+                    if (
+                        self._command_executable is not None
+                        and argv
+                        and argv[0] == self._command_executable.proc_fd_path
+                    ):
+                        admitted_executable = self._command_executable
+                    if admitted_executable.execution_format == "elf":
+                        try:
+                            observed_exe = os.stat(f"/proc/{process.pid}/exe")
+                        except OSError as exc:
+                            process.kill()
+                            raise SandboxLaunchError(
+                                "attested process executable is unavailable",
+                                code="runtime_preflight_failed",
+                                lease_id=self.lease_id,
+                            ) from exc
+                        if (
+                            observed_exe.st_dev != admitted_executable.snapshot_device
+                            or observed_exe.st_ino != admitted_executable.snapshot_inode
+                        ):
+                            process.kill()
+                            raise SandboxLaunchError(
+                                "attested process executable identity changed",
+                                code="runtime_preflight_failed",
+                                lease_id=self.lease_id,
+                            )
+                    recorder(f"process-group-{process_group}", identity)
+                    return process
                 stop_deadline = min(deadline, loop.time() + 0.25)
                 while True:
                     fields = self._proc_fields(process.pid)

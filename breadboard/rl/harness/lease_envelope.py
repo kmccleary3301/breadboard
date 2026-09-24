@@ -42,12 +42,6 @@ _CLONE_NEWPID = 0x20000000
 _RECEIPT_SCHEMA = "bb.containment-receipt.v1"
 _MAX_FRAME = 256 * 1024
 _MAX_FDS = 64
-_PTRACE_TRACEME = 0
-_PTRACE_CONT = 7
-_PTRACE_DETACH = 17
-_PTRACE_SETOPTIONS = 0x4200
-_PTRACE_O_TRACEEXEC = 0x10
-_PTRACE_EVENT_EXEC = 4
 
 
 class RuntimeContainment(str, Enum):
@@ -358,19 +352,29 @@ def _recv_frame(sock: socket.socket) -> tuple[dict[str, Any], list[int]]:
 
 def _send_credentials(sock: socket.socket, payload: Mapping[str, Any]) -> None:
     _send_frame(sock, payload)
-def _ptrace(request: int, pid: int, data: int = 0) -> None:
+def _execveat_fd(fd: int, argv: Sequence[str], environment: Mapping[str, str]) -> None:
     libc = ctypes.CDLL(None, use_errno=True)
-    function = libc.ptrace
-    function.restype = ctypes.c_long
-    result = function(
-        ctypes.c_ulong(request),
-        ctypes.c_ulong(pid),
-        ctypes.c_void_p(),
-        ctypes.c_void_p(data),
+    function = libc.execveat
+    function.restype = ctypes.c_int
+    encoded_argv = [os.fsencode(item) for item in argv]
+    argv_array = (ctypes.c_char_p * (len(encoded_argv) + 1))(
+        *encoded_argv, None
     )
-    if result == -1:
-        error = ctypes.get_errno()
-        raise OSError(error, os.strerror(error))
+    encoded_environment = [
+        os.fsencode(f"{key}={value}") for key, value in environment.items()
+    ]
+    environment_array = (ctypes.c_char_p * (len(encoded_environment) + 1))(
+        *encoded_environment, None
+    )
+    result = function(
+        ctypes.c_int(fd),
+        ctypes.c_char_p(b""),
+        argv_array,
+        environment_array,
+        ctypes.c_int(0x1000),
+    )
+    error = ctypes.get_errno()
+    raise OSError(error, os.strerror(error))
 
 
 def _unshare(flags: int) -> None:
@@ -567,9 +571,25 @@ def _spawn_one(_control: socket.socket, message: Mapping[str, Any], fds: list[in
     stdin_index, stdout_index, stderr_index = message["stdio_indices"]
     cwd_index = message["cwd_index"]
     executable_index = message["executable_index"]
-    command_index = message.get("command_index")
+    exec_index = message["exec_index"]
+    gate_index = message["gate_index"]
     extra_indices = message.get("extra_indices", [])
-    if any(type(index) is not int or not 0 <= index < len(fds) for index in [status_index, stdin_index, stdout_index, stderr_index, cwd_index, executable_index, *extra_indices] if index is not None):
+    indices = [
+        status_index,
+        stdin_index,
+        stdout_index,
+        stderr_index,
+        cwd_index,
+        executable_index,
+        exec_index,
+        gate_index,
+        *extra_indices,
+    ]
+    if any(
+        type(index) is not int or not 0 <= index < len(fds)
+        for index in indices
+        if index is not None
+    ):
         raise OSError("envelope spawn descriptor index is invalid")
     status_fd = fds[status_index]
     child = os.fork()
@@ -582,57 +602,29 @@ def _spawn_one(_control: socket.socket, message: Mapping[str, Any], fds: list[in
             os.dup2(fds[stderr_index], 2)
             for fd in fds:
                 os.set_inheritable(fd, True)
-            _ptrace(_PTRACE_TRACEME, 0)
-            os.kill(os.getpid(), signal.SIGSTOP)
+            status_sock = socket.socket(fileno=status_fd)
+            status_sock.sendmsg(
+                [b"B"],
+                [
+                    (
+                        socket.SOL_SOCKET,
+                        socket.SCM_CREDENTIALS,
+                        struct.pack("3i", os.getpid(), os.getuid(), os.getgid()),
+                    )
+                ],
+            )
+            status_sock.detach()
+            if os.read(fds[gate_index], 1) != b"G":
+                raise OSError("envelope exec gate was not admitted")
+            os.close(fds[gate_index])
             argv = list(_rewrite_received_fd_paths(tuple(message["argv"]), fds))
-            exec_path = argv[0]
             argv0_path = message.get("argv0_path")
             if isinstance(argv0_path, str) and argv0_path:
                 argv[0] = argv0_path
             env = {str(key): str(value) for key, value in message["environment"].items()}
-            os.execve(exec_path, argv, env)
+            _execveat_fd(fds[exec_index], argv, env)
         except BaseException:
             os._exit(127)
-    while True:
-        waited, status = os.waitpid(child, os.WUNTRACED)
-        if waited == child and os.WIFSTOPPED(status):
-            break
-        if os.WIFEXITED(status) or os.WIFSIGNALED(status):
-            raise OSError("envelope child exited before ptrace admission")
-    _ptrace(_PTRACE_SETOPTIONS, child, _PTRACE_O_TRACEEXEC)
-    _ptrace(_PTRACE_CONT, child)
-    while True:
-        waited, status = os.waitpid(child, os.WUNTRACED)
-        if waited != child:
-            continue
-        if os.WIFEXITED(status) or os.WIFSIGNALED(status):
-            raise OSError("envelope child exited before exec admission")
-        if (
-            os.WIFSTOPPED(status)
-            and os.WSTOPSIG(status) == signal.SIGTRAP
-            and (status >> 16) == _PTRACE_EVENT_EXEC
-        ):
-            _ptrace(_PTRACE_DETACH, child, int(signal.SIGSTOP))
-            waited, detached_status = os.waitpid(child, os.WUNTRACED)
-            if (
-                waited != child
-                or not os.WIFSTOPPED(detached_status)
-                or os.WSTOPSIG(detached_status) != signal.SIGSTOP
-            ):
-                raise OSError("envelope target did not enter detached stop")
-            break
-    status_sock = socket.socket(fileno=status_fd)
-    status_sock.sendmsg(
-        [b"B"],
-        [
-            (
-                socket.SOL_SOCKET,
-                socket.SCM_CREDENTIALS,
-                struct.pack("3i", child, os.getuid(), os.getgid()),
-            )
-        ],
-    )
-    status_sock.detach()
     while True:
         waited, status = os.waitpid(child, 0)
         if waited == child:
@@ -706,10 +698,12 @@ class EnvelopeProcess:
         *,
         pid: int,
         status: socket.socket,
+        gate: int,
         stdin: Any,
         stdout: Any,
         stderr: Any,
     ) -> None:
+        self._gate = gate
         self.pid = pid
         self.stdin = stdin
         self.stdout = stdout
@@ -736,7 +730,20 @@ class EnvelopeProcess:
             if self._status is not None:
                 self._status.close()
                 self._status = None
+            if self._gate >= 0:
+                os.close(self._gate)
+                self._gate = -1
         return self.returncode
+
+    def admit(self) -> None:
+        if self._gate < 0:
+            raise RuntimeError("envelope exec gate was already closed")
+        gate = self._gate
+        self._gate = -1
+        try:
+            os.write(gate, b"G")
+        finally:
+            os.close(gate)
 
     def kill(self) -> None:
         try:
@@ -842,6 +849,7 @@ async def spawn_envelope_process(
     stdin_r, stdin_w = os.pipe()
     stdout_r, stdout_w = os.pipe()
     stderr_r, stderr_w = os.pipe()
+    gate_r, gate_w = os.pipe()
     status_host, status_supervisor = socket.socketpair(
         socket.AF_UNIX, socket.SOCK_SEQPACKET
     )
@@ -855,6 +863,15 @@ async def spawn_envelope_process(
     for fd in extra_fds:
         extra_indices.append(len(sent_fds))
         sent_fds.append(fd)
+    exec_index = (
+        command_index
+        if command_index is not None
+        and argv
+        and argv[0] == f"/proc/self/fd/{command_fd}"
+        else 4
+    )
+    gate_index = len(sent_fds)
+    sent_fds.append(gate_r)
     cwd_index = len(sent_fds)
     sent_fds.append(os.dup(cwd_fd))
     mapping = {fd: index for index, fd in enumerate(sent_fds)}
@@ -864,7 +881,9 @@ async def spawn_envelope_process(
         "status_index": 3,
         "stdio_indices": [0, 1, 2],
         "executable_index": 4,
+        "exec_index": exec_index,
         "command_index": command_index,
+        "gate_index": gate_index,
         "extra_indices": extra_indices,
         "cwd_index": cwd_index,
         "argv0_path": argv0_path,
@@ -874,7 +893,7 @@ async def spawn_envelope_process(
     try:
         await asyncio.to_thread(_send_frame, envelope.control, message, sent_fds)
     finally:
-        for fd in (stdin_r, stdout_w, stderr_w, sent_fds[-1]):
+        for fd in (stdin_r, stdout_w, stderr_w, gate_r, sent_fds[-1]):
             try:
                 os.close(fd)
             except OSError:
@@ -891,6 +910,7 @@ async def spawn_envelope_process(
         process = EnvelopeProcess(
             pid=pid,
             status=status_host,
+            gate=gate_w,
             stdin=stdin,
             stdout=stdout,
             stderr=stderr,
@@ -898,6 +918,10 @@ async def spawn_envelope_process(
         return process
     except BaseException:
         status_host.close()
+        try:
+            os.close(gate_w)
+        except OSError:
+            pass
         for fd in (stdout_r, stderr_r, stdin_w):
             try:
                 os.close(fd)

@@ -712,7 +712,6 @@ async def test_catalog_argv0_and_proc_exe_bind_different_objects_at_private_barr
 
     assert observed["cmdline"][0].decode() == runtime_path
     assert observed["tracer_pid"] == "0"
-    assert observed["state"] in {"T", "t"}
     assert observed["exe"].startswith("/memfd:breadboard-runtime")
     assert result["stdout"] == "argv-proof"
     assert (await primary.close()).state is CleanupState.RELEASED
