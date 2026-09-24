@@ -189,7 +189,7 @@ def test_target_dynamic_author_requires_typed_same_process_observations() -> Non
         ),
         (
             HarnessCompositionManifestV1,
-            "bb.rl.harness-composition.v1",
+            "bb.rl.harness-composition.v3",
         ),
     ],
 )

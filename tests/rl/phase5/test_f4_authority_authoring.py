@@ -138,7 +138,7 @@ def _spec(tmp: Path) -> F4AuthorityAuthoringInput:
     )
 
 
-def test_v1_canonical_bytes_unchanged_and_v2_bundle_set_is_closed(
+def test_v3_canonical_bytes_unchanged_and_v4_bundle_set_is_closed(
     tmp_path: Path,
 ) -> None:
     fixture = tmp_path / "fixture"
@@ -154,7 +154,7 @@ def test_v1_canonical_bytes_unchanged_and_v2_bundle_set_is_closed(
     assert v1.canonical_bytes() == raw
     payload = v1.model_dump(mode="json")
     payload.pop("config_bundle_ref")
-    payload["schema_version"] = "bb.rl.harness-composition.v2"
+    payload["schema_version"] = "bb.rl.harness-composition.v4"
     ref = v1.config_bundle_ref.model_dump(mode="json")
     payload["config_bundle_refs"] = [ref, ref]
     with pytest.raises(ValidationError, match="sorted and unique"):
