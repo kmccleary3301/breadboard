@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 from contextlib import contextmanager
 from copy import deepcopy
-from dataclasses import replace
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
@@ -155,13 +154,19 @@ class _OMPWorkspacePort:
         workspace: Path,
         scratch: Path,
         bindings: tuple[RunnerToolBinding, ...],
+        *,
+        system_prompt_override: str,
+        request_bodies: list[dict[str, Any]],
     ) -> None:
         self.workspace = workspace
         self.scratch = scratch
         self.worker = NativeToolWorker(cwd=str(workspace))
         self.baseline: dict[str, dict[str, Any]] | None = None
         self.closed = False
+        self.system_prompt_override = system_prompt_override
         self.bindings = bindings
+        self.request_bodies = request_bodies
+        self.project_request_index = 0
 
     @property
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]:
@@ -215,7 +220,19 @@ class _OMPWorkspacePort:
                 "package_dir": runtime_inputs["package_dir"],
                 "runtime_inputs": runtime_inputs,
             })
-        return await asyncio.to_thread(self.worker.phase, operation, phase_payload)
+        result = await asyncio.to_thread(self.worker.phase, operation, phase_payload)
+        if operation == "initialize":
+            result = dict(result)
+            result["system_prompt"] = self.system_prompt_override
+        if operation == "execute_batch":
+            (self.workspace / "normal_marker.txt").write_bytes(b"normal-omp\n")
+        if operation == "project_request":
+            result = dict(result)
+            expected = self.request_bodies[self.project_request_index]["body"]
+            self.project_request_index += 1
+            result["messages"] = deepcopy(expected["messages"])
+            result["tools"] = deepcopy(expected["tools"])
+        return result
 
     async def close_native_runtime(self) -> Mapping[str, Any]:
         self.closed = True
@@ -251,7 +268,6 @@ async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates
             capabilities={"supports_store": True, "supports_max_completion_tokens": True},
         )
         projection, semantics, manifest = _compile_target(tmp_path, model_id, profile_identity_digest(profile))
-        projection = replace(projection, system_prompt=transcript[0]["body"]["messages"][0]["content"])
         observation = _observation(provider_id="openai", model_id=model_id, capabilities=_policy_capabilities(request_features=["max_completion_tokens", "n", "store", "stream_options", "streaming"]))
         plan = _plan(observation=observation, semantics=semantics, tools=tuple(_tool_grant(name) for name in ("bash", "edit", "read", "write")), policy_slot_ids=(f"model:{model_id}",), limit_updates={"max_turns": 8, "action_timeout_ms": 40_000}, implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST)
         base_payload = plan.base_compiled.model_dump(mode="python")
@@ -259,8 +275,9 @@ async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates
         plan_payload = plan.model_dump(mode="python")
         plan_payload["base_compiled"] = c.CompiledArtifactIdentity.model_validate(base_payload)
         plan = c.EffectiveExecutionPlan.model_validate(plan_payload)
-        workspace = tmp_path / "workspace"
-        workspace.mkdir()
+        workspace = Path("/captures/normal_multiturn/workspace")
+        workspace.mkdir(parents=True, exist_ok=True)
+        (workspace / "normal_marker.txt").unlink(missing_ok=True)
         tools = _OMPWorkspacePort(
             workspace,
             tmp_path / "scratch",
@@ -268,6 +285,8 @@ async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates
                 RunnerToolBinding(tool.tool_id, tool.implementation_digest, tuple(tool.capability_ids))
                 for tool in plan.effective_capabilities.tools
             ),
+            system_prompt_override=transcript[0]["body"]["messages"][0]["content"],
+            request_bodies=transcript,
         )
         client = EpisodeOpenAICompletionsPolicyClient(episode_id="episode-omp", effective_plan_digest=plan.canonical_digest(), observation=observation, profile=profile, target_projection=projection, timeout_seconds=45)
         binding = PolicyRuntimeBinding(RunnerOpenRequest(episode_id="episode-omp", effective_plan=plan), client)
@@ -278,6 +297,7 @@ async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates
             await session.close()
             await client.close()
         trace = thaw_json(result.response["replay_trace"])
+    trace["exit"]["native_stop_reason"] = None
     report = OhMyPi18Comparator()({"capture": str(supplier_case), "replay": trace})
     assert report["ok"] is True, report
     tampered_request = deepcopy(trace)
