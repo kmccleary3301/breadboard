@@ -13,6 +13,8 @@ import stat
 import subprocess
 import sys
 from dataclasses import replace
+from types import SimpleNamespace
+
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -481,6 +483,46 @@ def _not_found(reference: str) -> DockerCommandResult:
         stdout=b"[]\n",
         stderr=f"error: no such object: {reference}\n".encode("utf-8"),
     )
+
+
+def test_docker_accepts_sole_workspace_seed_root_without_extra_mount() -> None:
+    entry = MaterializationEntry(
+        digest("workspace-seed"),
+        ".",
+        c.MountAccess.READ_WRITE,
+        4_096,
+        "workspace_seed",
+    )
+    plan = SimpleNamespace(
+        materialization_plan=SimpleNamespace(entries=(entry,)),
+    )
+    context = SimpleNamespace(role="primary")
+
+    assert docker_module._root_repository_entry(plan) is entry
+    assert DockerSandboxBackend._mount_specs(plan, context) == ()
+
+
+def test_docker_rejects_mixed_workspace_seed_root_entries() -> None:
+    root = MaterializationEntry(
+        digest("workspace-seed"),
+        ".",
+        c.MountAccess.READ_WRITE,
+        4_096,
+        "workspace_seed",
+    )
+    extra = MaterializationEntry(
+        digest("input"),
+        "input",
+        c.MountAccess.READ_ONLY,
+        4_096,
+        "input",
+    )
+    plan = SimpleNamespace(
+        materialization_plan=SimpleNamespace(entries=(root, extra)),
+    )
+
+    with pytest.raises(DockerAdapterError, match="sole repository or workspace seed"):
+        docker_module._root_repository_entry(plan)
 
 
 def _docker_plan(tmp_path: Path, *, gvisor: bool = False) -> tuple[Any, Path, Path, tuple[tuple[Path, str, bool], ...]]:

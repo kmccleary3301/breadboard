@@ -793,12 +793,12 @@ def _root_repository_entry(plan: Any) -> Any | None:
         return None
     if (
         len(roots) != 1
-        or roots[0].role != "repository"
+        or roots[0].role not in {"repository", "workspace_seed"}
         or len(entries) != 1
     ):
         raise DockerAdapterError(
             "runtime_preflight_failed",
-            "workspace root requires a sole repository materialization entry",
+            "workspace root requires a sole repository or workspace seed materialization entry",
         )
     return roots[0]
 
@@ -2783,6 +2783,8 @@ class DockerRuntimeHandle:
                 "runtime_preflight_failed",
                 "workspace base measurement requires at most one repository mount",
             )
+        if not repositories:
+            return None
         relative_path = repositories[0].target_logical_path if repositories else "."
         repository_root = (
             CONTAINER_WORKSPACE_ROOT

@@ -22,10 +22,16 @@ from breadboard.rl.harness.materialization import (
     CacheLeaseState,
     CleanupState,
     CleanupStepReceipt,
+    EMPTY_WORKSPACE_SEED_DIGEST,
     FilesystemMaterializationStore,
     MaterializationEntry,
     MaterializationKey,
+    SealedSourceManifest,
     SourceManifestEntry,
+    WORKSPACE_SEED_MEDIA_TYPE,
+    WORKSPACE_SEED_SCHEMA_VERSION,
+    build_workspace_seed_artifact,
+    validate_workspace_seed_manifest,
 )
 from tests.rl.harness.wp7_fixtures import (
     DeterministicRandom,
@@ -3087,3 +3093,203 @@ def test_tmpfs_quota_mount_path_race_unmounts_only_covered_descriptor(
     assert all(target != os.fspath(root) for target, _detach in unmounted)
     assert authority._mounted is False
     assert authority._covered_descriptor == -1
+def test_workspace_seed_rejects_boolean_modes_before_materialization(
+    tmp_path: Path,
+) -> None:
+    class Entry:
+        def __init__(
+            self,
+            logical_path: str,
+            kind: str,
+            byte_count: int,
+            mode: object,
+            content_digest: str | None,
+        ) -> None:
+            self.logical_path = logical_path
+            self.kind = kind
+            self.byte_count = byte_count
+            self.mode = mode
+            self.content_digest = content_digest
+
+        def projection(self) -> dict[str, object]:
+            return {
+                "path": self.logical_path,
+                "kind": self.kind,
+                "bytes": self.byte_count,
+                "mode": self.mode,
+                "digest": self.content_digest,
+            }
+
+    member_digest = digest(b"x")
+    entries = (
+        Entry(".", "directory", 0, True, None),
+        Entry("seed.txt", "file", 1, True, member_digest),
+    )
+    identity = {
+        "schema_version": WORKSPACE_SEED_SCHEMA_VERSION,
+        "media_type": WORKSPACE_SEED_MEDIA_TYPE,
+        "directory_mode": True,
+        "entries": [entry.projection() for entry in entries],
+    }
+    source_digest = independent_digest(identity)
+    manifest = SealedSourceManifest(
+        source_digest=source_digest,
+        schema_identity=WORKSPACE_SEED_SCHEMA_VERSION,
+        media_identity=WORKSPACE_SEED_MEDIA_TYPE,
+        entries=entries,
+        total_bytes=1,
+        total_files=1,
+    )
+
+    class Reader:
+        def load_manifest(
+            self, _digest: str, *, max_bytes: int
+        ) -> SealedSourceManifest:
+            return manifest
+
+        def validate_workspace_seed_manifest(
+            self, value: SealedSourceManifest, expected_digest: str
+        ) -> int:
+            return validate_workspace_seed_manifest(value, expected_digest)
+
+        def read_member(
+            self, _digest: str, _logical_path: str, *, max_bytes: int
+        ) -> bytes:
+            return b"x"
+
+    store, _cache_root, _workspace_root = _store(
+        tmp_path, Reader(), FrozenClock(), namespace=31_002
+    )
+    plan = make_materialization_plan(
+        make_effective_plan(),
+        entries=(
+            MaterializationEntry(
+                source_digest,
+                ".",
+                c.MountAccess.READ_WRITE,
+                4_096,
+                "workspace_seed",
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="mode is invalid"):
+        store.materialize(plan)
+    store.close()
+
+
+
+def test_workspace_seed_mount_starts_with_exact_file_mode_and_private_baseline(
+    tmp_path: Path,
+) -> None:
+    seed_digest = digest("workspace-seed")
+    reader = MemorySourceReader(
+        {seed_digest: {"AGENTS.md": b"seed\n"}},
+        modes={(seed_digest, "AGENTS.md"): 0o600},
+    )
+    store, _cache_root, workspace_root = _store(
+        tmp_path, reader, FrozenClock(), namespace=31_000
+    )
+    plan = make_materialization_plan(
+        make_effective_plan(),
+        entries=(
+            MaterializationEntry(
+                seed_digest,
+                ".",
+                c.MountAccess.READ_WRITE,
+                4_096,
+                "workspace_seed",
+            ),
+        ),
+    )
+    materialized = store.materialize(plan)
+    try:
+        assert sorted(path.name for path in materialized.workspace_path.iterdir()) == [
+            "AGENTS.md"
+        ]
+        assert stat.S_IMODE((materialized.workspace_path / "AGENTS.md").stat().st_mode) == 0o600
+        assert materialized.seed_baseline_path is not None
+        assert materialized.seed_baseline_path.is_dir()
+        assert not (materialized.workspace_path / ".git").exists()
+    finally:
+        materialized.close()
+
+
+def test_workspace_seed_artifact_identity_is_pinned_and_paths_are_closed() -> None:
+    digest_value, payload = build_workspace_seed_artifact(
+        {"AGENTS.md": b"seed\n"},
+        file_modes={"AGENTS.md": 0o600},
+        directory_mode=0o700,
+    )
+    manifest = json.loads(payload)
+    assert manifest["source_digest"] == digest_value
+    assert manifest["entries"][0] == {
+        "path": ".",
+        "kind": "directory",
+        "bytes": 0,
+        "mode": 0o700,
+        "digest": None,
+    }
+    assert build_workspace_seed_artifact({}, directory_mode=0o700)[0] == (
+        EMPTY_WORKSPACE_SEED_DIGEST
+    )
+    with pytest.raises(ValueError):
+        build_workspace_seed_artifact({"../escape": b"x"})
+    with pytest.raises(ValueError):
+        build_workspace_seed_artifact({"/absolute": b"x"})
+    with pytest.raises(ValueError):
+        SourceManifestEntry("link", "symlink", 0, 0o777, None)
+
+
+@pytest.mark.parametrize(
+    "files",
+    [
+        {"a": b"file", "a/b": b"nested"},
+        {"A": b"upper", "a": b"lower"},
+        {"A": b"file", "a/b": b"nested"},
+        {"A/x": b"x", "a/y": b"y"},
+    ],
+)
+def test_workspace_seed_rejects_file_path_collisions_before_publication(
+    files: dict[str, bytes],
+) -> None:
+    with pytest.raises(ValueError, match="workspace seed"):
+        build_workspace_seed_artifact(files)
+
+
+def test_empty_workspace_seed_stays_byte_empty_through_seal(
+    tmp_path: Path,
+) -> None:
+    reader = MemorySourceReader({EMPTY_WORKSPACE_SEED_DIGEST: {}})
+    store, _cache_root, _workspace_root = _store(
+        tmp_path, reader, FrozenClock(), namespace=31_001
+    )
+    plan = make_materialization_plan(
+        make_effective_plan(),
+        entries=(
+            MaterializationEntry(
+                EMPTY_WORKSPACE_SEED_DIGEST,
+                ".",
+                c.MountAccess.READ_WRITE,
+                4_096,
+                "workspace_seed",
+            ),
+        ),
+    )
+    materialized = store.materialize(plan)
+    try:
+        assert list(materialized.workspace_path.iterdir()) == []
+        receipt, _snapshot_path = store.seal_snapshot(
+            materialized,
+            source_lease_id=materialized.receipt.cache_lease_id,
+            effective_plan_digest=materialized.receipt.effective_plan_digest,
+            task_digest=plan.subject_digest,
+            verifier_digest="sha256:" + "0" * 64,
+            max_depth=16,
+            max_files=16,
+            max_inodes=16,
+            max_bytes=4_096,
+        )
+        assert receipt.file_count == 0
+        assert receipt.byte_count == 0
+    finally:
+        materialized.close()

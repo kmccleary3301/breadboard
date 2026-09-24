@@ -49,6 +49,7 @@ from .materialization import (
     FilesystemMaterializationStore,
     SealedSourceManifest,
     SourceManifestEntry,
+    validate_workspace_seed_manifest,
 )
 from .mount_namespace_broker import (
     MountNamespaceBroker,
@@ -2245,6 +2246,11 @@ class _CASMaterializationSourceReader:
             raise ValueError("sealed source authority does not match requested digest")
         self._manifests[digest] = manifest
         return manifest
+
+    def validate_workspace_seed_manifest(
+        self, manifest: SealedSourceManifest, expected_digest: str
+    ) -> int:
+        return validate_workspace_seed_manifest(manifest, expected_digest)
 
     def read_member(self, digest: str, logical_path: str, *, max_bytes: int) -> bytes:
         manifest = self._manifests.get(digest)

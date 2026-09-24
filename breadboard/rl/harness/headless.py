@@ -26,9 +26,11 @@ from .composition import (
     ManagedPolicyRuntimeClientResolver,
     PinnedServerCompilerAdapter,
     ProductionComposition,
+    _CASMaterializationSourceReader,
     load_pinned_compiler,
     load_production_composition,
 )
+from .materialization import validate_workspace_seed_manifest
 from .policy_provider import (
     E4TargetPolicyProjection,
     EpisodeOpenAICompletionsPolicyResolver,
@@ -54,10 +56,13 @@ class ObsoleteOuterIsolationError(TypeError):
 class HeadlessWorkspaceInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    workspace_mode: Literal["repository", "seeded"] = "repository"
+    workspace_directory_mode: int = Field(default=0o700, ge=0, le=0o777, strict=True)
+    workspace_seed_digest: str | None = Field(default=None, pattern=_DIGEST_PATTERN)
     repository_snapshot_digest: str | None = Field(
         default=None, pattern=_DIGEST_PATTERN
     )
-    base_commit: str = Field(pattern=_GIT_COMMIT_PATTERN)
+    base_commit: str | None = Field(default=None, pattern=_GIT_COMMIT_PATTERN)
     task_image_digest: str = Field(pattern=_DIGEST_PATTERN)
     containment: Literal["attested", "unconfined_test_only"] = "attested"
 
@@ -69,6 +74,39 @@ class HeadlessWorkspaceInput(BaseModel):
                 "outer_isolation is obsolete and has been replaced by per-lease verified containment attestation"
             )
         return data
+
+    @model_validator(mode="after")
+    def _workspace_authority_is_exact(self) -> HeadlessWorkspaceInput:
+        if self.workspace_mode == "repository":
+            if self.base_commit is None:
+                raise ValueError("repository workspace requires base_commit")
+            if self.workspace_seed_digest is not None:
+                raise ValueError("repository workspace cannot declare a seed tree")
+        else:
+            if (
+                type(self.workspace_directory_mode) is not int
+                or self.workspace_directory_mode < 0
+                or self.workspace_directory_mode > 0o777
+            ):
+                raise ValueError("seeded workspace directory mode is invalid")
+            if (
+                self.repository_snapshot_digest is not None
+                or self.base_commit is not None
+                or self.workspace_seed_digest is None
+            ):
+                raise ValueError(
+                    "seeded workspace requires a seed tree and cannot declare repository authority"
+                )
+        return self
+
+    def identity_dict(self) -> dict[str, Any]:
+        identity = self.model_dump(mode="json")
+        if self.workspace_mode == "repository":
+            # These defaults were not present in the original request schema.
+            identity.pop("workspace_mode", None)
+            identity.pop("workspace_directory_mode", None)
+            identity.pop("workspace_seed_digest", None)
+        return identity
 
 class HeadlessProviderInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -321,7 +359,7 @@ class HeadlessRunRequest(BaseModel):
                     freeze_json_object(self.context, field_name="headless context")
                 )
             ),
-            "workspace": self.workspace.model_dump(mode="json"),
+            "workspace": self.workspace.identity_dict(),
             "expected_resources": self.expected_resources.model_dump(mode="json"),
             "expected_limits": self.expected_limits.model_dump(mode="json"),
             "tool_allowlist": list(self.tool_allowlist),
@@ -594,7 +632,7 @@ async def run_headless_request(
             effective_plan = _load_effective_plan(
                 composition, create.effective_plan_ref
             )
-            _validate_effective_plan(request, target, effective_plan)
+            _validate_effective_plan(request, target, effective_plan, composition)
             run_started = True
             run_operation = await composition.service.run(
                 episode_id,
@@ -607,7 +645,11 @@ async def run_headless_request(
                 result,
                 run,
                 composition,
-                expected_base_commit=request.workspace.base_commit,
+                expected_base_commit=(
+                    request.workspace.base_commit
+                    if request.workspace.workspace_mode == "repository"
+                    else request.workspace.workspace_seed_digest
+                ),
             )
             close_operation = await composition.service.close_episode(episode_id)
             closed = await composition.service.get_closed_envelope(episode_id)
@@ -636,7 +678,11 @@ async def run_headless_request(
                         result,
                         run,
                         composition,
-                        expected_base_commit=request.workspace.base_commit,
+                        expected_base_commit=(
+                            request.workspace.base_commit
+                            if request.workspace.workspace_mode == "repository"
+                            else request.workspace.workspace_seed_digest
+                        ),
                     )
                     terminal_unsuccessful = run.primary_disposition.value != "succeeded"
             except BaseException as exc:
@@ -769,6 +815,10 @@ def _validate_repository_base_commit_binding(
     request: HeadlessRunRequest,
     bindings: Mapping[str, str],
 ) -> None:
+    if request.workspace.workspace_mode == "seeded":
+        if bindings:
+            raise ValueError("seeded workspace cannot have repository base bindings")
+        return
     if any(
         type(digest) is not str
         or re.fullmatch(_DIGEST_PATTERN, digest) is None
@@ -783,18 +833,36 @@ def _validate_repository_base_commit_binding(
     )
     expected_commit = request.workspace.base_commit
     if (
-        set(bindings) != {expected_digest}
+        expected_commit is None
+        or set(bindings) != {expected_digest}
         or bindings[expected_digest] != expected_commit
     ):
         raise ValueError(
             "repository base commit is not bound to the admitted workspace authority"
         )
 
+def _validate_seed_workspace_directory_mode(
+    declared_mode: int, manifest_root_mode: int
+) -> None:
+    if (
+        type(declared_mode) is not int
+        or type(manifest_root_mode) is not int
+        or not 0 <= declared_mode <= 0o777
+        or not 0 <= manifest_root_mode <= 0o777
+    ):
+        raise ValueError("seeded workspace directory mode is invalid")
+    if declared_mode != manifest_root_mode:
+        raise ValueError(
+            "seeded workspace directory mode does not match seed manifest root"
+        )
+
+
 
 def _validate_effective_plan(
     request: HeadlessRunRequest,
     target: E4TargetPolicyProjection,
     plan: c.EffectiveExecutionPlan,
+    composition: ProductionComposition,
 ) -> None:
     if plan.effective_capabilities.resources != request.expected_resources:
         raise ValueError("effective resource limits do not match the headless request")
@@ -802,6 +870,28 @@ def _validate_effective_plan(
         raise ValueError("effective execution limits do not match the headless request")
     if plan.sandbox != request.expected_sandbox:
         raise ValueError("effective sandbox grant does not match the headless request")
+    if request.workspace.workspace_mode == "seeded":
+        root_mounts = tuple(
+            mount for mount in plan.sandbox.mounts if mount.target_logical_path == "."
+        )
+        if (
+            request.workspace.workspace_seed_digest is None
+            or len(root_mounts) != 1
+            or root_mounts[0].source_artifact_digest
+            != request.workspace.workspace_seed_digest
+        ):
+            raise ValueError("seeded workspace root is not bound to its seed artifact")
+        reader = _CASMaterializationSourceReader(composition.authority_graph.cas)
+        manifest = reader.load_manifest(
+            request.workspace.workspace_seed_digest,
+            max_bytes=root_mounts[0].max_bytes,
+        )
+        root_mode = validate_workspace_seed_manifest(
+            manifest, request.workspace.workspace_seed_digest
+        )
+        _validate_seed_workspace_directory_mode(
+            request.workspace.workspace_directory_mode, root_mode
+        )
     if plan.sandbox.image_digest != request.workspace.task_image_digest:
         raise ValueError("effective sandbox image does not match the workspace input")
     if (
@@ -927,7 +1017,7 @@ def _preflight_failure_result(
                 freeze_json_object(request.context, field_name="headless context")
             )
         ),
-        "workspace": request.workspace.model_dump(mode="json"),
+        "workspace": request.workspace.identity_dict(),
         "tool_allowlist": list(request.tool_allowlist),
         "expected_resources": request.expected_resources.model_dump(mode="json"),
         "expected_limits": request.expected_limits.model_dump(mode="json"),

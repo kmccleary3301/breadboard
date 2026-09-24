@@ -23,6 +23,8 @@ from breadboard.rl.harness.headless import (
     HeadlessWorkspaceInput,
     _atomic_write,
     _project_headless_run,
+    _validate_repository_base_commit_binding,
+    _validate_seed_workspace_directory_mode,
     run_headless_request,
 )
 from breadboard.rl.harness.runners.base import freeze_json_object, thaw_json
@@ -31,6 +33,56 @@ from breadboard.rl.harness.qualification import (
     materialize_production_composition_fixture,
 )
 from tests.rl.harness.e4_compiler_test_helper import compile_pi_target
+def test_headless_workspace_mode_preserves_repository_identity_and_rejects_mixed_states() -> None:
+    task_image = "sha256:" + "0" * 64
+    legacy = HeadlessWorkspaceInput(
+        repository_snapshot_digest=None,
+        base_commit="1" * 40,
+        task_image_digest=task_image,
+    )
+    assert legacy.identity_dict() == {
+        "repository_snapshot_digest": None,
+        "base_commit": "1" * 40,
+        "task_image_digest": task_image,
+        "containment": "attested",
+    }
+    omp_seeded = HeadlessWorkspaceInput(
+        workspace_mode="seeded",
+        workspace_directory_mode=0o755,
+        workspace_seed_digest="sha256:" + "1" * 64,
+        task_image_digest=task_image,
+    )
+    assert omp_seeded.workspace_directory_mode == 0o755
+    seeded = HeadlessWorkspaceInput(
+        workspace_mode="seeded",
+        workspace_seed_digest="sha256:" + "1" * 64,
+        task_image_digest=task_image,
+    )
+    _validate_repository_base_commit_binding(
+        HeadlessRunRequest.model_construct(workspace=seeded),
+        {},
+    )
+    with pytest.raises(ValueError):
+        HeadlessWorkspaceInput(
+            workspace_mode="seeded",
+            base_commit="1" * 40,
+            task_image_digest=task_image,
+        )
+
+
+
+@pytest.mark.parametrize(
+    ("declared", "root", "matches"),
+    [(0o755, 0o755, True), (0o755, 0o700, False), (0o700, 0o755, False)],
+)
+def test_seeded_workspace_directory_mode_binds_to_manifest_root(
+    declared: int, root: int, matches: bool
+) -> None:
+    if matches:
+        _validate_seed_workspace_directory_mode(declared, root)
+    else:
+        with pytest.raises(ValueError, match="does not match"):
+            _validate_seed_workspace_directory_mode(declared, root)
 
 def test_atomic_result_publication_refuses_existing_destination(
     tmp_path: Path,
@@ -115,6 +167,25 @@ def test_headless_projection_preserves_evidence_without_fabricating_patches() ->
     assert json.loads(json.dumps(result))["terminal"]["response"] == {
         "output": [{"type": "message", "content": [{"type": "output_text", "text": "done"}]}]
     }
+    seed_digest = "sha256:" + "6" * 64
+    seeded_workspace = HeadlessWorkspaceInput(
+        workspace_mode="seeded",
+        workspace_seed_digest=seed_digest,
+        task_image_digest="sha256:" + "7" * 64,
+    )
+    assert seeded_workspace.workspace_mode == "seeded"
+    seeded_run = replace(
+        run,
+        workspace_diff={**run.workspace_diff, "base_commit": seed_digest},
+    )
+    seeded_result: dict[str, Any] = {}
+    _project_headless_run(
+        seeded_result,
+        seeded_run,
+        composition,
+        expected_base_commit=seed_digest,
+    )
+    assert seeded_result["workspace_evidence"]["patch_base_commit"] == seed_digest
 
     with pytest.raises(ValueError):
         _project_headless_run(
