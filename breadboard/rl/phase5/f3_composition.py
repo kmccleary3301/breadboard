@@ -435,8 +435,8 @@ def _measure_directory(name: str, path: str) -> DirectoryAuthorityRefV1:
     return DirectoryAuthorityRefV1(
         authority_id=f"f3-{name}",
         path=path,
-        device=metadata.st_dev,
-        inode=metadata.st_ino,
+        device=str(metadata.st_dev),
+        inode=str(metadata.st_ino),
         owner_uid=metadata.st_uid,
         mode="0700",
     )
@@ -783,7 +783,7 @@ def build_f3_production_composition(
         _measure_directory("service_output_root", parsed.stores.service_output_root)
         compiler = compiled.compiler
         manifest = HarnessCompositionManifestV1(
-            schema_version="bb.rl.harness-composition.v1",
+            schema_version="bb.rl.harness-composition.v3",
             composition_id=parsed.composition_id,
             authority_bundle_ref=authority_ref,
             config_bundle_ref=copied["config-bundle.json"][0],
@@ -827,7 +827,7 @@ def build_f3_production_composition(
         manifest_bytes = manifest.canonical_bytes()
         _write_exclusive(manifest_path, manifest_bytes)
         composition_ref = CompositionRefV1(
-            schema_version="bb.rl.harness-composition-ref.v1",
+            schema_version="bb.rl.harness-composition-ref.v3",
             manifest_path=os.fspath(manifest_path.resolve()),
             manifest_sha256=sha256_bytes(manifest_bytes),
             manifest_size_bytes=len(manifest_bytes),

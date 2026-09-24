@@ -127,8 +127,8 @@ def test_wrapper_executable_authority_rejects_writable_or_relative_binary() -> N
     base = {
         "path": "/usr/bin/env",
         "sha256": "sha256:" + "1" * 64,
-        "device": 1,
-        "inode": 2,
+        "device": "1",
+        "inode": "2",
         "ctime_ns": "1700000000000000000",
         "size_bytes": 4,
         "mode": 0o755,

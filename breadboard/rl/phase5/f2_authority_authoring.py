@@ -322,7 +322,7 @@ class C4StaticPolicyAuthority(_ExactModel):
 
 
 class F2C4StaticAuthorityInput(_ExactModel):
-    schema_version: Literal["bb.rl.phase5-f2-c4-static-authority-input.v1"]
+    schema_version: Literal["bb.rl.phase5-f2-c4-static-authority-input.v2"]
     prompt: str = Field(min_length=1, max_length=4096)
     tool_implementation_digest: str
     task: C4TaskIdentity
@@ -357,7 +357,7 @@ class F2C4StaticAuthorityInput(_ExactModel):
 
 
 class F2C4DynamicAuthorityInput(_ExactModel):
-    schema_version: Literal["bb.rl.phase5-f2-c4-dynamic-authority-input.v1"]
+    schema_version: Literal["bb.rl.phase5-f2-c4-dynamic-authority-input.v2"]
     composition_id: str
     attempt_id: str
     callback: C4CallbackAuthority
@@ -456,7 +456,7 @@ class F2C4TargetDynamicPlanInput(_ExactModel):
 
 
 class F2C4TargetDynamicObservations(_ExactModel):
-    schema_version: Literal["bb.rl.phase5-f2-c4-target-dynamic-observations.v1"]
+    schema_version: Literal["bb.rl.phase5-f2-c4-target-dynamic-observations.v2"]
     attempt_id: str
     callback_observed_port: int = Field(ge=1, le=65535)
     callback_secret_handle_version_digest: str
@@ -570,7 +570,7 @@ def author_f2_target_dynamic_authority(
         secret_handle_version_digest=observations.callback_secret_handle_version_digest,
     )
     return F2C4DynamicAuthorityInput(
-        schema_version="bb.rl.phase5-f2-c4-dynamic-authority-input.v1",
+        schema_version="bb.rl.phase5-f2-c4-dynamic-authority-input.v2",
         composition_id=plan.composition_id, attempt_id=plan.attempt_id,
         callback=callback, subject=plan.subject, validity=observations.validity,
         revocation=observations.revocation, installed=observations.installed,
@@ -839,8 +839,8 @@ class TlsCallbackLiveHandoffV1:
             or self.tls_private_key.leaf_public_key_sha256 != runtime.leaf_public_key_sha256
             or self.callback_socket.gateway != callback_plan.gateway
             or self.callback_socket.observed_port != callback_plan.observed_port
-            or self.callback_socket.socket_device != callback_plan.socket_device
-            or self.callback_socket.socket_inode != callback_plan.socket_inode
+            or self.callback_socket.socket_device != int(callback_plan.socket_device)
+            or self.callback_socket.socket_inode != int(callback_plan.socket_inode)
             or self.callback_socket.socket_mode != callback_plan.socket_mode
             or self.callback_socket.socket_owner_uid != callback_plan.socket_owner_uid
             or len(matching_handles) != 1
@@ -850,7 +850,7 @@ class TlsCallbackLiveHandoffV1:
 
 
 class F2C4StaticAuthorityFragment(_ExactModel):
-    schema_version: Literal["bb.rl.phase5-f2-c4-static-authority-fragment.v1"]
+    schema_version: Literal["bb.rl.phase5-f2-c4-static-authority-fragment.v2"]
     authority: F2C4StaticAuthorityInput
     authority_digest: str
     source_inventory: tuple[dict[str, Any], ...]
@@ -1272,7 +1272,7 @@ def _verify_executable_observation(executable: Any) -> None:
         stat.S_IMODE(info.st_mode), info.st_uid,
     )
     expected = (
-        executable.device, executable.inode, int(executable.ctime_ns),
+        int(executable.device), int(executable.inode), int(executable.ctime_ns),
         executable.size_bytes, executable.mode, executable.owner_uid,
     )
     if actual != expected:
@@ -1363,7 +1363,7 @@ def build_f2_c4_static_authority(
     } for name, item in source_values)
     authority_bytes = canonical_json_bytes(authority.model_dump(mode="json"))
     fragment = F2C4StaticAuthorityFragment(
-        schema_version="bb.rl.phase5-f2-c4-static-authority-fragment.v1",
+        schema_version="bb.rl.phase5-f2-c4-static-authority-fragment.v2",
         authority=authority,
         authority_digest=_digest(authority_bytes),
         source_inventory=source_inventory,
@@ -1509,7 +1509,7 @@ def author_f2_operator_input(semantic_input_path: str, output_dir: str) -> str:
         openssl_before.st_size, stat.S_IMODE(openssl_before.st_mode), openssl_before.st_uid,
     )
     expected_openssl = (
-        spec.openssl.device, spec.openssl.inode, int(spec.openssl.ctime_ns),
+        int(spec.openssl.device), int(spec.openssl.inode), int(spec.openssl.ctime_ns),
         spec.openssl.size_bytes, spec.openssl.mode, spec.openssl.owner_uid,
     )
     if actual_openssl != expected_openssl:
@@ -1673,7 +1673,7 @@ def author_f2_operator_input(semantic_input_path: str, output_dir: str) -> str:
                 "tls": spec.tls.model_dump(mode="json"),
             }
             operator = {
-                "schema_version": "bb.rl.phase5-f2-production-input.v2",
+                "schema_version": "bb.rl.phase5-f2-production-input.v3",
                 "composition_id": spec.composition_id,
                 "authority": authority,
                 "installed": spec.installed.model_dump(mode="json"),
