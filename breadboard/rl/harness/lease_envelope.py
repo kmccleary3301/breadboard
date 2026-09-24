@@ -12,7 +12,6 @@ import socket
 import stat
 import struct
 import time
-import tempfile
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -42,6 +41,11 @@ _CLONE_NEWUSER = 0x10000000
 _CLONE_NEWPID = 0x20000000
 _RECEIPT_SCHEMA = "bb.containment-receipt.v1"
 _MAX_FRAME = 256 * 1024
+_SYS_OPEN_TREE = 428
+_SYS_MOVE_MOUNT = 429
+_OPEN_TREE_CLONE = 1
+_OPEN_TREE_CLOEXEC = 0x80000
+_MOVE_MOUNT_F_EMPTY_PATH = 0x00000004
 _MAX_FDS = 64
 
 
@@ -459,6 +463,46 @@ def _unbind_path(target: str) -> None:
         ctypes.c_char_p(os.fsencode(target)),
         ctypes.c_int(_MNT_DETACH),
     )
+def _open_tree(path: str) -> int:
+    libc = ctypes.CDLL(None, use_errno=True)
+    syscall = libc.syscall
+    syscall.restype = ctypes.c_long
+    tree_fd = syscall(
+        ctypes.c_long(_SYS_OPEN_TREE),
+        ctypes.c_int(-100),
+        ctypes.c_char_p(os.fsencode(path)),
+        ctypes.c_uint(_OPEN_TREE_CLONE | _OPEN_TREE_CLOEXEC),
+    )
+    if tree_fd < 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error))
+    return tree_fd
+
+
+def _move_mount(tree_fd: int, target: str) -> None:
+    libc = ctypes.CDLL(None, use_errno=True)
+    syscall = libc.syscall
+    syscall.restype = ctypes.c_long
+    result = syscall(
+        ctypes.c_long(_SYS_MOVE_MOUNT),
+        ctypes.c_int(tree_fd),
+        ctypes.c_char_p(b""),
+        ctypes.c_int(-100),
+        ctypes.c_char_p(os.fsencode(target)),
+        ctypes.c_uint(_MOVE_MOUNT_F_EMPTY_PATH),
+    )
+    if result != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error))
+
+
+def _clone_bind_mount(source: str, mountpoint: str = "/dev/shm") -> int:
+    _bind_path(source, mountpoint)
+    try:
+        return _open_tree(mountpoint)
+    finally:
+        _unbind_path(mountpoint)
+
 
 def _verify_bind_identity(source_fd: int, target: str) -> None:
     source_stat = os.fstat(source_fd)
@@ -480,46 +524,33 @@ def _setup_mount_view(
     tmpfs_size_bytes: int,
 ) -> tuple[str, tuple[str, ...]]:
     _enter_private_mount_namespace()
-    staging_root = tempfile.mkdtemp(prefix=".breadboard-envelope-", dir="/dev/shm")
-    workspace_stage = f"{staging_root}/workspace"
-    scratch_stage = f"{staging_root}/scratch"
-    workspace_staged = False
-    scratch_staged = False
+    workspace = os.path.abspath(workspace)
+    scratch = os.path.abspath(scratch)
+    workspace_tree_fd = -1
+    scratch_tree_fd = -1
     try:
-        os.mkdir(workspace_stage, mode=0o700)
-        os.mkdir(scratch_stage, mode=0o700)
-        _bind_path(os.path.abspath(workspace), workspace_stage)
-        workspace_staged = True
-        _bind_path(os.path.abspath(scratch), scratch_stage)
-        scratch_staged = True
+        _verify_bind_identity(workspace_fd, workspace)
+        _verify_bind_identity(scratch_fd, scratch)
+        workspace_tree_fd = _clone_bind_mount(workspace)
+        scratch_tree_fd = _clone_bind_mount(scratch)
         _mount_tmpfs("/tmp", tmpfs_size_bytes)
         for path in (workspace, scratch):
-            os.makedirs(os.path.abspath(path), mode=0o700, exist_ok=True)
-        _bind_path(workspace_stage, os.path.abspath(workspace))
-        _bind_path(scratch_stage, os.path.abspath(scratch))
-        _verify_bind_identity(workspace_fd, os.path.abspath(workspace))
-        _verify_bind_identity(scratch_fd, os.path.abspath(scratch))
+            os.makedirs(path, mode=0o700, exist_ok=True)
+        _move_mount(workspace_tree_fd, workspace)
+        os.close(workspace_tree_fd)
+        workspace_tree_fd = -1
+        _move_mount(scratch_tree_fd, scratch)
+        os.close(scratch_tree_fd)
+        scratch_tree_fd = -1
+        _verify_bind_identity(workspace_fd, workspace)
+        _verify_bind_identity(scratch_fd, scratch)
         _remount_readonly("/")
         _mount_proc()
         return _verify_mount_view(workspace, scratch)
     finally:
-        for staged, path in (
-            (scratch_staged, scratch_stage),
-            (workspace_staged, workspace_stage),
-        ):
-            if staged:
-                try:
-                    _unbind_path(path)
-                except OSError:
-                    pass
-            try:
-                os.rmdir(path)
-            except FileNotFoundError:
-                pass
-        try:
-            os.rmdir(staging_root)
-        except FileNotFoundError:
-            pass
+        for tree_fd in (workspace_tree_fd, scratch_tree_fd):
+            if tree_fd >= 0:
+                os.close(tree_fd)
 
 
 def _supervisor_main(
