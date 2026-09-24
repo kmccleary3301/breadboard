@@ -28,11 +28,15 @@ from .mount_namespace_broker import (
     _MS_NOEXEC,
     _MS_NOSUID,
     _MNT_DETACH,
+    _MS_NOATIME,
+    _MS_NODIRATIME,
+    _MS_RDONLY,
+    _MS_RELATIME,
+    _MS_REMOUNT,
     _bind,
     _enter_private_mount_namespace,
     _libc_call,
     _mountinfo,
-    _remount_readonly,
 )
 
 
@@ -45,6 +49,8 @@ _MAX_FRAME = 256 * 1024
 _SYS_OPEN_TREE = 428
 _SYS_MOVE_MOUNT = 429
 _OPEN_TREE_CLONE = 1
+_SYS_MOUNT_SETATTR = 442
+_MOUNT_ATTR_RDONLY = 1
 _OPEN_TREE_CLOEXEC = 0x80000
 _MOVE_MOUNT_F_EMPTY_PATH = 0x00000004
 _AT_RECURSIVE = 0x8000
@@ -58,6 +64,90 @@ class RuntimeContainment(str, Enum):
 
 class ContainmentReceiptError(ValueError):
     code = "containment_receipt_invalid"
+
+
+
+class EnvelopeMountError(OSError):
+    """The lease mount view cannot be proven read-only outside its writable roots."""
+
+
+class _MountAttr(ctypes.Structure):
+    _fields_ = [
+        ("attr_set", ctypes.c_uint64),
+        ("attr_clr", ctypes.c_uint64),
+        ("propagation", ctypes.c_uint64),
+        ("userns_fd", ctypes.c_uint64),
+    ]
+
+
+def _mount_paths(raw: bytes) -> list[tuple[str, set[bytes]]]:
+    mounts = []
+    for line in raw.splitlines():
+        fields = line.split()
+        if len(fields) < 7 or not fields[0].isdigit():
+            raise EnvelopeMountError(errno.EINVAL, "mountinfo is malformed")
+        path = re.sub(
+            rb"\\([0-7]{3})",
+            lambda match: bytes((int(match.group(1), 8),)),
+            fields[4],
+        ).decode("utf-8", "surrogateescape")
+        mounts.append((path, set(fields[5].split(b","))))
+    if not mounts:
+        raise EnvelopeMountError(errno.EINVAL, "mountinfo is empty")
+    return mounts
+
+
+def _remount_tree_readonly(target: str) -> None:
+    libc = ctypes.CDLL(None, use_errno=True)
+    syscall = libc.syscall
+    syscall.restype = ctypes.c_long
+    attr = _MountAttr(attr_set=_MOUNT_ATTR_RDONLY)
+    if syscall(
+        ctypes.c_long(_SYS_MOUNT_SETATTR), ctypes.c_int(-100),
+        ctypes.c_char_p(os.fsencode(target)), ctypes.c_uint(_AT_RECURSIVE),
+        ctypes.byref(attr), ctypes.c_size_t(ctypes.sizeof(attr)),
+    ) == 0:
+        return
+    error = ctypes.get_errno()
+    if error not in (errno.ENOSYS, errno.EINVAL, errno.EOPNOTSUPP):
+        raise EnvelopeMountError(error, f"recursive readonly remount failed: {target}")
+    mounts = _mount_paths(_mountinfo())
+    seen: set[str] = set()
+    descendants = sorted(
+        ((path, options) for path, options in mounts
+         if path == target or path.startswith(target.rstrip("/") + "/")),
+        key=lambda entry: entry[0].count("/"), reverse=True,
+    )
+    for path, options in descendants:
+        if path in seen:
+            raise EnvelopeMountError(errno.EINVAL, f"stacked mount cannot be verified: {path}")
+        seen.add(path)
+        preserved = 0
+        for option, flag in (
+            (b"nosuid", _MS_NOSUID), (b"nodev", _MS_NODEV),
+            (b"noexec", _MS_NOEXEC), (b"noatime", _MS_NOATIME),
+            (b"nodiratime", _MS_NODIRATIME), (b"relatime", _MS_RELATIME),
+        ):
+            if option in options:
+                preserved |= flag
+        if b"ro" not in options:
+            try:
+                _libc_call(
+                    "mount", ctypes.c_char_p(None), ctypes.c_char_p(os.fsencode(path)),
+                    ctypes.c_char_p(None),
+                    ctypes.c_ulong(_MS_REMOUNT | _MS_BIND | _MS_RDONLY | preserved),
+                    ctypes.c_char_p(None),
+                )
+            except OSError as exc:
+                raise EnvelopeMountError(
+                    exc.errno, f"readonly remount failed: {path}"
+                ) from exc
+    after = _mount_paths(_mountinfo())
+    if len(after) != len(mounts) or any(
+        b"ro" not in options for path, options in after
+        if path == target or path.startswith(target.rstrip("/") + "/")
+    ):
+        raise EnvelopeMountError(errno.EROFS, f"readonly mount verification failed: {target}")
 
 
 class ReceiptAuthenticator(Protocol):
@@ -442,18 +532,17 @@ def _verify_mount_view(workspace: str, scratch: str) -> tuple[str, tuple[str, ..
     scratch = os.path.abspath(scratch)
     raw = _mountinfo()
     roots = tuple(sorted({workspace, scratch, "/tmp"}))
-    entries: dict[str, list[bytes]] = {}
-    for line in raw.splitlines():
-        fields = line.split()
-        if len(fields) >= 6:
-            entries[fields[4].replace(b"\\040", b" ").decode("utf-8", "surrogateescape")] = fields
-    root = entries.get("/")
-    if root is None or b"ro" not in root[5].split(b","):
-        raise OSError("envelope root mount is writable")
-    for path in roots:
-        fields = entries.get(path)
-        if fields is None or b"rw" not in fields[5].split(b","):
-            raise OSError(f"envelope writable mount is absent: {path}")
+    entries = _mount_paths(raw)
+    seen_roots: set[str] = set()
+    for path, options in entries:
+        if path in roots:
+            if b"rw" not in options:
+                raise EnvelopeMountError(errno.EROFS, f"envelope writable mount is absent: {path}")
+            seen_roots.add(path)
+        elif b"ro" not in options:
+            raise EnvelopeMountError(errno.EROFS, f"envelope inherited mount is writable: {path}")
+    if seen_roots != set(roots):
+        raise EnvelopeMountError(errno.ENOENT, f"envelope writable mount is absent: {sorted(set(roots) - seen_roots)}")
     return _digest_mountinfo(raw), roots
 
 def _open_tree(path: str) -> int:
@@ -520,6 +609,7 @@ def _setup_mount_view(
         _verify_bind_identity(scratch_fd, scratch)
         workspace_tree_fd = _open_tree(workspace)
         scratch_tree_fd = _open_tree(scratch)
+        _remount_tree_readonly("/")
         _mount_tmpfs("/tmp", tmpfs_size_bytes)
         for path in (workspace, scratch):
             os.makedirs(path, mode=0o700, exist_ok=True)
@@ -531,8 +621,8 @@ def _setup_mount_view(
         scratch_tree_fd = -1
         _verify_bind_identity(workspace_fd, workspace)
         _verify_bind_identity(scratch_fd, scratch)
-        _remount_readonly("/")
         _mount_proc()
+        _remount_tree_readonly("/proc")
         return _verify_mount_view(workspace, scratch)
     finally:
         for tree_fd in (workspace_tree_fd, scratch_tree_fd):

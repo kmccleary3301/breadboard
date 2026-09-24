@@ -123,6 +123,53 @@ def test_containment_receipt_preserves_writable_roots_through_teardown(
     )
     assert completed.writable_roots == receipt.writable_roots
 
+def test_envelope_rejects_writable_inherited_child_mount(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mountinfo = (
+        b"1 0 1:1 / / ro - ext4 root ro\n"
+        b"2 1 1:2 / /dev/shm rw - tmpfs shm rw\n"
+        b"3 1 1:3 / /workspace rw - ext4 workspace rw\n"
+        b"4 1 1:4 / /scratch rw - tmpfs scratch rw\n"
+        b"5 1 1:5 / /tmp rw - tmpfs tmp rw\n"
+    )
+    monkeypatch.setattr(lease_envelope, "_mountinfo", lambda: mountinfo)
+    with pytest.raises(OSError, match="/dev/shm"):
+        lease_envelope._verify_mount_view("/workspace", "/scratch")
+
+
+@requires_sealed_execution
+async def test_envelope_child_mount_is_read_only_inside_lease(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    try:
+        command = (
+            "/usr/bin/python3 -c 'import errno,os; "
+            "p=\"/dev/shm/breadboard-forbidden-write\"; "
+            "try_write=lambda: os.open(p,os.O_CREAT|os.O_WRONLY,0o600); "
+            "import sys; "
+            "exec(\"try:\\n try_write()\\nexcept OSError as e:\\n "
+            "sys.exit(0 if e.errno == errno.EROFS else 5)\\nsys.exit(6)\")'"
+        )
+        result = await primary._runtime.run_shell(
+            command, timeout_ms=2_000, output_limit=4_096
+        )
+        assert result["returncode"] == 0, result
+        receipt = primary._runtime.containment_receipt
+        assert receipt is not None
+        assert receipt.mountinfo_sha256.startswith("sha256:")
+        assert {entry["path"] for entry in receipt.writable_mounts} == {
+            "/tmp", str(primary._materialized.workspace_path),
+            str(primary._runtime._envelope.scratch),
+        }
+    finally:
+        await primary.close()
+
+
 
 
 @requires_sealed_execution
