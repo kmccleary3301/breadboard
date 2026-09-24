@@ -3747,6 +3747,7 @@ def _validate_native_tool_closure(
 def _load_native_tool_bindings(
     installed: InstalledV1,
     receipts: Sequence[c.AdmissionReceipt],
+    compiled_manifests: Mapping[str, CompiledConfigManifest],
 ) -> tuple[InstalledToolAdapter, ...]:
     reachable: dict[str, set[str]] = {}
     for receipt in receipts:
@@ -3754,6 +3755,44 @@ def _load_native_tool_bindings(
             reachable.setdefault(tool.tool_id, set()).add(tool.implementation_digest)
     bindings: list[InstalledToolAdapter] = []
     for descriptor in installed.tool_adapters:
+        matching_receipts = tuple(
+            receipt for receipt in receipts
+            if all(
+                any(
+                    tool.tool_id == tool_id
+                    and tool.implementation_digest == descriptor.manifest_ref.sha256
+                    for tool in receipt.effective_capabilities.tools
+                )
+                for tool_id in descriptor.tool_ids
+            )
+        )
+        declared_argv: set[tuple[str, ...]] = set()
+        for receipt in matching_receipts:
+            compiled = compiled_manifests.get(receipt.compiled.manifest_digest)
+            if compiled is None:
+                raise ValueError("native tool compiled manifest is not pinned")
+            target = compiled.semantic.to_canonical_obj().get("metadata", {}).get("e4_target")
+            if not isinstance(target, Mapping):
+                continue
+            profile = target.get("runtime_profile")
+            worker = profile.get("native_worker") if isinstance(profile, Mapping) else None
+            if not isinstance(worker, Mapping) or "argv" not in worker:
+                continue
+            argv = worker["argv"]
+            if not isinstance(argv, list) or not argv or any(type(arg) is not str for arg in argv):
+                raise ValueError("sealed native worker argv is invalid")
+            declared_argv.add(tuple(argv))
+        if len(declared_argv) > 1:
+            raise ValueError("sealed native worker argv conflicts across receipts")
+        sealed_argv = next(iter(declared_argv), None)
+        if sealed_argv is not None and descriptor.argv is not None and descriptor.argv != sealed_argv:
+            raise ValueError("sealed native worker argv differs from installed descriptor")
+        effective = (
+            InstalledToolAdapterV1.model_validate({
+                **descriptor.model_dump(mode="python"), "argv": sealed_argv,
+            })
+            if sealed_argv is not None and descriptor.argv is None else descriptor
+        )
         digests = {digest for tool_id in descriptor.tool_ids for digest in reachable.get(tool_id, set())}
         if len(digests) != 1 or next(iter(digests), None) != descriptor.manifest_ref.sha256:
             raise ValueError("native tool binding is unadmitted or implementation-mismatched")
@@ -3762,7 +3801,7 @@ def _load_native_tool_bindings(
             payload, expected_digest=descriptor.manifest_ref.sha256
         )
         executable_digest, entrypoint_digest = _validate_native_tool_closure(
-            descriptor, source_manifest
+            effective, source_manifest
         )
         bindings.append(
             InstalledToolAdapter(
@@ -3778,10 +3817,10 @@ def _load_native_tool_bindings(
                 entrypoint_relative_path=descriptor.entrypoint_relative_path,
                 executable_digest=executable_digest,
                 entrypoint_digest=entrypoint_digest,
-                argv=descriptor.argv,
+                argv=effective.argv,
                 argv_file_digests=tuple(
                     (argument.removeprefix("./"), next(item.content_digest or "" for item in source_manifest.entries if item.logical_path == argument.removeprefix("./")))
-                    for argument in (descriptor.argv or ())[1:-1] if argument != "--import"
+                    for argument in (effective.argv or ())[1:-1] if argument != "--import"
                 ),
             )
         )
@@ -4351,6 +4390,7 @@ def _build_runtime_graph(
     native_tool_adapters = _load_native_tool_bindings(
         manifest.installed,
         admission_receipts,
+        graph.compiler.pinned_manifests,
     )
     _validate_installed_registry_graph(
         manifest.installed,

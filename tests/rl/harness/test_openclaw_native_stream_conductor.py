@@ -963,3 +963,109 @@ async def test_openclaw_native_worker_ack_and_close_are_scope_verified(tmp_path:
         assert all(group["group_probe_absent"] for group in closed["cleanup"]["process_groups"])
     finally:
         await worker.close()
+
+
+@pytest.mark.parametrize("descriptor_argv", [None, "equal", "different"])
+def test_installed_worker_argv_comes_from_sealed_target(
+    tmp_path: Path, descriptor_argv: str | None
+) -> None:
+    import subprocess
+    from types import SimpleNamespace
+
+    from breadboard.rl.harness import composition
+    from breadboard.rl.harness.materialization import SealedSourceManifest, SourceManifestEntry
+
+    _, _, compiled = _compile_target(
+        tmp_path, profile_digest="sha256:" + "a" * 64
+    )
+    target = compiled.semantic.to_canonical_obj()["metadata"]["e4_target"]
+    declared = tuple(target["runtime_profile"]["native_worker"]["argv"])
+    compiled_digest = "sha256:" + hashlib.sha256(compiled.canonical_bytes()).hexdigest()
+    root = tmp_path / "installed"
+    root.mkdir(mode=0o700)
+    files = {
+        "bin/node": b"#!/bin/sh\nprintf '%s\\n' \"$@\"\n",
+        declared[2].removeprefix("./"): b"// pinned loader\n",
+        declared[-1]: b"// pinned worker\n",
+    }
+    entries: list[SourceManifestEntry] = []
+    directories = {
+        str(parent)
+        for name in files
+        for parent in Path(name).parent.parents
+        if str(parent) != "."
+    } | {str(Path(name).parent) for name in files}
+    for directory in sorted(directories):
+        (root / directory).mkdir(mode=0o700, parents=True, exist_ok=True)
+        entries.append(SourceManifestEntry(directory, "directory", 0, 0o700))
+    for name, content in files.items():
+        path = root / name
+        path.write_bytes(content)
+        path.chmod(0o700 if name == "bin/node" else 0o600)
+        entries.append(
+            SourceManifestEntry(
+                name, "file", len(content), path.stat().st_mode & 0o777,
+                "sha256:" + hashlib.sha256(content).hexdigest(),
+            )
+        )
+    source_manifest = SealedSourceManifest(
+        source_digest="sha256:" + "b" * 64,
+        schema_identity=composition._NATIVE_TOOL_SOURCE_SCHEMA_VERSION,
+        media_identity=composition._NATIVE_TOOL_SOURCE_MEDIA_TYPE,
+        entries=tuple(sorted(entries, key=lambda item: item.logical_path)),
+        total_bytes=sum(len(content) for content in files.values()),
+        total_files=len(files),
+    )
+    manifest_path = tmp_path / "native-manifest.json"
+    manifest_bytes = composition._canonical_bytes(source_manifest.projection())
+    manifest_path.write_bytes(manifest_bytes)
+    stat = root.stat()
+    descriptor = {
+        "adapter_id": "openclaw.local.v2026.9.4",
+        "tool_ids": sorted(["ls", "read", "edit", "write", "exec", "process"]),
+        "runtime_root": {
+            "authority_id": "native-runtime", "path": str(root),
+            "device": stat.st_dev, "inode": stat.st_ino,
+            "owner_uid": stat.st_uid, "mode": "0700",
+        },
+        "manifest_ref": {
+            "path": str(manifest_path), "sha256": source_manifest.manifest_digest,
+            "size_bytes": len(manifest_bytes),
+            "media_type": "application/vnd.breadboard.native-tool-source+json;version=1",
+        },
+        "executable_relative_path": "bin/node",
+        "entrypoint_relative_path": declared[-1],
+    }
+    if descriptor_argv:
+        descriptor["argv"] = list(declared if descriptor_argv == "equal" else (
+            declared[0], "--import", "./bin/node", declared[-1]
+        ))
+    installed = SimpleNamespace(
+        tool_adapters=(composition.InstalledToolAdapterV1.model_validate_json(json.dumps(descriptor)),)
+    )
+    receipt = SimpleNamespace(
+        compiled=SimpleNamespace(manifest_digest=compiled_digest),
+        effective_capabilities=SimpleNamespace(
+            tools=tuple(
+                SimpleNamespace(tool_id=tool, implementation_digest=source_manifest.manifest_digest)
+                for tool in descriptor["tool_ids"]
+            )
+        ),
+    )
+    if descriptor_argv == "different":
+        with pytest.raises(ValueError, match="sealed.*argv"):
+            composition._load_native_tool_bindings(
+                installed, (receipt,), {compiled_digest: compiled}
+            )
+        return
+    (binding,) = composition._load_native_tool_bindings(
+        installed, (receipt,), {compiled_digest: compiled}
+    )
+    command = sandbox_module._native_worker_argv(binding, str(root / "bin/node"))
+    assert command == (
+        str(root / "bin/node"), "--import", str(root / declared[2].removeprefix("./")),
+        str(root / declared[-1]),
+    )
+    assert subprocess.run(command, capture_output=True, text=True, check=True).stdout.splitlines() == [
+        "--import", str(root / declared[2].removeprefix("./")), str(root / declared[-1]),
+    ]
