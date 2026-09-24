@@ -2648,12 +2648,11 @@ class TrustedProcessHandle:
         return result
 
     async def terminate(self) -> tuple[CleanupStepReceipt, ...]:
-        async with self._terminate_lock:
-            if self._terminate_task is None:
-                async with self._launch_lock:
-                    self._closing = True
-                self._terminate_task = asyncio.create_task(self._terminate_once())
-            task = self._terminate_task
+        task = self._terminate_task
+        if task is None:
+            self._closing = True
+            task = asyncio.create_task(self._terminate_once())
+            self._terminate_task = task
         return await asyncio.shield(task)
 
     async def _terminate_once(self) -> tuple[CleanupStepReceipt, ...]:
@@ -2661,12 +2660,16 @@ class TrustedProcessHandle:
             if self._closed:
                 return (CleanupStepReceipt("runtime", CleanupState.ALREADY_RELEASED),)
         failed = False
+        failure_detail = ""
         async with self._native_session_lock:
             native_session = self._native_session
             self._native_session = None
         if native_session is not None:
             try:
                 await native_session.close()
+            except asyncio.CancelledError:
+                failed = True
+                failure_detail = "native_session:CancelledError"
             except BaseException:
                 failed = True
         if self._envelope is not None:
@@ -2698,7 +2701,8 @@ class TrustedProcessHandle:
                 self._closed = True
         return (
             CleanupStepReceipt(
-                "runtime", CleanupState.FAILED if failed else CleanupState.RELEASED
+                "runtime", CleanupState.FAILED if failed else CleanupState.RELEASED,
+                failure_detail,
             ),
         )
 

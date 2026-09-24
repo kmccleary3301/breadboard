@@ -1374,6 +1374,81 @@ async def test_cancelled_termination_retains_signed_teardown_and_releases_lease(
 
 
 @requires_sealed_execution
+async def test_cancelled_termination_waiting_for_launch_lock_fences_later_launch(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(
+        with_writable_mount=True, runtime_install_root=tmp_path / "runtime"
+    )
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    handle = primary._runtime
+    try:
+        async with handle._launch_lock:
+            first = asyncio.create_task(handle.terminate())
+            await asyncio.sleep(0)
+            first.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await first
+
+        with pytest.raises(WorkspaceStateError) as refused:
+            await handle.run_shell(
+                "printf forbidden", timeout_ms=2_000, output_limit=4_096
+            )
+        assert refused.value.code == "lease_not_active"
+        second = await asyncio.wait_for(handle.terminate(), 4)
+        assert await handle.terminate() == second == (
+            CleanupStepReceipt("runtime", CleanupState.RELEASED),
+        )
+        assert handle.teardown_receipt is not None
+        assert handle.teardown_receipt.outcome == {
+            "pid1_reaped": True, "all_dead": True,
+        }
+        assert handle._executable.closed is True
+    finally:
+        closed = await primary.close()
+        await harness.manager.close()
+    assert closed.state is CleanupState.RELEASED
+    assert not (harness.lease_root / f"{primary.lease_id}.json").exists()
+
+
+@requires_sealed_execution
+async def test_native_close_inner_cancellation_records_typed_runtime_failure(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(
+        with_writable_mount=True, runtime_install_root=tmp_path / "runtime"
+    )
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    handle = primary._runtime
+
+    class CancelledNativeSession:
+        async def close(self) -> None:
+            raise asyncio.CancelledError("native close cancelled")
+
+    handle._native_session = CancelledNativeSession()
+    try:
+        first = await handle.terminate()
+        assert first == (
+            CleanupStepReceipt(
+                "runtime", CleanupState.FAILED, "native_session:CancelledError"
+            ),
+        )
+        assert await handle.terminate() == first
+        assert handle.teardown_receipt is not None
+        assert handle.teardown_receipt.outcome == {
+            "pid1_reaped": True, "all_dead": True,
+        }
+        assert (await primary.close()).state is CleanupState.QUARANTINED
+        assert (harness.lease_root / f"{primary.lease_id}.json").exists()
+    finally:
+        await harness.manager.close()
+
+
+@requires_sealed_execution
 async def test_real_process_plan_runs_through_wp5_port_seals_snapshot_and_cleans(
     tmp_path: Path,
 ) -> None:
