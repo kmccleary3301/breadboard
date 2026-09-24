@@ -975,7 +975,7 @@ async def test_real_process_closed_stream_timeout_or_cancellation_kills_descenda
     harness = RuntimeHarness(tmp_path, fixture)
     harness.manager.process_backend = TrustedProcessBackend()
     primary = await harness.manager.open(fixture.request)
-    ready_fifo = tmp_path / "descendant-ready.fifo"
+    ready_fifo = primary._materialized.workspace_path / "descendant-ready.fifo"
     os.mkfifo(ready_fifo)
     ready_fd = os.open(ready_fifo, os.O_RDWR | os.O_NONBLOCK)
     quoted_ready = shlex.quote(str(ready_fifo))
@@ -1172,7 +1172,7 @@ async def test_real_process_restart_never_signals_from_stale_lease_record(
     harness = RuntimeHarness(tmp_path, fixture)
     harness.manager.process_backend = TrustedProcessBackend()
     primary = await harness.manager.open(fixture.request)
-    ready_fifo = tmp_path / "restart-ready.fifo"
+    ready_fifo = primary._materialized.workspace_path / "restart-ready.fifo"
     os.mkfifo(ready_fifo)
     ready_fd = os.open(ready_fifo, os.O_RDWR | os.O_NONBLOCK)
     command = (
