@@ -110,12 +110,20 @@ def test_rerun5_receiver_replay_preserves_full_bodies_results_and_effects() -> N
                     assert [str(result) for result in results] == [by_id.get(call.id, "") for call in calls]
                 elif entry.get("broken") or finish_reason == "error":
                     assert results == []
+            stop_reason = "error" if case_id == "stream_fragments_broken" else "stop"
             episode = project_bb_trace({
+                "runtime_inputs": {
+                    "cwd": "/workspace",
+                    "home": "/home/capture",
+                    "current_date": "2026-09-23",
+                    "package_dir": "/packages",
+                },
                 "requests": [{"body": body} for body in request_bodies],
+                "native_responses": [{"finish_reason": stop_reason}] * len(request_bodies),
                 "results": [{"output": output} for output in recorded_results],
                 "effects": trace["effects"],
                 "termination": "timed_out" if trace.get("timed_out") else "submitted",
-                "stop_reason": "error" if case_id == "stream_fragments_broken" else "stop",
+                "stop_reason": stop_reason,
                 "receiver_requests": trace["receiver_requests"],
             })
             assert episode["requests"]
