@@ -70,6 +70,28 @@ def test_supplier_projection_self_comparison(case_dir: Path) -> None:
     assert report["ok"] is True
     assert report["failed"] == 0
 
+@pytest.mark.parametrize("case_dir", CASES, ids=lambda path: path.name)
+def test_packet_workspace_delta_excludes_seed_and_supplier_trajectory(case_dir: Path) -> None:
+    supplier = project_supplier_case(case_dir)
+    replay = deepcopy(supplier)
+    original = json.loads((case_dir / "trace.json").read_bytes())
+    replay["file_effects"] = {
+        path: item["sha256"] if item["exists"] else None
+        for path, item in original["effects"]["files"].items()
+    }
+    assert compare_cases(case_dir, replay)["ok"] is True
+    assert "AGENTS.md" not in supplier["file_effects"]
+    assert "trajectory_samples.jsonl" not in supplier["file_effects"]
+    assert "failed_trajectories.jsonl" not in supplier["file_effects"]
+
+
+def test_effect_exclusion_is_not_chosen_by_trace_role() -> None:
+    case_dir, replay = _replay("H-04-name-repair-duplicate")
+    replay["file_effects"]["unrelated.txt"] = "sha256:" + "b" * 64
+    replay["role"] = "supplier"
+    assert compare_cases(case_dir, replay)["ok"] is False
+
+
 
 def _replay(case_name: str) -> tuple[Path, dict[str, Any]]:
     case_dir = FIXTURES / case_name

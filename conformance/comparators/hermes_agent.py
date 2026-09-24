@@ -36,6 +36,27 @@ SUPPLIER_TRACE_SCHEMA_VERSION = "bb.e4.hermes-supplier-trace.v1"
 
 SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _CAMEL_BOUNDARY_RE = re.compile(r"([a-z0-9])([A-Z])")
+_WORKSPACE_SEED = {
+    "AGENTS.md": "sha256:6fc95531db12a94c2c8a08ccde807b1e266cb0cb92c40e7533552f3460ff6bbd",
+}
+# Supplier SDK bookkeeping is not a model workspace effect. Apply the same
+# typed exclusion to each side; never inspect the trace's self-declared role.
+_EFFECT_EXCLUSIONS = {
+    "supplier": frozenset({"trajectory_samples.jsonl", "failed_trajectories.jsonl"}),
+    "breadboard": frozenset({"trajectory_samples.jsonl", "failed_trajectories.jsonl"}),
+}
+
+
+def _effect_delta(effects: Mapping[str, str | None], *, role: str) -> dict[str, str | None]:
+    if role not in _EFFECT_EXCLUSIONS:
+        raise ValueError(f"unknown effect projection role: {role}")
+    return {
+        path: digest
+        for path, digest in effects.items()
+        if path not in _EFFECT_EXCLUSIONS[role]
+        and _WORKSPACE_SEED.get(path) != digest
+    }
+
 
 _CANONICAL_FIELDS = (
     "case_id",
@@ -375,7 +396,7 @@ def _file_effects(trace: Mapping[str, Any], case_dir: Path) -> dict[str, str | N
         for path in sorted(item for item in workspace.rglob("*") if item.is_file()):
             digest = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
             effects.setdefault(path.relative_to(workspace).as_posix(), digest)
-    return effects
+    return _effect_delta(effects, role="supplier")
 
 
 def _controls_projection(trace: Mapping[str, Any], requests: Sequence[Mapping[str, Any]], advertised: Sequence[str]) -> dict[str, Any]:
@@ -501,6 +522,9 @@ def project_bb_trace(trace: Mapping[str, Any] | Path | str) -> dict[str, Any]:
     for field in _CANONICAL_FIELDS:
         projected[field] = copy.deepcopy(value[field])
     projected["controls"] = _controls_projection(value, requests, advertised)
+    if not isinstance(projected["file_effects"], Mapping):
+        raise ValueError("BreadBoard file_effects must be an object")
+    projected["file_effects"] = _effect_delta(projected["file_effects"], role="breadboard")
     declared = value.get("normalizations", [])
     if not isinstance(declared, list) or any(type(item) is not str for item in declared):
         raise ValueError("normalizations must be a list of strings")
