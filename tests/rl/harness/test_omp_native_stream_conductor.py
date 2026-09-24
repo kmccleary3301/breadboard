@@ -372,7 +372,7 @@ async def test_omp_conductor_partitions_declared_denials_before_worker(
                 RunnerToolBinding(tool.tool_id, tool.implementation_digest, tuple(tool.capability_ids))
                 for tool in plan.effective_capabilities.tools
             ),
-            system_prompt_override="OMP conductor denial test",
+            system_prompt_override=projection.system_prompt,
             request_bodies=[],
             phase_log=phase_log,
         )
