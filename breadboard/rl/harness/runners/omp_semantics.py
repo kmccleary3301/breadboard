@@ -574,7 +574,7 @@ class OMPSemanticsState:
             for key, value in (capability_denials or {}).items()
             if isinstance(value, Mapping)
         }
-        self.messages: list[dict[str, Any]] = [{"role": "user", "content": task}]
+        self.messages: list[dict[str, Any]] = [{"role": "user", "content": [{"type": "text", "text": task}]}]
         self.request_count = 0
         self.stream_fn_issued = 0
         self.exit_status: str | None = None

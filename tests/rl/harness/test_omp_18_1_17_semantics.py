@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -25,6 +27,7 @@ from breadboard.rl.harness.runners.omp_semantics import (
     run_tool_batch,
     schedule_tool_calls,
 )
+from tests.rl.harness.test_omp_18_1_17_native_worker import _differential_bun, _differential_source_root
 
 
 def test_hashline_tag_is_xxh32_low16_and_trailing_display_space_insensitive() -> None:
@@ -469,3 +472,57 @@ def test_omp_request_cap_refuses_before_native_query() -> None:
     assert trace["request_count"] == 1
     assert trace["exit"] == {"kind": "RequestLimitExceeded", "native_stop_reason": "tool_calls"}
     assert project_bb_trace(trace)["termination"]["native_stop_reason"] == "tool_calls"
+
+
+def test_omp_initial_user_turn_is_one_text_part() -> None:
+    request = OMPSemanticsState(task="do task", system_prompt="system").project_request()
+    assert request["messages"][1] == {"role": "user", "content": [{"type": "text", "text": "do task"}]}
+
+
+_PINNED_REMINDER_SCRIPT = """
+const payload = JSON.parse(await Bun.stdin.text());
+const { DateCwdReminderInjector } = await import(`${payload.root}/packages/coding-agent/src/session/date-cwd-reminder.ts`);
+const context = new DateCwdReminderInjector().transform({ systemPrompt: payload.system, messages: payload.messages }, payload.date, payload.cwd);
+process.stdout.write(JSON.stringify(context.messages));
+"""
+
+
+@pytest.mark.skipif(
+    _differential_bun() is None or not _differential_source_root().is_dir(),
+    reason="bun or pinned OMP source is unavailable on this host",
+)
+def test_omp_pinned_reminder_projection_keeps_reminder_and_task_parts(tmp_path: Path) -> None:
+    source_root = _differential_source_root()
+    # The reminder module's only runtime import is the pinned prompt renderer.
+    shim = tmp_path / "resolve" / "@oh-my-pi" / "pi-utils"
+    shim.mkdir(parents=True)
+    (shim / "package.json").write_text('{"type":"module","exports":"./index.ts"}', encoding="utf-8")
+    (shim / "index.ts").write_text(
+        f"export * as prompt from {json.dumps(str(source_root / 'packages/utils/src/prompt.ts'))};\n",
+        encoding="utf-8",
+    )
+    script = tmp_path / "reminder.ts"
+    script.write_text(_PINNED_REMINDER_SCRIPT, encoding="utf-8")
+    request = OMPSemanticsState(task="do task", system_prompt="system").project_request()
+    completed = subprocess.run(
+        [str(_differential_bun()), str(script)],
+        input=json.dumps({
+            "root": str(source_root),
+            "system": [request["messages"][0]["content"]],
+            "messages": request["messages"][1:],
+            "date": "2026-09-23",
+            "cwd": "/workspace/repo",
+        }),
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={**os.environ, "NODE_PATH": str(tmp_path / "resolve")},
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    [user] = json.loads(completed.stdout)
+    assert user["role"] == "user"
+    [reminder, task] = user["content"]
+    assert reminder["type"] == "text"
+    assert reminder["text"].startswith("<system-reminder>\nToday: 2026-09-23; current working directory: '/workspace/repo'.")
+    assert task == {"type": "text", "text": "do task"}
