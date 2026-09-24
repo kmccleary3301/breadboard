@@ -188,6 +188,32 @@ def test_fd_path_rewrite_is_single_pass_over_whole_descriptor_tokens() -> None:
     assert lease_envelope._rewrite_fd_paths(("--x=/proc/self/fd/31/y",), {3: 0}) == (
         "--x=/proc/self/fd/31/y",
     )
+    received = [40, 41, 42, 43, 44, 45]
+    # Model text naming the status channel (index 3) is never rewritten, and
+    # a whole-token reference to a non-exposable index is left untouched.
+    assert lease_envelope._rewrite_received_fd_paths(
+        ("/proc/self/fd/4", "-lc", "cat /proc/self/fd/3", "/proc/self/fd/3"),
+        received,
+        {4, 5},
+    ) == ("/proc/self/fd/44", "-lc", "cat /proc/self/fd/3", "/proc/self/fd/3")
+
+
+def test_spawn_rejects_control_channel_named_as_exposable() -> None:
+    message = {
+        "fd_count": 6,
+        "status_index": 0,
+        "stdio_indices": [1, 2, 3],
+        "cwd_index": 4,
+        "executable_index": 5,
+        "exec_index": 5,
+        "gate_index": 5,
+        "exec_ready_index": 5,
+        "extra_indices": [0],
+        "environment": {},
+        "argv": [],
+    }
+    with pytest.raises(OSError, match="control channel"):
+        _spawn_one(None, message, [10, 11, 12, 13, 14, 15], object())
 
 
 

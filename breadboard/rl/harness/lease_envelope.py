@@ -866,6 +866,7 @@ def _spawn_one(
     exec_index = message["exec_index"]
     gate_index = message["gate_index"]
     extra_indices = message.get("extra_indices", [])
+    command_index = message.get("command_index")
     env = message.get("environment")
     if not isinstance(env, dict) or any(
         not isinstance(key, str) or not isinstance(value, str)
@@ -883,6 +884,7 @@ def _spawn_one(
         exec_index,
         gate_index,
         exec_ready_index,
+        command_index,
         *extra_indices,
     ]
     if any(
@@ -891,6 +893,16 @@ def _spawn_one(
         if index is not None
     ):
         raise OSError("envelope spawn descriptor index is invalid")
+    exposable_indices = {
+        index
+        for index in (executable_index, exec_index, command_index, *extra_indices)
+        if index is not None
+    }
+    if exposable_indices & {
+        status_index, stdin_index, stdout_index, stderr_index,
+        cwd_index, gate_index, exec_ready_index,
+    }:
+        raise OSError("envelope control channel is not exposable to the child")
     status_fd = fds[status_index]
     exec_ready_fd = fds[exec_ready_index]
     child = os.fork()
@@ -917,7 +929,11 @@ def _spawn_one(
             if os.read(fds[gate_index], 1) != b"G":
                 raise OSError("envelope exec gate was not admitted")
             os.close(fds[gate_index])
-            argv = list(_rewrite_received_fd_paths(tuple(message["argv"]), fds))
+            argv = list(
+                _rewrite_received_fd_paths(
+                    tuple(message["argv"]), fds, exposable_indices
+                )
+            )
             argv0_path = message.get("argv0_path")
             if isinstance(argv0_path, str) and argv0_path:
                 argv[0] = argv0_path
@@ -926,6 +942,7 @@ def _spawn_one(
                 exec_fd=fds[exec_index],
                 status_fd=status_fd,
                 exec_ready_fd=exec_ready_fd,
+                exposable_fds={fds[index] for index in exposable_indices},
                 argv=argv,
             )
             os.set_inheritable(exec_fd, False)
@@ -1372,7 +1389,13 @@ async def spawn_envelope_process(
     sent_fds.append(os.dup(cwd_fd))
     exec_ready_index = len(sent_fds)
     sent_fds.append(exec_ready_w)
-    mapping = {fd: index for index, fd in enumerate(sent_fds)}
+    # Only descriptors deliberately handed to the child may be named in argv;
+    # status, gate, readiness, stdio and cwd channels never are.
+    mapping = {
+        sent_fds[index]: index
+        for index in (4, command_index, *extra_indices)
+        if index is not None
+    }
     message = {
         "kind": "spawn",
         "fd_count": len(sent_fds),
@@ -1488,43 +1511,47 @@ class EnvelopeLaunch:
         return receipt
 
 
+_FD_PATH = re.compile(r"/proc/self/fd/([0-9]+)")
+
+
 def _rewrite_fd_paths(argv: Sequence[str], mapping: Mapping[int, int]) -> tuple[str, ...]:
-    def replace(match: re.Match[str]) -> str:
-        source = int(match.group(1))
-        if source not in mapping:
-            return match.group(0)
-        return f"/proc/self/fd/{mapping[source]}"
+    """Renumber whole-argument ``/proc/self/fd/N`` tokens named by ``mapping``.
 
-    return tuple(
-        re.sub(r"/proc/self/fd/([0-9]+)", replace, str(item)) for item in argv
+    Only launcher-generated whole arguments are descriptor references;
+    substrings inside model-controlled text are passed through unchanged.
+    """
+    result = []
+    for item in argv:
+        match = _FD_PATH.fullmatch(str(item))
+        if match is not None and int(match.group(1)) in mapping:
+            result.append(f"/proc/self/fd/{mapping[int(match.group(1))]}")
+        else:
+            result.append(str(item))
+    return tuple(result)
+
+
+def _rewrite_received_fd_paths(
+    argv: Sequence[str], fds: Sequence[int], exposable_indices: set[int]
+) -> tuple[str, ...]:
+    return _rewrite_fd_paths(
+        argv, {index: fds[index] for index in exposable_indices}
     )
 
 
-def _rewrite_received_fd_paths(argv: Sequence[str], fds: Sequence[int]) -> tuple[str, ...]:
-    def replace(match: re.Match[str]) -> str:
-        index = int(match.group(1))
-        if index >= len(fds):
-            return match.group(0)
-        return f"/proc/self/fd/{fds[index]}"
-
-    return tuple(
-        re.sub(r"/proc/self/fd/([0-9]+)", replace, str(item))
-        for item in argv
-    )
 def _prepare_exec_descriptors(
     fds: Sequence[int],
     *,
     exec_fd: int,
     status_fd: int,
     exec_ready_fd: int,
+    exposable_fds: set[int],
     argv: Sequence[str],
 ) -> tuple[int, tuple[str, ...]]:
     referenced = {exec_fd}
     for item in argv:
-        for match in re.finditer(r"/proc/self/fd/([0-9]+)", item):
-            candidate = int(match.group(1))
-            if candidate in fds:
-                referenced.add(candidate)
+        match = _FD_PATH.fullmatch(item)
+        if match is not None and int(match.group(1)) in exposable_fds:
+            referenced.add(int(match.group(1)))
     mapping: dict[int, int] = {}
     next_fd = 3
     for source in sorted(referenced):
