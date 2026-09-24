@@ -105,17 +105,20 @@ def _archive_case(tmp_path: Path) -> tuple[Path, list[dict[str, Any]], str]:
         str(part.get("text", ""))
         for part in transcript[0]["body"]["messages"][1]["content"]
         if isinstance(part, Mapping) and part.get("type") == "text"
-    )
-
-
+)
 class _OMPWorkspacePort:
-    def __init__(self, workspace: Path, scratch: Path) -> None:
+    def __init__(
+        self,
+        workspace: Path,
+        scratch: Path,
+        bindings: tuple[RunnerToolBinding, ...],
+    ) -> None:
         self.workspace = workspace
         self.scratch = scratch
         self.worker = NativeToolWorker(cwd=str(workspace))
         self.baseline: dict[str, dict[str, Any]] | None = None
         self.closed = False
-        self.bindings = tuple(RunnerToolBinding(name, "sha256:" + "a" * 64, ()) for name in ("read", "bash", "edit", "write"))
+        self.bindings = bindings
 
     @property
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]:
@@ -214,7 +217,14 @@ async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates
         plan = c.EffectiveExecutionPlan.model_validate(plan_payload)
         workspace = tmp_path / "workspace"
         workspace.mkdir()
-        tools = _OMPWorkspacePort(workspace, tmp_path / "scratch")
+        tools = _OMPWorkspacePort(
+            workspace,
+            tmp_path / "scratch",
+            tuple(
+                RunnerToolBinding(tool.tool_id, tool.implementation_digest, tuple(tool.capability_ids))
+                for tool in plan.effective_capabilities.tools
+            ),
+        )
         client = EpisodeOpenAICompletionsPolicyClient(episode_id="episode-omp", effective_plan_digest=plan.canonical_digest(), observation=observation, profile=profile, target_projection=projection, timeout_seconds=45)
         binding = PolicyRuntimeBinding(RunnerOpenRequest(episode_id="episode-omp", effective_plan=plan), client)
         session = await ConductorAdapter(CONDUCTOR_RUNTIME_ABI).open(RunnerOpenRequest(episode_id="episode-omp", effective_plan=plan), policy=binding, workspace=tools, cancellation=type("C", (), {"raise_if_cancelled": lambda *args, **kwargs: None})(), events=type("E", (), {"emit": lambda self, event: asyncio.sleep(0)})())
