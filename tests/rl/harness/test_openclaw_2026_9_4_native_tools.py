@@ -47,6 +47,22 @@ def test_exec_and_process_poll_clamp(tmp_path: Path) -> None:
     tools.scope.cleanup()
 
 
+def test_poll_replays_unacknowledged_output_until_history_commit(tmp_path: Path) -> None:
+    tools = OpenClawNativeTools(tmp_path)
+    try:
+        launched = tools.execute("exec", {"command": "printf 'ACK_MARKER\\n'", "background": True})
+        session = launched["sessionId"]
+        first = tools.execute("process", {"action": "poll", "sessionId": session, "timeout": 500})
+        second = tools.execute("process", {"action": "poll", "sessionId": session, "timeout": 500})
+        assert "ACK_MARKER" in first["output"]
+        assert second["output"] == first["output"]
+        tools.acknowledge_poll(second["delivery_id"], "sha256:" + "a" * 64)
+        third = tools.execute("process", {"action": "poll", "sessionId": session, "timeout": 500})
+        assert "ACK_MARKER" not in third["output"]
+    finally:
+        tools.scope.cleanup()
+
+
 def test_exec_timeout_admission_rejects_over_thirty_seconds(tmp_path: Path) -> None:
     tools = OpenClawNativeTools(tmp_path)
     try:

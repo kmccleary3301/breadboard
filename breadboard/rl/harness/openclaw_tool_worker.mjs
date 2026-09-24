@@ -20,6 +20,8 @@ const MODULE_DIGESTS = Object.freeze({
   "workspace-YW5Pl2cf.mjs": "8201a6b4ee921ac2767e272924488ed7c56c9041d274070490a064968438d5cf",
   "bash-process-registry-DHrULGkz.mjs": "6f8a65296ce1a1e07b0f3d94d2bf65f9e88c5a68b9d01df3eecc1f40f349627e",
   "openai-transport-stream-D950WgL3.mjs": "83fd60ff0760bef6eeabcee42fd219f1213cc9ffe3f65666681f486775032d78",
+  "tool-execution-context-C6v2UVPI.mjs": "17e1286b50ee915fa28d5741614a48295994c978e4a64b77ea6b163f674a0082",
+  "internal-hooks-DUPhyX-W.mjs": "7288bc46b3e51f1c86e225b14d6baa84d34a806fad0cb37234c4ee5e34b49218",
   "agent-exec-BAuhpelg.mjs": "2e39dbc961337936860849aaaed6a26b734d0c20648093f2bc51a46ebfe9526d",
 });
 const MAX_LIVE_PROCESSES = 4;
@@ -32,11 +34,14 @@ let sourceBootstrap = null;
 let sourceWorkspace = null;
 let sourceTransport = null;
 let modelConfig = null;
+let sourceExecutionContext = null;
+let sourceAcknowledgeResult = null;
 let builtTools = [];
 let verifiedRegistryUrl = null;
 let classifyAgentExecResultFn = null;
 let exitCodeForEnvelopeFn = null;
 let prepared = null;
+let preparedContext = null;
 let closing = false;
 let advertisedTools = new Map();
 let capabilityDenials = new Map();
@@ -57,6 +62,8 @@ async function verifyAndLoad() {
   const core = await import(bytes["core-coding-tools-DoP9tAh3.mjs"]);
   sourceBootstrap = await import(bytes["bootstrap-DYYMCrXY.mjs"]);
   sourceWorkspace = await import(bytes["workspace-YW5Pl2cf.mjs"]);
+  sourceExecutionContext = await import(bytes["tool-execution-context-C6v2UVPI.mjs"]);
+  sourceAcknowledgeResult = (await import(bytes["internal-hooks-DUPhyX-W.mjs"])).t;
   sourceTransport = await import(bytes["openai-transport-stream-D950WgL3.mjs"]);
   const agentExecPath = join(DIST, "agent-exec-BAuhpelg.mjs");
   const agentExecPayload = await readFile(agentExecPath, "utf8");
@@ -395,13 +402,13 @@ async function executePrepared() {
           continue;
         }
       }
-      const result = await tool.execute(call.id, call.arguments);
+      const result = await sourceExecutionContext.n({ assistantMessage: preparedContext.assistantMessage }, () => tool.execute(call.id, call.arguments));
       const details = result?.details && typeof result.details === "object" ? result.details : {};
       const status = details.status;
       const item = { id: call.id, completion_index: index, content: result?.content ?? [], details, isError: Boolean(result?.isError) };
       if (call.name === "process" && call.arguments?.action === "poll" && details.sessionId) {
         const id = deliveryId();
-        pending.set(id, { sessionId: String(details.sessionId), createdAt: Date.now() });
+        pending.set(id, { sessionId: String(details.sessionId), result });
         item.delivery_id = id;
       }
       results.push(item);
@@ -520,6 +527,7 @@ async function handle(message) {
   }
   if (phase === "prepare_tools") {
     if (!Array.isArray(message.calls)) throw new Error("prepare_tools calls must be an array");
+    preparedContext = { assistantMessage: {} };
     prepared = message.calls.map((call, index) => {
       const id = String(call?.id ?? `call_${index}`);
       if (!call || typeof call.name !== "string" || !call.name) return { id, name: "", arguments: {}, error: "tool call has no name" };
@@ -570,7 +578,10 @@ async function handle(message) {
     const id = String(message.delivery_id || "");
     if (!id || !pending.has(id)) throw new Error(`unknown delivery_id ${id}`);
     const record = pending.get(id);
-    pending.delete(id);
+    sourceAcknowledgeResult(record.result);
+    for (const [key, delivery] of pending) {
+      if (delivery.sessionId === record.sessionId) pending.delete(key);
+    }
     return { schema_version: PROTOCOL, kind: "acked", delivery_id: id, session_id: record.sessionId, history_digest: text(message.history_digest) };
   }
   if (phase === "classify_result") {
