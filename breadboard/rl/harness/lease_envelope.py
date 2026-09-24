@@ -71,6 +71,10 @@ class EnvelopeMountError(OSError):
     """The lease mount view cannot be proven read-only outside its writable roots."""
 
 
+
+class EnvelopeUnsupportedHostError(Exception):
+    """This host cannot establish the required lease namespaces."""
+
 class _MountAttr(ctypes.Structure):
     _fields_ = [
         ("attr_set", ctypes.c_uint64),
@@ -528,6 +532,30 @@ def _enter_user_namespace() -> None:
     gid = os.getegid()
     _write_map("/proc/self/uid_map", f"0 {uid} 1\n")
     _write_map("/proc/self/gid_map", f"0 {gid} 1\n")
+
+
+def preflight_host_containment() -> None:
+    """Exercise the launcher's namespace and UID/GID-map path without an action."""
+    if os.name != "posix" or not Path("/proc/self/ns").is_dir():
+        raise EnvelopeUnsupportedHostError("Linux namespaces are unavailable")
+    pid = os.fork()
+    if pid == 0:
+        try:
+            try:
+                _unshare(_CLONE_NEWPID | _CLONE_NEWNS | _CLONE_NEWNET)
+            except OSError as exc:
+                if exc.errno != errno.EPERM:
+                    raise
+                _unshare(_CLONE_NEWUSER | _CLONE_NEWPID | _CLONE_NEWNS | _CLONE_NEWNET)
+                _enter_user_namespace()
+        except OSError:
+            os._exit(1)
+        os._exit(0)
+    _, status = os.waitpid(pid, 0)
+    if not os.WIFEXITED(status) or os.WEXITSTATUS(status) != 0:
+        raise EnvelopeUnsupportedHostError(
+            "Linux namespace setup or UID/GID mapping is unavailable"
+        )
 
 
 def _mount_tmpfs(target: str, size_bytes: int, *, mode: int = 0o1777) -> None:
@@ -1097,7 +1125,7 @@ def _launcher_main(
         os._exit(0 if os.WIFEXITED(status) else 1)
     except BaseException as exc:
         try:
-            _send_frame(sock, {"kind": "error", "error": type(exc).__name__, "message": str(exc)})
+            _send_frame(sock, {"kind": "error", "error": type(exc).__name__, "message": str(exc), "errno": getattr(exc, "errno", None)})
         except BaseException:
             pass
         os._exit(70)
@@ -1657,6 +1685,10 @@ def launch_envelope(
             for fd in received:
                 os.close(fd)
             if kind_name == "error":
+                if frame.get("errno") in (errno.EPERM, errno.EACCES):
+                    raise EnvelopeUnsupportedHostError(
+                        "Linux namespace setup or UID/GID mapping is unavailable"
+                    )
                 raise OSError(frame.get("message", "envelope launch failed"))
             if kind_name != "ready" or ready is not None:
                 raise OSError("envelope readiness is invalid")
@@ -1701,8 +1733,10 @@ __all__ = [
     "EnvelopeLaunch",
     "EnvelopeProcess",
     "RuntimeContainment",
+    "EnvelopeUnsupportedHostError",
     "add_teardown_outcome",
     "launch_envelope",
+    "preflight_host_containment",
     "mint_containment_receipt",
     "spawn_envelope_process",
     "verify_containment_receipt",

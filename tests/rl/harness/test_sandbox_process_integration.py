@@ -68,19 +68,54 @@ pytestmark = pytest.mark.local_process
 RUNTIME_ABI = TERMINAL_RUNTIME_ABI
 RUNNER_DIGEST = TERMINAL_IMPLEMENTATION_DIGEST
 
-def _sealed_execution_supported() -> bool:
-    return (
+def _sealed_execution_refusal() -> str | None:
+    if not (
         sys.platform == "linux"
         and hasattr(os, "memfd_create")
         and hasattr(os, "MFD_ALLOW_SEALING")
         and os.path.isdir("/proc/self/fd")
-    )
+    ):
+        return "runtime_unsupported: requires Linux sealed-memfd descriptor execution"
+    try:
+        lease_envelope.preflight_host_containment()
+    except lease_envelope.EnvelopeUnsupportedHostError as exc:
+        return f"runtime_unsupported: {exc}"
+    return None
 
 
+_sealed_refusal = _sealed_execution_refusal()
 requires_sealed_execution = pytest.mark.skipif(
-    not _sealed_execution_supported(),
-    reason="requires Linux sealed-memfd descriptor execution",
+    _sealed_refusal is not None,
+    reason=_sealed_refusal or "",
 )
+
+@pytest.mark.skipif(sys.platform != "linux", reason="requires Linux namespaces")
+@pytest.mark.parametrize("denied_map", ("setgroups", "uid_map"))
+async def test_denied_user_namespace_mapping_refuses_lease_before_child_effect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, denied_map: str
+) -> None:
+    fixture = make_runtime_fixture(
+        with_writable_mount=True, runtime_install_root=tmp_path / "runtime"
+    )
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+
+    def unshare(flags: int) -> None:
+        if not flags & lease_envelope._CLONE_NEWUSER:
+            raise OSError(errno.EPERM, "privileged namespaces unavailable")
+
+    def write_map(path: str, value: str) -> None:
+        if path.endswith("/" + denied_map):
+            raise OSError(errno.EACCES, "namespace mapping denied", path)
+
+    monkeypatch.setattr(lease_envelope, "_unshare", unshare)
+    monkeypatch.setattr(lease_envelope, "_write_map", write_map)
+    with pytest.raises(SandboxLaunchError) as captured:
+        await harness.manager.open(fixture.request)
+    assert captured.value.code == "runtime_unsupported"
+    assert "namespace" in str(captured.value).lower()
+    assert list(harness.workspace_root.iterdir()) == []
+
 
 
 def test_envelope_rejects_non_string_environment_before_fork() -> None:
@@ -401,8 +436,9 @@ async def test_envelope_scratch_and_tmp_are_size_limited_tmpfs(
             for line in mounts
             for _, block_size, blocks in [line.split(":")]
         ]
-        assert 0 < sum(sizes) <= fixture.plan.resources.storage_bytes + 8192
-        assert all(size <= fixture.plan.resources.storage_bytes // 2 + 4096 for size in sizes)
+        storage_bytes = primary._runtime.plan.resources.storage_bytes
+        assert 0 < sum(sizes) <= storage_bytes + 8192
+        assert all(size <= storage_bytes // 2 + 4096 for size in sizes)
     finally:
         await primary.close()
 
@@ -838,7 +874,7 @@ async def test_missing_host_git_refuses_before_trusted_process_launch(
 async def test_unsupported_host_refuses_before_subprocess_recorder_or_workload_effect(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    if _sealed_execution_supported():
+    if _sealed_refusal is None:
         pytest.skip("unsupported-host contract is exercised only without sealed execution")
     fixture = make_runtime_fixture(
         with_writable_mount=True, runtime_install_root=tmp_path
@@ -1237,6 +1273,11 @@ async def test_terminate_racing_barrier_fences_launch_and_closes_snapshot_fd_onc
     first_result = await asyncio.wait_for(first, 2)
     assert first_result["returncode"] == -signal.SIGKILL
     assert not (primary._materialized.workspace_path / "work/late-effect").exists()
+    assert handle.teardown_receipt is not None
+    assert handle.teardown_receipt.outcome == {
+        "pid1_reaped": True,
+        "all_dead": True,
+    }
     assert handle._executable.closed is True
     with pytest.raises(OSError):
         os.fstat(executable_fd)
@@ -1803,6 +1844,9 @@ async def test_real_process_restart_never_signals_from_stale_lease_record(
             docker_backend=None,
             random_bytes=DeterministicRandom(50_000),
         )
+        # The original manager is still in this test process. Release only its
+        # ownership lock to model the crashed manager before cold recovery.
+        harness.manager._release_lease_owner_lock(primary.lease_id, unlink=False)
         harness.clock.advance(minutes=5)
         receipts = await asyncio.wait_for(recovery.reconcile_stale(), 2)
         assert len(receipts) == 1
@@ -1816,6 +1860,10 @@ async def test_real_process_restart_never_signals_from_stale_lease_record(
             ),
             CleanupStepReceipt(
                 "runtime", CleanupState.QUARANTINED, "stale_identity_uncertain"
+            ),
+            CleanupStepReceipt(
+                "native_scratch", CleanupState.QUARANTINED,
+                "dependent runtime cleanup incomplete",
             ),
             CleanupStepReceipt(
                 "workspace", CleanupState.QUARANTINED, "stale_identity_uncertain"
@@ -1929,17 +1977,31 @@ async def test_concurrent_trusted_actions_persist_distinct_identities_and_reconc
             docker_backend=None,
             random_bytes=DeterministicRandom(60_000),
         )
+        harness.manager._release_lease_owner_lock(primary.lease_id, unlink=False)
         harness.clock.advance(minutes=5)
         receipts = await asyncio.wait_for(recovery.reconcile_stale(), 2)
         assert len(receipts) == 1
         assert receipts[0].steps == (
-            CleanupStepReceipt("runtime", CleanupState.RELEASED),
-            CleanupStepReceipt("workspace", CleanupState.RELEASED),
-            CleanupStepReceipt("cache_holder", CleanupState.RELEASED),
-            CleanupStepReceipt("lease_record", CleanupState.RELEASED),
+            CleanupStepReceipt("child_verifier", CleanupState.ALREADY_RELEASED),
+            CleanupStepReceipt("runtime", CleanupState.QUARANTINED, "stale_identity_uncertain"),
+            CleanupStepReceipt(
+                "native_scratch", CleanupState.QUARANTINED,
+                "dependent runtime cleanup incomplete",
+            ),
+            CleanupStepReceipt("workspace", CleanupState.QUARANTINED, "stale_identity_uncertain"),
+            CleanupStepReceipt("cache_holder", CleanupState.QUARANTINED, "stale_identity_uncertain"),
+            CleanupStepReceipt("lease_record", CleanupState.QUARANTINED, "stale_identity_uncertain"),
         )
-        result = await asyncio.wait_for(second, 1)
-        assert result["returncode"] == -signal.SIGKILL
+        os.kill(surviving_pid, 0)
+        assert record_path.exists()
+        second.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(second, 1)
+        with pytest.raises(ProcessLookupError):
+            os.kill(surviving_pid, 0)
+        receipts = await recovery.reconcile_stale()
+        assert len(receipts) == 1
+        assert receipts[0].state is CleanupState.RELEASED
         assert not record_path.exists()
     finally:
         for action in (first, second):

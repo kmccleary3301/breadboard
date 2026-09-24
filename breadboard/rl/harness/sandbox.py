@@ -58,8 +58,10 @@ from .lease_envelope import (
     ContainmentReceiptError,
     DescriptorPath,
     EnvelopeLaunch,
+    EnvelopeUnsupportedHostError,
     RuntimeContainment,
     launch_envelope,
+    preflight_host_containment,
     spawn_envelope_process,
 )
 
@@ -1834,6 +1836,7 @@ class TrustedProcessHandle:
         self._native_session: NativeSession | None = None
         self._native_session_lock = asyncio.Lock()
         self._launch_lock = asyncio.Lock()
+        self._terminate_lock = asyncio.Lock()
         self._closing = False
         self._closed = False
         self.repository_base_commit: str | None = None
@@ -2643,6 +2646,10 @@ class TrustedProcessHandle:
         return result
 
     async def terminate(self) -> tuple[CleanupStepReceipt, ...]:
+        async with self._terminate_lock:
+            return await self._terminate_once()
+
+    async def _terminate_once(self) -> tuple[CleanupStepReceipt, ...]:
         async with self._launch_lock:
             if self._closed:
                 return (CleanupStepReceipt("runtime", CleanupState.ALREADY_RELEASED),)
@@ -2762,6 +2769,7 @@ class TrustedProcessBackend:
                         code="runtime_preflight_failed",
                         lease_id=lease_id,
                     )
+                await asyncio.to_thread(preflight_host_containment)
                 scratch.mkdir(mode=0o700, exist_ok=True)
                 envelope = await asyncio.to_thread(
                     launch_envelope,
@@ -2841,12 +2849,16 @@ class TrustedProcessBackend:
                 False,
                 False,
             )
-        except BaseException:
+        except BaseException as exc:
             if command_executable is not None:
                 command_executable.close()
             if executable is not None:
                 executable.close()
             os.close(context.workspace_fd)
+            if isinstance(exc, EnvelopeUnsupportedHostError):
+                raise SandboxLaunchError(
+                    str(exc), code="runtime_unsupported", lease_id=lease_id
+                ) from exc
             raise
         return handle, measurement
 
