@@ -3737,7 +3737,9 @@ def _cleanup_released(
     base_resources = {"runtime", "workspace", "cache_holder", "lease_record"}
     required_resources = base_resources if required is None else required
     allowed_resources = (
-        base_resources | {"child_verifier"} if required is None else required_resources
+        base_resources | {"child_verifier", "native_scratch"}
+        if required is None
+        else required_resources
     )
     resources = tuple(step.resource for step in receipt.steps)
     resource_set = set(resources)

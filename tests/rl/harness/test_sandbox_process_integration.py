@@ -695,6 +695,259 @@ def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
             plan=plan,
         )
 
+
+
+
+def test_sealed_repository_diff_repository_mode_binds_alternate_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = tmp_path / "source"
+    scratch = tmp_path / "scratch"
+    repository.mkdir()
+    scratch.mkdir()
+    git_path = shutil.which("git")
+    assert git_path is not None
+
+    def git(*arguments: str) -> str:
+        completed = subprocess.run(
+            ("git", *arguments),
+            cwd=repository,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return completed.stdout.strip()
+
+    git("init", "--quiet")
+    (repository / "tracked.txt").write_text("before\n", encoding="utf-8")
+    git("add", ".")
+    git(
+        "-c",
+        "user.name=BreadBoard",
+        "-c",
+        "user.email=breadboard@example.invalid",
+        "commit",
+        "--quiet",
+        "-m",
+        "base",
+    )
+    base_commit = git("rev-parse", "HEAD")
+    (repository / "binary.bin").write_bytes(b"\x00\x01\xffbinary\n")
+    (repository / "tracked.txt").write_text("after\n", encoding="utf-8")
+    class PinnedGit:
+        proc_fd_path = git_path
+        digest = "sha256:" + "0" * 64
+
+        def __init__(self) -> None:
+            self.fd = os.open(git_path, os.O_RDONLY)
+
+        def close(self) -> None:
+            os.close(self.fd)
+
+    monkeypatch.setattr(
+        "breadboard.rl.harness.sandbox._snapshot_installed_executable",
+        lambda _path, _expected_digest: PinnedGit(),
+    )
+    plan = type(
+        "RepositoryDiffPlan",
+        (),
+        {
+            "runtime": type(
+                "Runtime",
+                (),
+                {"fixed_environment": (("PATH", str(Path(git_path).parent)),)},
+            )(),
+            "limits": type(
+                "Limits",
+                (),
+                {"action_timeout_ms": 10_000, "artifact_bytes_each": 1024 * 1024},
+            )(),
+        },
+    )()
+    result = _sealed_repository_diff(
+        repository=repository,
+        scratch_directory=scratch,
+        base_commit=base_commit,
+        plan=plan,
+    )
+    assert result["returncode"] == 0
+    assert "diff --git a/binary.bin b/binary.bin\n" in result["stdout"]
+
+
+def test_sealed_workspace_seed_diff_uses_real_git_without_sealed_exec(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    baseline = tmp_path / "baseline"
+    scratch = tmp_path / "scratch"
+    workspace.mkdir()
+    baseline.mkdir()
+    scratch.mkdir()
+    (baseline / "seed.txt").write_text("before\n", encoding="utf-8")
+    shutil.copy2(baseline / "seed.txt", workspace / "seed.txt")
+    (workspace / "seed.txt").write_text("after\n", encoding="utf-8")
+    (workspace / "marker.txt").write_text("marker\n", encoding="utf-8")
+    git_path = shutil.which("git")
+    assert git_path is not None
+
+    class PinnedGit:
+        proc_fd_path = git_path
+        digest = "sha256:" + "0" * 64
+
+        def __init__(self) -> None:
+            self.fd = os.open(git_path, os.O_RDONLY)
+
+        def close(self) -> None:
+            os.close(self.fd)
+
+    monkeypatch.setattr(
+        "breadboard.rl.harness.sandbox._snapshot_installed_executable",
+        lambda _path, _expected_digest: PinnedGit(),
+    )
+    plan = type(
+        "SeedDiffPlan",
+        (),
+        {
+            "runtime": type(
+                "Runtime",
+                (),
+                {"fixed_environment": (("PATH", str(Path(git_path).parent)),)},
+            )(),
+            "limits": type(
+                "Limits",
+                (),
+                {"action_timeout_ms": 10_000, "artifact_bytes_each": 1024 * 1024},
+            )(),
+        },
+    )()
+    result = _sealed_repository_diff(
+        repository=workspace,
+        scratch_directory=scratch,
+        base_commit="sha256:" + "1" * 64,
+        plan=plan,
+        seed_baseline=baseline,
+    )
+    assert result["returncode"] == 0
+    assert "diff --git a/seed.txt b/seed.txt\n" in result["stdout"]
+    assert "diff --git a/marker.txt b/marker.txt\n" in result["stdout"]
+@requires_sealed_execution
+def test_sealed_workspace_seed_diff_captures_modification_and_marker_addition(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    workspace = tmp_path / "workspace"
+    baseline = tmp_path / "seed-baseline"
+    scratch = tmp_path / "scratch"
+    repository.mkdir()
+    workspace.mkdir()
+    baseline.mkdir()
+    scratch.mkdir()
+    (baseline / "seed.txt").write_text("before\n", encoding="utf-8")
+    shutil.copy2(baseline / "seed.txt", workspace / "seed.txt")
+    (workspace / "seed.txt").write_text("after\n", encoding="utf-8")
+    (workspace / "marker.txt").write_text("marker\n", encoding="utf-8")
+    git_path = shutil.which("git")
+    assert git_path is not None
+
+    def git(*arguments: str) -> str:
+        completed = subprocess.run(
+            ("git", *arguments),
+            cwd=repository,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return completed.stdout.strip()
+
+    git("init", "--quiet")
+    shutil.copy2(baseline / "seed.txt", repository / "seed.txt")
+    git("add", ".")
+    git(
+        "-c",
+        "user.name=BreadBoard",
+        "-c",
+        "user.email=breadboard@example.invalid",
+        "commit",
+        "--quiet",
+        "-m",
+        "base",
+    )
+    base_commit = git("rev-parse", "HEAD")
+    (repository / "seed.txt").write_text("after\n", encoding="utf-8")
+    (repository / "marker.txt").write_text("marker\n", encoding="utf-8")
+    plan = type(
+        "SeedDiffPlan",
+        (),
+        {
+            "runtime": type(
+                "Runtime",
+                (),
+                {"fixed_environment": (("PATH", str(Path(git_path).parent)),)},
+            )(),
+            "limits": type(
+                "Limits",
+                (),
+                {"action_timeout_ms": 10_000, "artifact_bytes_each": 1024 * 1024},
+            )(),
+        },
+    )()
+    repository_result = _sealed_repository_diff(
+        repository=repository,
+        scratch_directory=scratch,
+        base_commit=base_commit,
+        plan=plan,
+    )
+    seed_result = _sealed_repository_diff(
+        repository=workspace,
+        scratch_directory=scratch,
+        base_commit="sha256:" + "1" * 64,
+        plan=plan,
+        seed_baseline=baseline,
+    )
+    assert seed_result["stdout"] == repository_result["stdout"]
+    patch = seed_result["stdout"]
+    seed_section = patch.split("diff --git a/seed.txt b/seed.txt\n", 1)[1].split(
+        "diff --git a/marker.txt b/marker.txt\n", 1
+    )[0]
+    index_line = next(line for line in seed_section.splitlines() if line.startswith("index "))
+    old_blob, new_blob = index_line.split()[1].split("..", 1)
+    assert old_blob.strip("0") and new_blob.strip("0")
+
+
+@requires_sealed_execution
+def test_sealed_workspace_seed_diff_rejects_workspace_git_metadata(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    baseline = tmp_path / "seed-baseline"
+    workspace.mkdir()
+    baseline.mkdir()
+    (workspace / ".git").mkdir()
+    git_path = shutil.which("git")
+    assert git_path is not None
+    plan = type(
+        "SeedDiffPlan", (),
+        {
+            "runtime": type(
+                "Runtime", (), {"fixed_environment": (("PATH", str(Path(git_path).parent)),)}
+            )(),
+            "limits": type(
+                "Limits", (),
+                {"action_timeout_ms": 10_000, "artifact_bytes_each": 1024 * 1024},
+            )(),
+        },
+    )()
+    with pytest.raises(VerifierSnapshotError, match="embedded Git repository"):
+        _sealed_repository_diff(
+            repository=workspace,
+            scratch_directory=tmp_path / "scratch",
+            base_commit="sha256:" + "2" * 64,
+            plan=plan,
+            seed_baseline=baseline,
+        )
+
 async def test_process_backend_binds_identity_recorder_before_base_measurement(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

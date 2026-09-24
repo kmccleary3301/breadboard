@@ -13,6 +13,7 @@ from breadboard.rl.harness.evidence import (
     EvidenceCorruptError,
     EvidenceValidationError,
     V2EvidenceAuthority,
+    _PRIMARY_OPTIONAL_CLEANUP_RESOURCES,
     canonical_digest,
 )
 from breadboard.rl.harness.materialization import (
@@ -768,7 +769,9 @@ class DeterministicEvidenceRepository:
             if (
                 tuple(inputs.cleanup_required_resources) != required_resources
                 or len(resources) != len(set(resources))
-                or set(resources) != set(required_resources)
+                or not set(required_resources)
+                <= set(resources)
+                <= set(required_resources) | set(_PRIMARY_OPTIONAL_CLEANUP_RESOURCES)
                 or inputs.cleanup_receipt.state not in released
                 or any(
                     step.state not in released for step in inputs.cleanup_receipt.steps
