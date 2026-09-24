@@ -201,11 +201,10 @@ async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates
             context_window=32_768,
             max_output_tokens=2_048,
             caller_headers={},
-            request_policy={"mode": "streaming", "include_usage": True, "strict_tools": None, "enable_thinking": None},
-            capabilities={"supports_store": True},
+            request_policy={"mode": "streaming", "include_usage": True, "max_token_field": "max_completion_tokens", "strict_tools": None, "enable_thinking": None},
         )
         projection, semantics, manifest = _compile_target(tmp_path, model_id)
-        observation = _observation(provider_id="openai", model_id=model_id, capabilities=_policy_capabilities(request_features=["max_tokens", "n", "store", "stream_options", "streaming"]))
+        observation = _observation(provider_id="openai", model_id=model_id, capabilities=_policy_capabilities(request_features=["max_completion_tokens", "n", "store", "stream_options", "streaming"]))
         plan = _plan(observation=observation, semantics=semantics, tools=tuple(_tool_grant(name) for name in ("bash", "edit", "read", "write")), policy_slot_ids=(f"model:{model_id}",), limit_updates={"max_turns": 8, "action_timeout_ms": 40_000}, implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST)
         base_payload = plan.base_compiled.model_dump(mode="python")
         base_payload.update(manifest_digest="sha256:" + hashlib.sha256(manifest.canonical_bytes()).hexdigest(), compiler_input_digest=manifest.inputs.compiler_input_digest)
