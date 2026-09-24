@@ -96,6 +96,45 @@ def test_envelope_rejects_non_string_environment_before_fork() -> None:
     with pytest.raises(OSError, match="environment is invalid"):
         _spawn_one(None, message, [], object())
 
+def test_exec_handshake_requires_readiness_then_close_on_exec() -> None:
+    read_fd, write_fd = os.pipe()
+    try:
+        os.write(write_fd, b"R")
+        os.close(write_fd)
+        assert lease_envelope._read_exec_pipe(read_fd) is True
+    finally:
+        os.close(read_fd)
+    read_fd, write_fd = os.pipe()
+    try:
+        os.write(write_fd, b"RE")
+        os.close(write_fd)
+        with pytest.raises(OSError, match="execveat"):
+            lease_envelope._read_exec_pipe(read_fd)
+    finally:
+        os.close(read_fd)
+
+
+@requires_sealed_execution
+async def test_fast_direct_elf_exec_without_sleep(tmp_path: Path) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True, runtime_install_root=tmp_path / "runtime")
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    verifier_path = tmp_path / "fast-verifier"
+    shutil.copyfile(Path(os.path.realpath("/usr/bin/true")), verifier_path)
+    verifier_path.chmod(0o500)
+    verifier_digest = "sha256:" + __import__("hashlib").sha256(verifier_path.read_bytes()).hexdigest()
+    primary._runtime._command_executable = _snapshot_installed_executable(str(verifier_path), verifier_digest)
+    try:
+        for _ in range(12):
+            result = await primary._runtime.run_argv(
+                (str(verifier_path),), timeout_ms=2_000, output_limit=4_096,
+            )
+            assert result["returncode"] == 0, result
+    finally:
+        await primary.close()
+
+
 def test_containment_receipt_preserves_writable_mounts_through_teardown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1785,6 +1824,7 @@ async def test_identity_persistence_failure_kills_suspended_action_before_effect
     assert tuple(record.get("process_identities", ())) == ()
     assert (await primary.close()).state is CleanupState.RELEASED
     assert list(harness.workspace_root.iterdir()) == []
+
     assert list(harness.lease_root.iterdir()) == []
 
 
@@ -1818,6 +1858,12 @@ async def test_trusted_process_enforces_network_isolation_and_records_netns(
             cmd, timeout_ms=2_000, output_limit=4_096
         )
         assert result["returncode"] != 0
+        interfaces = await primary._runtime.run_shell(
+            "/usr/bin/python3 -c 'import socket; print(\",\".join(name for _, name in socket.if_nameindex()))'",
+            timeout_ms=2_000, output_limit=4_096,
+        )
+        assert interfaces["returncode"] == 0, interfaces
+        assert interfaces["stdout"].strip() == "lo"
     finally:
         server.close()
         await server.wait_closed()

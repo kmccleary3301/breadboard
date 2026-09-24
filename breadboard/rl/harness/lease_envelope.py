@@ -860,6 +860,7 @@ def _spawn_one(
         for key, value in env.items()
     ):
         raise OSError("envelope environment is invalid")
+    exec_ready_index = message["exec_ready_index"]
     indices = [
         status_index,
         stdin_index,
@@ -869,6 +870,7 @@ def _spawn_one(
         executable_index,
         exec_index,
         gate_index,
+        exec_ready_index,
         *extra_indices,
     ]
     if any(
@@ -878,6 +880,7 @@ def _spawn_one(
     ):
         raise OSError("envelope spawn descriptor index is invalid")
     status_fd = fds[status_index]
+    exec_ready_fd = fds[exec_ready_index]
     child = os.fork()
     if child == 0:
         try:
@@ -910,13 +913,17 @@ def _spawn_one(
                 fds,
                 exec_fd=fds[exec_index],
                 status_fd=status_fd,
+                exec_ready_fd=exec_ready_fd,
                 argv=argv,
             )
             os.set_inheritable(exec_fd, False)
             os.set_inheritable(status_fd, False)
+            os.set_inheritable(exec_ready_fd, False)
+            os.write(exec_ready_fd, b"R")
             try:
                 _execveat_fd(exec_fd, argv, env)
             except BaseException as exc:
+                os.write(exec_ready_fd, b"E")
                 try:
                     os.set_inheritable(status_fd, True)
                     _send_frame(
@@ -932,6 +939,10 @@ def _spawn_one(
                 os._exit(127)
             os._exit(127)
         except BaseException as exc:
+            try:
+                os.write(exec_ready_fd, b"E")
+            except OSError:
+                pass
             try:
                 os.set_inheritable(status_fd, True)
                 _send_frame(
@@ -1070,6 +1081,14 @@ def _pidfd_send_signal(pidfd: int, sig: int) -> None:
         error = ctypes.get_errno()
         raise OSError(error, os.strerror(error))
 
+def _read_exec_pipe(fd: int) -> bool:
+    if os.read(fd, 1) != b"R":
+        raise OSError(errno.EIO, "execveat readiness was not reported")
+    if os.read(fd, 1) != b"":
+        raise OSError(errno.EIO, "execveat failed after readiness")
+    return True
+
+
 class EnvelopeProcess:
     def __init__(
         self,
@@ -1078,10 +1097,12 @@ class EnvelopeProcess:
         pidfd: int,
         status: socket.socket,
         gate: int,
+        exec_ready: int,
         stdin: Any,
         stdout: Any,
         stderr: Any,
     ) -> None:
+        self._exec_ready = exec_ready
         self._gate = gate
         self._pidfd = pidfd
         self.pid = pid
@@ -1092,6 +1113,19 @@ class EnvelopeProcess:
         self.returncode: int | None = None
         self._wait_task: Any = None
         self.exec_error: Mapping[str, Any] | None = None
+
+    async def wait_exec(self, timeout_ms: int) -> None:
+        descriptor = self._exec_ready
+        if descriptor < 0:
+            raise RuntimeError("exec readiness was already consumed")
+        self._exec_ready = -1
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(_read_exec_pipe, descriptor),
+                timeout_ms / 1000,
+            )
+        finally:
+            os.close(descriptor)
 
     async def wait(self) -> int:
         if self._wait_task is None:
@@ -1120,6 +1154,9 @@ class EnvelopeProcess:
             if self._pidfd >= 0:
                 os.close(self._pidfd)
                 self._pidfd = -1
+            if self._exec_ready >= 0:
+                os.close(self._exec_ready)
+                self._exec_ready = -1
         return self.returncode
 
     def admit(self) -> None:
@@ -1245,6 +1282,7 @@ async def spawn_envelope_process(
     stdout_r, stdout_w = os.pipe()
     stderr_r, stderr_w = os.pipe()
     gate_r, gate_w = os.pipe()
+    exec_ready_r, exec_ready_w = os.pipe2(os.O_CLOEXEC)
     status_host, status_supervisor = socket.socketpair(
         socket.AF_UNIX, socket.SOCK_SEQPACKET
     )
@@ -1269,6 +1307,8 @@ async def spawn_envelope_process(
     sent_fds.append(gate_r)
     cwd_index = len(sent_fds)
     sent_fds.append(os.dup(cwd_fd))
+    exec_ready_index = len(sent_fds)
+    sent_fds.append(exec_ready_w)
     mapping = {fd: index for index, fd in enumerate(sent_fds)}
     message = {
         "kind": "spawn",
@@ -1280,6 +1320,7 @@ async def spawn_envelope_process(
         "command_index": command_index,
         "gate_index": gate_index,
         "extra_indices": extra_indices,
+        "exec_ready_index": exec_ready_index,
         "cwd_index": cwd_index,
         "argv0_path": argv0_path,
         "argv": _rewrite_fd_paths(argv, mapping),
@@ -1288,7 +1329,7 @@ async def spawn_envelope_process(
     try:
         await asyncio.to_thread(_send_frame, envelope.control, message, sent_fds)
     finally:
-        for fd in (stdin_r, stdout_w, stderr_w, gate_r, sent_fds[-1]):
+        for fd in (stdin_r, stdout_w, stderr_w, gate_r, exec_ready_w, sent_fds[cwd_index]):
             try:
                 os.close(fd)
             except OSError:
@@ -1313,6 +1354,7 @@ async def spawn_envelope_process(
             pidfd=pidfd,
             status=status_host,
             gate=gate_w,
+            exec_ready=exec_ready_r,
             stdin=stdin,
             stdout=stdout,
             stderr=stderr,
@@ -1322,6 +1364,7 @@ async def spawn_envelope_process(
     except BaseException:
         if pidfd >= 0:
             os.close(pidfd)
+        os.close(exec_ready_r)
         try:
             os.close(gate_w)
         except OSError:
@@ -1400,6 +1443,7 @@ def _prepare_exec_descriptors(
     *,
     exec_fd: int,
     status_fd: int,
+    exec_ready_fd: int,
     argv: Sequence[str],
 ) -> tuple[int, tuple[str, ...]]:
     referenced = {exec_fd}
@@ -1411,13 +1455,13 @@ def _prepare_exec_descriptors(
     mapping: dict[int, int] = {}
     next_fd = 3
     for source in sorted(referenced):
-        while next_fd == status_fd or next_fd in mapping.values():
+        while next_fd in (status_fd, exec_ready_fd) or next_fd in mapping.values():
             next_fd += 1
         os.dup2(source, next_fd, inheritable=True)
         mapping[source] = next_fd
         next_fd += 1
     rewritten = _rewrite_fd_paths(argv, mapping)
-    preserved = set(mapping) | {status_fd}
+    preserved = set(mapping) | {status_fd, exec_ready_fd}
     for fd in set(fds):
         if fd > 2 and fd not in preserved:
             try:

@@ -2400,41 +2400,15 @@ class TrustedProcessHandle:
                         and argv[0] == self._command_executable.proc_fd_path
                     ):
                         admitted_executable = self._command_executable
-                    if admitted_executable.execution_format == "elf":
-                        identity_deadline = loop.time() + min(
-                            0.25, timeout_ms / 1000
-                        )
-                        while True:
-                            try:
-                                observed_exe = os.stat(f"/proc/{process.pid}/exe")
-                            except OSError as exc:
-                                try:
-                                    current_start = self._start_identity(process.pid)
-                                except OSError:
-                                    break
-                                if current_start != identity["process_start_identity"]:
-                                    break
-                                process.kill()
-                                raise SandboxLaunchError(
-                                    "attested process executable is unavailable",
-                                    code="runtime_preflight_failed",
-                                    lease_id=self.lease_id,
-                                ) from exc
-                            if (
-                                observed_exe.st_dev
-                                == admitted_executable.snapshot_device
-                                and observed_exe.st_ino
-                                == admitted_executable.snapshot_inode
-                            ):
-                                break
-                            if loop.time() >= identity_deadline:
-                                process.kill()
-                                raise SandboxLaunchError(
-                                    "attested process executable identity changed",
-                                    code="runtime_preflight_failed",
-                                    lease_id=self.lease_id,
-                                )
-                            await asyncio.sleep(0.001)
+                    try:
+                        await process.wait_exec(timeout_ms)
+                    except (OSError, asyncio.TimeoutError) as exc:
+                        process.kill()
+                        raise SandboxLaunchError(
+                            "attested process exec did not succeed",
+                            code="runtime_preflight_failed",
+                            lease_id=self.lease_id,
+                        ) from exc
                     identity = {
                         **identity,
                         "process_executable_digest": admitted_executable.digest,
