@@ -173,6 +173,32 @@ async def test_public_service_does_not_close_success_without_teardown_receipt(
         )
         assert result.response.closed_envelope_ref is None
         assert case.sandbox.lease.teardown_receipt is None
+        assert result.response.primary_disposition is EpisodePrimaryDisposition.FAILED
+        assert result.response.primary_failure is not None
+        assert result.response.primary_failure.code == "containment_receipt_invalid"
+        assert (await service.get_state(case.request.episode_id)).state is EpisodeLifecycleState.QUARANTINED
+    finally:
+        await service.close()
+
+
+@pytest.mark.asyncio
+async def test_public_service_quarantines_missing_verifier_teardown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, case, _, created = await _created(monkeypatch)
+    case.sandbox.verifier.emit_teardown_receipt = False
+    try:
+        result = await service.run(
+            case.request.episode_id,
+            create_fingerprint=created.response.create_fingerprint,
+            task_input={"case": "counterfeit-verifier-teardown"},
+            context={},
+        )
+        assert result.response.primary_disposition is EpisodePrimaryDisposition.FAILED
+        assert result.response.primary_failure is not None
+        assert result.response.primary_failure.code == "containment_receipt_invalid"
+        assert result.response.closed_envelope_ref is None
+        assert (await service.get_state(case.request.episode_id)).state is EpisodeLifecycleState.QUARANTINED
     finally:
         await service.close()
 
@@ -1485,8 +1511,9 @@ async def test_verifier_close_task_is_owned_observed_and_joined_before_shutdown(
         assert verification_failed.cleanup_fact is not None
         assert verification_failed.cleanup_fact.code == "verifier_close_failed"
         assert recovered.verifier_cleanup_receipt is None
-        assert recovered.closed_envelope is not None
-        assert recovered.locator.current_state == "closed"
+        assert recovered.closed_envelope is None
+        assert recovered.locator.current_state == "quarantined"
+        assert "repo.publish_closed" not in case.calls
     else:
         assert verification_failed.cleanup_fact is None
         assert coordinator.verifier_cleanup_receipt == (
@@ -1502,13 +1529,13 @@ async def test_verifier_close_task_is_owned_observed_and_joined_before_shutdown(
         assert quarantine_event.primary_fact.code == "process_interrupted"
         assert quarantine_event.cleanup_fact is not None
         assert quarantine_event.cleanup_fact.code == "closed_publication_failed"
+        assert case.calls.index("lease.close") < case.calls.index("repo.publish_closed")
+        assert case.calls.index("repo.publish_closed") < case.calls.index(
+            "sandbox.manager.close"
+        )
     assert case.calls.count("verifier.close") == 1
     assert case.calls.count("lease.close") == 1
     assert case.calls.index("verifier.close") < case.calls.index("lease.close")
-    assert case.calls.index("lease.close") < case.calls.index("repo.publish_closed")
-    assert case.calls.index("repo.publish_closed") < case.calls.index(
-        "sandbox.manager.close"
-    )
 
 
 
@@ -1979,11 +2006,12 @@ async def test_verifier_close_failure_still_releases_primary_lease_and_is_durabl
 
     assert outcome.response.primary_disposition is EpisodePrimaryDisposition.FAILED
     assert outcome.response.completed_envelope_ref == ref("completed-envelope")
-    assert outcome.response.closed_envelope_ref == ref("closed-envelope")
+    assert outcome.response.closed_envelope_ref is None
     assert case.calls.count("verifier.close") == 1
     assert case.calls.count("lease.close") == 1
     assert case.repository.failed_completed_inputs[-1].primary_disposition == "failed"
-    assert case.repository.closed_inputs[-1].final_primary_outcome == "failed"
+    assert case.repository.closed_inputs == []
+    assert (await service.get_state(case.request.episode_id)).state is EpisodeLifecycleState.QUARANTINED
     assert any(
         event.primary_fact is not None
         and event.primary_fact.code == "verifier_close_failed"

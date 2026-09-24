@@ -64,6 +64,11 @@ from tests.rl.harness.test_runner_policy_runtime import (
 
 from tests.rl.harness.v2_service_fixtures import signed_containment_receipt
 
+CONDUCTOR_TEST_AUTHENTICATOR = HmacSha256ReceiptAuthenticator(
+    key_id="conductor-test", key=b"conductor-test-key-32-bytes!!!!!"
+)
+
+
 class RecordingToolPort:
     def __init__(
         self,
@@ -73,9 +78,7 @@ class RecordingToolPort:
     ) -> None:
         self.containment = RuntimeContainment.ATTESTED
         self.containment_lease_id = "lease-conductor-test"
-        self.containment_authenticator = HmacSha256ReceiptAuthenticator(
-            key_id="conductor-test", key=b"conductor-test-key-32-bytes!!!!!"
-        )
+        self.containment_authenticator = CONDUCTOR_TEST_AUTHENTICATOR
         self.containment_receipt = signed_containment_receipt(
             self.containment_lease_id, "sandbox", self.containment_authenticator
         )
@@ -109,6 +112,26 @@ async def test_public_open_rejects_unconfined_trusted_process_workspace() -> Non
     tools.containment_receipt = None
     with pytest.raises(RunnerPlanError, match="containment receipt"):
         await _open(tools=tools)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("containment", [RuntimeContainment.ATTESTED, RuntimeContainment.UNCONFINED_TEST_ONLY])
+async def test_public_open_rejects_workspace_self_signed_containment(
+    containment: RuntimeContainment,
+) -> None:
+    tools = RecordingToolPort()
+    tools.containment = containment
+    forged_authenticator = HmacSha256ReceiptAuthenticator(
+        key_id="workspace-forgery", key=b"workspace-forgery-key-32-bytes!!!!"
+    )
+    tools.containment_authenticator = forged_authenticator
+    tools.containment_receipt = signed_containment_receipt(
+        tools.containment_lease_id, "sandbox", forged_authenticator
+    )
+    with pytest.raises(RunnerPlanError) as caught:
+        await _open(tools=tools)
+    assert caught.value.code == "containment_receipt_invalid"
+    assert tools.calls == []
 
 
 class RecordingCancellationProbe:
@@ -340,7 +363,7 @@ async def _open(
     resolved_sink = sink or RecordingEventSink()
     open_request = RunnerOpenRequest(episode_id=episode_id, effective_plan=resolved_plan)
     binding = PolicyRuntimeBinding(open_request, resolved_client)
-    adapter = ConductorAdapter(CONDUCTOR_RUNTIME_ABI)
+    adapter = ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR)
     session = await adapter.open(
         open_request,
         policy=binding,
@@ -595,7 +618,7 @@ async def _assert_open_rejected(
     binding = PolicyRuntimeBinding(request, client)
 
     with pytest.raises(RunnerPlanError) as captured:
-        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI).open(
+        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR).open(
             request,
             policy=binding,
             workspace=tools,
@@ -878,7 +901,7 @@ def test_conductor_constructor_owns_identity_and_rejects_post_bootstrap_drift(
     )
     monkeypatch.setattr(conductor_module, "measure_module_artifact", lambda _path: changed)
     with pytest.raises(RuntimeError, match="changed after bootstrap"):
-        ConductorAdapter(CONDUCTOR_RUNTIME_ABI)
+        ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR)
 
 
 @pytest.mark.parametrize(
@@ -903,7 +926,7 @@ async def test_conductor_rejects_runner_identity_mismatch_before_binding_tool_pr
     tools = RecordingToolPort()
     probe = RecordingCancellationProbe()
     sink = RecordingEventSink()
-    adapter = ConductorAdapter(CONDUCTOR_RUNTIME_ABI)
+    adapter = ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR)
 
     with pytest.raises(RunnerPlanError) as captured:
         await adapter.open(
@@ -982,7 +1005,7 @@ async def test_conductor_rejects_malformed_or_unbound_ir_before_tool_probe_event
     sink = RecordingEventSink()
 
     with pytest.raises((RunnerPlanError, RunnerPolicyBindingError)) as captured:
-        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI).open(
+        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR).open(
             RunnerOpenRequest(episode_id="episode-a", effective_plan=plan),
             policy=binding,
             workspace=tools,
@@ -1020,7 +1043,7 @@ async def test_conductor_rejects_foreign_provider_tool_policy_before_port_effect
     )
 
     with pytest.raises(RunnerPlanError) as captured:
-        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI).open(
+        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR).open(
             RunnerOpenRequest(episode_id="episode-a", effective_plan=plan),
             policy=binding,
             workspace=tools,
@@ -1057,7 +1080,7 @@ async def test_conductor_rejects_tool_binding_subclass_even_when_equality_can_sp
     binding = PolicyRuntimeBinding(RunnerOpenRequest(episode_id="episode-a", effective_plan=plan), client)
 
     with pytest.raises(RunnerPlanError) as captured:
-        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI).open(
+        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR).open(
             RunnerOpenRequest(episode_id="episode-a", effective_plan=plan),
             policy=binding,
             workspace=tools,
@@ -2444,7 +2467,7 @@ async def test_conductor_requires_exact_policy_binding_and_claims_it_only_once()
     observation = _observation()
     plan = _plan(observation=observation, implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST)
     request = RunnerOpenRequest(episode_id="episode-a", effective_plan=plan)
-    adapter = ConductorAdapter(CONDUCTOR_RUNTIME_ABI)
+    adapter = ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR)
 
     for candidate_factory in (
         lambda client: PolicyRuntimeBindingSubclass(request, client),

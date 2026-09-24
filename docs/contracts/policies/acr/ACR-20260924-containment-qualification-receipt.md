@@ -10,8 +10,8 @@
 
 Headless requests formerly accepted `outer_isolation`; that declaration did not prove per-lease containment. This change rejects the obsolete field and verifies signed receipts at the public trusted-process admission gates:
 1. `SandboxRuntimeManager.open` and `open_verifier` verify each launched lease's receipt against its lease ID, runtime ID, and installed authenticator before activation.
-2. `ConductorAdapter.open` verifies the trusted-process workspace receipt even when the workspace advertises `UNCONFINED_TEST_ONLY`.
-3. `BreadBoardV2EpisodeService.create` verifies the primary receipt and `run` verifies the verifier receipt before execution. Its cleanup gates require signed teardown outcomes before closed publication; missing or failed teardown quarantines the episode.
+2. `ConductorAdapter.open` checks trusted-process receipts against the composer-injected authenticator, not the workspace's claimed signer, and refuses `UNCONFINED_TEST_ONLY` unless the composer explicitly enables a test-only lane.
+3. `BreadBoardV2EpisodeService.create` verifies primary admission and `run` verifies verifier admission. A completed evidence root may be provisional during cleanup; CLOSED and a successful run response require verified primary and verifier teardown. Missing or invalid teardown quarantines, yields a failed run disposition, and cannot publish a closed reference.
 4. The production pinned backend rejects an unconfined trusted-process plan; headless rejects unconfined trusted-process workspace inputs. These checks supplement, rather than replace, per-lease receipt verification.
 5. Headless validation rejects `outer_isolation` with `ObsoleteOuterIsolationError`.
 
@@ -37,7 +37,7 @@ Headless requests formerly accepted `outer_isolation`; that declaration did not 
 
 ## 5) Evidence and Validation Plan
 
-- Regression tests exercise missing primary and verifier receipts through public manager and service APIs, unconfined conductor admission, and missing or failed signed teardown.
+- Regression tests exercise missing primary and verifier admission receipts, self-signed workspace counterfeits, unconfined conductor and headless entrypoints, signed teardown failure, and repeat-five composition descriptor stability.
 - Headless tests reject obsolete `outer_isolation` in workspace and run requests.
 - These local focused tests do not establish a Linux installed qualification or live containment claim; those require separate capture/replay and installed evidence.
 

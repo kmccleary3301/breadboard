@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -119,27 +120,23 @@ def test_headless_run_request_rejects_obsolete_outer_isolation() -> None:
 
 
 @pytest.mark.asyncio
-async def test_public_qualification_entry_rejects_unconfined_trusted_process(
-    tmp_path: Path,
-) -> None:
+async def test_public_qualification_entry_rejects_unconfined_trusted_process() -> None:
     """Public conductor admission rejects a trusted-process workspace without a receipt."""
-    fixture = materialize_production_composition_fixture(tmp_path)
-    composition = load_production_composition(
-        str(fixture.composition_ref_path), fixture.secret_files
-    )
-    try:
-        tools = RecordingToolPort()
-        tools.containment = RuntimeContainment.UNCONFINED_TEST_ONLY
-        tools.containment_receipt = None
-        with pytest.raises(RunnerPlanError, match="containment receipt"):
-            await _open(tools=tools)
-    finally:
+    tools = RecordingToolPort()
+    tools.containment = RuntimeContainment.UNCONFINED_TEST_ONLY
+    tools.containment_receipt = None
+    with pytest.raises(RunnerPlanError) as caught:
+        await _open(tools=tools)
+    assert caught.value.code == "containment_receipt_invalid"
+
+
+@pytest.mark.asyncio
+async def test_production_composition_close_stabilizes_directory_fds(tmp_path: Path) -> None:
+    baseline = len(os.listdir("/dev/fd"))
+    for index in range(5):
+        fixture = materialize_production_composition_fixture(tmp_path / str(index))
+        composition = load_production_composition(
+            str(fixture.composition_ref_path), fixture.secret_files
+        )
         await composition.close()
-
-
-def test_headless_trusted_process_rejects_unconfined_lane() -> None:
-    inp = HeadlessWorkspaceInput(
-        base_commit="a" * 40,
-        task_image_digest="sha256:" + "0" * 64,
-    )
-    assert inp.containment == "attested"
+        assert len(os.listdir("/dev/fd")) == baseline

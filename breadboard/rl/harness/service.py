@@ -2162,13 +2162,14 @@ class BreadBoardV2EpisodeService:
             )
         finally:
             await self._close_owner(coordinator, None)
+        succeeded = coordinator.state is EpisodeLifecycleState.CLOSED
         result = V2RunResult(
             coordinator.request.episode_id,
             coordinator.create_fingerprint,
             coordinator.run_fingerprint or "",
-            EpisodePrimaryDisposition.SUCCEEDED,
-            MappingProxyType(dict(runner_result.response)),
-            runner_result.termination.value,
+            EpisodePrimaryDisposition.SUCCEEDED if succeeded else EpisodePrimaryDisposition.FAILED,
+            MappingProxyType(dict(runner_result.response)) if succeeded else None,
+            runner_result.termination.value if succeeded else None,
             runner_result.turn_count,
             completed.envelope_ref,
             coordinator.closed.envelope_ref if coordinator.closed else None,
@@ -2184,6 +2185,7 @@ class BreadBoardV2EpisodeService:
             verifier_measurement_digest=completed.verifier_measurement_digest,
             verifier_result_digest=completed.verifier_result_digest,
             workspace_diff=coordinator.workspace_diff,
+            primary_failure=coordinator.primary_failure,
         )
         coordinator.run_result = result
         return result
@@ -2906,6 +2908,8 @@ class BreadBoardV2EpisodeService:
                     "cleanup", "containment_receipt_invalid", "reconcile", "cleanup",
                     lease_id=coordinator.lease.lease_id,
                 )
+                coordinator.primary_disposition = EpisodePrimaryDisposition.FAILED
+                coordinator.primary_failure = failure
                 await self._quarantine(coordinator, failure, independent_cleanup=True)
                 return V2CloseResult(
                     coordinator.request.episode_id, coordinator.state,
@@ -2966,6 +2970,21 @@ class BreadBoardV2EpisodeService:
             # evidence root; it remains quarantined rather than manufacturing one.
             failure = primary_failure or _v2_failure(
                 "primary", "completed_evidence_missing", "none", "cleanup"
+            )
+            await self._quarantine(coordinator, failure)
+            return V2CloseResult(
+                coordinator.request.episode_id,
+                coordinator.state,
+                coordinator.cleanup_disposition,
+                None,
+            )
+        if coordinator.verifier_cleanup_failure is not None or (
+            coordinator.verifier_lease_id is not None
+            and coordinator.verifier_cleanup_receipt is None
+        ):
+            failure = coordinator.verifier_cleanup_failure or _v2_failure(
+                "cleanup", "verifier_cleanup_not_released", "reconcile",
+                "verifier_cleanup", lease_id=coordinator.verifier_lease_id,
             )
             await self._quarantine(coordinator, failure)
             return V2CloseResult(

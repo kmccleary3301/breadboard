@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 
+from breadboard.rl.harness import headless as headless_module
 from breadboard.rl.harness import contracts as c
 from breadboard.artifacts import InMemoryCAS
 from breadboard.rl.harness.service import EpisodePrimaryDisposition, V2RunResult
@@ -208,11 +209,12 @@ def test_target_semantics_reject_changed_tool_parameter_schema(
     reason="composition fixtures require POSIX file authorities",
 )
 @pytest.mark.parametrize(
-    ("request_schema", "runtime_class"),
+    ("request_schema", "runtime_class", "containment"),
     (
-        ("bb.rl.headless-run-request.v1", c.RuntimeClass.TRUSTED_PROCESS),
-        ("bb.rl.headless-run-request.v1", c.RuntimeClass.HARDENED_DOCKER),
-        ("bb.rl.headless-run-request.v2", c.RuntimeClass.HARDENED_DOCKER),
+        ("bb.rl.headless-run-request.v1", c.RuntimeClass.TRUSTED_PROCESS, "attested"),
+        ("bb.rl.headless-run-request.v1", c.RuntimeClass.HARDENED_DOCKER, "attested"),
+        ("bb.rl.headless-run-request.v2", c.RuntimeClass.HARDENED_DOCKER, "attested"),
+        ("bb.rl.headless-run-request.v1", c.RuntimeClass.TRUSTED_PROCESS, "unconfined_test_only"),
     ),
 )
 @pytest.mark.asyncio
@@ -220,6 +222,8 @@ async def test_headless_runner_rejects_unadmitted_requests_before_credentials(
     tmp_path: Path,
     request_schema: str,
     runtime_class: c.RuntimeClass,
+    containment: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fixture = materialize_production_composition_fixture(tmp_path)
     resolution = c.ResolveEpisodeRequest.model_validate(
@@ -247,6 +251,7 @@ async def test_headless_runner_rejects_unadmitted_requests_before_credentials(
             repository_snapshot_digest=None,
             base_commit="0" * 40,
             task_image_digest=task_image_digest,
+            containment=containment,
         ),
         expected_resources=c.ResourceLimits(
             cpu_millis=1_000,
@@ -296,6 +301,15 @@ async def test_headless_runner_rejects_unadmitted_requests_before_credentials(
     )
     assert str(fixture.composition_ref_path) not in request.model_dump_json()
 
+    if containment == "unconfined_test_only":
+        secret_reads: list[str] = []
+        original_secret_bindings = headless_module._secret_file_bindings
+
+        def observe_secret_bindings(*args: Any, **kwargs: Any) -> Any:
+            secret_reads.append("secret")
+            return original_secret_bindings(*args, **kwargs)
+
+        monkeypatch.setattr(headless_module, "_secret_file_bindings", observe_secret_bindings)
     with pytest.raises(HeadlessRunFailed) as rejected:
         await run_headless_request(
             request,
@@ -336,5 +350,7 @@ async def test_headless_runner_rejects_unadmitted_requests_before_credentials(
     }
     assert json.loads(result_path.read_bytes()) == rejected.value.result
     assert not event_path.exists()
+    if containment == "unconfined_test_only":
+        assert secret_reads == []
 
 

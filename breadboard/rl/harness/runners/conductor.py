@@ -25,6 +25,8 @@ from breadboard.rl.harness.contracts import PolicyCapabilityObservation
 from breadboard.rl.harness.contracts import RuntimeClass
 from breadboard.rl.harness.lease_envelope import (
     ContainmentReceiptError,
+    ReceiptAuthenticator,
+    RuntimeContainment,
     verify_containment_receipt,
 )
 from breadboard.rl.harness.runner_identity import measure_module_artifact
@@ -1209,9 +1211,15 @@ def _admit_schema(schema: Mapping[str, Any], request: RunnerOpenRequest) -> None
 
 
 class ConductorAdapter:
-    __slots__ = ("_descriptor",)
+    __slots__ = ("_descriptor", "_containment_authenticator", "_allow_unconfined_test_only")
 
-    def __init__(self, runtime_abi: str) -> None:
+    def __init__(
+        self,
+        runtime_abi: str,
+        *,
+        containment_authenticator: ReceiptAuthenticator | None = None,
+        allow_unconfined_test_only: bool = False,
+    ) -> None:
         if runtime_abi != CONDUCTOR_RUNTIME_ABI:
             raise ValueError("conductor adapter accepts only its exact runtime ABI")
         measured = measure_module_artifact(__file__)
@@ -1233,6 +1241,8 @@ class ConductorAdapter:
             runtime_abi=runtime_abi,
             implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
         )
+        self._containment_authenticator = containment_authenticator
+        self._allow_unconfined_test_only = allow_unconfined_test_only
 
     @property
     def descriptor(self) -> RunnerAdapterDescriptor:
@@ -1310,16 +1320,21 @@ class ConductorAdapter:
             raise _plan_error(request, "tool port bindings do not exactly match plan grants", "tool_grant_mismatch")
         if request.effective_plan.sandbox.runtime_class is RuntimeClass.TRUSTED_PROCESS:
             receipt = getattr(workspace, "containment_receipt", None)
-            authenticator = getattr(workspace, "containment_authenticator", None)
             lease_id = getattr(workspace, "containment_lease_id", None)
             try:
-                if receipt is None or authenticator is None or not isinstance(lease_id, str):
+                if (
+                    getattr(workspace, "containment", None)
+                    is RuntimeContainment.UNCONFINED_TEST_ONLY
+                    and not self._allow_unconfined_test_only
+                ):
+                    raise ContainmentReceiptError("unconfined trusted-process workspace is not admitted")
+                if receipt is None or self._containment_authenticator is None or not isinstance(lease_id, str):
                     raise ContainmentReceiptError("containment receipt is missing")
                 verify_containment_receipt(
                     receipt,
                     lease_id=lease_id,
                     runtime_id=request.effective_plan.sandbox.runtime_id,
-                    authenticator=authenticator,
+                    authenticator=self._containment_authenticator,
                 )
             except ContainmentReceiptError as exc:
                 raise _plan_error(

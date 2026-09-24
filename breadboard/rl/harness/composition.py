@@ -43,6 +43,7 @@ from .evidence import (
     FilesystemEpisodeLocatorStore,
     V2EvidenceAuthority,
 )
+from .history import HistoricalV1EpisodeReader
 from .materialization import (
     DirectoryStorageBackend,
     FilesystemMaterializationStore,
@@ -4344,7 +4345,10 @@ def _build_runtime_graph(
     adapters = []
     for descriptor in manifest.installed.runner_adapters:
         if descriptor.adapter_id == CONDUCTOR_ADAPTER_ID:
-            adapter = ConductorAdapter(descriptor.runtime_abi)
+            adapter = ConductorAdapter(
+                descriptor.runtime_abi,
+                containment_authenticator=graph.authenticator,
+            )
         elif descriptor.adapter_id == TERMINAL_ADAPTER_ID:
             adapter = TerminalResponsesAdapter(descriptor.runtime_abi)
         else:
@@ -4654,8 +4658,11 @@ def _build_runtime_graph(
         if len(api_specs) != 1:
             raise ValueError("exactly one API bearer authority is required")
         api_token = pinned[api_specs[0].handle_id].data.decode("utf-8")
+        history_reader = rollback.attempt(HistoricalV1EpisodeReader)
+        rollback.own(history_reader.close)
         app = create_app(
             service,
+            history=history_reader,
             auth_token=api_token,
             allow_unauthenticated_loopback=False,
         )
@@ -4677,6 +4684,7 @@ def _build_runtime_graph(
         service,
         (
             materialization.close,
+            history_reader.close,
             locator.close,
             policy_resolver.close,
             *(() if private_daemon_owner is None else (private_daemon_owner.close,)),
