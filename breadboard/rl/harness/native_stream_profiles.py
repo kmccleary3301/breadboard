@@ -39,8 +39,21 @@ class NativeStreamProfile:
 
 
 def _pi_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
-    del bootstrap
-    return pi_semantics.PiSemanticsState(task=task, system_prompt=system_prompt)
+    model_config = bootstrap.get("model_config")
+    if not isinstance(model_config, Mapping):
+        model_config = {}
+    model_id = model_config.get("id", model_config.get("model", "pi-0.73.1"))
+    provider = model_config.get("provider", "openai")
+    if not isinstance(model_id, str) or not model_id:
+        model_id = "pi-0.73.1"
+    if not isinstance(provider, str) or not provider:
+        provider = "openai"
+    return pi_semantics.PiSemanticsState(
+        task=task,
+        system_prompt=system_prompt,
+        model_id=model_id,
+        provider=provider,
+    )
 
 
 NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({

@@ -564,6 +564,24 @@ async def test_pi_native_stream_cap_batch_and_request_shape(tmp_path: Path) -> N
         assert "strict" not in json.dumps(request)
 
 
+
+
+@pytest.mark.asyncio
+async def test_pi_native_stream_preserves_supplier_wire_tool_id_bytes(
+    tmp_path: Path,
+) -> None:
+    call_id = "pi-tool-parallel_valid_invalid_valid-00-00"
+    _, requests, _, _, _ = await _run_episode(
+        tmp_path,
+        [[(call_id, "write", {"path": "parallel-a.txt", "content": "A\n"})], []],
+    )
+    assistant = next(
+        message
+        for message in requests[1]["messages"]
+        if message.get("role") == "assistant" and message.get("tool_calls")
+    )
+    assert assistant["tool_calls"][0]["id"] == call_id
+
 @pytest.mark.asyncio
 async def test_pi_native_stream_duplicate_call_ids_keep_ordinal_arguments(
     tmp_path: Path,
@@ -771,6 +789,46 @@ async def test_pi_native_worker_rejects_invalid_advertisement(tmp_path: Path, ca
                 },
                 timeout_ms=5_000,
             )
+    finally:
+        await port.close()
+
+
+@pytest.mark.asyncio
+async def test_pi_native_worker_history_keeps_sampled_argument_value(
+    tmp_path: Path,
+) -> None:
+    port = _NativeWorkerPort(tmp_path, ())
+    try:
+        initialized = await port.invoke_native_phase(
+            "initialize",
+            {
+                "task": "raw argument history",
+                "model_config": {
+                    "id": "model-a",
+                    "provider": "openai",
+                    "base_url": "http://127.0.0.1",
+                    "input": ["text"],
+                },
+            },
+            timeout_ms=5_000,
+        )
+        assert initialized["kind"] == "initialized"
+        prepared = await port.invoke_native_phase(
+            "prepare_tools",
+            {
+                "calls": [
+                    {
+                        "id": "raw-number",
+                        "name": "read",
+                        "arguments": {"path": 123},
+                    },
+                ],
+            },
+            timeout_ms=5_000,
+        )
+        assert prepared["history_calls"] == [
+            {"id": "raw-number", "name": "read", "arguments": {"path": 123}},
+        ]
     finally:
         await port.close()
 

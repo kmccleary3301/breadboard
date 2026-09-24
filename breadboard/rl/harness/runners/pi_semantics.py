@@ -159,6 +159,66 @@ def _close_partial_json(value: str) -> str:
     return repaired
 
 
+def _partial_object(value: str) -> dict[str, Any]:
+    """Approximate pinned ``partial-json`` recovery for malformed strings.
+
+    Pi's ``parseStreamingJson`` returns fields parsed before an unescaped quote
+    or other malformed suffix instead of discarding the whole object.  This is
+    intentionally a last fallback after strict, repaired, and balanced parses.
+    """
+    if not value.lstrip().startswith("{"):
+        return {}
+    decoder = json.JSONDecoder()
+    index = value.index("{") + 1
+    result: dict[str, Any] = {}
+    while index < len(value):
+        while index < len(value) and value[index] in " \t\r\n,":
+            index += 1
+        if index >= len(value) or value[index] == "}":
+            break
+        try:
+            key, end = decoder.raw_decode(value, index)
+        except (ValueError, TypeError):
+            break
+        if not isinstance(key, str):
+            break
+        index = end
+        while index < len(value) and value[index] in " \t\r\n":
+            index += 1
+        if index >= len(value) or value[index] != ":":
+            break
+        index += 1
+        while index < len(value) and value[index] in " \t\r\n":
+            index += 1
+        if index >= len(value):
+            break
+        if value[index] == '"':
+            start = index
+            index += 1
+            escaped = False
+            while index < len(value):
+                char = value[index]
+                if char == '"' and not escaped:
+                    index += 1
+                    break
+                if char == "\\" and not escaped:
+                    escaped = True
+                else:
+                    escaped = False
+                index += 1
+            try:
+                parsed = json.loads(value[start:index])
+            except (ValueError, TypeError):
+                break
+        else:
+            try:
+                parsed, index = decoder.raw_decode(value, index)
+            except (ValueError, TypeError):
+                break
+        result[key] = parsed
+    return result
+
+
 def parse_streaming_json(value: str | None) -> dict[str, Any]:
     if not value or not value.strip():
         return {}
@@ -170,7 +230,7 @@ def parse_streaming_json(value: str | None) -> dict[str, Any]:
             continue
         if isinstance(parsed, dict):
             return parsed
-    return {}
+    return _partial_object(value)
 
 
 
@@ -233,7 +293,6 @@ def _native_stop_reason(finish_reason: str) -> str:
 
 class PiSemanticsState:
     """Pi 0.73.1 agent state with a bounded streamFn admission seam."""
-
     def __init__(
         self,
         *,
@@ -242,14 +301,23 @@ class PiSemanticsState:
         request_cap: int = DEFAULT_REQUEST_CAP,
         image_delivery: bool = False,
         case_id: str | None = None,
+        model_id: str = "pi-0.73.1",
+        provider: str = "openai",
     ) -> None:
         if request_cap <= 0:
             raise ValueError("request_cap must be positive")
+        if not isinstance(model_id, str) or not model_id:
+            raise ValueError("model_id must be non-empty text")
+        if not isinstance(provider, str) or not provider:
+            raise ValueError("provider must be non-empty text")
         self.task = task
         self.system_prompt = system_prompt
         self.request_cap = request_cap
         self.image_delivery = image_delivery
         self.case_id = case_id
+        self.model_id = model_id
+        self.provider = provider
+        self.api = "openai-completions"
         self.request_count = 0
         self.stream_fn_issued = 0
         self.request_records: list[PiRequestRecord] = []
@@ -257,7 +325,6 @@ class PiSemanticsState:
         self.exit_status: str | None = None
         self.native_stop_reason: str | None = None
         self.messages.append({"role": "user", "content": [{"type": "text", "text": task}]})
-
     @property
     def is_exited(self) -> bool:
         return self.exit_status is not None
@@ -302,7 +369,14 @@ class PiSemanticsState:
             blocks.append({"type": "text", "text": content})
         for call in calls:
             blocks.append({"type": "toolCall", "id": call.id, "name": call.name, "arguments": call.arguments})
-        assistant = {"role": "assistant", "content": blocks, "stopReason": stop_reason}
+        assistant = {
+            "role": "assistant",
+            "content": blocks,
+            "stopReason": stop_reason,
+            "api": self.api,
+            "provider": self.provider,
+            "model": self.model_id,
+        }
         self.messages.append(assistant)
         self.native_stop_reason = stop_reason
         if not calls:

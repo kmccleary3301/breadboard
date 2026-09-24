@@ -96,3 +96,12 @@ def test_eighth_request_then_ninth_stream_attempt_is_local_error():
 def test_partial_json_repair_and_plain_tools():
     assert parse_streaming_json('{"path":"x') == {"path": "x"}
     assert parse_streaming_json('{"path":123}') == {"path": 123}
+
+
+def test_receiver_argument_with_unescaped_shell_quotes_matches_pinned_partial_json() -> None:
+    receiver_arguments = (
+        r'''{"command":"printf 'cwd='; pwd; printf 'state=%s\n' "${PI_CAPTURE_STATE-unset}""}'''
+    )
+    assert parse_streaming_json(receiver_arguments) == {
+        "command": "printf 'cwd='; pwd; printf 'state=%s\n' ",
+    }

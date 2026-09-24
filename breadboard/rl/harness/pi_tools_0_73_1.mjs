@@ -543,7 +543,13 @@ async function executeOperation(operation, payload, signal) {
         };
         preparedInternal.push({ ...item });
         calls.push({ ...item });
-        historyCalls.push({ ...item });
+        // Pi keeps the sampled call in assistant history; only execution uses
+        // the validator's converted argument clone.
+        historyCalls.push({
+          id: value.request.callId,
+          name: value.request.toolId,
+          arguments: value.request.argumentsValue,
+        });
       } catch (error) {
         const message = String(error?.message ?? error);
         const item = {
