@@ -39,6 +39,7 @@ from .mount_namespace_broker import (
 UTC = timezone.utc
 _CLONE_NEWUSER = 0x10000000
 _CLONE_NEWPID = 0x20000000
+_CLONE_NEWNET = 0x40000000
 _RECEIPT_SCHEMA = "bb.containment-receipt.v1"
 _MAX_FRAME = 256 * 1024
 _SYS_OPEN_TREE = 428
@@ -78,7 +79,7 @@ def _ns_inode(link: str) -> int:
 def _namespace_inodes() -> dict[str, int]:
     return {
         name: _ns_inode(os.readlink(f"/proc/self/ns/{name}"))
-        for name in ("pid", "mnt", "user")
+        for name in ("pid", "mnt", "user", "net")
     }
 
 
@@ -99,6 +100,7 @@ class ContainmentReceipt:
     pid_namespace_inode: int
     mount_namespace_inode: int
     user_namespace_inode: int
+    network_namespace_inode: int
     mountinfo_sha256: str
     writable_roots: tuple[str, ...]
     created_at: str
@@ -117,6 +119,7 @@ class ContainmentReceipt:
                 "pid": self.pid_namespace_inode,
                 "mnt": self.mount_namespace_inode,
                 "user": self.user_namespace_inode,
+                "net": self.network_namespace_inode,
             },
             "mountinfo_sha256": self.mountinfo_sha256,
             "writable_roots": list(self.writable_roots),
@@ -157,6 +160,7 @@ class ContainmentReceipt:
                 pid_namespace_inode=namespaces["pid"],
                 mount_namespace_inode=namespaces["mnt"],
                 user_namespace_inode=namespaces["user"],
+                network_namespace_inode=namespaces["net"] if "net" in namespaces else namespaces["network"],
                 mountinfo_sha256=value["mountinfo_sha256"],
                 writable_roots=roots,
                 created_at=value["created_at"],
@@ -185,6 +189,7 @@ def _validate_receipt_shape(receipt: ContainmentReceipt) -> None:
                 receipt.pid_namespace_inode,
                 receipt.mount_namespace_inode,
                 receipt.user_namespace_inode,
+                receipt.network_namespace_inode,
             )
         )
         or not isinstance(receipt.mountinfo_sha256, str)
@@ -228,8 +233,8 @@ def mint_containment_receipt(
         pid_namespace_inode=namespaces["pid"],
         mount_namespace_inode=namespaces["mnt"],
         user_namespace_inode=namespaces["user"],
+        network_namespace_inode=namespaces["net"],
         mountinfo_sha256=_digest_mountinfo(_mountinfo()),
-        writable_roots=tuple(sorted(set(writable_roots))),
         created_at=(now or datetime.now(UTC)).isoformat().replace("+00:00", "Z"),
         key_id=authenticator.key_id,
         algorithm=authenticator.algorithm,
@@ -244,8 +249,8 @@ def mint_containment_receipt(
         pid_namespace_inode=receipt.pid_namespace_inode,
         mount_namespace_inode=receipt.mount_namespace_inode,
         user_namespace_inode=receipt.user_namespace_inode,
+        network_namespace_inode=receipt.network_namespace_inode,
         mountinfo_sha256=receipt.mountinfo_sha256,
-        writable_roots=receipt.writable_roots,
         created_at=receipt.created_at,
         key_id=receipt.key_id,
         algorithm=receipt.algorithm,
@@ -272,8 +277,8 @@ def add_teardown_outcome(
         pid_namespace_inode=receipt.pid_namespace_inode,
         mount_namespace_inode=receipt.mount_namespace_inode,
         user_namespace_inode=receipt.user_namespace_inode,
+        network_namespace_inode=receipt.network_namespace_inode,
         mountinfo_sha256=receipt.mountinfo_sha256,
-        writable_roots=receipt.writable_roots,
         created_at=receipt.created_at,
         key_id=receipt.key_id,
         algorithm=receipt.algorithm,
@@ -288,8 +293,8 @@ def add_teardown_outcome(
         pid_namespace_inode=unsigned.pid_namespace_inode,
         mount_namespace_inode=unsigned.mount_namespace_inode,
         user_namespace_inode=unsigned.user_namespace_inode,
+        network_namespace_inode=unsigned.network_namespace_inode,
         mountinfo_sha256=unsigned.mountinfo_sha256,
-        writable_roots=unsigned.writable_roots,
         created_at=unsigned.created_at,
         key_id=unsigned.key_id,
         algorithm=unsigned.algorithm,
@@ -628,8 +633,8 @@ def _supervisor_main(
             pid_namespace_inode=receipt.pid_namespace_inode,
             mount_namespace_inode=receipt.mount_namespace_inode,
             user_namespace_inode=receipt.user_namespace_inode,
+            network_namespace_inode=receipt.network_namespace_inode,
             mountinfo_sha256=mountinfo_digest,
-            writable_roots=receipt.writable_roots,
             created_at=receipt.created_at,
             key_id=receipt.key_id,
             algorithm=receipt.algorithm,
@@ -643,8 +648,8 @@ def _supervisor_main(
             pid_namespace_inode=receipt.pid_namespace_inode,
             mount_namespace_inode=receipt.mount_namespace_inode,
             user_namespace_inode=receipt.user_namespace_inode,
+            network_namespace_inode=receipt.network_namespace_inode,
             mountinfo_sha256=receipt.mountinfo_sha256,
-            writable_roots=receipt.writable_roots,
             created_at=receipt.created_at,
             key_id=receipt.key_id,
             algorithm=receipt.algorithm,
@@ -839,12 +844,12 @@ def _launcher_main(
     try:
         mode = "privileged"
         try:
-            _unshare(_CLONE_NEWPID | _CLONE_NEWNS)
+            _unshare(_CLONE_NEWPID | _CLONE_NEWNS | _CLONE_NEWNET)
         except OSError as exc:
             if exc.errno != errno.EPERM:
                 raise
             mode = "userns"
-            _unshare(_CLONE_NEWUSER | _CLONE_NEWPID | _CLONE_NEWNS)
+            _unshare(_CLONE_NEWUSER | _CLONE_NEWPID | _CLONE_NEWNS | _CLONE_NEWNET)
             _enter_user_namespace()
         child = os.fork()
         if child == 0:

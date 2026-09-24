@@ -2788,3 +2788,44 @@ def test_lease_constructor_closes_duplicate_when_identity_stat_fails(
         os.fstat(duplicated[0])
     os.fstat(lease_fd)
     os.close(lease_fd)
+
+
+def test_containment_receipt_requires_network_namespace_inode() -> None:
+    from breadboard.rl.harness.lease_envelope import (
+        ContainmentReceipt,
+        ContainmentReceiptError,
+    )
+
+    base = {
+        "schema": "bb.containment-receipt.v1",
+        "lease_id": "lease-net-test",
+        "runtime_id": "runtime-net-test",
+        "mode": "privileged",
+        "namespaces": {
+            "pid": 1001,
+            "mnt": 1002,
+            "user": 1003,
+            "net": 1004,
+        },
+        "mountinfo_sha256": "sha256:" + "0" * 64,
+        "writable_roots": ["/scratch", "/tmp", "/workspace"],
+        "created_at": "2026-09-24T00:00:00Z",
+        "key_id": "test-key",
+        "algorithm": "hmac-sha256-v1",
+        "signature": ("00" * 32),
+    }
+
+    receipt = ContainmentReceipt.from_mapping(base)
+    assert receipt.network_namespace_inode == 1004
+    mapping = receipt.to_mapping()
+    assert mapping["namespaces"]["net"] == 1004
+
+    missing_net = dict(base)
+    missing_net["namespaces"] = {"pid": 1001, "mnt": 1002, "user": 1003}
+    with pytest.raises(ContainmentReceiptError, match="containment receipt is malformed"):
+        ContainmentReceipt.from_mapping(missing_net)
+
+    zero_net = dict(base)
+    zero_net["namespaces"] = {"pid": 1001, "mnt": 1002, "user": 1003, "net": 0}
+    with pytest.raises(ContainmentReceiptError, match="containment receipt fields are invalid"):
+        ContainmentReceipt.from_mapping(zero_net)

@@ -1650,3 +1650,39 @@ async def test_identity_persistence_failure_kills_suspended_action_before_effect
     assert (await primary.close()).state is CleanupState.RELEASED
     assert list(harness.workspace_root.iterdir()) == []
     assert list(harness.lease_root.iterdir()) == []
+
+
+@requires_sealed_execution
+async def test_trusted_process_enforces_network_isolation_and_records_netns(
+    tmp_path: Path,
+) -> None:
+    server = await asyncio.start_server(lambda r, w: None, "127.0.0.1", 0)
+    server_port = server.sockets[0].getsockname()[1]
+    fixture = make_runtime_fixture(
+        with_writable_mount=True, runtime_install_root=tmp_path
+    )
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    try:
+        receipt = primary._runtime.containment_receipt
+        assert receipt is not None
+        assert receipt.network_namespace_inode > 0
+        if Path("/proc/self/ns/net").exists():
+            from breadboard.rl.harness.lease_envelope import _ns_inode
+
+            assert receipt.network_namespace_inode != _ns_inode(
+                os.readlink("/proc/self/ns/net")
+            )
+        cmd = (
+            f"/usr/bin/python3 -c \"import socket; s = socket.socket(); "
+            f"s.settimeout(0.5); s.connect(('127.0.0.1', {server_port}))\""
+        )
+        result = await primary._runtime.run_shell(
+            cmd, timeout_ms=2_000, output_limit=4_096
+        )
+        assert result["returncode"] != 0
+    finally:
+        server.close()
+        await server.wait_closed()
+        await primary.close()
