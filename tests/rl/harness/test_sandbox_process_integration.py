@@ -561,6 +561,7 @@ async def test_pinned_shell_executes_admitted_bytes_after_source_mutation(
             original_identity.st_ino,
         )
     else:
+        runtime_path.chmod(0o700)
         runtime_path.write_bytes(replacement_bytes)
         runtime_path.chmod(0o500)
         mutated_identity = runtime_path.stat()
@@ -569,9 +570,8 @@ async def test_pinned_shell_executes_admitted_bytes_after_source_mutation(
             original_identity.st_ino,
         )
     assert runtime_path.read_bytes() == replacement_bytes
-
     result = await primary._runtime.run_shell(
-        "printf admitted-snapshot",
+        "sleep 0.05; printf admitted-snapshot",
         timeout_ms=1_000,
         output_limit=4_096,
     )
@@ -784,7 +784,7 @@ async def test_catalog_argv0_and_proc_exe_bind_different_objects_at_private_barr
         harness.manager, "_record_process_identity", inspect_stopped_process
     )
     result = await primary._runtime.run_shell(
-        "printf argv-proof", timeout_ms=1_000, output_limit=4_096
+        "sleep 0.05; printf argv-proof", timeout_ms=1_000, output_limit=4_096
     )
 
     assert observed["cmdline"][0].decode() == runtime_path
