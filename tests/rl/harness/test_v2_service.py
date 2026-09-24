@@ -2672,6 +2672,26 @@ async def test_native_scratch_cleanup_receipt_released_avoids_quarantine_and_fai
 
     # Under 1a1668bf, _cleanup_released(real_receipt) is False because native_scratch is omitted from allowed_resources
     assert service_module._cleanup_released(real_receipt) is True
+    # The closed-publication validator must accept the same receipt, and must not
+    # admit native_scratch for verifier leases.
+    from breadboard.rl.harness import evidence as evidence_module
+
+    projected = evidence_module._json_value(real_receipt)
+    evidence_module._validate_cleanup_projection(
+        projected, expected_lease_id=real_receipt.lease_id
+    )
+    with pytest.raises(evidence_module.EvidenceValidationError):
+        evidence_module._validate_cleanup_projection(
+            {**projected, "steps": [*projected["steps"], dict(projected["steps"][0])]},
+            expected_lease_id=real_receipt.lease_id,
+        )
+    with pytest.raises(evidence_module.EvidenceValidationError):
+        evidence_module._validate_cleanup_projection(
+            projected,
+            expected_lease_id=real_receipt.lease_id,
+            required_resources=evidence_module._VERIFIER_CLEANUP_RESOURCES,
+        )
+
 
     # Test closing cleanup with the real receipt released avoids quarantine
     service, case, _, created = await _created(monkeypatch)

@@ -8,11 +8,11 @@
 
 ## 1) Problem Statement
 
-`SandboxRuntime._close_lease` adds a `native_scratch` cleanup step to every lease that created per-lease native scratch (`_create_native_scratch` during the `initialize` native phase, since e311a07). `service._cleanup_released` admits only `runtime`, `workspace`, `cache_holder`, and `lease_record`, plus `child_verifier`, for primary leases. So a lease whose scratch was fully released still produced `resource_set <= allowed_resources == False`. The service then quarantined the episode with `cleanup_not_released` (service.py `_v2_failure("cleanup", "cleanup_not_released", ...)`). The OpenHands capture 1113 quarantine tombstone recorded exactly this, and every native-worker session (Pi, OMP, OpenHands, Hermes, OpenClaw) takes the same path.
+`SandboxRuntime._close_lease` adds a `native_scratch` cleanup step to every lease that created per-lease native scratch (`_create_native_scratch` during the `initialize` native phase, since e311a07). `service._cleanup_released` admits only `runtime`, `workspace`, `cache_holder`, and `lease_record`, plus `child_verifier`, for primary leases. So a lease whose scratch was fully released still produced `resource_set <= allowed_resources == False`. The service then quarantined the episode with `cleanup_not_released` (service.py `_v2_failure("cleanup", "cleanup_not_released", ...)`). The OpenHands capture 1113 quarantine tombstone recorded exactly this, and every native-worker session (Pi, OMP, OpenHands, Hermes, OpenClaw) takes the same path. The closed-publication validator `evidence._validate_cleanup_projection` required the exact primary resource set, so it would also have rejected the same receipt at publication and recovery.
 
 ## 2) Scope and Surfaces
 
-- Kernel module touched: `breadboard/rl/harness/service.py` (`_cleanup_released`, primary-lease default only).
+- Kernel modules touched: `breadboard/rl/harness/service.py` (`_cleanup_released`, primary-lease default only) and `breadboard/rl/harness/evidence.py` (`_validate_cleanup_projection`, which gains `_PRIMARY_OPTIONAL_CLEANUP_RESOURCES = ("native_scratch",)` for the primary required set only).
 - Extension modules touched: none.
 - Contract surfaces touched: episode cleanup disposition; no schema, event, or receipt shape changes.
 - Is this a **kernel danger-zone** change? `yes`.
@@ -32,7 +32,7 @@
 
 ## 5) Evidence and Validation Plan
 
-- Required contract lane tests: `tests/rl/harness/test_v2_service.py::test_native_scratch_cleanup_receipt_released_avoids_quarantine_and_failed_quarantines`. It fails at `1a1668bf` (`_cleanup_released` returns False for a released receipt that includes `native_scratch`) and passes after the fix. It also asserts that a failed `native_scratch` step still quarantines.
+- Required contract lane tests: `tests/rl/harness/test_v2_service.py::test_native_scratch_cleanup_receipt_released_avoids_quarantine_and_failed_quarantines`. It fails at `1a1668bf` (`_cleanup_released` returns False for a released receipt that includes `native_scratch`) and passes after the fix. With only the service fixed, it fails in the evidence validator. It also asserts that a failed `native_scratch` step still quarantines, that a duplicated step is rejected, and that verifier leases do not admit `native_scratch`. `tests/rl/harness/test_v2_service.py` plus `tests/rl/harness/test_evidence.py`: 269 passed.
 - Required replay/parity checks: the installed native replays of the E4 profiles must end without `cleanup_not_released` quarantine.
 - Required conformance/ablation checks: `scripts/check_danger_zone_acr.py` on the changed-file list.
 - Required evidence bundles to refresh: none.
