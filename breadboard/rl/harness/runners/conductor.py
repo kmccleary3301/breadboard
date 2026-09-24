@@ -10,7 +10,7 @@ import json
 import math
 import re
 import time
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Mapping, Protocol, runtime_checkable
 
 from breadboard_engine.compilation.contracts import (
     bytes_sha256,
@@ -2320,6 +2320,52 @@ class _ConductorSession:
                         0, self._open_request.episode_id, self._open_request.effective_plan_digest,
                         turn, ordinal, call.id, call.name, raw.arguments,
                     ))
+                dispatch_positions: list[int] = []
+                for dispatch_call in dispatch_calls:
+                    position = next(
+                        (
+                            index
+                            for index, parsed_call in enumerate(parsed.calls)
+                            if index not in dispatch_positions and parsed_call == dispatch_call
+                        ),
+                        None,
+                    )
+                    if position is None:
+                        raise RunnerProtocolError(
+                            "native dispatch decision changed call identity",
+                            code="native_response_invalid", **self._context(),
+                        )
+                    dispatch_positions.append(position)
+                synthetic_results = getattr(parsed, "synthetic_results", ())
+                if (
+                    not isinstance(synthetic_results, tuple)
+                    or any(type(item) is not dict for item in synthetic_results)
+                ):
+                    raise RunnerProtocolError(
+                        "native source dispatch decision lacks synthetic results",
+                        code="native_response_invalid", **self._context(),
+                    )
+                synthetic_by_position: dict[int, dict[str, Any]] = {}
+                for item in synthetic_results:
+                    position = item.get("completion_index")
+                    if (
+                        type(position) is not int
+                        or position < 0
+                        or position >= len(parsed.calls)
+                        or position in synthetic_by_position
+                        or item.get("id") != parsed.calls[position].id
+                    ):
+                        raise RunnerProtocolError(
+                            "native synthetic tool result identity changed",
+                            code="native_response_invalid", **self._context(),
+                        )
+                    synthetic_by_position[position] = dict(item)
+                if set(dispatch_positions) | set(synthetic_by_position) != set(range(len(parsed.calls))):
+                    raise RunnerProtocolError(
+                        "native dispatch decision does not cover tool calls",
+                        code="native_response_invalid", **self._context(),
+                    )
+                completed: Mapping[str, Any] = {"kind": "tool_results", "results": []}
                 if dispatch_calls:
                     prepared = await phase("prepare_tools", {"calls": [
                         {"id": call.id, "name": call.name, "arguments": call.arguments}
@@ -2343,33 +2389,47 @@ class _ConductorSession:
                                 code="native_response_invalid", **self._context(),
                             )
                         blocks = [block for block in parsed.assistant["content"] if block["type"] == "toolCall"]
-                        for block, prepared_call in zip(blocks, history_calls, strict=True):
-                            block["arguments"] = prepared_call["arguments"]
+                        for position, prepared_call in zip(dispatch_positions, history_calls, strict=True):
+                            blocks[position]["arguments"] = prepared_call["arguments"]
                         await commit(len(state.messages), "assistant", turn, events=[
                             {"kind": "assistant_prepared", "message": parsed.assistant},
                         ])
                     await self._checkpoint("before_action", turn=turn)
                     completed = await phase("execute_batch", {})
-                    raw_results = completed.get("results")
-                else:
-                    synthetic_results = getattr(parsed, "synthetic_results", ())
+                    worker_results = completed.get("results")
                     if (
-                        not isinstance(synthetic_results, tuple)
-                        or len(synthetic_results) != len(parsed.calls)
-                        or any(type(item) is not dict for item in synthetic_results)
+                        completed.get("kind") != "tool_results"
+                        or type(worker_results) is not list
+                        or len(worker_results) != len(dispatch_calls)
+                        or any(type(item) is not dict for item in worker_results)
+                        or [item.get("id") for item in worker_results]
+                        != [call.id for call in dispatch_calls]
                     ):
                         raise RunnerProtocolError(
-                            "native source dispatch decision lacks synthetic results",
+                            "native tool batch result is malformed",
                             code="native_response_invalid", **self._context(),
                         )
+                    if synthetic_by_position:
+                        raw_results = []
+                        worker_index = 0
+                        for position in range(len(parsed.calls)):
+                            if position in synthetic_by_position:
+                                raw_results.append(synthetic_by_position[position])
+                            else:
+                                item = dict(worker_results[worker_index])
+                                item["completion_index"] = position
+                                raw_results.append(item)
+                                worker_index += 1
+                        if worker_index != len(worker_results):
+                            raise RunnerProtocolError(
+                                "native tool batch result is malformed",
+                                code="native_response_invalid", **self._context(),
+                            )
+                    else:
+                        raw_results = worker_results
+                else:
                     raw_results = [dict(item) for item in synthetic_results]
                 if (
-                    dispatch_calls
-                    and (
-                        completed.get("kind") != "tool_results"
-                        or type(raw_results) is not list
-                    )
-                ) or (
                     type(raw_results) is not list
                     or len(raw_results) != len(parsed.calls)
                     or any(type(item) is not dict for item in raw_results)

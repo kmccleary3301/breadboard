@@ -54,10 +54,14 @@ def test_denial_happens_before_native_resolution() -> None:
     ("value", "expected"),
     [
         ("HTTP://example.invalid", "url"),
+        ("https:/example.invalid", "url"),
+        ("www.example.invalid/path", "url"),
         (" https://example.invalid", None),
         ("./db.sqlite:users", "sqlite"),
         ("db%2Esqlite:users", None),
-        ("ssh:host/path", "ssh"),
+        ("ssh://host/path", "ssh"),
+        ("ssh:host/path", None),
+        ("prefix/ssh://host/path", "ssh"),
         ("https%3A%2F%2Fexample.invalid", None),
     ],
 )
@@ -65,6 +69,29 @@ def test_route_matchers_follow_source_path_forms(value: str, expected: str | Non
     root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
     policy = json.loads((root / "native-config.json").read_text())["capability_denials"]
     assert classify_capability(value, denial_policy=policy) == expected
+
+
+def test_route_declarations_cover_pinned_omp_registries() -> None:
+    root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
+    policy = json.loads((root / "native-config.json").read_text())["capability_denials"]
+    # Pinned source: internal-urls/router.ts:38-53 and utils/ar/registry.ts:32-58.
+    assert set(policy["internal-resource"]["route"]["schemes"]) == {
+        "agent", "artifact", "history", "local", "mcp", "memory", "omp",
+        "pr", "rule", "security", "skill", "vault", "xd",
+    }
+    assert set(policy["archive"]["route"]["extensions"]) == {
+        ".zip", ".jar", ".war", ".ear", ".apk", ".whl", ".ipa", ".xpi",
+        ".vsix", ".nupkg", ".cbz", ".tar", ".tar.gz", ".tgz", ".tar.bz2",
+        ".tbz2", ".tbz", ".tar.xz", ".txz", ".tar.zst", ".tzst", ".tar.z",
+        ".asar", ".rar", ".cbr", ".7z", ".iso", ".cab", ".cpio", ".rpm",
+        ".ar", ".a", ".lib", ".deb", ".lzh", ".lha", ".arj", ".gz", ".bz2",
+        ".xz", ".zst", ".z", ".lzma",
+    }
+    assert set(policy["video"]["route"]["extensions"]) == {
+        ".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi", ".wmv",
+    }
+    assert policy["url"]["route"]["patterns"] == [r"^https?:\/\/?", r"^www\."]
+    assert policy["ssh"]["route"]["patterns"] == [r"ssh:\/\/"]
 
 def test_worker_resolves_verified_installed_entrypoint(tmp_path: Path) -> None:
     worker = NativeToolWorker(cwd=str(tmp_path))

@@ -272,7 +272,7 @@ def _lower_worker_target(
         ),
         "oh-my-pi@18.1.17": (
             "breadboard.oh-my-pi.v18.1.17",
-            "c90f83a8c1ab4c5cd83cd8abbdd9a5039255881777054961ac91a60583b8e96f",
+            "c3916db25bc14f848fe4d10d0a9e4fabf5a91c73a3126051e82afad59664e575",
         ),
     }
     recipe = recipes.get(package.target_id)

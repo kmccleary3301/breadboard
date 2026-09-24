@@ -598,6 +598,24 @@ class OMPSemanticsState:
         messages = [{"role": "system", "content": self.system_prompt}, *self.messages]
         return {"kind": "request", "messages": messages, "tools": [dict(schema) for schema in self.tool_schemas]}
 
+    def _capability_denial(self, call: ToolCall) -> str | None:
+        arguments = call.arguments
+        if isinstance(arguments, str):
+            try:
+                arguments = json.loads(arguments)
+            except (TypeError, ValueError):
+                return None
+        if not isinstance(arguments, Mapping):
+            return None
+        try:
+            deny_excluded_capabilities(
+                arguments,
+                denial_policy=self.capability_denials,
+            )
+        except PermissionError as exc:
+            return str(exc)
+        return None
+
     def prepare_response(self, response: NativeProviderResponse) -> OMPResponseResult:
         if not isinstance(response, NativeProviderResponse):
             raise TypeError("response must be NativeProviderResponse")
@@ -642,12 +660,19 @@ class OMPSemanticsState:
                     "synthetic": True,
                 })
                 self.exit_status = None
-                return OMPResponseResult(assistant, (), finish_reason, False)
+                return OMPResponseResult(assistant, (), finish_reason, False, dispatch_calls=(), synthetic_results=())
             self.recovery.accept_turn(assistant)
             self.exit_status = "Submitted" if finish_reason == "stop" else finish_reason
-        else:
-            self.recovery.accept_turn(assistant)
-        if finish_reason == "length" and calls:
+            return OMPResponseResult(
+                assistant,
+                (),
+                finish_reason,
+                True,
+                dispatch_calls=(),
+                synthetic_results=(),
+            )
+        self.recovery.accept_turn(assistant)
+        if finish_reason == "length":
             synthetic_results = tuple(
                 {
                     "id": call.id,
@@ -668,7 +693,30 @@ class OMPSemanticsState:
                 dispatch_calls=(),
                 synthetic_results=synthetic_results,
             )
-        return OMPResponseResult(assistant, calls, finish_reason, not calls and self.exit_status is not None)
+        dispatch_calls: list[ToolCall] = []
+        synthetic_results: list[Mapping[str, Any]] = []
+        for index, call in enumerate(calls):
+            denial = self._capability_denial(call)
+            if denial is None:
+                dispatch_calls.append(call)
+                continue
+            synthetic_results.append({
+                "id": call.id,
+                "name": call.name,
+                "content": denial,
+                "details": {"phase": "prepare", "reason": "capability_denied"},
+                "isError": True,
+                "terminate": False,
+                "completion_index": index,
+            })
+        return OMPResponseResult(
+            assistant,
+            calls,
+            finish_reason,
+            False,
+            dispatch_calls=tuple(dispatch_calls),
+            synthetic_results=tuple(synthetic_results),
+        )
 
     def prepare_tools(self, calls: Sequence[ToolCall]) -> dict[str, Any]:
         prepared: list[OMPPreparedCall] = []

@@ -104,6 +104,54 @@ def test_comparator_rejects_empty_native_response_record() -> None:
     assert "malformed" in report["errors"][0]
 
 
+def test_comparator_rejects_extra_native_response_record() -> None:
+    supplier = _trace()
+    replay = deepcopy(supplier)
+    replay["native_responses"] = [{"choices": [{"finish_reason": "stop"}]}] * 2
+    report = compare({"capture": supplier, "replay": replay})
+    assert report["ok"] is False
+    assert "exactly one native_responses" in report["errors"][0]
+
+
+def test_comparator_rejects_missing_native_response_record() -> None:
+    supplier = _trace()
+    replay = deepcopy(supplier)
+    replay["native_responses"] = []
+    report = compare({"capture": supplier, "replay": replay})
+    assert report["ok"] is False
+    assert "exactly one native_responses" in report["errors"][0]
+
+
+def test_comparator_rejects_reordered_native_response_records() -> None:
+    supplier = _trace()
+    supplier["requests"] = [supplier["requests"][0], deepcopy(supplier["requests"][0])]
+    supplier["native_responses"] = [
+        {"choices": [{"finish_reason": "length"}]},
+        {"choices": [{"finish_reason": "stop"}]},
+    ]
+    replay = deepcopy(supplier)
+    replay["native_responses"] = [
+        {"choices": [{"finish_reason": "stop"}]},
+        {"choices": [{"finish_reason": "length"}]},
+    ]
+    replay["exit"] = {"kind": "Submitted", "native_stop_reason": "length"}
+    report = compare({"capture": supplier, "replay": replay})
+    assert report["ok"] is False
+    assert report["failed"] >= 1
+
+
+def test_comparator_accepts_positional_native_response_pair() -> None:
+    supplier = _trace()
+    supplier["requests"] = [supplier["requests"][0], deepcopy(supplier["requests"][0])]
+    supplier["native_responses"] = [
+        {"choices": [{"finish_reason": "length"}]},
+        {"choices": [{"finish_reason": "stop"}]},
+    ]
+    replay = deepcopy(supplier)
+    report = compare({"capture": supplier, "replay": replay})
+    assert report["ok"] is True
+
+
 def test_bb_runtime_inputs_match_supplier_declaration() -> None:
     supplier = _trace()
     replay = deepcopy(supplier)

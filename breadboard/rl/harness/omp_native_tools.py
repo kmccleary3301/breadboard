@@ -10,6 +10,7 @@ import importlib.resources
 import json
 import os
 from pathlib import Path
+import re
 import select
 import struct
 import subprocess
@@ -126,20 +127,29 @@ def classify_capability(
     *,
     denial_policy: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> str | None:
-    """Classify a route using the target-declared denial matchers."""
+    """Classify a route using the target-declared source predicates."""
     if not isinstance(value, str):
         return None
     candidate = value
     if candidate.lower().startswith("file://"):
         return None
     policy = denial_policy or {}
-    scheme = candidate.split("://", 1)[0].lower() if "://" in candidate else None
     for capability, entry in policy.items():
         if not isinstance(entry, Mapping):
             continue
         route = entry.get("route")
         if not isinstance(route, Mapping):
             continue
+        patterns = route.get("patterns")
+        if isinstance(patterns, list):
+            for pattern in patterns:
+                if not isinstance(pattern, str):
+                    continue
+                try:
+                    if re.search(pattern, candidate, flags=re.IGNORECASE):
+                        return str(capability)
+                except re.error as exc:
+                    raise ValueError(f"invalid route pattern for {capability}: {pattern}") from exc
         prefixes = route.get("prefixes")
         if isinstance(prefixes, list) and any(
             isinstance(prefix, str) and candidate.lower().startswith(prefix.lower())
@@ -147,8 +157,10 @@ def classify_capability(
         ):
             return str(capability)
         schemes = route.get("schemes")
-        if isinstance(schemes, list) and scheme in {item.lower() for item in schemes if isinstance(item, str)}:
-            return str(capability)
+        if isinstance(schemes, list):
+            scheme = candidate.split("://", 1)[0].lower() if "://" in candidate else None
+            if scheme in {item.lower() for item in schemes if isinstance(item, str)}:
+                return str(capability)
         extensions = route.get("extensions")
         if isinstance(extensions, list):
             base = candidate.lower().split("?", 1)[0].split(":", 1)[0]
@@ -159,17 +171,18 @@ def classify_capability(
                 return str(capability)
     if policy:
         return None
-    for prefix, capability in (
-        ("http://", "url"),
-        ("https://", "url"),
-        ("ssh://", "ssh"),
-        ("artifact://", "internal-resource"),
-        ("skill://", "internal-resource"),
-        ("vault://", "internal-resource"),
-        ("mcp://", "internal-resource"),
+    for pattern, capability in (
+        (r"^https?:\/\/?", "url"),
+        (r"^www\.", "url"),
+        (r"ssh:\/\/", "ssh"),
     ):
-        if candidate.startswith(prefix):
+        if re.search(pattern, candidate, flags=re.IGNORECASE):
             return capability
+    if any(
+        candidate.lower().startswith(f"{scheme}://")
+        for scheme in ("agent", "artifact", "history", "local", "mcp", "memory", "omp", "pr", "rule", "security", "skill", "vault", "xd")
+    ):
+        return "internal-resource"
     return None
 
 

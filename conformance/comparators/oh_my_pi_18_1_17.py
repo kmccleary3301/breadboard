@@ -243,49 +243,48 @@ def _effects(case_dir: Path | None, trace: Mapping[str, Any]) -> dict[str, str |
 _NATIVE_STOP_REASON_UNAVAILABLE = object()
 
 
-def _wire_stop_reason(trace: Mapping[str, Any]) -> str | None | object:
+def _wire_finish_reasons(trace: Mapping[str, Any]) -> list[str]:
     raw_responses = trace.get("native_responses")
     if not isinstance(raw_responses, list):
-        return _NATIVE_STOP_REASON_UNAVAILABLE
+        raise ValueError("BB trace must carry native_responses for every request")
     reasons: list[str] = []
-    for raw in raw_responses:
-        if not isinstance(raw, Mapping):
-            raise ValueError("native response wire record is malformed")
+    for index, raw in enumerate(raw_responses):
+        if not isinstance(raw, Mapping) or not raw:
+            raise ValueError(f"native response wire record {index} is malformed")
+        record_reasons: list[str] = []
         choices = raw.get("choices")
         if isinstance(choices, list):
             for choice in choices:
                 if isinstance(choice, Mapping) and isinstance(choice.get("finish_reason"), str):
-                    reasons.append(choice["finish_reason"])
-        if isinstance(raw.get("finish_reason"), str):
-            reasons.append(raw["finish_reason"])
+                    if not choice["finish_reason"]:
+                        raise ValueError(f"native response wire record {index} has invalid finish_reason")
+                    record_reasons.append(choice["finish_reason"])
+        if "finish_reason" in raw:
+            reason = raw["finish_reason"]
+            if not isinstance(reason, str) or not reason:
+                raise ValueError(f"native response wire record {index} has invalid finish_reason")
+            record_reasons.append(reason)
+        if not record_reasons:
+            raise ValueError(f"native response wire record {index} is missing finish_reason")
+        reasons.append(record_reasons[-1])
+    return reasons
+
+
+def _wire_stop_reason(trace: Mapping[str, Any]) -> str | None | object:
+    if not isinstance(trace.get("native_responses"), list):
+        return _NATIVE_STOP_REASON_UNAVAILABLE
+    reasons = _wire_finish_reasons(trace)
     return reasons[-1] if reasons else None
 
 
 def _validate_native_responses(
     trace: Mapping[str, Any],
     request_count: int,
-) -> None:
+) -> list[str]:
     raw_responses = trace.get("native_responses")
-    if not isinstance(raw_responses, list) or len(raw_responses) < request_count:
-        raise ValueError("BB trace must carry native_responses for every request")
-    for index, raw in enumerate(raw_responses):
-        if not isinstance(raw, Mapping) or not raw:
-            raise ValueError(f"native response wire record {index} is malformed")
-        if "finish_reason" in raw:
-            if not isinstance(raw["finish_reason"], str) or not raw["finish_reason"]:
-                raise ValueError(f"native response wire record {index} has invalid finish_reason")
-            continue
-        choices = raw.get("choices")
-        if not isinstance(choices, list) or not choices:
-            raise ValueError(f"native response wire record {index} is missing finish_reason")
-        for choice in choices:
-            if (
-                not isinstance(choice, Mapping)
-                or not isinstance(choice.get("finish_reason"), str)
-                or not choice["finish_reason"]
-            ):
-                raise ValueError(f"native response wire record {index} is missing finish_reason")
-
+    if not isinstance(raw_responses, list) or len(raw_responses) != request_count:
+        raise ValueError("BB trace must carry exactly one native_responses record per request")
+    return _wire_finish_reasons(trace)
 
 def _termination(trace: Mapping[str, Any], *, supplier_capture: bool = False) -> dict[str, Any]:
     if not supplier_capture and "native_stop_reason_source" in trace:
@@ -373,13 +372,24 @@ def _supplier_trace(path: Path) -> dict[str, Any]:
             requests.append({"index": len(requests), "body": dict(row["body"])})
         events = row.get("events")
         if isinstance(events, list):
-            native_responses.extend(event for event in events if isinstance(event, Mapping))
+            reasons: list[str] = []
+            for event in events:
+                if not isinstance(event, Mapping):
+                    continue
+                if isinstance(event.get("finish_reason"), str) and event["finish_reason"]:
+                    reasons.append(event["finish_reason"])
+                choices = event.get("choices")
+                if isinstance(choices, list):
+                    for choice in choices:
+                        if isinstance(choice, Mapping) and isinstance(choice.get("finish_reason"), str) and choice["finish_reason"]:
+                            reasons.append(choice["finish_reason"])
+            if reasons:
+                native_responses.append({"finish_reason": reasons[-1]})
     if requests and not isinstance(trace.get("requests"), list):
         trace["requests"] = requests
-    if native_responses and not isinstance(trace.get("native_responses"), list):
+    if native_responses:
         trace["native_responses"] = native_responses
     return trace
-
 
 def project_supplier_case(case_dir: str | Path) -> dict[str, Any]:
     """Project a supplier capture directory to the canonical episode."""
@@ -466,6 +476,28 @@ class OhMyPi18Comparator:
                 if isinstance(replay, (str, Path)) and Path(replay).is_file()
                 else None,
             )
+            report = self.compare_episodes(expected, observed)
+            supplier_reasons = (
+                _wire_finish_reasons(capture_value)
+                if (
+                    isinstance(capture_value.get("native_responses"), list)
+                    and len(capture_value["native_responses"])
+                    == len(_requests(capture_value, _declared(capture_value)))
+                )
+                else None
+            )
+            if supplier_reasons is not None:
+                observed_reasons = _wire_finish_reasons(replay_value)
+                assertion = _assertion(
+                    "native_response_finish_reasons_equal",
+                    supplier_reasons,
+                    observed_reasons,
+                )
+                report["assertions"].append(assertion)
+                if assertion["status"] == "failed":
+                    report["failed"] += 1
+                    report["passed"] -= 1
+            return report
         except (OSError, TypeError, ValueError) as exc:
             return {
                 "schema_version": REPORT_SCHEMA_VERSION,
@@ -477,7 +509,6 @@ class OhMyPi18Comparator:
                 "errors": [str(exc)],
                 "ok": False,
             }
-        return self.compare_episodes(expected, observed)
 
     compare = __call__
 

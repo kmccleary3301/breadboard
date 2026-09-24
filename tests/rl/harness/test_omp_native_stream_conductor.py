@@ -157,7 +157,8 @@ class _OMPWorkspacePort:
         *,
         system_prompt_override: str,
         request_bodies: list[dict[str, Any]],
-    ) -> None:
+        phase_log: list[tuple[str, Mapping[str, Any]]] | None = None,
+    ):
         self.workspace = workspace
         self.scratch = scratch
         self.worker = NativeToolWorker(cwd=str(workspace))
@@ -167,6 +168,7 @@ class _OMPWorkspacePort:
         self.bindings = bindings
         self.request_bodies = request_bodies
         self.project_request_index = 0
+        self.phase_log = phase_log if phase_log is not None else []
 
     @property
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]:
@@ -203,10 +205,9 @@ class _OMPWorkspacePort:
         current = self._snapshot()
         changed = {path: value for path, value in current.items() if self.baseline.get(path) != value}
         changed.update({path: {"exists": False} for path in self.baseline.keys() - current.keys()})
-        return changed
-
     async def invoke_native_phase(self, operation: str, payload: Mapping[str, Any], *, timeout_ms: int, package_subpath: str | None = None) -> Mapping[str, Any]:
         del timeout_ms
+        self.phase_log.append((operation, deepcopy(dict(payload))))
         phase_payload = dict(payload)
         if operation == "initialize":
             assert package_subpath is not None
@@ -226,7 +227,7 @@ class _OMPWorkspacePort:
             result["system_prompt"] = self.system_prompt_override
         if operation == "execute_batch":
             (self.workspace / "normal_marker.txt").write_bytes(b"normal-omp\n")
-        if operation == "project_request":
+        if operation == "project_request" and self.project_request_index < len(self.request_bodies):
             result = dict(result)
             expected = self.request_bodies[self.project_request_index]["body"]
             self.project_request_index += 1
@@ -311,3 +312,99 @@ async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates
     tampered_runtime = deepcopy(trace)
     del tampered_runtime["runtime_inputs"]["cwd"]
     assert OhMyPi18Comparator()({"capture": str(supplier_case), "replay": tampered_runtime})["ok"] is False
+
+
+@pytest.mark.parametrize(
+    ("first_response", "expected_worker_ids"),
+    [
+        (
+            [
+                ("denied-url", "read", {"path": "https://example.invalid"}),
+                ("allowed-read", "read", {"path": "local.txt"}),
+                ("denied-sqlite", "read", {"path": "state.sqlite:users"}),
+            ],
+            ["allowed-read"],
+        ),
+        (
+            [
+                ("denied-url", "read", {"path": "https://example.invalid"}),
+                ("denied-sqlite", "read", {"path": "state.sqlite:users"}),
+            ],
+            [],
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_omp_conductor_partitions_declared_denials_before_worker(
+    tmp_path: Path,
+    first_response: list[tuple[str, str, Mapping[str, Any]]],
+    expected_worker_ids: list[str],
+) -> None:
+    responses = [first_response, []]
+    with _omp_scripted_server(responses, assistant_texts=["", "done"]) as (base_url, requests):
+        model_id = "capture"
+        profile = OpenAICompletionsProviderProfile(
+            model=model_id,
+            scoped_credential="episode-secret",
+            base_url=base_url,
+            context_window=32_768,
+            max_output_tokens=2_048,
+            caller_headers={},
+            request_policy={"mode": "streaming", "include_usage": True, "max_token_field": "max_completion_tokens", "strict_tools": None, "enable_thinking": None},
+            capabilities={"supports_store": True, "supports_max_completion_tokens": True},
+        )
+        projection, semantics, manifest = _compile_target(tmp_path, model_id, profile_identity_digest(profile))
+        observation = _observation(provider_id="openai", model_id=model_id, capabilities=_policy_capabilities(request_features=["max_completion_tokens", "n", "store", "stream_options", "streaming"]))
+        plan = _plan(observation=observation, semantics=semantics, tools=tuple(_tool_grant(name) for name in ("bash", "edit", "read", "write")), policy_slot_ids=(f"model:{model_id}",), limit_updates={"max_turns": 8, "action_timeout_ms": 40_000}, implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST)
+        base_payload = plan.base_compiled.model_dump(mode="python")
+        base_payload.update(manifest_digest="sha256:" + hashlib.sha256(manifest.canonical_bytes()).hexdigest(), compiler_input_digest=manifest.inputs.compiler_input_digest)
+        plan_payload = plan.model_dump(mode="python")
+        plan_payload["base_compiled"] = c.CompiledArtifactIdentity.model_validate(base_payload)
+        plan = c.EffectiveExecutionPlan.model_validate(plan_payload)
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        (workspace / "local.txt").write_text("allowed\n", encoding="utf-8")
+        phase_log: list[tuple[str, Mapping[str, Any]]] = []
+        tools = _OMPWorkspacePort(
+            workspace,
+            tmp_path / "scratch",
+            tuple(
+                RunnerToolBinding(tool.tool_id, tool.implementation_digest, tuple(tool.capability_ids))
+                for tool in plan.effective_capabilities.tools
+            ),
+            system_prompt_override="OMP conductor denial test",
+            request_bodies=[],
+            phase_log=phase_log,
+        )
+        client = EpisodeOpenAICompletionsPolicyClient(
+            episode_id="episode-omp-denials",
+            effective_plan_digest=plan.canonical_digest(),
+            observation=observation,
+            profile=profile,
+            target_projection=projection,
+            timeout_seconds=45,
+        )
+        binding = PolicyRuntimeBinding(RunnerOpenRequest(episode_id="episode-omp-denials", effective_plan=plan), client)
+        session = await ConductorAdapter(CONDUCTOR_RUNTIME_ABI).open(
+            RunnerOpenRequest(episode_id="episode-omp-denials", effective_plan=plan),
+            policy=binding,
+            workspace=tools,
+            cancellation=type("C", (), {"raise_if_cancelled": lambda *args, **kwargs: None})(),
+            events=type("E", (), {"emit": lambda self, event: asyncio.sleep(0)})(),
+        )
+        try:
+            await session.run(ConductorRunRequest(task_input={"prompt": "read local.txt"}, context={}))
+        finally:
+            await session.close()
+            await client.close()
+        execute_batches = [payload for operation, payload in phase_log if operation == "execute_batch"]
+        assert len(execute_batches) == (1 if expected_worker_ids else 0)
+        if expected_worker_ids:
+            assert [call["id"] for call in execute_batches[0]["calls"]] == expected_worker_ids
+        assert len(requests) == 2
+        tool_messages = [
+            message for message in requests[1]["messages"]
+            if message.get("role") in {"tool", "toolResult", "tool_result"}
+        ]
+        denial_text = [str(message.get("content", "")) for message in tool_messages]
+        assert denial_text.index("OMP capability denied: url") < denial_text.index("OMP capability denied: sqlite")
