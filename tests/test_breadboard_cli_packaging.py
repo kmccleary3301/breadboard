@@ -166,6 +166,7 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         "breadboard/rl/harness/__init__.py",
         "breadboard/rl/harness/headless.py",
         "breadboard/rl/harness/SANDBOX_CAPABILITY_MATRIX.json",
+        "breadboard/rl/harness/runners/omp_native_tool_worker.ts",
         "breadboard/rl/harness/resources/qualification/canonical_artifact_vectors_v1.json",
         "breadboard/rl/harness/resources/qualification/tls/authority.json",
         "breadboard/rl/harness/resources/qualification/tls/ca.cert.pem",
@@ -173,6 +174,10 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         "breadboard/rl/harness/resources/qualification/tls/server.key.pem",
         "config/product/tui-release.json",
         "config/e4_targets/notices/oh-my-pi-16.2.13.txt",
+        "config/e4_targets/oh_my_pi/18.1.17/target.json",
+        "config/e4_targets/oh_my_pi/18.1.17/native-worker.json",
+        "config/e4_targets/oh_my_pi/18.1.17/semantic-policy.json",
+        "config/e4_targets/oh_my_pi/18.1.17/prompts/system-prompt.md",
         "config/e4_targets/notices/pi-0.57.1.txt",
         "conformance/comparators/registry.json",
         "contracts/kernel/manifests/bb.engine_conformance_manifest.v1.schema.json",
@@ -280,6 +285,7 @@ from breadboard.product.harness.templates import (
 )
 from breadboard.product.operation_catalog import product_operation_catalog
 from breadboard.rl.harness.pi_native_tools import _WORKER
+from breadboard.rl.harness.omp_native_tools import verified_tool_worker_path
 from breadboard_engine.compilation.primitive_records import get_spec
 from breadboard_engine.e4_targets import (
     _resource_root,
@@ -337,7 +343,7 @@ generated = json.loads(
 assert generated["catalog_id"] == "bb.public_operation_catalog.v2"
 assert files("breadboard_sdk.generated").joinpath("public_bindings.py").is_file()
 target_ids = list_e4_target_ids()
-assert target_ids == ("mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "openhands-sdk@1.47.0", "pi@0.57.1", "pi@0.73.1")
+assert target_ids == ("mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "oh-my-pi@18.1.17", "openhands-sdk@1.47.0", "pi@0.57.1", "pi@0.73.1")
 for target_id in target_ids:
     target = load_e4_target(target_id)
     for asset in target.descriptor["assets"]:
@@ -346,6 +352,8 @@ for target_id in target_ids:
 pi_target = load_e4_target("pi@0.57.1")
 pi_073_worker = Path(_WORKER).resolve()
 assert pi_073_worker.is_file() and pi_073_worker.is_relative_to(site_root)
+omp_worker = verified_tool_worker_path()
+assert omp_worker.is_relative_to(site_root)
 omp_target = load_e4_target("oh-my-pi@16.2.13")
 assert pi_target.descriptor["upstream"]["package"]["integrity"].startswith("sha512-")
 assert omp_target.descriptor["upstream"]["source"]["commit"] == (
@@ -381,7 +389,7 @@ print(json.dumps({{
         ),
         "profile_id": "daily_driver.v1",
         "e4_import_count": 0,
-        "e4_target_ids": ["mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "openhands-sdk@1.47.0", "pi@0.57.1", "pi@0.73.1"],
+        "e4_target_ids": ["mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "oh-my-pi@18.1.17", "openhands-sdk@1.47.0", "pi@0.57.1", "pi@0.73.1"],
     }
 
     help_result = subprocess.run(

@@ -178,6 +178,10 @@ def _registered_comparator_input(
             "supplier_case": str(OPENHANDS_CASE),
             "bb_trace": _openhands_measured_bb_trace(),
         }
+    if comparator_id == "oh_my_pi_18_1_17_trace_v1":
+        from tests.e4_parity.test_omp_18_1_17_comparator import _trace as omp_trace
+
+        return {"capture": omp_trace(), "replay": omp_trace()}
     if comparator_id == "semantic_replay_v1":
         return {
             "capture": {"captured_artifacts": []},
@@ -251,6 +255,8 @@ def test_each_registered_comparator_entrypoint_conforms_to_protocol(tmp_path: Pa
         assert report_schema_version == entry["report_schema_version"]
         assert isinstance(report["assertions"], list) and report["assertions"]
         assert {"assertion_id", "status", "observed", "expected"} <= set(report["assertions"][0])
+        if entry["comparator_id"] == "oh_my_pi_18_1_17_trace_v1":
+            assert report["ok"] is True
 
 
 def test_rejected_openhands_bb_trace_reports_error() -> None:
