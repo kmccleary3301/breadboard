@@ -924,6 +924,11 @@ async def test_real_process_preserves_absolute_workspace_and_scratch_roots(
     tmp_path: Path,
 ) -> None:
     staging_before = set(Path("/dev/shm").glob(".breadboard-envelope-*"))
+    shm_mountinfo_before = tuple(
+        line
+        for line in Path("/proc/self/mountinfo").read_text().splitlines()
+        if " /dev/shm " in line
+    )
     fixture = make_runtime_fixture(with_writable_mount=True)
     harness = RuntimeHarness(tmp_path, fixture)
     harness.manager.process_backend = TrustedProcessBackend()
@@ -959,6 +964,11 @@ async def test_real_process_preserves_absolute_workspace_and_scratch_roots(
     receipt = await primary.close()
     assert receipt.state is CleanupState.RELEASED
     assert await harness.manager.close() == ()
+    assert tuple(
+        line
+        for line in Path("/proc/self/mountinfo").read_text().splitlines()
+        if " /dev/shm " in line
+    ) == shm_mountinfo_before
     assert set(Path("/dev/shm").glob(".breadboard-envelope-*")) == staging_before
 
 
