@@ -68,8 +68,8 @@ def _request_payload(
         observed = path.stat(follow_symlinks=False)
         return {
             "ctime_ns": str(observed.st_ctime_ns),
-            "device": observed.st_dev,
-            "inode": observed.st_ino,
+            "device": str(observed.st_dev),
+            "inode": str(observed.st_ino),
             "mode": stat.S_IMODE(observed.st_mode),
             "mtime_ns": str(observed.st_mtime_ns),
             "nlink": observed.st_nlink,
@@ -198,7 +198,7 @@ def _request_payload(
                 "scope_digest": CAUSE,
             },
             "rollback_id": rollback_id,
-            "schema_version": "bb.rl.phase5.g4-rollback-request.v1",
+            "schema_version": "bb.rl.phase5.g4-rollback-request.v2",
             "source_deletion_plan": {
                 "operation_id": f"{rollback_id}.source-deletion",
                 "owned_sources": [
@@ -1813,6 +1813,15 @@ def test_request_and_receipt_payloads_require_closed_canonical_bound_schemas(
             request + b" ",
         )
     request_object = json.loads(request)
+    old_request = dict(request_object, schema_version="bb.rl.phase5.g4-rollback-request.v1")
+    old_raw = canonical_json_bytes(old_request)
+    with pytest.raises(RollbackValidationError, match="unsupported rollback request schema version"):
+        store.prepare("rollback-validation", canonical_digest(old_raw), old_raw)
+    numeric_request = json.loads(request)
+    numeric_request["rerun_source_identities"]["authority_bundle"]["identity"]["inode"] = 123
+    numeric_raw = canonical_json_bytes(numeric_request)
+    with pytest.raises(RollbackValidationError, match="canonical decimal string"):
+        store.prepare("rollback-validation", canonical_digest(numeric_raw), numeric_raw)
     request_object["unexpected"] = True
     extra_request = canonical_json_bytes(request_object)
     with pytest.raises(RollbackValidationError, match="exactly"):
