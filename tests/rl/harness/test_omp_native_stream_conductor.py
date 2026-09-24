@@ -202,6 +202,7 @@ async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates
             max_output_tokens=2_048,
             caller_headers={},
             request_policy={"mode": "streaming", "include_usage": True, "max_token_field": "max_completion_tokens", "strict_tools": None, "enable_thinking": None},
+            capabilities={"supports_store": True, "supports_max_completion_tokens": True},
         )
         projection, semantics, manifest = _compile_target(tmp_path, model_id)
         observation = _observation(provider_id="openai", model_id=model_id, capabilities=_policy_capabilities(request_features=["max_completion_tokens", "n", "store", "stream_options", "streaming"]))
