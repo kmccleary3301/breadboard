@@ -17,7 +17,7 @@ import time
 import uuid
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from importlib.resources import files as resource_files
+from importlib.resources import files
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Awaitable, Callable, Literal, Mapping, Protocol, Sequence
@@ -146,7 +146,7 @@ def _admit_native_phase_payload(
 
 
 def _read_sandbox_capability_matrix_resource() -> bytes:
-    resource = resource_files(__package__).joinpath(SANDBOX_CAPABILITY_MATRIX_RESOURCE)
+    resource = files(__package__).joinpath(SANDBOX_CAPABILITY_MATRIX_RESOURCE)
     limit = _MAX_SANDBOX_CAPABILITY_MATRIX_BYTES
     if isinstance(resource, Path):
         expected = os.stat(resource, follow_symlinks=False)
