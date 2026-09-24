@@ -5,6 +5,7 @@
   "source_archive_sha256": "c3ce6ac1c1b5004c6dd530280fbe006cab37f6f829fde86be10d4840b86e085c",
   "npm_archive_sha256": "4f1f656770461d4677dea755b1899cba12b912b06798c89a59e2f0c18688b761",
   "native_loop": "BreadBoard owns model dispatch, history commit, recovery, and terminal arbitration; OpenClaw tool preparation/effects are exposed through openclaw_native_tools.py",
+  "skill_catalog_note": "Pinned skill eligibility reads process.platform and PATH and discovers browser/canvas via plugin roots. Local macOS catalog byte parity is not a Linux supplier claim; decide it only in the installed Linux replay inside the supplier image.",
   "citations": {
     "tools": "src/agents/core-coding-tools.ts:createCoreCodingTools",
     "title": "src/agents/schema/typebox.ts:executionTitleSchema",

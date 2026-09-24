@@ -288,9 +288,12 @@ class _OpenClawWorkerClient:
         self,
         workspace: str | Path,
         *,
+        message_timestamp_ms: str,
         node: str | None = None,
         dist: str | None = None,
     ) -> None:
+        if not re.fullmatch(r"\d{13}", message_timestamp_ms):
+            raise ValueError("declared message_timestamp_ms must be a 13-digit UTC epoch millisecond string")
         self.workspace = str(Path(workspace).resolve())
         self.node = node or os.environ.get("OPENCLAW_NODE", "node")
         fallback_dist = "/tmp/openclaw-npm-20260923/node_modules/openclaw/dist"
@@ -372,6 +375,7 @@ class _OpenClawWorkerClient:
                     "cwd": self.workspace,
                     "home": str(Path.home()),
                     "current_date": datetime.now(timezone.utc).date().isoformat(),
+                    "message_timestamp_ms": message_timestamp_ms,
                     "package_dir": self.dist,
                     "session_id": uuid.uuid4().hex,
                 },
@@ -507,12 +511,15 @@ class OpenClawNativeTools:
     def __init__(
         self,
         workspace: str | Path,
+        message_timestamp_ms: str,
         *,
         worker: _OpenClawWorkerClient | None = None,
     ) -> None:
         self.workspace = Path(workspace).resolve()
         self.workspace.mkdir(parents=True, exist_ok=True)
-        self._worker = worker or _OpenClawWorkerClient(self.workspace)
+        self._worker = worker or _OpenClawWorkerClient(
+            self.workspace, message_timestamp_ms=message_timestamp_ms,
+        )
         self.scope = _NodeWorkerScope(self._worker)
     def execute(self, name: str, arguments: Mapping[str, Any] | None = None) -> dict[str, Any]:
         # Arguments cross the source boundary unchanged.  OpenClaw's pinned
@@ -565,6 +572,7 @@ def native_worker_invocation() -> dict[str, Any]:
         "source_modules": [
             "core-coding-tools-DoP9tAh3.mjs",
             "bash-process-registry-DHrULGkz.mjs",
+            "bootstrap-files-BAkC4xBB.mjs",
             "bootstrap-DYYMCrXY.mjs",
             "workspace-YW5Pl2cf.mjs",
         ],

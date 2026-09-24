@@ -11,9 +11,9 @@
       "sha256": "sha256:4b7a0fbb2ef2bbefa279cf50b6ed98b63ec9c2fa0f1044b5b165935dd2bdf010"
     },
     {
-      "bytes": 4822,
+      "bytes": 4973,
       "path": "native-config.json",
-      "sha256": "sha256:3e4f506de060e573fdc4d850ea16eef4c0dd33898bed81ec78ab250361b78343"
+      "sha256": "sha256:f12c6fa9121efdd48e314db34d826a790f028cd1c248f21c6a7c65dd2b7add6e"
     },
     {
       "bytes": 80,
@@ -31,9 +31,9 @@
       "sha256": "sha256:5095e5b99bcf0e0cab95b905f24bbac0d9ef65b3772785b9bb0194af76f11239"
     },
     {
-      "bytes": 1299,
+      "bytes": 1565,
       "path": "source.json",
-      "sha256": "sha256:a366e3ee1966b5bc6082e49733273572760378083499fe1e1960f240c8ee0a06"
+      "sha256": "sha256:7fabd48a20a68143a5d9afd6ca212f7c0d1aaa2bbeed8c512276ac6db276ceb7"
     }
   ],
   "execution": {

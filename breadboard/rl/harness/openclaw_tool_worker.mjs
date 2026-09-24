@@ -19,6 +19,7 @@ const finalizationOnly = process.argv.length === 3 && process.argv[2] === "--fin
 const DIST = process.env.OPENCLAW_DIST || "/opt/openclaw/dist";
 const MODULE_DIGESTS = Object.freeze({
   "core-coding-tools-DoP9tAh3.mjs": "403a72188e3378cc570691083fa9270c05e20dc7e2706c62c5c455457b50dca3",
+  "bootstrap-files-BAkC4xBB.mjs": "ff194038a11578027d75ea98570ec71bc253b554c1bda430dcb9cf9eef857a0d",
   "bootstrap-DYYMCrXY.mjs": "e87734ad3d2d4b614a317ddd57565df7ce800aff0b8eaafd565066d905d61e1c",
   "workspace-YW5Pl2cf.mjs": "8201a6b4ee921ac2767e272924488ed7c56c9041d274070490a064968438d5cf",
   "bash-process-registry-DHrULGkz.mjs": "6f8a65296ce1a1e07b0f3d94d2bf65f9e88c5a68b9d01df3eecc1f40f349627e",
@@ -43,7 +44,6 @@ const TOOL_ORDER = Object.freeze(["edit", "exec", "ls", "process", "read", "writ
 let workspace = null;
 let scopeKey = "openclaw:e4";
 let tools = new Map();
-let sourceBootstrap = null;
 let sourceWorkspace = null;
 let sourceTransport = null;
 let modelConfig = null;
@@ -87,7 +87,7 @@ async function verifyAndLoad() {
   }
   verifiedRegistryUrl = bytes["bash-process-registry-DHrULGkz.mjs"];
   const core = await import(bytes["core-coding-tools-DoP9tAh3.mjs"]);
-  sourceBootstrap = await import(bytes["bootstrap-DYYMCrXY.mjs"]);
+  const sourceBootstrapFiles = await import(bytes["bootstrap-files-BAkC4xBB.mjs"]);
   sourceWorkspace = await import(bytes["workspace-YW5Pl2cf.mjs"]);
   sourceExecutionContext = await import(bytes["tool-execution-context-C6v2UVPI.mjs"]);
   sourceAcknowledgeResult = (await import(bytes["internal-hooks-DUPhyX-W.mjs"])).t;
@@ -103,8 +103,7 @@ async function verifyAndLoad() {
   sourceProviderPrompt = (await import(bytes["provider-runtime-Cf3GwX2b.mjs"])).z;
   return {
     createCoreCodingTools: core.t,
-    buildBootstrapContextFiles: sourceBootstrap.n,
-    loadWorkspaceBootstrapFiles: sourceWorkspace._,
+    resolveBootstrapContextForRun: sourceBootstrapFiles.a,
     buildOpenAICompletionsParams: sourceTransport.t,
   };
 }
@@ -245,30 +244,23 @@ function projectSourceRequest(messages, buildOpenAICompletionsParams) {
   };
 }
 
-async function bootstrapContext(loadWorkspaceBootstrapFiles, buildBootstrapContextFiles) {
-  const files = await loadWorkspaceBootstrapFiles(workspace);
-  return buildBootstrapContextFiles(files, { maxChars: 20000, totalMaxChars: 60000 });
+async function bootstrapContext(resolveBootstrapContextForRun, config, sessionId, sessionKey) {
+  const resolved = await resolveBootstrapContextForRun({
+    workspaceDir: workspace, config, agentId: "main", sessionId, sessionKey,
+  });
+  return resolved.contextFiles;
 }
-async function materializeSourcePrompt(ordered, contextFiles, runtimeInputs, packageDir) {
+async function materializeSourcePrompt(ordered, contextFiles, runtimeInputs, packageDir, config, sessionKey) {
   const modelId = modelConfig?.id;
   const provider = modelConfig?.provider;
-  if (typeof modelId !== "string" || !modelId || typeof provider !== "string" || !provider) {
-    throw new Error("model_config provider and id are required for pinned prompt");
-  }
   const packageRoot = packageDir.endsWith("/dist") ? resolve(packageDir, "..") : packageDir;
-  const config = {
-    agents: { defaults: { model: { primary: `${provider}/${modelId}` }, workspace } },
-    tools: { allow: TOOL_ORDER },
-  };
   const sessionId = runtimeInputs.session_id;
-  if (typeof sessionId !== "string" || !sessionId) throw new Error("declared session_id is required");
   if (typeof runtimeInputs.message_timestamp_ms !== "string" || !/^\d{13}$/.test(runtimeInputs.message_timestamp_ms)) {
     throw new Error("declared message_timestamp_ms is required");
   }
   sourceInitialTimestamp = Number(runtimeInputs.message_timestamp_ms);
   if (!Number.isSafeInteger(sourceInitialTimestamp)) throw new Error("declared message_timestamp_ms is invalid");
   sourceConfig = config;
-  const sessionKey = `agent:main:explicit:${sessionId}`;
   sourceSessionKey = sessionKey;
   const { runtimeInfo, userTimezone, userDate } = await sourceRuntimePrompt({
     config, agentId: "main", workspaceDir: workspace, cwd: workspace,
@@ -621,9 +613,21 @@ async function handle(message) {
     await materializeBootstrapAssets(assets);
     const source = await verifyAndLoad();
     const ordered = makeTools(source.createCoreCodingTools);
+    const modelId = modelConfig?.id;
+    const provider = modelConfig?.provider;
+    if (typeof modelId !== "string" || !modelId || typeof provider !== "string" || !provider) {
+      throw new Error("model_config provider and id are required for pinned prompt");
+    }
+    const sessionId = runtimeInputs.session_id;
+    if (typeof sessionId !== "string" || !sessionId) throw new Error("declared session_id is required");
+    const sessionKey = `agent:main:explicit:${sessionId}`;
+    const config = {
+      agents: { defaults: { model: { primary: `${provider}/${modelId}` }, workspace } },
+      tools: { allow: TOOL_ORDER },
+    };
     await sourceWorkspace.d({ dir: workspace, ensureBootstrapFiles: true });
-    const bootstrapFiles = await bootstrapContext(source.loadWorkspaceBootstrapFiles, source.buildBootstrapContextFiles);
-    const { prompt: systemPrompt, runtimeFacts } = await materializeSourcePrompt(ordered, bootstrapFiles, runtimeInputs, packageDir);
+    const bootstrapFiles = await bootstrapContext(source.resolveBootstrapContextForRun, config, sessionId, sessionKey);
+    const { prompt: systemPrompt, runtimeFacts } = await materializeSourcePrompt(ordered, bootstrapFiles, runtimeInputs, packageDir, config, sessionKey);
     return {
       schema_version: PROTOCOL,
       kind: "initialized",

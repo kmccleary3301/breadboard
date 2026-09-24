@@ -499,8 +499,8 @@ def _wire_prompt_facts(
             message["content"] = content
         if runtime_lines != 1:
             raise ComparatorError("pinned transport must emit exactly one relocated Runtime line per request")
-        if stamped_users < 1:
-            raise ComparatorError("pinned transport must emit a stamped user message")
+        if stamped_users != 1:
+            raise ComparatorError("pinned transport must emit exactly one stamped user message per request")
     return projected
 
 

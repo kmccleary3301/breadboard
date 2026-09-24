@@ -807,6 +807,35 @@ async def test_openclaw_initialization_materializes_pinned_system_prompt(tmp_pat
         assert "## Tooling\nTools policy-filtered." in prompt
         assert "<available_skills>" in prompt
         assert "## Workspace Files (injected)" in prompt
+        assert f"## {tmp_path}/BOOTSTRAP.md" not in prompt
+    finally:
+        await worker.close()
+
+
+@pytest.mark.asyncio
+async def test_pinned_skill_catalog_contains_supplier_linux_names_on_local_host(tmp_path: Path) -> None:
+    fixture = Path(__file__).parents[2] / "e4_parity/fixtures/openclaw_packet_640/receiver/http-transcript.jsonl"
+    supplier = json.loads(fixture.read_text(encoding="utf-8").splitlines()[0])["body"]
+    supplier_names = set(re.findall(r"<name>([^<]+)</name>", supplier["messages"][0]["content"]))
+    assert len(supplier_names) == 17
+
+    worker = _NativeWorkerPort(tmp_path, ())
+    config = json.loads((Path(__file__).parents[3] / "config/e4_targets/openclaw/2026.9.4/native-config.json").read_bytes())
+    try:
+        initialized = await worker.invoke_native_phase(
+            "initialize",
+            {
+                "advertisement": config["advertisement"],
+                "model_config": {"id": "gpt-4o-mini", "provider": "openai"},
+                "runtime_inputs": worker.native_runtime_inputs(
+                    input_names=("cwd", "home", "current_date", "message_timestamp_ms", "package_dir", "session_id"),
+                    package_subpath=".",
+                ),
+            },
+            timeout_ms=15_000,
+        )
+        local_names = set(re.findall(r"<name>([^<]+)</name>", initialized["system_prompt"]))
+        assert supplier_names <= local_names
     finally:
         await worker.close()
 

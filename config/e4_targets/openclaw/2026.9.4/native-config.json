@@ -111,6 +111,7 @@
     "source_modules": [
       "core-coding-tools-DoP9tAh3.mjs",
       "bash-process-registry-DHrULGkz.mjs",
+      "bootstrap-files-BAkC4xBB.mjs",
       "bootstrap-DYYMCrXY.mjs",
       "workspace-YW5Pl2cf.mjs",
       "openai-transport-stream-D950WgL3.mjs",
@@ -120,6 +121,7 @@
       "core-coding-tools-DoP9tAh3.mjs": "sha256:403a72188e3378cc570691083fa9270c05e20dc7e2706c62c5c455457b50dca3",
       "bash-process-registry-DHrULGkz.mjs": "sha256:6f8a65296ce1a1e07b0f3d94d2bf65f9e88c5a68b9d01df3eecc1f40f349627e",
       "workspace-YW5Pl2cf.mjs": "sha256:8201a6b4ee921ac2767e272924488ed7c56c9041d274070490a064968438d5cf",
+      "bootstrap-files-BAkC4xBB.mjs": "sha256:ff194038a11578027d75ea98570ec71bc253b554c1bda430dcb9cf9eef857a0d",
       "openai-transport-stream-D950WgL3.mjs": "sha256:83fd60ff0760bef6eeabcee42fd219f1213cc9ffe3f65666681f486775032d78",
       "agent-exec-BAuhpelg.mjs": "sha256:2e39dbc961337936860849aaaed6a26b734d0c20648093f2bc51a46ebfe9526d"
     },

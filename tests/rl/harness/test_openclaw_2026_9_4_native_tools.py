@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 import json
 import os
@@ -31,6 +32,11 @@ _PACKET = Path(
     )
 )
 
+@pytest.fixture
+def message_timestamp_ms() -> str:
+    return str(int(datetime.now(timezone.utc).timestamp() * 1000))
+
+
 
 def test_pinned_classifier_refuses_changed_dist_byte(tmp_path: Path) -> None:
     source_dist = Path(os.environ.get("OPENCLAW_DIST", "/tmp/openclaw-npm-20260923/node_modules/openclaw/dist"))
@@ -53,8 +59,8 @@ def test_pinned_classifier_refuses_changed_dist_byte(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(not _PACKET.is_file(), reason="admitted supplier packet is not installed")
-def test_packet_results_are_classified_by_pinned_dist(tmp_path: Path) -> None:
-    tools = OpenClawNativeTools(tmp_path)
+def test_packet_results_are_classified_by_pinned_dist(tmp_path: Path, message_timestamp_ms: str) -> None:
+    tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
     try:
         expected = {
             "normal_multiturn_write_read": ("ok", "marker verified", 0),
@@ -85,8 +91,8 @@ def test_bootstrap_order_budgets_and_missing_markers(tmp_path: Path) -> None:
     assert context[3]["content"] == f"[MISSING] Expected at: {tmp_path / 'BOOTSTRAP.md'}"
 
 
-def test_native_file_effects_and_exact_edit(tmp_path: Path) -> None:
-    tools = OpenClawNativeTools(tmp_path)
+def test_native_file_effects_and_exact_edit(tmp_path: Path, message_timestamp_ms: str) -> None:
+    tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
     tools.execute("write", {"path": "marker.txt", "content": "before\n"})
     result = tools.execute("edit", {"path": "marker.txt", "oldText": "before", "newText": "after"})
     assert result["changed"] is True
@@ -94,8 +100,8 @@ def test_native_file_effects_and_exact_edit(tmp_path: Path) -> None:
     assert tools.execute("read", {"path": "marker.txt"})["content"] == "after\n"
 
 
-def test_exec_and_process_poll_clamp(tmp_path: Path) -> None:
-    tools = OpenClawNativeTools(tmp_path)
+def test_exec_and_process_poll_clamp(tmp_path: Path, message_timestamp_ms: str) -> None:
+    tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
     result = tools.execute("exec", {"command": "printf READY", "background": True})
     assert result["status"] == "running"
     polled = tools.execute("process", {"action": "poll", "sessionId": result["sessionId"], "timeout": 999_999})
@@ -106,8 +112,8 @@ def test_exec_and_process_poll_clamp(tmp_path: Path) -> None:
     tools.scope.cleanup()
 
 
-def test_poll_replays_unacknowledged_output_until_history_commit(tmp_path: Path) -> None:
-    tools = OpenClawNativeTools(tmp_path)
+def test_poll_replays_unacknowledged_output_until_history_commit(tmp_path: Path, message_timestamp_ms: str) -> None:
+    tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
     try:
         launched = tools.execute("exec", {"command": "printf 'ACK_MARKER\\n'", "background": True})
         session = launched["sessionId"]
@@ -122,8 +128,8 @@ def test_poll_replays_unacknowledged_output_until_history_commit(tmp_path: Path)
         tools.scope.cleanup()
 
 
-def test_parallel_native_batch_commits_source_order_with_observed_completion(tmp_path: Path) -> None:
-    tools = OpenClawNativeTools(tmp_path)
+def test_parallel_native_batch_commits_source_order_with_observed_completion(tmp_path: Path, message_timestamp_ms: str) -> None:
+    tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
     try:
         tools._worker._request({
             "phase": "prepare_tools",
@@ -142,8 +148,8 @@ def test_parallel_native_batch_commits_source_order_with_observed_completion(tmp
         tools.scope.cleanup()
 
 
-def test_parallel_exec_reservations_enforce_live_process_cap(tmp_path: Path) -> None:
-    tools = OpenClawNativeTools(tmp_path)
+def test_parallel_exec_reservations_enforce_live_process_cap(tmp_path: Path, message_timestamp_ms: str) -> None:
+    tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
     try:
         tools._worker._request({
             "phase": "prepare_tools",
@@ -160,8 +166,8 @@ def test_parallel_exec_reservations_enforce_live_process_cap(tmp_path: Path) -> 
         tools.scope.cleanup()
 
 
-def test_exec_timeout_admission_rejects_over_thirty_seconds(tmp_path: Path) -> None:
-    tools = OpenClawNativeTools(tmp_path)
+def test_exec_timeout_admission_rejects_over_thirty_seconds(tmp_path: Path, message_timestamp_ms: str) -> None:
+    tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
     try:
         denied = tools.execute("exec", {"command": "touch timeout-31.txt", "timeoutSeconds": 31})
         assert denied["isError"] is True
@@ -173,8 +179,8 @@ def test_exec_timeout_admission_rejects_over_thirty_seconds(tmp_path: Path) -> N
         tools.scope.cleanup()
 
 
-def test_max_live_processes_counts_every_exec_including_foreground(tmp_path: Path) -> None:
-    tools = OpenClawNativeTools(tmp_path)
+def test_max_live_processes_counts_every_exec_including_foreground(tmp_path: Path, message_timestamp_ms: str) -> None:
+    tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
     try:
         for index in range(4):
             res = tools.execute("exec", {"command": "sleep 30", "background": True})
@@ -188,8 +194,8 @@ def test_max_live_processes_counts_every_exec_including_foreground(tmp_path: Pat
         assert "OpenClaw live process cap exceeded" in str(fifth.get("output", ""))
     finally:
         tools.scope.cleanup()
-def test_classify_result_semantics_and_envelope_invariants(tmp_path: Path) -> None:
-    tools = OpenClawNativeTools(tmp_path)
+def test_classify_result_semantics_and_envelope_invariants(tmp_path: Path, message_timestamp_ms: str) -> None:
+    tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
     try:
         # 1. OK execution: exit 0, trailing trim, nullable model/provider, usage/cost/toolSummary preserved
         ok_res = tools._worker._request({

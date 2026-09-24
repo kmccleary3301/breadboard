@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 
@@ -229,6 +230,17 @@ def test_user_timestamp_must_match_pinned_worker_fact() -> None:
         )
 
 
+def test_second_stamped_user_message_is_rejected() -> None:
+    fixture = Path(__file__).parent / "fixtures" / "openclaw_packet_640"
+    receipt = json.loads((fixture / "case-receipt.json").read_text())
+    request = json.loads(json.dumps(project_supplier_case(fixture)["requests"][0]))
+    stamp = comparator._USER_TIMESTAMP.match(request["messages"][1]["content"])
+    assert stamp is not None
+    request["messages"].append({"role": "user", "content": stamp.group() + "duplicate"})
+    with pytest.raises(ComparatorError, match="exactly one stamped user"):
+        comparator._wire_prompt_facts([request], roots=comparator._supplier_wire_roots(receipt))
+
+
 def test_malformed_packet_stops_without_followup_request_or_effect() -> None:
     packet = Path("/tmp/bbe4-openclaw-packet640/packet/cases/malformed_tool_call")
     if not packet.is_dir():
@@ -317,8 +329,9 @@ def test_phase_worker_runs_real_pinned_source_tools(tmp_path: Path, monkeypatch:
         OpenClawNativeTools,
         native_worker_invocation,
     )
+    message_timestamp_ms = str(int(datetime.now(timezone.utc).timestamp() * 1000))
 
-    tools = OpenClawNativeTools(tmp_path)
+    tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
     try:
         invocation = native_worker_invocation()
         assert invocation["protocol"] == "bb.openclaw-native.v1"
