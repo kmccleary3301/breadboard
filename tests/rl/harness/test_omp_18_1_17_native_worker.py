@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import hashlib
 import json
 import re
-import sys
+import shutil
 import subprocess
+import sys
+import zipfile
 import pytest
 
 from breadboard.rl.harness.omp_native_tools import (
@@ -17,31 +20,109 @@ from breadboard.rl.harness.omp_native_tools import (
     verified_tool_worker_path,
 )
 
-_LOCAL_SOURCE_ROOT = Path("/private/tmp/e4-sol-review-w2-1-routing/standalone-source")
-_LOCAL_BUN = Path("/opt/homebrew/bin/bun")
+_PINNED_SOURCE_SHA256 = "67822418bad69de015d28a1bbd45fa7be689fdce367dfa3d584bdfcfbfcb5587"
+
+
+def _source_zip_path() -> Path | None:
+    configured = os.environ.get("BB_OMP_SOURCE_ZIP")
+    if not configured:
+        return None
+    path = Path(configured)
+    if not path.is_file():
+        return None
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if digest != _PINNED_SOURCE_SHA256:
+        raise AssertionError(f"pinned OMP source archive digest mismatch: {digest}")
+    return path
 
 
 def _differential_source_root() -> Path:
-    configured = os.environ.get("OMP_DIFFERENTIAL_SOURCE_ROOT")
-    if configured:
-        return Path(configured)
-    if _LOCAL_SOURCE_ROOT.is_dir():
-        return _LOCAL_SOURCE_ROOT
     return Path(pinned_worker_spec().source_root)
 
 
-def _differential_bun() -> Path:
-    configured = os.environ.get("OMP_DIFFERENTIAL_BUN")
+def _differential_bun() -> Path | None:
+    configured = os.environ.get("BB_BUN")
     if configured:
         return Path(configured)
-    if _LOCAL_BUN.is_file():
-        return _LOCAL_BUN
-    return Path(pinned_worker_spec().bun)
+    discovered = shutil.which("bun")
+    if discovered:
+        return Path(discovered)
+    pinned = Path(pinned_worker_spec().bun)
+    return pinned if pinned.is_file() else None
 
 
-OMP_AVAILABLE = _differential_bun().is_file() and _differential_source_root().is_dir()
+OMP_AVAILABLE = (
+    _differential_bun() is not None
+    and (
+        _source_zip_path() is not None
+        or _differential_source_root().is_dir()
+    )
+)
 
 
+
+def _materialize_differential_source(tmp_path: Path) -> Path:
+    source_zip = _source_zip_path()
+    if source_zip is None:
+        return _differential_source_root()
+    source_root = tmp_path / "omp-source"
+    with zipfile.ZipFile(source_zip) as archive:
+        archive.extractall(source_root)
+        roots = {
+            name.split("/", 1)[0]
+            for name in archive.namelist()
+            if "/" in name
+        }
+    if len(roots) != 1:
+        raise AssertionError(f"pinned source archive root is not unique: {roots}")
+    source_root = source_root / roots.pop()
+    for package, exports in {
+        "@oh-my-pi/pi-natives": "export const glob = async () => [];\nexport const notebookToEditableText = (value) => value;\n",
+        "@oh-my-pi/pi-utils": (
+            "export const hasFsCode = () => false;\n"
+            "export const isEnoent = (error) => error?.code === 'ENOENT';\n"
+            "export const isEnotdir = (error) => error?.code === 'ENOTDIR';\n"
+            "export const isWsl = () => false;\n"
+            "export const stripWindowsExtendedLengthPathPrefix = (value) => value;\n"
+            "export const windowsPathToWslMount = (value) => value;\n"
+            "export const BINARY_SNIFF_BYTES = 512;\n"
+            "export const isProbablyBinary = () => false;\n"
+            "export const isProbablyBinaryHeader = () => false;\n"
+            "export const logger = console;\n"
+            "export const prompt = async () => undefined;\n"
+            "export const readImageMetadata = async () => undefined;\n"
+        ),
+    }.items():
+        package_root = source_root / "node_modules" / package
+        package_root.mkdir(parents=True, exist_ok=True)
+        (package_root / "package.json").write_text(
+            '{"type":"module","exports":"./index.ts"}',
+            encoding="utf-8",
+        )
+        (package_root / "index.ts").write_text(exports, encoding="utf-8")
+    handler_stubs = {
+        "agent-protocol.ts": "export class AgentProtocolHandler { readonly scheme = 'agent'; }\n",
+        "artifact-protocol.ts": "export class ArtifactProtocolHandler { readonly scheme = 'artifact'; }\n",
+        "history-protocol.ts": "export class HistoryProtocolHandler { readonly scheme = 'history'; }\n",
+        "issue-pr-protocol.ts": (
+            "export class IssueProtocolHandler { readonly scheme = 'issue'; }\n"
+            "export class PrProtocolHandler { readonly scheme = 'pr'; }\n"
+        ),
+        "local-protocol.ts": "export class LocalProtocolHandler { readonly scheme = 'local'; }\n",
+        "mcp-protocol.ts": "export class McpProtocolHandler { readonly scheme = 'mcp'; }\n",
+        "memory-protocol.ts": "export class MemoryProtocolHandler { readonly scheme = 'memory'; }\n",
+        "omp-protocol.ts": "export class OmpProtocolHandler { readonly scheme = 'omp'; }\n",
+        "rule-protocol.ts": "export class RuleProtocolHandler { readonly scheme = 'rule'; }\n",
+        "security-protocol.ts": "export class SecurityProtocolHandler { readonly scheme = 'security'; }\n",
+        "skill-protocol.ts": "export class SkillProtocolHandler { readonly scheme = 'skill'; }\n",
+        "ssh-protocol.ts": "export class SshProtocolHandler { readonly scheme = 'ssh'; }\n",
+        "vault-protocol.ts": "export class VaultProtocolHandler { readonly scheme = 'vault'; }\n",
+        "xd-protocol.ts": "export class XdProtocolHandler { readonly scheme = 'xd'; }\n",
+    }
+    handler_root = source_root / "packages/coding-agent/src/internal-urls"
+    for filename, contents in handler_stubs.items():
+        (handler_root / filename).write_text(contents, encoding="utf-8")
+    return source_root
 def _pinned_source(relative: str) -> str:
     return (Path(pinned_worker_spec().source_root) / relative).read_text(encoding="utf-8")
 
@@ -117,10 +198,12 @@ def _source_route_patterns() -> tuple[list[str], list[str]]:
 
 
 _TS_ROUTE_PROBE = r"""
-import { expandPath, isReadableUrlPath, pathTargetsSsh } from "%s/packages/coding-agent/src/tools/path-utils.ts";
+import { expandPath, isReadableUrlPath, pathTargetsSsh } from "__OMP_SOURCE_ROOT__/packages/coding-agent/src/tools/path-utils.ts";
+import { InternalUrlRouter } from "__OMP_SOURCE_ROOT__/packages/coding-agent/src/internal-urls/router.ts";
 
 const input = JSON.parse(await Bun.stdin.text());
 const policy = input.policy;
+const internalRouter = new InternalUrlRouter();
 
 function routeExtension(value, extensions) {
   const base = value.toLowerCase();
@@ -163,17 +246,12 @@ function classify(value) {
   if (isReadableUrlPath(candidate)) return "url";
   if (pathTargetsSsh(candidate)) return "ssh";
   const internal = extractUriScheme(candidate);
-  if (internal) {
-    const schemes = new Set((policy["internal-resource"]?.route?.schemes ?? []).map(item => item.toLowerCase()));
-    if (schemes.has(internal)) {
-      if (internal === "local") {
-        const parsed = new URL(candidate);
-        if (parsed.pathname) candidate = decodeURIComponent(parsed.pathname);
-        else return "internal-resource";
-      } else {
-        return "internal-resource";
-      }
-    } else if (!["file", "http", "https", "ssh"].includes(internal) && schemes.has("mcp")) {
+  if (internal && internalRouter.canResolve(candidate)) {
+    if (internal === "local") {
+      const parsed = new URL(candidate);
+      if (parsed.pathname) candidate = decodeURIComponent(parsed.pathname);
+      else return "internal-resource";
+    } else {
       return "internal-resource";
     }
   }
@@ -185,7 +263,7 @@ function classify(value) {
 }
 
 console.log(JSON.stringify(input.values.map(value => ({ value, route: classify(value) }))));
-""" % _differential_source_root()
+"""
 
 
 def _authority_payload(tmp_path: Path) -> dict[str, object]:
@@ -261,6 +339,22 @@ def test_route_classification_differential_matches_pinned_bun(tmp_path: Path) ->
     root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
     policy = json.loads((root / "native-config.json").read_text())["capability_denials"]
     assert classify_capability("file:///tmp/state.sqlite", denial_policy=policy) == "sqlite"
+    fixture_root = tmp_path / "route-fixtures"
+    fixture_root.mkdir()
+    fixture_sqlite = fixture_root / "route.sqlite"
+    fixture_sqlite.write_bytes(b"SQLite format 3\0")
+    fixture_question = fixture_root / "route?name.sqlite"
+    fixture_question.write_bytes(b"SQLite format 3\0")
+    fixture_archive = fixture_root / "route.tar.gz"
+    fixture_archive.write_bytes(b"archive")
+    fixture_pdf = fixture_root / "route.pdf"
+    fixture_pdf.write_bytes(b"%PDF-1.7\n")
+    fixture_sqlite_archive = fixture_root / "route.sqlite:artifact.tar.gz"
+    fixture_sqlite_archive.write_bytes(b"SQLite format 3\0")
+    fixture_agent = fixture_root / "agent:foo"
+    fixture_agent.write_bytes(b"literal")
+    fixture_mcp = fixture_root / "mcp:opaque"
+    fixture_mcp.write_bytes(b"literal")
     values = [
         "file:///tmp/state.sqlite",
         "file:///tmp/state%2Esqlite:users",
@@ -327,18 +421,35 @@ def test_route_classification_differential_matches_pinned_bun(tmp_path: Path) ->
         "ordinary.txt",
         "state.sqlite.backup",
     ]
+    values.extend(
+        [
+            fixture_sqlite.as_uri(),
+            fixture_question.as_uri(),
+            fixture_archive.as_uri() + ":member",
+            fixture_pdf.as_uri() + ":1",
+            fixture_sqlite_archive.as_posix(),
+            str(fixture_agent),
+            str(fixture_mcp),
+            "agent:foo",
+            "mcp:opaque",
+        ]
+    )
     expected = [
         {"value": value, "route": classify_capability(value, denial_policy=policy)}
         for value in values
     ]
+    source_root = _materialize_differential_source(tmp_path)
     probe = tmp_path / "omp_route_probe.ts"
-    probe.write_text(_TS_ROUTE_PROBE, encoding="utf-8")
+    probe.write_text(
+        _TS_ROUTE_PROBE.replace("__OMP_SOURCE_ROOT__", source_root.as_posix()),
+        encoding="utf-8",
+    )
     result = subprocess.run(
         [_differential_bun(), str(probe)],
         input=json.dumps({"policy": policy, "values": values}),
         capture_output=True,
         text=True,
-        cwd=_differential_source_root(),
+        cwd=source_root,
         check=False,
     )
     assert result.returncode == 0, result.stderr

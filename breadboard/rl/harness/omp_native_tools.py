@@ -294,7 +294,8 @@ def classify_capability(
             if isinstance(internal_entry, Mapping)
             else set()
         )
-        if internal in internal_schemes:
+        hierarchical = re.match(r"^[a-z][a-z0-9+.-]*:\/\/", candidate, re.I)
+        if internal in internal_schemes and hierarchical:
             if internal == "local":
                 local_path = urlsplit(candidate).path
                 if local_path:
@@ -303,7 +304,11 @@ def classify_capability(
                     return "internal-resource"
             else:
                 return "internal-resource"
-        elif internal not in {"file", "http", "https", "ssh"} and "mcp" in internal_schemes:
+        elif (
+            internal not in internal_schemes
+            and internal not in {"file", "http", "https", "ssh"}
+            and "mcp" in internal_schemes
+        ):
             return "internal-resource"
 
     # path-utils.ts:177-181 resolveReadPath performs the same Linux expansion
