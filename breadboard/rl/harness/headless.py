@@ -26,9 +26,11 @@ from .composition import (
     ManagedPolicyRuntimeClientResolver,
     PinnedServerCompilerAdapter,
     ProductionComposition,
+    _CASMaterializationSourceReader,
     load_pinned_compiler,
     load_production_composition,
 )
+from .materialization import validate_workspace_seed_manifest
 from .policy_provider import (
     E4TargetPolicyProjection,
     EpisodeOpenAICompletionsPolicyResolver,
@@ -68,10 +70,12 @@ class HeadlessWorkspaceInput(BaseModel):
             if self.workspace_seed_digest is not None:
                 raise ValueError("repository workspace cannot declare a seed tree")
         else:
-            if self.workspace_directory_mode != 0o700:
-                raise ValueError(
-                    "seeded workspace directory mode must be canonical 0700"
-                )
+            if (
+                type(self.workspace_directory_mode) is not int
+                or self.workspace_directory_mode < 0
+                or self.workspace_directory_mode > 0o777
+            ):
+                raise ValueError("seeded workspace directory mode is invalid")
             if (
                 self.repository_snapshot_digest is not None
                 or self.base_commit is not None
@@ -601,7 +605,7 @@ async def run_headless_request(
             effective_plan = _load_effective_plan(
                 composition, create.effective_plan_ref
             )
-            _validate_effective_plan(request, target, effective_plan)
+            _validate_effective_plan(request, target, effective_plan, composition)
             run_started = True
             run_operation = await composition.service.run(
                 episode_id,
@@ -810,11 +814,28 @@ def _validate_repository_base_commit_binding(
             "repository base commit is not bound to the admitted workspace authority"
         )
 
+def _validate_seed_workspace_directory_mode(
+    declared_mode: int, manifest_root_mode: int
+) -> None:
+    if (
+        type(declared_mode) is not int
+        or type(manifest_root_mode) is not int
+        or not 0 <= declared_mode <= 0o777
+        or not 0 <= manifest_root_mode <= 0o777
+    ):
+        raise ValueError("seeded workspace directory mode is invalid")
+    if declared_mode != manifest_root_mode:
+        raise ValueError(
+            "seeded workspace directory mode does not match seed manifest root"
+        )
+
+
 
 def _validate_effective_plan(
     request: HeadlessRunRequest,
     target: E4TargetPolicyProjection,
     plan: c.EffectiveExecutionPlan,
+    composition: ProductionComposition,
 ) -> None:
     if plan.effective_capabilities.resources != request.expected_resources:
         raise ValueError("effective resource limits do not match the headless request")
@@ -833,6 +854,17 @@ def _validate_effective_plan(
             != request.workspace.workspace_seed_digest
         ):
             raise ValueError("seeded workspace root is not bound to its seed artifact")
+        reader = _CASMaterializationSourceReader(composition.authority_graph.cas)
+        manifest = reader.load_manifest(
+            request.workspace.workspace_seed_digest,
+            max_bytes=root_mounts[0].max_bytes,
+        )
+        root_mode = validate_workspace_seed_manifest(
+            manifest, request.workspace.workspace_seed_digest
+        )
+        _validate_seed_workspace_directory_mode(
+            request.workspace.workspace_directory_mode, root_mode
+        )
     if plan.sandbox.image_digest != request.workspace.task_image_digest:
         raise ValueError("effective sandbox image does not match the workspace input")
     if (

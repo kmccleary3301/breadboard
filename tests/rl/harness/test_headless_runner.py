@@ -23,6 +23,7 @@ from breadboard.rl.harness.headless import (
     _atomic_write,
     _project_headless_run,
     _validate_repository_base_commit_binding,
+    _validate_seed_workspace_directory_mode,
     run_headless_request,
 )
 from breadboard.rl.harness.runners.base import freeze_json_object, thaw_json
@@ -44,13 +45,13 @@ def test_headless_workspace_mode_preserves_repository_identity_and_rejects_mixed
         "task_image_digest": task_image,
         "outer_isolation": None,
     }
-    with pytest.raises(ValueError, match="canonical 0700"):
-        HeadlessWorkspaceInput(
-            workspace_mode="seeded",
-            workspace_directory_mode=0o755,
-            workspace_seed_digest="sha256:" + "1" * 64,
-            task_image_digest=task_image,
-        )
+    omp_seeded = HeadlessWorkspaceInput(
+        workspace_mode="seeded",
+        workspace_directory_mode=0o755,
+        workspace_seed_digest="sha256:" + "1" * 64,
+        task_image_digest=task_image,
+    )
+    assert omp_seeded.workspace_directory_mode == 0o755
     seeded = HeadlessWorkspaceInput(
         workspace_mode="seeded",
         workspace_seed_digest="sha256:" + "1" * 64,
@@ -67,6 +68,20 @@ def test_headless_workspace_mode_preserves_repository_identity_and_rejects_mixed
             task_image_digest=task_image,
         )
 
+
+
+@pytest.mark.parametrize(
+    ("declared", "root", "matches"),
+    [(0o755, 0o755, True), (0o755, 0o700, False), (0o700, 0o755, False)],
+)
+def test_seeded_workspace_directory_mode_binds_to_manifest_root(
+    declared: int, root: int, matches: bool
+) -> None:
+    if matches:
+        _validate_seed_workspace_directory_mode(declared, root)
+    else:
+        with pytest.raises(ValueError, match="does not match"):
+            _validate_seed_workspace_directory_mode(declared, root)
 
 def test_atomic_result_publication_refuses_existing_destination(
     tmp_path: Path,

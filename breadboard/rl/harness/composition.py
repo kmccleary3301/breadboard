@@ -2246,8 +2246,8 @@ class _CASMaterializationSourceReader:
 
     def validate_workspace_seed_manifest(
         self, manifest: SealedSourceManifest, expected_digest: str
-    ) -> None:
-        validate_workspace_seed_manifest(manifest, expected_digest)
+    ) -> int:
+        return validate_workspace_seed_manifest(manifest, expected_digest)
 
     def read_member(self, digest: str, logical_path: str, *, max_bytes: int) -> bytes:
         manifest = self._manifests.get(digest)

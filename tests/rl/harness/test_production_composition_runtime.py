@@ -404,6 +404,21 @@ def test_cas_materialization_reader_requires_typed_seed_manifest(tmp_path) -> No
     cas.close()
 
 
+def test_cas_materialization_reader_accepts_profile_seed_root_mode(tmp_path) -> None:
+    cas = FilesystemCAS(tmp_path / "cas")
+    seed_digest, payload = build_workspace_seed_artifact(
+        {"AGENTS.md": b"seed\n"},
+        file_modes={"AGENTS.md": 0o600},
+        directory_mode=0o755,
+    )
+    cas.put_bytes(payload, artifact_id=seed_digest)
+    reader = _CASMaterializationSourceReader(cas)
+    manifest = reader.load_manifest(seed_digest, max_bytes=len(payload))
+
+    assert reader.validate_workspace_seed_manifest(manifest, seed_digest) == 0o755
+    cas.close()
+
+
 
 def test_installed_runtime_is_measured_before_app_construction(tmp_path) -> None:
     executable = tmp_path / "runtime"

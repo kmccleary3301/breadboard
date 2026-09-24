@@ -419,8 +419,8 @@ WORKSPACE_SEED_MEDIA_TYPE = "application/vnd.breadboard.workspace-seed-tree"
 
 def validate_workspace_seed_manifest(
     manifest: SealedSourceManifest, expected_digest: str
-) -> None:
-    """Validate the typed identity and root mode of one workspace seed."""
+) -> int:
+    """Validate one typed seed manifest and return its declared root mode."""
     if (
         manifest.schema_identity != WORKSPACE_SEED_SCHEMA_VERSION
         or manifest.media_identity != WORKSPACE_SEED_MEDIA_TYPE
@@ -432,8 +432,6 @@ def validate_workspace_seed_manifest(
     )
     if len(roots) != 1 or roots[0].kind != "directory":
         raise ValueError("workspace seed manifest root is invalid")
-    if roots[0].mode != 0o700:
-        raise ValueError("workspace seed manifest root mode is not canonical 0700")
     identity = {
         "schema_version": WORKSPACE_SEED_SCHEMA_VERSION,
         "media_type": WORKSPACE_SEED_MEDIA_TYPE,
@@ -442,6 +440,7 @@ def validate_workspace_seed_manifest(
     }
     if _digest(identity) != expected_digest:
         raise ValueError("workspace seed manifest identity mismatch")
+    return roots[0].mode
 
 
 def build_workspace_seed_artifact(
