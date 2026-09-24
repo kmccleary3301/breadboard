@@ -83,6 +83,8 @@ NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
         episode_timeout_seconds=120,
         ack_policy="none",
         incomplete_stop_reasons=frozenset({"error", "aborted"}),
+        runtime_input_names=("cwd", "home", "current_date", "package_dir"),
+        package_subpath="node_modules/@oh-my-pi/pi-coding-agent",
         state_module=omp_semantics,
         state_factory=_omp_state,
     ),

@@ -106,6 +106,7 @@ async function reapDescendants(owned: ProcessHandle[] = []): Promise<number[]> {
   return remaining.flatMap((pgid) => [...table.values()].filter((info) => info.pgid === pgid).map((info) => info.pid));
 }
 let workspace = "";
+let runtimeInputs: Record<string, string> = {};
 let convertMessages: ((model: any, context: any, compat: any) => unknown[]) | null = null;
 const converterModel = {
   id: "capture",
@@ -125,6 +126,22 @@ function exactRecord(value: unknown, label: string, required: readonly string[],
     throw new Error(`${label} has invalid keys`);
   }
   return record;
+}
+
+function requireRuntimeInputs(value: unknown): Record<string, string> {
+  const input = exactRecord(
+    value,
+    "runtime_inputs",
+    ["cwd", "home", "current_date", "package_dir"],
+  );
+  const typed: Record<string, string> = {};
+  for (const name of ["cwd", "home", "current_date", "package_dir"]) {
+    if (typeof input[name] !== "string" || !input[name]) {
+      throw new Error(`runtime_inputs.${name} must be a non-empty string`);
+    }
+    typed[name] = input[name] as string;
+  }
+  return typed;
 }
 
 function requireAdvertisement(value: unknown): {
@@ -181,9 +198,20 @@ function parametersFor(tool: any): Record<string, unknown> {
   };
 }
 async function initialize(payload: Record<string, any>) {
-  if (payload.workspace === undefined || payload.scratch === undefined) throw new Error("initialize requires injected workspace and scratch");
+  runtimeInputs = requireRuntimeInputs(payload.runtime_inputs);
+  if (
+    typeof payload.workspace !== "string"
+    || payload.workspace !== runtimeInputs.cwd
+    || typeof payload.package_dir !== "string"
+    || payload.package_dir !== runtimeInputs.package_dir
+    || typeof payload.scratch !== "string"
+    || !payload.scratch
+  ) {
+    throw new Error("initialize workspace authority does not match runtime_inputs");
+  }
   const advertisement = requireAdvertisement(payload.advertisement);
-  workspace = String(payload.workspace);
+  workspace = runtimeInputs.cwd;
+  process.env.HOME = runtimeInputs.home;
   nativeSystemPrompt = advertisement.systemPrompt;
   boundedDescriptions = advertisement.descriptions;
   // The pinned source root is deployment-selected; static source imports cannot
@@ -218,6 +246,7 @@ async function initialize(payload: Record<string, any>) {
     system_prompt: advertisement.systemPrompt,
     tool_schemas: tools.map((tool: any) => ({ type: "function", function: { name: tool.name, description: boundedDescriptions[tool.name], parameters: parametersFor(tool) } })),
     bootstrap: {
+      ...runtimeInputs,
       consumer_id: "breadboard.oh-my-pi.v18.1.17",
       workspace,
       source_commit: SOURCE_ROOT.split("-").at(-1),
@@ -272,19 +301,21 @@ async function dispatch(operation: string, payload: Record<string, any>): Promis
     const completed: Array<Record<string, unknown> & { source_index: number }> = [];
     await Promise.all(prepared.map(async (call, sourceIndex) => {
       if (call.error) {
-        completed.push({ id: call.id, completion_index: completed.length, content: call.error, details: { phase: "prepare" }, isError: true, source_index: sourceIndex });
+        completed.push({ id: call.id, completion_index: completed.length, content: call.error, details: { phase: "prepare", effects: {} }, isError: true, source_index: sourceIndex });
         return;
       }
       const tool = tools.find((candidate: any) => candidate.name === call.name);
       if (!tool) {
-        completed.push({ id: call.id, completion_index: completed.length, content: `OMP tool is not admitted: ${call.name}`, details: {}, isError: true, source_index: sourceIndex });
+        completed.push({ id: call.id, completion_index: completed.length, content: `OMP tool is not admitted: ${call.name}`, details: { effects: {} }, isError: true, source_index: sourceIndex });
         return;
       }
       try {
         const result = await tool.execute(call.id, call.arguments);
-        completed.push({ id: call.id, completion_index: completed.length, content: result.content ?? [], details: result.details ?? {}, isError: Boolean(result.details?.isError), terminate: Boolean(result.details?.terminate), source_index: sourceIndex });
+        const rawDetails = result.details && typeof result.details === "object" && !Array.isArray(result.details) ? result.details : {};
+        const details = { ...rawDetails, effects: rawDetails.effects && typeof rawDetails.effects === "object" && !Array.isArray(rawDetails.effects) ? rawDetails.effects : {} };
+        completed.push({ id: call.id, completion_index: completed.length, content: result.content ?? [], details, isError: Boolean(result.details?.isError), terminate: Boolean(result.details?.terminate), source_index: sourceIndex });
       } catch (error) {
-        completed.push({ id: call.id, completion_index: completed.length, content: String(error), details: { phase: "execute" }, isError: true, source_index: sourceIndex });
+        completed.push({ id: call.id, completion_index: completed.length, content: String(error), details: { phase: "execute", effects: {} }, isError: true, source_index: sourceIndex });
       }
     }));
     completed.sort((left, right) => left.source_index - right.source_index);
