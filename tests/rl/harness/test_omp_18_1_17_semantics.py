@@ -8,6 +8,7 @@ from breadboard_engine.provider.native_response import NativeProviderResponse, N
 from breadboard.rl.harness.omp_native_tools import supplier_cli_invocation
 from breadboard.rl.harness.runners.omp_semantics import (
     EditStore,
+    LENGTH_SKIP_MESSAGE,
     NoRetryPolicy,
     OMPSemanticsState,
     SeenAnchorError,
@@ -186,6 +187,45 @@ def test_omp_phase_state_commits_native_completion_order() -> None:
     assert [item["completion_index"] for item in batch["results"]] == [1, 0]
     state.commit_tool_results(prepared_response.calls, batch["results"])
     assert [item["toolCallId"] for item in state.messages[-2:]] == ["b", "a"]
+
+
+def test_omp_length_response_declares_no_dispatch_and_preserves_exact_skip_text() -> None:
+    class Worker:
+        invocations = 0
+
+        def execute_batch(self, calls: list[dict[str, object]]) -> list[dict[str, object]]:
+            self.invocations += 1
+            return []
+
+    worker = Worker()
+    state = OMPSemanticsState(task="do not run truncated tool", worker=worker)
+    assert state.begin_query() is None
+    parsed = state.prepare_response(
+        NativeProviderResponse(
+            binding_digest="binding",
+            request_digest="request",
+            response_id="length",
+            model="capture",
+            content=None,
+            finish_reason="length",
+            tool_calls=(NativeToolCall("a", "bash", '{"command":"touch marker"}'),),
+        )
+    )
+    assert [call.id for call in parsed.calls] == ["a"]
+    assert parsed.dispatch_calls == ()
+    assert parsed.synthetic_results == (
+        {
+            "id": "a",
+            "name": "bash",
+            "content": LENGTH_SKIP_MESSAGE,
+            "details": {"reason": "length"},
+            "isError": False,
+            "terminate": False,
+            "completion_index": 0,
+        },
+    )
+    assert worker.invocations == 0
+    assert state.effects == {}
 
 
 def test_omp_prepare_refuses_excluded_native_capabilities() -> None:

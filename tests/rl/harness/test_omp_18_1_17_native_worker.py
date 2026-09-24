@@ -145,6 +145,61 @@ def test_real_pinned_worker_runs_initialize_and_close(tmp_path: Path) -> None:
     or not Path(pinned_worker_spec().source_root).is_dir(),
     reason="pinned OMP runtime is unavailable on this host",
 )
+@pytest.mark.parametrize("capability", ["pty", "async"])
+def test_real_pinned_worker_denies_excluded_bash_capabilities(
+    tmp_path: Path,
+    capability: str,
+) -> None:
+    worker = NativeToolWorker(cwd=str(tmp_path))
+    advertisement = {
+        "system_prompt": "",
+        "tool_descriptions": {name: name for name in ("read", "bash", "edit", "write")},
+        "capability_denials": {
+            name: {
+                "schema_version": "bb.omp-capability-denial.v1",
+                "capability": name,
+                "message": f"OMP capability denied: {name}",
+                "source_ref": "test",
+            }
+            for name in ("pty", "async")
+        },
+    }
+    try:
+        worker.start()
+        worker.phase(
+            "initialize",
+            {
+                "task": "deny excluded capability",
+                "model_config": {},
+                "advertisement": advertisement,
+                **_authority_payload(tmp_path),
+            },
+        )
+        marker = tmp_path / "should-not-exist"
+        prepared = worker.phase(
+            "prepare_tools",
+            {
+                "calls": [{
+                    "id": capability,
+                    "name": "bash",
+                    "arguments": {"command": f"touch {marker}", capability: True},
+                }],
+            },
+        )
+        assert prepared["calls"][0]["error"] == f"OMP capability denied: {capability}"
+        completed = worker.phase("execute_batch", {"calls": prepared["calls"]})
+        assert completed["results"][0]["content"] == f"OMP capability denied: {capability}"
+        assert completed["results"][0]["isError"] is True
+        assert not marker.exists()
+    finally:
+        worker.stop()
+
+
+@pytest.mark.skipif(
+    not Path(pinned_worker_spec().bun).is_file()
+    or not Path(pinned_worker_spec().source_root).is_dir(),
+    reason="pinned OMP runtime is unavailable on this host",
+)
 def test_real_pinned_worker_closes_background_brush_descendant(tmp_path: Path) -> None:
     worker = NativeToolWorker(cwd=str(tmp_path))
     worker.start()

@@ -10,6 +10,7 @@ const TOOL_NAMES = ["read", "bash", "edit", "write"] as const;
 type Call = { id: string; name: string; arguments: Record<string, unknown> };
 let boundedDescriptions: Record<string, string> = {};
 let nativeSystemPrompt = "";
+let capabilityDenials: Record<string, Record<string, unknown>> = {};
 let session: any = null;
 let tools: any[] = [];
 let irToJsonSchema: ((ir: unknown, options?: Record<string, unknown>) => Record<string, unknown>) | null = null;
@@ -174,6 +175,18 @@ function requireAdvertisement(value: unknown): {
   }
   return { systemPrompt: advertisement.system_prompt, descriptions: bounded, capabilityDenials };
 }
+
+function deniedCapability(argumentsValue: Record<string, unknown>): string | undefined {
+  for (const capability of ["pty", "async"]) {
+    if (argumentsValue[capability] !== true) continue;
+    const entry = capabilityDenials[capability];
+    if (!entry || entry.capability !== capability || typeof entry.message !== "string") {
+      return `OMP capability denial policy unavailable: ${capability}`;
+    }
+    return entry.message;
+  }
+  return undefined;
+}
 function parametersFor(tool: any): Record<string, unknown> {
   if (irToJsonSchema === null || typeof tool.parameters !== "function" || tool.parameters.ir === undefined) {
     throw new Error(`tool schema is unavailable: ${tool.name}`);
@@ -210,6 +223,7 @@ async function initialize(payload: Record<string, any>) {
     throw new Error("initialize workspace authority does not match runtime_inputs");
   }
   const advertisement = requireAdvertisement(payload.advertisement);
+  capabilityDenials = advertisement.capabilityDenials;
   workspace = runtimeInputs.cwd;
   process.env.HOME = runtimeInputs.home;
   nativeSystemPrompt = advertisement.systemPrompt;
@@ -290,6 +304,7 @@ async function dispatch(operation: string, payload: Record<string, any>): Promis
         error = error ?? "Invalid tool arguments: expected a JSON object";
         argumentsValue = {};
       }
+      if (!error) error = deniedCapability(argumentsValue);
       const item: any = { id: String(call.id), name: String(call.name), arguments: argumentsValue };
       if (!TOOL_NAMES.includes(item.name)) item.error = `OMP tool is not admitted: ${item.name}`;
       if (error) item.error = item.error ?? error;

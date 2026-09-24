@@ -534,6 +534,8 @@ class OMPResponseResult:
     calls: tuple[ToolCall, ...]
     stop_reason: str
     quiescent: bool
+    dispatch_calls: tuple[ToolCall, ...] | None = None
+    synthetic_results: tuple[Mapping[str, Any], ...] = ()
 
 
 class OMPSemanticsState:
@@ -645,6 +647,27 @@ class OMPSemanticsState:
             self.exit_status = "Submitted" if finish_reason == "stop" else finish_reason
         else:
             self.recovery.accept_turn(assistant)
+        if finish_reason == "length" and calls:
+            synthetic_results = tuple(
+                {
+                    "id": call.id,
+                    "name": call.name,
+                    "content": LENGTH_SKIP_MESSAGE,
+                    "details": {"reason": "length"},
+                    "isError": False,
+                    "terminate": False,
+                    "completion_index": index,
+                }
+                for index, call in enumerate(calls)
+            )
+            return OMPResponseResult(
+                assistant,
+                calls,
+                finish_reason,
+                False,
+                dispatch_calls=(),
+                synthetic_results=synthetic_results,
+            )
         return OMPResponseResult(assistant, calls, finish_reason, not calls and self.exit_status is not None)
 
     def prepare_tools(self, calls: Sequence[ToolCall]) -> dict[str, Any]:

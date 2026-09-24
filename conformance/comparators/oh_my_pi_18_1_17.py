@@ -277,20 +277,25 @@ def _termination(trace: Mapping[str, Any], *, supplier_capture: bool = False) ->
         kind = "request_limit_exceeded"
     wire_reason = _wire_stop_reason(trace)
     if wire_reason is not _NATIVE_STOP_REASON_UNAVAILABLE:
-        if reason != wire_reason:
+        if reason is None and supplier_capture:
+            reason = wire_reason
+        elif reason != wire_reason:
             raise ValueError("native stop reason does not match recorded response bytes")
-        # The supplier packet has no response bytes for this field. Both sides
-        # therefore expose an explicitly unavailable canonical value after BB
-        # validates its own recorded response bytes above.
-        reason = None
+        reason = wire_reason
     elif supplier_capture:
         reason = None
     return {"kind": kind, "native_stop_reason": reason}
 
 
-def _validate_runtime_inputs(trace: Mapping[str, Any]) -> None:
+def _validate_runtime_inputs(
+    trace: Mapping[str, Any],
+    *,
+    supplier_capture: bool = False,
+) -> dict[str, str] | None:
     if "runtime_inputs" not in trace:
-        return
+        if supplier_capture:
+            return None
+        raise ValueError("BB trace must declare runtime_inputs")
     runtime_inputs = trace["runtime_inputs"]
     required = {"cwd", "home", "current_date", "package_dir"}
     if (
@@ -299,6 +304,7 @@ def _validate_runtime_inputs(trace: Mapping[str, Any]) -> None:
         or any(type(runtime_inputs[name]) is not str or not runtime_inputs[name] for name in required)
     ):
         raise ValueError("runtime_inputs must declare non-empty cwd, home, current_date, and package_dir")
+    return {name: runtime_inputs[name] for name in sorted(required)}
 
 
 def _project(
@@ -307,9 +313,16 @@ def _project(
     *,
     supplier_capture: bool = False,
 ) -> dict[str, Any]:
-    _validate_runtime_inputs(trace)
+    _validate_runtime_inputs(trace, supplier_capture=supplier_capture)
     declared = _declared(trace)
     requests = _requests(trace, declared)
+    if not supplier_capture:
+        native_responses = trace.get("native_responses")
+        if (
+            not isinstance(native_responses, list)
+            or len(native_responses) < len(requests)
+        ):
+            raise ValueError("BB trace must carry native_responses for every request")
     episode = {
         "schema_version": CANONICAL_SCHEMA_VERSION,
         "requests": requests,
@@ -322,20 +335,28 @@ def _project(
     return episode
 def _supplier_trace(path: Path) -> dict[str, Any]:
     trace = _load(path)
-    if not path.is_dir() or isinstance(trace.get("requests"), list):
+    if not path.is_dir():
         return trace
     transcript = path / "receiver" / "http-transcript.jsonl"
     if not transcript.is_file():
         return trace
     requests: list[dict[str, Any]] = []
+    native_responses: list[Mapping[str, Any]] = []
     for line in transcript.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
         row = json.loads(line)
-        if isinstance(row, Mapping) and isinstance(row.get("body"), Mapping):
+        if not isinstance(row, Mapping):
+            continue
+        if isinstance(row.get("body"), Mapping):
             requests.append({"index": len(requests), "body": dict(row["body"])})
-    if requests:
+        events = row.get("events")
+        if isinstance(events, list):
+            native_responses.extend(event for event in events if isinstance(event, Mapping))
+    if requests and not isinstance(trace.get("requests"), list):
         trace["requests"] = requests
+    if native_responses and not isinstance(trace.get("native_responses"), list):
+        trace["native_responses"] = native_responses
     return trace
 
 
@@ -381,9 +402,9 @@ def _assertion(assertion_id: str, expected: Any, observed: Any) -> dict[str, Any
     return {"assertion_id": assertion_id, "status": "passed" if difference is None else "failed", "expected": expected, "observed": observed, "detail": difference or "observed value equals expected value"}
 
 
+
 class OhMyPi18Comparator:
     """Comparator class with the same callable interface as Mini's comparator."""
-
     def compare_episodes(self, expected: Mapping[str, Any], observed: Mapping[str, Any]) -> dict[str, Any]:
         assertions = [_assertion(f"episode.{field}_equal", expected.get(field), observed.get(field)) for field in ("requests", "tool_calls", "results", "file_effects", "termination", "request_count")]
         failed = sum(item["status"] == "failed" for item in assertions)
@@ -393,8 +414,37 @@ class OhMyPi18Comparator:
         capture = inp.get("capture") or inp.get("supplier")
         replay = inp.get("replay") or inp.get("breadboard")
         try:
-            expected = project_supplier_case(capture) if isinstance(capture, (str, Path)) else _project(capture or {})
-            observed = project_bb_trace(replay) if isinstance(replay, (str, Path)) else _project(replay or {})
+            capture_value = (
+                _supplier_trace(Path(capture))
+                if isinstance(capture, (str, Path))
+                else capture or {}
+            )
+            replay_value = (
+                _load(replay)
+                if isinstance(replay, (str, Path))
+                else replay or {}
+            )
+            supplier_runtime_inputs = _validate_runtime_inputs(
+                capture_value,
+                supplier_capture=True,
+            )
+            replay_runtime_inputs = _validate_runtime_inputs(replay_value)
+            if (
+                supplier_runtime_inputs is not None
+                and supplier_runtime_inputs != replay_runtime_inputs
+            ):
+                raise ValueError("BB runtime_inputs do not match supplier declared values")
+            expected = _project(
+                capture_value,
+                Path(capture) if isinstance(capture, (str, Path)) else None,
+                supplier_capture=True,
+            )
+            observed = _project(
+                replay_value,
+                Path(replay).parent
+                if isinstance(replay, (str, Path)) and Path(replay).is_file()
+                else None,
+            )
         except (OSError, TypeError, ValueError) as exc:
             return {
                 "schema_version": REPORT_SCHEMA_VERSION,

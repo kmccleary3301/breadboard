@@ -2302,6 +2302,9 @@ class _ConductorSession:
             parsed = state.prepare_response(native)
             await commit(before, "assistant", turn)
             observations: list[FrozenJsonObject] = []
+            dispatch_calls = getattr(parsed, "dispatch_calls", None)
+            if dispatch_calls is None:
+                dispatch_calls = parsed.calls
             if parsed.calls:
                 # parsed.calls is the ordered 1:1 projection of native.tool_calls;
                 # join by ordinal so duplicate provider IDs keep their own arguments.
@@ -2317,39 +2320,57 @@ class _ConductorSession:
                         0, self._open_request.episode_id, self._open_request.effective_plan_digest,
                         turn, ordinal, call.id, call.name, raw.arguments,
                     ))
-                prepared = await phase("prepare_tools", {"calls": [
-                    {"id": call.id, "name": call.name, "arguments": call.arguments}
-                    for call in parsed.calls
-                ]})
-                if prepared.get("kind") != "prepared":
-                    raise RunnerProtocolError(
-                        "native batch preparation failed",
-                        code="native_response_invalid", **self._context(),
-                    )
-                history_calls = prepared.get("history_calls")
-                if history_calls is not None:
-                    if (
-                        type(history_calls) is not list
-                        or any(type(item) is not dict for item in history_calls)
-                        or [(item.get("id"), item.get("name")) for item in history_calls]
-                        != [(call.id, call.name) for call in parsed.calls]
-                    ):
+                if dispatch_calls:
+                    prepared = await phase("prepare_tools", {"calls": [
+                        {"id": call.id, "name": call.name, "arguments": call.arguments}
+                        for call in dispatch_calls
+                    ]})
+                    if prepared.get("kind") != "prepared":
                         raise RunnerProtocolError(
-                            "native prepared history identity changed",
+                            "native batch preparation failed",
                             code="native_response_invalid", **self._context(),
                         )
-                    blocks = [block for block in parsed.assistant["content"] if block["type"] == "toolCall"]
-                    for block, prepared_call in zip(blocks, history_calls, strict=True):
-                        block["arguments"] = prepared_call["arguments"]
-                    await commit(len(state.messages), "assistant", turn, events=[
-                        {"kind": "assistant_prepared", "message": parsed.assistant},
-                    ])
-                await self._checkpoint("before_action", turn=turn)
-                completed = await phase("execute_batch", {})
-                raw_results = completed.get("results")
+                    history_calls = prepared.get("history_calls")
+                    if history_calls is not None:
+                        if (
+                            type(history_calls) is not list
+                            or any(type(item) is not dict for item in history_calls)
+                            or [(item.get("id"), item.get("name")) for item in history_calls]
+                            != [(call.id, call.name) for call in dispatch_calls]
+                        ):
+                            raise RunnerProtocolError(
+                                "native prepared history identity changed",
+                                code="native_response_invalid", **self._context(),
+                            )
+                        blocks = [block for block in parsed.assistant["content"] if block["type"] == "toolCall"]
+                        for block, prepared_call in zip(blocks, history_calls, strict=True):
+                            block["arguments"] = prepared_call["arguments"]
+                        await commit(len(state.messages), "assistant", turn, events=[
+                            {"kind": "assistant_prepared", "message": parsed.assistant},
+                        ])
+                    await self._checkpoint("before_action", turn=turn)
+                    completed = await phase("execute_batch", {})
+                    raw_results = completed.get("results")
+                else:
+                    synthetic_results = getattr(parsed, "synthetic_results", ())
+                    if (
+                        not isinstance(synthetic_results, tuple)
+                        or len(synthetic_results) != len(parsed.calls)
+                        or any(type(item) is not dict for item in synthetic_results)
+                    ):
+                        raise RunnerProtocolError(
+                            "native source dispatch decision lacks synthetic results",
+                            code="native_response_invalid", **self._context(),
+                        )
+                    raw_results = [dict(item) for item in synthetic_results]
                 if (
-                    completed.get("kind") != "tool_results"
-                    or type(raw_results) is not list
+                    dispatch_calls
+                    and (
+                        completed.get("kind") != "tool_results"
+                        or type(raw_results) is not list
+                    )
+                ) or (
+                    type(raw_results) is not list
                     or len(raw_results) != len(parsed.calls)
                     or any(type(item) is not dict for item in raw_results)
                     or [item.get("id") for item in raw_results] != [call.id for call in parsed.calls]
