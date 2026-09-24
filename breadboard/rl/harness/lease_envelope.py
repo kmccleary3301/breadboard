@@ -613,6 +613,13 @@ def _spawn_one(_control: socket.socket, message: Mapping[str, Any], fds: list[in
             and (status >> 16) == _PTRACE_EVENT_EXEC
         ):
             _ptrace(_PTRACE_DETACH, child, int(signal.SIGSTOP))
+            waited, detached_status = os.waitpid(child, os.WUNTRACED)
+            if (
+                waited != child
+                or not os.WIFSTOPPED(detached_status)
+                or os.WSTOPSIG(detached_status) != signal.SIGSTOP
+            ):
+                raise OSError("envelope target did not enter detached stop")
             break
     status_sock = socket.socket(fileno=status_fd)
     status_sock.sendmsg(
