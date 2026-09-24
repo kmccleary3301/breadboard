@@ -96,6 +96,70 @@ def _bb_trace_from_packet() -> dict:
 
 def _report(bb_trace: dict) -> dict:
     return PiCodingAgent0731Comparator()({"capture": {"case_dir": str(SUPPLIER_CASE)}, "replay": bb_trace})
+def _request_limit_case(tmp_path: Path) -> tuple[Path, dict]:
+    trace, requests = _packet_trace_and_requests()
+    trace = deepcopy(trace)
+    trace["case_id"] = "request_cap_eight"
+    trace["request_count"] = len(requests)
+    trace["stream_fn_issued"] = len(requests) + 1
+    last_assistant = next(message for message in reversed(trace["messages"]) if message.get("role") == "assistant")
+    last_assistant["stopReason"] = "error"
+    last_assistant["errorMessage"] = "PI_CAPTURE_REQUEST_LIMIT: eight model requests issued"
+    case = tmp_path / "request-limit-case"
+    (case / "receiver").mkdir(parents=True)
+    (case / "trace.json").write_text(json.dumps(trace), encoding="utf-8")
+    (case / "scenario.json").write_text(json.dumps({"steps": [{} for _ in requests]}), encoding="utf-8")
+    (case / "receiver" / "http-transcript.jsonl").write_text(
+        "\n".join(json.dumps({"body": request}) for request in requests) + "\n",
+        encoding="utf-8",
+    )
+    return case, trace
+
+
+def _request_limit_bb_trace(case: Path, supplier_trace: dict) -> dict:
+    expected = project_supplier_case(case)
+    return {
+        **supplier_trace,
+        "role": "replay",
+        "requests": expected["requests"],
+        "effects": expected["effects"],
+        "runtime_inputs": dict(BB_RUNTIME_INPUTS),
+        "termination": {"kind": "RequestLimitExceeded", "native_stop_reason": "error"},
+    }
+
+
+def test_request_limit_cause_matches_real_shaped_pair(tmp_path: Path) -> None:
+    case, supplier_trace = _request_limit_case(tmp_path)
+    bb_trace = _request_limit_bb_trace(case, supplier_trace)
+    report = PiCodingAgent0731Comparator()(
+        {"capture": {"case_dir": str(case)}, "replay": bb_trace}
+    )
+    assert report["passed"] is True
+    assert [item for item in report["normalizations"] if item["rule"] == "request_limit_cause"] == [
+        {"side": "supplier", "rule": "request_limit_cause", "count": 1},
+        {"side": "bb", "rule": "request_limit_cause", "count": 1},
+    ]
+
+
+def test_request_limit_cause_requires_declared_count(tmp_path: Path) -> None:
+    case, supplier_trace = _request_limit_case(tmp_path)
+    bb_trace = _request_limit_bb_trace(case, supplier_trace)
+    bb_trace["request_count"] -= 1
+    report = PiCodingAgent0731Comparator()(
+        {"capture": {"case_dir": str(case)}, "replay": bb_trace}
+    )
+    assert report["passed"] is False
+
+
+def test_request_limit_cause_requires_supplier_literal(tmp_path: Path) -> None:
+    case, supplier_trace = _request_limit_case(tmp_path)
+    supplier_trace["messages"][-1]["errorMessage"] = "different failure"
+    case.joinpath("trace.json").write_text(json.dumps(supplier_trace), encoding="utf-8")
+    bb_trace = _request_limit_bb_trace(case, supplier_trace)
+    report = PiCodingAgent0731Comparator()(
+        {"capture": {"case_dir": str(case)}, "replay": bb_trace}
+    )
+    assert report["passed"] is False
 
 
 def test_real_packet_inverse_runtime_and_advertisement_rules_match() -> None:

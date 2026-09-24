@@ -11,6 +11,14 @@ Only these typed normalizations are allowed:
   after its native SHA-256 is verified; and
 * each declared supplier advertisement prompt string is removed exactly once
   from each system message.
+  The request-limit cause rule is typed and guarded by the packet case
+  declaration: ``scenario.json.steps`` declares the request cap.  A supplier
+  ``error`` stop with ``errorMessage`` starting with
+  ``PI_CAPTURE_REQUEST_LIMIT:`` (the pinned ``pi_capture_supplier.mjs:50-53``)
+  and a matching request count maps to ``request_limit``.  A BB
+  ``RequestLimitExceeded`` termination with the same matching count maps to
+  ``request_limit``.  Native stop reasons remain raw and an unmatched count or
+  message remains unnormalized.
 
 Supplier roots and package directory are fixed capture-lane declarations. BB
 roots, date, and package directory must be supplied in the top-level
@@ -19,8 +27,8 @@ content-hash diff ``{path: {exists, bytes, sha256, content_utf8?}}``; both
 supplier and BB records use this schema and root repository ``.git`` entries
 are excluded by the capture rule.  Supplier source
 ``pi_capture_supplier.mjs:57-58`` reads bytes and calls Node
-``Buffer.toString("utf8")`` (replacement decoding).  Since that source has no
-content cap, BB declares a 64 KiB cap: ``content_utf8`` is compared only when
+``Buffer.toString("utf8")``.  Since that source has no content cap, BB
+declares a 64 KiB cap: ``content_utf8`` is compared only when
 both records are at or below the cap, while ``exists``, ``bytes``, and
 ``sha256`` are always compared.  No arbitrary placeholder or volatile-field
 removal is performed.
@@ -54,6 +62,7 @@ RuleName = Literal[
     "package_dir_documentation_path",
     "advertisement_read_description",
     "advertisement_prompt_removal",
+    "request_limit_cause",
 ]
 NORMALIZATIONS: tuple[RuleName, ...] = (
     "workspace_root",
@@ -62,6 +71,7 @@ NORMALIZATIONS: tuple[RuleName, ...] = (
     "package_dir_documentation_path",
     "advertisement_read_description",
     "advertisement_prompt_removal",
+    "request_limit_cause",
 )
 
 
@@ -277,6 +287,48 @@ def _normalize_termination(termination: Mapping[str, Any]) -> dict[str, Any]:
         normalized["kind"] = "submitted"
     return normalized
 
+
+def _apply_request_limit_cause(
+    trace: Mapping[str, Any],
+    termination: dict[str, Any],
+    request_cap: int | None,
+    counts: _RuleCounts,
+) -> dict[str, Any]:
+    if request_cap is None or trace.get("request_count") != request_cap:
+        return termination
+    qualifies = termination.get("kind") == "RequestLimitExceeded" and trace.get("role") == "replay"
+    if trace.get("role") == "supplier":
+        raw_messages = trace.get("messages")
+        last_assistant = (
+            next(
+                (
+                    item
+                    for item in reversed(raw_messages)
+                    if isinstance(item, Mapping) and item.get("role") == "assistant"
+                ),
+                None,
+            )
+            if isinstance(raw_messages, list)
+            else None
+        )
+        raw_stop = (
+            last_assistant.get("stopReason", last_assistant.get("stop_reason"))
+            if isinstance(last_assistant, Mapping)
+            else None
+        )
+        raw_error = last_assistant.get("errorMessage") if isinstance(last_assistant, Mapping) else None
+        qualifies = raw_stop == "error" and isinstance(raw_error, str) and raw_error.startswith(
+            "PI_CAPTURE_REQUEST_LIMIT:"
+        )
+    if not qualifies:
+        return termination
+    normalized = dict(termination)
+    normalized["kind"] = "request_limit"
+    counts.add("request_limit_cause")
+    return normalized
+
+
+
 def _normalize_effects(
     effects: Any,
     runtime: _RuntimeInputs,
@@ -296,7 +348,14 @@ def _normalize_effects(
         normalized[normalized_path] = value
     return normalized
 
-def _project(trace: Mapping[str, Any], requests: list[Mapping[str, Any]], runtime: _RuntimeInputs, counts: _RuleCounts) -> dict[str, Any]:
+def _project(
+    trace: Mapping[str, Any],
+    requests: list[Mapping[str, Any]],
+    runtime: _RuntimeInputs,
+    counts: _RuleCounts,
+    *,
+    request_cap: int | None = None,
+) -> dict[str, Any]:
     messages = _canonical_messages(trace.get("messages"), runtime, counts)
     if not messages:
         messages = _from_events(trace.get("events"), runtime, counts)
@@ -314,13 +373,16 @@ def _project(trace: Mapping[str, Any], requests: list[Mapping[str, Any]], runtim
         last_assistant = next((m for m in reversed(messages) if m["role"] == "assistant"), {})
         stop = last_assistant.get("stop_reason")
         termination = {"kind": "submitted" if stop == "stop" else ("error" if stop == "error" else "running"), "native_stop_reason": stop}
+    termination = _apply_request_limit_cause(
+        trace, _normalize_termination(termination), request_cap, counts
+    )
     return {
         "schema_version": TRACE_SCHEMA_VERSION,
         "requests": _normalize(requests, runtime, counts),
         "tool_calls": calls,
         "observations": observations,
         "effects": _normalize_effects(trace.get("effects", {}), runtime, counts),
-        "termination": _normalize(_normalize_termination(termination), runtime, counts),
+        "termination": _normalize(termination, runtime, counts),
         "request_count": trace.get("request_count", len(requests)),
     }
 
@@ -413,18 +475,46 @@ def _apply_supplier_advertisement(requests: list[Mapping[str, Any]], counts: _Ru
     return output
 
 
-def _project_supplier_trace(trace: Mapping[str, Any], requests: list[Mapping[str, Any]]) -> tuple[dict[str, Any], _RuleCounts]:
+def _project_supplier_trace(
+    trace: Mapping[str, Any],
+    requests: list[Mapping[str, Any]],
+    *,
+    request_cap: int | None = None,
+) -> tuple[dict[str, Any], _RuleCounts]:
     if not isinstance(trace, Mapping) or trace.get("role") != "supplier":
         raise ValueError("supplier trace must identify role=supplier")
     counts = _RuleCounts()
     runtime = _supplier_runtime_inputs(trace)
-    return _project(trace, _apply_supplier_advertisement(requests, counts), runtime, counts), counts
+    return _project(
+        trace,
+        _apply_supplier_advertisement(requests, counts),
+        runtime,
+        counts,
+        request_cap=request_cap,
+    ), counts
 
 
-def _project_supplier_case(case_dir: str | Path) -> tuple[dict[str, Any], _RuleCounts]:
+def _case_request_cap(root: Path) -> int | None:
+    scenario_path = root / "scenario.json"
+    if not scenario_path.is_file():
+        return None
+    scenario = _load_json(scenario_path)
+    steps = scenario.get("steps") if isinstance(scenario, Mapping) else None
+    if not isinstance(steps, list) or not steps:
+        raise ValueError("supplier scenario must declare non-empty steps for request cap")
+    return len(steps)
+
+
+def _project_supplier_case(
+    case_dir: str | Path,
+    *,
+    request_cap: int | None = None,
+) -> tuple[dict[str, Any], _RuleCounts]:
     root = Path(case_dir)
     if root.is_file():
         root = root.parent
+    if request_cap is None:
+        request_cap = _case_request_cap(root)
     trace_path = root / "trace.json"
     if not trace_path.is_file():
         raise FileNotFoundError(f"supplier trace missing: {trace_path}")
@@ -442,7 +532,7 @@ def _project_supplier_case(case_dir: str | Path) -> tuple[dict[str, Any], _RuleC
             body = row.get("body") if isinstance(row, Mapping) else None
             if isinstance(body, Mapping) and isinstance(body.get("messages"), list):
                 requests.append(body)
-    return _project_supplier_trace(trace, requests)
+    return _project_supplier_trace(trace, requests, request_cap=request_cap)
 
 
 def project_supplier_case(case_dir: str | Path) -> dict[str, Any]:
@@ -451,7 +541,11 @@ def project_supplier_case(case_dir: str | Path) -> dict[str, Any]:
     return projected
 
 
-def _project_bb_trace(trace: Mapping[str, Any] | str | Path) -> tuple[dict[str, Any], _RuleCounts]:
+def _project_bb_trace(
+    trace: Mapping[str, Any] | str | Path,
+    *,
+    request_cap: int | None = None,
+) -> tuple[dict[str, Any], _RuleCounts]:
     if isinstance(trace, (str, Path)):
         trace = _load_json(Path(trace))
     if not isinstance(trace, Mapping):
@@ -463,7 +557,13 @@ def _project_bb_trace(trace: Mapping[str, Any] | str | Path) -> tuple[dict[str, 
         raise ValueError("BB trace must provide messages or events")
     runtime = _bb_runtime_inputs(trace)
     counts = _RuleCounts()
-    return _project(trace, [item for item in requests if isinstance(item, Mapping)], runtime, counts), counts
+    return _project(
+        trace,
+        [item for item in requests if isinstance(item, Mapping)],
+        runtime,
+        counts,
+        request_cap=request_cap,
+    ), counts
 
 
 def project_bb_trace(trace: Mapping[str, Any] | str | Path) -> dict[str, Any]:
@@ -530,18 +630,21 @@ class PiCodingAgent0731Comparator:
         capture = inp.get("capture", {})
         replay = inp.get("replay", {})
         capture_case = capture.get("case_dir") if isinstance(capture, Mapping) else None
+        request_cap: int | None = None
         if isinstance(capture, Mapping) and (capture_case or capture.get("path")):
-            expected, expected_counts = _project_supplier_case(capture_case or capture["path"])
+            case_path = capture_case or capture["path"]
+            request_cap = _case_request_cap(Path(case_path).resolve())
+            expected, expected_counts = _project_supplier_case(case_path, request_cap=request_cap)
         elif isinstance(capture, Mapping) and capture.get("role") == "supplier":
             expected, expected_counts = _project_supplier_trace(capture, [item for item in capture.get("requests", []) if isinstance(item, Mapping)])
         else:
             raise ValueError("capture must provide a supplier case directory or supplier trace")
         if isinstance(replay, Mapping) and "trace" in replay:
-            observed, observed_counts = _project_bb_trace(replay["trace"])
+            observed, observed_counts = _project_bb_trace(replay["trace"], request_cap=request_cap)
         elif isinstance(replay, Mapping) and "path" in replay:
-            observed, observed_counts = _project_bb_trace(replay["path"])
+            observed, observed_counts = _project_bb_trace(replay["path"], request_cap=request_cap)
         else:
-            observed, observed_counts = _project_bb_trace(replay)
+            observed, observed_counts = _project_bb_trace(replay, request_cap=request_cap)
         expected, observed = _drop_unbounded_effect_content(expected, observed)
         difference = _first_difference(expected, observed)
         return {
