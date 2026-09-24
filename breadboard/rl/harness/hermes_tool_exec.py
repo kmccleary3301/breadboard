@@ -163,6 +163,12 @@ def _owned_directory(path: Path) -> Path:
     return path
 
 
+def _require_disjoint_roots(workspace: Path, scratch: Path) -> None:
+    # Canonical roots; is_relative_to is reflexive, so equal roots also fail.
+    if workspace.is_relative_to(scratch) or scratch.is_relative_to(workspace):
+        raise ValueError("Hermes workspace and scratch must be disjoint")
+
+
 def configure_shell_boundary(workspace: Path, scratch: Path, hermes_home: Path) -> dict:
     """Seal admitted inputs before supplier imports or native shell bootstrap."""
     libc = _libc()
@@ -177,8 +183,7 @@ def configure_shell_boundary(workspace: Path, scratch: Path, hermes_home: Path) 
     workspace = _owned_directory(workspace)
     scratch = _owned_directory(scratch)
     hermes_home = _owned_directory(hermes_home)
-    if workspace.parent != scratch.parent or workspace == scratch:
-        raise ValueError("Hermes scratch must be a separate workspace sibling")
+    _require_disjoint_roots(workspace, scratch)
     if hermes_home != scratch / "hermes-home":
         raise ValueError("Hermes home must be the admitted scratch/hermes-home")
     native_root = Path(__file__).resolve().parent

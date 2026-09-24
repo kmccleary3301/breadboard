@@ -210,6 +210,14 @@ def _require(condition: bool, message: str) -> None:
         raise HermesWorkerError(message)
 
 
+def _require_disjoint_roots(workspace: Path, scratch: Path) -> None:
+    # Resolved roots; is_relative_to is reflexive, so equal roots also fail.
+    _require(
+        not workspace.is_relative_to(scratch) and not scratch.is_relative_to(workspace),
+        "workspace/scratch must be disjoint",
+    )
+
+
 def _history_revision(
     old: list[bytes], messages: list[dict[str, Any]]
 ) -> tuple[dict[str, Any] | None, list[bytes]]:
@@ -466,11 +474,7 @@ class HermesActor:
         self._workspace = Path(workspace).resolve(strict=True)
         self._workspace_before = self._workspace_snapshot()
         self._scratch = Path(scratch).resolve(strict=True)
-        _require(
-            self._workspace != self._scratch
-            and self._workspace.parent == self._scratch.parent,
-            "workspace/scratch must be separate siblings",
-        )
+        _require_disjoint_roots(self._workspace, self._scratch)
         self._home = self._scratch / "hermes-home"
         self._home.mkdir(mode=0o700)
         for directory in ("tmp", "cache", "config"):

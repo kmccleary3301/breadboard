@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,12 +12,15 @@ from types import SimpleNamespace
 import pytest
 
 from breadboard_engine.compilation.provider_response import HERMES_RESPONSE_CONSUMER_ID
+from breadboard.rl.harness import hermes_tool_exec, hermes_worker
+from breadboard.rl.harness import sandbox as sandbox_module
 from breadboard.rl.harness.runners import conductor as conductor_module
 from breadboard.rl.harness.hermes_tools import HermesToolRuntime, HermesToolRuntimeError, TOOL_NAMES
 from breadboard.rl.harness.runners.base import (
     RunnerDependencyError,
     RunnerProtocolError,
     RunnerTerminationEvent,
+    RunnerToolBinding,
     RunnerTurn,
 )
 
@@ -318,3 +323,114 @@ def test_mismatched_native_schema_sha_fails_closed(tmp_path: Path) -> None:
     )
     with pytest.raises(HermesToolRuntimeError, match="native tool schema differs from overlay pin"):
         runtime._bounded_tool_schemas()
+
+
+async def _lease_initialize_roots(
+    episode: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Path, Path]:
+    """Workspace/scratch the lease boundary hands Hermes initialize in an episode."""
+    workspace_root = episode / "workspace"
+    lease_root = episode / "lease"
+    workspace_root.mkdir(parents=True)
+    lease_root.mkdir()
+    binding = RunnerToolBinding("read_file", "sha256:" + "1" * 64, ())
+    adapter = SimpleNamespace(
+        adapter_id=sandbox_module.HERMES_AGENT_LOCAL_ADAPTER_ID,
+        tool_ids=sandbox_module.HERMES_NATIVE_TOOL_IDS,
+        runtime_root_path="/sealed/hermes",
+    )
+    entry = SimpleNamespace(
+        role="workspace_seed", target_logical_path=".", access=SimpleNamespace(value="rw")
+    )
+    plan = SimpleNamespace(
+        effective_plan_digest="plan",
+        tool_bindings=(binding,),
+        installed_tool_adapters=(adapter,),
+        limits=SimpleNamespace(observation_bytes=4096),
+        materialization_plan=SimpleNamespace(entries=(entry,)),
+    )
+    captured: list[Mapping[str, object]] = []
+
+    async def no_op() -> None:
+        return None
+
+    async def invoke(
+        _adapter: object, _operation: str, payload: Mapping[str, object], *, timeout_ms: int
+    ) -> Mapping[str, object]:
+        del timeout_ms
+        captured.append(payload)
+        return {"kind": "initialized"}
+
+    lease_root_fd = os.open(lease_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    lease = SimpleNamespace(
+        lease_id="lease-05b39b43fd986a75e89c7948927c8e32",
+        plan=plan,
+        _manager=SimpleNamespace(lease_root=lease_root, _lease_root_fd=lease_root_fd),
+        _runtime=SimpleNamespace(invoke_native_phase=invoke),
+        _begin_operation=no_op,
+        _end_operation=no_op,
+        _resolve=lambda logical_path, writable=False: workspace_root / logical_path,
+    )
+    monkeypatch.setattr(
+        sandbox_module.TrustedProcessHandle,
+        "_validate_native_binding",
+        staticmethod(lambda _plan, _adapter: None),
+    )
+    try:
+        await sandbox_module.LeaseBackedRunnerWorkspace(
+            lease, "plan", (binding,)
+        ).invoke_native_phase("initialize", {"task": "hermes"}, timeout_ms=1_000)
+    finally:
+        os.close(lease_root_fd)
+    # The worker and shell boundary both receive canonical (resolved) roots.
+    return (
+        Path(str(captured[0]["workspace"])).resolve(strict=True),
+        Path(str(captured[0]["scratch"])).resolve(strict=True),
+    )
+
+
+@pytest.mark.asyncio
+async def test_hermes_admits_product_lease_workspace_and_scratch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace, scratch = await _lease_initialize_roots(tmp_path / "episode", monkeypatch)
+    episode = tmp_path.resolve() / "episode"
+    # Product layout: <episode>/workspace and <episode>/lease/<id>.native-scratch.
+    assert workspace == episode / "workspace"
+    assert scratch == episode / "lease" / "lease-05b39b43fd986a75e89c7948927c8e32.native-scratch"
+    assert workspace.parent != scratch.parent
+
+    hermes_worker._require_disjoint_roots(workspace, scratch)
+    hermes_tool_exec._require_disjoint_roots(workspace, scratch)
+
+
+@pytest.mark.parametrize(
+    ("workspace_name", "scratch_name"),
+    [("workspace", "scratch"), ("ws", "ws-scratch")],
+    ids=["siblings", "name-prefixed-sibling"],
+)
+def test_hermes_admits_sibling_workspace_and_scratch(
+    tmp_path: Path, workspace_name: str, scratch_name: str
+) -> None:
+    workspace = tmp_path.resolve() / workspace_name
+    scratch = tmp_path.resolve() / scratch_name
+
+    hermes_worker._require_disjoint_roots(workspace, scratch)
+    hermes_tool_exec._require_disjoint_roots(workspace, scratch)
+
+
+@pytest.mark.parametrize(
+    ("workspace_part", "scratch_part"),
+    [("outer", "outer/a/b"), ("outer/a/b", "outer"), ("outer", "outer")],
+    ids=["scratch-inside-workspace", "workspace-inside-scratch", "equal"],
+)
+def test_hermes_rejects_nested_or_equal_workspace_and_scratch(
+    tmp_path: Path, workspace_part: str, scratch_part: str
+) -> None:
+    workspace = tmp_path.resolve() / workspace_part
+    scratch = tmp_path.resolve() / scratch_part
+
+    with pytest.raises(hermes_worker.HermesWorkerError, match="^workspace/scratch must be disjoint$"):
+        hermes_worker._require_disjoint_roots(workspace, scratch)
+    with pytest.raises(ValueError, match="^Hermes workspace and scratch must be disjoint$"):
+        hermes_tool_exec._require_disjoint_roots(workspace, scratch)
