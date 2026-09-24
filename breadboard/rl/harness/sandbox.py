@@ -2401,25 +2401,34 @@ class TrustedProcessHandle:
                     ):
                         admitted_executable = self._command_executable
                     if admitted_executable.execution_format == "elf":
-                        try:
-                            observed_exe = os.stat(f"/proc/{process.pid}/exe")
-                        except OSError as exc:
-                            process.kill()
-                            raise SandboxLaunchError(
-                                "attested process executable is unavailable",
-                                code="runtime_preflight_failed",
-                                lease_id=self.lease_id,
-                            ) from exc
-                        if (
-                            observed_exe.st_dev != admitted_executable.snapshot_device
-                            or observed_exe.st_ino != admitted_executable.snapshot_inode
-                        ):
-                            process.kill()
-                            raise SandboxLaunchError(
-                                "attested process executable identity changed",
-                                code="runtime_preflight_failed",
-                                lease_id=self.lease_id,
-                            )
+                        identity_deadline = loop.time() + min(
+                            0.25, timeout_ms / 1000
+                        )
+                        while True:
+                            try:
+                                observed_exe = os.stat(f"/proc/{process.pid}/exe")
+                            except OSError as exc:
+                                process.kill()
+                                raise SandboxLaunchError(
+                                    "attested process executable is unavailable",
+                                    code="runtime_preflight_failed",
+                                    lease_id=self.lease_id,
+                                ) from exc
+                            if (
+                                observed_exe.st_dev
+                                == admitted_executable.snapshot_device
+                                and observed_exe.st_ino
+                                == admitted_executable.snapshot_inode
+                            ):
+                                break
+                            if loop.time() >= identity_deadline:
+                                process.kill()
+                                raise SandboxLaunchError(
+                                    "attested process executable identity changed",
+                                    code="runtime_preflight_failed",
+                                    lease_id=self.lease_id,
+                                )
+                            await asyncio.sleep(0.001)
                     recorder(f"process-group-{process_group}", identity)
                     return process
                 stop_deadline = min(deadline, loop.time() + 0.25)
