@@ -11,7 +11,7 @@ import math
 import re
 import time
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Awaitable, Callable, Literal
 
 from breadboard_engine.compilation.contracts import (
     bytes_sha256,
@@ -120,6 +120,16 @@ class NativeCleanupOutcome:
     all_dead: bool | None
     error_code: str | None
     binding_close_error_code: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _NativePhaseSteps:
+    step: Callable[[int], Awaitable[RunnerTermination | None]]
+    before_close: Callable[[], Awaitable[None]] | None
+    build_response: Callable[
+        [Mapping[str, Mapping[str, Any]], Mapping[str, Any]], Mapping[str, Any]
+    ]
+    max_steps: int
 
 @dataclass(frozen=True, slots=True)
 class ConductorRunRequest:
@@ -2036,31 +2046,31 @@ class _ConductorSession:
     ) -> RunnerResult:
         self._native_stream_close_callback = None
         self._native_stream_close_started = False
+        primary: BaseException | None = None
         try:
             return await self._loop_native_stream_body(request, profile)
-        except BaseException as primary:
-            callback = self._native_stream_close_callback
-            if callback is not None and not self._native_stream_close_started:
-                try:
-                    await callback()
-                except BaseException as cleanup:
-                    if not isinstance(cleanup, asyncio.CancelledError):
-                        self._record_native_cleanup_failure(primary, cleanup)
+        except BaseException as exc:
+            primary = exc
             raise
         finally:
-            self._native_stream_close_callback = None
-            self._native_stream_close_started = False
+            callback = self._native_stream_close_callback
+            try:
+                if callback is not None and not self._native_stream_close_started:
+                    try:
+                        await callback()
+                    except BaseException as cleanup:
+                        if primary is None:
+                            raise
+                        if not isinstance(cleanup, asyncio.CancelledError):
+                            self._record_native_cleanup_failure(primary, cleanup)
+            finally:
+                self._native_stream_close_callback = None
+                self._native_stream_close_started = False
 
     async def _loop_native_stream_body(
         self, request: ConductorRunRequest, profile: native_stream_profiles.NativeStreamProfile,
     ) -> RunnerResult:
-        """Drive declared native source phases through the admitted lease."""
-        if profile.phase_mode == "checkpointed":
-            return await self._loop_checkpointed_native(request, profile)
-        if profile.phase_mode != "streaming" or profile.state_factory is None:
-            raise _plan_error(
-                self._open_request, "native phase mode is invalid", "compiled_ir_mismatch",
-            )
+        """Drive one native loop using the profile's typed phase-step mode."""
         limits = self._open_request.effective_plan.effective_capabilities.limits
         consumer_id = self._projection.source_consumer_id
         tools = self._tools
@@ -2070,10 +2080,8 @@ class _ConductorSession:
         )
         if (
             not isinstance(tools, NativeSourceSessionPort)
-            or not isinstance(tools, NativeRuntimeInputPort)
             or not isinstance(tools, NativeWorkspaceEffectsPort)
             or self._binding.source_model_config is None
-            or not isinstance(advertisement, Mapping)
             or limits.max_turns != profile.max_turns
             or limits.action_timeout_ms != profile.action_timeout_ms
             or len(self._projection.models) != 1
@@ -2081,17 +2089,70 @@ class _ConductorSession:
             or self._projection.models[0].params
             or tuple(self._projection.modes[0].tool_ids) != profile.tool_order
             or consumer_id != profile.consumer_id
+            or profile.phase_mode not in {"streaming", "checkpointed"}
+            or not isinstance(source_profile, Mapping)
+            or any(not isinstance(source_profile.get(name), Mapping)
+                   for name in profile.sealed_initialize_fields)
+            or profile.phase_mode == "streaming" and (
+                profile.state_factory is None
+                or not isinstance(tools, NativeRuntimeInputPort)
+                or not isinstance(advertisement, Mapping)
+            )
         ):
-            raise _plan_error(self._open_request, "native stream runtime controls differ", "compiled_ir_mismatch")
+            raise _plan_error(self._open_request, "native source runtime controls differ", "compiled_ir_mismatch")
         task = request.task_input.get("prompt")
         if set(request.task_input) != {"prompt"} or type(task) is not str or request.context:
             raise RunnerRequestError(
-                "native stream requires the owned headless prompt without caller context",
+                "native source requires the owned headless prompt without caller context",
                 code="request_authority_invalid",
             )
         await tools.begin_native_workspace_effects()
         model = self._projection.models[0]
+        if profile.phase_mode == "streaming":
+            steps = await self._streaming_native_steps(
+                profile, tools, limits, model, task, consumer_id, advertisement,
+            )
+        else:
+            steps = await self._checkpointed_native_steps(
+                profile, tools, limits, model, task,
+            )
+        termination = RunnerTermination.MAX_TURNS
+        for turn in range(1, steps.max_steps + 1):
+            await self._checkpoint("before_policy", turn=turn)
+            outcome = await steps.step(turn)
+            if outcome is not None:
+                termination = outcome
+                break
+        if steps.before_close is not None:
+            await steps.before_close()
+        if profile.phase_mode == "streaming":
+            await self._checkpoint("after_loop", turn=len(self._turns))
+        callback = self._native_stream_close_callback
+        if callback is None:
+            raise RunnerProtocolError(
+                "native runtime close was not registered",
+                code="native_response_invalid", **self._context(),
+            )
+        closed = await callback()
+        effects = await self._native_effects()
+        if profile.phase_mode == "checkpointed":
+            await self._checkpoint("after_loop", turn=len(self._turns))
+        await self._checkpoint("before_commit", turn=len(self._turns))
+        await self._commit_termination(termination)
+        return RunnerResult(
+            episode_id=self._open_request.episode_id,
+            effective_plan_digest=self._open_request.effective_plan_digest,
+            original_request={"task_input": request.task_input, "context": request.context},
+            response=steps.build_response(effects, closed),
+            termination=termination, turn_count=len(self._turns),
+            turns=tuple(self._turns), events=tuple(self._events),
+        )
 
+    async def _streaming_native_steps(
+        self, profile: native_stream_profiles.NativeStreamProfile,
+        tools: NativeSourceSessionPort, limits: Any, model: _ModelProjection,
+        task: str, consumer_id: str, advertisement: Mapping[str, Any],
+    ) -> _NativePhaseSteps:
         async def phase(operation: str, payload: Mapping[str, Any]) -> dict[str, Any]:
             raw = await tools.invoke_native_phase(
                 operation,
@@ -2252,16 +2313,12 @@ class _ConductorSession:
             )
 
         await commit(0, "initial", None)
-        termination = RunnerTermination.POLICY_INCOMPLETE
-        while not state.is_exited:
-            turn = len(self._turns) + 1
-            await self._checkpoint("before_policy", turn=turn)
+        async def step(turn: int) -> RunnerTermination | None:
             before = len(state.messages)
             if state.begin_query() is not None:
                 # Pi's streamFn seam refuses the ninth query before any HTTP.
                 await commit(before, "exit", len(self._turns) or None)
-                termination = RunnerTermination.LIMITS_EXCEEDED
-                break
+                return RunnerTermination.LIMITS_EXCEEDED
             projected = await phase("project_request", {"messages": state.messages})
             if projected.get("kind") != "request":
                 raise RunnerProtocolError(
@@ -2274,7 +2331,7 @@ class _ConductorSession:
                 "tools": projected.get("tools"),
             }, field_name="native policy request")
             response, request_body = await self._native_policy_exchange(
-                frozen_request, model=model, turn=turn, require_receipt=True,
+                frozen_request, model=model, turn=turn, phase_mode=profile.phase_mode,
             )
             trace_requests.append(dict(request_body))
             native = native_stream_consumers.native_response_from_dict(
@@ -2378,68 +2435,32 @@ class _ConductorSession:
                             )
             self._turns.append(RunnerTurn(turn, (), tuple(observations)))
             if state.is_exited:
-                termination = self._native_stop_termination(
+                return self._native_stop_termination(
                     state.native_stop_reason, profile.incomplete_stop_reasons,
                 )
-        await self._checkpoint("after_loop", turn=len(self._turns))
-        closed = await close_once()
-        cleanup = closed["cleanup"]
-        effects = await self._native_effects()
-        await self._checkpoint("before_commit", turn=len(self._turns))
-        await self._commit_termination(termination)
-        replay_trace = state.to_trace(
-            requests=trace_requests,
-            runtime_inputs=runtime_inputs,
-            effects=effects,
-        )
-        return RunnerResult(
-            episode_id=self._open_request.episode_id,
-            effective_plan_digest=self._open_request.effective_plan_digest,
-            original_request={"task_input": request.task_input, "context": request.context},
-            response={
+            return None
+
+        def build_response(effects: Mapping[str, Mapping[str, Any]], closed: Mapping[str, Any]) -> Mapping[str, Any]:
+            replay_trace = state.to_trace(
+                requests=trace_requests,
+                runtime_inputs=runtime_inputs,
+                effects=effects,
+            )
+            return {
                 "source_id": consumer_id,
                 "replay_trace": replay_trace,
                 "bootstrap": bootstrap,
-                "cleanup": cleanup,
-            },
-            termination=termination, turn_count=len(self._turns),
-            turns=tuple(self._turns), events=tuple(self._events),
-        )
-    async def _loop_checkpointed_native(
-        self, request: ConductorRunRequest, profile: native_stream_profiles.NativeStreamProfile,
-    ) -> RunnerResult:
-        limits = self._open_request.effective_plan.effective_capabilities.limits
-        tools = self._tools
+                "cleanup": closed["cleanup"],
+            }
+
+        return _NativePhaseSteps(step, None, build_response, profile.max_turns + 1)
+    async def _checkpointed_native_steps(
+        self, profile: native_stream_profiles.NativeStreamProfile,
+        tools: NativeSourceSessionPort, limits: Any, model: _ModelProjection,
+        task: str,
+    ) -> _NativePhaseSteps:
         model_config = self._binding.source_model_config
         tool_order = profile.tool_order
-        if (
-            not isinstance(tools, NativeSourceSessionPort)
-            or not isinstance(tools, NativeWorkspaceEffectsPort)
-            or self._projection.source_profile is None
-            or any(
-                not isinstance(self._projection.source_profile.get(name), Mapping)
-                for name in profile.sealed_initialize_fields
-            )
-            or model_config is None
-            or limits.max_turns != profile.max_turns
-            or limits.action_timeout_ms != profile.action_timeout_ms
-            or len(self._projection.models) != 1
-            or len(self._projection.modes) != 1
-            or tuple(self._projection.modes[0].tool_ids) != tool_order
-            or self._projection.source_consumer_id != profile.consumer_id
-            or self._projection.models[0].params
-        ):
-            raise _plan_error(
-                self._open_request, "checkpointed native source runtime controls differ",
-                "compiled_ir_mismatch",
-            )
-        task = request.task_input.get("prompt")
-        if set(request.task_input) != {"prompt"} or type(task) is not str or request.context:
-            raise RunnerRequestError(
-                "checkpointed native source requires the owned headless prompt without caller context",
-                code="request_authority_invalid",
-            )
-        model = self._projection.models[0]
         deadline = time.monotonic() + profile.episode_timeout_seconds
         history: list[FrozenJsonObject] = []
         history_digest = canonical_sha256(history)
@@ -2465,20 +2486,9 @@ class _ConductorSession:
             }
 
         def project_request_body(body: Mapping[str, Any]) -> dict[str, Any]:
-            projected: dict[str, Any] = {
-                "model": body.get("model"),
-                "max_tokens": body.get("max_tokens"),
-                "stream": bool(body.get("stream", False)),
-                "messages": [
-                    project_message(message)
-                    for message in body.get("messages", [])
-                ],
-                "tools": body.get("tools", []),
-            }
-            for key in ("temperature", "top_p", "tool_choice"):
-                if key in body:
-                    projected[key] = body[key]
-            return projected
+            # body_b64 comes from the source SDK's HTTP request.read(); retain
+            # precisely its decoded JSON fields, including absent keys.
+            return dict(body)
 
         def project_response(response: Mapping[str, Any]) -> dict[str, Any]:
             choices = response.get("choices", [])
@@ -2690,7 +2700,45 @@ class _ConductorSession:
                     if segment["kind"] == "sequential":
                         watchdog = time.monotonic() + min(profile.phase_watchdog_seconds, remaining())
 
-        await tools.begin_native_workspace_effects()
+        close_task: asyncio.Task[Mapping[str, Any]] | None = None
+
+        async def close_once() -> Mapping[str, Any]:
+            nonlocal close_task
+            self._native_stream_close_started = True
+            if close_task is None:
+                async def close_phase() -> Mapping[str, Any]:
+                    self._set_native_cleanup_outcome(
+                        attempted=True, all_dead=None, error_code=None,
+                    )
+                    try:
+                        retired = await tools.close_native_runtime()
+                        if (
+                            not isinstance(retired, Mapping)
+                            or retired.get("kind") != "closed"
+                            or not isinstance(retired.get("cleanup"), Mapping)
+                            or retired["cleanup"].get("all_dead") is not True
+                        ):
+                            raise invalid("native runtime cleanup is not verified")
+                    except BaseException as exc:
+                        self._record_native_cleanup_failure(None, exc)
+                        raise
+                    self._set_native_cleanup_outcome(
+                        attempted=True, all_dead=True, error_code=None,
+                    )
+                    return retired
+
+                close_task = asyncio.create_task(close_phase())
+            try:
+                return await asyncio.shield(close_task)
+            except asyncio.CancelledError as cancellation:
+                try:
+                    await close_task
+                except BaseException as close_error:
+                    if not isinstance(close_error, asyncio.CancelledError):
+                        self._record_native_cleanup_failure(None, close_error)
+                raise cancellation
+
+        self._native_stream_close_callback = close_once
         initialized = await phase(
             "initialize", {
                 "task": task, "model_config": model_config,
@@ -2719,9 +2767,7 @@ class _ConductorSession:
         ):
             raise invalid("native worker did not initialize its complete tool surface")
         self._binding.bind_native_tools(initialized["tool_schemas"])
-        termination = RunnerTermination.MAX_TURNS
-        for turn in range(1, profile.max_turns + 1):
-            await self._checkpoint("before_policy", turn=turn)
+        async def step(turn: int) -> RunnerTermination | None:
             sampled = await phase("sample", {}, "before_policy", turn)
             raw_sample = decode_json_body(sampled.get("raw_response_b64"))
             if sampled.get("kind") == "sample_ready" and state["status"] != "RUNNING":
@@ -2730,13 +2776,12 @@ class _ConductorSession:
                         "native source phase failed before a provider request",
                         code="native_source_failed", **self._context(),
                     ), turn=turn)
-                termination = self._native_stop_termination(
+                return self._native_stop_termination(
                     state.get("public_stop") if state.get("public_stop") in profile.limit_stop_reasons
                     else "stopped" if state["status"] == "STOPPED" else None,
                     profile.incomplete_stop_reasons | {"stopped"},
                     profile.limit_stop_reasons,
                 )
-                break
             if sampled.get("kind") != "provider_request":
                 raise invalid("native sample did not produce its single provider request")
             http_request = sampled.get("http_request")
@@ -2750,7 +2795,10 @@ class _ConductorSession:
                 "body": project_request_body(request_body),
             })
             async with asyncio.timeout(min(profile.provider_timeout_seconds, remaining())):
-                receipt = await self._invoke_native_policy(http_request, model=model, turn=turn)
+                receipt = await self._invoke_native_policy(
+                    http_request, model=model, turn=turn,
+                    verify_staged_body=profile.phase_mode == "checkpointed",
+                )
             public_response = receipt if "body_b64" in receipt else receipt.get("native_http_response")
             decoded_response = (
                 decode_json_body(public_response.get("body_b64"))
@@ -2891,106 +2939,92 @@ class _ConductorSession:
                     raise invalid("native post-tool/recovery commit failed")
             self._turns.append(RunnerTurn(turn, actions, tuple(observations)))
             if state["status"] in {"FINISHED", "STOPPED"}:
-                termination = self._native_stop_termination(
+                return self._native_stop_termination(
                     state.get("public_stop") if state.get("public_stop") in profile.limit_stop_reasons
                     else "stopped" if state["status"] == "STOPPED" else None,
                     profile.incomplete_stop_reasons | {"stopped"},
                     profile.limit_stop_reasons,
                 )
-                break
             if state["status"] == "ERROR":
                 await self._raise_error(RunnerDependencyError(
                     "native source phase failed",
                     code="native_source_failed", **self._context(),
                 ), turn=turn)
-        await self._native_commit_source(
-            len(self._turns), profile.consumer_id, "exit", (),
-            history_digest, state,
-        )
-        retired = await tools.close_native_runtime()
-        if (
-            not isinstance(retired, Mapping)
-            or retired.get("kind") != "closed"
-            or not isinstance(retired.get("cleanup"), Mapping)
-            or retired["cleanup"].get("all_dead") is not True
-        ):
-            raise invalid("native runtime cleanup is not verified")
-        measured_effects = await self._native_effects()
-        trace_file_effects: dict[str, str | None] = {}
-        for path, value in measured_effects.items():
-            if (
-                type(path) is not str or not isinstance(value, Mapping)
-                or type(value.get("exists")) is not bool
-                or value["exists"] and type(value.get("sha256")) is not str
-            ):
-                raise invalid("native workspace effect is malformed")
-            trace_file_effects[path] = value["sha256"] if value["exists"] else None
-        await self._checkpoint("after_loop", turn=len(self._turns))
-        await self._checkpoint("before_commit", turn=len(self._turns))
-        await self._commit_termination(termination)
-        system_messages: list[str] = []
-        for request_row in trace_requests:
-            body = request_row["body"]
-            for message in body.get("messages", ()):
+            return None
+
+        async def before_close() -> None:
+            await self._native_commit_source(
+                len(self._turns), profile.consumer_id, "exit", (),
+                history_digest, state,
+            )
+
+        def build_response(effects: Mapping[str, Mapping[str, Any]], closed: Mapping[str, Any]) -> Mapping[str, Any]:
+            trace_file_effects: dict[str, str | None] = {}
+            for path, value in effects.items():
                 if (
-                    isinstance(message, Mapping)
-                    and message.get("role") == "system"
-                    and isinstance(message.get("content"), str)
-                    and message["content"] not in system_messages
+                    type(path) is not str or not isinstance(value, Mapping)
+                    or type(value.get("exists")) is not bool
+                    or value["exists"] and type(value.get("sha256")) is not str
                 ):
-                    system_messages.append(message["content"])
-        last_response = trace_requests[-1].get("response") if trace_requests else None
-        choices = last_response.get("choices", ()) if isinstance(last_response, Mapping) else ()
-        native_stop_reason = (
-            choices[-1].get("finish_reason")
-            if choices and isinstance(choices[-1], Mapping)
-            else state.get("public_stop") or state.get("status")
-        )
-        replay_trace = {
-            "schema_version": profile.trace_schema_version,
-            "case_id": self._open_request.episode_id,
-            "profile": profile.trace_profile_name,
-            "context": {
-                "system_messages": system_messages,
-                "agents_md": [
-                    content for content in system_messages if "AGENTS.md" in content
-                ],
-            },
-            "controls": {
-                **profile.trace_controls,
-                "http_attempts": len(trace_requests),
-                "advertised_tools": list(tool_order),
-            },
-            "requests": trace_requests,
-            "tool_calls": trace_tool_calls,
-            "tool_results": history_tool_results(tuple(history)),
-            "visible_corrections": visible_corrections(tuple(history)),
-            "file_effects": trace_file_effects,
-            "runtime": {"cwd": declared_workspace},
-            "termination": {
-                "kind": "completed" if state["status"] == "FINISHED" else "stopped",
-                "native_stop_reason": native_stop_reason,
-            },
-            "request_count": len(trace_requests),
-            "normalizations": [],
-        }
-        return RunnerResult(
-            episode_id=self._open_request.episode_id,
-            effective_plan_digest=self._open_request.effective_plan_digest,
-            original_request={"task_input": request.task_input, "context": request.context},
-            response={
+                    raise invalid("native workspace effect is malformed")
+                trace_file_effects[path] = value["sha256"] if value["exists"] else None
+            system_messages: list[str] = []
+            for request_row in trace_requests:
+                body = request_row["body"]
+                for message in body.get("messages", ()):
+                    if (
+                        isinstance(message, Mapping)
+                        and message.get("role") == "system"
+                        and isinstance(message.get("content"), str)
+                        and message["content"] not in system_messages
+                    ):
+                        system_messages.append(message["content"])
+            last_response = trace_requests[-1].get("response") if trace_requests else None
+            choices = last_response.get("choices", ()) if isinstance(last_response, Mapping) else ()
+            native_stop_reason = (
+                choices[-1].get("finish_reason")
+                if choices and isinstance(choices[-1], Mapping)
+                else state.get("public_stop") or state.get("status")
+            )
+            replay_trace = {
+                "schema_version": profile.trace_schema_version,
+                "case_id": self._open_request.episode_id,
+                "profile": profile.trace_profile_name,
+                "context": {
+                    "system_messages": system_messages,
+                    "agents_md": [
+                        content for content in system_messages if "AGENTS.md" in content
+                    ],
+                },
+                "controls": {
+                    **profile.trace_controls,
+                    "http_attempts": len(trace_requests),
+                    "advertised_tools": list(tool_order),
+                },
+                "requests": trace_requests,
+                "tool_calls": trace_tool_calls,
+                "tool_results": history_tool_results(tuple(history)),
+                "visible_corrections": visible_corrections(tuple(history)),
+                "file_effects": trace_file_effects,
+                "runtime": {"cwd": declared_workspace},
+                "termination": {
+                    "kind": "completed" if state["status"] == "FINISHED" else "stopped",
+                    "native_stop_reason": native_stop_reason,
+                },
+                "request_count": len(trace_requests),
+                "normalizations": [],
+            }
+            return {
                 "source_id": profile.consumer_id,
                 "messages": history,
                 "state": state,
                 "replay_trace": replay_trace,
-            },
-            termination=termination, turn_count=len(self._turns),
-            turns=tuple(self._turns), events=tuple(self._events),
-        )
+            }
 
+        return _NativePhaseSteps(step, before_close, build_response, profile.max_turns)
     async def _native_policy_exchange(
         self, frozen_request: FrozenJsonObject, *, model: _ModelProjection,
-        turn: int, require_receipt: bool,
+        turn: int, phase_mode: Literal["streaming", "checkpointed"],
     ) -> tuple[FrozenJsonObject, Mapping[str, Any] | str]:
         request_digest = canonical_sha256(frozen_request)
         await self._emit(PolicyRequestEvent(
@@ -3028,7 +3062,7 @@ class _ConductorSession:
                 code="policy_response_digest_mismatch", **self._context(),
             )
         receipt_body: Mapping[str, Any] | str = response_digest
-        if require_receipt:
+        if phase_mode == "streaming":
             native_receipt = thaw_json(response.get("native_response"))
             request_body = (
                 native_receipt.get("request_body")
@@ -3062,14 +3096,27 @@ class _ConductorSession:
 
     async def _invoke_native_policy(
         self, http_request: Mapping[str, Any], *, model: _ModelProjection, turn: int,
+        verify_staged_body: bool = False,
     ) -> Mapping[str, Any]:
         """Persist the serialized SDK exchange before releasing its response."""
-        frozen_request = freeze_json_object(
-            self._binding.stage_native_http_request(http_request),
-            field_name="native policy request",
-        )
+        staged = self._binding.stage_native_http_request(http_request)
+        # The checkpointed worker's _handle_http reads the SDK request bytes
+        # and publishes body_b64. The provider's _invoke_native_http sends the
+        # staged bytes unchanged; unlike streaming, there is no response-body
+        # receipt. Verify this source-to-transport handoff before invocation.
+        if verify_staged_body:
+            staged_http = staged.get("native_http_request")
+            if (
+                not isinstance(staged_http, Mapping)
+                or staged_http.get("body_b64") != http_request.get("body_b64")
+            ):
+                raise RunnerProtocolError(
+                    "native provider staged body differs from the source HTTP body",
+                    code="native_response_invalid", **self._context(),
+                )
+        frozen_request = freeze_json_object(staged, field_name="native policy request")
         _, digest = await self._native_policy_exchange(
-            frozen_request, model=model, turn=turn, require_receipt=False,
+            frozen_request, model=model, turn=turn, phase_mode="checkpointed",
         )
         return self._binding.take_native_http_response(digest)
     async def _loop_openhands(self, request: ConductorRunRequest) -> RunnerResult:

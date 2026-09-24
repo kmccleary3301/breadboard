@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from dataclasses import replace
@@ -12,6 +13,7 @@ from breadboard_engine.compilation.provider_response import HERMES_RESPONSE_CONS
 from breadboard.rl.harness.runners import conductor as conductor_module
 from breadboard.rl.harness.hermes_tools import HermesToolRuntime, HermesToolRuntimeError, TOOL_NAMES
 from breadboard.rl.harness.runners.base import (
+    RunnerDependencyError,
     RunnerProtocolError,
     RunnerTerminationEvent,
     RunnerTurn,
@@ -131,10 +133,9 @@ class FakeBinding:
     def bind_native_tools(self, tools: tuple[Mapping[str, Any], ...]) -> None:
         self.bound_tools = tools
 
-async def _run(*, fail_ack: bool = False, overlay: bool = True) -> tuple[Any, FakeNativePort, list[tuple[str, str]]]:
-    tools = FakeNativePort(fail_ack=fail_ack)
-    log = tools.log
-    session = HarnessSession(log)
+def _configure_session(
+    session: HarnessSession, tools: FakeNativePort, *, overlay: bool = True,
+) -> None:
     limits = SimpleNamespace(max_turns=8, action_timeout_ms=40_000, transcript_bytes=1_000_000)
     session._open_request = SimpleNamespace(
         episode_id="hermes-regression", effective_plan_digest="sha256:" + "a" * 64,
@@ -150,8 +151,16 @@ async def _run(*, fail_ack: bool = False, overlay: bool = True) -> tuple[Any, Fa
     session._tools = tools
     session._turns = [RunnerTurn(1, (), ())]
     session._events = []
+    session._native_cleanup_outcome = conductor_module.NativeCleanupOutcome(False, None, None, None)
 
-    result = await session._loop_native_stream_body(
+
+async def _run(*, overlay: bool = True) -> tuple[Any, FakeNativePort, list[tuple[str, str]]]:
+    tools = FakeNativePort()
+    log = tools.log
+    session = HarnessSession(log)
+    _configure_session(session, tools, overlay=overlay)
+
+    result = await session._loop_native_stream(
         conductor_module.ConductorRunRequest({"prompt": "test"}),
         conductor_module.NATIVE_STREAM_PROFILES[HERMES_RESPONSE_CONSUMER_ID],
     )
@@ -177,12 +186,105 @@ async def test_history_ack_follows_durable_source_commit() -> None:
     )
     assert first_ack > first_commit
     assert tools.operations.count("initialize") == 1
+    assert log.count(("effects", "close")) == 1
 
 
 @pytest.mark.asyncio
-async def test_history_ack_failure_is_typed_and_stops_followup_operations() -> None:
+async def test_history_ack_failure_closes_native_runtime_once() -> None:
+    class FailingAckPort(FakeNativePort):
+        async def close_native_runtime(self) -> dict[str, Any]:
+            closed = await super().close_native_runtime()
+            assert self.init_count == 1
+            return closed
+
+    tools = FailingAckPort(fail_ack=True)
+    session = HarnessSession(tools.log)
+    _configure_session(session, tools)
     with pytest.raises(RunnerProtocolError, match="ack failed"):
-        await _run(fail_ack=True)
+        await session._loop_native_stream(
+            conductor_module.ConductorRunRequest({"prompt": "test"}),
+            conductor_module.NATIVE_STREAM_PROFILES[HERMES_RESPONSE_CONSUMER_ID],
+        )
+    assert tools.log.count(("effects", "close")) == 1
+    assert session._native_stream_close_callback is None
+
+
+@pytest.mark.asyncio
+async def test_sample_failure_closes_native_runtime_once() -> None:
+    class FailingSamplePort(FakeNativePort):
+        async def invoke_native_phase(
+            self, operation: str, payload: Mapping[str, Any], *, timeout_ms: int,
+        ) -> Mapping[str, Any]:
+            if operation == "sample":
+                self.operations.append(operation)
+                raise RunnerProtocolError("malformed sample", code="native_response_invalid")
+            return await super().invoke_native_phase(operation, payload, timeout_ms=timeout_ms)
+
+    tools = FailingSamplePort()
+    session = HarnessSession(tools.log)
+    _configure_session(session, tools)
+    with pytest.raises(RunnerProtocolError, match="malformed sample"):
+        await session._loop_native_stream(
+            conductor_module.ConductorRunRequest({"prompt": "test"}),
+            conductor_module.NATIVE_STREAM_PROFILES[HERMES_RESPONSE_CONSUMER_ID],
+        )
+    assert tools.log.count(("effects", "close")) == 1
+    assert session._native_stream_close_callback is None
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ("provider", "commit", "cancellation"))
+async def test_native_failures_close_after_initialization(failure: str) -> None:
+    class FailurePort(FakeNativePort):
+        async def invoke_native_phase(
+            self, operation: str, payload: Mapping[str, Any], *, timeout_ms: int,
+        ) -> Mapping[str, Any]:
+            if operation == "sample" and failure == "provider":
+                self.operations.append(operation)
+                return {
+                    "schema_version": "bb.hermes-native.v1",
+                    "kind": "provider_request", "event_delta": (),
+                    "history_digest": _DIGEST, "status": "RUNNING",
+                    "iteration": 0, "http_request": {"body_b64": "e30="},
+                }
+            return await super().invoke_native_phase(operation, payload, timeout_ms=timeout_ms)
+
+    class FailureSession(HarnessSession):
+        async def _checkpoint(self, checkpoint: str, **kwargs: Any) -> None:
+            if failure == "cancellation" and checkpoint == "before_policy":
+                raise asyncio.CancelledError
+
+        async def _native_commit_source(
+            self, turn: int | None, consumer_id: str, phase_name: str,
+            events: tuple[Mapping[str, Any], ...], digest: str,
+            state: Mapping[str, Any],
+        ) -> None:
+            if failure == "commit" and phase_name == "initial":
+                raise RunnerProtocolError("publication failed", code="native_response_invalid")
+            await super()._native_commit_source(
+                turn, consumer_id, phase_name, events, digest, state,
+            )
+
+        async def _invoke_native_policy(
+            self, http_request: Mapping[str, Any], *, model: Any, turn: int,
+            verify_staged_body: bool = False,
+        ) -> Mapping[str, Any]:
+            assert verify_staged_body
+            raise RunnerDependencyError("provider failed", code="policy_invoke_failed")
+
+    tools = FailurePort()
+    session = FailureSession(tools.log)
+    _configure_session(session, tools)
+    expected = asyncio.CancelledError if failure == "cancellation" else (
+        RunnerDependencyError if failure == "provider" else RunnerProtocolError
+    )
+    with pytest.raises(expected):
+        await session._loop_native_stream(
+            conductor_module.ConductorRunRequest({"prompt": "test"}),
+            conductor_module.NATIVE_STREAM_PROFILES[HERMES_RESPONSE_CONSUMER_ID],
+        )
+    assert tools.init_count == 1
+    assert tools.log.count(("effects", "close")) == 1
+    assert session._native_stream_close_callback is None
 
 
 @pytest.mark.asyncio
