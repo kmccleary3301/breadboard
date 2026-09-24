@@ -1196,6 +1196,16 @@ async def test_real_process_closed_stream_timeout_or_cancellation_kills_descenda
         finally:
             loop.remove_reader(ready_fd)
 
+        containment_receipt = primary._runtime.containment_receipt
+        assert containment_receipt is not None
+        descendant = await primary.runner_workspace.read_text("work/descendant.pid")
+        namespace_descendant_pid = int(descendant["content"])
+        host_pid = _resolve_namespace_pid(
+            namespace_descendant_pid, containment_receipt.pid_namespace_inode
+        )
+        assert host_pid is not None
+        descendant_pid = host_pid
+
         started = loop.time()
         if mode == "cancel":
             action.cancel()
@@ -1211,16 +1221,7 @@ async def test_real_process_closed_stream_timeout_or_cancellation_kills_descenda
         assert loop.time() - started < 3
 
         spawned = await primary.runner_workspace.read_text("work/spawned.pid")
-        descendant = await primary.runner_workspace.read_text("work/descendant.pid")
-        namespace_descendant_pid = int(descendant["content"])
         assert namespace_descendant_pid == int(spawned["content"])
-        containment_receipt = primary._runtime.containment_receipt
-        assert containment_receipt is not None
-        host_pid = _resolve_namespace_pid(
-            namespace_descendant_pid, containment_receipt.pid_namespace_inode
-        )
-        assert host_pid is not None
-        descendant_pid = host_pid
 
         async with asyncio.timeout(1):
             while True:
@@ -1356,6 +1357,7 @@ async def test_trusted_process_handle_enforces_exact_500ms_deadline_and_cleans_d
             CleanupState.ALREADY_RELEASED,
         ),
         CleanupStepReceipt("runtime", CleanupState.RELEASED),
+        CleanupStepReceipt("native_scratch", CleanupState.RELEASED),
         CleanupStepReceipt("workspace", CleanupState.RELEASED),
         CleanupStepReceipt("cache_holder", CleanupState.RELEASED),
         CleanupStepReceipt("lease_record", CleanupState.RELEASED),
