@@ -257,6 +257,7 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
     deferred_targets = {
         OPENHANDS_RESPONSE_CONSUMER_ID: "openhands-sdk@1.47.0",
         PI_RESPONSE_CONSUMER_ID: "pi@0.73.1",
+        HERMES_RESPONSE_CONSUMER_ID: "hermes-agent@2026.9.11",
     }
     if (
         version not in (1, 2, 3)
@@ -271,8 +272,8 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
         )
         or version == 3
         and (
-            renderer_id not in NATIVE_CHAT_RESPONSE_TARGETS
-            or binding.get("target_id") != NATIVE_CHAT_RESPONSE_TARGETS[renderer_id]
+            renderer_id not in deferred_targets
+            or binding.get("target_id") != deferred_targets[renderer_id]
             or not isinstance(binding.get("runtime_profile"), Mapping)
             or binding.get("rendered_prompt_digest") is not None
         )
@@ -615,8 +616,11 @@ class EpisodeOpenAICompletionsPolicyClient:
         if (
             self._native_binding is not None
             or target is None
-            or target.renderer_id
-            not in {MINI_RESPONSE_CONSUMER_ID, *NATIVE_CHAT_RESPONSE_TARGETS}
+            or target.renderer_id not in {
+                MINI_RESPONSE_CONSUMER_ID,
+                PI_RESPONSE_CONSUMER_ID,
+                *NATIVE_CHAT_RESPONSE_TARGETS,
+            }
             or target.source_manifest is None
             or profile is None
         ):

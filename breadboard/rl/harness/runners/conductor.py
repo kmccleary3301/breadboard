@@ -2770,7 +2770,7 @@ class _ConductorSession:
             })
             async with asyncio.timeout(min(45, remaining())):
                 receipt = await self._invoke_native_policy(http_request, model=model, turn=turn)
-            public_response = receipt.get("native_http_response")
+            public_response = receipt if "body_b64" in receipt else receipt.get("native_http_response")
             decoded_response = (
                 decode_json_body(public_response.get("body_b64"))
                 if isinstance(public_response, Mapping) else None
@@ -3239,7 +3239,7 @@ class _ConductorSession:
                     "body": request_body,
                 })
                 receipt = await self._invoke_native_policy(http_request, model=model, turn=turn)
-                public_response = receipt.get("native_http_response")
+                public_response = receipt if "body_b64" in receipt else receipt.get("native_http_response")
                 if isinstance(public_response, Mapping):
                     decoded_response = decode_json_body(public_response.get("body_b64"))
                     if isinstance(decoded_response, Mapping) and trace_requests:

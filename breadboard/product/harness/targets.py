@@ -17,7 +17,6 @@ from breadboard_engine.compilation.contracts import (
     canonical_json_bytes,
     canonical_sha256,
 )
-from breadboard_engine.compilation.provider_response import NATIVE_CHAT_RESPONSE_TARGETS
 from breadboard_engine.e4_targets import E4TargetPackage, read_e4_target
 
 from .compile import HarnessCompilation, HarnessCompileError, compile_harness_definition
@@ -29,9 +28,19 @@ from .validate import (
 )
 
 
-_NATIVE_RECIPE_DIGESTS = MappingProxyType({
-    "openhands-sdk@1.47.0": "3d3dfae53ab307406804660577288a44a93476d4620be4d31739882a57cbe71a",
-    "hermes-agent@2026.9.11": "a357a3aeaa2e694a192e1d5bc4e0a4bbfe8ddca264ad3d9f52b929d025371177",
+_NATIVE_WORKER_RECIPES = MappingProxyType({
+    "openhands-sdk@1.47.0": (
+        "breadboard.openhands-sdk.v1.47.0",
+        "3d3dfae53ab307406804660577288a44a93476d4620be4d31739882a57cbe71a",
+    ),
+    "pi@0.73.1": (
+        "breadboard.pi-coding-agent.v0.73.1",
+        "2834e64d081edede815bd1fa81d8ad423b5d0bd1c2e6466ca3ba5060c12a5003",
+    ),
+    "hermes-agent@2026.9.11": (
+        "breadboard.hermes-agent.v2026.9.11",
+        "a357a3aeaa2e694a192e1d5bc4e0a4bbfe8ddca264ad3d9f52b929d025371177",
+    ),
 })
 
 
@@ -262,20 +271,20 @@ def _lower_mini_target(
     )
 
 
-def _lower_native_chat_target(
+def _lower_worker_target(
     package: E4TargetPackage,
     harness: Mapping[str, Any],
     dynamic_fields: Mapping[str, Any],
 ) -> E4TargetRendering:
     """Bind source assets; the owned source worker renders runtime-dependent fields."""
-    renderer_id = harness["renderer"]["selector"]
+    recipe = _NATIVE_WORKER_RECIPES.get(package.target_id)
     if (
-        package.target_id != NATIVE_CHAT_RESPONSE_TARGETS[renderer_id]
-        or sha256(package.descriptor_bytes).hexdigest()
-        != _NATIVE_RECIPE_DIGESTS.get(package.target_id)
+        recipe is None
+        or sha256(package.descriptor_bytes).hexdigest() != recipe[1]
+        or harness["renderer"]["selector"] != recipe[0]
         or dynamic_fields
     ):
-        raise HarnessCompileError("Native Chat targets require their pinned recipe and no caller template inputs")
+        raise HarnessCompileError("Native worker targets require their pinned recipe and no caller template inputs")
     native = json.loads(package.read_asset_text("native-config.json"))
     surface = json.loads(package.read_asset_text("tool-surface.json"))
     order = tuple(surface["ordered_tools"])
@@ -307,7 +316,7 @@ def _lower_native_chat_target(
         system_prompt=None,
         ordered_tool_names=order,
         tools=tuple(compiler_tools),
-        renderer_id=renderer_id,
+        renderer_id=recipe[0],
         runtime_profile=copy_harness_json(native, freeze=True),
     )
 
@@ -350,8 +359,12 @@ def lower_e4_target(
             raise HarnessCompileError("E4 target configuration revision does not match")
         if harness["renderer"]["selector"] == "breadboard.mini-swe-agent.v2.4.6":
             return _lower_mini_target(package, harness, dynamic_fields)
-        if harness["renderer"]["selector"] in NATIVE_CHAT_RESPONSE_TARGETS:
-            return _lower_native_chat_target(package, harness, dynamic_fields)
+        if harness["renderer"]["selector"] in {
+            "breadboard.openhands-sdk.v1.47.0",
+            "breadboard.pi-coding-agent.v0.73.1",
+            "breadboard.hermes-agent.v2026.9.11",
+        }:
+            return _lower_worker_target(package, harness, dynamic_fields)
         raise E4TargetCapabilityError(
             harness["renderer"]["selector"], tuple(harness["required_capabilities"])
         )

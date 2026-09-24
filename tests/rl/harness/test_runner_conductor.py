@@ -79,6 +79,10 @@ class RecordingToolPort:
         self.binding_reads += 1
         return self._bindings
 
+    @property
+    def declared_workspace(self) -> str:
+        return "/workspace"
+
     async def invoke_tool(
         self,
         tool_id: str,
@@ -3754,6 +3758,9 @@ class _NativeCloseTestPort(RecordingToolPort):
         self.release_close = asyncio.Event()
         self.runtime_all_dead = True
 
+    @property
+    def declared_workspace(self) -> str:
+        return "/native-test/workspace"
     def native_runtime_inputs(
         self,
         *,

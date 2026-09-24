@@ -239,6 +239,9 @@ class _NativeWorkerPort:
         self.effect_admissions = 0
         self.effect_measurements = 0
 
+    @property
+    def declared_workspace(self) -> str:
+        return str(self.workspace)
     def _snapshot_effects(self) -> dict[str, dict[str, Any]]:
         snapshot, _ = sandbox_module._workspace_effect_snapshot(
             self.workspace,
