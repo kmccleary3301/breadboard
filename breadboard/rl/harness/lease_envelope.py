@@ -624,6 +624,12 @@ def _spawn_one(_control: socket.socket, message: Mapping[str, Any], fds: list[in
     exec_index = message["exec_index"]
     gate_index = message["gate_index"]
     extra_indices = message.get("extra_indices", [])
+    env = message.get("environment")
+    if not isinstance(env, dict) or any(
+        not isinstance(key, str) or not isinstance(value, str)
+        for key, value in env.items()
+    ):
+        raise OSError("envelope environment is invalid")
     indices = [
         status_index,
         stdin_index,
