@@ -123,7 +123,9 @@ if record.get("composer_sha256") != hashlib.sha256(composer.read_bytes()).hexdig
 sif=Path(record.get("sif_path",""))
 if not re.fullmatch(r"hermes-public-[0-9a-f]{{12}}-[0-9a-f]{{12}}\\.sif",sif.name) or sif.name != f'hermes-public-{{sys.argv[2][:12]}}-{{record["composer_sha256"][:12]}}.sif' or sif.parent != Path("/root/bbe4-do2-20260923/hermes/images"):
     raise SystemExit("public SIF path is not the sealed version")
-if hashlib.sha256(sif.read_bytes()).hexdigest() != record.get("sif_sha256"):
+with sif.open("rb") as image:
+    image_sha256 = hashlib.file_digest(image, "sha256").hexdigest()
+if image_sha256 != record.get("sif_sha256"):
     raise SystemExit("public SIF bytes differ from sidecar")
 print(sif)
 PY
