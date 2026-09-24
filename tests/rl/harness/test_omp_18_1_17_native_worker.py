@@ -107,7 +107,7 @@ function routeExtension(value, extensions) {
 
 function splitImageQuestion(value) {
   const supportsQuestion = !value.includes("://") || value.startsWith("attachment://") || value.startsWith("local://");
-  if (!supportsQuestion || /\\.(?:sqlite3?|db3?)(?=(?::|\\?|$))/i.test(value)) return value;
+  if (!supportsQuestion || /\.(?:sqlite3?|db3?)(?=(?::|\?|$))/i.test(value)) return value;
   const index = value.indexOf("?");
   if (index < 0) return value;
   const question = new URLSearchParams(value.slice(index + 1)).get("q");
@@ -119,7 +119,7 @@ function matches(capability, value) {
   if (!route) return false;
   if ((route.patterns ?? []).some(pattern => new RegExp(pattern, "i").test(value))) return true;
   if ((route.prefixes ?? []).some(prefix => value.toLowerCase().startsWith(prefix.toLowerCase()))) return true;
-  const scheme = value.match(/^([a-z][a-z0-9+.-]*):\\/\\//i)?.[1]?.toLowerCase();
+  const scheme = value.match(/^([a-z][a-z0-9+.-]*):\/\//i)?.[1]?.toLowerCase();
   if (scheme && (route.schemes ?? []).some(item => item.toLowerCase() === scheme)) return true;
   return Array.isArray(route.extensions) && routeExtension(value, route.extensions);
 }
@@ -130,7 +130,7 @@ function classify(value) {
   candidate = splitImageQuestion(candidate);
   if (isReadableUrlPath(candidate)) return "url";
   if (pathTargetsSsh(candidate)) return "ssh";
-  const internal = candidate.match(/^([a-z][a-z0-9+.-]*):\\/\\//i)?.[1]?.toLowerCase();
+  const internal = candidate.match(/^([a-z][a-z0-9+.-]*):\/\//i)?.[1]?.toLowerCase();
   if (internal) {
     const schemes = new Set(policy["internal-resource"]?.route?.schemes ?? []);
     if (internal === "local" && schemes.has(internal)) {
