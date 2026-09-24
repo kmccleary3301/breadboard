@@ -10,11 +10,13 @@ import importlib.resources
 import json
 import os
 from pathlib import Path
+import posixpath
 import re
 import select
 import struct
 import subprocess
 from typing import Any, Mapping
+from urllib.parse import unquote, urlsplit
 OMP_COMMIT = "3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec"
 OMP_SOURCE_ROOT = f"oh-my-pi-{OMP_COMMIT}"
 OMP_CLI_RELATIVE = "packages/coding-agent/src/cli.ts"
@@ -118,57 +120,173 @@ def supplier_cli_invocation(*, cwd: str, model: str, task: str) -> NativeInvocat
     return NativeInvocation("omp-supplier-cli", spec.command(cwd=cwd, model=model, task=task), cwd, {})
 
 
-def validate_native_tool_name(name: str) -> None:
-    if name not in ALLOWED_TOOLS:
-        raise ValueError(f"OMP tool is not admitted: {name}")
+def _normalize_at_prefix(value: str) -> str:
+    if not value.startswith("@"):
+        return value
+    without_at = value[1:]
+    if (
+        without_at.startswith(("/", "~"))
+        or re.match(r"^[A-Za-z]:", without_at)
+        or any(
+            without_at.startswith(prefix)
+            for prefix in (
+                "agent://", "artifact://", "skill://", "rule://",
+                "security://", "local:", "mcp://",
+            )
+        )
+    ):
+        return without_at
+    return value
 
+
+def _expand_linux_path(value: str) -> str:
+    """Mirror pinned path-utils.ts expandPath on the Linux target."""
+    # path-utils.ts:167-181, de-colon before normalizeAtPrefix.
+    value = re.sub(r"^:(?=[/\\~]|\.\.?[/\\]|[A-Za-z]:)", "", value)
+    value = _normalize_at_prefix(value)
+    # path-utils.ts:15 and :178, normalizeUnicodeSpaces.
+    value = re.sub(r"[\u00A0\u2000-\u200A\u202F\u205F\u3000]", " ", value)
+    # path-utils.ts:151-161, stripFileUrl; Windows-only extended-prefix handling
+    # is a no-op for this Linux target.
+    if value.lower().startswith("file://"):
+        parsed = urlsplit(value)
+        if parsed.netloc not in ("", "localhost"):
+            return value
+        value = unquote(parsed.path)
+    # path-utils.ts:163-173, expandTilde (with the Linux home supplied by the
+    # caller's process; route tests use a deterministic HOME).
+    home = os.path.expanduser("~")
+    if value == "~":
+        value = home
+    elif value.startswith("~/") or value.startswith("~\\"):
+        value = home + value[1:]
+    elif value.startswith("~"):
+        value = posixpath.join(home, value[1:])
+    return value
+
+
+def _split_image_question(value: str) -> tuple[str, bool]:
+    """Mirror read.ts:603-618 splitImageQuestionTarget."""
+    supports_question = (
+        "://" not in value
+        or value.startswith("attachment://")
+        or value.startswith("local://")
+    )
+    if not supports_question or re.search(r"\.(?:sqlite3?|db3?)(?=(?::|\?|$))", value, re.I):
+        return value, False
+    query_index = value.find("?")
+    if query_index < 0:
+        return value, False
+    query = value[query_index + 1:]
+    question = next(
+        (unquote(part.split("=", 1)[1]) for part in query.split("&")
+         if part.lower().startswith("q=") and len(part.split("=", 1)) == 2),
+        "",
+    )
+    return (value[:query_index], True) if question else (value, False)
+
+
+def _repair_collapsed_url(value: str) -> str:
+    # fetch.ts:129-135 repairCollapsedScheme.
+    match = re.match(r"^(https?):/(?!/)", value, re.I)
+    return f"{match.group(1)}://{value[match.end():]}" if match else value
+
+
+def _route_extension(candidate: str, extensions: list[Any]) -> bool:
+    # read.ts:1380-1412 resolves archive/sqlite before ordinary file dispatch.
+    base = candidate.lower().split("?", 1)[0]
+    return any(
+        isinstance(extension, str)
+        and re.search(re.escape(extension.lower()) + r"(?=[:?]|$)", base)
+        for extension in extensions
+    )
+
+
+def _ordered_read_candidate(value: str) -> str:
+    """Apply the pinned Linux read.ts pre-routing normalization in order."""
+    candidate = value
+    # read.ts:1268-1275: only lowercase file:// invokes expandPath.
+    if candidate.startswith("file://"):
+        candidate = _expand_linux_path(candidate)
+    candidate, _ = _split_image_question(candidate)
+    return candidate
 def classify_capability(
     value: Any,
     *,
     denial_policy: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> str | None:
-    """Classify a route using the target-declared source predicates."""
+    """Classify after the pinned read.ts Linux pre-routing sequence."""
     if not isinstance(value, str):
         return None
-    candidate = value
-    if candidate.lower().startswith("file://"):
-        return None
     policy = denial_policy or {}
-    for capability, entry in policy.items():
+    candidate = _ordered_read_candidate(value)
+
+    def entry_matches(capability: str, text: str) -> bool:
+        entry = policy.get(capability)
         if not isinstance(entry, Mapping):
-            continue
+            return False
         route = entry.get("route")
         if not isinstance(route, Mapping):
-            continue
+            return False
         patterns = route.get("patterns")
-        if isinstance(patterns, list):
-            for pattern in patterns:
-                if not isinstance(pattern, str):
-                    continue
-                try:
-                    if re.search(pattern, candidate, flags=re.IGNORECASE):
-                        return str(capability)
-                except re.error as exc:
-                    raise ValueError(f"invalid route pattern for {capability}: {pattern}") from exc
+        if isinstance(patterns, list) and any(
+            isinstance(pattern, str) and re.search(pattern, text, re.I)
+            for pattern in patterns
+        ):
+            return True
         prefixes = route.get("prefixes")
         if isinstance(prefixes, list) and any(
-            isinstance(prefix, str) and candidate.lower().startswith(prefix.lower())
+            isinstance(prefix, str) and text.lower().startswith(prefix.lower())
             for prefix in prefixes
         ):
-            return str(capability)
+            return True
         schemes = route.get("schemes")
         if isinstance(schemes, list):
-            scheme = candidate.split("://", 1)[0].lower() if "://" in candidate else None
-            if scheme in {item.lower() for item in schemes if isinstance(item, str)}:
-                return str(capability)
+            scheme_match = re.match(r"^([a-z][a-z0-9+.-]*):\/\/", text, re.I)
+            if scheme_match and scheme_match.group(1).lower() in {
+                item.lower() for item in schemes if isinstance(item, str)
+            }:
+                return True
         extensions = route.get("extensions")
-        if isinstance(extensions, list):
-            base = candidate.lower().split("?", 1)[0].split(":", 1)[0]
-            if any(
-                isinstance(extension, str) and base.endswith(extension.lower())
-                for extension in extensions
-            ):
-                return str(capability)
+        return isinstance(extensions, list) and _route_extension(text, extensions)
+
+    # fetch.ts:170-201 runs URL repair and URL classification before internal URLs.
+    repaired = _repair_collapsed_url(candidate)
+    if entry_matches("url", repaired):
+        return "url"
+    # path-utils.ts:574-588 is the raw-argument SSH substring gate.
+    if entry_matches("ssh", candidate):
+        return "ssh"
+
+    # read.ts:1318-1368 routes internal URLs; local:// files continue through
+    # archive/SQLite/PDF/image/document routing after resolving to a file.
+    internal_match = re.match(r"^([a-z][a-z0-9+.-]*):\/\/", candidate, re.I)
+    if internal_match:
+        scheme = internal_match.group(1).lower()
+        internal_entry = policy.get("internal-resource")
+        internal_schemes = (
+            internal_entry.get("route", {}).get("schemes", [])
+            if isinstance(internal_entry, Mapping)
+            else []
+        )
+        if scheme == "local" and scheme in {str(item).lower() for item in internal_schemes}:
+            local_path = urlsplit(candidate).path
+            if local_path:
+                candidate = unquote(local_path)
+            else:
+                return "internal-resource"
+        elif scheme in {str(item).lower() for item in internal_schemes}:
+            return "internal-resource"
+
+    # path-utils.ts:177-181 resolveReadPath performs the same Linux expansion
+    # before filesystem route resolution (Windows-only branches are no-ops).
+    candidate = _expand_linux_path(candidate)
+
+    # read.ts:1380-1412 preserves literal precedence, then checks these
+    # source route families in this order.
+    for capability in ("archive", "sqlite", "pdf", "image", "video", "document"):
+        if entry_matches(capability, candidate):
+            return capability
     if policy:
         return None
     for pattern, capability in (
@@ -176,13 +294,8 @@ def classify_capability(
         (r"^www\.", "url"),
         (r"ssh:\/\/", "ssh"),
     ):
-        if re.search(pattern, candidate, flags=re.IGNORECASE):
+        if re.search(pattern, repaired, re.I):
             return capability
-    if any(
-        candidate.lower().startswith(f"{scheme}://")
-        for scheme in ("agent", "artifact", "history", "issue", "local", "mcp", "memory", "omp", "pr", "rule", "security", "skill", "vault", "xd")
-    ):
-        return "internal-resource"
     return None
 
 

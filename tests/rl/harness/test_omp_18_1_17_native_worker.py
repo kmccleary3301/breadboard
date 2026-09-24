@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 import re
 import sys
+import subprocess
 import pytest
 
 from breadboard.rl.harness.omp_native_tools import (
@@ -15,7 +16,10 @@ from breadboard.rl.harness.omp_native_tools import (
     verified_tool_worker_path,
 )
 
-
+OMP_AVAILABLE = (
+    Path(pinned_worker_spec().bun).is_file()
+    and Path(pinned_worker_spec().source_root).is_dir()
+)
 def _pinned_source(relative: str) -> str:
     return (Path(pinned_worker_spec().source_root) / relative).read_text(encoding="utf-8")
 
@@ -90,6 +94,64 @@ def _source_route_patterns() -> tuple[list[str], list[str]]:
     return (re.findall(pattern, url_body), re.findall(pattern, ssh_body))
 
 
+_TS_ROUTE_PROBE = r"""
+import { expandPath, isReadableUrlPath, pathTargetsSsh } from "%s/packages/coding-agent/src/tools/path-utils.ts";
+
+const input = JSON.parse(await Bun.stdin.text());
+const policy = input.policy;
+
+function routeExtension(value, extensions) {
+  const base = value.toLowerCase().split("?", 1)[0];
+  return extensions.some(extension => typeof extension === "string" && new RegExp(`${extension.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=[:?]|$)`, "i").test(base));
+}
+
+function splitImageQuestion(value) {
+  const supportsQuestion = !value.includes("://") || value.startsWith("attachment://") || value.startsWith("local://");
+  if (!supportsQuestion || /\\.(?:sqlite3?|db3?)(?=(?::|\\?|$))/i.test(value)) return value;
+  const index = value.indexOf("?");
+  if (index < 0) return value;
+  const question = new URLSearchParams(value.slice(index + 1)).get("q");
+  return question ? value.slice(0, index) : value;
+}
+
+function matches(capability, value) {
+  const route = policy[capability]?.route;
+  if (!route) return false;
+  if ((route.patterns ?? []).some(pattern => new RegExp(pattern, "i").test(value))) return true;
+  if ((route.prefixes ?? []).some(prefix => value.toLowerCase().startsWith(prefix.toLowerCase()))) return true;
+  const scheme = value.match(/^([a-z][a-z0-9+.-]*):\\/\\//i)?.[1]?.toLowerCase();
+  if (scheme && (route.schemes ?? []).some(item => item.toLowerCase() === scheme)) return true;
+  return Array.isArray(route.extensions) && routeExtension(value, route.extensions);
+}
+
+function classify(value) {
+  let candidate = value;
+  if (candidate.startsWith("file://")) candidate = expandPath(candidate);
+  candidate = splitImageQuestion(candidate);
+  if (isReadableUrlPath(candidate)) return "url";
+  if (pathTargetsSsh(candidate)) return "ssh";
+  const internal = candidate.match(/^([a-z][a-z0-9+.-]*):\\/\\//i)?.[1]?.toLowerCase();
+  if (internal) {
+    const schemes = new Set(policy["internal-resource"]?.route?.schemes ?? []);
+    if (internal === "local" && schemes.has(internal)) {
+      const parsed = new URL(candidate);
+      if (parsed.pathname) candidate = decodeURIComponent(parsed.pathname);
+      else return "internal-resource";
+    } else if (schemes.has(internal)) {
+      return "internal-resource";
+    }
+  }
+  candidate = expandPath(candidate);
+  for (const capability of ["archive", "sqlite", "pdf", "image", "video", "document"]) {
+    if (matches(capability, candidate)) return capability;
+  }
+  return null;
+}
+
+console.log(JSON.stringify(input.values.map(value => ({ value, route: classify(value) }))));
+""" % pinned_worker_spec().source_root
+
+
 def _authority_payload(tmp_path: Path) -> dict[str, object]:
     scratch = tmp_path / ".scratch"
     package_dir = tmp_path / "package"
@@ -146,6 +208,71 @@ def test_route_matchers_follow_source_path_forms(value: str, expected: str | Non
     policy = json.loads((root / "native-config.json").read_text())["capability_denials"]
     assert classify_capability(value, denial_policy=policy) == expected
 
+
+@pytest.mark.skipif(not OMP_AVAILABLE, reason="pinned OMP runtime is unavailable on this host")
+def test_route_classification_differential_matches_pinned_bun(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
+    policy = json.loads((root / "native-config.json").read_text())["capability_denials"]
+    assert classify_capability("file:///tmp/state.sqlite", denial_policy=policy) == "sqlite"
+    values = [
+        "file:///tmp/state.sqlite",
+        "file:///tmp/state%2Esqlite:users",
+        "FILE:///tmp/state.sqlite",
+        "file:///tmp/archive.tar.gz:member",
+        "file:///tmp/read.pdf:1",
+        "file:///tmp/image.png",
+        "file:///tmp/movie.mp4",
+        "file:///tmp/report.docx",
+        "@/tmp/state.sqlite",
+        "@local:///tmp/state.sqlite:users",
+        "\u00a0/tmp/state.sqlite",
+        "~/.cache/state.sqlite",
+        ":/tmp/state.sqlite",
+        "/tmp/image.png?q=describe",
+        "/tmp/state.sqlite?q=ignored",
+        "/tmp/image.png:img",
+        "local:///tmp/state.sqlite:users",
+        "local:///tmp/image.png:img",
+        "local://opaque/resource",
+        "https://example.invalid",
+        "https:/example.invalid",
+        "HTTPS://example.invalid",
+        "www.example.invalid/path",
+        "ssh://host/path",
+        "prefix/ssh://host/path",
+        "agent://item",
+        "artifact://item",
+        "history://item",
+        "issue://item",
+        "mcp://item",
+        "memory://item",
+        "omp://item",
+        "pr://item",
+        "rule://item",
+        "security://item",
+        "skill://item",
+        "vault://item",
+        "xd://item",
+        "ordinary.txt",
+        "state.sqlite.backup",
+    ]
+    expected = [
+        {"value": value, "route": classify_capability(value, denial_policy=policy)}
+        for value in values
+    ]
+    probe = tmp_path / "omp_route_probe.ts"
+    probe.write_text(_TS_ROUTE_PROBE, encoding="utf-8")
+    result = subprocess.run(
+        [pinned_worker_spec().bun, str(probe)],
+        input=json.dumps({"policy": policy, "values": values}),
+        capture_output=True,
+        text=True,
+        cwd=pinned_worker_spec().source_root,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    observed = json.loads(result.stdout.strip().splitlines()[-1])
+    assert observed == expected
 
 @pytest.mark.skipif(
     not Path(pinned_worker_spec().source_root).is_dir(),
