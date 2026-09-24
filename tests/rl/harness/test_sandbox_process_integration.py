@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import asyncio
 from dataclasses import replace
 import errno
@@ -225,6 +226,7 @@ async def test_process_backend_binds_identity_recorder_before_base_measurement(
         digest = plan.runtime.measured_binary_digest
         size = 0
         fd = pinned_fd
+        execution_format = "elf"
 
         def close(self) -> None:
             os.close(self.fd)
@@ -972,6 +974,34 @@ async def test_real_process_preserves_absolute_workspace_and_scratch_roots(
     assert set(Path("/dev/shm").glob(".breadboard-envelope-*")) == staging_before
 
 
+def _namespace_processes(pid_namespace_inode: int) -> list[tuple[int, str]]:
+    processes: list[tuple[int, str]] = []
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdecimal():
+            continue
+        try:
+            if os.stat(entry / "ns/pid").st_ino != pid_namespace_inode:
+                continue
+            fields = (entry / "stat").read_text(encoding="ascii").rsplit(")", 1)[1].split()
+            processes.append((int(entry.name), fields[0]))
+        except (OSError, UnicodeError, ValueError, IndexError):
+            continue
+    return processes
+
+
+def _resolve_namespace_pid(namespace_pid: int, pid_namespace_inode: int) -> int | None:
+    target = str(namespace_pid)
+    for host_pid, _state in _namespace_processes(pid_namespace_inode):
+        try:
+            status = Path(f"/proc/{host_pid}/status").read_text(encoding="ascii")
+        except (OSError, UnicodeError):
+            continue
+        for line in status.splitlines():
+            if line.startswith("NSpid:") and line.split()[-1] == target:
+                return host_pid
+    return None
+
+
 @requires_sealed_execution
 async def test_real_process_leader_exit_keeps_exact_descendant_cleanup_authority(
     tmp_path: Path,
@@ -993,31 +1023,48 @@ async def test_real_process_leader_exit_keeps_exact_descendant_cleanup_authority
     )
     command = (
         f"/bin/sh -c {shlex.quote(descendant_command)} & "
-        "while [ ! -f work/descendant.pid ]; do :; done"
+        "while [ ! -f work/descendant.pid ]; do :; done; "
+        "sleep 1"
     )
-    descendant_pid: int | None = None
+    action = asyncio.create_task(
+        primary.runner_workspace.run_shell(command, timeout=2)
+    )
+    host_pid: int | None = None
     try:
-        await primary.runner_workspace.run_shell(command, timeout=2)
-        descendant = await primary.runner_workspace.read_text(
-            "work/descendant.pid"
-        )
-        descendant_pid = int(descendant["content"])
-        async with asyncio.timeout(1):
-            while True:
-                try:
-                    os.kill(descendant_pid, 0)
-                except ProcessLookupError:
-                    break
+        descendant: dict[str, object] | None = None
+        for _ in range(200):
+            try:
+                candidate = await primary.runner_workspace.read_text(
+                    "work/descendant.pid"
+                )
+            except FileNotFoundError:
                 await asyncio.sleep(0.01)
-        receipt = await primary.close()
-        assert receipt.state is CleanupState.RELEASED
+            else:
+                descendant = candidate
+                break
+        assert descendant is not None
+        namespace_pid = int(str(descendant["content"]))
+        receipt = primary._runtime.containment_receipt
+        assert receipt is not None
+        host_pid = _resolve_namespace_pid(namespace_pid, receipt.pid_namespace_inode)
+        assert host_pid is not None
+        assert Path(f"/proc/{host_pid}").exists()
+        await action
+        assert not Path(f"/proc/{host_pid}").exists()
+        assert not any(
+            state == "Z"
+            for _pid, state in _namespace_processes(receipt.pid_namespace_inode)
+        )
+        cleanup_receipt = await primary.close()
+        assert cleanup_receipt.state is CleanupState.RELEASED
         assert await harness.manager.close() == ()
     finally:
-        if descendant_pid is not None:
-            try:
-                os.kill(descendant_pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+        if not action.done():
+            action.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await action
+        if host_pid is not None and Path(f"/proc/{host_pid}").exists():
+            os.kill(host_pid, signal.SIGKILL)
 
 @requires_sealed_execution
 @pytest.mark.parametrize("mode", ["timeout", "cancel"])
