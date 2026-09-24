@@ -5,15 +5,30 @@ import { readdir, readFile } from "node:fs/promises";
 // the model loop; this process only composes and executes the four SDK tools.
 const RPC_SCHEMA = "bb.native-worker.rpc.v1";
 const PHASE_SCHEMA = "bb.omp-native.v1";
-const SOURCE_ROOT = "/opt/omp/source/oh-my-pi-3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec";
 const TOOL_NAMES = ["read", "bash", "edit", "write"] as const;
 type Call = { id: string; name: string; arguments: Record<string, unknown> };
-let boundedDescriptions: Record<string, string> = {};
-let nativeSystemPrompt = "";
-let capabilityDenials: Record<string, Record<string, unknown>> = {};
-let session: any = null;
-let tools: any[] = [];
-let irToJsonSchema: ((ir: unknown, options?: Record<string, unknown>) => Record<string, unknown>) | null = null;
+type RouteClassifier = { sourceRoot: string; lockSha256: string; moduleDigests: Map<string, string> };
+let pinnedSourceRoot = "";
+
+async function sha256File(path: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", await Bun.file(path).arrayBuffer());
+  return Buffer.from(digest).toString("hex");
+}
+
+let pinnedExpandPath: ((value: string) => string) | null = null;
+let pinnedUrlPredicate: ((value: string) => boolean) | null = null;
+let pinnedSshPredicate: ((value: string) => boolean) | null = null;
+let pinnedSplitPathAndSel: ((value: string) => { path: string; sel?: string }) | null = null;
+let pinnedSplitPathAndSelPreferringLiteral: ((value: string, cwd: string) => Promise<{ path: string; sel?: string }>) | null = null;
+let pinnedProbeLiteralPathExists: ((value: string, cwd: string) => Promise<"exists" | "missing" | "unknown">) | null = null;
+let pinnedResolveReadPath: ((value: string, cwd: string) => string) | null = null;
+let pinnedSplitPdfImageReadPath: ((value: string) => { pdfPath: string; page?: number } | null) | null = null;
+let pinnedIsVideoPath: ((value: string) => boolean) | null = null;
+let pinnedReadImageMetadata: ((value: string) => Promise<{ mimeType?: string } | null>) | null = null;
+let pinnedConvertibleExtensions: ReadonlySet<string> | null = null;
+let pinnedArchiveResolver: ((session: any, path: string, cache: Map<any, any>, signal?: AbortSignal) => Promise<any>) | null = null;
+let pinnedSqliteResolver: ((session: any, path: string, cache: Map<any, any>, signal?: AbortSignal) => Promise<any>) | null = null;
+let pinnedInternalRouter: any = null;
 let prepared: Array<Call & { error?: string }> = [];
 
 function sleep(milliseconds: number): Promise<void> {
@@ -145,6 +160,106 @@ function requireRuntimeInputs(value: unknown): Record<string, string> {
   return typed;
 }
 
+function digestHex(value: unknown, label: string): string {
+  if (typeof value !== "string" || !/^sha256:[0-9a-f]{64}$/.test(value)) {
+    throw new Error(`${label} must be a sha256 digest`);
+  }
+  return value.slice("sha256:".length);
+}
+
+function requireRouteClassifier(value: unknown): RouteClassifier {
+  const classifier = exactRecord(
+    value,
+    "route_classifier",
+    ["schema_version", "source_root", "source_archive_sha256", "lock_sha256", "modules"],
+  );
+  if (classifier.schema_version !== "bb.omp-route-classifier.v1" || typeof classifier.source_root !== "string" || !classifier.source_root) {
+    throw new Error("route_classifier has invalid schema or source_root");
+  }
+  digestHex(classifier.source_archive_sha256, "route_classifier.source_archive_sha256");
+  const rawModules = exactRecord(classifier.modules, "route_classifier.modules", []);
+  const moduleDigests = new Map<string, string>();
+  for (const [name, raw] of Object.entries(rawModules)) {
+    const module = exactRecord(raw, `route_classifier.modules.${name}`, ["path", "sha256"]);
+    if (typeof module.path !== "string" || !module.path || module.path.startsWith("/") || module.path.includes("..")) {
+      throw new Error(`route_classifier.modules.${name}.path is invalid`);
+    }
+    moduleDigests.set(module.path, digestHex(module.sha256, `route_classifier.modules.${name}.sha256`));
+  }
+  if (!moduleDigests.size) throw new Error("route_classifier.modules must not be empty");
+  return {
+    sourceRoot: classifier.source_root,
+    lockSha256: digestHex(classifier.lock_sha256, "route_classifier.lock_sha256"),
+    moduleDigests,
+  };
+}
+
+type PinnedRoute = { route: string; matched_path?: string };
+
+function routeCapability(route: string): string | undefined {
+  if (route === "archive" || route === "sqlite" || route === "image" || route === "video" || route === "pdf" || route === "document") {
+    return route;
+  }
+  if (route.startsWith("internal:")) return "internal-resource";
+  return undefined;
+}
+
+async function classifyPinnedRead(value: unknown): Promise<PinnedRoute> {
+  if (typeof value !== "string") return { route: "unknown" };
+  if (
+    !pinnedExpandPath || !pinnedUrlPredicate || !pinnedSshPredicate
+    || !pinnedSplitPathAndSel || !pinnedSplitPathAndSelPreferringLiteral
+    || !pinnedProbeLiteralPathExists || !pinnedResolveReadPath
+    || !pinnedSplitPdfImageReadPath || !pinnedIsVideoPath || !pinnedReadImageMetadata
+    || !pinnedConvertibleExtensions || !pinnedArchiveResolver || !pinnedSqliteResolver
+    || !pinnedInternalRouter
+  ) throw new Error("pinned read classifier unavailable");
+
+  let readPath = value;
+  if (readPath.startsWith("file://")) readPath = pinnedExpandPath(readPath);
+  if (pinnedUrlPredicate(readPath)) return { route: "url" };
+  if (pinnedSshPredicate(readPath)) return { route: "ssh" };
+  const scheme = readPath.match(/^([a-z][a-z0-9+.-]*):\/\//i)?.[1]?.toLowerCase();
+  if (pinnedInternalRouter.canResolve(readPath)) {
+    if (scheme && scheme !== "local") return { route: `internal:${scheme}` };
+    if (scheme === "local") {
+      const parsed = new URL(readPath);
+      if (parsed.pathname) readPath = decodeURIComponent(parsed.pathname);
+    }
+  }
+
+  const literalSplit = await pinnedSplitPathAndSelPreferringLiteral(readPath, workspace);
+  const rawPathIsLiteral = literalSplit.sel === undefined && pinnedSplitPathAndSel(readPath).sel !== undefined;
+  const cache = new Map();
+  if (!rawPathIsLiteral) {
+    const archive = await pinnedArchiveResolver(session, readPath, cache);
+    if (archive) return { route: "archive", matched_path: archive.absolutePath };
+    const sqlite = await pinnedSqliteResolver(session, readPath, cache);
+    if (sqlite) return { route: "sqlite", matched_path: sqlite.absolutePath };
+    const pdfCandidate = pinnedSplitPdfImageReadPath(readPath);
+    if (pdfCandidate && (await pinnedProbeLiteralPathExists(readPath, workspace)) === "missing") {
+      return { route: "pdf", matched_path: pdfCandidate.pdfPath };
+    }
+  }
+
+  const localPath = literalSplit.path;
+  const absolutePath = pinnedResolveReadPath(localPath, workspace);
+  if (pinnedIsVideoPath(localPath)) return { route: "video", matched_path: absolutePath };
+  try {
+    const stat = await Bun.file(absolutePath).stat();
+    if (!stat.isDirectory) {
+      const image = await pinnedReadImageMetadata(absolutePath);
+      if (image?.mimeType) return { route: "image", matched_path: absolutePath };
+      const dot = localPath.lastIndexOf(".");
+      const extension = dot >= 0 ? localPath.slice(dot).toLowerCase() : "";
+      if (pinnedConvertibleExtensions.has(extension)) return { route: "document", matched_path: absolutePath };
+    }
+  } catch {
+    // Missing paths are plain-file candidates; the native read tool reports the
+    // pinned not-found error after admission.
+  }
+  return { route: "file", matched_path: absolutePath };
+}
 function requireAdvertisement(value: unknown): {
   systemPrompt: string;
   descriptions: Record<string, string>;
@@ -186,6 +301,7 @@ function requireAdvertisement(value: unknown): {
     }
   }
   if (advertisement.settings !== undefined) {
+
     exactRecord(advertisement.settings, "advertisement.settings", ["request_cap", "model_max_tokens", "provider_attempts"]);
   }
   return { systemPrompt: advertisement.system_prompt, descriptions: bounded, capabilityDenials };
@@ -201,6 +317,26 @@ function deniedCapability(argumentsValue: Record<string, unknown>): string | und
     return entry.message;
   }
   return undefined;
+}
+async function pinnedCallAdmission(name: string, argumentsValue: Record<string, unknown>): Promise<{ error?: string; route?: PinnedRoute }> {
+  const staticError = deniedCapability(argumentsValue);
+  if (staticError) return { error: staticError };
+  if (name !== "read" || typeof argumentsValue.path !== "string") return { route: { route: "file" } };
+  try {
+    const route = await classifyPinnedRead(argumentsValue.path);
+    if (route.route === "file") return { route };
+    const capability = routeCapability(route.route);
+    if (capability === undefined) {
+      return { error: "OMP capability denial policy unavailable: unknown pinned read route", route };
+    }
+    const entry = capabilityDenials[capability];
+    if (!entry || entry.capability !== capability || typeof entry.message !== "string") {
+      return { error: `OMP capability denial policy unavailable: ${capability}`, route };
+    }
+    return { route };
+  } catch (error) {
+    return { error: `OMP pinned read classification failed closed: ${String(error)}` };
+  }
 }
 function parametersFor(tool: any): Record<string, unknown> {
   if (irToJsonSchema === null || typeof tool.parameters !== "function" || tool.parameters.ir === undefined) {
@@ -237,20 +373,52 @@ async function initialize(payload: Record<string, any>) {
   ) {
     throw new Error("initialize workspace authority does not match runtime_inputs");
   }
-  const advertisement = requireAdvertisement(payload.advertisement);
-  capabilityDenials = advertisement.capabilityDenials;
-  workspace = runtimeInputs.cwd;
-  process.env.HOME = runtimeInputs.home;
-  nativeSystemPrompt = advertisement.systemPrompt;
-  boundedDescriptions = advertisement.descriptions;
+  const routeClassifier = requireRouteClassifier(payload.route_classifier);
+  pinnedSourceRoot = routeClassifier.sourceRoot;
+  const expectedFiles = new Map(routeClassifier.moduleDigests);
+  expectedFiles.set("bun.lock", routeClassifier.lockSha256);
+  for (const [relativePath, expectedDigest] of expectedFiles) {
+    const absolutePath = `${pinnedSourceRoot}/${relativePath}`;
+    let observedDigest: string;
+    try {
+      observedDigest = await sha256File(absolutePath);
+    } catch (error) {
+      throw new Error(`pinned OMP source verification failed for ${relativePath}: ${String(error)}`);
+    }
+    if (observedDigest !== expectedDigest) {
+      throw new Error(`pinned OMP source verification failed for ${relativePath}: expected ${expectedDigest}, got ${observedDigest}`);
+    }
+  }
   // The pinned source root is deployment-selected; static source imports cannot
   // represent the verified runtime path used by the SIF installation.
-  const { createAgentSession, Settings } = await import(`${SOURCE_ROOT}/packages/coding-agent/src/sdk.ts`);
-  const providerModule = await import(`${SOURCE_ROOT}/packages/ai/src/providers/openai-completions.ts`);
+  const { createAgentSession, Settings } = await import(`${pinnedSourceRoot}/packages/coding-agent/src/sdk.ts`);
+  const providerModule = await import(`${pinnedSourceRoot}/packages/ai/src/providers/openai-completions.ts`);
   convertMessages = providerModule.convertMessages as typeof convertMessages;
-  const schemaModule = await import(`${SOURCE_ROOT}/packages/omptype/src/json-schema.ts`);
+  const schemaModule = await import(`${pinnedSourceRoot}/packages/omptype/src/json-schema.ts`);
   irToJsonSchema = schemaModule.irToJsonSchema as typeof irToJsonSchema;
-  const { SessionManager } = await import(`${SOURCE_ROOT}/packages/coding-agent/src/session/session-manager.ts`);
+  const pathModule = await import(`${pinnedSourceRoot}/packages/coding-agent/src/tools/path-utils.ts`);
+  const pdfModule = await import(`${pinnedSourceRoot}/packages/coding-agent/src/tools/read-pdf.ts`);
+  const videoModule = await import(`${pinnedSourceRoot}/packages/coding-agent/src/utils/video.ts`);
+  const mimeModule = await import(`${pinnedSourceRoot}/packages/utils/src/mime.ts`);
+  const markitModule = await import(`${pinnedSourceRoot}/packages/coding-agent/src/utils/markit.ts`);
+  const archiveModule = await import(`${pinnedSourceRoot}/packages/coding-agent/src/tools/read-archive.ts`);
+  const sqliteModule = await import(`${pinnedSourceRoot}/packages/coding-agent/src/tools/read-sqlite.ts`);
+  const routerModule = await import(`${pinnedSourceRoot}/packages/coding-agent/src/internal-urls/router.ts`);
+  pinnedExpandPath = pathModule.expandPath;
+  pinnedUrlPredicate = pathModule.isReadableUrlPath;
+  pinnedSshPredicate = pathModule.pathTargetsSsh;
+  pinnedSplitPathAndSel = pathModule.splitPathAndSel;
+  pinnedSplitPathAndSelPreferringLiteral = pathModule.splitPathAndSelPreferringLiteral;
+  pinnedProbeLiteralPathExists = pathModule.probeLiteralPathExists;
+  pinnedResolveReadPath = pathModule.resolveReadPath;
+  pinnedSplitPdfImageReadPath = pdfModule.splitPdfImageReadPath;
+  pinnedIsVideoPath = videoModule.isVideoPath;
+  pinnedReadImageMetadata = mimeModule.readImageMetadata;
+  pinnedConvertibleExtensions = markitModule.CONVERTIBLE_EXTENSIONS;
+  pinnedArchiveResolver = archiveModule.resolveArchiveReadPath;
+  pinnedSqliteResolver = sqliteModule.resolveSqliteReadPath;
+  pinnedInternalRouter = routerModule.InternalUrlRouter.instance();
+  const { SessionManager } = await import(`${pinnedSourceRoot}/packages/coding-agent/src/session/session-manager.ts`);
   const settings = await Settings.init({ cwd: workspace, agentDir: String(payload.scratch), inMemory: true, configFiles: [], overrides: {
     "retry.enabled": false, "retry.fallbackChains": {}, "compaction.enabled": false,
     "modelLoopGuard.enabled": false, "tools.maxTimeout": 30, "edit.fuzzyMatch": true,
@@ -278,7 +446,7 @@ async function initialize(payload: Record<string, any>) {
       ...runtimeInputs,
       consumer_id: "breadboard.oh-my-pi.v18.1.17",
       workspace,
-      source_commit: SOURCE_ROOT.split("-").at(-1),
+      source_commit: pinnedSourceRoot.split("-").at(-1),
       settings: payload.advertisement.settings ?? {},
       capability_denials: advertisement.capabilityDenials,
     },
@@ -304,7 +472,7 @@ async function dispatch(operation: string, payload: Record<string, any>): Promis
     };
   }
   if (operation === "prepare_tools") {
-    prepared = (payload.calls ?? []).map((call: any) => {
+    prepared = await Promise.all((payload.calls ?? []).map(async (call: any) => {
       let argumentsValue = call.arguments;
       let error: string | undefined;
       if (typeof argumentsValue === "string") {
@@ -319,12 +487,17 @@ async function dispatch(operation: string, payload: Record<string, any>): Promis
         error = error ?? "Invalid tool arguments: expected a JSON object";
         argumentsValue = {};
       }
-      if (!error) error = deniedCapability(argumentsValue);
-      const item: any = { id: String(call.id), name: String(call.name), arguments: argumentsValue };
+      let route: PinnedRoute | undefined;
+      if (!error) {
+        const admission = await pinnedCallAdmission(String(call.name), argumentsValue);
+        error = admission.error;
+        route = admission.route;
+      }
+      const item: any = { id: String(call.id), name: String(call.name), arguments: argumentsValue, route };
       if (!TOOL_NAMES.includes(item.name)) item.error = `OMP tool is not admitted: ${item.name}`;
       if (error) item.error = item.error ?? error;
       return item;
-    });
+    }));
     return { schema_version: PHASE_SCHEMA, kind: "prepared", calls: prepared, history_calls: prepared.map((call) => ({ id: call.id, name: call.name, arguments: call.arguments })) };
   }
   if (operation === "execute_batch") {

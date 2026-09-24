@@ -14,8 +14,8 @@ import pytest
 from breadboard.rl.harness.omp_native_tools import (
     NativeToolWorker,
     NativeWorkerPhaseError,
-    classify_capability,
     deny_excluded_capabilities,
+    deny_pinned_route,
     pinned_worker_spec,
     verified_tool_worker_path,
 )
@@ -124,6 +124,13 @@ def _materialize_differential_source(tmp_path: Path) -> Path:
         (handler_root / filename).write_text(contents, encoding="utf-8")
     return source_root
 def _pinned_source(relative: str) -> str:
+    source_zip = _source_zip_path()
+    if source_zip is not None:
+        with zipfile.ZipFile(source_zip) as archive:
+            matches = [name for name in archive.namelist() if name.endswith(f"/{relative}")]
+            if len(matches) != 1:
+                raise AssertionError(f"pinned source member is not unique: {relative} -> {matches}")
+            return archive.read(matches[0]).decode("utf-8")
     return (Path(pinned_worker_spec().source_root) / relative).read_text(encoding="utf-8")
 
 
@@ -197,73 +204,6 @@ def _source_route_patterns() -> tuple[list[str], list[str]]:
     return (re.findall(pattern, url_body), re.findall(pattern, ssh_body))
 
 
-_TS_ROUTE_PROBE = r"""
-import { expandPath, isReadableUrlPath, pathTargetsSsh } from "__OMP_SOURCE_ROOT__/packages/coding-agent/src/tools/path-utils.ts";
-import { InternalUrlRouter } from "__OMP_SOURCE_ROOT__/packages/coding-agent/src/internal-urls/router.ts";
-
-const input = JSON.parse(await Bun.stdin.text());
-const policy = input.policy;
-const internalRouter = new InternalUrlRouter();
-
-function routeExtension(value, extensions) {
-  const base = value.toLowerCase();
-  return extensions.some(extension => typeof extension === "string" && new RegExp(`${extension.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=[:?]|$)`, "i").test(base));
-}
-
-function splitImageQuestion(value) {
-  const supportsQuestion = !value.includes("://") || value.startsWith("attachment://") || value.startsWith("local://");
-  if (!supportsQuestion || /\.(?:sqlite3?|db3?)(?=(?::|\?|$))/i.test(value)) return value;
-  const index = value.indexOf("?");
-  if (index < 0) return value;
-  const question = new URLSearchParams(value.slice(index + 1)).get("q");
-  return question ? value.slice(0, index) : value;
-}
-
-function extractUriScheme(value) {
-  const hierarchical = value.match(/^([a-z][a-z0-9+.-]*):\/\//i);
-  if (hierarchical) return hierarchical[1].toLowerCase();
-  const opaque = value.match(/^([a-z][a-z0-9+.-]*):(.+)$/is);
-  if (!opaque) return undefined;
-  const [, scheme, rest] = opaque;
-  if (scheme.length === 1 || scheme.includes(".")) return undefined;
-  if (/^(?:raw|conflicts|-?\d+(?:[-+]\d+)?(?:,\d+(?:[-+]\d+)?)?)(?::(?:raw|conflicts|-?\d+(?:[-+]\d+)?(?:,\d+(?:[-+]\d+)?)?))*$/i.test(rest)) return undefined;
-  return scheme.toLowerCase();
-}
-
-function matches(capability, value) {
-  const route = policy[capability]?.route;
-  if (!route) return false;
-  if ((route.patterns ?? []).some(pattern => new RegExp(pattern, "i").test(value))) return true;
-  if ((route.prefixes ?? []).some(prefix => value.toLowerCase().startsWith(prefix.toLowerCase()))) return true;
-  const scheme = value.match(/^([a-z][a-z0-9+.-]*):\/\//i)?.[1]?.toLowerCase();
-  if (scheme && (route.schemes ?? []).some(item => item.toLowerCase() === scheme)) return true;
-  return Array.isArray(route.extensions) && routeExtension(value, route.extensions);
-}
-
-function classify(value) {
-  let candidate = expandPath(value);
-  candidate = splitImageQuestion(candidate);
-  if (isReadableUrlPath(candidate)) return "url";
-  if (pathTargetsSsh(candidate)) return "ssh";
-  const internal = extractUriScheme(candidate);
-  if (internal && internalRouter.canResolve(candidate)) {
-    if (internal === "local") {
-      const parsed = new URL(candidate);
-      if (parsed.pathname) candidate = decodeURIComponent(parsed.pathname);
-      else return "internal-resource";
-    } else {
-      return "internal-resource";
-    }
-  }
-  candidate = expandPath(candidate);
-  for (const capability of ["sqlite", "archive", "pdf", "image", "video", "document"]) {
-    if (matches(capability, candidate)) return capability;
-  }
-  return null;
-}
-
-console.log(JSON.stringify(input.values.map(value => ({ value, route: classify(value) }))));
-"""
 
 
 def _authority_payload(tmp_path: Path) -> dict[str, object]:
@@ -294,171 +234,132 @@ def test_native_worker_spec_binds_source_and_real_leaves() -> None:
     assert "brush-core Shell" in metadata["native_leaves"]
 
 
-def test_denial_happens_before_native_resolution() -> None:
-    with pytest.raises(PermissionError):
-        deny_excluded_capabilities({"path": "https://example.invalid"})
+def test_static_denial_happens_before_native_resolution() -> None:
     with pytest.raises(PermissionError):
         deny_excluded_capabilities({"pty": True})
 
-
-
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    [
-        ("HTTP://example.invalid", "url"),
-        ("https:/example.invalid", "url"),
-        ("www.example.invalid/path", "url"),
-        (" https://example.invalid", None),
-        ("./db.sqlite:users", "sqlite"),
-        ("db%2Esqlite:users", None),
-        ("ssh://host/path", "ssh"),
-        ("ssh:host/path", None),
-        ("prefix/ssh://host/path", "ssh"),
-        ("https%3A%2F%2Fexample.invalid", None),
-        ("file://LOCALHOST/tmp/state%2Esqlite", "sqlite"),
-        ("FILE://LOCALHOST/tmp/state%2Esqlite", "sqlite"),
-        ("file:///tmp/x%3Fname.sqlite", "sqlite"),
-        ("file:///tmp/x%23name.sqlite", "sqlite"),
-        ("file:///tmp/x%2Fname.sqlite", "sqlite"),
-        ("@agent://foo", "internal-resource"),
-        ("@AGENT://foo", None),
-        ("custom://resource", "internal-resource"),
-        ("CUSTOM:opaque", "internal-resource"),
-        ("urn:example:document", "internal-resource"),
-        ("foo.ts:50", None),
-    ],
-)
-def test_route_matchers_follow_source_path_forms(value: str, expected: str | None) -> None:
-    root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
-    policy = json.loads((root / "native-config.json").read_text())["capability_denials"]
-    assert classify_capability(value, denial_policy=policy) == expected
-
-
-@pytest.mark.skipif(not OMP_AVAILABLE, reason="pinned OMP runtime is unavailable on this host")
-def test_route_classification_differential_matches_pinned_bun(tmp_path: Path) -> None:
-    root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
-    policy = json.loads((root / "native-config.json").read_text())["capability_denials"]
-    assert classify_capability("file:///tmp/state.sqlite", denial_policy=policy) == "sqlite"
-    fixture_root = tmp_path / "route-fixtures"
-    fixture_root.mkdir()
-    fixture_sqlite = fixture_root / "route.sqlite"
-    fixture_sqlite.write_bytes(b"SQLite format 3\0")
-    fixture_question = fixture_root / "route?name.sqlite"
-    fixture_question.write_bytes(b"SQLite format 3\0")
-    fixture_archive = fixture_root / "route.tar.gz"
-    fixture_archive.write_bytes(b"archive")
-    fixture_pdf = fixture_root / "route.pdf"
-    fixture_pdf.write_bytes(b"%PDF-1.7\n")
-    fixture_sqlite_archive = fixture_root / "route.sqlite:artifact.tar.gz"
-    fixture_sqlite_archive.write_bytes(b"SQLite format 3\0")
-    fixture_agent = fixture_root / "agent:foo"
-    fixture_agent.write_bytes(b"literal")
-    fixture_mcp = fixture_root / "mcp:opaque"
-    fixture_mcp.write_bytes(b"literal")
-    values = [
-        "file:///tmp/state.sqlite",
-        "file:///tmp/state%2Esqlite:users",
-        "file://LOCALHOST/tmp/state%2Esqlite",
-        "FILE://LOCALHOST/tmp/state%2Esqlite",
-        "file:///tmp/x%3Fname.sqlite",
-        "file:///tmp/x%23name.sqlite",
-        "file:///tmp/x%2Fname.sqlite",
-        "file:///tmp/archive.tar.gz:member",
-        "file:///tmp/read.pdf:1",
-        "file:///tmp/image.png",
-        "file:///tmp/movie.mp4",
-        "file:///tmp/report.docx",
-        "@/tmp/state.sqlite",
-        "@local:///tmp/state.sqlite:users",
-        "@@agent://foo",
-        "@~/state.sqlite",
-        "~root/state.sqlite",
-        "~nobody/state.sqlite",
-        "\u3000/tmp/state.sqlite",
-        ":file:///tmp/state.sqlite",
-        ":/file:///tmp/state.sqlite",
-        "state.sqlite.pdf",
-        "state.zip:state.sqlite",
-        "state.sqlite:artifact.tar.gz",
-        "state.pdf:1",
-        "state.pdf:weird",
-        "host:ssh://dir/",
-        "host:/tmp/state.sqlite",
-        "@agent://foo",
-        "@AGENT://foo",
-        "\u00a0/tmp/state.sqlite",
-        "~/.cache/state.sqlite",
-        ":/tmp/state.sqlite",
-        "/tmp/image.png?q=describe",
-        "/tmp/state.sqlite?q=ignored",
-        "/tmp/image.png:img",
-        "local:///tmp/state.sqlite:users",
-        "local:///tmp/image.png:img",
-        "local://opaque/resource",
-        "https://example.invalid",
-        "https:/example.invalid",
-        "HTTPS://example.invalid",
-        "www.example.invalid/path",
-        "ssh://host/path",
-        "prefix/ssh://host/path",
-        "agent://item",
-        "artifact://item",
-        "history://item",
-        "issue://item",
-        "mcp://item",
-        "memory://item",
-        "omp://item",
-        "pr://item",
-        "rule://item",
-        "security://item",
-        "skill://item",
-        "vault://item",
-        "xd://item",
-        "custom://resource",
-        "CUSTOM:opaque",
-        "urn:example:document",
-        "foo.ts:50",
-        "ordinary.txt",
-        "state.sqlite.backup",
-    ]
-    values.extend(
-        [
-            fixture_sqlite.as_uri(),
-            fixture_question.as_uri(),
-            fixture_archive.as_uri() + ":member",
-            fixture_pdf.as_uri() + ":1",
-            fixture_sqlite_archive.as_posix(),
-            str(fixture_agent),
-            str(fixture_mcp),
-            "agent:foo",
-            "mcp:opaque",
-        ]
-    )
-    expected = [
-        {"value": value, "route": classify_capability(value, denial_policy=policy)}
-        for value in values
-    ]
-    source_root = _materialize_differential_source(tmp_path)
-    probe = tmp_path / "omp_route_probe.ts"
-    probe.write_text(
-        _TS_ROUTE_PROBE.replace("__OMP_SOURCE_ROOT__", source_root.as_posix()),
-        encoding="utf-8",
-    )
-    result = subprocess.run(
-        [_differential_bun(), str(probe)],
-        input=json.dumps({"policy": policy, "values": values}),
-        capture_output=True,
-        text=True,
-        cwd=source_root,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    observed = json.loads(result.stdout.strip().splitlines()[-1])
-    assert observed == expected
+def test_static_route_policy_is_typed_and_fail_closed() -> None:
+    policy = {
+        "archive": {"message": "archive denied"},
+        "internal-resource": {"message": "internal denied"},
+    }
+    with pytest.raises(PermissionError, match="archive denied"):
+        deny_pinned_route({"route": "archive"}, denial_policy=policy)
+    with pytest.raises(PermissionError, match="unknown pinned read route"):
+        deny_pinned_route({"route": "unexpected"}, denial_policy=policy)
+    deny_pinned_route({"route": "file"}, denial_policy=policy)
+    with pytest.raises(PermissionError, match="internal denied"):
+        deny_pinned_route({"route": "internal:agent"}, denial_policy=policy)
 
 @pytest.mark.skipif(
-    not Path(pinned_worker_spec().source_root).is_dir(),
-    reason="pinned OMP source is unavailable on this host",
+    not Path(pinned_worker_spec().bun).is_file()
+    or not Path(pinned_worker_spec().source_root).is_dir(),
+    reason="pinned OMP runtime/source is unavailable on this host",
+)
+def test_real_pinned_worker_classifies_fuzz_overadmission_fixtures(tmp_path: Path) -> None:
+    literal_root = tmp_path / "file:" / "evil"
+    literal_root.mkdir(parents=True)
+    archive_path = literal_root / "data.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("member", "fixture")
+    sqlite_path = literal_root / "xyz.sqlite"
+    sqlite_path.write_bytes(b"SQLite format 3\0")
+    worker = NativeToolWorker(cwd=str(tmp_path))
+    denials = {
+        capability: {
+            "schema_version": "bb.omp-capability-denial.v1",
+            "capability": capability,
+            "message": f"OMP capability denied: {capability}",
+            "source_ref": "test",
+        }
+        for capability in ("pty", "async", "archive", "sqlite", "pdf", "image", "video", "document", "url", "ssh", "internal-resource")
+    }
+    try:
+        worker.start()
+        worker.phase(
+            "initialize",
+            {
+                "task": "classify pinned read routes",
+                "model_config": {},
+                "advertisement": {
+                    "system_prompt": "",
+                    "tool_descriptions": {name: name for name in ("read", "bash", "edit", "write")},
+                    "capability_denials": denials,
+                },
+                **_authority_payload(tmp_path),
+            },
+        )
+        prepared = worker.phase(
+            "prepare_tools",
+            {
+                "calls": [
+                    {"id": "archive", "name": "read", "arguments": {"path": "file://evil/data.zip:member"}},
+                    {"id": "sqlite", "name": "read", "arguments": {"path": "file://evil/xyz.sqlite:users"}},
+                ],
+            },
+        )
+        assert [call["route"]["route"] for call in prepared["calls"]] == ["archive", "sqlite"]
+        assert [call["error"] for call in prepared["calls"]] == [
+            "OMP capability denied: archive",
+            "OMP capability denied: sqlite",
+        ]
+    finally:
+        worker.stop()
+
+@pytest.mark.skipif(
+    not Path(pinned_worker_spec().bun).is_file()
+    or not Path(pinned_worker_spec().source_root).is_dir(),
+    reason="pinned OMP runtime/source is unavailable on this host",
+)
+def test_real_pinned_worker_rejects_tampered_classifier_module(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
+    config = json.loads((root / "native-config.json").read_text(encoding="utf-8"))
+    classifier = json.loads(json.dumps(config["route_classifier"]))
+    source_root = Path(classifier["source_root"])
+    copied_root = tmp_path / "omp-source"
+    for entry in [*classifier["modules"].values(), {"path": "bun.lock"}]:
+        relative = entry["path"]
+        destination = copied_root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes((source_root / relative).read_bytes())
+    tampered = copied_root / next(iter(classifier["modules"].values()))["path"]
+    tampered.write_bytes(tampered.read_bytes() + b"\n")
+    classifier["source_root"] = str(copied_root)
+    worker = NativeToolWorker(cwd=str(tmp_path))
+    try:
+        worker.start()
+        with pytest.raises(NativeWorkerPhaseError, match="source verification failed"):
+            worker.phase(
+                "initialize",
+                {
+                    "task": "reject tampered source",
+                    "model_config": {},
+                    "advertisement": {
+                        "system_prompt": "",
+                        "tool_descriptions": {name: name for name in ("read", "bash", "edit", "write")},
+                        "capability_denials": {
+                            capability: {
+                                "schema_version": "bb.omp-capability-denial.v1",
+                                "capability": capability,
+                                "message": f"OMP capability denied: {capability}",
+                                "source_ref": "test",
+                            }
+                            for capability in ("pty", "async")
+                        },
+                    },
+                    "route_classifier": classifier,
+                    **_authority_payload(tmp_path),
+                },
+            )
+    finally:
+        worker.stop()
+
+
+
+
+@pytest.mark.skipif(
+    not OMP_AVAILABLE,
+    reason="pinned OMP runtime/source archive is unavailable on this host",
 )
 def test_route_declarations_match_parsed_pinned_omp_registries() -> None:
     root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"

@@ -10,13 +10,22 @@ import importlib.resources
 import json
 import os
 from pathlib import Path
-import posixpath
-import re
 import select
 import struct
 import subprocess
 from typing import Any, Mapping
-from urllib.parse import unquote, urlsplit
+
+PINNED_EXCLUDED_ROUTES: Mapping[str, str] = {
+    "archive": "archive",
+    "sqlite": "sqlite",
+    "image": "image",
+    "video": "video",
+    "pdf": "pdf",
+    "document": "document",
+    "url": "url",
+    "ssh": "ssh",
+    "internal": "internal-resource",
+}
 OMP_COMMIT = "3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec"
 OMP_SOURCE_ROOT = f"oh-my-pi-{OMP_COMMIT}"
 OMP_CLI_RELATIVE = "packages/coding-agent/src/cli.ts"
@@ -120,218 +129,26 @@ def supplier_cli_invocation(*, cwd: str, model: str, task: str) -> NativeInvocat
     return NativeInvocation("omp-supplier-cli", spec.command(cwd=cwd, model=model, task=task), cwd, {})
 
 
-def _normalize_at_prefix(value: str) -> str:
-    if not value.startswith("@"):
-        return value
-    without_at = value[1:]
-    if (
-        without_at.startswith("/")
-        or without_at == "~"
-        or without_at.startswith(("~/", "~\\"))
-        or re.match(r"^[A-Za-z]:", without_at)
-        or any(
-            without_at.startswith(prefix)
-            for prefix in (
-                "agent://", "artifact://", "skill://", "rule://",
-                "security://", "local:", "mcp://",
-            )
-        )
-    ):
-        return without_at
-    return value
-
-
-def _expand_linux_path(value: str) -> str:
-    """Mirror pinned path-utils.ts expandPath on the Linux target."""
-    # path-utils.ts:167-181, de-colon before normalizeAtPrefix.
-    value = re.sub(r"^:(?=[/\\~]|\.\.?[/\\]|[A-Za-z]:)", "", value)
-    value = _normalize_at_prefix(value)
-    # path-utils.ts:15 and :178, normalizeUnicodeSpaces.
-    value = re.sub(r"[\u00A0\u2000-\u200A\u202F\u205F\u3000]", " ", value)
-    # path-utils.ts:151-161, stripFileUrl; Windows-only extended-prefix handling
-    # is a no-op for this Linux target.
-    if value.lower().startswith("file://"):
-        parsed = urlsplit(value)
-        if parsed.netloc.lower() not in ("", "localhost"):
-            return value
-        value = unquote(parsed.path)
-    # path-utils.ts:163-173, expandTilde (with the Linux home supplied by the
-    # caller's process; route tests use a deterministic HOME).
-    home = os.path.expanduser("~")
-    if value == "~":
-        value = home
-    elif value.startswith("~/") or value.startswith("~\\"):
-        value = home + value[1:]
-    elif value.startswith("~"):
-        value = posixpath.join(home, value[1:])
-    return value
-
-
-def _split_image_question(value: str) -> tuple[str, bool]:
-    """Mirror read.ts:603-618 splitImageQuestionTarget."""
-    supports_question = (
-        "://" not in value
-        or value.startswith("attachment://")
-        or value.startswith("local://")
-    )
-    if not supports_question or re.search(r"\.(?:sqlite3?|db3?)(?=(?::|\?|$))", value, re.I):
-        return value, False
-    query_index = value.find("?")
-    if query_index < 0:
-        return value, False
-    query = value[query_index + 1:]
-    question = next(
-        (unquote(part.split("=", 1)[1]) for part in query.split("&")
-         if part.lower().startswith("q=") and len(part.split("=", 1)) == 2),
-        "",
-    )
-    return (value[:query_index], True) if question else (value, False)
-
-
-def _repair_collapsed_url(value: str) -> str:
-    # fetch.ts:129-135 repairCollapsedScheme.
-    match = re.match(r"^(https?):/(?!/)", value, re.I)
-    return f"{match.group(1)}://{value[match.end():]}" if match else value
-
-
-def _route_extension(candidate: str, extensions: list[Any]) -> bool:
-    # read.ts:1380-1412 resolves archive/sqlite before ordinary file dispatch.
-    base = candidate.lower()
-    return any(
-        isinstance(extension, str)
-        and re.search(re.escape(extension.lower()) + r"(?=[:?]|$)", base)
-        for extension in extensions
-    )
-
-def _extract_uri_scheme(value: str) -> str | None:
-    """Mirror internal-urls/parse.ts extractUriScheme."""
-    hierarchical = re.match(r"^([a-z][a-z0-9+.-]*):\/\/", value, re.I)
-    if hierarchical:
-        return hierarchical.group(1).lower()
-    opaque = re.match(r"^([a-z][a-z0-9+.-]*):(.+)$", value, re.I | re.S)
-    if not opaque:
-        return None
-    scheme, rest = opaque.groups()
-    if len(scheme) == 1 or "." in scheme:
-        return None
-    if re.fullmatch(
-        r"(?:raw|conflicts|-?\d+(?:[-+]\d+)?(?:,\d+(?:[-+]\d+)?)*)"
-        r"(?::(?:raw|conflicts|-?\d+(?:[-+]\d+)?(?:,\d+(?:[-+]\d+)?)*))*",
-        rest,
-        re.I,
-    ):
-        return None
-    return scheme.lower()
-
-
-def _ordered_read_candidate(value: str) -> str:
-    """Apply the pinned Linux read.ts pre-routing normalization in order."""
-    # path-utils.ts:167-181 expandPath is the source-owned path normalizer;
-    # applying it before routing also handles case variants and @-prefixed
-    # internal URLs without a policy bypass.
-    candidate = _expand_linux_path(value)
-    candidate, _ = _split_image_question(candidate)
-    return candidate
-def classify_capability(
-    value: Any,
+def deny_pinned_route(
+    route_result: Mapping[str, Any],
     *,
     denial_policy: Mapping[str, Mapping[str, Any]] | None = None,
-) -> str | None:
-    """Classify after the pinned read.ts Linux pre-routing sequence."""
-    if not isinstance(value, str):
-        return None
+) -> None:
+    """Map a worker-owned pinned route to the static policy table."""
+    if not isinstance(route_result, Mapping):
+        raise PermissionError("OMP capability denial policy unavailable: malformed pinned read route")
+    route = route_result.get("route")
+    if route == "file":
+        return
+    capability = "internal" if isinstance(route, str) and route.startswith("internal:") else route
     policy = denial_policy or {}
-    candidate = _ordered_read_candidate(value)
-
-    def entry_matches(capability: str, text: str) -> bool:
-        entry = policy.get(capability)
-        if not isinstance(entry, Mapping):
-            return False
-        route = entry.get("route")
-        if not isinstance(route, Mapping):
-            return False
-        patterns = route.get("patterns")
-        if isinstance(patterns, list) and any(
-            isinstance(pattern, str) and re.search(pattern, text, re.I)
-            for pattern in patterns
-        ):
-            return True
-        prefixes = route.get("prefixes")
-        if isinstance(prefixes, list) and any(
-            isinstance(prefix, str) and text.lower().startswith(prefix.lower())
-            for prefix in prefixes
-        ):
-            return True
-        schemes = route.get("schemes")
-        if isinstance(schemes, list):
-            scheme_match = re.match(r"^([a-z][a-z0-9+.-]*):\/\/", text, re.I)
-            if scheme_match and scheme_match.group(1).lower() in {
-                item.lower() for item in schemes if isinstance(item, str)
-            }:
-                return True
-        extensions = route.get("extensions")
-        return isinstance(extensions, list) and _route_extension(text, extensions)
-
-    # fetch.ts:170-201 runs URL repair and URL classification before internal URLs.
-    repaired = _repair_collapsed_url(candidate)
-    if entry_matches("url", repaired):
-        return "url"
-    # path-utils.ts:574-588 is the raw-argument SSH substring gate.
-    if entry_matches("ssh", candidate):
-        return "ssh"
-
-    # read.ts:1318-1368 asks InternalUrlRouter.canResolve after the URL
-    # parser. Registered schemes use the static policy set; unknown schemes
-    # fall through to the pinned MCP resource handler when it is registered.
-    internal = _extract_uri_scheme(candidate)
-    if internal:
-        internal_entry = policy.get("internal-resource")
-        internal_schemes = (
-            {
-                str(item).lower()
-                for item in internal_entry.get("route", {}).get("schemes", [])
-            }
-            if isinstance(internal_entry, Mapping)
-            else set()
-        )
-        hierarchical = re.match(r"^[a-z][a-z0-9+.-]*:\/\/", candidate, re.I)
-        if internal in internal_schemes and hierarchical:
-            if internal == "local":
-                local_path = urlsplit(candidate).path
-                if local_path:
-                    candidate = unquote(local_path)
-                else:
-                    return "internal-resource"
-            else:
-                return "internal-resource"
-        elif (
-            internal not in internal_schemes
-            and internal not in {"file", "http", "https", "ssh"}
-            and "mcp" in internal_schemes
-        ):
-            return "internal-resource"
-
-    # path-utils.ts:177-181 resolveReadPath performs the same Linux expansion
-    # before filesystem route resolution (Windows-only branches are no-ops).
-    if re.match(r"^file:\/\/", candidate, re.I):
-        return None
-    candidate = _expand_linux_path(candidate)
-
-    # read.ts:1380-1412 preserves literal precedence, then checks these
-    # source route families in this order.
-    for capability in ("sqlite", "archive", "pdf", "image", "video", "document"):
-        if entry_matches(capability, candidate):
-            return capability
-    if policy:
-        return None
-    for pattern, capability in (
-        (r"^https?:\/\/?", "url"),
-        (r"^www\.", "url"),
-        (r"ssh:\/\/", "ssh"),
-    ):
-        if re.search(pattern, repaired, re.I):
-            return capability
-    return None
+    policy_capability = PINNED_EXCLUDED_ROUTES.get(capability)
+    if policy_capability is None:
+        raise PermissionError("OMP capability denial policy unavailable: unknown pinned read route")
+    entry = policy.get(policy_capability)
+    if not isinstance(entry, Mapping) or type(entry.get("message")) is not str:
+        raise PermissionError(f"OMP capability denial policy unavailable: {policy_capability}")
+    raise PermissionError(entry["message"])
 
 
 def deny_excluded_capabilities(
@@ -339,27 +156,27 @@ def deny_excluded_capabilities(
     *,
     denial_policy: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> None:
+    """Apply only static non-path denials; pinned worker owns read routing."""
     policy = denial_policy or {}
-    for key in ("path", "paths", "cwd", "input"):
-        value = arguments.get(key)
-        values = value if isinstance(value, list) else [value]
-        for item in values:
-            nested = item.values() if isinstance(item, Mapping) else (item,)
-            for candidate in nested:
-                capability = classify_capability(candidate, denial_policy=policy)
-                if capability is not None:
-                    entry = policy.get(capability)
-                    if not isinstance(entry, Mapping) or type(entry.get("message")) is not str:
-                        raise PermissionError(
-                            f"OMP capability denial policy unavailable: {capability}"
-                        )
-                    raise PermissionError(entry["message"])
     for key in ("pty", "async"):
         if arguments.get(key) is True:
             entry = policy.get(key)
-            if not isinstance(entry, Mapping) or entry.get("capability") != key or type(entry.get("message")) is not str:
+            if (
+                not isinstance(entry, Mapping)
+                or entry.get("capability") != key
+                or type(entry.get("message")) is not str
+            ):
                 raise PermissionError(f"OMP capability denial policy unavailable: {key}")
             raise PermissionError(entry["message"])
+def _sealed_route_classifier() -> Mapping[str, Any]:
+    target = Path(__file__).resolve().parents[3] / "config" / "e4_targets" / "oh_my_pi" / "18.1.17" / "native-config.json"
+    config = json.loads(target.read_text(encoding="utf-8"))
+    route_classifier = config.get("route_classifier")
+    if not isinstance(route_classifier, Mapping):
+        raise RuntimeError("OMP sealed native-config is missing route_classifier")
+    return route_classifier
+
+
 class NativeWorkerPhaseError(RuntimeError):
     """A framed OMP phase failed in the pinned worker."""
 
@@ -424,7 +241,6 @@ class NativeToolWorker:
         if len(payload) != length:
             raise NativeWorkerPhaseError("native worker returned a truncated phase frame")
         return payload
-
     def phase(
         self,
         operation: str,
@@ -439,12 +255,15 @@ class NativeToolWorker:
             raise NativeWorkerPhaseError("native worker pipes are unavailable")
         self._request_id += 1
         request_id = self._request_id
+        request_payload = dict(payload)
+        if operation == "initialize":
+            request_payload.setdefault("route_classifier", _sealed_route_classifier())
         body = json.dumps(
             {
                 "schema_version": "bb.native-worker.rpc.v1",
                 "request_id": request_id,
                 "operation": operation,
-                "payload": dict(payload),
+                "payload": request_payload,
             },
             separators=(",", ":"),
         ).encode()
@@ -502,8 +321,8 @@ __all__ = [
     "OMP_SOURCE_ROOT",
     "PinnedNativeWorkerSpec",
     "build_native_invocation",
-    "classify_capability",
     "deny_excluded_capabilities",
+    "deny_pinned_route",
     "pinned_worker_spec",
     "supplier_cli_invocation",
     "validate_native_tool_name",
