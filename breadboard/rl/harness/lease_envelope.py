@@ -680,19 +680,34 @@ def _spawn_one(_control: socket.socket, message: Mapping[str, Any], fds: list[in
             os.set_inheritable(status_fd, False)
             try:
                 _execveat_fd(exec_fd, argv, env)
-            except OSError as exc:
+            except BaseException as exc:
+                try:
+                    os.set_inheritable(status_fd, True)
+                    _send_frame(
+                        status_sock,
+                        {
+                            "kind": "exec_error",
+                            "errno": getattr(exc, "errno", None),
+                            "message": str(exc),
+                        },
+                    )
+                except BaseException:
+                    pass
+                os._exit(127)
+            os._exit(127)
+        except BaseException as exc:
+            try:
                 os.set_inheritable(status_fd, True)
                 _send_frame(
                     status_sock,
                     {
                         "kind": "exec_error",
-                        "errno": exc.errno,
+                        "errno": getattr(exc, "errno", None),
                         "message": str(exc),
                     },
                 )
-                raise
-            os._exit(127)
-        except BaseException:
+            except BaseException:
+                pass
             os._exit(127)
     while True:
         waited, status = os.waitpid(child, 0)
