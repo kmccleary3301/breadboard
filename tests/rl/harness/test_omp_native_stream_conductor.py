@@ -43,7 +43,7 @@ OMP_AVAILABLE = Path(pinned_worker_spec().bun).is_file() and Path(pinned_worker_
 pytestmark = pytest.mark.skipif(not OMP_AVAILABLE, reason="pinned OMP runtime is unavailable")
 
 
-def _compile_target(tmp_path: Path, model_id: str) -> tuple[Any, Mapping[str, Any], Any]:
+def _compile_target(tmp_path: Path, model_id: str, provider_profile_digest: str) -> tuple[Any, Mapping[str, Any], Any]:
     cas = FilesystemCAS(tmp_path / "target-cas")
     try:
         compiled = compile_e4_harness(
@@ -66,7 +66,7 @@ def _compile_target(tmp_path: Path, model_id: str) -> tuple[Any, Mapping[str, An
                         "response_policy": {
                             "schema_version": "bb.provider_native_response_policy.v1",
                             "consumer_id": OMP_RESPONSE_CONSUMER_ID,
-                            "provider_profile_digest": "sha256:" + "a" * 64,
+                            "provider_profile_digest": provider_profile_digest,
                             "max_response_bytes": 1_048_576,
                             "max_stream_fragments": 10_000,
                         },
@@ -204,7 +204,7 @@ async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates
             request_policy={"mode": "streaming", "include_usage": True, "max_token_field": "max_completion_tokens", "strict_tools": None, "enable_thinking": None},
             capabilities={"supports_store": True, "supports_max_completion_tokens": True},
         )
-        projection, semantics, manifest = _compile_target(tmp_path, model_id)
+        projection, semantics, manifest = _compile_target(tmp_path, model_id, profile_identity_digest(profile))
         observation = _observation(provider_id="openai", model_id=model_id, capabilities=_policy_capabilities(request_features=["max_completion_tokens", "n", "store", "stream_options", "streaming"]))
         plan = _plan(observation=observation, semantics=semantics, tools=tuple(_tool_grant(name) for name in ("bash", "edit", "read", "write")), policy_slot_ids=(f"model:{model_id}",), limit_updates={"max_turns": 8, "action_timeout_ms": 40_000}, implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST)
         base_payload = plan.base_compiled.model_dump(mode="python")
