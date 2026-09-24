@@ -40,7 +40,10 @@ from .materialization import (
     MaterializationEntry,
     MaterializedWorkspace,
     SandboxCleanupReceipt,
+    SealedSourceManifest,
     VerifierSnapshotReceipt,
+    WORKSPACE_SEED_MEDIA_TYPE,
+    WORKSPACE_SEED_SCHEMA_VERSION,
     WorkspaceLeaseState,
     WorkspaceMaterializationPlan,
     WorkspaceOpenRequest,
@@ -3177,6 +3180,109 @@ def _workspace_effect_snapshot(
     finally:
         os.close(root_fd)
 
+def _workspace_seed_baseline_digest(
+    root: Path,
+    manifest: SealedSourceManifest,
+    *,
+    max_bytes: int,
+    max_inodes: int,
+    max_depth: int,
+) -> str:
+    root_stat = root.lstat()
+    if not stat.S_ISDIR(root_stat.st_mode):
+        raise VerifierSnapshotError(
+            "workspace seed baseline root is not a directory",
+            code="snapshot_tampered",
+        )
+    entries: list[dict[str, Any]] = [
+        {
+            "path": ".",
+            "kind": "directory",
+            "bytes": 0,
+            "mode": stat.S_IMODE(root_stat.st_mode),
+            "digest": None,
+        }
+    ]
+    total_bytes = 0
+    total_nodes = 0
+    for current, directories, files in os.walk(root, followlinks=False):
+        current_path = Path(current)
+        relative_parent = current_path.relative_to(root).as_posix()
+        if relative_parent == ".":
+            relative_parent = ""
+        depth = 0 if not relative_parent else len(PurePosixPath(relative_parent).parts)
+        if depth > max_depth:
+            raise VerifierSnapshotError(
+                "workspace seed baseline exceeds depth limit",
+                code="snapshot_tampered",
+            )
+        directories.sort()
+        files.sort()
+        for name in directories:
+            path = current_path / name
+            info = path.lstat()
+            total_nodes += 1
+            if total_nodes > max_inodes or not stat.S_ISDIR(info.st_mode):
+                raise VerifierSnapshotError(
+                    "workspace seed baseline contains an unauthorized directory",
+                    code="snapshot_tampered",
+                )
+            logical = f"{relative_parent}/{name}" if relative_parent else name
+            entries.append(
+                {
+                    "path": logical,
+                    "kind": "directory",
+                    "bytes": 0,
+                    "mode": stat.S_IMODE(info.st_mode),
+                    "digest": None,
+                }
+            )
+        for name in files:
+            path = current_path / name
+            info = path.lstat()
+            total_nodes += 1
+            if (
+                total_nodes > max_inodes
+                or not stat.S_ISREG(info.st_mode)
+                or info.st_nlink != 1
+            ):
+                raise VerifierSnapshotError(
+                    "workspace seed baseline contains an unauthorized file",
+                    code="snapshot_tampered",
+                )
+            payload = path.read_bytes()
+            if len(payload) != info.st_size or len(payload) > max_bytes - total_bytes:
+                raise VerifierSnapshotError(
+                    "workspace seed baseline exceeds byte limit",
+                    code="snapshot_tampered",
+                )
+            total_bytes += len(payload)
+            logical = f"{relative_parent}/{name}" if relative_parent else name
+            entries.append(
+                {
+                    "path": logical,
+                    "kind": "file",
+                    "bytes": len(payload),
+                    "mode": stat.S_IMODE(info.st_mode),
+                    "digest": "sha256:" + hashlib.sha256(payload).hexdigest(),
+                }
+            )
+    entries.sort(key=lambda item: item["path"])
+    identity = {
+        "schema_version": WORKSPACE_SEED_SCHEMA_VERSION,
+        "media_type": WORKSPACE_SEED_MEDIA_TYPE,
+        "directory_mode": stat.S_IMODE(root_stat.st_mode),
+        "entries": entries,
+    }
+    digest = _wp7_digest(identity)
+    if digest != manifest.source_digest:
+        raise VerifierSnapshotError(
+            "workspace seed baseline identity changed",
+            code="snapshot_tampered",
+        )
+
+    return digest
+
 def _workspace_effect_baseline(
     snapshot: Mapping[str, Mapping[str, Any]],
 ) -> dict[str, tuple[int, str]]:
@@ -4045,6 +4151,24 @@ class SandboxWorkspaceLease:
                     lease_id=self.lease_id,
                 )
             try:
+                if seed_entries:
+                    seed_manifest = self._materialized.seed_manifest
+                    seed_baseline = self._materialized.seed_baseline_path
+                    if seed_manifest is None or seed_baseline is None:
+                        self._state = WorkspaceLeaseState.QUARANTINED
+                        raise VerifierSnapshotError(
+                            "workspace seed baseline authority is unavailable",
+                            code="snapshot_tampered",
+                            lease_id=self.lease_id,
+                        )
+                    await asyncio.to_thread(
+                        _workspace_seed_baseline_digest,
+                        seed_baseline,
+                        seed_manifest,
+                        max_bytes=self.plan.resources.storage_bytes,
+                        max_inodes=self.plan.security_policy.snapshot_max_inodes,
+                        max_depth=self.plan.security_policy.snapshot_max_depth,
+                    )
                 seal_task = asyncio.create_task(
                     asyncio.to_thread(
                         self._manager.materialization_store.seal_snapshot,

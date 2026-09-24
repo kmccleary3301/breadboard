@@ -417,6 +417,33 @@ WORKSPACE_SEED_SCHEMA_VERSION = "bb.rl.workspace-seed-tree.v1"
 WORKSPACE_SEED_MEDIA_TYPE = "application/vnd.breadboard.workspace-seed-tree"
 
 
+def validate_workspace_seed_manifest(
+    manifest: SealedSourceManifest, expected_digest: str
+) -> None:
+    """Validate the typed identity and root mode of one workspace seed."""
+    if (
+        manifest.schema_identity != WORKSPACE_SEED_SCHEMA_VERSION
+        or manifest.media_identity != WORKSPACE_SEED_MEDIA_TYPE
+        or manifest.source_digest != expected_digest
+    ):
+        raise ValueError("workspace seed manifest authority is invalid")
+    roots = tuple(
+        entry for entry in manifest.entries if entry.logical_path == "."
+    )
+    if len(roots) != 1 or roots[0].kind != "directory":
+        raise ValueError("workspace seed manifest root is invalid")
+    if roots[0].mode != 0o700:
+        raise ValueError("workspace seed manifest root mode is not canonical 0700")
+    identity = {
+        "schema_version": WORKSPACE_SEED_SCHEMA_VERSION,
+        "media_type": WORKSPACE_SEED_MEDIA_TYPE,
+        "directory_mode": roots[0].mode,
+        "entries": [entry.projection() for entry in manifest.entries],
+    }
+    if _digest(identity) != expected_digest:
+        raise ValueError("workspace seed manifest identity mismatch")
+
+
 def build_workspace_seed_artifact(
     files: Mapping[str, bytes],
     *,
@@ -1411,6 +1438,7 @@ class MaterializedWorkspace:
     receipt: WorkspaceMaterializationReceipt
     workspace_path: Path
     seed_baseline_path: Path | None
+    seed_manifest: SealedSourceManifest | None
     workspace_directory_mode: int
     cache_token: CacheLeaseToken
     cache_receipt: CacheLeaseReceipt
@@ -1896,6 +1924,12 @@ class FilesystemMaterializationStore:
         manifest = self.source_reader.load_manifest(
             entry.source_digest, max_bytes=entry.max_bytes
         )
+        if entry.role == "workspace_seed":
+            validator = getattr(
+                self.source_reader, "validate_workspace_seed_manifest", None
+            )
+            if validator is not None:
+                validator(manifest, entry.source_digest)
         if (
             manifest.source_digest != entry.source_digest
             or manifest.total_bytes > entry.max_bytes
@@ -2023,6 +2057,14 @@ class FilesystemMaterializationStore:
                         manifest = self.source_reader.load_manifest(
                             entry.source_digest, max_bytes=entry.max_bytes
                         )
+                        if entry.role == "workspace_seed":
+                            validator = getattr(
+                                self.source_reader,
+                                "validate_workspace_seed_manifest",
+                                None,
+                            )
+                            if validator is not None:
+                                validator(manifest, entry.source_digest)
                         self._verify_tree(
                             object_relative + f"/source-{index}", manifest
                         )
@@ -2163,6 +2205,14 @@ class FilesystemMaterializationStore:
                         self._workspace.remove_tree(workspace_id, missing_ok=True)
                     raise
                 manifest_digest = _digest([item.manifest_digest for item in manifests])
+                seed_manifest = next(
+                    (
+                        manifest
+                        for entry, manifest in zip(plan.entries, manifests)
+                        if entry.role == "workspace_seed"
+                    ),
+                    None,
+                )
                 receipt = WorkspaceMaterializationReceipt(
                     workspace_id,
                     lease_id,
@@ -2219,6 +2269,7 @@ class FilesystemMaterializationStore:
                     receipt,
                     workspace,
                     seed_baseline_path,
+                    seed_manifest,
                     stat.S_IMODE(workspace_metadata.st_mode),
                     token,
                     receipt_cache,

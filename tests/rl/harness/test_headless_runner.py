@@ -44,9 +44,15 @@ def test_headless_workspace_mode_preserves_repository_identity_and_rejects_mixed
         "task_image_digest": task_image,
         "outer_isolation": None,
     }
+    with pytest.raises(ValueError, match="canonical 0700"):
+        HeadlessWorkspaceInput(
+            workspace_mode="seeded",
+            workspace_directory_mode=0o755,
+            workspace_seed_digest="sha256:" + "1" * 64,
+            task_image_digest=task_image,
+        )
     seeded = HeadlessWorkspaceInput(
         workspace_mode="seeded",
-        workspace_directory_mode=0o755,
         workspace_seed_digest="sha256:" + "1" * 64,
         task_image_digest=task_image,
     )

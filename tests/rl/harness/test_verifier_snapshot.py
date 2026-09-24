@@ -157,6 +157,64 @@ async def test_seeded_workspace_has_no_policy_files_after_run_and_seal(
         assert snapshot.byte_count == 0
     finally:
         await primary.close()
+
+@pytest.mark.asyncio
+async def test_seeded_verifier_rejects_mutated_seed_baseline(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    source_digest = EMPTY_WORKSPACE_SEED_DIGEST
+    seed_mount = c.MountGrant(
+        source_artifact_digest=source_digest,
+        target_logical_path=".",
+        access=fixture.plan.sandbox.mounts[0].access,
+        max_bytes=fixture.plan.sandbox.mounts[0].max_bytes,
+    )
+    sandbox_values = fixture.plan.sandbox.model_dump(mode="python")
+    sandbox_values["mounts"] = (seed_mount,)
+    seeded_sandbox = c.SandboxGrant.model_validate(sandbox_values)
+    task_values = fixture.plan.task.model_dump(mode="python")
+    task_values["repository_snapshot_digest"] = None
+    task_values["input_artifact_digests"] = (source_digest,)
+    seeded_task = c.TaskGrant.model_validate(task_values)
+    capability_values = fixture.plan.effective_capabilities.model_dump(mode="python")
+    capability_values["sandbox"] = seeded_sandbox
+    capability_values["task"] = seeded_task
+    seeded_capabilities = c.CapabilityVector.model_validate(capability_values)
+    plan_values = fixture.plan.model_dump(mode="python")
+    plan_values["sandbox"] = seeded_sandbox
+    plan_values["task"] = seeded_task
+    plan_values["effective_capabilities"] = seeded_capabilities
+    plan_values["effective_capability_digest"] = seeded_capabilities.canonical_digest()
+    seeded_plan = c.EffectiveExecutionPlan.model_validate(plan_values)
+    seeded_request = WorkspaceOpenRequest(fixture.request.episode_id, seeded_plan)
+    seeded_fixture = replace(fixture, plan=seeded_plan, request=seeded_request)
+    harness = RuntimeHarness(tmp_path, seeded_fixture)
+    harness.reader.sources[source_digest] = {}
+    monkeypatch.setattr(
+        sandbox_module,
+        "_sealed_repository_diff",
+        lambda **kwargs: {
+            "returncode": 0,
+            "stdout": "",
+            "stderr": "",
+            "base_commit": kwargs["base_commit"],
+            "git_executable_digest": digest("git"),
+        },
+    )
+    primary = await harness.manager.open(seeded_request)
+    try:
+        baseline = primary._materialized.seed_baseline_path
+        assert baseline is not None
+        (baseline / "tampered.txt").write_text("tampered", encoding="utf-8")
+        with pytest.raises(VerifierSnapshotError) as captured:
+            await primary.seal_for_verifier()
+        assert captured.value.code == "workspace seed baseline identity changed"
+        assert primary.state is WorkspaceLeaseState.QUARANTINED
+    finally:
+        if primary.state is not WorkspaceLeaseState.QUARANTINED:
+            await primary.close()
 async def test_patch_uses_the_terminated_immutable_verifier_snapshot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

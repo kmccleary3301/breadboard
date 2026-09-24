@@ -68,6 +68,10 @@ class HeadlessWorkspaceInput(BaseModel):
             if self.workspace_seed_digest is not None:
                 raise ValueError("repository workspace cannot declare a seed tree")
         else:
+            if self.workspace_directory_mode != 0o700:
+                raise ValueError(
+                    "seeded workspace directory mode must be canonical 0700"
+                )
             if (
                 self.repository_snapshot_digest is not None
                 or self.base_commit is not None

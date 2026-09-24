@@ -25,7 +25,12 @@ from breadboard.rl.harness.composition import (
     _non_repeating_close_callback,
 )
 from breadboard.rl.harness.contracts import MountAccess, RuntimeClass
-from breadboard.rl.harness.materialization import DirectoryStorageBackend, FilesystemMaterializationStore, MaterializationEntry
+from breadboard.rl.harness.materialization import (
+    DirectoryStorageBackend,
+    FilesystemMaterializationStore,
+    MaterializationEntry,
+    build_workspace_seed_artifact,
+)
 from breadboard.rl.harness.sandbox import InstalledRuntime
 from breadboard.artifacts.cas import FilesystemCAS
 from tests.rl.harness.wp7_fixtures import FrozenClock, MemorySourceReader, digest, make_effective_plan, make_materialization_plan, make_store_roots
@@ -347,12 +352,57 @@ def test_cas_materialization_reader_rejects_noncanonical_manifest(tmp_path) -> N
     source_digest = "sha256:" + "b" * 64
     noncanonical = b'{"schema_version": "bb.rl.sealed-source.v1"}'
     cas.put_bytes(noncanonical, artifact_id=source_digest)
-
     with pytest.raises(ValueError, match="not canonical"):
         _CASMaterializationSourceReader(cas).load_manifest(
             source_digest, max_bytes=len(noncanonical)
         )
     cas.close()
+
+
+
+def test_cas_materialization_reader_recomputes_seed_identity(tmp_path) -> None:
+    cas = FilesystemCAS(tmp_path / "cas")
+    seed_digest, payload = build_workspace_seed_artifact(
+        {"AGENTS.md": b"seed\n"},
+        file_modes={"AGENTS.md": 0o600},
+        directory_mode=0o700,
+    )
+    document = json.loads(payload)
+    declared_digest = "sha256:" + "c" * 64
+    document["source_digest"] = declared_digest
+    tampered = json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
+    cas.put_bytes(tampered, artifact_id=declared_digest)
+    reader = _CASMaterializationSourceReader(cas)
+    manifest = reader.load_manifest(declared_digest, max_bytes=len(tampered))
+
+    with pytest.raises(ValueError, match="identity mismatch"):
+        reader.validate_workspace_seed_manifest(manifest, declared_digest)
+    assert seed_digest != declared_digest
+    cas.close()
+
+
+def test_cas_materialization_reader_requires_typed_seed_manifest(tmp_path) -> None:
+    cas = FilesystemCAS(tmp_path / "cas")
+    declared_digest = "sha256:" + "d" * 64
+    document = json.loads(
+        build_workspace_seed_artifact(
+            {"AGENTS.md": b"seed\n"},
+            file_modes={"AGENTS.md": 0o600},
+            directory_mode=0o700,
+        )[1]
+    )
+    document["schema_version"] = "bb.rl.sealed-source.v1"
+    document["media_type"] = "application/vnd.breadboard.sealed-source+json;version=1"
+    document["source_digest"] = declared_digest
+    payload = json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
+    cas.put_bytes(payload, artifact_id=declared_digest)
+    reader = _CASMaterializationSourceReader(cas)
+    manifest = reader.load_manifest(declared_digest, max_bytes=len(payload))
+
+    with pytest.raises(ValueError, match="authority is invalid"):
+        reader.validate_workspace_seed_manifest(manifest, declared_digest)
+    cas.close()
+
 
 
 def test_installed_runtime_is_measured_before_app_construction(tmp_path) -> None:
