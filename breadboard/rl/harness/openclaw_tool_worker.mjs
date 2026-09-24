@@ -563,7 +563,6 @@ async function handle(message) {
       schema_version: PROTOCOL,
       kind: "prepared",
       calls: prepared,
-      history_calls: prepared.map(({ id, name, arguments: argumentsValue }) => ({ id, name, arguments: argumentsValue })),
     };
   }
   if (phase === "execute_batch") return await executePrepared();
@@ -572,7 +571,7 @@ async function handle(message) {
     if (!id || !pending.has(id)) throw new Error(`unknown delivery_id ${id}`);
     const record = pending.get(id);
     pending.delete(id);
-    return { schema_version: PROTOCOL, kind: "acknowledged", delivery_id: id, session_id: record.sessionId, history_digest: text(message.history_digest) };
+    return { schema_version: PROTOCOL, kind: "acked", delivery_id: id, session_id: record.sessionId, history_digest: text(message.history_digest) };
   }
   if (phase === "classify_result") {
     if (!classifyAgentExecResultFn) throw new Error("classifier is not initialized");

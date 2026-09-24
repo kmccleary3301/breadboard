@@ -5,6 +5,7 @@ from contextlib import contextmanager
 import hashlib
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import re
 import os
 from pathlib import Path
 import struct
@@ -175,7 +176,7 @@ def _sse_tool_response(
 
 
 @contextmanager
-def _scripted_server(responses: list[list[tuple[str, str, Mapping[str, Any]]]]):
+def _scripted_server(responses: list[list[tuple[str, str, Mapping[str, Any]]]] | Callable[[int, list[dict[str, Any]]], list[tuple[str, str, Mapping[str, Any]]]]):
     requests: list[dict[str, Any]] = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -189,9 +190,8 @@ def _scripted_server(responses: list[list[tuple[str, str, Mapping[str, Any]]]]):
             body = json.loads(self.rfile.read(length))
             requests.append(body)
             ordinal = len(requests) - 1
-            payload = _sse_tool_response(
-                ordinal + 1, responses[min(ordinal, len(responses) - 1)]
-            )
+            calls = responses(ordinal, requests) if callable(responses) else responses[min(ordinal, len(responses) - 1)]
+            payload = _sse_tool_response(ordinal + 1, calls)
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Content-Length", str(len(payload)))
@@ -398,7 +398,7 @@ class _Cancellation:
 
 async def _run_episode(
     tmp_path: Path,
-    responses: list[list[tuple[str, str, Mapping[str, Any]]]],
+    responses: list[list[tuple[str, str, Mapping[str, Any]]]] | Callable[[int, list[dict[str, Any]]], list[tuple[str, str, Mapping[str, Any]]]],
     *,
     worker_factory: Callable[[Path, tuple[RunnerToolBinding, ...]], _NativeWorkerPort] | None = None,
 ):
@@ -532,6 +532,25 @@ async def test_openclaw_native_stream_cap_refuses_ninth_http_request(tmp_path: P
     }
     assert replay_trace["termination"]["isError"] is True
     assert all((tmp_path / f"turn-{index}.txt").read_text() == "ok\n" for index in range(8))
+
+@pytest.mark.asyncio
+async def test_openclaw_conductor_commits_poll_before_ack(tmp_path: Path) -> None:
+    def responses(ordinal: int, requests: list[dict[str, Any]]) -> list[tuple[str, str, Mapping[str, Any]]]:
+        if ordinal == 0:
+            return [("exec-1", "exec", {"command": "printf ACK_MARKER", "background": True})]
+        if ordinal == 1:
+            output = next(msg["content"] for msg in requests[-1]["messages"] if msg.get("tool_call_id") == "exec-1")
+            session = re.search(r"session ([^,]+), pid ", output)
+            assert session is not None
+            return [("poll-1", "process", {"action": "poll", "sessionId": session[1], "timeout": 500})]
+        return []
+
+    result, requests, _, _, operations = await _run_episode(tmp_path, responses)
+    assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
+    assert len(requests) == 3
+    assert operations.index("ack") > operations.index("execute_batch", operations.index("execute_batch") + 1)
+    assert any("ACK_MARKER" in str(msg.get("content")) for msg in requests[-1]["messages"] if msg.get("tool_call_id") == "poll-1")
+
 
 @pytest.mark.asyncio
 async def test_openclaw_native_stream_classification_and_cleanup_envelope(tmp_path: Path) -> None:
@@ -776,7 +795,7 @@ async def test_openclaw_native_worker_ack_and_close_are_scope_verified(tmp_path:
             {"delivery_id": delivery_id, "history_digest": "sha256:" + "a" * 64},
             timeout_ms=5_000,
         )
-        assert acknowledged["kind"] in {"acknowledged", "acked"}
+        assert acknowledged["kind"] == "acked"
         assert worker.operations[-1] == "ack"
         closed = await worker.invoke_native_phase("close", {}, timeout_ms=5_000)
         assert closed["cleanup"]["all_dead"] is True
