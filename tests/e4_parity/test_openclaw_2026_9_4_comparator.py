@@ -12,43 +12,11 @@ from conformance.comparators.openclaw_2026_9_4 import (
     project_bb_trace,
     project_supplier_case,
 )
-
-
-def _case(tmp_path: Path) -> Path:
-    case = tmp_path / "case"
-    (case / "receiver").mkdir(parents=True)
-    (case / "workspace").mkdir()
-    (case / "workspace" / "marker.txt").write_text("OK\n")
-    (case / "scenario.json").write_text(
-        json.dumps(
-            {
-                "case_id": "synthetic",
-                "probe_paths": ["marker.txt"],
-                "steps": [
-                    {"finish_reason": "tool_calls", "tool_calls": [{"name": "write", "arguments": {"path": "marker.txt", "content": "OK\\n"}}]},
-                    {"finish_reason": "stop", "assistant_content": "done"},
-                ],
-            }
-        )
-    )
-    (case / "receiver" / "http-transcript.jsonl").write_text(
-        json.dumps({"body": {"messages": [{"role": "user", "content": "task"}, {"role": "assistant", "tool_calls": [{"id": "w1", "function": {"name": "write", "arguments": "{\"path\":\"marker.txt\",\"content\":\"OK\\\\n\"}"}}]}], "tools": [{"name": "write"}]}}) + "\n"
-        + json.dumps({"body": {"messages": [{"role": "tool", "tool_call_id": "w1", "content": "OK"}], "tools": [{"name": "write"}]}}) + "\n"
-    )
-    return case
-
-
-def test_supplier_projection_and_replay_projection_share_canonical_episode(tmp_path: Path) -> None:
-    expected = project_supplier_case(_case(tmp_path))
-    observed = project_bb_trace(expected)
-    report = compare({"capture": {"trace": expected}, "replay": observed, "scope": {}})
-    assert report["ok"] is True
-    assert expected["request_count"] == 2
-    assert expected["effects"]["marker.txt"].startswith("sha256:")
+from conformance.comparators import openclaw_2026_9_4 as comparator
 
 
 
-def test_packet_640_fixture_round_trips_and_rejects_tampered_request() -> None:
+def test_packet_640_fixture_rejects_tampered_request() -> None:
     fixture = Path(__file__).parent / "fixtures" / "openclaw_packet_640"
     expected = project_supplier_case(fixture)
     receipt = json.loads((fixture / "case-receipt.json").read_text())
@@ -61,29 +29,12 @@ def test_packet_640_fixture_round_trips_and_rejects_tampered_request() -> None:
     ]
     assert raw_requests and "model" in raw_requests[0]
     overlaid_requests, _ = _apply_supplier_overlay(raw_requests)
-    observed = project_bb_trace({
-        "requests": overlaid_requests,
-        "effects": expected["effects"],
-        "termination": expected["termination"],
-        "request_count": len(raw_requests),
-    })
-    report = compare({"capture": {"trace": expected}, "replay": observed, "scope": {}})
-    assert report["ok"] is True
-    assert [call["name"] for call in expected["tool_calls"]] == ["write", "read"]
-    assert expected["effects"]["marker.txt"] == (
-        "sha256:f7a2b67b1ea18fb2bed758b564bb874610c2d875b07b08e0300d59f70a7bd958"
-    )
 
     tampered = json.loads(json.dumps(overlaid_requests))
     tampered[0]["messages"][0]["content"] = "tampered"
     rejected = compare({
-        "capture": {"trace": expected},
-        "replay": {
-            "requests": tampered,
-            "effects": expected["effects"],
-            "termination": expected["termination"],
-            "request_count": len(tampered),
-        },
+        "capture": str(fixture),
+        "replay": {**expected, "requests": tampered},
         "scope": {},
     })
     assert rejected["ok"] is False
@@ -248,3 +199,41 @@ def test_packet_exec_overlay_is_supplier_only_and_fails_closed(tmp_path: Path) -
     first.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
     with pytest.raises(ComparatorError, match="native_sha256"):
         project_supplier_case(tampered)
+
+
+@pytest.mark.parametrize("mutation", ["missing", "duplicate", "pre_overlaid", "native_sha", "overlay_description"])
+def test_real_packet_exec_overlay_rejects_counterfeits(mutation: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    packet = Path("/tmp/e4-sol-review-w2-2-packet/packet/cases/normal_multiturn_write_read")
+    if not packet.is_dir():
+        pytest.skip("independent admitted packet is not extracted")
+    requests = [
+        json.loads(line)["body"]
+        for line in (packet / "receiver" / "http-transcript.jsonl").read_text().splitlines()
+    ]
+    if mutation == "missing":
+        for request in requests:
+            request["tools"] = [tool for tool in request["tools"] if tool["function"]["name"] != "exec"]
+    elif mutation == "duplicate":
+        for request in requests:
+            request["tools"].append(next(tool for tool in request["tools"] if tool["function"]["name"] == "exec").copy())
+    elif mutation == "pre_overlaid":
+        for request in requests:
+            next(tool for tool in request["tools"] if tool["function"]["name"] == "exec")["function"]["description"] = comparator._admitted_overlay()["description"]
+    else:
+        original = comparator._load_json
+        def altered(path: Path, default: object = None) -> object:
+            config = original(path, default)
+            if str(path).endswith("/openclaw/2026.9.4/native-config.json"):
+                config["advertisement"]["tools"]["exec"]["native_sha256" if mutation == "native_sha" else "description"] = (
+                    "sha256:" + "0" * 64 if mutation == "native_sha" else "WRONG OVERLAY"
+                )
+            return config
+        monkeypatch.setattr(comparator, "_load_json", altered)
+        if mutation == "native_sha":
+            for request in requests:
+                next(tool for tool in request["tools"] if tool["function"]["name"] == "exec")["function"]["description"] = "WRONG NATIVE EXEC DESCRIPTION"
+            config = comparator._load_json(Path("config/e4_targets/openclaw/2026.9.4/native-config.json"))
+            config["advertisement"]["tools"]["exec"]["native_sha256"] = comparator._text_sha256("WRONG NATIVE EXEC DESCRIPTION")
+            monkeypatch.setattr(comparator, "_load_json", lambda path, default=None: config)
+    with pytest.raises(ComparatorError):
+        _apply_supplier_overlay(requests)

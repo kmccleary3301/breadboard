@@ -34,6 +34,8 @@ SOURCE_CITATIONS = {
 }
 TOOL_ORDER = ("ls", "read", "edit", "write", "exec", "process")
 VOLATILE_PLACEHOLDER_RE = re.compile(r"^<[A-Z][A-Z0-9_.-]*>$")
+NATIVE_EXEC_SHA256 = "sha256:6a41ebbc7cd1fae376a497c1bb1662c40a5faa87e5f811bff3ae37e04fb20973"
+OVERLAY_EXEC_SHA256 = "sha256:af70f1b4ae91e2951e297b1cab3ff9602107158c0e922e7c9fbcab669c867638"
 
 
 class ComparatorError(ValueError):
@@ -60,10 +62,10 @@ def _admitted_overlay() -> dict[str, str]:
         raise ComparatorError("OpenClaw exec advertisement overlay is malformed") from None
     if (
         type(description) is not str
-        or type(native_sha) is not str
-        or _text_sha256(description) == native_sha
+        or native_sha != NATIVE_EXEC_SHA256
+        or _text_sha256(description) != OVERLAY_EXEC_SHA256
     ):
-        raise ComparatorError("OpenClaw exec advertisement overlay must differ from native bytes")
+        raise ComparatorError("OpenClaw exec advertisement hashes differ from admitted native/overlay bytes")
     return {
         "tool": "exec",
         "native_sha256": native_sha,
@@ -77,19 +79,20 @@ def _apply_supplier_overlay(raw_requests: Sequence[Mapping[str, Any]]) -> tuple[
     transformed: list[dict[str, Any]] = []
     for body in raw_requests:
         current = json.loads(json.dumps(body))
-        for tool in current.get("tools", []):
-            function = tool.get("function") if isinstance(tool, Mapping) else None
-            if not isinstance(function, MutableMapping) or function.get("name") != "exec":
-                continue
-            description = function.get("description")
-            if type(description) is not str:
-                raise ComparatorError("supplier exec description is missing")
-            actual = _text_sha256(description)
-            if actual not in {overlay["native_sha256"], overlay["overlay_sha256"]}:
-                raise ComparatorError(
-                    "supplier exec description sha does not match declared native_sha256"
-                )
-            function["description"] = overlay["description"]
+        exec_tools = [
+            tool["function"]
+            for tool in current.get("tools", [])
+            if isinstance(tool, Mapping)
+            and isinstance(tool.get("function"), MutableMapping)
+            and tool["function"].get("name") == "exec"
+        ]
+        if len(exec_tools) != 1:
+            raise ComparatorError("supplier request must have exactly one native exec tool")
+        function = exec_tools[0]
+        description = function.get("description")
+        if type(description) is not str or _text_sha256(description) != NATIVE_EXEC_SHA256:
+            raise ComparatorError("supplier exec description sha does not match pinned native_sha256")
+        function["description"] = overlay["description"]
         transformed.append(current)
     return transformed, {key: value for key, value in overlay.items() if key != "description"}
 
@@ -560,7 +563,7 @@ def compare(inp: ComparatorInput) -> dict[str, Any]:
     try:
         if isinstance(capture, (str, Path)):
             expected = project_supplier_case(capture)
-            _, overlay_info = _apply_supplier_overlay(expected["requests"])
+            overlay_info = {key: value for key, value in _admitted_overlay().items() if key != "description"}
         else:
             expected, overlay_info = _supplier_trace_with_overlay(
                 capture.get("trace", capture) if isinstance(capture, Mapping) else capture
