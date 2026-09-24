@@ -240,10 +240,30 @@ def _effects(case_dir: Path | None, trace: Mapping[str, Any]) -> dict[str, str |
     return dict(sorted(effects.items()))
 
 
-_NATIVE_STOP_REASON_CAPTURE_UNAVAILABLE = "capture_unavailable"
+_NATIVE_STOP_REASON_UNAVAILABLE = object()
 
 
-def _termination(trace: Mapping[str, Any]) -> dict[str, Any]:
+def _wire_stop_reason(trace: Mapping[str, Any]) -> str | None | object:
+    raw_responses = trace.get("native_responses")
+    if not isinstance(raw_responses, list):
+        return _NATIVE_STOP_REASON_UNAVAILABLE
+    reasons: list[str] = []
+    for raw in raw_responses:
+        if not isinstance(raw, Mapping):
+            raise ValueError("native response wire record is malformed")
+        choices = raw.get("choices")
+        if isinstance(choices, list):
+            for choice in choices:
+                if isinstance(choice, Mapping) and isinstance(choice.get("finish_reason"), str):
+                    reasons.append(choice["finish_reason"])
+        if isinstance(raw.get("finish_reason"), str):
+            reasons.append(raw["finish_reason"])
+    return reasons[-1] if reasons else None
+
+
+def _termination(trace: Mapping[str, Any], *, supplier_capture: bool = False) -> dict[str, Any]:
+    if not supplier_capture and "native_stop_reason_source" in trace:
+        raise ValueError("BB trace cannot declare native stop reason provenance")
     exit_value = trace.get("exit", {})
     if not isinstance(exit_value, Mapping):
         exit_value = {}
@@ -255,9 +275,15 @@ def _termination(trace: Mapping[str, Any]) -> dict[str, Any]:
         kind = "submitted"
     if kind == "RequestLimitExceeded":
         kind = "request_limit_exceeded"
-    if trace.get("native_stop_reason_source") == _NATIVE_STOP_REASON_CAPTURE_UNAVAILABLE:
-        if reason not in {None, "stop"}:
-            raise ValueError("native stop reason contradicts capture-unavailable source")
+    wire_reason = _wire_stop_reason(trace)
+    if wire_reason is not _NATIVE_STOP_REASON_UNAVAILABLE:
+        if reason != wire_reason:
+            raise ValueError("native stop reason does not match recorded response bytes")
+        # The supplier packet has no response bytes for this field. Both sides
+        # therefore expose an explicitly unavailable canonical value after BB
+        # validates its own recorded response bytes above.
+        reason = None
+    elif supplier_capture:
         reason = None
     return {"kind": kind, "native_stop_reason": reason}
 
@@ -275,7 +301,12 @@ def _validate_runtime_inputs(trace: Mapping[str, Any]) -> None:
         raise ValueError("runtime_inputs must declare non-empty cwd, home, current_date, and package_dir")
 
 
-def _project(trace: Mapping[str, Any], case_dir: Path | None = None) -> dict[str, Any]:
+def _project(
+    trace: Mapping[str, Any],
+    case_dir: Path | None = None,
+    *,
+    supplier_capture: bool = False,
+) -> dict[str, Any]:
     _validate_runtime_inputs(trace)
     declared = _declared(trace)
     requests = _requests(trace, declared)
@@ -285,7 +316,7 @@ def _project(trace: Mapping[str, Any], case_dir: Path | None = None) -> dict[str
         "tool_calls": _tool_calls(trace, declared),
         "results": _results(trace, declared),
         "file_effects": _effects(case_dir, trace),
-        "termination": _termination(trace),
+        "termination": _termination(trace, supplier_capture=supplier_capture),
         "request_count": len(requests) or int(trace.get("receiver_requests", trace.get("request_count", 0)) or 0),
     }
     return episode
@@ -312,9 +343,7 @@ def project_supplier_case(case_dir: str | Path) -> dict[str, Any]:
     """Project a supplier capture directory to the canonical episode."""
     path = Path(case_dir)
     trace = _supplier_trace(path)
-    if "native_stop_reason_source" not in trace:
-        trace["native_stop_reason_source"] = _NATIVE_STOP_REASON_CAPTURE_UNAVAILABLE
-    return _project(trace, path if path.is_dir() else path.parent)
+    return _project(trace, path if path.is_dir() else path.parent, supplier_capture=True)
 
 
 def project_bb_trace(trace: Mapping[str, Any] | str | Path) -> dict[str, Any]:

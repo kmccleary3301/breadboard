@@ -568,6 +568,7 @@ class OMPSemanticsState:
         self.stream_fn_issued = 0
         self.exit_status: str | None = None
         self.native_stop_reason: str | None = None
+        self.native_responses: list[dict[str, Any]] = []
         self.recovery = TurnRecovery()
         self._pending_finish_reason: str | None = None
         self._closed = False
@@ -601,6 +602,9 @@ class OMPSemanticsState:
         if self.stream_fn_issued <= self.request_count:
             raise OMPPhaseError("response has no admitted provider query")
         self.request_count += 1
+        self.native_responses.append({"finish_reason": response.finish_reason})
+        if response.raw_response is not None:
+            self.native_responses.append(dict(response.raw_response))
         finish_reason = response.finish_reason
         self.native_stop_reason = finish_reason
         calls: tuple[ToolCall, ...] = ()
@@ -774,7 +778,7 @@ class OMPSemanticsState:
             "requests": request_bodies,
             "runtime_inputs": dict(runtime_inputs),
             "effects": dict(effects),
-            "native_stop_reason_source": "capture_unavailable",
+            "native_responses": [dict(response) for response in self.native_responses],
             "exit": termination,
         }
 __all__ = [
