@@ -58,6 +58,7 @@ from .lease_envelope import (
     ContainmentReceiptError,
     DescriptorPath,
     EnvelopeLaunch,
+    EnvelopeLaunchError,
     EnvelopeUnsupportedHostError,
     RuntimeContainment,
     launch_envelope,
@@ -1837,6 +1838,7 @@ class TrustedProcessHandle:
         self._native_session_lock = asyncio.Lock()
         self._launch_lock = asyncio.Lock()
         self._terminate_lock = asyncio.Lock()
+        self._terminate_task: asyncio.Task[tuple[CleanupStepReceipt, ...]] | None = None
         self._closing = False
         self._closed = False
         self.repository_base_commit: str | None = None
@@ -2647,7 +2649,10 @@ class TrustedProcessHandle:
 
     async def terminate(self) -> tuple[CleanupStepReceipt, ...]:
         async with self._terminate_lock:
-            return await self._terminate_once()
+            if self._terminate_task is None:
+                self._terminate_task = asyncio.create_task(self._terminate_once())
+            task = self._terminate_task
+        return await asyncio.shield(task)
 
     async def _terminate_once(self) -> tuple[CleanupStepReceipt, ...]:
         async with self._launch_lock:
@@ -2858,6 +2863,10 @@ class TrustedProcessBackend:
             if isinstance(exc, EnvelopeUnsupportedHostError):
                 raise SandboxLaunchError(
                     str(exc), code="runtime_unsupported", lease_id=lease_id
+                ) from exc
+            if isinstance(exc, EnvelopeLaunchError):
+                raise SandboxLaunchError(
+                    str(exc), code=exc.code, lease_id=lease_id
                 ) from exc
             raise
         return handle, measurement

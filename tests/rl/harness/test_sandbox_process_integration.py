@@ -118,6 +118,40 @@ async def test_denied_user_namespace_mapping_refuses_lease_before_child_effect(
 
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="requires Linux namespaces")
+def test_preflight_fork_exhaustion_is_typed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def exhausted() -> int:
+        raise BlockingIOError(errno.EAGAIN, "process quota exhausted")
+
+    monkeypatch.setattr(lease_envelope.os, "fork", exhausted)
+    with pytest.raises(lease_envelope.EnvelopeLaunchError) as captured:
+        lease_envelope.preflight_host_containment()
+    assert captured.value.code == "envelope_resources_exhausted"
+    assert captured.value.errno == errno.EAGAIN
+
+
+@requires_sealed_execution
+async def test_mount_denial_is_not_namespace_unsupported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(
+        with_writable_mount=True, runtime_install_root=tmp_path / "runtime"
+    )
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    def denied(*args: object) -> None:
+        raise PermissionError(errno.EACCES, "read-only mount denied by policy")
+
+    monkeypatch.setattr(lease_envelope, "_setup_mount_view", denied)
+    with pytest.raises(SandboxLaunchError) as captured:
+        await harness.manager.open(fixture.request)
+    assert captured.value.code == "envelope_mount_denied"
+    assert "mount_view" in str(captured.value)
+    assert list(harness.workspace_root.iterdir()) == []
+
+
 def test_envelope_rejects_non_string_environment_before_fork() -> None:
     message = {
         "fd_count": 0,
@@ -1285,6 +1319,58 @@ async def test_terminate_racing_barrier_fences_launch_and_closes_snapshot_fd_onc
     with pytest.raises(OSError):
         os.fstat(executable_fd)
     assert (await primary.close()).state is CleanupState.RELEASED
+
+
+@requires_sealed_execution
+async def test_cancelled_termination_retains_signed_teardown_and_releases_lease(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import threading
+
+    fixture = make_runtime_fixture(
+        with_writable_mount=True, runtime_install_root=tmp_path / "runtime"
+    )
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    handle = primary._runtime
+    executable_fd = handle._executable.fd
+    intercepted, release = threading.Event(), threading.Event()
+    original = lease_envelope._recv_frame
+
+    def intercept(sock: socket.socket):
+        frame = original(sock)
+        if frame[0].get("kind") == "teardown":
+            intercepted.set()
+            release.wait(3)
+        return frame
+
+    monkeypatch.setattr(lease_envelope, "_recv_frame", intercept)
+    try:
+        first = asyncio.create_task(handle.terminate())
+        assert await asyncio.wait_for(asyncio.to_thread(intercepted.wait), 2)
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        release.set()
+        second = await asyncio.wait_for(handle.terminate(), 2)
+        third = await asyncio.wait_for(handle.terminate(), 2)
+        assert second == third == (
+            CleanupStepReceipt("runtime", CleanupState.RELEASED),
+        )
+        assert handle.teardown_receipt is not None
+        assert handle.teardown_receipt.outcome == {
+            "pid1_reaped": True, "all_dead": True,
+        }
+        assert handle._envelope.pid1_fd == -1
+        assert handle._executable.closed is True
+        with pytest.raises(OSError):
+            os.fstat(executable_fd)
+    finally:
+        release.set()
+        receipt = await primary.close()
+    assert receipt.state is CleanupState.RELEASED
+    assert not (harness.lease_root / f"{primary.lease_id}.json").exists()
 
 
 @requires_sealed_execution

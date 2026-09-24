@@ -13,7 +13,7 @@ import stat
 import struct
 import re
 import select
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -74,6 +74,16 @@ class EnvelopeMountError(OSError):
 
 class EnvelopeUnsupportedHostError(Exception):
     """This host cannot establish the required lease namespaces."""
+
+
+class EnvelopeLaunchError(Exception):
+    """A failed containment launch with a bounded phase and stable failure code."""
+
+    def __init__(self, message: str, *, code: str, phase: str, errno_value: int | None = None) -> None:
+        super().__init__(f"{phase}: {message}")
+        self.code = code
+        self.phase = phase
+        self.errno = errno_value
 
 class _MountAttr(ctypes.Structure):
     _fields_ = [
@@ -538,7 +548,15 @@ def preflight_host_containment() -> None:
     """Exercise the launcher's namespace and UID/GID-map path without an action."""
     if os.name != "posix" or not Path("/proc/self/ns").is_dir():
         raise EnvelopeUnsupportedHostError("Linux namespaces are unavailable")
-    pid = os.fork()
+    try:
+        pid = os.fork()
+    except OSError as exc:
+        raise EnvelopeLaunchError(
+            "containment preflight could not fork",
+            code=("envelope_resources_exhausted" if exc.errno == errno.EAGAIN else "envelope_launch_failed"),
+            phase="preflight_fork",
+            errno_value=exc.errno,
+        ) from exc
     if pid == 0:
         try:
             try:
@@ -797,6 +815,7 @@ def _supervisor_main(
     mode: str,
 ) -> None:
     try:
+        phase = "mount_view"
         mountinfo_digest, writable_mounts = _setup_mount_view(
             workspace,
             scratch,
@@ -804,6 +823,7 @@ def _supervisor_main(
             scratch_fd,
             tmpfs_size_bytes,
         )
+        phase = "supervisor"
         receipt = mint_containment_receipt(
             lease_id=lease_id,
             runtime_id=runtime_id,
@@ -871,7 +891,8 @@ def _supervisor_main(
         try:
             _send_credentials(
                 sock,
-                {"kind": "error", "error": type(exc).__name__, "message": str(exc)},
+                {"kind": "error", "error": type(exc).__name__, "message": str(exc),
+                 "errno": getattr(exc, "errno", None), "phase": phase},
             )
         except BaseException:
             pass
@@ -1081,6 +1102,7 @@ def _launcher_main(
 ) -> None:
     sock = socket.socket(fileno=sock_fd)
     _close_unlisted_fds({sock_fd, workspace_fd, scratch_fd})
+    phase = "namespace_map"
     try:
         mode = "privileged"
         try:
@@ -1091,6 +1113,7 @@ def _launcher_main(
             mode = "userns"
             _unshare(_CLONE_NEWUSER | _CLONE_NEWPID | _CLONE_NEWNS | _CLONE_NEWNET)
             _enter_user_namespace()
+        phase = "fork_pid1"
         child = os.fork()
         if child == 0:
             _supervisor_main(
@@ -1115,6 +1138,7 @@ def _launcher_main(
             os.kill(child, signal.SIGKILL)
             os.waitpid(child, 0)
             raise
+        phase = "launcher_control"
         try:
             _send_frame(sock, {"kind": "pid1", "pid": child}, [pid1_fd])
         finally:
@@ -1125,7 +1149,9 @@ def _launcher_main(
         os._exit(0 if os.WIFEXITED(status) else 1)
     except BaseException as exc:
         try:
-            _send_frame(sock, {"kind": "error", "error": type(exc).__name__, "message": str(exc), "errno": getattr(exc, "errno", None)})
+            _send_frame(sock, {"kind": "error", "error": type(exc).__name__,
+                               "message": str(exc), "errno": getattr(exc, "errno", None),
+                               "phase": phase})
         except BaseException:
             pass
         os._exit(70)
@@ -1517,43 +1543,52 @@ class EnvelopeLaunch:
     authenticator: ReceiptAuthenticator
     workspace: str
     scratch: str
+    _termination_task: asyncio.Task[ContainmentReceipt] | None = field(default=None, init=False, repr=False)
+    teardown_receipt: ContainmentReceipt | None = field(default=None, init=False)
 
     async def terminate(self) -> ContainmentReceipt:
-        # Signal through the attested pidfd: a raw PID may be reused on the host
-        # once the launcher reaps PID1.
-        if self.pid1_fd < 0:
-            raise RuntimeError("envelope was already terminated")
+        task = self._termination_task
+        if task is None:
+            task = asyncio.create_task(self._terminate_once())
+            self._termination_task = task
+        return await asyncio.shield(task)
+
+    async def _terminate_once(self) -> ContainmentReceipt:
+        # The handle owns both the reader and the pidfd; cancelling a caller
+        # cannot discard a frame already consumed by its background reader.
         try:
-            _pidfd_send_signal(self.pid1_fd, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        message: dict[str, Any] | None = None
-        while message is None:
             try:
-                candidate, _fds = await __import__("asyncio").to_thread(_recv_frame, self.control)
-            except (EOFError, OSError):
-                break
-            if candidate.get("kind") == "teardown":
-                message = candidate
-            elif candidate.get("kind") == "error":
-                break
-        try:
-            await __import__("asyncio").to_thread(os.waitpid, self.launcher_pid, 0)
-        except ChildProcessError:
-            pass
-        pid1_reaped = bool(message and message.get("pid1_reaped") is True)
-        pid1_exited = bool(select.select([self.pid1_fd], [], [], 0)[0])
-        os.close(self.pid1_fd)
-        self.pid1_fd = -1
-        all_dead = bool(message and message.get("all_dead") is True and pid1_exited)
-        receipt = add_teardown_outcome(
-            self.receipt,
-            pid1_reaped=pid1_reaped,
-            all_dead=all_dead,
-            authenticator=self.authenticator,
-        )
-        self.control.close()
-        return receipt
+                _pidfd_send_signal(self.pid1_fd, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            message: dict[str, Any] | None = None
+            while message is None:
+                try:
+                    candidate, _fds = await asyncio.to_thread(_recv_frame, self.control)
+                except (EOFError, OSError):
+                    break
+                if candidate.get("kind") == "teardown":
+                    message = candidate
+                elif candidate.get("kind") == "error":
+                    break
+            try:
+                await asyncio.to_thread(os.waitpid, self.launcher_pid, 0)
+            except ChildProcessError:
+                pass
+            pid1_reaped = bool(message and message.get("pid1_reaped") is True)
+            pid1_exited = bool(select.select([self.pid1_fd], [], [], 0)[0])
+            self.teardown_receipt = add_teardown_outcome(
+                self.receipt,
+                pid1_reaped=pid1_reaped,
+                all_dead=bool(message and message.get("all_dead") is True and pid1_exited),
+                authenticator=self.authenticator,
+            )
+            return self.teardown_receipt
+        finally:
+            if self.pid1_fd >= 0:
+                os.close(self.pid1_fd)
+                self.pid1_fd = -1
+            self.control.close()
 
 
 class DescriptorPath(str):
@@ -1630,7 +1665,19 @@ def launch_envelope(
         socket.AF_UNIX, socket.SOCK_SEQPACKET
     )
     control_parent.setsockopt(socket.SOL_SOCKET, socket.SO_PASSCRED, 1)
-    pid = os.fork()
+    try:
+        pid = os.fork()
+    except OSError as exc:
+        control_parent.close()
+        control_child.close()
+        os.close(workspace_path_fd)
+        os.close(scratch_fd)
+        raise EnvelopeLaunchError(
+            str(exc),
+            code="envelope_resources_exhausted" if exc.errno == errno.EAGAIN else "envelope_launch_failed",
+            phase="launcher_fork",
+            errno_value=exc.errno,
+        ) from exc
     if pid == 0:
         control_parent.close()
         _launcher_main(
@@ -1685,11 +1732,23 @@ def launch_envelope(
             for fd in received:
                 os.close(fd)
             if kind_name == "error":
-                if frame.get("errno") in (errno.EPERM, errno.EACCES):
+                phase = frame.get("phase")
+                error_number = frame.get("errno")
+                if phase == "namespace_map" and error_number in (errno.EPERM, errno.EACCES):
                     raise EnvelopeUnsupportedHostError(
                         "Linux namespace setup or UID/GID mapping is unavailable"
                     )
-                raise OSError(frame.get("message", "envelope launch failed"))
+                code = (
+                    "envelope_mount_denied" if phase == "mount_view" and error_number in (errno.EPERM, errno.EACCES)
+                    else "envelope_resources_exhausted" if error_number == errno.EAGAIN
+                    else "envelope_launch_failed"
+                )
+                raise EnvelopeLaunchError(
+                    str(frame.get("message", "envelope launch failed")),
+                    code=code,
+                    phase=phase if type(phase) is str else "unknown",
+                    errno_value=error_number if type(error_number) is int else None,
+                )
             if kind_name != "ready" or ready is not None:
                 raise OSError("envelope readiness is invalid")
             ready = frame
