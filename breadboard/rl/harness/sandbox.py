@@ -1414,6 +1414,8 @@ def build_sandbox_execution_plan(request: WorkspaceOpenRequest, registries: Regi
             (digest, "workspace_seed" if role == "input" and digest in root_digests else role)
             for digest, role in required
         ]
+        if len(root_mounts) == 1:
+            required.append((root_mounts[0].source_artifact_digest, "workspace_seed"))
     required += [
         (value, "setup_input")
         for record in setup_records
