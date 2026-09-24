@@ -4550,3 +4550,160 @@ async def test_openhands_native_error_returns_replay_trace(failure_status: str) 
     assert thaw_json(result.response["state"])["status"] == failure_status
     assert tools.effect_admissions == 1
     assert tools.effect_measurements == 1
+
+
+async def test_openhands_iteration_budget_stops_at_configured_turn_limit(tmp_path: Path) -> None:
+    import os
+    import shutil
+    import sys
+    from breadboard.rl.harness.native_session import NativeSession
+    py312 = (
+        shutil.which("python3.12")
+        or "/opt/breadboard-native-tools/python/bin/python3.12"
+        or "/Users/kylemccleary/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12"
+    )
+    if not Path(py312).is_file():
+        pytest.skip("python3.12 binary not found")
+
+    fixtures = Path(__file__).resolve().parents[2] / "e4_parity" / "fixtures" / "openhands_sdk"
+    oh5_trace_path = fixtures / "OH-05-iteration-budget" / "trace.json"
+    if not oh5_trace_path.is_file():
+        pytest.skip("OH-05 trace fixture not found")
+    oh5_trace = json.loads(oh5_trace_path.read_text(encoding="utf-8"))
+
+    env = dict(os.environ)
+    repo_root = str(Path(__file__).resolve().parents[3])
+    uv_pkg = "/Users/kylemccleary/.cache/uv/archive-v0/EmOGkXXkN6m3sPSJ/lib/python3.12/site-packages"
+    pythonpaths = [repo_root]
+    if os.path.isdir(uv_pkg):
+        pythonpaths.append(uv_pkg)
+    for p in sys.path:
+        if "site-packages" in p and p not in pythonpaths:
+            pythonpaths.append(p)
+    env["PYTHONPATH"] = ":".join(pythonpaths)
+    env["OPENHANDS_SUPPRESS_BANNER"] = "1"
+
+    worker_code = """
+import sys
+from breadboard.rl.harness.native_worker import WorkerChannel
+from breadboard.rl.harness.openhands_worker import factory
+
+channel = WorkerChannel()
+sys.stdout = sys.stderr
+actor = factory(channel)
+while True:
+    cmd = channel.receive()
+    if cmd is None:
+        actor.close()
+        break
+    res = actor.dispatch(cmd["operation"], cmd["payload"])
+    channel.respond(res)
+"""
+    proc = await asyncio.create_subprocess_exec(
+        py312, "-u", "-c", worker_code,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=env,
+    )
+    session = NativeSession(proc, retire_callback=lambda: True)
+
+    class _OH05Client(_OpenHandsTraceClient):
+        def __init__(self, obs: c.PolicyCapabilityObservation) -> None:
+            super().__init__(obs)
+            self.provider_requests: list[Any] = []
+
+        def bind_compiled_plan(self, plan: c.EffectiveExecutionPlan) -> Mapping[str, Any]:
+            del plan
+            return {
+                "model_name": "openai/gpt-4o-mini",
+                "model_canonical_name": None,
+                "max_input_tokens": 131072,
+                "base_url": "http://127.0.0.1:1234/v1",
+            }
+        async def invoke(self, request: Any) -> PolicyRuntimeInvokeResult:
+            idx = len(self.provider_requests)
+            self.provider_requests.append(request)
+            if idx < len(oh5_trace["responses"]):
+                body = oh5_trace["responses"][idx]["response"]
+            else:
+                body = {
+                    "choices": [{"index": 0, "message": {"role": "assistant", "content": "unexpected extra turn"}, "finish_reason": "stop"}],
+                }
+            self.http_response = {
+                "status_code": 200,
+                "headers": [["content-type", "application/json"]],
+                "body_b64": base64.b64encode(json.dumps(body).encode()).decode(),
+            }
+            response = {"native_http_response": self.http_response}
+            return PolicyRuntimeInvokeResult(
+                response_payload=response,
+                response_digest=_independent_digest(response),
+            )
+
+    class _RealWorkerPort(RecordingToolPort):
+        def __init__(self, sess: NativeSession, tool_ids: Sequence[str], workspace: Path, scratch: Path) -> None:
+            super().__init__(tuple(_tool_binding(tid) for tid in sorted(tool_ids)))
+            self._sess = sess
+            self._workspace = workspace
+            self._scratch = scratch
+            self.operations: list[str] = []
+
+        async def begin_native_workspace_effects(self) -> None:
+            self.operations.append("begin_native_workspace_effects")
+
+        async def measure_workspace_effects(self) -> Mapping[str, Mapping[str, Any]]:
+            self.operations.append("measure_effects")
+            return {}
+
+        async def invoke_native_phase(self, operation: str, payload: Mapping[str, Any], *, timeout_ms: int) -> Mapping[str, Any]:
+            self.operations.append(operation)
+            effective_payload = dict(payload)
+            if operation == "initialize":
+                effective_payload["workspace"] = str(self._workspace)
+                effective_payload["scratch"] = str(self._scratch)
+            return await self._sess.invoke_native_phase(operation, effective_payload, timeout_ms=timeout_ms)
+
+        async def close_native_runtime(self) -> Mapping[str, Any]:
+            self.operations.append("close_native_runtime")
+            await self._sess.close()
+            return {
+                "kind": "closed",
+                "cleanup": {
+                    "all_dead": True,
+                    "steps": [
+                        {"resource": "runtime", "state": "released", "detail": ""},
+                    ],
+                },
+            }
+
+    tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
+    port = _RealWorkerPort(session, tool_order, tmp_path / "workspace", tmp_path / "scratch")
+
+    observation = _observation()
+    semantic = _openhands_semantics(observation)
+    plan = _plan(
+        observation=observation,
+        semantics=semantic,
+        tools=tuple(_tool_grant(tid) for tid in sorted(tool_order)),
+        limit_updates={"max_turns": 2, "action_timeout_ms": 90_000},
+        implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
+    )
+    client = _OH05Client(observation)
+    cancellation = RecordingCancellationProbe()
+    events = RecordingEventSink()
+    cond_session, _, _, _, _, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=port,
+        cancellation=cancellation,
+        sink=events,
+    )
+
+    try:
+        task = "Keep using the terminal without finishing; the native iteration limit must stop the conversation."
+        result = await cond_session.run(ConductorRunRequest({"prompt": task}))
+        assert len(client.provider_requests) == 2, f"Expected exactly 2 provider requests, got {len(client.provider_requests)}"
+    finally:
+        await cond_session.close()

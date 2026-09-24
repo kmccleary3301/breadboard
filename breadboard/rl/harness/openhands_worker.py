@@ -19,7 +19,6 @@ MODEL_RESPONSE_LIMIT = 4 * 1024 * 1024
 TRANSCRIPT_LIMIT = 32 * 1024 * 1024
 FRAME_LIMIT = 16 * 1024 * 1024
 RAW_TERMINAL_LIMIT = 1 * 1024 * 1024
-MAX_ITERATIONS = 16
 CLIENT_TIMEOUT = 45
 MAX_OUTPUT_TOKENS = 2048
 NATIVE_IDLE_TIMEOUT = 30
@@ -223,6 +222,10 @@ class OpenHandsActor:
         max_input_tokens = model_config["max_input_tokens"]
         if type(max_input_tokens) is not int or max_input_tokens < 1:
             raise NativeWorkerError("max_input_tokens must be a positive integer")
+        max_iteration_per_run = payload.get("max_iteration_per_run")
+        if type(max_iteration_per_run) is not int or max_iteration_per_run < 1:
+            raise NativeWorkerError("max_iteration_per_run must be a positive integer")
+        self._max_iteration_per_run = max_iteration_per_run
         workspace = self._require_str(payload, "workspace")
         scratch = self._require_str(payload, "scratch")
         if not os.path.isabs(workspace) or not os.path.isabs(scratch):
@@ -384,7 +387,7 @@ class OpenHandsActor:
             agent=self._agent,
             workspace=workspace,
             persistence_dir=None,
-            max_iteration_per_run=MAX_ITERATIONS,
+            max_iteration_per_run=self._max_iteration_per_run,
             stuck_detection=True,
             max_budget_per_run=None,
             visualizer=None,
@@ -423,7 +426,7 @@ class OpenHandsActor:
             if blocked_reason is not None:
                 state.execution_status = self._sdk["ConversationExecutionStatus"].FINISHED
                 return {"schema_version": SCHEMA_VERSION, "kind": "sample_ready", "event_delta": self._take_events(), "status": self._status(), "iteration": self._iteration}
-        if self._status() in {"FINISHED", "STUCK", "ERROR"} or self._iteration >= MAX_ITERATIONS:
+        if self._status() in {"FINISHED", "STUCK", "ERROR"} or self._iteration >= self._max_iteration_per_run:
             return {"schema_version": SCHEMA_VERSION, "kind": "sample_ready", "event_delta": [], "status": self._status(), "iteration": self._iteration}
         if self._status() in {"IDLE", "PAUSED"}:
             state.execution_status = self._sdk["ConversationExecutionStatus"].RUNNING
@@ -588,11 +591,11 @@ class OpenHandsActor:
                 self._conversation._on_event(self._sdk["MessageEvent"](source="user", llm_message=self._sdk["Message"](role="user", content=[self._sdk["TextContent"](text=followup)])))
             else:
                 self._conversation.state.execution_status = self._sdk["ConversationExecutionStatus"].FINISHED
-        if self._iteration >= MAX_ITERATIONS and self._status() not in {"FINISHED", "ERROR", "STUCK"}:
+        if self._iteration >= self._max_iteration_per_run and self._status() not in {"FINISHED", "ERROR", "STUCK"}:
             self._conversation.state.execution_status = self._sdk["ConversationExecutionStatus"].ERROR
             self._conversation._on_event(self._sdk["ConversationErrorEvent"](
                 source="environment", code="MaxIterationsReached",
-                detail=f"Agent reached maximum iterations limit ({MAX_ITERATIONS}).",
+                detail=f"Agent reached maximum iterations limit ({self._max_iteration_per_run}).",
             ))
         result = {
             "schema_version": SCHEMA_VERSION,

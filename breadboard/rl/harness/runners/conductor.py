@@ -2423,7 +2423,7 @@ class _ConductorSession:
             or not isinstance(tools, NativeWorkspaceEffectsPort)
             or profile is None
             or model_config is None
-            or limits.max_turns != 16
+            or limits.max_turns < 1
             or limits.action_timeout_ms != 90_000
             or len(self._projection.models) != 1
             or len(self._projection.modes) != 1
@@ -2529,7 +2529,7 @@ class _ConductorSession:
             if status is not None or iteration is not None:
                 if (
                     status not in {"IDLE", "RUNNING", "PAUSED", "FINISHED", "STUCK", "ERROR"}
-                    or type(iteration) is not int or not 0 <= iteration <= 16
+                    or type(iteration) is not int or not 0 <= iteration <= limits.max_turns
                 ):
                     raise RunnerProtocolError(
                         "native execution state is invalid",
@@ -2547,7 +2547,13 @@ class _ConductorSession:
             ))
 
         initialized = await phase(
-            "initialize", {"task": task, "model_config": model_config}, timeout_ms=60_000,
+            "initialize",
+            {
+                "task": task,
+                "model_config": thaw_json(model_config),
+                "max_iteration_per_run": limits.max_turns,
+            },
+            timeout_ms=60_000,
         )
         if (
             initialized.get("kind") != "initialized"
@@ -2560,7 +2566,7 @@ class _ConductorSession:
         self._binding.bind_native_tools(initialized["tool_schemas"])
         await commit_events(initialized, "initial", None)
         termination = RunnerTermination.MAX_TURNS
-        for turn in range(1, 17):
+        for turn in range(1, limits.max_turns + 1):
             await self._checkpoint("before_policy", turn=turn)
             sampled = await phase("sample", {}, timeout_ms=60_000)
             await commit_events(sampled, "before_policy", turn)
