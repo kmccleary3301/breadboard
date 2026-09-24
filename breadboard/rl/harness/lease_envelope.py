@@ -11,9 +11,8 @@ import signal
 import socket
 import stat
 import struct
-import time
-import threading
 import re
+import select
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -533,60 +532,63 @@ def _setup_mount_view(
 
 
 class _ChildReaper:
-    """Continuously reap namespace children while preserving leader statuses."""
+    """Reap namespace children from the supervisor's SIGCHLD wakeup loop."""
 
     def __init__(self) -> None:
-        self._condition = threading.Condition()
-        self._forking = False
-        self._leaders: set[int] = set()
-        self._statuses: dict[int, int] = {}
-        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._signal_read, self._signal_write = os.pipe()
+        os.set_blocking(self._signal_read, False)
+        os.set_blocking(self._signal_write, False)
+        self._previous_wakeup_fd = signal.set_wakeup_fd(
+            self._signal_write, warn_on_full_buffer=False
+        )
+        self._previous_handler = signal.signal(signal.SIGCHLD, lambda *_: None)
+        self._leader: int | None = None
+        self._leader_status: int | None = None
 
-    def start(self) -> None:
-        self._thread.start()
+    def set_leader(self, pid: int) -> None:
+        self._leader = pid
+        self.reap()
 
-    def prepare_fork(self) -> None:
-        self._condition.acquire()
-        self._forking = True
-
-    def register_forked_child(self, pid: int) -> None:
-        self._leaders.add(pid)
-        self._forking = False
-        self._condition.notify_all()
-        self._condition.release()
-
-    def abort_fork(self) -> None:
-        self._forking = False
-        self._condition.notify_all()
-        self._condition.release()
     def wait_for_leader(self, pid: int) -> int:
-        with self._condition:
-            while pid not in self._statuses:
-                self._condition.wait()
-            status = self._statuses.pop(pid)
-            self._leaders.discard(pid)
-            return status
+        while self._leader_status is None:
+            self.reap()
+            if self._leader_status is not None:
+                break
+            select.select([self._signal_read], [], [], 0.05)
+        return self._leader_status
 
-    def _run(self) -> None:
+    def wait_for_control(self, sock: socket.socket) -> bool:
         while True:
-            with self._condition:
-                if self._forking:
-                    self._condition.wait(timeout=0.01)
-                    continue
+            readable, _, _ = select.select(
+                [sock, self._signal_read], [], []
+            )
+            if self._signal_read in readable:
+                self.reap()
+            if sock in readable:
+                return True
+
+    def reap(self) -> None:
+        try:
+            os.read(self._signal_read, 4096)
+        except BlockingIOError:
+            pass
+        while True:
             try:
                 pid, status = os.waitpid(-1, os.WNOHANG)
             except ChildProcessError:
-                time.sleep(0.01)
-                continue
+                return
             except InterruptedError:
                 continue
             if pid == 0:
-                time.sleep(0.005)
-                continue
-            with self._condition:
-                if pid in self._leaders:
-                    self._statuses[pid] = status
-                    self._condition.notify_all()
+                return
+            if pid == self._leader:
+                self._leader_status = status
+
+    def close(self) -> None:
+        signal.set_wakeup_fd(self._previous_wakeup_fd)
+        signal.signal(signal.SIGCHLD, self._previous_handler)
+        os.close(self._signal_read)
+        os.close(self._signal_write)
 
 
 def _supervisor_main(
@@ -650,12 +652,9 @@ def _supervisor_main(
         )
         _send_credentials(sock, {"kind": "ready", "receipt": receipt.to_mapping()})
         reaper = _ChildReaper()
-        reaper.start()
         while True:
+            reaper.wait_for_control(sock)
             message, fds = _recv_frame(sock)
-            if message.get("kind") == "reap":
-                _send_frame(sock, {"kind": "reaped"})
-                continue
             if message.get("kind") != "spawn":
                 for fd in fds:
                     os.close(fd)
@@ -719,12 +718,7 @@ def _spawn_one(
     ):
         raise OSError("envelope spawn descriptor index is invalid")
     status_fd = fds[status_index]
-    reaper.prepare_fork()
-    try:
-        child = os.fork()
-    except BaseException:
-        reaper.abort_fork()
-        raise
+    child = os.fork()
     if child == 0:
         try:
             os.setsid()
@@ -791,6 +785,7 @@ def _spawn_one(
             except BaseException:
                 pass
             os._exit(127)
+    reaper.set_leader(child)
     status = reaper.wait_for_leader(child)
     if os.WIFEXITED(status):
         code = os.WEXITSTATUS(status)
