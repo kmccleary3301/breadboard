@@ -920,6 +920,49 @@ async def test_real_process_plan_runs_through_wp5_port_seals_snapshot_and_cleans
 
 
 @requires_sealed_execution
+async def test_real_process_preserves_absolute_workspace_and_scratch_roots(
+    tmp_path: Path,
+) -> None:
+    staging_before = set(Path("/dev/shm").glob(".breadboard-envelope-*"))
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    envelope = primary._runtime._envelope
+    assert envelope is not None
+    workspace = primary._materialized.workspace_path
+    scratch = Path(envelope.scratch)
+    workspace_probe = workspace / "absolute-host-probe"
+    scratch_probe = scratch / "absolute-host-probe"
+    workspace_probe.write_text("workspace-host", encoding="utf-8")
+    scratch_probe.write_text("scratch-host", encoding="utf-8")
+    command = (
+        f"cat {shlex.quote(str(workspace_probe))} > work/workspace-read; "
+        f"cat {shlex.quote(str(scratch_probe))} > work/scratch-read; "
+        f"printf workspace-inside > {shlex.quote(str(workspace / 'absolute-inside'))}; "
+        f"printf scratch-inside > {shlex.quote(str(scratch / 'absolute-inside'))}"
+    )
+    result = await primary.runner_workspace.run_shell(command, timeout=2)
+    assert result["returncode"] == 0
+    assert (workspace / "work/workspace-read").read_text(encoding="utf-8") == (
+        "workspace-host"
+    )
+    assert (workspace / "work/scratch-read").read_text(encoding="utf-8") == (
+        "scratch-host"
+    )
+    assert (workspace / "absolute-inside").read_text(encoding="utf-8") == (
+        "workspace-inside"
+    )
+    assert (scratch / "absolute-inside").read_text(encoding="utf-8") == (
+        "scratch-inside"
+    )
+    receipt = await primary.close()
+    assert receipt.state is CleanupState.RELEASED
+    assert await harness.manager.close() == ()
+    assert set(Path("/dev/shm").glob(".breadboard-envelope-*")) == staging_before
+
+
+@requires_sealed_execution
 async def test_real_process_leader_exit_keeps_exact_descendant_cleanup_authority(
     tmp_path: Path,
 ) -> None:
