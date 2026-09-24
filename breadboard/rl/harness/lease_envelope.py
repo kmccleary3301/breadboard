@@ -993,6 +993,12 @@ def _resolve_host_pid(supervisor_pid: int, namespace_pid: int) -> int:
         nspid, parent = read_status(int(entry.name))
         if nspid == suffix and parent == expected_parent:
             return int(entry.name)
+    for entry in os.scandir("/proc"):
+        if not entry.name.isdecimal():
+            continue
+        nspid, _parent = read_status(int(entry.name))
+        if nspid == suffix:
+            return int(entry.name)
     raise OSError(
         errno.ESRCH,
         f"unable to resolve namespace PID {namespace_pid} "
