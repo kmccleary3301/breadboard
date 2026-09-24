@@ -237,3 +237,119 @@ def test_ipctransport_forwards_sdk_body_verbatim() -> None:
     assert channel.response is not None
     forwarded = channel.response["http_request"]
     assert base64.b64decode(forwarded["body_b64"], validate=True) == sdk_body
+
+
+@pytest.mark.parametrize("case_id", ["OH-01-normal-file-effect", "OH-02-invalid-call-continues", "OH-05-iteration-budget"])
+def test_worker_first_request_matches_supplier_packet_and_preserves_temperature(case_id: str, tmp_path: Path) -> None:
+    import json
+    import os
+    import shutil
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    py312 = (
+        shutil.which("python3.12")
+        or "/opt/breadboard-native-tools/python/bin/python3.12"
+        or "/Users/kylemccleary/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12"
+    )
+    if not Path(py312).is_file():
+        pytest.skip("python3.12 not found")
+    packet_path = Path("/Users/kylemccleary/projects/breadboard/docs_tmp/bb_direction_assessment/engine_pr_handoff_20260827/e4_admission_20260914T221653Z/do2-20260923/openhands/packet/openhands-supplier-capture-packet-rerun2/captures") / case_id / "trace.json"
+    if not packet_path.is_file():
+        pytest.skip(f"supplier packet trace for {case_id} not found")
+    fixture_path = packet_path
+
+    supplier_trace = json.loads(fixture_path.read_text(encoding="utf-8"))
+    supplier_req0 = supplier_trace["requests"][0]["body"]
+    repo_root = Path(__file__).resolve().parents[3]
+    env = dict(os.environ)
+    uv_pkg = "/Users/kylemccleary/.cache/uv/archive-v0/EmOGkXXkN6m3sPSJ/lib/python3.12/site-packages"
+    pythonpaths = [str(repo_root)]
+    if os.path.isdir(uv_pkg):
+        pythonpaths.append(uv_pkg)
+    for p in sys.path:
+        if "site-packages" in p and p not in pythonpaths:
+            pythonpaths.append(p)
+    env["PYTHONPATH"] = ":".join(pythonpaths)
+    env["OPENHANDS_SUPPRESS_BANNER"] = "1"
+
+    ws = tmp_path / "ws"
+    sc = tmp_path / "sc"
+    ws.mkdir(parents=True)
+    sc.mkdir(parents=True)
+
+    test_code = """
+import os, sys, json, base64, pathlib, importlib.util
+
+worker_path = sys.argv[1]
+spec = importlib.util.spec_from_file_location("openhands_worker", worker_path)
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+OpenHandsActor = mod.OpenHandsActor
+
+ws = sys.argv[2]
+sc = sys.argv[3]
+task = sys.argv[4]
+max_iter = int(sys.argv[5])
+resp_body_json = sys.argv[6]
+
+class SingleRequestChannel:
+    def __init__(self):
+        self.response = None
+    def respond(self, value):
+        self.response = value
+    def receive(self):
+        return {
+            "operation": "provider_response",
+            "payload": {
+                "status_code": 200,
+                "headers": [["content-type", "application/json"]],
+                "body_b64": base64.b64encode(resp_body_json.encode()).decode(),
+            },
+        }
+
+channel = SingleRequestChannel()
+actor = OpenHandsActor(channel)
+payload = {
+    "task": task,
+    "model_config": {
+        "model_name": "openai/gpt-4o-mini",
+        "model_canonical_name": None,
+        "max_input_tokens": 131072,
+        "base_url": "http://127.0.0.1:1234/v1",
+    },
+    "workspace": ws,
+    "scratch": sc,
+    "max_iteration_per_run": max_iter,
+}
+actor.dispatch("initialize", payload)
+actor.dispatch("sample", {})
+actor.close()
+
+assert channel.response is not None, "Worker never issued HTTP request"
+body_b64 = channel.response["http_request"]["body_b64"]
+raw = base64.b64decode(body_b64)
+body = json.loads(raw)
+print(json.dumps(body))
+"""
+    task = supplier_trace.get("task")
+    if not task:
+        # Extract task from messages[1].content[0].text
+        task = supplier_req0["messages"][1]["content"][0]["text"]
+    max_iter = supplier_trace.get("controls", {}).get("max_iterations", 16)
+    resp0 = supplier_trace.get("responses", [{}])[0].get("response", {"choices": [{"index": 0, "message": {"role": "assistant", "content": "done"}, "finish_reason": "stop"}]})
+
+    worker_path = str(repo_root / "breadboard/rl/harness/openhands_worker.py")
+    res = subprocess.run([py312, "-c", test_code, worker_path, str(ws), str(sc), task, str(max_iter), json.dumps(resp0)], env=env, capture_output=True, text=True, check=True)
+    worker_body = json.loads(res.stdout.strip().splitlines()[-1])
+
+    assert "temperature" in worker_body
+    assert worker_body["temperature"] == 0.0
+    assert worker_body["model"] == supplier_req0["model"]
+
+    # Compare normalized bodies
+    supplier_norm = json.loads(json.dumps(supplier_req0).replace("/opt/openhands/case/workspace", "<WORKSPACE>"))
+    worker_norm = json.loads(json.dumps(worker_body).replace(str(ws), "<WORKSPACE>"))
+    worker_norm["prompt_cache_key"] = supplier_norm.get("prompt_cache_key")
+    assert worker_norm == supplier_norm
