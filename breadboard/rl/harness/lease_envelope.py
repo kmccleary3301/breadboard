@@ -739,22 +739,19 @@ def _recv_ready_status(status: socket.socket) -> int:
 def _resolve_host_pid(supervisor_pid: int, namespace_pid: int) -> int:
     """Resolve a child PID from the supervisor's PID namespace to the host.
 
-    ``SCM_CREDENTIALS`` reports a PID in the receiving process's namespace.
-    The status socket is consumed by the supervisor, so the child PID it
-    reports is namespace-local.  The caller, however, must signal and inspect
-    the host process.  The stopped child is a direct child of the host-visible
-    supervisor PID, which gives us an unambiguous mapping in ``/proc``.
+    ``SCM_CREDENTIALS`` may report a PID in the receiver's namespace or in
+    the initial namespace, depending on which side of the namespace boundary
+    owns the socket.  Prefer the direct host-visible child when present, and
+    otherwise map a namespace PID through ``/proc``.
     """
-    suffix = f"{namespace_pid}"
-    for entry in os.scandir("/proc"):
-        if not entry.name.isdecimal():
-            continue
+    expected_parent = str(supervisor_pid)
+
+    def read_status(pid: int) -> tuple[str | None, str | None]:
         try:
-            status = Path(entry.path, "status").read_text(encoding="ascii")
+            status = Path(f"/proc/{pid}/status").read_text(encoding="ascii")
         except (OSError, UnicodeError):
-            continue
-        nspid = None
-        parent = None
+            return None, None
+        nspid = parent = None
         for line in status.splitlines():
             if line.startswith("NSpid:"):
                 values = line.split()[1:]
@@ -764,7 +761,18 @@ def _resolve_host_pid(supervisor_pid: int, namespace_pid: int) -> int:
                 fields = line.split()
                 if len(fields) == 2:
                     parent = fields[1]
-        if nspid == suffix and parent == str(supervisor_pid):
+        return nspid, parent
+
+    _nspid, parent = read_status(namespace_pid)
+    if parent == expected_parent:
+        return namespace_pid
+
+    suffix = str(namespace_pid)
+    for entry in os.scandir("/proc"):
+        if not entry.name.isdecimal():
+            continue
+        nspid, parent = read_status(int(entry.name))
+        if nspid == suffix and parent == expected_parent:
             return int(entry.name)
     raise OSError(
         errno.ESRCH,
