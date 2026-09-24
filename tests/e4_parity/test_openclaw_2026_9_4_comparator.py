@@ -7,6 +7,7 @@ import pytest
 
 from conformance.comparators.openclaw_2026_9_4 import (
     ComparatorError,
+    _apply_supplier_overlay,
     compare,
     project_bb_trace,
     project_supplier_case,
@@ -59,8 +60,9 @@ def test_packet_640_fixture_round_trips_and_rejects_tampered_request() -> None:
         if "body" in json.loads(line)
     ]
     assert raw_requests and "model" in raw_requests[0]
+    overlaid_requests, _ = _apply_supplier_overlay(raw_requests)
     observed = project_bb_trace({
-        "requests": raw_requests,
+        "requests": overlaid_requests,
         "effects": expected["effects"],
         "termination": expected["termination"],
         "request_count": len(raw_requests),
@@ -72,7 +74,7 @@ def test_packet_640_fixture_round_trips_and_rejects_tampered_request() -> None:
         "sha256:f7a2b67b1ea18fb2bed758b564bb874610c2d875b07b08e0300d59f70a7bd958"
     )
 
-    tampered = json.loads(json.dumps(raw_requests))
+    tampered = json.loads(json.dumps(overlaid_requests))
     tampered[0]["messages"][0]["content"] = "tampered"
     rejected = compare({
         "capture": {"trace": expected},
@@ -195,3 +197,33 @@ def test_phase_worker_runs_real_pinned_source_tools(tmp_path: Path, monkeypatch:
         assert tools.execute("read", {"path": "marker.txt"})["content"] == "OK\n"
     finally:
         tools.scope.cleanup()
+
+
+def test_packet_exec_overlay_is_supplier_only_and_fails_closed(tmp_path: Path) -> None:
+    fixture = Path(__file__).parent / "fixtures" / "openclaw_packet_640"
+    raw = [
+        json.loads(line)["body"]
+        for line in (fixture / "receiver" / "http-transcript.jsonl").read_text().splitlines()
+    ]
+    expected = project_supplier_case(fixture)
+    assert expected["requests"][0]["tools"][1]["function"]["description"] != (
+        raw[0]["tools"][1]["function"]["description"]
+    )
+    native_candidate = {
+        "requests": raw,
+        "effects": expected["effects"],
+        "termination": expected["termination"],
+        "request_count": len(raw),
+    }
+    rejected = compare({"capture": str(fixture), "replay": native_candidate, "scope": {}})
+    assert rejected["ok"] is False
+    assert rejected["overlay"]["native_sha256"].endswith("20973")
+    import shutil
+    tampered = tmp_path / "packet"
+    shutil.copytree(fixture, tampered)
+    first = tampered / "receiver" / "http-transcript.jsonl"
+    rows = [json.loads(line) for line in first.read_text().splitlines()]
+    rows[0]["body"]["tools"][1]["function"]["description"] = "wrong"
+    first.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+    with pytest.raises(ComparatorError, match="native_sha256"):
+        project_supplier_case(tampered)

@@ -45,6 +45,55 @@ def _sha256(path: Path) -> str:
     return f"sha256:{digest}"
 
 
+def _text_sha256(value: str) -> str:
+    return f"sha256:{hashlib.sha256(value.encode('utf-8')).hexdigest()}"
+
+
+def _admitted_overlay() -> dict[str, str]:
+    root = Path(__file__).resolve().parents[2]
+    config = _load_json(root / "config/e4_targets/openclaw/2026.9.4/native-config.json")
+    try:
+        overlay = config["advertisement"]["tools"]["exec"]
+        description = overlay["description"]
+        native_sha = overlay["native_sha256"]
+    except (KeyError, TypeError):
+        raise ComparatorError("OpenClaw exec advertisement overlay is malformed") from None
+    if (
+        type(description) is not str
+        or type(native_sha) is not str
+        or _text_sha256(description) == native_sha
+    ):
+        raise ComparatorError("OpenClaw exec advertisement overlay must differ from native bytes")
+    return {
+        "tool": "exec",
+        "native_sha256": native_sha,
+        "overlay_sha256": _text_sha256(description),
+        "description": description,
+    }
+
+
+def _apply_supplier_overlay(raw_requests: Sequence[Mapping[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    overlay = _admitted_overlay()
+    transformed: list[dict[str, Any]] = []
+    for body in raw_requests:
+        current = json.loads(json.dumps(body))
+        for tool in current.get("tools", []):
+            function = tool.get("function") if isinstance(tool, Mapping) else None
+            if not isinstance(function, MutableMapping) or function.get("name") != "exec":
+                continue
+            description = function.get("description")
+            if type(description) is not str:
+                raise ComparatorError("supplier exec description is missing")
+            actual = _text_sha256(description)
+            if actual not in {overlay["native_sha256"], overlay["overlay_sha256"]}:
+                raise ComparatorError(
+                    "supplier exec description sha does not match declared native_sha256"
+                )
+            function["description"] = overlay["description"]
+        transformed.append(current)
+    return transformed, {key: value for key, value in overlay.items() if key != "description"}
+
+
 def _load_json(path: Path, default: Any = None) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -373,7 +422,6 @@ def _canonicalize(trace: Mapping[str, Any]) -> dict[str, Any]:
     _validate_trace(canonical)
     return canonical
 
-
 def project_supplier_case(case_dir: str | Path) -> dict[str, Any]:
     """Project a captured supplier case directory into one canonical episode."""
     root = Path(case_dir)
@@ -385,6 +433,7 @@ def project_supplier_case(case_dir: str | Path) -> dict[str, Any]:
         closed = _load_json(root / "receiver" / "closed.json", {})
         request_count = int(closed.get("requests", 0)) if isinstance(closed, Mapping) else 0
         raw_requests = [{"messages": [], "tools": []} for _ in range(request_count)]
+    raw_requests, _ = _apply_supplier_overlay(raw_requests)
     requests = _project_request_bodies(raw_requests)
     calls = _tool_calls_from_requests(requests) or _tool_calls_from_scenario(scenario)
     workspace = root / "workspace"
@@ -441,6 +490,15 @@ def project_bb_trace(trace: Any) -> dict[str, Any]:
     return _canonicalize(value)
 
 
+def _supplier_trace_with_overlay(trace: Any) -> tuple[dict[str, Any], dict[str, str]]:
+    projected = project_bb_trace(trace)
+    requests, overlay = _apply_supplier_overlay(projected["requests"])
+    projected["requests"] = _project_request_bodies(requests)
+    projected["tool_calls"] = _tool_calls_from_requests(projected["requests"])
+    projected["results"] = _results_from_requests(projected["requests"], projected["tool_calls"])
+    return _canonicalize(projected), overlay
+
+
 def _difference(expected: Any, observed: Any, path: str = "$") -> str | None:
     if type(expected) is not type(observed) and not (isinstance(expected, (int, float)) and not isinstance(expected, bool) and isinstance(observed, (int, float)) and not isinstance(observed, bool)):
         return f"first difference at {path}: expected {expected!r}, observed {observed!r}"
@@ -488,8 +546,15 @@ def compare(inp: ComparatorInput) -> dict[str, Any]:
     assertions: list[dict[str, Any]] = []
     capture = inp.get("capture", {})
     replay = inp.get("replay", {})
+    overlay_info: dict[str, str] | None = None
     try:
-        expected = project_supplier_case(capture) if isinstance(capture, (str, Path)) else project_bb_trace(capture.get("trace", capture) if isinstance(capture, Mapping) else capture)
+        if isinstance(capture, (str, Path)):
+            expected = project_supplier_case(capture)
+            _, overlay_info = _apply_supplier_overlay(expected["requests"])
+        else:
+            expected, overlay_info = _supplier_trace_with_overlay(
+                capture.get("trace", capture) if isinstance(capture, Mapping) else capture
+            )
     except (ComparatorError, OSError, TypeError, ValueError) as exc:
         errors.append(f"capture: {exc}")
         expected = None
@@ -503,6 +568,9 @@ def compare(inp: ComparatorInput) -> dict[str, Any]:
         assertions.append(_assertion("request_count_equal", expected["request_count"], observed["request_count"], None if expected["request_count"] == observed["request_count"] else "request count differs"))
         assertions.append(_assertion("tool_order_equal", expected["tool_calls"], observed["tool_calls"], _difference(expected["tool_calls"], observed["tool_calls"])))
         assertions.append(_assertion("effects_equal", expected["effects"], observed["effects"], _difference(expected["effects"], observed["effects"])))
+    if overlay_info is not None:
+        assertions.append(_assertion("supplier_exec_overlay", overlay_info, overlay_info))
+    passed = sum(assertion["status"] == "passed" for assertion in assertions)
     passed = sum(assertion["status"] == "passed" for assertion in assertions)
     failed = sum(assertion["status"] == "failed" for assertion in assertions)
     return {
@@ -512,6 +580,7 @@ def compare(inp: ComparatorInput) -> dict[str, Any]:
         "config_id": str((inp.get("scope") or {}).get("config_id", CONFIG_ID)),
         "scope": dict(inp.get("scope") or {}),
         "generated_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "overlay": overlay_info,
         "assertions": assertions,
         "details": [{"assertion_id": item["assertion_id"], "status": item["status"], "detail": item["detail"]} for item in assertions],
         "errors": errors,
