@@ -46,7 +46,7 @@ _SYS_MOVE_MOUNT = 429
 _OPEN_TREE_CLONE = 1
 _OPEN_TREE_CLOEXEC = 0x80000
 _MOVE_MOUNT_F_EMPTY_PATH = 0x00000004
-_MAX_FDS = 64
+_AT_RECURSIVE = 0x8000
 
 
 class RuntimeContainment(str, Enum):
@@ -446,23 +446,6 @@ def _verify_mount_view(workspace: str, scratch: str) -> tuple[str, tuple[str, ..
             raise OSError(f"envelope writable mount is absent: {path}")
     return _digest_mountinfo(raw), roots
 
-def _bind_path(source: str, target: str) -> None:
-    _libc_call(
-        "mount",
-        ctypes.c_char_p(os.fsencode(source)),
-        ctypes.c_char_p(os.fsencode(target)),
-        ctypes.c_char_p(None),
-        ctypes.c_ulong(_MS_BIND),
-        ctypes.c_char_p(None),
-    )
-
-
-def _unbind_path(target: str) -> None:
-    _libc_call(
-        "umount2",
-        ctypes.c_char_p(os.fsencode(target)),
-        ctypes.c_int(_MNT_DETACH),
-    )
 def _open_tree(path: str) -> int:
     libc = ctypes.CDLL(None, use_errno=True)
     syscall = libc.syscall
@@ -471,7 +454,7 @@ def _open_tree(path: str) -> int:
         ctypes.c_long(_SYS_OPEN_TREE),
         ctypes.c_int(-100),
         ctypes.c_char_p(os.fsencode(path)),
-        ctypes.c_uint(_OPEN_TREE_CLONE | _OPEN_TREE_CLOEXEC),
+        ctypes.c_uint(_OPEN_TREE_CLONE | _OPEN_TREE_CLOEXEC | _AT_RECURSIVE),
     )
     if tree_fd < 0:
         error = ctypes.get_errno()
@@ -496,12 +479,6 @@ def _move_mount(tree_fd: int, target: str) -> None:
         raise OSError(error, os.strerror(error))
 
 
-def _clone_bind_mount(source: str, mountpoint: str = "/dev/shm") -> int:
-    _bind_path(source, mountpoint)
-    try:
-        return _open_tree(mountpoint)
-    finally:
-        _unbind_path(mountpoint)
 
 
 def _verify_bind_identity(source_fd: int, target: str) -> None:
@@ -531,8 +508,8 @@ def _setup_mount_view(
     try:
         _verify_bind_identity(workspace_fd, workspace)
         _verify_bind_identity(scratch_fd, scratch)
-        workspace_tree_fd = _clone_bind_mount(workspace)
-        scratch_tree_fd = _clone_bind_mount(scratch)
+        workspace_tree_fd = _open_tree(workspace)
+        scratch_tree_fd = _open_tree(scratch)
         _mount_tmpfs("/tmp", tmpfs_size_bytes)
         for path in (workspace, scratch):
             os.makedirs(path, mode=0o700, exist_ok=True)
