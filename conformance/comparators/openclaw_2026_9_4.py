@@ -310,7 +310,7 @@ def _results_from_requests(
     return results
 
 
-def _termination(scenario: Mapping[str, Any], request_count: int) -> dict[str, Any]:
+def _termination(scenario: Mapping[str, Any], request_count: int, *, cap_triggered: bool) -> dict[str, Any]:
     steps = scenario.get("steps", [])
     last = steps[-1] if isinstance(steps, Sequence) and steps else {}
     failure = any(
@@ -338,9 +338,9 @@ def _termination(scenario: Mapping[str, Any], request_count: int) -> dict[str, A
         error_value = None
     elif malformed:
         kind = "malformed_tool_call"
-        native_stop_reason = last.get("finish_reason") if isinstance(last, Mapping) else "tool_calls"
+        native_stop_reason = "error"
         error_value = None
-    elif scenario.get("max_requests") is not None:
+    elif cap_triggered:
         kind = "request_budget"
         native_stop_reason = "429"
         error_value = "bbe4 capture request cap"
@@ -353,7 +353,10 @@ def _termination(scenario: Mapping[str, Any], request_count: int) -> dict[str, A
         "native_stop_reason": native_stop_reason,
     }
     if error_value is not None:
-        termination.update({"isError": True, "status": 429, "error": error_value})
+        termination.update({
+            "isError": True,
+            "refusal": {"status": 429, "message": error_value, "isError": True},
+        })
     return termination
 
 
@@ -387,6 +390,98 @@ def _effects(workspace: Path, scenario: Mapping[str, Any]) -> dict[str, str | No
 
 
 
+# Pinned OpenClaw 2026.9.4 system-prompt-params-BOlFEPMI.mjs emits
+# "Current date:" at line 930 and the runtime at lines 997-1020. The
+# @openclaw/ai transport relocates the runtime out of the system message
+# (openai-completions-stream-Da2vvl-S.mjs:459-469, 615-639).
+_DATE_LINE = re.compile(r"(?m)^Current date: (?P<date>\d{4}-\d{2}-\d{2})$")
+_RUNTIME_LINE = re.compile(
+    r"(?m)^Runtime: agent=main \| session=agent:main:explicit:(?P<session>[^ |\n]+)"
+    r" \| sessionId=(?P<session_id>[^ |\n]+) \| host=(?P<host>[^|\n]+)"
+    r" \| os=(?P<os>[^|\n]+?) \((?P<arch>[^)\n]+)\)"
+    r" \| node=(?P<node>[^ |\n]+) \| model=(?P<model>[^ |\n]+)"
+    r" \| default_model=(?P<default_model>[^ |\n]+)$"
+)
+
+
+def _wire_prompt_facts(
+    requests: list[dict[str, Any]],
+    *,
+    roots: Mapping[str, str],
+    current_date: str | None = None,
+    runtime_facts: Mapping[str, str] | None = None,
+    session_id: str | None = None,
+) -> list[dict[str, Any]]:
+    projected = json.loads(json.dumps(requests))
+    for request in projected:
+        for message in request.get("messages", []):
+            content = message.get("content")
+            if not isinstance(content, str):
+                continue
+            if message.get("role") == "system":
+                matches = list(_DATE_LINE.finditer(content))
+                if len(matches) != 1:
+                    raise ComparatorError("pinned system prompt must emit exactly one Current date line")
+                if current_date is not None and matches[0].group("date") != current_date:
+                    raise ComparatorError("wire Current date does not agree with declared runtime input")
+                if runtime_facts and runtime_facts.get("current_date") != matches[0].group("date"):
+                    raise ComparatorError("wire Current date does not agree with pinned worker fact")
+                if "OPENCLAW-RELOCATABLE-BOUNDARY" in content or re.search(r"(?m)^Runtime: ", content):
+                    raise ComparatorError("pinned transport must relocate runtime out of system prompt")
+                content = content[:matches[0].start("date")] + "<OPENCLAW_DATE>" + content[matches[0].end("date"):]
+            elif message.get("role") == "user" and runtime_facts is not None:
+                matches = list(_RUNTIME_LINE.finditer(content))
+                if len(matches) > 1:
+                    raise ComparatorError("relocated runtime line is ambiguous")
+                if matches:
+                    runtime = matches[0]
+                    if runtime.group("session") != runtime.group("session_id"):
+                        raise ComparatorError("relocated session and sessionId differ")
+                    if session_id is not None and runtime.group("session_id") != session_id:
+                        raise ComparatorError("wire session differs from declared input")
+                    if runtime_facts and any(
+                        runtime.group(key) != runtime_facts.get(key)
+                        for key in ("session_id", "host", "os", "arch", "node")
+                    ):
+                        raise ComparatorError("wire runtime differs from pinned worker facts")
+                    replacements = [
+                        (runtime.start(key), runtime.end(key), f"<OPENCLAW_{key.upper()}>")
+                        for key in ("session", "session_id", "host", "os")
+                    ]
+                    for start, end, token in sorted(replacements, reverse=True):
+                        content = content[:start] + token + content[end:]
+            for name, root in roots.items():
+                if type(root) is not str or not root.startswith("/") or root == "/":
+                    raise ComparatorError(f"invalid declared {name} root")
+                content = content.replace(root, f"<OPENCLAW_{name.upper()}_ROOT>")
+            message["content"] = content
+    return projected
+
+
+def _supplier_wire_roots(receipt: Mapping[str, Any]) -> dict[str, str]:
+    command = receipt.get("command")
+    workspace = receipt.get("workspace")
+    if not isinstance(command, list) or len(command) < 2 or not isinstance(command[1], str) or not isinstance(workspace, str):
+        raise ComparatorError("supplier receipt lacks workspace or pinned package command")
+    return {
+        "workspace": workspace,
+        "package": str(Path(command[1]).parent.parent),
+        "home": str(Path(workspace).parent / "home"),
+    }
+
+
+def _replay_wire_roots(trace: Mapping[str, Any]) -> dict[str, str]:
+    inputs = trace.get("runtime_inputs", {})
+    if not isinstance(inputs, Mapping):
+        raise ComparatorError("runtime_inputs must be a mapping")
+    roots: dict[str, str] = {}
+    if "cwd" in inputs:
+        roots["workspace"] = inputs["cwd"]
+    if "package_dir" in inputs:
+        roots["package"] = str(Path(inputs["package_dir"]).parent) if Path(inputs["package_dir"]).name == "dist" else inputs["package_dir"]
+    if "home" in inputs:
+        roots["home"] = inputs["home"]
+    return roots
 
 def _validate_trace(trace: Mapping[str, Any]) -> None:
     required = {"requests", "tool_calls", "results", "effects", "termination", "request_count"}
@@ -403,6 +498,15 @@ def _validate_trace(trace: Mapping[str, Any]) -> None:
     termination = trace["termination"]
     if not isinstance(termination, Mapping) or not termination.get("kind"):
         raise ComparatorError("termination must declare kind and native stop reason")
+    if termination["kind"] == "request_budget":
+        if trace.get("budget") != {"cap_triggered": True, "refused_attempts": 1}:
+            raise ComparatorError("request budget requires one recorded refused attempt")
+        if trace["termination"].get("refusal") != {
+            "status": 429, "message": "bbe4 capture request cap", "isError": True,
+        }:
+            raise ComparatorError("request budget requires the model-visible 429 refusal")
+    elif trace.get("budget", {}).get("cap_triggered") or trace.get("budget", {}).get("refused_attempts"):
+        raise ComparatorError("refusal control contradicts non-budget termination")
 
 
 def _canonicalize(trace: Mapping[str, Any]) -> dict[str, Any]:
@@ -417,6 +521,8 @@ def _canonicalize(trace: Mapping[str, Any]) -> dict[str, Any]:
         "termination": _normalize_declared(trace.get("termination", {}), declared, ("termination",)),
         "request_count": int(trace.get("request_count", 0)),
     }
+    if "budget" in trace:
+        canonical["budget"] = trace["budget"]
     if "classification" in trace:
         canonical["classification"] = _normalize_declared(trace["classification"], declared, ("classification",))
     if "envelope" in trace:
@@ -434,14 +540,30 @@ def project_supplier_case(case_dir: str | Path) -> dict[str, Any]:
     scenario = _load_json(root / "scenario.json", {})
     if not isinstance(scenario, Mapping):
         raise ComparatorError(f"invalid scenario at {root / 'scenario.json'}")
+    receipt = _load_json(root / "case-receipt.json")
+    if not isinstance(receipt, Mapping):
+        raise ComparatorError("supplier case receipt is required")
+    budget = {
+        "cap_triggered": receipt.get("budget_cap_triggered"),
+        "refused_attempts": receipt.get("proxy_refused"),
+    }
+    if type(budget["cap_triggered"]) is not bool or type(budget["refused_attempts"]) is not int:
+        raise ComparatorError("supplier receipt has invalid budget refusal controls")
+    if budget["cap_triggered"] != (budget["refused_attempts"] > 0):
+        raise ComparatorError("supplier receipt budget trigger contradicts refusal count")
     raw_requests = _trace_requests_from_transcript(root)
+    if budget["cap_triggered"] and len(raw_requests) != scenario.get("max_requests"):
+        raise ComparatorError("supplier refusal did not occur at declared request cap")
     if not raw_requests:
         closed = _load_json(root / "receiver" / "closed.json", {})
         request_count = int(closed.get("requests", 0)) if isinstance(closed, Mapping) else 0
         raw_requests = [{"messages": [], "tools": []} for _ in range(request_count)]
     raw_requests, _ = _apply_supplier_overlay(raw_requests)
     requests = _project_request_bodies(raw_requests)
-    calls = _tool_calls_from_requests(requests) or _tool_calls_from_scenario(scenario)
+    termination = _termination(scenario, len(requests), cap_triggered=budget["cap_triggered"])
+    calls = _tool_calls_from_requests(requests) or (
+        [] if termination["kind"] == "malformed_tool_call" else _tool_calls_from_scenario(scenario)
+    )
     workspace = root / "workspace"
     trace = {
         "schema_version": TRACE_SCHEMA_VERSION,
@@ -450,20 +572,18 @@ def project_supplier_case(case_dir: str | Path) -> dict[str, Any]:
         "tool_calls": calls,
         "results": _results_from_requests(requests, calls) or _results_from_scenario(scenario, workspace, calls),
         "effects": _effects(workspace, scenario),
-        "termination": _termination(scenario, len(requests)),
+        "termination": termination,
         "request_count": len(requests),
         "normalizations": scenario.get("normalizations", {}),
+        "budget": budget,
     }
-    receipt = _load_json(root / "case-receipt.json", {})
-    if isinstance(receipt, Mapping):
-        if "classification" in receipt:
-            trace["classification"] = receipt["classification"]
-        if "envelope" in receipt:
-            trace["envelope"] = receipt["envelope"]
-        elif "final_envelope" in receipt:
-            trace["envelope"] = receipt["final_envelope"]
+    if "classification" in receipt:
+        trace["classification"] = receipt["classification"]
+    if "envelope" in receipt:
+        trace["envelope"] = receipt["envelope"]
+    elif "final_envelope" in receipt:
+        trace["envelope"] = receipt["final_envelope"]
     return _canonicalize(trace)
-
 def _load_trace_input(trace: Any) -> Mapping[str, Any]:
     if isinstance(trace, Mapping):
         return trace
@@ -500,6 +620,11 @@ def project_bb_trace(trace: Any) -> dict[str, Any]:
             event for event in value["events"]
             if isinstance(event, Mapping) and event.get("type") == "tool_result"
         ]
+    if "budget" not in value and "refused_attempts" in value:
+        refused = value["refused_attempts"]
+        if type(refused) is not int or refused < 0:
+            raise ComparatorError("replay refused_attempts must be a nonnegative integer")
+        value["budget"] = {"cap_triggered": refused > 0, "refused_attempts": refused}
     return _canonicalize(value)
 
 
@@ -577,13 +702,64 @@ def compare(inp: ComparatorInput) -> dict[str, Any]:
         errors.append(f"replay: {exc}")
         observed = None
     if expected is not None and observed is not None:
+        try:
+            runtime = replay.get("trace", replay) if isinstance(replay, Mapping) else _load_trace_input(replay)
+            if isinstance(runtime, Mapping) and isinstance(runtime.get("episode"), Mapping):
+                runtime = runtime["episode"]
+            if isinstance(capture, (str, Path)):
+                receipt = _load_json(Path(capture) / "case-receipt.json")
+                source_roots = _supplier_wire_roots(receipt) if _replay_wire_roots(runtime) else {}
+            else:
+                source_roots = {}
+            observed_roots = _replay_wire_roots(runtime)
+            source_dates = [
+                match.group("date")
+                for request in expected["requests"]
+                for message in request.get("messages", ())
+                if message.get("role") == "system" and isinstance(message.get("content"), str)
+                for match in _DATE_LINE.finditer(message["content"])
+            ]
+            source_date = source_dates[0] if source_dates else None
+            inputs = runtime.get("runtime_inputs", {})
+            facts = runtime.get("runtime_facts")
+            if not isinstance(inputs, Mapping):
+                raise ComparatorError("replay runtime inputs are required")
+            if "session_id" in inputs and not isinstance(facts, Mapping):
+                raise ComparatorError("replay pinned runtime facts are required for explicit session")
+            if facts is not None and (not isinstance(facts, Mapping) or facts.get("session_id") != inputs.get("session_id")):
+                raise ComparatorError("replay pinned runtime facts disagree with declared session")
+            source_session_id = None
+            if isinstance(capture, (str, Path)) and facts is not None:
+                command = receipt.get("command", ())
+                if not isinstance(command, list) or "--session-id" not in command:
+                    raise ComparatorError("supplier receipt lacks explicit session id")
+                source_session_id = command[command.index("--session-id") + 1]
+            candidate_date = inputs.get("current_date", source_date)
+            expected = {
+                **expected,
+                "requests": _wire_prompt_facts(
+                    expected["requests"], roots=source_roots, current_date=source_date,
+                    runtime_facts={} if facts is not None else None, session_id=source_session_id,
+                ),
+            }
+            observed = {
+                **observed,
+                "requests": _wire_prompt_facts(
+                    observed["requests"], roots=observed_roots, current_date=candidate_date,
+                    runtime_facts=facts, session_id=inputs.get("session_id"),
+                ),
+            }
+        except (ComparatorError, TypeError, ValueError) as exc:
+            errors.append(f"wire prompt: {exc}")
+            expected = None
+            observed = None
+    if expected is not None and observed is not None:
         assertions.append(_assertion("episode_equal", expected, observed, _difference(expected, observed)))
         assertions.append(_assertion("request_count_equal", expected["request_count"], observed["request_count"], None if expected["request_count"] == observed["request_count"] else "request count differs"))
         assertions.append(_assertion("tool_order_equal", expected["tool_calls"], observed["tool_calls"], _difference(expected["tool_calls"], observed["tool_calls"])))
         assertions.append(_assertion("effects_equal", expected["effects"], observed["effects"], _difference(expected["effects"], observed["effects"])))
     if overlay_info is not None:
         assertions.append(_assertion("supplier_exec_overlay", overlay_info, overlay_info))
-    passed = sum(assertion["status"] == "passed" for assertion in assertions)
     passed = sum(assertion["status"] == "passed" for assertion in assertions)
     failed = sum(assertion["status"] == "failed" for assertion in assertions)
     return {

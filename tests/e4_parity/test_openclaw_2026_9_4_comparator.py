@@ -38,10 +38,7 @@ def test_packet_640_fixture_rejects_tampered_request() -> None:
         "scope": {},
     })
     assert rejected["ok"] is False
-    assert any(
-        assertion["assertion_id"] == "episode_equal" and assertion["status"] == "failed"
-        for assertion in rejected["assertions"]
-    )
+    assert rejected["errors"] == ["wire prompt: pinned system prompt must emit exactly one Current date line"]
 
 
 @pytest.mark.parametrize("field,wrong", [
@@ -63,6 +60,124 @@ def test_packet_wire_authority_changes_fail_comparison(field: str, wrong: object
     observed = {**expected, "requests": requests}
     report = compare({"capture": str(fixture), "replay": observed, "scope": {}})
     assert not report["ok"], f"wire field {field} was ignored"
+
+
+@pytest.mark.parametrize("mutation", ["node", "arch", "runtime_boundary", "missing_date", "duplicate_date"])
+def test_packet_prompt_normalization_fails_closed(mutation: str) -> None:
+    fixture = Path(__file__).parent / "fixtures" / "openclaw_packet_640"
+    expected = project_supplier_case(fixture)
+    candidate = json.loads(json.dumps(expected))
+    system = candidate["requests"][0]["messages"][0]
+    prompt = system["content"]
+    if mutation == "node":
+        system["content"] = prompt.replace("node=v", "node=changed-v")
+        if system["content"] == prompt:
+            system["content"] = prompt.replace("Current model identity:", "Current model identity: changed")
+    elif mutation == "arch":
+        system["content"] = prompt.replace("## Tooling", "arch=changed\n## Tooling")
+    elif mutation == "runtime_boundary":
+        system["content"] = prompt.replace("<!-- /openclaw:attempt:DYNAMIC -->", "Runtime: host=fake | os=Linux (arm64)\n<!-- /openclaw:attempt:DYNAMIC -->")
+    elif mutation == "missing_date":
+        system["content"] = prompt.replace("Current date: 2026-09-23", "Current day: 2026-09-23")
+    else:
+        system["content"] = prompt.replace("Current date: 2026-09-23", "Current date: 2026-09-23\nCurrent date: 2026-09-23")
+    assert not compare({"capture": str(fixture), "replay": candidate, "scope": {}})["ok"]
+
+
+def test_packet_budget_refusal_requires_supplier_and_replay_controls(tmp_path: Path) -> None:
+    packet = Path("/tmp/bbe4-openclaw-packet640/packet/cases/budget_cutoff_after_prefix")
+    if not packet.is_dir():
+        pytest.skip("independent admitted packet not extracted")
+    supplier = project_supplier_case(packet)
+    assert supplier["budget"] == {"cap_triggered": True, "refused_attempts": 1}
+    replay = json.loads(json.dumps(supplier))
+    assert compare({"capture": str(packet), "replay": replay, "scope": {}})["ok"]
+    for mutation in (
+        {"cap_triggered": False, "refused_attempts": 0},
+        {"cap_triggered": True, "refused_attempts": 0},
+    ):
+        replay["budget"] = mutation
+        assert not compare({"capture": str(packet), "replay": replay, "scope": {}})["ok"]
+    replay.pop("budget")
+    assert not compare({"capture": str(packet), "replay": replay, "scope": {}})["ok"]
+def test_packet_prompt_date_and_roots_use_declared_runtime_inputs() -> None:
+    fixture = Path(__file__).parent / "fixtures" / "openclaw_packet_640"
+    expected = project_supplier_case(fixture)
+    candidate = json.loads(json.dumps(expected))
+    candidate["runtime_inputs"] = {
+        "cwd": "/tmp/bb-workspace",
+        "package_dir": "/tmp/bb-openclaw/dist",
+        "home": "/tmp/bb-home",
+        "current_date": "2026-09-24",
+    }
+    for request in candidate["requests"]:
+        for message in request["messages"]:
+            if isinstance(message.get("content"), str):
+                message["content"] = (
+                    message["content"]
+                    .replace("/capture-out/normal_multiturn_write_read/workspace", "/tmp/bb-workspace")
+                    .replace("/opt/openclaw", "/tmp/bb-openclaw")
+                    .replace("Current date: 2026-09-23", "Current date: 2026-09-24")
+                )
+    assert compare({"capture": str(fixture), "replay": candidate, "scope": {}})["ok"]
+    candidate["runtime_inputs"]["current_date"] = "2026-09-25"
+    assert not compare({"capture": str(fixture), "replay": candidate, "scope": {}})["ok"]
+
+
+
+
+def test_relocated_runtime_normalizes_only_recorded_facts() -> None:
+    fixture = Path(__file__).parent / "fixtures" / "openclaw_packet_640"
+    expected = project_supplier_case(fixture)
+    candidate = json.loads(json.dumps(expected))
+    candidate["runtime_inputs"] = {
+        "cwd": "/tmp/bb-workspace",
+        "package_dir": "/tmp/bb-openclaw/dist",
+        "home": "/tmp/bb-home",
+        "current_date": "2026-09-24",
+        "session_id": "bbe4-12345",
+    }
+    candidate["runtime_facts"] = {
+        "host": "candidate-host",
+        "os": "Linux 6.8.0-candidate",
+        "arch": "x64",
+        "node": "v26.3.0",
+        "session_id": "bbe4-12345",
+        "current_date": "2026-09-24",
+    }
+    for request in candidate["requests"]:
+        for message in request["messages"]:
+            if isinstance(message.get("content"), str):
+                message["content"] = (
+                    message["content"]
+                    .replace("/capture-out/normal_multiturn_write_read/workspace", "/tmp/bb-workspace")
+                    .replace("/opt/openclaw", "/tmp/bb-openclaw")
+                    .replace("Current date: 2026-09-23", "Current date: 2026-09-24")
+                    .replace("capture-c18626e33a734cd7a0613d9fa38a76b0", "bbe4-12345")
+                    .replace("host=perf-eng-2", "host=candidate-host")
+                    .replace("os=Linux 6.8.0-90-generic (x64)", "os=Linux 6.8.0-candidate (x64)")
+                )
+    assert compare({"capture": str(fixture), "replay": candidate, "scope": {}})["ok"]
+    for old, new in (("node=v26.3.0", "node=v99.0.0"), ("(x64)", "(arm64)"), ("model=openai/gpt-4o-mini", "model=openai/other")):
+        mutant = json.loads(json.dumps(candidate))
+        for request in mutant["requests"]:
+            for message in request["messages"]:
+                if isinstance(message.get("content"), str):
+                    message["content"] = message["content"].replace(old, new)
+        assert not compare({"capture": str(fixture), "replay": mutant, "scope": {}})["ok"]
+    candidate["runtime_facts"]["host"] = "invented-host"
+    assert not compare({"capture": str(fixture), "replay": candidate, "scope": {}})["ok"]
+
+
+def test_malformed_packet_stops_without_followup_request_or_effect() -> None:
+    packet = Path("/tmp/bbe4-openclaw-packet640/packet/cases/malformed_tool_call")
+    if not packet.is_dir():
+        pytest.skip("independent admitted packet not extracted")
+    supplier = project_supplier_case(packet)
+    assert supplier["request_count"] == 1
+    assert supplier["tool_calls"] == []
+    assert supplier["termination"] == {"kind": "malformed_tool_call", "native_stop_reason": "error"}
+    assert supplier["effects"]["malformed-marker.txt"] is None
 
 
 def test_comparator_rejects_non_identical_repeated_tool_snapshots() -> None:
