@@ -378,9 +378,11 @@ def test_replay_spec_records_git_head_instead_of_stale_literal(monkeypatch: pyte
         return SimpleNamespace(returncode=0, stdout="" if "status" in command else head + "\n", stderr="")
 
     monkeypatch.setattr(e4_hermes_native_replay.subprocess, "run", git_run, raising=False)
+    monkeypatch.setattr(e4_hermes_native_replay, "_prepare_bundle", lambda head, bundle: "f" * 64)
+    monkeypatch.setattr(e4_hermes_native_replay, "verify_local_bundle", lambda bundle, head: None)
     spec = e4_hermes_native_replay.do2_job_spec(tmp_path / "packet", tmp_path / "out", kit_root=_replay_kit(tmp_path))
     assert spec["source"]["commit"] == head
-    assert f"--base-commit {head}" in spec["sbatch_script"]
+    assert f"'{head}'" in spec["sbatch_script"] and '--base-commit "$1"' in spec["sbatch_script"]
     assert 'SLURM_JOB_ID="$SLURM_JOB_ID"' in spec["sbatch_script"]
 
 
@@ -409,15 +411,15 @@ def test_replay_spec_uses_checkout_and_explicit_kit_not_current_directory(
 ) -> None:
     head = "b" * 40
     monkeypatch.setattr(e4_hermes_native_replay, "_checkout_commit", lambda: head, raising=False)
+    monkeypatch.setattr(e4_hermes_native_replay, "_prepare_bundle", lambda head, bundle: "f" * 64)
+    monkeypatch.setattr(e4_hermes_native_replay, "verify_local_bundle", lambda bundle, head: None)
     kit_root = _replay_kit(tmp_path)
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     monkeypatch.chdir(elsewhere)
     spec = e4_hermes_native_replay.do2_job_spec(tmp_path / "packet", tmp_path / "out", kit_root=kit_root)
     uploaded = {entry["remote"].split("/")[-1]: entry["local"] for entry in spec["puts"]}
-    source = Path(e4_hermes_native_replay.__file__).resolve().parents[1]
-    assert uploaded["breadboard"] == str(source / "breadboard")
-    assert uploaded["conformance"] == str(source / "conformance")
+    assert Path(uploaded["hermes-head.bundle"]) == Path("/tmp/hermes-conductor-head.bundle").resolve()
     assert uploaded["hermes_capture_breadboard.py"] == str(kit_root / "do2-20260923" / "hermes" / "kit" / "hermes_capture_breadboard.py")
 
 
@@ -448,16 +450,67 @@ def test_mapping_trace_report_hashes_canonical_input_bytes() -> None:
     assert "job_id" not in report
 
 
+@pytest.mark.parametrize("case_dir", CASES, ids=lambda path: path.name)
+def test_unoverlaid_native_schemas_never_pass(case_dir: Path) -> None:
+    report = compare_cases(case_dir, project_supplier_case(case_dir))
+    assert not report["ok"]
+    assert any(gap["id"] == "hermes-rerun3-unoverlaid-schemas" for gap in report["gaps"])
+
+
+def test_request_body_preserves_absent_stream_key() -> None:
+    case_dir, replay = _replay("H-01-normal-memory-skill-write")
+    assert "stream" not in replay["requests"][0]["body"]
+    replay["requests"][0]["body"]["stream"] = False
+    assert not compare_cases(case_dir, replay)["ok"]
+
+
+def test_json_request_comparison_only_ignores_object_member_order() -> None:
+    case_dir, replay = _replay("H-01-normal-memory-skill-write")
+    original = replay["requests"][0]["body"]
+    replay["requests"][0]["body"] = dict(reversed(list(original.items())))
+    assert compare_cases(case_dir, replay)["ok"]
+
+    missing = deepcopy(replay)
+    missing["requests"][0]["body"].pop("max_tokens")
+    assert not compare_cases(case_dir, missing)["ok"]
+
+    numeric = deepcopy(replay)
+    numeric["requests"][0]["body"]["max_tokens"] = 2048.0
+    assert not compare_cases(case_dir, numeric)["ok"]
+
+    ordered = deepcopy(replay)
+    ordered["requests"][0]["body"]["messages"].reverse()
+    assert not compare_cases(case_dir, ordered)["ok"]
+
+
+def test_installed_job_id_must_match_recorded_slurm_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case_dir, replay = _replay("H-01-normal-memory-skill-write")
+    trace_path = tmp_path / "bb-trace.json"
+    trace_path.write_text(json.dumps(replay), encoding="utf-8")
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
+    assert not compare_cases(case_dir, trace_path, installed_replay=True, job_id="456789")["ok"]
+    replay["job_id"] = "456789"
+    trace_path.write_text(json.dumps(replay), encoding="utf-8")
+    assert not compare_cases(case_dir, trace_path, installed_replay=True)["ok"]
+    monkeypatch.setenv("SLURM_JOB_ID", "456789")
+    assert compare_cases(case_dir, trace_path, installed_replay=True, job_id="456789")["ok"]
+    monkeypatch.setenv("SLURM_JOB_ID", "other-job")
+    assert not compare_cases(case_dir, trace_path, installed_replay=True, job_id="456789")["ok"]
+
+
 def test_installed_replay_without_job_id_fails_even_when_trace_matches(tmp_path: Path) -> None:
     case_dir, replay = _replay("H-01-normal-memory-skill-write")
     trace_path = tmp_path / "bb-trace.json"
     trace_path.write_text(json.dumps(replay), encoding="utf-8")
     report = compare_cases(case_dir, trace_path, installed_replay=True)
     assert report["ok"] is False
-    assert any("job_id" in error for error in report["errors"])
+    assert any("SLURM_JOB_ID" in error for error in report["errors"])
 
 
-def test_path_trace_report_hashes_original_bytes(tmp_path: Path) -> None:
+def test_path_trace_report_hashes_original_bytes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SLURM_JOB_ID", "456789")
     case_dir, replay = _replay("H-01-normal-memory-skill-write")
     raw = json.dumps(replay, indent=2, ensure_ascii=False).encode("utf-8") + b"\n"
     trace_path = tmp_path / "bb-trace.json"

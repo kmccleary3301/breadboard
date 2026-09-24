@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import ast
+import hashlib
+import json
+import subprocess
 from pathlib import Path
 
 import scripts.e4_hermes_native_replay as replay
@@ -18,16 +22,39 @@ def test_do2_spec_pins_the_public_hermes_replay_inputs_and_outputs(
     (kit / "hermes_sif_compose.py").touch()
     for name in ("hermes_capture_breadboard.py", "hermes_capture_probe.py", "hermes_capture_receiver.py", "hermes_capture_cases.json"):
         (operators / name).touch()
-    monkeypatch.setattr(replay, "_checkout_commit", lambda: "a" * 40)
-    spec = do2_job_spec(PACKET, Path("/output/hermes"), Path("/tmp/wheelhouse"), kit_root=kit)
+    head = subprocess.run(["git", "-C", str(Path(replay.__file__).resolve().parents[1]), "rev-parse", "HEAD"],
+                          check=True, capture_output=True, text=True).stdout.strip()
+    monkeypatch.setattr(replay, "_checkout_commit", lambda: head)
+    bundle = tmp_path / "head.bundle"
+    spec = do2_job_spec(PACKET, Path("/output/hermes"), Path("/tmp/wheelhouse"), kit_root=kit, bundle=bundle)
     assert spec["profile"] == "hermes"
     assert spec["packet"]["sha256"].startswith("sha256:870fc991ddf7")
     assert spec["source"]["native_source_commit"] == "939e45c91d751fadd94dcd1b873ac3cb44846213"
     assert spec["resources"] == {"cpus": 16, "memory_gb": 64, "time_minutes": 240}
     assert any(entry["local"] == str(operators / "hermes_capture_breadboard.py") for entry in spec["puts"])
-    assert any(entry["local"] == str(Path(replay.__file__).resolve().parents[1] / "breadboard") for entry in spec["puts"])
+    assert spec["source"]["bundle_sha256"] == "sha256:" + hashlib.sha256(bundle.read_bytes()).hexdigest()
+    assert any(entry["local"] == str(bundle) for entry in spec["puts"])
     assert "apptainer exec --containall --cleanenv --net --network none" in spec["sbatch_script"]
     assert 'SLURM_JOB_ID="$SLURM_JOB_ID"' in spec["sbatch_script"]
     assert "/opt/breadboard-public/venv/bin/python -I -B" in spec["sbatch_script"]
     assert set(spec["expected_outputs"]["cases"]) == set(CASES)
     assert spec["expected_outputs"]["H-06"] == "exactly 8 requests and native_stop_reason=tool_calls"
+    composer_sha = hashlib.sha256((kit / "hermes_sif_compose.py").read_bytes()).hexdigest()
+    assert spec["sif"]["sidecar"].endswith(f"hermes-public-{head[:12]}-{composer_sha[:12]}.sif.json")
+    assert "sha256(sif.read_bytes()).hexdigest()" in spec["sbatch_script"]
+    assert 'git -C /bb rev-parse HEAD' in spec["sbatch_script"]
+    assert "hermes-public.sif" not in spec["sbatch_script"]
+
+
+def test_composer_uses_no_repository_ceiling_without_repository_binding() -> None:
+    kit = Path("/Users/kylemccleary/projects/breadboard/docs_tmp/bb_direction_assessment/engine_pr_handoff_20260827/e4_admission_20260914T221653Z/hermes_sif_compose.py")
+    tree = ast.parse(kit.read_text())
+    ceiling = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "OperatorCeiling"
+    ]
+    assert len(ceiling) == 1
+    repository = next(arg.value for arg in ceiling[0].keywords if arg.arg == "repository_snapshot_digests")
+    assert isinstance(repository, ast.Tuple) and not repository.elts

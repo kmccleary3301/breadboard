@@ -18,6 +18,7 @@ sample is retained alongside the repaired name.
 from __future__ import annotations
 
 import copy
+import os
 import hashlib
 import json
 import re
@@ -97,16 +98,17 @@ _SCHEMA_GAP = "hermes-rerun3-unoverlaid-schemas"
 def _request_difference(
     expected: list[dict[str, Any]], observed: list[dict[str, Any]],
     overlay: Mapping[str, Any],
-) -> tuple[str | None, bool]:
+) -> tuple[str | None, bool, bool]:
     left, right = copy.deepcopy(expected), copy.deepcopy(observed)
     if len(left) != len(right):
-        return _first_difference(left, right, "$.requests"), False
+        return _first_difference(left, right, "$.requests"), False, False
     used_overlay = False
+    unoverlaid = False
     for row_index, (source, candidate) in enumerate(zip(left, right)):
         source_tools = source.get("body", {}).get("tools", [])
         candidate_tools = candidate.get("body", {}).get("tools", [])
         if not isinstance(source_tools, list) or not isinstance(candidate_tools, list) or len(source_tools) != len(candidate_tools):
-            return _first_difference(left, right, "$.requests"), False
+            return _first_difference(left, right, "$.requests"), False, False
         for tool_index, (native, approved) in enumerate(zip(source_tools, candidate_tools)):
             name = native.get("function", {}).get("name") if isinstance(native, Mapping) else None
             if name not in overlay:
@@ -114,15 +116,22 @@ def _request_difference(
             declaration = overlay[name]
             native_bytes = json.dumps(native, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
             approved_bytes = json.dumps(approved, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+            if hashlib.sha256(native_bytes).hexdigest() != declaration["native_sha256"]:
+                return f"unoverlaid supplier schema differs at $.requests[{row_index}].body.tools[{tool_index}]", False, True
+            if approved_bytes == native_bytes:
+                unoverlaid = True
+                continue
             if (
-                hashlib.sha256(native_bytes).hexdigest() != declaration["native_sha256"]
-                or hashlib.sha256(approved_bytes).hexdigest() != declaration["approved_sha256"]
+                hashlib.sha256(approved_bytes).hexdigest() != declaration["approved_sha256"]
                 or approved_bytes != declaration["approved_schema_json"].encode()
             ):
-                return _first_difference(left, right, "$.requests"), False
+                return _first_difference(left, right, "$.requests"), False, False
             source_tools[tool_index] = candidate_tools[tool_index] = name
             used_overlay = True
-    return _first_difference(left, right, "$.requests"), used_overlay
+    difference = _first_difference(left, right, "$.requests")
+    if unoverlaid and difference is None:
+        difference = "unoverlaid native schemas in BreadBoard request"
+    return difference, used_overlay, unoverlaid
 
 
 
@@ -134,17 +143,18 @@ def _json_value(value: Any) -> str:
         return repr(value)
 
 
+def _object_keys(value: Mapping[str, Any]) -> tuple[str, ...]:
+    """Static symmetric JSON rule: object member order is not semantic."""
+    return tuple(sorted(value))
+
+
 def _first_difference(expected: Any, observed: Any, path: str = "$") -> str | None:
-    """Return an ordered JSON difference; object key order is semantic."""
-    if type(expected) in (int, float) and type(observed) in (int, float):
-        if expected == observed:
-            return None
-        return f"first difference at {path}: expected {_json_value(expected)}, observed {_json_value(observed)}"
+    """Return a strict JSON difference except for object member order."""
     if type(expected) is not type(observed):
         return f"first difference at {path}: expected {_json_value(expected)}, observed {_json_value(observed)} (types differ)"
     if isinstance(expected, Mapping):
-        expected_keys = list(expected)
-        observed_keys = list(observed)
+        expected_keys = _object_keys(expected)
+        observed_keys = _object_keys(observed)
         if expected_keys != observed_keys:
             return f"first difference at {path}: expected keys {_json_value(expected_keys)}, observed keys {_json_value(observed_keys)}"
         for key in expected_keys:
@@ -266,7 +276,7 @@ def _body_projection(body: Mapping[str, Any], advertised: Sequence[str]) -> dict
     projected: dict[str, Any] = {
         "model": body.get("model"),
         "max_tokens": body.get("max_tokens"),
-        "stream": bool(body.get("stream", False)),
+        **({"stream": copy.deepcopy(body["stream"])} if "stream" in body else {}),
         "messages": [
             _message_projection(item) if isinstance(item, Mapping) else copy.deepcopy(item)
             for item in messages
@@ -675,15 +685,23 @@ def compare_cases(
         if not isinstance(bb_value, Mapping):
             raise ValueError("BreadBoard trace must be an object")
         candidate_job = bb_value.get("job_id")
-        if candidate_job is not None and (not isinstance(candidate_job, str) or not candidate_job.strip()):
+        if installed_replay:
+            recorded_job = os.environ.get("SLURM_JOB_ID")
+            if not isinstance(recorded_job, str) or re.fullmatch(r"[1-9][0-9]*", recorded_job) is None:
+                raise ValueError("installed replay requires a numeric SLURM_JOB_ID from the run environment")
+            if job_id is not None and job_id != recorded_job:
+                raise ValueError("replay job_id differs from installed SLURM_JOB_ID")
+            if candidate_job is not None and candidate_job != recorded_job:
+                raise ValueError("BreadBoard trace job_id differs from installed SLURM_JOB_ID")
+            job_id = recorded_job
+        elif candidate_job is not None and (not isinstance(candidate_job, str) or not candidate_job.strip()):
             raise ValueError("BreadBoard job_id must be a nonempty string")
-        if job_id is not None and (not isinstance(job_id, str) or not job_id.strip()):
+        elif job_id is not None and (not isinstance(job_id, str) or not job_id.strip()):
             raise ValueError("replay job_id must be a nonempty string")
-        if job_id is not None and candidate_job is not None and job_id != candidate_job:
+        elif job_id is not None and candidate_job is not None and job_id != candidate_job:
             raise ValueError("replay job_id differs from BreadBoard trace job_id")
-        job_id = job_id or candidate_job
-        if installed_replay and job_id is None:
-            raise ValueError("installed replay requires job_id from trace or replay metadata")
+        else:
+            job_id = job_id or candidate_job
         observed_root = _declared_workspace_root(bb_value)
         observed = project_bb_trace(bb_value)
         expected_changed, observed_changed = [False], [False]
@@ -698,7 +716,7 @@ def compare_cases(
         Path(__file__).resolve().parents[2] / "config/e4_targets/hermes_agent/2026.9.11/native-config.json"
     )
     overlay = overlay_config["schema_overlay"]
-    request_difference, used_overlay = _request_difference(expected["requests"], observed["requests"], overlay)
+    request_difference, used_overlay, unoverlaid = _request_difference(expected["requests"], observed["requests"], overlay)
     for field in _CANONICAL_FIELDS:
         difference = request_difference if field == "requests" else _first_difference(
             expected.get(field), observed.get(field), f"$.{field}"
@@ -706,7 +724,7 @@ def compare_cases(
         assertions.append(_assertion(f"{expected['case_id']}.{field}_equal", expected.get(field), observed.get(field), difference))
     return _report(
         assertions, normalizations=normalizations,
-        gaps=[{"id": _SCHEMA_GAP, "evidence": "source-derived"}] if used_overlay else [],
+        gaps=[{"id": _SCHEMA_GAP, "evidence": "source-derived"}] if used_overlay or unoverlaid else [],
         source_derived_controls=_PACKET_ABSENT_CONTROLS,
         bb_trace_sha256=trace_hash, job_id=job_id, mode=mode,
     )
