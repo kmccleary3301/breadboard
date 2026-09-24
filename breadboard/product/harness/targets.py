@@ -272,7 +272,7 @@ def _lower_worker_target(
         ),
         "openclaw@2026.9.4": (
             "breadboard.openclaw.native-chat.v1",
-            "cc24e63da85f0ba365a469cc4033ff5ae00a1f69c841c7c90da096b40ba6c644",
+            "5fa46a5873bb9f582369b9bb0ccff8f134906836a78cd49db7f291b387b674d6",
         ),
     }
     recipe = recipes.get(package.target_id)
@@ -323,12 +323,16 @@ def lower_e4_target(
         raise ValueError("E4 target execution and overlay descriptors are required")
     config_asset = execution.get("config_asset")
     prompt_asset = execution.get("system_prompt_asset")
+    prompt_source = execution.get("system_prompt_source")
     tool_asset = execution.get("tool_surface_asset")
-    if not all(
-        type(value) is str and value
-        for value in (config_asset, prompt_asset, tool_asset)
+    if (
+        any(type(value) is not str or not value for value in (config_asset, tool_asset))
+        or (
+            (type(prompt_asset) is not str or not prompt_asset)
+            and (type(prompt_source) is not str or not prompt_source)
+        )
     ):
-        raise ValueError("E4 target execution assets are invalid")
+        raise ValueError("E4 target execution assets or prompt source are invalid")
     from breadboard_engine.compilation.server_compiler import strict_parse_payload
 
     harness = strict_parse_payload(
@@ -343,6 +347,8 @@ def lower_e4_target(
             raise HarnessDefinitionValidationError(findings)
         if harness["schema_version"] != "bb.e4.target_config.v2":
             raise HarnessCompileError("E4 target configuration revision does not match")
+        if prompt_asset is None and harness["renderer"]["selector"] != "breadboard.openclaw.native-chat.v1":
+            raise HarnessCompileError("only the pinned OpenClaw worker may render a source prompt")
         if harness["renderer"]["selector"] == "breadboard.mini-swe-agent.v2.4.6":
             return _lower_mini_target(package, harness, dynamic_fields)
         if harness["renderer"]["selector"] in {

@@ -90,12 +90,18 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "asset",
         "dynamic_fields"
+      ],
+      "oneOf": [
+        {"required": ["asset"]},
+        {"required": ["source"]}
       ],
       "properties": {
         "asset": {
           "$ref": "#/$defs/relative_path"
+        },
+        "source": {
+          "$ref": "#/$defs/identifier"
         },
         "dynamic_fields": {
           "type": "array",

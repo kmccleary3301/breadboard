@@ -411,7 +411,11 @@ class OpenClawSemanticsState:
         if system_prompt:
             self.history.append({"role": "system", "content": system_prompt})
         if task:
-            self.history.append({"role": "user", "content": task})
+            self.history.append({
+                "role": "user",
+                "content": task,
+                **({"timestamp": int(self.bootstrap["message_timestamp_ms"])} if "message_timestamp_ms" in self.bootstrap else {}),
+            })
         self.raw_responses: list[Mapping[str, Any]] = []
         self.terminal_kind: str | None = None
         self.native_stop_reason: str | None = None
@@ -626,6 +630,11 @@ class OpenClawSemanticsState:
         error_obj: dict[str, Any] | None = None
         if is_timeout:
             error_obj = {"message": "Agent run timed out", "kind": "timeout"}
+        elif self.terminal_kind == "malformed_tool_call":
+            error_obj = {
+                "message": "Provider returned an incomplete or malformed tool call",
+                "kind": "incomplete_turn",
+            }
         elif is_budget:
             error_obj = {"message": "bbe4 capture request cap", "kind": "agent_error"}
         elif is_error:

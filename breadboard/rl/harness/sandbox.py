@@ -3592,11 +3592,13 @@ class LeaseBackedRunnerWorkspace:
                 code="runtime_unsupported",
                 lease_id=self.__lease.lease_id,
             )
+        now = datetime.now(timezone.utc)
         scratch = _native_scratch_path(self.__lease._manager, self.__lease.lease_id)
         available = {
             "cwd": str(self.__lease._resolve(workspace_mount.target_logical_path, writable=False)),
             "home": str(scratch / "home"),
-            "current_date": datetime.now(timezone.utc).date().isoformat(),
+            "current_date": now.date().isoformat(),
+            "message_timestamp_ms": str(int(now.timestamp() * 1000)),
             "package_dir": str(Path(adapters[0].runtime_root_path) / package_path),
             "session_id": self.__lease.lease_id,
         }

@@ -5,7 +5,7 @@ renderer:
   selector: breadboard.openclaw.native-chat.v1
   revision: breadboard.openclaw.2026.9.4
 prompt:
-  asset: prompts/system.j2
+  source: openclaw:pinned-attempt-prompt
   dynamic_fields: []
 tools:
   ordered:
@@ -101,10 +101,6 @@ materialization:
     role: config
     required: true
     source_ref: openclaw@3a9d69db/harness
-  - path: prompts/system.j2
-    role: prompt
-    required: true
-    source_ref: src/agents/system-prompt.ts
   - path: tool-surface.json
     role: tool_surface
     required: true
@@ -131,7 +127,6 @@ materialization:
     source_ref: 12_SOURCE_PINS.json
   order:
   - harness.yaml
-  - prompts/system.j2
   - tool-surface.json
   - native-config.json
   - bootstrap/AGENTS.md

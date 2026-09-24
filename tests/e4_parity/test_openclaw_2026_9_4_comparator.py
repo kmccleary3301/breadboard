@@ -169,6 +169,66 @@ def test_relocated_runtime_normalizes_only_recorded_facts() -> None:
     assert not compare({"capture": str(fixture), "replay": candidate, "scope": {}})["ok"]
 
 
+def test_relocated_runtime_line_cannot_be_omitted() -> None:
+    fixture = Path(__file__).parent / "fixtures" / "openclaw_packet_640"
+    supplier = project_supplier_case(fixture)
+    replay = json.loads(json.dumps(supplier["requests"]))
+    for request in replay:
+        for message in request["messages"]:
+            if message.get("role") == "user" and isinstance(message.get("content"), str):
+                message["content"] = message["content"].split("\n\nRuntime: ", 1)[0]
+    receipt = json.loads((fixture / "case-receipt.json").read_text())
+    with pytest.raises(ComparatorError, match="exactly one relocated Runtime line"):
+        comparator._wire_prompt_facts(
+            replay,
+            roots=comparator._supplier_wire_roots(receipt),
+            runtime_facts={"current_date": "2026-09-23", "session_id": "never-matched"},
+        )
+
+
+def test_literal_user_path_is_not_a_normalizable_prompt_root() -> None:
+    source_root = "/tmp/independent-one"
+    replay_root = "/tmp/independent-two"
+    source = [{
+        "messages": [
+            {"role": "system", "content": f"Working directory: {source_root}\nCurrent date: 2026-09-23"},
+            {"role": "user", "content": f"[Wed 2026-09-23 09:18 UTC] Literal user request: {source_root}\n\nRuntime: agent=main | session=agent:main:explicit:s | sessionId=s | host=h | os=Linux (x64) | node=v26 | model=openai/m | default_model=openai/m"},
+        ],
+    }]
+    replay = json.loads(json.dumps(source))
+    for message in replay[0]["messages"]:
+        message["content"] = message["content"].replace(source_root, replay_root)
+    fields = {"home": "/tmp/independent-home", "package": "/opt/openclaw"}
+    facts = {"current_date": "2026-09-23", "session_id": "s", "host": "h", "os": "Linux", "arch": "x64", "node": "v26"}
+    normalized_source = comparator._wire_prompt_facts(source, roots={**fields, "workspace": source_root}, runtime_facts=facts)
+    normalized_replay = comparator._wire_prompt_facts(replay, roots={**fields, "workspace": replay_root}, runtime_facts=facts)
+    assert normalized_source != normalized_replay
+
+
+
+def test_user_timestamp_must_match_pinned_worker_fact() -> None:
+    fixture = Path(__file__).parent / "fixtures" / "openclaw_packet_640"
+    receipt = json.loads((fixture / "case-receipt.json").read_text())
+    first = project_supplier_case(fixture)["requests"][0]
+    first_user = first["messages"][1]["content"]
+    timestamp = comparator._USER_TIMESTAMP.match(first_user)
+    runtime = comparator._RUNTIME_LINE.search(first_user)
+    assert runtime is not None
+    assert timestamp is not None
+    facts = {
+        "current_date": "2026-09-23",
+        "timestamp_prefix": timestamp.group(),
+        "session_id": runtime.group("session_id"),
+        **{key: runtime.group(key) for key in ("host", "os", "arch", "node")},
+    }
+    mutated = json.loads(json.dumps(first))
+    mutated["messages"][1]["content"] = first_user.replace(timestamp.group(), "[Thu 2026-09-24 09:18 UTC] ", 1)
+    with pytest.raises(ComparatorError, match="timestamp differs from pinned worker fact"):
+        comparator._wire_prompt_facts(
+            [mutated], roots=comparator._supplier_wire_roots(receipt), runtime_facts=facts,
+        )
+
+
 def test_malformed_packet_stops_without_followup_request_or_effect() -> None:
     packet = Path("/tmp/bbe4-openclaw-packet640/packet/cases/malformed_tool_call")
     if not packet.is_dir():

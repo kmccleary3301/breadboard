@@ -1,14 +1,9 @@
 {
   "assets": [
     {
-      "bytes": 3581,
+      "bytes": 3465,
       "path": "harness.yaml",
-      "sha256": "sha256:9070a2ab7b335e85eb26c49c421cc66a9a861af23ff53cf03a97f1c364173e2a"
-    },
-    {
-      "bytes": 1031,
-      "path": "prompts/system.j2",
-      "sha256": "sha256:50d72b68d170383107dde0da5f9fcf095f5069f184ea0916fc90af8c567004c3"
+      "sha256": "sha256:ad9dc986262fa02acd6966843e6c637fae679f66c338a32c3b2e115d1e383f9c"
     },
     {
       "bytes": 8562,
@@ -16,9 +11,9 @@
       "sha256": "sha256:4b7a0fbb2ef2bbefa279cf50b6ed98b63ec9c2fa0f1044b5b165935dd2bdf010"
     },
     {
-      "bytes": 5926,
+      "bytes": 4822,
       "path": "native-config.json",
-      "sha256": "sha256:b3e9169f0d6bfa8b3b3f2a650fb0199569ac5d9c1148d0525f35773e9164521f"
+      "sha256": "sha256:3e4f506de060e573fdc4d850ea16eef4c0dd33898bed81ec78ab250361b78343"
     },
     {
       "bytes": 80,
@@ -43,7 +38,7 @@
   ],
   "execution": {
     "config_asset": "harness.yaml",
-    "system_prompt_asset": "prompts/system.j2",
+    "system_prompt_source": "openclaw:pinned-attempt-prompt",
     "tool_surface_asset": "tool-surface.json"
   },
   "family": "openclaw",

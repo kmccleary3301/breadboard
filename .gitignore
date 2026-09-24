@@ -15,6 +15,7 @@ c_sessions_extracted/
 cursor_*
 cm_edits/
 AGENTS.md
+!config/e4_targets/**/bootstrap/AGENTS.md
 @AGENTS.md
 .claude/
 .claude.json

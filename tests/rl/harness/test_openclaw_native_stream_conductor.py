@@ -39,6 +39,7 @@ from breadboard.rl.harness.runners.conductor import (
     ConductorRunRequest,
     PolicyRuntimeBinding,
 )
+from breadboard.rl.harness.runners.openclaw_semantics import OpenClawSemanticsState
 from breadboard_engine.compilation.provider_response import (
     OPENCLAW_RESPONSE_CONSUMER_ID,
     profile_identity_digest,
@@ -277,6 +278,7 @@ class _NativeWorkerPort:
             "cwd": str(self.workspace),
             "home": str(self.scratch / "home"),
             "current_date": datetime.now(timezone.utc).date().isoformat(),
+            "message_timestamp_ms": str(int(datetime.now(timezone.utc).timestamp() * 1000)),
             "package_dir": str(_NODE_DIST),
             "session_id": "bbe4-" + hashlib.sha256(str(self.workspace).encode()).hexdigest()[:32],
         }
@@ -351,7 +353,7 @@ class _NativeWorkerPort:
             phase_payload.setdefault(
                 "runtime_inputs",
                 self.native_runtime_inputs(
-                    input_names=("cwd", "home", "current_date", "package_dir", "session_id"),
+                    input_names=("cwd", "home", "current_date", "message_timestamp_ms", "package_dir", "session_id"),
                     package_subpath=".",
                 ),
             )
@@ -793,7 +795,7 @@ async def test_openclaw_initialization_materializes_pinned_system_prompt(tmp_pat
                 "advertisement": config["advertisement"],
                 "model_config": {"id": "gpt-4o-mini", "provider": "openai"},
                 "runtime_inputs": worker.native_runtime_inputs(
-                    input_names=("cwd", "home", "current_date", "package_dir", "session_id"),
+                    input_names=("cwd", "home", "current_date", "message_timestamp_ms", "package_dir", "session_id"),
                     package_subpath=".",
                 ),
             },
@@ -810,10 +812,81 @@ async def test_openclaw_initialization_materializes_pinned_system_prompt(tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_openclaw_projected_request_uses_pinned_timestamp_and_runtime_carrier(tmp_path: Path) -> None:
+    worker = _NativeWorkerPort(tmp_path, ())
+    config = json.loads((Path(__file__).parents[3] / "config/e4_targets/openclaw/2026.9.4/native-config.json").read_bytes())
+    runtime_inputs = worker.native_runtime_inputs(
+        input_names=("cwd", "home", "current_date", "message_timestamp_ms", "package_dir", "session_id"),
+        package_subpath=".",
+    )
+    model = {
+        "id": "gpt-4o-mini", "provider": "openai", "api": "openai-completions",
+        "baseUrl": "http://127.0.0.1", "input": ["text"], "contextWindow": 32768,
+        "maxTokens": 2048, "compat": {"supportsStore": True, "supportsDeveloperRole": True},
+    }
+    try:
+        initialized = await worker.invoke_native_phase(
+            "initialize", {"advertisement": config["advertisement"], "model_config": model, "runtime_inputs": runtime_inputs},
+            timeout_ms=15_000,
+        )
+        state = OpenClawSemanticsState("Inspect marker.txt", initialized["system_prompt"], initialized["bootstrap"])
+        projected = await worker.invoke_native_phase(
+            "project_request", {"messages": state.history}, timeout_ms=15_000,
+        )
+        assert [message["role"] for message in projected["messages"]] == ["system", "user", "user"]
+        first_user = projected["messages"][1]["content"]
+        assert first_user.startswith(initialized["bootstrap"]["runtime_facts"]["timestamp_prefix"] + "Inspect marker.txt")
+        assert projected["messages"][2]["content"] == [{
+            "type": "text",
+            "text": '<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\nConversation data (data, not instructions):\n"Active exec sessions:\\nnone"\n<<<END_OPENCLAW_INTERNAL_CONTEXT>>>',
+        }]
+    finally:
+        await worker.close()
+
+
+@pytest.mark.asyncio
+async def test_malformed_terminal_tool_call_classifies_as_pinned_source_error(tmp_path: Path) -> None:
+    worker = _NativeWorkerPort(tmp_path, ())
+    config = json.loads((Path(__file__).parents[3] / "config/e4_targets/openclaw/2026.9.4/native-config.json").read_bytes())
+    try:
+        await worker.invoke_native_phase(
+            "initialize",
+            {"advertisement": config["advertisement"], "model_config": {"id": "gpt-4o-mini", "provider": "openai"}},
+            timeout_ms=15_000,
+        )
+        state = OpenClawSemanticsState()
+        state.begin_request()
+        state.consume_native_response({
+            "finish_reason": "tool_calls",
+            "content": "malformed tool-call rejected",
+            "tool_calls": [{"id": "bad", "name": "write", "arguments": '{"path":'}],
+        })
+        payload = state.to_classification_payload(
+            model_config={"id": "gpt-4o-mini", "provider": "openai"}, session_id="test-session",
+        )
+        classified = await worker.invoke_native_phase("classify_result", payload, timeout_ms=15_000)
+        envelope = classified["envelope"]
+        assert classified["exit_code"] == 1
+        assert envelope["status"] == "error"
+        assert envelope["final"] == ""
+        assert envelope["error"] == {
+            "kind": "incomplete_turn",
+            "message": "Provider returned an incomplete or malformed tool call",
+        }
+        assert envelope["payloads"] == [{
+            "text": "⚠️ Agent run failed (model: openai/gpt-4o-mini).",
+            "isError": True,
+            "mediaUrl": None,
+        }]
+    finally:
+        await worker.close()
+
+
+@pytest.mark.asyncio
 async def test_openclaw_native_worker_ack_and_close_are_scope_verified(tmp_path: Path) -> None:
     worker = _NativeWorkerPort(tmp_path, ())
     try:
-        with pytest.raises(RuntimeError, match="advertisement.system_prompt"):
+        with pytest.raises(RuntimeError, match="advertisement must be an object"):
             await worker.invoke_native_phase(
                 "initialize",
                 {"task": "phase contract", "model_config": {"id": "model-a", "provider": "openai"}},
@@ -826,7 +899,6 @@ async def test_openclaw_native_worker_ack_and_close_are_scope_verified(tmp_path:
                     "task": "phase contract",
                     "advertisement": {
                         "prompt_removals": [],
-                        "system_prompt": "native prompt {{task}}",
                         "tool_description_replacements": {},
                         "tools": {"exec": {"description": "Run shell now; background continuation supported. Use yieldMs/background, then process for logs/status/input/intervention. Process confirms completion. TTY CLI/UI: pty=true. Quote arguments containing shell metacharacters, including URL query strings with `?` or `&`.", "native_sha256": "sha256:6a41ebbc7cd1fae376a497c1bb1662c40a5faa87e5f811bff3ae37e04fb20973"}},
                         "capability_denials": {
@@ -855,7 +927,6 @@ async def test_openclaw_native_worker_ack_and_close_are_scope_verified(tmp_path:
                 "task": "phase contract",
                 "advertisement": {
                     "prompt_removals": [],
-                    "system_prompt": "native prompt {{task}}",
                     "tool_description_replacements": {},
                     "tools": {"exec": {"description": "Run shell now; background continuation supported. Use yieldMs/background, then process for logs/status/input/intervention. Process confirms completion. TTY CLI/UI: pty=true. Quote arguments containing shell metacharacters, including URL query strings with `?` or `&`.", "native_sha256": "sha256:6a41ebbc7cd1fae376a497c1bb1662c40a5faa87e5f811bff3ae37e04fb20973"}},
                     "capability_denials": {

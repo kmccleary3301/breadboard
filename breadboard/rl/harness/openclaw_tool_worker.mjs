@@ -32,6 +32,10 @@ const MODULE_DIGESTS = Object.freeze({
   "sandbox-info-BDS1M4pk.mjs": "470df328a0d4575ad72d011ae9b43ef8dcddc727fd30dcb97b5e920050c64266",
   "provider-runtime-Cf3GwX2b.mjs": "24f24a500e815424e823afa3fc606ced8be03b0e3490be4b9e1ccafb24c0b9a9",
   "builtin-openclaw-B-H-7lKk.mjs": "0a8c813e535c92d03f69bc58381518ba0e6ac6e46f3adda54138c5f668340ea8",
+  "system-prompt-report-DZJbcDI4.mjs": "50803825eb86d4f062029c7728bc39fb69ccdef4de83f1e7ab82bb70babb4e08",
+  "runtime-context-prompt-DWIcn5Yx.mjs": "66cd0b276bb1b2f7625aae77e1a9e0890fbcc06e249be5f6f0f7cab51692ea84",
+  "assistant-request-failure-copy-CeEzc8UX.mjs": "b954236ee1e913406607fea854b2daaf99dcd8049b6faecb978dcca56a020a56",
+  "session-DVbOtm8K.mjs": "1e00c482e6fc7333173da95f436ee7ebb8b6975646e2c74a4162f4920fa4c0f7",
 });
 const MAX_LIVE_PROCESSES = 4;
 const TOOL_ORDER = Object.freeze(["edit", "exec", "ls", "process", "read", "write"]);
@@ -48,6 +52,16 @@ let sourceSkillsPrompt = null;
 let sourceRuntimePrompt = null;
 let sourceProviderPrompt = null;
 let sourceAttemptPrompt = null;
+let normalizeSourceMessages = null;
+let projectSourceRuntimeFragments = null;
+let sourceRuntimeFactsContext = null;
+let buildSourceRuntimeContextMessage = null;
+let convertSourceTranscriptToLlm = null;
+let renderSourceFailureCopy = null;
+let sourceTimezone = null;
+let sourceConfig = null;
+let sourceSessionKey = null;
+let sourceInitialTimestamp = null;
 let sourceExecutionContext = null;
 let sourceAcknowledgeResult = null;
 let builtTools = [];
@@ -81,7 +95,11 @@ async function verifyAndLoad() {
   sourceSkills = (await import(bytes["workspace-skill-loader-BjTKGaFi.mjs"])).i;
   sourceSkillsPrompt = (await import(bytes["workspace-skill-prompt-D3wdQJbf.mjs"])).n;
   sourceRuntimePrompt = (await import(bytes["sandbox-info-BDS1M4pk.mjs"])).i;
-  sourceAttemptPrompt = (await import(pinnedAttemptPrompt)).buildAttemptSystemPrompt;
+  sourceRuntimeFactsContext = (await import(bytes["system-prompt-report-DZJbcDI4.mjs"])).r;
+  buildSourceRuntimeContextMessage = (await import(bytes["runtime-context-prompt-DWIcn5Yx.mjs"])).r;
+  convertSourceTranscriptToLlm = (await import(bytes["session-DVbOtm8K.mjs"])).u;
+  renderSourceFailureCopy = (await import(bytes["assistant-request-failure-copy-CeEzc8UX.mjs"])).t;
+  ({ buildAttemptSystemPrompt: sourceAttemptPrompt, normalizeMessagesForLlmBoundary: normalizeSourceMessages, projectRuntimeContextFragments: projectSourceRuntimeFragments } = await import(pinnedAttemptPrompt));
   sourceProviderPrompt = (await import(bytes["provider-runtime-Cf3GwX2b.mjs"])).z;
   return {
     createCoreCodingTools: core.t,
@@ -102,10 +120,7 @@ function exactKeys(value, expected, label) {
 }
 
 function validateAdvertisement(value) {
-  exactKeys(value, ["prompt_removals", "system_prompt", "tool_description_replacements", "tools", "capability_denials"], "advertisement");
-  if (typeof value.system_prompt !== "string" || !value.system_prompt) {
-    throw new Error("advertisement.system_prompt is required");
-  }
+  exactKeys(value, ["prompt_removals", "tool_description_replacements", "tools", "capability_denials"], "advertisement");
   if (!Array.isArray(value.prompt_removals) || value.prompt_removals.some((item) => typeof item !== "string")) {
     throw new Error("advertisement.prompt_removals is invalid");
   }
@@ -195,6 +210,19 @@ function projectSourceRequest(messages, buildOpenAICompletionsParams) {
     ? system.content
     : "";
   const history = toSourceHistory(system && system.role === "system" ? messages.slice(1) : messages);
+  const initialUser = history.find((message) => message.role === "user");
+  if (initialUser && !Number.isFinite(initialUser.timestamp)) initialUser.timestamp = sourceInitialTimestamp;
+  const normalized = normalizeSourceMessages(history, { timezone: sourceTimezone, includeTimestamp: true });
+  const fragments = sourceRuntimeFactsContext({
+    cfg: sourceConfig, sessionKey: sourceSessionKey, agentId: "main",
+    capabilityToolNames: new Set(TOOL_ORDER),
+  });
+  const sourceHistory = [
+    ...normalized,
+    ...convertSourceTranscriptToLlm([
+      buildSourceRuntimeContextMessage(projectSourceRuntimeFragments(fragments), fragments),
+    ]),
+  ];
   const baseTools = builtTools && builtTools.length ? builtTools : Array.from(tools.values());
   const sourceTools = baseTools.map((tool) => {
     const overlay = advertisedTools.get(tool.name);
@@ -203,7 +231,7 @@ function projectSourceRequest(messages, buildOpenAICompletionsParams) {
   if (typeof buildOpenAICompletionsParams === "function" && systemPrompt) {
     const params = buildOpenAICompletionsParams(
       modelConfig,
-      { systemPrompt, messages: history, tools: sourceTools },
+      { systemPrompt, messages: sourceHistory, tools: sourceTools },
       undefined,
     );
     return {
@@ -212,7 +240,7 @@ function projectSourceRequest(messages, buildOpenAICompletionsParams) {
     };
   }
   return {
-    messages,
+    messages: sourceHistory,
     tools: baseTools.map(schemaFor),
   };
 }
@@ -234,11 +262,26 @@ async function materializeSourcePrompt(ordered, contextFiles, runtimeInputs, pac
   };
   const sessionId = runtimeInputs.session_id;
   if (typeof sessionId !== "string" || !sessionId) throw new Error("declared session_id is required");
+  if (typeof runtimeInputs.message_timestamp_ms !== "string" || !/^\d{13}$/.test(runtimeInputs.message_timestamp_ms)) {
+    throw new Error("declared message_timestamp_ms is required");
+  }
+  sourceInitialTimestamp = Number(runtimeInputs.message_timestamp_ms);
+  if (!Number.isSafeInteger(sourceInitialTimestamp)) throw new Error("declared message_timestamp_ms is invalid");
+  sourceConfig = config;
   const sessionKey = `agent:main:explicit:${sessionId}`;
+  sourceSessionKey = sessionKey;
   const { runtimeInfo, userTimezone, userDate } = await sourceRuntimePrompt({
     config, agentId: "main", workspaceDir: workspace, cwd: workspace,
     sessionKey, sessionId, model: `${provider}/${modelId}`,
   });
+  sourceTimezone = userTimezone;
+  const stamped = normalizeSourceMessages(
+    [{ role: "user", content: "x", timestamp: sourceInitialTimestamp }],
+    { timezone: userTimezone, includeTimestamp: true },
+  )[0].content;
+  if (typeof stamped !== "string" || !stamped.endsWith("x") || stamped === "x") {
+    throw new Error("pinned source did not stamp declared user timestamp");
+  }
   const entries = sourceSkills(workspace, {
     agentId: "main", config, bundledSkillsDir: join(packageRoot, "skills"),
   });
@@ -269,6 +312,7 @@ async function materializeSourcePrompt(ordered, contextFiles, runtimeInputs, pac
       node: runtimeInfo.node,
       session_id: sessionId,
       current_date: userDate,
+      timestamp_prefix: stamped.slice(0, -1),
     },
   };
 }
@@ -554,15 +598,6 @@ async function handle(message) {
     const runtimeInputs = message.runtime_inputs && typeof message.runtime_inputs === "object" ? message.runtime_inputs : {};
     const workspacePath = typeof message.workspace === "string" && message.workspace ? message.workspace : runtimeInputs.cwd;
     if (typeof workspacePath !== "string" || !workspacePath) throw new Error("workspace is required");
-    if (
-      !message.advertisement
-      || typeof message.advertisement !== "object"
-      || Array.isArray(message.advertisement)
-      || typeof message.advertisement.system_prompt !== "string"
-      || !message.advertisement.system_prompt
-    ) {
-      throw new Error("advertisement.system_prompt is required");
-    }
     const advertisement = validateAdvertisement(message.advertisement);
     workspace = resolve(workspacePath);
     scopeKey = typeof message.scopeKey === "string" && message.scopeKey ? message.scopeKey : scopeKey;
@@ -693,9 +728,20 @@ async function handle(message) {
     return { schema_version: PROTOCOL, kind: "acked", delivery_id: id, session_id: record.sessionId, history_digest: text(message.history_digest) };
   }
   if (phase === "classify_result") {
-    const runResult = message.result && typeof message.result === "object"
+    let runResult = message.result && typeof message.result === "object"
       ? message.result
       : buildRunResultFromTerminalState(message);
+    if (runResult.meta?.error?.kind === "incomplete_turn") {
+      const model = runResult.meta.agentMeta;
+      const warning = renderSourceFailureCopy({
+        provider: model?.provider, model: model?.model, reason: "unclassified",
+      });
+      runResult = {
+        ...runResult,
+        payloads: [{ text: warning, isError: true, mediaUrl: null }],
+        meta: { ...runResult.meta, finalAssistantVisibleText: null },
+      };
+    }
     const envelope = classifyAgentExecResult(
       runResult,
       Boolean(message.fallback_exhausted || message.fallbackExhausted),

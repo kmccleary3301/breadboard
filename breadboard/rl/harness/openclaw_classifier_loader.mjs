@@ -16,7 +16,7 @@ const modules = new Map([
   ["openclaw:pinned-attempt-prompt", {
     filename: "builtin-openclaw-B-H-7lKk.mjs",
     expected: "0a8c813e535c92d03f69bc58381518ba0e6ac6e46f3adda54138c5f668340ea8",
-    appended: "\nexport { buildAttemptSystemPrompt };\n",
+    appended: "\nexport { buildAttemptSystemPrompt, normalizeMessagesForLlmBoundary, projectRuntimeContextFragments };\n",
   }],
 ]);
 const dist = process.env.OPENCLAW_DIST || join(process.cwd(), "dist");

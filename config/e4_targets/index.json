@@ -11,7 +11,7 @@
     },
     "openclaw@2026.9.4": {
       "descriptor": "openclaw/2026.9.4/target.json",
-      "sha256": "cc24e63da85f0ba365a469cc4033ff5ae00a1f69c841c7c90da096b40ba6c644"
+      "sha256": "5fa46a5873bb9f582369b9bb0ccff8f134906836a78cd49db7f291b387b674d6"
     },
     "openhands-sdk@1.47.0": {
       "descriptor": "openhands_sdk/1.47.0/target.json",

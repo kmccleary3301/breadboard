@@ -402,6 +402,38 @@ _RUNTIME_LINE = re.compile(
     r" \| node=(?P<node>[^ |\n]+) \| model=(?P<model>[^ |\n]+)"
     r" \| default_model=(?P<default_model>[^ |\n]+)$"
 )
+_USER_TIMESTAMP = re.compile(
+    r"^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{4}-\d{2}-\d{2} \d{2}:\d{2} [A-Za-z_+/0-9:-]+\] "
+)
+
+
+def _normalize_source_paths(content: str, roots: Mapping[str, str]) -> str:
+    # Only source-builder fields may vary; a root in user text is not a path fact.
+    if workspace := roots.get("workspace"):
+        content = re.sub(
+            rf"(?m)^(Working directory: ){re.escape(workspace)}$",
+            r"\1<OPENCLAW_WORKSPACE_ROOT>",
+            content,
+        )
+        content = re.sub(
+            rf"(?m)^(## ){re.escape(workspace)}(?=/(?:AGENTS|SOUL|IDENTITY|USER|BOOTSTRAP|MEMORY)\.md$)",
+            r"\1<OPENCLAW_WORKSPACE_ROOT>",
+            content,
+        )
+    if package := roots.get("package"):
+        content = re.sub(
+            rf"(?m)^(Docs: ){re.escape(package)}(?=/docs$)",
+            r"\1<OPENCLAW_PACKAGE_ROOT>",
+            content,
+        )
+        content = re.sub(
+            rf"(?m)^(    <location>){re.escape(package)}(?=/(?:skills|custodian-skills)/[^<]+/SKILL\.md</location>$)",
+            r"\1<OPENCLAW_PACKAGE_ROOT>",
+            content,
+        )
+    return content
+
+
 
 
 def _wire_prompt_facts(
@@ -413,7 +445,12 @@ def _wire_prompt_facts(
     session_id: str | None = None,
 ) -> list[dict[str, Any]]:
     projected = json.loads(json.dumps(requests))
+    for name, root in roots.items():
+        if type(root) is not str or not root.startswith("/") or root == "/":
+            raise ComparatorError(f"invalid declared {name} root")
     for request in projected:
+        runtime_lines = 0
+        stamped_users = 0
         for message in request.get("messages", []):
             content = message.get("content")
             if not isinstance(content, str):
@@ -429,8 +466,15 @@ def _wire_prompt_facts(
                 if "OPENCLAW-RELOCATABLE-BOUNDARY" in content or re.search(r"(?m)^Runtime: ", content):
                     raise ComparatorError("pinned transport must relocate runtime out of system prompt")
                 content = content[:matches[0].start("date")] + "<OPENCLAW_DATE>" + content[matches[0].end("date"):]
-            elif message.get("role") == "user" and runtime_facts is not None:
+            elif message.get("role") == "user":
+                timestamp = _USER_TIMESTAMP.match(content)
+                if timestamp:
+                    stamped_users += 1
+                    if runtime_facts and runtime_facts.get("timestamp_prefix") and timestamp.group() != runtime_facts["timestamp_prefix"]:
+                        raise ComparatorError("wire user timestamp differs from pinned worker fact")
+                    content = "<OPENCLAW_USER_TIMESTAMP> " + content[timestamp.end():]
                 matches = list(_RUNTIME_LINE.finditer(content))
+                runtime_lines += len(matches)
                 if len(matches) > 1:
                     raise ComparatorError("relocated runtime line is ambiguous")
                 if matches:
@@ -450,11 +494,13 @@ def _wire_prompt_facts(
                     ]
                     for start, end, token in sorted(replacements, reverse=True):
                         content = content[:start] + token + content[end:]
-            for name, root in roots.items():
-                if type(root) is not str or not root.startswith("/") or root == "/":
-                    raise ComparatorError(f"invalid declared {name} root")
-                content = content.replace(root, f"<OPENCLAW_{name.upper()}_ROOT>")
+            if message.get("role") == "system":
+                content = _normalize_source_paths(content, roots)
             message["content"] = content
+        if runtime_lines != 1:
+            raise ComparatorError("pinned transport must emit exactly one relocated Runtime line per request")
+        if stamped_users < 1:
+            raise ComparatorError("pinned transport must emit a stamped user message")
     return projected
 
 

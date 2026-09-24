@@ -8,38 +8,37 @@
 
 ## 1) Problem Statement
 
-The native worker previously substituted a short hand-authored advertisement for OpenClaw's actual system prompt. This changes model-visible instructions, skills, workspace context, and request bytes. The comparator also inferred a budget refusal from a declared cap rather than the supplier's recorded refusal.
+The OpenClaw worker emitted a pinned system prompt but the sealed target still advertised a duplicate hand-authored prompt asset. Its model wire omitted the pinned per-message user timestamp and internal runtime-context carrier. A malformed terminal tool call retained raw provider text as a successful-looking visible payload instead of the pinned source error presentation. The comparator accepted zero relocated runtime lines and normalized path literals in user instructions.
 
 ## 2) Scope and Surfaces
 
-- Extension: `breadboard/rl/harness/openclaw_tool_worker.mjs` and its sha-verified classifier loader.
-- Comparator: `conformance/comparators/openclaw_2026_9_4.py`; OpenClaw semantics for malformed terminal tool calls.
-- Contract surfaces: pinned source prompt construction, wire request comparison, supplier receipt controls, and 429 refusal.
-- Kernel danger-zone: yes, because the model-visible native worker and typed lease runtime inputs change. The generic Conductor and other profiles remain unchanged.
+- Extension: `breadboard/rl/harness/openclaw_tool_worker.mjs`, its sha-verified classifier loader, and the OpenClaw semantics state.
+- Comparator: `conformance/comparators/openclaw_2026_9_4.py`.
+- Contract surfaces: source-owned prompt declaration, sealed target/asset table, typed lease timestamp, wire request comparison, and malformed terminal classification.
+- Kernel danger-zone: yes, because the source worker, typed runtime inputs, and v2 target prompt declaration change. The generic Conductor and other profiles remain unchanged.
 
 ## 3) Coupling and Generalization Impact
 
-- The worker imports the pinned `buildAttemptSystemPrompt` through a sha-verified loader export. It invokes pinned runtime, skill, bootstrap and provider helpers rather than restating prompt text.
-- The comparator uses one static grammar from the pinned prompt builder for both supplier and replay wire messages. Only the single `Current date:` line, declared workspace/package/home roots, and host, OS-release and explicit-session-id spans of the relocated `Runtime:` user line are normalized symmetrically; node, model, architecture, session-key shape and skill catalog remain exact.
-- The pinned OpenAI transport removes the cache/relocatable boundary from the system message and relocates its runtime line into a user message (`@openclaw/ai/dist/openai-completions-stream-Da2vvl-S.mjs:459-469,615-639`). A leaked boundary or `Runtime:` system line fails comparison.
-- The capture receipt has no independent host, OS or date fact record. Supplier values therefore come from captured wire; the replay date and session are checked against typed lease inputs, and replay host/OS/node/architecture/date against pinned worker facts. This supplier evidence limit is explicit, not candidate authority. The capture kit invokes `openclaw agent --session-id capture-…` (`openclaw_capture_supplier.py:122`); the replay uses the same explicit-session key shape with a lease-derived session id.
+- The source-owned `buildAttemptSystemPrompt` binding replaces the duplicate prompt asset and advertisement. The canonical `serialize_e4_target` output reseals the target descriptor and index; the classifier loader and required bootstrap asset are packaged.
+- The worker invokes sha-verified pinned runtime/skill/bootstrap/provider helpers, the LLM-boundary user timestamp normalizer, the runtime-facts context producer, and the source transcript carrier conversion. The malformed error copy is rendered by pinned source code before the pinned classifier projects its envelope.
+- The comparator uses one grammar on supplier and replay. Only the date value, pinned system-builder path fields, the leading user timestamp, and host/OS-release/explicit-session spans of exactly one relocated `Runtime:` line per request are normalized. Literal user paths, model, node, architecture, session-key shape, skill catalog and tool schemas remain exact. Replay timestamp and runtime line must agree with pinned worker facts; the declared timestamp comes from a typed lease input.
+- The pinned transport relocates `Runtime:` into a user message. The capture receipt has no independent host, OS or date fact record, so supplier values come from captured wire; replay facts are checked against typed inputs and the pinned worker. This limit is explicit, not a candidate exemption.
 
 ## 4) Change Classification
 
-- Classification: `behavioral-change` (breaking the prior synthetic OpenClaw model-visible prompt intentionally).
-- Compatibility window: none; only the pinned OpenClaw 2026.9.4 target is affected.
-- Schema bump: none. The existing native phase and trace fields carry the source prompt and refusal controls.
+- Classification: `behavioral-change` (removes the synthetic prompt and repairs model-wire and terminal-error parity).
+- Compatibility window: none; only the pinned OpenClaw 2026.9.4 target uses the source-owned prompt.
+- Schema bump: none. The v2 descriptor/config schemas now require exactly one prompt asset or pinned prompt source; the other target packages retain their asset declarations.
 
 ## 5) Evidence and Validation Plan
 
-- A pre-fix focused test rejects the synthetic prompt and verifies the pinned attempt sections, skills and bootstrap context after repair.
-- Comparator tests reject altered prompt bytes, missing/duplicate dates, runtime boundary leakage, mismatched pinned runtime facts and missing budget/refusal controls; only declared symmetric date/root/runtime spans pass.
-- Malformed-call test verifies the pinned finalizer's error stop and absence of replayable tool calls.
-- Run focused OpenClaw tests and `scripts/check_danger_zone_acr.py` against explicit changed paths. Exact-head installed replay and independent review are required before promotion.
+- Pre-fix comparator tests failed when the relocated Runtime line was omitted and when different literal user paths were incorrectly erased; frozen exact-head review found missing timestamp/carrier, extra prompt asset, and malformed classification mismatch.
+- Focused tests exercise pinned prompt construction, per-message timestamp and structured internal context, source malformed-error projection, asymmetric prompt mutations, target resealing/asset inclusion, and request-cap controls.
+- Local six-case request projection records index 0 per case; macOS skill eligibility and architecture intentionally differ from the Linux supplier capture. Higher request indices and installed acceptance require the independent Linux replay. `scripts/check_danger_zone_acr.py` checks the explicit changed-file set.
 
 ## 6) Rollout Plan
 
-Review source-prompt construction, comparator normalization/refusal, and malformed-tool-call parity at the exact candidate head. Main owns installed replay and promotion.
+Independent review must inspect source-prompt construction, comparator normalization, malformed classification, and exact-head asset packaging. Main owns installed Linux replay and promotion; local projections do not establish acceptance.
 
 ## 7) Rollback Plan
 
