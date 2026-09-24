@@ -158,11 +158,8 @@ def _trace_requests_from_transcript(case_dir: Path) -> list[dict[str, Any]]:
 
 
 def _project_request_bodies(raw_requests: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Project sent wire bodies to the canonical request contract."""
-    return [
-        {"messages": body.get("messages", []), "tools": body.get("tools", [])}
-        for body in raw_requests
-    ]
+    """Retain every sent wire field; no authority-bearing field is volatile."""
+    return [dict(body) for body in raw_requests]
 
 
 def _wire_identity(value: Mapping[str, Any]) -> str:

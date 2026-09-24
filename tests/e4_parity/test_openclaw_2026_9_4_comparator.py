@@ -93,6 +93,27 @@ def test_packet_640_fixture_round_trips_and_rejects_tampered_request() -> None:
     )
 
 
+@pytest.mark.parametrize("field,wrong", [
+    ("model", "WRONG-MODEL"),
+    ("max_completion_tokens", 99999),
+    ("store", True),
+    ("stream", False),
+])
+def test_packet_wire_authority_changes_fail_comparison(field: str, wrong: object) -> None:
+    fixture = Path(__file__).parent / "fixtures" / "openclaw_packet_640"
+    raw = [
+        json.loads(line)["body"]
+        for line in (fixture / "receiver" / "http-transcript.jsonl").read_text().splitlines()
+    ]
+    requests, _ = _apply_supplier_overlay(raw)
+    expected = project_supplier_case(fixture)
+    for request in requests:
+        request[field] = wrong
+    observed = {**expected, "requests": requests}
+    report = compare({"capture": str(fixture), "replay": observed, "scope": {}})
+    assert not report["ok"], f"wire field {field} was ignored"
+
+
 def test_comparator_rejects_non_identical_repeated_tool_snapshots() -> None:
     first = {
         "model": "gpt",
