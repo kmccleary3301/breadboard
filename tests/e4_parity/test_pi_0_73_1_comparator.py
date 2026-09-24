@@ -4,6 +4,7 @@ import asyncio
 from copy import deepcopy
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,18 @@ BB_RUNTIME_INPUTS = {
     "current_date": "2027-04-05",
     "package_dir": "/srv/pi-0731",
 }
+
+
+@pytest.fixture
+def _require_pinned_pi_node() -> None:
+    node_modules = Path(os.environ.get("PI_CODING_AGENT_NODE_MODULES", "/tmp/pi-node-0731/node_modules"))
+    entrypoint = node_modules / "@mariozechner" / "pi-coding-agent" / "dist" / "index.js"
+    if entrypoint.is_file():
+        return
+    reason = f"pinned Pi 0.73.1 node_modules root is unavailable: {node_modules}"
+    if os.environ.get("BB_REQUIRE_PINNED_PI_NODE") == "1":
+        pytest.fail(f"required {reason}")
+    pytest.skip(reason)
 
 
 def _sha256(path: Path) -> str:
@@ -177,6 +190,7 @@ def _replay_request_limit_bb_trace(case: Path, supplier_trace: dict) -> dict:
     )
 
 
+@pytest.mark.usefixtures("_require_pinned_pi_node")
 def test_request_limit_cause_matches_real_shaped_pair(tmp_path: Path) -> None:
     case, supplier_trace = _request_limit_case(tmp_path)
     bb_trace = _replay_request_limit_bb_trace(case, supplier_trace)
@@ -190,6 +204,7 @@ def test_request_limit_cause_matches_real_shaped_pair(tmp_path: Path) -> None:
     ]
 
 
+@pytest.mark.usefixtures("_require_pinned_pi_node")
 def test_request_limit_cause_requires_declared_count(tmp_path: Path) -> None:
     case, supplier_trace = _request_limit_case(tmp_path)
     bb_trace = _replay_request_limit_bb_trace(case, supplier_trace)
@@ -200,6 +215,7 @@ def test_request_limit_cause_requires_declared_count(tmp_path: Path) -> None:
     assert report["passed"] is False
 
 
+@pytest.mark.usefixtures("_require_pinned_pi_node")
 def test_request_limit_cause_requires_supplier_literal(tmp_path: Path) -> None:
     case, supplier_trace = _request_limit_case(tmp_path)
     supplier_trace["messages"][-1]["errorMessage"] = "different failure"
@@ -211,6 +227,7 @@ def test_request_limit_cause_requires_supplier_literal(tmp_path: Path) -> None:
     assert report["passed"] is False
 
 
+@pytest.mark.usefixtures("_require_pinned_pi_node")
 def test_request_limit_counterfeit_missing_refused_attempt_fails(tmp_path: Path) -> None:
     case, supplier_trace = _request_limit_case(tmp_path)
     bb_trace = _replay_request_limit_bb_trace(case, supplier_trace)
@@ -228,6 +245,7 @@ def test_request_limit_counterfeit_missing_refused_attempt_fails(tmp_path: Path)
     assert report["passed"] is False
 
 
+@pytest.mark.usefixtures("_require_pinned_pi_node")
 def test_request_limit_counterfeit_unrelated_error_kind_fails(tmp_path: Path) -> None:
     case, supplier_trace = _request_limit_case(tmp_path)
     bb_trace = _replay_request_limit_bb_trace(case, supplier_trace)
@@ -239,6 +257,7 @@ def test_request_limit_counterfeit_unrelated_error_kind_fails(tmp_path: Path) ->
     assert report["passed"] is False
 
 
+@pytest.mark.usefixtures("_require_pinned_pi_node")
 def test_request_limit_counterfeit_unrelated_terminal_error_message_fails(tmp_path: Path) -> None:
     case, supplier_trace = _request_limit_case(tmp_path)
     bb_trace = _replay_request_limit_bb_trace(case, supplier_trace)
@@ -250,6 +269,7 @@ def test_request_limit_counterfeit_unrelated_terminal_error_message_fails(tmp_pa
     assert report["passed"] is False
 
 
+@pytest.mark.usefixtures("_require_pinned_pi_node")
 def test_request_limit_counterfeit_candidate_claims_supplier_role_fails(tmp_path: Path) -> None:
     case, supplier_trace = _request_limit_case(tmp_path)
     bb_trace = _replay_request_limit_bb_trace(case, supplier_trace)
