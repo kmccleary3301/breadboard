@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from pathlib import Path
 
 import pytest
 
@@ -256,6 +258,138 @@ def test_omp_prepare_refuses_excluded_native_capabilities() -> None:
         "OMP capability denied: async",
     ]
 
+
+def test_omp_declared_route_exclusions_deny_before_worker_invocation() -> None:
+    root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
+    native = json.loads((root / "native-config.json").read_text())
+    policy = native["capability_denials"]
+    samples = {
+        "url": ("read", {"path": "https://example.invalid"}),
+        "ssh": ("read", {"path": "ssh://example.invalid/etc/hosts"}),
+        "pty": ("bash", {"command": "printf x", "pty": True}),
+        "archive": ("read", {"path": "bundle.zip:member.txt"}),
+        "sqlite": ("read", {"path": "state.sqlite:users"}),
+        "image": ("read", {"path": "picture.png"}),
+        "video": ("read", {"path": "clip.mp4"}),
+        "pdf": ("read", {"path": "report.pdf"}),
+        "document": ("read", {"path": "report.docx"}),
+        "internal-resource": ("read", {"path": "artifact://capture"}),
+        "async": ("bash", {"command": "printf x", "async": True}),
+    }
+
+    class Worker:
+        invocations = 0
+
+        def execute_batch(self, calls: list[dict[str, object]]) -> list[dict[str, object]]:
+            self.invocations += 1
+            return []
+
+    calls = tuple(
+        NativeToolCall(name, tool_name, json.dumps(arguments))
+        for name, (tool_name, arguments) in samples.items()
+    )
+    worker = Worker()
+    state = OMPSemanticsState(
+        task="deny declared routes",
+        worker=worker,
+        capability_denials=policy,
+    )
+    assert state.begin_query() is None
+    state.prepare_response(NativeProviderResponse(
+        binding_digest="binding",
+        request_digest="request",
+        response_id="response",
+        model="capture",
+        content=None,
+        finish_reason="tool_calls",
+        tool_calls=calls,
+    ))
+    prepared = state.prepare_tools(calls)
+    assert [item["error"] for item in prepared["calls"]] == [
+        policy[capability]["message"] for capability in samples
+    ]
+    results = state.execute_batch()["results"]
+    assert [item["content"] for item in results] == [
+        policy[capability]["message"] for capability in samples
+    ]
+    assert worker.invocations == 0
+    assert state.effects == {}
+
+
+
+def test_omp_mixed_denials_preserve_source_order_and_execute_allowed_calls() -> None:
+    root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
+    policy = json.loads((root / "native-config.json").read_text())["capability_denials"]
+
+    class Worker:
+        calls: list[dict[str, object]] = []
+
+        def execute_batch(self, calls: list[dict[str, object]]) -> list[dict[str, object]]:
+            self.calls.extend(calls)
+            return [
+                {"id": call["id"], "completion_index": 0, "content": "allowed", "details": {}, "isError": False}
+                for call in calls
+            ]
+
+    calls = (
+        NativeToolCall("denied", "read", '{"path":"HTTP://example.invalid"}'),
+        NativeToolCall("allowed", "read", '{"path":"./local.txt"}'),
+    )
+    worker = Worker()
+    state = OMPSemanticsState(task="mixed routes", worker=worker, capability_denials=policy)
+    assert state.begin_query() is None
+    state.prepare_response(NativeProviderResponse(
+        binding_digest="binding",
+        request_digest="request",
+        response_id="response",
+        model="capture",
+        content=None,
+        finish_reason="tool_calls",
+        tool_calls=calls,
+    ))
+    state.prepare_tools(calls)
+    results = state.execute_batch()["results"]
+    assert [item["content"] for item in results] == [
+        "OMP capability denied: url",
+        "allowed",
+    ]
+    assert [call["id"] for call in worker.calls] == ["allowed"]
+
+
+def test_omp_none_denied_batch_executes_every_call() -> None:
+    root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
+    policy = json.loads((root / "native-config.json").read_text())["capability_denials"]
+
+    class Worker:
+        calls: list[dict[str, object]] = []
+
+        def execute_batch(self, calls: list[dict[str, object]]) -> list[dict[str, object]]:
+            self.calls.extend(calls)
+            return [
+                {"id": call["id"], "completion_index": index, "content": "allowed", "details": {}, "isError": False}
+                for index, call in enumerate(calls)
+            ]
+
+    calls = (
+        NativeToolCall("a", "read", '{"path":"./a.txt"}'),
+        NativeToolCall("b", "bash", '{"command":"printf ok"}'),
+    )
+    worker = Worker()
+    state = OMPSemanticsState(task="allowed routes", worker=worker, capability_denials=policy)
+    assert state.begin_query() is None
+    state.prepare_response(NativeProviderResponse(
+        binding_digest="binding",
+        request_digest="request",
+        response_id="response",
+        model="capture",
+        content=None,
+        finish_reason="tool_calls",
+        tool_calls=calls,
+    ))
+    state.prepare_tools(calls)
+    results = state.execute_batch()["results"]
+    assert [item["content"] for item in results] == ["allowed", "allowed"]
+    assert [call["id"] for call in worker.calls] == ["a", "b"]
 
 def test_omp_request_cap_refuses_before_native_query() -> None:
     state = OMPSemanticsState(task="bounded", request_cap=1)

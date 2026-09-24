@@ -706,7 +706,9 @@ class OMPSemanticsState:
             results: list[Any] = [ToolResult.skipped_result(ToolCall(item.id, item.name, item.arguments)) for item in self._pending_calls]
         else:
             valid = [item for item in self._pending_calls if item.error is None]
-            if self.worker is None:
+            if not valid:
+                raw_results = []
+            elif self.worker is None:
                 raw_results = [ToolResult(item.id, item.name, error="native worker unavailable") for item in valid]
             else:
                 raw_results = self.worker.execute_batch([{"id": item.id, "name": item.name, "arguments": item.arguments} for item in valid])
@@ -715,7 +717,13 @@ class OMPSemanticsState:
                 for item in raw_results
             }
             results = [
-                ToolResult(item.id, item.name, error=item.error, details={"phase": "prepare"})
+                ToolResult(
+                    item.id,
+                    item.name,
+                    output=item.error or "",
+                    error=item.error,
+                    details={"phase": "prepare"},
+                )
                 if item.error
                 else by_id.get(item.id, ToolResult(item.id, item.name, error="native result missing"))
                 for item in self._pending_calls

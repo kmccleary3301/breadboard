@@ -261,6 +261,32 @@ def _wire_stop_reason(trace: Mapping[str, Any]) -> str | None | object:
     return reasons[-1] if reasons else None
 
 
+def _validate_native_responses(
+    trace: Mapping[str, Any],
+    request_count: int,
+) -> None:
+    raw_responses = trace.get("native_responses")
+    if not isinstance(raw_responses, list) or len(raw_responses) < request_count:
+        raise ValueError("BB trace must carry native_responses for every request")
+    for index, raw in enumerate(raw_responses):
+        if not isinstance(raw, Mapping) or not raw:
+            raise ValueError(f"native response wire record {index} is malformed")
+        if "finish_reason" in raw:
+            if not isinstance(raw["finish_reason"], str) or not raw["finish_reason"]:
+                raise ValueError(f"native response wire record {index} has invalid finish_reason")
+            continue
+        choices = raw.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise ValueError(f"native response wire record {index} is missing finish_reason")
+        for choice in choices:
+            if (
+                not isinstance(choice, Mapping)
+                or not isinstance(choice.get("finish_reason"), str)
+                or not choice["finish_reason"]
+            ):
+                raise ValueError(f"native response wire record {index} is missing finish_reason")
+
+
 def _termination(trace: Mapping[str, Any], *, supplier_capture: bool = False) -> dict[str, Any]:
     if not supplier_capture and "native_stop_reason_source" in trace:
         raise ValueError("BB trace cannot declare native stop reason provenance")
@@ -317,12 +343,7 @@ def _project(
     declared = _declared(trace)
     requests = _requests(trace, declared)
     if not supplier_capture:
-        native_responses = trace.get("native_responses")
-        if (
-            not isinstance(native_responses, list)
-            or len(native_responses) < len(requests)
-        ):
-            raise ValueError("BB trace must carry native_responses for every request")
+        _validate_native_responses(trace, len(requests))
     episode = {
         "schema_version": CANONICAL_SCHEMA_VERSION,
         "requests": requests,

@@ -86,6 +86,24 @@ def test_bb_trace_requires_declared_runtime_inputs() -> None:
         project_bb_trace(replay)
 
 
+@pytest.mark.parametrize("native_response", [{}, {"choices": [{}]}])
+def test_bb_native_response_requires_finish_reason(native_response: dict) -> None:
+    replay = _trace()
+    replay["native_responses"] = [native_response]
+    with pytest.raises(ValueError, match="finish_reason|malformed"):
+        project_bb_trace(replay)
+
+
+def test_comparator_rejects_empty_native_response_record() -> None:
+    supplier = _trace()
+    supplier.pop("native_responses")
+    replay = _trace()
+    replay["native_responses"] = [{}]
+    report = compare({"capture": supplier, "replay": replay})
+    assert report["ok"] is False
+    assert "malformed" in report["errors"][0]
+
+
 def test_bb_runtime_inputs_match_supplier_declaration() -> None:
     supplier = _trace()
     replay = deepcopy(supplier)

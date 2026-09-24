@@ -14,11 +14,74 @@
   "result_commit_order": "completion",
   "ack_policy": "none",
   "capability_denials": {
+    "url": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "url",
+      "message": "OMP capability denied: url",
+      "source_ref": "prompts/system-prompt.md:11",
+      "route": {"schemes": ["http", "https"]}
+    },
+    "ssh": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "ssh",
+      "message": "OMP capability denied: ssh",
+      "source_ref": "prompts/system-prompt.md:11",
+      "route": {"schemes": ["ssh"], "prefixes": ["ssh:"]}
+    },
     "pty": {
       "schema_version": "bb.omp-capability-denial.v1",
       "capability": "pty",
       "message": "OMP capability denied: pty",
       "source_ref": "prompts/system-prompt.md:23"
+    },
+    "archive": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "archive",
+      "message": "OMP capability denied: archive",
+      "source_ref": "prompts/system-prompt.md:11",
+      "route": {"extensions": [".zip", ".jar", ".war", ".ear", ".apk", ".whl", ".tar", ".tgz", ".gz", ".bz2", ".xz", ".zst", ".rar", ".7z", ".iso", ".cab", ".deb", ".rpm", ".cpio", ".ar", ".a", ".lzh", ".arj", ".asar"]}
+    },
+    "sqlite": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "sqlite",
+      "message": "OMP capability denied: sqlite",
+      "source_ref": "prompts/system-prompt.md:11",
+      "route": {"extensions": [".sqlite", ".sqlite3", ".db", ".db3"]}
+    },
+    "image": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "image",
+      "message": "OMP capability denied: image",
+      "source_ref": "prompts/system-prompt.md:11",
+      "route": {"extensions": [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".svgz"], "schemes": ["attachment"]}
+    },
+    "video": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "video",
+      "message": "OMP capability denied: video",
+      "source_ref": "prompts/system-prompt.md:11",
+      "route": {"extensions": [".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi", ".wmv"]}
+    },
+    "pdf": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "pdf",
+      "message": "OMP capability denied: pdf",
+      "source_ref": "prompts/system-prompt.md:11",
+      "route": {"extensions": [".pdf"]}
+    },
+    "document": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "document",
+      "message": "OMP capability denied: document",
+      "source_ref": "prompts/system-prompt.md:11",
+      "route": {"extensions": [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".odt", ".odp", ".ods", ".rtf", ".epub"]}
+    },
+    "internal-resource": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "internal-resource",
+      "message": "OMP capability denied: internal-resource",
+      "source_ref": "prompts/system-prompt.md:11",
+      "route": {"schemes": ["agent", "artifact", "issue", "internal", "local", "mcp", "memory", "omp", "pr", "security", "skill", "xd"]}
     },
     "async": {
       "schema_version": "bb.omp-capability-denial.v1",

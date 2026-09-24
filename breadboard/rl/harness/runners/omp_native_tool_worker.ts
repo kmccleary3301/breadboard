@@ -158,17 +158,32 @@ function requireAdvertisement(value: unknown): {
     if (typeof typedDescriptions[name] !== "string") throw new Error(`advertisement tool description must be a string: ${name}`);
     bounded[name] = typedDescriptions[name] as string;
   }
-  const rawDenials = exactRecord(advertisement.capability_denials, "advertisement.capability_denials", ["pty", "async"]);
+  const rawDenials = advertisement.capability_denials;
+  if (!rawDenials || typeof rawDenials !== "object" || Array.isArray(rawDenials)) {
+    throw new Error("advertisement.capability_denials must be an object");
+  }
   const capabilityDenials: Record<string, Record<string, unknown>> = {};
-  for (const capability of ["pty", "async"]) {
-    const entry = exactRecord(rawDenials[capability], `advertisement.capability_denials.${capability}`, ["schema_version", "capability", "message", "source_ref"]);
+  for (const [capability, value] of Object.entries(rawDenials as Record<string, unknown>)) {
+    const entry = exactRecord(
+      value,
+      `advertisement.capability_denials.${capability}`,
+      ["schema_version", "capability", "message", "source_ref"],
+      ["route"],
+    );
     if (
       entry.schema_version !== "bb.omp-capability-denial.v1"
       || entry.capability !== capability
       || typeof entry.message !== "string"
       || typeof entry.source_ref !== "string"
+      || (capability !== "pty" && capability !== "async"
+        && (!entry.route || typeof entry.route !== "object" || Array.isArray(entry.route)))
     ) throw new Error(`advertisement has invalid capability denial: ${capability}`);
     capabilityDenials[capability] = entry;
+  }
+  for (const capability of ["pty", "async"]) {
+    if (!capabilityDenials[capability]) {
+      throw new Error(`advertisement is missing capability denial: ${capability}`);
+    }
   }
   if (advertisement.settings !== undefined) {
     exactRecord(advertisement.settings, "advertisement.settings", ["request_cap", "model_max_tokens", "provider_attempts"]);

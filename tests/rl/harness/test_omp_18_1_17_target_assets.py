@@ -13,14 +13,20 @@ def test_omp_target_assets_are_closed_and_four_tool() -> None:
     assert target["target_id"] == "oh-my-pi@18.1.17"
     native = json.loads((root / "native-config.json").read_text())
     denials = native["capability_denials"]
-    for capability in ("pty", "async"):
+    assert set(denials) == set(surface["denied_capabilities"])
+    for capability in surface["denied_capabilities"]:
         entry = denials[capability]
-        assert entry == {
+        expected = {
             "schema_version": "bb.omp-capability-denial.v1",
             "capability": capability,
             "message": f"OMP capability denied: {capability}",
-            "source_ref": "prompts/system-prompt.md:23",
+            "source_ref": "prompts/system-prompt.md:23"
+            if capability in {"pty", "async"}
+            else "prompts/system-prompt.md:11",
         }
+        assert {key: entry[key] for key in expected} == expected
+        if capability not in {"pty", "async"}:
+            assert isinstance(entry.get("route"), dict)
     assert surface["ordered_tools"] == ["read", "bash", "edit", "write"]
     assert policy["requests"]["retry_transport_attempts"] == 1
     assert policy["turn_recovery"]["max_corrective_continuations"] == 3

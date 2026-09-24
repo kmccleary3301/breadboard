@@ -121,11 +121,43 @@ def validate_native_tool_name(name: str) -> None:
     if name not in ALLOWED_TOOLS:
         raise ValueError(f"OMP tool is not admitted: {name}")
 
-def classify_capability(value: Any) -> str | None:
-    """Classify excluded routes after literal local-path precedence."""
+def classify_capability(
+    value: Any,
+    *,
+    denial_policy: Mapping[str, Mapping[str, Any]] | None = None,
+) -> str | None:
+    """Classify a route using the target-declared denial matchers."""
     if not isinstance(value, str):
         return None
-    if value.startswith("file://"):
+    candidate = value
+    if candidate.lower().startswith("file://"):
+        return None
+    policy = denial_policy or {}
+    scheme = candidate.split("://", 1)[0].lower() if "://" in candidate else None
+    for capability, entry in policy.items():
+        if not isinstance(entry, Mapping):
+            continue
+        route = entry.get("route")
+        if not isinstance(route, Mapping):
+            continue
+        prefixes = route.get("prefixes")
+        if isinstance(prefixes, list) and any(
+            isinstance(prefix, str) and candidate.lower().startswith(prefix.lower())
+            for prefix in prefixes
+        ):
+            return str(capability)
+        schemes = route.get("schemes")
+        if isinstance(schemes, list) and scheme in {item.lower() for item in schemes if isinstance(item, str)}:
+            return str(capability)
+        extensions = route.get("extensions")
+        if isinstance(extensions, list):
+            base = candidate.lower().split("?", 1)[0].split(":", 1)[0]
+            if any(
+                isinstance(extension, str) and base.endswith(extension.lower())
+                for extension in extensions
+            ):
+                return str(capability)
+    if policy:
         return None
     for prefix, capability in (
         ("http://", "url"),
@@ -136,7 +168,7 @@ def classify_capability(value: Any) -> str | None:
         ("vault://", "internal-resource"),
         ("mcp://", "internal-resource"),
     ):
-        if value.startswith(prefix):
+        if candidate.startswith(prefix):
             return capability
     return None
 
@@ -146,21 +178,24 @@ def deny_excluded_capabilities(
     *,
     denial_policy: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> None:
-    for key in ("path", "paths", "cwd", "command", "env", "input"):
+    policy = denial_policy or {}
+    for key in ("path", "paths", "cwd", "input"):
         value = arguments.get(key)
         values = value if isinstance(value, list) else [value]
         for item in values:
-            if isinstance(item, Mapping):
-                nested = item.values()
-            else:
-                nested = (item,)
+            nested = item.values() if isinstance(item, Mapping) else (item,)
             for candidate in nested:
-                capability = classify_capability(candidate)
+                capability = classify_capability(candidate, denial_policy=policy)
                 if capability is not None:
-                    raise PermissionError(f"OMP capability denied before native resolution: {capability}")
+                    entry = policy.get(capability)
+                    if not isinstance(entry, Mapping) or type(entry.get("message")) is not str:
+                        raise PermissionError(
+                            f"OMP capability denial policy unavailable: {capability}"
+                        )
+                    raise PermissionError(entry["message"])
     for key in ("pty", "async"):
         if arguments.get(key) is True:
-            entry = (denial_policy or {}).get(key)
+            entry = policy.get(key)
             if not isinstance(entry, Mapping) or entry.get("capability") != key or type(entry.get("message")) is not str:
                 raise PermissionError(f"OMP capability denial policy unavailable: {key}")
             raise PermissionError(entry["message"])

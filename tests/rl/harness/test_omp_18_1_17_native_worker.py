@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import sys
 
 import pytest
@@ -8,6 +9,7 @@ import pytest
 from breadboard.rl.harness.omp_native_tools import (
     NativeToolWorker,
     NativeWorkerPhaseError,
+    classify_capability,
     deny_excluded_capabilities,
     pinned_worker_spec,
     verified_tool_worker_path,
@@ -46,6 +48,23 @@ def test_denial_happens_before_native_resolution() -> None:
     with pytest.raises(PermissionError):
         deny_excluded_capabilities({"pty": True})
 
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("HTTP://example.invalid", "url"),
+        (" https://example.invalid", None),
+        ("./db.sqlite:users", "sqlite"),
+        ("db%2Esqlite:users", None),
+        ("ssh:host/path", "ssh"),
+        ("https%3A%2F%2Fexample.invalid", None),
+    ],
+)
+def test_route_matchers_follow_source_path_forms(value: str, expected: str | None) -> None:
+    root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
+    policy = json.loads((root / "native-config.json").read_text())["capability_denials"]
+    assert classify_capability(value, denial_policy=policy) == expected
 
 def test_worker_resolves_verified_installed_entrypoint(tmp_path: Path) -> None:
     worker = NativeToolWorker(cwd=str(tmp_path))
