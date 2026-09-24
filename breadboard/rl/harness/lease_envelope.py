@@ -806,6 +806,22 @@ def _spawn_one(
         status_sock.detach()
 
 
+def _close_unlisted_fds(keep: set[int]) -> None:
+    try:
+        entries = os.listdir("/proc/self/fd")
+    except OSError:
+        return
+    for name in entries:
+        if not name.isdecimal():
+            continue
+        fd = int(name)
+        if fd > 2 and fd not in keep:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+
 def _launcher_main(
     sock_fd: int,
     *,
@@ -817,8 +833,9 @@ def _launcher_main(
     scratch_fd: int,
     authenticator: ReceiptAuthenticator,
     tmpfs_size_bytes: int,
-) -> None:
+ ) -> None:
     sock = socket.socket(fileno=sock_fd)
+    _close_unlisted_fds({sock_fd, workspace_fd, scratch_fd})
     try:
         mode = "privileged"
         try:
@@ -839,6 +856,8 @@ def _launcher_main(
                 scratch=scratch,
                 workspace_fd=workspace_fd,
                 scratch_fd=scratch_fd,
+
+
                 authenticator=authenticator,
                 tmpfs_size_bytes=tmpfs_size_bytes,
                 mode=mode,
@@ -856,11 +875,55 @@ def _launcher_main(
         os._exit(70)
 
 
+def _open_attested_pidfd(
+    pid: int,
+    credentials: tuple[int, int, int],
+    pid_namespace_inode: int,
+) -> int:
+    if not hasattr(os, "pidfd_open"):
+        raise OSError(errno.ENOTSUP, "pidfd_open is unavailable")
+    pidfd = os.pidfd_open(pid, 0)
+    try:
+        if os.stat(f"/proc/{pid}/ns/pid").st_ino != pid_namespace_inode:
+            raise OSError("attested child PID namespace identity changed")
+        uid = gid = None
+        for line in Path(f"/proc/{pid}/status").read_text(encoding="ascii").splitlines():
+            if line.startswith("Uid:"):
+                uid = int(line.split()[1])
+            elif line.startswith("Gid:"):
+                gid = int(line.split()[1])
+        if uid != credentials[1] or gid != credentials[2]:
+            raise OSError("attested child credentials changed")
+        return pidfd
+    except BaseException:
+        os.close(pidfd)
+        raise
+
+
+def _pidfd_send_signal(pidfd: int, sig: int) -> None:
+    sender = getattr(os, "pidfd_send_signal", None)
+    if sender is not None:
+        sender(pidfd, sig)
+        return
+    function = ctypes.CDLL(None, use_errno=True).syscall
+    function.restype = ctypes.c_long
+    result = function(
+        ctypes.c_long(424),
+        ctypes.c_int(pidfd),
+        ctypes.c_int(sig),
+        ctypes.c_void_p(),
+        ctypes.c_uint(0),
+    )
+    if result != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error))
+
 class EnvelopeProcess:
     def __init__(
         self,
         *,
         pid: int,
+        pidfd: int,
         status: socket.socket,
         gate: int,
         stdin: Any,
@@ -868,6 +931,7 @@ class EnvelopeProcess:
         stderr: Any,
     ) -> None:
         self._gate = gate
+        self._pidfd = pidfd
         self.pid = pid
         self.stdin = stdin
         self.stdout = stdout
@@ -883,7 +947,7 @@ class EnvelopeProcess:
                 asyncio.to_thread(_recv_frame, self._status)
             )
         try:
-            message, _fds = await self._wait_task
+            message, _fds = await asyncio.shield(self._wait_task)
         except (EOFError, OSError):
             self.returncode = -signal.SIGKILL
         else:
@@ -901,6 +965,9 @@ class EnvelopeProcess:
             if self._gate >= 0:
                 os.close(self._gate)
                 self._gate = -1
+            if self._pidfd >= 0:
+                os.close(self._pidfd)
+                self._pidfd = -1
         return self.returncode
 
     def admit(self) -> None:
@@ -914,8 +981,10 @@ class EnvelopeProcess:
             os.close(gate)
 
     def kill(self) -> None:
+        if self._pidfd < 0:
+            return
         try:
-            os.kill(self.pid, signal.SIGKILL)
+            _pidfd_send_signal(self._pidfd, signal.SIGKILL)
         except ProcessLookupError:
             pass
 
@@ -937,24 +1006,24 @@ async def _pipe_writer(fd: int) -> Any:
     return asyncio.StreamWriter(transport, protocol, None, loop)
 
 
-def _recv_ready_status(status: socket.socket) -> int:
+def _recv_ready_status(status: socket.socket) -> tuple[int, int, int]:
     payload, ancdata, _flags, _address = status.recvmsg(
         1, socket.CMSG_SPACE(3 * struct.calcsize("i"))
     )
     if payload != b"B":
         raise OSError("envelope child did not stop at admission")
-    process_pid = None
+    credentials = None
     for level, kind, data in ancdata:
         if (
             level == socket.SOL_SOCKET
             and kind == socket.SCM_CREDENTIALS
             and len(data) >= 12
         ):
-            process_pid = struct.unpack("3i", data[:12])[0]
+            credentials = struct.unpack("3i", data[:12])
             break
-    if process_pid is None or process_pid <= 0:
+    if credentials is None or credentials[0] <= 0:
         raise OSError("envelope child credentials are missing")
-    return process_pid
+    return credentials
 def _resolve_host_pid(supervisor_pid: int, namespace_pid: int) -> int:
     """Resolve a child PID from the supervisor's PID namespace to the host.
 
@@ -1072,31 +1141,35 @@ async def spawn_envelope_process(
                 os.close(fd)
             except OSError:
                 pass
+    pidfd = -1
     try:
-        namespace_pid = await asyncio.wait_for(
+        credentials = await asyncio.wait_for(
             asyncio.to_thread(_recv_ready_status, status_host),
             max(0.001, timeout_ms / 1000),
         )
-        try:
-            pid = _resolve_host_pid(envelope.pid1, namespace_pid)
-        except ProcessLookupError:
-            # A worker may have reparented the gated child before /proc exposes
-            # the parent chain; SCM_CREDENTIALS is already host-visible here.
-            pid = namespace_pid
+        pid, _uid, _gid = credentials
+        pidfd = _open_attested_pidfd(
+            pid,
+            credentials,
+            envelope.receipt.pid_namespace_inode,
+        )
         stdout = await _pipe_reader(stdout_r)
         stderr = await _pipe_reader(stderr_r)
         stdin = await _pipe_writer(stdin_w)
         process = EnvelopeProcess(
             pid=pid,
+            pidfd=pidfd,
             status=status_host,
             gate=gate_w,
             stdin=stdin,
             stdout=stdout,
             stderr=stderr,
         )
+        pidfd = -1
         return process
     except BaseException:
-        status_host.close()
+        if pidfd >= 0:
+            os.close(pidfd)
         try:
             os.close(gate_w)
         except OSError:

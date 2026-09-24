@@ -96,6 +96,64 @@ def test_envelope_rejects_non_string_environment_before_fork() -> None:
 
 
 @requires_sealed_execution
+async def test_envelope_descendants_do_not_hold_lease_owner_lock(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    envelope = primary._runtime._envelope
+    assert envelope is not None
+    lock_path = str(harness.lease_root / f"{primary.lease_id}.owner.lock")
+    action = asyncio.create_task(
+        primary.runner_workspace.run_shell(
+            ": > work/lock-ready; exec 1>&- 2>&-; sleep 10",
+            timeout=2,
+        )
+    )
+    try:
+        for _ in range(200):
+            if (primary._materialized.workspace_path / "work/lock-ready").exists():
+                break
+            await asyncio.sleep(0.01)
+        else:
+            raise AssertionError("envelope process did not become ready")
+        roots = {envelope.launcher_pid, envelope.pid1}
+        pending = list(roots)
+        while pending:
+            parent = pending.pop()
+            for entry in Path("/proc").iterdir():
+                if not entry.name.isdecimal():
+                    continue
+                try:
+                    status = (entry / "status").read_text(encoding="ascii")
+                except (OSError, UnicodeError):
+                    continue
+                if any(
+                    line == f"PPid:\t{parent}"
+                    for line in status.splitlines()
+                ):
+                    child = int(entry.name)
+                    if child not in roots:
+                        roots.add(child)
+                        pending.append(child)
+        for pid in roots:
+            for entry in Path(f"/proc/{pid}/fd").iterdir():
+                try:
+                    assert os.readlink(entry) != lock_path
+                except (OSError, UnicodeError):
+                    continue
+    finally:
+        if not action.done():
+            action.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await action
+        await primary.close()
+        await harness.manager.close()
+
+
+@requires_sealed_execution
 def test_sealed_executable_works_without_python_exported_seal_constants(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
