@@ -53,7 +53,7 @@ class _Channel:
         ),
     ],
 )
-def test_temperature_rewrite_canonicalizes_forwarded_framing(
+def test_forwarded_framing_preserves_body_verbatim(
     framing_headers: list[tuple[str, str]], expected_header_names: list[str]
 ) -> None:
     document = {"model": "fixture-model", "messages": [{"role": "user", "content": "hello"}]}
@@ -73,18 +73,17 @@ def test_temperature_rewrite_canonicalizes_forwarded_framing(
 
     assert channel.response is not None
     forwarded = channel.response["http_request"]
-    rewritten_body = base64.b64decode(forwarded["body_b64"], validate=True)
-    assert json.loads(rewritten_body)["temperature"] == 0
+    forwarded_body = base64.b64decode(forwarded["body_b64"], validate=True)
+    assert forwarded_body == original_body
     assert all(name.casefold() != "transfer-encoding" for name, _ in forwarded["headers"])
     content_lengths = [
         value for name, value in forwarded["headers"] if name.casefold() == "content-length"
     ]
-    assert content_lengths == [str(len(rewritten_body))]
+    assert content_lengths == [str(len(original_body))]
     forwarded_names = [
         name for name, _ in forwarded["headers"] if name.casefold() != "host"
     ]
     assert forwarded_names == expected_header_names
-
 
 def test_forwarded_framing_is_canonical_without_body_rewrite() -> None:
     document = {
@@ -119,3 +118,95 @@ def test_forwarded_framing_is_canonical_without_body_rewrite() -> None:
         for name, value in forwarded["headers"]
         if name.casefold() == "content-length"
     ] == [("Content-Length", str(len(original_body)))]
+
+
+def test_worker_built_llm_select_chat_options_keeps_temperature_and_transport_is_verbatim() -> None:
+    import os
+    import shutil
+    import subprocess
+
+    def _check_sdk() -> None:
+        try:
+            from openhands.sdk import LLM
+            from openhands.sdk.llm.options.chat_options import select_chat_options
+
+            worker_llm = LLM(
+                model="openai/gpt-4o-mini",
+                api_key="secret",
+                base_url="https://api.test/v1",
+                num_retries=0,
+                timeout=45,
+                max_output_tokens=2048,
+                temperature=0,
+                reasoning_effort="none",
+                disable_vision=True,
+                drop_params=True,
+                capability_overrides={
+                    "supports_reasoning_effort": False,
+                    "supports_vision": False,
+                    "supports_responses_api": False,
+                    "supports_sampling_params": True,
+                },
+            )
+            opts = select_chat_options(worker_llm, {}, has_tools=True)
+            assert opts.get("temperature") == 0.0, f"Expected 0.0, got {opts.get('temperature')}"
+            return
+        except Exception:
+            pass
+
+        py312 = (
+            shutil.which("python3.12")
+            or "/opt/breadboard-native-tools/python/bin/python3.12"
+            or "/Users/kylemccleary/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12"
+        )
+        env = dict(os.environ)
+        archive_pkg = "/Users/kylemccleary/.cache/uv/archive-v0/EmOGkXXkN6m3sPSJ/lib/python3.12/site-packages"
+        if os.path.isdir(archive_pkg):
+            env["PYTHONPATH"] = archive_pkg
+        env["OPENHANDS_SUPPRESS_BANNER"] = "1"
+        code = """
+import os, sys
+from openhands.sdk import LLM
+from openhands.sdk.llm.options.chat_options import select_chat_options
+
+worker_llm = LLM(
+    model="openai/gpt-4o-mini",
+    api_key="secret",
+    base_url="https://api.test/v1",
+    num_retries=0,
+    timeout=45,
+    max_output_tokens=2048,
+    temperature=0,
+    reasoning_effort="none",
+    disable_vision=True,
+    drop_params=True,
+    capability_overrides={
+        "supports_reasoning_effort": False,
+        "supports_vision": False,
+        "supports_responses_api": False,
+        "supports_sampling_params": True,
+    },
+)
+opts = select_chat_options(worker_llm, {}, has_tools=True)
+assert opts.get("temperature") == 0.0, f"Expected 0.0, got {opts.get('temperature')}"
+print("OK")
+"""
+        res = subprocess.run([py312, "-c", code], env=env, capture_output=True, text=True, check=True)
+        assert res.stdout.strip() == "OK"
+
+    _check_sdk()
+
+    # 2. _IPCTransport forwards the SDK body byte-for-byte without rewriting
+    channel = _Channel()
+    transport = _IPCTransport(channel, "credential", lambda _request: {})
+    sdk_body = b'{"messages":[{"content":"hi","role":"user"}],"model":"openai/gpt-4o-mini","temperature":0.0}'
+    request = httpx.Request(
+        "POST",
+        "https://provider.test/v1/chat/completions",
+        headers=[("Authorization", "Bearer credential")],
+        content=sdk_body,
+    )
+    transport.handle_request(request)
+    assert channel.response is not None
+    forwarded = channel.response["http_request"]
+    assert base64.b64decode(forwarded["body_b64"], validate=True) == sdk_body

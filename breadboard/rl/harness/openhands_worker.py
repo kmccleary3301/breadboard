@@ -48,14 +48,6 @@ class _IPCTransport:
         if auth != f"Bearer {self._credential}":
             raise self._httpx.LocalProtocolError("native transport credential rejected")
         body = request.content
-        original_body = body
-        try:
-            document = json.loads(body)
-        except (TypeError, ValueError, UnicodeDecodeError):
-            document = None
-        if isinstance(document, dict) and "temperature" not in document:
-            document["temperature"] = 0
-            body = json.dumps(document, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         if len(body) > FRAME_LIMIT:
             raise self._httpx.RequestError("native OpenHands request exceeds frame limit", request=request)
         headers: list[list[str]] = []
@@ -359,6 +351,12 @@ class OpenHandsActor:
             "stream": False,
             "native_tool_calling": True,
             "drop_params": True,
+            "capability_overrides": {
+                "supports_reasoning_effort": False,
+                "supports_vision": False,
+                "supports_responses_api": False,
+                "supports_sampling_params": True,
+            },
         }
         self._llm = LLM(**llm_kwargs)
         if detect_provider(self._llm) is not None:
