@@ -833,7 +833,7 @@ def _launcher_main(
     scratch_fd: int,
     authenticator: ReceiptAuthenticator,
     tmpfs_size_bytes: int,
- ) -> None:
+) -> None:
     sock = socket.socket(fileno=sock_fd)
     _close_unlisted_fds({sock_fd, workspace_fd, scratch_fd})
     try:
@@ -856,8 +856,6 @@ def _launcher_main(
                 scratch=scratch,
                 workspace_fd=workspace_fd,
                 scratch_fd=scratch_fd,
-
-
                 authenticator=authenticator,
                 tmpfs_size_bytes=tmpfs_size_bytes,
                 mode=mode,
