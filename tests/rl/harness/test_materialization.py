@@ -26,8 +26,12 @@ from breadboard.rl.harness.materialization import (
     FilesystemMaterializationStore,
     MaterializationEntry,
     MaterializationKey,
+    SealedSourceManifest,
     SourceManifestEntry,
+    WORKSPACE_SEED_MEDIA_TYPE,
+    WORKSPACE_SEED_SCHEMA_VERSION,
     build_workspace_seed_artifact,
+    validate_workspace_seed_manifest,
 )
 from tests.rl.harness.wp7_fixtures import (
     DeterministicRandom,
@@ -3089,6 +3093,90 @@ def test_tmpfs_quota_mount_path_race_unmounts_only_covered_descriptor(
     assert all(target != os.fspath(root) for target, _detach in unmounted)
     assert authority._mounted is False
     assert authority._covered_descriptor == -1
+def test_workspace_seed_rejects_boolean_modes_before_materialization(
+    tmp_path: Path,
+) -> None:
+    class Entry:
+        def __init__(
+            self,
+            logical_path: str,
+            kind: str,
+            byte_count: int,
+            mode: object,
+            content_digest: str | None,
+        ) -> None:
+            self.logical_path = logical_path
+            self.kind = kind
+            self.byte_count = byte_count
+            self.mode = mode
+            self.content_digest = content_digest
+
+        def projection(self) -> dict[str, object]:
+            return {
+                "path": self.logical_path,
+                "kind": self.kind,
+                "bytes": self.byte_count,
+                "mode": self.mode,
+                "digest": self.content_digest,
+            }
+
+    member_digest = digest(b"x")
+    entries = (
+        Entry(".", "directory", 0, True, None),
+        Entry("seed.txt", "file", 1, True, member_digest),
+    )
+    identity = {
+        "schema_version": WORKSPACE_SEED_SCHEMA_VERSION,
+        "media_type": WORKSPACE_SEED_MEDIA_TYPE,
+        "directory_mode": True,
+        "entries": [entry.projection() for entry in entries],
+    }
+    source_digest = independent_digest(identity)
+    manifest = SealedSourceManifest(
+        source_digest=source_digest,
+        schema_identity=WORKSPACE_SEED_SCHEMA_VERSION,
+        media_identity=WORKSPACE_SEED_MEDIA_TYPE,
+        entries=entries,
+        total_bytes=1,
+        total_files=1,
+    )
+
+    class Reader:
+        def load_manifest(
+            self, _digest: str, *, max_bytes: int
+        ) -> SealedSourceManifest:
+            return manifest
+
+        def validate_workspace_seed_manifest(
+            self, value: SealedSourceManifest, expected_digest: str
+        ) -> int:
+            return validate_workspace_seed_manifest(value, expected_digest)
+
+        def read_member(
+            self, _digest: str, _logical_path: str, *, max_bytes: int
+        ) -> bytes:
+            return b"x"
+
+    store, _cache_root, _workspace_root = _store(
+        tmp_path, Reader(), FrozenClock(), namespace=31_002
+    )
+    plan = make_materialization_plan(
+        make_effective_plan(),
+        entries=(
+            MaterializationEntry(
+                source_digest,
+                ".",
+                c.MountAccess.READ_WRITE,
+                4_096,
+                "workspace_seed",
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="mode is invalid"):
+        store.materialize(plan)
+    store.close()
+
+
 
 def test_workspace_seed_mount_starts_with_exact_file_mode_and_private_baseline(
     tmp_path: Path,

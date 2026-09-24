@@ -355,7 +355,12 @@ class SourceManifestEntry:
             self.logical_path,
             allow_root=self.logical_path == "." and self.kind == "directory",
         )
-        if self.byte_count < 0 or self.mode < 0 or self.mode > 0o777:
+        if (
+            type(self.mode) is not int
+            or self.byte_count < 0
+            or self.mode < 0
+            or self.mode > 0o777
+        ):
             raise ValueError("invalid source manifest metadata")
         if self.kind == "file" and not (self.content_digest or "").startswith(
             _DIGEST_PREFIX
@@ -432,6 +437,11 @@ def validate_workspace_seed_manifest(
     )
     if len(roots) != 1 or roots[0].kind != "directory":
         raise ValueError("workspace seed manifest root is invalid")
+    if any(
+        type(entry.mode) is not int or not 0 <= entry.mode <= 0o777
+        for entry in manifest.entries
+    ):
+        raise ValueError("workspace seed manifest mode is invalid")
     identity = {
         "schema_version": WORKSPACE_SEED_SCHEMA_VERSION,
         "media_type": WORKSPACE_SEED_MEDIA_TYPE,
