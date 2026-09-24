@@ -71,8 +71,10 @@ async def test_failed_public_close_exposes_inventory_and_retry_releases_resource
     workspace_root.mkdir()
     live_lease = lease_root / "episode-live"
     live_workspace = workspace_root / "workspace-live"
+    leftover_scratch = lease_root / "episode-left.native-scratch"
     live_lease.mkdir()
     live_workspace.mkdir()
+    leftover_scratch.mkdir(mode=0o700)
     probe = _ProductionCleanupProbe(
         manifest=SimpleNamespace(
             stores=SimpleNamespace(
@@ -99,6 +101,7 @@ async def test_failed_public_close_exposes_inventory_and_retry_releases_resource
             raise RuntimeError("runtime cleanup pending")
         live_lease.rmdir()
         live_workspace.rmdir()
+        leftover_scratch.rmdir()
 
     composition = ProductionComposition(
         app=None,
@@ -125,6 +128,7 @@ async def test_failed_public_close_exposes_inventory_and_retry_releases_resource
         await first_close
 
     inventory = composition.observe_cleanup_inventory()
+    assert os.fspath(leftover_scratch) in inventory.orphan_resource_ids
     assert inventory.active_lease_ids == ("episode-live",)
     assert inventory.workspace_paths == (os.fspath(live_workspace),)
 
@@ -133,6 +137,7 @@ async def test_failed_public_close_exposes_inventory_and_retry_releases_resource
     inventory = composition.observe_cleanup_inventory()
     assert inventory.active_lease_ids == ()
     assert inventory.workspace_paths == ()
+    assert inventory.orphan_resource_ids == ()
 
 @pytest.mark.asyncio
 async def test_composition_retries_failed_runtime_cleanup_before_authorities() -> None:

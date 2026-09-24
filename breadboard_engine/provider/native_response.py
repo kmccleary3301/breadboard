@@ -86,6 +86,8 @@ class NativeStreamFragment:
     text: str
     call_id: str | None = None
     name: str | None = None
+    # Source stream ``tool_calls[].index``; ``index`` is the global ordinal.
+    tool_index: int | None = None
 
     def __post_init__(self) -> None:
         if self.kind not in {"content", "tool_arguments"}:
@@ -105,7 +107,11 @@ class NativeStreamFragment:
                 _require_text(
                     self.name, "native stream fragment name", max_length=_MAX_ID_LENGTH
                 )
-        elif self.call_id is not None or self.name is not None:
+            if self.tool_index is not None and (
+                type(self.tool_index) is not int or self.tool_index < 0
+            ):
+                raise ProviderContractError("native stream fragment tool_index is invalid")
+        elif self.call_id is not None or self.name is not None or self.tool_index is not None:
             raise ProviderContractError("content fragments cannot carry tool identity")
 
     @property
@@ -118,6 +124,8 @@ class NativeStreamFragment:
             result["call_id"] = self.call_id
         if self.name is not None:
             result["name"] = self.name
+        if self.tool_index is not None:
+            result["tool_index"] = self.tool_index
         return result
 
 
@@ -135,6 +143,7 @@ class NativeProviderResponse:
     usage: Mapping[str, Any] | None = None
     stream_fragments: tuple[NativeStreamFragment, ...] = field(default_factory=tuple)
     raw_response: Mapping[str, Any] | None = None
+    request_body: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         _require_text(self.binding_digest, "binding_digest", max_length=256)
@@ -157,6 +166,11 @@ class NativeProviderResponse:
             if not isinstance(raw, Mapping):
                 raise ProviderContractError("raw_response must be an object")
             object.__setattr__(self, "raw_response", raw)
+        if self.request_body is not None:
+            body = _copy_json_value(self.request_body, "request_body", freeze=True)
+            if not isinstance(body, Mapping):
+                raise ProviderContractError("request_body must be an object")
+            object.__setattr__(self, "request_body", body)
         if not isinstance(self.stream_fragments, tuple):
             raise ProviderContractError("stream_fragments must be an ordered tuple")
         if any(not isinstance(item, NativeStreamFragment) for item in self.stream_fragments):
@@ -178,6 +192,8 @@ class NativeProviderResponse:
         }
         if self.raw_response is not None:
             result["raw_response"] = _copy_json_value(self.raw_response, "raw_response")
+        if self.request_body is not None:
+            result["request_body"] = _copy_json_value(self.request_body, "request_body")
         return result
 
     def validate_bounds(self, *, max_response_bytes: int, max_stream_fragments: int) -> None:

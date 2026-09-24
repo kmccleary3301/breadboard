@@ -252,7 +252,7 @@ def test_built_wheel_clean_install_runs_public_surface_without_credentials(
     venv_python = venv / "bin" / "python"
     breadboard = venv / "bin" / "breadboard"
     subprocess.run(
-        ["uv", "pip", "install", "--python", str(venv_python), str(wheel)],
+        ["uv", "pip", "install", "--link-mode=copy", "--python", str(venv_python), str(wheel)],
         cwd=outside_repo,
         env=environment,
         check=True,
@@ -279,6 +279,7 @@ from breadboard.product.harness.templates import (
     minimal_template_path,
 )
 from breadboard.product.operation_catalog import product_operation_catalog
+from breadboard.rl.harness.pi_native_tools import _WORKER
 from breadboard_engine.compilation.primitive_records import get_spec
 from breadboard_engine.e4_targets import (
     _resource_root,
@@ -336,8 +337,15 @@ generated = json.loads(
 assert generated["catalog_id"] == "bb.public_operation_catalog.v2"
 assert files("breadboard_sdk.generated").joinpath("public_bindings.py").is_file()
 target_ids = list_e4_target_ids()
-assert target_ids == ("mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "pi@0.57.1")
+assert target_ids == ("mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "openhands-sdk@1.47.0", "pi@0.57.1", "pi@0.73.1")
+for target_id in target_ids:
+    target = load_e4_target(target_id)
+    for asset in target.descriptor["assets"]:
+        asset_path = asset["path"]
+        assert isinstance(target.read_asset_bytes(asset_path), bytes)
 pi_target = load_e4_target("pi@0.57.1")
+pi_073_worker = Path(_WORKER).resolve()
+assert pi_073_worker.is_file() and pi_073_worker.is_relative_to(site_root)
 omp_target = load_e4_target("oh-my-pi@16.2.13")
 assert pi_target.descriptor["upstream"]["package"]["integrity"].startswith("sha512-")
 assert omp_target.descriptor["upstream"]["source"]["commit"] == (
@@ -359,10 +367,11 @@ print(json.dumps({{
         [str(venv_python), "-I", "-c", probe],
         cwd=outside_repo,
         env=environment,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
     )
+    assert probe_result.returncode == 0, probe_result.stderr[-4000:]
     assert json.loads(probe_result.stdout) == {
         "distribution": "breadboard-harness-cli",
         "version": "0.0.0",
@@ -372,7 +381,7 @@ print(json.dumps({{
         ),
         "profile_id": "daily_driver.v1",
         "e4_import_count": 0,
-        "e4_target_ids": ["mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "pi@0.57.1"],
+        "e4_target_ids": ["mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "openhands-sdk@1.47.0", "pi@0.57.1", "pi@0.73.1"],
     }
 
     help_result = subprocess.run(

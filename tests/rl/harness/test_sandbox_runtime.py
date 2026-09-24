@@ -1523,6 +1523,23 @@ async def test_execute_rejects_malformed_argv_without_fencing_active_lease(
     assert lease.state is WorkspaceLeaseState.ACTIVE
     assert handle.argv_actions == []
 
+@pytest.mark.asyncio
+async def test_close_removes_native_scratch_and_reports_cleanup(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    lease = await harness.manager.open(fixture.request)
+    scratch = sandbox_module._create_native_scratch(harness.manager, lease.lease_id)
+    (scratch / "home").mkdir()
+    (scratch / "home" / "marker").write_text("scratch")
+
+    receipt = await lease.close()
+
+    assert not scratch.exists()
+    assert CleanupStepReceipt("native_scratch", CleanupState.RELEASED) in receipt.steps
+
+
 @pytest.mark.parametrize("completion", ["finish", "cancel"])
 async def test_close_fences_new_operations_and_drains_an_active_operation(
     tmp_path: Path, completion: str
@@ -1921,6 +1938,10 @@ async def test_restart_reconciliation_leaves_live_foreign_lease_then_reclaims_ex
     lease = await original.manager.open(fixture.request)
     record_path = original.lease_root / f"{lease.lease_id}.json"
     workspace_path = lease._materialized.workspace_path
+    scratch_path = sandbox_module._create_native_scratch(
+        original.manager, lease.lease_id
+    )
+    (scratch_path / "home").mkdir()
     record = dict(original.manager._read_lease_record(record_path))
     recovery_backend = ReconcileBackend()
     recovery = SandboxRuntimeManager(
@@ -1964,11 +1985,13 @@ async def test_restart_reconciliation_leaves_live_foreign_lease_then_reclaims_ex
             CleanupState.ALREADY_RELEASED,
         ),
         CleanupStepReceipt("runtime", CleanupState.RELEASED),
+        CleanupStepReceipt("native_scratch", CleanupState.RELEASED),
         CleanupStepReceipt("workspace", CleanupState.RELEASED),
         CleanupStepReceipt("cache_holder", CleanupState.RELEASED),
         CleanupStepReceipt("lease_record", CleanupState.RELEASED),
     )
     assert len(recovery_backend.reconciled) == 1
+    assert not scratch_path.exists()
     assert not workspace_path.exists()
     assert not record_path.exists()
     assert original.store.recover_stale_cache_holder(record) == CleanupStepReceipt(
@@ -2177,6 +2200,11 @@ async def test_restart_reclaims_orphan_verifier_owner_lock_without_blocking_prim
     orphan_lease_id = "verifier-lease-" + ("a" * 32)
     orphan_lock = original.lease_root / f"{orphan_lease_id}.owner.lock"
     orphan_lock.touch(mode=0o600)
+    orphan_scratch = sandbox_module._create_native_scratch(
+        original.manager, orphan_lease_id
+    )
+    (orphan_scratch / "home").mkdir()
+    (orphan_scratch / "home" / "marker").write_text("scratch")
     original.clock.advance(minutes=5)
     original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
     recovery = SandboxRuntimeManager(
@@ -2201,10 +2229,12 @@ async def test_restart_reclaims_orphan_verifier_owner_lock_without_blocking_prim
         receipt for receipt in receipts if receipt.lease_id == lease.lease_id
     )
     assert orphan.steps == (
+        CleanupStepReceipt("native_scratch", CleanupState.RELEASED),
         CleanupStepReceipt("owner_lock", CleanupState.RELEASED),
     )
     assert primary.state is CleanupState.RELEASED
     assert not orphan_lock.exists()
+    assert not orphan_scratch.exists()
     assert not workspace.exists()
     assert not (original.lease_root / f"{lease.lease_id}.json").exists()
     assert active_lock.exists()

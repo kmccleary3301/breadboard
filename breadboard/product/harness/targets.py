@@ -209,8 +209,8 @@ class E4TargetRendering:
     descriptor_digest: str
     execution_config_digest: str
     overlay_digest: str
-    rendered_prompt_digest: str
-    system_prompt: str
+    rendered_prompt_digest: str | None
+    system_prompt: str | None
     ordered_tool_names: tuple[str, ...]
     tools: tuple[Mapping[str, Any], ...]
     renderer_id: str = "breadboard.e4.legacy-string-template.v1"
@@ -255,6 +255,59 @@ def _lower_mini_target(
     )
 
 
+def _lower_worker_target(
+    package: E4TargetPackage,
+    harness: Mapping[str, Any],
+    dynamic_fields: Mapping[str, Any],
+) -> E4TargetRendering:
+    """Bind source assets; the owned worker renders runtime-dependent fields."""
+    recipes = {
+        "openhands-sdk@1.47.0": (
+            "breadboard.openhands-sdk.v1.47.0",
+            "3d3dfae53ab307406804660577288a44a93476d4620be4d31739882a57cbe71a",
+        ),
+        "pi@0.73.1": (
+            "breadboard.pi-coding-agent.v0.73.1",
+            "2834e64d081edede815bd1fa81d8ad423b5d0bd1c2e6466ca3ba5060c12a5003",
+        ),
+    }
+    recipe = recipes.get(package.target_id)
+    if (
+        recipe is None
+        or sha256(package.descriptor_bytes).hexdigest() != recipe[1]
+        or harness["renderer"]["selector"] != recipe[0]
+        or dynamic_fields
+    ):
+        raise HarnessCompileError("native worker requires its pinned recipe and no caller template inputs")
+    native = json.loads(package.read_asset_text("native-config.json"))
+    surface = json.loads(package.read_asset_text("tool-surface.json"))
+    order = tuple(surface["ordered_tools"])
+    compiler_tools = []
+    for name in order:
+        tool = {"name": name, **surface["tools"][name]}
+        # The registry emits an empty required list. Native HTTP uses the
+        # untouched source schemas in runtime_profile, including omissions.
+        tool["parameters"] = {
+            **tool["parameters"], "required": tool["parameters"].get("required", []),
+        }
+        compiler_tools.append(copy_harness_json(tool, freeze=True))
+    descriptor = package.descriptor
+    overlay = descriptor["overlay"]
+    return E4TargetRendering(
+        target_id=package.target_id,
+        overlay_id=overlay["overlay_id"],
+        descriptor_digest=canonical_sha256(descriptor),
+        execution_config_digest=canonical_sha256(harness),
+        overlay_digest=canonical_sha256(overlay),
+        rendered_prompt_digest=None,
+        system_prompt=None,
+        ordered_tool_names=order,
+        tools=tuple(compiler_tools),
+        renderer_id=recipe[0],
+        runtime_profile=copy_harness_json(native, freeze=True),
+    )
+
+
 def lower_e4_target(
     package: E4TargetPackage,
     dynamic_fields: Mapping[str, Any],
@@ -293,6 +346,11 @@ def lower_e4_target(
             raise HarnessCompileError("E4 target configuration revision does not match")
         if harness["renderer"]["selector"] == "breadboard.mini-swe-agent.v2.4.6":
             return _lower_mini_target(package, harness, dynamic_fields)
+        if harness["renderer"]["selector"] in {
+            "breadboard.openhands-sdk.v1.47.0",
+            "breadboard.pi-coding-agent.v0.73.1",
+        }:
+            return _lower_worker_target(package, harness, dynamic_fields)
         raise E4TargetCapabilityError(
             harness["renderer"]["selector"], tuple(harness["required_capabilities"])
         )
@@ -399,6 +457,7 @@ def lower_e4_target(
         system_prompt=rendered_prompt,
         ordered_tool_names=tuple(ordered_names),
         tools=tuple(tools),
+        renderer_id="breadboard.e4.legacy-string-template.v1",
     )
 
 
@@ -509,7 +568,7 @@ def lower_e4_harness(
         },
         "modes": [{
             "id": "build",
-            "prompt": rendered.system_prompt,
+            **({"prompt": rendered.system_prompt} if rendered.system_prompt is not None else {}),
             "tools_enabled": list(rendered.ordered_tool_names),
         }],
         "loop": {"sequence": ["build"]},

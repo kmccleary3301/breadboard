@@ -49,6 +49,39 @@ def _digest(value: object) -> str:
     return "sha256:" + hashlib.sha256(payload).hexdigest()
 
 
+def test_openhands_adapter_rejects_missing_terminal_during_descriptor_admission(tmp_path: Path) -> None:
+    native = tmp_path / "native"
+    native.mkdir(mode=0o700)
+    metadata = native.stat()
+    manifest = tmp_path / "native-manifest.json"
+    payload = b"{}\n"
+    manifest.write_bytes(payload)
+    descriptor = {
+        "adapter_id": "openhands-sdk.local.v1.47.0",
+        "tool_ids": ["file_editor", "finish", "task_tracker", "terminal", "think"],
+        "runtime_root": {
+            "authority_id": "native-runtime",
+            "path": str(native),
+            "device": metadata.st_dev,
+            "inode": metadata.st_ino,
+            "owner_uid": metadata.st_uid,
+            "mode": "0700",
+        },
+        "manifest_ref": {
+            "path": str(manifest),
+            "sha256": "sha256:" + hashlib.sha256(payload).hexdigest(),
+            "size_bytes": len(payload),
+            "media_type": "application/vnd.breadboard.native-tool-source+json;version=1",
+        },
+        "executable_relative_path": "python/bin/python3.12",
+        "entrypoint_relative_path": "openhands_worker.py",
+    }
+    composition.InstalledToolAdapterV1.model_validate_json(json.dumps(descriptor))
+    descriptor["tool_ids"].remove("terminal")
+    with pytest.raises(ValueError):
+        composition.InstalledToolAdapterV1.model_validate_json(json.dumps(descriptor))
+
+
 def test_project_quota_seccomp_rejects_inode_owner_escape_authority() -> None:
     profile = {
         "defaultAction": "SCMP_ACT_ERRNO",

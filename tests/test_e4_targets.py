@@ -19,7 +19,10 @@ from breadboard_engine.e4_targets import (
     load_e4_target,
 )
 
-from breadboard.product.harness.targets import bind_e4_target_inputs, serialize_e4_target_inputs
+from breadboard.product.harness.targets import (
+    bind_e4_target_inputs,
+    serialize_e4_target_inputs,
+)
 from breadboard.product.harness.validate import (
     HarnessDefinitionValidationError,
     validate_e4_target_document,
@@ -42,9 +45,12 @@ def test_target_resources_load_outside_editable_checkout_cwd(
 
     assert _resource_root() == TARGET_ROOT
     assert list_e4_target_ids() == (
-        "mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "pi@0.57.1"
+        "mini-swe-agent@2.4.6",
+        "oh-my-pi@16.2.13",
+        "openhands-sdk@1.47.0",
+        "pi@0.57.1",
+        "pi@0.73.1",
     )
-
 
 def test_editable_source_root_accepts_only_absolute_local_file_urls(
     tmp_path: Path,
@@ -60,9 +66,7 @@ def test_editable_source_root_accepts_only_absolute_local_file_urls(
     def unreadable_metadata(_: str) -> str:
         raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid byte")
 
-    assert (
-        _editable_source_root(SimpleNamespace(read_text=unreadable_metadata)) is None
-    )
+    assert _editable_source_root(SimpleNamespace(read_text=unreadable_metadata)) is None
 
     for url in (
         "https://example.invalid/source",
@@ -97,9 +101,12 @@ def test_distribution_owner_match_does_not_resolve_symlink_aliases(
 
 def test_pinned_targets_load_with_exact_release_source_and_runtime_assets() -> None:
     assert list_e4_target_ids() == (
-        "mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "pi@0.57.1"
+        "mini-swe-agent@2.4.6",
+        "oh-my-pi@16.2.13",
+        "openhands-sdk@1.47.0",
+        "pi@0.57.1",
+        "pi@0.73.1",
     )
-
     pi = load_e4_target("pi@0.57.1")
     assert pi.descriptor["upstream"] == {
         "repository": "https://github.com/badlogic/pi-mono.git",
@@ -345,14 +352,14 @@ def _write_v2_fixture(root: Path) -> Path:
         )
     )
     config = json.loads(
-        (
-            ROOT / "contracts/kernel/examples/e4_target_config_v2_minimal.json"
-        ).read_text(encoding="utf-8")
+        (ROOT / "contracts/kernel/examples/e4_target_config_v2_minimal.json").read_text(
+            encoding="utf-8"
+        )
     )
     assets = {
         "harness.yaml": json.dumps(config, separators=(",", ":")).encode("utf-8"),
         "prompts/system-prompt.md": b"example prompt\\n",
-        "tool-surface.json": b"{\"ordered_tools\":[\"terminal\"]}\\n",
+        "tool-surface.json": b'{"ordered_tools":["terminal"]}\\n',
     }
     for asset in descriptor["assets"]:
         content = assets[asset["path"]]
@@ -432,7 +439,9 @@ def test_target_loader_rejects_duplicate_v2_configuration_keys(tmp_path: Path) -
         _load_e4_target_from_root(root, "example@2.0")
 
 
-def test_target_loader_checks_nested_schema_without_parent_required(tmp_path: Path) -> None:
+def test_target_loader_checks_nested_schema_without_parent_required(
+    tmp_path: Path,
+) -> None:
     root = _write_v2_fixture(tmp_path)
     config_path = root / "example" / "2.0" / "harness.yaml"
     config = json.loads(config_path.read_text(encoding="utf-8"))
@@ -454,26 +463,27 @@ def test_target_loader_checks_nested_schema_without_parent_required(tmp_path: Pa
     with pytest.raises(E4TargetError):
         _load_e4_target_from_root(root, "example@2.0")
 
-    config["inputs"]["fields"][0]["value_schema"]["properties"]["child"]["properties"] = {
-        "ghost": {"type": "string"}
-    }
+    config["inputs"]["fields"][0]["value_schema"]["properties"]["child"][
+        "properties"
+    ] = {"ghost": {"type": "string"}}
     config_path.write_text(json.dumps(config), encoding="utf-8")
     _refresh_v2_descriptor(root)
     package = _load_e4_target_from_root(root, "example@2.0")
     frame = bind_e4_target_inputs(
-        package, "bb.rl.headless-run-request.v2", {"task": {"child": {"ghost": "present"}}}
+        package,
+        "bb.rl.headless-run-request.v2",
+        {"task": {"child": {"ghost": "present"}}},
     )
     assert json.loads(frame)["target_dynamic_fields"] == {
         "task": {"child": {"ghost": "present"}}
     }
 
 
-
 def test_v2_input_schema_supports_nullable_typed_arrays_and_closed_objects() -> None:
     config = json.loads(
-        (
-            ROOT / "contracts/kernel/examples/e4_target_config_v2_minimal.json"
-        ).read_text(encoding="utf-8")
+        (ROOT / "contracts/kernel/examples/e4_target_config_v2_minimal.json").read_text(
+            encoding="utf-8"
+        )
     )
     field = config["inputs"]["fields"][0]
     field["required"] = False
@@ -493,9 +503,9 @@ def test_v2_input_schema_supports_nullable_typed_arrays_and_closed_objects() -> 
 
 def test_v2_input_default_must_validate_against_its_value_schema() -> None:
     config = json.loads(
-        (
-            ROOT / "contracts/kernel/examples/e4_target_config_v2_minimal.json"
-        ).read_text(encoding="utf-8")
+        (ROOT / "contracts/kernel/examples/e4_target_config_v2_minimal.json").read_text(
+            encoding="utf-8"
+        )
     )
     field = config["inputs"]["fields"][0]
     field["required"] = False
@@ -510,16 +520,15 @@ def test_v2_input_default_must_validate_against_its_value_schema() -> None:
 
     findings = validate_e4_target_document(config)
     assert any(
-        finding.pointer == "/inputs/fields/0/default/enabled"
-        for finding in findings
+        finding.pointer == "/inputs/fields/0/default/enabled" for finding in findings
     )
 
 
 def test_v2_input_schema_is_required_and_value_type_is_not_admitted() -> None:
     config = json.loads(
-        (
-            ROOT / "contracts/kernel/examples/e4_target_config_v2_minimal.json"
-        ).read_text(encoding="utf-8")
+        (ROOT / "contracts/kernel/examples/e4_target_config_v2_minimal.json").read_text(
+            encoding="utf-8"
+        )
     )
     field = config["inputs"]["fields"][0]
     field.pop("value_schema")
@@ -536,6 +545,7 @@ def test_v2_input_schema_is_required_and_value_type_is_not_admitted() -> None:
         and finding.code == "required"
         for finding in findings
     )
+
 
 def test_target_loader_rejects_unknown_v2_descriptor_fields(tmp_path: Path) -> None:
     root = _write_v2_fixture(tmp_path)
@@ -622,7 +632,9 @@ def test_target_loader_rejects_nontext_descriptor_revision(tmp_path: Path) -> No
         _load_e4_target_from_root(root, "example@2.0")
 
 
-def test_target_loader_rejects_unknown_v2_configuration_revision(tmp_path: Path) -> None:
+def test_target_loader_rejects_unknown_v2_configuration_revision(
+    tmp_path: Path,
+) -> None:
     root = _write_v2_fixture(tmp_path)
     config_path = root / "example" / "2.0" / "harness.yaml"
     config = json.loads(config_path.read_text(encoding="utf-8"))
@@ -637,33 +649,55 @@ def test_target_loader_rejects_unknown_v2_configuration_revision(tmp_path: Path)
         _load_e4_target_from_root(root, "example@2.0")
 
 
-def test_v2_input_binding_preserves_presence_and_runtime_ownership(tmp_path: Path) -> None:
+def test_v2_input_binding_preserves_presence_and_runtime_ownership(
+    tmp_path: Path,
+) -> None:
     root = _write_v2_fixture(tmp_path)
     config_path = root / "example" / "2.0" / "harness.yaml"
     config = json.loads(config_path.read_text(encoding="utf-8"))
     field_base = {
-        "required": False, "producer": "operator", "lifetime": "episode",
-        "source_ref": "fixture/inputs.json", "omission": "missing",
+        "required": False,
+        "producer": "operator",
+        "lifetime": "episode",
+        "source_ref": "fixture/inputs.json",
+        "omission": "missing",
     }
-    config["inputs"]["fields"].extend([
-        dict(field_base, name="tag", value_schema={"type": ["string", "null"]}),
-        dict(
-            field_base, name="payload", required=True, omission="required",
-            value_schema={
-                "type": "object",
-                "properties": {"enabled": {"type": "boolean"}, "count": {"type": "integer"}},
-                "required": ["enabled", "count"], "additionalProperties": False,
-            },
-        ),
-        dict(
-            field_base, name="fallback", omission="default", default=0,
-            value_schema={"type": "integer"},
-        ),
-        dict(
-            field_base, name="tick", producer="runtime", lifetime="turn",
-            required=True, omission="required", value_schema={"type": "integer", "minimum": 0},
-        ),
-    ])
+    config["inputs"]["fields"].extend(
+        [
+            dict(field_base, name="tag", value_schema={"type": ["string", "null"]}),
+            dict(
+                field_base,
+                name="payload",
+                required=True,
+                omission="required",
+                value_schema={
+                    "type": "object",
+                    "properties": {
+                        "enabled": {"type": "boolean"},
+                        "count": {"type": "integer"},
+                    },
+                    "required": ["enabled", "count"],
+                    "additionalProperties": False,
+                },
+            ),
+            dict(
+                field_base,
+                name="fallback",
+                omission="default",
+                default=0,
+                value_schema={"type": "integer"},
+            ),
+            dict(
+                field_base,
+                name="tick",
+                producer="runtime",
+                lifetime="turn",
+                required=True,
+                omission="required",
+                value_schema={"type": "integer", "minimum": 0},
+            ),
+        ]
+    )
     config["inputs"]["order"] = ["task", "tag", "payload", "fallback", "tick"]
     config_path.write_text(json.dumps(config), encoding="utf-8")
     _refresh_v2_descriptor(root)
@@ -688,17 +722,28 @@ def test_v2_input_binding_preserves_presence_and_runtime_ownership(tmp_path: Pat
         ("/tick", "input_producer")
     ]
     with pytest.raises(HarnessDefinitionValidationError) as encoded_object:
-        bind_e4_target_inputs(package, version, dict(values, payload='{"enabled":false,"count":0}'))
-    assert [(finding.pointer, finding.code) for finding in encoded_object.value.findings] == [
-        ("/payload", "type")
-    ]
+        bind_e4_target_inputs(
+            package, version, dict(values, payload='{"enabled":false,"count":0}')
+        )
+    assert [
+        (finding.pointer, finding.code) for finding in encoded_object.value.findings
+    ] == [("/payload", "type")]
 
 
 def test_v2_input_identity_preserves_numeric_form_and_nested_key_order() -> None:
     version = "bb.rl.headless-run-request.v2"
     integer = serialize_e4_target_inputs(version, {"value": {"first": 1, "second": 2}})
-    floating = serialize_e4_target_inputs(version, {"value": {"first": 1.0, "second": 2}})
-    reordered = serialize_e4_target_inputs(version, {"value": {"second": 2, "first": 1}})
+    floating = serialize_e4_target_inputs(
+        version, {"value": {"first": 1.0, "second": 2}}
+    )
+    reordered = serialize_e4_target_inputs(
+        version, {"value": {"second": 2, "first": 1}}
+    )
     assert len({integer, floating, reordered}) == 3
-    assert type(json.loads(floating)["target_dynamic_fields"]["value"]["first"]) is float
-    assert list(json.loads(reordered)["target_dynamic_fields"]["value"]) == ["second", "first"]
+    assert (
+        type(json.loads(floating)["target_dynamic_fields"]["value"]["first"]) is float
+    )
+    assert list(json.loads(reordered)["target_dynamic_fields"]["value"]) == [
+        "second",
+        "first",
+    ]

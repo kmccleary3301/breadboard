@@ -18,14 +18,17 @@ from ...contracts import (
     ProviderRuntimeError,
     sanitize_provider_result,
 )
-from ...contract_wire import canonical_json
+from ...contract_wire import ProviderContractError, canonical_json
 from ...native_response import NativeProviderResponse
-from ....compilation.provider_response import CompiledNativeResponseBinding, MINI_RESPONSE_CONSUMER_ID
+from ....compilation.provider_response import (
+    CompiledNativeResponseBinding, MINI_RESPONSE_CONSUMER_ID, PI_RESPONSE_CONSUMER_ID,
+)
 from ...model_role_options import openai_chat_role_options
 from ...sdk_bindings import provider_sdk_bindings
 from ....security import redaction
 from .streaming import OpenAIBaseRuntime
 from .chat_stream_decoder import OpenAIChatStreamDecoder
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +137,83 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         if http_client is None:
             raise AssertionError("profile HTTP client was not created")
         return _ProfileClient(transport, profile, http_client)
+
+    def send_native_http_request(
+        self,
+        *,
+        client: Any,
+        method: str,
+        url: str,
+        headers: Tuple[Tuple[str, str], ...],
+        body: bytes,
+        max_response_bytes: int,
+    ) -> Dict[str, Any]:
+        """Send an admitted source request without SDK request/response projection."""
+        if (
+            not isinstance(client, _ProfileClient)
+            or not isinstance(client.profile, OpenAICompletionsProviderProfile)
+            or client.profile.provider_id != "openai"
+            or client.profile.runtime_id != "openai_chat"
+            or method != "POST"
+            or type(url) is not str
+            or type(body) is not bytes
+            or type(max_response_bytes) is not int
+            or max_response_bytes <= 0
+        ):
+            raise ProviderRuntimeError(
+                "native HTTP client or request is invalid",
+                kind="configuration",
+                details={"code": "native_http_request_invalid"},
+            )
+        profile = client.profile
+        wire_headers: list[tuple[str, str]] = []
+        for name, value in profile.caller_headers.items():
+            wire_headers.append((name, value))
+        for name, value in headers:
+            if name.casefold() == "authorization":
+                continue
+            wire_headers.append((name, value))
+        wire_headers.append(("Authorization", "Bearer " + profile.scoped_credential))
+        with redaction.secret_value_scope(
+            profile.scoped_credential,
+            *profile.caller_headers.values(),
+            *(value for _, value in headers),
+            allow_short=True,
+        ):
+            try:
+                with client.http_client.stream(
+                    method,
+                    url,
+                    headers=wire_headers,
+                    content=body,
+                ) as response:
+                    chunks: list[bytes] = []
+                    total = 0
+                    for chunk in response.iter_raw():
+                        total += len(chunk)
+                        if total > max_response_bytes:
+                            raise ProviderRuntimeError(
+                                "native HTTP response exceeds its byte bound",
+                                kind="protocol",
+                                details={"code": "native_http_response_oversized"},
+                            )
+                        chunks.append(chunk)
+                    return {
+                        "status_code": response.status_code,
+                        "headers": [
+                            [name, value] for name, value in response.headers.multi_items()
+                        ],
+                        "body": b"".join(chunks),
+                    }
+            except ProviderRuntimeError:
+                raise
+            except Exception as exc:
+                return {
+                    "error": {
+                        "type": exc.__class__.__name__,
+                        "message": redaction.safe_exception_message(exc),
+                    }
+                }
 
     def _stream_chat_completion(
         self,
@@ -354,6 +434,27 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                         max_response_bytes=binding.policy.max_response_bytes,
                         max_stream_fragments=binding.policy.max_stream_fragments,
                     )
+            if (
+                response.request_digest
+                != hashlib.sha256(canonical_json(sent_request).encode("utf-8")).hexdigest()
+            ):
+                raise ProviderRuntimeError(
+                    "native response request receipt does not match the sent body",
+                    kind="protocol",
+                    details={"code": "native_request_digest_mismatch"},
+                )
+            response = replace(response, request_body=sent_request)
+            try:
+                response.validate_bounds(
+                    max_response_bytes=binding.policy.max_response_bytes,
+                    max_stream_fragments=binding.policy.max_stream_fragments,
+                )
+            except ProviderContractError:
+                raise ProviderRuntimeError(
+                    "Chat Completions native response contract violation",
+                    kind="protocol",
+                    details={"code": "invalid_native_chat_response"},
+                ) from None
             response_payload = response.as_dict()
             safe_response, problems = redaction.scrub_structure(
                 response_payload, path="$.native_response"
@@ -378,17 +479,23 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
     ) -> Dict[str, Any]:
         """Project the exact request used by a profile-bound invocation.
 
-        Mini's messages are already its source client's wire messages, so they are
-        sent as given rather than rebuilt from BreadBoard's canonical message shape.
+        Native consumers supply their source client's wire messages rather than
+        BreadBoard's canonical message shape.
         """
-        if context.extra.get("response_consumer_id") == MINI_RESPONSE_CONSUMER_ID:
+        consumer_id = context.extra.get("response_consumer_id")
+        if consumer_id in {MINI_RESPONSE_CONSUMER_ID, PI_RESPONSE_CONSUMER_ID}:
             chat_messages = [dict(message) for message in messages]
         else:
             chat_messages = self._convert_messages_to_chat(messages, context=context)
-        return profile.chat_request(
+        request = profile.chat_request(
             chat_messages,
-            self._convert_tools_to_openai(tools),
+            tools if consumer_id == PI_RESPONSE_CONSUMER_ID else self._convert_tools_to_openai(tools),
         )
+        if consumer_id == PI_RESPONSE_CONSUMER_ID:
+            # Pinned Pi buildParams omits n and disables storage for this binding.
+            request.pop("n")
+            request["store"] = False
+        return request
 
     def _unbound_request_options(
         self,

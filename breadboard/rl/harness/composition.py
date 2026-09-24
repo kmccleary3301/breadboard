@@ -69,6 +69,7 @@ from .runners.base import RunnerAdapterDescriptor, RunnerAdapterRegistry
 from .runners.conductor import CONDUCTOR_ADAPTER_ID, ConductorAdapter
 from .runners.terminal import TERMINAL_ADAPTER_ID, TerminalResponsesAdapter
 from .sandbox import (
+    NATIVE_PHASE_TOOL_IDS,
     InstalledImage,
     InstalledRuntime,
     InstalledSandboxAuthoritySet,
@@ -288,6 +289,11 @@ class InstalledToolAdapterV1(_ExactModel):
             for tool_id in self.tool_ids
         ):
             raise ValueError("installed tool adapter tool IDs are invalid")
+        if (
+            self.adapter_id in NATIVE_PHASE_TOOL_IDS
+            and self.tool_ids != NATIVE_PHASE_TOOL_IDS[self.adapter_id]
+        ):
+            raise ValueError("source-native adapter requires its exact source tool set")
         if self.manifest_ref.media_type != _NATIVE_TOOL_SOURCE_REF_MEDIA_TYPE:
             raise ValueError("native tool source manifest media type is not exact")
         return self
@@ -3023,7 +3029,9 @@ class _ProductionCleanupProbe:
             )
         )
         active_leases = {
-            path.stem for path in lease_paths
+            path.stem
+            for path in lease_paths
+            if not path.name.endswith(".native-scratch")
         } | set(getattr(self._sandbox_runtime, "_leases", {})) | set(
             getattr(self._materialization, "_active_workspaces", {})
         )
@@ -3100,10 +3108,16 @@ class _ProductionCleanupProbe:
         )
         cgroup_values = tuple(sorted(os.fspath(path) for path in cgroup_paths))
         workspace_values = tuple(os.fspath(path) for path in workspace_paths)
+        scratch_paths = {
+            os.fspath(path)
+            for path in lease_paths
+            if path.name.endswith(".native-scratch")
+        }
         orphan_ids = tuple(
             sorted(
                 {
                     *active_leases,
+                    *scratch_paths,
                     *container_ids,
                     *(f"pid:{pid}" for pid in live_processes),
                     *cgroup_values,
@@ -3775,17 +3789,18 @@ def _validate_installed_registry_graph(
     native_tool_adapters: Sequence[InstalledToolAdapter] = (),
 ) -> None:
     capabilities = tuple(item.effective_capabilities for item in receipts)
+    installed_native_tools = {
+        (tool_id, adapter.manifest_digest)
+        for adapter in native_tool_adapters
+        for tool_id in adapter.tool_ids
+    }
     reachable_native_tools = {
         (tool.tool_id, tool.implementation_digest)
         for capability in capabilities
         if capability.runner.adapter_id != TERMINAL_ADAPTER_ID
         for tool in capability.tools
         if tool.tool_id != "terminal"
-    }
-    installed_native_tools = {
-        (tool_id, adapter.manifest_digest)
-        for adapter in native_tool_adapters
-        for tool_id in adapter.tool_ids
+        or (tool.tool_id, tool.implementation_digest) in installed_native_tools
     }
     registered_tools = {
         (record.grant.tool_id, record.grant.implementation_digest)

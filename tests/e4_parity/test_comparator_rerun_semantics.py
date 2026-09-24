@@ -5,14 +5,17 @@ import importlib
 import json
 from pathlib import Path
 from typing import Any, Mapping
-
 from conformance.comparators.stored_report import compare
+from conformance.comparators.openhands_sdk import (
+    compare as compare_openhands,
+    project_supplier_case,
+)
 from scripts.validate_e4_c4_chain import _diff_comparator_reports
 
 ROOT = Path(__file__).resolve().parents[2]
 INVENTORY_PATH = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"
 REGISTRY_PATH = ROOT / "conformance" / "comparators" / "registry.json"
-
+OPENHANDS_CASE = ROOT / "tests" / "e4_parity" / "fixtures" / "openhands_sdk" / "OH-01-normal-file-effect"
 
 def _load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -29,6 +32,28 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return "sha256:" + digest.hexdigest()
+
+
+def _openhands_measured_bb_trace() -> dict[str, Any]:
+    supplier = project_supplier_case(OPENHANDS_CASE)
+    workspace = OPENHANDS_CASE / "workspace"
+    effects: dict[str, dict[str, Any]] = {}
+    for relative, digest in supplier["file_effects"].items():
+        if digest is None:
+            effects[relative] = {"exists": False}
+            continue
+        path = workspace / relative
+        content = path.read_bytes()
+        assert _sha256(path) == digest
+        effects[relative] = {
+            "exists": True,
+            "bytes": len(content),
+            "sha256": digest,
+            "content_utf8": content.decode("utf-8", "replace"),
+        }
+    replay = dict(supplier)
+    replay["file_effects"] = effects
+    return replay
 
 
 def _accepted_lanes() -> list[dict[str, Any]]:
@@ -65,6 +90,118 @@ def _comparator_fixture(tmp_path: Path) -> tuple[Path, Path, dict[str, Any]]:
     }
     _write_json(comparator_path, report)
     return replay_path, comparator_path, report
+
+
+def _registered_comparator_input(
+    comparator_id: str,
+    comparator_path: Path,
+    tmp_path: Path,
+) -> dict[str, Any]:
+    if comparator_id == "pi_coding_agent_0_73_1_trace_v1":
+        return {
+            "capture": {"role": "supplier", "requests": []},
+            "replay": {
+                "role": "replay",
+                "messages": [],
+                "requests": [],
+                "runtime_inputs": {
+                    "cwd": "/workspace",
+                    "home": "/home",
+                    "current_date": "2027-04-05",
+                    "package_dir": "/srv/pi",
+                },
+            },
+            "scope": {},
+            "artifacts": {"comparator_ref": comparator_path},
+        }
+    if comparator_id == "mini_swe_agent_trace_v1":
+        trace_fields = {
+            "requests": [],
+            "history": [],
+            "exit": {},
+            "effects": {},
+            "counters": {},
+            "normalizations": [],
+        }
+        supplier_trace = {
+            "schema_version": "bb.e4.mini-trace.v1",
+            "role": "supplier",
+            "case_id": "fixture-case",
+            "scenario_sha256": "sha256:" + "0" * 64,
+            **trace_fields,
+        }
+        replay_trace = {**supplier_trace, "role": "breadboard"}
+        supplier_trace_path = tmp_path / "mini_supplier_trace.json"
+        replay_trace_path = tmp_path / "mini_replay_trace.json"
+        supplier_manifest_path = tmp_path / "mini_supplier_manifest.json"
+        replay_manifest_path = tmp_path / "mini_replay_manifest.json"
+        _write_json(supplier_trace_path, supplier_trace)
+        _write_json(replay_trace_path, replay_trace)
+        _write_json(
+            supplier_manifest_path,
+            {
+                "schema_version": "bb.e4.mini-trace-manifest.v1",
+                "role": "supplier",
+                "cases": {
+                    "fixture-case": {
+                        "path": supplier_trace_path.name,
+                        "sha256": _sha256(supplier_trace_path),
+                    }
+                },
+            },
+        )
+        _write_json(
+            replay_manifest_path,
+            {
+                "schema_version": "bb.e4.mini-trace-manifest.v1",
+                "role": "breadboard",
+                "cases": {
+                    "fixture-case": {
+                        "path": replay_trace_path.name,
+                        "sha256": _sha256(replay_trace_path),
+                    }
+                },
+            },
+        )
+        return {
+            "capture": _load_json(supplier_manifest_path),
+            "replay": _load_json(replay_manifest_path),
+            "scope": {},
+            "artifacts": {
+                "comparator_ref": comparator_path,
+                "capture_ref": supplier_manifest_path,
+                "replay_ref": replay_manifest_path,
+            },
+        }
+    if comparator_id == "openhands_sdk_trace_v1":
+        return {
+            "supplier_case": str(OPENHANDS_CASE),
+            "bb_trace": _openhands_measured_bb_trace(),
+        }
+    if comparator_id == "semantic_replay_v1":
+        return {
+            "capture": {"captured_artifacts": []},
+            "replay": {
+                "replay_summary": {},
+                "normalized_records": [],
+                "input_hashes": {},
+            },
+            "scope": {"lane_id": "fixture_semantic_lane"},
+            "artifacts": {"comparator_ref": comparator_path},
+        }
+    if comparator_id in {
+        "oh_my_pi_stored_report_replay",
+        "pi_stored_report_replay",
+        "codex_stored_report_replay",
+        "north_star_stored_report_replay",
+    }:
+        return {
+            "capture": {},
+            "replay": {},
+            "scope": {},
+            "artifacts": {"comparator_ref": comparator_path},
+        }
+    raise AssertionError(f"unhandled comparator ID: {comparator_id}")
 
 
 def test_tampered_replay_rerun_fails_naming_diverging_assertion_ids(tmp_path: Path) -> None:
@@ -107,17 +244,26 @@ def test_each_registered_comparator_entrypoint_conforms_to_protocol(tmp_path: Pa
         module = importlib.import_module(entrypoint["module"])
         comparator = getattr(module, entrypoint["callable"])
         report = comparator(
-            {
-                "capture": {},
-                "replay": {},
-                "scope": {},
-                "artifacts": {"comparator_ref": comparator_path},
-            }
+            _registered_comparator_input(entry["comparator_id"], comparator_path, tmp_path)
         )
         assert isinstance(report, dict)
-        assert report["schema_version"] == entry["report_schema_version"]
+        report_schema_version = report.get("schema_version", report.get("report_schema_version"))
+        assert report_schema_version == entry["report_schema_version"]
         assert isinstance(report["assertions"], list) and report["assertions"]
         assert {"assertion_id", "status", "observed", "expected"} <= set(report["assertions"][0])
+
+
+def test_rejected_openhands_bb_trace_reports_error() -> None:
+    replay = _openhands_measured_bb_trace()
+    replay["file_effects"]["marker.txt"] = "sha256:" + ("a" * 64)
+    report = compare_openhands(
+        {
+            "supplier_case": str(OPENHANDS_CASE),
+            "bb_trace": replay,
+        }
+    )
+    assert report["ok"] is False
+    assert report["errors"]
 
 
 def test_stored_report_comparator_is_deterministic_for_identical_inputs(tmp_path: Path) -> None:

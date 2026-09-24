@@ -16,7 +16,7 @@ import tempfile
 import time
 import uuid
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timezone
 from importlib.resources import files
 from pathlib import Path
 from types import MappingProxyType
@@ -50,6 +50,8 @@ from .runners.base import (
     RunnerToolBinding,
     freeze_json_object,
 )
+from .native_session import NativeSession, NativeSessionError
+from .native_worker import MAX_FRAME_BYTES
 from .sandbox_docker import VERIFIER_RESULT_MAX_BYTES
 
 VERIFIER_REQUEST_RELATIVE_PATH = "input/verifier-request.json"
@@ -60,6 +62,7 @@ SANDBOX_CAPABILITY_MATRIX_SHA256 = (
     "c24e24766e0e34527af921ba3794b06da4bec468df0e059e90e5deb0a20147df"
 )
 _MAX_SANDBOX_CAPABILITY_MATRIX_BYTES = 64 * 1024
+EFFECT_CONTENT_UTF8_MAX_BYTES = 64 * 1024
 _SANDBOX_ADAPTER_STATUSES = {
     "docker": "experimental",
     "firecracker": "unsupported",
@@ -78,9 +81,66 @@ _SANDBOX_CAPABILITY_KEYS = {
     "persistent_workspace",
     "isolated",
 }
+
+OPENHANDS_SDK_LOCAL_ADAPTER_ID: str = "openhands-sdk.local.v1.47.0"
+OPENHANDS_NATIVE_TOOL_IDS: tuple[str, ...] = (
+    "file_editor",
+    "finish",
+    "task_tracker",
+    "terminal",
+    "think",
+)
+PI_CODING_AGENT_LOCAL_ADAPTER_ID: str = "pi-coding-agent.local.v0.73.1"
+PI_NATIVE_TOOL_IDS: tuple[str, ...] = ("bash", "edit", "read", "write")
+NATIVE_PHASE_TOOL_IDS: Mapping[str, tuple[str, ...]] = MappingProxyType({
+    OPENHANDS_SDK_LOCAL_ADAPTER_ID: OPENHANDS_NATIVE_TOOL_IDS,
+    PI_CODING_AGENT_LOCAL_ADAPTER_ID: PI_NATIVE_TOOL_IDS,
+})
 MINI_SWE_AGENT_LOCAL_ADAPTER_ID: str = "mini-swe-agent.local.v2.4.6"
 MINI_SWE_AGENT_TOOL_ID: str = "bash"
 
+
+def _admit_native_phase_payload(
+    operation: str,
+    payload: Mapping[str, Any],
+    *,
+    adapter_id: str,
+    workspace: str | Path | None,
+    scratch: str | Path | None,
+    runtime_root: str | Path,
+    package_subpath: str | None = None,
+) -> dict[str, Any]:
+    admitted = dict(payload)
+    if operation != "initialize":
+        return admitted
+    if {"workspace", "scratch", "package_dir"} & set(admitted):
+        raise WorkspaceStateError(
+            "native initialize cannot supply workspace authority",
+            code="workspace_authority_mismatch",
+        )
+    package_path: Path | None = None
+    if package_subpath is not None:
+        if type(package_subpath) is not str or not package_subpath:
+            raise WorkspaceStateError(
+                "native package subpath is invalid",
+                code="workspace_authority_mismatch",
+            )
+        package_path = Path(package_subpath)
+        if package_path.is_absolute() or ".." in package_path.parts:
+            raise WorkspaceStateError(
+                "native package subpath escapes adapter runtime root",
+                code="workspace_escape",
+            )
+    if workspace is None or scratch is None:
+        return admitted
+    admitted["workspace"] = str(workspace)
+    admitted["scratch"] = str(scratch)
+    package_dir = (
+        None if package_path is None else str(Path(runtime_root) / package_path)
+    )
+    if package_dir is not None:
+        admitted["package_dir"] = package_dir
+    return admitted
 
 
 def _read_sandbox_capability_matrix_resource() -> bytes:
@@ -1412,6 +1472,15 @@ class RuntimeHandle(Protocol):
         input_bytes: bytes = b"",
     ) -> Mapping[str, Any]: ...
 
+
+    async def invoke_native_phase(
+        self,
+        binding: InstalledToolAdapter,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+    ) -> Mapping[str, Any]: ...
     async def run_native_tool(
         self,
         binding: InstalledToolAdapter,
@@ -1742,6 +1811,8 @@ class TrustedProcessHandle:
         self._workspace_fd = workspace_fd
         self._workspace_identity = workspace_identity
         self._groups: dict[int, Mapping[str, Any]] = {}
+        self._native_session: NativeSession | None = None
+        self._native_session_lock = asyncio.Lock()
         self._launch_lock = asyncio.Lock()
         self._closing = False
         self._closed = False
@@ -1929,6 +2000,139 @@ class TrustedProcessHandle:
             await cleanup
             raise
 
+    @staticmethod
+    def _validate_native_binding(
+        plan: SandboxExecutionPlan,
+        binding: InstalledToolAdapter,
+    ) -> None:
+        if (
+            type(binding) is not InstalledToolAdapter
+            or binding.adapter_id not in NATIVE_PHASE_TOOL_IDS
+            or tuple(binding.tool_ids) != NATIVE_PHASE_TOOL_IDS[binding.adapter_id]
+            or plan.runtime.runtime_class is not RuntimeClass.TRUSTED_PROCESS
+            or len(plan.installed_tool_adapters) != 1
+            or plan.installed_tool_adapters[0] != binding
+        ):
+            raise SandboxLaunchError(
+                "source-native session is not admitted",
+                code="runtime_unsupported",
+            )
+        compiled = tuple(plan.tool_bindings)
+        if (
+            len(compiled) != len(binding.tool_ids)
+            or tuple(item.tool_id for item in compiled) != tuple(binding.tool_ids)
+            or any(
+                item.implementation_digest != binding.manifest_digest
+                for item in compiled
+            )
+        ):
+            raise SandboxLaunchError(
+                "source-native tool bindings are not exact",
+                code="tool_binding_projection_mismatch",
+            )
+
+    async def invoke_native_phase(
+        self,
+        binding: InstalledToolAdapter,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+    ) -> Mapping[str, Any]:
+        self._validate_native_binding(self.plan, binding)
+        if type(operation) is not str or not operation or "\x00" in operation:
+            raise SandboxLaunchError(
+                "native operation is invalid",
+                code="runtime_preflight_failed",
+                lease_id=self.lease_id,
+            )
+        if not isinstance(payload, Mapping):
+            raise SandboxLaunchError(
+                "native payload is invalid",
+                code="runtime_preflight_failed",
+                lease_id=self.lease_id,
+            )
+        if (
+            type(timeout_ms) is not int
+            or timeout_ms <= 0
+            or timeout_ms > self.plan.limits.action_timeout_ms
+        ):
+            raise SandboxLaunchError(
+                "native timeout exceeds admitted ceiling",
+                code="runtime_preflight_failed",
+                lease_id=self.lease_id,
+            )
+        async with self._native_session_lock:
+            session = self._native_session
+            if session is None:
+                _validate_native_root(binding)
+                node_path = _native_member_path(
+                    binding, binding.executable_relative_path
+                )
+                entrypoint_path = _native_member_path(
+                    binding, binding.entrypoint_relative_path
+                )
+                _measure_native_file(entrypoint_path, binding.entrypoint_digest)
+                node = _snapshot_installed_executable(
+                    node_path, binding.executable_digest
+                )
+                runtime_root = Path(binding.runtime_root_path)
+                environment = dict(self.plan.runtime.fixed_environment)
+                if binding.adapter_id == PI_CODING_AGENT_LOCAL_ADAPTER_ID:
+                    # Pinned framed worker imports Pi only from the sealed root.
+                    environment["PI_NATIVE_WORKER_FRAMED"] = "1"
+                    environment["PI_CODING_AGENT_NODE_MODULES"] = str(runtime_root / "node_modules")
+                else:
+                    environment["PYTHONHOME"] = str(runtime_root / "python")
+                    environment["PYTHONNOUSERSITE"] = "1"
+                    environment["LD_LIBRARY_PATH"] = str(runtime_root / "python/lib")
+                process: asyncio.subprocess.Process | None = None
+                try:
+                    process = await self._start_stopped_process(
+                        (
+                            self._executable.proc_fd_path,
+                            "-lc",
+                            'exec "$@"',
+                            "breadboard-native-worker",
+                            node.proc_fd_path,
+                            entrypoint_path,
+                        ),
+                        timeout_ms=min(timeout_ms, self.plan.limits.setup_timeout_ms),
+                        extra_fds=(node.fd,),
+                        environment=environment,
+                    )
+
+                    async def retire() -> bool:
+                        assert process is not None
+                        return await self._cleanup_process_shielded(
+                            process, clear_identity=True
+                        )
+
+                    session = NativeSession(
+                        process,
+                        max_frame_bytes=MAX_FRAME_BYTES,
+                        retire_callback=retire,
+                    )
+                    self._native_session = session
+                except BaseException:
+                    if process is not None and self._native_session is None:
+                        await self._cleanup_process_shielded(
+                            process, clear_identity=True
+                        )
+                    raise
+                finally:
+                    node.close()
+        try:
+            return await session.invoke_native_phase(
+                operation, payload, timeout_ms=timeout_ms
+            )
+        except NativeSessionError as exc:
+            raise SandboxLaunchError(
+                str(exc),
+                code=exc.code,
+                lease_id=self.lease_id,
+            ) from exc
+
     async def run_shell(
         self,
         command: str,
@@ -2051,6 +2255,104 @@ class TrustedProcessHandle:
             timeout_ms=timeout_ms,
             output_limit=output_limit,
         )
+    async def _start_stopped_process(
+        self,
+        argv: Sequence[str],
+        *,
+        timeout_ms: int,
+        extra_fds: Sequence[int] = (),
+        environment: Mapping[str, str] | None = None,
+    ) -> asyncio.subprocess.Process:
+        process: asyncio.subprocess.Process | None = None
+        identity_published = False
+        try:
+            async with self._launch_lock:
+                if self._closing or self._closed:
+                    raise WorkspaceStateError(
+                        "runtime is not active",
+                        code="lease_not_active",
+                        lease_id=self.lease_id,
+                    )
+                metadata = os.fstat(self._workspace_fd)
+                if (metadata.st_dev, metadata.st_ino) != self._workspace_identity:
+                    raise WorkspaceStateError(
+                        "workspace descriptor identity changed",
+                        code="workspace_authority_mismatch",
+                        lease_id=self.lease_id,
+                    )
+                process = await asyncio.create_subprocess_exec(
+                    self._executable.proc_fd_path,
+                    "-c",
+                    'printf B; kill -STOP $$; exec "$@"',
+                    "breadboard-bootstrap",
+                    *argv,
+                    executable=self._executable.proc_fd_path,
+                    pass_fds=tuple(
+                        executable.fd
+                        for executable in (
+                            self._executable,
+                            self._command_executable,
+                        )
+                        if executable is not None
+                    )
+                    + tuple(extra_fds)
+                    + (self._workspace_fd,),
+                    preexec_fn=lambda: os.fchdir(self._workspace_fd),
+                    env=(
+                        dict(self.plan.runtime.fixed_environment)
+                        if environment is None
+                        else dict(environment)
+                    ),
+                    start_new_session=True,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                if process.stdout is None:
+                    raise RuntimeError("trusted process bootstrap pipe is unavailable")
+                loop = asyncio.get_running_loop()
+                deadline = loop.time() + timeout_ms / 1000
+                try:
+                    marker = await asyncio.wait_for(
+                        process.stdout.readexactly(1),
+                        min(timeout_ms / 1000, 1.0),
+                    )
+                except (asyncio.IncompleteReadError, asyncio.TimeoutError) as exc:
+                    raise SandboxLaunchError(
+                        "trusted process bootstrap did not become ready",
+                        code="runtime_preflight_failed", lease_id=self.lease_id,
+                    ) from exc
+                if marker != b"B":
+                    raise RuntimeError("trusted process bootstrap failed")
+                stop_deadline = min(deadline, loop.time() + 0.25)
+                while True:
+                    fields = self._proc_fields(process.pid)
+                    if fields[0] in {"T", "t"}:
+                        break
+                    if loop.time() >= stop_deadline:
+                        raise RuntimeError(
+                            "trusted process did not stop before admission"
+                        )
+                    await asyncio.sleep(0.001)
+                identity = self._observe_group_identity(process.pid)
+                process_group = int(identity["process_group_id"])
+                self._groups[process_group] = identity
+                recorder = getattr(self, "_identity_recorder", None)
+                if recorder is None:
+                    raise RuntimeError(
+                        "trusted process identity recorder is unavailable"
+                    )
+                identity_published = True
+                recorder(f"process-group-{process_group}", identity)
+                os.kill(process.pid, signal.SIGCONT)
+                return process
+        except BaseException:
+            if process is not None:
+                await self._cleanup_process_shielded(
+                    process, clear_identity=identity_published
+                )
+            raise
+
 
     async def _run_pinned_argv(
         self,
@@ -2074,88 +2376,13 @@ class TrustedProcessHandle:
                 code="runtime_preflight_failed",
                 lease_id=self.lease_id,
             )
-        process: asyncio.subprocess.Process | None = None
-        identity_published = False
-        try:
-            async with self._launch_lock:
-                if self._closing or self._closed:
-                    raise WorkspaceStateError(
-                        "runtime is not active",
-                        code="lease_not_active",
-                        lease_id=self.lease_id,
-                    )
-                metadata = os.fstat(self._workspace_fd)
-                if (metadata.st_dev, metadata.st_ino) != self._workspace_identity:
-                    raise WorkspaceStateError(
-                        "workspace descriptor identity changed",
-                        code="workspace_authority_mismatch",
-                        lease_id=self.lease_id,
-                    )
-                bootstrap = 'printf B; kill -STOP $$; exec "$@"'
-                process = await asyncio.create_subprocess_exec(
-                    self._executable.proc_fd_path,
-                    "-c",
-                    bootstrap,
-                    "breadboard-bootstrap",
-                    *argv,
-                    executable=self._executable.proc_fd_path,
-                    pass_fds=tuple(
-                        executable.fd
-                        for executable in (
-                            self._executable,
-                            self._command_executable,
-                        )
-                        if executable is not None
-                    )
-                    + tuple(extra_fds)
-                    + (self._workspace_fd,),
-                    preexec_fn=lambda: os.fchdir(self._workspace_fd),
-                    env=environment if environment is not None else dict(self.plan.runtime.fixed_environment),
-                    start_new_session=True,
-                    stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                if process.stdout is None:
-                    raise RuntimeError("trusted process bootstrap pipe is unavailable")
-                loop = asyncio.get_running_loop()
-                deadline = loop.time() + timeout_ms / 1000
-                try:
-                    marker = await asyncio.wait_for(
-                        process.stdout.readexactly(1),
-                        min(timeout_ms / 1000, 1.0),
-                    )
-                except (asyncio.IncompleteReadError, asyncio.TimeoutError):
-                    raise RuntimeError("trusted process bootstrap failed") from None
-                if marker != b"B":
-                    raise RuntimeError("trusted process bootstrap failed")
-                stop_deadline = min(deadline, loop.time() + 0.25)
-                while True:
-                    fields = self._proc_fields(process.pid)
-                    if fields[0] in {"T", "t"}:
-                        break
-                    if loop.time() >= stop_deadline:
-                        raise RuntimeError(
-                            "trusted process did not stop before admission"
-                        )
-                    await asyncio.sleep(0.001)
-                identity = self._observe_group_identity(process.pid)
-                process_group = int(identity["process_group_id"])
-                self._groups[process_group] = identity
-                recorder = getattr(self, "_identity_recorder", None)
-                if recorder is None:
-                    raise RuntimeError(
-                        "trusted process identity recorder is unavailable"
-                    )
-                recorder(f"process-group-{process_group}", identity)
-                identity_published = True
-                os.kill(process.pid, signal.SIGCONT)
-        except BaseException:
-            if process is not None:
-                await self._cleanup_process_shielded(
-                    process, clear_identity=identity_published
-                )
-            raise
+        process = await self._start_stopped_process(
+            argv,
+            timeout_ms=timeout_ms,
+            extra_fds=extra_fds,
+            environment=environment,
+        )
+        deadline = asyncio.get_running_loop().time() + timeout_ms / 1000
 
         total = 0
         count_lock = asyncio.Lock()
@@ -2321,6 +2548,14 @@ class TrustedProcessHandle:
                 return (CleanupStepReceipt("runtime", CleanupState.ALREADY_RELEASED),)
             self._closing = True
         failed = False
+        async with self._native_session_lock:
+            native_session = self._native_session
+            self._native_session = None
+        if native_session is not None:
+            try:
+                await native_session.close()
+            except BaseException:
+                failed = True
         for process_group, identity in tuple(self._groups.items()):
             if not await self._drain_group(process_group, identity):
                 failed = True
@@ -2513,6 +2748,356 @@ class TrustedProcessBackend:
             ),
         )
 
+def _sole_writable_policy_workspace_mount(
+    lease: SandboxWorkspaceLease,
+) -> MaterializationEntry:
+    entries = tuple(
+        entry
+        for entry in lease.plan.materialization_plan.entries
+        if entry.access.value == "rw"
+    )
+    if len(entries) != 1:
+        raise WorkspaceStateError(
+            "source-native workspace mount is not unique",
+            code="workspace_authority_mismatch",
+            lease_id=lease.lease_id,
+        )
+    return entries[0]
+
+_NATIVE_SCRATCH_SUFFIX = ".native-scratch"
+
+
+def _native_scratch_name(lease_id: str) -> str:
+    return lease_id + _NATIVE_SCRATCH_SUFFIX
+
+
+def _native_scratch_path(manager: SandboxRuntimeManager, lease_id: str) -> Path:
+    return manager.lease_root / _native_scratch_name(lease_id)
+
+
+def _create_native_scratch(manager: SandboxRuntimeManager, lease_id: str) -> Path:
+    root_fd = manager._lease_root_fd
+    if root_fd is None:
+        raise WorkspaceStateError(
+            "native scratch authority is unavailable",
+            code="workspace_authority_mismatch",
+            lease_id=lease_id,
+        )
+    name = _native_scratch_name(lease_id)
+    os.mkdir(name, mode=0o700, dir_fd=root_fd)
+    try:
+        descriptor = os.open(
+            name,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=root_fd,
+        )
+        try:
+            metadata = os.fstat(descriptor)
+            if (
+                not stat.S_ISDIR(metadata.st_mode)
+                or metadata.st_uid != os.geteuid()
+                or stat.S_IMODE(metadata.st_mode) != 0o700
+            ):
+                raise WorkspaceStateError(
+                    "native scratch authority is invalid",
+                    code="workspace_authority_mismatch",
+                    lease_id=lease_id,
+                )
+        finally:
+            os.close(descriptor)
+    except BaseException:
+        try:
+            os.rmdir(name, dir_fd=root_fd)
+        except OSError:
+            pass
+        raise
+    return _native_scratch_path(manager, lease_id)
+
+
+def _native_scratch_present(manager: SandboxRuntimeManager, lease_id: str) -> bool:
+    root_fd = manager._lease_root_fd
+    if root_fd is None:
+        return False
+    try:
+        os.stat(
+            _native_scratch_name(lease_id),
+            dir_fd=root_fd,
+            follow_symlinks=False,
+        )
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def _remove_native_scratch(
+    manager: SandboxRuntimeManager,
+    lease_id: str,
+) -> CleanupStepReceipt:
+    root_fd = manager._lease_root_fd
+    if root_fd is None:
+        return CleanupStepReceipt(
+            "native_scratch", CleanupState.QUARANTINED, "lease_root_unavailable"
+        )
+    name = _native_scratch_name(lease_id)
+
+    def remove_directory(descriptor: int) -> None:
+        os.fchmod(descriptor, stat.S_IMODE(os.fstat(descriptor).st_mode) | 0o700)
+        for child_name in tuple(os.listdir(descriptor)):
+            metadata = os.stat(child_name, dir_fd=descriptor, follow_symlinks=False)
+            if stat.S_ISDIR(metadata.st_mode):
+                child = os.open(
+                    child_name,
+                    os.O_RDONLY
+                    | getattr(os, "O_DIRECTORY", 0)
+                    | getattr(os, "O_NOFOLLOW", 0),
+                    dir_fd=descriptor,
+                )
+                try:
+                    remove_directory(child)
+                finally:
+                    os.close(child)
+                os.rmdir(child_name, dir_fd=descriptor)
+            else:
+                os.unlink(child_name, dir_fd=descriptor)
+        os.fsync(descriptor)
+
+    try:
+        descriptor = os.open(
+            name,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=root_fd,
+        )
+    except FileNotFoundError:
+        return CleanupStepReceipt("native_scratch", CleanupState.ALREADY_RELEASED)
+    except BaseException as exc:
+        return CleanupStepReceipt(
+            "native_scratch", CleanupState.FAILED, type(exc).__name__
+        )
+    try:
+        remove_directory(descriptor)
+    except BaseException as exc:
+        return CleanupStepReceipt(
+            "native_scratch", CleanupState.FAILED, type(exc).__name__
+        )
+    finally:
+        os.close(descriptor)
+    try:
+        os.rmdir(name, dir_fd=root_fd)
+        os.fsync(root_fd)
+    except BaseException as exc:
+        return CleanupStepReceipt(
+            "native_scratch", CleanupState.FAILED, type(exc).__name__
+        )
+    return CleanupStepReceipt("native_scratch", CleanupState.RELEASED)
+
+def _workspace_effect_snapshot(
+    root: Path,
+    *,
+    exclude_root_git: bool,
+    max_total_bytes: int,
+    max_inodes: int,
+    max_depth: int,
+    expected_root_identity: tuple[int, int] | None = None,
+) -> tuple[dict[str, dict[str, Any]], tuple[int, int]]:
+    """Hash one materialized policy workspace through no-follow dirfds.
+
+    Logical file sizes are checked against ``max_total_bytes`` (the lease's
+    admitted storage bound) before any content is read, so sparse or
+    oversized files fail closed instead of being hashed without bound.
+    Every visited node counts against ``max_inodes`` as it is listed and
+    nesting beyond ``max_depth`` is rejected (the security policy's snapshot
+    traversal ceilings), so empty-node floods cannot grow the scan unbounded.
+    """
+    if any(
+        type(bound) is not int or bound < 0
+        for bound in (max_total_bytes, max_inodes, max_depth)
+    ) or max_total_bytes == 0:
+        raise WorkspaceStateError(
+            "workspace effect traversal bound is invalid",
+            code="workspace_authority_mismatch",
+        )
+    scanned_bytes = 0
+    visited_nodes = 0
+    snapshot: dict[str, dict[str, Any]] = {}
+    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    file_flags = (
+        os.O_RDONLY
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+    )
+
+    try:
+        root_fd = os.open(root, directory_flags)
+    except OSError as exc:
+        raise WorkspaceStateError(
+            "workspace effects cannot be measured",
+            code="workspace_authority_mismatch",
+        ) from exc
+    try:
+        root_stat = os.fstat(root_fd)
+        root_identity = (root_stat.st_dev, root_stat.st_ino)
+        if expected_root_identity is not None and root_identity != expected_root_identity:
+            raise WorkspaceStateError(
+                "workspace root identity changed",
+                code="workspace_authority_mismatch",
+            )
+
+        def walk(directory_fd: int, prefix: str, depth: int) -> None:
+            nonlocal scanned_bytes, visited_nodes
+            entries: list[os.DirEntry[str]] = []
+            try:
+                with os.scandir(directory_fd) as iterator:
+                    for entry in iterator:
+                        if exclude_root_git and not prefix and entry.name == ".git":
+                            continue
+                        visited_nodes += 1
+                        if visited_nodes > max_inodes or depth > max_depth:
+                            raise WorkspaceStateError(
+                                "workspace effects exceed the admitted traversal ceiling",
+                                code="output_limit_exceeded",
+                                details={
+                                    "path": f"{prefix}/{entry.name}" if prefix else entry.name,
+                                    "visited_nodes": visited_nodes,
+                                    "max_inodes": max_inodes,
+                                    "depth": depth,
+                                    "max_depth": max_depth,
+                                },
+                            )
+                        entries.append(entry)
+            except OSError as exc:
+                raise WorkspaceStateError(
+                    "workspace effects cannot be measured",
+                    code="workspace_authority_mismatch",
+                ) from exc
+            entries.sort(key=lambda entry: entry.name)
+            for entry in entries:
+                relative = f"{prefix}/{entry.name}" if prefix else entry.name
+                try:
+                    metadata = entry.stat(follow_symlinks=False)
+                except OSError as exc:
+                    raise WorkspaceStateError(
+                        "workspace effects cannot be measured",
+                        code="workspace_authority_mismatch",
+                    ) from exc
+                if stat.S_ISDIR(metadata.st_mode):
+                    try:
+                        child_fd = os.open(entry.name, directory_flags, dir_fd=directory_fd)
+                    except OSError as exc:
+                        raise WorkspaceStateError(
+                            "workspace effects cannot be measured",
+                            code="workspace_authority_mismatch",
+                        ) from exc
+                    try:
+                        walk(child_fd, relative, depth + 1)
+                    finally:
+                        os.close(child_fd)
+                    continue
+                if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+                    raise WorkspaceStateError(
+                        "workspace contains an unauthorized effect node",
+                        code="workspace_authority_mismatch",
+                    )
+                descriptor = -1
+                digest = hashlib.sha256()
+                content = bytearray()
+                total_bytes = 0
+                try:
+                    descriptor = os.open(
+                        entry.name,
+                        file_flags,
+                        dir_fd=directory_fd,
+                    )
+                    opened_metadata = os.fstat(descriptor)
+                    if (
+                        not stat.S_ISREG(opened_metadata.st_mode)
+                        or opened_metadata.st_dev != metadata.st_dev
+                        or opened_metadata.st_ino != metadata.st_ino
+                        or opened_metadata.st_nlink != 1
+                    ):
+                        raise WorkspaceStateError(
+                            "workspace effect node changed during measurement",
+                            code="workspace_authority_mismatch",
+                        )
+                    logical_size = opened_metadata.st_size
+                    if logical_size > max_total_bytes - scanned_bytes:
+                        raise WorkspaceStateError(
+                            "workspace effects exceed the admitted storage bound",
+                            code="output_limit_exceeded",
+                            details={
+                                "path": relative,
+                                "logical_bytes": logical_size,
+                                "scanned_bytes": scanned_bytes,
+                                "max_total_bytes": max_total_bytes,
+                            },
+                        )
+                    while True:
+                        chunk = os.read(descriptor, 1024 * 1024)
+                        if not chunk:
+                            break
+                        total_bytes += len(chunk)
+                        if total_bytes > logical_size:
+                            raise WorkspaceStateError(
+                                "workspace effect node changed during measurement",
+                                code="workspace_authority_mismatch",
+                            )
+                        digest.update(chunk)
+                        consumed = total_bytes - len(chunk)
+                        if consumed < EFFECT_CONTENT_UTF8_MAX_BYTES:
+                            content.extend(chunk[: EFFECT_CONTENT_UTF8_MAX_BYTES - consumed])
+                    if total_bytes != logical_size:
+                        raise WorkspaceStateError(
+                            "workspace effect node changed during measurement",
+                            code="workspace_authority_mismatch",
+                        )
+                    scanned_bytes += total_bytes
+                except OSError as exc:
+                    raise WorkspaceStateError(
+                        "workspace effects cannot be measured",
+                        code="workspace_authority_mismatch",
+                    ) from exc
+                finally:
+                    if descriptor >= 0:
+                        os.close(descriptor)
+                value: dict[str, Any] = {
+                    "exists": True,
+                    "bytes": total_bytes,
+                    "sha256": "sha256:" + digest.hexdigest(),
+                }
+                if total_bytes <= EFFECT_CONTENT_UTF8_MAX_BYTES:
+                    value["content_utf8"] = bytes(content).decode("utf-8", "replace")
+                snapshot[relative] = value
+
+        walk(root_fd, "", 0)
+        return snapshot, root_identity
+    finally:
+        os.close(root_fd)
+
+def _workspace_effect_baseline(
+    snapshot: Mapping[str, Mapping[str, Any]],
+) -> dict[str, tuple[int, str]]:
+    return {
+        path: (value["bytes"], value["sha256"])
+        for path, value in snapshot.items()
+    }
+
+def _changed_workspace_effects(
+    baseline: Mapping[str, tuple[int, str]],
+    current: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Mapping[str, Any]]:
+    changed: dict[str, Mapping[str, Any]] = {}
+    for path, value in current.items():
+        identity = (value["bytes"], value["sha256"])
+        if baseline.get(path) != identity:
+            changed[path] = value
+    for path in baseline.keys() - current.keys():
+        changed[path] = {"exists": False}
+    return changed
+
+
+
 
 class LeaseBackedRunnerWorkspace:
     def __init__(self, lease: SandboxWorkspaceLease, effective_plan_digest: str,
@@ -2531,8 +3116,265 @@ class LeaseBackedRunnerWorkspace:
         self.__lease = lease
         self.__tool_bindings = bindings
 
+        self.__effects_root: Path | None = None
+        self.__effects_exclude_root_git = False
+        self.__effects_baseline: dict[str, tuple[int, str]] | None = None
+        self.__effects_root_identity: tuple[int, int] | None = None
     @property
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]: return self.__tool_bindings
+
+
+
+    async def begin_native_workspace_effects(self) -> None:
+        lease = self.__lease
+        lease._assert_active()
+        if self.__effects_baseline is not None:
+            raise WorkspaceStateError(
+                "native workspace effects were already admitted",
+                code="workspace_authority_mismatch",
+                lease_id=lease.lease_id,
+            )
+        workspace_mount = _sole_writable_policy_workspace_mount(lease)
+        workspace_root = lease._resolve(
+            workspace_mount.target_logical_path,
+            writable=True,
+        )
+        await lease._begin_operation()
+        try:
+            snapshot, root_identity = await asyncio.to_thread(
+                _workspace_effect_snapshot,
+                workspace_root,
+                exclude_root_git=workspace_mount.role == "repository",
+                max_total_bytes=lease.plan.resources.storage_bytes,
+                max_inodes=lease.plan.security_policy.snapshot_max_inodes,
+                max_depth=lease.plan.security_policy.snapshot_max_depth,
+            )
+            self.__effects_root = workspace_root
+            self.__effects_exclude_root_git = workspace_mount.role == "repository"
+            self.__effects_root_identity = root_identity
+            self.__effects_baseline = _workspace_effect_baseline(snapshot)
+        finally:
+            await lease._end_operation()
+
+    async def measure_workspace_effects(self) -> Mapping[str, Mapping[str, Any]]:
+        lease = self.__lease
+        if (
+            self.__effects_root is None
+            or self.__effects_baseline is None
+            or self.__effects_root_identity is None
+        ):
+            raise WorkspaceStateError(
+                "native workspace effects were not admitted",
+                code="workspace_authority_mismatch",
+                lease_id=lease.lease_id,
+            )
+        lease._assert_active()
+        await lease._begin_operation()
+        try:
+            current, _ = await asyncio.to_thread(
+                _workspace_effect_snapshot,
+                self.__effects_root,
+                exclude_root_git=self.__effects_exclude_root_git,
+                max_total_bytes=lease.plan.resources.storage_bytes,
+                max_inodes=lease.plan.security_policy.snapshot_max_inodes,
+                max_depth=lease.plan.security_policy.snapshot_max_depth,
+                expected_root_identity=self.__effects_root_identity,
+            )
+            return _changed_workspace_effects(self.__effects_baseline, current)
+        finally:
+            await lease._end_operation()
+
+    async def close_native_runtime(self) -> Mapping[str, Any]:
+        """Retire the native worker before workspace effects are measured."""
+        lease = self.__lease
+        lease._assert_active()
+        await lease._begin_operation()
+        try:
+            steps = await lease._runtime.terminate()
+            return {
+                "kind": "closed",
+                "cleanup": {
+                    "all_dead": bool(steps) and all(
+                        step.state
+                        in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
+                        for step in steps
+                    ),
+                    "steps": [
+                        {
+                            "resource": step.resource,
+                            "state": step.state.value,
+                            "detail": step.detail,
+                        }
+                        for step in steps
+                    ],
+                },
+            }
+        finally:
+            await lease._end_operation()
+
+    def native_runtime_inputs(
+        self,
+        *,
+        input_names: tuple[str, ...],
+        package_subpath: str,
+    ) -> Mapping[str, str]:
+        if (
+            type(input_names) is not tuple
+            or not input_names
+            or any(type(name) is not str or not name for name in input_names)
+            or len(set(input_names)) != len(input_names)
+            or type(package_subpath) is not str
+            or not package_subpath
+        ):
+            raise WorkspaceStateError(
+                "source-native runtime input declaration is invalid",
+                code="runtime_unsupported",
+                lease_id=self.__lease.lease_id,
+            )
+        package_path = Path(package_subpath)
+        if package_path.is_absolute() or ".." in package_path.parts:
+            raise WorkspaceStateError(
+                "source-native package subpath escapes adapter runtime root",
+                code="workspace_escape",
+                lease_id=self.__lease.lease_id,
+            )
+        workspace_mount = _sole_writable_policy_workspace_mount(self.__lease)
+        adapters = tuple(
+            adapter
+            for adapter in self.__lease.plan.installed_tool_adapters
+            if adapter.adapter_id in NATIVE_PHASE_TOOL_IDS
+        )
+        if len(adapters) != 1:
+            raise WorkspaceStateError(
+                "source-native runtime inputs are unavailable",
+                code="runtime_unsupported",
+                lease_id=self.__lease.lease_id,
+            )
+        scratch = _native_scratch_path(self.__lease._manager, self.__lease.lease_id)
+        available = {
+            "cwd": str(self.__lease._resolve(workspace_mount.target_logical_path, writable=False)),
+            "home": str(scratch / "home"),
+            "current_date": datetime.now(timezone.utc).date().isoformat(),
+            "package_dir": str(Path(adapters[0].runtime_root_path) / package_path),
+        }
+        unknown = set(input_names) - set(available)
+        if unknown:
+            raise WorkspaceStateError(
+                "source-native runtime input is not supported",
+                code="runtime_unsupported",
+                lease_id=self.__lease.lease_id,
+            )
+        return {name: available[name] for name in input_names}
+
+    async def invoke_native_phase(
+        self,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+        package_subpath: str | None = None,
+    ) -> Mapping[str, Any]:
+        lease = self.__lease
+        await lease._begin_operation()
+        try:
+            adapters = tuple(
+                adapter
+                for adapter in lease.plan.installed_tool_adapters
+                if adapter.adapter_id in NATIVE_PHASE_TOOL_IDS
+            )
+            if len(adapters) != 1:
+                raise WorkspaceStateError(
+                    "source-native adapter is not exactly installed",
+                    code="runtime_unsupported",
+                    lease_id=lease.lease_id,
+                )
+            adapter = adapters[0]
+            try:
+                TrustedProcessHandle._validate_native_binding(lease.plan, adapter)
+            except SandboxRuntimeError as exc:
+                raise WorkspaceStateError(
+                    str(exc),
+                    code=exc.code,
+                    lease_id=lease.lease_id,
+                ) from exc
+            try:
+                from .runners.base import thaw_json
+                frozen_payload = freeze_json_object(
+                    payload,
+                    field_name="native phase payload",
+                    max_depth=8,
+                    max_nodes=lease.plan.limits.observation_bytes + 1,
+                    max_encoded_bytes=lease.plan.limits.observation_bytes,
+                )
+            except (JsonSnapshotError, TypeError, ValueError) as exc:
+                raise WorkspaceStateError(
+                    "native phase payload is invalid",
+                    code="runtime_preflight_failed",
+                    lease_id=lease.lease_id,
+                ) from exc
+            try:
+                native_payload = _admit_native_phase_payload(
+                    operation,
+                    thaw_json(frozen_payload),
+                    adapter_id=adapter.adapter_id,
+                    workspace=None,
+                    scratch=None,
+                    runtime_root=adapter.runtime_root_path,
+                    package_subpath=package_subpath,
+                )
+            except WorkspaceStateError as exc:
+                raise WorkspaceStateError(
+                    str(exc),
+                    code=exc.code,
+                    lease_id=lease.lease_id,
+                ) from exc
+            if operation == "initialize":
+                workspace_mount = _sole_writable_policy_workspace_mount(lease)
+                workspace = lease._resolve(workspace_mount.target_logical_path, writable=True)
+                scratch = _native_scratch_path(lease._manager, lease.lease_id)
+                try:
+                    native_payload = _admit_native_phase_payload(
+                        operation,
+                        native_payload,
+                        adapter_id=adapter.adapter_id,
+                        workspace=workspace,
+                        scratch=scratch,
+                        runtime_root=adapter.runtime_root_path,
+                        package_subpath=package_subpath,
+                    )
+                except WorkspaceStateError as exc:
+                    raise WorkspaceStateError(
+                        str(exc),
+                        code=exc.code,
+                        lease_id=lease.lease_id,
+                    ) from exc
+                try:
+                    _create_native_scratch(lease._manager, lease.lease_id)
+                except WorkspaceStateError:
+                    raise
+                except OSError as exc:
+                    raise WorkspaceStateError(
+                        "native scratch authority is unavailable",
+                        code="workspace_authority_mismatch",
+                        lease_id=lease.lease_id,
+                    ) from exc
+            if operation == "execute":
+                tool_id = native_payload.get("tool_id")
+                if type(tool_id) is not str or tool_id not in adapter.tool_ids:
+                    raise WorkspaceStateError(
+                        "native execute tool identity is not admitted",
+                        code="tool_binding_projection_mismatch",
+                        lease_id=lease.lease_id,
+                    )
+            return await lease._runtime.invoke_native_phase(
+                adapter,
+                operation,
+                native_payload,
+                timeout_ms=timeout_ms,
+            )
+        finally:
+            await lease._end_operation()
+
     async def invoke_tool(
         self,
         tool_id: str,
@@ -3293,11 +4135,21 @@ class VerifierWorkspaceLease:
             runtime_step = _runtime_to_lease_cleanup_step(
                 await self._runtime.terminate()
             )
-            steps = [runtime_step]
             runtime_released = runtime_step.state in {
                 CleanupState.RELEASED,
                 CleanupState.ALREADY_RELEASED,
             }
+            steps = [runtime_step]
+            if _native_scratch_present(self._manager, self.lease_id):
+                steps.append(
+                    _remove_native_scratch(self._manager, self.lease_id)
+                    if runtime_released
+                    else CleanupStepReceipt(
+                        "native_scratch",
+                        CleanupState.QUARANTINED,
+                        "dependent runtime cleanup incomplete",
+                    )
+                )
             if runtime_released:
                 try:
                     for root, dirs, files in os.walk(self.workspace, topdown=True, followlinks=False):
@@ -4421,9 +5273,19 @@ class SandboxRuntimeManager:
             steps.append(
                 CleanupStepReceipt("child_verifier", child_state, child_detail)
             )
-            steps.append(
-                _runtime_to_lease_cleanup_step(await lease._runtime.terminate())
-            )
+            runtime_step = _runtime_to_lease_cleanup_step(await lease._runtime.terminate())
+            steps.append(runtime_step)
+            if _native_scratch_present(self, lease.lease_id):
+                steps.append(
+                    _remove_native_scratch(self, lease.lease_id)
+                    if runtime_step.state
+                    in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
+                    else CleanupStepReceipt(
+                        "native_scratch",
+                        CleanupState.QUARANTINED,
+                        "dependent runtime cleanup incomplete",
+                    )
+                )
             dependencies_released = all(
                 step.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
                 for step in steps
@@ -4652,34 +5514,42 @@ class SandboxRuntimeManager:
             if self._lease_record_exists(lease_id):
                 self._release_lease_owner_lock(lease_id, unlink=False)
                 continue
+            scratch_step = (
+                _remove_native_scratch(self, lease_id)
+                if _native_scratch_present(self, lease_id)
+                else None
+            )
+            if scratch_step is not None and scratch_step.state not in {
+                CleanupState.RELEASED,
+                CleanupState.ALREADY_RELEASED,
+            }:
+                receipts.append(
+                    SandboxCleanupReceipt.from_steps(
+                        lease_id,
+                        (
+                            scratch_step,
+                            CleanupStepReceipt(
+                                "owner_lock",
+                                CleanupState.QUARANTINED,
+                                "native_scratch_cleanup_failed",
+                            ),
+                        ),
+                    )
+                )
+                continue
             try:
                 self._release_lease_owner_lock(lease_id, unlink=True)
                 os.fsync(self._lease_root_fd)
             except Exception:
-                receipts.append(
-                    SandboxCleanupReceipt.from_steps(
-                        lease_id,
-                        (
-                            CleanupStepReceipt(
-                                "owner_lock",
-                                CleanupState.QUARANTINED,
-                                "owner_lock_cleanup_failed",
-                            ),
-                        ),
-                    )
+                lock_step = CleanupStepReceipt(
+                    "owner_lock",
+                    CleanupState.QUARANTINED,
+                    "owner_lock_cleanup_failed",
                 )
             else:
-                receipts.append(
-                    SandboxCleanupReceipt.from_steps(
-                        lease_id,
-                        (
-                            CleanupStepReceipt(
-                                "owner_lock",
-                                CleanupState.RELEASED,
-                            ),
-                        ),
-                    )
-                )
+                lock_step = CleanupStepReceipt("owner_lock", CleanupState.RELEASED)
+            orphan_steps = ((scratch_step,) if scratch_step is not None else ()) + (lock_step,)
+            receipts.append(SandboxCleanupReceipt.from_steps(lease_id, orphan_steps))
         names = tuple(sorted(record_names))
         paths = [
             self.lease_root / name
@@ -4835,12 +5705,24 @@ class SandboxRuntimeManager:
             }
             backend = self.process_backend if runtime_authority_id in trusted_runtime_ids else self.docker_backend
             reconcile = getattr(backend, "reconcile", None) if backend is not None else None
+            scratch_present = _native_scratch_present(self, path.stem)
             if not callable(reconcile):
                 unavailable_steps = (
                     CleanupStepReceipt(
                         "runtime",
                         CleanupState.QUARANTINED,
                         "stale_identity_uncertain",
+                    ),
+                    *(
+                        (
+                            CleanupStepReceipt(
+                                "native_scratch",
+                                CleanupState.QUARANTINED,
+                                "stale_identity_uncertain",
+                            ),
+                        )
+                        if scratch_present
+                        else ()
                     ),
                     CleanupStepReceipt(
                         "workspace",
@@ -4866,12 +5748,30 @@ class SandboxRuntimeManager:
                 )
                 continue
             raw_steps = reconciliation_prefix + tuple(await reconcile(record))
+            runtime_steps = tuple(
+                step for step in raw_steps if step.resource == "runtime"
+            )
+            runtime_released = bool(runtime_steps) and all(
+                step.state
+                in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
+                for step in runtime_steps
+            )
+            if scratch_present:
+                raw_steps += (
+                    _remove_native_scratch(self, path.stem)
+                    if runtime_released
+                    else CleanupStepReceipt(
+                        "native_scratch",
+                        CleanupState.QUARANTINED,
+                        "dependent runtime cleanup incomplete",
+                    ),
+                )
             if (
                 {step.resource for step in raw_steps}
                 == (
                     {
                         "child_verifier",
-                        *(("snapshot",) if snapshot_step is not None else ()),
+                        *({"native_scratch"} if scratch_present else set()),
                         "runtime",
                         "workspace",
                         "cache_holder",
@@ -4880,6 +5780,7 @@ class SandboxRuntimeManager:
                     if role == "primary"
                     else {
                         *(("snapshot",) if snapshot_step is not None else ()),
+                        *({"native_scratch"} if scratch_present else set()),
                         "runtime",
                         "workspace",
                         "cache_holder",
@@ -4896,14 +5797,6 @@ class SandboxRuntimeManager:
                     str(record["lease_id"]), raw_steps
                 ))
                 continue
-            runtime_steps = tuple(
-                step for step in raw_steps if step.resource == "runtime"
-            )
-            runtime_released = bool(runtime_steps) and all(
-                step.state
-                in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
-                for step in runtime_steps
-            )
             steps = list(raw_steps)
             if (
                 runtime_released
@@ -5098,4 +5991,9 @@ __all__ = [
     "load_sandbox_capability_matrix",
     "MINI_SWE_AGENT_LOCAL_ADAPTER_ID",
     "MINI_SWE_AGENT_TOOL_ID",
+    "OPENHANDS_SDK_LOCAL_ADAPTER_ID",
+    "OPENHANDS_NATIVE_TOOL_IDS",
+    "PI_CODING_AGENT_LOCAL_ADAPTER_ID",
+    "PI_NATIVE_TOOL_IDS",
+    "NATIVE_PHASE_TOOL_IDS",
 ]

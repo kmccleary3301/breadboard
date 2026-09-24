@@ -1,0 +1,86 @@
+{
+  "assets": [
+    {
+      "bytes": 4587,
+      "path": "harness.yaml",
+      "sha256": "sha256:316bea3871a3b577e422c4bed04fe170d2d2c166ef93fa64dc77b822571fc3c7"
+    },
+    {
+      "bytes": 2147,
+      "path": "prompts/system-prompt.md",
+      "sha256": "sha256:efef605630a3f79ed4ce9daaf8469a8f4db529cbdd5c4f37708b0d1047dcb12a"
+    },
+    {
+      "bytes": 1654,
+      "path": "native-config.json",
+      "sha256": "sha256:e2ed9c0be966ad8efbe1f49e73d8a979fda19c2c3b48221453b3ac9b0e20944e"
+    },
+    {
+      "bytes": 3085,
+      "path": "tool-surface.json",
+      "sha256": "sha256:cc9a6e8386f0caafe6c20e2e44552a32411c50b92b0bf75976ed7bc229dfb782"
+    },
+    {
+      "bytes": 1070,
+      "path": "LICENSE.txt",
+      "sha256": "sha256:4f6a1985796db5225e3b1e59972bd47e07a27a0748427cb3d3c8fbf39f9311f0"
+    },
+    {
+      "bytes": 1095,
+      "path": "source.json",
+      "sha256": "sha256:8b017d0a7501788f5b8660a3eee27bf12b14ab57a95426c912d8d9446618a308"
+    }
+  ],
+  "execution": {
+    "config_asset": "harness.yaml",
+    "system_prompt_asset": "prompts/system-prompt.md",
+    "tool_surface_asset": "tool-surface.json"
+  },
+  "family": "pi",
+  "overlay": {
+    "argv": [
+      "--tools",
+      "read,bash,edit,write",
+      "--thinking",
+      "off",
+      "--no-extensions",
+      "--no-skills",
+      "--no-prompt-templates",
+      "--no-session"
+    ],
+    "overlay_id": "breadboard.pi.headless.v0.73.1",
+    "settings": [
+      {
+        "name": "agent.request_cap",
+        "value": 8
+      },
+      {
+        "name": "model.thinking_level",
+        "value": "off"
+      },
+      {
+        "name": "model.stream",
+        "value": true
+      },
+      {
+        "name": "model.max_tokens",
+        "value": 2048
+      },
+      {
+        "name": "model.timeout_seconds",
+        "value": 45
+      },
+      {
+        "name": "model.retry_enabled",
+        "value": false
+      },
+      {
+        "name": "model.images_enabled",
+        "value": false
+      }
+    ]
+  },
+  "schema_version": "bb.e4.target.v2",
+  "target_id": "pi@0.73.1",
+  "version": "0.73.1"
+}

@@ -388,6 +388,10 @@ class _FrozenDict(tuple[tuple[str, Any], ...], Mapping[str, Any]):
     def __iter__(self) -> Iterator[str]:
         return (key for key, _value in tuple.__iter__(self))
 
+    def __contains__(self, key: object) -> bool:
+        # tuple.__contains__ would test key/value pairs, not keys.
+        return any(candidate == key for candidate, _value in tuple.__iter__(self))
+
     def __eq__(self, other: object) -> bool:
         if isinstance(other, Mapping):
             return dict(self.items()) == dict(other.items())
