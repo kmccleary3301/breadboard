@@ -2932,10 +2932,10 @@ def test_containment_receipt_requires_network_namespace_inode() -> None:
 
     missing_net = dict(base)
     missing_net["namespaces"] = {"pid": 1001, "mnt": 1002, "user": 1003}
-    with pytest.raises(ContainmentReceiptError, match="containment receipt is malformed"):
+    with pytest.raises(ContainmentReceiptError):
         ContainmentReceipt.from_mapping(missing_net)
 
     zero_net = dict(base)
     zero_net["namespaces"] = {"pid": 1001, "mnt": 1002, "user": 1003, "net": 0}
-    with pytest.raises(ContainmentReceiptError, match="containment receipt fields are invalid"):
+    with pytest.raises(ContainmentReceiptError):
         ContainmentReceipt.from_mapping(zero_net)

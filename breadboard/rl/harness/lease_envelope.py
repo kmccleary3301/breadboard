@@ -259,13 +259,33 @@ class ContainmentReceipt:
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "ContainmentReceipt":
-        if type(value) is not dict and not isinstance(value, Mapping):
+        if not isinstance(value, Mapping):
             raise ContainmentReceiptError("containment receipt is not an object")
+        required = {
+            "schema", "lease_id", "runtime_id", "mode", "namespaces",
+            "mountinfo_sha256", "writable_mounts", "created_at",
+            "key_id", "algorithm", "signature",
+        }
+        if set(value) not in (required, required | {"outcome"}):
+            raise ContainmentReceiptError("containment receipt keys are invalid")
+        namespaces = value["namespaces"]
+        if not isinstance(namespaces, Mapping) or set(namespaces) != {"pid", "mnt", "user", "net"}:
+            raise ContainmentReceiptError("containment receipt namespace keys are invalid")
+        raw_mounts = value["writable_mounts"]
+        mount_keys = {"path", "fstype", "size_bytes", "source"}
+        if type(raw_mounts) is not list or any(
+            not isinstance(mount, Mapping) or set(mount) != mount_keys for mount in raw_mounts
+        ):
+            raise ContainmentReceiptError("containment receipt writable mount keys are invalid")
+        outcome_raw = value["outcome"] if "outcome" in value else None
+        if "outcome" in value and (
+            not isinstance(outcome_raw, Mapping)
+            or set(outcome_raw) != {"pid1_reaped", "all_dead"}
+        ):
+            raise ContainmentReceiptError("containment receipt outcome keys are invalid")
         try:
-            namespaces = value["namespaces"]
             signature = bytes.fromhex(value["signature"])
-            mounts = tuple(WritableMount(**mount) for mount in value["writable_mounts"])
-            outcome_raw = value.get("outcome")
+            mounts = tuple(WritableMount(**mount) for mount in raw_mounts)
             outcome = None if outcome_raw is None else {
                 "pid1_reaped": outcome_raw["pid1_reaped"],
                 "all_dead": outcome_raw["all_dead"],

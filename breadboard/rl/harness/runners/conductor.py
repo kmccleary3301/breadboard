@@ -15,6 +15,7 @@ from typing import Any, Protocol, runtime_checkable
 from breadboard_engine.compilation.contracts import (
     bytes_sha256,
     canonical_sha256,
+    canonical_json_bytes,
 )
 from breadboard_engine.compilation.provider_response import (
     MINI_RESPONSE_CONSUMER_ID,
@@ -26,6 +27,7 @@ from breadboard.rl.harness.contracts import RuntimeClass
 from breadboard.rl.harness.lease_envelope import (
     AdmittedLeaseLedger,
     AdmittedLeaseRecord,
+    ContainmentReceipt,
     ContainmentReceiptError,
     ReceiptAuthenticator,
     RuntimeContainment,
@@ -1343,12 +1345,19 @@ class ConductorAdapter:
                     runtime_id=request.effective_plan.sandbox.runtime_id,
                     authenticator=self._containment_authenticator,
                 )
+                presented = receipt.to_mapping() if isinstance(receipt, ContainmentReceipt) else receipt
+                try:
+                    presented_bytes = canonical_json_bytes({
+                        key: value for key, value in presented.items() if key != "signature"
+                    })
+                except (TypeError, ValueError) as exc:
+                    raise ContainmentReceiptError("containment receipt cannot be serialized") from exc
                 admitted = self._admitted_lease_ledger.lookup(lease_id)
                 if (
                     type(admitted) is not AdmittedLeaseRecord
                     or admitted.lease_id != lease_id
                     or admitted.runtime_id != request.effective_plan.sandbox.runtime_id
-                    or admitted.receipt_bytes != verified.canonical_bytes()
+                    or admitted.receipt_bytes != presented_bytes
                     or admitted.receipt_signature != verified.signature
                 ):
                     raise ContainmentReceiptError("containment lease is not live and exact")

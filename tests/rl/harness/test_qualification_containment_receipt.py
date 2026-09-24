@@ -13,7 +13,13 @@ from breadboard.rl.harness.headless import (
     HeadlessWorkspaceInput,
     ObsoleteOuterIsolationError,
 )
-from breadboard.rl.harness.lease_envelope import RuntimeContainment, verify_containment_receipt
+from breadboard.rl.harness.lease_envelope import (
+    ContainmentReceipt,
+    ContainmentReceiptError,
+    RuntimeContainment,
+    add_teardown_outcome,
+    verify_containment_receipt,
+)
 from breadboard.rl.harness.qualification import (
     materialize_production_composition_fixture,
 )
@@ -226,6 +232,58 @@ async def test_admitted_receipt_requires_exact_live_lease(tmp_path: Path) -> Non
         assert replayed.value.code == "containment_receipt_invalid"
     finally:
         await harness.manager.close()
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mutation",
+    ("unknown_top_level", "unknown_namespace", "present_optional_outcome_null",
+     "unknown_mount", "unknown_outcome"),
+)
+async def test_admitted_receipt_rejects_presented_extra_or_null_keys(
+    tmp_path: Path, mutation: str
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    lease = await harness.manager.open(fixture.request)
+    try:
+        authenticator = harness.manager._containment_authenticator
+        adapter = ConductorAdapter(
+            CONDUCTOR_RUNTIME_ABI,
+            containment_authenticator=authenticator,
+            admitted_lease_ledger=harness.manager.admitted_lease_ledger,
+        )
+        original = lease.runner_workspace.containment_receipt
+        assert ContainmentReceipt.from_mapping(original.to_mapping()) == original
+        teardown = add_teardown_outcome(
+            original, pid1_reaped=True, all_dead=True, authenticator=authenticator
+        )
+        assert ContainmentReceipt.from_mapping(teardown.to_mapping()) == teardown
+        presented = original.to_mapping()
+        assert "outcome" not in presented
+        if mutation == "unknown_top_level":
+            presented["unadmitted_claim"] = "untrusted"
+        elif mutation == "unknown_namespace":
+            presented["namespaces"]["unadmitted_claim"] = 123
+        elif mutation == "unknown_mount":
+            presented["writable_mounts"][0]["unadmitted_claim"] = 123
+        elif mutation == "unknown_outcome":
+            presented["outcome"] = {
+                "pid1_reaped": True, "all_dead": True, "unadmitted_claim": 123
+            }
+        else:
+            presented["outcome"] = None
+        with pytest.raises(ContainmentReceiptError):
+            ContainmentReceipt.from_mapping(presented)
+        tools = RecordingToolPort()
+        tools.containment_lease_id = lease.lease_id
+        tools.containment_receipt = presented
+        with pytest.raises(RunnerPlanError) as caught:
+            await _open_with_ledger(adapter, tools, runtime_id="trusted-process")
+        assert caught.value.code == "containment_receipt_invalid"
+    finally:
+        await lease.close()
+        await harness.manager.close()
+
 
 @pytest.mark.asyncio
 async def test_verifier_admission_is_removed_at_teardown(tmp_path: Path) -> None:
