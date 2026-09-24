@@ -11,6 +11,7 @@ import { join, resolve, basename } from "node:path";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
+import { classifyAgentExecResult, exitCodeForEnvelope } from "openclaw:pinned-agent-exec";
 
 const PROTOCOL = "bb.openclaw-native.v1";
 const DIST = process.env.OPENCLAW_DIST || "/opt/openclaw/dist";
@@ -38,8 +39,6 @@ let sourceExecutionContext = null;
 let sourceAcknowledgeResult = null;
 let builtTools = [];
 let verifiedRegistryUrl = null;
-let classifyAgentExecResultFn = null;
-let exitCodeForEnvelopeFn = null;
 let prepared = null;
 let preparedContext = null;
 let closing = false;
@@ -65,15 +64,6 @@ async function verifyAndLoad() {
   sourceExecutionContext = await import(bytes["tool-execution-context-C6v2UVPI.mjs"]);
   sourceAcknowledgeResult = (await import(bytes["internal-hooks-DUPhyX-W.mjs"])).t;
   sourceTransport = await import(bytes["openai-transport-stream-D950WgL3.mjs"]);
-  const agentExecPath = join(DIST, "agent-exec-BAuhpelg.mjs");
-  const agentExecPayload = await readFile(agentExecPath, "utf8");
-  const match = agentExecPayload.match(/\/\/#region src\/commands\/agent-exec-result\.ts([\s\S]*?)\/\/#endregion/);
-  if (!match) throw new Error("pinned OpenClaw classifyAgentExecResult region not found");
-  const classifierCode = match[1] + "\nfunction exitCodeForEnvelope(envelope) { return envelope.status === \"ok\" ? 0 : envelope.status === \"timeout\" ? 2 : 1; }\nreturn { classifyAgentExecResult, exitCodeForEnvelope };";
-  const classifierFn = new Function(classifierCode);
-  const extracted = classifierFn();
-  classifyAgentExecResultFn = extracted.classifyAgentExecResult;
-  exitCodeForEnvelopeFn = extracted.exitCodeForEnvelope;
   return {
     createCoreCodingTools: core.t,
     buildBootstrapContextFiles: sourceBootstrap.n,
@@ -601,16 +591,15 @@ async function handle(message) {
     return { schema_version: PROTOCOL, kind: "acked", delivery_id: id, session_id: record.sessionId, history_digest: text(message.history_digest) };
   }
   if (phase === "classify_result") {
-    if (!classifyAgentExecResultFn) throw new Error("classifier is not initialized");
     const runResult = message.result && typeof message.result === "object"
       ? message.result
       : buildRunResultFromTerminalState(message);
-    const envelope = classifyAgentExecResultFn(
+    const envelope = classifyAgentExecResult(
       runResult,
       Boolean(message.fallback_exhausted || message.fallbackExhausted),
       message.projected_error_payload || message.projectedErrorPayload,
     );
-    const exitCode = exitCodeForEnvelopeFn(envelope);
+    const exitCode = exitCodeForEnvelope(envelope);
     return {
       schema_version: PROTOCOL,
       kind: "classified_result",

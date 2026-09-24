@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
+import os
+import subprocess
+import tarfile
 
 import pytest
 
@@ -14,6 +18,61 @@ from breadboard.rl.harness.openclaw_native_tools import (
     materialize_baseline_bootstrap,
 )
 
+
+
+_WORKER = Path(__file__).parents[3] / "breadboard/rl/harness/openclaw_tool_worker.mjs"
+_LOADER = _WORKER.with_name("openclaw_classifier_loader.mjs")
+_PACKET = Path(
+    os.environ.get(
+        "OPENCLAW_ADMITTED_PACKET",
+        "/Users/kylemccleary/projects/breadboard/docs_tmp/bb_direction_assessment/"
+        "engine_pr_handoff_20260827/e4_admission_20260914T221653Z/"
+        "do2-20260923/openclaw/packet/openclaw-capture-admitted-640-20260923T091850Z.tar.gz",
+    )
+)
+
+
+def test_pinned_classifier_refuses_changed_dist_byte(tmp_path: Path) -> None:
+    source_dist = Path(os.environ.get("OPENCLAW_DIST", "/tmp/openclaw-npm-20260923/node_modules/openclaw/dist"))
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    for source in source_dist.iterdir():
+        if source.name != "agent-exec-BAuhpelg.mjs":
+            (dist / source.name).symlink_to(source)
+    pinned = source_dist / "agent-exec-BAuhpelg.mjs"
+    (dist / pinned.name).write_bytes(pinned.read_bytes() + b"\\n")
+    result = subprocess.run(
+        ["node", "--import", str(_LOADER), str(_WORKER)],
+        env={**os.environ, "OPENCLAW_DIST": str(dist)},
+        capture_output=True,
+        timeout=20,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert b"pinned OpenClaw dist digest mismatch for agent-exec-BAuhpelg.mjs" in result.stderr
+
+
+@pytest.mark.skipif(not _PACKET.is_file(), reason="admitted supplier packet is not installed")
+def test_packet_results_are_classified_by_pinned_dist(tmp_path: Path) -> None:
+    tools = OpenClawNativeTools(tmp_path)
+    try:
+        expected = {
+            "normal_multiturn_write_read": ("ok", "marker verified", 0),
+            "process_exec_effect": ("ok", "process complete", 0),
+            "malformed_tool_call": ("error", "", 1),
+        }
+        with tarfile.open(_PACKET, "r:gz") as packet:
+            for case, (status, final, exit_code) in expected.items():
+                member = packet.extractfile(f"packet/cases/{case}/supplier.stdout")
+                assert member is not None
+                captured = json.load(member)
+                classified = tools._worker._request({"phase": "classify_result", "result": captured})
+                assert classified["envelope"]["status"] == status
+                assert classified["envelope"]["final"] == final
+                assert classified["exit_code"] == exit_code
+                assert classified["envelope"]["payloads"] == captured["payloads"]
+    finally:
+        tools.scope.cleanup()
 
 
 def test_bootstrap_order_budgets_and_missing_markers(tmp_path: Path) -> None:

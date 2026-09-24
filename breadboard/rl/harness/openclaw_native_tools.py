@@ -309,7 +309,7 @@ class _OpenClawWorkerClient:
         }
         env["OPENCLAW_DIST"] = self.dist
         self._process = subprocess.Popen(
-            [self.node, str(worker)],
+            [self.node, "--import", str(worker.with_name("openclaw_classifier_loader.mjs")), str(worker)],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -542,7 +542,7 @@ def stop_before_recovery(
 def native_worker_invocation() -> dict[str, Any]:
     """Tool-only Node worker command; no model loop, provider, or supplier process."""
     return {
-        "command": ["node", "breadboard/rl/harness/openclaw_tool_worker.mjs"],
+        "command": ["node", "--import", "./breadboard/rl/harness/openclaw_classifier_loader.mjs", "breadboard/rl/harness/openclaw_tool_worker.mjs"],
         "protocol": "bb.openclaw-native.v1",
         "transport": "bb.native-worker.rpc.v1",
         "phases": [
