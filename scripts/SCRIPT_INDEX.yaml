@@ -2,7 +2,7 @@
 # regenerable structure. CI runs --check (S-2): file-set drift fails.
 schema: bb.script_index.v1
 default_owner: kmccleary3301
-live_script_count: 437
+live_script_count: 438
 entries:
   - path: scripts/SCRIPT_INDEX.yaml
     class: live-wired
@@ -993,6 +993,11 @@ entries:
     class: live-wired
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, tests/test_diff_terminal_semantics.py]
+    expiry: none (durable tooling)
+  - path: scripts/e4_hermes_native_replay.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [tests/rl/harness/test_hermes_packet_replay.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/__init__.py
     class: live-wired
