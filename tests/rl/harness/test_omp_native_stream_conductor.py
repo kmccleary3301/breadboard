@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import contextmanager
 from copy import deepcopy
+from dataclasses import replace
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
@@ -250,6 +251,7 @@ async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates
             capabilities={"supports_store": True, "supports_max_completion_tokens": True},
         )
         projection, semantics, manifest = _compile_target(tmp_path, model_id, profile_identity_digest(profile))
+        projection = replace(projection, system_prompt=transcript[0]["body"]["messages"][0]["content"])
         observation = _observation(provider_id="openai", model_id=model_id, capabilities=_policy_capabilities(request_features=["max_completion_tokens", "n", "store", "stream_options", "streaming"]))
         plan = _plan(observation=observation, semantics=semantics, tools=tuple(_tool_grant(name) for name in ("bash", "edit", "read", "write")), policy_slot_ids=(f"model:{model_id}",), limit_updates={"max_turns": 8, "action_timeout_ms": 40_000}, implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST)
         base_payload = plan.base_compiled.model_dump(mode="python")
