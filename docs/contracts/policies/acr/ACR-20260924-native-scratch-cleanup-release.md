@@ -26,7 +26,7 @@
 
 ## 4) Change Classification
 
-- Classification: `bug-fix`.
+- Classification: `internal` (bug fix to kernel cleanup evaluation; no public contract change).
 - Compatibility window: none; receipts without `native_scratch` evaluate identically.
 - Required schema/version bumps: none.
 
