@@ -287,7 +287,8 @@ def test_real_pinned_worker_rejects_advertisement_extra_keys(tmp_path: Path, mut
         advertisement["settings"] = {"request_cap": 8, "model_max_tokens": 2048, "provider_attempts": 1, "extra": True}
     worker = NativeToolWorker(cwd=str(tmp_path))
     try:
-        with pytest.raises(NativeWorkerPhaseError, match="invalid keys"):
+        message = "invalid capability denial" if mutation == "denials" else "invalid keys"
+        with pytest.raises(NativeWorkerPhaseError, match=message):
             worker.phase(
                 "initialize",
                 {
