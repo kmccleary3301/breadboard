@@ -159,6 +159,18 @@ class ReceiptAuthenticator(Protocol):
     def verify(self, unsigned_canonical_bytes: bytes, signature: bytes) -> bool: ...
 
 
+@dataclass(frozen=True, slots=True)
+class AdmittedLeaseRecord:
+    lease_id: str
+    runtime_id: str
+    receipt_bytes: bytes
+    receipt_signature: bytes
+
+
+class AdmittedLeaseLedger(Protocol):
+    def lookup(self, lease_id: str) -> AdmittedLeaseRecord | None: ...
+
+
 def _ns_inode(link: str) -> int:
     left, right = link.rsplit("[", 1)
     if not right.endswith("]") or not right[:-1].isdigit():
@@ -1696,6 +1708,8 @@ def launch_envelope(
 
 
 __all__ = [
+    "AdmittedLeaseLedger",
+    "AdmittedLeaseRecord",
     "ContainmentReceipt",
     "ContainmentReceiptError",
     "EnvelopeLaunch",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -12,12 +13,28 @@ from breadboard.rl.harness.headless import (
     HeadlessWorkspaceInput,
     ObsoleteOuterIsolationError,
 )
-from breadboard.rl.harness.lease_envelope import RuntimeContainment
+from breadboard.rl.harness.lease_envelope import RuntimeContainment, verify_containment_receipt
 from breadboard.rl.harness.qualification import (
     materialize_production_composition_fixture,
 )
-from breadboard.rl.harness.runners.base import RunnerPlanError
-from tests.rl.harness.test_runner_conductor import RecordingToolPort, _open
+from breadboard.rl.harness.runners.base import RunnerOpenRequest, RunnerPlanError
+from breadboard.rl.harness.runners.conductor import (
+    CONDUCTOR_ADAPTER_ID,
+    CONDUCTOR_IMPLEMENTATION_DIGEST,
+    CONDUCTOR_RUNTIME_ABI,
+    ConductorAdapter,
+    PolicyRuntimeBinding,
+)
+from tests.rl.harness.test_runner_conductor import (
+    RecordingCancellationProbe,
+    RecordingEventSink,
+    RecordingToolPort,
+    _open,
+)
+from tests.rl.harness.test_runner_policy_runtime import RecordingPolicyClient, _observation, _plan
+from tests.rl.harness.test_sandbox_runtime import RuntimeHarness
+from tests.rl.harness.v2_service_fixtures import signed_containment_receipt
+from tests.rl.harness.wp7_fixtures import make_runtime_fixture
 
 
 def test_headless_workspace_input_rejects_obsolete_outer_isolation() -> None:
@@ -128,6 +145,102 @@ async def test_public_qualification_entry_rejects_unconfined_trusted_process() -
     with pytest.raises(RunnerPlanError) as caught:
         await _open(tools=tools)
     assert caught.value.code == "containment_receipt_invalid"
+
+
+async def _open_with_ledger(
+    adapter: ConductorAdapter, tools: RecordingToolPort, *, runtime_id: str = "sandbox"
+) -> Any:
+    observation = _observation()
+    plan = _plan(
+        observation=observation,
+        implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
+        sandbox_runtime_id=runtime_id,
+    )
+    request = RunnerOpenRequest(episode_id="episode-a", effective_plan=plan)
+    return await adapter.open(
+        request,
+        policy=PolicyRuntimeBinding(request, RecordingPolicyClient(observation)),
+        workspace=tools,
+        cancellation=RecordingCancellationProbe(),
+        events=RecordingEventSink(),
+    )
+
+
+@pytest.mark.asyncio
+async def test_composer_signed_counterfeit_without_manager_admission_is_rejected(tmp_path: Path) -> None:
+    fixture = materialize_production_composition_fixture(tmp_path)
+    composition = load_production_composition(str(fixture.composition_ref_path), fixture.secret_files)
+    try:
+        adapter = composition.service._dependencies.runner_registry.resolve(
+            CONDUCTOR_ADAPTER_ID, CONDUCTOR_RUNTIME_ABI
+        )
+        tools = RecordingToolPort()
+        tools.containment_receipt = signed_containment_receipt(
+            tools.containment_lease_id, "sandbox", composition.authority_graph.authenticator
+        )
+        with pytest.raises(RunnerPlanError) as caught:
+            await _open_with_ledger(adapter, tools)
+        assert caught.value.code == "containment_receipt_invalid"
+    finally:
+        await composition.close()
+
+
+@pytest.mark.asyncio
+async def test_admitted_receipt_requires_exact_live_lease(tmp_path: Path) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    lease = await harness.manager.open(fixture.request)
+    try:
+        assert not hasattr(lease.runner_workspace, "containment_authenticator")
+        authenticator = harness.manager._containment_authenticator
+        adapter = ConductorAdapter(
+            CONDUCTOR_RUNTIME_ABI,
+            containment_authenticator=authenticator,
+            admitted_lease_ledger=harness.manager.admitted_lease_ledger,
+        )
+        tools = RecordingToolPort()
+        tools.containment_lease_id = lease.lease_id
+        original = lease.runner_workspace.containment_receipt
+        tools.containment_receipt = original
+        session = await _open_with_ledger(adapter, tools, runtime_id="trusted-process")
+        await session.close()
+
+        unsigned = replace(original, created_at="2026-09-25T00:00:00Z")
+        tools.containment_receipt = replace(
+            unsigned, signature=authenticator.sign(unsigned.canonical_bytes())
+        )
+        verify_containment_receipt(
+            tools.containment_receipt,
+            lease_id=lease.lease_id,
+            runtime_id="trusted-process",
+            authenticator=authenticator,
+        )
+        with pytest.raises(RunnerPlanError) as modified:
+            await _open_with_ledger(adapter, tools, runtime_id="trusted-process")
+        assert modified.value.code == "containment_receipt_invalid"
+
+        tools.containment_receipt = original
+        await lease.close()
+        with pytest.raises(RunnerPlanError) as replayed:
+            await _open_with_ledger(adapter, tools, runtime_id="trusted-process")
+        assert replayed.value.code == "containment_receipt_invalid"
+    finally:
+        await harness.manager.close()
+
+@pytest.mark.asyncio
+async def test_verifier_admission_is_removed_at_teardown(tmp_path: Path) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    primary = await harness.manager.open(fixture.request)
+    try:
+        snapshot = await primary.seal_for_verifier()
+        verifier = await harness.manager.open_verifier(primary, snapshot)
+        assert harness.manager.admitted_lease_ledger.lookup(verifier.lease_id) is not None
+        await verifier.close()
+        assert harness.manager.admitted_lease_ledger.lookup(verifier.lease_id) is None
+    finally:
+        await primary.close()
+        await harness.manager.close()
 
 
 @pytest.mark.asyncio

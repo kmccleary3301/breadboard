@@ -202,6 +202,56 @@ async def test_public_service_quarantines_missing_verifier_teardown(
     finally:
         await service.close()
 
+@pytest.mark.parametrize("primary_receipt", ("missing", "invalid", "valid"))
+@pytest.mark.parametrize("verifier_receipt", ("missing", "invalid", "valid"))
+@pytest.mark.parametrize("primary_cleanup", ("ok", "failed"))
+@pytest.mark.parametrize("verifier_cleanup", ("ok", "failed"))
+async def test_cleanup_matrix_preserves_failure_fact_and_refuses_closed_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    primary_receipt: str,
+    verifier_receipt: str,
+    primary_cleanup: str,
+    verifier_cleanup: str,
+) -> None:
+    service, case, _ = await _service(monkeypatch)
+    for lease, receipt_mode, cleanup_mode in (
+        (case.sandbox.lease, primary_receipt, primary_cleanup),
+        (case.sandbox.verifier, verifier_receipt, verifier_cleanup),
+    ):
+        if receipt_mode == "missing":
+            lease.emit_teardown_receipt = False
+        elif receipt_mode == "invalid":
+            original_close = lease.close
+
+            async def invalid_close(original_close=original_close, lease=lease):
+                result = await original_close()
+                lease.teardown_receipt = replace(lease.teardown_receipt, signature=b"\1" * 32)
+                return result
+
+            lease.close = invalid_close
+        if cleanup_mode == "failed":
+            lease.close_receipt = failed_receipt(lease.lease_id)
+
+    expected_closed = (
+        primary_receipt, verifier_receipt, primary_cleanup, verifier_cleanup
+    ) == ("valid", "valid", "ok", "ok")
+    try:
+        created = await service.create(case.request)
+        result = await service.run(
+            case.request.episode_id,
+            create_fingerprint=created.response.create_fingerprint,
+            task_input={"case": "cleanup-matrix"},
+            context={},
+        )
+        state = (await service.get_state(case.request.episode_id)).state
+        assert (state is EpisodeLifecycleState.CLOSED) is expected_closed
+        assert (result.response.primary_disposition is EpisodePrimaryDisposition.SUCCEEDED) is expected_closed
+        assert (result.response.closed_envelope_ref is not None) is expected_closed
+        assert bool(case.repository.closed_inputs) is expected_closed
+        assert (result.response.primary_failure is None) is expected_closed
+    finally:
+        await service.close()
+
 
 async def test_v2_materializes_the_terminal_request_selected_by_the_effective_plan() -> None:
     request = ConductorRunRequest(

@@ -54,6 +54,8 @@ from .native_session import NativeSession, NativeSessionError
 from .native_worker import MAX_FRAME_BYTES
 from .sandbox_docker import VERIFIER_RESULT_MAX_BYTES
 from .lease_envelope import (
+    AdmittedLeaseLedger,
+    AdmittedLeaseRecord,
     ContainmentReceipt,
     ContainmentReceiptError,
     DescriptorPath,
@@ -3288,9 +3290,6 @@ class LeaseBackedRunnerWorkspace:
         return self.__lease.containment_receipt
 
     @property
-    def containment_authenticator(self) -> Any | None:
-        return getattr(self.__lease._manager, "_containment_authenticator", None)
-    @property
     def containment_lease_id(self) -> str:
         return self.__lease.lease_id
     @property
@@ -4309,6 +4308,7 @@ class VerifierWorkspaceLease:
                 return self._cleanup
             self._closing = True
             self._fenced = True
+            self._manager._admitted_leases.pop(self.lease_id, None)
             active_tasks = tuple(
                 task
                 for task in self._active_operation_tasks
@@ -4437,6 +4437,14 @@ class _PendingLaunchCleanup:
     backend_cleanup_pending: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _AdmittedLeaseLedgerView:
+    records: Mapping[str, AdmittedLeaseRecord]
+
+    def lookup(self, lease_id: str) -> AdmittedLeaseRecord | None:
+        return self.records.get(lease_id)
+
+
 class SandboxRuntimeManager:
     def __init__(self, *, registries: RegistrySnapshotSet,
                  installed_authorities: InstalledSandboxAuthoritySet,
@@ -4470,6 +4478,10 @@ class SandboxRuntimeManager:
         self.process_backend = process_backend; self.docker_backend = docker_backend
         self._containment_authenticator = containment_authenticator
         self._random_bytes = random_bytes; self._leases: dict[str, SandboxWorkspaceLease] = {}
+        self._admitted_leases: dict[str, AdmittedLeaseRecord] = {}
+        self.admitted_lease_ledger: AdmittedLeaseLedger = _AdmittedLeaseLedgerView(
+            MappingProxyType(self._admitted_leases)
+        )
         self._snapshots: dict[str, tuple[VerifierSnapshotReceipt, Path]] = {}
         self._pending_launch_cleanups: dict[str, _PendingLaunchCleanup] = {}
         self._lease_owner_locks: dict[str, int] = {}
@@ -4480,13 +4492,13 @@ class SandboxRuntimeManager:
 
     def _verify_runtime_containment(
         self, plan: SandboxExecutionPlan, lease_id: str, runtime: RuntimeHandle
-    ) -> None:
+    ) -> ContainmentReceipt | None:
         if plan.runtime.runtime_class is not RuntimeClass.TRUSTED_PROCESS:
-            return
+            return None
         try:
             if self._containment_authenticator is None:
                 raise ContainmentReceiptError("containment authenticator is missing")
-            verify_containment_receipt(
+            return verify_containment_receipt(
                 getattr(runtime, "containment_receipt", None),
                 lease_id=lease_id,
                 runtime_id=plan.runtime.runtime_id,
@@ -4709,6 +4721,7 @@ class SandboxRuntimeManager:
     def _unlink_lease_record(self, lease_id: str) -> None:
         if self._lease_root_fd is None:
             raise RuntimeError("sandbox manager is closed")
+        self._admitted_leases.pop(lease_id, None)
         try:
             os.unlink(lease_id + ".json", dir_fd=self._lease_root_fd)
         except FileNotFoundError:
@@ -5010,7 +5023,7 @@ class SandboxRuntimeManager:
                 runtime, measurement = await backend.launch(
                     plan, materialized.workspace_path, context=context
                 )
-                self._verify_runtime_containment(plan, lease_id, runtime)
+                admitted_receipt = self._verify_runtime_containment(plan, lease_id, runtime)
                 if measurement.mismatch:
                     raise SandboxAttestationError("runtime measurement mismatch", code="runtime_measurement_mismatch",
                                                   lease_id=lease_id)
@@ -5046,8 +5059,14 @@ class SandboxRuntimeManager:
                     "state": "active"})
                 self._write_lease_record(lease_id, active_record)
                 self._leases[lease_id] = lease
+                if admitted_receipt is not None:
+                    self._admitted_leases[lease_id] = AdmittedLeaseRecord(
+                        lease_id, plan.runtime.runtime_id,
+                        admitted_receipt.canonical_bytes(), admitted_receipt.signature,
+                    )
                 return lease
             except BaseException as primary:
+                self._admitted_leases.pop(lease_id, None)
                 cleanup_steps: list[CleanupStepReceipt] = []
                 cleanup_errors: list[str] = []
                 if runtime is not None:
@@ -5377,7 +5396,7 @@ class SandboxRuntimeManager:
                 launched, measurement = await backend.launch(
                     verifier_plan, workspace, context=context
                 )
-                self._verify_runtime_containment(verifier_plan, lease_id, launched)
+                admitted_receipt = self._verify_runtime_containment(verifier_plan, lease_id, launched)
                 if measurement.mismatch:
                     raise SandboxAttestationError("verifier runtime measurement mismatch", code="runtime_measurement_mismatch",
                                                   lease_id=lease_id)
@@ -5418,8 +5437,14 @@ class SandboxRuntimeManager:
                 })
                 self._write_lease_record(lease_id, active_record)
                 primary._verifier_children.append(lease)
+                if admitted_receipt is not None:
+                    self._admitted_leases[lease_id] = AdmittedLeaseRecord(
+                        lease_id, runtime.runtime_id,
+                        admitted_receipt.canonical_bytes(), admitted_receipt.signature,
+                    )
                 return lease
             except BaseException as primary_error:
+                self._admitted_leases.pop(lease_id, None)
                 if "workspace_fd" in locals() and workspace_fd >= 0:
                     os.close(workspace_fd)
                     workspace_fd = -1
@@ -5517,6 +5542,7 @@ class SandboxRuntimeManager:
     async def _close_lease(self, lease: SandboxWorkspaceLease) -> SandboxCleanupReceipt:
         async with lease._lock:
             if lease._cleanup is not None: return lease._cleanup
+            self._admitted_leases.pop(lease.lease_id, None)
             await lease._fence_and_drain(WorkspaceLeaseState.RELEASING)
             steps: list[CleanupStepReceipt] = []
             child_states: list[CleanupState] = []

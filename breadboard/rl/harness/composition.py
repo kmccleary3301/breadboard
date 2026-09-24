@@ -4342,21 +4342,6 @@ def _build_runtime_graph(
         verifiers=manifest.installed.verifiers,
         tool_adapters=tuple(native_tool_adapters),
     )
-    adapters = []
-    for descriptor in manifest.installed.runner_adapters:
-        if descriptor.adapter_id == CONDUCTOR_ADAPTER_ID:
-            adapter = ConductorAdapter(
-                descriptor.runtime_abi,
-                containment_authenticator=graph.authenticator,
-            )
-        elif descriptor.adapter_id == TERMINAL_ADAPTER_ID:
-            adapter = TerminalResponsesAdapter(descriptor.runtime_abi)
-        else:
-            raise ValueError("runner adapter is not installed by the closed switch")
-        if adapter.descriptor != descriptor:
-            raise ValueError("runner adapter descriptor mismatch")
-        adapters.append(adapter)
-    runner_registry = RunnerAdapterRegistry(adapters)
 
     source_reader = _CASMaterializationSourceReader(graph.cas)
     cache_guard = _DirectoryIdentityGuard(
@@ -4530,6 +4515,22 @@ def _build_runtime_graph(
     rollback.attempt(
         lambda: revalidate_directory("lease", str(sandbox_manager.lease_root))
     )
+    adapters = []
+    for descriptor in manifest.installed.runner_adapters:
+        if descriptor.adapter_id == CONDUCTOR_ADAPTER_ID:
+            adapter = ConductorAdapter(
+                descriptor.runtime_abi,
+                containment_authenticator=graph.authenticator,
+                admitted_lease_ledger=sandbox_manager.admitted_lease_ledger,
+            )
+        elif descriptor.adapter_id == TERMINAL_ADAPTER_ID:
+            adapter = TerminalResponsesAdapter(descriptor.runtime_abi)
+        else:
+            raise ValueError("runner adapter is not installed by the closed switch")
+        if adapter.descriptor != descriptor:
+            raise ValueError("runner adapter descriptor mismatch")
+        adapters.append(adapter)
+    runner_registry = RunnerAdapterRegistry(adapters)
     cleanup_probe = _ProductionCleanupProbe(
         manifest=manifest,
         materialization=materialization,

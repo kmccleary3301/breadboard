@@ -2931,6 +2931,7 @@ class BreadBoardV2EpisodeService:
                 "cleanup",
                 lease_id=receipt.lease_id,
             )
+            coordinator.primary_failure = primary_failure or failure
             await self._quarantine(
                 coordinator,
                 failure,
@@ -2953,6 +2954,7 @@ class BreadBoardV2EpisodeService:
                 "cleanup",
                 lease_id=coordinator.primary_lease_id,
             )
+            coordinator.primary_failure = primary_failure or failure
             await self._quarantine(
                 coordinator,
                 failure,

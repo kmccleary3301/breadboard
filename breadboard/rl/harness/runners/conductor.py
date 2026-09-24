@@ -24,6 +24,8 @@ from breadboard_engine.compilation.provider_response import (
 from breadboard.rl.harness.contracts import PolicyCapabilityObservation
 from breadboard.rl.harness.contracts import RuntimeClass
 from breadboard.rl.harness.lease_envelope import (
+    AdmittedLeaseLedger,
+    AdmittedLeaseRecord,
     ContainmentReceiptError,
     ReceiptAuthenticator,
     RuntimeContainment,
@@ -1211,13 +1213,14 @@ def _admit_schema(schema: Mapping[str, Any], request: RunnerOpenRequest) -> None
 
 
 class ConductorAdapter:
-    __slots__ = ("_descriptor", "_containment_authenticator", "_allow_unconfined_test_only")
+    __slots__ = ("_descriptor", "_containment_authenticator", "_admitted_lease_ledger", "_allow_unconfined_test_only")
 
     def __init__(
         self,
         runtime_abi: str,
         *,
         containment_authenticator: ReceiptAuthenticator | None = None,
+        admitted_lease_ledger: AdmittedLeaseLedger | None = None,
         allow_unconfined_test_only: bool = False,
     ) -> None:
         if runtime_abi != CONDUCTOR_RUNTIME_ABI:
@@ -1242,6 +1245,7 @@ class ConductorAdapter:
             implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
         )
         self._containment_authenticator = containment_authenticator
+        self._admitted_lease_ledger = admitted_lease_ledger
         self._allow_unconfined_test_only = allow_unconfined_test_only
 
     @property
@@ -1328,14 +1332,26 @@ class ConductorAdapter:
                     and not self._allow_unconfined_test_only
                 ):
                     raise ContainmentReceiptError("unconfined trusted-process workspace is not admitted")
-                if receipt is None or self._containment_authenticator is None or not isinstance(lease_id, str):
-                    raise ContainmentReceiptError("containment receipt is missing")
-                verify_containment_receipt(
+                if (
+                    receipt is None or self._containment_authenticator is None
+                    or self._admitted_lease_ledger is None or not isinstance(lease_id, str)
+                ):
+                    raise ContainmentReceiptError("containment receipt or admitted lease is missing")
+                verified = verify_containment_receipt(
                     receipt,
                     lease_id=lease_id,
                     runtime_id=request.effective_plan.sandbox.runtime_id,
                     authenticator=self._containment_authenticator,
                 )
+                admitted = self._admitted_lease_ledger.lookup(lease_id)
+                if (
+                    type(admitted) is not AdmittedLeaseRecord
+                    or admitted.lease_id != lease_id
+                    or admitted.runtime_id != request.effective_plan.sandbox.runtime_id
+                    or admitted.receipt_bytes != verified.canonical_bytes()
+                    or admitted.receipt_signature != verified.signature
+                ):
+                    raise ContainmentReceiptError("containment lease is not live and exact")
             except ContainmentReceiptError as exc:
                 raise _plan_error(
                     request,

@@ -13,7 +13,7 @@ import pytest
 
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.composition import HmacSha256ReceiptAuthenticator
-from breadboard.rl.harness.lease_envelope import RuntimeContainment
+from breadboard.rl.harness.lease_envelope import AdmittedLeaseRecord, RuntimeContainment
 from breadboard.rl.harness.runners import conductor as conductor_module
 from breadboard.rl.harness.runners.base import (
     PolicyRequestEvent,
@@ -69,6 +69,20 @@ CONDUCTOR_TEST_AUTHENTICATOR = HmacSha256ReceiptAuthenticator(
 )
 
 
+class RecordingAdmittedLeaseLedger:
+    def __init__(self) -> None:
+        receipt = signed_containment_receipt("lease-conductor-test", "sandbox", CONDUCTOR_TEST_AUTHENTICATOR)
+        self.record = AdmittedLeaseRecord(
+            "lease-conductor-test", "sandbox", receipt.canonical_bytes(), receipt.signature
+        )
+
+    def lookup(self, lease_id: str) -> AdmittedLeaseRecord | None:
+        return self.record if lease_id == self.record.lease_id else None
+
+
+CONDUCTOR_TEST_LEDGER = RecordingAdmittedLeaseLedger()
+
+
 class RecordingToolPort:
     def __init__(
         self,
@@ -78,9 +92,8 @@ class RecordingToolPort:
     ) -> None:
         self.containment = RuntimeContainment.ATTESTED
         self.containment_lease_id = "lease-conductor-test"
-        self.containment_authenticator = CONDUCTOR_TEST_AUTHENTICATOR
         self.containment_receipt = signed_containment_receipt(
-            self.containment_lease_id, "sandbox", self.containment_authenticator
+            self.containment_lease_id, "sandbox", CONDUCTOR_TEST_AUTHENTICATOR
         )
         self._bindings = bindings
         self.results = list(results or [])
@@ -363,7 +376,7 @@ async def _open(
     resolved_sink = sink or RecordingEventSink()
     open_request = RunnerOpenRequest(episode_id=episode_id, effective_plan=resolved_plan)
     binding = PolicyRuntimeBinding(open_request, resolved_client)
-    adapter = ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR)
+    adapter = ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR, admitted_lease_ledger=CONDUCTOR_TEST_LEDGER)
     session = await adapter.open(
         open_request,
         policy=binding,
@@ -618,7 +631,7 @@ async def _assert_open_rejected(
     binding = PolicyRuntimeBinding(request, client)
 
     with pytest.raises(RunnerPlanError) as captured:
-        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR).open(
+        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR, admitted_lease_ledger=CONDUCTOR_TEST_LEDGER).open(
             request,
             policy=binding,
             workspace=tools,
@@ -901,7 +914,7 @@ def test_conductor_constructor_owns_identity_and_rejects_post_bootstrap_drift(
     )
     monkeypatch.setattr(conductor_module, "measure_module_artifact", lambda _path: changed)
     with pytest.raises(RuntimeError, match="changed after bootstrap"):
-        ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR)
+        ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR, admitted_lease_ledger=CONDUCTOR_TEST_LEDGER)
 
 
 @pytest.mark.parametrize(
@@ -926,7 +939,7 @@ async def test_conductor_rejects_runner_identity_mismatch_before_binding_tool_pr
     tools = RecordingToolPort()
     probe = RecordingCancellationProbe()
     sink = RecordingEventSink()
-    adapter = ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR)
+    adapter = ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR, admitted_lease_ledger=CONDUCTOR_TEST_LEDGER)
 
     with pytest.raises(RunnerPlanError) as captured:
         await adapter.open(
@@ -1005,7 +1018,7 @@ async def test_conductor_rejects_malformed_or_unbound_ir_before_tool_probe_event
     sink = RecordingEventSink()
 
     with pytest.raises((RunnerPlanError, RunnerPolicyBindingError)) as captured:
-        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR).open(
+        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR, admitted_lease_ledger=CONDUCTOR_TEST_LEDGER).open(
             RunnerOpenRequest(episode_id="episode-a", effective_plan=plan),
             policy=binding,
             workspace=tools,
@@ -1043,7 +1056,7 @@ async def test_conductor_rejects_foreign_provider_tool_policy_before_port_effect
     )
 
     with pytest.raises(RunnerPlanError) as captured:
-        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR).open(
+        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR, admitted_lease_ledger=CONDUCTOR_TEST_LEDGER).open(
             RunnerOpenRequest(episode_id="episode-a", effective_plan=plan),
             policy=binding,
             workspace=tools,
@@ -1080,7 +1093,7 @@ async def test_conductor_rejects_tool_binding_subclass_even_when_equality_can_sp
     binding = PolicyRuntimeBinding(RunnerOpenRequest(episode_id="episode-a", effective_plan=plan), client)
 
     with pytest.raises(RunnerPlanError) as captured:
-        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR).open(
+        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR, admitted_lease_ledger=CONDUCTOR_TEST_LEDGER).open(
             RunnerOpenRequest(episode_id="episode-a", effective_plan=plan),
             policy=binding,
             workspace=tools,
@@ -2467,7 +2480,7 @@ async def test_conductor_requires_exact_policy_binding_and_claims_it_only_once()
     observation = _observation()
     plan = _plan(observation=observation, implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST)
     request = RunnerOpenRequest(episode_id="episode-a", effective_plan=plan)
-    adapter = ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR)
+    adapter = ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR, admitted_lease_ledger=CONDUCTOR_TEST_LEDGER)
 
     for candidate_factory in (
         lambda client: PolicyRuntimeBindingSubclass(request, client),
