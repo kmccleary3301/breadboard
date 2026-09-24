@@ -25,7 +25,6 @@ from breadboard.rl.harness.contracts import PolicyCapabilityObservation
 from breadboard.rl.harness.contracts import RuntimeClass
 from breadboard.rl.harness.lease_envelope import (
     ContainmentReceiptError,
-    RuntimeContainment,
     verify_containment_receipt,
 )
 from breadboard.rl.harness.runner_identity import measure_module_artifact
@@ -1309,11 +1308,7 @@ class ConductorAdapter:
             installed = None
         if installed != expected:
             raise _plan_error(request, "tool port bindings do not exactly match plan grants", "tool_grant_mismatch")
-        if (
-            request.effective_plan.sandbox.runtime_class is RuntimeClass.TRUSTED_PROCESS
-            and getattr(workspace, "containment", RuntimeContainment.ATTESTED)
-            is RuntimeContainment.ATTESTED
-        ):
+        if request.effective_plan.sandbox.runtime_class is RuntimeClass.TRUSTED_PROCESS:
             receipt = getattr(workspace, "containment_receipt", None)
             authenticator = getattr(workspace, "containment_authenticator", None)
             lease_id = getattr(workspace, "containment_lease_id", None)

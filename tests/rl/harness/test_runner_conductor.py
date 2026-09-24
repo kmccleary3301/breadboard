@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from breadboard.rl.harness import contracts as c
+from breadboard.rl.harness.composition import HmacSha256ReceiptAuthenticator
 from breadboard.rl.harness.lease_envelope import RuntimeContainment
 from breadboard.rl.harness.runners import conductor as conductor_module
 from breadboard.rl.harness.runners.base import (
@@ -61,6 +62,7 @@ from tests.rl.harness.test_runner_policy_runtime import (
     _response,
 )
 
+from tests.rl.harness.v2_service_fixtures import signed_containment_receipt
 
 class RecordingToolPort:
     def __init__(
@@ -69,7 +71,14 @@ class RecordingToolPort:
         *,
         results: list[Mapping[str, Any]] | None = None,
     ) -> None:
-        self.containment = RuntimeContainment.UNCONFINED_TEST_ONLY
+        self.containment = RuntimeContainment.ATTESTED
+        self.containment_lease_id = "lease-conductor-test"
+        self.containment_authenticator = HmacSha256ReceiptAuthenticator(
+            key_id="conductor-test", key=b"conductor-test-key-32-bytes!!!!!"
+        )
+        self.containment_receipt = signed_containment_receipt(
+            self.containment_lease_id, "sandbox", self.containment_authenticator
+        )
         self._bindings = bindings
         self.results = list(results or [])
         self.calls: list[tuple[str, dict[str, Any], int]] = []
@@ -92,6 +101,14 @@ class RecordingToolPort:
         if self.error is not None:
             raise self.error
         return self.results.pop(0)
+
+@pytest.mark.asyncio
+async def test_public_open_rejects_unconfined_trusted_process_workspace() -> None:
+    tools = RecordingToolPort()
+    tools.containment = RuntimeContainment.UNCONFINED_TEST_ONLY
+    tools.containment_receipt = None
+    with pytest.raises(RunnerPlanError, match="containment receipt"):
+        await _open(tools=tools)
 
 
 class RecordingCancellationProbe:
