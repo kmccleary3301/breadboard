@@ -1240,6 +1240,7 @@ async def test_real_process_closed_stream_timeout_or_cancellation_kills_descenda
                 CleanupState.ALREADY_RELEASED,
             ),
             CleanupStepReceipt("runtime", CleanupState.RELEASED),
+            CleanupStepReceipt("native_scratch", CleanupState.RELEASED),
             CleanupStepReceipt("workspace", CleanupState.RELEASED),
             CleanupStepReceipt("cache_holder", CleanupState.RELEASED),
             CleanupStepReceipt("lease_record", CleanupState.RELEASED),
