@@ -903,6 +903,23 @@ def _spawn_one(
         cwd_index, gate_index, exec_ready_index,
     }:
         raise OSError("envelope control channel is not exposable to the child")
+    argv_items = message["argv"]
+    descriptor_arguments = message.get("descriptor_arguments", [])
+    if (
+        not isinstance(argv_items, list)
+        or any(type(item) is not str for item in argv_items)
+        or not isinstance(descriptor_arguments, list)
+        or any(
+            not isinstance(pair, list)
+            or len(pair) != 2
+            or any(type(value) is not int for value in pair)
+            or not 0 <= pair[0] < len(argv_items)
+            or pair[1] not in exposable_indices
+            for pair in descriptor_arguments
+        )
+        or len({pair[0] for pair in descriptor_arguments}) != len(descriptor_arguments)
+    ):
+        raise OSError("envelope descriptor arguments are invalid")
     status_fd = fds[status_index]
     exec_ready_fd = fds[exec_ready_index]
     child = os.fork()
@@ -929,22 +946,19 @@ def _spawn_one(
             if os.read(fds[gate_index], 1) != b"G":
                 raise OSError("envelope exec gate was not admitted")
             os.close(fds[gate_index])
-            argv = list(
-                _rewrite_received_fd_paths(
-                    tuple(message["argv"]), fds, exposable_indices
-                )
-            )
-            argv0_path = message.get("argv0_path")
-            if isinstance(argv0_path, str) and argv0_path:
-                argv[0] = argv0_path
             exec_fd, argv = _prepare_exec_descriptors(
                 fds,
                 exec_fd=fds[exec_index],
                 status_fd=status_fd,
                 exec_ready_fd=exec_ready_fd,
-                exposable_fds={fds[index] for index in exposable_indices},
-                argv=argv,
+                argv=argv_items,
+                descriptor_arguments={
+                    position: fds[index] for position, index in descriptor_arguments
+                },
             )
+            argv0_path = message.get("argv0_path")
+            if isinstance(argv0_path, str) and argv0_path:
+                argv[0] = argv0_path
             os.set_inheritable(exec_fd, False)
             os.set_inheritable(status_fd, False)
             os.set_inheritable(exec_ready_fd, False)
@@ -1358,6 +1372,9 @@ async def spawn_envelope_process(
     cwd_fd: int,
     timeout_ms: int,
 ) -> EnvelopeProcess:
+    handed = {executable_fd, *extra_fds} | ({command_fd} if command_fd is not None else set())
+    if any(type(item) is DescriptorPath and item.fd not in handed for item in argv):
+        raise ValueError("argv names a descriptor that is not handed to the child")
     stdin_r, stdin_w = os.pipe()
     stdout_r, stdout_w = os.pipe()
     stderr_r, stderr_w = os.pipe()
@@ -1380,7 +1397,8 @@ async def spawn_envelope_process(
         command_index
         if command_index is not None
         and argv
-        and argv[0] == f"/proc/self/fd/{command_fd}"
+        and type(argv[0]) is DescriptorPath
+        and argv[0].fd == command_fd
         else 4
     )
     gate_index = len(sent_fds)
@@ -1389,13 +1407,19 @@ async def spawn_envelope_process(
     sent_fds.append(os.dup(cwd_fd))
     exec_ready_index = len(sent_fds)
     sent_fds.append(exec_ready_w)
-    # Only descriptors deliberately handed to the child may be named in argv;
-    # status, gate, readiness, stdio and cwd channels never are.
-    mapping = {
+    # Only launcher-generated DescriptorPath entries name descriptors, and only
+    # the ones handed to the child; status, gate, readiness, stdio and cwd
+    # channels never are. Plain strings, including model text, pass verbatim.
+    exposable = {
         sent_fds[index]: index
         for index in (4, command_index, *extra_indices)
         if index is not None
     }
+    descriptor_arguments = [
+        [position, exposable[item.fd]]
+        for position, item in enumerate(argv)
+        if type(item) is DescriptorPath
+    ]
     message = {
         "kind": "spawn",
         "fd_count": len(sent_fds),
@@ -1409,7 +1433,8 @@ async def spawn_envelope_process(
         "exec_ready_index": exec_ready_index,
         "cwd_index": cwd_index,
         "argv0_path": argv0_path,
-        "argv": _rewrite_fd_paths(argv, mapping),
+        "argv": [str(item) for item in argv],
+        "descriptor_arguments": descriptor_arguments,
         "environment": dict(environment),
     }
     try:
@@ -1511,31 +1536,19 @@ class EnvelopeLaunch:
         return receipt
 
 
-_FD_PATH = re.compile(r"/proc/self/fd/([0-9]+)")
+class DescriptorPath(str):
+    """A launcher-generated argv entry naming one descriptor handed to the child.
 
-
-def _rewrite_fd_paths(argv: Sequence[str], mapping: Mapping[int, int]) -> tuple[str, ...]:
-    """Renumber whole-argument ``/proc/self/fd/N`` tokens named by ``mapping``.
-
-    Only launcher-generated whole arguments are descriptor references;
-    substrings inside model-controlled text are passed through unchanged.
+    Only entries of exactly this type are renumbered for the child. Equal
+    plain strings, including any model-supplied text, pass through verbatim.
     """
-    result = []
-    for item in argv:
-        match = _FD_PATH.fullmatch(str(item))
-        if match is not None and int(match.group(1)) in mapping:
-            result.append(f"/proc/self/fd/{mapping[int(match.group(1))]}")
-        else:
-            result.append(str(item))
-    return tuple(result)
 
+    fd: int
 
-def _rewrite_received_fd_paths(
-    argv: Sequence[str], fds: Sequence[int], exposable_indices: set[int]
-) -> tuple[str, ...]:
-    return _rewrite_fd_paths(
-        argv, {index: fds[index] for index in exposable_indices}
-    )
+    def __new__(cls, fd: int) -> "DescriptorPath":
+        path = super().__new__(cls, f"/proc/self/fd/{fd}")
+        path.fd = fd
+        return path
 
 
 def _prepare_exec_descriptors(
@@ -1544,14 +1557,15 @@ def _prepare_exec_descriptors(
     exec_fd: int,
     status_fd: int,
     exec_ready_fd: int,
-    exposable_fds: set[int],
     argv: Sequence[str],
-) -> tuple[int, tuple[str, ...]]:
-    referenced = {exec_fd}
-    for item in argv:
-        match = _FD_PATH.fullmatch(item)
-        if match is not None and int(match.group(1)) in exposable_fds:
-            referenced.add(int(match.group(1)))
+    descriptor_arguments: Mapping[int, int],
+) -> tuple[int, list[str]]:
+    """Pack the exec and argv-named descriptors low; close every other one.
+
+    ``descriptor_arguments`` maps argv positions to received descriptors; no
+    other argv entry is interpreted as a descriptor reference.
+    """
+    referenced = {exec_fd, *descriptor_arguments.values()}
     mapping: dict[int, int] = {}
     next_fd = 3
     for source in sorted(referenced):
@@ -1560,18 +1574,14 @@ def _prepare_exec_descriptors(
         os.dup2(source, next_fd, inheritable=True)
         mapping[source] = next_fd
         next_fd += 1
-    rewritten = _rewrite_fd_paths(argv, mapping)
-    preserved = set(mapping) | {status_fd, exec_ready_fd}
-    for fd in set(fds):
+    rewritten = list(argv)
+    for position, source in descriptor_arguments.items():
+        rewritten[position] = f"/proc/self/fd/{mapping[source]}"
+    preserved = set(mapping.values()) | {status_fd, exec_ready_fd}
+    for fd in set(fds) | set(mapping):
         if fd > 2 and fd not in preserved:
             try:
                 os.close(fd)
-            except OSError:
-                pass
-    for source, target in mapping.items():
-        if source != target:
-            try:
-                os.close(source)
             except OSError:
                 pass
     return mapping[exec_fd], rewritten

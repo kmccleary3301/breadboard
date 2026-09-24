@@ -56,6 +56,7 @@ from .sandbox_docker import VERIFIER_RESULT_MAX_BYTES
 from .lease_envelope import (
     ContainmentReceipt,
     ContainmentReceiptError,
+    DescriptorPath,
     EnvelopeLaunch,
     RuntimeContainment,
     launch_envelope,
@@ -697,7 +698,7 @@ def _snapshot_installed_executable(
         if fcntl.fcntl(snapshot_fd, _LINUX_F_GET_SEALS) & seals != seals:
             raise OSError("executable snapshot sealing was incomplete")
         snapshot = os.fstat(snapshot_fd)
-        proc_fd_path = f"/proc/self/fd/{snapshot_fd}"
+        proc_fd_path = DescriptorPath(snapshot_fd)
         proc_snapshot = os.stat(proc_fd_path)
         if (proc_snapshot.st_dev, proc_snapshot.st_ino) != (
             snapshot.st_dev,
@@ -2458,7 +2459,7 @@ class TrustedProcessHandle:
     ) -> Mapping[str, Any]:
         if (
             not argv
-            or any(type(item) is not str or "\x00" in item for item in argv)
+            or any(not isinstance(item, str) or "\x00" in item for item in argv)
             or type(input_bytes) is not bytes
             or len(input_bytes) > output_limit
             or any(type(fd) is not int or fd < 0 for fd in extra_fds)

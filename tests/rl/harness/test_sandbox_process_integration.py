@@ -177,43 +177,89 @@ def test_lease_mountpoints_are_recreated_only_inside_private_tmp(tmp_path: Path)
     lease_envelope._prepare_lease_mountpoint(str(tmp_root), str(tmp_root))
     assert not outside.exists()
 
-def test_fd_path_rewrite_is_single_pass_over_whole_descriptor_tokens() -> None:
-    mapping = {5: 0, 6: 1, 7: 2, 8: 3, 3: 4, 4: 5, 9: 6, 10: 7, 11: 8}
-    assert lease_envelope._rewrite_fd_paths(
-        ("/proc/self/fd/3", "/proc/self/fd/4"), mapping
-    ) == ("/proc/self/fd/4", "/proc/self/fd/5")
-    assert lease_envelope._rewrite_fd_paths(("/proc/self/fd/30",), {3: 0, 30: 4}) == (
-        "/proc/self/fd/4",
-    )
-    assert lease_envelope._rewrite_fd_paths(("--x=/proc/self/fd/31/y",), {3: 0}) == (
-        "--x=/proc/self/fd/31/y",
-    )
-    received = [40, 41, 42, 43, 44, 45]
-    # Model text naming the status channel (index 3) is never rewritten, and
-    # a whole-token reference to a non-exposable index is left untouched.
-    assert lease_envelope._rewrite_received_fd_paths(
-        ("/proc/self/fd/4", "-lc", "cat /proc/self/fd/3", "/proc/self/fd/3"),
-        received,
-        {4, 5},
-    ) == ("/proc/self/fd/44", "-lc", "cat /proc/self/fd/3", "/proc/self/fd/3")
+def test_only_launcher_descriptor_positions_reach_the_child() -> None:
+    # The reviewer's attack: model text naming the status channel's index and
+    # an unrelated whole-token literal must both reach exec verbatim.
+    status_r, status_w = os.pipe()
+    ready_r, ready_w = os.pipe()
+    exec_source = os.open(os.devnull, os.O_RDONLY)
+    child = os.fork()
+    if child == 0:
+        try:
+            exec_fd, argv = lease_envelope._prepare_exec_descriptors(
+                [exec_source, status_w, ready_w],
+                exec_fd=exec_source,
+                status_fd=status_w,
+                exec_ready_fd=ready_w,
+                argv=[
+                    "/proc/self/fd/77",
+                    "-lc",
+                    "cat /proc/self/fd/3",
+                    "/proc/self/fd/24",
+                    f"/proc/self/fd/{status_w}",
+                ],
+                descriptor_arguments={0: exec_source},
+            )
+            report = {
+                "argv": argv,
+                "exec_fd": exec_fd,
+                "status_is_exec": os.path.sameopenfile(exec_fd, status_w),
+            }
+            os.write(status_w, json.dumps(report).encode())
+        finally:
+            os._exit(0)
+    os.close(status_w)
+    os.close(ready_w)
+    os.close(exec_source)
+    os.waitpid(child, 0)
+    with os.fdopen(status_r, "rb") as stream:
+        report = json.loads(stream.read())
+    os.close(ready_r)
+    assert report["argv"] == [
+        f"/proc/self/fd/{report['exec_fd']}",
+        "-lc",
+        "cat /proc/self/fd/3",
+        "/proc/self/fd/24",
+        f"/proc/self/fd/{status_w}",
+    ]
+    assert report["status_is_exec"] is False
 
 
-def test_spawn_rejects_control_channel_named_as_exposable() -> None:
-    message = {
-        "fd_count": 6,
-        "status_index": 0,
-        "stdio_indices": [1, 2, 3],
-        "cwd_index": 4,
-        "executable_index": 5,
-        "exec_index": 5,
-        "gate_index": 5,
-        "exec_ready_index": 5,
-        "extra_indices": [0],
+def _spawn_message(**overrides: object) -> dict[str, object]:
+    message: dict[str, object] = {
+        "fd_count": 10,
+        "status_index": 3,
+        "stdio_indices": [0, 1, 2],
+        "executable_index": 4,
+        "exec_index": 4,
+        "command_index": None,
+        "extra_indices": [5],
+        "gate_index": 6,
+        "cwd_index": 7,
+        "exec_ready_index": 8,
         "environment": {},
-        "argv": [],
+        "argv": ["/proc/self/fd/4", "-lc", "cat /proc/self/fd/3"],
+        "descriptor_arguments": [[0, 4]],
     }
-    with pytest.raises(OSError, match="control channel"):
-        _spawn_one(None, message, [10, 11, 12, 13, 14, 15], object())
+    message.update(overrides)
+    return message
+
+
+@pytest.mark.parametrize(
+    "overrides, reason",
+    [
+        ({"extra_indices": [3]}, "control channel"),
+        ({"descriptor_arguments": [[2, 3]]}, "descriptor arguments"),
+        ({"descriptor_arguments": [[2, 6]]}, "descriptor arguments"),
+        ({"descriptor_arguments": [[3, 4]]}, "descriptor arguments"),
+        ({"descriptor_arguments": [[0, 4], [0, 5]]}, "descriptor arguments"),
+    ],
+)
+def test_spawn_refuses_to_name_control_channels_in_argv(
+    overrides: dict[str, object], reason: str
+) -> None:
+    with pytest.raises(OSError, match=reason):
+        _spawn_one(None, _spawn_message(**overrides), list(range(40, 50)), object())
 
 
 
