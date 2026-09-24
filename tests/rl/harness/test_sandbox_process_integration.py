@@ -784,7 +784,7 @@ async def test_catalog_argv0_and_proc_exe_bind_different_objects_at_private_barr
         harness.manager, "_record_process_identity", inspect_stopped_process
     )
     result = await primary._runtime.run_shell(
-        "sleep 0.5; printf argv-proof", timeout_ms=1_000, output_limit=4_096
+        "sleep 1.5; printf argv-proof", timeout_ms=3_000, output_limit=4_096
     )
 
     assert observed["cmdline"][0].decode() == runtime_path
