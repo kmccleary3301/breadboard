@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -84,6 +85,47 @@ def _normalize(value: Any, *, declared: set[str], key: str | None = None) -> Any
     return value
 
 
+# Pinned 18.1.17 packages/coding-agent/src/system-prompt.ts:351-368 supplies the
+# workstation values OS=`${os.platform()} ${os.release()}` and
+# Kernel=getKernelIdentity() (trimmed), and prompts/system/project-prompt.md:3-6
+# renders them as `- {{label}}: {{value}}` plus `- Model: {{model}}`, where
+# model is formatModelString `<provider>/<id>` (config/model-resolver.ts:234-236).
+# The OS release, kernel build, and provider route label are host or deployment
+# facts. Only those spans are tokenized; every other byte stays compared.
+_WORKSTATION_GRAMMAR: dict[str, tuple[re.Pattern[str], str, str]] = {
+    "OS": (re.compile(r"(?P<platform>\S+) (?P<release>\S+)"), "release", "<OMP_OS_RELEASE>"),
+    "Kernel": (re.compile(r"(?P<build>\S(?:[^\n]*\S)?)"), "build", "<OMP_KERNEL_BUILD>"),
+    "Model": (re.compile(r"(?P<provider>[^/\s]+)/(?P<id>[^\n]+)"), "provider", "<OMP_MODEL_PROVIDER>"),
+}
+_WORKSTATION_LINE = re.compile(r"(?m)^- (?P<label>" + "|".join(_WORKSTATION_GRAMMAR) + r"): (?P<value>[^\n]*)$")
+
+
+def _tokenize_workstation(body: Mapping[str, Any]) -> None:
+    """Tokenize the pinned workstation value spans of each system message in place."""
+    messages = body.get("messages")
+    for message in messages if isinstance(messages, list) else []:
+        if not isinstance(message, dict) or message.get("role") != "system" or not isinstance(message.get("content"), str):
+            continue
+        content = message["content"]
+        lines: dict[str, list[re.Match[str]]] = {label: [] for label in _WORKSTATION_GRAMMAR}
+        for line in _WORKSTATION_LINE.finditer(content):
+            lines[line.group("label")].append(line)
+        spans: list[tuple[int, int, str]] = []
+        for label, (grammar, group, token) in _WORKSTATION_GRAMMAR.items():
+            if len(lines[label]) != 1:
+                raise ValueError(f"pinned OMP system prompt must emit exactly one '- {label}:' workstation line, found {len(lines[label])}")
+            line = lines[label][0]
+            value = grammar.fullmatch(content, line.start("value"), line.end("value"))
+            if value is None:
+                raise ValueError(f"pinned OMP workstation '- {label}:' value does not match the pinned grammar")
+            if label == "Model" and value.group("id") != body.get("model"):
+                raise ValueError("pinned OMP workstation Model id does not equal the request body model")
+            spans.append((value.start(group), value.end(group), token))
+        for start, end, token in sorted(spans, reverse=True):
+            content = content[:start] + token + content[end:]
+        message["content"] = content
+
+
 def _requests(trace: Mapping[str, Any], declared: set[str]) -> list[dict[str, Any]]:
     raw = trace.get("requests")
     if not isinstance(raw, list):
@@ -94,6 +136,7 @@ def _requests(trace: Mapping[str, Any], declared: set[str]) -> list[dict[str, An
         if not isinstance(body, Mapping):
             body = {"value": body}
         normalized_body = _normalize(body, declared=declared)
+        _tokenize_workstation(normalized_body)
         result.append(
             {
                 "index": item.get("index", index) if isinstance(item, Mapping) else index,

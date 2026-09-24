@@ -3,6 +3,8 @@ from __future__ import annotations
 from copy import deepcopy
 import json
 from pathlib import Path
+import re
+from typing import Callable
 
 import pytest
 from breadboard.product.evidence.e4.run_lane import _comparator_entry
@@ -193,7 +195,7 @@ def test_supplier_and_bb_dedupe_cumulative_snapshots(tmp_path: Path) -> None:
         "content": "x",
     }
     messages = [
-        {"role": "system", "content": "system"},
+        {"role": "system", "content": "<workstation>\n- OS: linux 6.8.0-90-generic\n- Kernel: #91-Ubuntu SMP\n- Model: capture/capture\n</workstation>"},
         {"role": "user", "content": "task"},
         {"role": "assistant", "content": "", "tool_calls": [call]},
     ]
@@ -274,3 +276,68 @@ def test_omp_comparator_loads_through_lane_registry() -> None:
     loaded = _load_comparator_callable(entry)
     assert loaded is compare
     assert entry["comparator_id"] == "oh_my_pi_18_1_17_trace_v1"
+
+
+WORKSTATION_FIXTURES = Path(__file__).parent / "fixtures" / "omp_18_1_17_workstation"
+
+
+def _first_request_pair() -> tuple[dict, dict]:
+    """Job-1203 normal first requests; the BB one has R2 and R3 applied by hand."""
+    supplier = json.loads((WORKSTATION_FIXTURES / "supplier-normal-req0.json").read_text(encoding="utf-8"))
+    bb = json.loads((WORKSTATION_FIXTURES / "bb-normal-req0-r2-r3-hand-applied.json").read_text(encoding="utf-8"))
+    assert bb["fixture"].startswith("HAND-EDITED")
+    return supplier["body"], bb["body"]
+
+
+def _first_request_traces() -> dict[str, dict]:
+    traces: dict[str, dict] = {}
+    for side, body in zip(("capture", "replay"), _first_request_pair()):
+        traces[side] = _trace()
+        traces[side]["requests"] = [{"body": body}]
+    return traces
+
+
+def test_workstation_grammar_equates_job_1203_first_requests() -> None:
+    traces = _first_request_traces()
+    assert traces["capture"]["requests"] != traces["replay"]["requests"]
+    report = compare(traces)
+    assert report["ok"] is True, report
+
+
+def _swap(old: str, new: str) -> Callable[[str], str]:
+    def mutate(content: str) -> str:
+        assert content.count(old) == 1
+        return content.replace(old, new)
+
+    return mutate
+
+
+def _drop_model_line(content: str) -> str:
+    stripped, count = re.subn(r"(?m)^- Model: [^\n]*\n", "", content)
+    assert count == 1
+    return stripped
+
+
+@pytest.mark.parametrize("side", ["capture", "replay"])
+@pytest.mark.parametrize(
+    ("mutate", "error"),
+    [
+        pytest.param(_swap("\n- Distro: Linux\n", "\n- Distro: Linux\n- OS: linux 6.8.0-90-generic\n"), "exactly one '- OS:'", id="duplicate-os"),
+        pytest.param(_drop_model_line, "exactly one '- Model:'", id="missing-model"),
+        pytest.param(_swap("/capture\n</workstation>", "/other\n</workstation>"), "Model id does not equal", id="model-id-not-body-model"),
+        pytest.param(_swap("-generic\n- Distro:", "-generic extra\n- Distro:"), "'- OS:' value does not match", id="text-after-release"),
+        pytest.param(_swap("- Arch: x64\n", "- Arch: arm64\n"), None, id="non-value-byte"),
+        pytest.param(_swap("- OS: linux ", "- OS: darwin "), None, id="platform"),
+    ],
+)
+def test_workstation_grammar_mutations_fail(side: str, mutate: Callable[[str], str], error: str | None) -> None:
+    traces = _first_request_traces()
+    system = traces[side]["requests"][0]["body"]["messages"][0]
+    assert system["role"] == "system"
+    system["content"] = mutate(system["content"])
+    report = compare(traces)
+    assert report["ok"] is False
+    if error is None:
+        assert [item["assertion_id"] for item in report["assertions"] if item["status"] == "failed"] == ["episode.requests_equal"]
+    else:
+        assert error in report["errors"][0]

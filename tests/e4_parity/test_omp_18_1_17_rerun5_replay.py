@@ -71,6 +71,10 @@ def _tool_message_output(message: dict[str, Any]) -> str:
     return str(content)
 
 
+def _without_system(body: dict[str, Any]) -> dict[str, Any]:
+    return {**body, "messages": [message for message in body["messages"] if message.get("role") != "system"]}
+
+
 def test_rerun5_receiver_replay_preserves_full_bodies_results_and_effects() -> None:
     if not PACKET.is_file():
         pytest.skip("DO-2 rerun5 packet is not mounted")
@@ -127,7 +131,8 @@ def test_rerun5_receiver_replay_preserves_full_bodies_results_and_effects() -> N
                 "receiver_requests": trace["receiver_requests"],
             })
             assert episode["requests"]
-            assert [request["body"] for request in episode["requests"]] == request_bodies
+            # Only the pinned workstation value spans of the system prompt are projected.
+            assert [_without_system(request["body"]) for request in episode["requests"]] == [_without_system(body) for body in request_bodies]
             assert episode["file_effects"] == {
                 path: (value.get("sha256") if isinstance(value, dict) else value)
                 for path, value in sorted(trace["effects"].items())
