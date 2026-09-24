@@ -3016,55 +3016,66 @@ def _remove_native_scratch(
         )
     name = _native_scratch_name(lease_id)
 
-    def remove_directory(descriptor: int) -> None:
-        os.fchmod(descriptor, stat.S_IMODE(os.fstat(descriptor).st_mode) | 0o700)
-        for child_name in tuple(os.listdir(descriptor)):
-            metadata = os.stat(child_name, dir_fd=descriptor, follow_symlinks=False)
-            if stat.S_ISDIR(metadata.st_mode):
-                child = os.open(
-                    child_name,
-                    os.O_RDONLY
-                    | getattr(os, "O_DIRECTORY", 0)
-                    | getattr(os, "O_NOFOLLOW", 0),
-                    dir_fd=descriptor,
-                )
-                try:
-                    remove_directory(child)
-                finally:
-                    os.close(child)
-                os.rmdir(child_name, dir_fd=descriptor)
-            else:
-                os.unlink(child_name, dir_fd=descriptor)
-        os.fsync(descriptor)
+    if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
+        return CleanupStepReceipt("native_scratch", CleanupState.FAILED, "no_follow_unavailable")
+    root_device = os.fstat(root_fd).st_dev
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+
+    def open_directory(parts: tuple[str, ...]) -> int:
+        descriptor = os.dup(root_fd)
+        try:
+            for part in parts:
+                child = os.open(part, directory_flags, dir_fd=descriptor)
+                os.close(descriptor)
+                descriptor = child
+                if os.fstat(descriptor).st_dev != root_device:
+                    raise OSError(errno.EXDEV, "native scratch crosses a device")
+            return descriptor
+        except BaseException:
+            os.close(descriptor)
+            raise
 
     try:
-        descriptor = os.open(
-            name,
-            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
-            dir_fd=root_fd,
-        )
+        descriptor = open_directory((name,))
     except FileNotFoundError:
         return CleanupStepReceipt("native_scratch", CleanupState.ALREADY_RELEASED)
     except BaseException as exc:
-        return CleanupStepReceipt(
-            "native_scratch", CleanupState.FAILED, type(exc).__name__
-        )
+        return CleanupStepReceipt("native_scratch", CleanupState.FAILED, type(exc).__name__)
+    os.close(descriptor)
+    pending: list[tuple[tuple[str, ...], bool]] = [((name,), False)]
     try:
-        remove_directory(descriptor)
+        while pending:
+            parts, visited = pending.pop()
+            if visited:
+                parent = open_directory(parts[:-1])
+                try:
+                    metadata = os.stat(parts[-1], dir_fd=parent, follow_symlinks=False)
+                    if metadata.st_dev != root_device:
+                        raise OSError(errno.EXDEV, "native scratch crosses a device")
+                    os.rmdir(parts[-1], dir_fd=parent)
+                    os.fsync(parent)
+                finally:
+                    os.close(parent)
+                continue
+            directory = open_directory(parts)
+            try:
+                os.fchmod(directory, stat.S_IMODE(os.fstat(directory).st_mode) | 0o700)
+                children = tuple(os.listdir(directory))
+                pending.append((parts, True))
+                for child_name in children:
+                    metadata = os.stat(child_name, dir_fd=directory, follow_symlinks=False)
+                    if metadata.st_dev != root_device:
+                        raise OSError(errno.EXDEV, "native scratch crosses a device")
+                    if stat.S_ISDIR(metadata.st_mode):
+                        pending.append(((*parts, child_name), False))
+                    else:
+                        os.unlink(child_name, dir_fd=directory)
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        return CleanupStepReceipt("native_scratch", CleanupState.RELEASED)
     except BaseException as exc:
-        return CleanupStepReceipt(
-            "native_scratch", CleanupState.FAILED, type(exc).__name__
-        )
-    finally:
-        os.close(descriptor)
-    try:
-        os.rmdir(name, dir_fd=root_fd)
-        os.fsync(root_fd)
-    except BaseException as exc:
-        return CleanupStepReceipt(
-            "native_scratch", CleanupState.FAILED, type(exc).__name__
-        )
-    return CleanupStepReceipt("native_scratch", CleanupState.RELEASED)
+        return CleanupStepReceipt("native_scratch", CleanupState.FAILED, type(exc).__name__)
 
 def _workspace_effect_snapshot(
     root: Path,

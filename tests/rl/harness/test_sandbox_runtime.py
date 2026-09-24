@@ -1546,6 +1546,43 @@ async def test_close_removes_native_scratch_and_reports_cleanup(
     assert CleanupStepReceipt("native_scratch", CleanupState.RELEASED) in receipt.steps
 
 
+def test_native_scratch_refuses_cross_device_and_preserves_host_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    scratch = sandbox_module._create_native_scratch(harness.manager, "cross-device")
+    outside = tmp_path / "outside-host-file"
+    outside.write_text("outside", encoding="utf-8")
+    (scratch / "outside-link").symlink_to(outside)
+    child = scratch / "foreign-mount"
+    child.mkdir()
+    (child / "evidence").write_text("retain", encoding="utf-8")
+    child_inode = child.stat().st_ino
+    real_fstat = os.fstat
+
+    def foreign_device(fd: int) -> Any:
+        observed = real_fstat(fd)
+        if observed.st_ino == child_inode:
+            return type("ForeignStat", (), {
+                "st_dev": observed.st_dev + 1,
+                "st_mode": observed.st_mode,
+            })()
+        return observed
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(os, "fstat", foreign_device)
+            refusal = sandbox_module._remove_native_scratch(harness.manager, "cross-device")
+        assert refusal.state is CleanupState.FAILED
+        assert (child / "evidence").read_text(encoding="utf-8") == "retain"
+        assert outside.read_text(encoding="utf-8") == "outside"
+    finally:
+        assert sandbox_module._remove_native_scratch(
+            harness.manager, "cross-device"
+        ).state in (CleanupState.RELEASED, CleanupState.ALREADY_RELEASED)
+        assert outside.read_text(encoding="utf-8") == "outside"
+
 @pytest.mark.parametrize("completion", ["finish", "cancel"])
 async def test_close_fences_new_operations_and_drains_an_active_operation(
     tmp_path: Path, completion: str
