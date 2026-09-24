@@ -1837,7 +1837,6 @@ class TrustedProcessHandle:
         self._native_session: NativeSession | None = None
         self._native_session_lock = asyncio.Lock()
         self._launch_lock = asyncio.Lock()
-        self._terminate_lock = asyncio.Lock()
         self._terminate_task: asyncio.Task[tuple[CleanupStepReceipt, ...]] | None = None
         self._closing = False
         self._closed = False
