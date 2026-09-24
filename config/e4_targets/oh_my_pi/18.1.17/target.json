@@ -2,7 +2,7 @@
   "assets": [
     {"bytes": 4495, "path": "harness.yaml", "sha256": "sha256:ac7d3b739a4602e995957b6896295c48d0997a61d173a53e1d01445eb5208980"},
     {"bytes": 4110, "path": "prompts/system-prompt.md", "sha256": "sha256:54c6e1ceccf67708d9211ee6e943b23c75ec94ff0791894febe897e6a7543c20"},
-    {"bytes": 5016, "path": "native-config.json", "sha256": "sha256:5f6329e3514afe396b19535a960eb4b1545ff4b5baff62314aa660e6138a3be7"},
+    {"bytes": 5025, "path": "native-config.json", "sha256": "sha256:ec9e7c0a6d3dbe3cb2b972e28b5708b538c0875bf4adc6aeaf4e201c156e6052"},
     {"bytes": 25796, "path": "tool-surface.json", "sha256": "sha256:95ec3cde0ab084a51a012b9c6944f80a69aaae99ce4e9892ccd690e748c7b877"},
     {"bytes": 1144, "path": "LICENSE.txt", "sha256": "sha256:16c45f9d667442781f03fa198914cc39abcaa48ec5ed8f644643e554ca2fbf63"},
     {"bytes": 602, "path": "source.json", "sha256": "sha256:a1948e5e223e806025bf5d302dfda8abed98268c66e6a90cdacb7e32479df036"}

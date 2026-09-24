@@ -6,12 +6,14 @@ from pathlib import Path
 
 import pytest
 
+from conformance.comparators.oh_my_pi_18_1_17 import project_bb_trace
 from breadboard_engine.provider.native_response import NativeProviderResponse, NativeToolCall
 from breadboard.rl.harness.omp_native_tools import supplier_cli_invocation
 from breadboard.rl.harness.runners.omp_semantics import (
     EditStore,
     LENGTH_SKIP_MESSAGE,
     NoRetryPolicy,
+    OMPPhaseError,
     OMPSemanticsState,
     SeenAnchorError,
     ToolCall,
@@ -158,6 +160,51 @@ def test_omp_empty_stop_uses_bounded_native_recovery() -> None:
     assert state.messages[-1]["role"] == "developer"
     assert "Attempt #1/3" in state.messages[-1]["content"]
 
+
+
+def test_omp_raw_response_is_one_wire_record_and_projects() -> None:
+    state = OMPSemanticsState(task="raw response")
+    assert state.begin_query() is None
+    state.prepare_response(
+        NativeProviderResponse(
+            binding_digest="binding",
+            request_digest="request",
+            response_id="raw",
+            model="capture",
+            content="done",
+            finish_reason="stop",
+            raw_response={"id": "raw", "choices": [{"finish_reason": "stop"}]},
+        )
+    )
+    assert len(state.native_responses) == 1
+    trace = state.to_trace(
+        requests=[{"messages": [], "tools": []}],
+        runtime_inputs={
+            "cwd": "/workspace",
+            "home": "/scratch/home",
+            "current_date": "2026-09-23",
+            "package_dir": "/workspace/package",
+        },
+        effects={},
+    )
+    assert project_bb_trace(trace)["request_count"] == 1
+
+
+def test_omp_raw_response_finish_reason_must_match_decoded() -> None:
+    state = OMPSemanticsState(task="raw response")
+    assert state.begin_query() is None
+    with pytest.raises(OMPPhaseError, match="finish_reason disagrees"):
+        state.prepare_response(
+            NativeProviderResponse(
+                binding_digest="binding",
+                request_digest="request",
+                response_id="raw",
+                model="capture",
+                content="done",
+                finish_reason="stop",
+                raw_response={"id": "raw", "choices": [{"finish_reason": "tool_calls"}]},
+            )
+        )
 
 def test_omp_phase_state_commits_native_completion_order() -> None:
     class Worker:

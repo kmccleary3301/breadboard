@@ -107,7 +107,7 @@
       "message": "OMP capability denied: internal-resource",
       "source_ref": "prompts/system-prompt.md:11",
       "route": {
-        "schemes": ["agent", "artifact", "history", "local", "mcp", "memory", "omp", "pr", "rule", "security", "skill", "vault", "xd"],
+        "schemes": ["agent", "artifact", "history", "issue", "local", "mcp", "memory", "omp", "pr", "rule", "security", "skill", "vault", "xd"],
         "source_ref": "packages/coding-agent/src/internal-urls/router.ts:38-53"
       }
     },

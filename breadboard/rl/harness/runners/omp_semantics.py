@@ -510,6 +510,13 @@ def append_wall_time_notice(output: str, wall_time_ms: float) -> str:
     return f"{output or '(no output)'}\n\n{notice}"
 
 
+def _thaw_native_wire(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _thaw_native_wire(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_thaw_native_wire(item) for item in value]
+    return value
+
 
 PHASE_SCHEMA_VERSION = "bb.omp-native.v1"
 CONSUMER_ID = "breadboard.oh-my-pi.v18.1.17"
@@ -622,9 +629,24 @@ class OMPSemanticsState:
         if self.stream_fn_issued <= self.request_count:
             raise OMPPhaseError("response has no admitted provider query")
         self.request_count += 1
-        self.native_responses.append({"finish_reason": response.finish_reason})
-        if response.raw_response is not None:
-            self.native_responses.append(dict(response.raw_response))
+        if response.raw_response is None:
+            self.native_responses.append({"finish_reason": response.finish_reason})
+        else:
+            if not isinstance(response.raw_response, Mapping):
+                raise OMPPhaseError("raw native response must be an object")
+            raw_reasons: list[str] = []
+            choices = response.raw_response.get("choices")
+            if isinstance(choices, (list, tuple)):
+                raw_reasons.extend(
+                    choice["finish_reason"]
+                    for choice in choices
+                    if isinstance(choice, Mapping) and isinstance(choice.get("finish_reason"), str)
+                )
+            if isinstance(response.raw_response.get("finish_reason"), str):
+                raw_reasons.append(response.raw_response["finish_reason"])
+            if not raw_reasons or any(reason != response.finish_reason for reason in raw_reasons):
+                raise OMPPhaseError("raw native response finish_reason disagrees with decoded response")
+            self.native_responses.append(_thaw_native_wire(response.raw_response))
         finish_reason = response.finish_reason
         self.native_stop_reason = finish_reason
         calls: tuple[ToolCall, ...] = ()

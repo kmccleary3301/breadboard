@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import re
 import sys
-
 import pytest
 
 from breadboard.rl.harness.omp_native_tools import (
@@ -14,6 +14,70 @@ from breadboard.rl.harness.omp_native_tools import (
     pinned_worker_spec,
     verified_tool_worker_path,
 )
+
+
+def _pinned_source(relative: str) -> str:
+    return (Path(pinned_worker_spec().source_root) / relative).read_text(encoding="utf-8")
+
+
+def _source_registry_sets() -> dict[str, set[str]]:
+    router = _pinned_source("packages/coding-agent/src/internal-urls/router.ts")
+    imports: dict[str, str] = {}
+    for names, module in re.findall(r'import \{([^}]+)\} from "\./([^"]+)";', router):
+        for name in names.split(","):
+            imports[name.strip()] = module
+    constructor = router.split("constructor() {", 1)[1].split("\n\t}", 1)[0]
+    handlers = re.findall(r"this\.register\(new (\w+ProtocolHandler)\(\)\)", constructor)
+    internal = {
+        re.search(
+            r'readonly scheme = "([^"]+)"',
+            _pinned_source(f"packages/coding-agent/src/internal-urls/{imports[handler]}.ts"),
+        ).group(1)
+        for handler in handlers
+        if handler != "SshProtocolHandler"
+    }
+
+    archive = _pinned_source("packages/utils/src/ar/registry.ts")
+    archive_block = archive.split("const FORMAT_EXTENSIONS", 1)[1].split("};", 1)[0]
+    archive_extensions = {
+        f".{extension}"
+        for values in re.findall(r": \[([^\]]+)\]", archive_block)
+        for extension in re.findall(r'"([^"]+)"', values)
+    }
+
+    video = _pinned_source("packages/coding-agent/src/utils/video.ts")
+    video_block = video.split("const VIDEO_EXTENSION_LOOKUP", 1)[1].split("};", 1)[0]
+    video_extensions = set(re.findall(r'"(\.[^"]+)": true', video_block))
+
+    markit = _pinned_source("packages/coding-agent/src/utils/markit.ts")
+    markit_values = re.search(r"CONVERTIBLE_EXTENSIONS[^=]*= new Set\(\[([^\]]+)\]\)", markit).group(1)
+    document_extensions = set(re.findall(r'"(\.[^"]+)"', markit_values))
+
+    mime = _pinned_source("packages/utils/src/mime.ts")
+    mime_values = re.search(r"SUPPORTED_IMAGE_MIME_TYPES = new Set\(\[([^\]]+)\]\)", mime).group(1)
+    image_mime_types = set(re.findall(r'"([^"]+)"', mime_values))
+    image_extensions = {
+        "." + mime_type.removeprefix("image/").replace("jpeg", "jpg")
+        for mime_type in image_mime_types
+    } | {".jpeg", ".svg", ".svgz"}
+
+    sqlite = _pinned_source("packages/coding-agent/src/tools/sqlite-reader.ts")
+    sqlite_pattern = re.search(r"SQLITE_PATH_PATTERN = /([^/]+)/", sqlite).group(1)
+    sqlite_alternatives = re.search(r"\(\?:([^)]*)\)", sqlite_pattern).group(1).split("|")
+    sqlite_extensions = set()
+    for alternative in sqlite_alternatives:
+        sqlite_extensions.add("." + alternative.replace("?", ""))
+        if alternative.endswith("?"):
+            sqlite_extensions.add("." + alternative[:-1])
+
+    return {
+        "internal-resource": internal,
+        "archive": archive_extensions,
+        "video": video_extensions,
+        "document": document_extensions,
+        "image": image_extensions,
+        "sqlite": sqlite_extensions,
+    }
 def _authority_payload(tmp_path: Path) -> dict[str, object]:
     scratch = tmp_path / ".scratch"
     package_dir = tmp_path / "package"
@@ -71,25 +135,16 @@ def test_route_matchers_follow_source_path_forms(value: str, expected: str | Non
     assert classify_capability(value, denial_policy=policy) == expected
 
 
-def test_route_declarations_cover_pinned_omp_registries() -> None:
+@pytest.mark.skipif(
+    not Path(pinned_worker_spec().source_root).is_dir(),
+    reason="pinned OMP source is unavailable on this host",
+)
+def test_route_declarations_match_parsed_pinned_omp_registries() -> None:
     root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
     policy = json.loads((root / "native-config.json").read_text())["capability_denials"]
-    # Pinned source: internal-urls/router.ts:38-53 and utils/ar/registry.ts:32-58.
-    assert set(policy["internal-resource"]["route"]["schemes"]) == {
-        "agent", "artifact", "history", "local", "mcp", "memory", "omp",
-        "pr", "rule", "security", "skill", "vault", "xd",
-    }
-    assert set(policy["archive"]["route"]["extensions"]) == {
-        ".zip", ".jar", ".war", ".ear", ".apk", ".whl", ".ipa", ".xpi",
-        ".vsix", ".nupkg", ".cbz", ".tar", ".tar.gz", ".tgz", ".tar.bz2",
-        ".tbz2", ".tbz", ".tar.xz", ".txz", ".tar.zst", ".tzst", ".tar.z",
-        ".asar", ".rar", ".cbr", ".7z", ".iso", ".cab", ".cpio", ".rpm",
-        ".ar", ".a", ".lib", ".deb", ".lzh", ".lha", ".arj", ".gz", ".bz2",
-        ".xz", ".zst", ".z", ".lzma",
-    }
-    assert set(policy["video"]["route"]["extensions"]) == {
-        ".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi", ".wmv",
-    }
+    parsed = _source_registry_sets()
+    for capability, expected in parsed.items():
+        assert set(policy[capability]["route"]["extensions" if capability != "internal-resource" else "schemes"]) == expected
     assert policy["url"]["route"]["patterns"] == [r"^https?:\/\/?", r"^www\."]
     assert policy["ssh"]["route"]["patterns"] == [r"ssh:\/\/"]
 

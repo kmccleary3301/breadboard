@@ -180,7 +180,7 @@ def classify_capability(
             return capability
     if any(
         candidate.lower().startswith(f"{scheme}://")
-        for scheme in ("agent", "artifact", "history", "local", "mcp", "memory", "omp", "pr", "rule", "security", "skill", "vault", "xd")
+        for scheme in ("agent", "artifact", "history", "issue", "local", "mcp", "memory", "omp", "pr", "rule", "security", "skill", "vault", "xd")
     ):
         return "internal-resource"
     return None
