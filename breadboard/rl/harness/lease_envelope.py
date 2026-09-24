@@ -736,6 +736,43 @@ def _recv_ready_status(status: socket.socket) -> int:
     if process_pid is None or process_pid <= 0:
         raise OSError("envelope child credentials are missing")
     return process_pid
+def _resolve_host_pid(supervisor_pid: int, namespace_pid: int) -> int:
+    """Resolve a child PID from the supervisor's PID namespace to the host.
+
+    ``SCM_CREDENTIALS`` reports a PID in the receiving process's namespace.
+    The status socket is consumed by the supervisor, so the child PID it
+    reports is namespace-local.  The caller, however, must signal and inspect
+    the host process.  The stopped child is a direct child of the host-visible
+    supervisor PID, which gives us an unambiguous mapping in ``/proc``.
+    """
+    suffix = f"{namespace_pid}"
+    for entry in os.scandir("/proc"):
+        if not entry.name.isdecimal():
+            continue
+        try:
+            status = Path(entry.path, "status").read_text(encoding="ascii")
+        except (OSError, UnicodeError):
+            continue
+        nspid = None
+        parent = None
+        for line in status.splitlines():
+            if line.startswith("NSpid:"):
+                values = line.split()[1:]
+                if values:
+                    nspid = values[-1]
+            elif line.startswith("PPid:"):
+                fields = line.split()
+                if len(fields) == 2:
+                    parent = fields[1]
+        if nspid == suffix and parent == str(supervisor_pid):
+            return int(entry.name)
+    raise OSError(
+        errno.ESRCH,
+        f"unable to resolve namespace PID {namespace_pid} "
+        f"under supervisor {supervisor_pid}",
+    )
+
+
 
 
 async def spawn_envelope_process(
@@ -788,15 +825,14 @@ async def spawn_envelope_process(
                 os.close(fd)
             except OSError:
                 pass
-        status_supervisor.close()
     try:
-        pid = await asyncio.wait_for(
+        namespace_pid = await asyncio.wait_for(
             asyncio.to_thread(_recv_ready_status, status_host),
             max(0.001, timeout_ms / 1000),
         )
+        pid = _resolve_host_pid(envelope.pid1, namespace_pid)
         stdout = await _pipe_reader(stdout_r)
         stderr = await _pipe_reader(stderr_r)
-        stdin = await _pipe_writer(stdin_w)
         process = EnvelopeProcess(
             pid=pid,
             status=status_host,
