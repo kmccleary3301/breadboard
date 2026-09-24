@@ -1176,6 +1176,8 @@ async def test_real_process_closed_stream_timeout_or_cancellation_kills_descenda
     )
     descendant_pid: int | None = None
     receipt = None
+    containment_receipt = None
+    host_pid: int | None = None
     try:
         action = asyncio.create_task(
             primary.runner_workspace.run_shell(command, timeout=1)
@@ -1210,17 +1212,23 @@ async def test_real_process_closed_stream_timeout_or_cancellation_kills_descenda
 
         spawned = await primary.runner_workspace.read_text("work/spawned.pid")
         descendant = await primary.runner_workspace.read_text("work/descendant.pid")
-        descendant_pid = int(descendant["content"])
-        assert descendant_pid == int(spawned["content"])
+        namespace_descendant_pid = int(descendant["content"])
+        assert namespace_descendant_pid == int(spawned["content"])
+        containment_receipt = primary._runtime.containment_receipt
+        assert containment_receipt is not None
+        host_pid = _resolve_namespace_pid(
+            namespace_descendant_pid, containment_receipt.pid_namespace_inode
+        )
+        assert host_pid is not None
+        descendant_pid = host_pid
 
         async with asyncio.timeout(1):
             while True:
                 try:
-                    os.kill(descendant_pid, 0)
+                    os.kill(host_pid, 0)
                 except ProcessLookupError:
                     break
                 await asyncio.sleep(0.01)
-
         with pytest.raises(FileNotFoundError):
             await primary.runner_workspace.read_text("work/late")
         receipt = await primary.close()
@@ -1306,8 +1314,14 @@ async def test_trusted_process_handle_enforces_exact_500ms_deadline_and_cleans_d
     assert under_elapsed < over_elapsed
     spawned = await primary.runner_workspace.read_text("work/deadline-spawned.pid")
     descendant = await primary.runner_workspace.read_text("work/deadline-child.pid")
-    descendant_pid = int(descendant["content"])
-    assert descendant_pid == int(spawned["content"])
+    namespace_descendant_pid = int(descendant["content"])
+    assert namespace_descendant_pid == int(spawned["content"])
+    containment_receipt = primary._runtime.containment_receipt
+    assert containment_receipt is not None
+    descendant_pid = _resolve_namespace_pid(
+        namespace_descendant_pid, containment_receipt.pid_namespace_inode
+    )
+    assert descendant_pid is not None
     async with asyncio.timeout(1):
         while True:
             try:
