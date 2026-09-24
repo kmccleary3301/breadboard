@@ -253,6 +253,42 @@ def test_exact_plan_projection_derives_runtime_materialization_and_runner_author
     assert plan.isolation_disposition is IsolationDisposition.TRUSTED_PROCESS
 
 
+
+
+def test_seeded_root_mount_is_admitted_as_workspace_seed() -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    source_digest = digest("workspace-source")
+    seeded_sandbox = c.SandboxGrant.model_validate(
+        {
+            **fixture.plan.sandbox.model_dump(),
+            "mounts": (
+                c.MountGrant(
+                    source_artifact_digest=source_digest,
+                    target_logical_path=".",
+                    access=c.MountAccess.READ_WRITE,
+                    max_bytes=4_096,
+                ),
+            ),
+        }
+    )
+    seeded_plan = replace_plan_capabilities(
+        fixture.plan,
+        sandbox=seeded_sandbox,
+    )
+    seeded_request = WorkspaceOpenRequest(fixture.request.episode_id, seeded_plan)
+
+    plan = build_sandbox_execution_plan(
+        seeded_request, fixture.registries, fixture.authorities
+    )
+
+    assert plan.materialization_plan.entries[0].projection() == {
+        "source_digest": source_digest,
+        "target_logical_path": ".",
+        "access": "rw",
+        "max_bytes": 4_096,
+        "role": "workspace_seed",
+    }
+
 def test_selected_plan_does_not_receive_unrelated_native_tool_authority(
     tmp_path: Path,
 ) -> None:
