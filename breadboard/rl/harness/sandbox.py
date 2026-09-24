@@ -2312,6 +2312,19 @@ class TrustedProcessHandle:
                     process = await spawn_envelope_process(
                         self._envelope,
                         argv=argv,
+                        argv0_path=(
+                            self._command_executable.source_path
+                            if (
+                                self._command_executable is not None
+                                and argv
+                                and argv[0] == self._command_executable.proc_fd_path
+                            )
+                            else (
+                                self._executable.source_path
+                                if argv and argv[0] == self._executable.proc_fd_path
+                                else None
+                            )
+                        ),
                         environment=launch_environment,
                         executable_fd=self._executable.fd,
                         command_fd=(

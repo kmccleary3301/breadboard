@@ -584,9 +584,13 @@ def _spawn_one(_control: socket.socket, message: Mapping[str, Any], fds: list[in
                 os.set_inheritable(fd, True)
             _ptrace(_PTRACE_TRACEME, 0)
             os.kill(os.getpid(), signal.SIGSTOP)
-            argv = _rewrite_received_fd_paths(tuple(message["argv"]), fds)
+            argv = list(_rewrite_received_fd_paths(tuple(message["argv"]), fds))
+            exec_path = argv[0]
+            argv0_path = message.get("argv0_path")
+            if isinstance(argv0_path, str) and argv0_path:
+                argv[0] = argv0_path
             env = {str(key): str(value) for key, value in message["environment"].items()}
-            os.execvpe(argv[0], argv, env)
+            os.execve(exec_path, argv, env)
         except BaseException:
             os._exit(127)
     while True:
@@ -821,6 +825,7 @@ async def spawn_envelope_process(
     envelope: EnvelopeLaunch,
     *,
     argv: Sequence[str],
+    argv0_path: str | None = None,
     environment: Mapping[str, str],
     executable_fd: int,
     command_fd: int | None,
@@ -856,6 +861,7 @@ async def spawn_envelope_process(
         "command_index": command_index,
         "extra_indices": extra_indices,
         "cwd_index": cwd_index,
+        "argv0_path": argv0_path,
         "argv": _rewrite_fd_paths(argv, mapping),
         "environment": dict(environment),
     }
