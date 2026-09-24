@@ -19,10 +19,22 @@ MODEL_RESPONSE_LIMIT = 4 * 1024 * 1024
 TRANSCRIPT_LIMIT = 32 * 1024 * 1024
 FRAME_LIMIT = 16 * 1024 * 1024
 RAW_TERMINAL_LIMIT = 1 * 1024 * 1024
-CLIENT_TIMEOUT = 45
-MAX_OUTPUT_TOKENS = 2048
 NATIVE_IDLE_TIMEOUT = 30
 
+
+def load_native_config(source: str | Path | Mapping[str, Any] | None = None) -> dict[str, Any]:
+    if isinstance(source, Mapping):
+        import copy
+        return copy.deepcopy(dict(source))
+    if source is not None:
+        return json.loads(Path(source).read_text(encoding="utf-8"))
+    env_path = os.environ.get("OPENHANDS_NATIVE_CONFIG_PATH")
+    if env_path and Path(env_path).is_file():
+        return json.loads(Path(env_path).read_text(encoding="utf-8"))
+    fallback = Path(__file__).resolve().parents[3] / "config/e4_targets/openhands_sdk/1.47.0/native-config.json"
+    if fallback.is_file():
+        return json.loads(fallback.read_text(encoding="utf-8"))
+    raise FileNotFoundError("Could not find openhands native-config.json")
 
 class NativeWorkerError(RuntimeError):
     """An invalid phase request or a native source failure."""
@@ -328,38 +340,30 @@ class OpenHandsActor:
                 "close": _IPCTransport.close,
             },
         )
+        import copy
+        native_config_source = (
+            payload.get("native_config")
+            or payload.get("native_config_path")
+        )
+        native_config = load_native_config(native_config_source)
+        model_profile = copy.deepcopy(native_config.get("model", {}))
+        timeout = model_profile.get("timeout", 45)
+        num_retries = model_profile.get("num_retries", 0)
         self._transport = transport_type(self._channel, self._credential, self._request_result)
-        http_client = httpx.Client(transport=self._transport, timeout=CLIENT_TIMEOUT)
+        http_client = httpx.Client(transport=self._transport, timeout=timeout)
         self._client = OpenAI(
             api_key=self._credential,
             base_url=base_url,
-            max_retries=0,
-            timeout=CLIENT_TIMEOUT,
+            max_retries=num_retries,
+            timeout=timeout,
             http_client=http_client,
         )
         llm_kwargs: dict[str, Any] = {
+            **model_profile,
             "model": model,
             "api_key": self._credential,
             "base_url": base_url,
-            "num_retries": 0,
-            "timeout": CLIENT_TIMEOUT,
             "max_input_tokens": max_input_tokens,
-            "max_output_tokens": MAX_OUTPUT_TOKENS,
-            "temperature": 0,
-            "reasoning_effort": "none",
-            "extended_thinking_budget": None,
-            "disable_vision": True,
-            "log_completions": False,
-            "api_mode": "chat",
-            "stream": False,
-            "native_tool_calling": True,
-            "drop_params": True,
-            "capability_overrides": {
-                "supports_reasoning_effort": False,
-                "supports_vision": False,
-                "supports_responses_api": False,
-                "supports_sampling_params": True,
-            },
         }
         self._llm = LLM(**llm_kwargs)
         if detect_provider(self._llm) is not None:

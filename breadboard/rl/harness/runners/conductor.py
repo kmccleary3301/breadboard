@@ -2552,6 +2552,7 @@ class _ConductorSession:
                 "task": task,
                 "model_config": thaw_json(model_config),
                 "max_iteration_per_run": limits.max_turns,
+                "native_config": thaw_json(self._projection.source_profile),
             },
             timeout_ms=60_000,
         )

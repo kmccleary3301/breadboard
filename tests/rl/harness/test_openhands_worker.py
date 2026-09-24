@@ -120,82 +120,109 @@ def test_forwarded_framing_is_canonical_without_body_rewrite() -> None:
     ] == [("Content-Length", str(len(original_body)))]
 
 
-def test_worker_built_llm_select_chat_options_keeps_temperature_and_transport_is_verbatim() -> None:
+def test_worker_built_llm_uses_sealed_config_and_mutating_sampling_drops_temperature(tmp_path: Path) -> None:
+    import json
     import os
     import shutil
     import subprocess
+    import sys
+    from pathlib import Path
 
-    def _check_sdk() -> None:
-        try:
-            from openhands.sdk import LLM
-            from openhands.sdk.llm.options.chat_options import select_chat_options
+    py312 = (
+        shutil.which("python3.12")
+        or "/opt/breadboard-native-tools/python/bin/python3.12"
+        or "/Users/kylemccleary/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12"
+    )
+    if not Path(py312).is_file():
+        pytest.skip("python3.12 not found")
 
-            worker_llm = LLM(
-                model="openai/gpt-4o-mini",
-                api_key="secret",
-                base_url="https://api.test/v1",
-                num_retries=0,
-                timeout=45,
-                max_output_tokens=2048,
-                temperature=0,
-                reasoning_effort="none",
-                disable_vision=True,
-                drop_params=True,
-                capability_overrides={
-                    "supports_reasoning_effort": False,
-                    "supports_vision": False,
-                    "supports_responses_api": False,
-                    "supports_sampling_params": True,
-                },
-            )
-            opts = select_chat_options(worker_llm, {}, has_tools=True)
-            assert opts.get("temperature") == 0.0, f"Expected 0.0, got {opts.get('temperature')}"
-            return
-        except Exception:
-            pass
+    env = dict(os.environ)
+    repo_root = str(Path(__file__).resolve().parents[3])
+    uv_pkg = "/Users/kylemccleary/.cache/uv/archive-v0/EmOGkXXkN6m3sPSJ/lib/python3.12/site-packages"
+    pythonpaths = [repo_root]
+    if os.path.isdir(uv_pkg):
+        pythonpaths.append(uv_pkg)
+    for p in sys.path:
+        if "site-packages" in p and p not in pythonpaths:
+            pythonpaths.append(p)
+    env["PYTHONPATH"] = ":".join(pythonpaths)
+    env["OPENHANDS_SUPPRESS_BANNER"] = "1"
 
-        py312 = (
-            shutil.which("python3.12")
-            or "/opt/breadboard-native-tools/python/bin/python3.12"
-            or "/Users/kylemccleary/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12"
-        )
-        env = dict(os.environ)
-        archive_pkg = "/Users/kylemccleary/.cache/uv/archive-v0/EmOGkXXkN6m3sPSJ/lib/python3.12/site-packages"
-        if os.path.isdir(archive_pkg):
-            env["PYTHONPATH"] = archive_pkg
-        env["OPENHANDS_SUPPRESS_BANNER"] = "1"
-        code = """
-import os, sys
-from openhands.sdk import LLM
-from openhands.sdk.llm.options.chat_options import select_chat_options
+    worker_test_code = """
+import os, sys, json, base64, pathlib
+from breadboard.rl.harness.openhands_worker import OpenHandsActor
 
-worker_llm = LLM(
-    model="openai/gpt-4o-mini",
-    api_key="secret",
-    base_url="https://api.test/v1",
-    num_retries=0,
-    timeout=45,
-    max_output_tokens=2048,
-    temperature=0,
-    reasoning_effort="none",
-    disable_vision=True,
-    drop_params=True,
-    capability_overrides={
-        "supports_reasoning_effort": False,
-        "supports_vision": False,
-        "supports_responses_api": False,
-        "supports_sampling_params": True,
+class SingleRequestChannel:
+    def __init__(self):
+        self.response = None
+    def respond(self, value):
+        self.response = value
+    def receive(self):
+        return {
+            "operation": "provider_response",
+            "payload": {
+                "status_code": 200,
+                "headers": [["content-type", "application/json"]],
+                "body_b64": base64.b64encode(b'{"choices":[{"index":0,"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}').decode(),
+            },
+        }
+
+workspace = sys.argv[1]
+scratch = sys.argv[2]
+config_path = sys.argv[3] if len(sys.argv) > 3 else None
+
+channel = SingleRequestChannel()
+actor = OpenHandsActor(channel)
+payload = {
+    "task": "respond with done",
+    "model_config": {
+        "model_name": "openai/gpt-4o-mini",
+        "model_canonical_name": None,
+        "max_input_tokens": 131072,
+        "base_url": "http://127.0.0.1:1234/v1",
     },
-)
-opts = select_chat_options(worker_llm, {}, has_tools=True)
-assert opts.get("temperature") == 0.0, f"Expected 0.0, got {opts.get('temperature')}"
-print("OK")
+    "workspace": workspace,
+    "scratch": scratch,
+    "max_iteration_per_run": 2,
+}
+if config_path:
+    payload["native_config_path"] = config_path
+
+actor.dispatch("initialize", payload)
+actor.dispatch("sample", {})
+actor.close()
+
+assert channel.response is not None, "Worker never issued HTTP request"
+body = json.loads(base64.b64decode(channel.response["http_request"]["body_b64"]))
+print(json.dumps({"has_temperature": "temperature" in body, "temperature": body.get("temperature")}))
 """
-        res = subprocess.run([py312, "-c", code], env=env, capture_output=True, text=True, check=True)
-        assert res.stdout.strip() == "OK"
+    # 1. Sealed config: supports_sampling_params is True, so temperature is present
+    ws1 = str(tmp_path / "ws1")
+    sc1 = str(tmp_path / "sc1")
+    Path(ws1).mkdir(parents=True)
+    Path(sc1).mkdir(parents=True)
+    res1 = subprocess.run([py312, "-c", worker_test_code, ws1, sc1], env=env, capture_output=True, text=True, check=True)
+    out1 = json.loads(res1.stdout.strip().splitlines()[-1])
+    assert out1["has_temperature"] is True
+    assert out1["temperature"] == 0
 
-    _check_sdk()
+    # 2. Mutated config: copy sealed config and set supports_sampling_params to False
+    sealed_config_path = Path(repo_root) / "config/e4_targets/openhands_sdk/1.47.0/native-config.json"
+    mutated_config = json.loads(sealed_config_path.read_text(encoding="utf-8"))
+    mutated_config["model"]["capability_overrides"]["supports_sampling_params"] = False
+    mutated_path = tmp_path / "mutated-native-config.json"
+    mutated_path.write_text(json.dumps(mutated_config), encoding="utf-8")
 
+    ws2 = str(tmp_path / "ws2")
+    sc2 = str(tmp_path / "sc2")
+    Path(ws2).mkdir(parents=True)
+    Path(sc2).mkdir(parents=True)
+    res2 = subprocess.run([py312, "-c", worker_test_code, ws2, sc2, str(mutated_path)], env=env, capture_output=True, text=True, check=True)
+    out2 = json.loads(res2.stdout.strip().splitlines()[-1])
+    assert out2["has_temperature"] is False, f"Expected temperature to be dropped with supports_sampling_params=False, got {out2}"
+
+
+def test_ipctransport_forwards_sdk_body_verbatim() -> None:
     # 2. _IPCTransport forwards the SDK body byte-for-byte without rewriting
     channel = _Channel()
     transport = _IPCTransport(channel, "credential", lambda _request: {})
