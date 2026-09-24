@@ -426,6 +426,19 @@ def _bind_path(source: str, target: str) -> None:
         ctypes.c_ulong(_MS_BIND),
         ctypes.c_char_p(None),
     )
+
+def _verify_bind_identity(source_fd: int, target: str) -> None:
+    source_stat = os.fstat(source_fd)
+    target_stat = os.stat(target, follow_symlinks=True)
+    source_identity = (source_stat.st_dev, source_stat.st_ino)
+    target_identity = (target_stat.st_dev, target_stat.st_ino)
+    if source_identity != target_identity:
+        raise OSError(
+            errno.ESTALE,
+            f"envelope bind identity mismatch for {target}: "
+            f"source={source_identity!r} target={target_identity!r}",
+        )
+
 def _setup_mount_view(
     workspace: str,
     scratch: str,
@@ -436,6 +449,8 @@ def _setup_mount_view(
     _enter_private_mount_namespace()
     _bind_path(workspace, workspace)
     _bind_path(scratch, scratch)
+    _verify_bind_identity(workspace_fd, workspace)
+    _verify_bind_identity(scratch_fd, scratch)
     _remount_readonly("/")
     _mount_tmpfs("/tmp", tmpfs_size_bytes)
     _mount_proc()
