@@ -376,7 +376,7 @@ async def _run_fixture(
         ),
     )
     session._projection = SimpleNamespace(
-        source_profile={"advertisement": {}},
+        source_profile={"advertisement": {}, "schema_overlay": {"read_file": {}, "terminal": {}}},
         models=(SimpleNamespace(params={}, policy_slot_id="slot"),),
         modes=(SimpleNamespace(tool_ids=TOOL_ORDER),),
     )

@@ -2434,6 +2434,7 @@ class _ConductorSession:
             not isinstance(tools, NativeSourceSessionPort)
             or not isinstance(tools, NativeWorkspaceEffectsPort)
             or self._projection.source_profile is None
+            or not isinstance(self._projection.source_profile.get("schema_overlay"), Mapping)
             or model_config is None
             or limits.max_turns != 8
             or limits.action_timeout_ms != 40_000
@@ -2710,7 +2711,10 @@ class _ConductorSession:
 
         await tools.begin_native_workspace_effects()
         initialized = await phase(
-            "initialize", {"task": task, "model_config": model_config}, "initial", None,
+            "initialize", {
+                "task": task, "model_config": model_config,
+                "schema_overlay": self._projection.source_profile["schema_overlay"],
+            }, "initial", None,
         )
         source_runtime = initialized.get("source_runtime")
         worker_workspace = (

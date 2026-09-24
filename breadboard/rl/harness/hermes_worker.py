@@ -587,9 +587,15 @@ class HermesActor:
         _require(self._phase == "new", "worker already initialized")
         self._keys(
             payload,
-            {"task", "model_config", "workspace", "scratch", "remaining_seconds"},
+            {"task", "model_config", "workspace", "scratch", "schema_overlay", "remaining_seconds"},
         )
         self._admit_deadline(payload)
+        overlay = payload["schema_overlay"]
+        _require(
+            isinstance(overlay, Mapping) and set(overlay) == {"read_file", "terminal"},
+            "sealed schema overlay is missing or incomplete",
+        )
+        self._schema_overlay = overlay
         task, model = payload["task"], payload["model_config"]
         _require(type(task) is str and bool(task), "task must be nonempty text")
         self._task = task
@@ -668,6 +674,7 @@ class HermesActor:
             workspace=self._workspace,
             scratch=self._scratch,
             hermes_home=self._home,
+            schema_overlay=self._schema_overlay,
             remaining=self._remaining,
         )
         runtime_facts = self._runtime.initialize()

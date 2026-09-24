@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from breadboard.rl.harness.runners import conductor as conductor_module
+from breadboard.rl.harness.hermes_tools import HermesToolRuntime, HermesToolRuntimeError, TOOL_NAMES
 from breadboard.rl.harness.runners.base import (
     RunnerProtocolError,
     RunnerTerminationEvent,
@@ -25,6 +29,7 @@ class FakeNativePort:
         self.log: list[tuple[str, str]] = []
         self.init_count = 0
         self.fail_ack = fail_ack
+        self.schema_overlay = None
 
     @property
     def tool_bindings(self) -> tuple[Any, ...]:
@@ -52,6 +57,7 @@ class FakeNativePort:
         self.log.append(("operation", operation))
         if operation == "initialize":
             self.init_count += 1
+            self.schema_overlay = payload.get("schema_overlay")
             if self.init_count > 1:
                 raise AssertionError("initialize invoked twice")
             return self._checkpoint()
@@ -124,7 +130,7 @@ class FakeBinding:
     def bind_native_tools(self, tools: tuple[Mapping[str, Any], ...]) -> None:
         self.bound_tools = tools
 
-async def _run(*, fail_ack: bool = False) -> tuple[Any, FakeNativePort, list[tuple[str, str]]]:
+async def _run(*, fail_ack: bool = False, overlay: bool = True) -> tuple[Any, FakeNativePort, list[tuple[str, str]]]:
     tools = FakeNativePort(fail_ack=fail_ack)
     log = tools.log
     session = HarnessSession(log)
@@ -134,7 +140,7 @@ async def _run(*, fail_ack: bool = False) -> tuple[Any, FakeNativePort, list[tup
         effective_plan=SimpleNamespace(effective_capabilities=SimpleNamespace(limits=limits)),
     )
     session._projection = SimpleNamespace(
-        source_profile={"advertisement": {}},
+        source_profile={"advertisement": {}, **({"schema_overlay": {"read_file": {}, "terminal": {}}} if overlay else {})},
         models=(SimpleNamespace(params={}, policy_slot_id="slot"),),
         modes=(SimpleNamespace(tool_ids=_TOOL_ORDER),),
     )
@@ -144,6 +150,8 @@ async def _run(*, fail_ack: bool = False) -> tuple[Any, FakeNativePort, list[tup
     session._events = []
 
     result = await session._loop_hermes(conductor_module.ConductorRunRequest({"prompt": "test"}))
+    if overlay:
+        assert tools.schema_overlay == {"read_file": {}, "terminal": {}}
     return result, tools, log
 
 
@@ -177,3 +185,29 @@ async def test_history_checkpoint_continuation_initializes_once() -> None:
     _, tools, _ = await _run()
     assert tools.operations[:2] == ["initialize", "history_ack"]
     assert tools.operations.count("initialize") == 1
+
+@pytest.mark.asyncio
+async def test_missing_sealed_overlay_prevents_worker_initialization() -> None:
+    with pytest.raises(conductor_module.RunnerPlanError, match="runtime controls differ"):
+        await _run(overlay=False)
+
+
+def test_mismatched_native_schema_sha_fails_closed(tmp_path: Path) -> None:
+
+    native = [
+        {"type": "function", "function": {"name": name, "parameters": {}}}
+        for name in TOOL_NAMES
+    ]
+    declared = {
+        "native_sha256": "0" * 64,
+        "approved_schema_json": json.dumps(native[1], sort_keys=True, separators=(",", ":")),
+    }
+    declared["approved_sha256"] = hashlib.sha256(declared["approved_schema_json"].encode()).hexdigest()
+    runtime = HermesToolRuntime(
+        SimpleNamespace(tools=native),
+        workspace=tmp_path, scratch=tmp_path, hermes_home=tmp_path,
+        remaining=lambda: 35,
+        schema_overlay={"read_file": declared, "terminal": declared},
+    )
+    with pytest.raises(HermesToolRuntimeError, match="native tool schema differs from overlay pin"):
+        runtime._bounded_tool_schemas()
