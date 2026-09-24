@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import json
 import re
@@ -16,10 +17,31 @@ from breadboard.rl.harness.omp_native_tools import (
     verified_tool_worker_path,
 )
 
-OMP_AVAILABLE = (
-    Path(pinned_worker_spec().bun).is_file()
-    and Path(pinned_worker_spec().source_root).is_dir()
-)
+_LOCAL_SOURCE_ROOT = Path("/private/tmp/e4-sol-review-w2-1-routing/standalone-source")
+_LOCAL_BUN = Path("/opt/homebrew/bin/bun")
+
+
+def _differential_source_root() -> Path:
+    configured = os.environ.get("OMP_DIFFERENTIAL_SOURCE_ROOT")
+    if configured:
+        return Path(configured)
+    if _LOCAL_SOURCE_ROOT.is_dir():
+        return _LOCAL_SOURCE_ROOT
+    return Path(pinned_worker_spec().source_root)
+
+
+def _differential_bun() -> Path:
+    configured = os.environ.get("OMP_DIFFERENTIAL_BUN")
+    if configured:
+        return Path(configured)
+    if _LOCAL_BUN.is_file():
+        return _LOCAL_BUN
+    return Path(pinned_worker_spec().bun)
+
+
+OMP_AVAILABLE = _differential_bun().is_file() and _differential_source_root().is_dir()
+
+
 def _pinned_source(relative: str) -> str:
     return (Path(pinned_worker_spec().source_root) / relative).read_text(encoding="utf-8")
 
@@ -156,14 +178,14 @@ function classify(value) {
     }
   }
   candidate = expandPath(candidate);
-  for (const capability of ["archive", "sqlite", "pdf", "image", "video", "document"]) {
+  for (const capability of ["sqlite", "archive", "pdf", "image", "video", "document"]) {
     if (matches(capability, candidate)) return capability;
   }
   return null;
 }
 
 console.log(JSON.stringify(input.values.map(value => ({ value, route: classify(value) }))));
-""" % pinned_worker_spec().source_root
+""" % _differential_source_root()
 
 
 def _authority_payload(tmp_path: Path) -> dict[str, object]:
@@ -221,7 +243,7 @@ def test_denial_happens_before_native_resolution() -> None:
         ("file:///tmp/x%23name.sqlite", "sqlite"),
         ("file:///tmp/x%2Fname.sqlite", "sqlite"),
         ("@agent://foo", "internal-resource"),
-        ("@AGENT://foo", "internal-resource"),
+        ("@AGENT://foo", None),
         ("custom://resource", "internal-resource"),
         ("CUSTOM:opaque", "internal-resource"),
         ("urn:example:document", "internal-resource"),
@@ -312,11 +334,11 @@ def test_route_classification_differential_matches_pinned_bun(tmp_path: Path) ->
     probe = tmp_path / "omp_route_probe.ts"
     probe.write_text(_TS_ROUTE_PROBE, encoding="utf-8")
     result = subprocess.run(
-        [pinned_worker_spec().bun, str(probe)],
+        [_differential_bun(), str(probe)],
         input=json.dumps({"policy": policy, "values": values}),
         capture_output=True,
         text=True,
-        cwd=pinned_worker_spec().source_root,
+        cwd=_differential_source_root(),
         check=False,
     )
     assert result.returncode == 0, result.stderr

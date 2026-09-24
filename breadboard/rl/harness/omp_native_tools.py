@@ -130,7 +130,7 @@ def _normalize_at_prefix(value: str) -> str:
         or without_at.startswith(("~/", "~\\"))
         or re.match(r"^[A-Za-z]:", without_at)
         or any(
-            without_at.lower().startswith(prefix)
+            without_at.startswith(prefix)
             for prefix in (
                 "agent://", "artifact://", "skill://", "rule://",
                 "security://", "local:", "mcp://",
@@ -314,7 +314,7 @@ def classify_capability(
 
     # read.ts:1380-1412 preserves literal precedence, then checks these
     # source route families in this order.
-    for capability in ("archive", "sqlite", "pdf", "image", "video", "document"):
+    for capability in ("sqlite", "archive", "pdf", "image", "video", "document"):
         if entry_matches(capability, candidate):
             return capability
     if policy:
