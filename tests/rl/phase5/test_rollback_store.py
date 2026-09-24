@@ -49,6 +49,11 @@ RECEIPT = "sha256:" + "55" * 32
 TUPLE_OWNER = "sha256:" + "66" * 32
 
 
+def _bump_signed_identity(identity: list[object], index: int) -> None:
+    value = identity[index]
+    identity[index] = str(int(value) + 1) if index < 2 else value + 1
+
+
 def _request_payload(
     rollback_id: str, base: Path, *, variant: str = "primary"
 ) -> bytes:
@@ -5304,6 +5309,40 @@ def _v14_leave_preparing(
     assert "stage.all_moved" in events
     return names, payloads
 
+@pytest.mark.parametrize("legacy", ("version", "numeric-root", "numeric-stage", "numeric-candidate"))
+def test_cleanup_signed_identities_are_decimal_and_legacy_authority_fails_closed(
+    tmp_path: Path, legacy: str
+) -> None:
+    root = tmp_path / legacy
+    _v14_leave_preparing(root, 1)
+    preparing = root / ".rollback-journal.cleanup-staging" / "preparing"
+    signer = object.__new__(FilesystemRollbackJournalStore)
+    signer._authority_key = KEY
+    signer._domain = "rollback-journal"
+    payload = dict(signer._verify_signed(preparing.read_bytes(), "abandoned-cleanup-preparing"))
+    assert payload["schema_version"] == "bb.rl.phase5.abandoned-cleanup-preparing.v3"
+    for identity in (
+        payload["root_identity"],
+        payload["stage_identity"],
+        payload["candidates"][0]["identity"],
+    ):
+        assert all(type(part) is str and str(int(part)) == part for part in identity[:2])
+    if legacy == "version":
+        payload["schema_version"] = "bb.rl.phase5.abandoned-cleanup-preparing.v2"
+    elif legacy == "numeric-root":
+        payload["root_identity"][1] = int(payload["root_identity"][1])
+    elif legacy == "numeric-stage":
+        payload["stage_identity"][0] = int(payload["stage_identity"][0])
+    else:
+        payload["candidates"][0]["identity"][1] = int(
+            payload["candidates"][0]["identity"][1]
+        )
+    preparing.write_bytes(signer._signed_bytes("abandoned-cleanup-preparing", payload))
+    attacked = _v14_tree_inventory(root)
+    with pytest.raises(RollbackCorruptionError):
+        FilesystemRollbackJournalStore(root, authority_key=KEY)
+    assert _v14_tree_inventory(root) == attacked
+
 
 def _v14_tree_inventory(root: Path) -> dict[str, tuple[str, bytes | None]]:
     inventory: dict[str, tuple[str, bytes | None]] = {}
@@ -5673,7 +5712,7 @@ def test_v14_forged_preparing_staging_fails_before_any_mutation(
                 "manifest-nlink": 5,
                 "manifest-size": 6,
             }[attack]
-            payload["candidates"][0]["identity"][identity_index] += 1
+            _bump_signed_identity(payload["candidates"][0]["identity"], identity_index)
         elif attack == "manifest-type":
             payload["candidates"][0]["identity"][4] = stat.S_IFDIR | 0o700
         elif attack == "manifest-digest":
@@ -5692,7 +5731,7 @@ def test_v14_forged_preparing_staging_fails_before_any_mutation(
                 ".rollback-journal.ffffffffffffffffffffffffffffffff.tmp"
             )
         elif attack == "root-identity":
-            payload["root_identity"][1] += 1
+            _bump_signed_identity(payload["root_identity"], 1)
         elif attack == "root-inventory":
             payload["root_names"].append("forged")
             payload["root_names"].sort()
@@ -6392,7 +6431,7 @@ def test_v14_forged_committed_staging_cannot_publish_unrelated_state(
                 "candidate-nlink": 5,
                 "candidate-size": 6,
             }[attack]
-            candidate_payload["identity"][identity_index] += 1
+            _bump_signed_identity(candidate_payload["identity"], identity_index)
         elif attack == "candidate-type":
             candidate_payload["identity"][4] = stat.S_IFDIR | 0o700
         elif attack == "candidate-digest":
@@ -6467,7 +6506,7 @@ def test_v14_forged_committed_staging_cannot_publish_unrelated_state(
             )
         )
         payload["root_identity"] = list(payload["root_identity"])
-        payload["root_identity"][1] += 1
+        _bump_signed_identity(payload["root_identity"], 1)
         preparing_raw = signer._signed_bytes(
             "abandoned-cleanup-preparing",
             payload,
@@ -6658,7 +6697,7 @@ def test_v15_signed_stage_identity_tamper_fails_without_mutation(
         )
     )
     payload["stage_identity"] = list(payload["stage_identity"])
-    payload["stage_identity"][identity_index] += 1
+    _bump_signed_identity(payload["stage_identity"], identity_index)
     preparing.write_bytes(
         verifier._signed_bytes(
             "abandoned-cleanup-preparing",
@@ -6853,7 +6892,7 @@ def test_v16_terminal_receipt_replacement_proof_negatives_are_nonmutating(
         replacement["state"] = "ready"
     elif attack == "identity-mismatch":
         replacement["identity"] = list(replacement["identity"])
-        replacement["identity"][1] += 1
+        _bump_signed_identity(replacement["identity"], 1)
     else:
         temp = root / replacement["temp"]
         temp.write_bytes(replacement["expected_payload"].encode("utf-8"))
