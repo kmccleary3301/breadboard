@@ -2,6 +2,7 @@ from __future__ import annotations
 from builtins import BaseExceptionGroup
 
 import asyncio
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -41,6 +42,7 @@ from breadboard.rl.harness.service import (
     V2EpisodeConflict,
     V2EpisodeRejected,
     V2LifecycleDependencies,
+    V2EpisodeUnavailable,
     V2OperationDisposition,
 )
 from breadboard.artifacts.cas import InMemoryCAS
@@ -112,6 +114,30 @@ async def _created(monkeypatch: pytest.MonkeyPatch):
     service, case, preflights = await _service(monkeypatch)
     created = await service.create(case.request)
     return service, case, preflights, created
+
+
+@pytest.mark.parametrize("counterfeit", ["missing", "wrong-lease", "wrong-signature"])
+async def test_public_service_rejects_counterfeit_primary_receipt(
+    monkeypatch: pytest.MonkeyPatch, counterfeit: str
+) -> None:
+    service, case, _ = await _service(monkeypatch)
+    original = case.sandbox.lease.containment_receipt
+    if counterfeit == "missing":
+        case.sandbox.lease.containment_receipt = None
+    elif counterfeit == "wrong-lease":
+        wrong = replace(original, lease_id="lease-counterfeit")
+        case.sandbox.lease.containment_receipt = replace(
+            wrong, signature=case.sandbox._containment_authenticator.sign(wrong.canonical_bytes())
+        )
+    else:
+        case.sandbox.lease.containment_receipt = replace(original, signature=b"\1" * 32)
+    try:
+        with pytest.raises(V2EpisodeUnavailable) as caught:
+            await service.create(case.request)
+        assert caught.value.failure.code == "containment_receipt_invalid"
+        assert "lease.close" in case.calls
+    finally:
+        await service.close()
 
 
 async def test_public_service_rejects_verifier_without_containment_receipt(

@@ -2,15 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
 
-from breadboard.rl.harness import contracts as c
-from breadboard.rl.harness.composition import (
-    load_production_composition,
-    _PinnedTrustedProcessBackend,
-)
+from breadboard.rl.harness.composition import load_production_composition
 from breadboard.rl.harness.headless import (
     HeadlessRunRequest,
     HeadlessWorkspaceInput,
@@ -20,7 +15,8 @@ from breadboard.rl.harness.lease_envelope import RuntimeContainment
 from breadboard.rl.harness.qualification import (
     materialize_production_composition_fixture,
 )
-from breadboard.rl.harness.sandbox import SandboxLaunchError
+from breadboard.rl.harness.runners.base import RunnerPlanError
+from tests.rl.harness.test_runner_conductor import RecordingToolPort, _open
 
 
 def test_headless_workspace_input_rejects_obsolete_outer_isolation() -> None:
@@ -126,21 +122,19 @@ def test_headless_run_request_rejects_obsolete_outer_isolation() -> None:
 async def test_public_qualification_entry_rejects_unconfined_trusted_process(
     tmp_path: Path,
 ) -> None:
-    """Prove that UNCONFINED_TEST_ONLY is unreachable and rejected by public qualification entry."""
+    """Public conductor admission rejects a trusted-process workspace without a receipt."""
     fixture = materialize_production_composition_fixture(tmp_path)
     composition = load_production_composition(
         str(fixture.composition_ref_path), fixture.secret_files
     )
-    backend = composition.service._dependencies.sandbox_runtime.process_backend
-    assert isinstance(backend, _PinnedTrustedProcessBackend)
-
-    unconfined_plan = MagicMock()
-    unconfined_plan.containment = RuntimeContainment.UNCONFINED_TEST_ONLY
-    with pytest.raises(
-        SandboxLaunchError,
-        match="production composition rejects unconfined trusted-process execution",
-    ):
-        await backend.launch(unconfined_plan)
+    try:
+        tools = RecordingToolPort()
+        tools.containment = RuntimeContainment.UNCONFINED_TEST_ONLY
+        tools.containment_receipt = None
+        with pytest.raises(RunnerPlanError, match="containment receipt"):
+            await _open(tools=tools)
+    finally:
+        await composition.close()
 
 
 def test_headless_trusted_process_rejects_unconfined_lane() -> None:
