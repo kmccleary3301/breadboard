@@ -50,6 +50,22 @@ def test_incomplete_or_malformed_terminal_call_has_no_dispatch() -> None:
     assert result.recovery is not None
     assert result.recovery.trigger == "malformed-tool-call"
 
+def test_malformed_terminal_call_retains_text_and_source_error_without_replay_call() -> None:
+    state = OpenClawSemanticsState()
+    state.begin_request()
+    parsed = state.consume_native_response({
+        "finish_reason": "tool_calls",
+        "content": "malformed tool-call rejected",
+        "tool_calls": [{"id": "bad", "name": "write", "arguments": '{"path":"malformed-marker.txt","content":'}],
+    })
+    assert parsed.tool_batch.dispatchable is False
+    assert parsed.assistant_message["content"] == "malformed tool-call rejected"
+    assert parsed.assistant_message["tool_calls"] == []
+    assert parsed.assistant_message["stop_reason"] == "error"
+    assert state.prepare_request_history()[-1]["tool_calls"] == []
+    assert state.request_count == 1
+
+
 
 def test_provider_error_stops_before_retry_fallback_or_compaction() -> None:
     state = OpenClawSemanticsState()

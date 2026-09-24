@@ -319,6 +319,7 @@ def finalize_native_chat_response(
     executable = bool(calls) and not errors and finish_reason == "tool_calls"
     if calls and not errors and finish_reason == "stop" and allow_silent_tool_promotion:
         executable = True
+    malformed_terminal_call = bool(errors)
     if errors or finish_reason in {"error", "aborted"}:
         executable = False
     assistant_content: Any = content
@@ -341,8 +342,8 @@ def finalize_native_chat_response(
         "role": "assistant",
         "content": assistant_content,
         "tool_calls": [call.to_dict() for call in calls],
-        "finish_reason": finish_reason,
-        "stop_reason": view.native_stop_reason or finish_reason,
+        "finish_reason": "error" if malformed_terminal_call else finish_reason,
+        "stop_reason": "error" if malformed_terminal_call else view.native_stop_reason or finish_reason,
         **({"response_id": view.response_id} if view.response_id else {}),
         **({"usage": dict(view.usage)} if isinstance(view.usage, Mapping) else {}),
     }
@@ -357,7 +358,7 @@ def finalize_native_chat_response(
         tool_batch=batch,
         history_mutations=tuple(mutations),
         finish_reason=finish_reason,
-        native_stop_reason=view.native_stop_reason or finish_reason,
+        native_stop_reason="error" if malformed_terminal_call else view.native_stop_reason or finish_reason,
         usage=dict(view.usage) if isinstance(view.usage, Mapping) else None,
         raw_fragments=tuple(
             {
@@ -490,7 +491,7 @@ class OpenClawSemanticsState:
         self.stop_reason = result.finish_reason
         if result.recovery:
             self.recovery = result.recovery
-            self.terminal_kind = "recovery_stop"
+            self.terminal_kind = "malformed_tool_call" if result.recovery.trigger == "malformed-tool-call" else "recovery_stop"
         if result.tool_batch.dispatchable:
             if self.tool_admissions + len(result.tool_batch.tool_calls) > self.max_tool_admissions:
                 self.terminal_kind = "tool_budget"
@@ -705,6 +706,7 @@ class OpenClawSemanticsState:
             "runtime_inputs": dict(runtime_inputs or {}),
             "effects": dict(effects or {}),
             "termination": termination,
+            "runtime_facts": dict(self.bootstrap.get("runtime_facts", {})),
             "request_count": request_count,
             "normalizations": {},
             # Compatibility fields retained for direct semantics callers.
