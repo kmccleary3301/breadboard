@@ -341,3 +341,63 @@ def test_workstation_grammar_mutations_fail(side: str, mutate: Callable[[str], s
         assert [item["assertion_id"] for item in report["assertions"] if item["status"] == "failed"] == ["episode.requests_equal"]
     else:
         assert error in report["errors"][0]
+
+
+# Job-1203 malformed_tool_call effects, each in its side's recorded shape. The
+# supplier probes every declared path (null: no regular file); BB records the
+# paths its measured workspace changed.
+_RECOVERED = "sha256:7072f186429aabd403ce0eac668a22372b34c499b9d65ea9a835bb87402a8caf"
+_EMPTY = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+_SUPPLIER_1203_EFFECTS = {"malformed_recovered.txt": {"bytes": 14, "sha256": _RECOVERED}, "must_not_exist.txt": None}
+_BB_1203_EFFECTS = {"malformed_recovered.txt": {"bytes": 14, "exists": True, "sha256": _RECOVERED}}
+
+
+def _effect_traces(capture_effects: dict, replay_effects: dict) -> dict[str, dict]:
+    traces = {"capture": _trace(), "replay": _trace()}
+    traces["capture"]["effects"] = deepcopy(capture_effects)
+    traces["replay"]["effects"] = deepcopy(replay_effects)
+    return traces
+
+
+@pytest.mark.parametrize(
+    ("supplier_effects", "bb_effects"),
+    [
+        pytest.param(_SUPPLIER_1203_EFFECTS, _BB_1203_EFFECTS, id="malformed-1203"),
+        pytest.param({"cutoff_marker.txt": None}, {}, id="length-1203"),
+        pytest.param({"must_not_exist.txt": None}, {"must_not_exist.txt": {"exists": False}}, id="bb-removed"),
+    ],
+)
+def test_absent_effect_shapes_compare_equal(supplier_effects: dict, bb_effects: dict) -> None:
+    report = compare(_effect_traces(supplier_effects, bb_effects))
+    assert report["ok"] is True, report
+
+
+@pytest.mark.parametrize("swap", [False, True], ids=["supplier-capture", "supplier-replay"])
+@pytest.mark.parametrize(
+    "bb_effects",
+    [
+        pytest.param({**_BB_1203_EFFECTS, "must_not_exist.txt": {"bytes": 0, "exists": True, "sha256": _EMPTY}}, id="null-vs-content"),
+        pytest.param({}, id="changed-vs-absent"),
+        pytest.param({"malformed_recovered.txt": {"exists": False}}, id="changed-vs-removed"),
+    ],
+)
+def test_real_effect_differences_still_fail(bb_effects: dict, swap: bool) -> None:
+    sides = (bb_effects, _SUPPLIER_1203_EFFECTS) if swap else (_SUPPLIER_1203_EFFECTS, bb_effects)
+    report = compare(_effect_traces(*sides))
+    assert report["ok"] is False
+    assert [item["assertion_id"] for item in report["assertions"] if item["status"] == "failed"] == ["episode.file_effects_equal"]
+
+
+@pytest.mark.parametrize(
+    ("value", "error"),
+    [
+        pytest.param({"exists": True, "bytes": 0}, "has no sha256 digest", id="present-without-digest"),
+        pytest.param({"exists": False, "sha256": _EMPTY}, "has extra fields", id="removed-with-extra-fields"),
+        pytest.param(0, "neither a digest nor absent", id="scalar"),
+    ],
+)
+def test_malformed_effect_is_not_read_as_absent(value: object, error: str) -> None:
+    traces = _effect_traces(_SUPPLIER_1203_EFFECTS, {**_BB_1203_EFFECTS, "must_not_exist.txt": value})
+    report = compare(traces)
+    assert report["ok"] is False
+    assert error in report["errors"][0]

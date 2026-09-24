@@ -271,15 +271,33 @@ def _results(trace: Mapping[str, Any], declared: set[str]) -> list[dict[str, Any
     return result
 
 
-def _effects(case_dir: Path | None, trace: Mapping[str, Any]) -> dict[str, str | None]:
+def _effects(case_dir: Path | None, trace: Mapping[str, Any]) -> dict[str, str]:
+    """Map each path holding a regular file at episode end to its digest.
+
+    Every sealed case starts from an empty workspace on both sides. The supplier
+    kit (``kit/omp_capture_driver.py`` ``sha`` and its ``probe_paths`` loop)
+    records ``null`` for a declared path with no regular file. BB records only
+    paths that differ from its pre-episode snapshot, plus ``{"exists": false}``
+    for a removed one. All three mean "no file at episode end", so neither side
+    keeps an entry for them. Any other value that is not a digest is malformed.
+    """
     raw = trace.get("effects", {})
-    effects: dict[str, str | None] = {}
+    effects: dict[str, str] = {}
     if isinstance(raw, Mapping):
         for path, value in raw.items():
             if isinstance(value, Mapping):
-                effects[str(path)] = value.get("sha256")
-            elif value is None or isinstance(value, str):
-                effects[str(path)] = value
+                if value.get("exists") is False:
+                    if set(value) != {"exists"}:
+                        raise ValueError(f"absent OMP file effect {path!r} has extra fields")
+                    continue
+                value = value.get("sha256")
+                if not isinstance(value, str):
+                    raise ValueError(f"OMP file effect {path!r} has no sha256 digest")
+            if value is None:
+                continue
+            if not isinstance(value, str):
+                raise ValueError(f"OMP file effect {path!r} is neither a digest nor absent")
+            effects[str(path)] = value
     return dict(sorted(effects.items()))
 
 

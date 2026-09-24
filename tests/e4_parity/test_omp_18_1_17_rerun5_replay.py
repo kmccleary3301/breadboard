@@ -133,13 +133,16 @@ def test_rerun5_receiver_replay_preserves_full_bodies_results_and_effects() -> N
             assert episode["requests"]
             # Only the pinned workstation value spans of the system prompt are projected.
             assert [_without_system(request["body"]) for request in episode["requests"]] == [_without_system(body) for body in request_bodies]
+            # A declared path the supplier found absent (null) has no entry.
             assert episode["file_effects"] == {
-                path: (value.get("sha256") if isinstance(value, dict) else value)
+                path: value["sha256"]
                 for path, value in sorted(trace["effects"].items())
+                if value is not None
             }
             case_results[case_id] = {
                 "requests": trace["receiver_requests"],
                 "dispatched": dispatched,
+                "declared_effects": trace["effects"],
                 "effects": episode["file_effects"],
             }
 
@@ -154,7 +157,9 @@ def test_rerun5_receiver_replay_preserves_full_bodies_results_and_effects() -> N
     assert set(case_results) == set(CASE_IDS)
     assert [case_results[case_id]["requests"] for case_id in CASE_IDS] == [4, 4, 8, 1, 3, 3]
     assert case_results["stream_fragments_broken"]["dispatched"] == 0
-    assert case_results["length_cutoff_skips_tool"]["effects"]["cutoff_marker.txt"] is None
+    assert case_results["length_cutoff_skips_tool"]["declared_effects"] == {"cutoff_marker.txt": None}
+    assert case_results["length_cutoff_skips_tool"]["effects"] == {}
     assert case_results["normal_multiturn"]["effects"]["normal_marker.txt"].startswith("sha256:")
-    assert case_results["malformed_tool_call"]["effects"]["must_not_exist.txt"] is None
+    assert case_results["malformed_tool_call"]["declared_effects"]["must_not_exist.txt"] is None
+    assert "must_not_exist.txt" not in case_results["malformed_tool_call"]["effects"]
     assert case_results["process_lifecycle"]["effects"]["lifecycle_child.txt"].startswith("sha256:")
