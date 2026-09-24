@@ -1350,7 +1350,7 @@ class ConductorAdapter:
                     presented_bytes = canonical_json_bytes({
                         key: value for key, value in presented.items() if key != "signature"
                     })
-                except (TypeError, ValueError) as exc:
+                except Exception as exc:
                     raise ContainmentReceiptError("containment receipt cannot be serialized") from exc
                 admitted = self._admitted_lease_ledger.lookup(lease_id)
                 if (

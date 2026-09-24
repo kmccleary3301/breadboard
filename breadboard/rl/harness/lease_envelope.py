@@ -259,37 +259,31 @@ class ContainmentReceipt:
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "ContainmentReceipt":
-        if not isinstance(value, Mapping):
-            raise ContainmentReceiptError("containment receipt is not an object")
-        required = {
-            "schema", "lease_id", "runtime_id", "mode", "namespaces",
-            "mountinfo_sha256", "writable_mounts", "created_at",
-            "key_id", "algorithm", "signature",
-        }
-        if set(value) not in (required, required | {"outcome"}):
-            raise ContainmentReceiptError("containment receipt keys are invalid")
-        namespaces = value["namespaces"]
-        if not isinstance(namespaces, Mapping) or set(namespaces) != {"pid", "mnt", "user", "net"}:
-            raise ContainmentReceiptError("containment receipt namespace keys are invalid")
-        raw_mounts = value["writable_mounts"]
-        mount_keys = {"path", "fstype", "size_bytes", "source"}
-        if type(raw_mounts) is not list or any(
-            not isinstance(mount, Mapping) or set(mount) != mount_keys for mount in raw_mounts
-        ):
-            raise ContainmentReceiptError("containment receipt writable mount keys are invalid")
-        outcome_raw = value["outcome"] if "outcome" in value else None
-        if "outcome" in value and (
-            not isinstance(outcome_raw, Mapping)
-            or set(outcome_raw) != {"pid1_reaped", "all_dead"}
-        ):
-            raise ContainmentReceiptError("containment receipt outcome keys are invalid")
         try:
-            signature = bytes.fromhex(value["signature"])
-            mounts = tuple(WritableMount(**mount) for mount in raw_mounts)
-            outcome = None if outcome_raw is None else {
-                "pid1_reaped": outcome_raw["pid1_reaped"],
-                "all_dead": outcome_raw["all_dead"],
+            if not isinstance(value, Mapping):
+                raise ContainmentReceiptError("containment receipt is not an object")
+            required = {
+                "schema", "lease_id", "runtime_id", "mode", "namespaces",
+                "mountinfo_sha256", "writable_mounts", "created_at",
+                "key_id", "algorithm", "signature",
             }
+            if set(value) not in (required, required | {"outcome"}):
+                raise ContainmentReceiptError("containment receipt keys are invalid")
+            namespaces = value["namespaces"]
+            if not isinstance(namespaces, Mapping) or set(namespaces) != {"pid", "mnt", "user", "net"}:
+                raise ContainmentReceiptError("containment receipt namespace keys are invalid")
+            raw_mounts = value["writable_mounts"]
+            mount_keys = {"path", "fstype", "size_bytes", "source"}
+            if type(raw_mounts) is not list or any(
+                not isinstance(mount, Mapping) or set(mount) != mount_keys for mount in raw_mounts
+            ):
+                raise ContainmentReceiptError("containment receipt writable mount keys are invalid")
+            outcome_raw = value["outcome"] if "outcome" in value else None
+            if "outcome" in value and (
+                not isinstance(outcome_raw, Mapping)
+                or set(outcome_raw) != {"pid1_reaped", "all_dead"}
+            ):
+                raise ContainmentReceiptError("containment receipt outcome keys are invalid")
             receipt = cls(
                 schema_version=value["schema"],
                 lease_id=value["lease_id"],
@@ -300,48 +294,73 @@ class ContainmentReceipt:
                 user_namespace_inode=namespaces["user"],
                 network_namespace_inode=namespaces["net"],
                 mountinfo_sha256=value["mountinfo_sha256"],
-                writable_mounts=mounts,
+                writable_mounts=tuple(WritableMount(**mount) for mount in raw_mounts),
                 created_at=value["created_at"],
                 key_id=value["key_id"],
                 algorithm=value["algorithm"],
-                signature=signature,
-                outcome=outcome,
+                signature=bytes.fromhex(value["signature"]),
+                outcome=None if outcome_raw is None else {
+                    "pid1_reaped": outcome_raw["pid1_reaped"],
+                    "all_dead": outcome_raw["all_dead"],
+                },
             )
-        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            _validate_receipt_shape(receipt)
+            return receipt
+        except ContainmentReceiptError:
+            raise
+        except Exception as exc:
             raise ContainmentReceiptError("containment receipt is malformed") from exc
-        _validate_receipt_shape(receipt)
-        return receipt
 
 
 def _validate_receipt_shape(receipt: ContainmentReceipt) -> None:
+    if type(receipt) is not ContainmentReceipt:
+        raise ContainmentReceiptError("containment receipt fields are invalid")
+    inodes = (
+        receipt.pid_namespace_inode,
+        receipt.mount_namespace_inode,
+        receipt.user_namespace_inode,
+        receipt.network_namespace_inode,
+    )
     if (
-        receipt.schema_version != _RECEIPT_SCHEMA
-        or not isinstance(receipt.lease_id, str)
-        or not receipt.lease_id
-        or not isinstance(receipt.runtime_id, str)
-        or not receipt.runtime_id
-        or receipt.mode not in {"privileged", "userns"}
-        or any(
-            type(value) is not int or value <= 0
-            for value in (
-                receipt.pid_namespace_inode,
-                receipt.mount_namespace_inode,
-                receipt.user_namespace_inode,
-                receipt.network_namespace_inode,
-            )
-        )
-        or not isinstance(receipt.mountinfo_sha256, str)
-        or not receipt.mountinfo_sha256.startswith("sha256:")
-        or not receipt.writable_mounts
-        or tuple(sorted(receipt.writable_mounts, key=lambda mount: mount.path)) != receipt.writable_mounts
-        or len({mount.path for mount in receipt.writable_mounts}) != len(receipt.writable_mounts)
+        any(type(value) is not str for value in (
+            receipt.schema_version, receipt.lease_id, receipt.runtime_id,
+            receipt.mode, receipt.mountinfo_sha256, receipt.created_at,
+            receipt.key_id, receipt.algorithm,
+        ))
+        or any(type(inode) is not int for inode in inodes)
+        or type(receipt.writable_mounts) is not tuple
         or any(
             type(mount) is not WritableMount
             or type(mount.path) is not str
-            or not mount.path.startswith("/")
+            or type(mount.fstype) is not str
+            or (mount.size_bytes is not None and type(mount.size_bytes) is not int)
+            or type(mount.source) is not str
+            for mount in receipt.writable_mounts
+        )
+        or type(receipt.signature) is not bytes
+        or (
+            receipt.outcome is not None
+            and (
+                not isinstance(receipt.outcome, Mapping)
+                or any(type(key) is not str or type(item) is not bool
+                       for key, item in receipt.outcome.items())
+            )
+        )
+    ):
+        raise ContainmentReceiptError("containment receipt fields are invalid")
+    if (
+        receipt.schema_version != _RECEIPT_SCHEMA
+        or not receipt.lease_id
+        or not receipt.runtime_id
+        or receipt.mode not in {"privileged", "userns"}
+        or any(inode <= 0 for inode in inodes)
+        or not receipt.mountinfo_sha256.startswith("sha256:")
+        or not receipt.writable_mounts
+        or any(
+            not mount.path.startswith("/")
             or (
                 mount.source == "lease_tmpfs"
-                and (mount.fstype != "tmpfs" or type(mount.size_bytes) is not int or mount.size_bytes <= 0)
+                and (mount.fstype != "tmpfs" or mount.size_bytes is None or mount.size_bytes <= 0)
             )
             or (
                 mount.source == "workspace_bind"
@@ -350,16 +369,12 @@ def _validate_receipt_shape(receipt: ContainmentReceipt) -> None:
             or mount.source not in {"lease_tmpfs", "workspace_bind"}
             for mount in receipt.writable_mounts
         )
-        or not isinstance(receipt.created_at, str)
-        or not isinstance(receipt.key_id, str)
+        or tuple(sorted(receipt.writable_mounts, key=lambda mount: mount.path)) != receipt.writable_mounts
+        or len({mount.path for mount in receipt.writable_mounts}) != len(receipt.writable_mounts)
         or not receipt.key_id
         or receipt.algorithm != "hmac-sha256-v1"
-        or type(receipt.signature) is not bytes
         or len(receipt.signature) != 32
-        or (receipt.outcome is not None and (
-            set(receipt.outcome) != {"pid1_reaped", "all_dead"}
-            or any(type(item) is not bool for item in receipt.outcome.values())
-        ))
+        or (receipt.outcome is not None and set(receipt.outcome) != {"pid1_reaped", "all_dead"})
     ):
         raise ContainmentReceiptError("containment receipt fields are invalid")
     try:

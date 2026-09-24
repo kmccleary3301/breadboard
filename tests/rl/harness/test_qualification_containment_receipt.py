@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
-from dataclasses import replace
+from collections.abc import Mapping
+from copy import deepcopy
+from dataclasses import fields, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args, get_type_hints
 
 import pytest
 
@@ -17,6 +19,7 @@ from breadboard.rl.harness.lease_envelope import (
     ContainmentReceipt,
     ContainmentReceiptError,
     RuntimeContainment,
+    WritableMount,
     add_teardown_outcome,
     verify_containment_receipt,
 )
@@ -38,7 +41,7 @@ from tests.rl.harness.test_runner_conductor import (
     _open,
 )
 from tests.rl.harness.test_runner_policy_runtime import RecordingPolicyClient, _observation, _plan
-from tests.rl.harness.test_sandbox_runtime import RuntimeHarness
+from tests.rl.harness.test_sandbox_runtime import RecordingBackend, RuntimeHarness
 from tests.rl.harness.v2_service_fixtures import signed_containment_receipt
 from tests.rl.harness.wp7_fixtures import make_runtime_fixture
 
@@ -280,6 +283,154 @@ async def test_admitted_receipt_rejects_presented_extra_or_null_keys(
         with pytest.raises(RunnerPlanError) as caught:
             await _open_with_ledger(adapter, tools, runtime_id="trusted-process")
         assert caught.value.code == "containment_receipt_invalid"
+    finally:
+        await lease.close()
+        await harness.manager.close()
+
+
+@pytest.mark.asyncio
+async def test_two_mount_receipt_path_type_error_is_typed(tmp_path: Path) -> None:
+    class TwoMountBackend(RecordingBackend):
+        async def launch(self, plan, workspace, *, context):
+            handle, measurement = await super().launch(plan, workspace, context=context)
+            original = handle.containment_receipt
+            unsigned = replace(
+                original,
+                writable_mounts=(
+                    WritableMount("/scratch", "tmpfs", 4096, "lease_tmpfs"),
+                    *original.writable_mounts,
+                ),
+            )
+            handle.containment_receipt = replace(
+                unsigned, signature=self.containment_authenticator.sign(unsigned.canonical_bytes())
+            )
+            return handle, measurement
+
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture, backend=TwoMountBackend())
+    lease = await harness.manager.open(fixture.request)
+    try:
+        adapter = ConductorAdapter(
+            CONDUCTOR_RUNTIME_ABI,
+            containment_authenticator=harness.manager._containment_authenticator,
+            admitted_lease_ledger=harness.manager.admitted_lease_ledger,
+        )
+        tools = RecordingToolPort()
+        tools.containment_lease_id = lease.lease_id
+        tools.containment_receipt = lease.containment_receipt.to_mapping()
+        session = await _open_with_ledger(adapter, tools, runtime_id="trusted-process")
+        await session.close()
+        assert len(tools.containment_receipt["writable_mounts"]) == 2
+        tools.containment_receipt["writable_mounts"][1]["path"] = 123
+        with pytest.raises(ContainmentReceiptError):
+            ContainmentReceipt.from_mapping(tools.containment_receipt)
+        with pytest.raises(RunnerPlanError) as caught:
+            await _open_with_ledger(adapter, tools, runtime_id="trusted-process")
+        assert caught.value.code == "containment_receipt_invalid"
+    finally:
+        await lease.close()
+        await harness.manager.close()
+
+
+@pytest.mark.asyncio
+async def test_receipt_schema_type_swaps_are_typed_at_parser_and_admission(tmp_path: Path) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    lease = await harness.manager.open(fixture.request)
+    try:
+        original = lease.containment_receipt
+        authenticator = harness.manager._containment_authenticator
+        adapter = ConductorAdapter(
+            CONDUCTOR_RUNTIME_ABI,
+            containment_authenticator=authenticator,
+            admitted_lease_ledger=harness.manager.admitted_lease_ledger,
+        )
+        base = original.to_mapping()
+        outcome = add_teardown_outcome(
+            original, pid1_reaped=True, all_dead=True, authenticator=authenticator
+        ).to_mapping()
+        two_mounts = deepcopy(base)
+        two_mounts["writable_mounts"].insert(
+            0, WritableMount("/scratch", "tmpfs", 4096, "lease_tmpfs").to_mapping()
+        )
+        ContainmentReceipt.from_mapping(two_mounts)
+        receipt_types = get_type_hints(ContainmentReceipt)
+        mount_types = get_type_hints(WritableMount)
+        assert all(
+            set(mount) == {field.name for field in fields(WritableMount)}
+            for mount in two_mounts["writable_mounts"]
+        )
+        inode_fields = [field for field in fields(ContainmentReceipt) if field.name.endswith("_namespace_inode")]
+        assert len(inode_fields) == len(base["namespaces"])
+        assert all(receipt_types[field.name] is int for field in inode_fields)
+        assert bool in get_args(get_args(receipt_types["outcome"])[0])
+        assert all(
+            str in (get_args(mount_types[name]) or (mount_types[name],))
+            or int in (get_args(mount_types[name]) or (mount_types[name],))
+            for name in base["writable_mounts"][0]
+        )
+
+        def wrong_type(value: Any) -> Any:
+            if type(value) is str:
+                return 123
+            if type(value) is int or value is None:
+                return True
+            if type(value) is bool:
+                return 1
+            raise AssertionError(f"unexpected receipt schema value: {value!r}")
+
+        mutations: list[tuple[str, Any]] = []
+        for key, value in base.items():
+            if isinstance(value, (dict, list)):
+                continue
+            changed = deepcopy(base)
+            changed[key] = wrong_type(value)
+            mutations.append((f"top.{key}", changed))
+        for section, source in (("namespaces", base), ("outcome", outcome)):
+            for key, value in source[section].items():
+                changed = deepcopy(source)
+                changed[section][key] = wrong_type(value)
+                mutations.append((f"{section}.{key}", changed))
+        for index, mount in enumerate(two_mounts["writable_mounts"]):
+            for key, value in mount.items():
+                changed = deepcopy(two_mounts)
+                changed["writable_mounts"][index][key] = wrong_type(value)
+                mutations.append((f"writable_mounts[{index}].{key}", changed))
+        for section, replacement in (
+            ("namespaces", ["not a mapping"]),
+            ("outcome", ["not a mapping"]),
+            ("writable_mounts", {"not": "a list"}),
+            ("writable_mounts", ("not a list",)),
+        ):
+            changed = deepcopy(outcome if section == "outcome" else base)
+            changed[section] = replacement
+            mutations.append((f"{section}.container", changed))
+        changed = deepcopy(base)
+        changed["writable_mounts"][0] = ["not a mapping"]
+        mutations.append(("writable_mounts.element", changed))
+        mutations.extend((f"receipt.{type(value).__name__}", value) for value in ([], "text", b"bytes", None))
+
+        class ExplodingMapping(Mapping):
+            def __getitem__(self, key: str) -> Any:
+                return base[key]
+
+            def __iter__(self):
+                raise RuntimeError("malformed mapping iterator")
+
+            def __len__(self) -> int:
+                return len(base)
+
+        mutations.append(("receipt.exploding_mapping", ExplodingMapping()))
+
+        for name, presented in mutations:
+            with pytest.raises(ContainmentReceiptError):
+                ContainmentReceipt.from_mapping(presented)
+            tools = RecordingToolPort()
+            tools.containment_lease_id = lease.lease_id
+            tools.containment_receipt = presented
+            with pytest.raises(RunnerPlanError) as caught:
+                await _open_with_ledger(adapter, tools, runtime_id="trusted-process")
+            assert caught.value.code == "containment_receipt_invalid", name
     finally:
         await lease.close()
         await harness.manager.close()
