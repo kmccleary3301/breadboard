@@ -97,7 +97,7 @@
       "message": "OMP capability denied: document",
       "source_ref": "prompts/system-prompt.md:11",
       "route": {
-        "extensions": [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".odt", ".odp", ".ods", ".rtf", ".epub"],
+        "extensions": [".pdf", ".docx", ".pptx", ".xlsx", ".epub"],
         "source_ref": "packages/coding-agent/src/utils/markit.ts:22"
       }
     },

@@ -204,7 +204,7 @@ class _OMPWorkspacePort:
         assert self.baseline is not None
         current = self._snapshot()
         changed = {path: value for path, value in current.items() if self.baseline.get(path) != value}
-        changed.update({path: {"exists": False} for path in self.baseline.keys() - current.keys()})
+        return changed
     async def invoke_native_phase(self, operation: str, payload: Mapping[str, Any], *, timeout_ms: int, package_subpath: str | None = None) -> Mapping[str, Any]:
         del timeout_ms
         self.phase_log.append((operation, deepcopy(dict(payload))))
