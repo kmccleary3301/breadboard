@@ -12,13 +12,13 @@ The OpenHands worker must pass the pinned SDK's provider request without inserti
 
 ## 2) Scope and Surfaces
 
-The changed-file guard identifies three danger-zone paths in the PR delta from `ba63c4b3a6ce9f6ff088119b7bf0ca2e6400f517` through the current OpenHands lane head:
+The changed-file guard identifies three protected code paths, plus this ACR itself, in the PR delta from `ba63c4b3a6ce9f6ff088119b7bf0ca2e6400f517` through the current OpenHands lane head:
 
 - `breadboard/product/harness/targets.py`: updates the admitted OpenHands target descriptor digest to the resealed `openhands-sdk@1.47.0` target asset.
 - `breadboard/rl/harness/openhands_worker.py`: stops adding `temperature` to the SDK transport body, loads model settings from the native configuration, checks the positive initialized iteration limit, and uses that limit for the SDK conversation, sample cutoff, and max-iterations error.
 - `breadboard/rl/harness/runners/conductor.py`: admits a positive compiled turn limit, sends it and the source profile to worker initialization, bounds reported iterations against it, and drives the loop for that many turns rather than a literal 16.
 
-Danger-zone: yes. The same delta reseals the versioned target and native configuration, records six supplier stderr captures and their replay fixtures, and changes the OpenHands comparator and focused tests. Those files are outside the three paths matched by the danger-zone guard. The registered comparator now fails closed when the supplier's recorded conversation ID or BB's independently observed conversation ID is absent, ambiguous, or does not bind every request's prompt-cache key. This ACR is the decision artifact for the resulting changed-file list.
+Danger-zone: yes. The same delta reseals the versioned target and native configuration, records six supplier stderr captures and their replay fixtures, and changes the OpenHands comparator and focused tests. Those code and fixture files are outside the three listed protected code paths; this ACR is the fourth protected changed file. The registered comparator now fails closed when the supplier's recorded conversation ID or BB's independently observed conversation ID is absent, ambiguous, or does not bind every request's prompt-cache key. This ACR is the decision artifact for the resulting changed-file list.
 
 ## 3) Coupling and Generalization Impact
 
