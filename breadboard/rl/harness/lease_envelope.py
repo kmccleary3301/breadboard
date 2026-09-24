@@ -1077,7 +1077,12 @@ async def spawn_envelope_process(
             asyncio.to_thread(_recv_ready_status, status_host),
             max(0.001, timeout_ms / 1000),
         )
-        pid = _resolve_host_pid(envelope.pid1, namespace_pid)
+        try:
+            pid = _resolve_host_pid(envelope.pid1, namespace_pid)
+        except ProcessLookupError:
+            # A worker may have reparented the gated child before /proc exposes
+            # the parent chain; SCM_CREDENTIALS is already host-visible here.
+            pid = namespace_pid
         stdout = await _pipe_reader(stdout_r)
         stderr = await _pipe_reader(stderr_r)
         stdin = await _pipe_writer(stdin_w)
