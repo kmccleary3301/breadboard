@@ -516,6 +516,10 @@ def _setup_mount_view(
                 os.rmdir(path)
             except FileNotFoundError:
                 pass
+        try:
+            os.rmdir(staging_root)
+        except FileNotFoundError:
+            pass
 
 
 def _supervisor_main(
