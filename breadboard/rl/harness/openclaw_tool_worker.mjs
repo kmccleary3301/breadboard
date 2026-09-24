@@ -11,9 +11,10 @@ import { join, resolve, basename } from "node:path";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
-import { classifyAgentExecResult, exitCodeForEnvelope } from "openclaw:pinned-agent-exec";
+import { classifyAgentExecResult, errorEnvelope, exitCodeForEnvelope, formatErrorMessage } from "openclaw:pinned-agent-exec";
 
 const PROTOCOL = "bb.openclaw-native.v1";
+const finalizationOnly = process.argv.length === 3 && process.argv[2] === "--finalize-only";
 const DIST = process.env.OPENCLAW_DIST || "/opt/openclaw/dist";
 const MODULE_DIGESTS = Object.freeze({
   "core-coding-tools-DoP9tAh3.mjs": "403a72188e3378cc570691083fa9270c05e20dc7e2706c62c5c455457b50dca3",
@@ -44,6 +45,7 @@ let preparedContext = null;
 let closing = false;
 let advertisedTools = new Map();
 let capabilityDenials = new Map();
+let finalized = false;
 const pending = new Map();
 
 const sha256 = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
@@ -523,6 +525,33 @@ async function handle(message) {
       tools: TOOL_ORDER,
     };
   }
+  if (phase === "finalize_command_result") {
+    const envelope = message.envelope;
+    if (!envelope || typeof envelope !== "object" || Array.isArray(envelope)
+      || typeof envelope.ok !== "boolean" || typeof envelope.status !== "string"
+      || typeof message.sessionId !== "string"
+      || !Number.isSafeInteger(message.toolCalls) || message.toolCalls < 0
+      || (message.cleanup_error_message !== null && typeof message.cleanup_error_message !== "string")) {
+      throw new Error("finalize_command_result payload is invalid");
+    }
+    let finalEnvelope = envelope;
+    let runtimeError = null;
+    if (message.cleanup_error_message !== null) {
+      const cleanupFailure = new Error(`Agent exec cleanup failed: ${formatErrorMessage(new Error(message.cleanup_error_message))}`);
+      if (envelope.ok) finalEnvelope = errorEnvelope(cleanupFailure, message.sessionId);
+      else runtimeError = cleanupFailure.message;
+    }
+    return {
+      schema_version: PROTOCOL,
+      kind: "finalized_command_result",
+      command_result: {
+        envelope: finalEnvelope,
+        exitCode: exitCodeForEnvelope(finalEnvelope),
+        toolCalls: message.toolCalls,
+      },
+      runtime_error: runtimeError,
+    };
+  }
   if (!workspace || tools.size !== TOOL_ORDER.length) throw new Error("worker is not initialized");
   if (phase === "project_request") {
     const projected = projectSourceRequest(
@@ -645,6 +674,14 @@ const inputDone = new Promise((resolvePromise) => { finishInput = resolvePromise
 
 async function dispatch(command) {
   try {
+    if (finalizationOnly) {
+      if (command.operation !== "finalize_command_result" || finalized) {
+        throw new Error("finalize-only worker admits one finalization phase");
+      }
+      finalized = true;
+    } else if (command.operation === "finalize_command_result") {
+      throw new Error("finalization requires a retired native runtime");
+    }
     const payload = command.payload && typeof command.payload === "object" ? command.payload : {};
     const message = { ...payload, phase: command.operation };
     const result = await handle(message);

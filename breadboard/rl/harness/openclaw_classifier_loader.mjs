@@ -6,11 +6,11 @@ import { isMainThread } from "node:worker_threads";
 import { createHash } from "node:crypto";
 
 // Source: OpenClaw 2026.9.4 dist/agent-exec-BAuhpelg.mjs. The loader
-// exposes two private pinned declarations without copying their implementation.
+// exposes pinned private declarations without copying their implementation.
 const filename = "agent-exec-BAuhpelg.mjs";
 const expected = "2e39dbc961337936860849aaaed6a26b734d0c20648093f2bc51a46ebfe9526d";
-const appended = "\nexport { classifyAgentExecResult, exitCodeForEnvelope };\n";
-const dist = process.env.OPENCLAW_DIST || "/opt/openclaw/dist";
+const appended = "\nexport { classifyAgentExecResult, errorEnvelope, exitCodeForEnvelope, formatErrorMessage };\n";
+const dist = process.env.OPENCLAW_DIST || join(process.cwd(), "dist");
 const sourceUrl = pathToFileURL(join(dist, filename)).href;
 
 export async function resolve(specifier, context, nextResolve) {

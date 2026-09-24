@@ -106,6 +106,7 @@
       "prepare_tools",
       "execute_batch",
       "ack",
+      "finalize_command_result",
       "close"
     ],
     "source_modules": [
@@ -126,7 +127,7 @@
     "classifier_loader": {
       "source": "agent-exec-BAuhpelg.mjs",
       "source_sha256": "sha256:2e39dbc961337936860849aaaed6a26b734d0c20648093f2bc51a46ebfe9526d",
-      "appended_export": "export { classifyAgentExecResult, exitCodeForEnvelope };"
+      "appended_export": "export { classifyAgentExecResult, errorEnvelope, exitCodeForEnvelope, formatErrorMessage };"
     },
     "request": {
       "id": "string",
