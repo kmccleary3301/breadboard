@@ -2788,7 +2788,6 @@ class TrustedProcessBackend:
                         lease_id=lease_id,
                     )
                 scratch.mkdir(mode=0o700, exist_ok=True)
-                (scratch / "home").mkdir(mode=0o700, exist_ok=True)
                 envelope = await asyncio.to_thread(
                     launch_envelope,
                     lease_id=lease_id,

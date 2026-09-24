@@ -44,7 +44,7 @@ UTC = timezone.utc
 _CLONE_NEWUSER = 0x10000000
 _CLONE_NEWPID = 0x20000000
 _CLONE_NEWNET = 0x40000000
-_RECEIPT_SCHEMA = "bb.containment-receipt.v1"
+_RECEIPT_SCHEMA = "bb.containment-receipt.v2"
 _MAX_FRAME = 256 * 1024
 _SYS_OPEN_TREE = 428
 _SYS_MOVE_MOUNT = 429
@@ -182,6 +182,22 @@ def _receipt_unsigned(payload: Mapping[str, Any]) -> bytes:
 
 
 @dataclass(frozen=True, slots=True)
+class WritableMount:
+    path: str
+    fstype: str
+    size_bytes: int | None
+    source: str
+
+    def to_mapping(self) -> dict[str, Any]:
+        return {
+            "path": self.path,
+            "fstype": self.fstype,
+            "size_bytes": self.size_bytes,
+            "source": self.source,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ContainmentReceipt:
     schema_version: str
     lease_id: str
@@ -192,7 +208,7 @@ class ContainmentReceipt:
     user_namespace_inode: int
     network_namespace_inode: int
     mountinfo_sha256: str
-    writable_roots: tuple[str, ...]
+    writable_mounts: tuple[WritableMount, ...]
     created_at: str
     key_id: str
     algorithm: str
@@ -212,7 +228,7 @@ class ContainmentReceipt:
                 "net": self.network_namespace_inode,
             },
             "mountinfo_sha256": self.mountinfo_sha256,
-            "writable_roots": list(self.writable_roots),
+            "writable_mounts": [mount.to_mapping() for mount in self.writable_mounts],
             "created_at": self.created_at,
             "key_id": self.key_id,
             "algorithm": self.algorithm,
@@ -236,7 +252,7 @@ class ContainmentReceipt:
         try:
             namespaces = value["namespaces"]
             signature = bytes.fromhex(value["signature"])
-            roots = tuple(value["writable_roots"])
+            mounts = tuple(WritableMount(**mount) for mount in value["writable_mounts"])
             outcome_raw = value.get("outcome")
             outcome = None if outcome_raw is None else {
                 "pid1_reaped": outcome_raw["pid1_reaped"],
@@ -250,9 +266,9 @@ class ContainmentReceipt:
                 pid_namespace_inode=namespaces["pid"],
                 mount_namespace_inode=namespaces["mnt"],
                 user_namespace_inode=namespaces["user"],
-                network_namespace_inode=namespaces["net"] if "net" in namespaces else namespaces["network"],
+                network_namespace_inode=namespaces["net"],
                 mountinfo_sha256=value["mountinfo_sha256"],
-                writable_roots=roots,
+                writable_mounts=mounts,
                 created_at=value["created_at"],
                 key_id=value["key_id"],
                 algorithm=value["algorithm"],
@@ -284,9 +300,24 @@ def _validate_receipt_shape(receipt: ContainmentReceipt) -> None:
         )
         or not isinstance(receipt.mountinfo_sha256, str)
         or not receipt.mountinfo_sha256.startswith("sha256:")
-        or not receipt.writable_roots
-        or tuple(sorted(set(receipt.writable_roots))) != receipt.writable_roots
-        or any(type(root) is not str or not root.startswith("/") for root in receipt.writable_roots)
+        or not receipt.writable_mounts
+        or tuple(sorted(receipt.writable_mounts, key=lambda mount: mount.path)) != receipt.writable_mounts
+        or len({mount.path for mount in receipt.writable_mounts}) != len(receipt.writable_mounts)
+        or any(
+            type(mount) is not WritableMount
+            or type(mount.path) is not str
+            or not mount.path.startswith("/")
+            or (
+                mount.source == "lease_tmpfs"
+                and (mount.fstype != "tmpfs" or type(mount.size_bytes) is not int or mount.size_bytes <= 0)
+            )
+            or (
+                mount.source == "workspace_bind"
+                and (mount.fstype != "bind" or mount.size_bytes is not None)
+            )
+            or mount.source not in {"lease_tmpfs", "workspace_bind"}
+            for mount in receipt.writable_mounts
+        )
         or not isinstance(receipt.created_at, str)
         or not isinstance(receipt.key_id, str)
         or not receipt.key_id
@@ -310,7 +341,7 @@ def mint_containment_receipt(
     lease_id: str,
     runtime_id: str,
     mode: str,
-    writable_roots: Sequence[str],
+    writable_mounts: Sequence[WritableMount],
     authenticator: ReceiptAuthenticator,
     now: datetime | None = None,
 ) -> ContainmentReceipt:
@@ -325,7 +356,7 @@ def mint_containment_receipt(
         user_namespace_inode=namespaces["user"],
         network_namespace_inode=namespaces["net"],
         mountinfo_sha256=_digest_mountinfo(_mountinfo()),
-        writable_roots=tuple(sorted(set(writable_roots))),
+        writable_mounts=tuple(sorted(writable_mounts, key=lambda mount: mount.path)),
         created_at=(now or datetime.now(UTC)).isoformat().replace("+00:00", "Z"),
         key_id=authenticator.key_id,
         algorithm=authenticator.algorithm,
@@ -342,7 +373,7 @@ def mint_containment_receipt(
         user_namespace_inode=receipt.user_namespace_inode,
         network_namespace_inode=receipt.network_namespace_inode,
         mountinfo_sha256=receipt.mountinfo_sha256,
-        writable_roots=receipt.writable_roots,
+        writable_mounts=receipt.writable_mounts,
         created_at=receipt.created_at,
         key_id=receipt.key_id,
         algorithm=receipt.algorithm,
@@ -371,7 +402,7 @@ def add_teardown_outcome(
         user_namespace_inode=receipt.user_namespace_inode,
         network_namespace_inode=receipt.network_namespace_inode,
         mountinfo_sha256=receipt.mountinfo_sha256,
-        writable_roots=receipt.writable_roots,
+        writable_mounts=receipt.writable_mounts,
         created_at=receipt.created_at,
         key_id=receipt.key_id,
         algorithm=receipt.algorithm,
@@ -388,7 +419,7 @@ def add_teardown_outcome(
         user_namespace_inode=unsigned.user_namespace_inode,
         network_namespace_inode=unsigned.network_namespace_inode,
         mountinfo_sha256=unsigned.mountinfo_sha256,
-        writable_roots=unsigned.writable_roots,
+        writable_mounts=unsigned.writable_mounts,
         created_at=unsigned.created_at,
         key_id=unsigned.key_id,
         algorithm=unsigned.algorithm,
@@ -499,7 +530,7 @@ def _enter_user_namespace() -> None:
     _write_map("/proc/self/gid_map", f"0 {gid} 1\n")
 
 
-def _mount_tmpfs(target: str, size_bytes: int) -> None:
+def _mount_tmpfs(target: str, size_bytes: int, *, mode: int = 0o1777) -> None:
     if type(size_bytes) is not int or size_bytes <= 0:
         raise ValueError("tmpfs size is invalid")
     _libc_call(
@@ -508,7 +539,7 @@ def _mount_tmpfs(target: str, size_bytes: int) -> None:
         ctypes.c_char_p(os.fsencode(target)),
         ctypes.c_char_p(b"tmpfs"),
         ctypes.c_ulong(_MS_NOSUID | _MS_NODEV),
-        ctypes.c_char_p(f"size={size_bytes},mode=1777".encode("ascii")),
+        ctypes.c_char_p(f"size={size_bytes},mode={mode:o}".encode("ascii")),
     )
 
 
@@ -527,23 +558,51 @@ def _mount_proc() -> None:
     )
 
 
-def _verify_mount_view(workspace: str, scratch: str) -> tuple[str, tuple[str, ...]]:
+def _tmpfs_budgets(size_bytes: int) -> tuple[int, int]:
+    if type(size_bytes) is not int or size_bytes < 8192:
+        raise EnvelopeMountError(errno.EINVAL, "lease tmpfs budget is too small")
+    tmp_size = size_bytes // 2
+    return tmp_size, size_bytes - tmp_size
+
+
+def _verify_mount_view(
+    workspace: str, scratch: str, tmpfs_size_bytes: int,
+) -> tuple[str, tuple[WritableMount, ...]]:
     workspace = os.path.abspath(workspace)
     scratch = os.path.abspath(scratch)
+    tmp_size, scratch_size = _tmpfs_budgets(tmpfs_size_bytes)
     raw = _mountinfo()
-    roots = tuple(sorted({workspace, scratch, "/tmp"}))
-    entries = _mount_paths(raw)
+    sizes = {"/tmp": tmp_size, scratch: scratch_size}
+    roots = {workspace, scratch, "/tmp"}
     seen_roots: set[str] = set()
-    for path, options in entries:
+    for line, (path, options) in zip(raw.splitlines(), _mount_paths(raw), strict=True):
+        fields = line.split()
         if path in roots:
-            if b"rw" not in options:
-                raise EnvelopeMountError(errno.EROFS, f"envelope writable mount is absent: {path}")
+            if path in seen_roots or b"rw" not in options:
+                raise EnvelopeMountError(errno.EROFS, f"envelope writable mount is invalid: {path}")
             seen_roots.add(path)
+            if path in sizes:
+                separator = fields.index(b"-") if b"-" in fields else -1
+                if separator < 0 or fields[separator + 1] != b"tmpfs":
+                    raise EnvelopeMountError(errno.EINVAL, f"lease tmpfs mount is absent: {path}")
+                info = os.statvfs(path)
+                actual_size = info.f_blocks * info.f_frsize
+                if actual_size <= 0 or actual_size > sizes[path] + info.f_frsize:
+                    raise EnvelopeMountError(errno.EINVAL, f"lease tmpfs size is invalid: {path}")
+                if b"nosuid" not in options or b"nodev" not in options:
+                    raise EnvelopeMountError(errno.EINVAL, f"lease tmpfs safety flags are absent: {path}")
         elif b"ro" not in options:
             raise EnvelopeMountError(errno.EROFS, f"envelope inherited mount is writable: {path}")
-    if seen_roots != set(roots):
-        raise EnvelopeMountError(errno.ENOENT, f"envelope writable mount is absent: {sorted(set(roots) - seen_roots)}")
-    return _digest_mountinfo(raw), roots
+    if seen_roots != roots:
+        raise EnvelopeMountError(errno.ENOENT, f"envelope writable mount is absent: {sorted(roots - seen_roots)}")
+    mounts = tuple(sorted((
+        WritableMount(path, "tmpfs", size, "lease_tmpfs")
+        for path, size in sizes.items()
+    ), key=lambda mount: mount.path))
+    return _digest_mountinfo(raw), tuple(sorted(
+        (*mounts, WritableMount(workspace, "bind", None, "workspace_bind")),
+        key=lambda mount: mount.path,
+    ))
 
 def _open_tree(path: str) -> int:
     libc = ctypes.CDLL(None, use_errno=True)
@@ -598,36 +657,30 @@ def _setup_mount_view(
     workspace_fd: int,
     scratch_fd: int,
     tmpfs_size_bytes: int,
-) -> tuple[str, tuple[str, ...]]:
+) -> tuple[str, tuple[WritableMount, ...]]:
     _enter_private_mount_namespace()
     workspace = os.path.abspath(workspace)
     scratch = os.path.abspath(scratch)
     workspace_tree_fd = -1
-    scratch_tree_fd = -1
     try:
         _verify_bind_identity(workspace_fd, workspace)
         _verify_bind_identity(scratch_fd, scratch)
         workspace_tree_fd = _open_tree(workspace)
-        scratch_tree_fd = _open_tree(scratch)
         _remount_tree_readonly("/")
-        _mount_tmpfs("/tmp", tmpfs_size_bytes)
-        for path in (workspace, scratch):
-            os.makedirs(path, mode=0o700, exist_ok=True)
+        tmp_size, scratch_size = _tmpfs_budgets(tmpfs_size_bytes)
+        _mount_tmpfs("/tmp", tmp_size)
         _move_mount(workspace_tree_fd, workspace)
         os.close(workspace_tree_fd)
         workspace_tree_fd = -1
-        _move_mount(scratch_tree_fd, scratch)
-        os.close(scratch_tree_fd)
-        scratch_tree_fd = -1
+        _mount_tmpfs(scratch, scratch_size, mode=0o700)
+        os.mkdir(os.path.join(scratch, "home"), mode=0o700)
         _verify_bind_identity(workspace_fd, workspace)
-        _verify_bind_identity(scratch_fd, scratch)
         _mount_proc()
         _remount_tree_readonly("/proc")
-        return _verify_mount_view(workspace, scratch)
+        return _verify_mount_view(workspace, scratch, tmpfs_size_bytes)
     finally:
-        for tree_fd in (workspace_tree_fd, scratch_tree_fd):
-            if tree_fd >= 0:
-                os.close(tree_fd)
+        if workspace_tree_fd >= 0:
+            os.close(workspace_tree_fd)
 
 
 class _ChildReaper:
@@ -704,7 +757,7 @@ def _supervisor_main(
     mode: str,
 ) -> None:
     try:
-        mountinfo_digest, writable_roots = _setup_mount_view(
+        mountinfo_digest, writable_mounts = _setup_mount_view(
             workspace,
             scratch,
             workspace_fd,
@@ -715,7 +768,7 @@ def _supervisor_main(
             lease_id=lease_id,
             runtime_id=runtime_id,
             mode=mode,
-            writable_roots=writable_roots,
+            writable_mounts=writable_mounts,
             authenticator=authenticator,
         )
         # Replace the mount digest with the verified digest, then resign the receipt.
@@ -729,7 +782,7 @@ def _supervisor_main(
             user_namespace_inode=receipt.user_namespace_inode,
             network_namespace_inode=receipt.network_namespace_inode,
             mountinfo_sha256=mountinfo_digest,
-            writable_roots=receipt.writable_roots,
+            writable_mounts=receipt.writable_mounts,
             created_at=receipt.created_at,
             key_id=receipt.key_id,
             algorithm=receipt.algorithm,
@@ -745,7 +798,7 @@ def _supervisor_main(
             user_namespace_inode=receipt.user_namespace_inode,
             network_namespace_inode=receipt.network_namespace_inode,
             mountinfo_sha256=receipt.mountinfo_sha256,
-            writable_roots=receipt.writable_roots,
+            writable_mounts=receipt.writable_mounts,
             created_at=receipt.created_at,
             key_id=receipt.key_id,
             algorithm=receipt.algorithm,

@@ -2797,7 +2797,7 @@ def test_containment_receipt_requires_network_namespace_inode() -> None:
     )
 
     base = {
-        "schema": "bb.containment-receipt.v1",
+        "schema": "bb.containment-receipt.v2",
         "lease_id": "lease-net-test",
         "runtime_id": "runtime-net-test",
         "mode": "privileged",
@@ -2808,7 +2808,11 @@ def test_containment_receipt_requires_network_namespace_inode() -> None:
             "net": 1004,
         },
         "mountinfo_sha256": "sha256:" + "0" * 64,
-        "writable_roots": ["/scratch", "/tmp", "/workspace"],
+        "writable_mounts": [
+            {"path": "/scratch", "fstype": "tmpfs", "size_bytes": 500_000, "source": "lease_tmpfs"},
+            {"path": "/tmp", "fstype": "tmpfs", "size_bytes": 500_000, "source": "lease_tmpfs"},
+            {"path": "/workspace", "fstype": "bind", "size_bytes": None, "source": "workspace_bind"},
+        ],
         "created_at": "2026-09-24T00:00:00Z",
         "key_id": "test-key",
         "algorithm": "hmac-sha256-v1",

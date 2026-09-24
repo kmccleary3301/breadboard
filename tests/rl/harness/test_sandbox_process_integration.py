@@ -96,7 +96,7 @@ def test_envelope_rejects_non_string_environment_before_fork() -> None:
     with pytest.raises(OSError, match="environment is invalid"):
         _spawn_one(None, message, [], object())
 
-def test_containment_receipt_preserves_writable_roots_through_teardown(
+def test_containment_receipt_preserves_writable_mounts_through_teardown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -110,18 +110,21 @@ def test_containment_receipt_preserves_writable_roots_through_teardown(
     )
     receipt = lease_envelope.mint_containment_receipt(
         lease_id="lease", runtime_id="runtime", mode="userns",
-        writable_roots=("/scratch", "/workspace"),
+        writable_mounts=(
+            lease_envelope.WritableMount("/scratch", "tmpfs", 500_000, "lease_tmpfs"),
+            lease_envelope.WritableMount("/workspace", "bind", None, "workspace_bind"),
+        ),
         authenticator=authenticator,
     )
-    assert receipt.writable_roots == ("/scratch", "/workspace")
+    assert tuple(mount.path for mount in receipt.writable_mounts) == ("/scratch", "/workspace")
     assert lease_envelope.verify_containment_receipt(
         receipt.to_mapping(), lease_id="lease", runtime_id="runtime",
         authenticator=authenticator,
-    ).writable_roots == receipt.writable_roots
+    ).writable_mounts == receipt.writable_mounts
     completed = lease_envelope.add_teardown_outcome(
         receipt, pid1_reaped=True, all_dead=True, authenticator=authenticator,
     )
-    assert completed.writable_roots == receipt.writable_roots
+    assert completed.writable_mounts == receipt.writable_mounts
 
 def test_envelope_rejects_writable_inherited_child_mount(
     monkeypatch: pytest.MonkeyPatch,
@@ -135,7 +138,63 @@ def test_envelope_rejects_writable_inherited_child_mount(
     )
     monkeypatch.setattr(lease_envelope, "_mountinfo", lambda: mountinfo)
     with pytest.raises(OSError, match="/dev/shm"):
-        lease_envelope._verify_mount_view("/workspace", "/scratch")
+        lease_envelope._verify_mount_view("/workspace", "/scratch", 1_000_000)
+
+
+def test_envelope_mounts_scratch_on_bounded_private_tmpfs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace, scratch = tmp_path / "workspace", tmp_path / "scratch"
+    workspace.mkdir()
+    scratch.mkdir()
+    mounted: list[tuple[str, int]] = []
+    monkeypatch.setattr(lease_envelope, "_enter_private_mount_namespace", lambda: None)
+    monkeypatch.setattr(lease_envelope, "_remount_tree_readonly", lambda path: None)
+    monkeypatch.setattr(lease_envelope, "_open_tree", lambda path: os.open(path, os.O_RDONLY))
+    monkeypatch.setattr(lease_envelope, "_move_mount", lambda fd, path: None)
+    monkeypatch.setattr(lease_envelope, "_mount_proc", lambda: None)
+    monkeypatch.setattr(lease_envelope, "_mount_tmpfs", lambda path, size, **kwargs: mounted.append((path, size)))
+    monkeypatch.setattr(lease_envelope, "_verify_mount_view", lambda workspace, scratch, size: ("sha256:" + "0" * 64, ()))
+    workspace_fd = os.open(workspace, os.O_RDONLY)
+    scratch_fd = os.open(scratch, os.O_RDONLY)
+    try:
+        lease_envelope._setup_mount_view(
+            str(workspace), str(scratch), workspace_fd, scratch_fd, 1_000_000,
+        )
+    finally:
+        os.close(workspace_fd)
+        os.close(scratch_fd)
+    assert set(dict(mounted)) == {"/tmp", str(scratch)}
+    assert sum(size for _, size in mounted) == 1_000_000
+
+
+@requires_sealed_execution
+async def test_envelope_scratch_and_tmp_are_size_limited_tmpfs(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    try:
+        scratch = primary._runtime._envelope.scratch
+        result = await primary._runtime.run_shell(
+            f"stat -f -c '%T:%S:%b' /tmp {shlex.quote(scratch)}",
+            timeout_ms=2_000, output_limit=4_096,
+        )
+        assert result["returncode"] == 0, result
+        mounts = result["stdout"].splitlines()
+        assert len(mounts) == 2
+        assert all(line.startswith("tmpfs:") for line in mounts)
+        sizes = [
+            int(block_size) * int(blocks)
+            for line in mounts
+            for _, block_size, blocks in [line.split(":")]
+        ]
+        assert 0 < sum(sizes) <= fixture.plan.resources.storage_bytes + 8192
+        assert all(size <= fixture.plan.resources.storage_bytes // 2 + 4096 for size in sizes)
+    finally:
+        await primary.close()
 
 
 @requires_sealed_execution
@@ -162,7 +221,7 @@ async def test_envelope_child_mount_is_read_only_inside_lease(
         receipt = primary._runtime.containment_receipt
         assert receipt is not None
         assert receipt.mountinfo_sha256.startswith("sha256:")
-        assert {entry["path"] for entry in receipt.writable_mounts} == {
+        assert {entry.path for entry in receipt.writable_mounts} == {
             "/tmp", str(primary._materialized.workspace_path),
             str(primary._runtime._envelope.scratch),
         }
@@ -1094,12 +1153,13 @@ async def test_real_process_preserves_absolute_workspace_and_scratch_roots(
     workspace_probe = workspace / "absolute-host-probe"
     scratch_probe = scratch / "absolute-host-probe"
     workspace_probe.write_text("workspace-host", encoding="utf-8")
-    scratch_probe.write_text("scratch-host", encoding="utf-8")
+    scratch_probe.write_text("host-invisible", encoding="utf-8")
     command = (
         f"cat {shlex.quote(str(workspace_probe))} > work/workspace-read; "
-        f"cat {shlex.quote(str(scratch_probe))} > work/scratch-read; "
-        f"printf workspace-inside > {shlex.quote(str(workspace / 'absolute-inside'))}; "
-        f"printf scratch-inside > {shlex.quote(str(scratch / 'absolute-inside'))}"
+        f"test ! -e {shlex.quote(str(scratch_probe))}; "
+        f"printf scratch-inside > {shlex.quote(str(scratch / 'absolute-inside'))}; "
+        f"cat {shlex.quote(str(scratch / 'absolute-inside'))} > work/scratch-read; "
+        f"printf workspace-inside > {shlex.quote(str(workspace / 'absolute-inside'))}"
     )
     result = await primary.runner_workspace.run_shell(command, timeout=2)
     assert result["returncode"] == 0
@@ -1107,14 +1167,13 @@ async def test_real_process_preserves_absolute_workspace_and_scratch_roots(
         "workspace-host"
     )
     assert (workspace / "work/scratch-read").read_text(encoding="utf-8") == (
-        "scratch-host"
+        "scratch-inside"
     )
     assert (workspace / "absolute-inside").read_text(encoding="utf-8") == (
         "workspace-inside"
     )
-    assert (scratch / "absolute-inside").read_text(encoding="utf-8") == (
-        "scratch-inside"
-    )
+    assert scratch_probe.read_text(encoding="utf-8") == "host-invisible"
+    assert not (scratch / "absolute-inside").exists()
     receipt = await primary.close()
     assert receipt.state is CleanupState.RELEASED
     assert await harness.manager.close() == ()
