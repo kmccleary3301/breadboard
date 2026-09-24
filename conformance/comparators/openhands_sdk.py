@@ -93,6 +93,58 @@ ALLOWED_NORMALIZATIONS = frozenset(NORMALIZATION_BY_PLACEHOLDER.values())
 PLACEHOLDERS = tuple(NORMALIZATION_BY_PLACEHOLDER)
 
 
+def _prompt_cache_key(value: Any) -> str:
+    # SDK 1.47.0 LocalConversation._llm_call_context (local_conversation.py:1611-1619)
+    # uses the conversation's UUID as its default prompt-cache shard key.
+    if type(value) is not str or UUID_RE.fullmatch(value) is None:
+        raise ValueError("prompt_cache_key must be a conversation UUID")
+    return "<EVENT_UUID>"
+
+
+def _request_workspace(value: Any, root: str) -> Any:
+    if isinstance(value, Mapping):
+        return {key: _request_workspace(item, root) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_request_workspace(item, root) for item in value]
+    if isinstance(value, str):
+        return value.replace(root, "<WORKSPACE>")
+    return value
+
+
+def compare_request_sequences(
+    supplier_bodies: Sequence[Mapping[str, Any]],
+    worker_bodies: Sequence[Mapping[str, Any]],
+    *,
+    supplier_workspace: str,
+    worker_workspace: str,
+    worker_conversation_id: str,
+) -> list[str | None]:
+    """Compare every ordered SDK request with symmetric typed workspace/key rules."""
+    if len(supplier_bodies) != len(worker_bodies):
+        raise ValueError(
+            f"request count differs: supplier {len(supplier_bodies)}, worker {len(worker_bodies)}"
+        )
+    _prompt_cache_key(worker_conversation_id)
+    results: list[str | None] = []
+    keys: list[str | None] = [None, None]
+    for index, (supplier, worker) in enumerate(zip(supplier_bodies, worker_bodies)):
+        normalized = []
+        for side, (body, root) in enumerate(
+            ((supplier, supplier_workspace), (worker, worker_workspace))
+        ):
+            key = body.get("prompt_cache_key")
+            if side == 1 and key != worker_conversation_id:
+                raise ValueError(f"request {index}: prompt_cache_key differs from worker conversation ID")
+            if keys[side] is None:
+                keys[side] = key
+            elif key != keys[side]:
+                raise ValueError(f"request {index}: prompt_cache_key changed within role {side}")
+            item = _request_workspace(_Normalizer().value(body), root)
+            normalized.append(item)
+        results.append(_first_difference(normalized[0], normalized[1], f"$.requests[{index}].body"))
+    return results
+
+
 def _is_number(value: Any) -> bool:
     return type(value) in (int, float)
 
@@ -166,6 +218,10 @@ class _Normalizer:
             return {str(k): self.value(v, key=str(k)) for k, v in value.items()}
         if isinstance(value, list):
             return [self.value(item, key=key) for item in value]
+        if key == "prompt_cache_key":
+            if value == "<EVENT_UUID>":
+                return value
+            return self._mark(_prompt_cache_key(value))
         if not isinstance(value, str):
             return value
         if value in PLACEHOLDERS:

@@ -7,7 +7,7 @@ import shutil
 
 import pytest
 
-from conformance.comparators.openhands_sdk import compare_cases, project_bb_trace, project_supplier_case
+from conformance.comparators.openhands_sdk import compare_cases, compare_request_sequences, project_bb_trace, project_supplier_case
 
 FIXTURES = Path(__file__).parent / "fixtures" / "openhands_sdk"
 CASES = tuple(sorted(path for path in FIXTURES.iterdir() if path.is_dir()))
@@ -214,3 +214,26 @@ def test_undeclared_literal_placeholder_remains_rejected() -> None:
     trace["requests"][0]["body"]["id"] = "<RESPONSE_ID>"
     with pytest.raises(ValueError, match="normalization"):
         project_bb_trace(trace)
+
+
+@pytest.mark.parametrize("key", ["constant", "not-a-uuid", "00000000-0000-0000-0000-000000000000"])
+def test_request_sequence_rejects_malformed_candidate_cache_key(key: str) -> None:
+    source = {"prompt_cache_key": "f77abdcc-8ac9-460c-8d9b-e35e5b884c1a"}
+    with pytest.raises(ValueError, match="prompt_cache_key"):
+        compare_request_sequences(
+            [source], [{"prompt_cache_key": key}],
+            supplier_workspace="/opt/openhands/case/workspace",
+            worker_workspace="/var/tmp/worker/workspace",
+            worker_conversation_id="56351706-00f7-47c5-98d0-7145da8af641",
+        )
+
+
+def test_request_sequence_rejects_constant_uuid_unrelated_to_conversation() -> None:
+    source = {"prompt_cache_key": "f77abdcc-8ac9-460c-8d9b-e35e5b884c1a"}
+    with pytest.raises(ValueError, match="differs from worker conversation ID"):
+        compare_request_sequences(
+            [source], [{"prompt_cache_key": "123e4567-e89b-12d3-a456-426614174000"}],
+            supplier_workspace="/opt/openhands/case/workspace",
+            worker_workspace="/var/tmp/worker/workspace",
+            worker_conversation_id="56351706-00f7-47c5-98d0-7145da8af641",
+        )
