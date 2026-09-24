@@ -659,14 +659,20 @@ def _supervisor_main(
                 for fd in fds:
                     os.close(fd)
                 raise OSError("unknown envelope request")
-            try:
-                _spawn_one(sock, message, fds, reaper)
-            finally:
-                for fd in fds:
-                    try:
-                        os.close(fd)
-                    except OSError:
-                        pass
+            worker = os.fork()
+            if worker == 0:
+                worker_reaper = _ChildReaper()
+                try:
+                    _spawn_one(sock, message, fds, worker_reaper)
+                finally:
+                    worker_reaper.close()
+                os._exit(0)
+            for fd in fds:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+            continue
     except BaseException as exc:
         try:
             _send_credentials(

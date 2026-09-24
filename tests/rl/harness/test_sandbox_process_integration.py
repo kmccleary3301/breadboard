@@ -568,7 +568,7 @@ async def test_pinned_verifier_executes_admitted_bytes_after_source_replacement(
     harness.manager.process_backend = TrustedProcessBackend()
     primary = await harness.manager.open(fixture.request)
     verifier_path = tmp_path / "verifier"
-    verifier_path.write_bytes(b"#!/bin/sh\nprintf admitted-verifier\n")
+    shutil.copyfile(Path(os.path.realpath("/bin/sh")), verifier_path)
     verifier_path.chmod(0o500)
     verifier_digest = "sha256:" + __import__("hashlib").sha256(
         verifier_path.read_bytes()
@@ -576,12 +576,12 @@ async def test_pinned_verifier_executes_admitted_bytes_after_source_replacement(
     pinned = _snapshot_installed_executable(str(verifier_path), verifier_digest)
     primary._runtime._command_executable = pinned
     replacement = tmp_path / "replacement-verifier"
-    replacement.write_bytes(b"#!/bin/sh\nprintf attacker-controlled\n")
+    shutil.copyfile(Path(os.path.realpath("/bin/false")), replacement)
     replacement.chmod(0o500)
     os.replace(replacement, verifier_path)
 
     result = await primary._runtime.run_argv(
-        (str(verifier_path),),
+        (str(verifier_path), "-c", "printf admitted-verifier"),
         timeout_ms=1_000,
         output_limit=4_096,
     )
