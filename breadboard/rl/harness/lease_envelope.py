@@ -43,12 +43,6 @@ _RECEIPT_SCHEMA = "bb.containment-receipt.v1"
 _MAX_FRAME = 256 * 1024
 _MAX_FDS = 64
 
-_AT_FDCWD = -100
-_SYS_OPEN_TREE = 428
-_SYS_MOVE_MOUNT = 429
-_OPEN_TREE_CLONE = 1
-_OPEN_TREE_CLOEXEC = 0x80000
-_MOVE_MOUNT_F_EMPTY_PATH = 0x00000004
 
 class RuntimeContainment(str, Enum):
     ATTESTED = "attested"
@@ -465,33 +459,6 @@ def _unbind_path(target: str) -> None:
         ctypes.c_int(_MNT_DETACH),
     )
 
-def _bind_fd_tree(source_fd: int, target: str) -> None:
-    libc = ctypes.CDLL(None, use_errno=True)
-    syscall = libc.syscall
-    syscall.restype = ctypes.c_long
-    tree_fd = syscall(
-        ctypes.c_long(_SYS_OPEN_TREE),
-        ctypes.c_int(_AT_FDCWD),
-        ctypes.c_char_p(f"/proc/self/fd/{source_fd}".encode()),
-        ctypes.c_uint(_OPEN_TREE_CLONE | _OPEN_TREE_CLOEXEC),
-    )
-    if tree_fd < 0:
-        error = ctypes.get_errno()
-        raise OSError(error, os.strerror(error))
-    try:
-        result = syscall(
-            ctypes.c_long(_SYS_MOVE_MOUNT),
-            ctypes.c_int(tree_fd),
-            ctypes.c_char_p(b""),
-            ctypes.c_int(_AT_FDCWD),
-            ctypes.c_char_p(os.fsencode(target)),
-            ctypes.c_uint(_MOVE_MOUNT_F_EMPTY_PATH),
-        )
-        if result != 0:
-            error = ctypes.get_errno()
-            raise OSError(error, os.strerror(error))
-    finally:
-        os.close(tree_fd)
 def _verify_bind_identity(source_fd: int, target: str) -> None:
     source_stat = os.fstat(source_fd)
     target_stat = os.stat(target, follow_symlinks=True)
@@ -512,13 +479,26 @@ def _setup_mount_view(
     tmpfs_size_bytes: int,
 ) -> tuple[str, tuple[str, ...]]:
     _enter_private_mount_namespace()
+    staging_root = f"/dev/shm/.breadboard-envelope-{os.getpid()}"
+    workspace_stage = f"{staging_root}/workspace"
+    scratch_stage = f"{staging_root}/scratch"
+    os.makedirs(staging_root, mode=0o700)
+    os.mkdir(workspace_stage, mode=0o700)
+    os.mkdir(scratch_stage, mode=0o700)
+    _bind_path(os.path.abspath(workspace), workspace_stage)
+    _bind_path(os.path.abspath(scratch), scratch_stage)
     _mount_tmpfs("/tmp", tmpfs_size_bytes)
     for path in (workspace, scratch):
         os.makedirs(os.path.abspath(path), mode=0o700, exist_ok=True)
-    _bind_fd_tree(workspace_fd, os.path.abspath(workspace))
-    _bind_fd_tree(scratch_fd, os.path.abspath(scratch))
+    _bind_path(workspace_stage, os.path.abspath(workspace))
+    _bind_path(scratch_stage, os.path.abspath(scratch))
     _verify_bind_identity(workspace_fd, os.path.abspath(workspace))
     _verify_bind_identity(scratch_fd, os.path.abspath(scratch))
+    _unbind_path(workspace_stage)
+    _unbind_path(scratch_stage)
+    os.rmdir(workspace_stage)
+    os.rmdir(scratch_stage)
+    os.rmdir(staging_root)
     _remount_readonly("/")
     _mount_proc()
     return _verify_mount_view(workspace, scratch)
