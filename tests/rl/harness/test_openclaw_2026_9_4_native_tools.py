@@ -47,3 +47,19 @@ def test_exec_and_process_poll_clamp(tmp_path: Path) -> None:
     tools.scope.cleanup()
 
 
+def test_max_live_processes_counts_every_exec_including_foreground(tmp_path: Path) -> None:
+    tools = OpenClawNativeTools(tmp_path)
+    try:
+        for index in range(4):
+            res = tools.execute("exec", {"command": "sleep 30", "background": True})
+            assert res.get("status") == "running"
+        # The 5th exec call is foreground (no background or pty flags).
+        # Per Kyle's process choice in issue 15, max_live_processes=4 must count
+        # EVERY live exec process, rejecting the 5th call.
+        fifth = tools.execute("exec", {"command": "echo foreground_should_be_rejected"})
+        assert fifth.get("isError") is True
+        assert fifth.get("status") == "rejected"
+        assert "OpenClaw live process cap exceeded" in str(fifth.get("output", ""))
+    finally:
+        tools.scope.cleanup()
+

@@ -364,7 +364,7 @@ async function executePrepared() {
       continue;
     }
     try {
-      if (call.name === "exec" && (call.arguments?.background === true || call.arguments?.pty === true)) {
+      if (call.name === "exec") {
         const listed = await tools.get("process").execute("worker-live-limit", { action: "list" });
         const sessions = Array.isArray(listed?.details?.sessions) ? listed.details.sessions : [];
         const live = sessions.filter((session) => session?.status === "running" || session?.status === "backgrounded").length;

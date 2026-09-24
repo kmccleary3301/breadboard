@@ -292,7 +292,13 @@ class _OpenClawWorkerClient:
     ) -> None:
         self.workspace = str(Path(workspace).resolve())
         self.node = node or os.environ.get("OPENCLAW_NODE", "node")
-        self.dist = dist or os.environ.get("OPENCLAW_DIST", "/opt/openclaw/dist")
+        fallback_dist = "/tmp/openclaw-npm-20260923/node_modules/openclaw/dist"
+        default_dist = (
+            "/opt/openclaw/dist"
+            if Path("/opt/openclaw/dist").is_dir()
+            else (fallback_dist if Path(fallback_dist).is_dir() else "/opt/openclaw/dist")
+        )
+        self.dist = dist or os.environ.get("OPENCLAW_DIST", default_dist)
         if not Path(self.dist).is_dir():
             raise FileNotFoundError(f"pinned OpenClaw dist is unavailable: {self.dist}")
         worker = Path(__file__).with_name("openclaw_tool_worker.mjs")
