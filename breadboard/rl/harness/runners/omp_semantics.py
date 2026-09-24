@@ -18,7 +18,7 @@ from difflib import SequenceMatcher
 from typing import Any, TypeVar
 
 from breadboard_engine.provider.native_response import NativeProviderResponse, NativeToolCall
-from ..omp_native_tools import deny_excluded_capabilities
+from ..omp_native_tools import deny_declared_read_route, deny_excluded_capabilities
 
 # xxHash32 constants from xxhash_rust::xxh32::xxh32 (seed 0 in the supplier).
 _P1 = 0x9E3779B1
@@ -558,6 +558,7 @@ class OMPSemanticsState:
         worker: Any = None,
         case_id: str | None = None,
         capability_denials: Mapping[str, Mapping[str, Any]] | None = None,
+        cwd: str | None = None,
     ) -> None:
         if request_cap <= 0:
             raise ValueError("request_cap must be positive")
@@ -566,6 +567,7 @@ class OMPSemanticsState:
         self.tool_schemas = tuple(dict(schema) for schema in tool_schemas)
         self.request_cap = request_cap
         self.worker = worker
+        self.cwd = cwd
         self.case_id = case_id
         self.capability_denials = {
             str(key): dict(value)
@@ -618,6 +620,12 @@ class OMPSemanticsState:
             deny_excluded_capabilities(
                 arguments,
                 denial_policy=self.capability_denials,
+            )
+            deny_declared_read_route(
+                call.name,
+                arguments,
+                denial_policy=self.capability_denials,
+                cwd=self.cwd,
             )
         except PermissionError as exc:
             return str(exc)
@@ -758,6 +766,12 @@ class OMPSemanticsState:
                     deny_excluded_capabilities(
                         arguments,
                         denial_policy=self.capability_denials,
+                    )
+                    deny_declared_read_route(
+                        call.name,
+                        arguments,
+                        denial_policy=self.capability_denials,
+                        cwd=self.cwd,
                     )
                 except PermissionError as exc:
                     error = str(exc)

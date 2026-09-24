@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from functools import cache
 from pathlib import Path
 import hashlib
 import json
@@ -13,6 +14,7 @@ import pytest
 
 from breadboard.rl.harness.omp_native_tools import (
     NativeToolWorker,
+    PinnedNativeWorkerSpec,
     NativeWorkerPhaseError,
     deny_excluded_capabilities,
     deny_pinned_route,
@@ -21,6 +23,16 @@ from breadboard.rl.harness.omp_native_tools import (
 )
 
 _PINNED_SOURCE_SHA256 = "67822418bad69de015d28a1bbd45fa7be689fdce367dfa3d584bdfcfbfcb5587"
+
+@cache
+def _runtime_spec() -> PinnedNativeWorkerSpec:
+    source_root = os.environ.get("BB_OMP_TEST_SOURCE_ROOT")
+    bun = os.environ.get("BB_OMP_TEST_BUN")
+    if (source_root is None) != (bun is None):
+        raise ValueError("both BB_OMP_TEST_SOURCE_ROOT and BB_OMP_TEST_BUN are required")
+    if source_root is not None and bun is not None:
+        return PinnedNativeWorkerSpec.for_test(bun=Path(bun), source_root=Path(source_root))
+    return pinned_worker_spec()
 
 
 def _source_zip_path() -> Path | None:
@@ -37,7 +49,7 @@ def _source_zip_path() -> Path | None:
 
 
 def _differential_source_root() -> Path:
-    return Path(pinned_worker_spec().source_root)
+    return Path(_runtime_spec().source_root)
 
 
 def _differential_bun() -> Path | None:
@@ -47,7 +59,7 @@ def _differential_bun() -> Path | None:
     discovered = shutil.which("bun")
     if discovered:
         return Path(discovered)
-    pinned = Path(pinned_worker_spec().bun)
+    pinned = Path(_runtime_spec().bun)
     return pinned if pinned.is_file() else None
 
 
@@ -131,7 +143,7 @@ def _pinned_source(relative: str) -> str:
             if len(matches) != 1:
                 raise AssertionError(f"pinned source member is not unique: {relative} -> {matches}")
             return archive.read(matches[0]).decode("utf-8")
-    return (Path(pinned_worker_spec().source_root) / relative).read_text(encoding="utf-8")
+    return (Path(_runtime_spec().source_root) / relative).read_text(encoding="utf-8")
 
 
 def _source_registry_sets() -> dict[str, set[str]]:
@@ -252,8 +264,8 @@ def test_static_route_policy_is_typed_and_fail_closed() -> None:
         deny_pinned_route({"route": "internal:agent"}, denial_policy=policy)
 
 @pytest.mark.skipif(
-    not Path(pinned_worker_spec().bun).is_file()
-    or not Path(pinned_worker_spec().source_root).is_dir(),
+    not Path(_runtime_spec().bun).is_file()
+    or not Path(_runtime_spec().source_root).is_dir(),
     reason="pinned OMP runtime/source is unavailable on this host",
 )
 def test_real_pinned_worker_classifies_fuzz_overadmission_fixtures(tmp_path: Path) -> None:
@@ -264,16 +276,13 @@ def test_real_pinned_worker_classifies_fuzz_overadmission_fixtures(tmp_path: Pat
         archive.writestr("member", "fixture")
     sqlite_path = literal_root / "xyz.sqlite"
     sqlite_path.write_bytes(b"SQLite format 3\0")
-    worker = NativeToolWorker(cwd=str(tmp_path))
-    denials = {
-        capability: {
-            "schema_version": "bb.omp-capability-denial.v1",
-            "capability": capability,
-            "message": f"OMP capability denied: {capability}",
-            "source_ref": "test",
-        }
-        for capability in ("pty", "async", "archive", "sqlite", "pdf", "image", "video", "document", "url", "ssh", "internal-resource")
-    }
+    (tmp_path / "visible.txt").write_text("read route observation preserves the real tool\n", encoding="utf-8")
+    worker = NativeToolWorker(cwd=str(tmp_path), spec=_runtime_spec())
+    config = json.loads(
+        (Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17/native-config.json")
+        .read_text(encoding="utf-8")
+    )
+    denials = config["capability_denials"]
     try:
         worker.start()
         worker.phase(
@@ -297,22 +306,28 @@ def test_real_pinned_worker_classifies_fuzz_overadmission_fixtures(tmp_path: Pat
                     {"id": "sqlite", "name": "read", "arguments": {"path": "file://evil/xyz.sqlite:users"}},
                     {"id": "url", "name": "read", "arguments": {"path": "HTTP://example.invalid"}},
                     {"id": "ssh", "name": "read", "arguments": {"path": "ssh://example.invalid/etc/hosts"}},
+                    {"id": "plain", "name": "read", "arguments": {"path": "visible.txt"}},
                 ],
             },
         )
-        assert [call["route"]["route"] for call in prepared["calls"]] == ["archive", "sqlite", "url", "ssh"]
-        assert [call["error"] for call in prepared["calls"]] == [
+        assert [call["route"]["route"] for call in prepared["calls"]] == ["archive", "sqlite", "url", "ssh", "file"]
+        assert [call.get("error") for call in prepared["calls"]] == [
             "OMP capability denied: archive",
             "OMP capability denied: sqlite",
             "OMP capability denied: url",
             "OMP capability denied: ssh",
+            None,
         ]
+        completed = worker.phase("execute_batch", {})
+        plain = next(item for item in completed["results"] if item["id"] == "plain")
+        assert plain["isError"] is False
+        assert any("read route observation preserves the real tool" in part["text"] for part in plain["content"])
     finally:
         worker.stop()
 
 @pytest.mark.skipif(
-    not Path(pinned_worker_spec().bun).is_file()
-    or not Path(pinned_worker_spec().source_root).is_dir(),
+    not Path(_runtime_spec().bun).is_file()
+    or not Path(_runtime_spec().source_root).is_dir(),
     reason="pinned OMP runtime/source is unavailable on this host",
 )
 def test_real_pinned_worker_rejects_tampered_classifier_module(tmp_path: Path) -> None:
@@ -329,7 +344,7 @@ def test_real_pinned_worker_rejects_tampered_classifier_module(tmp_path: Path) -
     tampered = copied_root / next(iter(classifier["modules"].values()))["path"]
     tampered.write_bytes(tampered.read_bytes() + b"\n")
     classifier["source_root"] = str(copied_root)
-    worker = NativeToolWorker(cwd=str(tmp_path))
+    worker = NativeToolWorker(cwd=str(tmp_path), spec=_runtime_spec())
     try:
         worker.start()
         with pytest.raises(NativeWorkerPhaseError, match="source verification failed"):
@@ -359,8 +374,8 @@ def test_real_pinned_worker_rejects_tampered_classifier_module(tmp_path: Path) -
         worker.stop()
 
 @pytest.mark.skipif(
-    not Path(pinned_worker_spec().bun).is_file()
-    or not Path(pinned_worker_spec().source_root).is_dir(),
+    not Path(_runtime_spec().bun).is_file()
+    or not Path(_runtime_spec().source_root).is_dir(),
     reason="pinned OMP runtime/source is unavailable on this host",
 )
 def test_real_pinned_worker_rejects_unknown_classifier_module(tmp_path: Path) -> None:
@@ -368,7 +383,7 @@ def test_real_pinned_worker_rejects_unknown_classifier_module(tmp_path: Path) ->
     config = json.loads((root / "native-config.json").read_text(encoding="utf-8"))
     classifier = json.loads(json.dumps(config["route_classifier"]))
     classifier["modules"]["unknown.ts"] = next(iter(classifier["modules"].values()))
-    worker = NativeToolWorker(cwd=str(tmp_path))
+    worker = NativeToolWorker(cwd=str(tmp_path), spec=_runtime_spec())
     try:
         worker.start()
         with pytest.raises(NativeWorkerPhaseError, match="route_classifier.modules has invalid keys"):
@@ -415,7 +430,7 @@ def test_route_declarations_match_parsed_pinned_omp_registries() -> None:
     assert policy["ssh"]["route"]["patterns"] == ssh_patterns
 
 def test_worker_resolves_verified_installed_entrypoint(tmp_path: Path) -> None:
-    worker = NativeToolWorker(cwd=str(tmp_path))
+    worker = NativeToolWorker(cwd=str(tmp_path), spec=_runtime_spec())
     command = worker.start().command
     assert command[1] == str(verified_tool_worker_path())
     assert str(tmp_path) not in command[1]
@@ -474,12 +489,12 @@ while True:
 
 
 @pytest.mark.skipif(
-    not Path(pinned_worker_spec().bun).is_file()
-    or not Path(pinned_worker_spec().source_root).is_dir(),
+    not Path(_runtime_spec().bun).is_file()
+    or not Path(_runtime_spec().source_root).is_dir(),
     reason="pinned OMP runtime is unavailable on this host",
 )
 def test_real_pinned_worker_runs_initialize_and_close(tmp_path: Path) -> None:
-    worker = NativeToolWorker(cwd=str(tmp_path))
+    worker = NativeToolWorker(cwd=str(tmp_path), spec=_runtime_spec())
     worker.start()
     initialized = worker.phase(
         "initialize",
@@ -508,8 +523,8 @@ def test_real_pinned_worker_runs_initialize_and_close(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(
-    not Path(pinned_worker_spec().bun).is_file()
-    or not Path(pinned_worker_spec().source_root).is_dir(),
+    not Path(_runtime_spec().bun).is_file()
+    or not Path(_runtime_spec().source_root).is_dir(),
     reason="pinned OMP runtime is unavailable on this host",
 )
 @pytest.mark.parametrize("capability", ["pty", "async"])
@@ -517,7 +532,7 @@ def test_real_pinned_worker_denies_excluded_bash_capabilities(
     tmp_path: Path,
     capability: str,
 ) -> None:
-    worker = NativeToolWorker(cwd=str(tmp_path))
+    worker = NativeToolWorker(cwd=str(tmp_path), spec=_runtime_spec())
     advertisement = {
         "system_prompt": "",
         "tool_descriptions": {name: name for name in ("read", "bash", "edit", "write")},
@@ -563,12 +578,12 @@ def test_real_pinned_worker_denies_excluded_bash_capabilities(
 
 
 @pytest.mark.skipif(
-    not Path(pinned_worker_spec().bun).is_file()
-    or not Path(pinned_worker_spec().source_root).is_dir(),
+    not Path(_runtime_spec().bun).is_file()
+    or not Path(_runtime_spec().source_root).is_dir(),
     reason="pinned OMP runtime is unavailable on this host",
 )
 def test_real_pinned_worker_closes_background_brush_descendant(tmp_path: Path) -> None:
-    worker = NativeToolWorker(cwd=str(tmp_path))
+    worker = NativeToolWorker(cwd=str(tmp_path), spec=_runtime_spec())
     worker.start()
     advertisement = {
         "system_prompt": "",
@@ -603,8 +618,8 @@ def test_real_pinned_worker_closes_background_brush_descendant(tmp_path: Path) -
 
 
 @pytest.mark.skipif(
-    not Path(pinned_worker_spec().bun).is_file()
-    or not Path(pinned_worker_spec().source_root).is_dir(),
+    not Path(_runtime_spec().bun).is_file()
+    or not Path(_runtime_spec().source_root).is_dir(),
     reason="pinned OMP runtime is unavailable on this host",
 )
 @pytest.mark.parametrize("mutation", ["top", "descriptions", "denials", "denial_entry", "settings"])
@@ -633,7 +648,7 @@ def test_real_pinned_worker_rejects_advertisement_extra_keys(tmp_path: Path, mut
         advertisement["capability_denials"]["pty"]["extra"] = True
     else:
         advertisement["settings"] = {"request_cap": 8, "model_max_tokens": 2048, "provider_attempts": 1, "extra": True}
-    worker = NativeToolWorker(cwd=str(tmp_path))
+    worker = NativeToolWorker(cwd=str(tmp_path), spec=_runtime_spec())
     try:
         message = "invalid capability denial" if mutation == "denials" else "invalid keys"
         with pytest.raises(NativeWorkerPhaseError, match=message):

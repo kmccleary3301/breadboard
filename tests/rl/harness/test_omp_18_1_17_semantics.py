@@ -8,7 +8,7 @@ import pytest
 
 from conformance.comparators.oh_my_pi_18_1_17 import project_bb_trace
 from breadboard_engine.provider.native_response import NativeProviderResponse, NativeToolCall
-from breadboard.rl.harness.omp_native_tools import supplier_cli_invocation
+from breadboard.rl.harness.omp_native_tools import deny_declared_read_route, supplier_cli_invocation
 from breadboard.rl.harness.runners.omp_semantics import (
     EditStore,
     LENGTH_SKIP_MESSAGE,
@@ -353,6 +353,21 @@ def test_omp_declared_route_exclusions_deny_before_worker_invocation() -> None:
     assert worker.invocations == 0
     assert state.effects == {}
 
+
+
+def test_declared_read_route_preserves_literal_selector_filename(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
+    policy = json.loads((root / "native-config.json").read_text())["capability_denials"]
+    literal = tmp_path / "bundle.zip:state.sqlite"
+    literal.write_text("literal file", encoding="utf-8")
+    deny_declared_read_route(
+        "read", {"path": literal.name}, cwd=str(tmp_path), denial_policy=policy
+    )
+    literal.unlink()
+    with pytest.raises(PermissionError, match="OMP capability denied: archive"):
+        deny_declared_read_route(
+            "read", {"path": literal.name}, cwd=str(tmp_path), denial_policy=policy
+        )
 
 
 def test_omp_mixed_denials_preserve_source_order_and_execute_allowed_calls() -> None:

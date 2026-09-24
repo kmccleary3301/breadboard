@@ -1,5 +1,5 @@
 #!/opt/omp/runtime/bun-linux-x64-baseline/bun
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, realpath } from "node:fs/promises";
 
 // Persistent tool-only phase worker. The Conductor owns provider transport and
 // the model loop; this process only composes and executes the four SDK tools.
@@ -32,20 +32,6 @@ async function sha256File(path: string): Promise<string> {
   return Buffer.from(digest).toString("hex");
 }
 
-let pinnedExpandPath: ((value: string) => string) | null = null;
-let pinnedUrlPredicate: ((value: string) => boolean) | null = null;
-let pinnedSshPredicate: ((value: string) => boolean) | null = null;
-let pinnedSplitPathAndSel: ((value: string) => { path: string; sel?: string }) | null = null;
-let pinnedSplitPathAndSelPreferringLiteral: ((value: string, cwd: string) => Promise<{ path: string; sel?: string }>) | null = null;
-let pinnedProbeLiteralPathExists: ((value: string, cwd: string) => Promise<"exists" | "missing" | "unknown">) | null = null;
-let pinnedResolveReadPath: ((value: string, cwd: string) => string) | null = null;
-let pinnedSplitPdfImageReadPath: ((value: string) => { pdfPath: string; page?: number } | null) | null = null;
-let pinnedIsVideoPath: ((value: string) => boolean) | null = null;
-let pinnedReadImageMetadata: ((value: string) => Promise<{ mimeType?: string } | null>) | null = null;
-let pinnedConvertibleExtensions: ReadonlySet<string> | null = null;
-let pinnedArchiveResolver: ((session: any, path: string, cache: Map<any, any>, signal?: AbortSignal) => Promise<any>) | null = null;
-let pinnedSqliteResolver: ((session: any, path: string, cache: Map<any, any>, signal?: AbortSignal) => Promise<any>) | null = null;
-let pinnedInternalRouter: any = null;
 let prepared: Array<Call & { error?: string }> = [];
 
 function sleep(milliseconds: number): Promise<void> {
@@ -224,61 +210,64 @@ function routeCapability(route: string): string | undefined {
   return undefined;
 }
 
+const PINNED_READ_SHA256 = "270694388f57680524c3df3f6223e845dc8c4d78e2146748d2013c63ae9ba935";
+const READ_ROUTE_MARKER = "__OMP_PINNED_ROUTE__:";
+const READ_BRANCHES: ReadonlyArray<readonly [string, string]> = [
+  ["if (parsedUrlTarget) {", "url"],
+  ["return this.#handleInternalUrl(internalTarget.path, parsed, signal);", "internal"],
+  ["if (archivePath) {", "archive"],
+  ["if (sqlitePath) {", "sqlite"],
+  ["if (isDirectory) {", "file"],
+  ["if (pdfImageRead) {", "pdf"],
+  ["if (isVideoPath(absolutePath)) {", "video"],
+  ["if (parsed.kind === \"image\") {", "image"],
+  ["} else if (mimeType) {", "image"],
+  ["} else if (shouldConvertWithMarkit) {", "document"],
+  ["// One read for every consumer below.", "file"],
+  ["throw new ToolError(`Path '${localReadPath}' not found`);", "file"],
+];
+type ReadRouteTool = { execute: (id: string, params: { path: string }) => Promise<unknown> };
+let pinnedReadTool: ReadRouteTool | null = null;
+
+function observePinnedReadBranches(sourceRoot: string): void {
+  const sourcePath = `${sourceRoot}/packages/coding-agent/src/tools/read.ts`;
+  Bun.plugin({
+    name: "verified-omp-read-route-observer",
+    setup(build) {
+      build.onLoad({ filter: /\/tools\/read\.ts\?omp-route-observer$/ }, async ({ path }) => {
+        const canonicalSource = await realpath(sourcePath);
+        if (path !== `${canonicalSource}?omp-route-observer`) {
+          throw new Error(`unexpected route observer module path ${path}`);
+        }
+        if (await sha256File(sourcePath) !== PINNED_READ_SHA256) throw new Error("pinned read dispatcher digest mismatch");
+        let contents = await Bun.file(sourcePath).text();
+        for (const [needle, route] of READ_BRANCHES) {
+          const occurrences = contents.split(needle).length - 1;
+          if (occurrences !== (route === "internal" ? 2 : 1)) {
+            throw new Error(`pinned read branch changed: ${needle}`);
+          }
+          const observation = route === "internal"
+            ? `throw new Error("${READ_ROUTE_MARKER}" + (scheme === "ssh" ? "ssh" : "internal"));`
+            : `throw new Error("${READ_ROUTE_MARKER}${route}");`;
+          contents = contents.replaceAll(needle, needle.endsWith("{") ? `${needle}\n${observation}` : `${observation}\n${needle}`);
+        }
+        return { contents, loader: "ts" };
+      });
+    },
+  });
+}
+
 async function classifyPinnedRead(value: unknown): Promise<PinnedRoute> {
-  if (typeof value !== "string") return { route: "unknown" };
-  if (
-    !pinnedExpandPath || !pinnedUrlPredicate || !pinnedSshPredicate
-    || !pinnedSplitPathAndSel || !pinnedSplitPathAndSelPreferringLiteral
-    || !pinnedProbeLiteralPathExists || !pinnedResolveReadPath
-    || !pinnedSplitPdfImageReadPath || !pinnedIsVideoPath || !pinnedReadImageMetadata
-    || !pinnedConvertibleExtensions || !pinnedArchiveResolver || !pinnedSqliteResolver
-    || !pinnedInternalRouter
-  ) throw new Error("pinned read classifier unavailable");
-
-  let readPath = value;
-  if (readPath.startsWith("file://")) readPath = pinnedExpandPath(readPath);
-  if (pinnedUrlPredicate(readPath)) return { route: "url" };
-  if (pinnedSshPredicate(readPath)) return { route: "ssh" };
-  const scheme = readPath.match(/^([a-z][a-z0-9+.-]*):\/\//i)?.[1]?.toLowerCase();
-  if (pinnedInternalRouter.canResolve(readPath)) {
-    if (scheme && scheme !== "local") return { route: `internal:${scheme}` };
-    if (scheme === "local") {
-      const parsed = new URL(readPath);
-      if (parsed.pathname) readPath = decodeURIComponent(parsed.pathname);
-    }
-  }
-
-  const literalSplit = await pinnedSplitPathAndSelPreferringLiteral(readPath, workspace);
-  const rawPathIsLiteral = literalSplit.sel === undefined && pinnedSplitPathAndSel(readPath).sel !== undefined;
-  const cache = new Map();
-  if (!rawPathIsLiteral) {
-    const archive = await pinnedArchiveResolver(session, readPath, cache);
-    if (archive) return { route: "archive", matched_path: archive.absolutePath };
-    const sqlite = await pinnedSqliteResolver(session, readPath, cache);
-    if (sqlite) return { route: "sqlite", matched_path: sqlite.absolutePath };
-    const pdfCandidate = pinnedSplitPdfImageReadPath(readPath);
-    if (pdfCandidate && (await pinnedProbeLiteralPathExists(readPath, workspace)) === "missing") {
-      return { route: "pdf", matched_path: pdfCandidate.pdfPath };
-    }
-  }
-
-  const localPath = literalSplit.path;
-  const absolutePath = pinnedResolveReadPath(localPath, workspace);
-  if (pinnedIsVideoPath(localPath)) return { route: "video", matched_path: absolutePath };
+  if (typeof value !== "string" || pinnedReadTool === null) return { route: "unclassified" };
   try {
-    const stat = await Bun.file(absolutePath).stat();
-    if (!stat.isDirectory) {
-      const image = await pinnedReadImageMetadata(absolutePath);
-      if (image?.mimeType) return { route: "image", matched_path: absolutePath };
-      const dot = localPath.lastIndexOf(".");
-      const extension = dot >= 0 ? localPath.slice(dot).toLowerCase() : "";
-      if (pinnedConvertibleExtensions.has(extension)) return { route: "document", matched_path: absolutePath };
+    await pinnedReadTool.execute("read-route-observation", { path: value });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.startsWith(READ_ROUTE_MARKER)) {
+      return { route: message.slice(READ_ROUTE_MARKER.length) };
     }
-  } catch {
-    // Missing paths are plain-file candidates; the native read tool reports the
-    // pinned not-found error after admission.
   }
-  return { route: "file", matched_path: absolutePath };
+  return { route: "unclassified" };
 }
 function requireAdvertisement(value: unknown): {
   systemPrompt: string;
@@ -422,28 +411,6 @@ async function initialize(payload: Record<string, any>) {
   convertMessages = providerModule.convertMessages as typeof convertMessages;
   const schemaModule = await import(`${pinnedSourceRoot}/packages/omptype/src/json-schema.ts`);
   irToJsonSchema = schemaModule.irToJsonSchema as typeof irToJsonSchema;
-  const pathModule = await import(`${pinnedSourceRoot}/packages/coding-agent/src/tools/path-utils.ts`);
-  const pdfModule = await import(`${pinnedSourceRoot}/packages/coding-agent/src/tools/read-pdf.ts`);
-  const videoModule = await import(`${pinnedSourceRoot}/packages/coding-agent/src/utils/video.ts`);
-  const mimeModule = await import(`${pinnedSourceRoot}/packages/utils/src/mime.ts`);
-  const markitModule = await import(`${pinnedSourceRoot}/packages/coding-agent/src/utils/markit.ts`);
-  const archiveModule = await import(`${pinnedSourceRoot}/packages/coding-agent/src/tools/read-archive.ts`);
-  const sqliteModule = await import(`${pinnedSourceRoot}/packages/coding-agent/src/tools/read-sqlite.ts`);
-  const routerModule = await import(`${pinnedSourceRoot}/packages/coding-agent/src/internal-urls/router.ts`);
-  pinnedExpandPath = pathModule.expandPath;
-  pinnedUrlPredicate = pathModule.isReadableUrlPath;
-  pinnedSshPredicate = pathModule.pathTargetsSsh;
-  pinnedSplitPathAndSel = pathModule.splitPathAndSel;
-  pinnedSplitPathAndSelPreferringLiteral = pathModule.splitPathAndSelPreferringLiteral;
-  pinnedProbeLiteralPathExists = pathModule.probeLiteralPathExists;
-  pinnedResolveReadPath = pathModule.resolveReadPath;
-  pinnedSplitPdfImageReadPath = pdfModule.splitPdfImageReadPath;
-  pinnedIsVideoPath = videoModule.isVideoPath;
-  pinnedReadImageMetadata = mimeModule.readImageMetadata;
-  pinnedConvertibleExtensions = markitModule.CONVERTIBLE_EXTENSIONS;
-  pinnedArchiveResolver = archiveModule.resolveArchiveReadPath;
-  pinnedSqliteResolver = sqliteModule.resolveSqliteReadPath;
-  pinnedInternalRouter = routerModule.InternalUrlRouter.instance();
   const { SessionManager } = await import(`${pinnedSourceRoot}/packages/coding-agent/src/session/session-manager.ts`);
   const settings = await Settings.init({ cwd: workspace, agentDir: String(payload.scratch), inMemory: true, configFiles: [], overrides: {
     "retry.enabled": false, "retry.fallbackChains": {}, "compaction.enabled": false,
@@ -463,6 +430,13 @@ async function initialize(payload: Record<string, any>) {
   });
   session = created.session;
   tools = session.agent.state.tools.filter((tool: any) => TOOL_NAMES.includes(tool.name));
+  const originalRead = tools.find((tool: any) => tool.name === "read");
+  if (!originalRead || await sha256File(`${pinnedSourceRoot}/packages/coding-agent/src/tools/read.ts`) !== PINNED_READ_SHA256) {
+    throw new Error("pinned read dispatcher verification failed");
+  }
+  observePinnedReadBranches(pinnedSourceRoot);
+  const { ReadTool: RouteReadTool } = await import(`${pinnedSourceRoot}/packages/coding-agent/src/tools/read.ts?omp-route-observer`);
+  pinnedReadTool = new RouteReadTool(originalRead.session);
   return {
     schema_version: PHASE_SCHEMA,
     kind: "initialized",

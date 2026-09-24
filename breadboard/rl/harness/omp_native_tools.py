@@ -6,11 +6,13 @@ Rust/NAPI leaves. Offline tests can validate the command, settings, admission,
 and request/result projection without executing native code.
 """
 from dataclasses import dataclass
+import hashlib
 import importlib.resources
 import json
 import os
 from pathlib import Path
 import select
+import re
 import struct
 import subprocess
 from typing import Any, Mapping
@@ -61,6 +63,27 @@ class PinnedNativeWorkerSpec:
     archive_sha256: str = OMP_ARCHIVE_SHA256
     lock_sha256: str = OMP_LOCK_SHA256
     platform: str = "linux-x64-baseline"
+    @classmethod
+    def for_test(cls, *, bun: Path, source_root: Path) -> "PinnedNativeWorkerSpec":
+        """Verified local runtime override; production defaults never read environment."""
+        if not bun.is_file() or not source_root.is_dir():
+            raise FileNotFoundError("test OMP Bun and source root must exist")
+        classifier = _sealed_route_classifier()
+        modules = {
+            entry["path"]: entry["sha256"]
+            for entry in classifier["modules"].values()
+        }
+        modules["bun.lock"] = classifier["lock_sha256"]
+        modules["packages/coding-agent/src/tools/read.ts"] = "sha256:270694388f57680524c3df3f6223e845dc8c4d78e2146748d2013c63ae9ba935"
+        for relative, digest in modules.items():
+            path = source_root / relative
+            if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest.removeprefix("sha256:"):
+                raise ValueError(f"test OMP pinned source digest mismatch: {relative}")
+        return cls(
+            bun=str(bun),
+            source_root=str(source_root),
+            cli=str(source_root / OMP_CLI_RELATIVE),
+        )
 
     def command(self, *, cwd: str, model: str, task: str, no_session: bool = True) -> tuple[str, ...]:
         """Exact supplier-compatible command used by the capture packet."""
@@ -150,6 +173,47 @@ def deny_pinned_route(
         raise PermissionError(f"OMP capability denial policy unavailable: {policy_capability}")
     raise PermissionError(entry["message"])
 
+
+def deny_declared_read_route(
+    name: str,
+    arguments: Mapping[str, Any],
+    *,
+    denial_policy: Mapping[str, Mapping[str, Any]],
+    cwd: str | None = None,
+) -> None:
+    """Partition syntactically declared remote and structured reads before dispatch."""
+    path = arguments.get("path")
+    if name != "read" or not isinstance(path, str):
+        return
+    for capability in ("url", "ssh"):
+        declaration = denial_policy.get(capability, {}).get("route", {})
+        if any(
+            re.search(pattern, path, re.IGNORECASE)
+            for pattern in declaration.get("patterns", ())
+        ):
+            deny_pinned_route({"route": capability}, denial_policy=denial_policy)
+    scheme = re.match(r"^([a-z][a-z0-9+.-]*)://", path, re.IGNORECASE)
+    if scheme:
+        name = scheme.group(1).lower()
+        declaration = denial_policy.get("internal-resource", {}).get("route", {})
+        if name not in {"file", "local"} and name in declaration.get("schemes", ()):
+            deny_pinned_route({"route": f"internal:{name}"}, denial_policy=denial_policy)
+        return
+    if cwd is None:
+        return
+    try:
+        if (Path(cwd) / path).exists():
+            return
+    except OSError:
+        return
+    # A colon is a structured member/table request, not an extension alone.
+    resource, delimiter, _selector = path.partition(":")
+    if not delimiter:
+        return
+    for capability in ("archive", "sqlite"):
+        declaration = denial_policy.get(capability, {}).get("route", {})
+        if any(resource.lower().endswith(extension) for extension in declaration.get("extensions", ())):
+            deny_pinned_route({"route": capability}, denial_policy=denial_policy)
 
 def deny_excluded_capabilities(
     arguments: Mapping[str, Any],
@@ -256,8 +320,11 @@ class NativeToolWorker:
         self._request_id += 1
         request_id = self._request_id
         request_payload = dict(payload)
-        if operation == "initialize":
-            request_payload.setdefault("route_classifier", _sealed_route_classifier())
+        if operation == "initialize" and "route_classifier" not in request_payload:
+            classifier = dict(_sealed_route_classifier())
+            if isinstance(self.spec, PinnedNativeWorkerSpec) and self.spec.source_root != OMP_SOURCE_ROOT_LINUX:
+                classifier["source_root"] = self.spec.source_root
+            request_payload["route_classifier"] = classifier
         body = json.dumps(
             {
                 "schema_version": "bb.native-worker.rpc.v1",
