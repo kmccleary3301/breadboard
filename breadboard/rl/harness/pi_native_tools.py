@@ -33,15 +33,18 @@ def _run_worker(request: Mapping[str, Any], *, cwd: str | os.PathLike[str]) -> d
     if len(payload.encode("utf-8")) > _MAX_REQUEST_BYTES:
         raise PiNativeWorkerError(f"request exceeds {_MAX_REQUEST_BYTES} bytes")
     environment = os.environ.copy()
-    process = subprocess.run(
-        [_node_executable(), str(_WORKER)],
-        input=payload.encode("utf-8"),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        cwd=str(cwd),
-        env=environment,
-        check=False,
-    )
+    try:
+        process = subprocess.run(
+            [_node_executable(), str(_WORKER)],
+            input=payload.encode("utf-8"),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=str(cwd),
+            env=environment,
+            check=False,
+        )
+    except OSError as exc:
+        raise PiNativeWorkerError(f"native worker could not start: {exc}") from exc
     if process.returncode != 0:
         diagnostics = process.stderr.decode("utf-8", "replace").strip()
         raise PiNativeWorkerError(diagnostics or f"native worker exited with code {process.returncode}")

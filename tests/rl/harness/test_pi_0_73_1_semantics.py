@@ -275,10 +275,11 @@ def test_parse_streaming_json_differential_against_pinned_node() -> None:
         )
 
 
-def test_argument_parsing_fails_closed_without_pinned_worker(monkeypatch) -> None:
+@pytest.mark.parametrize("node", ["/usr/bin/false", "/nonexistent/bb-pi-node"])
+def test_argument_parsing_fails_closed_without_pinned_worker(monkeypatch, node) -> None:
     from breadboard.rl.harness.pi_native_tools import PiNativeWorkerError
 
-    monkeypatch.setenv("PI_NODE", "/usr/bin/false")
+    monkeypatch.setenv("PI_NODE", node)
     with pytest.raises(PiNativeWorkerError):
         parse_streaming_json('{"path":"x"}')
 
