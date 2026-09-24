@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 
 import json
+import tarfile
+import shutil
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
@@ -30,6 +32,11 @@ PACKET_TRACE_SHA256 = {
     "H-05-terminal-lifecycle": "b0b801a0b7affa832aa381b40cfa140d0efb89e8e8f499a656c8c175e47bf36e",
     "H-06-request-budget-stop": "bd65f26d9003fd3bd3346ba8f198a42663b901bb0489ee75c601316fe8130c72",
 }
+E_HERMES = Path(
+    "/Users/kylemccleary/projects/breadboard/docs_tmp/bb_direction_assessment/"
+    "engine_pr_handoff_20260827/e4_admission_20260914T221653Z/"
+    "do2-20260923/hermes"
+)
 TARGET_CONFIG = Path(__file__).resolve().parents[2] / "config/e4_targets/hermes_agent/2026.9.11/native-config.json"
 
 
@@ -368,7 +375,34 @@ def _replay_kit(tmp_path: Path) -> Path:
         "hermes_capture_cases.json",
     ):
         (capture / name).touch()
+    (capture / "hermes_capture_cases.json").write_bytes(
+        (E_HERMES / "kit" / "hermes_capture_cases.json").read_bytes()
+    )
     return kit_root
+
+def test_replay_spec_retrieves_every_packet_case_and_receiver_receipt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(e4_hermes_native_replay, "_checkout_commit", lambda: "a" * 40)
+    monkeypatch.setattr(e4_hermes_native_replay, "_prepare_bundle", lambda head, bundle: "f" * 64)
+    monkeypatch.setattr(e4_hermes_native_replay, "verify_local_bundle", lambda bundle, head: None)
+    packet = E_HERMES / "packet" / "hermes-supplier-capture-packet-rerun3.tar.gz"
+    with tarfile.open(packet, "r:gz") as archive:
+        manifest = archive.extractfile("hermes-supplier-capture-packet/captures/runner-result.json")
+        assert manifest is not None
+        packet_cases = {item["case_id"] for item in json.load(manifest)["cases"]}
+    spec = e4_hermes_native_replay.do2_job_spec(
+        packet, tmp_path / "out", kit_root=_replay_kit(tmp_path),
+    )
+    assert set(spec["expected_outputs"]["cases"]) == packet_cases
+    for case in packet_cases:
+        assert set(spec["expected_outputs"]["cases"][case]) == {
+            "bb-trace.json", "comparator-report.json", "receiver/http-transcript.jsonl",
+        }
+        assert all(
+            any(entry["local"] == str(tmp_path / "out" / case / name) for entry in spec["gets"])
+            for name in spec["expected_outputs"]["cases"][case]
+        )
 
 
 def test_replay_spec_records_git_head_instead_of_stale_literal(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -482,11 +516,63 @@ def test_json_request_comparison_only_ignores_object_member_order() -> None:
     ordered["requests"][0]["body"]["messages"].reverse()
     assert not compare_cases(case_dir, ordered)["ok"]
 
+def test_supplier_and_candidate_extra_body_members_both_fail(tmp_path: Path) -> None:
+    case_dir, replay = _replay("H-01-normal-memory-skill-write")
+    supplier_case = tmp_path / case_dir.name
+    shutil.copytree(case_dir, supplier_case)
+    assert compare_cases(supplier_case, replay)["ok"]
+    trace_path = supplier_case / "trace.json"
+    supplier = json.loads(trace_path.read_bytes())
+    supplier["requests"][0]["body"]["parallel_tool_calls"] = True
+    trace_path.write_text(json.dumps(supplier), encoding="utf-8")
+    assert not compare_cases(supplier_case, replay)["ok"]
+
+    replay["requests"][0]["body"]["parallel_tool_calls"] = True
+    assert not compare_cases(case_dir, replay)["ok"]
+
+
+def _receiver_transcript(tmp_path: Path, replay: dict[str, Any]) -> Path:
+    path = tmp_path / "http-transcript.jsonl"
+    rows = (
+        {"index": index, "body": request["body"]}
+        for index, request in enumerate(replay["requests"])
+    )
+    path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_installed_receiver_observation_rejects_one_byte_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SLURM_JOB_ID", "456789")
+    case_dir, replay = _replay("H-01-normal-memory-skill-write")
+    trace_path = tmp_path / "bb-trace.json"
+    trace_path.write_text(json.dumps(replay), encoding="utf-8")
+    assert not compare_cases(case_dir, trace_path, installed_replay=True)["ok"]
+    transcript = _receiver_transcript(tmp_path, replay)
+    assert compare_cases(
+        case_dir, trace_path, installed_replay=True, receiver_transcript=transcript,
+    )["ok"]
+    rows = transcript.read_text(encoding="utf-8").splitlines()
+    first = json.loads(rows[0])
+    first["body"]["messages"][0]["content"] += "x"
+    rows[0] = json.dumps(first, ensure_ascii=False)
+    transcript.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    report = compare_cases(
+        case_dir, trace_path, installed_replay=True, receiver_transcript=transcript,
+    )
+    assert not report["ok"]
+    assert any("receiver" in item["assertion_id"] for item in report["assertions"] if item["status"] == "failed")
+
 
 def test_installed_job_id_must_match_recorded_slurm_environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     case_dir, replay = _replay("H-01-normal-memory-skill-write")
+    transcript = _receiver_transcript(tmp_path, replay)
     trace_path = tmp_path / "bb-trace.json"
     trace_path.write_text(json.dumps(replay), encoding="utf-8")
     monkeypatch.delenv("SLURM_JOB_ID", raising=False)
@@ -495,7 +581,7 @@ def test_installed_job_id_must_match_recorded_slurm_environment(
     trace_path.write_text(json.dumps(replay), encoding="utf-8")
     assert not compare_cases(case_dir, trace_path, installed_replay=True)["ok"]
     monkeypatch.setenv("SLURM_JOB_ID", "456789")
-    assert compare_cases(case_dir, trace_path, installed_replay=True, job_id="456789")["ok"]
+    assert compare_cases(case_dir, trace_path, installed_replay=True, job_id="456789", receiver_transcript=transcript)["ok"]
     monkeypatch.setenv("SLURM_JOB_ID", "other-job")
     assert not compare_cases(case_dir, trace_path, installed_replay=True, job_id="456789")["ok"]
 
@@ -515,7 +601,10 @@ def test_path_trace_report_hashes_original_bytes(tmp_path: Path, monkeypatch: py
     raw = json.dumps(replay, indent=2, ensure_ascii=False).encode("utf-8") + b"\n"
     trace_path = tmp_path / "bb-trace.json"
     trace_path.write_bytes(raw)
-    report = compare_cases(case_dir, trace_path, installed_replay=True, job_id="456789")
+    report = compare_cases(
+        case_dir, trace_path, installed_replay=True, job_id="456789",
+        receiver_transcript=_receiver_transcript(tmp_path, replay),
+    )
     assert report["ok"] is True
     assert report["mode"] == "installed-replay"
     assert report["job_id"] == "456789"

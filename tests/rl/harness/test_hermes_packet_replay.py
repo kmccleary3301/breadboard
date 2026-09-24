@@ -9,10 +9,15 @@ import sys
 from pathlib import Path
 
 import scripts.e4_hermes_native_replay as replay
-from scripts.e4_hermes_native_replay import CASES, do2_job_spec
+from scripts.e4_hermes_native_replay import do2_job_spec
 
 
 PACKET = Path("/packet/hermes-supplier-capture-packet-rerun3.tar.gz")
+SEALED_CASES = Path(
+    "/Users/kylemccleary/projects/breadboard/docs_tmp/bb_direction_assessment/"
+    "engine_pr_handoff_20260827/e4_admission_20260914T221653Z/"
+    "do2-20260923/hermes/kit/hermes_capture_cases.json"
+)
 
 
 def test_do2_spec_pins_the_public_hermes_replay_inputs_and_outputs(
@@ -24,6 +29,7 @@ def test_do2_spec_pins_the_public_hermes_replay_inputs_and_outputs(
     (kit / "hermes_sif_compose.py").touch()
     for name in ("hermes_capture_breadboard.py", "hermes_capture_probe.py", "hermes_capture_receiver.py", "hermes_capture_cases.json"):
         (operators / name).touch()
+    (operators / "hermes_capture_cases.json").write_bytes(SEALED_CASES.read_bytes())
     head = subprocess.run(["git", "-C", str(Path(replay.__file__).resolve().parents[1]), "rev-parse", "HEAD"],
                           check=True, capture_output=True, text=True).stdout.strip()
     monkeypatch.setattr(replay, "_checkout_commit", lambda: head)
@@ -39,7 +45,7 @@ def test_do2_spec_pins_the_public_hermes_replay_inputs_and_outputs(
     assert "apptainer exec --containall --cleanenv --net --network none" in spec["sbatch_script"]
     assert 'SLURM_JOB_ID="$SLURM_JOB_ID"' in spec["sbatch_script"]
     assert "/opt/breadboard-public/venv/bin/python -I -B" in spec["sbatch_script"]
-    assert set(spec["expected_outputs"]["cases"]) == set(CASES)
+    assert set(spec["expected_outputs"]["cases"]) == set(json.loads(SEALED_CASES.read_bytes())["cases"])
     assert spec["expected_outputs"]["H-06"] == "exactly 8 requests and native_stop_reason=tool_calls"
     composer_sha = hashlib.sha256((kit / "hermes_sif_compose.py").read_bytes()).hexdigest()
     assert spec["sif"]["sidecar"].endswith(f"hermes-public-{head[:12]}-{composer_sha[:12]}.sif.json")

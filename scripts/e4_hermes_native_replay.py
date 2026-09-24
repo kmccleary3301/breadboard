@@ -13,10 +13,7 @@ from typing import Any
 PACKET_SHA256 = "870fc991ddf72271766b90f113921d1c0bfff3fb58090550691bac1fd9a780d6"
 SUPPLIER_SIF_SHA256 = "70455f244b35912f319363c05c9e163f119c0235656124a797c0aad950103033"
 SOURCE_COMMIT = "939e45c91d751fadd94dcd1b873ac3cb44846213"
-CASES = (
-    "H-01-normal-memory-skill-write", "H-02-mixed-invalid-name",
-    "H-03-visible-empty-recovery", "H-04-name-repair-duplicate",
-)
+CASE_OUTPUTS = ("bb-trace.json", "comparator-report.json", "receiver/http-transcript.jsonl")
 REMOTE = "/root/bbe4-do2-20260923/hermes/replay"
 KIT_PATHS = (
     Path("hermes_sif_compose.py"),
@@ -27,6 +24,19 @@ KIT_PATHS = (
         "hermes_capture_cases.json",
     )),
 )
+
+def _sealed_cases(path: Path) -> tuple[str, ...]:
+    value = json.loads(path.read_bytes())
+    if value.get("schema_version") != "bb.e4.hermes-capture-cases.v1" or value.get("profile") != "hermes":
+        raise ValueError("Hermes sealed case-set manifest is invalid")
+    cases = value.get("cases")
+    if not isinstance(cases, dict) or not cases or any(
+        not isinstance(case_id, str) or not isinstance(case, dict)
+        or case.get("case_id") != case_id
+        for case_id, case in cases.items()
+    ):
+        raise ValueError("Hermes sealed case-set entries are invalid")
+    return tuple(sorted(cases))
 
 
 def _checkout_commit() -> str:
@@ -83,6 +93,7 @@ def do2_job_spec(
     bundle_sha256 = _prepare_bundle(head_commit, bundle)
     verify_local_bundle(bundle, head_commit)
     composer_sha = hashlib.sha256(kit_paths["hermes_sif_compose.py"].read_bytes()).hexdigest()
+    cases = _sealed_cases(kit_paths["hermes_capture_cases.json"])
     expected_sidecar = Path(
         f"/root/bbe4-do2-20260923/hermes/images/hermes-public-{head_commit[:12]}-{composer_sha[:12]}.sif.json"
     )
@@ -143,7 +154,7 @@ apptainer exec --containall --cleanenv --net --network none \\
 """
     expected = {
         "summary": "summary.json",
-        "cases": {case: ["bb-trace.json", "comparator-report.json"] for case in CASES},
+        "cases": {case: list(CASE_OUTPUTS) for case in cases},
         "trace_schema": "bb.e4.hermes-agent-trace.v1",
         "comparison": "conformance/comparators/hermes_agent.py compare_cases, all canonical fields equal",
         "H-06": "exactly 8 requests and native_stop_reason=tool_calls",
@@ -164,7 +175,7 @@ apptainer exec --containall --cleanenv --net --network none \\
         "resources": {"cpus": 16, "memory_gb": 64, "time_minutes": 240},
         "gets": [
             {"remote": f"{REMOTE}/out/summary.json", "local": str(output / "summary.json")},
-            *({"remote": f"{REMOTE}/out/{case}/{name}", "local": str(output / case / name)} for case in CASES for name in ("bb-trace.json", "comparator-report.json")),
+            *({"remote": f"{REMOTE}/out/{case}/{name}", "local": str(output / case / name)} for case in cases for name in CASE_OUTPUTS),
             {"remote": f"{REMOTE}/bb-e4-hermes-public-replay-*.out", "local": str(output / "operator.out")},
         ],
         "expected_outputs": expected,

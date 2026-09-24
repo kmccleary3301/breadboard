@@ -181,6 +181,22 @@ def _load_json(path: Path) -> Any:
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise ValueError(f"cannot load JSON {path}: {exc}") from exc
 
+def _receiver_requests(path: Path) -> list[dict[str, Any]]:
+    try:
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot load receiver HTTP transcript {path}: {exc}") from exc
+    requests: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, Mapping):
+            raise ValueError("receiver HTTP transcript row must be an object")
+        if "body" not in row:
+            continue
+        if not isinstance(row["body"], Mapping):
+            raise ValueError("receiver HTTP request body must be an object")
+        requests.append({"index": row.get("index"), "body": row["body"]})
+    return requests
+
 
 def _parse_json_or_text(value: Any) -> Any:
     if not isinstance(value, str):
@@ -266,27 +282,12 @@ def _replace_workspace(value: Any, root: str, changed: list[bool]) -> Any:
     return value
 
 
-def _body_projection(body: Mapping[str, Any], advertised: Sequence[str]) -> dict[str, Any]:
-    messages = body.get("messages", [])
-    if not isinstance(messages, list):
+def _body_projection(body: Mapping[str, Any]) -> dict[str, Any]:
+    if not isinstance(body.get("messages"), list):
         raise ValueError("request body messages must be a list")
-    tools = body.get("tools", [])
-    if not isinstance(tools, list):
+    if not isinstance(body.get("tools"), list):
         raise ValueError("request body tools must be a list")
-    projected: dict[str, Any] = {
-        "model": body.get("model"),
-        "max_tokens": body.get("max_tokens"),
-        **({"stream": copy.deepcopy(body["stream"])} if "stream" in body else {}),
-        "messages": [
-            _message_projection(item) if isinstance(item, Mapping) else copy.deepcopy(item)
-            for item in messages
-        ],
-        "tools": copy.deepcopy(tools),
-    }
-    for key in ("temperature", "top_p", "tool_choice"):
-        if key in body:
-            projected[key] = copy.deepcopy(body[key])
-    return projected
+    return copy.deepcopy(dict(body))
 
 
 def _response_projection(response: Mapping[str, Any]) -> dict[str, Any]:
@@ -319,10 +320,10 @@ def _request_projection(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any
         body = row.get("body")
         if not isinstance(body, Mapping):
             continue
-        advertised = _tool_names(body)
+        _tool_names(body)
         item: dict[str, Any] = {
             "index": row.get("index"),
-            "body": _body_projection(body, advertised),
+            "body": _body_projection(body),
         }
         requests.append(item)
     responses = {
@@ -666,9 +667,11 @@ def compare_cases(
     *,
     installed_replay: bool = False,
     job_id: str | None = None,
+    receiver_transcript: Path | str | None = None,
 ) -> dict[str, Any]:
     normalizations: list[str] = []
     trace_hash: str | None = None
+    receiver_difference: str | None = None
     mode = "installed-replay" if installed_replay else "fixture"
     try:
         expected, supplier_root = _supplier_input(supplier_case)
@@ -703,6 +706,22 @@ def compare_cases(
         else:
             job_id = job_id or candidate_job
         observed_root = _declared_workspace_root(bb_value)
+        if installed_replay:
+            if receiver_transcript is None:
+                raise ValueError("installed replay requires a persisted receiver HTTP transcript path")
+            trace_requests = bb_value.get("requests")
+            if not isinstance(trace_requests, list) or any(
+                not isinstance(row, Mapping) or not isinstance(row.get("body"), Mapping)
+                for row in trace_requests
+            ):
+                raise ValueError("BreadBoard trace request bodies must be objects")
+            recorded = [
+                {"index": row.get("index"), "body": row["body"]}
+                for row in trace_requests
+            ]
+            receiver_difference = _first_difference(
+                recorded, _receiver_requests(Path(receiver_transcript)), "$.receiver_http_requests",
+            )
         observed = project_bb_trace(bb_value)
         expected_changed, observed_changed = [False], [False]
         expected = _replace_workspace(expected, supplier_root, expected_changed)
@@ -715,6 +734,12 @@ def compare_cases(
     overlay_config = _load_json(
         Path(__file__).resolve().parents[2] / "config/e4_targets/hermes_agent/2026.9.11/native-config.json"
     )
+    if installed_replay:
+        assertions.append(_assertion(
+            f"{expected['case_id']}.receiver_http_requests_equal",
+            "recorded BreadBoard request bodies", "receiver-observed HTTP request bodies",
+            receiver_difference,
+        ))
     overlay = overlay_config["schema_overlay"]
     request_difference, used_overlay, unoverlaid = _request_difference(expected["requests"], observed["requests"], overlay)
     for field in _CANONICAL_FIELDS:
