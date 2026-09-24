@@ -2386,11 +2386,11 @@ def test_privileged_linux_bind_mount_device_replacement_fails_live_and_restart()
         os.close(root_descriptor)
     try:
         attack = request_preconfigured_bind_replace()
-        assert attack.source_before.device == replacement.stat().st_dev
-        assert attack.source_before.inode == replacement.stat().st_ino
+        assert attack.source_before.device == str(replacement.stat().st_dev)
+        assert attack.source_before.inode == str(replacement.stat().st_ino)
         assert attack.target_before.device != attack.source_before.device
-        assert root.stat().st_dev == attack.source_before.device
-        assert root.stat().st_ino == attack.source_before.inode
+        assert str(root.stat().st_dev) == attack.source_before.device
+        assert str(root.stat().st_ino) == attack.source_before.inode
         _assert_live_authority_fails_before_generation_io(
             authority, generation_one, root
         )
