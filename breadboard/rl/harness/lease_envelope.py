@@ -841,6 +841,7 @@ async def spawn_envelope_process(
         pid = _resolve_host_pid(envelope.pid1, namespace_pid)
         stdout = await _pipe_reader(stdout_r)
         stderr = await _pipe_reader(stderr_r)
+        stdin = await _pipe_writer(stdin_w)
         process = EnvelopeProcess(
             pid=pid,
             status=status_host,
