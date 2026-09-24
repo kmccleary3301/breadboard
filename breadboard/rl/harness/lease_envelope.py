@@ -1041,6 +1041,19 @@ def _launcher_main(
                 mode=mode,
             )
             os._exit(0)
+        # Pin PID1 before this process can reap it, so the host PID can never
+        # be reused under the descriptor the client signals through.
+        try:
+            pid1_fd = os.pidfd_open(child, 0)
+        except BaseException:
+            # Not yet reaped, so the raw PID still names PID1 here.
+            os.kill(child, signal.SIGKILL)
+            os.waitpid(child, 0)
+            raise
+        try:
+            _send_frame(sock, {"kind": "pid1", "pid": child}, [pid1_fd])
+        finally:
+            os.close(pid1_fd)
         _waited, status = os.waitpid(child, 0)
         all_dead = not Path(f"/proc/{child}").exists()
         _send_frame(sock, {"kind": "teardown", "pid1_reaped": True, "all_dead": all_dead})
@@ -1077,6 +1090,41 @@ def _open_attested_pidfd(
         os.close(pidfd)
         raise
 
+
+
+def _pidfd_pid(pidfd: int) -> int:
+    for line in Path(f"/proc/self/fdinfo/{pidfd}").read_text(encoding="ascii").splitlines():
+        if line.startswith("Pid:"):
+            return int(line.split()[1])
+    raise OSError(errno.ENOTSUP, "pidfd fdinfo does not report a Pid")
+
+
+def _verify_pid1_descriptor(
+    pidfd: int,
+    credentials: tuple[int, int, int],
+    pid_namespace_inode: int,
+) -> None:
+    """Check a launcher-pinned PID1 pidfd names the attested supervisor.
+
+    A pidfd keeps its process identity across PID reuse; the Pid field turns
+    -1 once that process is reaped, so an equal Pid before and after the
+    /proc reads proves those reads observed the pinned process.
+    """
+    pid = credentials[0]
+    if _pidfd_pid(pidfd) != pid:
+        raise OSError(errno.ESRCH, "envelope PID1 descriptor does not name the live supervisor")
+    if os.stat(f"/proc/{pid}/ns/pid").st_ino != pid_namespace_inode:
+        raise OSError("attested PID1 namespace identity changed")
+    uid = gid = None
+    for line in Path(f"/proc/{pid}/status").read_text(encoding="ascii").splitlines():
+        if line.startswith("Uid:"):
+            uid = int(line.split()[1])
+        elif line.startswith("Gid:"):
+            gid = int(line.split()[1])
+    if uid != credentials[1] or gid != credentials[2]:
+        raise OSError("attested PID1 credentials changed")
+    if _pidfd_pid(pidfd) != pid:
+        raise OSError(errno.ESRCH, "envelope PID1 exited during attestation")
 
 def _pidfd_send_signal(pidfd: int, sig: int) -> None:
     sender = getattr(os, "pidfd_send_signal", None)
@@ -1543,34 +1591,55 @@ def launch_envelope(
     control_child.close()
     os.close(workspace_path_fd)
     os.close(scratch_fd)
+    pid1_fd = -1
     try:
-        message, ancdata, _flags, _address = control_parent.recvmsg(
-            _MAX_FRAME + 4,
-            socket.CMSG_SPACE(_MAX_FDS * array.array("i").itemsize),
-        )
-        # SOCK_SEQPACKET preserves each response as one message.
-        if len(message) < 4:
-            raise OSError("envelope readiness is truncated")
-        size = struct.unpack("!I", message[:4])[0]
-        if size > _MAX_FRAME or len(message) != size + 4:
-            raise OSError("envelope readiness size is invalid")
-        ready = json.loads(message[4:].decode("utf-8"))
-        if ready.get("kind") == "error":
-            raise OSError(ready.get("message", "envelope launch failed"))
-        if ready.get("kind") != "ready":
-            raise OSError("envelope readiness is invalid")
-        receipt = ContainmentReceipt.from_mapping(ready["receipt"])
+        ready: dict[str, Any] | None = None
         credentials: tuple[int, int, int] | None = None
-        for level, kind, data in ancdata:
-            if level == socket.SOL_SOCKET and kind == socket.SCM_CREDENTIALS and len(data) >= 12:
-                credentials = struct.unpack("3i", data[:12])
-                break
+        pid1_pid: int | None = None
+        # SOCK_SEQPACKET preserves each frame. The launcher sends the PID1
+        # pidfd it opened before it could reap PID1; the supervisor sends
+        # readiness with kernel-verified credentials. Either may come first.
+        while ready is None or pid1_fd < 0:
+            message, ancdata, _flags, _address = control_parent.recvmsg(
+                _MAX_FRAME + 4,
+                socket.CMSG_SPACE(_MAX_FDS * array.array("i").itemsize)
+                + socket.CMSG_SPACE(12),
+            )
+            if len(message) < 4:
+                raise OSError("envelope readiness is truncated")
+            size = struct.unpack("!I", message[:4])[0]
+            if size > _MAX_FRAME or len(message) != size + 4:
+                raise OSError("envelope readiness size is invalid")
+            frame = json.loads(message[4:].decode("utf-8"))
+            received: list[int] = []
+            frame_credentials: tuple[int, int, int] | None = None
+            for level, kind, data in ancdata:
+                if level == socket.SOL_SOCKET and kind == socket.SCM_RIGHTS:
+                    values = array.array("i")
+                    values.frombytes(data[: len(data) - (len(data) % values.itemsize)])
+                    received.extend(values.tolist())
+                elif level == socket.SOL_SOCKET and kind == socket.SCM_CREDENTIALS and len(data) >= 12:
+                    frame_credentials = struct.unpack("3i", data[:12])
+            kind_name = frame.get("kind") if type(frame) is dict else None
+            if kind_name == "pid1" and pid1_fd < 0 and len(received) == 1:
+                pid1_fd = received[0]
+                pid1_pid = frame.get("pid")
+                continue
+            for fd in received:
+                os.close(fd)
+            if kind_name == "error":
+                raise OSError(frame.get("message", "envelope launch failed"))
+            if kind_name != "ready" or ready is not None:
+                raise OSError("envelope readiness is invalid")
+            ready = frame
+            credentials = frame_credentials
+        receipt = ContainmentReceipt.from_mapping(ready["receipt"])
         if credentials is None or credentials[0] <= 0:
             raise OSError("envelope supervisor credentials are missing")
-        pid1_fd = _open_attested_pidfd(
-            credentials[0], credentials, receipt.pid_namespace_inode
-        )
-        return EnvelopeLaunch(
+        if type(pid1_pid) is not int or pid1_pid != credentials[0]:
+            raise OSError("envelope PID1 descriptor does not match the supervisor")
+        _verify_pid1_descriptor(pid1_fd, credentials, receipt.pid_namespace_inode)
+        launch = EnvelopeLaunch(
             control_parent,
             pid,
             credentials[0],
@@ -1580,7 +1649,11 @@ def launch_envelope(
             str(workspace),
             str(scratch),
         )
+        pid1_fd = -1
+        return launch
     except BaseException:
+        if pid1_fd >= 0:
+            os.close(pid1_fd)
         control_parent.close()
         try:
             os.kill(pid, signal.SIGKILL)
