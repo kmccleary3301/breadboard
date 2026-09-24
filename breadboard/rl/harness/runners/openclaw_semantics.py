@@ -59,25 +59,6 @@ class RequestLimitExceeded(OpenClawSemanticsError):
 
 class ToolAdmissionExceeded(OpenClawSemanticsError):
     pass
-REQUIRED_TOOL_FIELDS = {
-    "read": ("path",),
-    "write": ("path", "content"),
-    "edit": ("path", "edits"),
-    "exec": ("command",),
-    "process": ("action",),
-}
-PROCESS_ACTIONS = {"list", "poll", "log", "write", "send-keys", "submit", "paste", "kill", "clear", "remove"}
-
-
-def _validate_prepared_tool(name: str, arguments: Mapping[str, Any]) -> None:
-    missing = [field for field in REQUIRED_TOOL_FIELDS.get(name, ()) if field not in arguments]
-    if missing:
-        raise OpenClawSemanticsError(f"missing required {name} parameters: {', '.join(missing)}")
-    if name == "edit" and (not isinstance(arguments.get("edits"), list) or not arguments["edits"]):
-        raise OpenClawSemanticsError("edit edits must be a non-empty array")
-    if name == "process" and arguments.get("action") not in PROCESS_ACTIONS:
-        raise OpenClawSemanticsError("invalid process action")
-
 
 @dataclass(frozen=True)
 class NativeStreamFragment:
@@ -321,7 +302,6 @@ def finalize_native_chat_response(
         try:
             call_id, name, raw_arguments, call_type, call_index = _call_fields(raw_call, index)
             args = _decode_tool_arguments(raw_arguments)
-            _validate_prepared_tool(name, args)
             calls.append(
                 FinalizedToolCall(
                     call_id,

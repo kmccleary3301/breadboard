@@ -25,6 +25,22 @@ def test_stream_fragments_finalize_before_dispatch() -> None:
     assert result.tool_batch.calls[0].arguments == {"path": "x", "content": "ok"}
 
 
+def test_argument_shape_is_deferred_to_native_worker() -> None:
+    result = finalize_native_chat_response(
+        {
+            "finish_reason": "tool_calls",
+            "tool_calls": [
+                {
+                    "id": "missing-path",
+                    "name": "read",
+                    "arguments": {"unexpected": "value"},
+                }
+            ],
+        }
+    )
+    assert result.tool_batch.dispatchable is True
+    assert result.tool_batch.calls[0].arguments == {"unexpected": "value"}
+
 def test_incomplete_or_malformed_terminal_call_has_no_dispatch() -> None:
     result = finalize_native_chat_response(
         {"finish_reason": "tool_calls", "tool_calls": [{"id": "bad", "name": "write", "arguments": '{"path":'}]}
