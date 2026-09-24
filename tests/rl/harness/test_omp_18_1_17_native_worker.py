@@ -295,13 +295,17 @@ def test_real_pinned_worker_classifies_fuzz_overadmission_fixtures(tmp_path: Pat
                 "calls": [
                     {"id": "archive", "name": "read", "arguments": {"path": "file://evil/data.zip:member"}},
                     {"id": "sqlite", "name": "read", "arguments": {"path": "file://evil/xyz.sqlite:users"}},
+                    {"id": "url", "name": "read", "arguments": {"path": "HTTP://example.invalid"}},
+                    {"id": "ssh", "name": "read", "arguments": {"path": "ssh://example.invalid/etc/hosts"}},
                 ],
             },
         )
-        assert [call["route"]["route"] for call in prepared["calls"]] == ["archive", "sqlite"]
+        assert [call["route"]["route"] for call in prepared["calls"]] == ["archive", "sqlite", "url", "ssh"]
         assert [call["error"] for call in prepared["calls"]] == [
             "OMP capability denied: archive",
             "OMP capability denied: sqlite",
+            "OMP capability denied: url",
+            "OMP capability denied: ssh",
         ]
     finally:
         worker.stop()

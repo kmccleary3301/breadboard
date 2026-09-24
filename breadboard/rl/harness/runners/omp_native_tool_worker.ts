@@ -214,7 +214,10 @@ function requireRouteClassifier(value: unknown): RouteClassifier {
 type PinnedRoute = { route: string; matched_path?: string };
 
 function routeCapability(route: string): string | undefined {
-  if (route === "archive" || route === "sqlite" || route === "image" || route === "video" || route === "pdf" || route === "document") {
+  if (
+    route === "archive" || route === "sqlite" || route === "image" || route === "video"
+    || route === "pdf" || route === "document" || route === "url" || route === "ssh"
+  ) {
     return route;
   }
   if (route.startsWith("internal:")) return "internal-resource";
