@@ -125,7 +125,9 @@ def _normalize_at_prefix(value: str) -> str:
         return value
     without_at = value[1:]
     if (
-        without_at.startswith(("/", "~"))
+        without_at.startswith("/")
+        or without_at == "~"
+        or without_at.startswith(("~/", "~\\"))
         or re.match(r"^[A-Za-z]:", without_at)
         or any(
             without_at.startswith(prefix)
