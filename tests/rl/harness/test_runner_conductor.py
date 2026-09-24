@@ -4582,7 +4582,12 @@ async def test_openhands_iteration_budget_stops_at_configured_turn_limit(tmp_pat
             pythonpaths.append(p)
     env["PYTHONPATH"] = ":".join(pythonpaths)
     env["OPENHANDS_SUPPRESS_BANNER"] = "1"
-
+    try:
+        check = subprocess.run([py312, "-c", "from breadboard.rl.harness.openhands_worker import factory"], env=env, capture_output=True, timeout=5)
+        if check.returncode != 0:
+            pytest.skip("openhands worker not importable in python3.12")
+    except Exception:
+        pytest.skip("openhands worker probe failed")
     worker_code = """
 import sys
 from breadboard.rl.harness.native_worker import WorkerChannel

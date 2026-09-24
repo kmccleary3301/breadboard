@@ -147,7 +147,12 @@ def test_worker_built_llm_uses_sealed_config_and_mutating_sampling_drops_tempera
             pythonpaths.append(p)
     env["PYTHONPATH"] = ":".join(pythonpaths)
     env["OPENHANDS_SUPPRESS_BANNER"] = "1"
-
+    try:
+        check = subprocess.run([py312, "-c", "import openhands"], env=env, capture_output=True, timeout=5)
+        if check.returncode != 0:
+            pytest.skip("openhands SDK not importable in python3.12")
+    except Exception:
+        pytest.skip("openhands SDK probe failed")
     worker_test_code = """
 import os, sys, json, base64, pathlib
 from breadboard.rl.harness.openhands_worker import OpenHandsActor
@@ -273,6 +278,12 @@ def test_worker_first_request_matches_supplier_packet_and_preserves_temperature(
             pythonpaths.append(p)
     env["PYTHONPATH"] = ":".join(pythonpaths)
     env["OPENHANDS_SUPPRESS_BANNER"] = "1"
+    try:
+        check = subprocess.run([py312, "-c", "import openhands"], env=env, capture_output=True, timeout=5)
+        if check.returncode != 0:
+            pytest.skip("openhands SDK not importable in python3.12")
+    except Exception:
+        pytest.skip("openhands SDK probe failed")
 
     ws = tmp_path / "ws"
     sc = tmp_path / "sc"
