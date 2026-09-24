@@ -226,6 +226,41 @@ def test_request_limit_counterfeit_missing_refused_attempt_fails(tmp_path: Path)
     )
     assert report["passed"] is False
 
+
+def test_request_limit_counterfeit_unrelated_error_kind_fails(tmp_path: Path) -> None:
+    case, supplier_trace = _request_limit_case(tmp_path)
+    bb_trace = _replay_request_limit_bb_trace(case, supplier_trace)
+    counterfeit = deepcopy(bb_trace)
+    counterfeit["termination"] = {"kind": "error", "native_stop_reason": "error"}
+    report = PiCodingAgent0731Comparator()(
+        {"capture": {"case_dir": str(case)}, "replay": counterfeit}
+    )
+    assert report["passed"] is False
+
+
+def test_request_limit_counterfeit_unrelated_terminal_error_message_fails(tmp_path: Path) -> None:
+    case, supplier_trace = _request_limit_case(tmp_path)
+    bb_trace = _replay_request_limit_bb_trace(case, supplier_trace)
+    counterfeit = deepcopy(bb_trace)
+    counterfeit["messages"][-1]["errorMessage"] = "Unrelated model/transport error"
+    report = PiCodingAgent0731Comparator()(
+        {"capture": {"case_dir": str(case)}, "replay": counterfeit}
+    )
+    assert report["passed"] is False
+
+
+def test_request_limit_counterfeit_candidate_claims_supplier_role_fails(tmp_path: Path) -> None:
+    case, supplier_trace = _request_limit_case(tmp_path)
+    bb_trace = _replay_request_limit_bb_trace(case, supplier_trace)
+    counterfeit = deepcopy(bb_trace)
+    counterfeit["messages"][-1]["errorMessage"] = "PI_CAPTURE_REQUEST_LIMIT: fake"
+    counterfeit["termination"] = {"kind": "error", "native_stop_reason": "error"}
+    counterfeit["role"] = "supplier"
+    report = PiCodingAgent0731Comparator()(
+        {"capture": {"case_dir": str(case)}, "replay": counterfeit}
+    )
+    assert report["passed"] is False
+
 def test_real_packet_inverse_runtime_and_advertisement_rules_match() -> None:
     """A BB-shaped trace made from a real packet is a comparator unit fixture."""
     expected = project_supplier_case(SUPPLIER_CASE)

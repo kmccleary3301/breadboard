@@ -293,6 +293,8 @@ def _apply_request_limit_cause(
     termination: dict[str, Any],
     request_cap: int | None,
     counts: _RuleCounts,
+    *,
+    role: str,
 ) -> dict[str, Any]:
     if not isinstance(request_cap, int) or request_cap <= 0:
         return termination
@@ -319,7 +321,6 @@ def _apply_request_limit_cause(
     if _content_blocks(terminal_message) != [{"type": "text", "text": ""}]:
         return termination
 
-    role = trace.get("role")
     qualifies = False
     if role == "supplier":
         raw_error = terminal_message.get("errorMessage")
@@ -328,7 +329,10 @@ def _apply_request_limit_cause(
             and raw_error.startswith("PI_CAPTURE_REQUEST_LIMIT:")
         )
     elif role == "replay":
-        qualifies = termination.get("kind") in {"RequestLimitExceeded", "error"}
+        qualifies = (
+            termination.get("kind") == "RequestLimitExceeded"
+            and terminal_message.get("errorMessage") is None
+        )
     if not qualifies:
         return termination
 
@@ -363,6 +367,7 @@ def _project(
     runtime: _RuntimeInputs,
     counts: _RuleCounts,
     *,
+    role: str,
     request_cap: int | None = None,
 ) -> dict[str, Any]:
     messages = _canonical_messages(trace.get("messages"), runtime, counts)
@@ -383,7 +388,7 @@ def _project(
         stop = last_assistant.get("stop_reason")
         termination = {"kind": "submitted" if stop == "stop" else ("error" if stop == "error" else "running"), "native_stop_reason": stop}
     termination = _apply_request_limit_cause(
-        trace, _normalize_termination(termination), request_cap, counts
+        trace, _normalize_termination(termination), request_cap, counts, role=role
     )
     return {
         "schema_version": TRACE_SCHEMA_VERSION,
@@ -499,6 +504,7 @@ def _project_supplier_trace(
         _apply_supplier_advertisement(requests, counts),
         runtime,
         counts,
+        role="supplier",
         request_cap=request_cap,
     ), counts
 
@@ -571,6 +577,7 @@ def _project_bb_trace(
         [item for item in requests if isinstance(item, Mapping)],
         runtime,
         counts,
+        role="replay",
         request_cap=request_cap,
     ), counts
 
