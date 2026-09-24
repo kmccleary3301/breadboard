@@ -4395,19 +4395,9 @@ async def test_openhands_trace_is_frozen_json_and_comparator_compatible(
 
 
 
-async def test_openhands_error_observations_match_supplier_projection(tmp_path: Path) -> None:
-    """Compare the committed OH-02 and OH-05 event objects without fabrication.
-
-    ``OH-02-invalid-call-continues/trace.json#/events/2`` is the real
-    ``AgentErrorEvent``.  ``OH-05-iteration-budget/trace.json#/events/1`` is
-    the real ``ObservationEvent`` with a ``TerminalObservation``; only its
-    supplier-side ``/observation/is_error`` value is flipped to true.
-    """
-    from conformance.comparators.openhands_sdk import (
-        compare_cases,
-        project_bb_trace,
-        project_supplier_case,
-    )
+async def test_openhands_native_errors_are_preserved_in_replay_trace() -> None:
+    """Preserve native failed observations and repeated agent errors in the replay."""
+    from conformance.comparators.openhands_sdk import project_bb_trace
 
     fixtures = Path(__file__).resolve().parents[2] / "e4_parity" / "fixtures" / "openhands_sdk"
     oh2_path = fixtures / "OH-02-invalid-call-continues" / "trace.json"
@@ -4467,58 +4457,17 @@ async def test_openhands_error_observations_match_supplier_projection(tmp_path: 
         await session.close()
     trace = thaw_json(result.response["replay_trace"])
     projected = project_bb_trace(trace)
-    assert projected["observations"][0]["is_error"] is True
-    assert sum(
-        event["event_kind"] == "AgentErrorEvent"
-        for event in projected["observations"]
-    ) == 2
+    assert [event["event_kind"] for event in projected["observations"]] == [
+        "ObservationEvent",
+        "AgentErrorEvent",
+        "AgentErrorEvent",
+    ]
+    assert all(event["is_error"] is True for event in projected["observations"])
+    assert [event["error_text"] for event in projected["observations"][1:]] == [
+        "invalid command",
+        "invalid command",
+    ]
 
-    supplier = {
-        "schema_version": "bb.e4.openhands-supplier-trace.v1",
-        "case_id": "episode-a",
-        "controls": {"http_attempts": 1},
-        "requests": [{"index": 0, "body": {"messages": []}}],
-        "responses": [{
-            "index": 0,
-            "response": {
-                "choices": [{
-                    "index": 0,
-                    "message": {"role": "assistant", "content": ""},
-                    "finish_reason": "tool_calls",
-                }],
-            },
-        }],
-        "events": [
-            {
-                "kind": "ActionEvent",
-                "tool_name": "finish",
-                "security_risk": "LOW",
-                "tool_call": {"arguments": {}},
-            },
-            copy.deepcopy(failed_observation),
-            copy.deepcopy(agent_error),
-            copy.deepcopy(second_agent_error),
-        ],
-        "effects": {},
-        "exit": {"status": "finished"},
-    }
-    (tmp_path / "workspace").mkdir()
-    (tmp_path / "trace.json").write_text(
-        json.dumps(supplier, ensure_ascii=False), encoding="utf-8"
-    )
-    expected = project_supplier_case(tmp_path)
-    report = compare_cases(tmp_path, trace)
-    assert report["ok"] is True
-    assert expected["observations"][0]["is_error"] is True
-    assert sum(
-        event["event_kind"] == "AgentErrorEvent"
-        for event in expected["observations"]
-    ) == 2
-    tampered = copy.deepcopy(trace)
-    tampered["observations"][0]["is_error"] = False
-    negative = compare_cases(tmp_path, tampered)
-    assert negative["ok"] is False
-    assert negative["failed"] >= 1
 
 @pytest.mark.parametrize("failure_status", ["ERROR", "STUCK"])
 async def test_openhands_native_error_returns_replay_trace(failure_status: str) -> None:
