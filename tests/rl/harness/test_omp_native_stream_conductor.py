@@ -231,3 +231,6 @@ async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates
     assert trace["runtime_inputs"]["cwd"] == str(workspace)
     assert trace["runtime_inputs"]["package_dir"]
     assert result.termination in {RunnerTermination.ASSISTANT_COMPLETE, RunnerTermination.POLICY_INCOMPLETE}
+    tampered_runtime = deepcopy(trace)
+    del tampered_runtime["runtime_inputs"]["cwd"]
+    assert OhMyPi18Comparator()({"capture": str(supplier_case), "replay": tampered_runtime})["ok"] is False

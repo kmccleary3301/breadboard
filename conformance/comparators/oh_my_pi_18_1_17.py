@@ -250,12 +250,26 @@ def _termination(trace: Mapping[str, Any]) -> dict[str, Any]:
         kind = "timed_out" if trace.get("timed_out") else ("submitted" if trace.get("exit_code") == 0 else "error")
     if kind == "Submitted":
         kind = "submitted"
-    elif kind == "RequestLimitExceeded":
+    if kind == "RequestLimitExceeded":
         kind = "request_limit_exceeded"
     return {"kind": kind, "native_stop_reason": reason}
 
 
+def _validate_runtime_inputs(trace: Mapping[str, Any]) -> None:
+    if "runtime_inputs" not in trace:
+        return
+    runtime_inputs = trace["runtime_inputs"]
+    required = {"cwd", "home", "current_date", "package_dir"}
+    if (
+        not isinstance(runtime_inputs, Mapping)
+        or set(runtime_inputs) != required
+        or any(type(runtime_inputs[name]) is not str or not runtime_inputs[name] for name in required)
+    ):
+        raise ValueError("runtime_inputs must declare non-empty cwd, home, current_date, and package_dir")
+
+
 def _project(trace: Mapping[str, Any], case_dir: Path | None = None) -> dict[str, Any]:
+    _validate_runtime_inputs(trace)
     declared = _declared(trace)
     requests = _requests(trace, declared)
     episode = {
@@ -268,7 +282,6 @@ def _project(trace: Mapping[str, Any], case_dir: Path | None = None) -> dict[str
         "request_count": len(requests) or int(trace.get("receiver_requests", trace.get("request_count", 0)) or 0),
     }
     return episode
-
 def _supplier_trace(path: Path) -> dict[str, Any]:
     trace = _load(path)
     if not path.is_dir() or isinstance(trace.get("requests"), list):
