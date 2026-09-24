@@ -15,6 +15,7 @@ import pytest
 
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness import sandbox as sandbox_module
+from breadboard.rl.harness.composition import HmacSha256ReceiptAuthenticator
 from breadboard.rl.harness.materialization import (
     CleanupState,
     CleanupStepReceipt,
@@ -193,6 +194,10 @@ class RuntimeHarness:
             lease_root=self.lease_root,
             process_backend=self.backend,
             docker_backend=self.backend,
+            containment_authenticator=HmacSha256ReceiptAuthenticator(
+                key_id="test-containment-key",
+                key=b"test-containment-key-material-32-bytes!!",
+            ),
             random_bytes=DeterministicRandom(2_000),
         )
 
