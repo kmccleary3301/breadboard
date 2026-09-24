@@ -18,7 +18,6 @@ import pytest
 from breadboard.rl.harness import sandbox as sandbox_module
 from breadboard.artifacts.cas import FilesystemCAS
 from breadboard.product.harness.resolution import compile_e4_harness
-from breadboard.rl.harness.composition import HmacSha256ReceiptAuthenticator
 from breadboard.rl.harness.lease_envelope import RuntimeContainment
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.policy_provider import (
@@ -49,7 +48,12 @@ from breadboard_engine.compilation.provider_response import PI_RESPONSE_CONSUMER
 from breadboard_engine.e4_targets import load_e4_target
 from breadboard_engine.provider.contracts import OpenAICompletionsProviderProfile
 from tests.compilation.test_server_compiler import _options
-from tests.rl.harness.test_runner_conductor import _digest, _tool_grant
+from tests.rl.harness.test_runner_conductor import (
+    CONDUCTOR_TEST_AUTHENTICATOR,
+    CONDUCTOR_TEST_LEDGER,
+    _digest,
+    _tool_grant,
+)
 from tests.rl.harness.test_runner_policy_runtime import _observation, _plan, _policy_capabilities
 from tests.rl.harness.v2_service_fixtures import signed_containment_receipt
 from conformance.comparators.pi_coding_agent_0_73_1 import PiCodingAgent0731Comparator
@@ -229,12 +233,9 @@ class _NativeWorkerPort:
         initialize_workspace_write: bool = False,
     ) -> None:
         self.containment = RuntimeContainment.ATTESTED
-        self.containment_lease_id = "lease-pi-native-stream"
-        self.containment_authenticator = HmacSha256ReceiptAuthenticator(
-            key_id="pi-native-stream-test", key=b"pi-native-stream-test-key-material!!"
-        )
+        self.containment_lease_id = CONDUCTOR_TEST_LEDGER.record.lease_id
         self.containment_receipt = signed_containment_receipt(
-            self.containment_lease_id, "sandbox", self.containment_authenticator
+            self.containment_lease_id, "sandbox", CONDUCTOR_TEST_AUTHENTICATOR
         )
         self.workspace = workspace
         self.scratch = workspace / ".scratch"
@@ -524,7 +525,11 @@ async def _run_episode(
             RunnerOpenRequest(episode_id="episode-pi", effective_plan=plan), client
         )
         sink = _Events()
-        session = await ConductorAdapter(CONDUCTOR_RUNTIME_ABI).open(
+        session = await ConductorAdapter(
+            CONDUCTOR_RUNTIME_ABI,
+            containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR,
+            admitted_lease_ledger=CONDUCTOR_TEST_LEDGER,
+        ).open(
             RunnerOpenRequest(episode_id="episode-pi", effective_plan=plan),
             policy=binding,
             workspace=worker,
