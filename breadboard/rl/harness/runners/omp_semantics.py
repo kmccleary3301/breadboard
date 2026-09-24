@@ -597,7 +597,6 @@ class OMPSemanticsState:
         self.stream_fn_issued += 1
         if self.request_count >= self.request_cap:
             self.exit_status = "RequestLimitExceeded"
-            self.native_stop_reason = "error"
             refusal = {"role": "assistant", "content": "", "stopReason": "error", "isError": True}
             self.messages.append(refusal)
             return refusal

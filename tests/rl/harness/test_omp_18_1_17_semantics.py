@@ -445,8 +445,10 @@ def test_omp_request_cap_refuses_before_native_query() -> None:
         request_digest="request",
         response_id="response",
         model="capture",
-        content="done",
-        finish_reason="stop",
+        content=None,
+        finish_reason="tool_calls",
+        tool_calls=(NativeToolCall("pending", "bash", '{"command":"printf ok"}'),),
+        raw_response={"choices": [{"finish_reason": "tool_calls"}]},
     ))
     refusal = state.begin_query()
     assert refusal is not None
@@ -465,4 +467,5 @@ def test_omp_request_cap_refuses_before_native_query() -> None:
         "isError": True,
     }
     assert trace["request_count"] == 1
-    assert trace["exit"] == {"kind": "RequestLimitExceeded", "native_stop_reason": "error"}
+    assert trace["exit"] == {"kind": "RequestLimitExceeded", "native_stop_reason": "tool_calls"}
+    assert project_bb_trace(trace)["termination"]["native_stop_reason"] == "tool_calls"
