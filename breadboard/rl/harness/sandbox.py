@@ -1007,6 +1007,31 @@ def _native_worker_argv(binding: InstalledToolAdapter, executable: str) -> tuple
     return tuple(arguments)
 
 
+def _native_worker_environment(
+    plan: SandboxExecutionPlan, binding: InstalledToolAdapter
+) -> dict[str, str]:
+    """Build the admitted environment for every launch of a native worker."""
+    runtime_root = Path(binding.runtime_root_path)
+    environment = dict(plan.runtime.fixed_environment)
+    if binding.adapter_id in {
+        PI_CODING_AGENT_LOCAL_ADAPTER_ID,
+        OPENCLAW_LOCAL_ADAPTER_ID,
+    }:
+        # Pinned framed workers import supplier code only from the
+        # sealed runtime root and never receive Python env wiring.
+        if binding.adapter_id == PI_CODING_AGENT_LOCAL_ADAPTER_ID:
+            environment["PI_NATIVE_WORKER_FRAMED"] = "1"
+            environment["PI_CODING_AGENT_NODE_MODULES"] = str(runtime_root / "node_modules")
+        else:
+            environment["OPENCLAW_DIST"] = str(runtime_root / "dist")
+    else:
+        environment["PYTHONHOME"] = str(runtime_root / "python")
+        environment["PYTHONNOUSERSITE"] = "1"
+        environment["LD_LIBRARY_PATH"] = str(runtime_root / "python/lib")
+    return environment
+
+
+
 def _validate_native_root(binding: InstalledToolAdapter) -> None:
     try:
         metadata = os.stat(binding.runtime_root_path, follow_symlinks=False)
@@ -2219,23 +2244,7 @@ class TrustedProcessHandle:
                 node = _snapshot_installed_executable(
                     node_path, binding.executable_digest
                 )
-                runtime_root = Path(binding.runtime_root_path)
-                environment = dict(self.plan.runtime.fixed_environment)
-                if binding.adapter_id in {
-                    PI_CODING_AGENT_LOCAL_ADAPTER_ID,
-                    OPENCLAW_LOCAL_ADAPTER_ID,
-                }:
-                    # Pinned framed workers import supplier code only from the
-                    # sealed runtime root and never receive Python env wiring.
-                    if binding.adapter_id == PI_CODING_AGENT_LOCAL_ADAPTER_ID:
-                        environment["PI_NATIVE_WORKER_FRAMED"] = "1"
-                        environment["PI_CODING_AGENT_NODE_MODULES"] = str(runtime_root / "node_modules")
-                    else:
-                        environment["OPENCLAW_DIST"] = str(runtime_root / "dist")
-                else:
-                    environment["PYTHONHOME"] = str(runtime_root / "python")
-                    environment["PYTHONNOUSERSITE"] = "1"
-                    environment["LD_LIBRARY_PATH"] = str(runtime_root / "python/lib")
+                environment = _native_worker_environment(self.plan, binding)
                 process: asyncio.subprocess.Process | None = None
                 try:
                     process = await self._start_stopped_process(
@@ -3526,7 +3535,7 @@ class LeaseBackedRunnerWorkspace:
                 *_native_worker_argv(binding, node.proc_fd_path),
                 "--finalize-only",
                 cwd=binding.runtime_root_path,
-                env={},
+                env=_native_worker_environment(lease.plan, binding),
                 pass_fds=(node.fd,),
                 start_new_session=True,
                 stdin=asyncio.subprocess.PIPE,
