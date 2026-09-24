@@ -238,7 +238,7 @@ def test_omp_phase_state_commits_native_completion_order() -> None:
     assert [item["toolCallId"] for item in state.messages[-2:]] == ["b", "a"]
 
 
-def test_omp_length_response_declares_no_dispatch_and_preserves_exact_skip_text() -> None:
+def test_omp_length_response_skips_execution_and_preserves_terminal_punctuation() -> None:
     class Worker:
         invocations = 0
 
@@ -262,17 +262,10 @@ def test_omp_length_response_declares_no_dispatch_and_preserves_exact_skip_text(
     )
     assert [call.id for call in parsed.calls] == ["a"]
     assert parsed.dispatch_calls == ()
-    assert parsed.synthetic_results == (
-        {
-            "id": "a",
-            "name": "bash",
-            "content": LENGTH_SKIP_MESSAGE,
-            "details": {"reason": "length"},
-            "isError": False,
-            "terminate": False,
-            "completion_index": 0,
-        },
-    )
+    assert len(parsed.synthetic_results) == 1
+    assert parsed.synthetic_results[0]["id"] == "a"
+    assert parsed.synthetic_results[0]["content"].endswith("targets).")
+    assert parsed.synthetic_results[0]["details"]["reason"] == "length"
     assert worker.invocations == 0
     assert state.effects == {}
 

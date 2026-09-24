@@ -318,7 +318,7 @@ LENGTH_SKIP_MESSAGE = (
     "are truncated and unsafe to run. Do NOT retry by re-emitting the same large payload "
     "— split the work into several smaller tool calls (e.g. for `write`/`edit`, write the "
     "first chunk then append the rest with subsequent `edit` insert ops, or break the "
-    "file into multiple `write` targets)"
+    "file into multiple `write` targets)."
 )
 
 
