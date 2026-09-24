@@ -9,7 +9,11 @@ import subprocess
 import pytest
 
 from conformance.comparators.oh_my_pi_18_1_17 import project_bb_trace
-from breadboard_engine.provider.native_response import NativeProviderResponse, NativeToolCall
+from breadboard_engine.provider.native_response import (
+    NativeProviderResponse,
+    NativeStreamTermination,
+    NativeToolCall,
+)
 from breadboard.rl.harness.omp_native_tools import deny_declared_read_route, supplier_cli_invocation
 from breadboard.rl.harness.runners.omp_semantics import (
     EditStore,
@@ -526,3 +530,83 @@ def test_omp_pinned_reminder_projection_keeps_reminder_and_task_parts(tmp_path: 
     assert reminder["type"] == "text"
     assert reminder["text"].startswith("<system-reminder>\nToday: 2026-09-23; current working directory: '/workspace/repo'.")
     assert task == {"type": "text", "text": "do task"}
+
+
+_CUT_ID = "omp-capture-stream_fragments_broken-00-00"
+_CUT_ARGUMENTS = "{\"command\":\"printf 'stream-"
+
+
+def _cut_chunk(delta: dict) -> dict:
+    return {"id": "cut", "object": "chat.completion.chunk", "created": 0, "model": "capture",
+            "choices": [{"index": 0, "delta": delta, "finish_reason": None}]}
+
+
+def _terminated(reason: str, deltas: list[dict], *, content=None, calls=()) -> NativeProviderResponse:
+    return NativeProviderResponse(
+        binding_digest="binding", request_digest="request", response_id="cut",
+        model="capture", content=content, finish_reason=None, tool_calls=tuple(calls),
+        stream_termination=NativeStreamTermination(reason, tuple(_cut_chunk(d) for d in deltas)),
+    )
+
+
+def test_omp_truncated_stream_keeps_the_partial_call_with_an_undispatched_error_result() -> None:
+    # Job-1203 stream_fragments_broken: text, then a call cut mid-arguments.
+    deltas = [
+        {"role": "assistant", "content": "broken stream"},
+        {"content": " mid-argument"},
+        {"tool_calls": [{"index": 0, "id": _CUT_ID, "type": "function",
+                         "function": {"name": "bash", "arguments": ""}}]},
+        {"tool_calls": [{"index": 0, "function": {"arguments": _CUT_ARGUMENTS}}]},
+    ]
+    state = OMPSemanticsState(task="cut")
+    assert state.begin_query() is None
+    result = state.prepare_response(_terminated(
+        "stream_truncated", deltas, content="broken stream mid-argument",
+        calls=[NativeToolCall(_CUT_ID, "bash", _CUT_ARGUMENTS)],
+    ))
+    assert result.dispatch_calls == ()
+    assert [call.id for call in result.calls] == [_CUT_ID]
+    assert result.assistant == {"role": "assistant", "stopReason": "error", "content": [
+        {"type": "text", "text": "broken stream mid-argument"},
+        {"type": "toolCall", "id": _CUT_ID, "name": "bash", "arguments": _CUT_ARGUMENTS},
+    ]}
+    [placeholder] = result.synthetic_results
+    assert placeholder["content"] == (
+        "Tool call was not executed because the provider stream ended with an error before "
+        "the tool could run: OpenAI completions stream closed before a finish_reason was received"
+    )
+    assert placeholder["details"]["executed"] is False
+    state.commit_tool_results(result.calls, list(result.synthetic_results))
+    assert state.messages[-1]["role"] == "toolResult"
+    assert state.messages[-1]["toolCallId"] == _CUT_ID
+    assert state.messages[-1]["isError"] is True
+    assert state.is_exited
+    trace = state.to_trace(requests=[{}], runtime_inputs={}, effects={})
+    assert trace["exit"] == {"kind": "Submitted", "native_stop_reason": None}
+    assert trace["native_responses"] == [{"stream_termination": {
+        "reason": "stream_truncated", "chunks": [_cut_chunk(d) for d in deltas],
+    }}]
+
+
+def test_omp_transport_error_after_text_is_a_text_only_error_stop() -> None:
+    state = OMPSemanticsState(task="cut")
+    assert state.begin_query() is None
+    result = state.prepare_response(
+        _terminated("transport_error", [{"content": "partial"}], content="partial")
+    )
+    assert (result.calls, result.synthetic_results) == ((), ())
+    assert state.messages[-1]["stopReason"] == "error"
+    assert state.exit_status == "Submitted"
+    assert state.native_stop_reason is None
+
+
+@pytest.mark.parametrize(("reason", "delta"), [
+    ("stream_truncated", {"role": "assistant", "content": ""}),
+    ("transport_error", {"tool_calls": [{"index": 0, "function": {"arguments": "{"}}]}),
+    ("stream_truncated", {"content": "x", "reasoning_content": "think"}),
+])
+def test_omp_unreplayable_stream_terminations_fail_closed(reason: str, delta: dict) -> None:
+    state = OMPSemanticsState(task="cut")
+    assert state.begin_query() is None
+    with pytest.raises(OMPPhaseError):
+        state.prepare_response(_terminated(reason, [delta]))

@@ -321,6 +321,15 @@ LENGTH_SKIP_MESSAGE = (
     "file into multiple `write` targets)."
 )
 
+# Pinned openai-completions.ts:1418-1421 throws this for EOF without finish or
+# [DONE]; agent-loop.ts:3038-3060 renders the error placeholder around it.
+INCOMPLETE_STREAM_ERROR = "OpenAI completions stream closed before a finish_reason was received"
+STREAM_ERROR_SKIP_MESSAGE = (
+    "Tool call was not executed because the provider stream ended with an error "
+    "before the tool could run"
+)
+_REASONING_DELTA_FIELDS = ("reasoning", "reasoning_content", "reasoning_details")
+
 
 @dataclass(frozen=True)
 class ToolResult:
@@ -636,6 +645,8 @@ class OMPSemanticsState:
         if self.stream_fn_issued <= self.request_count:
             raise OMPPhaseError("response has no admitted provider query")
         self.request_count += 1
+        if response.stream_termination is not None:
+            return self._prepare_terminated_stream(response)
         if response.raw_response is None:
             self.native_responses.append({"finish_reason": response.finish_reason})
         else:
@@ -745,6 +756,76 @@ class OMPSemanticsState:
             False,
             dispatch_calls=tuple(dispatch_calls),
             synthetic_results=tuple(synthetic_results),
+        )
+
+    def _prepare_terminated_stream(self, response: NativeProviderResponse) -> OMPResponseResult:
+        """Pinned error stop for a stream that ended without a finish_reason.
+
+        openai-completions.ts:1227-1290 opens a block for non-empty text or any
+        tool_calls entry, and :1418 throws only when output.content is non-empty;
+        :909-943 then finalizes open tool calls, which retainCompletedToolCalls
+        (agent-loop.ts:1843-1848) keeps. agent-loop.ts:1318-1359 pairs each call
+        with a placeholder error result without executing it and returns, so
+        session.prompt resolves normally (exit "Submitted").
+        """
+        termination = response.stream_termination
+        has_text = has_tool_entries = False
+        for chunk in termination.chunks:
+            for choice in chunk.get("choices") or ():
+                delta = choice.get("delta") or {}
+                if any(delta.get(name) is not None for name in _REASONING_DELTA_FIELDS):
+                    raise OMPPhaseError("terminated stream carries reasoning deltas")
+                content = delta.get("content")
+                has_text = has_text or (isinstance(content, str) and bool(content))
+                has_tool_entries = has_tool_entries or bool(delta.get("tool_calls"))
+        if termination.reason == "stream_truncated":
+            if not (has_text or has_tool_entries):
+                raise OMPPhaseError("truncated stream without output finalizes as a stop")
+        elif has_tool_entries:
+            raise OMPPhaseError("transport error during tool-call streaming is not replayable")
+        self.native_responses.append({"stream_termination": termination.as_dict()})
+        self.native_stop_reason = None
+        calls = tuple(
+            ToolCall(call.id, call.name, call.arguments, index)
+            for index, call in enumerate(response.tool_calls)
+        )
+        blocks: list[dict[str, Any]] = []
+        if response.content:
+            blocks.append({"type": "text", "text": response.content})
+        blocks.extend(
+            {"type": "toolCall", "id": call.id, "name": call.name, "arguments": call.arguments}
+            for call in calls
+        )
+        assistant: dict[str, Any] = {"role": "assistant", "content": blocks, "stopReason": "error"}
+        self.messages.append(assistant)
+        self._pending_finish_reason = "error"
+        self.recovery.accept_turn(assistant)
+        self.exit_status = "Submitted"
+        # Only stream_truncated can carry calls; its upstream text is pinned.
+        synthetic_results = tuple(
+            {
+                "id": call.id,
+                "name": call.name,
+                "content": f"{STREAM_ERROR_SKIP_MESSAGE}: {INCOMPLETE_STREAM_ERROR}",
+                "details": {
+                    "__synthetic": True,
+                    "source": "assistant_stop_error",
+                    "executed": False,
+                    "upstreamError": INCOMPLETE_STREAM_ERROR,
+                },
+                "isError": True,
+                "terminate": False,
+                "completion_index": index,
+            }
+            for index, call in enumerate(calls)
+        )
+        return OMPResponseResult(
+            assistant,
+            calls,
+            "error",
+            not calls,
+            dispatch_calls=(),
+            synthetic_results=synthetic_results,
         )
 
     def prepare_tools(self, calls: Sequence[ToolCall]) -> dict[str, Any]:
