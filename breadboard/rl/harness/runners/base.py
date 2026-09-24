@@ -1073,6 +1073,7 @@ class NativeStreamPolicyRuntimeClientPort(CompiledPolicyRuntimeClientPort, Proto
 
     def bind_native_stream(
         self, system_prompt: str, tools: tuple[Mapping[str, Any], ...],
+        *, accept_truncated_stream: bool,
     ) -> None: ...
 
 

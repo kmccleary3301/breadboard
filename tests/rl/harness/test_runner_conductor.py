@@ -3736,6 +3736,7 @@ class _NativeCloseTestClient(RecordingPolicyClient):
 
     def bind_native_stream(
         self, system_prompt: str, tools: tuple[Mapping[str, Any], ...],
+        *, accept_truncated_stream: bool,
     ) -> None:
         self.native_stream_binding = (system_prompt, tools)
 

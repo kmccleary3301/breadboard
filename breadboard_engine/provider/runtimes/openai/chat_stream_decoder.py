@@ -14,6 +14,7 @@ from ...contract_wire import canonical_json
 from ...native_response import (
     NativeProviderResponse,
     NativeStreamFragment,
+    NativeStreamTermination,
     NativeToolCall,
 )
 from ....security import redaction
@@ -180,8 +181,13 @@ class OpenAIChatStreamDecoder:
         max_stream_fragments: int,
         extra_body: Optional[Dict[str, Any]] = None,
         request_options: Optional[Dict[str, Any]] = None,
+        accept_truncated_stream: bool = False,
     ) -> NativeProviderResponse:
-        """Decode low-level Chat SSE without constructing normalized tool calls."""
+        """Decode low-level Chat SSE without constructing normalized tool calls.
+
+        With ``accept_truncated_stream`` a begun stream that ends without a
+        finish_reason becomes a typed termination carrying its received chunks.
+        """
         stream_ctx = self._create_stream(
             client,
             model=model,
@@ -199,18 +205,60 @@ class OpenAIChatStreamDecoder:
             native_max_response_bytes=max_response_bytes,
             native_max_stream_fragments=max_stream_fragments,
         )
+        chunks: List[Any] = []
+        chunk_bytes = 0
+        chunks_overflowed = False
+        termination: Optional[str] = None
         try:
             with stream_ctx as stream:
-                for event in stream:
+                events = iter(stream)
+                while True:
+                    try:
+                        event = next(events)
+                    except StopIteration:
+                        break
+                    except (ProviderRuntimeError, AttributeError, TypeError):
+                        raise
+                    except Exception:
+                        if not accept_truncated_stream or not state.message_id:
+                            raise
+                        termination = "transport_error"
+                        break
                     context.raise_if_cancelled()
+                    if accept_truncated_stream and not chunks_overflowed:
+                        chunk = event.to_dict(mode="json")
+                        chunk_bytes += len(canonical_json(chunk).encode("utf-8"))
+                        if chunk_bytes > max_response_bytes:
+                            chunks_overflowed = True
+                            chunks.clear()
+                        else:
+                            chunks.append(chunk)
                     self._consume_event(event, context, state)
             context.raise_if_cancelled()
+            if (
+                accept_truncated_stream
+                and termination is None
+                and state.message_id
+                and not state.stream_finish_reasons.get(0)
+            ):
+                termination = "stream_truncated"
+            if termination is not None and chunks_overflowed:
+                raise self._protocol_error(
+                    "Native Chat Completions retained chunk byte limit exceeded",
+                    state,
+                    "native_response_limit_exceeded",
+                )
             return self._native_response_from_state(
                 state,
                 binding_digest=binding_digest,
                 request_digest=request_digest,
                 max_response_bytes=max_response_bytes,
                 max_stream_fragments=max_stream_fragments,
+                stream_termination=(
+                    None
+                    if termination is None
+                    else NativeStreamTermination(termination, tuple(chunks))
+                ),
             )
         except ProviderRuntimeError:
             raise
@@ -262,6 +310,7 @@ class OpenAIChatStreamDecoder:
         request_digest: str,
         max_response_bytes: int,
         max_stream_fragments: int,
+        stream_termination: Optional[NativeStreamTermination] = None,
     ) -> NativeProviderResponse:
         if not state.message_id:
             raise self._protocol_error(
@@ -269,7 +318,7 @@ class OpenAIChatStreamDecoder:
                 state,
                 "invalid_chat_response_id",
             )
-        if not state.stream_finish_reasons.get(0):
+        if stream_termination is None and not state.stream_finish_reasons.get(0):
             raise self._protocol_error(
                 "Native Chat Completions response is incomplete",
                 state,
@@ -278,7 +327,11 @@ class OpenAIChatStreamDecoder:
         calls: list[NativeToolCall] = []
         for index in sorted(state.tool_states):
             tool_state = state.tool_states[index]
-            if (
+            if stream_termination is not None:
+                if not tool_state.call_id or not tool_state.name:
+                    # A cut stream can end before a call's identity arrives.
+                    continue
+            elif (
                 not tool_state.call_id
                 or not tool_state.name
                 or not tool_state.arguments_seen
@@ -336,10 +389,13 @@ class OpenAIChatStreamDecoder:
             response_id=state.message_id,
             model=state.model,
             content="".join(state.text_parts) if state.content_seen else None,
-            finish_reason=state.stream_finish_reasons[0],
+            finish_reason=(
+                state.stream_finish_reasons[0] if stream_termination is None else None
+            ),
             tool_calls=tuple(calls),
             usage=usage,
             stream_fragments=tuple(fragments),
+            stream_termination=stream_termination,
         )
         response.validate_bounds(
             max_response_bytes=max_response_bytes,

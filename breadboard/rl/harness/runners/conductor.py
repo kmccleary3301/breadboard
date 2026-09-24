@@ -326,6 +326,7 @@ class PolicyRuntimeBinding:
 
     def bind_native_stream(
         self, system_prompt: str, tools: tuple[Mapping[str, Any], ...],
+        *, accept_truncated_stream: bool,
     ) -> None:
         if (
             self._source_consumer_id not in NATIVE_STREAM_PROFILES
@@ -338,7 +339,9 @@ class PolicyRuntimeBinding:
                 episode_id=self._episode_id,
                 effective_plan_digest=self._effective_plan_digest,
             )
-        self._client.bind_native_stream(system_prompt, tools)
+        self._client.bind_native_stream(
+            system_prompt, tools, accept_truncated_stream=accept_truncated_stream,
+        )
 
     def stage_native_http_request(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
         if (
@@ -2188,7 +2191,10 @@ class _ConductorSession:
                 "native stream bootstrap runtime inputs differ from declared inputs",
                 code="native_response_binding_invalid", **self._context(),
             )
-        self._binding.bind_native_stream(system_prompt, tuple(tool_schemas))
+        self._binding.bind_native_stream(
+            system_prompt, tuple(tool_schemas),
+            accept_truncated_stream=profile.accepts_truncated_stream,
+        )
         state = profile.state_factory(task, system_prompt, bootstrap)
         trace_requests: list[dict[str, Any]] = []
 
@@ -2481,7 +2487,8 @@ class _ConductorSession:
             if state.is_exited:
                 termination = (
                     RunnerTermination.POLICY_INCOMPLETE
-                    if state.native_stop_reason in profile.incomplete_stop_reasons
+                    if native.stream_termination is not None
+                    or state.native_stop_reason in profile.incomplete_stop_reasons
                     else RunnerTermination.ASSISTANT_COMPLETE
                 )
         await self._checkpoint("after_loop", turn=len(self._turns))

@@ -563,3 +563,70 @@ def test_native_fragment_limit_stops_retention_without_another_request():
         finally:
             client.close()
         assert len(requests) == 1
+
+
+# Job-1203 supplier capture `stream_fragments_broken`: four chunks, then EOF with
+# neither a finish chunk nor [DONE].
+_TRUNCATED_STREAM_EVENTS = [
+    {"choices": [{"delta": {"content": "broken stream", "role": "assistant"},
+                  "finish_reason": None, "index": 0}],
+     "created": 0, "id": "omp-capture-stream-stream_fragments_broken-00",
+     "model": _MODEL, "object": "chat.completion.chunk"},
+    {"choices": [{"delta": {"content": " mid-argument"}, "finish_reason": None, "index": 0}],
+     "created": 0, "id": "omp-capture-stream-stream_fragments_broken-00",
+     "model": _MODEL, "object": "chat.completion.chunk"},
+    {"choices": [{"delta": {"tool_calls": [{
+        "function": {"arguments": "", "name": "bash"},
+        "id": "omp-capture-stream_fragments_broken-00-00", "index": 0, "type": "function",
+    }]}, "finish_reason": None, "index": 0}],
+     "created": 0, "id": "omp-capture-stream-stream_fragments_broken-00",
+     "model": _MODEL, "object": "chat.completion.chunk"},
+    {"choices": [{"delta": {"tool_calls": [{
+        "function": {"arguments": "{\"command\":\"printf 'stream-"}, "index": 0,
+    }]}, "finish_reason": None, "index": 0}],
+     "created": 0, "id": "omp-capture-stream-stream_fragments_broken-00",
+     "model": _MODEL, "object": "chat.completion.chunk"},
+]
+
+
+def _invoke_truncated_stream(**flag):
+    payload = b"".join(
+        b"data: " + json.dumps(chunk).encode() + b"\n\n" for chunk in _TRUNCATED_STREAM_EVENTS
+    )
+    with _receiver(response_payload=payload) as (base_url, credential, requests):
+        profile = _profile(base_url, credential, True)
+        binding = _binding(profile)
+        runtime = _runtime()
+        client = runtime.create_client_from_profile(profile, timeout_seconds=3)
+        try:
+            response = runtime.invoke_native(
+                client=client, model=_MODEL,
+                messages=[{"role": "user", "content": "cut stream"}],
+                tools=_TOOLS, stream=True, context=_context(profile, binding),
+                binding=binding, **flag,
+            )
+        finally:
+            client.close()
+    assert len(requests) == 1
+    return response
+
+
+def test_accepted_truncated_stream_is_a_typed_termination_with_its_chunks():
+    response = _invoke_truncated_stream(accept_truncated_stream=True)
+    assert response.finish_reason is None
+    assert response.stream_termination.reason == "stream_truncated"
+    assert [dict(item) for item in response.as_dict()["stream_termination"]["chunks"]] == (
+        _TRUNCATED_STREAM_EVENTS
+    )
+    assert response.content == "broken stream mid-argument"
+    assert [call.as_dict() for call in response.tool_calls] == [{
+        "id": "omp-capture-stream_fragments_broken-00-00",
+        "name": "bash",
+        "arguments": "{\"command\":\"printf 'stream-",
+    }]
+
+
+def test_truncated_stream_without_the_profile_flag_stays_incomplete():
+    with pytest.raises(ProviderRuntimeError) as raised:
+        _invoke_truncated_stream()
+    assert raised.value.safe_code == "incomplete_chat_stream"

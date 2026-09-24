@@ -284,8 +284,13 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         stream: bool,
         context: ProviderRuntimeContext,
         binding: CompiledNativeResponseBinding,
+        accept_truncated_stream: bool = False,
     ) -> NativeProviderResponse:
-        """Invoke an admitted profile and retain its native response verbatim."""
+        """Invoke an admitted profile and retain its native response verbatim.
+
+        ``accept_truncated_stream`` is the native-stream profile's opt-in to a
+        typed termination for a begun stream that ends without a finish_reason.
+        """
         profile = context.provider_profile
         if profile is None:
             raise ProviderRuntimeError(
@@ -378,6 +383,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                     max_stream_fragments=binding.policy.max_stream_fragments,
                     extra_body=extra_body,
                     request_options=profile_options,
+                    accept_truncated_stream=accept_truncated_stream,
                 )
             else:
                 call_kwargs: Dict[str, Any] = {

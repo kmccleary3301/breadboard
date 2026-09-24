@@ -36,6 +36,9 @@ class NativeStreamProfile:
     state_module: ModuleType
     # (task, system_prompt, bootstrap) -> profile semantics state.
     state_factory: Callable[[str, str, Mapping[str, Any]], Any]
+    # A begun stream ending without a finish_reason reaches the semantics as a
+    # typed termination instead of failing in the decoder.
+    accepts_truncated_stream: bool = False
 
 
 def _pi_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
@@ -88,6 +91,7 @@ NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
         package_subpath="node_modules/@oh-my-pi/pi-coding-agent",
         state_module=omp_semantics,
         state_factory=_omp_state,
+        accepts_truncated_stream=True,
     ),
 })
 

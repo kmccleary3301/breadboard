@@ -617,6 +617,7 @@ class EpisodeOpenAICompletionsPolicyClient:
         self._native_private_responses: dict[str, Mapping[str, Any]] = {}
         self._native_tool_schemas: tuple[Mapping[str, Any], ...] | None = None
         self._native_stream_prompt: str | None = None
+        self._native_accept_truncated_stream = False
 
     def bind_compiled_plan(self, plan: EffectiveExecutionPlan) -> Mapping[str, Any]:
         """Join a source-native client to the actual selected compiled plan."""
@@ -788,6 +789,7 @@ class EpisodeOpenAICompletionsPolicyClient:
 
     def bind_native_stream(
         self, system_prompt: str, tools: tuple[Mapping[str, Any], ...],
+        *, accept_truncated_stream: bool,
     ) -> None:
         """Seal the admitted worker's bootstrap before the first stream."""
         target = self._target_projection
@@ -799,6 +801,7 @@ class EpisodeOpenAICompletionsPolicyClient:
             or type(system_prompt) is not str or not system_prompt
             or type(tools) is not tuple
             or canonical_sha256(tools) != canonical_sha256(target.chat_tools)
+            or type(accept_truncated_stream) is not bool
         ):
             raise RunnerPolicyBindingError(
                 "native stream bootstrap differs from its compiled source binding",
@@ -806,6 +809,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                 episode_id=self._episode_id, effective_plan_digest=self._effective_plan_digest,
             )
         self._native_stream_prompt = system_prompt
+        self._native_accept_truncated_stream = accept_truncated_stream
 
     def stage_native_http_request(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
         """Admit exactly one source SDK HTTP request without exposing its headers."""
@@ -1516,6 +1520,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                         stream=stream,
                         context=context,
                         binding=native_binding,
+                        accept_truncated_stream=self._native_accept_truncated_stream,
                     )
                 return self._runtime.invoke(
                     client=self._transport,
