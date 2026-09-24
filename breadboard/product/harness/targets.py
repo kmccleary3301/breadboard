@@ -272,7 +272,7 @@ def _lower_worker_target(
         ),
         "openclaw@2026.9.4": (
             "breadboard.openclaw.native-chat.v1",
-            "b3d17e8c322a92e4b922e5a771b47d20e70adb8dbd06559d079a42610528d6b1",
+            "8b2a10b1cee5e15c04462bf2adf50ae4971593c5fc5877f76d40e5504f8a8717",
         ),
     }
     recipe = recipes.get(package.target_id)

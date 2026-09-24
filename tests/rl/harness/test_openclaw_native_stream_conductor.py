@@ -304,6 +304,8 @@ class _NativeWorkerPort:
             env["OPENCLAW_DIST"] = str(_NODE_DIST)
             self._process = await asyncio.create_subprocess_exec(
                 "node",
+                "--import",
+                str(_WORKER.with_name("openclaw_classifier_loader.mjs")),
                 str(_WORKER),
                 cwd=self.workspace,
                 env=env,
@@ -565,7 +567,7 @@ async def test_openclaw_native_stream_classification_and_cleanup_envelope(tmp_pa
     assert classified["exit_code"] == 0
     assert final_env["status"] == "ok"
     assert final_env["ok"] is True
-    assert final_env["exit_code"] == 0
+    assert result.response["command_result"] == {"envelope": final_env, "exitCode": 0}
     assert result.response["replay_trace"]["classification"] == classified
     assert result.response["replay_trace"]["final_envelope"] == final_env
     assert result.response["replay_trace"]["envelope"] == final_env
@@ -598,8 +600,11 @@ async def test_openclaw_native_stream_classification_and_cleanup_envelope(tmp_pa
     assert post_env["status"] == "error"
     assert post_env["final"] == ""
     assert list(post_env["payloads"]) == []
-    assert post_env["exit_code"] == 1
-    assert "Agent runtime clean up did not settle; state ownership retained until this process exits" in post_env["error"]["message"]
+    assert "exit_code" not in post_env
+    assert post_env["error"]["message"] == (
+        "Agent exec cleanup failed: native process scope did not reach independently observed death"
+    )
+    assert fail_result.response["command_result"] == {"envelope": post_env, "exitCode": 1}
     assert fail_result.response["replay_trace"]["classification"]["envelope"]["ok"] is True
     assert fail_result.response["replay_trace"]["final_envelope"]["ok"] is False
 
