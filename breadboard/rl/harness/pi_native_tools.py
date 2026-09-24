@@ -28,7 +28,8 @@ def _node_executable() -> str:
 
 
 def _run_worker(request: Mapping[str, Any], *, cwd: str | os.PathLike[str]) -> dict[str, Any]:
-    payload = json.dumps(dict(request), ensure_ascii=False, separators=(",", ":"))
+    # ASCII escapes carry lone surrogates losslessly to JSON.parse in Node.
+    payload = json.dumps(dict(request), ensure_ascii=True, separators=(",", ":"))
     if len(payload.encode("utf-8")) > _MAX_REQUEST_BYTES:
         raise PiNativeWorkerError(f"request exceeds {_MAX_REQUEST_BYTES} bytes")
     environment = os.environ.copy()

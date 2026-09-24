@@ -281,3 +281,7 @@ def test_argument_parsing_fails_closed_without_pinned_worker(monkeypatch) -> Non
     monkeypatch.setenv("PI_NODE", "/usr/bin/false")
     with pytest.raises(PiNativeWorkerError):
         parse_streaming_json('{"path":"x"}')
+
+
+def test_argument_parsing_preserves_lone_surrogates() -> None:
+    assert parse_streaming_json('{"a":"\ud83d"}') == {"a": "\ud83d"}
