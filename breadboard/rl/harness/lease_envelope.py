@@ -12,6 +12,7 @@ import socket
 import stat
 import struct
 import time
+import tempfile
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -479,13 +480,12 @@ def _setup_mount_view(
     tmpfs_size_bytes: int,
 ) -> tuple[str, tuple[str, ...]]:
     _enter_private_mount_namespace()
-    staging_root = f"/dev/shm/.breadboard-envelope-{os.getpid()}"
+    staging_root = tempfile.mkdtemp(prefix=".breadboard-envelope-", dir="/dev/shm")
     workspace_stage = f"{staging_root}/workspace"
     scratch_stage = f"{staging_root}/scratch"
     workspace_staged = False
     scratch_staged = False
     try:
-        os.makedirs(staging_root, mode=0o700)
         os.mkdir(workspace_stage, mode=0o700)
         os.mkdir(scratch_stage, mode=0o700)
         _bind_path(os.path.abspath(workspace), workspace_stage)
