@@ -3246,6 +3246,7 @@ def test_workspace_seed_artifact_identity_is_pinned_and_paths_are_closed() -> No
         {"a": b"file", "a/b": b"nested"},
         {"A": b"upper", "a": b"lower"},
         {"A": b"file", "a/b": b"nested"},
+        {"A/x": b"x", "a/y": b"y"},
     ],
 )
 def test_workspace_seed_rejects_file_path_collisions_before_publication(

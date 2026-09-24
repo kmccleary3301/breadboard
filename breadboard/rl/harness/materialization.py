@@ -496,6 +496,11 @@ def build_workspace_seed_artifact(
         for parent in PurePosixPath(path).parents
         if parent.as_posix() != "."
     }
+    folded_entries: dict[str, str] = {}
+    for path in (*sorted(directories), *normalized_paths):
+        previous = folded_entries.setdefault(path.casefold(), path)
+        if previous != path:
+            raise ValueError("workspace seed paths collide case-insensitively")
     entries: list[SourceManifestEntry] = [
         SourceManifestEntry(".", "directory", 0, directory_mode, None)
     ]
