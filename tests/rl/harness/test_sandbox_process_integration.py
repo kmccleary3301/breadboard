@@ -46,6 +46,7 @@ from breadboard.rl.harness.sandbox import (
     _sealed_repository_diff,
     _snapshot_installed_executable,
 )
+from breadboard.rl.harness.lease_envelope import _spawn_one
 from tests.rl.harness.test_runner_terminal import (
     RecordingEventSink,
     ScriptedCancellationProbe,
@@ -76,6 +77,22 @@ requires_sealed_execution = pytest.mark.skipif(
     not _sealed_execution_supported(),
     reason="requires Linux sealed-memfd descriptor execution",
 )
+
+
+def test_envelope_rejects_non_string_environment_before_fork() -> None:
+    message = {
+        "fd_count": 0,
+        "status_index": 0,
+        "stdio_indices": [0, 0, 0],
+        "cwd_index": 0,
+        "executable_index": 0,
+        "exec_index": 0,
+        "gate_index": 0,
+        "extra_indices": [],
+        "environment": {"PATH": 1},
+    }
+    with pytest.raises(OSError, match="environment is invalid"):
+        _spawn_one(None, message, [], object())
 
 
 @requires_sealed_execution
