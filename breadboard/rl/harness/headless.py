@@ -47,6 +47,9 @@ _HEADLESS_MODULE_IDENTITY = measure_module_artifact(__file__)
 _POLICY_PROVIDER_PATH = Path(__file__).with_name("policy_provider.py")
 _POLICY_PROVIDER_IDENTITY = measure_module_artifact(str(_POLICY_PROVIDER_PATH))
 
+class ObsoleteOuterIsolationError(ValueError):
+    """Raised when an obsolete outer_isolation declaration is supplied."""
+
 
 class HeadlessWorkspaceInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -57,8 +60,53 @@ class HeadlessWorkspaceInput(BaseModel):
     base_commit: str = Field(pattern=_GIT_COMMIT_PATTERN)
     task_image_digest: str = Field(pattern=_DIGEST_PATTERN)
     containment: Literal["attested", "unconfined_test_only"] = "attested"
-    outer_isolation: Literal["apptainer"] | None = None
 
+    def __init__(self, /, **data: Any) -> None:
+        if "outer_isolation" in data:
+            raise ObsoleteOuterIsolationError(
+                "outer_isolation is obsolete and has been replaced by per-lease verified containment attestation"
+            )
+        super().__init__(**data)
+
+    @classmethod
+    def model_validate(
+        cls,
+        obj: Any,
+        *,
+        strict: bool | None = None,
+        from_attributes: bool | None = None,
+        context: Any | None = None,
+    ) -> HeadlessWorkspaceInput:
+        if isinstance(obj, Mapping) and "outer_isolation" in obj:
+            raise ObsoleteOuterIsolationError(
+                "outer_isolation is obsolete and has been replaced by per-lease verified containment attestation"
+            )
+        return super().model_validate(
+            obj,
+            strict=strict,
+            from_attributes=from_attributes,
+            context=context,
+        )
+
+    @classmethod
+    def model_validate_json(
+        cls,
+        json_data: str | bytes | bytearray,
+        *,
+        strict: bool | None = None,
+        context: Any | None = None,
+    ) -> HeadlessWorkspaceInput:
+        import json
+        payload = json.loads(json_data)
+        if isinstance(payload, Mapping) and "outer_isolation" in payload:
+            raise ObsoleteOuterIsolationError(
+                "outer_isolation is obsolete and has been replaced by per-lease verified containment attestation"
+            )
+        return super().model_validate_json(
+            json_data,
+            strict=strict,
+            context=context,
+        )
 
 class HeadlessProviderInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -227,6 +275,69 @@ class HeadlessRunRequest(BaseModel):
     event_log_path: str
     patch_path: str | None = None
 
+    def __init__(self, /, **data: Any) -> None:
+        if "outer_isolation" in data:
+            raise ObsoleteOuterIsolationError(
+                "outer_isolation is obsolete and has been replaced by per-lease verified containment attestation"
+            )
+        ws = data.get("workspace")
+        if isinstance(ws, Mapping) and "outer_isolation" in ws:
+            raise ObsoleteOuterIsolationError(
+                "outer_isolation is obsolete and has been replaced by per-lease verified containment attestation"
+            )
+        super().__init__(**data)
+
+    @classmethod
+    def model_validate(
+        cls,
+        obj: Any,
+        *,
+        strict: bool | None = None,
+        from_attributes: bool | None = None,
+        context: Any | None = None,
+    ) -> HeadlessRunRequest:
+        if isinstance(obj, Mapping):
+            if "outer_isolation" in obj:
+                raise ObsoleteOuterIsolationError(
+                    "outer_isolation is obsolete and has been replaced by per-lease verified containment attestation"
+                )
+            ws = obj.get("workspace")
+            if isinstance(ws, Mapping) and "outer_isolation" in ws:
+                raise ObsoleteOuterIsolationError(
+                    "outer_isolation is obsolete and has been replaced by per-lease verified containment attestation"
+                )
+        return super().model_validate(
+            obj,
+            strict=strict,
+            from_attributes=from_attributes,
+            context=context,
+        )
+
+    @classmethod
+    def model_validate_json(
+        cls,
+        json_data: str | bytes | bytearray,
+        *,
+        strict: bool | None = None,
+        context: Any | None = None,
+    ) -> HeadlessRunRequest:
+        import json
+        payload = json.loads(json_data)
+        if isinstance(payload, Mapping):
+            if "outer_isolation" in payload:
+                raise ObsoleteOuterIsolationError(
+                    "outer_isolation is obsolete and has been replaced by per-lease verified containment attestation"
+                )
+            ws = payload.get("workspace")
+            if isinstance(ws, Mapping) and "outer_isolation" in ws:
+                raise ObsoleteOuterIsolationError(
+                    "outer_isolation is obsolete and has been replaced by per-lease verified containment attestation"
+                )
+        return super().model_validate_json(
+            json_data,
+            strict=strict,
+            context=context,
+        )
     @field_validator("result_path", "event_log_path")
     @classmethod
     def _path_is_absolute(cls, value: str) -> str:
@@ -1341,6 +1452,7 @@ __all__ = [
     "HeadlessRunFailed",
     "HeadlessRunRequest",
     "HeadlessWorkspaceInput",
+    "ObsoleteOuterIsolationError",
     "load_headless_request",
     "load_headless_provider_route_authority",
     "run_headless_request",
