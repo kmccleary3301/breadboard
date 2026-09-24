@@ -18,13 +18,6 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping
 from breadboard.rl.harness import contracts as c
-from .composition import HmacSha256ReceiptAuthenticator
-from .lease_envelope import (
-    ContainmentReceipt,
-    ContainmentReceiptError,
-    ReceiptAuthenticator,
-    verify_containment_receipt,
-)
 
 
 QUALIFICATION_RESOURCE_PACKAGE = "breadboard.rl.harness.resources.qualification"
@@ -296,62 +289,7 @@ class MaterializedProductionCompositionFixture:
     policy_response_body: Mapping[str, object]
     policy_observation: Mapping[str, object]
     cleanup_paths: tuple[Path, ...]
-    containment_authenticator: HmacSha256ReceiptAuthenticator | None = None
 
-    def verify_containment(
-        self,
-        receipt: ContainmentReceipt | Mapping[str, Any] | None,
-        *,
-        lease_id: str,
-        runtime_id: str = "trusted-process",
-        runtime_class: c.RuntimeClass | str = c.RuntimeClass.TRUSTED_PROCESS,
-        require_teardown: bool = False,
-    ) -> ContainmentReceipt | None:
-        return verify_qualification_containment(
-            receipt,
-            lease_id=lease_id,
-            runtime_id=runtime_id,
-            runtime_class=runtime_class,
-            authenticator=self.containment_authenticator,
-            require_teardown=require_teardown,
-        )
-
-
-def verify_qualification_containment(
-    receipt: ContainmentReceipt | Mapping[str, Any] | None,
-    *,
-    lease_id: str,
-    runtime_id: str,
-    runtime_class: c.RuntimeClass | str,
-    authenticator: ReceiptAuthenticator | None = None,
-    require_teardown: bool = False,
-) -> ContainmentReceipt | None:
-    """Verify containment receipt for TRUSTED_PROCESS runtime class.
-
-    For TRUSTED_PROCESS, fails closed on missing, tampered, or lease-mismatched receipts.
-    For other runtime classes, returns None without verification.
-    """
-    normalized_class = (
-        runtime_class
-        if isinstance(runtime_class, c.RuntimeClass)
-        else c.RuntimeClass(str(runtime_class))
-    )
-    if normalized_class is not c.RuntimeClass.TRUSTED_PROCESS:
-        return None
-    actual_receipt = getattr(receipt, "containment_receipt", receipt)
-    if actual_receipt is None:
-        raise ContainmentReceiptError("containment receipt is missing")
-    if authenticator is None:
-        authenticator = getattr(receipt, "containment_authenticator", None)
-        if authenticator is None:
-            raise ContainmentReceiptError("containment receipt authenticator is missing")
-    return verify_containment_receipt(
-        actual_receipt,
-        lease_id=lease_id,
-        runtime_id=runtime_id,
-        authenticator=authenticator,
-        require_teardown=require_teardown,
-    )
 
 @contextlib.contextmanager
 def qualification_policy_server(
@@ -2200,5 +2138,4 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
         policy_response_body=MappingProxyType(policy_response),
         policy_observation=MappingProxyType(policy_observation.model_dump(mode="json")),
         cleanup_paths=(),
-        containment_authenticator=authenticator,
     )

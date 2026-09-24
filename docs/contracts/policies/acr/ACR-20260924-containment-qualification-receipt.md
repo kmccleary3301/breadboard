@@ -8,29 +8,30 @@
 
 ## 1) Problem Statement
 
-Qualification previously permitted `TRUSTED_PROCESS` runtime execution without validating a per-lease `ContainmentReceipt`. That left our safest execution lane's containment attestation unverified during qualification runs. In addition, callers could declare the obsolete `outer_isolation` parameter in headless requests instead of relying on per-lease verified containment attestation.
+Callers could previously declare the obsolete `outer_isolation` parameter in headless requests instead of relying on per-lease verified containment attestation.
+In addition, trusted-process containment requires end-to-end receipt verification:
+1. `service.py:1490-1514` enforces per-lease `ContainmentReceipt` verification via `verify_containment_receipt` at allocation time when runtime is `TRUSTED_PROCESS` and containment is `ATTESTED`, failing closed on missing, tampered, or mismatched receipts.
+2. `_PinnedTrustedProcessBackend.launch` strictly enforces `ATTESTED` containment and rejects `UNCONFINED_TEST_ONLY` with `SandboxLaunchError("production composition rejects unconfined trusted-process execution")`.
+3. `headless.py:527-531` rejects trusted-process execution with `containment != "attested"`.
+4. Caller-declared `outer_isolation` in `HeadlessWorkspaceInput` and `HeadlessRunRequest` is rejected with a typed `ObsoleteOuterIsolationError` using concise `@model_validator(mode="before")` hooks and dropped from request identity.
 
-To fail closed and ensure end-to-end security provenance:
-1. Caller-declared `outer_isolation` in `HeadlessWorkspaceInput` and `HeadlessRunRequest` is rejected with a typed `ObsoleteOuterIsolationError` and dropped from request identity.
- 2. For `TRUSTED_PROCESS`, qualification verifies `ContainmentReceipt` using `verify_containment_receipt` with the receipt authenticator, failing closed on missing, tampered, or lease-mismatched receipts.
+## 2) Scope and Surfaces
 
- ## 2) Scope and Surfaces
- 
- - Kernel modules touched:
-   - `breadboard/rl/harness/headless.py`
-   - `breadboard/rl/harness/qualification.py`
- - Test files touched:
-   - `tests/rl/harness/test_qualification_containment_receipt.py`
- - Contract surfaces touched:
-   - Headless request schema validation and identity dictionary
-   - Qualification containment verification API and fixture
- - Kernel danger-zone change? yes
+- Kernel modules touched:
+  - `breadboard/rl/harness/headless.py`
+  - `breadboard/rl/harness/qualification.py`
+- Test files touched:
+  - `tests/rl/harness/test_qualification_containment_receipt.py`
+- Contract surfaces touched:
+  - Headless request schema validation and identity dictionary
+- Kernel danger-zone change? yes
+
 ## 3) Coupling and Generalization Impact
 
 - Does this add any core -> extension dependency? no. Qualification and headless execution use existing typed primitives in `lease_envelope` and `composition`.
 - Does this narrow cross-harness parity behavior? yes. Trusted process execution requires valid containment attestation.
 - Does this alter default endpoint semantics? no. Non-trusted-process runtimes (such as Docker) are unaffected.
-- Coupling risk score (`low`) and rationale: the change enforces already-specified containment receipt verification at the qualification boundary and explicitly removes an obsolete headless field.
+- Coupling risk score (`low`) and rationale: the change enforces already-specified containment receipt verification and cleanly removes an obsolete headless field with concise validation.
 
 ## 4) Change Classification
 
@@ -41,12 +42,12 @@ To fail closed and ensure end-to-end security provenance:
 ## 5) Evidence and Validation Plan
 
 - Required contract lane tests:
-  - `tests/rl/harness/test_qualification_containment_receipt.py` (accepts signed receipt, rejects missing receipt, rejects tampered signature, rejects lease mismatch, rejects obsolete outer_isolation).
+  - `tests/rl/harness/test_qualification_containment_receipt.py` (rejects obsolete outer_isolation on HeadlessWorkspaceInput and HeadlessRunRequest, verifies public qualification entry rejects unconfined trusted-process, verifies default containment is attested).
   - Headless runner tests (`tests/rl/harness/test_headless_runner.py`).
   - Production composition lifecycle tests (`tests/rl/harness/test_production_composition_public_lifecycle.py`).
   - Qualification fixture generator tests (`tests/rl/harness/test_production_composition_fixture_generator.py`).
-- Pre-fix proof: tests failed at `66cade05` due to missing `verify_qualification_containment` and `ObsoleteOuterIsolationError`.
-- Post-fix verification: all qualification containment tests pass (8 passed).
+- Pre-fix proof: at `66cade05`, `headless.py` accepted `outer_isolation: Literal['apptainer'] | None = None` and lacked `ObsoleteOuterIsolationError`.
+- Post-fix verification: all focused tests pass.
 
 ## 6) Rollout Plan
 
