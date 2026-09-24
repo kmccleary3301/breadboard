@@ -5,7 +5,7 @@ renderer:
   selector: breadboard.oh-my-pi.v18.1.17
   revision: breadboard.oh-my-pi.v18.1.17
 prompt:
-  asset: prompts/system-prompt.md
+  asset: prompts/source-system-prompt.md
   dynamic_fields: []
 tools:
   ordered:
@@ -137,10 +137,10 @@ materialization:
     role: config
     required: true
     source_ref: oh-my-pi@3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec/packages/coding-agent/src/sdk.ts
-  - path: prompts/system-prompt.md
+  - path: prompts/source-system-prompt.md
     role: prompt
     required: true
-    source_ref: oh-my-pi@3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec/packages/coding-agent/src/system-prompt.ts
+    source_ref: oh-my-pi@3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec/packages/coding-agent/src/prompts/system/system-prompt.md
   - path: native-config.json
     role: runtime
     required: true
@@ -159,7 +159,7 @@ materialization:
     source_ref: 12_SOURCE_PINS.json
   order:
   - harness.yaml
-  - prompts/system-prompt.md
+  - prompts/source-system-prompt.md
   - native-config.json
   - tool-surface.json
   - LICENSE.txt

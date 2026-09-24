@@ -10,7 +10,7 @@ type Call = { id: string; name: string; arguments: Record<string, unknown> };
 type RouteClassifier = { sourceRoot: string; lockSha256: string; moduleDigests: Map<string, string> };
 let pinnedSourceRoot = "";
 let boundedDescriptions: Record<string, string> = {};
-let nativeSystemPrompt = "";
+let nativeSystemPrompt: string[] = [];
 let capabilityDenials: Record<string, Record<string, unknown>> = {};
 let session: any = null;
 let tools: any[] = [];
@@ -18,6 +18,7 @@ let irToJsonSchema: ((ir: unknown, options?: Record<string, unknown>) => Record<
 let workspace = "";
 let runtimeInputs: Record<string, string> = {};
 let convertMessages: ((model: any, context: any, compat: any) => unknown[]) | null = null;
+let reminderInjector: { transform: (context: { systemPrompt: string[]; messages: unknown[] }, date: string, cwd: string) => unknown } | null = null;
 const converterModel = {
   id: "capture",
   provider: "capture",
@@ -270,17 +271,21 @@ async function classifyPinnedRead(value: unknown): Promise<PinnedRoute> {
   return { route: "unclassified" };
 }
 function requireAdvertisement(value: unknown): {
-  systemPrompt: string;
-  descriptions: Record<string, string>;
+  descriptionPolicy: Record<string, Record<string, unknown>>;
   capabilityDenials: Record<string, Record<string, unknown>>;
 } {
-  const advertisement = exactRecord(value, "advertisement", ["system_prompt", "tool_descriptions", "capability_denials"], ["settings"]);
-  if (typeof advertisement.system_prompt !== "string") throw new Error("advertisement.system_prompt must be a string");
-  const typedDescriptions = exactRecord(advertisement.tool_descriptions, "advertisement.tool_descriptions", TOOL_NAMES);
-  const bounded: Record<string, string> = {};
+  const advertisement = exactRecord(value, "advertisement", ["bounded_description_policy", "capability_denials"], ["settings"]);
+  const rawPolicy = exactRecord(advertisement.bounded_description_policy, "advertisement.bounded_description_policy", TOOL_NAMES);
+  const descriptionPolicy: Record<string, Record<string, unknown>> = {};
   for (const name of TOOL_NAMES) {
-    if (typeof typedDescriptions[name] !== "string") throw new Error(`advertisement tool description must be a string: ${name}`);
-    bounded[name] = typedDescriptions[name] as string;
+    const entry = exactRecord(rawPolicy[name], `advertisement.bounded_description_policy.${name}`, ["original_sha256", "bounded_sha256", "removed_spans"]);
+    for (const field of ["original_sha256", "bounded_sha256"]) digestHex(entry[field], `${name}.${field}`);
+    if (!Array.isArray(entry.removed_spans)) throw new Error(`${name}.removed_spans must be an array`);
+    for (const span of entry.removed_spans) {
+      const source = exactRecord(span, `${name}.removed_spans`, ["text", "source_file"]);
+      if (typeof source.text !== "string" || !source.text || typeof source.source_file !== "string") throw new Error(`${name}.removed_spans is invalid`);
+    }
+    descriptionPolicy[name] = entry;
   }
   const rawDenials = advertisement.capability_denials;
   if (!rawDenials || typeof rawDenials !== "object" || Array.isArray(rawDenials)) {
@@ -313,7 +318,7 @@ function requireAdvertisement(value: unknown): {
 
     exactRecord(advertisement.settings, "advertisement.settings", ["request_cap", "model_max_tokens", "provider_attempts"]);
   }
-  return { systemPrompt: advertisement.system_prompt, descriptions: bounded, capabilityDenials };
+  return { descriptionPolicy, capabilityDenials };
 }
 
 function deniedCapability(argumentsValue: Record<string, unknown>): string | undefined {
@@ -386,8 +391,6 @@ async function initialize(payload: Record<string, any>) {
   capabilityDenials = advertisement.capabilityDenials;
   workspace = runtimeInputs.cwd;
   process.env.HOME = runtimeInputs.home;
-  nativeSystemPrompt = advertisement.systemPrompt;
-  boundedDescriptions = advertisement.descriptions;
   const routeClassifier = requireRouteClassifier(payload.route_classifier);
   pinnedSourceRoot = routeClassifier.sourceRoot;
   const expectedFiles = new Map(routeClassifier.moduleDigests);
@@ -404,6 +407,20 @@ async function initialize(payload: Record<string, any>) {
       throw new Error(`pinned OMP source verification failed for ${relativePath}: expected ${expectedDigest}, got ${observedDigest}`);
     }
   }
+  for (const [relativePath, digest] of Object.entries({
+    "packages/coding-agent/src/sdk.ts": "87fea78a3b4f72e6dae959cee0a94afa0395aa6a954ab2d1154962200bb0759e",
+    "packages/coding-agent/src/system-prompt.ts": "3e86ad7cbbd76546b6571dcc04d2c5e46a94df67986b2f6036c6cebe60d31d88",
+    "packages/coding-agent/src/prompts/system/system-prompt.md": "6f4854f0e80a3a0931c9b34bda8a8d7e6f90d15ec4dfa7567c5f7019b02feca7",
+    "packages/coding-agent/src/prompts/system/personalities/default.md": "2c8bd4f78b9223f33c4d38044256f1285acbfb932eaad42d1cc5a3e2fc64dbd3",
+    "packages/coding-agent/src/session/date-cwd-reminder.ts": "57d5a86126d78e332af182fa0d70165e0a3719a70b55296121cfd4d1c291a709",
+    "packages/coding-agent/src/prompts/system/date-cwd-reminder.md": "624bf012a8960a5546eb5b555e63221a87612a3dcd608f84976c66ab48a92769",
+    "packages/ai/src/providers/openai-completions.ts": "8492ebc5f6fc0e024a310f13aa00487f7f41d34dd28f3e91a29633b88610cd60",
+    "packages/omptype/src/json-schema.ts": "827b4718ab1c92bce0156e44749e25843024c445b2fd32ce6ed9f574e1408cf7",
+  })) {
+    if (await sha256File(`${pinnedSourceRoot}/${relativePath}`) !== digest) {
+      throw new Error(`pinned OMP request source verification failed for ${relativePath}`);
+    }
+  }
   // The pinned source root is deployment-selected; static source imports cannot
   // represent the verified runtime path used by the SIF installation.
   const { createAgentSession, Settings } = await import(`${pinnedSourceRoot}/packages/coding-agent/src/sdk.ts`);
@@ -412,9 +429,14 @@ async function initialize(payload: Record<string, any>) {
   const schemaModule = await import(`${pinnedSourceRoot}/packages/omptype/src/json-schema.ts`);
   irToJsonSchema = schemaModule.irToJsonSchema as typeof irToJsonSchema;
   const { SessionManager } = await import(`${pinnedSourceRoot}/packages/coding-agent/src/session/session-manager.ts`);
+  const { DateCwdReminderInjector } = await import(`${pinnedSourceRoot}/packages/coding-agent/src/session/date-cwd-reminder.ts`);
+  reminderInjector = new DateCwdReminderInjector();
   const settings = await Settings.init({ cwd: workspace, agentDir: String(payload.scratch), inMemory: true, configFiles: [], overrides: {
     "retry.enabled": false, "retry.fallbackChains": {}, "compaction.enabled": false,
-    "modelLoopGuard.enabled": false, "tools.maxTimeout": 30, "edit.fuzzyMatch": true,
+    "modelLoopGuard.enabled": false, "advisor.enabled": false, "autolearn.enabled": false,
+    "autoContinue.enabled": false, "prewalk.enabled": false, "imageUrls.enabled": false,
+    "snapcompact.enabled": false, "title.refreshOnReplan": false,
+    "tools.maxTimeout": 30, "tools.artifactSpillThreshold": 32768, "edit.fuzzyMatch": true,
     "edit.fuzzyThreshold": 0.95, "edit.enforceSeenLines": true, "edit.autoRepair.enabled": false,
     "edit.blockAutoGenerated": true, "shellMinimizer.enabled": false,
   } });
@@ -429,7 +451,26 @@ async function initialize(payload: Record<string, any>) {
     rebindModelAfterDiscovery: false, getApiKey: async () => "omp-tool-worker-key",
   });
   session = created.session;
+  nativeSystemPrompt = session.agent.state.systemPrompt;
+  if (!Array.isArray(nativeSystemPrompt) || !nativeSystemPrompt.length || nativeSystemPrompt.some((part) => typeof part !== "string")) {
+    throw new Error("pinned OMP SDK did not build a system prompt");
+  }
   tools = session.agent.state.tools.filter((tool: any) => TOOL_NAMES.includes(tool.name));
+  boundedDescriptions = Object.fromEntries(tools.map((tool: any) => {
+    const policy = advertisement.descriptionPolicy[tool.name];
+    let description = String(tool.description);
+    if (new Bun.CryptoHasher("sha256").update(description).digest("hex") !== digestHex(policy.original_sha256, `${tool.name}.original_sha256`)) {
+      throw new Error(`pinned OMP description differs for ${tool.name}`);
+    }
+    for (const span of policy.removed_spans as Array<{ text: string }>) {
+      if (description.split(span.text).length !== 2) throw new Error(`bounded OMP description span differs for ${tool.name}`);
+      description = description.replace(span.text, "");
+    }
+    if (new Bun.CryptoHasher("sha256").update(description).digest("hex") !== digestHex(policy.bounded_sha256, `${tool.name}.bounded_sha256`)) {
+      throw new Error(`bounded OMP description differs for ${tool.name}`);
+    }
+    return [tool.name, description];
+  }));
   const originalRead = tools.find((tool: any) => tool.name === "read");
   if (!originalRead || await sha256File(`${pinnedSourceRoot}/packages/coding-agent/src/tools/read.ts`) !== PINNED_READ_SHA256) {
     throw new Error("pinned read dispatcher verification failed");
@@ -440,7 +481,7 @@ async function initialize(payload: Record<string, any>) {
   return {
     schema_version: PHASE_SCHEMA,
     kind: "initialized",
-    system_prompt: advertisement.systemPrompt,
+    system_prompt: nativeSystemPrompt.join("\n\n"),
     tool_schemas: tools.map((tool: any) => ({ type: "function", function: { name: tool.name, description: boundedDescriptions[tool.name], parameters: parametersFor(tool) } })),
     bootstrap: {
       ...runtimeInputs,
@@ -460,7 +501,8 @@ async function dispatch(operation: string, payload: Record<string, any>): Promis
     if (convertMessages === null) throw new Error("pinned OMP provider converter is unavailable");
     const model = session.agent.state.model ?? converterModel;
     if (model.api !== "openai-completions") throw new Error(`pinned OMP provider converter requires an OpenAI Completions model: ${String(model.api)}`);
-    const messages = convertMessages(model, { systemPrompt: nativeSystemPrompt ? [nativeSystemPrompt] : [], messages: payload.messages ?? [] }, model.compat);
+    if (reminderInjector === null) throw new Error("pinned OMP date/cwd reminder is unavailable");
+    const messages = convertMessages(model, reminderInjector.transform({ systemPrompt: nativeSystemPrompt, messages: payload.messages ?? [] }, runtimeInputs.current_date, workspace), model.compat);
     return {
       schema_version: PHASE_SCHEMA,
       kind: "request",

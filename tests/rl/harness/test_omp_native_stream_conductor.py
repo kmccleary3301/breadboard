@@ -3,12 +3,12 @@ from __future__ import annotations
 import asyncio
 from contextlib import contextmanager
 from copy import deepcopy
-from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
 import threading
 import json
 import os
+import re
 from pathlib import Path
 import tarfile
 from typing import Any, Mapping
@@ -18,7 +18,7 @@ import pytest
 from breadboard.artifacts.cas import FilesystemCAS
 from breadboard.product.harness.resolution import compile_e4_harness
 from breadboard.rl.harness import contracts as c
-from breadboard.rl.harness.omp_native_tools import NativeToolWorker, pinned_worker_spec
+from breadboard.rl.harness.omp_native_tools import NativeToolWorker, PinnedNativeWorkerSpec, pinned_worker_spec
 from breadboard.rl.harness.policy_provider import EpisodeOpenAICompletionsPolicyClient
 from breadboard.rl.harness.runners.base import RunnerOpenRequest, RunnerTermination, RunnerToolBinding, thaw_json
 from breadboard.rl.harness.runners.conductor import CONDUCTOR_IMPLEMENTATION_DIGEST, CONDUCTOR_RUNTIME_ABI, ConductorAdapter, ConductorRunRequest, PolicyRuntimeBinding
@@ -41,7 +41,16 @@ PACKET = Path(
         "omp/packet/omp_supplier_capture_packet_rerun5.tar.gz",
     )
 )
-OMP_AVAILABLE = Path(pinned_worker_spec().bun).is_file() and Path(pinned_worker_spec().source_root).is_dir()
+_source_root = os.environ.get("BB_OMP_TEST_SOURCE_ROOT")
+_bun = os.environ.get("BB_OMP_TEST_BUN")
+if (_source_root is None) != (_bun is None):
+    raise ValueError("both BB_OMP_TEST_SOURCE_ROOT and BB_OMP_TEST_BUN are required")
+_WORKER_SPEC = (
+    PinnedNativeWorkerSpec.for_test(bun=Path(_bun), source_root=Path(_source_root))
+    if _source_root is not None and _bun is not None
+    else pinned_worker_spec()
+)
+OMP_AVAILABLE = Path(_WORKER_SPEC.bun).is_file() and Path(_WORKER_SPEC.source_root).is_dir()
 pytestmark = pytest.mark.skipif(not OMP_AVAILABLE, reason="pinned OMP runtime is unavailable")
 
 @contextmanager
@@ -147,27 +156,25 @@ def _archive_case(tmp_path: Path) -> tuple[Path, list[dict[str, Any]], str]:
         str(part.get("text", ""))
         for part in transcript[0]["body"]["messages"][1]["content"]
         if isinstance(part, Mapping) and part.get("type") == "text"
-)
+        and not str(part.get("text", "")).startswith("<system-reminder>")
+    )
 class _OMPWorkspacePort:
     def __init__(
         self,
         workspace: Path,
         scratch: Path,
         bindings: tuple[RunnerToolBinding, ...],
+        capture_date: str,
         *,
-        system_prompt_override: str,
-        request_bodies: list[dict[str, Any]],
         phase_log: list[tuple[str, Mapping[str, Any]]] | None = None,
     ):
         self.workspace = workspace
         self.scratch = scratch
-        self.worker = NativeToolWorker(cwd=str(workspace))
+        self.worker = NativeToolWorker(cwd=str(workspace), spec=_WORKER_SPEC)
         self.baseline: dict[str, dict[str, Any]] | None = None
+        self.capture_date = capture_date
         self.closed = False
-        self.system_prompt_override = system_prompt_override
         self.bindings = bindings
-        self.request_bodies = request_bodies
-        self.project_request_index = 0
         self.phase_log = phase_log if phase_log is not None else []
         self._prepared_calls: list[dict[str, Any]] = []
 
@@ -176,11 +183,11 @@ class _OMPWorkspacePort:
         return self.bindings
 
     def native_runtime_inputs(self, *, input_names: tuple[str, ...], package_subpath: str) -> Mapping[str, str]:
-        package_dir = str(Path(pinned_worker_spec().source_root) / package_subpath)
+        package_dir = str(Path(_WORKER_SPEC.source_root) / package_subpath)
         values = {
             "cwd": str(self.workspace),
             "home": str(self.scratch / "home"),
-            "current_date": datetime.now(timezone.utc).date().isoformat(),
+            "current_date": self.capture_date,
             "package_dir": package_dir,
         }
         assert set(input_names) == set(values)
@@ -227,17 +234,8 @@ class _OMPWorkspacePort:
             })
         self.phase_log.append((operation, deepcopy(dict(phase_payload))))
         result = await asyncio.to_thread(self.worker.phase, operation, phase_payload)
-        if operation == "initialize":
-            result = dict(result)
-            result["system_prompt"] = self.system_prompt_override
         if operation == "execute_batch":
             (self.workspace / "normal_marker.txt").write_bytes(b"normal-omp\n")
-        if operation == "project_request" and self.project_request_index < len(self.request_bodies):
-            result = dict(result)
-            expected = self.request_bodies[self.project_request_index]["body"]
-            self.project_request_index += 1
-            result["messages"] = deepcopy(expected["messages"])
-            result["tools"] = deepcopy(expected["tools"])
         return result
 
     async def close_native_runtime(self) -> Mapping[str, Any]:
@@ -284,6 +282,9 @@ async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates
         workspace = Path("/captures/normal_multiturn/workspace")
         workspace.mkdir(parents=True, exist_ok=True)
         (workspace / "normal_marker.txt").unlink(missing_ok=True)
+        reminder = transcript[0]["body"]["messages"][1]["content"][0]["text"]
+        date_match = re.search(r"Today: (\d{4}-\d{2}-\d{2})", reminder)
+        assert date_match is not None
         tools = _OMPWorkspacePort(
             workspace,
             tmp_path / "scratch",
@@ -291,8 +292,7 @@ async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates
                 RunnerToolBinding(tool.tool_id, tool.implementation_digest, tuple(tool.capability_ids))
                 for tool in plan.effective_capabilities.tools
             ),
-            system_prompt_override=transcript[0]["body"]["messages"][0]["content"],
-            request_bodies=transcript,
+            capture_date=date_match.group(1),
         )
         client = EpisodeOpenAICompletionsPolicyClient(episode_id="episode-omp", effective_plan_digest=plan.canonical_digest(), observation=observation, profile=profile, target_projection=projection, timeout_seconds=45)
         binding = PolicyRuntimeBinding(RunnerOpenRequest(episode_id="episode-omp", effective_plan=plan), client)
@@ -377,12 +377,7 @@ async def test_omp_conductor_partitions_declared_denials_before_worker(
                 RunnerToolBinding(tool.tool_id, tool.implementation_digest, tuple(tool.capability_ids))
                 for tool in plan.effective_capabilities.tools
             ),
-            system_prompt_override=(
-                Path(__file__).resolve().parents[3]
-                .joinpath("config/e4_targets/oh_my_pi/18.1.17/prompts/system-prompt.md")
-                .read_text(encoding="utf-8")
-            ),
-            request_bodies=[],
+            capture_date="2026-09-23",
             phase_log=phase_log,
         )
         client = EpisodeOpenAICompletionsPolicyClient(

@@ -20,9 +20,7 @@ def test_omp_target_assets_are_closed_and_four_tool() -> None:
             "schema_version": "bb.omp-capability-denial.v1",
             "capability": capability,
             "message": f"OMP capability denied: {capability}",
-            "source_ref": "prompts/system-prompt.md:23"
-            if capability in {"pty", "async"}
-            else "prompts/system-prompt.md:11",
+            "source_ref": "semantic-policy.json",
         }
         assert {key: entry[key] for key in expected} == expected
         if capability not in {"pty", "async"}:

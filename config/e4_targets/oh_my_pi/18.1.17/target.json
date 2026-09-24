@@ -1,19 +1,19 @@
 {
   "assets": [
     {
-      "bytes": 4495,
+      "bytes": 4531,
       "path": "harness.yaml",
-      "sha256": "sha256:ac7d3b739a4602e995957b6896295c48d0997a61d173a53e1d01445eb5208980"
+      "sha256": "sha256:93608a187d39bba54a2f1655609251a8ad6a854217d8bb1d2988d75d1eea9abd"
     },
     {
-      "bytes": 4110,
-      "path": "prompts/system-prompt.md",
-      "sha256": "sha256:54c6e1ceccf67708d9211ee6e943b23c75ec94ff0791894febe897e6a7543c20"
+      "bytes": 16971,
+      "path": "prompts/source-system-prompt.md",
+      "sha256": "sha256:6f4854f0e80a3a0931c9b34bda8a8d7e6f90d15ec4dfa7567c5f7019b02feca7"
     },
     {
-      "bytes": 7064,
+      "bytes": 6987,
       "path": "native-config.json",
-      "sha256": "sha256:3e42c832ca7dd38d043a3def50b1df34dedcc1f49064118b62e64cc3ffc7f931"
+      "sha256": "sha256:25be3613d60fc0ca5d87587871d50a8e1eda0848ae228434219dbe8002b5ce14"
     },
     {
       "bytes": 25796,
@@ -33,7 +33,7 @@
   ],
   "execution": {
     "config_asset": "harness.yaml",
-    "system_prompt_asset": "prompts/system-prompt.md",
+    "system_prompt_asset": "prompts/source-system-prompt.md",
     "tool_surface_asset": "tool-surface.json"
   },
   "family": "oh_my_pi",

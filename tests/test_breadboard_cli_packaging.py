@@ -177,7 +177,7 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         "config/e4_targets/oh_my_pi/18.1.17/target.json",
         "config/e4_targets/oh_my_pi/18.1.17/native-worker.json",
         "config/e4_targets/oh_my_pi/18.1.17/semantic-policy.json",
-        "config/e4_targets/oh_my_pi/18.1.17/prompts/system-prompt.md",
+        "config/e4_targets/oh_my_pi/18.1.17/prompts/source-system-prompt.md",
         "config/e4_targets/notices/pi-0.57.1.txt",
         "conformance/comparators/registry.json",
         "contracts/kernel/manifests/bb.engine_conformance_manifest.v1.schema.json",

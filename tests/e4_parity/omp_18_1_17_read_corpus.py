@@ -17,6 +17,16 @@ def main() -> None:
     if len(inputs) != len(report["rows"]) or sha256(Path(corpus).read_bytes()).hexdigest() != report["corpus_sha256"]:
         raise ValueError("observed pinned source and corpus differ")
     config = json.loads(Path(config_file).read_text(encoding="utf-8"))
+    surface = json.loads((Path(config_file).parent / "tool-surface.json").read_text(encoding="utf-8"))
+    provenance = surface["native_description_provenance"]
+    description_policy = {
+        name: {
+            "original_sha256": "sha256:" + provenance["original_sha256"][name],
+            "bounded_sha256": "sha256:" + provenance["bounded_sha256"][name],
+            "removed_spans": provenance["removed_spans"][name],
+        }
+        for name in surface["ordered_tools"]
+    }
     base = Path(workspace)
     scratch = base / ".omp-read-corpus"
     home = scratch / "home"
@@ -37,7 +47,7 @@ def main() -> None:
         worker.phase("initialize", {
             "task": "classify pinned source-observed read corpus", "model_config": {},
             "advertisement": {
-                "system_prompt": "", "tool_descriptions": {name: name for name in ("read", "bash", "edit", "write")},
+                "bounded_description_policy": description_policy,
                 "capability_denials": config["capability_denials"],
             },
             "workspace": str(base), "scratch": str(scratch), "package_dir": str(package_dir),

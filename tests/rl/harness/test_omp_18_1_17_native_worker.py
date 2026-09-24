@@ -218,6 +218,19 @@ def _source_route_patterns() -> tuple[list[str], list[str]]:
 
 
 
+def _description_policy() -> dict[str, dict[str, object]]:
+    root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
+    provenance = json.loads((root / "tool-surface.json").read_text(encoding="utf-8"))["native_description_provenance"]
+    return {
+        name: {
+            "original_sha256": "sha256:" + provenance["original_sha256"][name],
+            "bounded_sha256": "sha256:" + provenance["bounded_sha256"][name],
+            "removed_spans": provenance["removed_spans"][name],
+        }
+        for name in ("read", "bash", "edit", "write")
+    }
+
+
 def _authority_payload(tmp_path: Path) -> dict[str, object]:
     scratch = tmp_path / ".scratch"
     package_dir = tmp_path / "package"
@@ -291,8 +304,7 @@ def test_real_pinned_worker_classifies_fuzz_overadmission_fixtures(tmp_path: Pat
                 "task": "classify pinned read routes",
                 "model_config": {},
                 "advertisement": {
-                    "system_prompt": "",
-                    "tool_descriptions": {name: name for name in ("read", "bash", "edit", "write")},
+                    "bounded_description_policy": _description_policy(),
                     "capability_denials": denials,
                 },
                 **_authority_payload(tmp_path),
@@ -354,8 +366,7 @@ def test_real_pinned_worker_rejects_tampered_classifier_module(tmp_path: Path) -
                     "task": "reject tampered source",
                     "model_config": {},
                     "advertisement": {
-                        "system_prompt": "",
-                        "tool_descriptions": {name: name for name in ("read", "bash", "edit", "write")},
+                        "bounded_description_policy": _description_policy(),
                         "capability_denials": {
                             capability: {
                                 "schema_version": "bb.omp-capability-denial.v1",
@@ -393,8 +404,7 @@ def test_real_pinned_worker_rejects_unknown_classifier_module(tmp_path: Path) ->
                     "task": "reject unknown classifier module",
                     "model_config": {},
                     "advertisement": {
-                        "system_prompt": "",
-                        "tool_descriptions": {name: name for name in ("read", "bash", "edit", "write")},
+                        "bounded_description_policy": _description_policy(),
                         "capability_denials": {
                             capability: {
                                 "schema_version": "bb.omp-capability-denial.v1",
@@ -502,8 +512,7 @@ def test_real_pinned_worker_runs_initialize_and_close(tmp_path: Path) -> None:
             "task": "read the workspace",
             "model_config": {},
             "advertisement": {
-                "system_prompt": "",
-                "tool_descriptions": {name: name for name in ("read", "bash", "edit", "write")},
+                "bounded_description_policy": _description_policy(),
                 "capability_denials": {
                     capability: {
                         "schema_version": "bb.omp-capability-denial.v1",
@@ -534,8 +543,7 @@ def test_real_pinned_worker_denies_excluded_bash_capabilities(
 ) -> None:
     worker = NativeToolWorker(cwd=str(tmp_path), spec=_runtime_spec())
     advertisement = {
-        "system_prompt": "",
-        "tool_descriptions": {name: name for name in ("read", "bash", "edit", "write")},
+        "bounded_description_policy": _description_policy(),
         "capability_denials": {
             name: {
                 "schema_version": "bb.omp-capability-denial.v1",
@@ -586,8 +594,7 @@ def test_real_pinned_worker_closes_background_brush_descendant(tmp_path: Path) -
     worker = NativeToolWorker(cwd=str(tmp_path), spec=_runtime_spec())
     worker.start()
     advertisement = {
-        "system_prompt": "",
-        "tool_descriptions": {name: name for name in ("read", "bash", "edit", "write")},
+        "bounded_description_policy": _description_policy(),
         "capability_denials": {
             capability: {
                 "schema_version": "bb.omp-capability-denial.v1",
@@ -631,8 +638,7 @@ def test_real_pinned_worker_rejects_advertisement_extra_keys(tmp_path: Path, mut
         "source_ref": "test",
     }
     advertisement = {
-        "system_prompt": "",
-        "tool_descriptions": {name: name for name in ("read", "bash", "edit", "write")},
+        "bounded_description_policy": _description_policy(),
         "capability_denials": {
             "pty": denial,
             "async": {**denial, "capability": "async", "message": "OMP capability denied: async"},
@@ -641,7 +647,7 @@ def test_real_pinned_worker_rejects_advertisement_extra_keys(tmp_path: Path, mut
     if mutation == "top":
         advertisement["extra"] = True
     elif mutation == "descriptions":
-        advertisement["tool_descriptions"]["extra"] = "not admitted"
+        advertisement["bounded_description_policy"]["extra"] = {}
     elif mutation == "denials":
         advertisement["capability_denials"]["extra"] = denial
     elif mutation == "denial_entry":

@@ -4,11 +4,13 @@
 - `title`: Oh My Pi 18.1.17 native worker and pinned read-route admission
 - `author`: BreadBoard E4 Oh My Pi lane
 - `date`: 2026-09-24
-- `status`: implemented; installed DO-2 replay pending
+- `status`: implemented; first-request pinned composition awaits installed DO-2 replay and independent review
 
 ## 1) Problem Statement
 
 The `oh-my-pi@18.1.17` target needs a compiled provider binding and a tool worker that uses the pinned supplier SDK. Its ReadTool has several path-dependent routes. A separate regex approximation can admit a URL, SSH path, archive member, database selector, or other excluded read as a local file. The changed worker observes the verified supplier `read.ts` branches before effects, admits only its local-file route, and fails closed when classification or the denial policy is unavailable. This decision records the shared compiler, Conductor, provider, and sandbox changes needed to run that target without treating a local Linux ARM result as an installed Linux x64 qualification.
+
+The first-request correction removes the independently authored 4,110-byte OMP prompt. The worker now obtains `session.agent.state.systemPrompt` from pinned OMP `createAgentSession` (`sdk.ts:3171-3228,3372-3378`) and applies pinned `DateCwdReminderInjector` to the user message before pinned OpenAI Completions conversion. Bounded tool descriptions start with pinned SDK tool descriptions and apply declared, hash-checked removal spans. The target asset is exactly the supplier template (`system-prompt.md`, SHA-256 `6f4854f0e80a3a0931c9b34bda8a8d7e6f90d15ec4dfa7567c5f7019b02feca7`), not the literal provider message. This correction covers issue 32 items 1–2 only; items 3–7 and installed parity remain outside its claim.
 
 ## 2) Scope and Surfaces
 
@@ -46,6 +48,7 @@ This adds a versioned target and streaming consumer. Within that target, the fin
 - Independent exact-code-head review at `966f091e417eea02161c293a5ddaa78e23b92abf`: `/tmp/bbe4-omp-review-sol-w5-2-966f091e-review.md` (SHA-256 `24a11395e063cba37e630550296b7866471a31fdce5a4a0b458a1f843325d837`). It accepts the local-vm-linux read-route fix with an explicit platform limit.
 - That review records an isolated Linux aarch64 VM run of six focused files, `329 passed, 4 warnings`: `/tmp/bbe4-omp-review-sol-w5-2-966f091e-vm-focused-isolated.txt` (SHA-256 `bc2cffc5050de54aed8be7d834945cd67e327dac4c73a010af54e10563bf6492`). It also records `313 passed, 13 skipped` on macOS and zero route mismatches or non-file admissions across its pinned-source corpora. These are results for the code head, not an installed x64 result or a review of this ACR commit.
 - The danger-zone ACR guard must accept the complete PR changed-file list; the kernel contract-pack checker must accept its manifest. DO-2 installed SIF replay on Linux x64 is **PENDING**. No DO-2 result or production acceptance is asserted here.
+- At this corrective head, the removed supplier-content overrides in `test_omp_native_stream_conductor.py` leave its local comparison environment-gated. Bun successfully bundled the worker TypeScript locally, but the macOS export lacks `@oh-my-pi/pi-ai/dialect` and native darwin leaves: direct source rendering and six-case installed request parity cannot be asserted from this host. The sealed supplier's first system message is 9,831 bytes, SHA-256 `975caab28fb212c4ff1642ce2ab5a46936205f9b04a9b96938cd04a971030491`. Independent review and the Linux x64 installed replay must compare the actual BB-produced system and reminder bytes without overrides.
 
 ## 6) Rollout Plan
 

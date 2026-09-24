@@ -272,7 +272,7 @@ def _lower_worker_target(
         ),
         "oh-my-pi@18.1.17": (
             "breadboard.oh-my-pi.v18.1.17",
-            "d4f8e975a39d84cbc588203f9b1fef124c1113021e9371d07208597152ca5468",
+            "67c6ee4da60208301d94ca3546e8b19cbd3d5ac43d18be37f71eac271251a66e",
         ),
     }
     recipe = recipes.get(package.target_id)
@@ -291,10 +291,17 @@ def _lower_worker_target(
         )
         if any(key not in native for key in required_native_fields):
             raise HarnessCompileError("OMP native config is missing admitted advertisement fields")
+        provenance = surface["native_description_provenance"]
+        if provenance["artifact_sha256"] != native["native_descriptions_artifact_sha256"]:
+            raise HarnessCompileError("OMP native description policy differs from its pinned artifact")
         native["advertisement"] = {
-            "system_prompt": package.read_asset_text("prompts/system-prompt.md"),
-            "tool_descriptions": {
-                name: surface["tools"][name]["description"] for name in surface["ordered_tools"]
+            "bounded_description_policy": {
+                name: {
+                    "original_sha256": "sha256:" + provenance["original_sha256"][name],
+                    "bounded_sha256": "sha256:" + provenance["bounded_sha256"][name],
+                    "removed_spans": provenance["removed_spans"][name],
+                }
+                for name in surface["ordered_tools"]
             },
             "capability_denials": native["capability_denials"],
             "settings": {

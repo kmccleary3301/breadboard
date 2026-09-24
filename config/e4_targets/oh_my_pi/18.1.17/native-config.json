@@ -62,7 +62,7 @@
       "schema_version": "bb.omp-capability-denial.v1",
       "capability": "url",
       "message": "OMP capability denied: url",
-      "source_ref": "prompts/system-prompt.md:11",
+      "source_ref": "semantic-policy.json",
       "route": {
         "patterns": ["^https?:\\/\\/?", "^www\\."],
         "source_ref": "packages/coding-agent/src/tools/path-utils.ts:594"
@@ -72,7 +72,7 @@
       "schema_version": "bb.omp-capability-denial.v1",
       "capability": "ssh",
       "message": "OMP capability denied: ssh",
-      "source_ref": "prompts/system-prompt.md:11",
+      "source_ref": "semantic-policy.json",
       "route": {
         "patterns": ["ssh:\\/\\/"],
         "source_ref": "packages/coding-agent/src/tools/path-utils.ts:574"
@@ -82,13 +82,13 @@
       "schema_version": "bb.omp-capability-denial.v1",
       "capability": "pty",
       "message": "OMP capability denied: pty",
-      "source_ref": "prompts/system-prompt.md:23"
+      "source_ref": "semantic-policy.json"
     },
     "archive": {
       "schema_version": "bb.omp-capability-denial.v1",
       "capability": "archive",
       "message": "OMP capability denied: archive",
-      "source_ref": "prompts/system-prompt.md:11",
+      "source_ref": "semantic-policy.json",
       "route": {
         "extensions": [".zip", ".jar", ".war", ".ear", ".apk", ".whl", ".ipa", ".xpi", ".vsix", ".nupkg", ".cbz", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tbz", ".tar.xz", ".txz", ".tar.zst", ".tzst", ".tar.z", ".asar", ".rar", ".cbr", ".7z", ".iso", ".cab", ".cpio", ".rpm", ".ar", ".a", ".lib", ".deb", ".lzh", ".lha", ".arj", ".gz", ".bz2", ".xz", ".zst", ".z", ".lzma"],
         "source_ref": "packages/utils/src/ar/registry.ts:32-58"
@@ -98,7 +98,7 @@
       "schema_version": "bb.omp-capability-denial.v1",
       "capability": "sqlite",
       "message": "OMP capability denied: sqlite",
-      "source_ref": "prompts/system-prompt.md:11",
+      "source_ref": "semantic-policy.json",
       "route": {
         "extensions": [".sqlite", ".sqlite3", ".db", ".db3"],
         "source_ref": "packages/coding-agent/src/tools/sqlite-reader.ts:59"
@@ -108,7 +108,7 @@
       "schema_version": "bb.omp-capability-denial.v1",
       "capability": "image",
       "message": "OMP capability denied: image",
-      "source_ref": "prompts/system-prompt.md:11",
+      "source_ref": "semantic-policy.json",
       "route": {
         "extensions": [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".svgz"],
         "schemes": ["attachment"],
@@ -119,7 +119,7 @@
       "schema_version": "bb.omp-capability-denial.v1",
       "capability": "video",
       "message": "OMP capability denied: video",
-      "source_ref": "prompts/system-prompt.md:11",
+      "source_ref": "semantic-policy.json",
       "route": {
         "extensions": [".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi", ".wmv"],
         "source_ref": "packages/coding-agent/src/utils/video.ts:15-23"
@@ -129,7 +129,7 @@
       "schema_version": "bb.omp-capability-denial.v1",
       "capability": "pdf",
       "message": "OMP capability denied: pdf",
-      "source_ref": "prompts/system-prompt.md:11",
+      "source_ref": "semantic-policy.json",
       "route": {
         "extensions": [".pdf"],
         "source_ref": "packages/coding-agent/src/tools/read-pdf.ts:7"
@@ -139,7 +139,7 @@
       "schema_version": "bb.omp-capability-denial.v1",
       "capability": "document",
       "message": "OMP capability denied: document",
-      "source_ref": "prompts/system-prompt.md:11",
+      "source_ref": "semantic-policy.json",
       "route": {
         "extensions": [".pdf", ".docx", ".pptx", ".xlsx", ".epub"],
         "source_ref": "packages/coding-agent/src/utils/markit.ts:22"
@@ -149,7 +149,7 @@
       "schema_version": "bb.omp-capability-denial.v1",
       "capability": "internal-resource",
       "message": "OMP capability denied: internal-resource",
-      "source_ref": "prompts/system-prompt.md:11",
+      "source_ref": "semantic-policy.json",
       "route": {
         "schemes": ["agent", "artifact", "history", "issue", "local", "mcp", "memory", "omp", "pr", "rule", "security", "skill", "vault", "xd"],
         "source_ref": "packages/coding-agent/src/internal-urls/router.ts:38-53"
@@ -159,7 +159,7 @@
       "schema_version": "bb.omp-capability-denial.v1",
       "capability": "async",
       "message": "OMP capability denied: async",
-      "source_ref": "prompts/system-prompt.md:23"
+      "source_ref": "semantic-policy.json"
     }
   },
   "native_descriptions_artifact_sha256": "cd548ef0285e5fc3987d79a1a47c1bc64fe93e1e68c71c0dc6a8ee3b30de244b"
