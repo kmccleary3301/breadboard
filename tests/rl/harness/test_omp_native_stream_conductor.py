@@ -279,6 +279,8 @@ async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates
             await client.close()
         trace = thaw_json(result.response["replay_trace"])
     report = OhMyPi18Comparator()({"capture": str(supplier_case), "replay": trace})
+    if not report["ok"]:
+        print("OMP_E2E_FAILURES", json.dumps([item for item in report["assertions"] if item["status"] == "failed"], sort_keys=True))
     assert report["ok"] is True, report
     tampered_request = deepcopy(trace)
     tampered_request["requests"][0]["messages"][0]["content"] += " tampered"
