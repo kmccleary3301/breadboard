@@ -34,6 +34,17 @@ class FakeNativePort:
         return "/workspace"
 
 
+    async def begin_native_workspace_effects(self) -> None:
+        self.log.append(("effects", "begin"))
+
+    async def close_native_runtime(self) -> dict[str, Any]:
+        self.log.append(("effects", "close"))
+        return {"kind": "closed", "cleanup": {"all_dead": True}}
+
+    async def measure_workspace_effects(self) -> dict[str, Any]:
+        self.log.append(("effects", "measure"))
+        return {}
+
     async def invoke_native_phase(
         self, operation: str, payload: Mapping[str, Any], *, timeout_ms: int,
     ) -> Mapping[str, Any]:
@@ -112,7 +123,6 @@ class FakeBinding:
 
     def bind_native_tools(self, tools: tuple[Mapping[str, Any], ...]) -> None:
         self.bound_tools = tools
-
 
 async def _run(*, fail_ack: bool = False) -> tuple[Any, FakeNativePort, list[tuple[str, str]]]:
     tools = FakeNativePort(fail_ack=fail_ack)

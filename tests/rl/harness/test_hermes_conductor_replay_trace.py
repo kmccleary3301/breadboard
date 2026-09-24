@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import hashlib
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -51,10 +52,13 @@ class FixtureNativePort:
         workspace: Path,
         *,
         worker_workspace: Path | None = None,
+        write_effect: bool = True,
     ) -> None:
         self.log: list[str] = []
         self.workspace = workspace
         self.worker_workspace = worker_workspace or workspace
+        self.write_effect = write_effect
+        self.baseline: dict[str, str] = {}
         self.requests = tuple(
             row for row in trace["requests"] if row["kind"] == "request"
         )
@@ -74,6 +78,29 @@ class FixtureNativePort:
     @property
     def declared_workspace(self) -> str:
         return str(self.workspace)
+
+    async def begin_native_workspace_effects(self) -> None:
+        self.begin_calls = getattr(self, "begin_calls", 0) + 1
+        self.workspace.mkdir(parents=True, exist_ok=True)
+        self.baseline = self._snapshot()
+
+    def _snapshot(self) -> dict[str, str]:
+        return {
+            path.relative_to(self.workspace).as_posix(): "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in self.workspace.rglob("*") if path.is_file()
+        }
+
+    async def measure_workspace_effects(self) -> dict[str, dict[str, Any]]:
+        self.measure_calls = getattr(self, "measure_calls", 0) + 1
+        return {
+            path: {"sha256": digest, "exists": True}
+            for path, digest in self._snapshot().items()
+            if self.baseline.get(path) != digest
+        }
+
+    async def close_native_runtime(self) -> dict[str, Any]:
+        self.close_calls = getattr(self, "close_calls", 0) + 1
+        return {"kind": "closed", "cleanup": {"all_dead": True}}
 
 
     def _delta(self, rows: tuple[dict[str, Any], ...]) -> list[dict[str, Any]]:
@@ -236,6 +263,8 @@ class FixtureNativePort:
                 segments=(),
             )
         if operation == "execute_segment":
+            if self.write_effect:
+                (self.workspace / "repaired.txt").write_text("repaired\n")
             tool_result = {
                 "content": json.dumps({
                     "bytes_written": 9,
@@ -323,12 +352,12 @@ class FixtureBinding:
 
 
 async def _run_fixture(
-    *, worker_workspace: Path | None = None,
-) -> dict[str, Any]:
+    workspace: Path, *, worker_workspace: Path | None = None,
+    write_effect: bool = True,
+) -> tuple[dict[str, Any], FixtureNativePort]:
     trace = json.loads((FIXTURE / "trace.json").read_text())
-    workspace = FIXTURE / "workspace"
     port = FixtureNativePort(
-        trace, workspace, worker_workspace=worker_workspace,
+        trace, workspace, worker_workspace=worker_workspace, write_effect=write_effect,
     )
     responses = tuple(
         row["response"] for row in trace["requests"] if row["kind"] == "served"
@@ -361,19 +390,20 @@ async def _run_fixture(
             "prompt": trace["requests"][0]["body"]["messages"][1]["content"]
         })
     )
-    return conductor_module.thaw_json(result.response["replay_trace"])
+    return conductor_module.thaw_json(result.response["replay_trace"]), port
 
 
 @pytest.mark.asyncio
-async def test_conductor_trace_matches_committed_rerun3_fixture() -> None:
-    trace = await _run_fixture()
+async def test_conductor_trace_matches_committed_rerun3_fixture(tmp_path: Path) -> None:
+    trace, port = await _run_fixture(workspace=tmp_path / "workspace")
     report = compare_cases(FIXTURE, trace)
-    assert report["ok"] is True, report
-    assert trace["runtime"]["cwd"] == str(FIXTURE / "workspace")
+    assert report["ok"] is True, [a["detail"] for a in report["assertions"] if a["status"] == "failed"]
+    assert trace["runtime"]["cwd"] == str(tmp_path / "workspace")
     assert trace["request_count"] == len(trace["requests"]) == 2
     assert trace["file_effects"] == {
         "repaired.txt": "sha256:aa6083f3a3c96f3860a4977f429ed51841511a3716ea3537472fea4365781e2b"
     }
+    assert (port.begin_calls, port.close_calls, port.measure_calls) == (1, 1, 1)
 
     packet_trace = json.loads((FIXTURE / "trace.json").read_text())
     expected_tools = packet_trace["requests"][0]["body"]["tools"]
@@ -392,8 +422,8 @@ async def test_conductor_trace_matches_committed_rerun3_fixture() -> None:
 
 
 @pytest.mark.asyncio
-async def test_conductor_rejects_name_only_tool_schemas_fixture() -> None:
-    trace = await _run_fixture()
+async def test_conductor_rejects_name_only_tool_schemas_fixture(tmp_path: Path) -> None:
+    trace, _ = await _run_fixture(workspace=tmp_path / "workspace")
     name_only_trace = copy.deepcopy(conductor_module.thaw_json(trace))
     name_only_trace["requests"][0]["body"]["tools"] = [
         {"type": "function", "function": {"name": name}}
@@ -406,6 +436,13 @@ async def test_conductor_rejects_name_only_tool_schemas_fixture() -> None:
 
 
 @pytest.mark.asyncio
-async def test_conductor_rejects_worker_workspace_mismatch() -> None:
+async def test_worker_reported_effect_without_content_change_is_not_trusted(tmp_path: Path) -> None:
+    trace, _ = await _run_fixture(workspace=tmp_path / "workspace", write_effect=False)
+    assert trace["file_effects"] == {}
+    assert compare_cases(FIXTURE, trace)["ok"] is False
+
+
+@pytest.mark.asyncio
+async def test_conductor_rejects_worker_workspace_mismatch(tmp_path: Path) -> None:
     with pytest.raises(RunnerProtocolError, match="workspace"):
-        await _run_fixture(worker_workspace=FIXTURE / "wrong-workspace")
+        await _run_fixture(workspace=tmp_path / "workspace", worker_workspace=FIXTURE / "wrong-workspace")

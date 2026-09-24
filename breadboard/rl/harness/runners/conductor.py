@@ -2432,6 +2432,7 @@ class _ConductorSession:
         )
         if (
             not isinstance(tools, NativeSourceSessionPort)
+            or not isinstance(tools, NativeWorkspaceEffectsPort)
             or self._projection.source_profile is None
             or model_config is None
             or limits.max_turns != 8
@@ -2458,7 +2459,6 @@ class _ConductorSession:
         state: FrozenJsonObject = freeze_json_object({}, field_name="Hermes state")
         trace_requests: list[dict[str, Any]] = []
         trace_tool_calls: list[dict[str, Any]] = []
-        trace_file_effects: dict[str, str | None] = {}
         trace_tool_call_keys: set[str] = set()
 
         def parse_json_or_text(value: Any) -> Any:
@@ -2668,13 +2668,6 @@ class _ConductorSession:
                     max_encoded_bytes=16 * 1024 * 1024,
                     max_nodes=16 * 1024 * 1024 + 1,
                 )
-                effects = value.get("file_effects")
-                if isinstance(effects, Mapping):
-                    for path, digest in effects.items():
-                        if isinstance(path, str) and (
-                            digest is None or isinstance(digest, str)
-                        ):
-                            trace_file_effects[path] = digest
                 if (
                     value.get("schema_version") != "bb.hermes-native.v1"
                     or type(value.get("kind")) is not str
@@ -2715,6 +2708,7 @@ class _ConductorSession:
                     if segment["kind"] == "sequential":
                         watchdog = time.monotonic() + min(40, remaining())
 
+        await tools.begin_native_workspace_effects()
         initialized = await phase(
             "initialize", {"task": task, "model_config": model_config}, "initial", None,
         )
@@ -2912,11 +2906,6 @@ class _ConductorSession:
                 committed = await phase("commit", {}, "observation_batch", turn)
                 if committed.get("kind") != "committed":
                     raise invalid("Hermes post-tool/recovery commit failed")
-                committed_effects = committed.get("file_effects")
-                if isinstance(committed_effects, Mapping):
-                    for path, digest in committed_effects.items():
-                        if isinstance(path, str) and (digest is None or isinstance(digest, str)):
-                            trace_file_effects[path] = digest
             self._turns.append(RunnerTurn(turn, actions, tuple(observations)))
             if state["status"] == "FINISHED":
                 termination = RunnerTermination.ASSISTANT_COMPLETE
@@ -2938,6 +2927,26 @@ class _ConductorSession:
             len(self._turns), HERMES_RESPONSE_CONSUMER_ID, "exit", (),
             history_digest, state,
         ))
+        retired = await tools.close_native_runtime()
+        if (
+            not isinstance(retired, Mapping)
+            or retired.get("kind") != "closed"
+            or not isinstance(retired.get("cleanup"), Mapping)
+            or retired["cleanup"].get("all_dead") is not True
+        ):
+            raise invalid("native runtime cleanup is not verified")
+        measured_effects = await tools.measure_workspace_effects()
+        if not isinstance(measured_effects, Mapping):
+            raise invalid("native workspace effects are malformed")
+        trace_file_effects: dict[str, str | None] = {}
+        for path, value in measured_effects.items():
+            if (
+                type(path) is not str or not isinstance(value, Mapping)
+                or type(value.get("exists")) is not bool
+                or value["exists"] and type(value.get("sha256")) is not str
+            ):
+                raise invalid("native workspace effect is malformed")
+            trace_file_effects[path] = value["sha256"] if value["exists"] else None
         await self._checkpoint("after_loop", turn=len(self._turns))
         await self._checkpoint("before_commit", turn=len(self._turns))
         await self._commit_termination(termination)
