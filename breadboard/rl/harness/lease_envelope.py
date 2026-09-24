@@ -42,6 +42,12 @@ _CLONE_NEWPID = 0x20000000
 _RECEIPT_SCHEMA = "bb.containment-receipt.v1"
 _MAX_FRAME = 256 * 1024
 _MAX_FDS = 64
+_PTRACE_TRACEME = 0
+_PTRACE_CONT = 7
+_PTRACE_DETACH = 17
+_PTRACE_SETOPTIONS = 0x4200
+_PTRACE_O_TRACEEXEC = 0x10
+_PTRACE_EVENT_EXEC = 4
 
 
 class RuntimeContainment(str, Enum):
@@ -352,6 +358,19 @@ def _recv_frame(sock: socket.socket) -> tuple[dict[str, Any], list[int]]:
 
 def _send_credentials(sock: socket.socket, payload: Mapping[str, Any]) -> None:
     _send_frame(sock, payload)
+def _ptrace(request: int, pid: int, data: int = 0) -> None:
+    libc = ctypes.CDLL(None, use_errno=True)
+    function = libc.ptrace
+    function.restype = ctypes.c_long
+    result = function(
+        ctypes.c_ulong(request),
+        ctypes.c_ulong(pid),
+        ctypes.c_void_p(),
+        ctypes.c_void_p(data),
+    )
+    if result == -1:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error))
 
 
 def _unshare(flags: int) -> None:
@@ -563,20 +582,7 @@ def _spawn_one(_control: socket.socket, message: Mapping[str, Any], fds: list[in
             os.dup2(fds[stderr_index], 2)
             for fd in fds:
                 os.set_inheritable(fd, True)
-            status_sock = socket.socket(fileno=status_fd)
-            status_sock.sendmsg(
-                [b"B"],
-                [
-                    (
-                        socket.SOL_SOCKET,
-                        socket.SCM_CREDENTIALS,
-                        struct.pack(
-                            "3i", os.getpid(), os.getuid(), os.getgid()
-                        ),
-                    )
-                ],
-            )
-            status_sock.detach()
+            _ptrace(_PTRACE_TRACEME, 0)
             os.kill(os.getpid(), signal.SIGSTOP)
             argv = _rewrite_received_fd_paths(tuple(message["argv"]), fds)
             env = {str(key): str(value) for key, value in message["environment"].items()}
@@ -588,7 +594,34 @@ def _spawn_one(_control: socket.socket, message: Mapping[str, Any], fds: list[in
         if waited == child and os.WIFSTOPPED(status):
             break
         if os.WIFEXITED(status) or os.WIFSIGNALED(status):
-            raise OSError("envelope child exited before stop")
+            raise OSError("envelope child exited before ptrace admission")
+    _ptrace(_PTRACE_SETOPTIONS, child, _PTRACE_O_TRACEEXEC)
+    _ptrace(_PTRACE_CONT, child)
+    while True:
+        waited, status = os.waitpid(child, os.WUNTRACED)
+        if waited != child:
+            continue
+        if os.WIFEXITED(status) or os.WIFSIGNALED(status):
+            raise OSError("envelope child exited before exec admission")
+        if (
+            os.WIFSTOPPED(status)
+            and os.WSTOPSIG(status) == signal.SIGTRAP
+            and (status >> 16) == _PTRACE_EVENT_EXEC
+        ):
+            _ptrace(_PTRACE_DETACH, child, int(signal.SIGSTOP))
+            break
+    status_sock = socket.socket(fileno=status_fd)
+    status_sock.sendmsg(
+        [b"B"],
+        [
+            (
+                socket.SOL_SOCKET,
+                socket.SCM_CREDENTIALS,
+                struct.pack("3i", child, os.getuid(), os.getgid()),
+            )
+        ],
+    )
+    status_sock.detach()
     while True:
         waited, status = os.waitpid(child, 0)
         if waited == child:
