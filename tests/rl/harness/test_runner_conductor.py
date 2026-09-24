@@ -6,6 +6,7 @@ import copy
 import json
 import hashlib
 from pathlib import Path
+import subprocess
 from collections.abc import Mapping
 from typing import Any
 
@@ -4554,40 +4555,27 @@ async def test_openhands_native_error_returns_replay_trace(failure_status: str) 
 
 async def test_openhands_iteration_budget_stops_at_configured_turn_limit(tmp_path: Path) -> None:
     import os
-    import shutil
-    import sys
     from breadboard.rl.harness.native_session import NativeSession
-    py312 = (
-        shutil.which("python3.12")
-        or "/opt/breadboard-native-tools/python/bin/python3.12"
-        or "/Users/kylemccleary/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12"
-    )
-    if not Path(py312).is_file():
-        pytest.skip("python3.12 binary not found")
+    py312 = os.environ.get("BB_OPENHANDS_PY312")
+    if py312 is None:
+        pytest.skip("BB_OPENHANDS_PY312 is unset; installed SDK replay requires Python 3.12")
+    assert Path(py312).is_file(), f"BB_OPENHANDS_PY312 is not a file: {py312}"
 
     fixtures = Path(__file__).resolve().parents[2] / "e4_parity" / "fixtures" / "openhands_sdk"
     oh5_trace_path = fixtures / "OH-05-iteration-budget" / "trace.json"
-    if not oh5_trace_path.is_file():
-        pytest.skip("OH-05 trace fixture not found")
+    assert oh5_trace_path.is_file(), f"OH-05 trace fixture not found: {oh5_trace_path}"
     oh5_trace = json.loads(oh5_trace_path.read_text(encoding="utf-8"))
 
     env = dict(os.environ)
     repo_root = str(Path(__file__).resolve().parents[3])
-    uv_pkg = "/Users/kylemccleary/.cache/uv/archive-v0/EmOGkXXkN6m3sPSJ/lib/python3.12/site-packages"
-    pythonpaths = [repo_root]
-    if os.path.isdir(uv_pkg):
-        pythonpaths.append(uv_pkg)
-    for p in sys.path:
-        if "site-packages" in p and p not in pythonpaths:
-            pythonpaths.append(p)
-    env["PYTHONPATH"] = ":".join(pythonpaths)
+    env["PYTHONPATH"] = repo_root
     env["OPENHANDS_SUPPRESS_BANNER"] = "1"
-    try:
-        check = subprocess.run([py312, "-c", "from breadboard.rl.harness.openhands_worker import factory"], env=env, capture_output=True, timeout=5)
-        if check.returncode != 0:
-            pytest.skip("openhands worker not importable in python3.12")
-    except Exception:
-        pytest.skip("openhands worker probe failed")
+    env["OPENAI_API_KEY"] = "fixture-only"
+    check = subprocess.run(
+        [py312, "-c", "import openhands.sdk, openhands.tools; import sys; assert sys.version_info[:2] == (3, 12); from breadboard.rl.harness.openhands_worker import factory"],
+        env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert check.returncode == 0, check.stderr
     worker_code = """
 import sys
 from breadboard.rl.harness.native_worker import WorkerChannel

@@ -1,0 +1,39 @@
++----------------------------------------------------------------------+
+|  OpenHands SDK v1.47.0                                               |
+|                                                                      |
+|  Report a bug: github.com/OpenHands/software-agent-sdk/issues        |
+|  Get help: openhands.dev/joinslack                                   |
+|  Scale up: openhands.dev/product/sdk                                 |
+|                                                                      |
+|  Set OPENHANDS_SUPPRESS_BANNER=1 to hide this message                |
++----------------------------------------------------------------------+
+
+[09/23/26 05:46:18] WARNING  No persistence_dir provided; falling   state.py:515
+                             back to InMemoryFileStore. EventLog                
+                             data will not persist across requests.             
+[09/23/26 05:46:18] INFO     Created new conversation               state.py:592
+                             147f5a25-6f9d-48d3-90c9-65bf077d401b               
+[09/23/26 05:46:18] INFO     Using forced SubprocessTerminal      factory.py:149
+[09/23/26 05:46:18] INFO     Using shell: /bin/bash   subprocess_terminal.py:142
+[09/23/26 05:46:18] INFO     TaskTrackerExecutor initialized   definition.py:161
+                             with save_dir: None                                
+[09/23/26 05:46:18] INFO     FileEditor initialized with cwd:      editor.py:105
+                             /opt/openhands/case/workspace                      
+[09/23/26 05:46:19] INFO     TerminalExecutor initialized with       impl.py:124
+                             working_dir:                                       
+                             /opt/openhands/case/workspace,                     
+                             username: None, terminal_type:                     
+                             subprocess                                         
+[09/23/26 05:46:19] INFO     Loaded 3 tools from spec                base.py:564
+[09/23/26 05:46:19] WARNING  tmux is not installed. Falling back  factory.py:181
+                             to subprocess-based terminal, which                
+                             may be less stable. For best agent                 
+                             performance, install tmux (e.g.                    
+                             `apt-get install tmux` or `brew                    
+                             install tmux`).                                    
+/usr/local/lib/python3.12/site-packages/openhands/tools/terminal/impl.py:402: UserWarning: tmux is not installed. Falling back to subprocess-based terminal, which may be less stable. For best agent performance, install tmux (e.g. `apt-get install tmux` or `brew install tmux`).
+  self._session = create_terminal_session(
+[09/23/26 05:46:19] INFO     Using shell: /bin/bash   subprocess_terminal.py:142
+[09/23/26 05:46:20] INFO     Terminal session reset successfully     impl.py:412
+                             with working_dir:                                  
+                             /opt/openhands/case/workspace                      

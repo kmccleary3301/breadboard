@@ -101,6 +101,20 @@ def _prompt_cache_key(value: Any) -> str:
     return "<EVENT_UUID>"
 
 
+def supplier_conversation_id_from_stderr(stderr: str) -> str:
+    """Read the one SDK state.py:592 conversation ID recorded by the supplier."""
+    lines = stderr.splitlines()
+    matches = [index for index, line in enumerate(lines) if "Created new conversation" in line]
+    if len(matches) != 1:
+        raise ValueError(f"supplier.stderr must record exactly one Created new conversation line; found {len(matches)}")
+    index = matches[0]
+    if "state.py:592" not in lines[index] or index + 1 == len(lines):
+        raise ValueError("supplier.stderr has a malformed state.py:592 conversation record")
+    conversation_id = lines[index + 1].strip()
+    if UUID_RE.fullmatch(conversation_id) is None:
+        raise ValueError("supplier.stderr conversation ID must be a UUID")
+    return conversation_id
+
 def _request_workspace(value: Any, root: str) -> Any:
     if isinstance(value, Mapping):
         return {key: _request_workspace(item, root) for key, item in value.items()}
@@ -117,6 +131,7 @@ def compare_request_sequences(
     *,
     supplier_workspace: str,
     worker_workspace: str,
+    supplier_conversation_id: str,
     worker_conversation_id: str,
 ) -> list[str | None]:
     """Compare every ordered SDK request with symmetric typed workspace/key rules."""
@@ -124,23 +139,18 @@ def compare_request_sequences(
         raise ValueError(
             f"request count differs: supplier {len(supplier_bodies)}, worker {len(worker_bodies)}"
         )
+    _prompt_cache_key(supplier_conversation_id)
     _prompt_cache_key(worker_conversation_id)
     results: list[str | None] = []
-    keys: list[str | None] = [None, None]
     for index, (supplier, worker) in enumerate(zip(supplier_bodies, worker_bodies)):
         normalized = []
-        for side, (body, root) in enumerate(
-            ((supplier, supplier_workspace), (worker, worker_workspace))
+        for role, body, root, conversation_id in (
+            ("supplier", supplier, supplier_workspace, supplier_conversation_id),
+            ("candidate", worker, worker_workspace, worker_conversation_id),
         ):
-            key = body.get("prompt_cache_key")
-            if side == 1 and key != worker_conversation_id:
-                raise ValueError(f"request {index}: prompt_cache_key differs from worker conversation ID")
-            if keys[side] is None:
-                keys[side] = key
-            elif key != keys[side]:
-                raise ValueError(f"request {index}: prompt_cache_key changed within role {side}")
-            item = _request_workspace(_Normalizer().value(body), root)
-            normalized.append(item)
+            if body.get("prompt_cache_key") != conversation_id:
+                raise ValueError(f"request {index}: {role} prompt_cache_key differs from its conversation ID")
+            normalized.append(_request_workspace(_Normalizer().value(body), root))
         results.append(_first_difference(normalized[0], normalized[1], f"$.requests[{index}].body"))
     return results
 

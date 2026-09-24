@@ -152,7 +152,8 @@ def test_supplier_packet_fixtures_match_manifest() -> None:
     )
     members = [FIXTURE_ROOT / "requirements.lock", FIXTURE_ROOT / "kit/openhands_capture_cases.json"]
     members += sorted((FIXTURE_ROOT / "captures").glob("*/trace.json"))
-    assert len(members) == 8
+    members += sorted((FIXTURE_ROOT / "captures").glob("*/supplier.stderr"))
+    assert len(members) == 14
     for member in members:
         digest = manifest["./" + member.relative_to(FIXTURE_ROOT).as_posix()]
         assert hashlib.sha256(member.read_bytes()).hexdigest() == digest
@@ -253,7 +254,7 @@ def test_ipctransport_forwards_sdk_body_verbatim() -> None:
 
 
 def test_worker_all_supplier_request_sequences(tmp_path: Path) -> None:
-    from conformance.comparators.openhands_sdk import compare_request_sequences
+    from conformance.comparators.openhands_sdk import compare_request_sequences, supplier_conversation_id_from_stderr
 
     python, env = _sdk_python()
     result = subprocess.run(
@@ -266,16 +267,24 @@ def test_worker_all_supplier_request_sequences(tmp_path: Path) -> None:
     observed = json.loads(output)
     cases = json.loads((FIXTURE_ROOT / "kit/openhands_capture_cases.json").read_text())["cases"]
     assert set(observed) == set(cases)
+    manifest = dict(
+        line.split(maxsplit=1)[::-1]
+        for line in (FIXTURE_ROOT / "manifest.sha256").read_text(encoding="utf-8").splitlines()
+    )
     report: dict[str, Any] = {"cases": {}}
     for case_id in cases:
         supplier = json.loads((FIXTURE_ROOT / "captures" / case_id / "trace.json").read_text())
         source_bodies = [row["body"] for row in supplier["requests"]]
         worker_bodies = observed[case_id]["requests"]
         assert len(worker_bodies) == len(source_bodies), case_id
+        stderr = (FIXTURE_ROOT / "captures" / case_id / "supplier.stderr").read_bytes()
+        assert hashlib.sha256(stderr).hexdigest() == manifest[f"./captures/{case_id}/supplier.stderr"]
+        supplier_conversation_id = supplier_conversation_id_from_stderr(stderr.decode("utf-8"))
         differences = compare_request_sequences(
             source_bodies, worker_bodies,
             supplier_workspace="/opt/openhands/case/workspace",
             worker_workspace=observed[case_id]["workspace"],
+            supplier_conversation_id=supplier_conversation_id,
             worker_conversation_id=observed[case_id]["conversation_id"],
         )
         report["cases"][case_id] = [
