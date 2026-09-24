@@ -67,6 +67,7 @@ SANDBOX_CAPABILITY_MATRIX_SHA256 = (
     "c24e24766e0e34527af921ba3794b06da4bec468df0e059e90e5deb0a20147df"
 )
 _MAX_SANDBOX_CAPABILITY_MATRIX_BYTES = 64 * 1024
+_NATIVE_PHASE_PAYLOAD_MAX_DEPTH = 64
 EFFECT_CONTENT_UTF8_MAX_BYTES = 64 * 1024
 _SANDBOX_ADAPTER_STATUSES = {
     "docker": "experimental",
@@ -3510,7 +3511,7 @@ class LeaseBackedRunnerWorkspace:
                 frozen_payload = freeze_json_object(
                     payload,
                     field_name="native phase payload",
-                    max_depth=8,
+                    max_depth=_NATIVE_PHASE_PAYLOAD_MAX_DEPTH,
                     max_nodes=lease.plan.limits.observation_bytes + 1,
                     max_encoded_bytes=lease.plan.limits.observation_bytes,
                 )
