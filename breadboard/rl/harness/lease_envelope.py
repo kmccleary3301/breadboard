@@ -620,10 +620,16 @@ def _spawn_one(_control: socket.socket, message: Mapping[str, Any], fds: list[in
             argv0_path = message.get("argv0_path")
             if isinstance(argv0_path, str) and argv0_path:
                 argv[0] = argv0_path
+            exec_fd, argv = _prepare_exec_descriptors(
+                fds,
+                exec_fd=fds[exec_index],
+                status_fd=status_fd,
+                argv=argv,
+            )
             env = {str(key): str(value) for key, value in message["environment"].items()}
             os.set_inheritable(status_fd, False)
             try:
-                _execveat_fd(fds[exec_index], argv, env)
+                _execveat_fd(exec_fd, argv, env)
             except OSError as exc:
                 os.set_inheritable(status_fd, True)
                 _send_frame(
@@ -1008,6 +1014,42 @@ def _rewrite_received_fd_paths(argv: Sequence[str], fds: Sequence[int]) -> tuple
         re.sub(r"/proc/self/fd/([0-9]+)", replace, str(item))
         for item in argv
     )
+def _prepare_exec_descriptors(
+    fds: Sequence[int],
+    *,
+    exec_fd: int,
+    status_fd: int,
+    argv: Sequence[str],
+) -> tuple[int, tuple[str, ...]]:
+    referenced = {exec_fd}
+    for item in argv:
+        for match in re.finditer(r"/proc/self/fd/([0-9]+)", item):
+            candidate = int(match.group(1))
+            if candidate in fds:
+                referenced.add(candidate)
+    mapping: dict[int, int] = {}
+    next_fd = 3
+    for source in sorted(referenced):
+        while next_fd == status_fd or next_fd in mapping.values():
+            next_fd += 1
+        os.dup2(source, next_fd, inheritable=True)
+        mapping[source] = next_fd
+        next_fd += 1
+    rewritten = _rewrite_fd_paths(argv, mapping)
+    preserved = set(mapping) | {status_fd}
+    for fd in set(fds):
+        if fd > 2 and fd not in preserved:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+    for source, target in mapping.items():
+        if source != target:
+            try:
+                os.close(source)
+            except OSError:
+                pass
+    return mapping[exec_fd], rewritten
 
 
 def launch_envelope(
