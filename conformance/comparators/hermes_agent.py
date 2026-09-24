@@ -71,6 +71,60 @@ _CANONICAL_FIELDS = (
     "termination",
     "request_count",
 )
+_SOURCE_CONTROL_VALUES = {
+    "api_mode": "chat_completions",
+    "streaming": False,
+    "max_iterations": 8,
+    "max_tokens": 2048,
+    "provider_deadline": 45,
+    "provider_timeout": 45,
+    "native_deadline": 35,
+    "tool_deadline": 35,
+    "watchdog_deadline": 40,
+    "watchdog": 40,
+    "terminal_deadline": 30,
+    "terminal_timeout": 30,
+    "retry": True,
+    "api_max_retries": 1,
+    "fallback": False,
+}
+_PACKET_ABSENT_CONTROLS = (
+    "provider_deadline", "provider_timeout", "retry", "api_max_retries", "fallback",
+)
+_SCHEMA_GAP = "hermes-rerun3-unoverlaid-schemas"
+
+
+def _request_difference(
+    expected: list[dict[str, Any]], observed: list[dict[str, Any]],
+    overlay: Mapping[str, Any],
+) -> tuple[str | None, bool]:
+    left, right = copy.deepcopy(expected), copy.deepcopy(observed)
+    if len(left) != len(right):
+        return _first_difference(left, right, "$.requests"), False
+    used_overlay = False
+    for row_index, (source, candidate) in enumerate(zip(left, right)):
+        source_tools = source.get("body", {}).get("tools", [])
+        candidate_tools = candidate.get("body", {}).get("tools", [])
+        if not isinstance(source_tools, list) or not isinstance(candidate_tools, list) or len(source_tools) != len(candidate_tools):
+            return _first_difference(left, right, "$.requests"), False
+        for tool_index, (native, approved) in enumerate(zip(source_tools, candidate_tools)):
+            name = native.get("function", {}).get("name") if isinstance(native, Mapping) else None
+            if name not in overlay:
+                continue
+            declaration = overlay[name]
+            native_bytes = json.dumps(native, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+            approved_bytes = json.dumps(approved, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+            if (
+                hashlib.sha256(native_bytes).hexdigest() != declaration["native_sha256"]
+                or hashlib.sha256(approved_bytes).hexdigest() != declaration["approved_sha256"]
+                or approved_bytes != declaration["approved_schema_json"].encode()
+            ):
+                return _first_difference(left, right, "$.requests"), False
+            source_tools[tool_index] = candidate_tools[tool_index] = name
+            used_overlay = True
+    return _first_difference(left, right, "$.requests"), used_overlay
+
+
 
 
 def _json_value(value: Any) -> str:
@@ -399,32 +453,31 @@ def _file_effects(trace: Mapping[str, Any], case_dir: Path) -> dict[str, str | N
     return _effect_delta(effects, role="supplier")
 
 
-def _controls_projection(trace: Mapping[str, Any], requests: Sequence[Mapping[str, Any]], advertised: Sequence[str]) -> dict[str, Any]:
+def _controls_projection(
+    trace: Mapping[str, Any], requests: Sequence[Mapping[str, Any]],
+    advertised: Sequence[str], *, role: str,
+) -> dict[str, Any]:
     controls = trace.get("controls", {})
     if not isinstance(controls, Mapping):
         raise ValueError("trace.controls must be an object")
+    if role == "breadboard":
+        missing = _SOURCE_CONTROL_VALUES.keys() - controls.keys()
+        if missing:
+            raise ValueError("BreadBoard controls missing fields: " + ", ".join(sorted(missing)))
+    elif role != "supplier":
+        raise ValueError(f"unknown controls role: {role}")
     body_count = len(requests)
     attempts = controls.get("http_attempts")
     if attempts is not None and (type(attempts) is not int or attempts != body_count):
         raise ValueError(f"controls.http_attempts={attempts!r} but found {body_count} request bodies")
-    return {
-        "api_mode": controls.get("api_mode", "chat_completions"),
-        "streaming": bool(controls.get("streaming", False)),
-        "max_iterations": controls.get("max_iterations", 8),
-        "max_tokens": controls.get("max_tokens", 2048),
-        "provider_deadline": controls.get("provider_deadline", controls.get("provider_timeout", 45)),
-        "provider_timeout": controls.get("provider_timeout", controls.get("provider_deadline", 45)),
-        "native_deadline": controls.get("native_deadline", controls.get("tool_deadline", 35)),
-        "tool_deadline": controls.get("tool_deadline", controls.get("native_deadline", 35)),
-        "watchdog_deadline": controls.get("watchdog_deadline", controls.get("watchdog", 40)),
-        "watchdog": controls.get("watchdog", controls.get("watchdog_deadline", 40)),
-        "terminal_deadline": controls.get("terminal_deadline", controls.get("terminal_timeout", 30)),
-        "terminal_timeout": controls.get("terminal_timeout", controls.get("terminal_deadline", 30)),
-        "retry": bool(controls.get("retry", False)) or (controls.get("api_max_retries", 1) > 0),
-        "api_max_retries": controls.get("api_max_retries", 1),
-        "fallback": bool(controls.get("fallback", False)),
-        "advertised_tools": list(advertised),
+    projected = {
+        key: controls.get(key, source_value)
+        for key, source_value in _SOURCE_CONTROL_VALUES.items()
     }
+    if type(projected["streaming"]) is not bool or type(projected["retry"]) is not bool or type(projected["fallback"]) is not bool:
+        raise ValueError("streaming, retry and fallback controls must be boolean")
+    projected["advertised_tools"] = list(advertised)
+    return projected
 
 def _canonical_from_supplier(trace: Mapping[str, Any], case_dir: Path) -> dict[str, Any]:
     raw_rows = trace.get("requests")
@@ -444,7 +497,7 @@ def _canonical_from_supplier(trace: Mapping[str, Any], case_dir: Path) -> dict[s
             "cwd": _declared_workspace_root(trace, fallback=case_dir / "workspace"),
         },
         "context": _context_projection(requests),
-        "controls": _controls_projection(trace, requests, advertised),
+        "controls": _controls_projection(trace, requests, advertised, role="supplier"),
         "requests": requests,
         "tool_calls": _tool_call_samples(requests, advertised),
         "tool_results": _tool_results(history),
@@ -521,7 +574,7 @@ def project_bb_trace(trace: Mapping[str, Any] | Path | str) -> dict[str, Any]:
     projected = {"schema_version": TRACE_SCHEMA_VERSION, "role": "breadboard"}
     for field in _CANONICAL_FIELDS:
         projected[field] = copy.deepcopy(value[field])
-    projected["controls"] = _controls_projection(value, requests, advertised)
+    projected["controls"] = _controls_projection(value, requests, advertised, role="breadboard")
     if not isinstance(projected["file_effects"], Mapping):
         raise ValueError("BreadBoard file_effects must be an object")
     projected["file_effects"] = _effect_delta(projected["file_effects"], role="breadboard")
@@ -530,7 +583,6 @@ def project_bb_trace(trace: Mapping[str, Any] | Path | str) -> dict[str, Any]:
         raise ValueError("normalizations must be a list of strings")
     projected["normalizations"] = list(declared)
     return projected
-
 
 def _assertion(assertion_id: str, expected: Any, observed: Any, detail: str | None = None) -> dict[str, Any]:
     return {
@@ -547,6 +599,11 @@ def _report(
     assertions: list[dict[str, Any]],
     errors: list[str] | None = None,
     normalizations: list[str] | None = None,
+    *,
+    gaps: list[dict[str, str]] | None = None,
+    source_derived_controls: Sequence[str] = (),
+    bb_trace_sha256: str | None = None,
+    job_id: str | None = None,
 ) -> dict[str, Any]:
     failed = sum(item["status"] == "failed" for item in assertions)
     return {
@@ -560,6 +617,10 @@ def _report(
         "failed": failed,
         "errors": errors or [],
         "normalizations": normalizations or [],
+        "gaps": gaps or [],
+        "source_derived_controls": list(source_derived_controls),
+        "bb_trace_sha256": bb_trace_sha256,
+        "job_id": job_id,
         "assertions": assertions,
     }
 
@@ -589,11 +650,22 @@ def compare_cases(
     bb_trace: Mapping[str, Any] | Path | str,
 ) -> dict[str, Any]:
     normalizations: list[str] = []
+    trace_hash: str | None = None
+    job_id: str | None = None
     try:
         expected, supplier_root = _supplier_input(supplier_case)
-        bb_value = _load_json(Path(bb_trace)) if isinstance(bb_trace, (Path, str)) else copy.deepcopy(bb_trace)
+        if isinstance(bb_trace, (Path, str)):
+            raw = Path(bb_trace).read_bytes()
+            trace_hash = "sha256:" + hashlib.sha256(raw).hexdigest()
+            bb_value = json.loads(raw)
+        else:
+            bb_value = copy.deepcopy(bb_trace)
         if not isinstance(bb_value, Mapping):
             raise ValueError("BreadBoard trace must be an object")
+        candidate_job = bb_value.get("job_id")
+        if candidate_job is not None and not isinstance(candidate_job, str):
+            raise ValueError("BreadBoard job_id must be a string")
+        job_id = candidate_job
         observed_root = _declared_workspace_root(bb_value)
         observed = project_bb_trace(bb_value)
         expected_changed, observed_changed = [False], [False]
@@ -604,10 +676,22 @@ def compare_cases(
     except (OSError, TypeError, ValueError) as exc:
         return _report([], [str(exc)], normalizations)
     assertions: list[dict[str, Any]] = []
+    overlay_config = _load_json(
+        Path(__file__).resolve().parents[2] / "config/e4_targets/hermes_agent/2026.9.11/native-config.json"
+    )
+    overlay = overlay_config["schema_overlay"]
+    request_difference, used_overlay = _request_difference(expected["requests"], observed["requests"], overlay)
     for field in _CANONICAL_FIELDS:
-        difference = _first_difference(expected.get(field), observed.get(field), f"$.{field}")
+        difference = request_difference if field == "requests" else _first_difference(
+            expected.get(field), observed.get(field), f"$.{field}"
+        )
         assertions.append(_assertion(f"{expected['case_id']}.{field}_equal", expected.get(field), observed.get(field), difference))
-    return _report(assertions, normalizations=normalizations)
+    return _report(
+        assertions, normalizations=normalizations,
+        gaps=[{"id": _SCHEMA_GAP, "evidence": "source-derived"}] if used_overlay else [],
+        source_derived_controls=_PACKET_ABSENT_CONTROLS,
+        bb_trace_sha256=trace_hash, job_id=job_id,
+    )
 
 
 class HermesAgentComparator:

@@ -63,17 +63,20 @@ def test_declared_schema_overlay_advertises_only_bounded_tools(tmp_path: Path) -
 @pytest.mark.parametrize("case_dir", CASES, ids=lambda path: path.name)
 def test_supplier_projection_self_comparison(case_dir: Path) -> None:
     supplier = project_supplier_case(case_dir)
-    replay = deepcopy(supplier)
+    replay = _bounded_replay(supplier)
     assert replay["schema_version"] == TRACE_SCHEMA_VERSION
     assert project_bb_trace(replay)["role"] == "breadboard"
     report = compare_cases(case_dir, replay)
     assert report["ok"] is True
     assert report["failed"] == 0
+    assert report["gaps"][0]["id"] == "hermes-rerun3-unoverlaid-schemas"
+    assert report["gaps"][0]["evidence"] == "source-derived"
+    assert {"provider_deadline", "retry", "api_max_retries", "fallback"} <= set(report["source_derived_controls"])
 
 @pytest.mark.parametrize("case_dir", CASES, ids=lambda path: path.name)
 def test_packet_workspace_delta_excludes_seed_and_supplier_trajectory(case_dir: Path) -> None:
     supplier = project_supplier_case(case_dir)
-    replay = deepcopy(supplier)
+    replay = _bounded_replay(supplier)
     original = json.loads((case_dir / "trace.json").read_bytes())
     replay["file_effects"] = {
         path: item["sha256"] if item["exists"] else None
@@ -93,9 +96,37 @@ def test_effect_exclusion_is_not_chosen_by_trace_role() -> None:
 
 
 
+def _bounded_replay(supplier: dict[str, Any]) -> dict[str, Any]:
+    replay = deepcopy(supplier)
+    overlay = json.loads(TARGET_CONFIG.read_bytes())["schema_overlay"]
+    for request in replay["requests"]:
+        for index, schema in enumerate(request["body"]["tools"]):
+            name = schema["function"]["name"]
+            if name in overlay:
+                request["body"]["tools"][index] = json.loads(overlay[name]["approved_schema_json"])
+    return replay
+
+
 def _replay(case_name: str) -> tuple[Path, dict[str, Any]]:
     case_dir = FIXTURES / case_name
-    return case_dir, deepcopy(project_supplier_case(case_dir))
+    return case_dir, _bounded_replay(project_supplier_case(case_dir))
+
+@pytest.mark.parametrize(
+    "key", ["max_tokens", "provider_deadline", "provider_timeout", "native_deadline",
+            "tool_deadline", "watchdog_deadline", "watchdog", "terminal_deadline",
+            "terminal_timeout", "retry", "api_max_retries", "fallback"],
+)
+def test_omitted_candidate_control_fails(key: str) -> None:
+    case_dir, replay = _replay("H-01-normal-memory-skill-write")
+    del replay["controls"][key]
+    assert compare_cases(case_dir, replay)["ok"] is False
+
+
+def test_explicit_retry_false_is_not_collapsed_into_retry_count() -> None:
+    case_dir, replay = _replay("H-01-normal-memory-skill-write")
+    replay["controls"]["retry"] = False
+    assert compare_cases(case_dir, replay)["ok"] is False
+
 
 
 def _extra_tool_advertised(trace: dict[str, Any]) -> None:
