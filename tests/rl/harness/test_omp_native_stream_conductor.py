@@ -30,6 +30,7 @@ from tests.rl.harness.test_pi_native_stream_conductor import _scripted_server
 from tests.rl.harness.test_runner_conductor import _tool_grant
 from tests.rl.harness.test_runner_policy_runtime import _observation, _plan, _policy_capabilities
 
+PACKET_SHA256 = "cf8937d3f359021e9c86b9c2190dbc2a2ffadc07f175cb84bb1910a65d2b54f0"
 PACKET = Path(
     os.environ.get(
         "BB_OMP_RERUN5_PACKET",
