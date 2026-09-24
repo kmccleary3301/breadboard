@@ -1396,14 +1396,19 @@ class EnvelopeLaunch:
     control: socket.socket
     launcher_pid: int
     pid1: int
+    pid1_fd: int
     receipt: ContainmentReceipt
     authenticator: ReceiptAuthenticator
     workspace: str
     scratch: str
 
     async def terminate(self) -> ContainmentReceipt:
+        # Signal through the attested pidfd: a raw PID may be reused on the host
+        # once the launcher reaps PID1.
+        if self.pid1_fd < 0:
+            raise RuntimeError("envelope was already terminated")
         try:
-            os.kill(self.pid1, signal.SIGKILL)
+            _pidfd_send_signal(self.pid1_fd, signal.SIGKILL)
         except ProcessLookupError:
             pass
         message: dict[str, Any] | None = None
@@ -1421,7 +1426,10 @@ class EnvelopeLaunch:
         except ChildProcessError:
             pass
         pid1_reaped = bool(message and message.get("pid1_reaped") is True)
-        all_dead = bool(message and message.get("all_dead") is True and not Path(f"/proc/{self.pid1}").exists())
+        pid1_exited = bool(select.select([self.pid1_fd], [], [], 0)[0])
+        os.close(self.pid1_fd)
+        self.pid1_fd = -1
+        all_dead = bool(message and message.get("all_dead") is True and pid1_exited)
         receipt = add_teardown_outcome(
             self.receipt,
             pid1_reaped=pid1_reaped,
@@ -1433,13 +1441,15 @@ class EnvelopeLaunch:
 
 
 def _rewrite_fd_paths(argv: Sequence[str], mapping: Mapping[int, int]) -> tuple[str, ...]:
-    result = []
-    for item in argv:
-        value = item
-        for source, target in mapping.items():
-            value = value.replace(f"/proc/self/fd/{source}", f"/proc/self/fd/{target}")
-        result.append(value)
-    return tuple(result)
+    def replace(match: re.Match[str]) -> str:
+        source = int(match.group(1))
+        if source not in mapping:
+            return match.group(0)
+        return f"/proc/self/fd/{mapping[source]}"
+
+    return tuple(
+        re.sub(r"/proc/self/fd/([0-9]+)", replace, str(item)) for item in argv
+    )
 
 
 def _rewrite_received_fd_paths(argv: Sequence[str], fds: Sequence[int]) -> tuple[str, ...]:
@@ -1550,17 +1560,21 @@ def launch_envelope(
         if ready.get("kind") != "ready":
             raise OSError("envelope readiness is invalid")
         receipt = ContainmentReceipt.from_mapping(ready["receipt"])
-        credentials_pid = None
+        credentials: tuple[int, int, int] | None = None
         for level, kind, data in ancdata:
             if level == socket.SOL_SOCKET and kind == socket.SCM_CREDENTIALS and len(data) >= 12:
-                credentials_pid = struct.unpack("3i", data[:12])[0]
+                credentials = struct.unpack("3i", data[:12])
                 break
-        if credentials_pid is None or credentials_pid <= 0:
+        if credentials is None or credentials[0] <= 0:
             raise OSError("envelope supervisor credentials are missing")
+        pid1_fd = _open_attested_pidfd(
+            credentials[0], credentials, receipt.pid_namespace_inode
+        )
         return EnvelopeLaunch(
             control_parent,
             pid,
-            credentials_pid,
+            credentials[0],
+            pid1_fd,
             receipt,
             authenticator,
             str(workspace),

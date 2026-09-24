@@ -177,6 +177,19 @@ def test_lease_mountpoints_are_recreated_only_inside_private_tmp(tmp_path: Path)
     lease_envelope._prepare_lease_mountpoint(str(tmp_root), str(tmp_root))
     assert not outside.exists()
 
+def test_fd_path_rewrite_is_single_pass_over_whole_descriptor_tokens() -> None:
+    mapping = {5: 0, 6: 1, 7: 2, 8: 3, 3: 4, 4: 5, 9: 6, 10: 7, 11: 8}
+    assert lease_envelope._rewrite_fd_paths(
+        ("/proc/self/fd/3", "/proc/self/fd/4"), mapping
+    ) == ("/proc/self/fd/4", "/proc/self/fd/5")
+    assert lease_envelope._rewrite_fd_paths(("/proc/self/fd/30",), {3: 0, 30: 4}) == (
+        "/proc/self/fd/4",
+    )
+    assert lease_envelope._rewrite_fd_paths(("--x=/proc/self/fd/31/y",), {3: 0}) == (
+        "--x=/proc/self/fd/31/y",
+    )
+
+
 
 @requires_sealed_execution
 async def test_fast_direct_elf_exec_without_sleep(tmp_path: Path) -> None:
