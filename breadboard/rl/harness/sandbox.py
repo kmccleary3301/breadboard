@@ -2408,6 +2408,12 @@ class TrustedProcessHandle:
                             try:
                                 observed_exe = os.stat(f"/proc/{process.pid}/exe")
                             except OSError as exc:
+                                try:
+                                    current_start = self._start_identity(process.pid)
+                                except OSError:
+                                    break
+                                if current_start != identity["process_start_identity"]:
+                                    break
                                 process.kill()
                                 raise SandboxLaunchError(
                                     "attested process executable is unavailable",
@@ -2429,6 +2435,11 @@ class TrustedProcessHandle:
                                     lease_id=self.lease_id,
                                 )
                             await asyncio.sleep(0.001)
+                    identity = {
+                        **identity,
+                        "process_executable_digest": admitted_executable.digest,
+                        "process_exec_succeeded": True,
+                    }
                     recorder(f"process-group-{process_group}", identity)
                     return process
                 stop_deadline = min(deadline, loop.time() + 0.25)
