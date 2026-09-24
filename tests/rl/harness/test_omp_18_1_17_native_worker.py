@@ -69,8 +69,8 @@ def _source_registry_sets() -> dict[str, set[str]]:
     sqlite_extensions = set()
     for alternative in sqlite_alternatives:
         sqlite_extensions.add("." + alternative.replace("?", ""))
-        if alternative.endswith("?"):
-            sqlite_extensions.add("." + alternative[:-1])
+        if "?" in alternative:
+            sqlite_extensions.add("." + alternative.replace("3?", ""))
 
     return {
         "internal-resource": internal,

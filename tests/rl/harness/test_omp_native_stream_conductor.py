@@ -169,6 +169,7 @@ class _OMPWorkspacePort:
         self.request_bodies = request_bodies
         self.project_request_index = 0
         self.phase_log = phase_log if phase_log is not None else []
+        self._prepared_calls: list[dict[str, Any]] = []
 
     @property
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]:
@@ -207,8 +208,11 @@ class _OMPWorkspacePort:
         return changed
     async def invoke_native_phase(self, operation: str, payload: Mapping[str, Any], *, timeout_ms: int, package_subpath: str | None = None) -> Mapping[str, Any]:
         del timeout_ms
-        self.phase_log.append((operation, deepcopy(dict(payload))))
         phase_payload = dict(payload)
+        if operation == "prepare_tools":
+            self._prepared_calls = deepcopy(list(phase_payload.get("calls", [])))
+        elif operation == "execute_batch":
+            phase_payload["calls"] = deepcopy(self._prepared_calls)
         if operation == "initialize":
             assert package_subpath is not None
             runtime_inputs = self.native_runtime_inputs(
@@ -221,6 +225,7 @@ class _OMPWorkspacePort:
                 "package_dir": runtime_inputs["package_dir"],
                 "runtime_inputs": runtime_inputs,
             })
+        self.phase_log.append((operation, deepcopy(dict(phase_payload))))
         result = await asyncio.to_thread(self.worker.phase, operation, phase_payload)
         if operation == "initialize":
             result = dict(result)
