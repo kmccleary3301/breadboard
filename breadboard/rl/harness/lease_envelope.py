@@ -479,26 +479,13 @@ def _setup_mount_view(
     tmpfs_size_bytes: int,
 ) -> tuple[str, tuple[str, ...]]:
     _enter_private_mount_namespace()
-    staging_root = f"/.breadboard-envelope-{os.getpid()}"
-    workspace_stage = f"{staging_root}/workspace"
-    scratch_stage = f"{staging_root}/scratch"
-    os.makedirs(staging_root, mode=0o700)
-    os.mkdir(workspace_stage, mode=0o700)
-    os.mkdir(scratch_stage, mode=0o700)
-    _bind_path(os.path.abspath(workspace), workspace_stage)
-    _bind_path(os.path.abspath(scratch), scratch_stage)
     _mount_tmpfs("/tmp", tmpfs_size_bytes)
     for path in (workspace, scratch):
         os.makedirs(os.path.abspath(path), mode=0o700, exist_ok=True)
-    _bind_path(workspace_stage, os.path.abspath(workspace))
-    _bind_path(scratch_stage, os.path.abspath(scratch))
+    _bind_path(f"/proc/self/fd/{workspace_fd}/.", os.path.abspath(workspace))
+    _bind_path(f"/proc/self/fd/{scratch_fd}/.", os.path.abspath(scratch))
     _verify_bind_identity(workspace_fd, os.path.abspath(workspace))
     _verify_bind_identity(scratch_fd, os.path.abspath(scratch))
-    _unbind_path(workspace_stage)
-    _unbind_path(scratch_stage)
-    os.rmdir(workspace_stage)
-    os.rmdir(scratch_stage)
-    os.rmdir(staging_root)
     _remount_readonly("/")
     _mount_proc()
     return _verify_mount_view(workspace, scratch)
