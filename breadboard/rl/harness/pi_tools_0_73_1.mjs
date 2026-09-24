@@ -240,9 +240,6 @@ function validateCall(call, defaultCwd) {
   const toolId = call.tool_id ?? call.toolId ?? call.name;
   if (typeof toolId !== "string" || !TOOL_IDS.has(toolId)) fail(`unknown tool_id: ${String(toolId)}`);
   const argumentsValue = call.arguments;
-  if (argumentsValue === null || typeof argumentsValue !== "object" || Array.isArray(argumentsValue)) {
-    fail("arguments must be a JSON object");
-  }
   const cwd = typeof call.cwd === "string" && call.cwd ? call.cwd : defaultCwd;
   const callIdValue = call.call_id ?? call.callId ?? call.id;
   const callId = typeof callIdValue === "string" && callIdValue ? callIdValue : "bb-native-call";

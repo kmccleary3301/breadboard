@@ -109,15 +109,17 @@ def test_partial_json_repair_and_plain_tools():
 def test_tool_execution_preserves_non_object_arguments(tmp_path: Path):
     r1 = execute_pi_tool("read", [], tmp_path)
     assert r1.is_error
-    assert "arguments must be a JSON object" in r1.content
+    assert 'Validation failed for tool "read":' in r1.content
+    assert "- root: must be object" in r1.content
+    assert "Received arguments:\n[]" in r1.content
 
     r2 = execute_pi_tool("bash", 42, tmp_path)
     assert r2.is_error
-    assert "arguments must be a JSON object" in r2.content
+    assert 'Validation failed for tool "bash":' in r2.content
 
     r3 = execute_pi_tool("write", None, tmp_path)
     assert r3.is_error
-    assert "arguments must be a JSON object" in r3.content
+    assert 'Validation failed for tool "write":' in r3.content
 def test_receiver_argument_with_unescaped_shell_quotes_matches_pinned_partial_json() -> None:
     receiver_arguments = (
         r'''{"command":"printf 'cwd='; pwd; printf 'state=%s\n' "${PI_CAPTURE_STATE-unset}""}'''
