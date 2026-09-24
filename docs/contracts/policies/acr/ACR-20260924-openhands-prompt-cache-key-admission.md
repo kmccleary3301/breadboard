@@ -19,6 +19,7 @@ DO-2 job 1206 failed all six OpenHands cases with `runtime/native_http_capabilit
 
 ## 3) Coupling and Generalization Impact
 
+- Danger-zone: yes.
 - Core -> extension dependency: no. Admission reads only `profile.request_policy.conversation_key_field`; `policy_provider.py` and `conductor.py` name no profile.
 - `conversation_key_field` is `Literal["prompt_cache_key"] | None`, default `None`; any other value fails policy construction. `as_dict` emits it only when set, so every existing profile identity digest is unchanged.
 - When declared, the key must be a canonical lowercase UUID string (`8-4-4-4-12`). Its value, or its absence, is pinned per episode client under the state lock just before a request is staged. Any later change of value or presence fails closed with `native_http_capability_mismatch`. The body is forwarded unchanged.
