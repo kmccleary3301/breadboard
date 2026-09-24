@@ -47,6 +47,19 @@ def test_exec_and_process_poll_clamp(tmp_path: Path) -> None:
     tools.scope.cleanup()
 
 
+def test_exec_timeout_admission_rejects_over_thirty_seconds(tmp_path: Path) -> None:
+    tools = OpenClawNativeTools(tmp_path)
+    try:
+        denied = tools.execute("exec", {"command": "touch timeout-31.txt", "timeoutSeconds": 31})
+        assert denied["isError"] is True
+        assert not (tmp_path / "timeout-31.txt").exists()
+        accepted = tools.execute("exec", {"command": "printf TIMEOUT_30", "timeoutSeconds": 30})
+        assert accepted["isError"] is False
+        assert "TIMEOUT_30" in accepted["output"]
+    finally:
+        tools.scope.cleanup()
+
+
 def test_max_live_processes_counts_every_exec_including_foreground(tmp_path: Path) -> None:
     tools = OpenClawNativeTools(tmp_path)
     try:

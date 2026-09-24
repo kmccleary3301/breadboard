@@ -140,6 +140,7 @@ function makeTools(createCoreCodingTools) {
     workspaceOnly: true,
     execDefaults: {
       host: "gateway",
+      timeoutSec: 30,
       security: "full",
       ask: "off",
       allowBackground: true,
@@ -537,6 +538,14 @@ async function handle(message) {
           error: denial.message,
           capability_denial: denial,
         };
+      }
+      if (call.name === "exec") {
+        const seconds = call.arguments.timeoutSeconds;
+        if (seconds !== undefined && (
+          typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0 || seconds > 30
+        )) {
+          return { id, name: call.name, arguments: call.arguments, error: "exec timeoutSeconds must be 0 or at most 30" };
+        }
       }
       try {
         // This is the pinned source's prepareArguments hook.  Python never
