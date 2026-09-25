@@ -738,7 +738,7 @@ def test_envelope_mounts_scratch_on_bounded_private_tmpfs(
     finally:
         os.close(workspace_fd)
         os.close(scratch_fd)
-    assert set(dict(mounted)) == {"/tmp", str(scratch)}
+    assert set(dict(mounted)) == {"/tmp", f"/proc/self/fd/{scratch_fd}"}
     assert sum(size for _, size in mounted) == 1_000_000
 
 

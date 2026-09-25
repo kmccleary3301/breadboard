@@ -822,7 +822,7 @@ def _setup_mount_view(
         _move_mount(workspace_tree_fd, workspace)
         os.close(workspace_tree_fd)
         workspace_tree_fd = -1
-        _mount_tmpfs(scratch, scratch_size, mode=0o700)
+        _mount_tmpfs(f"/proc/self/fd/{scratch_fd}", scratch_size, mode=0o700)
         os.mkdir(os.path.join(scratch, "home"), mode=0o700)
         _verify_bind_identity(workspace_fd, workspace)
         _mount_proc()

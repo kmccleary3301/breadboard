@@ -3321,6 +3321,43 @@ def _remove_native_scratch(
     except BaseException as exc:
         return CleanupStepReceipt("native_scratch", CleanupState.FAILED, type(exc).__name__)
 
+
+def _cleanup_native_scratch_step(
+    manager: SandboxRuntimeManager,
+    lease_id: str,
+    *,
+    created_scratch_identities: Sequence[tuple[int, int]] | None = None,
+    runtime: Any = None,
+    runtime_released: bool,
+) -> CleanupStepReceipt | None:
+    if not _native_scratch_present(manager, lease_id):
+        return None
+    created_identity = (
+        created_scratch_identities[0]
+        if created_scratch_identities
+        else getattr(runtime, "native_scratch_identity", None)
+    )
+    if created_identity is not None:
+        return (
+            _remove_native_scratch(
+                manager,
+                lease_id,
+                expected_identity=created_identity,
+            )
+            if runtime_released
+            else CleanupStepReceipt(
+                "native_scratch",
+                CleanupState.QUARANTINED,
+                "dependent runtime cleanup incomplete",
+            )
+        )
+    return CleanupStepReceipt(
+        "native_scratch",
+        CleanupState.QUARANTINED,
+        "preexisting_scratch_preserved",
+    )
+
+
 def _workspace_effect_snapshot(
     root: Path,
     *,
@@ -5418,6 +5455,7 @@ class SandboxRuntimeManager:
             runtime: RuntimeHandle | None = None
             backend: RuntimeBackend | None = None
             record_written = False
+            created_scratch_identities: list[tuple[int, int]] = []
             if not self._claim_lease_owner_lock(lease_id):
                 raise WorkspaceStateError(
                     "lease owner identity is already active",
@@ -5461,7 +5499,6 @@ class SandboxRuntimeManager:
                 record_written = True
                 backend = self.process_backend if plan.runtime.runtime_class is RuntimeClass.TRUSTED_PROCESS else self.docker_backend
                 if backend is None: raise SandboxLaunchError("runtime backend unavailable", code="runtime_unsupported")
-                created_scratch_identities: list[tuple[int, int]] = []
                 context = self._launch_context(
                     plan=plan,
                     workspace=materialized.workspace_path,
@@ -5574,35 +5611,15 @@ class SandboxRuntimeManager:
                     cleanup_steps.append(CleanupStepReceipt(
                         "cache_holder", CleanupState.QUARANTINED, "dependent runtime cleanup incomplete"
                     ))
-                scratch_present = _native_scratch_present(self, lease_id)
-                if scratch_present:
-                    created_identity = (
-                        created_scratch_identities[0]
-                        if created_scratch_identities
-                        else getattr(runtime, "native_scratch_identity", None)
-                    )
-                    if created_identity is not None:
-                        cleanup_steps.append(
-                            _remove_native_scratch(
-                                self,
-                                lease_id,
-                                expected_identity=created_identity,
-                            )
-                            if runtime_released
-                            else CleanupStepReceipt(
-                                "native_scratch",
-                                CleanupState.QUARANTINED,
-                                "dependent runtime cleanup incomplete",
-                            )
-                        )
-                    else:
-                        cleanup_steps.append(
-                            CleanupStepReceipt(
-                                "native_scratch",
-                                CleanupState.QUARANTINED,
-                                "preexisting_scratch_preserved",
-                            )
-                        )
+                scratch_step = _cleanup_native_scratch_step(
+                    self,
+                    lease_id,
+                    created_scratch_identities=created_scratch_identities,
+                    runtime=runtime,
+                    runtime_released=runtime_released,
+                )
+                if scratch_step is not None:
+                    cleanup_steps.append(scratch_step)
                 dependencies_released = all(
                     step.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
                     for step in cleanup_steps
@@ -5752,6 +5769,7 @@ class SandboxRuntimeManager:
                 raise
             launched: RuntimeHandle | None = None
             backend: RuntimeBackend | None = None
+            created_scratch_identities: list[tuple[int, int]] = []
             try:
                 workspace = self.materialization_store.storage_backend.allocate(
                     workspace_id=workspace_id, root=self.materialization_store.workspace_root,
@@ -5864,6 +5882,7 @@ class SandboxRuntimeManager:
                     workspace_fd=workspace_fd,
                     workspace_identity=(workspace_metadata.st_dev, workspace_metadata.st_ino),
                     owner_token=owner_token,
+                    record_scratch_identity=created_scratch_identities.append,
                 )
                 workspace_fd = -1
                 launched, measurement = await backend.launch(
@@ -5979,17 +5998,15 @@ class SandboxRuntimeManager:
                         "workspace", CleanupState.QUARANTINED,
                         "dependent runtime cleanup incomplete",
                     ))
-                scratch_present = _native_scratch_present(self, lease_id)
-                if scratch_present:
-                    cleanup_steps.append(
-                        _remove_native_scratch(self, lease_id)
-                        if runtime_released
-                        else CleanupStepReceipt(
-                            "native_scratch",
-                            CleanupState.QUARANTINED,
-                            "dependent runtime cleanup incomplete",
-                        )
-                    )
+                scratch_step = _cleanup_native_scratch_step(
+                    self,
+                    lease_id,
+                    created_scratch_identities=created_scratch_identities,
+                    runtime=launched,
+                    runtime_released=runtime_released,
+                )
+                if scratch_step is not None:
+                    cleanup_steps.append(scratch_step)
                 dependencies_released = all(
                     step.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
                     for step in cleanup_steps

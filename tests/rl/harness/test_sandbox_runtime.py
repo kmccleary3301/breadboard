@@ -1825,6 +1825,50 @@ async def test_open_preserves_preexisting_native_scratch_on_preflight_failure(
         if scratch_dir.is_dir():
             scratch_dir.rmdir()
 
+@pytest.mark.asyncio
+async def test_open_verifier_preserves_preexisting_native_scratch_on_preflight_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    primary = await harness.manager.open(fixture.request)
+    try:
+        snapshot = await primary.seal_for_verifier()
+        nonce = "preexist-verifier-scratch-sentinel"
+        lease_id = f"verifier-lease-{nonce}"
+        scratch_dir = harness.manager.lease_root / f"{lease_id}.native-scratch"
+        os.mkdir(scratch_dir, mode=0o700)
+        sentinel = scratch_dir / "sentinel.txt"
+        sentinel.write_text("sentinel-verifier-content", encoding="utf-8")
+        monkeypatch.setattr(harness.manager, "_nonce", lambda: nonce)
+        harness.backend.failure = SandboxLaunchError(
+            "attested trusted process native scratch already exists",
+            code="runtime_preflight_failed",
+            lease_id=lease_id,
+        )
+        try:
+            with pytest.raises(SandboxFault) as exc_info:
+                await harness.manager.open_verifier(primary, snapshot)
+            assert isinstance(exc_info.value.primary, SandboxLaunchError)
+            assert exc_info.value.primary.code == "runtime_preflight_failed"
+            assert scratch_dir.is_dir()
+            assert sentinel.is_file()
+            assert sentinel.read_text(encoding="utf-8") == "sentinel-verifier-content"
+            scratch_receipt = next(
+                step for step in exc_info.value.cleanup_receipt.steps
+                if step.resource == "native_scratch"
+            )
+            assert scratch_receipt.state is CleanupState.QUARANTINED
+            assert scratch_receipt.detail == "preexisting_scratch_preserved"
+        finally:
+            if sentinel.exists():
+                sentinel.unlink()
+            if scratch_dir.is_dir():
+                scratch_dir.rmdir()
+    finally:
+        await primary.close()
+        await harness.manager.close()
+
 @pytest.mark.parametrize("completion", ["finish", "cancel"])
 async def test_close_fences_new_operations_and_drains_an_active_operation(
     tmp_path: Path, completion: str
