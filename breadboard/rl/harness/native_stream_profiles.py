@@ -39,6 +39,9 @@ class NativeStreamProfile:
     # A begun stream ending without a finish_reason reaches the semantics as a
     # typed termination instead of failing in the decoder.
     accepts_truncated_stream: bool = False
+    # Sealed compiled runtime-profile objects the source worker's initialize
+    # phase requires verbatim (e.g. OMP's pinned route classifier).
+    initialize_profile_fields: tuple[str, ...] = ()
 
 
 def _pi_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
@@ -109,6 +112,7 @@ NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
         state_module=omp_semantics,
         state_factory=_omp_state,
         accepts_truncated_stream=True,
+        initialize_profile_fields=("route_classifier",),
     ),
 })
 

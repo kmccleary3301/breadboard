@@ -2223,7 +2223,18 @@ class _ConductorSession:
         runtime_inputs = {
             name: declared_runtime_inputs[name] for name in profile.runtime_input_names
         }
+        sealed_fields = {}
+        for name in profile.initialize_profile_fields:
+            value = source_profile.get(name)
+            if not isinstance(value, Mapping):
+                raise _plan_error(
+                    self._open_request,
+                    "native stream sealed initialize field is missing",
+                    "compiled_ir_mismatch",
+                )
+            sealed_fields[name] = thaw_json(value)
         initialized = await phase("initialize", {
+            **sealed_fields,
             "task": task,
             "model_config": thaw_json(self._binding.source_model_config),
             "advertisement": thaw_json(advertisement),
