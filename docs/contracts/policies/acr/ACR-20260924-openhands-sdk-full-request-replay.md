@@ -26,6 +26,8 @@ The Conductor passes the already compiled OpenHands source profile and `limits.m
 
 The replay trace now projects ordered `ActionEvent` tool calls from the worker's committed event deltas, including SDK-rejected calls. Only the separately returned validated `actions` are dispatched. This keeps the rejected call and its `AgentErrorEvent` visible without treating a validation failure as an executable tool call.
 
+The sealed supplier capture sets `num_retries` to zero, as does the native config for both the SDK LLM and its OpenAI HTTP client. A second `provider_request` after one `provider_response` in a sample is not replayed: the Conductor reports `native_retry_refused` with that request's method and URL instead of a generic malformed-response error. No retry setting or provider body is rewritten.
+
 ## 4) Change Classification
 
 - Classification: `additive`.

@@ -2675,6 +2675,14 @@ class _ConductorSession:
                     timeout_ms=60_000,
                 )
                 await commit_events(sampled, "before_policy", turn)
+                if sampled.get("kind") == "provider_request":
+                    second_request = sampled.get("http_request")
+                    method = second_request.get("method") if isinstance(second_request, Mapping) else None
+                    url = second_request.get("url") if isinstance(second_request, Mapping) else None
+                    raise RunnerProtocolError(
+                        f"native retry refused: second provider request {method} {url} in turn {turn}",
+                        code="native_retry_refused", **self._context(),
+                    )
             if sampled.get("kind") != "sample_ready":
                 raise RunnerProtocolError(
                     "native sample did not complete one provider exchange",

@@ -4589,6 +4589,65 @@ async def test_openhands_rejected_action_is_traced_but_not_dispatched() -> None:
     )
 
 
+async def test_openhands_second_provider_request_after_http_conflict_is_refused() -> None:
+    class _ConflictClient(_OpenHandsTraceClient):
+        async def invoke(self, request: Any) -> PolicyRuntimeInvokeResult:
+            await super().invoke(request)
+            self.http_response = {
+                "status_code": 409,
+                "headers": {"content-type": "application/json"},
+                "body_b64": base64.b64encode(b'{"error":{"message":"script exhausted","type":"script_exhausted"}}').decode(),
+            }
+            response = {"native_http_response": self.http_response}
+            return PolicyRuntimeInvokeResult(
+                response_payload=response,
+                response_digest=_independent_digest(response),
+            )
+
+    class _RetryPort(_OpenHandsTracePort):
+        async def invoke_native_phase(
+            self, operation: str, payload: Mapping[str, Any], *, timeout_ms: int,
+        ) -> Mapping[str, Any]:
+            reply = await super().invoke_native_phase(operation, payload, timeout_ms=timeout_ms)
+            if operation == "provider_response":
+                return {
+                    **reply,
+                    "kind": "provider_request",
+                    "http_request": {
+                        "method": "POST",
+                        "url": "https://provider.invalid/chat?retry=2",
+                        "headers": {},
+                        "body_b64": "",
+                    },
+                }
+            return reply
+
+    observation = _observation()
+    tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
+    plan = _plan(
+        observation=observation,
+        semantics=_openhands_semantics(observation),
+        tools=tuple(_tool_grant(tool_id) for tool_id in sorted(tool_order)),
+        limit_updates={"max_turns": 16, "action_timeout_ms": 90_000},
+        implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
+    )
+    client = _ConflictClient(observation)
+    tools = _RetryPort()
+    session, _, _, _, _, _ = await _open(
+        observation=observation, plan=plan, client=client, tools=tools,
+    )
+    try:
+        with pytest.raises(RunnerProtocolError) as captured:
+            await session.run(ConductorRunRequest({"prompt": "finish the task"}))
+    finally:
+        await session.close()
+    assert captured.value.code == "native_retry_refused"
+    assert "second provider request POST https://provider.invalid/chat?retry=2" in str(captured.value)
+    assert len(client.requests) == 1
+    assert tools.operations.count("provider_response") == 1
+    assert "execute" not in tools.operations
+
+
 @pytest.mark.parametrize("failure_status", ["ERROR", "STUCK"])
 async def test_openhands_native_error_returns_replay_trace(failure_status: str) -> None:
     observation = _observation()
