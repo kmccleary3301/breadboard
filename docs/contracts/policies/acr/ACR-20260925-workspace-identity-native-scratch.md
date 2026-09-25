@@ -8,7 +8,7 @@
 
 ## 1) Problem Statement
 
-Following PR #144 (which resolved envelope launch EROFS on `/tmp`), trusted process envelope runs inside Apptainer SIFs encountered failures at turn 0 across two distinct lifecycle mechanisms:
+Following PR #144 (which resolved envelope launch EROFS on `/tmp`), trusted process envelope runs inside Apptainer SIFs encountered failures at turn 0 across three distinct lifecycle mechanisms:
 
 1. **Native Scratch Authority Mismatch**:
    - In attested containment mode (`RuntimeContainment.ATTESTED`), `TrustedProcessBackend.launch` creates the native scratch directory (`scratch = context.native_scratch_path`).
@@ -23,6 +23,11 @@ Following PR #144 (which resolved envelope launch EROFS on `/tmp`), trusted proc
    - Upon `execveat`, `fd 3` was closed by the kernel. When the outer shell evaluated `exec "$@"`, `$1` was `/proc/self/fd/3`, which no longer existed, failing with `rc 127` (`breadboard-execute: line 1: /proc/self/fd/3: No such file or directory`).
    - ELF commands do not reference the shell path in `"$@"`, so only script-format commands suffered this failure. Non-envelope execution avoids this because `pass_fds` keeps executables open.
 
+3. **Verifier Lease Cleanup Rejects Attested Native Scratch**:
+   - Every attested lease, including verifier leases, receives native scratch because `launch_envelope` mounts it as the envelope's private writable home. `VerifierWorkspaceLease.close` therefore emits a `native_scratch` cleanup step.
+   - `BreadBoardV2EpisodeService` checked verifier cleanup with `_cleanup_released(..., required={runtime, workspace, snapshot, lease_record})`, which allowed only the required set, so a released `native_scratch` step marked verifier cleanup as not released (`verifier_cleanup_not_released`) after a successful verifier (returncode 0, DO-2 job 1304).
+   - The failed-completed tombstone then failed `_validate_cleanup_projection` (`cleanup receipt resource set is incomplete or ambiguous`) because only primary cleanup admitted optional `native_scratch`. Pre-existing on `main`.
+
 ## 2) Scope and Surfaces
 
 - `breadboard.rl.harness.sandbox`:
@@ -33,7 +38,9 @@ Following PR #144 (which resolved envelope launch EROFS on `/tmp`), trusted proc
   - `_remove_native_scratch`: enforce `expected_identity` check with leak-free `try/finally` around descriptor operations, quarantining mismatches as `scratch_identity_mismatch` while preserving the directory.
 - `breadboard.rl.harness.lease_envelope`:
   - `launch_envelope`: require `scratch_fd` and `scratch_identity` keyword arguments. Duplicate via `/proc/self/fd/{scratch_fd}` with `O_PATH | O_DIRECTORY | O_CLOEXEC` and verify directory mode and exact `(st_dev, st_ino)` identity prior to fork, failing closed with `EnvelopeLaunchError(code='envelope_scratch_mismatch', phase='scratch_verify')`.
-  - `_prepare_exec_descriptors`: allocate a distinct inheritable duplicate descriptor for any argv element (index >= 1) referencing `exec_fd`, while `exec_fd` itself remains close-on-exec (`CLOEXEC`).
+  - `_prepare_exec_descriptors`: after the existing low packing, when any argv element (index >= 1) references `exec_fd`, duplicate the packed exec descriptor to one inheritable descriptor numbered above every live source/target and rewrite those argv elements to it; the exec target itself remains close-on-exec (`CLOEXEC`).
+- `breadboard.rl.harness.service` / `breadboard.rl.harness.evidence`:
+  - Verifier cleanup admits optional `native_scratch` exactly as primary cleanup does (`_cleanup_released(..., optional={"native_scratch"})`, `_VERIFIER_OPTIONAL_CLEANUP_RESOURCES`). A present `native_scratch` step must still be `RELEASED`/`ALREADY_RELEASED`; unknown resources remain rejected.
 - `tests/rl/harness/test_sandbox_runtime`: portable regression tests for scratch identity adoption, swapped-directory rejection, invalid preexisting entry rejection, and unconfined preexisting directory rejection.
 - `tests/rl/harness/test_sandbox_process_integration`:
   - Sealed execution integration tests for preexisting scratch rejection and lifecycle identity adoption under `@requires_sealed_execution`.
@@ -50,10 +57,13 @@ Following PR #144 (which resolved envelope launch EROFS on `/tmp`), trusted proc
    - Pre-existing Scratch Preservation and Quarantine: When launch is refused due to a pre-existing scratch directory, `SandboxRuntimeManager.open` preserves the foreign/stale directory intact (including all sentinel contents) and records `CleanupStepReceipt('native_scratch', CleanupState.QUARANTINED, 'preexisting_scratch_preserved')`. `_remove_native_scratch` validates `expected_identity` under `try/finally` descriptor cleanup and quarantines mismatches as `scratch_identity_mismatch`.
    - Descriptor-Pinned Envelope Scratch Verification: `launch_envelope` receives pinned `scratch_fd` and `scratch_identity`. It never opens scratch by pathname; instead, it duplicates `/proc/self/fd/{scratch_fd}` under `O_PATH | O_DIRECTORY | O_CLOEXEC` and validates `(st_dev, st_ino) == scratch_identity` before `fork()`, raising `EnvelopeLaunchError(code='envelope_scratch_mismatch', phase='scratch_verify')` on mismatch without leaking file descriptors.
 2. **Envelope Descriptor Inheritance for Pinned Script Executables**:
-   - In `_prepare_exec_descriptors`, if any argv element at index >= 1 references `exec_fd` (`needs_inherited_exec`), a dedicated inheritable duplicate descriptor (`inherited_exec_fd`) is allocated.
-   - Rewritten argv maps index >= 1 occurrences to `/proc/self/fd/{inherited_exec_fd}`, while index 0 maps to `/proc/self/fd/{target_exec_fd}` (or is replaced by `argv0_path`).
-   - `target_exec_fd` is marked non-inheritable (`CLOEXEC`) before `_execveat_fd`, preventing descriptor leakage, while `inherited_exec_fd` remains open and inheritable in the child process.
+   - `_prepare_exec_descriptors` keeps the original low packing of the exec and argv-named descriptors. If any argv element at index >= 1 references `exec_fd`, the packed exec descriptor is duplicated (`dup2(..., inheritable=True)`) to `max(all fds, sources, targets, status_fd, exec_ready_fd) + 1`, which cannot collide with any live descriptor.
+   - Those argv elements are rewritten to `/proc/self/fd/<extra>`; index 0 keeps the packed exec target.
+   - The exec target is marked non-inheritable (`CLOEXEC`) before `_execveat_fd`; the extra duplicate stays open in the child, matching the non-envelope path where `pass_fds` keeps the sealed shell descriptor open.
    - Pinned descriptor semantics are fully preserved without path-based fallback or unpinned reopening.
+
+3. **Verifier Cleanup Resource Contract**:
+   - Verifier cleanup required resources are unchanged; `native_scratch` becomes an optional member for verifier receipts in both the service release check and evidence projection validation, mirroring `_PRIMARY_OPTIONAL_CLEANUP_RESOURCES`.
 
 ## 4) Change Classification
 
@@ -74,6 +84,12 @@ Fail-closed, corrective changes across the turn-0 pipeline. No permissions, cont
   - Integration test in `test_sandbox_process_integration.py`: `test_pinned_script_verifier_in_envelope_executes_with_open_descriptor_argv` verifying script-format verifier execution inside the envelope and proving all argv descriptor paths remain open.
 - **Reverse-apply verification**:
   - Reverse diff of `lease_envelope.py` against `test_prepare_exec_descriptors_script_format_argv_fd_mapping` demonstrates exact failure (`assert 3 != 3`) before the fix and pass after.
+
+- **Verifier Cleanup Resource Contract**:
+  - Diagnosed in DO-2 job 1304 (verifier returncode 0; `verifier_cleanup_not_released`, then `EvidenceValidationError` at `_validate_cleanup_projection`).
+  - `test_v2_service.py`: `test_verifier_native_scratch_cleanup_admission` (released → succeeded; quarantined → `verifier_cleanup_not_released`), `test_verifier_cleanup_released_admissions`.
+  - `test_evidence.py`: `test_failed_completed_publication_admits_verifier_native_scratch_and_rejects_unknown_resource`.
+  - Reverse-apply: with `evidence.py`/`service.py` from 39fafaf2 the new tests fail (3 failed); with the fix they pass.
 
 ## 6) Rollout Plan
 

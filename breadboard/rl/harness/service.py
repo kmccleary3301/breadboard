@@ -2051,6 +2051,7 @@ class BreadBoardV2EpisodeService:
             or not _cleanup_released(
                 verifier_receipt,
                 required={"runtime", "workspace", "snapshot", "lease_record"},
+                optional={"native_scratch"},
             )
         )
         if verifier_cleanup_bad and coordinator.verifier_cleanup_failure is None:
@@ -3001,6 +3002,7 @@ class BreadBoardV2EpisodeService:
             or not _cleanup_released(
                 coordinator.verifier_cleanup_receipt,
                 required={"runtime", "workspace", "snapshot", "lease_record"},
+                optional={"native_scratch"},
             )
         ):
             failure = coordinator.verifier_cleanup_failure or _v2_failure(
@@ -3116,6 +3118,7 @@ class BreadBoardV2EpisodeService:
                                 "snapshot",
                                 "lease_record",
                             },
+                            optional={"native_scratch"},
                         )
                         else None
                     ),
@@ -3130,6 +3133,7 @@ class BreadBoardV2EpisodeService:
                                 "snapshot",
                                 "lease_record",
                             },
+                            optional={"native_scratch"},
                         )
                         else None
                     ),
@@ -3144,6 +3148,7 @@ class BreadBoardV2EpisodeService:
                                 "snapshot",
                                 "lease_record",
                             },
+                            optional={"native_scratch"},
                         )
                         else ()
                     ),
@@ -3805,6 +3810,7 @@ def _cleanup_released(
     receipt: SandboxCleanupReceipt,
     *,
     required: set[str] | None = None,
+    optional: set[str] | None = None,
 ) -> bool:
     released = {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
     base_resources = {"runtime", "workspace", "cache_holder", "lease_record"}
@@ -3812,7 +3818,7 @@ def _cleanup_released(
     allowed_resources = (
         base_resources | {"child_verifier", "native_scratch"}
         if required is None
-        else required_resources
+        else required_resources | (set() if optional is None else optional)
     )
     resources = tuple(step.resource for step in receipt.steps)
     resource_set = set(resources)
