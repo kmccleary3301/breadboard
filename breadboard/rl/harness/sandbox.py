@@ -1206,6 +1206,7 @@ class RuntimeLaunchContext:
     record_scratch_identity: (
         Callable[[tuple[int, int]], None] | None
     ) = None
+    lease_root_identity: tuple[int, int] | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -1233,6 +1234,14 @@ class RuntimeLaunchContext:
                     or type(self.workspace_identity) is not tuple
                     or len(self.workspace_identity) != 2
                     or any(type(value) is not int or value < 0 for value in self.workspace_identity)
+                )
+            )
+            or (
+                self.lease_root_identity is not None
+                and (
+                    type(self.lease_root_identity) is not tuple
+                    or len(self.lease_root_identity) != 2
+                    or any(type(value) is not int or value < 0 for value in self.lease_root_identity)
                 )
             )
             or (
@@ -2897,45 +2906,89 @@ class TrustedProcessBackend:
                         code="runtime_preflight_failed",
                         lease_id=lease_id,
                     )
-                await asyncio.to_thread(preflight_host_containment)
-                scratch_created = False
-                try:
-                    os.mkdir(scratch, mode=0o700)
-                    scratch_created = True
-                except FileExistsError as exc:
+                if context.lease_root_identity is None:
                     raise SandboxLaunchError(
-                        "attested trusted process native scratch already exists",
+                        "attested trusted process lease root authority is unavailable",
                         code="runtime_preflight_failed",
                         lease_id=lease_id,
-                    ) from exc
-                except OSError as exc:
-                    raise SandboxLaunchError(
-                        f"attested trusted process native scratch creation failed: {exc}",
-                        code="runtime_preflight_failed",
-                        lease_id=lease_id,
-                    ) from exc
-                scratch_fd = -1
-                parent_fd = -1
-                try:
-                    scratch_fd = os.open(
-                        scratch,
-                        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
                     )
-                    parent_fd = os.open(
-                        scratch.parent,
-                        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+                parent_fd = -1
+                scratch_fd = -1
+                try:
+                    try:
+                        parent_fd = os.open(
+                            scratch.parent,
+                            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                        )
+                    except OSError as exc:
+                        raise SandboxLaunchError(
+                            f"attested trusted process lease root authority is unavailable: {exc}",
+                            code="runtime_preflight_failed",
+                            lease_id=lease_id,
+                        ) from exc
+                    parent_meta = os.fstat(parent_fd)
+                    if (
+                        not stat.S_ISDIR(parent_meta.st_mode)
+                        or (parent_meta.st_dev, parent_meta.st_ino) != context.lease_root_identity
+                    ):
+                        raise SandboxLaunchError(
+                            "attested trusted process lease root authority is invalid",
+                            code="runtime_preflight_failed",
+                            lease_id=lease_id,
+                        )
+                    scratch_name = _native_scratch_name(lease_id)
+                    if scratch.name != scratch_name:
+                        raise SandboxLaunchError(
+                            "attested trusted process native scratch authority is invalid",
+                            code="runtime_preflight_failed",
+                            lease_id=lease_id,
+                        )
+                    await asyncio.to_thread(preflight_host_containment)
+                    try:
+                        os.mkdir(scratch_name, mode=0o700, dir_fd=parent_fd)
+                    except FileExistsError as exc:
+                        raise SandboxLaunchError(
+                            "attested trusted process native scratch already exists",
+                            code="runtime_preflight_failed",
+                            lease_id=lease_id,
+                        ) from exc
+                    except OSError as exc:
+                        raise SandboxLaunchError(
+                            f"attested trusted process native scratch creation failed: {exc}",
+                            code="runtime_preflight_failed",
+                            lease_id=lease_id,
+                        ) from exc
+                    # In POSIX, mkdirat and openat are separate syscalls. Opening relative to
+                    # the pinned lease root with O_NOFOLLOW and verifying mode, ownership,
+                    # emptiness, and device ensures substitution races fail closed.
+                    scratch_fd = os.open(
+                        scratch_name,
+                        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                        dir_fd=parent_fd,
                     )
                     scratch_meta = os.fstat(scratch_fd)
-                    parent_meta = os.fstat(parent_fd)
                     if (
                         not stat.S_ISDIR(scratch_meta.st_mode)
                         or scratch_meta.st_uid != os.geteuid()
                         or stat.S_IMODE(scratch_meta.st_mode) != 0o700
-                        or scratch.name != _native_scratch_name(lease_id)
                         or scratch_meta.st_dev != parent_meta.st_dev
                     ):
                         raise SandboxLaunchError(
                             "attested trusted process native scratch authority is invalid",
+                            code="runtime_preflight_failed",
+                            lease_id=lease_id,
+                        )
+                    try:
+                        entries = os.listdir(scratch_fd)
+                    except OSError as exc:
+                        raise SandboxLaunchError(
+                            f"attested trusted process native scratch verification failed: {exc}",
+                            code="runtime_preflight_failed",
+                            lease_id=lease_id,
+                        ) from exc
+                    if entries:
+                        raise SandboxLaunchError(
+                            "attested trusted process native scratch is not empty",
                             code="runtime_preflight_failed",
                             lease_id=lease_id,
                         )
@@ -2954,13 +3007,6 @@ class TrustedProcessBackend:
                         authenticator=context.containment_authenticator,
                         tmpfs_size_bytes=plan.resources.storage_bytes,
                     )
-                except BaseException:
-                    if scratch_created and envelope is None:
-                        try:
-                            os.rmdir(scratch)
-                        except OSError:
-                            pass
-                    raise
                 finally:
                     if parent_fd >= 0:
                         os.close(parent_fd)
@@ -4943,6 +4989,7 @@ class SandboxRuntimeManager:
                  containment_authenticator: Any | None = None) -> None:
         self.registries = registries; self.installed_authorities = installed_authorities
         self.materialization_store = materialization_store
+        self._lease_root_identity: tuple[int, int] | None = None
         supplied_lease_root = Path(lease_root).resolve(strict=True)
         self._lease_root_fd = (
             os.dup(lease_root_fd)
@@ -4962,6 +5009,10 @@ class SandboxRuntimeManager:
             os.close(self._lease_root_fd)
             self._lease_root_fd = None
             raise
+        self._lease_root_identity = (
+            opened_root.st_dev,
+            opened_root.st_ino,
+        )
         self.lease_root = supplied_lease_root
         self.process_backend = process_backend; self.docker_backend = docker_backend
         self._containment_authenticator = containment_authenticator
@@ -5037,6 +5088,7 @@ class SandboxRuntimeManager:
         if self._lease_root_fd is not None:
             os.close(self._lease_root_fd)
             self._lease_root_fd = None
+            self._lease_root_identity = None
 
     def _nonce(self) -> str:
         value = self._random_bytes(16)
@@ -5133,6 +5185,12 @@ class SandboxRuntimeManager:
             owner_token=owner_token,
             record_scratch_identity=record_scratch_identity,
             containment_authenticator=self._containment_authenticator,
+            lease_root_identity=(
+                self._lease_root_identity
+                if plan.runtime.runtime_class is RuntimeClass.TRUSTED_PROCESS
+                and plan.containment is RuntimeContainment.ATTESTED
+                else None
+            ),
         )
 
     def _claim_lease_owner_lock(self, lease_id: str) -> bool:
@@ -6785,6 +6843,7 @@ class SandboxRuntimeManager:
                 if self._lease_root_fd is not None:
                     os.close(self._lease_root_fd)
                     self._lease_root_fd = None
+                    self._lease_root_identity = None
         return result
 
 

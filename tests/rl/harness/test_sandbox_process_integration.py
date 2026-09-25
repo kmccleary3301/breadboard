@@ -2941,3 +2941,109 @@ async def test_sealed_attested_launch_and_native_scratch_lifecycle(
         assert adopted == scratch_dir
     finally:
         await primary.close()
+
+
+
+@requires_sealed_execution
+@pytest.mark.asyncio
+async def test_sealed_attested_launch_rejects_lease_root_identity_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    nonce = "mismatch-root-sealed"
+    harness.manager._nonce = lambda: nonce
+    real_id = harness.manager._lease_root_identity
+    assert real_id is not None
+    harness.manager._lease_root_identity = (real_id[0], real_id[1] + 9999)
+    scratch_dir = harness.manager.lease_root / f"lease-{nonce}.native-scratch"
+
+    with pytest.raises(SandboxLaunchError) as exc_info:
+        await harness.manager.open(fixture.request)
+    assert exc_info.value.code == "runtime_preflight_failed"
+    assert "lease root authority is invalid" in str(exc_info.value)
+    assert not scratch_dir.exists()
+
+
+@requires_sealed_execution
+@pytest.mark.asyncio
+async def test_sealed_attested_launch_rejects_non_empty_scratch_preserves_directory_in_quarantine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    nonce = "nonempty-scratch-sealed"
+    harness.manager._nonce = lambda: nonce
+    scratch_dir = harness.manager.lease_root / f"lease-{nonce}.native-scratch"
+
+    real_mkdir = os.mkdir
+    def rogue_mkdir(name, mode=0o700, *, dir_fd=None):
+        real_mkdir(name, mode=mode, dir_fd=dir_fd)
+        if str(name).endswith(".native-scratch"):
+            (scratch_dir / "rogue.txt").write_text("rogue-payload", encoding="utf-8")
+    monkeypatch.setattr(os, "mkdir", rogue_mkdir)
+
+    with pytest.raises(SandboxFault) as exc_info:
+        await harness.manager.open(fixture.request)
+    assert exc_info.value.primary.code == "runtime_preflight_failed"
+    assert "native scratch is not empty" in str(exc_info.value.primary)
+    assert scratch_dir.is_dir()
+    assert (scratch_dir / "rogue.txt").is_file()
+    receipt = next(s for s in exc_info.value.cleanup_receipt.steps if s.resource == "native_scratch")
+    assert receipt.state is CleanupState.QUARANTINED
+    assert receipt.detail == "preexisting_scratch_preserved"
+
+
+@requires_sealed_execution
+@pytest.mark.asyncio
+async def test_sealed_attested_launch_envelope_failure_cleans_up_or_quarantines_replaced_scratch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+
+    # 1. Envelope failure after identity recorded -> manager removes scratch (RELEASED)
+    nonce_a = "envelope-fail-sealed"
+    harness.manager._nonce = lambda: nonce_a
+    scratch_a = harness.manager.lease_root / f"lease-{nonce_a}.native-scratch"
+
+    def fail_envelope(**kwargs):
+        raise sandbox_module.EnvelopeLaunchError("envelope boom", code="envelope_launch_failed", phase="launch")
+    monkeypatch.setattr(sandbox_module, "launch_envelope", fail_envelope)
+
+    cleanup_steps = []
+    real_cleanup = sandbox_module._cleanup_native_scratch_step
+    def recording_cleanup(*args, **kwargs):
+        step = real_cleanup(*args, **kwargs)
+        cleanup_steps.append(step)
+        return step
+    monkeypatch.setattr(sandbox_module, "_cleanup_native_scratch_step", recording_cleanup)
+
+    with pytest.raises(SandboxLaunchError) as exc_info:
+        await harness.manager.open(fixture.request)
+    assert exc_info.value.code == "envelope_launch_failed"
+    assert not scratch_a.exists()
+    assert cleanup_steps[0].state is CleanupState.RELEASED
+    assert cleanup_steps[0].resource == "native_scratch"
+
+    # 2. Envelope failure after identity recorded, replaced before cleanup -> QUARANTINED scratch_identity_mismatch
+    monkeypatch.setattr(sandbox_module, "_cleanup_native_scratch_step", real_cleanup)
+    nonce_b = "envelope-swap-sealed"
+    harness.manager._nonce = lambda: nonce_b
+    scratch_b = harness.manager.lease_root / f"lease-{nonce_b}.native-scratch"
+
+    def swap_and_fail_envelope(**kwargs):
+        scratch_b.rmdir()
+        scratch_b.mkdir(mode=0o700)
+        raise sandbox_module.EnvelopeLaunchError("envelope boom", code="envelope_launch_failed", phase="launch")
+    monkeypatch.setattr(sandbox_module, "launch_envelope", swap_and_fail_envelope)
+
+    with pytest.raises(SandboxFault) as exc_info:
+        await harness.manager.open(fixture.request)
+    receipt = next(s for s in exc_info.value.cleanup_receipt.steps if s.resource == "native_scratch")
+    assert receipt.state is CleanupState.QUARANTINED
+    assert receipt.detail == "scratch_identity_mismatch"
+    assert scratch_b.is_dir()
