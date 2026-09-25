@@ -1788,6 +1788,122 @@ def test_remove_native_scratch_rejects_identity_mismatch_and_preserves_directory
 
 
 @pytest.mark.asyncio
+async def test_primary_close_rejects_replaced_scratch_and_preserves_replacement(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    lease = await harness.manager.open(fixture.request)
+    scratch = sandbox_module._create_native_scratch(harness.manager, lease.lease_id)
+    original_stat = scratch.stat()
+    original_identity = (original_stat.st_dev, original_stat.st_ino)
+    lease._runtime.native_scratch_identity = original_identity
+
+    scratch.rmdir()
+    scratch.mkdir(mode=0o700)
+    sentinel = scratch / "replacement_sentinel.txt"
+    sentinel.write_text("must-survive", encoding="utf-8")
+    replacement_stat = scratch.stat()
+    assert (replacement_stat.st_dev, replacement_stat.st_ino) != original_identity
+
+    receipt = await lease.close()
+
+    scratch_receipt = next(
+        step for step in receipt.steps if step.resource == "native_scratch"
+    )
+    assert scratch_receipt.state is CleanupState.QUARANTINED
+    assert scratch_receipt.detail == "scratch_identity_mismatch"
+    assert scratch.is_dir()
+    assert sentinel.is_file()
+    assert sentinel.read_text(encoding="utf-8") == "must-survive"
+    assert any(step.state is CleanupState.QUARANTINED for step in receipt.steps)
+
+
+def test_remove_native_scratch_descriptor_relative_preserves_swapped_replacement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    lease_id = "test-swap-traversal"
+    scratch = sandbox_module._create_native_scratch(harness.manager, lease_id)
+    scratch_stat = scratch.stat()
+    expected_identity = (scratch_stat.st_dev, scratch_stat.st_ino)
+
+    child_dir = scratch / "child"
+    child_dir.mkdir()
+    child_file = child_dir / "child_file.txt"
+    child_file.write_text("child_data", encoding="utf-8")
+
+    swapped = False
+    replacement_sentinel = scratch / "replacement_sentinel.txt"
+    renamed_scratch = harness.manager.lease_root / f"{lease_id}-renamed"
+
+    real_open = os.open
+
+    def open_hook(path, flags, *args, **kwargs):
+        nonlocal swapped
+        fd = real_open(path, flags, *args, **kwargs)
+        if path == "child" and not swapped:
+            swapped = True
+            os.rename(scratch, renamed_scratch)
+            os.mkdir(scratch, mode=0o700)
+            replacement_sentinel.write_text("replacement_survives", encoding="utf-8")
+        return fd
+
+    monkeypatch.setattr(os, "open", open_hook)
+
+    try:
+        receipt = sandbox_module._remove_native_scratch(
+            harness.manager, lease_id, expected_identity=expected_identity
+        )
+        assert swapped is True
+        assert receipt.state is not CleanupState.RELEASED
+        assert receipt.state is CleanupState.QUARANTINED
+        assert receipt.detail == "scratch_identity_mismatch"
+        assert scratch.is_dir()
+        assert replacement_sentinel.is_file()
+        assert replacement_sentinel.read_text(encoding="utf-8") == "replacement_survives"
+        assert not child_file.exists()
+    finally:
+        if replacement_sentinel.exists():
+            replacement_sentinel.unlink()
+        if scratch.is_dir():
+            scratch.rmdir()
+        if renamed_scratch.is_dir():
+            import shutil
+            shutil.rmtree(renamed_scratch, ignore_errors=True)
+
+
+def test_remove_native_scratch_nested_structure_and_symlink_preserved(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    lease_id = "test-nested-lease"
+    scratch = sandbox_module._create_native_scratch(harness.manager, lease_id)
+    scratch_stat = scratch.stat()
+    expected_identity = (scratch_stat.st_dev, scratch_stat.st_ino)
+
+    outside = tmp_path / "outside_target.txt"
+    outside.write_text("outside_content", encoding="utf-8")
+
+    nested_dir = scratch / "a" / "b" / "c"
+    nested_dir.mkdir(parents=True)
+    (nested_dir / "deep_file.txt").write_text("deep_content", encoding="utf-8")
+    (scratch / "a" / "mid_file.txt").write_text("mid_content", encoding="utf-8")
+    (scratch / "top_file.txt").write_text("top_content", encoding="utf-8")
+    (scratch / "a" / "outside_symlink").symlink_to(outside)
+
+    receipt = sandbox_module._remove_native_scratch(
+        harness.manager, lease_id, expected_identity=expected_identity
+    )
+
+    assert receipt.state is CleanupState.RELEASED
+    assert not scratch.exists()
+    assert outside.is_file()
+    assert outside.read_text(encoding="utf-8") == "outside_content"
+
+@pytest.mark.asyncio
 async def test_open_preserves_preexisting_native_scratch_on_preflight_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
