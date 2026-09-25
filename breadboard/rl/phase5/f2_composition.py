@@ -501,8 +501,8 @@ def _prepare_callback_tls_runtime(
                 socket_metadata.st_uid,
             )
             != (
-                callback_plan.socket_device,
-                callback_plan.socket_inode,
+                int(callback_plan.socket_device),
+                int(callback_plan.socket_inode),
                 callback_plan.socket_mode,
                 callback_plan.socket_owner_uid,
             )
@@ -785,8 +785,8 @@ def _verify_executable_observation(value: ExecutableObservationInput) -> None:
         stat.S_IMODE(current.st_mode),
         current.st_uid,
     ) != (
-        value.device,
-        value.inode,
+        int(value.device),
+        int(value.inode),
         int(value.ctime_ns),
         value.size_bytes,
         value.mode,
