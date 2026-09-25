@@ -588,7 +588,7 @@ def _validate_composition_inspect(
     )
 
     if (
-        inspected["schema_version"] != "bb.rl.harness-composed.v1"
+        inspected["schema_version"] != "bb.rl.harness-composed.v2"
         or inspected["composition_id"] != manifest.get("composition_id")
         or inspected["input_manifest_digest"] != manifest_digest
         or inspected["compiler_identity"] != control.get("compiler")
@@ -704,11 +704,11 @@ def _validate_lifecycle(raw: Mapping[str, bytes], source: Mapping[str, Any]) -> 
     if (
         ref["schema_version"]
         != "bb.rl.f1.composition-reference-observation.v1"
-        or ref["ref_schema_version"] != "bb.rl.harness-composition-ref.v1"
+        or ref["ref_schema_version"] != "bb.rl.harness-composition-ref.v3"
         or ref["manifest_path_disposition"]
         != "absolute_runtime_path_omitted"
         or ref["manifest_media_type"]
-        != "application/vnd.breadboard.harness-composition+json;version=1"
+        != "application/vnd.breadboard.harness-composition+json;version=2"
         or not _SHA256.fullmatch(ref["composition_ref_sha256"])
         or _integer(
             ref["composition_ref_size_bytes"],

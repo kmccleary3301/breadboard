@@ -1424,7 +1424,7 @@ def build_f4_target_input(
             )
             manifest_value = base_manifest.model_dump(mode="json")
             manifest_value.pop("config_bundle_ref")
-            manifest_value["schema_version"] = "bb.rl.harness-composition.v2"
+            manifest_value["schema_version"] = "bb.rl.harness-composition.v4"
             manifest_value["authority_bundle_ref"] = authority_ref.model_dump(
                 mode="json"
             )
@@ -1447,7 +1447,7 @@ def build_f4_target_input(
             final_manifest_path = artifacts / "composition-manifest-final.json"
             _write(final_manifest_path, manifest_raw)
             composition_ref = CompositionRefV2(
-                schema_version="bb.rl.harness-composition-ref.v2",
+                schema_version="bb.rl.harness-composition-ref.v4",
                 manifest_path=os.fspath(final_manifest_path.resolve()),
                 manifest_sha256=_d(manifest_raw),
                 manifest_size_bytes=len(manifest_raw),

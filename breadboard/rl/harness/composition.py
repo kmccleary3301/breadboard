@@ -109,10 +109,10 @@ PolicyClientResolverFactory = Callable[
 
 
 COMPOSITION_REF_MEDIA_TYPE = (
-    "application/vnd.breadboard.harness-composition+json;version=1"
+    "application/vnd.breadboard.harness-composition+json;version=2"
 )
 COMPOSITION_MEDIA_TYPE = COMPOSITION_REF_MEDIA_TYPE
-COMPOSED_MEDIA_TYPE = "application/vnd.breadboard.harness-composed+json;version=1"
+COMPOSED_MEDIA_TYPE = "application/vnd.breadboard.harness-composed+json;version=2"
 _MAX_AUTHORITY_BYTES = 64 * 1024 * 1024
 _NATIVE_TOOL_SOURCE_SCHEMA_VERSION = "bb.rl.native-tool-source.v1"
 _NATIVE_TOOL_SOURCE_MEDIA_TYPE = (
@@ -199,6 +199,21 @@ def _positive_decimal(value: str) -> str:
     return value
 
 
+def _nonnegative_decimal(value: str) -> str:
+    if (
+        type(value) is not str
+        or re.fullmatch(r"(0|[1-9][0-9]*)", value) is None
+    ):
+        raise ValueError("filesystem identity must be a canonical nonnegative decimal string")
+    return value
+
+
+def _filesystem_inode(value: str) -> str:
+    if type(value) is not str or re.fullmatch(r"[1-9][0-9]*", value) is None:
+        raise ValueError("filesystem inode must be a canonical positive decimal string")
+    return value
+
+
 def _signed_payload(value: BaseModel) -> tuple[dict[str, Any], dict[str, Any]]:
     unsigned = value.model_dump(mode="json")
     unsigned.pop("signature")
@@ -244,7 +259,7 @@ class ArtifactFileRefV1(_ExactModel):
 
 
 class CompositionRefV1(_ExactModel):
-    schema_version: Literal["bb.rl.harness-composition-ref.v1"]
+    schema_version: Literal["bb.rl.harness-composition-ref.v3"]
     manifest_path: str
     manifest_sha256: str
     manifest_size_bytes: int = Field(gt=0, le=_MAX_AUTHORITY_BYTES)
@@ -258,18 +273,21 @@ class CompositionRefV1(_ExactModel):
 
 
 class CompositionRefV2(CompositionRefV1):
-    schema_version: Literal["bb.rl.harness-composition-ref.v2"]
+    schema_version: Literal["bb.rl.harness-composition-ref.v4"]
 
 
 class DirectoryAuthorityRefV1(_ExactModel):
     authority_id: str = Field(min_length=1, max_length=256)
     path: str
-    device: int = Field(ge=0)
-    inode: int = Field(gt=0)
+    device: str
+    inode: str
     owner_uid: int = Field(ge=0)
     mode: str = Field(pattern=r"0[0-7]{3}")
 
     _path = field_validator("path")(_absolute)
+    _device = field_validator("device")(_nonnegative_decimal)
+    _inode = field_validator("inode")(_filesystem_inode)
+
 class InstalledToolAdapterV1(_ExactModel):
     adapter_id: str = Field(min_length=1, max_length=256)
     tool_ids: tuple[str, ...]
@@ -760,15 +778,15 @@ class OuterBridgeLeaseV1(_ExactModel):
 
 
 class PreboundServiceSocketPlanV1(_ExactModel):
-    schema_version: Literal["bb.rl.harness-prebound-service-socket-plan.v1"]
+    schema_version: Literal["bb.rl.harness-prebound-service-socket-plan.v2"]
     role: str = Field(min_length=1, max_length=128)
     gateway: str
     observed_port: int = Field(ge=1, le=65535)
     family: Literal["AF_INET"]
     socket_type: Literal["SOCK_STREAM"]
     protocol: Literal["IPPROTO_TCP"]
-    socket_device: int = Field(ge=0)
-    socket_inode: int = Field(gt=0)
+    socket_device: str
+    socket_inode: str
     socket_mode: int = Field(gt=0)
     socket_owner_uid: int = Field(ge=0)
     getsockname_host: str
@@ -777,6 +795,8 @@ class PreboundServiceSocketPlanV1(_ExactModel):
     socket_plan_id: str
 
     _id = field_validator("socket_plan_id")(_digest)
+    _socket_device = field_validator("socket_device")(_nonnegative_decimal)
+    _socket_inode = field_validator("socket_inode")(_filesystem_inode)
 
     @model_validator(mode="after")
     def exact_socket(self) -> "PreboundServiceSocketPlanV1":
@@ -798,7 +818,7 @@ class PreboundServiceSocketPlanV1(_ExactModel):
 
 
 class PreboundServiceSocketLeaseV1(_ExactModel):
-    schema_version: Literal["bb.rl.harness-prebound-service-socket-lease.v1"]
+    schema_version: Literal["bb.rl.harness-prebound-service-socket-lease.v2"]
     role: str = Field(min_length=1, max_length=128)
     socket_plan_digest: str
     socket_plan_id: str
@@ -983,11 +1003,11 @@ class OfflineImageAuthorityV1(_ExactModel):
 
 
 class OpenSslAuthorityV1(_ExactModel):
-    schema_version: Literal["bb.rl.harness-openssl-authority.v1"]
+    schema_version: Literal["bb.rl.harness-openssl-authority.v2"]
     path: Literal["/usr/bin/openssl"]
     sha256: str
-    device: int = Field(ge=0)
-    inode: int = Field(gt=0)
+    device: str
+    inode: str
     ctime_ns: str
     size_bytes: int = Field(gt=0)
     mode: int = Field(ge=0, le=0o7777)
@@ -998,6 +1018,8 @@ class OpenSslAuthorityV1(_ExactModel):
 
     _digests = field_validator("sha256", "version_stdout_sha256")(_digest)
     _ctime_ns = field_validator("ctime_ns")(_positive_decimal)
+    _device = field_validator("device")(_nonnegative_decimal)
+    _inode = field_validator("inode")(_filesystem_inode)
 
     @model_validator(mode="after")
     def exact_openssl_authority(self) -> "OpenSslAuthorityV1":
@@ -1403,7 +1425,7 @@ def _validate_project_quota_seccomp(data: bytes) -> None:
 
 
 class HarnessCompositionManifestV1(_ExactModel):
-    schema_version: Literal["bb.rl.harness-composition.v1"]
+    schema_version: Literal["bb.rl.harness-composition.v3"]
     composition_id: str = Field(min_length=1, max_length=256)
     authority_bundle_ref: ArtifactFileRefV1
     config_bundle_ref: ArtifactFileRefV1
@@ -1609,7 +1631,7 @@ class HarnessCompositionManifestV1(_ExactModel):
 
 
 class HarnessCompositionManifestV2(HarnessCompositionManifestV1):
-    schema_version: Literal["bb.rl.harness-composition.v2"]
+    schema_version: Literal["bb.rl.harness-composition.v4"]
     config_bundle_ref: None = Field(default=None, exclude=True)
     config_bundle_refs: tuple[ArtifactFileRefV1, ...] = Field(min_length=1)
 
@@ -1622,7 +1644,7 @@ class HarnessCompositionManifestV2(HarnessCompositionManifestV1):
 
 
 class ComposedHarnessManifestV1(_ExactModel):
-    schema_version: Literal["bb.rl.harness-composed.v1"]
+    schema_version: Literal["bb.rl.harness-composed.v2"]
     composition_id: str
     input_manifest_digest: str
     authority_bundle_digest: str
@@ -2423,8 +2445,8 @@ def _observed_socket(fd: int, plan: OuterBridgePlanV1) -> dict[str, Any]:
         "family": "AF_INET",
         "socket_type": "SOCK_STREAM",
         "protocol": "IPPROTO_TCP",
-        "socket_device": metadata.st_dev,
-        "socket_inode": metadata.st_ino,
+        "socket_device": str(metadata.st_dev),
+        "socket_inode": str(metadata.st_ino),
         "socket_mode": metadata.st_mode,
         "socket_owner_uid": metadata.st_uid,
         "getsockname_host": address[0],
@@ -2626,7 +2648,7 @@ class OuterBridgeLifecycle:
                     )
                 )
                 authorities[role] = PreboundServiceSocketLeaseV1(
-                    schema_version=("bb.rl.harness-prebound-service-socket-lease.v1"),
+                    schema_version=("bb.rl.harness-prebound-service-socket-lease.v2"),
                     role=role,
                     socket_plan_digest=socket_plan.canonical_digest(),
                     socket_plan_id=(socket_plan.socket_plan_id),
@@ -3599,8 +3621,8 @@ def _validate_native_tool_closure(
     flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
     root_fd = os.open(root.path, flags)
     expected_root = (
-        root.device,
-        root.inode,
+        int(root.device),
+        int(root.inode),
         root.owner_uid,
         int(root.mode, 8),
     )
@@ -3750,8 +3772,8 @@ def _load_native_tool_bindings(
                 adapter_id=descriptor.adapter_id,
                 tool_ids=descriptor.tool_ids,
                 runtime_root_path=descriptor.runtime_root.path,
-                runtime_root_device=descriptor.runtime_root.device,
-                runtime_root_inode=descriptor.runtime_root.inode,
+                runtime_root_device=int(descriptor.runtime_root.device),
+                runtime_root_inode=int(descriptor.runtime_root.inode),
                 runtime_root_owner_uid=descriptor.runtime_root.owner_uid,
                 runtime_root_mode=descriptor.runtime_root.mode,
                 manifest_digest=descriptor.manifest_ref.sha256,
@@ -4732,11 +4754,11 @@ def _load_composition_manifest(
         ref_data = composition_ref_data
     _load_json_exact(ref_data)
     ref_schema = json.loads(ref_data).get("schema_version")
-    if ref_schema == "bb.rl.harness-composition-ref.v1":
+    if ref_schema == "bb.rl.harness-composition-ref.v3":
         ref: CompositionRefV1 | CompositionRefV2 = CompositionRefV1.model_validate_json(
             ref_data, strict=True
         )
-    elif ref_schema == "bb.rl.harness-composition-ref.v2":
+    elif ref_schema == "bb.rl.harness-composition-ref.v4":
         ref = CompositionRefV2.model_validate_json(ref_data, strict=True)
     else:
         raise ValueError("unsupported composition ref schema")
@@ -4750,14 +4772,14 @@ def _load_composition_manifest(
     manifest_schema = json.loads(manifest_data).get("schema_version")
     if (
         type(ref) is CompositionRefV1
-        and manifest_schema == "bb.rl.harness-composition.v1"
+        and manifest_schema == "bb.rl.harness-composition.v3"
     ):
         manifest: HarnessCompositionManifestV1 | HarnessCompositionManifestV2 = (
             HarnessCompositionManifestV1.model_validate_json(manifest_data, strict=True)
         )
     elif (
         type(ref) is CompositionRefV2
-        and manifest_schema == "bb.rl.harness-composition.v2"
+        and manifest_schema == "bb.rl.harness-composition.v4"
     ):
         manifest = HarnessCompositionManifestV2.model_validate_json(
             manifest_data, strict=True
@@ -4882,8 +4904,8 @@ def load_production_composition(
                     stat.S_IMODE(metadata.st_mode),
                 )
                 != (
-                    openssl.device,
-                    openssl.inode,
+                    int(openssl.device),
+                    int(openssl.inode),
                     int(openssl.ctime_ns),
                     openssl.size_bytes,
                     openssl.owner_uid,
@@ -4974,8 +4996,8 @@ def load_production_composition(
                 f"0{stat.S_IMODE(current.st_mode):03o}",
             )
             expected = (
-                directory["device"],
-                directory["inode"],
+                int(directory["device"]),
+                int(directory["inode"]),
                 directory["owner_uid"],
                 directory["mode"],
             )
@@ -4985,8 +5007,8 @@ def load_production_composition(
         cas_root = os.fstat(cas._root_fd)
         expected_cas = manifest.stores.cas
         if (cas_root.st_dev, cas_root.st_ino) != (
-            expected_cas.device,
-            expected_cas.inode,
+            int(expected_cas.device),
+            int(expected_cas.inode),
         ):
             raise ValueError("CAS reopened a different directory authority")
 
@@ -5160,7 +5182,7 @@ def load_production_composition(
             *manifest.selector_catalog.weighted,
         )
         composed = ComposedHarnessManifestV1(
-            schema_version="bb.rl.harness-composed.v1",
+            schema_version="bb.rl.harness-composed.v2",
             composition_id=manifest.composition_id,
             input_manifest_digest=ref.manifest_sha256,
             authority_bundle_digest=manifest.authority_bundle_ref.sha256,

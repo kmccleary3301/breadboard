@@ -15,6 +15,7 @@ import time
 from builtins import BaseExceptionGroup
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -1839,49 +1840,67 @@ def test_probe_failure_after_scratch_creation_removes_exact_root(
     assert not tuple(tmp_path.glob("f2-private-broker-*"))
 
 
-def test_recovery_authenticates_lease_and_finalizes_observed_absence(
-    tmp_path: Path,
-) -> None:
+_JOURNAL_TEST_DIGEST = "sha256:" + "1" * 64
+_JOURNAL_TEST_LEASE_ID = "lease-recovery"
+_JOURNAL_TEST_OWNER_TOKEN = "owner-token"
+_SQUASHFS_SCALE_INODE = 9_223_372_036_854_805_903
+
+
+def _journal_authenticator() -> SimpleNamespace:
+    secret = b"journal-test-key"
+
+    def sign(value: bytes) -> bytes:
+        return hmac.digest(secret, value, "sha256")
+
+    return SimpleNamespace(
+        key_id="journal-test",
+        algorithm="hmac-sha256-v1",
+        sign=sign,
+        verify=lambda value, signature: hmac.compare_digest(sign(value), signature),
+    )
+
+
+def _recovery_journal_fixture(tmp_path: Path) -> tuple[Path, Path, dict[str, Any]]:
     journal_root = tmp_path / "journals"
     lease_root = tmp_path / "leases"
     journal_root.mkdir(mode=0o700)
     lease_root.mkdir(mode=0o700)
-    lease_id = "lease-recovery"
-    owner_token = "owner-token"
-    digest = "sha256:" + "1" * 64
+    lease_id = _JOURNAL_TEST_LEASE_ID
+    owner_token = _JOURNAL_TEST_OWNER_TOKEN
+    digest = _JOURNAL_TEST_DIGEST
     process = {
         "pid": 9_999_999,
         "starttime": "1",
         "pgid": 9_999_999,
-        "executable_device": 1,
-        "executable_inode": 1,
+        "executable_device": "1",
+        "executable_inode": "1",
         "executable_ctime_ns": 1,
         "executable_size": 1,
         "executable_digest": digest,
-        "namespace_device": 1,
-        "namespace_inode": 1,
+        "namespace_device": "1",
+        "namespace_inode": "1",
     }
     parent = tmp_path.stat()
     daemon_root_path = tmp_path / "absent-daemon"
     daemon_root = {
         "path": str(daemon_root_path),
-        "device": 1,
-        "inode": 1,
+        "device": "1",
+        "inode": "1",
         "mode": 0o700,
         "digest": digest,
         "parent_path": str(tmp_path),
-        "parent_device": parent.st_dev,
-        "parent_inode": parent.st_ino,
+        "parent_device": str(parent.st_dev),
+        "parent_inode": str(parent.st_ino),
     }
     path = {
         "path": str(daemon_root_path / "config.json"),
-        "device": 1,
-        "inode": 1,
+        "device": "1",
+        "inode": "1",
         "mode": 0o600,
         "digest": digest,
         "parent_path": str(daemon_root_path),
-        "parent_device": 1,
-        "parent_inode": 1,
+        "parent_device": "1",
+        "parent_inode": "1",
     }
     payload = {
         "schema_version": broker_module.SUPERVISOR_JOURNAL_SCHEMA_VERSION,
@@ -1934,17 +1953,15 @@ def test_recovery_authenticates_lease_and_finalizes_observed_absence(
         "checksum": broker_module._journal_digest(_canonical(lease_payload)),
     }
     (lease_root / f"{lease_id}.json").write_bytes(_canonical(lease_envelope))
-    secret = b"journal-test-key"
+    return journal_root, lease_root, payload
 
-    def sign(value: bytes) -> bytes:
-        return hmac.digest(secret, value, "sha256")
 
-    authenticator = SimpleNamespace(
-        key_id="journal-test",
-        algorithm="hmac-sha256-v1",
-        sign=sign,
-        verify=lambda value, signature: hmac.compare_digest(sign(value), signature),
-    )
+def test_recovery_authenticates_lease_and_finalizes_observed_absence(
+    tmp_path: Path,
+) -> None:
+    journal_root, lease_root, payload = _recovery_journal_fixture(tmp_path)
+    lease_id = _JOURNAL_TEST_LEASE_ID
+    authenticator = _journal_authenticator()
     journal_fd = os.open(journal_root, os.O_RDONLY | os.O_DIRECTORY)
     lease_fd = os.open(lease_root, os.O_RDONLY | os.O_DIRECTORY)
     try:
@@ -1985,6 +2002,155 @@ def test_recovery_authenticates_lease_and_finalizes_observed_absence(
     )
 
 
+@pytest.mark.parametrize(
+    "schema_version",
+    [
+        "bb.rl.mount-namespace-supervisor.v2",
+        broker_module.SUPERVISOR_JOURNAL_SCHEMA_VERSION,
+    ],
+)
+def test_recovery_rejects_signed_integer_identity_journals(
+    tmp_path: Path,
+    schema_version: str,
+) -> None:
+    journal_root, lease_root, payload = _recovery_journal_fixture(tmp_path)
+    payload["schema_version"] = schema_version
+    payload["broker"] = {
+        **payload["broker"],
+        "executable_device": 1,
+        "executable_inode": 1,
+        "namespace_device": 1,
+        "namespace_inode": 1,
+    }
+    authenticator = _journal_authenticator()
+    journal_fd = os.open(journal_root, os.O_RDONLY | os.O_DIRECTORY)
+    lease_fd = os.open(lease_root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        broker_module._atomic_journal_write(
+            journal_fd,
+            _JOURNAL_TEST_LEASE_ID,
+            payload,
+            authenticator=authenticator,
+        )
+        with pytest.raises(OSError, match="supervisor journal authentication failed"):
+            broker_module.recover_supervisor_journals(
+                journal_fd,
+                lease_fd,
+                authenticator=authenticator,
+            )
+    finally:
+        os.close(lease_fd)
+        os.close(journal_fd)
+
+
+def test_journal_requires_canonical_decimal_filesystem_identities(
+    tmp_path: Path,
+) -> None:
+    _, _, payload = _recovery_journal_fixture(tmp_path)
+    stage = {
+        "source_path": str(tmp_path / "absent-stages" / "stage-0"),
+        "source_device": "0",
+        "source_inode": str(_SQUASHFS_SCALE_INODE),
+        "source_mode": stat.S_IFDIR,
+        "descriptor_device": "1",
+        "descriptor_inode": "2",
+        "mount_id": 7,
+        "readonly": True,
+        "source_parent_path": str(tmp_path / "absent-stages"),
+        "source_parent_device": "1",
+        "source_parent_inode": "3",
+    }
+    payload["stages"] = [stage]
+    assert broker_module._validate_journal_payload(payload)
+    assert not broker_module._validate_journal_payload(
+        {**payload, "schema_version": "bb.rl.mount-namespace-supervisor.v2"}
+    )
+    for key in (
+        "source_device",
+        "source_inode",
+        "descriptor_device",
+        "descriptor_inode",
+        "source_parent_device",
+        "source_parent_inode",
+    ):
+        assert not broker_module._validate_journal_payload(
+            {**payload, "stages": [{**stage, key: int(stage[key])}]}
+        )
+    for malformed in ("", "01", "-1", "+1", "1e3", "1.0", " 1", "\uff11"):
+        for key in ("device", "inode", "parent_device", "parent_inode"):
+            assert not broker_module._validate_journal_payload(
+                {**payload, "stage_root": {**payload["stage_root"], key: malformed}}
+            )
+    assert broker_module._validate_journal_payload(
+        {**payload, "stage_root": {**payload["stage_root"], "device": "0"}}
+    )
+    assert not broker_module._validate_journal_payload(
+        {**payload, "stage_root": {**payload["stage_root"], "inode": "0"}}
+    )
+
+
+def test_journal_round_trips_squashfs_scale_inode_into_recovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    journal_root, _, payload = _recovery_journal_fixture(tmp_path)
+    stage_root = tmp_path / "stages"
+    stage_root.mkdir(mode=0o700)
+    observed = stage_root.stat()
+    payload["stage_root"] = MountNamespaceBroker._journal_path(
+        str(stage_root),
+        device=observed.st_dev,
+        inode=_SQUASHFS_SCALE_INODE,
+        mode=stat.S_IMODE(observed.st_mode),
+        digest=_JOURNAL_TEST_DIGEST,
+    )
+    authenticator = _journal_authenticator()
+    journal_fd = os.open(journal_root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        broker_module._atomic_journal_write(
+            journal_fd,
+            _JOURNAL_TEST_LEASE_ID,
+            payload,
+            authenticator=authenticator,
+        )
+        envelope = broker_module._read_journal(
+            journal_fd,
+            _JOURNAL_TEST_LEASE_ID,
+            authenticator=authenticator,
+        )
+    finally:
+        os.close(journal_fd)
+    signed = (journal_root / f"{_JOURNAL_TEST_LEASE_ID}.supervisor.json").read_bytes()
+    assert b'"inode":"9223372036854805903"' in signed
+    recovered = envelope["payload"]["stage_root"]
+    assert recovered["device"] == str(observed.st_dev)
+    assert recovered["inode"] == "9223372036854805903"
+
+    real_stat = os.stat
+    live = {"inode": _SQUASHFS_SCALE_INODE}
+
+    def squashfs_stat(
+        path: str,
+        *,
+        dir_fd: int | None = None,
+        follow_symlinks: bool = True,
+    ) -> os.stat_result:
+        metadata = real_stat(path, dir_fd=dir_fd, follow_symlinks=follow_symlinks)
+        if dir_fd is None:
+            return metadata
+        fields = list(metadata[:10])
+        fields[stat.ST_INO] = live["inode"]
+        return os.stat_result(fields)
+
+    monkeypatch.setattr(os, "stat", squashfs_stat)
+    assert not broker_module._journal_path_absent(recovered)
+    # Adjacent inodes collapse to one binary64 value; the string comparison must not.
+    live["inode"] = _SQUASHFS_SCALE_INODE + 1
+    assert float(live["inode"]) == float(_SQUASHFS_SCALE_INODE)
+    with pytest.raises(OSError, match="journal path authority changed"):
+        broker_module._journal_path_absent(recovered)
+
+
 def test_process_observation_error_is_not_absence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2020,12 +2186,12 @@ def test_path_absence_requires_unchanged_parent_authority(
     parent = trusted.stat()
     observation = {
         "path": str(trusted / "absent"),
-        "device": 1,
-        "inode": 1,
+        "device": "1",
+        "inode": "1",
         "mode": 0o600,
         "parent_path": str(trusted),
-        "parent_device": parent.st_dev,
-        "parent_inode": parent.st_ino,
+        "parent_device": str(parent.st_dev),
+        "parent_inode": str(parent.st_ino),
     }
     assert broker_module._journal_path_absent(observation)
 
