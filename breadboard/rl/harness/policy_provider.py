@@ -21,8 +21,10 @@ from breadboard_engine.compilation.contracts import (
 )
 from breadboard_engine.compilation.provider_response import (
     CompiledNativeResponseBinding,
+    HERMES_RESPONSE_CONSUMER_ID,
     MINI_RESPONSE_CONSUMER_ID,
     PI_RESPONSE_CONSUMER_ID,
+    NATIVE_CHAT_RESPONSE_TARGETS,
     OMP_RESPONSE_CONSUMER_ID,
     OPENHANDS_RESPONSE_CONSUMER_ID,
     admit_native_response_binding,
@@ -146,16 +148,6 @@ def _project_effective_chat_tool(definition: Mapping[str, Any]) -> dict[str, Any
         properties[parameter["name"]] = schema
         if parameter.get("required") is True:
             required.append(parameter["name"])
-    required_order = definition.get("required_order")
-    if required_order is not None:
-        if (
-            not isinstance(required_order, tuple)
-            or any(type(name) is not str or not name for name in required_order)
-            or len(set(required_order)) != len(required_order)
-            or set(required_order) != set(required)
-        ):
-            raise ValueError("effective target tool required order is malformed")
-        required = list(required_order)
     parameter_schema: dict[str, Any] = {
         "type": "object",
         "properties": properties,
@@ -267,6 +259,7 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
         OPENHANDS_RESPONSE_CONSUMER_ID: "openhands-sdk@1.47.0",
         PI_RESPONSE_CONSUMER_ID: "pi@0.73.1",
         OMP_RESPONSE_CONSUMER_ID: "oh-my-pi@18.1.17",
+        HERMES_RESPONSE_CONSUMER_ID: "hermes-agent@2026.9.11",
     }
     if (
         version not in (1, 2, 3)
@@ -282,7 +275,7 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
         or version == 3
         and (
             renderer_id not in deferred_targets
-            or binding.get("target_id") != deferred_targets.get(renderer_id)
+            or binding.get("target_id") != deferred_targets[renderer_id]
             or not isinstance(binding.get("runtime_profile"), Mapping)
             or binding.get("rendered_prompt_digest") is not None
         )
@@ -324,7 +317,7 @@ def _validate_request_features(
     required = set(profile.required_request_features(tools=tools))
     if (
         target_projection is not None
-        and target_projection.renderer_id == OPENHANDS_RESPONSE_CONSUMER_ID
+        and target_projection.renderer_id in NATIVE_CHAT_RESPONSE_TARGETS
     ):
         # The SDK supplies raw HTTP instead of profile.chat_request(), which
         # inserts n=1. The pinned SDK omits n; native admission rejects that key.
@@ -636,8 +629,8 @@ class EpisodeOpenAICompletionsPolicyClient:
             or target is None
             or target.renderer_id not in {
                 MINI_RESPONSE_CONSUMER_ID,
-                OPENHANDS_RESPONSE_CONSUMER_ID,
                 PI_RESPONSE_CONSUMER_ID,
+                *NATIVE_CHAT_RESPONSE_TARGETS,
                 OMP_RESPONSE_CONSUMER_ID,
             }
             or target.source_manifest is None
@@ -750,9 +743,13 @@ class EpisodeOpenAICompletionsPolicyClient:
             self._native_cost = None
             runtime_profile = thaw_json(target.runtime_profile)
             if not isinstance(runtime_profile, Mapping):
-                raise ValueError("OpenHands target runtime profile is malformed")
+                raise ValueError("native Chat target runtime profile is malformed")
             public_config = {
-                "model_name": "openai/" + profile.model,
+                "model_name": (
+                    "openai/" + profile.model
+                    if target.renderer_id == OPENHANDS_RESPONSE_CONSUMER_ID
+                    else profile.model
+                ),
                 "model_canonical_name": None,
                 "base_url": profile.base_url,
                 "max_input_tokens": self._observation.capabilities.max_context_tokens,
@@ -766,13 +763,13 @@ class EpisodeOpenAICompletionsPolicyClient:
         """Bind the measured worker's once-rendered, workspace-dependent tools."""
         target = self._target_projection
         if (
-            target is None or target.renderer_id != OPENHANDS_RESPONSE_CONSUMER_ID
+            target is None or target.renderer_id not in NATIVE_CHAT_RESPONSE_TARGETS
             or self._native_binding is None or self._native_tool_schemas is not None
             or not isinstance(target.runtime_profile, Mapping)
             or type(tools) is not tuple
         ):
             raise RunnerPolicyBindingError(
-                "native tools require a fresh compiled OpenHands binding",
+                "native tools require a fresh compiled Chat binding",
                 code="native_http_binding_invalid",
                 episode_id=self._episode_id, effective_plan_digest=self._effective_plan_digest,
             )
@@ -785,7 +782,10 @@ class EpisodeOpenAICompletionsPolicyClient:
             comparison = thaw_json(snapshot)
             # FileEditorTool.create appends the actual conversation workspace.
             # The measured worker owns that rendering; every other field is fixed.
-            if reference["function"]["name"] == "file_editor":
+            if (
+                target.renderer_id == OPENHANDS_RESPONSE_CONSUMER_ID
+                and reference["function"]["name"] == "file_editor"
+            ):
                 description = comparison["function"].get("description")
                 if type(description) is not str or not description:
                     raise ValueError("native editor description is invalid")
@@ -825,12 +825,12 @@ class EpisodeOpenAICompletionsPolicyClient:
         profile = self._profile
         if (
             target is None
-            or target.renderer_id != OPENHANDS_RESPONSE_CONSUMER_ID
+            or target.renderer_id not in NATIVE_CHAT_RESPONSE_TARGETS
             or self._native_binding is None
             or profile is None
         ):
             raise RunnerPolicyBindingError(
-                "OpenHands native HTTP request has no compiled binding",
+                "native HTTP request has no compiled binding",
                 code="native_http_binding_invalid",
                 episode_id=self._episode_id,
                 effective_plan_digest=self._effective_plan_digest,
@@ -957,6 +957,10 @@ class EpisodeOpenAICompletionsPolicyClient:
             or body_object.get("model") != profile.model
             or body_object.get("stream", False) is not False
             or set(body_object) - admitted_fields
+            or (
+                target.renderer_id == HERMES_RESPONSE_CONSUMER_ID
+                and set(body_object) != {"model", "messages", "tools", "max_tokens"}
+            )
         ):
             raise RunnerPolicyBindingError(
                 "native HTTP request model or streaming mode is not admitted",
@@ -1116,7 +1120,7 @@ class EpisodeOpenAICompletionsPolicyClient:
             )
         return dict(response)
 
-    async def _invoke_openhands_http(
+    async def _invoke_native_http(
         self, request: PolicyRuntimeInvokeRequest
     ) -> PolicyRuntimeInvokeResult:
         if type(request) is not PolicyRuntimeInvokeRequest:
@@ -1324,15 +1328,15 @@ class EpisodeOpenAICompletionsPolicyClient:
         self, request: PolicyRuntimeInvokeRequest
     ) -> PolicyRuntimeInvokeResult:
         target = self._target_projection
-        if target is not None and target.renderer_id == OPENHANDS_RESPONSE_CONSUMER_ID:
+        if target is not None and target.renderer_id in NATIVE_CHAT_RESPONSE_TARGETS:
             if self._native_binding is None or self._native_plan is None:
                 raise RunnerPolicyBindingError(
-                    "OpenHands provider has no compiled-plan binding",
+                    "native Chat provider has no compiled-plan binding",
                     code="native_http_binding_invalid",
                     episode_id=self._episode_id,
                     effective_plan_digest=self._effective_plan_digest,
                 )
-            return await self._invoke_openhands_http(request)
+            return await self._invoke_native_http(request)
         if target is not None and target.runtime_profile is not None:
             if self._native_binding is None or self._native_plan is None:
                 raise RunnerPolicyBindingError(

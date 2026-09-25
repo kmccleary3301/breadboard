@@ -1,0 +1,233 @@
+{
+  "target_id": "hermes-agent@2026.9.11",
+  "ordered_tools": [
+    "patch",
+    "read_file",
+    "search_files",
+    "skill_view",
+    "skills_list",
+    "terminal",
+    "write_file"
+  ],
+  "tools": {
+    "patch": {
+      "description": "Targeted find-and-replace edits in files. Use this instead of sed/awk in terminal. Uses fuzzy matching (9 strategies) so minor whitespace/indentation differences won't break it. Returns a unified diff. Auto-runs syntax checks after editing. Finds a unique string and replaces it.",
+      "name": "patch",
+      "parameters": {
+        "properties": {
+          "new_string": {
+            "description": "Changed replacement text; it must differ from old_string. Pass empty string '' to delete the matched text.",
+            "type": "string"
+          },
+          "old_string": {
+            "description": "Exact text to find and replace. Must be unique in the file unless replace_all=true. Include surrounding context lines to ensure uniqueness.",
+            "type": "string"
+          },
+          "path": {
+            "description": "File path to edit.",
+            "type": "string"
+          },
+          "replace_all": {
+            "default": false,
+            "description": "Replace all occurrences instead of requiring a unique match (default: false)",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "old_string",
+          "new_string"
+        ],
+        "type": "object"
+      }
+    },
+    "read_file": {
+      "description": "Read a text file with line numbers and pagination. Use this instead of cat/head/tail in terminal. Output format: 'LINE_NUM|CONTENT'. Suggests similar filenames if not found. Use offset and limit for large files. Reads exceeding ~100K characters are truncated on a line boundary and return a next_offset; continue with offset to read the rest. Cannot read images/binary — use vision_analyze for images.",
+      "name": "read_file",
+      "parameters": {
+        "properties": {
+          "limit": {
+            "default": 2000,
+            "description": "Maximum number of lines to read (default: 2000, max: 2000). Reads are additionally capped at a ~100K-character budget with a next_offset continuation.",
+            "maximum": 2000,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 1,
+            "description": "Line number to start reading from (1-indexed, default: 1)",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Path to the file to read (absolute, relative, or ~/path)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    "search_files": {
+      "description": "Search file contents or find files by name. Use this instead of grep/rg/find/ls in terminal. Ripgrep-backed, faster than shell equivalents. On macOS, broad searches above the user home automatically skip TCC-protected folders (Desktop, Documents, Downloads, Library, Movies, Music, Pictures); target one directly when access is intentional.\n\nContent search (target='content'): Regex search inside files. Output modes: full matches with line numbers, file paths only, or match counts.\n\nFile search (target='files'): Find files by glob pattern (e.g., '*.py', '*config*'). Also use this instead of ls. Discovery order is the fast bounded default; exact global newest-first order is an explicit opt-in and may scan the full tree.",
+      "name": "search_files",
+      "parameters": {
+        "properties": {
+          "context": {
+            "default": 0,
+            "description": "Number of context lines before and after each match (grep mode only)",
+            "type": "integer"
+          },
+          "file_glob": {
+            "description": "Filter files by pattern in grep mode (e.g., '*.py' to only search Python files)",
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Maximum number of results to return (default: 50)",
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Skip first N results for pagination (default: 0)",
+            "type": "integer"
+          },
+          "order": {
+            "default": "discovery",
+            "description": "File-search order: 'discovery' is fast bounded traversal order; 'modified' is exact global newest-first and may scan the full tree; ignored for content",
+            "enum": [
+              "discovery",
+              "modified"
+            ],
+            "type": "string"
+          },
+          "output_mode": {
+            "default": "content",
+            "description": "Output format for grep mode: 'content' shows matching lines with line numbers, 'files_only' lists file paths, 'count' shows match counts per file",
+            "enum": [
+              "content",
+              "files_only",
+              "count"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "default": ".",
+            "description": "Directory or file to search in (default: current working directory)",
+            "type": "string"
+          },
+          "pattern": {
+            "description": "Regex pattern for content search, or glob pattern (e.g., '*.py') for file search",
+            "type": "string"
+          },
+          "target": {
+            "default": "content",
+            "description": "'content' searches inside file contents, 'files' searches for files by name",
+            "enum": [
+              "content",
+              "files"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "pattern"
+        ],
+        "type": "object"
+      }
+    },
+    "skill_view": {
+      "description": "Skills allow for loading information about specific tasks and workflows, as well as scripts and templates. Load a skill's full content or access its linked files (references, templates, scripts). First call returns SKILL.md content plus a 'linked_files' dict showing available references/templates/scripts. To access those, call again with file_path parameter.",
+      "name": "skill_view",
+      "parameters": {
+        "properties": {
+          "file_path": {
+            "description": "OPTIONAL: Path to a linked file within the skill (e.g., 'references/api.md', 'templates/config.yaml', 'scripts/validate.py'). Omit to get the main SKILL.md content.",
+            "type": "string"
+          },
+          "name": {
+            "description": "The skill name (use skills_list to see available skills). For plugin-provided skills, use the qualified form 'plugin:skill' (e.g. 'superpowers:writing-plans').",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    "skills_list": {
+      "description": "List available skills (name + description). Use skill_view(name) to load full content.",
+      "name": "skills_list",
+      "parameters": {
+        "properties": {
+          "category": {
+            "description": "Optional category filter to narrow results",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "terminal": {
+      "description": "Execute shell commands. The host OS, shell, and terminal backend are stated in your environment section — write commands for THAT platform. Filesystem, current working directory, and exported environment variables persist between calls.\n\nDo NOT use cat/head/tail (use read_file), grep/rg/find/ls (use search_files), sed/awk (use patch), or echo/heredoc file creation (use write_file). Reserve terminal for: builds, installs, git, processes, scripts, network, package managers — anything that needs a shell. Output is auto-truncated with the full text saved to a file — never pipe through tail/head to shorten it.\nEnvironment state persists: activate a virtualenv or export variables once per session, not before every command.\n\nForeground only: commands have a maximum 30-second timeout and return when finished.\nWorking directory: use 'workdir' for per-command cwd; when a command changes the session cwd (cd, pushd), trust the result's \"cwd\" field instead of prefixing every command with 'cd'.\n\n",
+      "name": "terminal",
+      "parameters": {
+        "properties": {
+          "command": {
+            "description": "The shell command to execute",
+            "type": "string"
+          },
+          "timeout": {
+            "description": "Maximum foreground execution time in seconds (default and maximum: 30). Commands exceeding 30 seconds are denied before execution.",
+            "minimum": 1,
+            "type": "integer",
+            "maximum": 30
+          },
+          "workdir": {
+            "description": "Working directory for this command (absolute path). Defaults to the session working directory.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "type": "object"
+      }
+    },
+    "write_file": {
+      "description": "Write content to a file, completely replacing existing content. Use this instead of echo/cat heredoc in terminal. Creates parent directories automatically. OVERWRITES the entire file — use 'patch' for targeted edits. Auto-runs syntax checks on .py/.json/.yaml/.toml and other linted languages; only NEW errors introduced by this write are surfaced (pre-existing errors are filtered out). The result's verified:true means the on-disk content hash was confirmed — do NOT re-read the file to check the write landed.",
+      "name": "write_file",
+      "parameters": {
+        "properties": {
+          "content": {
+            "description": "Complete content to write to the file",
+            "type": "string"
+          },
+          "path": {
+            "description": "Path to the file to write (will be created if it doesn't exist, overwritten if it does)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "dispatch": {
+    "kind": "target_adapter",
+    "adapter_id": "hermes-agent.local.v2026.9.11",
+    "binding_requirement": "RL-E4-2"
+  },
+  "provenance": {
+    "kind": "controlled_producer_capture",
+    "receipt": "HERMES_NATIVE_ASSEMBLY_RESULT_06.json",
+    "receipt_sha256": "59f8f47441b70487d1f1db12543b4b5ef8880c0f34c4d2097643c74054436706",
+    "request_index": 0,
+    "claim": "Controlled native SDK/tool preflight only; no live model, grading, supplier-reference equality or public composition qualification."
+  }
+}

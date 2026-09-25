@@ -53,6 +53,10 @@ class _RecordingPort:
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]:
         return self.bindings
 
+    @property
+    def declared_workspace(self) -> str:
+        return str(self.workspace)
+
     def native_runtime_inputs(self, *, input_names: tuple[str, ...], package_subpath: str) -> Mapping[str, str]:
         values = {
             "cwd": str(self.workspace),

@@ -1966,9 +1966,8 @@ def _parse_tool(path: str, payload: bytes, dep: SourceDependency) -> dict[str, A
     raw = strict_parse_payload(payload, logical_path=path, media_type=dep.media_type)
     allowed = {
         "id", "name", "description", "type_id", "manipulations",
-        "syntax_formats_supported", "preferred_formats", "parameters",
-        "required_order", "execution", "provider_routing", "use_cases",
-        "performance_data", "dependencies",
+        "syntax_formats_supported", "preferred_formats", "parameters", "execution",
+        "provider_routing", "use_cases", "performance_data", "dependencies",
     }
     _closed_fields(raw, allowed, "")
     for field_name in ("id", "name", "description", "parameters"):
@@ -2041,23 +2040,6 @@ def _parse_tool(path: str, payload: bytes, dep: SourceDependency) -> dict[str, A
                 "examples": deepcopy(examples),
             }
         )
-    raw_required_order = raw.get("required_order")
-    required_order: list[str] | None = None
-    if raw_required_order is not None:
-        if (
-            type(raw_required_order) is not list
-            or any(type(item) is not str for item in raw_required_order)
-            or len(set(raw_required_order)) != len(raw_required_order)
-            or set(raw_required_order) != {param["name"] for param in params if param["required"]}
-        ):
-            raise _error(
-                CompileStage.SCHEMA,
-                CompileErrorCode.TOOL_INVALID,
-                logical_path=path,
-                instance_pointer="/required_order",
-            )
-        required_order = list(raw_required_order)
-
     execution = _require_object(
         raw.get("execution", {"blocking": False, "max_per_turn": None}),
         "/execution",
@@ -2089,7 +2071,7 @@ def _parse_tool(path: str, payload: bytes, dep: SourceDependency) -> dict[str, A
             raise _error(CompileStage.SCHEMA, CompileErrorCode.TOOL_INVALID, logical_path=path, instance_pointer=f"/provider_routing/{provider_id}/fallback_formats")
         _reject_embedded_authority(fallback_formats, f"/provider_routing/{provider_id}/fallback_formats")
         checked_routing[provider_id] = deepcopy(settings)
-    result = {
+    return {
         "tool_id": tool_id,
         "model_name": name,
         "description": description,
@@ -2105,9 +2087,6 @@ def _parse_tool(path: str, payload: bytes, dep: SourceDependency) -> dict[str, A
         "provider_routing": checked_routing,
         "source_dependency": _dependency_obj(dep),
     }
-    if required_order is not None:
-        result["required_order"] = required_order
-    return result
 
 
 def _compile_tools(

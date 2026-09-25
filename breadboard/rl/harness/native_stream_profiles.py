@@ -13,8 +13,12 @@ from dataclasses import dataclass
 from types import MappingProxyType, ModuleType
 from typing import Any, Literal
 
-from breadboard_engine.compilation.provider_response import PI_RESPONSE_CONSUMER_ID
+from breadboard_engine.compilation.provider_response import (
+    HERMES_RESPONSE_CONSUMER_ID, PI_RESPONSE_CONSUMER_ID,
+)
+from breadboard.rl.harness import hermes_worker
 from breadboard.rl.harness.runners import omp_semantics, pi_semantics
+
 
 @dataclass(frozen=True, slots=True)
 class NativeStreamProfile:
@@ -35,13 +39,20 @@ class NativeStreamProfile:
     package_subpath: str
     state_module: ModuleType
     # (task, system_prompt, bootstrap) -> profile semantics state.
-    state_factory: Callable[[str, str, Mapping[str, Any]], Any]
+    state_factory: Callable[[str, str, Mapping[str, Any]], Any] | None
+    phase_mode: Literal["streaming", "checkpointed"] = "streaming"
+    trace_schema_version: str = ""
+    trace_profile_name: str = ""
+    trace_controls: Mapping[str, Any] | None = None
+    journal_byte_limit: bool = False
+    sealed_initialize_fields: tuple[str, ...] = ()
+    checkpoint_state_fields: tuple[str, ...] = ()
+    phase_watchdog_seconds: int = 40
+    provider_timeout_seconds: int = 45
+    limit_stop_reasons: frozenset[str] = frozenset()
     # A begun stream ending without a finish_reason reaches the semantics as a
     # typed termination instead of failing in the decoder.
     accepts_truncated_stream: bool = False
-    # Sealed compiled runtime-profile objects the source worker's initialize
-    # phase requires verbatim (e.g. OMP's pinned route classifier).
-    initialize_profile_fields: tuple[str, ...] = ()
 
 
 def _pi_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
@@ -95,6 +106,47 @@ NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
         state_module=pi_semantics,
         state_factory=_pi_state,
     ),
+    HERMES_RESPONSE_CONSUMER_ID: NativeStreamProfile(
+        consumer_id=HERMES_RESPONSE_CONSUMER_ID,
+        target_id="hermes-agent@2026.9.11",
+        target_version=3,
+        api_variant="chat",
+        phase_schema_version="bb.hermes-native.v1",
+        tool_order=(
+            "patch", "read_file", "search_files", "skill_view",
+            "skills_list", "terminal", "write_file",
+        ),
+        max_turns=8,
+        action_timeout_ms=40_000,
+        episode_timeout_seconds=120,
+        ack_policy="after_history_commit",
+        incomplete_stop_reasons=frozenset({"error", "stopped"}),
+        runtime_input_names=(),
+        package_subpath="",
+        state_module=hermes_worker,
+        state_factory=None,
+        phase_mode="checkpointed",
+        trace_schema_version="bb.e4.hermes-agent-trace.v1",
+        trace_profile_name="hermes",
+        trace_controls=MappingProxyType({
+            "api_mode": "chat_completions", "streaming": False,
+            "max_iterations": 8, "max_tokens": 2048, "http_attempts": None,
+            "provider_deadline": 45, "provider_timeout": 45,
+            "native_deadline": 35, "tool_deadline": 35,
+            "watchdog_deadline": 40, "watchdog": 40,
+            "terminal_deadline": 30, "terminal_timeout": 30,
+            "retry": True, "api_max_retries": 1, "fallback": False,
+            "advertised_tools": None,
+        }),
+        journal_byte_limit=True,
+        sealed_initialize_fields=("schema_overlay",),
+        checkpoint_state_fields=(
+            "source_exit", "public_stop", "source_runtime", "source_error",
+            "phase", "native_counters", "proposal", "segment_index",
+            "action_index", "source_result_metadata", "resource_facts",
+        ),
+        limit_stop_reasons=frozenset({"request_cap"}),
+    ),
     omp_semantics.CONSUMER_ID: NativeStreamProfile(
         consumer_id=omp_semantics.CONSUMER_ID,
         target_id="oh-my-pi@18.1.17",
@@ -112,7 +164,7 @@ NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
         state_module=omp_semantics,
         state_factory=_omp_state,
         accepts_truncated_stream=True,
-        initialize_profile_fields=("route_classifier",),
+        sealed_initialize_fields=("route_classifier",),
     ),
 })
 

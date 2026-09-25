@@ -15,6 +15,7 @@ from breadboard.artifacts.cas import FilesystemCAS
 from breadboard.product.harness.resolution import compile_e4_harness
 from breadboard_engine.compilation.contracts import canonical_sha256
 from breadboard_engine.compilation.provider_response import (
+    HERMES_RESPONSE_CONSUMER_ID,
     NATIVE_RESPONSE_CONSUMER_ID,
     OPENHANDS_RESPONSE_CONSUMER_ID,
     NativeResponseBindingError,
@@ -143,24 +144,6 @@ def _profile(credential: str = "episode-secret") -> OpenAICompletionsProviderPro
         max_output_tokens=32_000,
         caller_headers={"X-Episode-ID": "episode-one"},
     )
-
-def test_target_tool_projection_preserves_required_order_and_rejects_drift() -> None:
-    definition = {
-        "model_name": "read",
-        "description": "Read",
-        "parameters": (
-            {"name": "i", "schema": {"type": "string"}, "validation_rules": {}, "required": True},
-            {"name": "path", "schema": {"type": "string"}, "validation_rules": {}, "required": True},
-        ),
-        "required_order": ("path", "i"),
-        "provider_routing": {"openai": {"additionalProperties": False}},
-    }
-    projected = policy_provider_module._project_effective_chat_tool(definition)
-    assert projected["function"]["parameters"]["required"] == ["path", "i"]
-
-    malformed = {**definition, "required_order": ("path",)}
-    with pytest.raises(ValueError, match="required order"):
-        policy_provider_module._project_effective_chat_tool(malformed)
 
 
 def _request(
@@ -896,6 +879,12 @@ def _openhands_supplier_bodies() -> list[dict[str, Any]]:
     return [request["body"] for request in trace["requests"]]
 
 
+_HERMES_SUPPLIER_TRACE = (
+    Path(__file__).parents[2]
+    / "e4_parity/fixtures/hermes_agent/H-01-normal-memory-skill-write/trace.json"
+)
+
+
 def _unbound_openhands_client(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -904,7 +893,6 @@ def _unbound_openhands_client(
     consumer_id: str,
 ) -> tuple[EpisodeOpenAICompletionsPolicyClient, c.EffectiveExecutionPlan, list[bytes]]:
     """Build a real OpenHands client for the compiled target and a recording transport."""
-    supplier_body = _openhands_supplier_bodies()[0]
     request_policy: dict[str, Any] = {
         "mode": "non_streaming",
         "include_usage": False,
@@ -914,29 +902,55 @@ def _unbound_openhands_client(
     }
     if conversation_key_field is not None:
         request_policy["conversation_key_field"] = conversation_key_field
+    return _unbound_native_chat_client(
+        tmp_path,
+        monkeypatch,
+        target_id="openhands-sdk@1.47.0",
+        consumer_id=consumer_id,
+        model=_openhands_supplier_bodies()[0]["model"],
+        request_policy=request_policy,
+        sampling={"temperature": 0},
+        max_token_feature="max_completion_tokens",
+        request_features=["max_completion_tokens", "non_streaming", "temperature"],
+    )
+
+
+def _unbound_native_chat_client(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    target_id: str,
+    consumer_id: str,
+    model: str,
+    request_policy: Mapping[str, Any],
+    sampling: Mapping[str, Any],
+    max_token_feature: str,
+    request_features: list[str],
+) -> tuple[EpisodeOpenAICompletionsPolicyClient, c.EffectiveExecutionPlan, list[bytes]]:
+    """Build a real native Chat client for a compiled E4 target and a recording transport."""
     profile = OpenAICompletionsProviderProfile(
-        model=supplier_body["model"],
+        model=model,
         scoped_credential="episode-secret",
         base_url=_OPENHANDS_BASE_URL,
         context_window=131_072,
         max_output_tokens=2_048,
-        sampling={"temperature": 0},
+        sampling=dict(sampling),
         capabilities={
-            "supports_max_completion_tokens": True,
+            f"supports_{max_token_feature}": True,
             "supports_non_streaming": True,
             "supports_streaming": False,
             "supports_tools": True,
         },
-        request_policy=request_policy,
+        request_policy=dict(request_policy),
     )
-    cas = FilesystemCAS(tmp_path / "openhands-target-cas")
+    cas = FilesystemCAS(tmp_path / "native-chat-target-cas")
     try:
         manifest = compile_e4_harness(
-            load_e4_target("openhands-sdk@1.47.0"),
+            load_e4_target(target_id),
             {},
             {
                 "version": 2,
-                "profile": {"name": "openhands-native-http-test"},
+                "profile": {"name": "native-chat-http-test"},
                 "workspace": {"root": "workspace"},
                 "provider_tools": {"use_native": True, "api_variant": "chat"},
                 "providers": {
@@ -970,7 +984,7 @@ def _unbound_openhands_client(
         capabilities=_policy_capabilities(
             max_context_tokens=profile.context_window,
             max_output_tokens=profile.max_output_tokens,
-            request_features=["max_completion_tokens", "non_streaming", "temperature"],
+            request_features=request_features,
         ),
     )
     plan = _runtime_plan(
@@ -1128,7 +1142,7 @@ async def test_openhands_binding_requires_declared_conversation_key_field(
     try:
         with pytest.raises(
             NativeResponseBindingError,
-            match="OpenHands native response requires its compiled source profile",
+            match="native Chat response requires its compiled source profile",
         ):
             client.bind_compiled_plan(plan)
         with pytest.raises(RunnerPolicyBindingError) as error:
@@ -1140,6 +1154,77 @@ async def test_openhands_binding_requires_declared_conversation_key_field(
 
     assert error.value.code == "native_http_binding_invalid"
     assert sent == []
+
+
+def _unbound_hermes_client(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    conversation_key_field: str | None,
+) -> tuple[EpisodeOpenAICompletionsPolicyClient, c.EffectiveExecutionPlan, list[bytes]]:
+    request_policy: dict[str, Any] = {
+        "mode": "non_streaming",
+        "include_usage": False,
+        "max_token_field": "max_tokens",
+        "strict_tools": None,
+        "enable_thinking": None,
+    }
+    if conversation_key_field is not None:
+        request_policy["conversation_key_field"] = conversation_key_field
+    return _unbound_native_chat_client(
+        tmp_path,
+        monkeypatch,
+        target_id="hermes-agent@2026.9.11",
+        consumer_id=HERMES_RESPONSE_CONSUMER_ID,
+        model=_hermes_supplier_bodies()[0]["model"],
+        request_policy=request_policy,
+        sampling={},
+        max_token_feature="max_tokens",
+        request_features=["max_tokens", "non_streaming"],
+    )
+
+
+def _hermes_supplier_bodies() -> list[dict[str, Any]]:
+    trace = json.loads(_HERMES_SUPPLIER_TRACE.read_text(encoding="utf-8"))
+    return [request["body"] for request in trace["requests"] if request["kind"] == "request"]
+
+
+@pytest.mark.asyncio
+async def test_hermes_binding_admits_source_profile_without_conversation_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _hermes_supplier_bodies()[0]["model"]
+    client, plan, sent = _unbound_hermes_client(tmp_path, monkeypatch, conversation_key_field=None)
+    try:
+        public_config = client.bind_compiled_plan(plan)
+    finally:
+        await client.close()
+
+    assert public_config["model_name"] == model
+    assert public_config["base_url"] == _OPENHANDS_BASE_URL
+    assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_hermes_binding_rejects_undeclared_source_conversation_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, plan, sent = _unbound_hermes_client(
+        tmp_path, monkeypatch, conversation_key_field="prompt_cache_key"
+    )
+    try:
+        with pytest.raises(
+            NativeResponseBindingError,
+            match="native Chat response requires its compiled source profile",
+        ):
+            client.bind_compiled_plan(plan)
+    finally:
+        await client.close()
+
+    assert sent == []
+
 
 
 @pytest.mark.asyncio

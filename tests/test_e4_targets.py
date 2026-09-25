@@ -41,8 +41,9 @@ ROOT = Path(__file__).resolve().parents[1]
 TARGET_ROOT = ROOT / "config" / "e4_targets"
 
 _MAIN_LOWERED_TARGET_DIGESTS = {
+    "hermes-agent@2026.9.11": "sha256:4aecf53f72f9d32f4c5c88ece50dbe22d579a85b89a45dae88d15a2b4bb0decc",
     "mini-swe-agent@2.4.6": "sha256:3bf6fb7672e1e1b3d99385fbd0f002913091d77dc9bd46e239a4656f8644400d",
-    "openhands-sdk@1.47.0": "sha256:92800becc84ef7e7aae5b98b49dd37119227ec24e1546ab1765fe63208fb4676",
+    "openhands-sdk@1.47.0": "sha256:24d70fe47fbee319ccd6d5d9ba2307aae132bedf910531d604cc7e00241c3fba",
     "pi@0.73.1": "sha256:9c8dff35df9ae2efbff39bc7b11533cb9900500963d9efb157689dd1551f90db",
 }
 
@@ -77,6 +78,7 @@ def test_target_resources_load_outside_editable_checkout_cwd(
 
     assert _resource_root() == TARGET_ROOT
     assert list_e4_target_ids() == (
+        "hermes-agent@2026.9.11",
         "mini-swe-agent@2.4.6",
         "oh-my-pi@16.2.13",
         "oh-my-pi@18.1.17",
@@ -133,6 +135,7 @@ def test_distribution_owner_match_does_not_resolve_symlink_aliases(
 
 
     assert list_e4_target_ids() == (
+        "hermes-agent@2026.9.11",
         "mini-swe-agent@2.4.6",
         "oh-my-pi@16.2.13",
         "oh-my-pi@18.1.17",
@@ -267,6 +270,16 @@ def test_distribution_owner_match_does_not_resolve_symlink_aliases(
         "ast_edit",
     ]
     assert omp_surface["legacy_aliases"] == {"search": "grep", "find": "glob"}
+
+
+def test_hermes_package_loads_and_lowers_pinned_renderer() -> None:
+    package = load_e4_target("hermes-agent@2026.9.11")
+    rendered = lower_e4_target(package, {})
+    assert rendered.renderer_id == "breadboard.hermes-agent.v2026.9.11"
+    assert rendered.ordered_tool_names == (
+        "patch", "read_file", "search_files", "skill_view",
+        "skills_list", "terminal", "write_file",
+    )
 
 
 def test_target_freeze_references_match_calibrated_source_rows() -> None:
@@ -863,9 +876,9 @@ def test_omp_18_1_17_server_compile_binds_headless_v2(
                     item["name"]: item["schema"]
                     for item in definition["parameters"]
                 },
-                "required": definition.get("required_order", [
+                "required": [
                     item["name"] for item in definition["parameters"] if item["required"]
-                ]),
+                ],
                 "additionalProperties": definition["provider_routing"]["openai"]["additionalProperties"],
             }
             actual_tools.append({
@@ -902,11 +915,18 @@ def test_omp_18_1_17_server_compile_binds_headless_v2(
             }
             for item in actual_tools
         ]
+        def compiled_property_order(parameters: dict[str, Any]) -> list[str]:
+            # The compiler encodes required order through parameter order.
+            names, required = list(parameters["properties"]), parameters["required"]
+            if [name for name in names if name in required] == required:
+                return names
+            return [*required, *(name for name in names if name not in required)]
+
         expected_projection = [
             {
                 "name": item["function"]["name"],
                 "description": item["function"]["description"],
-                "property_names": list(item["function"]["parameters"]["properties"]),
+                "property_names": compiled_property_order(item["function"]["parameters"]),
                 "required": list(item["function"]["parameters"]["required"]),
                 "additionalProperties": item["function"]["parameters"]["additionalProperties"],
             }

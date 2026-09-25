@@ -15,7 +15,7 @@ In-repo tests did not notice, because the test-only `omp_native_tools.NativeTool
 ## 2) Scope and Surfaces
 
 - Kernel modules touched:
-  - `breadboard/rl/harness/native_stream_profiles.py`: new typed field `NativeStreamProfile.initialize_profile_fields`; OMP declares `("route_classifier",)`.
+  - `breadboard/rl/harness/native_stream_profiles.py`: OMP declares `sealed_initialize_fields=("route_classifier",)`. Main (#138) introduced that typed field for the checkpointed Hermes phase mode; the lane's own `initialize_profile_fields` was removed in the merge.
   - `breadboard/rl/harness/runners/conductor.py`: the native-stream initialize payload.
 - Tests: `tests/rl/harness/test_omp_native_initialize_payload.py`.
 - Contract surfaces touched: the native-stream initialize phase payload.
@@ -23,9 +23,9 @@ In-repo tests did not notice, because the test-only `omp_native_tools.NativeTool
 
 ## 3) Coupling and Generalization Impact
 
-- Core -> extension dependency: no. The conductor names no profile. It copies each field the profile declares in `initialize_profile_fields` verbatim from the compiled runtime profile.
-- The copy fails closed with `compiled_ir_mismatch` when a declared field is not an object in the compiled profile.
-- Pi and every other profile declare no fields, so their payloads are byte-identical to before.
+- Core -> extension dependency: no. The conductor names no profile. The streaming initialize payload now carries each field the profile declares in `sealed_initialize_fields`, copied verbatim from the compiled runtime profile, as the checkpointed initialize already did.
+- The loop's admission check fails closed with `compiled_ir_mismatch` when a declared field is not an object in the compiled profile.
+- Pi declares no fields, so its payload is byte-identical to before.
 
 ## 4) Change Classification
 

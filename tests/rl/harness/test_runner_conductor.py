@@ -107,6 +107,10 @@ class RecordingToolPort:
         self.binding_reads += 1
         return self._bindings
 
+    @property
+    def declared_workspace(self) -> str:
+        return "/workspace"
+
     async def invoke_tool(
         self,
         tool_id: str,
@@ -3823,6 +3827,9 @@ class _NativeCloseTestPort(RecordingToolPort):
         self.release_close = asyncio.Event()
         self.runtime_all_dead = True
 
+    @property
+    def declared_workspace(self) -> str:
+        return "/native-test/workspace"
     def native_runtime_inputs(
         self,
         *,
@@ -3974,19 +3981,15 @@ def _native_close_test_case(
             provider="openai",
         ),
     )
-    monkeypatch.setattr(
-        conductor_module,
-        "NATIVE_STREAM_PROFILES",
-        {PI_RESPONSE_CONSUMER_ID: profile},
-    )
-    monkeypatch.setattr(
-        conductor_module,
-        "_PROFILE_MODULE_IDENTITIES",
-        (
-            conductor_module.measure_module_artifact(native_stream_profiles.__file__),
-            conductor_module.measure_module_artifact(pi_semantics.__file__),
+    registry = {PI_RESPONSE_CONSUMER_ID: profile}
+    monkeypatch.setattr(conductor_module, "NATIVE_STREAM_PROFILES", registry)
+    monkeypatch.setattr(conductor_module, "_PROFILE_MODULE_IDENTITIES", (
+        conductor_module.measure_module_artifact(native_stream_profiles.__file__),
+        *(
+            conductor_module.measure_module_artifact(item.state_module.__file__)
+            for item in registry.values()
         ),
-    )
+    ))
     request_body = {"model": model["model_id"], "messages": [], "tools": []}
     request_digest = conductor_module.canonical_sha256(request_body).removeprefix("sha256:")
     first_response = {

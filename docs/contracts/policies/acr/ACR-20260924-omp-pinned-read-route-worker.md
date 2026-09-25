@@ -14,9 +14,9 @@ The first-request correction removes the independently authored 4,110-byte OMP p
 
 ## 2) Scope and Surfaces
 
-The PR delta from `ba63c4b3a6ce9f6ff088119b7bf0ca2e6400f517` to `966f091e417eea02161c293a5ddaa78e23b92abf` changes these eleven protected paths. This ACR is a twelfth protected path in the resulting PR delta:
+The PR delta from `ba63c4b3a6ce9f6ff088119b7bf0ca2e6400f517` to `966f091e417eea02161c293a5ddaa78e23b92abf` changes these ten protected paths (the `server_compiler.py` change was removed when main 1849de68 was merged). This ACR is an eleventh protected path in the resulting PR delta:
 
-- `breadboard/product/harness/targets.py`: accepts the pinned OMP v2 target recipe, constructs its native advertisement, and preserves a required-parameter order that differs from property order.
+- `breadboard/product/harness/targets.py`: accepts the pinned OMP v2 target recipe and constructs its native advertisement. OMP's required-parameter order is carried by main's compiled-property reordering (#138); the lane's earlier `required_order` field was removed when main was merged.
 - `breadboard/rl/harness/native_stream_profiles.py`: registers the OMP consumer, `chat_completions` variant, worker-backed state, tool order, and turn/time limits in the native-stream profile registry.
 - `breadboard/rl/harness/omp_native_tools.py`: pins the source, lock, Bun, installed worker entrypoint, route-policy inputs, and framed native-worker phases; its test override checks source-module digests.
 - `breadboard/rl/harness/policy_provider.py`: binds OMP to its compiled target and native provider profile, projects its model compatibility and tool order, and checks the source-native request against the admitted prompt and tools.
@@ -25,7 +25,6 @@ The PR delta from `ba63c4b3a6ce9f6ff088119b7bf0ca2e6400f517` to `966f091e417eea0
 - `breadboard/rl/harness/runners/omp_semantics.py`: supplies OMP request/response state, stop and length behavior, denied-call results, tool-result ordering, and replay-trace facts to the shared Conductor.
 - `breadboard/rl/harness/sandbox.py`: registers the OMP local adapter identity and its `bash`, `edit`, `read`, `write` tool set.
 - `breadboard_engine/compilation/provider_response.py`: admits OMP as a streaming native-response consumer only with its compiled target identity and source-profile constraints.
-- `breadboard_engine/compilation/server_compiler.py`: validates and retains an optional tool `required_order` against the declared required parameters.
 - `breadboard_engine/provider/runtimes/openai/chat.py`: keeps OMP's source-shaped messages and tools, omits `n`, and disables request storage for that bound consumer.
 - `docs/contracts/policies/acr/ACR-20260924-omp-pinned-read-route-worker.md`: records the decision required for those danger-zone changes.
 
@@ -35,13 +34,13 @@ The same PR delta adds the versioned OMP target assets, comparator, read-route o
 
 ## 3) Coupling and Generalization Impact
 
-The OMP behavior is selected by the exact target descriptor and `breadboard.oh-my-pi.v18.1.17` consumer identity, not by a generic tool name. The Conductor uses its existing native-stream profile registry and adds bounded schema admission; compiler and provider changes carry OMP's required tool ordering and native prompt through that boundary. Only `read`, `bash`, `edit`, and `write` are advertised. The worker verifies its source and lock inputs, observes the pinned ReadTool rather than maintaining a second route parser, and rejects unknown routes before tool execution. Declared remote and structured routes are also denied before dispatch by the OMP state. Shared compiler, provider, and Conductor edits make regressions in other targets a coupling risk; the explicit consumer checks and optional `required_order` constrain when the new behavior applies.
+The OMP behavior is selected by the exact target descriptor and `breadboard.oh-my-pi.v18.1.17` consumer identity, not by a generic tool name. The Conductor uses its existing native-stream profile registry and adds bounded schema admission; provider changes carry OMP's native prompt through that boundary, and the shared compiled-property ordering carries its required tool order. Only `read`, `bash`, `edit`, and `write` are advertised. The worker verifies its source and lock inputs, observes the pinned ReadTool rather than maintaining a second route parser, and rejects unknown routes before tool execution. Declared remote and structured routes are also denied before dispatch by the OMP state. Shared compiler, provider, and Conductor edits make regressions in other targets a coupling risk; the explicit consumer checks and optional `required_order` constrain when the new behavior applies.
 
 ## 4) Change Classification
 
 - Classification: `additive`.
 
-This adds a versioned target and streaming consumer. Within that target, the final read-route changes are corrective and fail closed: a non-file or unclassified supplier route no longer gains local-file admission. The optional required-order field changes compiled tool handling only when a target declares it. No installed x64 qualification, new general read capability, or merger authorization follows from this classification.
+This adds a versioned target and streaming consumer. Within that target, the final read-route changes are corrective and fail closed: a non-file or unclassified supplier route no longer gains local-file admission. No installed x64 qualification, new general read capability, or merger authorization follows from this classification.
 
 ## 5) Evidence and Validation Plan
 

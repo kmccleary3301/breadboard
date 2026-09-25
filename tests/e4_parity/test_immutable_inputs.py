@@ -355,6 +355,8 @@ def test_committed_bundle_matches_manifest_and_source_allowlist() -> None:
         },
     }
     workspace_exact = {
+        "docs_tmp/e4_immutable_inputs/hermes/hermes_capture_cases.json",
+        "docs_tmp/e4_immutable_inputs/hermes/hermes-supplier-capture-packet-rerun3.tar.gz",
         "docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip",
         "docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json",
         "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
