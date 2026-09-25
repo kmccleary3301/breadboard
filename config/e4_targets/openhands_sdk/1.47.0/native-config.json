@@ -4,8 +4,8 @@
   "versions": {
     "openhands-sdk": "1.47.0",
     "openhands-tools": "1.47.0",
-    "litellm": "1.93.0",
-    "openai": "2.33.0"
+    "litellm": "1.102.1",
+    "openai": "2.26.0"
   },
   "agent": {
     "tools": [
@@ -60,7 +60,12 @@
     "stream": false,
     "native_tool_calling": true,
     "drop_params": true,
-    "model_canonical_name": null
+    "capability_overrides": {
+      "supports_reasoning_effort": false,
+      "supports_vision": false,
+      "supports_responses_api": false,
+      "supports_sampling_params": true
+    }
   },
   "environment": {
     "LITELLM_LOCAL_MODEL_COST_MAP": "True",

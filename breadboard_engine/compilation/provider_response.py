@@ -420,6 +420,7 @@ def admit_native_response_binding(
             or profile.request_policy.mode != "non_streaming"
             or profile.request_policy.strict_tools is not None
             or profile.request_policy.enable_thinking is not None
+            or profile.request_policy.conversation_key_field != "prompt_cache_key"
             or profile.max_output_tokens != 2048
             or profile.sampling.as_dict() != {"temperature": 0.0, "n": 1}
         ):

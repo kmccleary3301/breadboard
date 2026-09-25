@@ -1,0 +1,94 @@
+{
+  "schema_version": "bb.e4.openhands-capture-cases.v1",
+  "profile": "openhands",
+  "settings": {
+    "max_iteration_per_run": 16,
+    "tool_concurrency_limit": 1,
+    "api_mode": "chat",
+    "stream": false,
+    "num_retries": 0,
+    "timeout": 45,
+    "max_output_tokens": 2048,
+    "temperature": 0,
+    "reasoning_effort": "none",
+    "persistence_dir": null,
+    "terminal_type": "subprocess",
+    "no_change_timeout_seconds": 30,
+    "tmux_required_absent": true
+  },
+  "cases": {
+    "OH-01-normal-file-effect": {
+      "case_id": "OH-01-normal-file-effect",
+      "task": "Create marker.txt with exactly the text openhands-normal\\n using the tools, then finish.",
+      "probe_paths": ["marker.txt"],
+      "steps": [
+        {"tool_calls": [{"name": "file_editor", "arguments": "{\"command\":\"create\",\"path\":\"/workspace/marker.txt\",\"file_text\":\"openhands-normal\\n\"}"}]},
+        {"tool_calls": [{"name": "terminal", "arguments": "{\"command\":\"cat marker.txt\",\"timeout\":5}"}]},
+        {"tool_calls": [{"name": "finish", "arguments": "{\"message\":\"normal complete\"}"}]}
+      ],
+      "oracle": "five ordered tool schemas, a real file-editor effect, a terminal readback, and FINISHED; path is rewritten to the case workspace."
+    },
+    "OH-02-invalid-call-continues": {
+      "case_id": "OH-02-invalid-call-continues",
+      "task": "Exercise per-call validation: make a valid file, send an invalid editor command, make a second valid file, then finish.",
+      "probe_paths": ["before.txt", "after.txt"],
+      "steps": [
+        {"tool_calls": [
+          {"name": "file_editor", "arguments": "{\"command\":\"create\",\"path\":\"/workspace/before.txt\",\"file_text\":\"before\\n\"}"},
+          {"name": "file_editor", "arguments": "{\"command\":\"not-a-real-command\",\"path\":\"/workspace/bad.txt\"}"},
+          {"name": "file_editor", "arguments": "{\"command\":\"create\",\"path\":\"/workspace/after.txt\",\"file_text\":\"after\\n\"}"}
+        ]},
+        {"tool_calls": [{"name": "finish", "arguments": "{\"message\":\"invalid call recorded\"}"}]}
+      ],
+      "oracle": "valid A and C effects remain eligible; invalid B emits native error evidence instead of whole-batch rejection."
+    },
+    "OH-03-finish-cutoff": {
+      "case_id": "OH-03-finish-cutoff",
+      "task": "Think, finish, and then attempt a file creation in one assistant response.",
+      "probe_paths": ["must-not-exist.txt"],
+      "steps": [
+        {"tool_calls": [
+          {"name": "think", "arguments": "{\"thought\":\"cutoff probe\"}"},
+          {"name": "finish", "arguments": "{\"message\":\"finished before trailing call\"}"},
+          {"name": "file_editor", "arguments": "{\"command\":\"create\",\"path\":\"/workspace/must-not-exist.txt\",\"file_text\":\"discarded\\n\"}"}
+        ]}
+      ],
+      "oracle": "prepared event facts include all calls, but only the validated prefix through Finish executes; trailing file is absent and no follow-up request occurs."
+    },
+    "OH-04-persistent-pty-reset": {
+      "case_id": "OH-04-persistent-pty-reset",
+      "task": "Use the persistent terminal: export a marker and change directory, observe them later, reset the shell, then prove the marker is gone.",
+      "probe_paths": ["pty-after-reset.txt"],
+      "steps": [
+        {"tool_calls": [{"name": "terminal", "arguments": "{\"command\":\"export OH_CAPTURE_MARKER=alive; mkdir -p pty-dir; cd pty-dir; printf 'entered\\n'\",\"timeout\":5}"}]},
+        {"tool_calls": [{"name": "terminal", "arguments": "{\"command\":\"printf '%s|%s\\n' \\\"$OH_CAPTURE_MARKER\\\" \\\"$PWD\\\"\",\"timeout\":5}"}]},
+        {"tool_calls": [{"name": "terminal", "arguments": "{\"command\":\"\",\"reset\":true}"}]},
+        {"tool_calls": [{"name": "terminal", "arguments": "{\"command\":\"printf '%s|%s\\n' \\\"${OH_CAPTURE_MARKER-unset}\\\" \\\"$PWD\\\" > pty-after-reset.txt\",\"timeout\":5}"}]},
+        {"tool_calls": [{"name": "finish", "arguments": "{\"message\":\"pty reset complete\"}"}]}
+      ],
+      "oracle": "subprocess PTY session persists export/cwd, poll/reset are native transitions, reset creates a fresh shell without tmux, and the later command observes unset marker."
+    },
+    "OH-05-iteration-budget": {
+      "case_id": "OH-05-iteration-budget",
+      "task": "Keep using the terminal without finishing; the native iteration limit must stop the conversation.",
+      "max_iteration_per_run": 2,
+      "probe_paths": ["budget.txt"],
+      "steps": [
+        {"tool_calls": [{"name": "terminal", "arguments": "{\"command\":\"printf one > budget.txt\",\"timeout\":5}"}]},
+        {"tool_calls": [{"name": "terminal", "arguments": "{\"command\":\"printf two >> budget.txt\",\"timeout\":5}"}]},
+        {"tool_calls": [{"name": "terminal", "arguments": "{\"command\":\"printf three >> budget.txt\",\"timeout\":5}"}]}
+      ],
+      "oracle": "native post-step iteration limit stops after two model turns, preserves completed effects, and sends no third request."
+    },
+    "OH-06-response-classification": {
+      "case_id": "OH-06-response-classification",
+      "task": "Respond to an empty/reasoning-only turn with a correction, then finish with plain text.",
+      "probe_paths": [],
+      "steps": [
+        {"content": null, "reasoning_content": "internal reasoning only", "tool_calls": [], "finish_reason": "stop"},
+        {"content": "Done with a plain final answer.", "tool_calls": [], "finish_reason": "stop"}
+      ],
+      "oracle": "empty/reasoning-only response is committed and receives native corrective user-role nudge; plain nonblank text then finishes without a tool call."
+    }
+  }
+}

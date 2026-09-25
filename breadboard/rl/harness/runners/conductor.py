@@ -121,6 +121,8 @@ CONDUCTOR_ADAPTER_ID = "breadboard.conductor.v1"
 CONDUCTOR_RUNTIME_ABI = "breadboard.conductor.v1"
 POLICY_RUNTIME_BINDING_SCHEMA_VERSION = "bb.rl.policy-runtime-binding.v1"
 
+_CANONICAL_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
 
 @dataclass(frozen=True, slots=True)
 class NativeCleanupOutcome:
@@ -2606,7 +2608,7 @@ class _ConductorSession:
             or not isinstance(tools, NativeWorkspaceEffectsPort)
             or profile is None
             or model_config is None
-            or limits.max_turns != 16
+            or limits.max_turns < 1
             or limits.action_timeout_ms != 90_000
             or len(self._projection.models) != 1
             or len(self._projection.modes) != 1
@@ -2682,7 +2684,22 @@ class _ConductorSession:
                 )
             for event in delta:
                 kind = event.get("kind")
-                if kind == "ObservationEvent":
+                if kind == "ActionEvent":
+                    call = event.get("tool_call")
+                    arguments = call.get("arguments") if isinstance(call, Mapping) else None
+                    if isinstance(arguments, str):
+                        try:
+                            arguments = json.loads(arguments)
+                        except json.JSONDecodeError:
+                            pass
+                    elif arguments is None and event.get("action") is not None:
+                        arguments = event["action"]
+                    trace_tool_calls.append({
+                        "tool_name": event.get("tool_name"),
+                        "arguments": arguments,
+                        "security_risk": event.get("security_risk"),
+                    })
+                elif kind == "ObservationEvent":
                     observation_value = event.get("observation")
                     if not isinstance(observation_value, Mapping):
                         observation_value = {"value": observation_value}
@@ -2712,7 +2729,7 @@ class _ConductorSession:
             if status is not None or iteration is not None:
                 if (
                     status not in {"IDLE", "RUNNING", "PAUSED", "FINISHED", "STUCK", "ERROR"}
-                    or type(iteration) is not int or not 0 <= iteration <= 16
+                    or type(iteration) is not int or not 0 <= iteration <= limits.max_turns
                 ):
                     raise RunnerProtocolError(
                         "native execution state is invalid",
@@ -2730,7 +2747,14 @@ class _ConductorSession:
             ))
 
         initialized = await phase(
-            "initialize", {"task": task, "model_config": model_config}, timeout_ms=60_000,
+            "initialize",
+            {
+                "task": task,
+                "model_config": thaw_json(model_config),
+                "max_iteration_per_run": limits.max_turns,
+                "native_config": thaw_json(self._projection.source_profile),
+            },
+            timeout_ms=60_000,
         )
         if (
             initialized.get("kind") != "initialized"
@@ -2740,10 +2764,19 @@ class _ConductorSession:
                 "native tools differ from the compiled source recipe",
                 code="native_response_binding_invalid", **self._context(),
             )
+        conversation_id = initialized.get("conversation_id")
+        if (
+            type(conversation_id) is not str
+            or _CANONICAL_UUID_RE.fullmatch(conversation_id) is None
+        ):
+            raise RunnerProtocolError(
+                "native conversation id is not a canonical UUID",
+                code="native_response_invalid", **self._context(),
+            )
         self._binding.bind_native_tools(initialized["tool_schemas"])
         await commit_events(initialized, "initial", None)
         termination = RunnerTermination.MAX_TURNS
-        for turn in range(1, 17):
+        for turn in range(1, limits.max_turns + 1):
             await self._checkpoint("before_policy", turn=turn)
             sampled = await phase("sample", {}, timeout_ms=60_000)
             await commit_events(sampled, "before_policy", turn)
@@ -2825,6 +2858,14 @@ class _ConductorSession:
                     timeout_ms=60_000,
                 )
                 await commit_events(sampled, "before_policy", turn)
+                if sampled.get("kind") == "provider_request":
+                    second_request = sampled.get("http_request")
+                    method = second_request.get("method") if isinstance(second_request, Mapping) else None
+                    url = second_request.get("url") if isinstance(second_request, Mapping) else None
+                    raise RunnerProtocolError(
+                        f"native retry refused: second provider request {method} {url} in turn {turn}",
+                        code="native_retry_refused", **self._context(),
+                    )
             if sampled.get("kind") != "sample_ready":
                 raise RunnerProtocolError(
                     "native sample did not complete one provider exchange",
@@ -2843,19 +2884,6 @@ class _ConductorSession:
                     "native prepared action list is invalid",
                     code="native_response_invalid", **self._context(),
                 )
-            prepared_all = prepared.get("prepared_actions", actions)
-            if not isinstance(prepared_all, tuple):
-                raise RunnerProtocolError(
-                    "native prepared action trace is invalid",
-                    code="native_response_invalid", **self._context(),
-                )
-            for action in prepared_all:
-                if isinstance(action, Mapping):
-                    trace_tool_calls.append({
-                        "tool_name": action.get("tool_id"),
-                        "arguments": action.get("arguments"),
-                        "security_risk": action.get("security_risk", "UNKNOWN"),
-                    })
             observations: list[FrozenJsonObject] = []
             finished = False
             for ordinal, action in enumerate(actions):
@@ -2967,6 +2995,7 @@ class _ConductorSession:
         replay_trace = {
             "schema_version": "bb.e4.openhands-sdk-trace.v1",
             "case_id": self._open_request.episode_id,
+            "conversation_id": conversation_id,
             "requests": trace_requests,
             "tool_calls": trace_tool_calls,
             "observations": trace_observations,

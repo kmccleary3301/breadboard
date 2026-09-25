@@ -536,6 +536,12 @@ _MAX_NATIVE_HTTP_RESPONSE_BYTES = 4 * 1024 * 1024
 _NATIVE_HTTP_SECRET_HEADERS = frozenset(
     {"authorization", "cookie", "proxy-authorization", "x-api-key", "api-key"}
 )
+_NATIVE_HTTP_BODY_FIELDS = frozenset({
+    "model", "messages", "tools", "stream", "temperature",
+    "max_tokens", "max_completion_tokens", "reasoning_effort",
+})
+_CANONICAL_UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+_UNPINNED = object()
 
 
 @dataclass(frozen=True, slots=True)
@@ -618,6 +624,8 @@ class EpisodeOpenAICompletionsPolicyClient:
         self._native_tool_schemas: tuple[Mapping[str, Any], ...] | None = None
         self._native_stream_prompt: str | None = None
         self._native_accept_truncated_stream = False
+        # One conversation key (or its absence) per episode, pinned on first staging.
+        self._native_conversation_key: str | None | object = _UNPINNED
 
     def bind_compiled_plan(self, plan: EffectiveExecutionPlan) -> Mapping[str, Any]:
         """Join a source-native client to the actual selected compiled plan."""
@@ -940,17 +948,32 @@ class EpisodeOpenAICompletionsPolicyClient:
                 episode_id=self._episode_id,
                 effective_plan_digest=self._effective_plan_digest,
             ) from None
+        conversation_field = profile.request_policy.conversation_key_field
+        admitted_fields = _NATIVE_HTTP_BODY_FIELDS
+        if conversation_field is not None:
+            admitted_fields = admitted_fields | {conversation_field}
         if (
             not isinstance(body_object, dict)
             or body_object.get("model") != profile.model
             or body_object.get("stream", False) is not False
-            or set(body_object) - {
-                "model", "messages", "tools", "stream", "temperature",
-                "max_tokens", "max_completion_tokens", "reasoning_effort",
-            }
+            or set(body_object) - admitted_fields
         ):
             raise RunnerPolicyBindingError(
                 "native HTTP request model or streaming mode is not admitted",
+                code="native_http_capability_mismatch",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        conversation_present = (
+            conversation_field is not None and conversation_field in body_object
+        )
+        conversation_key = body_object[conversation_field] if conversation_present else None
+        if conversation_present and (
+            type(conversation_key) is not str
+            or _CANONICAL_UUID_RE.fullmatch(conversation_key) is None
+        ):
+            raise RunnerPolicyBindingError(
+                "native HTTP conversation key is not a canonical UUID",
                 code="native_http_capability_mismatch",
                 episode_id=self._episode_id,
                 effective_plan_digest=self._effective_plan_digest,
@@ -1041,6 +1064,14 @@ class EpisodeOpenAICompletionsPolicyClient:
                     episode_id=self._episode_id,
                     effective_plan_digest=self._effective_plan_digest,
                 )
+            pinned_key = self._native_conversation_key
+            if pinned_key is not _UNPINNED and pinned_key != conversation_key:
+                raise RunnerPolicyBindingError(
+                    "native HTTP conversation key changed within the episode",
+                    code="native_http_capability_mismatch",
+                    episode_id=self._episode_id,
+                    effective_plan_digest=self._effective_plan_digest,
+                )
             header_pairs = tuple((pair[0], pair[1]) for pair in headers)
             public_request = {
                 "model": self._observation.model_id,
@@ -1052,6 +1083,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                 },
             }
             request_digest = canonical_sha256(public_request)
+            self._native_conversation_key = conversation_key
             self._native_pending = _PendingNativeHTTPRequest(
                 method=method,
                 url=url,

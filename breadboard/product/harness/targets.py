@@ -265,7 +265,7 @@ def _lower_worker_target(
     recipes = {
         "openhands-sdk@1.47.0": (
             "breadboard.openhands-sdk.v1.47.0",
-            "3d3dfae53ab307406804660577288a44a93476d4620be4d31739882a57cbe71a",
+            "8df535e010d344658393836920e031c43762e43af34d28b9c3cb3012e4c19910",
         ),
         "pi@0.73.1": (
             "breadboard.pi-coding-agent.v0.73.1",
