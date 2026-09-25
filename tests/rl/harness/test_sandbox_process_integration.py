@@ -52,6 +52,7 @@ from breadboard.rl.harness.sandbox import (
 )
 from breadboard.rl.harness.lease_envelope import _spawn_one
 from breadboard.rl.harness import lease_envelope
+from breadboard.rl.harness import sandbox as sandbox_module
 from breadboard.rl.harness.composition import HmacSha256ReceiptAuthenticator
 from tests.rl.harness.test_runner_terminal import (
     RecordingEventSink,
@@ -2593,3 +2594,52 @@ async def test_trusted_process_handle_rejects_workspace_descriptor_identity_mism
     assert "workspace descriptor identity changed" in str(exc_info.value)
     handle._workspace_identity = original_identity
     await primary.close()
+
+
+
+@requires_sealed_execution
+@pytest.mark.asyncio
+async def test_sealed_attested_launch_rejects_preexisting_scratch_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    nonce = "preexist-scratch-nonce"
+    lease_id = f"lease-{nonce}"
+    scratch_dir = harness.manager.lease_root / f"{lease_id}.native-scratch"
+    os.mkdir(scratch_dir, mode=0o700)
+    monkeypatch.setattr(harness.manager, "_nonce", lambda: nonce)
+    try:
+        with pytest.raises(SandboxLaunchError) as exc_info:
+            await harness.manager.open(fixture.request)
+        assert exc_info.value.code == "runtime_preflight_failed"
+        assert "already exists" in str(exc_info.value)
+    finally:
+        if scratch_dir.is_dir():
+            scratch_dir.rmdir()
+
+
+@requires_sealed_execution
+@pytest.mark.asyncio
+async def test_sealed_attested_launch_and_native_scratch_lifecycle(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    try:
+        handle = primary._runtime
+        assert isinstance(handle, TrustedProcessHandle)
+        assert handle.native_scratch_identity is not None
+        scratch_dir = harness.manager.lease_root / f"{primary.lease_id}.native-scratch"
+        assert scratch_dir.is_dir()
+        assert handle.native_scratch_identity == (scratch_dir.stat().st_dev, scratch_dir.stat().st_ino)
+
+        adopted = sandbox_module._create_native_scratch(
+            harness.manager, primary.lease_id, expected_identity=handle.native_scratch_identity
+        )
+        assert adopted == scratch_dir
+    finally:
+        await primary.close()

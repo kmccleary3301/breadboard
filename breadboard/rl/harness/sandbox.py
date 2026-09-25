@@ -1926,6 +1926,7 @@ class TrustedProcessHandle:
         workspace_identity: tuple[int, int],
         command_executable: _PinnedExecutable | None = None,
         envelope: EnvelopeLaunch | None = None,
+        native_scratch_identity: tuple[int, int] | None = None,
     ) -> None:
         self.plan = plan
         self.workspace = workspace
@@ -1937,6 +1938,7 @@ class TrustedProcessHandle:
         self._workspace_fd = workspace_fd
         self._workspace_identity = workspace_identity
         self._envelope = envelope
+        self.native_scratch_identity = native_scratch_identity
         self.containment_receipt: ContainmentReceipt | None = (
             None if envelope is None else envelope.receipt
         )
@@ -2872,6 +2874,7 @@ class TrustedProcessBackend:
                     )
                     interpreter.close()
             envelope: EnvelopeLaunch | None = None
+            native_scratch_identity: tuple[int, int] | None = None
             if plan.containment is RuntimeContainment.ATTESTED:
                 if context.containment_authenticator is None:
                     raise SandboxLaunchError(
@@ -2887,39 +2890,70 @@ class TrustedProcessBackend:
                         lease_id=lease_id,
                     )
                 await asyncio.to_thread(preflight_host_containment)
+                scratch_created = False
                 try:
                     os.mkdir(scratch, mode=0o700)
-                except FileExistsError:
-                    pass
-                scratch_fd = os.open(
-                    scratch,
-                    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
-                )
+                    scratch_created = True
+                except FileExistsError as exc:
+                    raise SandboxLaunchError(
+                        "attested trusted process native scratch already exists",
+                        code="runtime_preflight_failed",
+                        lease_id=lease_id,
+                    ) from exc
+                except OSError as exc:
+                    raise SandboxLaunchError(
+                        f"attested trusted process native scratch creation failed: {exc}",
+                        code="runtime_preflight_failed",
+                        lease_id=lease_id,
+                    ) from exc
+                scratch_fd = -1
+                parent_fd = -1
                 try:
+                    scratch_fd = os.open(
+                        scratch,
+                        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+                    )
+                    parent_fd = os.open(
+                        scratch.parent,
+                        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+                    )
                     scratch_meta = os.fstat(scratch_fd)
+                    parent_meta = os.fstat(parent_fd)
                     if (
                         not stat.S_ISDIR(scratch_meta.st_mode)
                         or scratch_meta.st_uid != os.geteuid()
                         or stat.S_IMODE(scratch_meta.st_mode) != 0o700
                         or scratch.name != _native_scratch_name(lease_id)
+                        or scratch_meta.st_dev != parent_meta.st_dev
                     ):
                         raise SandboxLaunchError(
                             "attested trusted process native scratch authority is invalid",
                             code="runtime_preflight_failed",
                             lease_id=lease_id,
                         )
+                    native_scratch_identity = (scratch_meta.st_dev, scratch_meta.st_ino)
+                    envelope = await asyncio.to_thread(
+                        launch_envelope,
+                        lease_id=lease_id,
+                        runtime_id=plan.runtime.runtime_id,
+                        workspace=workspace,
+                        scratch=scratch,
+                        workspace_fd=context.workspace_fd,
+                        authenticator=context.containment_authenticator,
+                        tmpfs_size_bytes=plan.resources.storage_bytes,
+                    )
+                except BaseException:
+                    if scratch_created and envelope is None:
+                        try:
+                            os.rmdir(scratch)
+                        except OSError:
+                            pass
+                    raise
                 finally:
-                    os.close(scratch_fd)
-                envelope = await asyncio.to_thread(
-                    launch_envelope,
-                    lease_id=lease_id,
-                    runtime_id=plan.runtime.runtime_id,
-                    workspace=workspace,
-                    scratch=scratch,
-                    workspace_fd=context.workspace_fd,
-                    authenticator=context.containment_authenticator,
-                    tmpfs_size_bytes=plan.resources.storage_bytes,
-                )
+                    if parent_fd >= 0:
+                        os.close(parent_fd)
+                    if scratch_fd >= 0:
+                        os.close(scratch_fd)
             elif plan.containment is not RuntimeContainment.UNCONFINED_TEST_ONLY:
                 raise SandboxLaunchError(
                     "trusted process containment disposition is invalid",
@@ -2936,6 +2970,7 @@ class TrustedProcessBackend:
                 context.workspace_identity,
                 command_executable,
                 envelope,
+                native_scratch_identity=native_scratch_identity,
             )
             if context.record_process_identity is None:
                 raise SandboxLaunchError(
@@ -3079,7 +3114,12 @@ def _native_scratch_path(manager: SandboxRuntimeManager, lease_id: str) -> Path:
     return manager.lease_root / _native_scratch_name(lease_id)
 
 
-def _create_native_scratch(manager: SandboxRuntimeManager, lease_id: str) -> Path:
+def _create_native_scratch(
+    manager: SandboxRuntimeManager,
+    lease_id: str,
+    *,
+    expected_identity: tuple[int, int] | None = None,
+) -> Path:
     root_fd = manager._lease_root_fd
     if root_fd is None:
         raise WorkspaceStateError(
@@ -3089,12 +3129,41 @@ def _create_native_scratch(manager: SandboxRuntimeManager, lease_id: str) -> Pat
         )
     name = _native_scratch_name(lease_id)
     root_device = os.fstat(root_fd).st_dev
-    created = False
+    if expected_identity is not None:
+        descriptor = -1
+        try:
+            try:
+                descriptor = os.open(
+                    name,
+                    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+                    dir_fd=root_fd,
+                )
+            except OSError as exc:
+                raise WorkspaceStateError(
+                    "native scratch authority is unavailable",
+                    code="workspace_authority_mismatch",
+                    lease_id=lease_id,
+                ) from exc
+            metadata = os.fstat(descriptor)
+            if (
+                not stat.S_ISDIR(metadata.st_mode)
+                or metadata.st_uid != os.geteuid()
+                or stat.S_IMODE(metadata.st_mode) != 0o700
+                or metadata.st_dev != root_device
+                or (metadata.st_dev, metadata.st_ino) != expected_identity
+            ):
+                raise WorkspaceStateError(
+                    "native scratch authority is invalid",
+                    code="workspace_authority_mismatch",
+                    lease_id=lease_id,
+                )
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+        return _native_scratch_path(manager, lease_id)
+
     try:
         os.mkdir(name, mode=0o700, dir_fd=root_fd)
-        created = True
-    except FileExistsError:
-        pass
     except OSError as exc:
         raise WorkspaceStateError(
             "native scratch authority is unavailable",
@@ -3111,7 +3180,7 @@ def _create_native_scratch(manager: SandboxRuntimeManager, lease_id: str) -> Pat
             )
         except OSError as exc:
             raise WorkspaceStateError(
-                "native scratch authority is invalid",
+                "native scratch authority is unavailable",
                 code="workspace_authority_mismatch",
                 lease_id=lease_id,
             ) from exc
@@ -3128,11 +3197,10 @@ def _create_native_scratch(manager: SandboxRuntimeManager, lease_id: str) -> Pat
                 lease_id=lease_id,
             )
     except BaseException:
-        if created:
-            try:
-                os.rmdir(name, dir_fd=root_fd)
-            except OSError:
-                pass
+        try:
+            os.rmdir(name, dir_fd=root_fd)
+        except OSError:
+            pass
         raise
     finally:
         if descriptor >= 0:
@@ -3799,7 +3867,14 @@ class LeaseBackedRunnerWorkspace:
                         lease_id=lease.lease_id,
                     ) from exc
                 try:
-                    _create_native_scratch(lease._manager, lease.lease_id)
+                    expected_identity = getattr(
+                        lease._runtime, "native_scratch_identity", None
+                    )
+                    _create_native_scratch(
+                        lease._manager,
+                        lease.lease_id,
+                        expected_identity=expected_identity,
+                    )
                 except WorkspaceStateError:
                     raise
                 except OSError as exc:

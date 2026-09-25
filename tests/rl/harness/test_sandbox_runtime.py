@@ -1688,17 +1688,51 @@ def test_native_scratch_refuses_cross_device_and_preserves_host_symlink(
         ).state in (CleanupState.RELEASED, CleanupState.ALREADY_RELEASED)
         assert outside.read_text(encoding="utf-8") == "outside"
 
-def test_create_native_scratch_adopts_existing_valid_directory(tmp_path: Path) -> None:
+def test_unconfined_create_native_scratch_rejects_preexisting_directory(tmp_path: Path) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    lease_id = "test-unconfined-lease"
+    scratch_dir = harness.manager.lease_root / f"{lease_id}.native-scratch"
+    os.mkdir(scratch_dir, mode=0o700)
+    with pytest.raises(sandbox_module.WorkspaceStateError) as exc_info:
+        sandbox_module._create_native_scratch(harness.manager, lease_id)
+    assert exc_info.value.code == "workspace_authority_mismatch"
+    scratch_dir.rmdir()
+
+
+def test_create_native_scratch_adopts_matching_identity(tmp_path: Path) -> None:
     fixture = make_runtime_fixture(with_writable_mount=True)
     harness = RuntimeHarness(tmp_path / "harness", fixture)
     lease_id = "test-adopt-lease"
     scratch_dir = harness.manager.lease_root / f"{lease_id}.native-scratch"
     os.mkdir(scratch_dir, mode=0o700)
-    adopted = sandbox_module._create_native_scratch(harness.manager, lease_id)
+    scratch_stat = scratch_dir.stat()
+    expected_identity = (scratch_stat.st_dev, scratch_stat.st_ino)
+    adopted = sandbox_module._create_native_scratch(
+        harness.manager, lease_id, expected_identity=expected_identity
+    )
     assert adopted == scratch_dir
     assert adopted.is_dir()
     receipt = sandbox_module._remove_native_scratch(harness.manager, lease_id)
     assert receipt.state is CleanupState.RELEASED
+
+
+def test_create_native_scratch_rejects_swapped_directory_identity(tmp_path: Path) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    lease_id = "test-swapped-lease"
+    scratch_dir = harness.manager.lease_root / f"{lease_id}.native-scratch"
+    os.mkdir(scratch_dir, mode=0o700)
+    original_identity = (scratch_dir.stat().st_dev, scratch_dir.stat().st_ino)
+    # Swap scratch: remove original and recreate directory with same mode
+    os.rmdir(scratch_dir)
+    os.mkdir(scratch_dir, mode=0o700)
+    with pytest.raises(sandbox_module.WorkspaceStateError) as exc_info:
+        sandbox_module._create_native_scratch(
+            harness.manager, lease_id, expected_identity=original_identity
+        )
+    assert exc_info.value.code == "workspace_authority_mismatch"
+    scratch_dir.rmdir()
 
 
 def test_create_native_scratch_rejects_existing_invalid_directory(tmp_path: Path) -> None:
@@ -1707,15 +1741,21 @@ def test_create_native_scratch_rejects_existing_invalid_directory(tmp_path: Path
     lease_id = "test-invalid-adopt"
     scratch_file = harness.manager.lease_root / f"{lease_id}.native-scratch"
     scratch_file.write_text("not-a-dir")
+    file_stat = scratch_file.stat()
     with pytest.raises(sandbox_module.WorkspaceStateError) as exc_info:
-        sandbox_module._create_native_scratch(harness.manager, lease_id)
+        sandbox_module._create_native_scratch(
+            harness.manager, lease_id, expected_identity=(file_stat.st_dev, file_stat.st_ino)
+        )
     assert exc_info.value.code == "workspace_authority_mismatch"
     scratch_file.unlink()
 
     scratch_dir = harness.manager.lease_root / f"{lease_id}.native-scratch"
     os.mkdir(scratch_dir, mode=0o777)
+    dir_stat = scratch_dir.stat()
     with pytest.raises(sandbox_module.WorkspaceStateError) as exc_info:
-        sandbox_module._create_native_scratch(harness.manager, lease_id)
+        sandbox_module._create_native_scratch(
+            harness.manager, lease_id, expected_identity=(dir_stat.st_dev, dir_stat.st_ino)
+        )
     assert exc_info.value.code == "workspace_authority_mismatch"
     scratch_dir.rmdir()
 
