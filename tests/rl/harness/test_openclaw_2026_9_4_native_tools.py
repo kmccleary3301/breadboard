@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import json
 import os
+import shlex
 import shutil
 import struct
 import subprocess
@@ -118,17 +119,25 @@ def test_exec_and_process_poll_clamp(tmp_path: Path, message_timestamp_ms: str) 
 
 def test_poll_replays_unacknowledged_output_until_history_commit(tmp_path: Path, message_timestamp_ms: str) -> None:
     tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
+    release = tmp_path / "poll-release"
     try:
-        launched = tools.execute("exec", {"command": "printf 'ACK_MARKER\\n'", "background": True})
+        command = (
+            "printf 'ACK_MARKER\\n'; "
+            f"while [ ! -f {shlex.quote(str(release))} ]; do sleep 0.05; done"
+        )
+        launched = tools.execute("exec", {"command": command, "background": True})
         session = launched["sessionId"]
         first = tools.execute("process", {"action": "poll", "sessionId": session, "timeout": 500})
         second = tools.execute("process", {"action": "poll", "sessionId": session, "timeout": 500})
         assert "ACK_MARKER" in first["output"]
+        assert "Process still running." in first["output"]
+        assert "Process still running." in second["output"]
         assert second["output"] == first["output"]
         tools.acknowledge_poll(second["delivery_id"], "sha256:" + "a" * 64)
         third = tools.execute("process", {"action": "poll", "sessionId": session, "timeout": 500})
         assert "ACK_MARKER" not in third["output"]
     finally:
+        release.touch()
         tools.scope.cleanup()
 
 
