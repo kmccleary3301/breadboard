@@ -43,6 +43,16 @@ Python tool closure; pricing requires the installed LiteLLM 1.101.0 catalog with
 `LITELLM_LOCAL_MODEL_COST_MAP=True` before import. Package/compiler support is not
 whole-episode qualification, official grading or a full-profile parity claim.
 
+Hermes Agent 2026.9.11 is pinned to source commit
+`939e45c91d751fadd94dcd1b873ac3cb44846213` under
+`config/e4_targets/hermes_agent/2026.9.11/`. Its replay trace records each raw
+model-emitted tool call, including invalid names and duplicate samples; only
+native-prepared valid actions can dispatch. The Hermes comparator derives the
+supplier workspace from the source-declared system-prompt cwd/workspace root
+or a consistent recorded `runtime.cwd`, and uses the candidate's recorded
+`runtime.cwd`. Missing or conflicting declarations fail comparison. This
+projection does not establish rerun3 parity or authorize rewriting prompt text.
+
 ## Compiler ownership and admission
 
 `breadboard.product.harness.resolution.compile_e4_harness` connects a verified

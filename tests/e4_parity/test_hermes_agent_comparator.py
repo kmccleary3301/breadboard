@@ -289,7 +289,7 @@ def test_h02_preserves_invalid_name_error_and_h04_repairs_and_deduplicates() -> 
     assert "NOT_A_TOOL" in invalid["tool_results"][0]["result"]
 
     repaired = project_supplier_case(FIXTURES / "H-04-name-repair-duplicate")
-    assert len(repaired["tool_calls"]) == 1
+    assert len(repaired["tool_calls"]) == 2
     assert repaired["tool_calls"][0]["raw_sample"]["name"] == "WriteFile"
     assert repaired["tool_calls"][0]["raw_sample"]["arguments"] == (
         '{"path":"/opt/hermes/case/workspace/repaired.txt","content":"repaired\\n"}'
@@ -299,6 +299,8 @@ def test_h02_preserves_invalid_name_error_and_h04_repairs_and_deduplicates() -> 
     assert repaired["tool_calls"][0]["raw_arguments"] == (
         '{"path":"/opt/hermes/case/workspace/repaired.txt","content":"repaired\\n"}'
     )
+    assert repaired["tool_calls"][1]["raw_tool_name"] == "write_file"
+    assert repaired["tool_calls"][1]["call_id"] == "same"
 
     assert len(repaired["tool_results"]) == 1
 
@@ -312,43 +314,80 @@ def test_h06_stops_at_eight_requests_without_ninth() -> None:
     }
 
 
-def _replace_strings(value: Any, old: str, new: str) -> Any:
-    if isinstance(value, str):
-        return value.replace(old, new)
-    if isinstance(value, list):
-        return [_replace_strings(item, old, new) for item in value]
-    if isinstance(value, dict):
-        return {key: _replace_strings(item, old, new) for key, item in value.items()}
-    return value
+
+
+def test_supplier_root_comes_from_its_system_prompt_not_packet_path() -> None:
+    case_dir, replay = _replay("H-02-mixed-invalid-name")
+    supplier = project_supplier_case(case_dir)
+    assert supplier["runtime"]["cwd"] == "/opt/hermes/case/workspace"
+    assert [call["raw_tool_name"] for call in supplier["tool_calls"]] == [
+        "NOT_A_TOOL", "write_file", "write_file",
+    ]
+    assert compare_cases(case_dir, replay)["ok"]
+
+
+@pytest.mark.parametrize("mutation", ("absent", "partial_absent", "conflicting", "runtime_conflict"))
+def test_supplier_root_must_be_declared_consistently(mutation: str) -> None:
+    case_dir, replay = _replay("H-02-mixed-invalid-name")
+    supplier = json.loads((case_dir / "trace.json").read_bytes())
+    requests = [row for row in supplier["requests"] if row.get("kind") == "request"]
+    if mutation == "runtime_conflict":
+        supplier["runtime"] = {"cwd": "/elsewhere/workspace"}
+    else:
+        for request in requests[:1] if mutation in {"conflicting", "partial_absent"} else requests:
+            content = request["body"]["messages"][0]["content"]
+            if mutation == "conflicting":
+                content = content.replace(
+                    "Current working directory: /opt/hermes/case/workspace",
+                    "Current working directory: /elsewhere/workspace",
+                )
+            else:
+                content = content.replace(
+                    "Current working directory: /opt/hermes/case/workspace", ""
+                ).replace("- Root: /opt/hermes/case/workspace", "")
+            request["body"]["messages"][0]["content"] = content
+    report = compare_cases(supplier, replay)
+    assert not report["ok"]
+    assert "workspace" in report["errors"][0]
 
 
 def test_workspace_roots_are_typed_and_fail_closed() -> None:
     case_dir, supplier = _replay("H-01-normal-memory-skill-write")
-    observed = _replace_strings(
-        supplier,
-        str(case_dir / "workspace"),
-        "/lease/workspace-abc/repository",
-    )
-    observed["runtime"] = {"cwd": "/lease/workspace-abc/repository"}
-    report = compare_cases(case_dir, observed)
-    assert report["ok"] is True
-    assert report["normalizations"] == ["workspace_root:<WORKSPACE>"]
+    assert compare_cases(case_dir, supplier)["ok"]
 
-    outside = deepcopy(observed)
-    outside["requests"][0]["body"]["messages"][0]["content"] = "/outside/not-authorized"
+    observed = deepcopy(supplier)
+    original_root = "/opt/hermes/case/workspace"
+    candidate_root = "/lease/workspace-abc/repository"
+    observed["runtime"] = {"cwd": candidate_root}
+    observed["tool_calls"][0]["arguments"]["path"] = candidate_root + "/normal.txt"
+    for request in observed["requests"]:
+        for message in request["body"]["messages"]:
+            if message.get("role") == "system":
+                message["content"] = message["content"].replace(
+                    f"Current working directory: {original_root}",
+                    f"Current working directory: {candidate_root}",
+                ).replace(f"- Root: {original_root}", f"- Root: {candidate_root}")
+    report = compare_cases(case_dir, observed)
+    assert report["errors"] == []
+    assert report["normalizations"] == ["workspace_root:<WORKSPACE>"]
+    assert next(a for a in report["assertions"] if a["name"].endswith(".tool_calls_equal"))["status"] == "passed"
+    assert next(a for a in report["assertions"] if a["name"].endswith(".requests_equal"))["status"] == "failed"
+
+    outside = deepcopy(supplier)
+    outside["tool_calls"][0]["arguments"]["path"] = "/outside/not-authorized"
     assert compare_cases(case_dir, outside)["ok"] is False
 
-    relative_mismatch = deepcopy(observed)
-    relative_mismatch["requests"][0]["body"]["messages"][0]["content"] = (
-        "/lease/workspace-abc/repository/different.txt"
-    )
-    assert compare_cases(case_dir, relative_mismatch)["ok"] is False
+    sibling = deepcopy(supplier)
+    sibling["tool_calls"][0]["arguments"]["path"] = original_root + "-old/normal.txt"
+    assert compare_cases(case_dir, sibling)["ok"] is False
 
-    missing_runtime = deepcopy(observed)
+    inconsistent = deepcopy(supplier)
+    inconsistent["runtime"] = {"cwd": candidate_root}
+    assert "workspace roots differ" in compare_cases(case_dir, inconsistent)["errors"][0]
+
+    missing_runtime = deepcopy(supplier)
     del missing_runtime["runtime"]
-    report = compare_cases(case_dir, missing_runtime)
-    assert report["ok"] is False
-    assert "runtime.cwd" in report["errors"][0]
+    assert "runtime.cwd" in compare_cases(case_dir, missing_runtime)["errors"][0]
 
 
 def test_comparator_rejects_name_only_tool_schemas() -> None:

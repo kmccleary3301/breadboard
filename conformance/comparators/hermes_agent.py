@@ -255,14 +255,61 @@ def _message_projection(message: Mapping[str, Any]) -> dict[str, Any]:
             continue
         projected[str(key)] = copy.deepcopy(value)
     return projected
-def _declared_workspace_root(trace: Mapping[str, Any], *, fallback: Path | None = None) -> str:
+def _declared_workspace_root(trace: Mapping[str, Any], *, require_runtime: bool = False) -> str:
     runtime = trace.get("runtime")
+    if runtime is not None and not isinstance(runtime, Mapping):
+        raise ValueError("trace runtime must be an object")
     cwd = runtime.get("cwd") if isinstance(runtime, Mapping) else None
-    if isinstance(cwd, str) and cwd.startswith("/") and cwd:
-        return cwd.rstrip("/")
-    if fallback is not None:
-        return str(fallback.resolve())
-    raise ValueError("trace is missing declared runtime.cwd")
+    if cwd is not None and (type(cwd) is not str or not cwd.startswith("/") or cwd == "/"):
+        raise ValueError("trace runtime.cwd must be an absolute workspace path")
+    if require_runtime and cwd is None:
+        raise ValueError("trace is missing declared runtime.cwd")
+
+    rows = trace.get("requests")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("trace is missing workspace declarations: no requests")
+    roots: list[str] = []
+    request_count = 0
+    for index, row in enumerate(rows):
+        if isinstance(row, Mapping) and row.get("kind") in {"served", "response"}:
+            continue
+        request_count += 1
+        body = row.get("body") if isinstance(row, Mapping) else None
+        messages = body.get("messages") if isinstance(body, Mapping) else None
+        if not isinstance(messages, list):
+            raise ValueError(f"request {index} has no messages for workspace declaration")
+        declarations: set[str] = set()
+        for message in messages:
+            if not isinstance(message, Mapping) or message.get("role") != "system":
+                continue
+            content = message.get("content")
+            if not isinstance(content, str):
+                continue
+            # Pinned Hermes prompt_builder.py emits the cwd; coding_context.py
+            # emits the workspace snapshot root. Neither is a path guess.
+            for line in content.splitlines():
+                for prefix in ("Current working directory: ", "- Root: "):
+                    if line.startswith(prefix):
+                        root = line[len(prefix):].strip()
+                        if not root.startswith("/") or root == "/":
+                            raise ValueError(f"request {index} declares an invalid workspace root")
+                        declarations.add(root)
+        if len(declarations) > 1:
+            raise ValueError(f"request {index} declares inconsistent workspace roots")
+        if not declarations:
+            if cwd is None or roots:
+                raise ValueError(f"request {index} is missing a declared workspace root")
+            continue
+        roots.append(next(iter(declarations)))
+    if not request_count or roots and len(roots) != request_count:
+        raise ValueError("request is missing a declared workspace root")
+    if len(set(roots)) > 1 or cwd is not None and roots and cwd != roots[0]:
+        raise ValueError("workspace roots differ across requests or from runtime.cwd")
+    if roots:
+        return roots[0]
+    if cwd is not None:
+        return cwd
+    raise ValueError("trace is missing a declared workspace root")
 
 
 def _replace_workspace(value: Any, root: str, changed: list[bool]) -> Any:
@@ -351,7 +398,6 @@ def _advertised_tools(requests: Sequence[Mapping[str, Any]]) -> list[str]:
 
 def _tool_call_samples(requests: Sequence[Mapping[str, Any]], advertised: Sequence[str]) -> list[dict[str, Any]]:
     calls: list[dict[str, Any]] = []
-    by_key: dict[str, dict[str, Any]] = {}
     for request in requests:
         response = request.get("response")
         choices = response.get("choices", []) if isinstance(response, Mapping) else []
@@ -368,9 +414,6 @@ def _tool_call_samples(requests: Sequence[Mapping[str, Any]], advertised: Sequen
                 raw_arguments = copy.deepcopy(function.get("arguments", {}))
                 repaired_name = _repair_name(raw_name, advertised)
                 arguments = _parse_json_or_text(raw_arguments)
-                key = json.dumps([repaired_name, arguments], ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-                if key in by_key:
-                    continue
                 item = {
                     "raw_sample": {
                         "name": raw_name,
@@ -384,7 +427,6 @@ def _tool_call_samples(requests: Sequence[Mapping[str, Any]], advertised: Sequen
                     "raw_arguments": raw_arguments,
                     "call_id": raw_call.get("id"),
                 }
-                by_key[key] = item
                 calls.append(item)
     return calls
 
@@ -505,7 +547,7 @@ def _canonical_from_supplier(trace: Mapping[str, Any], case_dir: Path) -> dict[s
         "case_id": trace.get("case_id") or case_dir.name,
         "profile": trace.get("profile"),
         "runtime": {
-            "cwd": _declared_workspace_root(trace, fallback=case_dir / "workspace"),
+            "cwd": _declared_workspace_root(trace),
         },
         "context": _context_projection(requests),
         "controls": _controls_projection(trace, requests, advertised, role="supplier"),
@@ -651,14 +693,14 @@ def _supplier_input(
             raise ValueError("supplier trace must be an object")
         if trace.get("schema_version") != SUPPLIER_TRACE_SCHEMA_VERSION:
             raise ValueError(f"trace schema_version must be {SUPPLIER_TRACE_SCHEMA_VERSION}")
-        return _canonical_from_supplier(trace, path), _declared_workspace_root(
-            trace, fallback=path / "workspace"
-        )
+        canonical = _canonical_from_supplier(trace, path)
+        return canonical, canonical["runtime"]["cwd"]
     if not isinstance(supplier_case, Mapping):
         raise ValueError("supplier trace must be an object")
     if supplier_case.get("schema_version") != SUPPLIER_TRACE_SCHEMA_VERSION:
         raise ValueError(f"trace schema_version must be {SUPPLIER_TRACE_SCHEMA_VERSION}")
-    return _canonical_from_supplier(supplier_case, Path(".")), _declared_workspace_root(supplier_case)
+    canonical = _canonical_from_supplier(supplier_case, Path("."))
+    return canonical, canonical["runtime"]["cwd"]
 
 
 def compare_cases(
@@ -705,7 +747,7 @@ def compare_cases(
             raise ValueError("replay job_id differs from BreadBoard trace job_id")
         else:
             job_id = job_id or candidate_job
-        observed_root = _declared_workspace_root(bb_value)
+        observed_root = _declared_workspace_root(bb_value, require_runtime=True)
         if installed_replay:
             if receiver_transcript is None:
                 raise ValueError("installed replay requires a persisted receiver HTTP transcript path")
