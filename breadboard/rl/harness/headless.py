@@ -16,6 +16,7 @@ import uuid
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from breadboard.product.harness.targets import bind_e4_target_inputs, serialize_e4_target_inputs
 from breadboard_engine.e4_targets import E4TargetPackage, load_e4_target
@@ -53,6 +54,19 @@ class ObsoleteOuterIsolationError(TypeError):
     """Raised when an obsolete outer_isolation declaration is supplied."""
 
 
+def _raise_obsolete_outer_isolation(_value: Any) -> None:
+    """Reject the hidden, excluded ``outer_isolation`` field when supplied.
+
+    This runs as a field-scoped before validator. A mode="before"/"wrap" model
+    validator would make ``model_validate_json(..., strict=True)`` re-validate
+    the parsed payload in strict Python mode, rejecting JSON arrays for every
+    tuple field.
+    """
+    raise ObsoleteOuterIsolationError(
+        "outer_isolation is obsolete and has been replaced by per-lease verified containment attestation"
+    )
+
+
 class HeadlessWorkspaceInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -66,14 +80,12 @@ class HeadlessWorkspaceInput(BaseModel):
     task_image_digest: str = Field(pattern=_DIGEST_PATTERN)
     containment: Literal["attested", "unconfined_test_only"] = "attested"
 
-    @model_validator(mode="before")
+    outer_isolation: SkipJsonSchema[None] = Field(default=None, exclude=True, repr=False)
+
+    @field_validator("outer_isolation", mode="before")
     @classmethod
-    def _reject_obsolete_outer_isolation(cls, data: Any) -> Any:
-        if isinstance(data, Mapping) and "outer_isolation" in data:
-            raise ObsoleteOuterIsolationError(
-                "outer_isolation is obsolete and has been replaced by per-lease verified containment attestation"
-            )
-        return data
+    def _reject_obsolete_outer_isolation(cls, value: Any) -> None:
+        _raise_obsolete_outer_isolation(value)
 
     @model_validator(mode="after")
     def _workspace_authority_is_exact(self) -> HeadlessWorkspaceInput:
@@ -275,20 +287,13 @@ class HeadlessRunRequest(BaseModel):
     event_log_path: str
     patch_path: str | None = None
 
-    @model_validator(mode="before")
+    outer_isolation: SkipJsonSchema[None] = Field(default=None, exclude=True, repr=False)
+
+    @field_validator("outer_isolation", mode="before")
     @classmethod
-    def _reject_obsolete_outer_isolation(cls, data: Any) -> Any:
-        if isinstance(data, Mapping):
-            if "outer_isolation" in data:
-                raise ObsoleteOuterIsolationError(
-                    "outer_isolation is obsolete and has been replaced by per-lease verified containment attestation"
-                )
-            ws = data.get("workspace")
-            if isinstance(ws, Mapping) and "outer_isolation" in ws:
-                raise ObsoleteOuterIsolationError(
-                    "outer_isolation is obsolete and has been replaced by per-lease verified containment attestation"
-                )
-        return data
+    def _reject_obsolete_outer_isolation(cls, value: Any) -> None:
+        _raise_obsolete_outer_isolation(value)
+
     @field_validator("result_path", "event_log_path")
     @classmethod
     def _path_is_absolute(cls, value: str) -> str:
