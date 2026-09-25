@@ -447,7 +447,7 @@ class FileTrustStore:
             "key_identity": self._identity_payload(self._root / self._KEY),
             "public_key_digest": self._public_key_digest,
             "root_identity": self._identity_payload(self._root),
-            "schema": "bb.rl.phase5.deployment-anchor.v2",
+            "schema": "bb.rl.phase5.deployment-anchor.v3",
             "state_identity": self._identity_payload(self._root / self._STATE),
             "store_id": self._store_id,
         }
@@ -479,7 +479,7 @@ class FileTrustStore:
                 "key_identity": self._identity_payload(self._root / self._KEY),
                 "public_key_digest": self._public_key_digest,
                 "root_identity": self._identity_payload(self._root),
-                "schema": "bb.rl.phase5.deployment-anchor.v2",
+                "schema": "bb.rl.phase5.deployment-anchor.v3",
                 "state_identity": self._identity_payload(self._root / self._STATE),
                 "store_id": self._store_id,
             }
@@ -545,8 +545,9 @@ class FileTrustStore:
         return value.st_dev, value.st_ino
 
     @classmethod
-    def _identity_payload(cls, path: Path) -> list[int]:
-        return list(cls._identity(path))
+    def _identity_payload(cls, path: Path) -> list[str]:
+        device, inode = cls._identity(path)
+        return [str(device), str(inode)]
 
     @staticmethod
     def _identity_fd(fd: int) -> tuple[int, int]:

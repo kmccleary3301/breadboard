@@ -4,8 +4,11 @@ import asyncio
 import hashlib
 import json
 import os
+import socket
+import stat
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -22,6 +25,8 @@ from breadboard.rl.phase5.f2_composition import (
     _f1_prerequisite_bytes,
     _validate_secret_files,
     _write_exclusive,
+    _prepare_callback_tls_runtime,
+    _verify_executable_observation,
     canonical_json_bytes,
     sha256_bytes,
 )
@@ -127,8 +132,8 @@ def test_wrapper_executable_authority_rejects_writable_or_relative_binary() -> N
     base = {
         "path": "/usr/bin/env",
         "sha256": "sha256:" + "1" * 64,
-        "device": 1,
-        "inode": 2,
+        "device": "1",
+        "inode": "2",
         "ctime_ns": "1700000000000000000",
         "size_bytes": 4,
         "mode": 0o755,
@@ -258,3 +263,151 @@ def test_production_module_has_no_fixture_dependency() -> None:
     source = module_path.read_text(encoding="utf-8")
     assert "production_composition_fixture" not in source
     assert "tests.rl" not in source
+
+
+def test_verify_executable_observation_accepts_canonical_decimal_strings(
+    tmp_path: Path,
+) -> None:
+    executable_file = tmp_path / "helper_bin"
+    executable_file.write_bytes(b"#!/bin/sh\nexit 0\n")
+    executable_file.chmod(0o555)
+    st = executable_file.stat()
+    digest = "sha256:" + hashlib.sha256(executable_file.read_bytes()).hexdigest()
+    observation = ExecutableObservationInput(
+        path=str(executable_file),
+        sha256=digest,
+        device=str(st.st_dev),
+        inode=str(st.st_ino),
+        ctime_ns=str(st.st_ctime_ns),
+        size_bytes=st.st_size,
+        mode=stat.S_IMODE(st.st_mode),
+        owner_uid=st.st_uid,
+    )
+    _verify_executable_observation(observation)
+
+    mismatched = ExecutableObservationInput(
+        path=str(executable_file),
+        sha256=digest,
+        device=str(st.st_dev),
+        inode=str(st.st_ino + 1),
+        ctime_ns=str(st.st_ctime_ns),
+        size_bytes=st.st_size,
+        mode=stat.S_IMODE(st.st_mode),
+        owner_uid=st.st_uid,
+    )
+    with pytest.raises(
+        F2CompositionError, match="wrapper executable runtime observation mismatch"
+    ):
+        _verify_executable_observation(mismatched)
+
+
+def test_prepare_callback_tls_runtime_accepts_canonical_decimal_socket_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from unittest.mock import MagicMock
+    from breadboard.rl.harness.composition import (
+        PreboundServiceSocketPlanV1,
+        _canonical_bytes,
+    )
+
+    sock_file = tmp_path / "mock_socket"
+    sock_file.write_bytes(b"")
+    st = sock_file.stat()
+    sock_mode = stat.S_IFSOCK | 0o600
+
+    plan_dict = {
+        "schema_version": "bb.rl.harness-prebound-service-socket-plan.v2",
+        "role": "callback_tls",
+        "gateway": "10.0.0.1",
+        "observed_port": 8443,
+        "family": "AF_INET",
+        "socket_type": "SOCK_STREAM",
+        "protocol": "IPPROTO_TCP",
+        "socket_device": str(st.st_dev),
+        "socket_inode": str(st.st_ino),
+        "socket_mode": sock_mode,
+        "socket_owner_uid": st.st_uid,
+        "getsockname_host": "10.0.0.1",
+        "getsockname_port": 8443,
+        "ip_freebind": True,
+    }
+    plan_dict["socket_plan_id"] = (
+        "sha256:" + hashlib.sha256(_canonical_bytes(plan_dict)).hexdigest()
+    )
+    plan = PreboundServiceSocketPlanV1.model_validate(plan_dict, strict=True)
+
+    spec = MagicMock()
+    spec.prebound_service_socket_plans = (plan,)
+    spec.authority.policy_http.path = "/nonexistent"
+    runtime = MagicMock()
+    runtime.socket_role = "callback_tls"
+    runtime.host = "10.0.0.1"
+    runtime.observed_port = 8443
+    runtime.socket_plan_id = plan.socket_plan_id
+    runtime.private_key_secret_handle_id = "k1"
+    live_secrets = {"k1": str(sock_file)}
+
+    mock_sock = MagicMock()
+    mock_sock.family = socket.AF_INET
+    mock_sock.type = socket.SOCK_STREAM
+    mock_sock.getsockopt.return_value = 1
+    mock_sock.getsockname.return_value = ("10.0.0.1", 8443)
+    monkeypatch.setattr(socket, "fromfd", MagicMock(return_value=mock_sock))
+
+    sock_file_fd = -1
+    orig_fstat = os.fstat
+
+    def custom_fstat(fd: int) -> Any:
+        res = orig_fstat(fd)
+        if sock_file_fd >= 0 and fd == sock_file_fd:
+            m = MagicMock()
+            m.st_dev = res.st_dev
+            m.st_ino = res.st_ino
+            m.st_mode = sock_mode
+            m.st_uid = res.st_uid
+            return m
+        return res
+
+    monkeypatch.setattr(os, "fstat", custom_fstat)
+
+    sock_file_fd = os.open(sock_file, os.O_RDONLY)
+    try:
+        with pytest.raises(Exception) as excinfo:
+            _prepare_callback_tls_runtime(
+                spec,
+                runtime,
+                live_secret_files=live_secrets,
+                socket_fd=sock_file_fd,
+                private_key_fd=sock_file_fd,
+            )
+        assert not (
+            isinstance(excinfo.value, F2CompositionError)
+            and "callback TLS socket plan observation mismatch" in str(excinfo.value)
+        )
+
+        mismatched_plan_dict = dict(plan_dict)
+        mismatched_plan_dict.pop("socket_plan_id", None)
+        mismatched_plan_dict["socket_device"] = str(st.st_dev + 1)
+        mismatched_plan_dict["socket_plan_id"] = (
+            "sha256:"
+            + hashlib.sha256(_canonical_bytes(mismatched_plan_dict)).hexdigest()
+        )
+        mismatched_plan = PreboundServiceSocketPlanV1.model_validate(
+            mismatched_plan_dict, strict=True
+        )
+        spec.prebound_service_socket_plans = (mismatched_plan,)
+        runtime.socket_plan_id = mismatched_plan.socket_plan_id
+
+        with pytest.raises(
+            F2CompositionError,
+            match="callback TLS socket plan observation mismatch",
+        ):
+            _prepare_callback_tls_runtime(
+                spec,
+                runtime,
+                live_secret_files=live_secrets,
+                socket_fd=sock_file_fd,
+                private_key_fd=sock_file_fd,
+            )
+    finally:
+        os.close(sock_file_fd)

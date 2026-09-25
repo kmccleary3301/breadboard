@@ -146,12 +146,12 @@ def test_author_refuses_existing_destination_before_reading_input(tmp_path: Path
     [
         (
             F2C4StaticAuthorityInput,
-            {"schema_version": "bb.rl.phase5-f2-c4-static-authority-input.v1", "stores": {}},
+            {"schema_version": "bb.rl.phase5-f2-c4-static-authority-input.v2", "stores": {}},
             "stores",
         ),
         (
             F2C4DynamicAuthorityInput,
-            {"schema_version": "bb.rl.phase5-f2-c4-dynamic-authority-input.v1", "wrapper_image_build_report": {}},
+            {"schema_version": "bb.rl.phase5-f2-c4-dynamic-authority-input.v2", "wrapper_image_build_report": {}},
             "wrapper_image_build_report",
         ),
     ],
@@ -182,14 +182,14 @@ def test_target_dynamic_author_requires_typed_same_process_observations() -> Non
     ("model", "schema_version"),
     [
         (F2C4SemanticInput, "bb.rl.phase5-f2-c4-semantic-input.v1"),
-        (F2C4DynamicAuthorityInput, "bb.rl.phase5-f2-c4-dynamic-authority-input.v1"),
+        (F2C4DynamicAuthorityInput, "bb.rl.phase5-f2-c4-dynamic-authority-input.v2"),
         (
             F2C4TargetDynamicObservations,
-            "bb.rl.phase5-f2-c4-target-dynamic-observations.v1",
+            "bb.rl.phase5-f2-c4-target-dynamic-observations.v2",
         ),
         (
             HarnessCompositionManifestV1,
-            "bb.rl.harness-composition.v1",
+            "bb.rl.harness-composition.v3",
         ),
     ],
 )
@@ -330,7 +330,7 @@ def test_live_callback_rejects_fd_key_cert_and_secret_mutations(tmp_path: Path) 
 def test_dynamic_observations_reject_persisted_fd_or_key_fields(field: str) -> None:
     with pytest.raises(ValidationError) as raised:
         F2C4TargetDynamicObservations.model_validate({
-            "schema_version": "bb.rl.phase5-f2-c4-target-dynamic-observations.v1",
+            "schema_version": "bb.rl.phase5-f2-c4-target-dynamic-observations.v2",
             field: 7 if field.endswith("_fd") else "forbidden",
         })
     assert any(error["loc"] == (field,) and error["type"] == "extra_forbidden" for error in raised.value.errors())

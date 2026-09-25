@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import contextlib
 import asyncio
 from dataclasses import replace
 import errno
 import fcntl
 import json
 import os
+import socket
 import shlex
 import signal
+import struct
 import shutil
 import subprocess
 import sys
@@ -31,6 +34,7 @@ from breadboard.rl.harness.runners.terminal import (
     TerminalRunRequest,
 )
 from breadboard.rl.harness.sandbox import (
+    RuntimeContainment,
     SandboxLaunchError,
     RuntimeLaunchContext,
     SandboxRuntimeManager,
@@ -44,6 +48,9 @@ from breadboard.rl.harness.sandbox import (
     _sealed_repository_diff,
     _snapshot_installed_executable,
 )
+from breadboard.rl.harness.lease_envelope import _spawn_one
+from breadboard.rl.harness import lease_envelope
+from breadboard.rl.harness.composition import HmacSha256ReceiptAuthenticator
 from tests.rl.harness.test_runner_terminal import (
     RecordingEventSink,
     ScriptedCancellationProbe,
@@ -61,19 +68,505 @@ pytestmark = pytest.mark.local_process
 RUNTIME_ABI = TERMINAL_RUNTIME_ABI
 RUNNER_DIGEST = TERMINAL_IMPLEMENTATION_DIGEST
 
-def _sealed_execution_supported() -> bool:
-    return (
+def _sealed_execution_refusal() -> str | None:
+    if not (
         sys.platform == "linux"
         and hasattr(os, "memfd_create")
         and hasattr(os, "MFD_ALLOW_SEALING")
         and os.path.isdir("/proc/self/fd")
-    )
+    ):
+        return "runtime_unsupported: requires Linux sealed-memfd descriptor execution"
+    try:
+        lease_envelope.preflight_host_containment()
+    except lease_envelope.EnvelopeUnsupportedHostError as exc:
+        return f"runtime_unsupported: {exc}"
+    return None
 
 
+_sealed_refusal = _sealed_execution_refusal()
 requires_sealed_execution = pytest.mark.skipif(
-    not _sealed_execution_supported(),
-    reason="requires Linux sealed-memfd descriptor execution",
+    _sealed_refusal is not None,
+    reason=_sealed_refusal or "",
 )
+
+@pytest.mark.skipif(sys.platform != "linux", reason="requires Linux namespaces")
+@pytest.mark.parametrize("denied_map", ("setgroups", "uid_map"))
+async def test_denied_user_namespace_mapping_refuses_lease_before_child_effect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, denied_map: str
+) -> None:
+    fixture = make_runtime_fixture(
+        with_writable_mount=True, runtime_install_root=tmp_path / "runtime"
+    )
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+
+    def unshare(flags: int) -> None:
+        if not flags & lease_envelope._CLONE_NEWUSER:
+            raise OSError(errno.EPERM, "privileged namespaces unavailable")
+
+    def write_map(path: str, value: str) -> None:
+        if path.endswith("/" + denied_map):
+            raise OSError(errno.EACCES, "namespace mapping denied", path)
+
+    monkeypatch.setattr(lease_envelope, "_unshare", unshare)
+    monkeypatch.setattr(lease_envelope, "_write_map", write_map)
+    with pytest.raises(SandboxLaunchError) as captured:
+        await harness.manager.open(fixture.request)
+    assert captured.value.code == "runtime_unsupported"
+    assert "namespace" in str(captured.value).lower()
+    assert list(harness.workspace_root.iterdir()) == []
+
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="requires Linux namespaces")
+def test_preflight_fork_exhaustion_is_typed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def exhausted() -> int:
+        raise BlockingIOError(errno.EAGAIN, "process quota exhausted")
+
+    monkeypatch.setattr(lease_envelope.os, "fork", exhausted)
+    with pytest.raises(lease_envelope.EnvelopeLaunchError) as captured:
+        lease_envelope.preflight_host_containment()
+    assert captured.value.code == "envelope_resources_exhausted"
+    assert captured.value.errno == errno.EAGAIN
+
+
+@requires_sealed_execution
+async def test_mount_denial_is_not_namespace_unsupported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(
+        with_writable_mount=True, runtime_install_root=tmp_path / "runtime"
+    )
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    def denied(*args: object) -> None:
+        raise PermissionError(errno.EACCES, "read-only mount denied by policy")
+
+    monkeypatch.setattr(lease_envelope, "_setup_mount_view", denied)
+    with pytest.raises(SandboxLaunchError) as captured:
+        await harness.manager.open(fixture.request)
+    assert captured.value.code == "envelope_mount_denied"
+    assert "mount_view" in str(captured.value)
+    assert list(harness.workspace_root.iterdir()) == []
+
+
+def test_envelope_rejects_non_string_environment_before_fork() -> None:
+    message = {
+        "fd_count": 0,
+        "status_index": 0,
+        "stdio_indices": [0, 0, 0],
+        "cwd_index": 0,
+        "executable_index": 0,
+        "exec_index": 0,
+        "gate_index": 0,
+        "extra_indices": [],
+        "environment": {"PATH": 1},
+    }
+    with pytest.raises(OSError, match="environment is invalid"):
+        _spawn_one(None, message, [], object())
+
+def test_exec_handshake_requires_readiness_then_close_on_exec() -> None:
+    read_fd, write_fd = os.pipe()
+    try:
+        os.write(write_fd, b"R")
+        os.close(write_fd)
+        assert lease_envelope._read_exec_pipe(read_fd) is True
+    finally:
+        os.close(read_fd)
+    read_fd, write_fd = os.pipe()
+    try:
+        os.write(write_fd, b"RE")
+        os.close(write_fd)
+        with pytest.raises(OSError, match="execveat"):
+            lease_envelope._read_exec_pipe(read_fd)
+    finally:
+        os.close(read_fd)
+
+
+def test_spawn_worker_releases_exec_readiness_writer_before_waiting(
+    tmp_path: Path,
+) -> None:
+    status_parent, status_child = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+    ready_r, ready_w = os.pipe()
+    gate_r, gate_w = os.pipe()
+    os.write(gate_w, b"X")
+    null_r = os.open(os.devnull, os.O_RDONLY)
+    null_w = os.open(os.devnull, os.O_WRONLY)
+    exec_fd = os.open(os.devnull, os.O_RDONLY)
+    cwd_fd = os.open(tmp_path, os.O_RDONLY)
+    fds = [status_child.detach(), null_r, null_w, null_w, cwd_fd, exec_fd, exec_fd, gate_r, ready_w]
+    message = {
+        "fd_count": len(fds),
+        "status_index": 0,
+        "stdio_indices": [1, 2, 3],
+        "cwd_index": 4,
+        "executable_index": 5,
+        "exec_index": 6,
+        "gate_index": 7,
+        "exec_ready_index": 8,
+        "environment": {},
+        "argv": ["/nonexistent"],
+    }
+    observed: list[bytes | None] = []
+
+    class _Reaper:
+        def set_leader(self, pid: int) -> None:
+            self.pid = pid
+
+        def wait_for_leader(self, pid: int) -> int:
+            _, status = os.waitpid(pid, 0)
+            os.set_blocking(ready_r, False)
+            observed.append(os.read(ready_r, 1))
+            try:
+                observed.append(os.read(ready_r, 1))
+            except BlockingIOError:
+                observed.append(None)
+            return status
+
+    try:
+        _spawn_one(None, message, fds, _Reaper())
+    finally:
+        for fd in (fds[0], ready_r, gate_w, null_r, null_w, exec_fd, cwd_fd, gate_r):
+            os.close(fd)
+        status_parent.close()
+    # Child reported failure, then the pipe reaches EOF: no worker-held writer.
+    assert observed == [b"E", b""]
+
+
+def test_lease_mountpoints_are_recreated_only_inside_private_tmp(tmp_path: Path) -> None:
+    tmp_root = tmp_path / "tmp"
+    tmp_root.mkdir()
+    workspace = tmp_root / "pytest-of-root" / "workspaces" / "lease"
+    lease_envelope._prepare_lease_mountpoint(str(workspace), str(tmp_root))
+    assert workspace.is_dir()
+    assert workspace.stat().st_mode & 0o777 == 0o700
+    outside = tmp_path / "host" / "workspace"
+    lease_envelope._prepare_lease_mountpoint(str(outside), str(tmp_root))
+    lease_envelope._prepare_lease_mountpoint(str(tmp_root), str(tmp_root))
+    assert not outside.exists()
+
+def test_only_launcher_descriptor_positions_reach_the_child() -> None:
+    # The reviewer's attack: model text naming the status channel's index and
+    # an unrelated whole-token literal must both reach exec verbatim.
+    status_r, status_w = os.pipe()
+    ready_r, ready_w = os.pipe()
+    exec_source = os.open(os.devnull, os.O_RDONLY)
+    child = os.fork()
+    if child == 0:
+        try:
+            exec_fd, argv = lease_envelope._prepare_exec_descriptors(
+                [exec_source, status_w, ready_w],
+                exec_fd=exec_source,
+                status_fd=status_w,
+                exec_ready_fd=ready_w,
+                argv=[
+                    "/proc/self/fd/77",
+                    "-lc",
+                    "cat /proc/self/fd/3",
+                    "/proc/self/fd/24",
+                    f"/proc/self/fd/{status_w}",
+                ],
+                descriptor_arguments={0: exec_source},
+            )
+            report = {
+                "argv": argv,
+                "exec_fd": exec_fd,
+                "status_is_exec": os.path.sameopenfile(exec_fd, status_w),
+            }
+            os.write(status_w, json.dumps(report).encode())
+        finally:
+            os._exit(0)
+    os.close(status_w)
+    os.close(ready_w)
+    os.close(exec_source)
+    os.waitpid(child, 0)
+    with os.fdopen(status_r, "rb") as stream:
+        report = json.loads(stream.read())
+    os.close(ready_r)
+    assert report["argv"] == [
+        f"/proc/self/fd/{report['exec_fd']}",
+        "-lc",
+        "cat /proc/self/fd/3",
+        "/proc/self/fd/24",
+        f"/proc/self/fd/{status_w}",
+    ]
+    assert report["status_is_exec"] is False
+
+
+def _spawn_message(**overrides: object) -> dict[str, object]:
+    message: dict[str, object] = {
+        "fd_count": 10,
+        "status_index": 3,
+        "stdio_indices": [0, 1, 2],
+        "executable_index": 4,
+        "exec_index": 4,
+        "command_index": None,
+        "extra_indices": [5],
+        "gate_index": 6,
+        "cwd_index": 7,
+        "exec_ready_index": 8,
+        "environment": {},
+        "argv": ["/proc/self/fd/4", "-lc", "cat /proc/self/fd/3"],
+        "descriptor_arguments": [[0, 4]],
+    }
+    message.update(overrides)
+    return message
+
+
+@pytest.mark.parametrize(
+    "overrides, reason",
+    [
+        ({"extra_indices": [3]}, "control channel"),
+        ({"descriptor_arguments": [[2, 3]]}, "descriptor arguments"),
+        ({"descriptor_arguments": [[2, 6]]}, "descriptor arguments"),
+        ({"descriptor_arguments": [[3, 4]]}, "descriptor arguments"),
+        ({"descriptor_arguments": [[0, 4], [0, 5]]}, "descriptor arguments"),
+    ],
+)
+def test_spawn_refuses_to_name_control_channels_in_argv(
+    overrides: dict[str, object], reason: str
+) -> None:
+    with pytest.raises(OSError, match=reason):
+        _spawn_one(None, _spawn_message(**overrides), list(range(40, 50)), object())
+
+
+@pytest.mark.skipif(
+    not hasattr(socket, "SCM_CREDENTIALS"), reason="SCM_CREDENTIALS is Linux-only"
+)
+def test_admission_without_a_self_pinned_pidfd_is_refused() -> None:
+    # A bare PID can be recycled after an adversarial SIGKILL and reap; only
+    # the child's own pidfd identifies it.
+    host, child = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+    with host, child:
+        host.setsockopt(socket.SOL_SOCKET, socket.SO_PASSCRED, 1)
+        child.sendmsg(
+            [b"B"],
+            [(
+                socket.SOL_SOCKET,
+                socket.SCM_CREDENTIALS,
+                struct.pack("3i", os.getpid(), os.getuid(), os.getgid()),
+            )],
+        )
+        with pytest.raises(OSError, match="pin its identity"):
+            lease_envelope._recv_ready_status(host)
+
+
+
+@requires_sealed_execution
+async def test_fast_direct_elf_exec_without_sleep(tmp_path: Path) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True, runtime_install_root=tmp_path / "runtime")
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    verifier_path = tmp_path / "fast-verifier"
+    shutil.copyfile(Path(os.path.realpath("/usr/bin/true")), verifier_path)
+    verifier_path.chmod(0o500)
+    verifier_digest = "sha256:" + __import__("hashlib").sha256(verifier_path.read_bytes()).hexdigest()
+    primary._runtime._command_executable = _snapshot_installed_executable(str(verifier_path), verifier_digest)
+    try:
+        for _ in range(12):
+            result = await primary._runtime.run_argv(
+                (str(verifier_path),), timeout_ms=2_000, output_limit=4_096,
+            )
+            assert result["returncode"] == 0, result
+    finally:
+        await primary.close()
+
+
+def test_containment_receipt_preserves_writable_mounts_through_teardown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        lease_envelope,
+        "_namespace_inodes",
+        lambda: {"pid": 1, "mnt": 2, "user": 3, "net": 4},
+    )
+    monkeypatch.setattr(lease_envelope, "_mountinfo", lambda: b"mount observation")
+    authenticator = HmacSha256ReceiptAuthenticator(
+        key_id="test-containment", key=b"k" * 32
+    )
+    receipt = lease_envelope.mint_containment_receipt(
+        lease_id="lease", runtime_id="runtime", mode="userns",
+        writable_mounts=(
+            lease_envelope.WritableMount("/scratch", "tmpfs", 500_000, "lease_tmpfs"),
+            lease_envelope.WritableMount("/workspace", "bind", None, "workspace_bind"),
+        ),
+        authenticator=authenticator,
+    )
+    assert tuple(mount.path for mount in receipt.writable_mounts) == ("/scratch", "/workspace")
+    assert lease_envelope.verify_containment_receipt(
+        receipt.to_mapping(), lease_id="lease", runtime_id="runtime",
+        authenticator=authenticator,
+    ).writable_mounts == receipt.writable_mounts
+    completed = lease_envelope.add_teardown_outcome(
+        receipt, pid1_reaped=True, all_dead=True, authenticator=authenticator,
+    )
+    assert completed.writable_mounts == receipt.writable_mounts
+
+def test_envelope_rejects_writable_inherited_child_mount(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mountinfo = (
+        b"1 0 1:1 / / ro - ext4 root ro\n"
+        b"2 1 1:2 / /dev/shm rw - tmpfs shm rw\n"
+        b"3 1 1:3 / /workspace rw - ext4 workspace rw\n"
+        b"4 1 1:4 / /scratch rw - tmpfs scratch rw\n"
+        b"5 1 1:5 / /tmp rw - tmpfs tmp rw\n"
+    )
+    monkeypatch.setattr(lease_envelope, "_mountinfo", lambda: mountinfo)
+    with pytest.raises(OSError, match="/dev/shm"):
+        lease_envelope._verify_mount_view("/workspace", "/scratch", 1_000_000)
+
+
+def test_envelope_mounts_scratch_on_bounded_private_tmpfs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace, scratch = tmp_path / "workspace", tmp_path / "scratch"
+    workspace.mkdir()
+    scratch.mkdir()
+    mounted: list[tuple[str, int]] = []
+    monkeypatch.setattr(lease_envelope, "_enter_private_mount_namespace", lambda: None)
+    monkeypatch.setattr(lease_envelope, "_remount_tree_readonly", lambda path: None)
+    monkeypatch.setattr(lease_envelope, "_open_tree", lambda path: os.open(path, os.O_RDONLY))
+    monkeypatch.setattr(lease_envelope, "_move_mount", lambda fd, path: None)
+    monkeypatch.setattr(lease_envelope, "_mount_proc", lambda: None)
+    monkeypatch.setattr(lease_envelope, "_mount_tmpfs", lambda path, size, **kwargs: mounted.append((path, size)))
+    monkeypatch.setattr(lease_envelope, "_verify_mount_view", lambda workspace, scratch, size: ("sha256:" + "0" * 64, ()))
+    workspace_fd = os.open(workspace, os.O_RDONLY)
+    scratch_fd = os.open(scratch, os.O_RDONLY)
+    try:
+        lease_envelope._setup_mount_view(
+            str(workspace), str(scratch), workspace_fd, scratch_fd, 1_000_000,
+        )
+    finally:
+        os.close(workspace_fd)
+        os.close(scratch_fd)
+    assert set(dict(mounted)) == {"/tmp", str(scratch)}
+    assert sum(size for _, size in mounted) == 1_000_000
+
+
+@requires_sealed_execution
+async def test_envelope_scratch_and_tmp_are_size_limited_tmpfs(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    try:
+        scratch = primary._runtime._envelope.scratch
+        result = await primary._runtime.run_shell(
+            f"stat -f -c '%T:%S:%b' /tmp {shlex.quote(scratch)}",
+            timeout_ms=2_000, output_limit=4_096,
+        )
+        assert result["returncode"] == 0, result
+        mounts = result["stdout"].splitlines()
+        assert len(mounts) == 2
+        assert all(line.startswith("tmpfs:") for line in mounts)
+        sizes = [
+            int(block_size) * int(blocks)
+            for line in mounts
+            for _, block_size, blocks in [line.split(":")]
+        ]
+        storage_bytes = primary._runtime.plan.resources.storage_bytes
+        assert 0 < sum(sizes) <= storage_bytes + 8192
+        assert all(size <= storage_bytes // 2 + 4096 for size in sizes)
+    finally:
+        await primary.close()
+
+
+@requires_sealed_execution
+async def test_envelope_child_mount_is_read_only_inside_lease(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    try:
+        command = (
+            "/usr/bin/python3 -c 'import errno,os; "
+            "p=\"/dev/shm/breadboard-forbidden-write\"; "
+            "try_write=lambda: os.open(p,os.O_CREAT|os.O_WRONLY,0o600); "
+            "import sys; "
+            "exec(\"try:\\n try_write()\\nexcept OSError as e:\\n "
+            "sys.exit(0 if e.errno == errno.EROFS else 5)\\nsys.exit(6)\")'"
+        )
+        result = await primary._runtime.run_shell(
+            command, timeout_ms=2_000, output_limit=4_096
+        )
+        assert result["returncode"] == 0, result
+        receipt = primary._runtime.containment_receipt
+        assert receipt is not None
+        assert receipt.mountinfo_sha256.startswith("sha256:")
+        assert {entry.path for entry in receipt.writable_mounts} == {
+            "/tmp", str(primary._materialized.workspace_path),
+            str(primary._runtime._envelope.scratch),
+        }
+    finally:
+        await primary.close()
+
+
+
+
+@requires_sealed_execution
+async def test_envelope_descendants_do_not_hold_lease_owner_lock(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    envelope = primary._runtime._envelope
+    assert envelope is not None
+    lock_path = str(harness.lease_root / f"{primary.lease_id}.owner.lock")
+    action = asyncio.create_task(
+        primary.runner_workspace.run_shell(
+            ": > work/lock-ready; exec 1>&- 2>&-; sleep 10",
+            timeout=2,
+        )
+    )
+    try:
+        for _ in range(200):
+            if (primary._materialized.workspace_path / "work/lock-ready").exists():
+                break
+            await asyncio.sleep(0.01)
+        else:
+            raise AssertionError("envelope process did not become ready")
+        roots = {envelope.launcher_pid, envelope.pid1}
+        pending = list(roots)
+        while pending:
+            parent = pending.pop()
+            for entry in Path("/proc").iterdir():
+                if not entry.name.isdecimal():
+                    continue
+                try:
+                    status = (entry / "status").read_text(encoding="ascii")
+                except (OSError, UnicodeError):
+                    continue
+                if any(
+                    line == f"PPid:\t{parent}"
+                    for line in status.splitlines()
+                ):
+                    child = int(entry.name)
+                    if child not in roots:
+                        roots.add(child)
+                        pending.append(child)
+        for pid in roots:
+            for entry in Path(f"/proc/{pid}/fd").iterdir():
+                try:
+                    assert os.readlink(entry) != lock_path
+                except (OSError, UnicodeError):
+                    continue
+    finally:
+        if not action.done():
+            action.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await action
+        await primary.close()
+        await harness.manager.close()
 
 
 @requires_sealed_execution
@@ -459,8 +952,11 @@ async def test_process_backend_binds_identity_recorder_before_base_measurement(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fixture = make_runtime_fixture(with_writable_mount=True)
-    plan = build_sandbox_execution_plan(
-        fixture.request, fixture.registries, fixture.authorities
+    plan = replace(
+        build_sandbox_execution_plan(
+            fixture.request, fixture.registries, fixture.authorities
+        ),
+        containment=RuntimeContainment.UNCONFINED_TEST_ONLY,
     )
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -474,6 +970,7 @@ async def test_process_backend_binds_identity_recorder_before_base_measurement(
         digest = plan.runtime.measured_binary_digest
         size = 0
         fd = pinned_fd
+        execution_format = "elf"
 
         def close(self) -> None:
             os.close(self.fd)
@@ -664,7 +1161,7 @@ async def test_missing_host_git_refuses_before_trusted_process_launch(
 async def test_unsupported_host_refuses_before_subprocess_recorder_or_workload_effect(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    if _sealed_execution_supported():
+    if _sealed_refusal is None:
         pytest.skip("unsupported-host contract is exercised only without sealed execution")
     fixture = make_runtime_fixture(
         with_writable_mount=True, runtime_install_root=tmp_path
@@ -733,6 +1230,7 @@ async def test_pinned_shell_executes_admitted_bytes_after_source_mutation(
             original_identity.st_ino,
         )
     else:
+        runtime_path.chmod(0o700)
         runtime_path.write_bytes(replacement_bytes)
         runtime_path.chmod(0o500)
         mutated_identity = runtime_path.stat()
@@ -741,9 +1239,8 @@ async def test_pinned_shell_executes_admitted_bytes_after_source_mutation(
             original_identity.st_ino,
         )
     assert runtime_path.read_bytes() == replacement_bytes
-
     result = await primary._runtime.run_shell(
-        "printf admitted-snapshot",
+        "sleep 0.05; printf admitted-snapshot",
         timeout_ms=1_000,
         output_limit=4_096,
     )
@@ -798,7 +1295,7 @@ async def test_pinned_verifier_executes_admitted_bytes_after_source_replacement(
     harness.manager.process_backend = TrustedProcessBackend()
     primary = await harness.manager.open(fixture.request)
     verifier_path = tmp_path / "verifier"
-    verifier_path.write_bytes(b"#!/bin/sh\nprintf admitted-verifier\n")
+    shutil.copyfile(Path(os.path.realpath("/bin/sh")), verifier_path)
     verifier_path.chmod(0o500)
     verifier_digest = "sha256:" + __import__("hashlib").sha256(
         verifier_path.read_bytes()
@@ -806,12 +1303,12 @@ async def test_pinned_verifier_executes_admitted_bytes_after_source_replacement(
     pinned = _snapshot_installed_executable(str(verifier_path), verifier_digest)
     primary._runtime._command_executable = pinned
     replacement = tmp_path / "replacement-verifier"
-    replacement.write_bytes(b"#!/bin/sh\nprintf attacker-controlled\n")
+    shutil.copyfile(Path(os.path.realpath("/bin/false")), replacement)
     replacement.chmod(0o500)
     os.replace(replacement, verifier_path)
 
     result = await primary._runtime.run_argv(
-        (str(verifier_path),),
+        (str(verifier_path), "-c", "printf admitted-verifier"),
         timeout_ms=1_000,
         output_limit=4_096,
     )
@@ -937,22 +1434,30 @@ async def test_catalog_argv0_and_proc_exe_bind_different_objects_at_private_barr
     def inspect_stopped_process(
         lease_id: str, resource_id: str, identity: dict[str, object] | None
     ) -> None:
-        assert identity is not None
+        if identity is None:
+            original(lease_id, resource_id, identity)
+            return
         pid = int(identity["process_pid"])
+        status = Path(f"/proc/{pid}/status").read_text()
+        observed["tracer_pid"] = next(
+            line.split()[1] for line in status.splitlines() if line.startswith("TracerPid:")
+        )
+        observed["state"] = next(
+            line.split()[1] for line in status.splitlines() if line.startswith("State:")
+        )[0]
         observed["cmdline"] = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
         observed["exe"] = os.readlink(f"/proc/{pid}/exe")
-        observed["state"] = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
         original(lease_id, resource_id, identity)
 
     monkeypatch.setattr(
         harness.manager, "_record_process_identity", inspect_stopped_process
     )
     result = await primary._runtime.run_shell(
-        "printf argv-proof", timeout_ms=1_000, output_limit=4_096
+        "sleep 5; printf argv-proof", timeout_ms=10_000, output_limit=4_096
     )
 
     assert observed["cmdline"][0].decode() == runtime_path
-    assert observed["state"] in {"T", "t"}
+    assert observed["tracer_pid"] == "0"
     assert observed["exe"].startswith("/memfd:breadboard-runtime")
     assert result["stdout"] == "argv-proof"
     assert (await primary.close()).state is CleanupState.RELEASED
@@ -974,7 +1479,8 @@ async def test_cancellation_at_private_barrier_reaps_group_and_handle_remains_us
     def cancel_at_recorder(
         lease_id: str, resource_id: str, identity: dict[str, object] | None
     ) -> None:
-        assert identity is not None
+        if identity is None:
+            return
         attempted_groups.append(int(identity["process_group_id"]))
         raise asyncio.CancelledError
 
@@ -1054,6 +1560,11 @@ async def test_terminate_racing_barrier_fences_launch_and_closes_snapshot_fd_onc
     first_result = await asyncio.wait_for(first, 2)
     assert first_result["returncode"] == -signal.SIGKILL
     assert not (primary._materialized.workspace_path / "work/late-effect").exists()
+    assert handle.teardown_receipt is not None
+    assert handle.teardown_receipt.outcome == {
+        "pid1_reaped": True,
+        "all_dead": True,
+    }
     assert handle._executable.closed is True
     with pytest.raises(OSError):
         os.fstat(executable_fd)
@@ -1061,6 +1572,133 @@ async def test_terminate_racing_barrier_fences_launch_and_closes_snapshot_fd_onc
     with pytest.raises(OSError):
         os.fstat(executable_fd)
     assert (await primary.close()).state is CleanupState.RELEASED
+
+
+@requires_sealed_execution
+async def test_cancelled_termination_retains_signed_teardown_and_releases_lease(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import threading
+
+    fixture = make_runtime_fixture(
+        with_writable_mount=True, runtime_install_root=tmp_path / "runtime"
+    )
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    handle = primary._runtime
+    executable_fd = handle._executable.fd
+    intercepted, release = threading.Event(), threading.Event()
+    original = lease_envelope._recv_frame
+
+    def intercept(sock: socket.socket):
+        frame = original(sock)
+        if frame[0].get("kind") == "teardown":
+            intercepted.set()
+            release.wait(3)
+        return frame
+
+    monkeypatch.setattr(lease_envelope, "_recv_frame", intercept)
+    try:
+        first = asyncio.create_task(handle.terminate())
+        assert await asyncio.wait_for(asyncio.to_thread(intercepted.wait), 2)
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        release.set()
+        second = await asyncio.wait_for(handle.terminate(), 2)
+        third = await asyncio.wait_for(handle.terminate(), 2)
+        assert second == third == (
+            CleanupStepReceipt("runtime", CleanupState.RELEASED),
+        )
+        assert handle.teardown_receipt is not None
+        assert handle.teardown_receipt.outcome == {
+            "pid1_reaped": True, "all_dead": True,
+        }
+        assert handle._envelope.pid1_fd == -1
+        assert handle._executable.closed is True
+        with pytest.raises(OSError):
+            os.fstat(executable_fd)
+    finally:
+        release.set()
+        receipt = await primary.close()
+    assert receipt.state is CleanupState.RELEASED
+    assert not (harness.lease_root / f"{primary.lease_id}.json").exists()
+
+
+@requires_sealed_execution
+async def test_cancelled_termination_waiting_for_launch_lock_fences_later_launch(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(
+        with_writable_mount=True, runtime_install_root=tmp_path / "runtime"
+    )
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    handle = primary._runtime
+    try:
+        async with handle._launch_lock:
+            first = asyncio.create_task(handle.terminate())
+            await asyncio.sleep(0)
+            first.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await first
+
+        with pytest.raises(WorkspaceStateError) as refused:
+            await handle.run_shell(
+                "printf forbidden", timeout_ms=2_000, output_limit=4_096
+            )
+        assert refused.value.code == "lease_not_active"
+        second = await asyncio.wait_for(handle.terminate(), 4)
+        assert await handle.terminate() == second == (
+            CleanupStepReceipt("runtime", CleanupState.RELEASED),
+        )
+        assert handle.teardown_receipt is not None
+        assert handle.teardown_receipt.outcome == {
+            "pid1_reaped": True, "all_dead": True,
+        }
+        assert handle._executable.closed is True
+    finally:
+        closed = await primary.close()
+        await harness.manager.close()
+    assert closed.state is CleanupState.RELEASED
+    assert not (harness.lease_root / f"{primary.lease_id}.json").exists()
+
+
+@requires_sealed_execution
+async def test_native_close_inner_cancellation_records_typed_runtime_failure(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(
+        with_writable_mount=True, runtime_install_root=tmp_path / "runtime"
+    )
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    handle = primary._runtime
+
+    class CancelledNativeSession:
+        async def close(self) -> None:
+            raise asyncio.CancelledError("native close cancelled")
+
+    handle._native_session = CancelledNativeSession()
+    try:
+        first = await handle.terminate()
+        assert first == (
+            CleanupStepReceipt(
+                "runtime", CleanupState.FAILED, "native_session:CancelledError"
+            ),
+        )
+        assert await handle.terminate() == first
+        assert handle.teardown_receipt is not None
+        assert handle.teardown_receipt.outcome == {
+            "pid1_reaped": True, "all_dead": True,
+        }
+        assert (await primary.close()).state is CleanupState.QUARANTINED
+        assert (harness.lease_root / f"{primary.lease_id}.json").exists()
+    finally:
+        await harness.manager.close()
 
 
 @requires_sealed_execution
@@ -1160,6 +1798,87 @@ async def test_real_process_plan_runs_through_wp5_port_seals_snapshot_and_cleans
 
 
 @requires_sealed_execution
+async def test_real_process_preserves_absolute_workspace_and_scratch_roots(
+    tmp_path: Path,
+) -> None:
+    staging_before = set(Path("/dev/shm").glob(".breadboard-envelope-*"))
+    shm_mountinfo_before = tuple(
+        line
+        for line in Path("/proc/self/mountinfo").read_text().splitlines()
+        if " /dev/shm " in line
+    )
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    envelope = primary._runtime._envelope
+    assert envelope is not None
+    workspace = primary._materialized.workspace_path
+    scratch = Path(envelope.scratch)
+    workspace_probe = workspace / "absolute-host-probe"
+    scratch_probe = scratch / "absolute-host-probe"
+    workspace_probe.write_text("workspace-host", encoding="utf-8")
+    scratch_probe.write_text("host-invisible", encoding="utf-8")
+    command = (
+        f"cat {shlex.quote(str(workspace_probe))} > work/workspace-read; "
+        f"test ! -e {shlex.quote(str(scratch_probe))}; "
+        f"printf scratch-inside > {shlex.quote(str(scratch / 'absolute-inside'))}; "
+        f"cat {shlex.quote(str(scratch / 'absolute-inside'))} > work/scratch-read; "
+        f"printf workspace-inside > {shlex.quote(str(workspace / 'absolute-inside'))}"
+    )
+    result = await primary.runner_workspace.run_shell(command, timeout=2)
+    assert result["returncode"] == 0
+    assert (workspace / "work/workspace-read").read_text(encoding="utf-8") == (
+        "workspace-host"
+    )
+    assert (workspace / "work/scratch-read").read_text(encoding="utf-8") == (
+        "scratch-inside"
+    )
+    assert (workspace / "absolute-inside").read_text(encoding="utf-8") == (
+        "workspace-inside"
+    )
+    assert scratch_probe.read_text(encoding="utf-8") == "host-invisible"
+    assert not (scratch / "absolute-inside").exists()
+    receipt = await primary.close()
+    assert receipt.state is CleanupState.RELEASED
+    assert await harness.manager.close() == ()
+    assert tuple(
+        line
+        for line in Path("/proc/self/mountinfo").read_text().splitlines()
+        if " /dev/shm " in line
+    ) == shm_mountinfo_before
+    assert set(Path("/dev/shm").glob(".breadboard-envelope-*")) == staging_before
+
+
+def _namespace_processes(pid_namespace_inode: int) -> list[tuple[int, str]]:
+    processes: list[tuple[int, str]] = []
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdecimal():
+            continue
+        try:
+            if os.stat(entry / "ns/pid").st_ino != pid_namespace_inode:
+                continue
+            fields = (entry / "stat").read_text(encoding="ascii").rsplit(")", 1)[1].split()
+            processes.append((int(entry.name), fields[0]))
+        except (OSError, UnicodeError, ValueError, IndexError):
+            continue
+    return processes
+
+
+def _resolve_namespace_pid(namespace_pid: int, pid_namespace_inode: int) -> int | None:
+    target = str(namespace_pid)
+    for host_pid, _state in _namespace_processes(pid_namespace_inode):
+        try:
+            status = Path(f"/proc/{host_pid}/status").read_text(encoding="ascii")
+        except (OSError, UnicodeError):
+            continue
+        for line in status.splitlines():
+            if line.startswith("NSpid:") and line.split()[-1] == target:
+                return host_pid
+    return None
+
+
+@requires_sealed_execution
 async def test_real_process_leader_exit_keeps_exact_descendant_cleanup_authority(
     tmp_path: Path,
 ) -> None:
@@ -1180,31 +1899,48 @@ async def test_real_process_leader_exit_keeps_exact_descendant_cleanup_authority
     )
     command = (
         f"/bin/sh -c {shlex.quote(descendant_command)} & "
-        "while [ ! -f work/descendant.pid ]; do :; done"
+        "while [ ! -f work/descendant.pid ]; do :; done; "
+        "sleep 1"
     )
-    descendant_pid: int | None = None
+    action = asyncio.create_task(
+        primary.runner_workspace.run_shell(command, timeout=2)
+    )
+    host_pid: int | None = None
     try:
-        await primary.runner_workspace.run_shell(command, timeout=2)
-        descendant = await primary.runner_workspace.read_text(
-            "work/descendant.pid"
-        )
-        descendant_pid = int(descendant["content"])
-        async with asyncio.timeout(1):
-            while True:
-                try:
-                    os.kill(descendant_pid, 0)
-                except ProcessLookupError:
-                    break
+        descendant: dict[str, object] | None = None
+        for _ in range(200):
+            try:
+                candidate = await primary.runner_workspace.read_text(
+                    "work/descendant.pid"
+                )
+            except FileNotFoundError:
                 await asyncio.sleep(0.01)
-        receipt = await primary.close()
-        assert receipt.state is CleanupState.RELEASED
+            else:
+                descendant = candidate
+                break
+        assert descendant is not None
+        namespace_pid = int(str(descendant["content"]))
+        receipt = primary._runtime.containment_receipt
+        assert receipt is not None
+        host_pid = _resolve_namespace_pid(namespace_pid, receipt.pid_namespace_inode)
+        assert host_pid is not None
+        assert Path(f"/proc/{host_pid}").exists()
+        await action
+        assert not Path(f"/proc/{host_pid}").exists()
+        assert not any(
+            state == "Z"
+            for _pid, state in _namespace_processes(receipt.pid_namespace_inode)
+        )
+        cleanup_receipt = await primary.close()
+        assert cleanup_receipt.state is CleanupState.RELEASED
         assert await harness.manager.close() == ()
     finally:
-        if descendant_pid is not None:
-            try:
-                os.kill(descendant_pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+        if not action.done():
+            action.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await action
+        if host_pid is not None and Path(f"/proc/{host_pid}").exists():
+            os.kill(host_pid, signal.SIGKILL)
 
 @requires_sealed_execution
 @pytest.mark.parametrize("mode", ["timeout", "cancel"])
@@ -1215,7 +1951,7 @@ async def test_real_process_closed_stream_timeout_or_cancellation_kills_descenda
     harness = RuntimeHarness(tmp_path, fixture)
     harness.manager.process_backend = TrustedProcessBackend()
     primary = await harness.manager.open(fixture.request)
-    ready_fifo = tmp_path / "descendant-ready.fifo"
+    ready_fifo = primary._materialized.workspace_path / "descendant-ready.fifo"
     os.mkfifo(ready_fifo)
     ready_fd = os.open(ready_fifo, os.O_RDWR | os.O_NONBLOCK)
     quoted_ready = shlex.quote(str(ready_fifo))
@@ -1241,6 +1977,8 @@ async def test_real_process_closed_stream_timeout_or_cancellation_kills_descenda
     )
     descendant_pid: int | None = None
     receipt = None
+    containment_receipt = None
+    host_pid: int | None = None
     try:
         action = asyncio.create_task(
             primary.runner_workspace.run_shell(command, timeout=1)
@@ -1259,6 +1997,16 @@ async def test_real_process_closed_stream_timeout_or_cancellation_kills_descenda
         finally:
             loop.remove_reader(ready_fd)
 
+        containment_receipt = primary._runtime.containment_receipt
+        assert containment_receipt is not None
+        descendant = await primary.runner_workspace.read_text("work/descendant.pid")
+        namespace_descendant_pid = int(descendant["content"])
+        host_pid = _resolve_namespace_pid(
+            namespace_descendant_pid, containment_receipt.pid_namespace_inode
+        )
+        assert host_pid is not None
+        descendant_pid = host_pid
+
         started = loop.time()
         if mode == "cancel":
             action.cancel()
@@ -1274,18 +2022,15 @@ async def test_real_process_closed_stream_timeout_or_cancellation_kills_descenda
         assert loop.time() - started < 3
 
         spawned = await primary.runner_workspace.read_text("work/spawned.pid")
-        descendant = await primary.runner_workspace.read_text("work/descendant.pid")
-        descendant_pid = int(descendant["content"])
-        assert descendant_pid == int(spawned["content"])
+        assert namespace_descendant_pid == int(spawned["content"])
 
         async with asyncio.timeout(1):
             while True:
                 try:
-                    os.kill(descendant_pid, 0)
+                    os.kill(host_pid, 0)
                 except ProcessLookupError:
                     break
                 await asyncio.sleep(0.01)
-
         with pytest.raises(FileNotFoundError):
             await primary.runner_workspace.read_text("work/late")
         receipt = await primary.close()
@@ -1296,6 +2041,7 @@ async def test_real_process_closed_stream_timeout_or_cancellation_kills_descenda
                 CleanupState.ALREADY_RELEASED,
             ),
             CleanupStepReceipt("runtime", CleanupState.RELEASED),
+            CleanupStepReceipt("native_scratch", CleanupState.RELEASED),
             CleanupStepReceipt("workspace", CleanupState.RELEASED),
             CleanupStepReceipt("cache_holder", CleanupState.RELEASED),
             CleanupStepReceipt("lease_record", CleanupState.RELEASED),
@@ -1356,23 +2102,46 @@ async def test_trusted_process_handle_enforces_exact_500ms_deadline_and_cleans_d
         "exec 1>&- 2>&-; "
         "wait \"$child\""
     )
+    containment_receipt = primary._runtime.containment_receipt
+    assert containment_receipt is not None
     over_started = loop.time()
+    over_action = asyncio.create_task(
+        handle.run_shell(
+            over_command,
+            timeout_ms=500,
+            output_limit=output_limit,
+        )
+    )
+    namespace_descendant_pid: int | None = None
+    descendant_pid: int | None = None
+    async with asyncio.timeout(1):
+        while descendant_pid is None:
+            try:
+                descendant = await primary.runner_workspace.read_text(
+                    "work/deadline-child.pid"
+                )
+            except FileNotFoundError:
+                await asyncio.sleep(0.01)
+                continue
+            namespace_descendant_pid = int(descendant["content"])
+            descendant_pid = _resolve_namespace_pid(
+                namespace_descendant_pid, containment_receipt.pid_namespace_inode
+            )
+            if descendant_pid is None:
+                await asyncio.sleep(0.01)
+
     with pytest.raises(SandboxLaunchError) as captured:
         async with asyncio.timeout(2):
-            await handle.run_shell(
-                over_command,
-                timeout_ms=500,
-                output_limit=output_limit,
-            )
+            await over_action
     over_elapsed = loop.time() - over_started
 
     assert captured.value.code == "runtime_launch_failed"
     assert 0.4 <= over_elapsed < 2
     assert under_elapsed < over_elapsed
+    assert namespace_descendant_pid is not None
     spawned = await primary.runner_workspace.read_text("work/deadline-spawned.pid")
-    descendant = await primary.runner_workspace.read_text("work/deadline-child.pid")
-    descendant_pid = int(descendant["content"])
-    assert descendant_pid == int(spawned["content"])
+    assert namespace_descendant_pid == int(spawned["content"])
+    assert descendant_pid is not None
     async with asyncio.timeout(1):
         while True:
             try:
@@ -1390,6 +2159,7 @@ async def test_trusted_process_handle_enforces_exact_500ms_deadline_and_cleans_d
             CleanupState.ALREADY_RELEASED,
         ),
         CleanupStepReceipt("runtime", CleanupState.RELEASED),
+        CleanupStepReceipt("native_scratch", CleanupState.RELEASED),
         CleanupStepReceipt("workspace", CleanupState.RELEASED),
         CleanupStepReceipt("cache_holder", CleanupState.RELEASED),
         CleanupStepReceipt("lease_record", CleanupState.RELEASED),
@@ -1412,7 +2182,7 @@ async def test_real_process_restart_never_signals_from_stale_lease_record(
     harness = RuntimeHarness(tmp_path, fixture)
     harness.manager.process_backend = TrustedProcessBackend()
     primary = await harness.manager.open(fixture.request)
-    ready_fifo = tmp_path / "restart-ready.fifo"
+    ready_fifo = primary._materialized.workspace_path / "restart-ready.fifo"
     os.mkfifo(ready_fifo)
     ready_fd = os.open(ready_fifo, os.O_RDWR | os.O_NONBLOCK)
     command = (
@@ -1488,6 +2258,9 @@ async def test_real_process_restart_never_signals_from_stale_lease_record(
             docker_backend=None,
             random_bytes=DeterministicRandom(50_000),
         )
+        # The original manager is still in this test process. Release only its
+        # ownership lock to model the crashed manager before cold recovery.
+        harness.manager._release_lease_owner_lock(primary.lease_id, unlink=False)
         harness.clock.advance(minutes=5)
         receipts = await asyncio.wait_for(recovery.reconcile_stale(), 2)
         assert len(receipts) == 1
@@ -1501,6 +2274,10 @@ async def test_real_process_restart_never_signals_from_stale_lease_record(
             ),
             CleanupStepReceipt(
                 "runtime", CleanupState.QUARANTINED, "stale_identity_uncertain"
+            ),
+            CleanupStepReceipt(
+                "native_scratch", CleanupState.QUARANTINED,
+                "dependent runtime cleanup incomplete",
             ),
             CleanupStepReceipt(
                 "workspace", CleanupState.QUARANTINED, "stale_identity_uncertain"
@@ -1614,17 +2391,31 @@ async def test_concurrent_trusted_actions_persist_distinct_identities_and_reconc
             docker_backend=None,
             random_bytes=DeterministicRandom(60_000),
         )
+        harness.manager._release_lease_owner_lock(primary.lease_id, unlink=False)
         harness.clock.advance(minutes=5)
         receipts = await asyncio.wait_for(recovery.reconcile_stale(), 2)
         assert len(receipts) == 1
         assert receipts[0].steps == (
-            CleanupStepReceipt("runtime", CleanupState.RELEASED),
-            CleanupStepReceipt("workspace", CleanupState.RELEASED),
-            CleanupStepReceipt("cache_holder", CleanupState.RELEASED),
-            CleanupStepReceipt("lease_record", CleanupState.RELEASED),
+            CleanupStepReceipt("child_verifier", CleanupState.ALREADY_RELEASED),
+            CleanupStepReceipt("runtime", CleanupState.QUARANTINED, "stale_identity_uncertain"),
+            CleanupStepReceipt(
+                "native_scratch", CleanupState.QUARANTINED,
+                "dependent runtime cleanup incomplete",
+            ),
+            CleanupStepReceipt("workspace", CleanupState.QUARANTINED, "stale_identity_uncertain"),
+            CleanupStepReceipt("cache_holder", CleanupState.QUARANTINED, "stale_identity_uncertain"),
+            CleanupStepReceipt("lease_record", CleanupState.QUARANTINED, "stale_identity_uncertain"),
         )
-        result = await asyncio.wait_for(second, 1)
-        assert result["returncode"] == -signal.SIGKILL
+        os.kill(surviving_pid, 0)
+        assert record_path.exists()
+        second.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(second, 1)
+        with pytest.raises(ProcessLookupError):
+            os.kill(surviving_pid, 0)
+        receipts = await recovery.reconcile_stale()
+        assert len(receipts) == 1
+        assert receipts[0].state is CleanupState.RELEASED
         assert not record_path.exists()
     finally:
         for action in (first, second):
@@ -1668,8 +2459,9 @@ async def test_identity_persistence_failure_kills_suspended_action_before_effect
             2,
         )
 
-    assert len(attempted) == 1
-    resource_id, identity = attempted[0]
+    nonempty_attempts = [(resource_id, identity) for resource_id, identity in attempted if identity is not None]
+    assert len(nonempty_attempts) == 1
+    resource_id, identity = nonempty_attempts[0]
     assert identity is not None
     assert resource_id == f"process-group-{identity['process_group_id']}"
     assert not (
@@ -1679,4 +2471,47 @@ async def test_identity_persistence_failure_kills_suspended_action_before_effect
     assert tuple(record.get("process_identities", ())) == ()
     assert (await primary.close()).state is CleanupState.RELEASED
     assert list(harness.workspace_root.iterdir()) == []
+
     assert list(harness.lease_root.iterdir()) == []
+
+
+@requires_sealed_execution
+async def test_trusted_process_enforces_network_isolation_and_records_netns(
+    tmp_path: Path,
+) -> None:
+    server = await asyncio.start_server(lambda r, w: None, "127.0.0.1", 0)
+    server_port = server.sockets[0].getsockname()[1]
+    fixture = make_runtime_fixture(
+        with_writable_mount=True, runtime_install_root=tmp_path
+    )
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    try:
+        receipt = primary._runtime.containment_receipt
+        assert receipt is not None
+        assert receipt.network_namespace_inode > 0
+        if Path("/proc/self/ns/net").exists():
+            from breadboard.rl.harness.lease_envelope import _ns_inode
+
+            assert receipt.network_namespace_inode != _ns_inode(
+                os.readlink("/proc/self/ns/net")
+            )
+        cmd = (
+            f"/usr/bin/python3 -c \"import socket; s = socket.socket(); "
+            f"s.settimeout(0.5); s.connect(('127.0.0.1', {server_port}))\""
+        )
+        result = await primary._runtime.run_shell(
+            cmd, timeout_ms=2_000, output_limit=4_096
+        )
+        assert result["returncode"] != 0
+        interfaces = await primary._runtime.run_shell(
+            "/usr/bin/python3 -c 'import socket; print(\",\".join(name for _, name in socket.if_nameindex()))'",
+            timeout_ms=2_000, output_limit=4_096,
+        )
+        assert interfaces["returncode"] == 0, interfaces
+        assert interfaces["stdout"].strip() == "lo"
+    finally:
+        server.close()
+        await server.wait_closed()
+        await primary.close()

@@ -199,6 +199,58 @@ class _PinnedSignedDirectoryCleanup:
 
 
     @staticmethod
+    def _cleanup_identity_wire(value: Sequence[int]) -> list[str | int]:
+        return [str(value[0]), str(value[1]), *value[2:]]
+
+    @classmethod
+    def _cleanup_identity_fields(
+        cls, value: object, *, decode: bool
+    ) -> object:
+        identity_keys = {"identity", "destination_identity", "root_identity", "stage_identity"}
+        if type(value) is list:
+            return [cls._cleanup_identity_fields(item, decode=decode) for item in value]
+        if type(value) is not dict:
+            return value
+        result: dict[str, object] = {}
+        for key, item in value.items():
+            if key in identity_keys and item is not None:
+                if type(item) is not list or len(item) not in {4, 6, 8}:
+                    raise RollbackCorruptionError("cleanup filesystem identity is invalid")
+                if decode:
+                    for part in item[:2]:
+                        if (
+                            type(part) is not str
+                            or re.fullmatch(r"(0|[1-9][0-9]*)", part) is None
+                        ):
+                            raise RollbackCorruptionError(
+                                "cleanup filesystem identity must use canonical decimal strings"
+                            )
+                    result[key] = [int(item[0]), int(item[1]), *item[2:]]
+                else:
+                    if any(type(part) is not int or part < 0 for part in item[:2]):
+                        raise RollbackCorruptionError("cleanup filesystem identity is invalid")
+                    result[key] = cls._cleanup_identity_wire(item)
+            else:
+                result[key] = cls._cleanup_identity_fields(item, decode=decode)
+        return result
+
+    def _cleanup_signed_bytes(self, kind: str, payload: Mapping[str, object]) -> bytes:
+        return self._signed_bytes(
+            kind, self._cleanup_identity_fields(dict(payload), decode=False)
+        )
+
+    def _cleanup_verify_signed(
+        self, raw: bytes, kind: str, version: str
+    ) -> Mapping[str, object]:
+        payload = self._verify_signed(raw, kind)
+        if payload.get("schema_version") != version:
+            raise RollbackCorruptionError(f"{kind} schema version is invalid")
+        decoded = self._cleanup_identity_fields(dict(payload), decode=True)
+        assert isinstance(decoded, dict)
+        return decoded
+
+
+    @staticmethod
     def _cleanup_stage_identity(
         value: os.stat_result,
     ) -> tuple[int, int, int, int, int, int]:
@@ -222,9 +274,9 @@ class _PinnedSignedDirectoryCleanup:
             canonical_json_bytes(
                 {
                     "domain": self._domain,
-                    "root_identity": list(root_identity),
+                    "root_identity": self._cleanup_identity_wire(root_identity),
                     "root_names": list(root_names),
-                    "stage_identity": list(stage_identity),
+                    "stage_identity": self._cleanup_identity_wire(stage_identity),
                 }
             )
         ).hexdigest()
@@ -735,7 +787,11 @@ class _PinnedSignedDirectoryCleanup:
         if len(raw) > _MAX_CLEANUP_MANIFEST_BYTES:
             raise RollbackCorruptionError("cleanup preparing authority exceeds bound")
         payload = _require_object(
-            self._verify_signed(raw, "abandoned-cleanup-preparing"),
+            self._cleanup_verify_signed(
+                raw,
+                "abandoned-cleanup-preparing",
+                "bb.rl.phase5.abandoned-cleanup-preparing.v3",
+            ),
             frozenset(
                 (
                     "candidates",
@@ -751,7 +807,7 @@ class _PinnedSignedDirectoryCleanup:
             "abandoned cleanup preparing authority",
         )
         if (
-            payload["schema_version"] != "bb.rl.phase5.abandoned-cleanup-preparing.v2"
+            payload["schema_version"] != "bb.rl.phase5.abandoned-cleanup-preparing.v3"
             or payload["domain"] != self._domain
             or payload["state"] != "preparing"
         ):
@@ -1141,7 +1197,11 @@ class _PinnedSignedDirectoryCleanup:
         if len(raw) > _MAX_CLEANUP_MANIFEST_BYTES:
             raise RollbackCorruptionError("cleanup committed authority exceeds bound")
         payload = _require_object(
-            self._verify_signed(raw, "abandoned-cleanup-committed"),
+            self._cleanup_verify_signed(
+                raw,
+                "abandoned-cleanup-committed",
+                "bb.rl.phase5.abandoned-cleanup-committed.v4",
+            ),
             frozenset(
                 (
                     "candidate_states",
@@ -1261,7 +1321,7 @@ class _PinnedSignedDirectoryCleanup:
         )
         generation = payload["progress_generation"]
         if (
-            payload["schema_version"] != "bb.rl.phase5.abandoned-cleanup-committed.v3"
+            payload["schema_version"] != "bb.rl.phase5.abandoned-cleanup-committed.v4"
             or payload["domain"] != self._domain
             or payload["state"] != "committed"
             or payload["preparing_digest"] != canonical_digest(preparing_raw)
@@ -1289,7 +1349,7 @@ class _PinnedSignedDirectoryCleanup:
         tombstone_proofs: Sequence[Mapping[str, object]],
         recovery_proof: Mapping[str, object] | None,
     ) -> bytes:
-        return self._signed_bytes(
+        return self._cleanup_signed_bytes(
             "abandoned-cleanup-committed",
             {
                 "candidate_states": [
@@ -1300,7 +1360,7 @@ class _PinnedSignedDirectoryCleanup:
                 "preparing_digest": canonical_digest(preparing_raw),
                 "progress_generation": progress_generation,
                 "recovery_proof": recovery_proof,
-                "schema_version": "bb.rl.phase5.abandoned-cleanup-committed.v3",
+                "schema_version": "bb.rl.phase5.abandoned-cleanup-committed.v4",
                 "stage_identity": list(preparing["stage_identity"]),
                 "state": "committed",
                 "tombstone_proofs": list(tombstone_proofs),
@@ -1416,7 +1476,7 @@ class _PinnedSignedDirectoryCleanup:
         recovery_proof: Mapping[str, object] | None,
         terminal_replacement_proof: Mapping[str, object] | None,
     ) -> bytes:
-        return self._signed_bytes(
+        return self._cleanup_signed_bytes(
             "abandoned-cleanup-receipt",
             {
                 "candidate_names": list(candidate_names),
@@ -1424,7 +1484,7 @@ class _PinnedSignedDirectoryCleanup:
                 "domain": self._domain,
                 "preparing_digest": canonical_digest(preparing_raw),
                 "recovery_proof": recovery_proof,
-                "schema_version": "bb.rl.phase5.abandoned-cleanup-receipt.v4",
+                "schema_version": "bb.rl.phase5.abandoned-cleanup-receipt.v5",
                 "stage_identity": list(preparing["stage_identity"]),
                 "state": "complete",
                 "terminal_removal_intent": True,
@@ -1442,7 +1502,11 @@ class _PinnedSignedDirectoryCleanup:
         if len(raw) > _MAX_CLEANUP_MANIFEST_BYTES:
             raise RollbackCorruptionError("cleanup receipt authority exceeds bound")
         payload = _require_object(
-            self._verify_signed(raw, "abandoned-cleanup-receipt"),
+            self._cleanup_verify_signed(
+                raw,
+                "abandoned-cleanup-receipt",
+                "bb.rl.phase5.abandoned-cleanup-receipt.v5",
+            ),
             frozenset(
                 (
                     "candidate_names",
@@ -1470,7 +1534,7 @@ class _PinnedSignedDirectoryCleanup:
             "cleanup receipt stage identity",
         )
         if (
-            payload["schema_version"] != "bb.rl.phase5.abandoned-cleanup-receipt.v4"
+            payload["schema_version"] != "bb.rl.phase5.abandoned-cleanup-receipt.v5"
             or payload["domain"] != self._domain
             or payload["state"] != "complete"
             or payload["terminal_removal_intent"] is not True
@@ -3801,7 +3865,7 @@ class _PinnedSignedDirectoryCleanup:
                 "domain": self._domain,
                 "root_identity": root_identity,
                 "root_names": root_names,
-                "schema_version": "bb.rl.phase5.abandoned-cleanup-preparing.v2",
+                "schema_version": "bb.rl.phase5.abandoned-cleanup-preparing.v3",
                 "stage_identity": stage_identity,
                 "state": "preparing",
                 "transaction_id": self._cleanup_transaction_id(
@@ -3810,7 +3874,7 @@ class _PinnedSignedDirectoryCleanup:
                     root_names,
                 ),
             }
-            preparing_raw = self._signed_bytes(
+            preparing_raw = self._cleanup_signed_bytes(
                 "abandoned-cleanup-preparing",
                 preparing,
             )
@@ -3865,7 +3929,7 @@ class _PinnedSignedDirectoryCleanup:
                 }
                 for name in names
             ]
-            preparing_raw = self._signed_bytes(
+            preparing_raw = self._cleanup_signed_bytes(
                 "abandoned-cleanup-preparing",
                 preparing,
             )

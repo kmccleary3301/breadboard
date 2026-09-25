@@ -56,8 +56,23 @@ from .runners.base import (
 from .native_session import NativeSession, NativeSessionError
 from .native_worker import MAX_FRAME_BYTES
 from .sandbox_docker import VERIFIER_RESULT_MAX_BYTES
-EMPTY_TREE_BASE_COMMIT = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+from .lease_envelope import (
+    AdmittedLeaseLedger,
+    AdmittedLeaseRecord,
+    ContainmentReceipt,
+    ContainmentReceiptError,
+    DescriptorPath,
+    EnvelopeLaunch,
+    EnvelopeLaunchError,
+    EnvelopeUnsupportedHostError,
+    RuntimeContainment,
+    launch_envelope,
+    verify_containment_receipt,
+    preflight_host_containment,
+    spawn_envelope_process,
+)
 
+EMPTY_TREE_BASE_COMMIT = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 VERIFIER_REQUEST_RELATIVE_PATH = "input/verifier-request.json"
 VERIFIER_REQUEST_SCHEMA_VERSION = "bb.rl.verifier-request.v1"
@@ -701,7 +716,7 @@ def _snapshot_installed_executable(
         if fcntl.fcntl(snapshot_fd, _LINUX_F_GET_SEALS) & seals != seals:
             raise OSError("executable snapshot sealing was incomplete")
         snapshot = os.fstat(snapshot_fd)
-        proc_fd_path = f"/proc/self/fd/{snapshot_fd}"
+        proc_fd_path = DescriptorPath(snapshot_fd)
         proc_snapshot = os.stat(proc_fd_path)
         if (proc_snapshot.st_dev, proc_snapshot.st_ino) != (
             snapshot.st_dev,
@@ -1132,6 +1147,7 @@ class SandboxExecutionPlan:
     tool_bindings: tuple[RunnerToolBinding, ...]
     isolation_disposition: IsolationDisposition
     installed_tool_adapters: tuple[InstalledToolAdapter, ...] = ()
+    containment: RuntimeContainment = RuntimeContainment.ATTESTED
 
 
 @dataclass(frozen=True, slots=True)
@@ -1191,6 +1207,8 @@ class RuntimeLaunchContext:
     record_process_identity: (
         Callable[[str, Mapping[str, Any] | None], None] | None
     ) = None
+    containment_authenticator: Any | None = None
+    native_scratch_path: Path | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -1527,6 +1545,8 @@ class RuntimeHandle(Protocol):
     async def run_argv(
         self, argv: Sequence[str], *, timeout_ms: int, output_limit: int
     ) -> Mapping[str, Any]: ...
+    containment_receipt: ContainmentReceipt | None
+    teardown_receipt: ContainmentReceipt | None
 def _sealed_repository_diff(
     *,
     repository: Path,
@@ -1912,6 +1932,7 @@ class TrustedProcessHandle:
         workspace_fd: int,
         workspace_identity: tuple[int, int],
         command_executable: _PinnedExecutable | None = None,
+        envelope: EnvelopeLaunch | None = None,
     ) -> None:
         self.plan = plan
         self.workspace = workspace
@@ -1922,10 +1943,16 @@ class TrustedProcessHandle:
         self._git_executable = git_executable
         self._workspace_fd = workspace_fd
         self._workspace_identity = workspace_identity
+        self._envelope = envelope
+        self.containment_receipt: ContainmentReceipt | None = (
+            None if envelope is None else envelope.receipt
+        )
+        self.teardown_receipt: ContainmentReceipt | None = None
         self._groups: dict[int, Mapping[str, Any]] = {}
         self._native_session: NativeSession | None = None
         self._native_session_lock = asyncio.Lock()
         self._launch_lock = asyncio.Lock()
+        self._terminate_task: asyncio.Task[tuple[CleanupStepReceipt, ...]] | None = None
         self._closing = False
         self._closed = False
         self.repository_base_commit: str | None = None
@@ -2378,7 +2405,7 @@ class TrustedProcessHandle:
         extra_fds: Sequence[int] = (),
         environment: Mapping[str, str] | None = None,
     ) -> asyncio.subprocess.Process:
-        process: asyncio.subprocess.Process | None = None
+        process: Any = None
         identity_published = False
         try:
             async with self._launch_lock:
@@ -2395,50 +2422,123 @@ class TrustedProcessHandle:
                         code="workspace_authority_mismatch",
                         lease_id=self.lease_id,
                     )
-                process = await asyncio.create_subprocess_exec(
-                    self._executable.proc_fd_path,
-                    "-c",
-                    'printf B; kill -STOP $$; exec "$@"',
-                    "breadboard-bootstrap",
-                    *argv,
-                    executable=self._executable.proc_fd_path,
-                    pass_fds=tuple(
-                        executable.fd
-                        for executable in (
-                            self._executable,
-                            self._command_executable,
-                        )
-                        if executable is not None
-                    )
-                    + tuple(extra_fds)
-                    + (self._workspace_fd,),
-                    preexec_fn=lambda: os.fchdir(self._workspace_fd),
-                    env=(
-                        dict(self.plan.runtime.fixed_environment)
-                        if environment is None
-                        else dict(environment)
-                    ),
-                    start_new_session=True,
-                    stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
+                launch_environment = (
+                    dict(self.plan.runtime.fixed_environment)
+                    if environment is None
+                    else dict(environment)
                 )
+                if self._envelope is not None:
+                    launch_environment["HOME"] = str(
+                        Path(self._envelope.scratch) / "home"
+                    )
+                if self._envelope is not None:
+                    process = await spawn_envelope_process(
+                        self._envelope,
+                        argv=argv,
+                        argv0_path=(
+                            self._command_executable.source_path
+                            if (
+                                self._command_executable is not None
+                                and argv
+                                and argv[0] == self._command_executable.proc_fd_path
+                            )
+                            else (
+                                self._executable.source_path
+                                if argv and argv[0] == self._executable.proc_fd_path
+                                else None
+                            )
+                        ),
+                        environment=launch_environment,
+                        executable_fd=self._executable.fd,
+                        command_fd=(
+                            None
+                            if self._command_executable is None
+                            else self._command_executable.fd
+                        ),
+                        extra_fds=extra_fds,
+                        cwd_fd=self._workspace_fd,
+                        timeout_ms=timeout_ms,
+                    )
+                else:
+                    process = await asyncio.create_subprocess_exec(
+                        self._executable.proc_fd_path,
+                        "-c",
+                        'printf B; kill -STOP $$; exec "$@"',
+                        "breadboard-bootstrap",
+                        *argv,
+                        executable=self._executable.proc_fd_path,
+                        pass_fds=tuple(
+                            executable.fd
+                            for executable in (
+                                self._executable,
+                                self._command_executable,
+                            )
+                            if executable is not None
+                        )
+                        + tuple(extra_fds)
+                        + (self._workspace_fd,),
+                        preexec_fn=lambda: os.fchdir(self._workspace_fd),
+                        env=(
+                            dict(self.plan.runtime.fixed_environment)
+                            if environment is None
+                            else dict(environment)
+                        ),
+                        start_new_session=True,
+                        stdin=asyncio.subprocess.PIPE,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
                 if process.stdout is None:
                     raise RuntimeError("trusted process bootstrap pipe is unavailable")
                 loop = asyncio.get_running_loop()
                 deadline = loop.time() + timeout_ms / 1000
-                try:
-                    marker = await asyncio.wait_for(
-                        process.stdout.readexactly(1),
-                        min(timeout_ms / 1000, 1.0),
-                    )
-                except (asyncio.IncompleteReadError, asyncio.TimeoutError) as exc:
-                    raise SandboxLaunchError(
-                        "trusted process bootstrap did not become ready",
-                        code="runtime_preflight_failed", lease_id=self.lease_id,
-                    ) from exc
-                if marker != b"B":
-                    raise RuntimeError("trusted process bootstrap failed")
+                if self._envelope is None:
+                    try:
+                        marker = await asyncio.wait_for(
+                            process.stdout.readexactly(1),
+                            min(timeout_ms / 1000, 1.0),
+                        )
+                    except (asyncio.IncompleteReadError, asyncio.TimeoutError) as exc:
+                        raise SandboxLaunchError(
+                            "trusted process bootstrap did not become ready",
+                            code="runtime_preflight_failed", lease_id=self.lease_id,
+                        ) from exc
+                    if marker != b"B":
+                        raise RuntimeError("trusted process bootstrap failed")
+                if self._envelope is not None:
+                    identity = self._observe_group_identity(process.pid)
+                    process_group = int(identity["process_group_id"])
+                    self._groups[process_group] = identity
+                    recorder = getattr(self, "_identity_recorder", None)
+                    if recorder is None:
+                        raise RuntimeError(
+                            "trusted process identity recorder is unavailable"
+                        )
+                    process.admit()
+                    identity_published = True
+                    admitted_executable = self._executable
+                    if (
+                        self._command_executable is not None
+                        and argv
+                        and argv[0] == self._command_executable.proc_fd_path
+                    ):
+                        admitted_executable = self._command_executable
+                    try:
+                        await process.wait_exec(timeout_ms)
+                    except (OSError, asyncio.TimeoutError) as exc:
+                        process.kill()
+                        raise SandboxLaunchError(
+                            "attested process exec did not succeed",
+                            code="runtime_preflight_failed",
+                            lease_id=self.lease_id,
+                        ) from exc
+                    identity = {
+                        **identity,
+                        "process_executable_digest": admitted_executable.digest,
+                        "process_exec_succeeded": True,
+                    }
+                    recorder(f"process-group-{process_group}", identity)
+                    return process
                 stop_deadline = min(deadline, loop.time() + 0.25)
                 while True:
                     fields = self._proc_fields(process.pid)
@@ -2481,7 +2581,7 @@ class TrustedProcessHandle:
     ) -> Mapping[str, Any]:
         if (
             not argv
-            or any(type(item) is not str or "\x00" in item for item in argv)
+            or any(not isinstance(item, str) or "\x00" in item for item in argv)
             or type(input_bytes) is not bytes
             or len(input_bytes) > output_limit
             or any(type(fd) is not int or fd < 0 for fd in extra_fds)
@@ -2543,6 +2643,13 @@ class TrustedProcessHandle:
             async with asyncio.timeout_at(deadline):
                 stdout, stderr, _, _ = await asyncio.gather(*stream_tasks, wait_task)
             stream_result = (stdout, stderr)
+            exec_error = getattr(process, "exec_error", None)
+            if exec_error is not None:
+                primary_error = SandboxLaunchError(
+                    "attested executable failed during admission",
+                    code="runtime_preflight_failed",
+                    lease_id=self.lease_id,
+                )
         except TimeoutError as exc:
             primary_error = SandboxLaunchError(
                 "process action timed out",
@@ -2658,17 +2765,38 @@ class TrustedProcessHandle:
         return result
 
     async def terminate(self) -> tuple[CleanupStepReceipt, ...]:
+        task = self._terminate_task
+        if task is None:
+            self._closing = True
+            task = asyncio.create_task(self._terminate_once())
+            self._terminate_task = task
+        return await asyncio.shield(task)
+
+    async def _terminate_once(self) -> tuple[CleanupStepReceipt, ...]:
         async with self._launch_lock:
             if self._closed:
                 return (CleanupStepReceipt("runtime", CleanupState.ALREADY_RELEASED),)
-            self._closing = True
         failed = False
+        failure_detail = ""
         async with self._native_session_lock:
             native_session = self._native_session
             self._native_session = None
         if native_session is not None:
             try:
                 await native_session.close()
+            except asyncio.CancelledError:
+                failed = True
+                failure_detail = "native_session:CancelledError"
+            except BaseException:
+                failed = True
+        if self._envelope is not None:
+            try:
+                self.teardown_receipt = await self._envelope.terminate()
+                if (
+                    self.teardown_receipt.outcome is None
+                    or not all(self.teardown_receipt.outcome.values())
+                ):
+                    failed = True
             except BaseException:
                 failed = True
         for process_group, identity in tuple(self._groups.items()):
@@ -2690,7 +2818,8 @@ class TrustedProcessHandle:
                 self._closed = True
         return (
             CleanupStepReceipt(
-                "runtime", CleanupState.FAILED if failed else CleanupState.RELEASED
+                "runtime", CleanupState.FAILED if failed else CleanupState.RELEASED,
+                failure_detail,
             ),
         )
 
@@ -2726,6 +2855,12 @@ class TrustedProcessBackend:
                 plan.runtime.executable_path,
                 plan.runtime.measured_binary_digest,
             )
+            if executable.execution_format != "elf":
+                raise SandboxLaunchError(
+                    "trusted process executable must be an ELF binary",
+                    code="runtime_preflight_failed",
+                    lease_id=lease_id,
+                )
             if context.role == "verifier":
                 if (
                     plan.verifier.runtime_id != plan.runtime.runtime_id
@@ -2746,6 +2881,39 @@ class TrustedProcessBackend:
                         plan.runtime.measured_binary_digest,
                     )
                     interpreter.close()
+            envelope: EnvelopeLaunch | None = None
+            if plan.containment is RuntimeContainment.ATTESTED:
+                if context.containment_authenticator is None:
+                    raise SandboxLaunchError(
+                        "attested trusted process requires a receipt authenticator",
+                        code="runtime_preflight_failed",
+                        lease_id=lease_id,
+                    )
+                scratch = context.native_scratch_path
+                if scratch is None:
+                    raise SandboxLaunchError(
+                        "attested trusted process native scratch is unavailable",
+                        code="runtime_preflight_failed",
+                        lease_id=lease_id,
+                    )
+                await asyncio.to_thread(preflight_host_containment)
+                scratch.mkdir(mode=0o700, exist_ok=True)
+                envelope = await asyncio.to_thread(
+                    launch_envelope,
+                    lease_id=lease_id,
+                    runtime_id=plan.runtime.runtime_id,
+                    workspace=workspace,
+                    scratch=scratch,
+                    workspace_fd=context.workspace_fd,
+                    authenticator=context.containment_authenticator,
+                    tmpfs_size_bytes=plan.resources.storage_bytes,
+                )
+            elif plan.containment is not RuntimeContainment.UNCONFINED_TEST_ONLY:
+                raise SandboxLaunchError(
+                    "trusted process containment disposition is invalid",
+                    code="runtime_preflight_failed",
+                    lease_id=lease_id,
+                )
             handle = TrustedProcessHandle(
                 plan,
                 workspace,
@@ -2755,6 +2923,7 @@ class TrustedProcessBackend:
                 context.workspace_fd,
                 context.workspace_identity,
                 command_executable,
+                envelope,
             )
             if context.record_process_identity is None:
                 raise SandboxLaunchError(
@@ -2807,12 +2976,20 @@ class TrustedProcessBackend:
                 False,
                 False,
             )
-        except BaseException:
+        except BaseException as exc:
             if command_executable is not None:
                 command_executable.close()
             if executable is not None:
                 executable.close()
             os.close(context.workspace_fd)
+            if isinstance(exc, EnvelopeUnsupportedHostError):
+                raise SandboxLaunchError(
+                    str(exc), code="runtime_unsupported", lease_id=lease_id
+                ) from exc
+            if isinstance(exc, EnvelopeLaunchError):
+                raise SandboxLaunchError(
+                    str(exc), code=exc.code, lease_id=lease_id
+                ) from exc
             raise
         return handle, measurement
 
@@ -2957,55 +3134,66 @@ def _remove_native_scratch(
         )
     name = _native_scratch_name(lease_id)
 
-    def remove_directory(descriptor: int) -> None:
-        os.fchmod(descriptor, stat.S_IMODE(os.fstat(descriptor).st_mode) | 0o700)
-        for child_name in tuple(os.listdir(descriptor)):
-            metadata = os.stat(child_name, dir_fd=descriptor, follow_symlinks=False)
-            if stat.S_ISDIR(metadata.st_mode):
-                child = os.open(
-                    child_name,
-                    os.O_RDONLY
-                    | getattr(os, "O_DIRECTORY", 0)
-                    | getattr(os, "O_NOFOLLOW", 0),
-                    dir_fd=descriptor,
-                )
-                try:
-                    remove_directory(child)
-                finally:
-                    os.close(child)
-                os.rmdir(child_name, dir_fd=descriptor)
-            else:
-                os.unlink(child_name, dir_fd=descriptor)
-        os.fsync(descriptor)
+    if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
+        return CleanupStepReceipt("native_scratch", CleanupState.FAILED, "no_follow_unavailable")
+    root_device = os.fstat(root_fd).st_dev
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+
+    def open_directory(parts: tuple[str, ...]) -> int:
+        descriptor = os.dup(root_fd)
+        try:
+            for part in parts:
+                child = os.open(part, directory_flags, dir_fd=descriptor)
+                os.close(descriptor)
+                descriptor = child
+                if os.fstat(descriptor).st_dev != root_device:
+                    raise OSError(errno.EXDEV, "native scratch crosses a device")
+            return descriptor
+        except BaseException:
+            os.close(descriptor)
+            raise
 
     try:
-        descriptor = os.open(
-            name,
-            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
-            dir_fd=root_fd,
-        )
+        descriptor = open_directory((name,))
     except FileNotFoundError:
         return CleanupStepReceipt("native_scratch", CleanupState.ALREADY_RELEASED)
     except BaseException as exc:
-        return CleanupStepReceipt(
-            "native_scratch", CleanupState.FAILED, type(exc).__name__
-        )
+        return CleanupStepReceipt("native_scratch", CleanupState.FAILED, type(exc).__name__)
+    os.close(descriptor)
+    pending: list[tuple[tuple[str, ...], bool]] = [((name,), False)]
     try:
-        remove_directory(descriptor)
+        while pending:
+            parts, visited = pending.pop()
+            if visited:
+                parent = open_directory(parts[:-1])
+                try:
+                    metadata = os.stat(parts[-1], dir_fd=parent, follow_symlinks=False)
+                    if metadata.st_dev != root_device:
+                        raise OSError(errno.EXDEV, "native scratch crosses a device")
+                    os.rmdir(parts[-1], dir_fd=parent)
+                    os.fsync(parent)
+                finally:
+                    os.close(parent)
+                continue
+            directory = open_directory(parts)
+            try:
+                os.fchmod(directory, stat.S_IMODE(os.fstat(directory).st_mode) | 0o700)
+                children = tuple(os.listdir(directory))
+                pending.append((parts, True))
+                for child_name in children:
+                    metadata = os.stat(child_name, dir_fd=directory, follow_symlinks=False)
+                    if metadata.st_dev != root_device:
+                        raise OSError(errno.EXDEV, "native scratch crosses a device")
+                    if stat.S_ISDIR(metadata.st_mode):
+                        pending.append(((*parts, child_name), False))
+                    else:
+                        os.unlink(child_name, dir_fd=directory)
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        return CleanupStepReceipt("native_scratch", CleanupState.RELEASED)
     except BaseException as exc:
-        return CleanupStepReceipt(
-            "native_scratch", CleanupState.FAILED, type(exc).__name__
-        )
-    finally:
-        os.close(descriptor)
-    try:
-        os.rmdir(name, dir_fd=root_fd)
-        os.fsync(root_fd)
-    except BaseException as exc:
-        return CleanupStepReceipt(
-            "native_scratch", CleanupState.FAILED, type(exc).__name__
-        )
-    return CleanupStepReceipt("native_scratch", CleanupState.RELEASED)
+        return CleanupStepReceipt("native_scratch", CleanupState.FAILED, type(exc).__name__)
 
 def _workspace_effect_snapshot(
     root: Path,
@@ -3344,6 +3532,18 @@ class LeaseBackedRunnerWorkspace:
     def declared_workspace(self) -> str:
         workspace_mount = _sole_writable_policy_workspace_mount(self.__lease)
         return str(self.__lease._resolve(workspace_mount.target_logical_path, writable=True))
+
+    @property
+    def containment_receipt(self) -> ContainmentReceipt | None:
+        return self.__lease.containment_receipt
+
+    @property
+    def containment_lease_id(self) -> str:
+        return self.__lease.lease_id
+    @property
+    def containment(self) -> RuntimeContainment:
+        return self.__lease.plan.containment
+
 
     async def begin_native_workspace_effects(self) -> None:
         lease = self.__lease
@@ -3921,6 +4121,13 @@ class SandboxWorkspaceLease:
     @property
     def cleanup_receipt(self) -> SandboxCleanupReceipt | None:
         return self._latest_cleanup
+    @property
+    def containment_receipt(self) -> ContainmentReceipt | None:
+        return getattr(self._runtime, "containment_receipt", None)
+
+    @property
+    def teardown_receipt(self) -> ContainmentReceipt | None:
+        return getattr(self._runtime, "teardown_receipt", None)
     async def execute(
         self, argv: Sequence[str], *, timeout_ms: int | None = None
     ) -> Mapping[str, Any]:
@@ -4294,6 +4501,14 @@ class VerifierWorkspaceLease:
         self._cleanup: SandboxCleanupReceipt | None = None
 
         self._close_task: asyncio.Task[SandboxCleanupReceipt] | None = None
+    @property
+    def containment_receipt(self) -> ContainmentReceipt | None:
+        return getattr(self._runtime, "containment_receipt", None)
+
+    @property
+    def teardown_receipt(self) -> ContainmentReceipt | None:
+        return getattr(self._runtime, "teardown_receipt", None)
+
     async def execute(self) -> Mapping[str, Any]:
         task = asyncio.current_task()
         if task is None:
@@ -4409,6 +4624,7 @@ class VerifierWorkspaceLease:
                 return self._cleanup
             self._closing = True
             self._fenced = True
+            self._manager._admitted_leases.pop(self.lease_id, None)
             active_tasks = tuple(
                 task
                 for task in self._active_operation_tasks
@@ -4421,8 +4637,9 @@ class VerifierWorkspaceLease:
                 return self._cleanup
             while self._active_operation_tasks:
                 await self._operations_drained.wait()
-            runtime_step = _runtime_to_lease_cleanup_step(
-                await self._runtime.terminate()
+            runtime_step = self._manager._verified_runtime_cleanup_step(
+                self.plan, self.lease_id, self._runtime,
+                await self._runtime.terminate(),
             )
             runtime_released = runtime_step.state in {
                 CleanupState.RELEASED,
@@ -4441,26 +4658,51 @@ class VerifierWorkspaceLease:
                 )
             if runtime_released:
                 try:
-                    for root, dirs, files in os.walk(self.workspace, topdown=True, followlinks=False):
+                    for root, dirs, files in os.walk(
+                        self.workspace, topdown=True, followlinks=False
+                    ):
                         root_path = Path(root)
                         os.chmod(root_path, 0o700, follow_symlinks=False)
                         for name in dirs + files:
                             candidate = root_path / name
                             if candidate.is_symlink():
                                 continue
-                            os.chmod(candidate, 0o700 if candidate.is_dir() else 0o600,
-                                     follow_symlinks=False)
-                    await asyncio.to_thread(self._manager.materialization_store.storage_backend.release, self.workspace)
-                    absent = self._manager.materialization_store.storage_backend.verify_absent(self.workspace)
-                    steps.append(CleanupStepReceipt("workspace", CleanupState.RELEASED if absent else CleanupState.FAILED))
+                            os.chmod(
+                                candidate,
+                                0o700 if candidate.is_dir() else 0o600,
+                                follow_symlinks=False,
+                            )
+                    await asyncio.to_thread(
+                        self._manager.materialization_store.storage_backend.release,
+                        self.workspace,
+                    )
+                    absent = self._manager.materialization_store.storage_backend.verify_absent(
+                        self.workspace
+                    )
+                    steps.append(
+                        CleanupStepReceipt(
+                            "workspace",
+                            CleanupState.RELEASED if absent else CleanupState.FAILED,
+                        )
+                    )
                 except FileNotFoundError:
-                    steps.append(CleanupStepReceipt("workspace", CleanupState.ALREADY_RELEASED))
+                    steps.append(
+                        CleanupStepReceipt("workspace", CleanupState.ALREADY_RELEASED)
+                    )
                 except Exception as exc:
-                    steps.append(CleanupStepReceipt("workspace", CleanupState.FAILED, type(exc).__name__))
+                    steps.append(
+                        CleanupStepReceipt(
+                            "workspace", CleanupState.FAILED, type(exc).__name__
+                        )
+                    )
             else:
-                steps.append(CleanupStepReceipt(
-                    "workspace", CleanupState.QUARANTINED, "dependent runtime cleanup incomplete"
-                ))
+                steps.append(
+                    CleanupStepReceipt(
+                        "workspace",
+                        CleanupState.QUARANTINED,
+                        "dependent runtime cleanup incomplete",
+                    )
+                )
             dependencies_released = all(
                 step.state in {
                     CleanupState.RELEASED,
@@ -4511,13 +4753,22 @@ class _PendingLaunchCleanup:
     backend_cleanup_pending: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _AdmittedLeaseLedgerView:
+    records: Mapping[str, AdmittedLeaseRecord]
+
+    def lookup(self, lease_id: str) -> AdmittedLeaseRecord | None:
+        return self.records.get(lease_id)
+
+
 class SandboxRuntimeManager:
     def __init__(self, *, registries: RegistrySnapshotSet,
                  installed_authorities: InstalledSandboxAuthoritySet,
                  materialization_store: FilesystemMaterializationStore,
                  lease_root: str | Path, process_backend: RuntimeBackend,
                  docker_backend: RuntimeBackend | None, random_bytes: Any,
-                 lease_root_fd: int | None = None) -> None:
+                 lease_root_fd: int | None = None,
+                 containment_authenticator: Any | None = None) -> None:
         self.registries = registries; self.installed_authorities = installed_authorities
         self.materialization_store = materialization_store
         supplied_lease_root = Path(lease_root).resolve(strict=True)
@@ -4541,7 +4792,12 @@ class SandboxRuntimeManager:
             raise
         self.lease_root = supplied_lease_root
         self.process_backend = process_backend; self.docker_backend = docker_backend
+        self._containment_authenticator = containment_authenticator
         self._random_bytes = random_bytes; self._leases: dict[str, SandboxWorkspaceLease] = {}
+        self._admitted_leases: dict[str, AdmittedLeaseRecord] = {}
+        self.admitted_lease_ledger: AdmittedLeaseLedger = _AdmittedLeaseLedgerView(
+            MappingProxyType(self._admitted_leases)
+        )
         self._snapshots: dict[str, tuple[VerifierSnapshotReceipt, Path]] = {}
         self._pending_launch_cleanups: dict[str, _PendingLaunchCleanup] = {}
         self._lease_owner_locks: dict[str, int] = {}
@@ -4549,6 +4805,52 @@ class SandboxRuntimeManager:
         self._reconcile_lock = asyncio.Lock()
         self._close_task: asyncio.Future[list[SandboxCleanupReceipt]] | None = None
         self._last_close_receipts: tuple[SandboxCleanupReceipt, ...] | None = None
+
+    def _verify_runtime_containment(
+        self, plan: SandboxExecutionPlan, lease_id: str, runtime: RuntimeHandle
+    ) -> ContainmentReceipt | None:
+        if plan.runtime.runtime_class is not RuntimeClass.TRUSTED_PROCESS:
+            return None
+        try:
+            if self._containment_authenticator is None:
+                raise ContainmentReceiptError("containment authenticator is missing")
+            return verify_containment_receipt(
+                getattr(runtime, "containment_receipt", None),
+                lease_id=lease_id,
+                runtime_id=plan.runtime.runtime_id,
+                authenticator=self._containment_authenticator,
+            )
+        except (ContainmentReceiptError, TypeError, AttributeError) as exc:
+            raise SandboxAttestationError(
+                "trusted process containment receipt was rejected",
+                code="containment_receipt_invalid",
+                lease_id=lease_id,
+            ) from exc
+
+    def _verified_runtime_cleanup_step(
+        self,
+        plan: SandboxExecutionPlan,
+        lease_id: str,
+        runtime: RuntimeHandle,
+        steps: Sequence[CleanupStepReceipt],
+    ) -> CleanupStepReceipt:
+        runtime_step = _runtime_to_lease_cleanup_step(steps)
+        if plan.runtime.runtime_class is RuntimeClass.TRUSTED_PROCESS:
+            try:
+                if self._containment_authenticator is None:
+                    raise ContainmentReceiptError("containment authenticator is missing")
+                verify_containment_receipt(
+                    getattr(runtime, "teardown_receipt", None),
+                    lease_id=lease_id,
+                    runtime_id=plan.runtime.runtime_id,
+                    authenticator=self._containment_authenticator,
+                    require_teardown=True,
+                )
+            except (ContainmentReceiptError, TypeError, AttributeError):
+                return CleanupStepReceipt(
+                    "runtime", CleanupState.FAILED, "containment_receipt_invalid"
+                )
+        return runtime_step
 
     def abort_bootstrap(self) -> None:
         """Release constructor-owned descriptors before any lease can be admitted."""
@@ -4645,11 +4947,18 @@ class SandboxRuntimeManager:
             result_relative_path=None if role == "primary" else "result",
             publish_prepared_identity=lambda identity, lease_id=lease_id:
                 self._publish_runtime_identity(lease_id, identity),
+            native_scratch_path=(
+                _native_scratch_path(self, lease_id)
+                if plan.runtime.runtime_class is RuntimeClass.TRUSTED_PROCESS
+                and plan.containment is RuntimeContainment.ATTESTED
+                else None
+            ),
             record_process_identity=lambda resource_id, identity, lease_id=lease_id:
                 self._record_process_identity(lease_id, resource_id, identity),
             workspace_fd=workspace_fd,
             workspace_identity=workspace_identity,
             owner_token=owner_token,
+            containment_authenticator=self._containment_authenticator,
         )
 
     def _claim_lease_owner_lock(self, lease_id: str) -> bool:
@@ -4728,6 +5037,7 @@ class SandboxRuntimeManager:
     def _unlink_lease_record(self, lease_id: str) -> None:
         if self._lease_root_fd is None:
             raise RuntimeError("sandbox manager is closed")
+        self._admitted_leases.pop(lease_id, None)
         try:
             os.unlink(lease_id + ".json", dir_fd=self._lease_root_fd)
         except FileNotFoundError:
@@ -5029,6 +5339,7 @@ class SandboxRuntimeManager:
                 runtime, measurement = await backend.launch(
                     plan, materialized.workspace_path, context=context
                 )
+                admitted_receipt = self._verify_runtime_containment(plan, lease_id, runtime)
                 if measurement.mismatch:
                     raise SandboxAttestationError("runtime measurement mismatch", code="runtime_measurement_mismatch",
                                                   lease_id=lease_id)
@@ -5064,8 +5375,14 @@ class SandboxRuntimeManager:
                     "state": "active"})
                 self._write_lease_record(lease_id, active_record)
                 self._leases[lease_id] = lease
+                if admitted_receipt is not None:
+                    self._admitted_leases[lease_id] = AdmittedLeaseRecord(
+                        lease_id, plan.runtime.runtime_id,
+                        admitted_receipt.canonical_bytes(), admitted_receipt.signature,
+                    )
                 return lease
             except BaseException as primary:
+                self._admitted_leases.pop(lease_id, None)
                 cleanup_steps: list[CleanupStepReceipt] = []
                 cleanup_errors: list[str] = []
                 if runtime is not None:
@@ -5118,6 +5435,17 @@ class SandboxRuntimeManager:
                     cleanup_steps.append(CleanupStepReceipt(
                         "cache_holder", CleanupState.QUARANTINED, "dependent runtime cleanup incomplete"
                     ))
+                scratch_present = _native_scratch_present(self, lease_id)
+                if scratch_present:
+                    cleanup_steps.append(
+                        _remove_native_scratch(self, lease_id)
+                        if runtime_released
+                        else CleanupStepReceipt(
+                            "native_scratch",
+                            CleanupState.QUARANTINED,
+                            "dependent runtime cleanup incomplete",
+                        )
+                    )
                 dependencies_released = all(
                     step.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
                     for step in cleanup_steps
@@ -5384,6 +5712,7 @@ class SandboxRuntimeManager:
                 launched, measurement = await backend.launch(
                     verifier_plan, workspace, context=context
                 )
+                admitted_receipt = self._verify_runtime_containment(verifier_plan, lease_id, launched)
                 if measurement.mismatch:
                     raise SandboxAttestationError("verifier runtime measurement mismatch", code="runtime_measurement_mismatch",
                                                   lease_id=lease_id)
@@ -5424,8 +5753,14 @@ class SandboxRuntimeManager:
                 })
                 self._write_lease_record(lease_id, active_record)
                 primary._verifier_children.append(lease)
+                if admitted_receipt is not None:
+                    self._admitted_leases[lease_id] = AdmittedLeaseRecord(
+                        lease_id, runtime.runtime_id,
+                        admitted_receipt.canonical_bytes(), admitted_receipt.signature,
+                    )
                 return lease
             except BaseException as primary_error:
+                self._admitted_leases.pop(lease_id, None)
                 if "workspace_fd" in locals() and workspace_fd >= 0:
                     os.close(workspace_fd)
                     workspace_fd = -1
@@ -5487,6 +5822,17 @@ class SandboxRuntimeManager:
                         "workspace", CleanupState.QUARANTINED,
                         "dependent runtime cleanup incomplete",
                     ))
+                scratch_present = _native_scratch_present(self, lease_id)
+                if scratch_present:
+                    cleanup_steps.append(
+                        _remove_native_scratch(self, lease_id)
+                        if runtime_released
+                        else CleanupStepReceipt(
+                            "native_scratch",
+                            CleanupState.QUARANTINED,
+                            "dependent runtime cleanup incomplete",
+                        )
+                    )
                 dependencies_released = all(
                     step.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
                     for step in cleanup_steps
@@ -5512,6 +5858,7 @@ class SandboxRuntimeManager:
     async def _close_lease(self, lease: SandboxWorkspaceLease) -> SandboxCleanupReceipt:
         async with lease._lock:
             if lease._cleanup is not None: return lease._cleanup
+            self._admitted_leases.pop(lease.lease_id, None)
             await lease._fence_and_drain(WorkspaceLeaseState.RELEASING)
             steps: list[CleanupStepReceipt] = []
             child_states: list[CleanupState] = []
@@ -5562,7 +5909,10 @@ class SandboxRuntimeManager:
             steps.append(
                 CleanupStepReceipt("child_verifier", child_state, child_detail)
             )
-            runtime_step = _runtime_to_lease_cleanup_step(await lease._runtime.terminate())
+            runtime_step = self._verified_runtime_cleanup_step(
+                lease.plan, lease.lease_id, lease._runtime,
+                await lease._runtime.terminate(),
+            )
             steps.append(runtime_step)
             if _native_scratch_present(self, lease.lease_id):
                 steps.append(

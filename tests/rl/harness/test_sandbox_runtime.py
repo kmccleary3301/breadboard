@@ -15,6 +15,7 @@ import pytest
 
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness import sandbox as sandbox_module
+from breadboard.rl.harness.composition import HmacSha256ReceiptAuthenticator
 from breadboard.rl.harness.materialization import (
     CleanupState,
     CleanupStepReceipt,
@@ -53,6 +54,8 @@ from tests.rl.harness.wp7_fixtures import (
     replace_plan_capabilities,
 )
 
+from tests.rl.harness.v2_service_fixtures import signed_containment_receipt
+from breadboard.rl.harness.lease_envelope import add_teardown_outcome
 
 class RecordingHandle:
     def __init__(self) -> None:
@@ -71,6 +74,11 @@ class RecordingHandle:
         self.release_run: asyncio.Event | None = None
         self.terminate_entered: asyncio.Event | None = None
         self.release_terminate: asyncio.Event | None = None
+        self.containment_receipt = None
+        self.teardown_receipt = None
+        self.containment_authenticator = None
+        self.omit_teardown_receipt = False
+        self.teardown_all_dead = True
 
     async def run_shell(
         self, command: str, *, timeout_ms: int, output_limit: int
@@ -89,6 +97,13 @@ class RecordingHandle:
         return self.result
 
     async def terminate(self) -> tuple[Any, ...]:
+        if self.containment_receipt is not None and not self.omit_teardown_receipt:
+            self.teardown_receipt = add_teardown_outcome(
+                self.containment_receipt,
+                pid1_reaped=True,
+                all_dead=self.teardown_all_dead,
+                authenticator=self.containment_authenticator,
+            )
         self.terminate_calls += 1
         if self.terminate_entered is not None:
             self.terminate_entered.set()
@@ -110,6 +125,10 @@ class RecordingBackend:
         self.launch_entered: asyncio.Event | None = None
         self.release_launch: asyncio.Event | None = None
 
+        self.containment_authenticator = None
+        self.omit_receipt_roles: set[str] = set()
+        self.omit_teardown_receipt = False
+        self.teardown_all_dead = True
     async def launch(
         self,
         plan: Any,
@@ -129,6 +148,16 @@ class RecordingBackend:
         handle = RecordingHandle()
         handle.termination_receipts = self.handle_termination_receipts
         self.handles.append(handle)
+        handle.containment_authenticator = self.containment_authenticator
+        handle.omit_teardown_receipt = self.omit_teardown_receipt
+        handle.teardown_all_dead = self.teardown_all_dead
+        if (
+            plan.runtime.runtime_class is c.RuntimeClass.TRUSTED_PROCESS
+            and context.role not in self.omit_receipt_roles
+        ):
+            handle.containment_receipt = signed_containment_receipt(
+                lease_id, plan.runtime.runtime_id, self.containment_authenticator
+            )
         requested = {
             "runtime": plan.runtime.runtime_id,
             "image": plan.image.image_digest,
@@ -163,6 +192,7 @@ class RuntimeHarness:
         *,
         backend: RecordingBackend | None = None,
     ) -> None:
+        tmp_path.mkdir(parents=True, exist_ok=True)
         self.fixture = fixture
         self.clock = FrozenClock()
         self.source_digest = digest("workspace-source")
@@ -193,8 +223,53 @@ class RuntimeHarness:
             lease_root=self.lease_root,
             process_backend=self.backend,
             docker_backend=self.backend,
+            containment_authenticator=HmacSha256ReceiptAuthenticator(
+                key_id="test-containment-key",
+                key=b"test-containment-key-material-32-bytes!!",
+            ),
             random_bytes=DeterministicRandom(2_000),
         )
+        self.backend.containment_authenticator = self.manager._containment_authenticator
+
+async def test_public_manager_rejects_missing_primary_containment_receipt(tmp_path: Path) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.backend.omit_receipt_roles.add("primary")
+    with pytest.raises(SandboxAttestationError) as caught:
+        await harness.manager.open(fixture.request)
+    assert caught.value.code == "containment_receipt_invalid"
+    assert harness.backend.handles[0].terminate_calls == 1
+    await harness.manager.close()
+
+async def test_public_manager_rejects_missing_verifier_containment_receipt(tmp_path: Path) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.backend.omit_receipt_roles.add("verifier")
+    primary = await harness.manager.open(fixture.request)
+    try:
+        snapshot = await primary.seal_for_verifier()
+        with pytest.raises(SandboxAttestationError) as caught:
+            await harness.manager.open_verifier(primary, snapshot)
+        assert caught.value.code == "containment_receipt_invalid"
+        assert harness.backend.handles[-1].terminate_calls == 1
+    finally:
+        await primary.close()
+        await harness.manager.close()
+
+
+@pytest.mark.parametrize("omit_receipt", [True, False], ids=["missing", "failed-outcome"])
+async def test_public_manager_fails_closed_without_signed_teardown(
+    tmp_path: Path, omit_receipt: bool
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.backend.omit_teardown_receipt = omit_receipt
+    harness.backend.teardown_all_dead = False
+    primary = await harness.manager.open(fixture.request)
+    receipt = await primary.close()
+    assert receipt.state not in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
+    assert (primary.teardown_receipt is None) is omit_receipt
+    await harness.manager.close()
 
 
 def _primary_runtime_index(fixture: RuntimeFixture) -> int:
@@ -1576,6 +1651,43 @@ async def test_close_removes_native_scratch_and_reports_cleanup(
     assert CleanupStepReceipt("native_scratch", CleanupState.RELEASED) in receipt.steps
 
 
+def test_native_scratch_refuses_cross_device_and_preserves_host_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    scratch = sandbox_module._create_native_scratch(harness.manager, "cross-device")
+    outside = tmp_path / "outside-host-file"
+    outside.write_text("outside", encoding="utf-8")
+    (scratch / "outside-link").symlink_to(outside)
+    child = scratch / "foreign-mount"
+    child.mkdir()
+    (child / "evidence").write_text("retain", encoding="utf-8")
+    child_inode = child.stat().st_ino
+    real_fstat = os.fstat
+
+    def foreign_device(fd: int) -> Any:
+        observed = real_fstat(fd)
+        if observed.st_ino == child_inode:
+            return type("ForeignStat", (), {
+                "st_dev": observed.st_dev + 1,
+                "st_mode": observed.st_mode,
+            })()
+        return observed
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(os, "fstat", foreign_device)
+            refusal = sandbox_module._remove_native_scratch(harness.manager, "cross-device")
+        assert refusal.state is CleanupState.FAILED
+        assert (child / "evidence").read_text(encoding="utf-8") == "retain"
+        assert outside.read_text(encoding="utf-8") == "outside"
+    finally:
+        assert sandbox_module._remove_native_scratch(
+            harness.manager, "cross-device"
+        ).state in (CleanupState.RELEASED, CleanupState.ALREADY_RELEASED)
+        assert outside.read_text(encoding="utf-8") == "outside"
+
 @pytest.mark.parametrize("completion", ["finish", "cancel"])
 async def test_close_fences_new_operations_and_drains_an_active_operation(
     tmp_path: Path, completion: str
@@ -2818,3 +2930,48 @@ def test_lease_constructor_closes_duplicate_when_identity_stat_fails(
         os.fstat(duplicated[0])
     os.fstat(lease_fd)
     os.close(lease_fd)
+
+
+def test_containment_receipt_requires_network_namespace_inode() -> None:
+    from breadboard.rl.harness.lease_envelope import (
+        ContainmentReceipt,
+        ContainmentReceiptError,
+    )
+
+    base = {
+        "schema": "bb.containment-receipt.v2",
+        "lease_id": "lease-net-test",
+        "runtime_id": "runtime-net-test",
+        "mode": "privileged",
+        "namespaces": {
+            "pid": 1001,
+            "mnt": 1002,
+            "user": 1003,
+            "net": 1004,
+        },
+        "mountinfo_sha256": "sha256:" + "0" * 64,
+        "writable_mounts": [
+            {"path": "/scratch", "fstype": "tmpfs", "size_bytes": 500_000, "source": "lease_tmpfs"},
+            {"path": "/tmp", "fstype": "tmpfs", "size_bytes": 500_000, "source": "lease_tmpfs"},
+            {"path": "/workspace", "fstype": "bind", "size_bytes": None, "source": "workspace_bind"},
+        ],
+        "created_at": "2026-09-24T00:00:00Z",
+        "key_id": "test-key",
+        "algorithm": "hmac-sha256-v1",
+        "signature": ("00" * 32),
+    }
+
+    receipt = ContainmentReceipt.from_mapping(base)
+    assert receipt.network_namespace_inode == 1004
+    mapping = receipt.to_mapping()
+    assert mapping["namespaces"]["net"] == 1004
+
+    missing_net = dict(base)
+    missing_net["namespaces"] = {"pid": 1001, "mnt": 1002, "user": 1003}
+    with pytest.raises(ContainmentReceiptError):
+        ContainmentReceipt.from_mapping(missing_net)
+
+    zero_net = dict(base)
+    zero_net["namespaces"] = {"pid": 1001, "mnt": 1002, "user": 1003, "net": 0}
+    with pytest.raises(ContainmentReceiptError):
+        ContainmentReceipt.from_mapping(zero_net)
