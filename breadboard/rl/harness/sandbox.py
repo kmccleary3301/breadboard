@@ -3441,6 +3441,8 @@ def _remove_native_scratch(
         return CleanupStepReceipt("native_scratch", CleanupState.ALREADY_RELEASED)
     except BaseException as exc:
         return CleanupStepReceipt("native_scratch", CleanupState.FAILED, type(exc).__name__)
+
+
 def _cleanup_native_scratch_step(
     manager: SandboxRuntimeManager,
     lease_id: str,
