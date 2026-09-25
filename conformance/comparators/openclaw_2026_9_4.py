@@ -37,6 +37,23 @@ VOLATILE_PLACEHOLDER_RE = re.compile(r"^<[A-Z][A-Z0-9_.-]*>$")
 NATIVE_EXEC_SHA256 = "sha256:6a41ebbc7cd1fae376a497c1bb1662c40a5faa87e5f811bff3ae37e04fb20973"
 OVERLAY_EXEC_SHA256 = "sha256:af70f1b4ae91e2951e297b1cab3ff9602107158c0e922e7c9fbcab669c867638"
 
+DECLARED_GAP_ID = "openclaw-supplier-envelope-unrecorded"
+DECLARED_GAP_KIND = "supplier_unrecorded"
+SUPPLIER_UNRECORDED_KEYS = frozenset({"classification", "envelope", "final_envelope"})
+EPISODE_PROJECTION_KEYS = (
+    "schema_version",
+    "source_commit",
+    "requests",
+    "tool_calls",
+    "results",
+    "effects",
+    "termination",
+    "request_count",
+    "normalizations",
+    "budget",
+)
+EPISODE_KEYS = EPISODE_PROJECTION_KEYS
+
 
 class ComparatorError(ValueError):
     pass
@@ -551,13 +568,13 @@ def _validate_trace(trace: Mapping[str, Any]) -> None:
             "status": 429, "message": "bbe4 capture request cap", "isError": True,
         }:
             raise ComparatorError("request budget requires the model-visible 429 refusal")
-    elif trace.get("budget", {}).get("cap_triggered") or trace.get("budget", {}).get("refused_attempts"):
+    elif (trace.get("budget") or {}).get("cap_triggered") or (trace.get("budget") or {}).get("refused_attempts"):
         raise ComparatorError("refusal control contradicts non-budget termination")
 
 
 def _canonicalize(trace: Mapping[str, Any]) -> dict[str, Any]:
     declared = _declared_placeholders(trace)
-    canonical = {
+    canonical: dict[str, Any] = {
         "schema_version": str(trace.get("schema_version", TRACE_SCHEMA_VERSION)),
         "source_commit": str(trace.get("source_commit", SOURCE_COMMIT)),
         "requests": _normalize_declared(trace.get("requests", []), declared, ("requests",)),
@@ -566,17 +583,9 @@ def _canonicalize(trace: Mapping[str, Any]) -> dict[str, Any]:
         "effects": _normalize_declared(trace.get("effects", {}), declared, ("effects",)),
         "termination": _normalize_declared(trace.get("termination", {}), declared, ("termination",)),
         "request_count": int(trace.get("request_count", 0)),
+        "normalizations": trace.get("normalizations", {}),
+        "budget": trace.get("budget"),
     }
-    if "budget" in trace:
-        canonical["budget"] = trace["budget"]
-    if "classification" in trace:
-        canonical["classification"] = _normalize_declared(trace["classification"], declared, ("classification",))
-    if "envelope" in trace:
-        canonical["envelope"] = _normalize_declared(trace["envelope"], declared, ("envelope",))
-    elif "final_envelope" in trace:
-        canonical["envelope"] = _normalize_declared(trace["final_envelope"], declared, ("envelope",))
-    if "normalizations" in trace:
-        canonical["normalizations"] = trace["normalizations"]
     _validate_trace(canonical)
     return canonical
 
@@ -589,6 +598,11 @@ def project_supplier_case(case_dir: str | Path) -> dict[str, Any]:
     receipt = _load_json(root / "case-receipt.json")
     if not isinstance(receipt, Mapping):
         raise ComparatorError("supplier case receipt is required")
+    forbidden = sorted(SUPPLIER_UNRECORDED_KEYS & set(receipt))
+    if forbidden:
+        raise ComparatorError(
+            f"supplier receipt carries undeclared envelope/classification keys: {', '.join(forbidden)}"
+        )
     budget = {
         "cap_triggered": receipt.get("budget_cap_triggered"),
         "refused_attempts": receipt.get("proxy_refused"),
@@ -623,12 +637,6 @@ def project_supplier_case(case_dir: str | Path) -> dict[str, Any]:
         "normalizations": scenario.get("normalizations", {}),
         "budget": budget,
     }
-    if "classification" in receipt:
-        trace["classification"] = receipt["classification"]
-    if "envelope" in receipt:
-        trace["envelope"] = receipt["envelope"]
-    elif "final_envelope" in receipt:
-        trace["envelope"] = receipt["final_envelope"]
     return _canonicalize(trace)
 def _load_trace_input(trace: Any) -> Mapping[str, Any]:
     if isinstance(trace, Mapping):
@@ -675,6 +683,15 @@ def project_bb_trace(trace: Any) -> dict[str, Any]:
 
 
 def _supplier_trace_with_overlay(trace: Any) -> tuple[dict[str, Any], dict[str, str]]:
+    raw = _load_trace_input(trace)
+    if isinstance(raw, Mapping):
+        source = raw.get("episode", raw)
+        if isinstance(source, Mapping):
+            forbidden = sorted(SUPPLIER_UNRECORDED_KEYS & set(source))
+            if forbidden:
+                raise ComparatorError(
+                    f"supplier trace carries undeclared envelope/classification keys: {', '.join(forbidden)}"
+                )
     projected = project_bb_trace(trace)
     requests, overlay = _apply_supplier_overlay(projected["requests"])
     projected["requests"] = _project_request_bodies(requests)
@@ -806,6 +823,27 @@ def compare(inp: ComparatorInput) -> dict[str, Any]:
         assertions.append(_assertion("effects_equal", expected["effects"], observed["effects"], _difference(expected["effects"], observed["effects"])))
     if overlay_info is not None:
         assertions.append(_assertion("supplier_exec_overlay", overlay_info, overlay_info))
+    replay_keys_present: list[str] = []
+    try:
+        raw_replay = _load_trace_input(replay.get("trace", replay) if isinstance(replay, Mapping) else replay)
+        if isinstance(raw_replay, Mapping):
+            replay_inner = raw_replay.get("episode", raw_replay)
+            if isinstance(replay_inner, Mapping):
+                replay_keys_present = [key for key in ("classification", "envelope", "final_envelope") if key in replay_inner]
+    except Exception:
+        replay_keys_present = []
+
+    declared_gap = {
+        "gap_id": DECLARED_GAP_ID,
+        "kind": DECLARED_GAP_KIND,
+        "detail": (
+            "Sealed OpenClaw 2026.9.4 supplier packet-640 receipts never "
+            "record classification, envelope, or final_envelope. These keys "
+            "are excluded from episode equality on both sides."
+        ),
+        "excluded_keys": sorted(SUPPLIER_UNRECORDED_KEYS),
+        "replay_keys_present": replay_keys_present,
+    }
     passed = sum(assertion["status"] == "passed" for assertion in assertions)
     failed = sum(assertion["status"] == "failed" for assertion in assertions)
     return {
@@ -816,6 +854,9 @@ def compare(inp: ComparatorInput) -> dict[str, Any]:
         "scope": dict(inp.get("scope") or {}),
         "generated_at_utc": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "overlay": overlay_info,
+        "declared_gaps": [declared_gap],
+        "declared_gap_ids": [DECLARED_GAP_ID],
+        "gaps": [DECLARED_GAP_ID],
         "assertions": assertions,
         "details": [{"assertion_id": item["assertion_id"], "status": item["status"], "detail": item["detail"]} for item in assertions],
         "errors": errors,

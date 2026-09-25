@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import shutil
 
 import pytest
 
@@ -425,3 +426,90 @@ def test_real_packet_exec_overlay_rejects_counterfeits(mutation: str, monkeypatc
             monkeypatch.setattr(comparator, "_load_json", lambda path, default=None: config)
     with pytest.raises(ComparatorError):
         _apply_supplier_overlay(requests)
+
+
+def test_bb_trace_with_envelope_and_classification_equals_supplier_and_records_gap() -> None:
+    fixture = Path(__file__).parent / "fixtures" / "openclaw_packet_640"
+    expected = project_supplier_case(fixture)
+    assert "classification" not in expected
+    assert "envelope" not in expected
+    assert "final_envelope" not in expected
+
+    candidate = json.loads(json.dumps(expected))
+    candidate["classification"] = {"verdict": "success", "category": "normal"}
+    candidate["envelope"] = {"turn_count": 3, "status": "completed"}
+    candidate["final_envelope"] = {"turn_count": 3, "status": "completed"}
+
+    report = compare({"capture": str(fixture), "replay": candidate, "scope": {}})
+    assert report["ok"] is True
+    assert report["errors"] == []
+    assert any(
+        assertion["assertion_id"] == "episode_equal" and assertion["status"] == "passed"
+        for assertion in report["assertions"]
+    )
+    assert any(
+        gap.get("gap_id") == "openclaw-supplier-envelope-unrecorded"
+        for gap in report.get("declared_gaps", [])
+    )
+    gap = next(
+        gap for gap in report["declared_gaps"]
+        if gap.get("gap_id") == "openclaw-supplier-envelope-unrecorded"
+    )
+    assert "envelope" in gap["replay_keys_present"]
+    assert "classification" in gap["replay_keys_present"]
+    assert "openclaw-supplier-envelope-unrecorded" in report.get("gaps", [])
+
+
+@pytest.mark.parametrize("key", ["classification", "envelope", "final_envelope"])
+def test_supplier_receipt_with_unrecorded_keys_fails_closed(tmp_path: Path, key: str) -> None:
+    fixture = Path(__file__).parent / "fixtures" / "openclaw_packet_640"
+    case_dir = tmp_path / f"case_{key}"
+    shutil.copytree(fixture, case_dir)
+    receipt_path = case_dir / "case-receipt.json"
+    receipt_data = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt_data[key] = {"unexpected": True}
+    receipt_path.write_text(json.dumps(receipt_data), encoding="utf-8")
+
+    with pytest.raises(ComparatorError, match="undeclared envelope/classification keys"):
+        project_supplier_case(case_dir)
+
+    replay = project_supplier_case(fixture)
+    report = compare({"capture": str(case_dir), "replay": replay, "scope": {}})
+    assert report["ok"] is False
+    assert any("undeclared envelope/classification keys" in err for err in report.get("errors", []))
+
+
+@pytest.mark.parametrize(
+    "mutation_type",
+    ["effects", "termination_kind", "request_count"],
+)
+def test_real_episode_difference_in_retained_key_still_fails(mutation_type: str) -> None:
+    fixture = Path(__file__).parent / "fixtures" / "openclaw_packet_640"
+    expected = project_supplier_case(fixture)
+    candidate = json.loads(json.dumps(expected))
+@pytest.mark.parametrize(
+    "mutation_type",
+    ["effects", "termination_kind", "termination_stop_reason"],
+)
+def test_real_episode_difference_in_retained_key_still_fails(mutation_type: str) -> None:
+    fixture = Path(__file__).parent / "fixtures" / "openclaw_packet_640"
+    expected = project_supplier_case(fixture)
+    candidate = json.loads(json.dumps(expected))
+    candidate["envelope"] = {"turn_count": 3, "status": "completed"}
+
+    if mutation_type == "effects":
+        candidate["effects"]["marker.txt"] = "sha256:" + "0" * 64
+    elif mutation_type == "termination_kind":
+        candidate["termination"]["kind"] = "failed"
+    elif mutation_type == "termination_stop_reason":
+        candidate["termination"]["native_stop_reason"] = "different_reason"
+
+    report = compare({"capture": str(fixture), "replay": candidate, "scope": {}})
+    assert report["ok"] is False
+    assertion = next(a for a in report["assertions"] if a["assertion_id"] == "episode_equal")
+    assert assertion["status"] == "failed"
+    assert assertion["detail"]
+    assert any(
+        gap.get("gap_id") == "openclaw-supplier-envelope-unrecorded"
+        for gap in report.get("declared_gaps", [])
+    )

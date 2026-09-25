@@ -4,6 +4,7 @@ import hashlib
 import importlib
 import json
 from pathlib import Path
+import shutil
 from typing import Any, Mapping
 from conformance.comparators.stored_report import compare
 from conformance.comparators.openhands_sdk import (
@@ -264,6 +265,23 @@ def test_each_registered_comparator_entrypoint_conforms_to_protocol(tmp_path: Pa
         assert {"assertion_id", "status", "observed", "expected"} <= set(report["assertions"][0])
         if entry["comparator_id"] == "openclaw_2026_9_4_trace_v1":
             assert report["ok"] is True
+            # Positive mutation: replay carrying envelope/classification keys compares equal with gap recorded
+            positive_replay = json.loads(json.dumps(comparator_input["replay"]))
+            positive_replay["classification"] = {"verdict": "success"}
+            positive_replay["envelope"] = {"turn_count": 3, "status": "completed"}
+            positive_replay["final_envelope"] = {"turn_count": 3, "status": "completed"}
+            positive_report = comparator({**comparator_input, "replay": positive_replay})
+            assert positive_report["ok"] is True
+            assert any(
+                assertion["assertion_id"] == "episode_equal"
+                and assertion["status"] == "passed"
+                for assertion in positive_report["assertions"]
+            )
+            assert any(
+                gap.get("gap_id") == "openclaw-supplier-envelope-unrecorded"
+                for gap in positive_report.get("declared_gaps", [])
+            )
+            # Negative mutation 1: tampered effects fail episode equality
             tampered = json.loads(json.dumps(comparator_input["replay"]))
             tampered["effects"]["marker.txt"] = None
             rejected = comparator({**comparator_input, "replay": tampered})
@@ -273,7 +291,16 @@ def test_each_registered_comparator_entrypoint_conforms_to_protocol(tmp_path: Pa
                 and assertion["status"] == "failed"
                 for assertion in rejected["assertions"]
             )
-
+            # Negative mutation 2: supplier receipt carrying classification fails closed
+            mutated_supplier = tmp_path / "mutated_openclaw_supplier"
+            shutil.copytree(comparator_input["capture"], mutated_supplier)
+            receipt_path = mutated_supplier / "case-receipt.json"
+            receipt_data = json.loads(receipt_path.read_text(encoding="utf-8"))
+            receipt_data["classification"] = {"unexpected": True}
+            receipt_path.write_text(json.dumps(receipt_data), encoding="utf-8")
+            closed_report = comparator({**comparator_input, "capture": str(mutated_supplier)})
+            assert closed_report["ok"] is False
+            assert any("classification" in err for err in closed_report.get("errors", []))
 
 def test_rejected_openhands_bb_trace_reports_error() -> None:
     replay = _openhands_measured_bb_trace()
