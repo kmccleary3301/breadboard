@@ -1,27 +1,21 @@
 # ACR-20260925-workspace-identity-native-scratch
 
 - `acr_id`: `ACR-20260925-workspace-identity-native-scratch`
-- `title`: Attested trusted-process turn-0 chain: single-owner native scratch, native payload depth, and script-command fd inheritance
+- `title`: Attested trusted-process turn-0 chain: single-owner native scratch and script-command fd inheritance
 - `author`: BreadBoard E4 containment lane
 - `date`: 2026-09-25
 - `status`: implemented; independent exact-head review pending
 
 ## 1) Problem Statement
 
-Following PR #144 (which resolved envelope launch EROFS on `/tmp`), trusted process envelope runs inside Apptainer SIFs encountered failures at turn 0 across three distinct lifecycle mechanisms:
+Following PR #144 (which resolved envelope launch EROFS on `/tmp`), trusted process envelope runs inside Apptainer SIFs encountered failures at turn 0 across two distinct lifecycle mechanisms:
 
 1. **Native Scratch Authority Mismatch**:
    - In attested containment mode (`RuntimeContainment.ATTESTED`), `TrustedProcessBackend.launch` creates the native scratch directory (`scratch = context.native_scratch_path`).
    - During subsequent native phase invocation (`invoke_native_phase`), `_create_native_scratch` attempted an unconditioned `os.mkdir(name, mode=0o700, dir_fd=root_fd)`. Because the scratch directory was already created at launch, `os.mkdir` raised `FileExistsError`, caught and re-raised as `WorkspaceStateError('native scratch authority is unavailable', code='workspace_authority_mismatch')`.
    - Additionally, descriptor identity checks in `TrustedProcessHandle._start_stopped_process` require that the workspace descriptor identity (`os.fstat(self._workspace_fd)`) strictly matches `self._workspace_identity` captured at materialization.
 
-2. **Native Phase Payload Depth Ceiling**:
-   - Commit `81076d1` introduced `max_depth=8` in `LeaseBackedRunnerWorkspace.invoke_native_phase` during payload freezing (`freeze_json_object`).
-   - Real OpenHands initialize payloads serialize agent OpenAI tool schemas (including parameters, properties, items, types, nested schemas) with nesting depth of ~12-14 levels.
-   - `max_depth=8` caused immediate rejection (`WorkspaceStateError(code="runtime_preflight_failed")`) on valid tool configurations.
-   - The harness constant `_DEFAULT_JSON_DEPTH = 64` (`breadboard/rl/harness/runners/base.py:21`) defines the intended default JSON snapshot depth across the harness.
-
-3. **Envelope Script-Command Descriptor Closure (Verifier FD)**:
+2. **Envelope Script-Command Descriptor Closure (Verifier FD)**:
    - Script-format commands executed via `TrustedProcessHandle.run_argv` (such as verifier snapshot-integrity scripts) build `execution_argv = (shell_fd_path, command_fd_path, *argv[1:])` and wrap execution in `(shell_fd_path, '-lc', 'exec "$@"', 'breadboard-execute', *execution_argv)`.
    - In envelope mode, `spawn_envelope_process` and `_prepare_exec_descriptors` placed the shell executable at `fd 3` and rewrote `argv[4]` to `/proc/self/fd/3`.
    - Before `execveat`, `_envelope_child` sets `os.set_inheritable(exec_fd, False)` on `fd 3` to enforce close-on-exec.
@@ -33,11 +27,9 @@ Following PR #144 (which resolved envelope launch EROFS on `/tmp`), trusted proc
 - `breadboard.rl.harness.sandbox`:
   - `TrustedProcessBackend.launch`: exclusive scratch creation with mode `0700` and `native_scratch_identity` binding on `TrustedProcessHandle`.
   - `_create_native_scratch`: identity verification (never `mkdir` when expected identity is provided; unconfined keeps create-exclusive).
-  - `LeaseBackedRunnerWorkspace.invoke_native_phase`: replace literal depth with imported harness constant `_DEFAULT_JSON_DEPTH`.
 - `breadboard.rl.harness.lease_envelope`:
   - `_prepare_exec_descriptors`: allocate a distinct inheritable duplicate descriptor for any argv element (index >= 1) referencing `exec_fd`, while `exec_fd` itself remains close-on-exec (`CLOEXEC`).
 - `tests/rl/harness/test_sandbox_runtime`: portable regression tests for scratch identity adoption, swapped-directory rejection, invalid preexisting entry rejection, and unconfined preexisting directory rejection.
-- `tests/rl/harness/test_sandbox_native_phase_admission`: unit tests asserting acceptance of realistic ~14-deep schema payloads and rejection above `_DEFAULT_JSON_DEPTH`.
 - `tests/rl/harness/test_sandbox_process_integration`:
   - Sealed execution integration tests for preexisting scratch rejection and lifecycle identity adoption under `@requires_sealed_execution`.
 - Pure unit test `test_prepare_exec_descriptors_script_format_argv_fd_mapping` and collision test `test_prepare_exec_descriptors_high_source_collision_resistance` for script-format argv/fd mapping, non-collision under fragmented descriptor spaces, and inheritability preservation on macOS and Linux.
@@ -51,11 +43,7 @@ Following PR #144 (which resolved envelope launch EROFS on `/tmp`), trusted proc
    - Strict Native Phase Adoption: When `invoke_native_phase` runs (e.g. `initialize`), `_create_native_scratch` receives `expected_identity=lease._runtime.native_scratch_identity`. If `expected_identity` is present, `_create_native_scratch` never calls `mkdir`; instead, it opens the existing entry under `manager._lease_root_fd` with `O_NOFOLLOW | O_DIRECTORY` and verifies directory type, `euid` ownership, `0700` mode, same device, and matching `(st_dev, st_ino)`.
    - Unconfined Preservation: If `expected_identity is None` (unconfined test path), `_create_native_scratch` retains create-exclusive semantics via `os.mkdir(..., dir_fd=root_fd)`.
 
-2. **Harness Default JSON Depth**:
-   - `LeaseBackedRunnerWorkspace.invoke_native_phase` imports `_DEFAULT_JSON_DEPTH = 64` from `breadboard.rl.harness.runners.base`.
-   - Preserves protection against unbounded JSON nesting while accommodating real agent tool definitions (~12-14 levels).
-
-3. **Envelope Descriptor Inheritance for Pinned Script Executables**:
+2. **Envelope Descriptor Inheritance for Pinned Script Executables**:
    - In `_prepare_exec_descriptors`, if any argv element at index >= 1 references `exec_fd` (`needs_inherited_exec`), a dedicated inheritable duplicate descriptor (`inherited_exec_fd`) is allocated.
    - Rewritten argv maps index >= 1 occurrences to `/proc/self/fd/{inherited_exec_fd}`, while index 0 maps to `/proc/self/fd/{target_exec_fd}` (or is replaced by `argv0_path`).
    - `target_exec_fd` is marked non-inheritable (`CLOEXEC`) before `_execveat_fd`, preventing descriptor leakage, while `inherited_exec_fd` remains open and inheritable in the child process.
@@ -73,9 +61,6 @@ Fail-closed, corrective changes across the turn-0 pipeline. No permissions, cont
   - Diagnosed in DO-2 probe jobs 1286/1288 (`SCR/w44-scratch-probe.py`).
   - Unit tests in `test_sandbox_runtime.py`: `test_unconfined_create_native_scratch_rejects_preexisting_directory`, `test_create_native_scratch_adopts_matching_identity`, `test_create_native_scratch_rejects_swapped_directory_identity`, `test_create_native_scratch_rejects_existing_invalid_directory`.
   - Integration tests in `test_sandbox_process_integration.py`: `test_sealed_attested_launch_rejects_preexisting_scratch_directory`, `test_sealed_attested_launch_and_native_scratch_lifecycle`.
-- **Payload Depth**:
-  - Diagnosed in DO-2 job 1292 (`WorkspaceStateError: native phase payload is invalid` due to schema depth 13 exceeding `max_depth=8`).
-  - Unit test in `test_sandbox_native_phase_admission.py`: `test_native_phase_payload_accepts_nesting_depth_beyond_eight` asserting acceptance of realistic ~14-deep schema payloads and rejection above `_DEFAULT_JSON_DEPTH`.
 - **Envelope Script-Command Descriptor**:
   - Diagnosed in DO-2 jobs 1294/1295 (`breadboard-execute: line 1: /proc/self/fd/3: No such file or directory`, rc 127 during verifier snapshot integrity check).
 - Unit tests in `test_sandbox_process_integration.py`: `test_prepare_exec_descriptors_script_format_argv_fd_mapping` and `test_prepare_exec_descriptors_high_source_collision_resistance` running on macOS and Linux, validating distinct inheritable descriptor allocation, collision resistance under fragmented descriptor spaces, and CLOEXEC isolation.
