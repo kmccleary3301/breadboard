@@ -1054,6 +1054,11 @@ def _native_worker_environment(
         # (config-eval hasBinary) reads both, so the sealed node's
         # directory takes that place here.
         environment["OPENCLAW_DISABLE_BUNDLED_PLUGINS"] = "1"
+        # The supplier's exec shim raises each child's oom_score_adj through
+        # /proc/self, which the envelope mounts read-only; the failed write
+        # would surface in tool output. The supplier's opt-out keeps the
+        # command output its capture recorded.
+        environment["OPENCLAW_CHILD_OOM_SCORE_ADJ"] = "0"
         if "PATH" not in environment:
             raise SandboxLaunchError(
                 "OpenClaw native worker runtime declares no PATH",
@@ -2332,7 +2337,9 @@ class TrustedProcessHandle:
                     process = await self._start_stopped_process(
                         (
                             self._executable.proc_fd_path,
-                            "-lc",
+                            # Not a login shell: the image's /etc/profile would
+                            # replace the admitted worker PATH.
+                            "-c",
                             'exec "$@"',
                             "breadboard-native-worker",
                             *_native_worker_argv(binding, node.proc_fd_path),
@@ -2529,6 +2536,10 @@ class TrustedProcessHandle:
                     launch_environment["HOME"] = str(
                         Path(self._envelope.scratch) / "home"
                     )
+                    # The composed TMPDIR names a runtime path outside the
+                    # envelope's read-only view; the envelope's lease-private
+                    # /tmp tmpfs (lease_envelope._setup_mount_view) replaces it.
+                    launch_environment["TMPDIR"] = "/tmp"
                 if self._envelope is not None:
                     process = await spawn_envelope_process(
                         self._envelope,

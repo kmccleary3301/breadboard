@@ -497,11 +497,9 @@ class _LaunchCaptured(Exception):
     pass
 
 
-@pytest.mark.asyncio
-async def test_openclaw_finalizer_launch_receives_native_session_environment(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def _openclaw_native_handle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> tuple[InstalledToolAdapter, SimpleNamespace, tuple[RunnerToolBinding, ...], object]:
     root = tmp_path / "openclaw"
     (root / "bin").mkdir(parents=True)
     (root / "bin/node").write_bytes(b"node")
@@ -548,7 +546,20 @@ async def test_openclaw_finalizer_launch_receives_native_session_environment(
             fd=-1, proc_fd_path="/pinned/node", close=lambda: None,
         ),
     )
+    handle = sandbox_module.TrustedProcessHandle(
+        plan, tmp_path, "lease", SimpleNamespace(proc_fd_path="/pinned/sh"),
+        "/usr/bin/git", -1, (0, 0),
+    )
+    return adapter, plan, bindings, handle
 
+
+@pytest.mark.asyncio
+async def test_openclaw_finalizer_launch_receives_native_session_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter, plan, bindings, handle = _openclaw_native_handle(tmp_path, monkeypatch)
+    root = Path(adapter.runtime_root_path)
     session_launch: dict[str, str] = {}
 
     async def capture_session(self, argv, *, timeout_ms, extra_fds=(), environment=None):
@@ -558,10 +569,6 @@ async def test_openclaw_finalizer_launch_receives_native_session_environment(
 
     monkeypatch.setattr(
         sandbox_module.TrustedProcessHandle, "_start_stopped_process", capture_session,
-    )
-    handle = sandbox_module.TrustedProcessHandle(
-        plan, tmp_path, "lease", SimpleNamespace(proc_fd_path="/pinned/sh"),
-        "/usr/bin/git", -1, (0, 0),
     )
     with pytest.raises(_LaunchCaptured):
         await handle.invoke_native_phase(adapter, "initialize", {}, timeout_ms=1_000)
@@ -603,6 +610,42 @@ async def test_openclaw_finalizer_launch_receives_native_session_environment(
     assert session_launch["LD_LIBRARY_PATH"] == "/opt/openclaw/lib"
     assert session_launch["OPENCLAW_DIST"] == str(root / "dist")
 
+
+@pytest.mark.asyncio
+async def test_native_worker_shell_wrapper_keeps_the_admitted_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Skill eligibility reads PATH in the worker; a login shell would let the
+    # image's /etc/profile reset or reorder it before the worker starts.
+    adapter, _plan, _bindings, handle = _openclaw_native_handle(tmp_path, monkeypatch)
+    launch: dict[str, object] = {}
+
+    async def capture_session(self, argv, *, timeout_ms, extra_fds=(), environment=None):
+        del self, timeout_ms, extra_fds
+        launch.update(argv=tuple(argv), environment=dict(environment))
+        raise _LaunchCaptured
+
+    monkeypatch.setattr(
+        sandbox_module.TrustedProcessHandle, "_start_stopped_process", capture_session,
+    )
+    with pytest.raises(_LaunchCaptured):
+        await handle.invoke_native_phase(adapter, "initialize", {}, timeout_ms=1_000)
+
+    argv = launch["argv"]
+    environment = launch["environment"]
+    assert argv[0] == "/pinned/sh" and argv[3] == "breadboard-native-worker"
+    home = tmp_path / "home"
+    home.mkdir()
+    shown = subprocess.run(
+        ("/bin/sh", *argv[1:4], "/usr/bin/printenv", "PATH"),
+        env={**environment, "HOME": str(home)},
+        capture_output=True, text=True, check=True,
+    )
+    assert shown.stdout.rstrip("\n") == environment["PATH"]
+    assert environment["PATH"].split(os.pathsep)[0] == str(
+        Path(adapter.runtime_root_path) / "bin"
+    )
 
 
 _SCAN_BOUNDS = {"max_total_bytes": 1 << 30, "max_inodes": 1 << 16, "max_depth": 64}

@@ -2254,6 +2254,49 @@ async def test_real_process_preserves_absolute_workspace_and_scratch_roots(
     assert set(Path("/dev/shm").glob(".breadboard-envelope-*")) == staging_before
 
 
+@requires_sealed_execution
+async def test_envelope_launch_gives_composed_tmpdir_the_lease_tmpfs(
+    tmp_path: Path,
+) -> None:
+    # A composed runtime declares TMPDIR on its own host root, which the
+    # envelope's read-only view hides; node's os.tmpdir() does not fall back.
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    composed_tmp = tmp_path / "runtime-tmp"
+    composed_tmp.mkdir()
+    runtime = next(
+        runtime
+        for runtime in fixture.authorities.runtimes
+        if runtime.runtime_id == fixture.plan.sandbox.runtime_id
+    )
+    composed = replace(
+        runtime,
+        fixed_environment=(*runtime.fixed_environment, ("TMPDIR", str(composed_tmp))),
+    )
+    authorities = replace(
+        fixture.authorities,
+        runtimes=tuple(
+            composed if candidate.runtime_id == composed.runtime_id else candidate
+            for candidate in fixture.authorities.runtimes
+        ),
+    )
+    harness = RuntimeHarness(
+        tmp_path / "harness", replace(fixture, authorities=authorities)
+    )
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    workspace = primary._materialized.workspace_path
+    result = await primary.runner_workspace.run_shell(
+        'probe=$(mktemp) && printf lease > "$probe" && printf %s "$probe" > work/tmp-probe',
+        timeout=2,
+    )
+    assert result["returncode"] == 0
+    probe = Path((workspace / "work/tmp-probe").read_text(encoding="utf-8"))
+    assert probe.parent == Path("/tmp")
+    assert list(composed_tmp.iterdir()) == []
+    assert (await primary.close()).state is CleanupState.RELEASED
+    assert await harness.manager.close() == ()
+
+
 def _namespace_processes(pid_namespace_inode: int) -> list[tuple[int, str]]:
     processes: list[tuple[int, str]] = []
     for entry in Path("/proc").iterdir():
