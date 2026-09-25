@@ -37,6 +37,7 @@ from breadboard.rl.harness.runners.terminal import (
 )
 from breadboard.rl.harness.sandbox import (
     RuntimeContainment,
+    SandboxFault,
     SandboxLaunchError,
     RuntimeLaunchContext,
     SandboxRuntimeManager,
@@ -134,6 +135,44 @@ def test_preflight_fork_exhaustion_is_typed(
     assert captured.value.code == "envelope_resources_exhausted"
     assert captured.value.errno == errno.EAGAIN
 
+
+@pytest.mark.skipif(sys.platform != "linux", reason="requires Linux namespaces")
+def test_launch_envelope_scratch_identity_mismatch_fails_before_fork(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fork_called() -> int:
+        pytest.fail("os.fork was called despite scratch identity mismatch")
+
+    monkeypatch.setattr(lease_envelope.os, "fork", fork_called)
+
+    workspace_dir = tmp_path / "workspace"
+    workspace_dir.mkdir()
+    scratch_dir = tmp_path / "scratch"
+    scratch_dir.mkdir()
+
+    workspace_fd = os.open(workspace_dir, os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC)
+    scratch_fd = os.open(scratch_dir, os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        real_stat = os.fstat(scratch_fd)
+        mismatched_identity = (real_stat.st_dev, real_stat.st_ino + 1)
+        authenticator = HmacSha256ReceiptAuthenticator(b"k" * 32)
+        with pytest.raises(lease_envelope.EnvelopeLaunchError) as exc_info:
+            lease_envelope.launch_envelope(
+                lease_id="test-lease-id",
+                runtime_id="test-runtime-id",
+                workspace=workspace_dir,
+                scratch=scratch_dir,
+                workspace_fd=workspace_fd,
+                scratch_fd=scratch_fd,
+                scratch_identity=mismatched_identity,
+                authenticator=authenticator,
+                tmpfs_size_bytes=1024 * 1024,
+            )
+        assert exc_info.value.code == "envelope_scratch_mismatch"
+        assert exc_info.value.phase == "scratch_verify"
+    finally:
+        os.close(workspace_fd)
+        os.close(scratch_fd)
 
 @requires_sealed_execution
 async def test_mount_denial_is_not_namespace_unsupported(
@@ -2856,16 +2895,28 @@ async def test_sealed_attested_launch_rejects_preexisting_scratch_directory(
     lease_id = f"lease-{nonce}"
     scratch_dir = harness.manager.lease_root / f"{lease_id}.native-scratch"
     os.mkdir(scratch_dir, mode=0o700)
+    sentinel = scratch_dir / "sentinel.txt"
+    sentinel.write_text("preserved", encoding="utf-8")
     monkeypatch.setattr(harness.manager, "_nonce", lambda: nonce)
     try:
-        with pytest.raises(SandboxLaunchError) as exc_info:
+        with pytest.raises(SandboxFault) as exc_info:
             await harness.manager.open(fixture.request)
-        assert exc_info.value.code == "runtime_preflight_failed"
-        assert "already exists" in str(exc_info.value)
+        assert isinstance(exc_info.value.primary, SandboxLaunchError)
+        assert exc_info.value.primary.code == "runtime_preflight_failed"
+        assert "already exists" in str(exc_info.value.primary)
+        assert scratch_dir.is_dir()
+        assert sentinel.is_file()
+        assert sentinel.read_text(encoding="utf-8") == "preserved"
+        scratch_receipt = next(
+            s for s in exc_info.value.cleanup_receipt.steps if s.resource == "native_scratch"
+        )
+        assert scratch_receipt.state is CleanupState.QUARANTINED
+        assert scratch_receipt.detail == "preexisting_scratch_preserved"
     finally:
+        if sentinel.exists():
+            sentinel.unlink()
         if scratch_dir.is_dir():
             scratch_dir.rmdir()
-
 
 @requires_sealed_execution
 @pytest.mark.asyncio

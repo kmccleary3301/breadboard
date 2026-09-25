@@ -1203,6 +1203,9 @@ class RuntimeLaunchContext:
     ) = None
     containment_authenticator: Any | None = None
     native_scratch_path: Path | None = None
+    record_scratch_identity: (
+        Callable[[tuple[int, int]], None] | None
+    ) = None
 
     def __post_init__(self) -> None:
         if (
@@ -1216,6 +1219,10 @@ class RuntimeLaunchContext:
             or (
                 self.record_process_identity is not None
                 and not callable(self.record_process_identity)
+            )
+            or (
+                self.record_scratch_identity is not None
+                and not callable(self.record_scratch_identity)
             )
             or (self.workspace_fd is None) != (self.workspace_identity is None)
             or (
@@ -2933,6 +2940,8 @@ class TrustedProcessBackend:
                             lease_id=lease_id,
                         )
                     native_scratch_identity = (scratch_meta.st_dev, scratch_meta.st_ino)
+                    if context.record_scratch_identity is not None:
+                        context.record_scratch_identity(native_scratch_identity)
                     envelope = await asyncio.to_thread(
                         launch_envelope,
                         lease_id=lease_id,
@@ -2940,6 +2949,8 @@ class TrustedProcessBackend:
                         workspace=workspace,
                         scratch=scratch,
                         workspace_fd=context.workspace_fd,
+                        scratch_fd=scratch_fd,
+                        scratch_identity=native_scratch_identity,
                         authenticator=context.containment_authenticator,
                         tmpfs_size_bytes=plan.resources.storage_bytes,
                     )
@@ -3229,6 +3240,8 @@ def _native_scratch_present(manager: SandboxRuntimeManager, lease_id: str) -> bo
 def _remove_native_scratch(
     manager: SandboxRuntimeManager,
     lease_id: str,
+    *,
+    expected_identity: tuple[int, int] | None = None,
 ) -> CleanupStepReceipt:
     root_fd = manager._lease_root_fd
     if root_fd is None:
@@ -3262,7 +3275,17 @@ def _remove_native_scratch(
         return CleanupStepReceipt("native_scratch", CleanupState.ALREADY_RELEASED)
     except BaseException as exc:
         return CleanupStepReceipt("native_scratch", CleanupState.FAILED, type(exc).__name__)
-    os.close(descriptor)
+    try:
+        if expected_identity is not None:
+            meta = os.fstat(descriptor)
+            if (meta.st_dev, meta.st_ino) != expected_identity:
+                return CleanupStepReceipt(
+                    "native_scratch",
+                    CleanupState.QUARANTINED,
+                    "scratch_identity_mismatch",
+                )
+    finally:
+        os.close(descriptor)
     pending: list[tuple[tuple[str, ...], bool]] = [((name,), False)]
     try:
         while pending:
@@ -4754,8 +4777,13 @@ class VerifierWorkspaceLease:
             }
             steps = [runtime_step]
             if _native_scratch_present(self._manager, self.lease_id):
+                scratch_identity = getattr(self._runtime, "native_scratch_identity", None)
                 steps.append(
-                    _remove_native_scratch(self._manager, self.lease_id)
+                    _remove_native_scratch(
+                        self._manager,
+                        self.lease_id,
+                        expected_identity=scratch_identity,
+                    )
                     if runtime_released
                     else CleanupStepReceipt(
                         "native_scratch",
@@ -5006,6 +5034,7 @@ class SandboxRuntimeManager:
         workspace_fd: int,
         workspace_identity: tuple[int, int],
         owner_token: str,
+        record_scratch_identity: Callable[[tuple[int, int]], None] | None = None,
     ) -> RuntimeLaunchContext:
         measured = dict(self.materialization_store.storage_backend.measure(workspace))
         authority = measured.get("authority_id")
@@ -5065,6 +5094,7 @@ class SandboxRuntimeManager:
             workspace_fd=workspace_fd,
             workspace_identity=workspace_identity,
             owner_token=owner_token,
+            record_scratch_identity=record_scratch_identity,
             containment_authenticator=self._containment_authenticator,
         )
 
@@ -5431,6 +5461,7 @@ class SandboxRuntimeManager:
                 record_written = True
                 backend = self.process_backend if plan.runtime.runtime_class is RuntimeClass.TRUSTED_PROCESS else self.docker_backend
                 if backend is None: raise SandboxLaunchError("runtime backend unavailable", code="runtime_unsupported")
+                created_scratch_identities: list[tuple[int, int]] = []
                 context = self._launch_context(
                     plan=plan,
                     workspace=materialized.workspace_path,
@@ -5442,6 +5473,7 @@ class SandboxRuntimeManager:
                     workspace_fd=materialized.duplicate_workspace_fd(),
                     workspace_identity=materialized.workspace_identity,
                     owner_token=owner_token,
+                    record_scratch_identity=created_scratch_identities.append,
                 )
                 runtime, measurement = await backend.launch(
                     plan, materialized.workspace_path, context=context
@@ -5544,15 +5576,33 @@ class SandboxRuntimeManager:
                     ))
                 scratch_present = _native_scratch_present(self, lease_id)
                 if scratch_present:
-                    cleanup_steps.append(
-                        _remove_native_scratch(self, lease_id)
-                        if runtime_released
-                        else CleanupStepReceipt(
-                            "native_scratch",
-                            CleanupState.QUARANTINED,
-                            "dependent runtime cleanup incomplete",
-                        )
+                    created_identity = (
+                        created_scratch_identities[0]
+                        if created_scratch_identities
+                        else getattr(runtime, "native_scratch_identity", None)
                     )
+                    if created_identity is not None:
+                        cleanup_steps.append(
+                            _remove_native_scratch(
+                                self,
+                                lease_id,
+                                expected_identity=created_identity,
+                            )
+                            if runtime_released
+                            else CleanupStepReceipt(
+                                "native_scratch",
+                                CleanupState.QUARANTINED,
+                                "dependent runtime cleanup incomplete",
+                            )
+                        )
+                    else:
+                        cleanup_steps.append(
+                            CleanupStepReceipt(
+                                "native_scratch",
+                                CleanupState.QUARANTINED,
+                                "preexisting_scratch_preserved",
+                            )
+                        )
                 dependencies_released = all(
                     step.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
                     for step in cleanup_steps

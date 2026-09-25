@@ -1754,6 +1754,8 @@ def launch_envelope(
     workspace: Path,
     scratch: Path,
     workspace_fd: int,
+    scratch_fd: int,
+    scratch_identity: tuple[int, int],
     authenticator: ReceiptAuthenticator,
     tmpfs_size_bytes: int,
 ) -> EnvelopeLaunch:
@@ -1763,9 +1765,29 @@ def launch_envelope(
         f"/proc/self/fd/{workspace_fd}",
         os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC,
     )
-    scratch_fd = os.open(
-        scratch, os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC
-    )
+    try:
+        scratch_path_fd = os.open(
+            f"/proc/self/fd/{scratch_fd}",
+            os.O_PATH | os.O_DIRECTORY | os.O_CLOEXEC,
+        )
+    except BaseException:
+        os.close(workspace_path_fd)
+        raise
+    try:
+        scratch_meta = os.fstat(scratch_path_fd)
+        if (
+            not stat.S_ISDIR(scratch_meta.st_mode)
+            or (scratch_meta.st_dev, scratch_meta.st_ino) != scratch_identity
+        ):
+            raise EnvelopeLaunchError(
+                f"envelope scratch identity mismatch: expected {scratch_identity}, got {(scratch_meta.st_dev, scratch_meta.st_ino)}",
+                code="envelope_scratch_mismatch",
+                phase="scratch_verify",
+            )
+    except BaseException:
+        os.close(workspace_path_fd)
+        os.close(scratch_path_fd)
+        raise
     control_parent, control_child = socket.socketpair(
         socket.AF_UNIX, socket.SOCK_SEQPACKET
     )
@@ -1776,7 +1798,7 @@ def launch_envelope(
         control_parent.close()
         control_child.close()
         os.close(workspace_path_fd)
-        os.close(scratch_fd)
+        os.close(scratch_path_fd)
         raise EnvelopeLaunchError(
             str(exc),
             code="envelope_resources_exhausted" if exc.errno == errno.EAGAIN else "envelope_launch_failed",
@@ -1792,14 +1814,14 @@ def launch_envelope(
             workspace_fd=os.dup(workspace_path_fd),
             workspace=str(workspace),
             scratch=str(scratch),
-            scratch_fd=scratch_fd,
+            scratch_fd=scratch_path_fd,
             authenticator=authenticator,
             tmpfs_size_bytes=tmpfs_size_bytes,
         )
         os._exit(70)
     control_child.close()
     os.close(workspace_path_fd)
-    os.close(scratch_fd)
+    os.close(scratch_path_fd)
     pid1_fd = -1
     try:
         ready: dict[str, Any] | None = None
