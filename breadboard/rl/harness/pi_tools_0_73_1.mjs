@@ -401,7 +401,8 @@ async function initialize(payload) {
   const home = resolve(scratch, "home");
   const tmpdir = resolve(scratch, "tmp");
   await mkdir(agentDir);
-  await mkdir(home);
+  // The attested lease envelope creates <scratch>/home and exports it as HOME.
+  await mkdir(home, { recursive: true });
   await mkdir(tmpdir);
   process.env.HOME = home;
   process.env.TMPDIR = tmpdir;

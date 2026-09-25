@@ -1038,6 +1038,27 @@ async def test_pi_native_worker_close_skips_already_dead_process_group(tmp_path:
 
 
 @pytest.mark.asyncio
+async def test_pi_native_worker_adopts_envelope_created_home(tmp_path: Path) -> None:
+    # The attested lease envelope creates <scratch>/home before the worker
+    # starts (lease_envelope._setup_mount_view) and exports it as HOME.
+    port = _NativeWorkerPort(tmp_path, ())
+    (port.scratch / "home").mkdir(mode=0o700)
+    try:
+        initialized = await port.invoke_native_phase(
+            "initialize",
+            {
+                "task": "envelope home",
+                "model_config": {"id": "model-a", "provider": "openai", "input": ["text"]},
+            },
+            timeout_ms=5_000,
+        )
+        assert initialized["kind"] == "initialized"
+        assert initialized["bootstrap"]["home"] == str(port.scratch / "home")
+    finally:
+        await port.close()
+
+
+@pytest.mark.asyncio
 async def test_pi_native_worker_preserves_late_detached_stdout_until_wait_grace(tmp_path: Path) -> None:
     port = _NativeWorkerPort(tmp_path, ())
     try:
