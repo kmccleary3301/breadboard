@@ -55,7 +55,7 @@ Since PR #145 (commit cc2eaf21), every Linux envelope launch fails in `_setup_mo
 
   - At the base, the real-launch failures are `mount_view: [Errno 22] Invalid argument`.
   - At 1f9adf09, the remaining failures are exactly the four test defects listed in section 2, and all four also fail at the base.
-  - A rerun at the corrected head is required.
+  - Job 1339 (kit `do2-envns-gate-w93.sh`) reran the gate at 4a8d7960 (tree 902767a7), which contains these test corrections. Root: 216 passed, 1 skipped. Unprivileged: 74 passed, 1 skipped. The only skip is the unsupported-host contract, which is skipped because this host supports sealed execution.
 - **Still required:** rerun the Hermes installed replay on a SIF built from a lane that contains this change.
 
 ## 6) Rollout Plan
