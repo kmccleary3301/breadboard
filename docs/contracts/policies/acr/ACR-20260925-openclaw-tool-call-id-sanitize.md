@@ -25,7 +25,7 @@ In DO-2 overlay job 1309, BreadBoard's replay wire carried truncated tool-call i
 - **Tests:** `tests/rl/harness/test_openclaw_native_stream_conductor.py`.
   - `test_openclaw_replay_tool_call_id_sanitizes_long_id_on_wire` checks that a history id longer than 40 characters reaches the wire, in both the assistant `tool_calls[].id` and the tool `tool_call_id`, as the id the pinned supplier sanitizer produces. The test computes that expected id by calling the dist function.
   - `test_openclaw_conductor_commits_poll_before_ack` now matches on the supplier-sanitized wire ids.
-- **Kernel danger-zone:** yes (`breadboard/**`).
+- Kernel danger-zone: yes, `breadboard/rl/harness/openclaw_tool_worker.mjs` is under the kernel protected surface (`breadboard/**`).
 
 ## 3) Coupling and Generalization Impact
 
@@ -43,3 +43,17 @@ In DO-2 overlay job 1309, BreadBoard's replay wire carried truncated tool-call i
 
 - Reverse-apply: against the base `openclaw_tool_worker.mjs` (3ada0f6a), both tests fail (2 failed). With the change, `test_openclaw_native_stream_conductor.py` passes 17/17.
 - Installed Linux replay of all six OpenClaw cases is required after PR #145 merges and the SIF is rebuilt.
+
+## 6) Rollout Plan
+
+An independent exact-head review checks the imported supplier helpers and digests. After PR #145 merges, the lane is rebuilt into a versioned SIF and the six OpenClaw cases are replayed on DO-2 against the supplier capture.
+
+## 7) Rollback Plan
+
+Revert the commit. The wire then reverts to unsanitized, truncated ids, which is the known divergent state.
+
+## 8) Approvals
+
+- Kernel reviewer: independent exact-head review required.
+- Contracts reviewer: independent exact-head review required.
+- Final decision: Main retains promotion authority; this ACR does not authorize merge.
