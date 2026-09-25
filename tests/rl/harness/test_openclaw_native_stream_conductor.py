@@ -19,6 +19,7 @@ import pytest
 from breadboard.artifacts.cas import FilesystemCAS
 from breadboard.product.harness.resolution import compile_e4_harness
 from breadboard.rl.harness import contracts as c
+from breadboard.rl.harness.lease_envelope import RuntimeContainment
 from breadboard.rl.harness.policy_provider import (
     E4TargetPolicyProjection,
     EpisodeOpenAICompletionsPolicyClient,
@@ -47,12 +48,18 @@ from breadboard_engine.compilation.provider_response import (
 from breadboard_engine.e4_targets import load_e4_target
 from breadboard_engine.provider.contracts import OpenAICompletionsProviderProfile
 from tests.compilation.test_server_compiler import _options
-from tests.rl.harness.test_runner_conductor import _digest, _tool_grant
+from tests.rl.harness.test_runner_conductor import (
+    CONDUCTOR_TEST_AUTHENTICATOR,
+    CONDUCTOR_TEST_LEDGER,
+    _digest,
+    _tool_grant,
+)
 from tests.rl.harness.test_runner_policy_runtime import (
     _observation,
     _plan,
     _policy_capabilities,
 )
+from tests.rl.harness.v2_service_fixtures import signed_containment_receipt
 
 
 
@@ -218,6 +225,11 @@ def _scripted_server(responses: list[list[tuple[str, str, Mapping[str, Any]]]] |
 
 class _NativeWorkerPort:
     def __init__(self, workspace: Path, grants: tuple[RunnerToolBinding, ...]) -> None:
+        self.containment = RuntimeContainment.ATTESTED
+        self.containment_lease_id = "lease-conductor-test"
+        self.containment_receipt = signed_containment_receipt(
+            self.containment_lease_id, "sandbox", CONDUCTOR_TEST_AUTHENTICATOR
+        )
         self.workspace = workspace
         self.scratch = workspace.parent / f"{workspace.name}-scratch"
         self.scratch.mkdir()
@@ -511,7 +523,11 @@ async def _run_episode(
             RunnerOpenRequest(episode_id="episode-openclaw", effective_plan=plan), client
         )
         sink = _Events()
-        session = await ConductorAdapter(CONDUCTOR_RUNTIME_ABI).open(
+        session = await ConductorAdapter(
+            CONDUCTOR_RUNTIME_ABI,
+            containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR,
+            admitted_lease_ledger=CONDUCTOR_TEST_LEDGER,
+        ).open(
             RunnerOpenRequest(episode_id="episode-openclaw", effective_plan=plan),
             policy=binding,
             workspace=worker,
@@ -1173,7 +1189,7 @@ def test_installed_worker_argv_comes_from_sealed_target(
         "tool_ids": sorted(["ls", "read", "edit", "write", "exec", "process"]),
         "runtime_root": {
             "authority_id": "native-runtime", "path": str(root),
-            "device": stat.st_dev, "inode": stat.st_ino,
+            "device": str(stat.st_dev), "inode": str(stat.st_ino),
             "owner_uid": stat.st_uid, "mode": "0700",
         },
         "manifest_ref": {

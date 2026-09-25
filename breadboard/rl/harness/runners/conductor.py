@@ -2489,9 +2489,13 @@ class _ConductorSession:
         try:
             closed = await close_once()
         except BaseException as exc:
-            cleanup_exception = exc
-            if isinstance(exc, asyncio.CancelledError):
+            if (
+                isinstance(exc, asyncio.CancelledError)
+                or classified is None
+                or profile.finalize_result_phase is None
+            ):
                 raise
+            cleanup_exception = exc
 
         cleanup = closed.get("cleanup") if isinstance(closed, Mapping) else None
         effects = await tools.measure_workspace_effects()

@@ -3995,7 +3995,7 @@ def _native_close_test_case(
     monkeypatch.setattr(
         conductor_module,
         "NATIVE_STREAM_PROFILES",
-        {PI_RESPONSE_CONSUMER_ID: profile},
+        {**conductor_module.NATIVE_STREAM_PROFILES, PI_RESPONSE_CONSUMER_ID: profile},
     )
     request_body = {"model": model["model_id"], "messages": [], "tools": []}
     request_digest = conductor_module.canonical_sha256(request_body).removeprefix("sha256:")
