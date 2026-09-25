@@ -3309,59 +3309,120 @@ def _remove_native_scratch(
     except BaseException as exc:
         return CleanupStepReceipt("native_scratch", CleanupState.FAILED, type(exc).__name__)
 
+    current_fd: int | None = scratch_fd
     try:
-        meta = os.fstat(scratch_fd)
-        if meta.st_dev != root_device:
+        current_stat = os.fstat(scratch_fd)
+        if current_stat.st_dev != root_device:
             raise OSError(errno.EXDEV, "native scratch crosses a device")
-        if expected_identity is not None and (meta.st_dev, meta.st_ino) != expected_identity:
+        if expected_identity is not None and (current_stat.st_dev, current_stat.st_ino) != expected_identity:
             return CleanupStepReceipt(
                 "native_scratch",
                 CleanupState.QUARANTINED,
                 "scratch_identity_mismatch",
             )
 
-        def remove_contents(dir_fd: int) -> None:
-            try:
-                os.fchmod(dir_fd, stat.S_IMODE(os.fstat(dir_fd).st_mode) | 0o700)
-            except OSError:
-                pass
-            with os.scandir(dir_fd) as scanner:
-                entries = tuple(scanner)
-            for entry in entries:
-                metadata = entry.stat(follow_symlinks=False)
-                if metadata.st_dev != root_device:
-                    raise OSError(errno.EXDEV, "native scratch crosses a device")
-                if entry.is_dir(follow_symlinks=False):
-                    if (stat.S_IMODE(metadata.st_mode) & 0o700) != 0o700:
-                        try:
+        current_name = name
+        current_subdirs: list[tuple[str, int, int]] | None = None
+        ancestors: list[tuple[str, int, int]] = []
+        subdirs_stack: list[list[tuple[str, int, int]]] = []
+        active_child_stack: list[tuple[str, int, int]] = []
+
+        while True:
+            if current_subdirs is None:
+                os.fchmod(current_fd, stat.S_IMODE(os.fstat(current_fd).st_mode) | 0o700)
+                current_subdirs = []
+                for entry_name in os.listdir(current_fd):
+                    entry_meta = os.stat(entry_name, dir_fd=current_fd, follow_symlinks=False)
+                    if entry_meta.st_dev != root_device:
+                        raise OSError(errno.EXDEV, "native scratch crosses a device")
+                    if stat.S_ISDIR(entry_meta.st_mode):
+                        if (stat.S_IMODE(entry_meta.st_mode) & 0o700) != 0o700:
                             os.chmod(
-                                entry.name,
-                                stat.S_IMODE(metadata.st_mode) | 0o700,
-                                dir_fd=dir_fd,
+                                entry_name,
+                                stat.S_IMODE(entry_meta.st_mode) | 0o700,
+                                dir_fd=current_fd,
                                 follow_symlinks=False,
                             )
-                        except OSError:
-                            pass
-                    child_fd = os.open(entry.name, directory_flags, dir_fd=dir_fd)
-                    try:
-                        if os.fstat(child_fd).st_dev != root_device:
-                            raise OSError(errno.EXDEV, "native scratch crosses a device")
-                        remove_contents(child_fd)
-                    finally:
-                        os.close(child_fd)
-                    os.rmdir(entry.name, dir_fd=dir_fd)
-                else:
-                    os.unlink(entry.name, dir_fd=dir_fd)
-            try:
-                os.fsync(dir_fd)
-            except OSError:
-                pass
+                        current_subdirs.append((entry_name, entry_meta.st_dev, entry_meta.st_ino))
+                    else:
+                        os.unlink(entry_name, dir_fd=current_fd)
 
-        remove_contents(scratch_fd)
+            if current_subdirs:
+                child_name, child_dev, child_ino = current_subdirs.pop()
+                child_fd = os.open(child_name, directory_flags, dir_fd=current_fd)
+                try:
+                    child_meta = os.fstat(child_fd)
+                    if child_meta.st_dev != root_device:
+                        raise OSError(errno.EXDEV, "native scratch crosses a device")
+                    if (child_meta.st_dev, child_meta.st_ino) != (child_dev, child_ino):
+                        return CleanupStepReceipt(
+                            "native_scratch",
+                            CleanupState.QUARANTINED,
+                            "scratch_identity_mismatch",
+                        )
+                    ancestors.append((current_name, current_stat.st_dev, current_stat.st_ino))
+                    subdirs_stack.append(current_subdirs)
+                    active_child_stack.append((child_name, child_dev, child_ino))
+
+                    os.close(current_fd)
+                    current_fd = child_fd
+                    child_fd = None
+                    current_name = child_name
+                    current_stat = child_meta
+                    current_subdirs = None
+                finally:
+                    if child_fd is not None:
+                        os.close(child_fd)
+                continue
+
+            os.fsync(current_fd)
+            if not ancestors:
+                break
+
+            expected_parent = ancestors.pop()
+            restored_subdirs = subdirs_stack.pop()
+            active_child = active_child_stack.pop()
+
+            parent_fd = os.open("..", directory_flags, dir_fd=current_fd)
+            try:
+                parent_meta = os.fstat(parent_fd)
+                if parent_meta.st_dev != root_device:
+                    raise OSError(errno.EXDEV, "native scratch crosses a device")
+                if (parent_meta.st_dev, parent_meta.st_ino) != (expected_parent[1], expected_parent[2]):
+                    return CleanupStepReceipt(
+                        "native_scratch",
+                        CleanupState.QUARANTINED,
+                        "scratch_identity_mismatch",
+                    )
+                os.close(current_fd)
+                current_fd = parent_fd
+                parent_fd = None
+                current_name = expected_parent[0]
+                current_stat = parent_meta
+                current_subdirs = restored_subdirs
+            finally:
+                if parent_fd is not None:
+                    os.close(parent_fd)
+
+            child_meta = os.stat(active_child[0], dir_fd=current_fd, follow_symlinks=False)
+            if child_meta.st_dev != root_device:
+                raise OSError(errno.EXDEV, "native scratch crosses a device")
+            if (child_meta.st_dev, child_meta.st_ino) != (active_child[1], active_child[2]):
+                return CleanupStepReceipt(
+                    "native_scratch",
+                    CleanupState.QUARANTINED,
+                    "scratch_identity_mismatch",
+                )
+            os.rmdir(active_child[0], dir_fd=current_fd)
     except BaseException as exc:
         return CleanupStepReceipt("native_scratch", CleanupState.FAILED, type(exc).__name__)
     finally:
-        os.close(scratch_fd)
+        if current_fd is not None:
+            try:
+                os.close(current_fd)
+            except OSError:
+                pass
+        current_fd = None
 
     try:
         final_meta = os.stat(name, dir_fd=root_fd, follow_symlinks=False)
@@ -3374,16 +3435,12 @@ def _remove_native_scratch(
                 "scratch_identity_mismatch",
             )
         os.rmdir(name, dir_fd=root_fd)
-        try:
-            os.fsync(root_fd)
-        except OSError:
-            pass
+        os.fsync(root_fd)
         return CleanupStepReceipt("native_scratch", CleanupState.RELEASED)
     except FileNotFoundError:
         return CleanupStepReceipt("native_scratch", CleanupState.ALREADY_RELEASED)
     except BaseException as exc:
         return CleanupStepReceipt("native_scratch", CleanupState.FAILED, type(exc).__name__)
-
 def _cleanup_native_scratch_step(
     manager: SandboxRuntimeManager,
     lease_id: str,

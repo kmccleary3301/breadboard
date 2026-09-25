@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import stat
+import resource
 import threading
 from dataclasses import replace
 from datetime import timedelta
@@ -1902,6 +1903,184 @@ def test_remove_native_scratch_nested_structure_and_symlink_preserved(
     assert not scratch.exists()
     assert outside.is_file()
     assert outside.read_text(encoding="utf-8") == "outside_content"
+
+def test_remove_native_scratch_1500_deep_nested_released(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    lease_id = "test-1500-deep-lease"
+    scratch = sandbox_module._create_native_scratch(harness.manager, lease_id)
+    scratch_stat = scratch.stat()
+    expected_identity = (scratch_stat.st_dev, scratch_stat.st_ino)
+
+    scratch_fd = os.open(scratch, os.O_RDONLY | os.O_DIRECTORY)
+    curr_fd = scratch_fd
+    try:
+        for i in range(1500):
+            name = f"d{i}"
+            os.mkdir(name, dir_fd=curr_fd)
+            next_fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY, dir_fd=curr_fd)
+            if curr_fd != scratch_fd:
+                os.close(curr_fd)
+            curr_fd = next_fd
+        leaf_fd = os.open("deep_file.txt", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, dir_fd=curr_fd)
+        os.write(leaf_fd, b"deep_content")
+        os.close(leaf_fd)
+    finally:
+        if curr_fd != scratch_fd:
+            os.close(curr_fd)
+        os.close(scratch_fd)
+
+    receipt = sandbox_module._remove_native_scratch(
+        harness.manager, lease_id, expected_identity=expected_identity
+    )
+
+    assert receipt.state is CleanupState.RELEASED
+    assert not scratch.exists()
+
+
+def test_remove_native_scratch_lowered_rlimit_200_deep_released(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    lease_id = "test-rlimit-200-deep-lease"
+    scratch = sandbox_module._create_native_scratch(harness.manager, lease_id)
+    scratch_stat = scratch.stat()
+    expected_identity = (scratch_stat.st_dev, scratch_stat.st_ino)
+
+    scratch_fd = os.open(scratch, os.O_RDONLY | os.O_DIRECTORY)
+    curr_fd = scratch_fd
+    try:
+        for i in range(200):
+            name = f"d{i}"
+            os.mkdir(name, dir_fd=curr_fd)
+            next_fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY, dir_fd=curr_fd)
+            if curr_fd != scratch_fd:
+                os.close(curr_fd)
+            curr_fd = next_fd
+        leaf_fd = os.open("deep_file.txt", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, dir_fd=curr_fd)
+        os.write(leaf_fd, b"deep_content")
+        os.close(leaf_fd)
+    finally:
+        if curr_fd != scratch_fd:
+            os.close(curr_fd)
+        os.close(scratch_fd)
+
+    def count_open_fds() -> int:
+        try:
+            return len(os.listdir("/dev/fd"))
+        except Exception:
+            count = 0
+            for fd in range(1024):
+                try:
+                    os.fstat(fd)
+                    count += 1
+                except OSError:
+                    pass
+            return count
+
+    orig_soft, orig_hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    current_open = count_open_fds()
+    resource.setrlimit(resource.RLIMIT_NOFILE, (current_open + 16, orig_hard))
+    try:
+        receipt = sandbox_module._remove_native_scratch(
+            harness.manager, lease_id, expected_identity=expected_identity
+        )
+        assert receipt.state is CleanupState.RELEASED
+        assert not scratch.exists()
+    finally:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (orig_soft, orig_hard))
+
+
+def test_remove_native_scratch_ancestor_swapped_during_traversal_quarantined(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    lease_id = "test-ancestor-swap-traversal"
+    scratch = sandbox_module._create_native_scratch(harness.manager, lease_id)
+    scratch_stat = scratch.stat()
+    expected_identity = (scratch_stat.st_dev, scratch_stat.st_ino)
+
+    ancestor_dir = scratch / "ancestor"
+    child_dir = ancestor_dir / "child"
+    child_dir.mkdir(parents=True)
+    child_file = child_dir / "child_file.txt"
+    child_file.write_text("child_data", encoding="utf-8")
+
+    swapped = False
+    replacement_sentinel = ancestor_dir / "replacement_sentinel.txt"
+    renamed_ancestor = scratch / "ancestor-renamed"
+
+    real_open = os.open
+
+    def open_hook(path, flags, *args, **kwargs):
+        nonlocal swapped
+        fd = real_open(path, flags, *args, **kwargs)
+        if path == "child" and not swapped:
+            swapped = True
+            os.rename(ancestor_dir, renamed_ancestor)
+            os.mkdir(ancestor_dir, mode=0o700)
+            replacement_sentinel.write_text("replacement_survives", encoding="utf-8")
+        return fd
+
+    monkeypatch.setattr(os, "open", open_hook)
+
+    try:
+        receipt = sandbox_module._remove_native_scratch(
+            harness.manager, lease_id, expected_identity=expected_identity
+        )
+        assert swapped is True
+        assert receipt.state is not CleanupState.RELEASED
+        assert receipt.state is CleanupState.QUARANTINED
+        assert receipt.detail == "scratch_identity_mismatch"
+        assert ancestor_dir.is_dir()
+        assert replacement_sentinel.is_file()
+        assert replacement_sentinel.read_text(encoding="utf-8") == "replacement_survives"
+    finally:
+        if replacement_sentinel.exists():
+            replacement_sentinel.unlink()
+        if ancestor_dir.is_dir():
+            ancestor_dir.rmdir()
+        if renamed_ancestor.is_dir():
+            import shutil
+            shutil.rmtree(renamed_ancestor, ignore_errors=True)
+        if scratch.is_dir():
+            scratch.rmdir()
+
+def test_remove_native_scratch_ascent_parent_mismatch_quarantined(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    lease_id = "test-ascent-parent-mismatch"
+    scratch = sandbox_module._create_native_scratch(harness.manager, lease_id)
+    scratch_stat = scratch.stat()
+    expected_identity = (scratch_stat.st_dev, scratch_stat.st_ino)
+
+    child_dir = scratch / "child"
+    child_dir.mkdir()
+    (child_dir / "file.txt").write_text("data", encoding="utf-8")
+
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+
+    real_open = os.open
+
+    def open_hook(path, flags, *args, **kwargs):
+        if path == "..":
+            return real_open(str(other_dir), flags)
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", open_hook)
+
+    receipt = sandbox_module._remove_native_scratch(
+        harness.manager, lease_id, expected_identity=expected_identity
+    )
+    assert receipt.state is CleanupState.QUARANTINED
+    assert receipt.detail == "scratch_identity_mismatch"
 
 @pytest.mark.asyncio
 async def test_open_preserves_preexisting_native_scratch_on_preflight_failure(
