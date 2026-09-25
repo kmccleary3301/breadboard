@@ -298,6 +298,204 @@ def test_only_launcher_descriptor_positions_reach_the_child() -> None:
     assert report["status_is_exec"] is False
 
 
+def test_prepare_exec_descriptors_script_format_argv_fd_mapping() -> None:
+    report_r, report_w = os.pipe()
+    status_r, status_w = os.pipe()
+    ready_r, ready_w = os.pipe()
+    exec_source = os.open(os.devnull, os.O_RDONLY)
+    command_source = os.open(os.devnull, os.O_RDONLY)
+    child = os.fork()
+    if child == 0:
+        try:
+            os.close(report_r)
+            raw_argv = [
+                f"/proc/self/fd/{exec_source}",
+                "-lc",
+                'exec "$@"',
+                "breadboard-execute",
+                f"/proc/self/fd/{exec_source}",
+                f"/proc/self/fd/{command_source}",
+                "extra_arg",
+            ]
+            descriptor_arguments = {
+                0: exec_source,
+                4: exec_source,
+                5: command_source,
+            }
+            exec_fd, rewritten_argv = lease_envelope._prepare_exec_descriptors(
+                [exec_source, command_source, status_w, ready_w],
+                exec_fd=exec_source,
+                status_fd=status_w,
+                exec_ready_fd=ready_w,
+                argv=raw_argv,
+                descriptor_arguments=descriptor_arguments,
+            )
+            arg_shell_fd = int(rewritten_argv[4].removeprefix("/proc/self/fd/"))
+            arg_cmd_fd = int(rewritten_argv[5].removeprefix("/proc/self/fd/"))
+            os.set_inheritable(exec_fd, False)
+            report = {
+                "exec_fd": exec_fd,
+                "rewritten_argv": rewritten_argv,
+                "arg_shell_fd": arg_shell_fd,
+                "arg_cmd_fd": arg_cmd_fd,
+                "exec_inheritable": os.get_inheritable(exec_fd),
+                "shell_inheritable": os.get_inheritable(arg_shell_fd),
+                "cmd_inheritable": os.get_inheritable(arg_cmd_fd),
+            }
+            os.write(report_w, json.dumps(report).encode())
+        finally:
+            os._exit(0)
+    os.close(report_w)
+    os.close(status_r)
+    os.close(status_w)
+    os.close(ready_r)
+    os.close(ready_w)
+    os.close(exec_source)
+    os.close(command_source)
+    _, exit_status = os.waitpid(child, 0)
+    assert os.WIFEXITED(exit_status) and os.WEXITSTATUS(exit_status) == 0
+    with os.fdopen(report_r, "rb") as stream:
+        report = json.loads(stream.read())
+    exec_fd = report["exec_fd"]
+    rewritten_argv = report["rewritten_argv"]
+    arg_shell_fd = report["arg_shell_fd"]
+    arg_cmd_fd = report["arg_cmd_fd"]
+    assert rewritten_argv[0] == f"/proc/self/fd/{exec_fd}"
+    assert arg_shell_fd != exec_fd
+    assert arg_cmd_fd != exec_fd
+    assert arg_cmd_fd != arg_shell_fd
+    assert report["shell_inheritable"] is True
+    assert report["cmd_inheritable"] is True
+    assert report["exec_inheritable"] is False
+    assert rewritten_argv[1:4] == ["-lc", 'exec "$@"', "breadboard-execute"]
+    assert rewritten_argv[6] == "extra_arg"
+
+def test_prepare_exec_descriptors_high_source_collision_resistance(
+    tmp_path: Path,
+) -> None:
+    path_exec = tmp_path / "exec_source.bin"
+    path_exec.write_bytes(b"exec_target")
+    path_arg1 = tmp_path / "arg1.txt"
+    path_arg1.write_bytes(b"descriptor_arg_1")
+    path_arg2 = tmp_path / "arg2.txt"
+    path_arg2.write_bytes(b"descriptor_arg_2")
+
+    report_r, report_w = os.pipe()
+    status_r, status_w = os.pipe()
+    ready_r, ready_w = os.pipe()
+    child = os.fork()
+    if child == 0:
+        try:
+            os.close(report_r)
+            os.close(status_r)
+            os.close(ready_r)
+            # Open several low file descriptors to fill up the lowest numbers
+            low_holes = [os.open(os.devnull, os.O_RDONLY) for _ in range(25)]
+
+            # Open sources at high descriptor numbers
+            exec_source = os.open(str(path_exec), os.O_RDONLY)
+            arg1_source = os.open(str(path_arg1), os.O_RDONLY)
+            arg2_source = os.open(str(path_arg2), os.O_RDONLY)
+
+            # Close the low descriptors to create free holes at low numbers
+            for fd in low_holes:
+                os.close(fd)
+
+            raw_argv = [
+                f"/proc/self/fd/{exec_source}",
+                "-lc",
+                'exec "$@"',
+                "breadboard-execute",
+                f"/proc/self/fd/{exec_source}",
+                f"/proc/self/fd/{arg1_source}",
+                f"/proc/self/fd/{arg2_source}",
+            ]
+            descriptor_arguments = {
+                0: exec_source,
+                4: exec_source,
+                5: arg1_source,
+                6: arg2_source,
+            }
+            exec_fd, rewritten_argv = lease_envelope._prepare_exec_descriptors(
+                [exec_source, arg1_source, arg2_source, status_w, ready_w],
+                exec_fd=exec_source,
+                status_fd=status_w,
+                exec_ready_fd=ready_w,
+                argv=raw_argv,
+                descriptor_arguments=descriptor_arguments,
+            )
+
+            # Extract rewritten descriptor integers
+            fd_exec_target = int(rewritten_argv[0].removeprefix("/proc/self/fd/"))
+            fd_extra = int(rewritten_argv[4].removeprefix("/proc/self/fd/"))
+            fd_arg1 = int(rewritten_argv[5].removeprefix("/proc/self/fd/"))
+            fd_arg2 = int(rewritten_argv[6].removeprefix("/proc/self/fd/"))
+
+            stat_exec = os.fstat(fd_exec_target)
+            stat_extra = os.fstat(fd_extra)
+            stat_arg1 = os.fstat(fd_arg1)
+            stat_arg2 = os.fstat(fd_arg2)
+
+            os.set_inheritable(exec_fd, False)
+
+            report = {
+                "exec_fd": exec_fd,
+                "fd_exec_target": fd_exec_target,
+                "fd_extra": fd_extra,
+                "fd_arg1": fd_arg1,
+                "fd_arg2": fd_arg2,
+                "rewritten_argv": rewritten_argv,
+                "exec_target_identity": (stat_exec.st_dev, stat_exec.st_ino),
+                "extra_identity": (stat_extra.st_dev, stat_extra.st_ino),
+                "arg1_identity": (stat_arg1.st_dev, stat_arg1.st_ino),
+                "arg2_identity": (stat_arg2.st_dev, stat_arg2.st_ino),
+                "exec_inheritable": os.get_inheritable(exec_fd),
+                "extra_inheritable": os.get_inheritable(fd_extra),
+                "arg1_inheritable": os.get_inheritable(fd_arg1),
+                "arg2_inheritable": os.get_inheritable(fd_arg2),
+            }
+            os.write(report_w, json.dumps(report).encode())
+        except BaseException as exc:
+            try:
+                os.write(report_w, json.dumps({"error": str(exc)}).encode())
+            except Exception:
+                pass
+            os._exit(1)
+        finally:
+            os._exit(0)
+
+    os.close(report_w)
+    os.close(status_r)
+    os.close(status_w)
+    os.close(ready_r)
+    os.close(ready_w)
+    _, exit_status = os.waitpid(child, 0)
+    assert os.WIFEXITED(exit_status) and os.WEXITSTATUS(exit_status) == 0
+    with os.fdopen(report_r, "rb") as stream:
+        report = json.loads(stream.read())
+    assert "error" not in report, report.get("error")
+
+    expected_exec_identity = (path_exec.stat().st_dev, path_exec.stat().st_ino)
+    expected_arg1_identity = (path_arg1.stat().st_dev, path_arg1.stat().st_ino)
+    expected_arg2_identity = (path_arg2.stat().st_dev, path_arg2.stat().st_ino)
+
+    # Exec target and extra must be distinct numbers
+    assert report["exec_fd"] == report["fd_exec_target"]
+    assert report["fd_exec_target"] != report["fd_extra"]
+
+    # Each rewritten descriptor refers to the same file as its source (st_ino/st_dev equality)
+    assert tuple(report["exec_target_identity"]) == expected_exec_identity
+    assert tuple(report["extra_identity"]) == expected_exec_identity
+    assert tuple(report["arg1_identity"]) == expected_arg1_identity
+    assert tuple(report["arg2_identity"]) == expected_arg2_identity
+
+    # Inheritability across exec
+    assert report["exec_inheritable"] is False
+    assert report["extra_inheritable"] is True
+    assert report["arg1_inheritable"] is True
+    assert report["arg2_inheritable"] is True
+
+
 def _spawn_message(**overrides: object) -> dict[str, object]:
     message: dict[str, object] = {
         "fd_count": 10,
@@ -1375,6 +1573,55 @@ async def test_pinned_verifier_executes_admitted_bytes_after_source_replacement(
     assert result["stdout"] == "admitted-verifier"
     assert (await primary.close()).state is CleanupState.RELEASED
     assert pinned.closed is True
+
+
+@requires_sealed_execution
+async def test_pinned_script_verifier_in_envelope_executes_with_open_descriptor_argv(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(
+        with_writable_mount=True,
+        runtime_install_root=tmp_path / "runtime",
+    )
+    (tmp_path / "harness").mkdir()
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    verifier_path = tmp_path / "script-verifier.sh"
+    verifier_script = (
+        "#!/bin/sh\n"
+        "for arg in \"$@\"; do\n"
+        "    case \"$arg\" in\n"
+        "        /proc/self/fd/*)\n"
+        "            if [ ! -e \"$arg\" ]; then\n"
+        "                echo \"closed fd path in argv: $arg\" >&2\n"
+        "                exit 42\n"
+        "            fi\n"
+        "            ;;\n"
+        "    esac\n"
+        "done\n"
+        "printf script-verifier-ok\n"
+    )
+    verifier_path.write_bytes(verifier_script.encode("utf-8"))
+    verifier_path.chmod(0o500)
+    verifier_digest = "sha256:" + __import__("hashlib").sha256(
+        verifier_path.read_bytes()
+    ).hexdigest()
+    pinned = _snapshot_installed_executable(str(verifier_path), verifier_digest)
+    assert pinned.execution_format == "script"
+    primary._runtime._command_executable = pinned
+
+    result = await primary._runtime.run_argv(
+        (str(verifier_path), "check-arg"),
+        timeout_ms=1_000,
+        output_limit=4_096,
+    )
+
+    assert result["returncode"] == 0
+    assert result["stdout"] == "script-verifier-ok"
+    assert (await primary.close()).state is CleanupState.RELEASED
+    assert pinned.closed is True
+
 
 @requires_sealed_execution
 async def test_pinned_binary_verifier_preserves_direct_execution(

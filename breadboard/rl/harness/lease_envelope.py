@@ -1710,7 +1710,10 @@ def _prepare_exec_descriptors(
     """Pack the exec and argv-named descriptors low; close every other one.
 
     ``descriptor_arguments`` maps argv positions to received descriptors; no
-    other argv entry is interpreted as a descriptor reference.
+    other argv entry is interpreted as a descriptor reference. Any argv entry
+    at position >= 1 referencing ``exec_fd`` receives a distinct inheritable
+    duplicate so it remains open across exec while the exec fd itself is
+    closed-on-exec.
     """
     referenced = {exec_fd, *descriptor_arguments.values()}
     mapping: dict[int, int] = {}
@@ -1731,6 +1734,16 @@ def _prepare_exec_descriptors(
                 os.close(fd)
             except OSError:
                 pass
+    if any(
+        position >= 1 and source == exec_fd
+        for position, source in descriptor_arguments.items()
+    ):
+        extra = max({*fds, *mapping, *mapping.values(), status_fd, exec_ready_fd}) + 1
+        os.dup2(mapping[exec_fd], extra, inheritable=True)
+        for position, source in descriptor_arguments.items():
+            if position >= 1 and source == exec_fd:
+                rewritten[position] = f"/proc/self/fd/{extra}"
+        preserved.add(extra)
     return mapping[exec_fd], rewritten
 
 

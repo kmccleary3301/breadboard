@@ -271,16 +271,31 @@ async def test_native_phase_payload_accepts_nesting_depth_beyond_eight(
         staticmethod(lambda _plan, _adapter: None),
     )
     workspace = sandbox_module.LeaseBackedRunnerWorkspace(lease, "plan", (binding,))
-    nested: dict[str, Any] = {"value": 42}
-    for _ in range(12):
-        nested = {"level": nested}
+    # Assert acceptance of realistic ~14-deep schema payload (e.g. OpenHands initialize tool definitions)
+    nested: dict[str, Any] = {"type": "string", "description": "leaf"}
+    for i in range(12):
+        nested = {"type": "object", f"prop_{i}": nested}
+    schema_payload = {"task": "initialize", "tools": [{"function": {"parameters": nested}}]}
     result = await workspace.invoke_native_phase(
         "step",
-        {"task": "nested", "config": nested},
+        schema_payload,
         timeout_ms=1_000,
     )
     assert result["kind"] == "stepped"
-    assert captured_payload[0]["config"] == nested
+    assert captured_payload[0] == schema_payload
+
+    # Assert rejection above harness constant _DEFAULT_JSON_DEPTH
+    from breadboard.rl.harness.runners.base import _DEFAULT_JSON_DEPTH
+    excessive: dict[str, Any] = {"value": 1}
+    for _ in range(_DEFAULT_JSON_DEPTH + 2):
+        excessive = {"k": excessive}
+    with pytest.raises(sandbox_module.WorkspaceStateError) as exc_info:
+        await workspace.invoke_native_phase(
+            "step",
+            {"nested": excessive},
+            timeout_ms=1_000,
+        )
+    assert exc_info.value.code == "runtime_preflight_failed"
 
 
 @pytest.mark.asyncio

@@ -49,6 +49,7 @@ from .materialization import (
     WorkspaceOpenRequest,
 )
 from .runners.base import (
+    _DEFAULT_JSON_DEPTH,
     JsonSnapshotError,
     RunnerToolBinding,
     freeze_json_object,
@@ -3820,7 +3821,7 @@ class LeaseBackedRunnerWorkspace:
                 frozen_payload = freeze_json_object(
                     payload,
                     field_name="native phase payload",
-                    max_depth=64,
+                    max_depth=_DEFAULT_JSON_DEPTH,
                     max_nodes=lease.plan.limits.observation_bytes + 1,
                     max_encoded_bytes=lease.plan.limits.observation_bytes,
                 )
