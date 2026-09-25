@@ -2572,3 +2572,24 @@ async def test_trusted_process_enforces_network_isolation_and_records_netns(
         server.close()
         await server.wait_closed()
         await primary.close()
+
+
+@requires_sealed_execution
+@pytest.mark.asyncio
+async def test_trusted_process_handle_rejects_workspace_descriptor_identity_mismatch(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    handle = primary._runtime
+    assert isinstance(handle, TrustedProcessHandle)
+    original_identity = handle._workspace_identity
+    handle._workspace_identity = (original_identity[0], original_identity[1] + 9999)
+    with pytest.raises(WorkspaceStateError) as exc_info:
+        await handle._start_stopped_process(["/bin/echo", "test"], timeout_ms=1000)
+    assert exc_info.value.code == "workspace_authority_mismatch"
+    assert "workspace descriptor identity changed" in str(exc_info.value)
+    handle._workspace_identity = original_identity
+    await primary.close()

@@ -2887,7 +2887,29 @@ class TrustedProcessBackend:
                         lease_id=lease_id,
                     )
                 await asyncio.to_thread(preflight_host_containment)
-                scratch.mkdir(mode=0o700, exist_ok=True)
+                try:
+                    os.mkdir(scratch, mode=0o700)
+                except FileExistsError:
+                    pass
+                scratch_fd = os.open(
+                    scratch,
+                    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+                )
+                try:
+                    scratch_meta = os.fstat(scratch_fd)
+                    if (
+                        not stat.S_ISDIR(scratch_meta.st_mode)
+                        or scratch_meta.st_uid != os.geteuid()
+                        or stat.S_IMODE(scratch_meta.st_mode) != 0o700
+                        or scratch.name != _native_scratch_name(lease_id)
+                    ):
+                        raise SandboxLaunchError(
+                            "attested trusted process native scratch authority is invalid",
+                            code="runtime_preflight_failed",
+                            lease_id=lease_id,
+                        )
+                finally:
+                    os.close(scratch_fd)
                 envelope = await asyncio.to_thread(
                     launch_envelope,
                     lease_id=lease_id,
@@ -3066,33 +3088,55 @@ def _create_native_scratch(manager: SandboxRuntimeManager, lease_id: str) -> Pat
             lease_id=lease_id,
         )
     name = _native_scratch_name(lease_id)
-    os.mkdir(name, mode=0o700, dir_fd=root_fd)
+    root_device = os.fstat(root_fd).st_dev
+    created = False
     try:
-        descriptor = os.open(
-            name,
-            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
-            dir_fd=root_fd,
-        )
+        os.mkdir(name, mode=0o700, dir_fd=root_fd)
+        created = True
+    except FileExistsError:
+        pass
+    except OSError as exc:
+        raise WorkspaceStateError(
+            "native scratch authority is unavailable",
+            code="workspace_authority_mismatch",
+            lease_id=lease_id,
+        ) from exc
+    descriptor = -1
+    try:
         try:
-            metadata = os.fstat(descriptor)
-            if (
-                not stat.S_ISDIR(metadata.st_mode)
-                or metadata.st_uid != os.geteuid()
-                or stat.S_IMODE(metadata.st_mode) != 0o700
-            ):
-                raise WorkspaceStateError(
-                    "native scratch authority is invalid",
-                    code="workspace_authority_mismatch",
-                    lease_id=lease_id,
-                )
-        finally:
-            os.close(descriptor)
+            descriptor = os.open(
+                name,
+                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=root_fd,
+            )
+        except OSError as exc:
+            raise WorkspaceStateError(
+                "native scratch authority is invalid",
+                code="workspace_authority_mismatch",
+                lease_id=lease_id,
+            ) from exc
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISDIR(metadata.st_mode)
+            or metadata.st_uid != os.geteuid()
+            or stat.S_IMODE(metadata.st_mode) != 0o700
+            or metadata.st_dev != root_device
+        ):
+            raise WorkspaceStateError(
+                "native scratch authority is invalid",
+                code="workspace_authority_mismatch",
+                lease_id=lease_id,
+            )
     except BaseException:
-        try:
-            os.rmdir(name, dir_fd=root_fd)
-        except OSError:
-            pass
+        if created:
+            try:
+                os.rmdir(name, dir_fd=root_fd)
+            except OSError:
+                pass
         raise
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
     return _native_scratch_path(manager, lease_id)
 
 
