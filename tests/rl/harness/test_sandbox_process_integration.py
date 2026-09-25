@@ -5,6 +5,7 @@ import asyncio
 from dataclasses import replace
 import errno
 import fcntl
+import hashlib
 import json
 import os
 import socket
@@ -14,6 +15,7 @@ import struct
 import shutil
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -417,6 +419,61 @@ def test_envelope_rejects_writable_inherited_child_mount(
     )
     monkeypatch.setattr(lease_envelope, "_mountinfo", lambda: mountinfo)
     with pytest.raises(OSError, match="/dev/shm"):
+        lease_envelope._verify_mount_view("/workspace", "/scratch", 1_000_000)
+
+
+def _stacked_tmp_mountinfo(covered_tmp_options: bytes, lease_tmp_parent: bytes) -> bytes:
+    # A container runtime mounted /tmp (id 5) before the envelope stacked its
+    # lease tmpfs (id 6) over it.
+    return (
+        b"1 0 1:1 / / ro - overlay root ro\n"
+        b"3 1 1:3 / /workspace rw - ext4 workspace rw\n"
+        b"4 1 1:4 / /scratch rw,nosuid,nodev - tmpfs scratch rw\n"
+        b"5 1 1:5 / /tmp " + covered_tmp_options + b" - tmpfs tmpfs rw\n"
+        b"6 " + lease_tmp_parent + b" 1:6 / /tmp rw,nosuid,nodev - tmpfs lease rw\n"
+    )
+
+
+@pytest.fixture
+def _bounded_statvfs(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        lease_envelope.os,
+        "statvfs",
+        lambda path: types.SimpleNamespace(f_blocks=1, f_frsize=4096),
+    )
+
+
+@pytest.mark.usefixtures("_bounded_statvfs")
+def test_envelope_accepts_lease_tmpfs_stacked_over_runtime_tmp(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mountinfo = _stacked_tmp_mountinfo(b"ro,nosuid,nodev", b"5")
+    monkeypatch.setattr(lease_envelope, "_mountinfo", lambda: mountinfo)
+    digest, mounts = lease_envelope._verify_mount_view("/workspace", "/scratch", 1_000_000)
+    assert digest == "sha256:" + hashlib.sha256(mountinfo).hexdigest()
+    assert [(mount.path, mount.source) for mount in mounts] == [
+        ("/scratch", "lease_tmpfs"), ("/tmp", "lease_tmpfs"), ("/workspace", "workspace_bind"),
+    ]
+
+
+@pytest.mark.usefixtures("_bounded_statvfs")
+def test_envelope_rejects_writable_mount_covered_by_lease_tmpfs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mountinfo = _stacked_tmp_mountinfo(b"rw,nosuid,nodev", b"5")
+    monkeypatch.setattr(lease_envelope, "_mountinfo", lambda: mountinfo)
+    with pytest.raises(OSError, match="inherited mount is writable: /tmp"):
+        lease_envelope._verify_mount_view("/workspace", "/scratch", 1_000_000)
+
+
+@pytest.mark.usefixtures("_bounded_statvfs")
+def test_envelope_rejects_two_visible_mounts_for_one_lease_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Both /tmp mounts hang off the root mount, so neither covers the other.
+    mountinfo = _stacked_tmp_mountinfo(b"rw,nosuid,nodev", b"1")
+    monkeypatch.setattr(lease_envelope, "_mountinfo", lambda: mountinfo)
+    with pytest.raises(OSError, match="writable mount is invalid: /tmp"):
         lease_envelope._verify_mount_view("/workspace", "/scratch", 1_000_000)
 
 
