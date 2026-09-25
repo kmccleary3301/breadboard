@@ -58,6 +58,7 @@ _PRIMARY_CLEANUP_RESOURCES = (
 # (``SandboxRuntimeManager._close_lease``); it must still be released.
 _PRIMARY_OPTIONAL_CLEANUP_RESOURCES = ("native_scratch",)
 _VERIFIER_CLEANUP_RESOURCES = ("runtime", "workspace", "snapshot", "lease_record")
+_VERIFIER_OPTIONAL_CLEANUP_RESOURCES = ("native_scratch",)
 _SCHEMA_MEDIA = "application/vnd.breadboard.evidence+json"
 
 
@@ -4952,11 +4953,12 @@ def _validate_cleanup_projection(
             )
         resources.append(resource)
     expected = tuple(required_resources)
-    optional = (
-        _PRIMARY_OPTIONAL_CLEANUP_RESOURCES
-        if expected == _PRIMARY_CLEANUP_RESOURCES
-        else ()
-    )
+    if expected == _PRIMARY_CLEANUP_RESOURCES:
+        optional = _PRIMARY_OPTIONAL_CLEANUP_RESOURCES
+    elif expected == _VERIFIER_CLEANUP_RESOURCES:
+        optional = _VERIFIER_OPTIONAL_CLEANUP_RESOURCES
+    else:
+        optional = ()
     if (
         len(expected) != len(set(expected))
         or len(resources) != len(set(resources))
