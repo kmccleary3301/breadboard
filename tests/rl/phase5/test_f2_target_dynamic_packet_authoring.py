@@ -81,15 +81,15 @@ def _security(uid: int, profile: str) -> dict[str, object]:
 
 def _socket_plan(role: str, port: int) -> dict[str, object]:
     value: dict[str, object] = {
-        "schema_version": "bb.rl.harness-prebound-service-socket-plan.v1",
+        "schema_version": "bb.rl.harness-prebound-service-socket-plan.v2",
         "role": role,
         "gateway": "10.91.0.1",
         "observed_port": port,
         "family": "AF_INET",
         "socket_type": "SOCK_STREAM",
         "protocol": "IPPROTO_TCP",
-        "socket_device": 1,
-        "socket_inode": port,
+        "socket_device": "1",
+        "socket_inode": str(port),
         "socket_mode": stat.S_IFSOCK | 0o600,
         "socket_owner_uid": os.getuid(),
         "getsockname_host": "10.91.0.1",
@@ -122,7 +122,7 @@ def _observations(tmp_path: Path, attempt_id: str, evidence_digest: str) -> dict
         "media_type": "application/x-pem-file",
     }
     return {
-        "schema_version": "bb.rl.phase5-f2-c4-target-dynamic-observations.v1",
+        "schema_version": "bb.rl.phase5-f2-c4-target-dynamic-observations.v2",
         "attempt_id": attempt_id,
         "callback_observed_port": 19001,
         "callback_secret_handle_version_digest": _digest("callback-secret"),

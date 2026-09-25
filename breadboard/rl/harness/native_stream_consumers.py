@@ -126,7 +126,7 @@ def native_response_from_dict(value: Mapping[str, Any]) -> NativeProviderRespons
     )
 
 
-def consume_pi_response(state: Any, response: NativeProviderResponse) -> NativeResponseProjection:
+async def consume_pi_response(state: Any, response: NativeProviderResponse) -> NativeResponseProjection:
     """Consume one response through the Pi profile state and expose the seam facts."""
 
     from breadboard.rl.harness.runners.pi_semantics import PiSemanticsState
@@ -134,7 +134,7 @@ def consume_pi_response(state: Any, response: NativeProviderResponse) -> NativeR
     if not isinstance(state, PiSemanticsState):
         raise TypeError("Pi consumer requires PiSemanticsState")
     before = len(state.messages)
-    result = state.prepare_response(response)
+    result = await state.prepare_response(response)
     mutations = tuple(state.messages[before:])
     calls = tuple(
         NativeToolBatchCall(call.id, call.name, call.arguments)

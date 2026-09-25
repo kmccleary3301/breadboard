@@ -49,6 +49,11 @@ RECEIPT = "sha256:" + "55" * 32
 TUPLE_OWNER = "sha256:" + "66" * 32
 
 
+def _bump_signed_identity(identity: list[object], index: int) -> None:
+    value = identity[index]
+    identity[index] = str(int(value) + 1) if index < 2 else value + 1
+
+
 def _request_payload(
     rollback_id: str, base: Path, *, variant: str = "primary"
 ) -> bytes:
@@ -68,8 +73,8 @@ def _request_payload(
         observed = path.stat(follow_symlinks=False)
         return {
             "ctime_ns": str(observed.st_ctime_ns),
-            "device": observed.st_dev,
-            "inode": observed.st_ino,
+            "device": str(observed.st_dev),
+            "inode": str(observed.st_ino),
             "mode": stat.S_IMODE(observed.st_mode),
             "mtime_ns": str(observed.st_mtime_ns),
             "nlink": observed.st_nlink,
@@ -198,7 +203,7 @@ def _request_payload(
                 "scope_digest": CAUSE,
             },
             "rollback_id": rollback_id,
-            "schema_version": "bb.rl.phase5.g4-rollback-request.v1",
+            "schema_version": "bb.rl.phase5.g4-rollback-request.v2",
             "source_deletion_plan": {
                 "operation_id": f"{rollback_id}.source-deletion",
                 "owned_sources": [
@@ -364,23 +369,23 @@ def _receipt_body(
         snapshot_digest = "sha256:" + "91" * 32
         monotonic = {
             "authority_id": "sha256:" + "92" * 32,
-            "config_device": 1,
+            "config_device": "1",
             "config_digest": "sha256:" + "93" * 32,
             "config_flags": 1,
             "config_gid": 0,
-            "config_inode": 2,
+            "config_inode": "2",
             "config_uid": 0,
-            "lock_device": 1,
+            "lock_device": "1",
             "lock_flags": 1,
             "lock_gid": 0,
-            "lock_inode": 3,
+            "lock_inode": "3",
             "lock_uid": 0,
-            "root_device": 1,
+            "root_device": "1",
             "root_flags": 1,
             "root_gid": 0,
-            "root_inode": 1,
+            "root_inode": "1",
             "root_uid": 0,
-            "schema_version": ("bb.rl.monotonic-revocation-authority-identity.v1"),
+            "schema_version": ("bb.rl.monotonic-revocation-authority-identity.v2"),
         }
         artifact_ref = {
             "artifact_id": snapshot_digest,
@@ -1813,6 +1818,15 @@ def test_request_and_receipt_payloads_require_closed_canonical_bound_schemas(
             request + b" ",
         )
     request_object = json.loads(request)
+    old_request = dict(request_object, schema_version="bb.rl.phase5.g4-rollback-request.v1")
+    old_raw = canonical_json_bytes(old_request)
+    with pytest.raises(RollbackValidationError, match="unsupported rollback request schema version"):
+        store.prepare("rollback-validation", canonical_digest(old_raw), old_raw)
+    numeric_request = json.loads(request)
+    numeric_request["rerun_source_identities"]["authority_bundle"]["identity"]["inode"] = 123
+    numeric_raw = canonical_json_bytes(numeric_request)
+    with pytest.raises(RollbackValidationError, match="canonical decimal string"):
+        store.prepare("rollback-validation", canonical_digest(numeric_raw), numeric_raw)
     request_object["unexpected"] = True
     extra_request = canonical_json_bytes(request_object)
     with pytest.raises(RollbackValidationError, match="exactly"):
@@ -5295,6 +5309,40 @@ def _v14_leave_preparing(
     assert "stage.all_moved" in events
     return names, payloads
 
+@pytest.mark.parametrize("legacy", ("version", "numeric-root", "numeric-stage", "numeric-candidate"))
+def test_cleanup_signed_identities_are_decimal_and_legacy_authority_fails_closed(
+    tmp_path: Path, legacy: str
+) -> None:
+    root = tmp_path / legacy
+    _v14_leave_preparing(root, 1)
+    preparing = root / ".rollback-journal.cleanup-staging" / "preparing"
+    signer = object.__new__(FilesystemRollbackJournalStore)
+    signer._authority_key = KEY
+    signer._domain = "rollback-journal"
+    payload = dict(signer._verify_signed(preparing.read_bytes(), "abandoned-cleanup-preparing"))
+    assert payload["schema_version"] == "bb.rl.phase5.abandoned-cleanup-preparing.v3"
+    for identity in (
+        payload["root_identity"],
+        payload["stage_identity"],
+        payload["candidates"][0]["identity"],
+    ):
+        assert all(type(part) is str and str(int(part)) == part for part in identity[:2])
+    if legacy == "version":
+        payload["schema_version"] = "bb.rl.phase5.abandoned-cleanup-preparing.v2"
+    elif legacy == "numeric-root":
+        payload["root_identity"][1] = int(payload["root_identity"][1])
+    elif legacy == "numeric-stage":
+        payload["stage_identity"][0] = int(payload["stage_identity"][0])
+    else:
+        payload["candidates"][0]["identity"][1] = int(
+            payload["candidates"][0]["identity"][1]
+        )
+    preparing.write_bytes(signer._signed_bytes("abandoned-cleanup-preparing", payload))
+    attacked = _v14_tree_inventory(root)
+    with pytest.raises(RollbackCorruptionError):
+        FilesystemRollbackJournalStore(root, authority_key=KEY)
+    assert _v14_tree_inventory(root) == attacked
+
 
 def _v14_tree_inventory(root: Path) -> dict[str, tuple[str, bytes | None]]:
     inventory: dict[str, tuple[str, bytes | None]] = {}
@@ -5664,7 +5712,7 @@ def test_v14_forged_preparing_staging_fails_before_any_mutation(
                 "manifest-nlink": 5,
                 "manifest-size": 6,
             }[attack]
-            payload["candidates"][0]["identity"][identity_index] += 1
+            _bump_signed_identity(payload["candidates"][0]["identity"], identity_index)
         elif attack == "manifest-type":
             payload["candidates"][0]["identity"][4] = stat.S_IFDIR | 0o700
         elif attack == "manifest-digest":
@@ -5683,7 +5731,7 @@ def test_v14_forged_preparing_staging_fails_before_any_mutation(
                 ".rollback-journal.ffffffffffffffffffffffffffffffff.tmp"
             )
         elif attack == "root-identity":
-            payload["root_identity"][1] += 1
+            _bump_signed_identity(payload["root_identity"], 1)
         elif attack == "root-inventory":
             payload["root_names"].append("forged")
             payload["root_names"].sort()
@@ -6383,7 +6431,7 @@ def test_v14_forged_committed_staging_cannot_publish_unrelated_state(
                 "candidate-nlink": 5,
                 "candidate-size": 6,
             }[attack]
-            candidate_payload["identity"][identity_index] += 1
+            _bump_signed_identity(candidate_payload["identity"], identity_index)
         elif attack == "candidate-type":
             candidate_payload["identity"][4] = stat.S_IFDIR | 0o700
         elif attack == "candidate-digest":
@@ -6458,7 +6506,7 @@ def test_v14_forged_committed_staging_cannot_publish_unrelated_state(
             )
         )
         payload["root_identity"] = list(payload["root_identity"])
-        payload["root_identity"][1] += 1
+        _bump_signed_identity(payload["root_identity"], 1)
         preparing_raw = signer._signed_bytes(
             "abandoned-cleanup-preparing",
             payload,
@@ -6649,7 +6697,7 @@ def test_v15_signed_stage_identity_tamper_fails_without_mutation(
         )
     )
     payload["stage_identity"] = list(payload["stage_identity"])
-    payload["stage_identity"][identity_index] += 1
+    _bump_signed_identity(payload["stage_identity"], identity_index)
     preparing.write_bytes(
         verifier._signed_bytes(
             "abandoned-cleanup-preparing",
@@ -6844,7 +6892,7 @@ def test_v16_terminal_receipt_replacement_proof_negatives_are_nonmutating(
         replacement["state"] = "ready"
     elif attack == "identity-mismatch":
         replacement["identity"] = list(replacement["identity"])
-        replacement["identity"][1] += 1
+        _bump_signed_identity(replacement["identity"], 1)
     else:
         temp = root / replacement["temp"]
         temp.write_bytes(replacement["expected_payload"].encode("utf-8"))

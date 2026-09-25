@@ -1639,6 +1639,8 @@ class BlockingVerifierBackend(RecordingBackend):
         handle, measurement = await super().launch(*args, **kwargs)
         if len(self.handles) == 2:
             blocking = BlockingVerifierHandle()
+            blocking.containment_receipt = handle.containment_receipt
+            blocking.containment_authenticator = handle.containment_authenticator
             self.handles[-1] = blocking
             return blocking, measurement
         return handle, measurement

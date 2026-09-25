@@ -6,6 +6,7 @@ and projects the worker's JSON tool result for the BB loop.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -27,24 +28,19 @@ def _node_executable() -> str:
     return os.environ.get("PI_NODE", shutil.which("node") or "node")
 
 
-def _run_worker(request: Mapping[str, Any], *, cwd: str | os.PathLike[str]) -> dict[str, Any]:
-    payload = json.dumps(dict(request), ensure_ascii=False, separators=(",", ":"))
-    if len(payload.encode("utf-8")) > _MAX_REQUEST_BYTES:
+def _encode_request(request: Mapping[str, Any]) -> bytes:
+    # ASCII escapes carry lone surrogates losslessly to JSON.parse in Node.
+    payload = json.dumps(dict(request), ensure_ascii=True, separators=(",", ":")).encode()
+    if len(payload) > _MAX_REQUEST_BYTES:
         raise PiNativeWorkerError(f"request exceeds {_MAX_REQUEST_BYTES} bytes")
-    environment = os.environ.copy()
-    process = subprocess.run(
-        [_node_executable(), str(_WORKER)],
-        input=payload.encode("utf-8"),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        cwd=str(cwd),
-        env=environment,
-        check=False,
-    )
-    if process.returncode != 0:
-        diagnostics = process.stderr.decode("utf-8", "replace").strip()
-        raise PiNativeWorkerError(diagnostics or f"native worker exited with code {process.returncode}")
-    lines = process.stdout.decode("utf-8", "replace").splitlines()
+    return payload
+
+
+def _decode_response(returncode: int, stdout: bytes, stderr: bytes) -> dict[str, Any]:
+    if returncode != 0:
+        diagnostics = stderr.decode("utf-8", "replace").strip()
+        raise PiNativeWorkerError(diagnostics or f"native worker exited with code {returncode}")
+    lines = stdout.decode("utf-8", "replace").splitlines()
     if len(lines) != 1:
         raise PiNativeWorkerError("native worker returned an invalid JSONL response")
     try:
@@ -54,6 +50,52 @@ def _run_worker(request: Mapping[str, Any], *, cwd: str | os.PathLike[str]) -> d
     if not isinstance(result, dict):
         raise PiNativeWorkerError("native worker result must be an object")
     return result
+
+
+def _run_worker(request: Mapping[str, Any], *, cwd: str | os.PathLike[str]) -> dict[str, Any]:
+    payload = _encode_request(request)
+    try:
+        process = subprocess.run(
+            [_node_executable(), str(_WORKER)],
+            input=payload,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=str(cwd),
+            env=os.environ.copy(),
+            check=False,
+        )
+    except OSError as exc:
+        raise PiNativeWorkerError(f"native worker could not start: {exc}") from exc
+    return _decode_response(process.returncode, process.stdout, process.stderr)
+
+
+async def _run_worker_async(
+    request: Mapping[str, Any], *, cwd: str | os.PathLike[str]
+) -> dict[str, Any]:
+    """Run one worker request without blocking the event loop.
+
+    Cancellation (for example the episode deadline) kills and reaps the worker.
+    """
+    payload = _encode_request(request)
+    try:
+        process = await asyncio.create_subprocess_exec(
+            _node_executable(),
+            str(_WORKER),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(cwd),
+            env=os.environ.copy(),
+        )
+    except OSError as exc:
+        raise PiNativeWorkerError(f"native worker could not start: {exc}") from exc
+    try:
+        stdout, stderr = await process.communicate(payload)
+    finally:
+        if process.returncode is None:
+            process.kill()
+            await process.wait()
+    return _decode_response(process.returncode, stdout, stderr)
 
 
 def _project_result(result: Mapping[str, Any], *, tool_id: str, call_id: str, image_delivery: bool) -> dict[str, Any]:
@@ -91,12 +133,11 @@ def execute_native_tool(
     call_id: str = "",
 ) -> dict[str, Any]:
     """Execute one source-derived Pi tool through the Node worker."""
-    if not isinstance(arguments, Mapping):
-        arguments = {}
     result = _run_worker(
         {
+            "operation": "execute",
             "tool_id": tool_id,
-            "arguments": dict(arguments),
+            "arguments": arguments,
             "cwd": str(Path(cwd).resolve()),
             "call_id": call_id,
         },
@@ -115,7 +156,7 @@ def dispatch_native_tools(
     normalized = [
         {
             "tool_id": str(call.get("name", call.get("tool_id", ""))),
-            "arguments": dict(call.get("arguments", {})) if isinstance(call.get("arguments", {}), Mapping) else {},
+            "arguments": call.get("arguments"),
             "call_id": str(call.get("id", call.get("call_id", ""))),
         }
         for call in calls
@@ -128,6 +169,25 @@ def dispatch_native_tools(
         _project_result(raw, tool_id=call["tool_id"], call_id=call["call_id"], image_delivery=image_delivery)
         for call, raw in zip(normalized, raw_results)
     ]
+
+async def parse_streaming_json_batch(
+    texts: Sequence[str | None], *, cwd: str | os.PathLike[str] | None = None
+) -> list[Any]:
+    """Parse argument texts with pinned ``parseStreamingJson`` in one worker process."""
+    inputs = list(texts)
+    if not inputs:
+        return []
+    if any(text is not None and not isinstance(text, str) for text in inputs):
+        raise PiNativeWorkerError("streaming JSON input must be a string or None")
+    result = await _run_worker_async(
+        {"operation": "parse_streaming_json_batch", "inputs": inputs},
+        cwd=cwd or Path.cwd(),
+    )
+    results = result.get("results")
+    if not isinstance(results, list) or len(results) != len(inputs):
+        raise PiNativeWorkerError("native worker parse result count does not match request")
+    return results
+
 
 def main() -> int:
     raw = sys.stdin.buffer.read(_MAX_REQUEST_BYTES + 1)

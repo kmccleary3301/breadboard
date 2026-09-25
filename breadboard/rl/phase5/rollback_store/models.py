@@ -229,14 +229,14 @@ class _ImmutableFileIdentity:
             ),
             name,
         )
-        for field_name in (
-            "device",
-            "inode",
-            "mode",
-            "nlink",
-            "owner_uid",
-            "size_bytes",
-        ):
+        for field_name in ("device", "inode"):
+            raw = item[field_name]
+            pattern = r"(0|[1-9][0-9]*)" if field_name == "device" else r"[1-9][0-9]*"
+            if type(raw) is not str or re.fullmatch(pattern, raw) is None:
+                raise RollbackValidationError(
+                    f"{name} {field_name} must be a canonical decimal string"
+                )
+        for field_name in ("mode", "nlink", "owner_uid", "size_bytes"):
             _require_int(item[field_name], f"{name} {field_name}")
         for field_name in ("ctime_ns", "mtime_ns"):
             value = item[field_name]
@@ -245,8 +245,8 @@ class _ImmutableFileIdentity:
                     f"{name} {field_name} must be decimal nanoseconds"
                 )
         identity = cls(
-            device=item["device"],
-            inode=item["inode"],
+            device=int(item["device"]),
+            inode=int(item["inode"]),
             size_bytes=item["size_bytes"],
             mtime_ns=item["mtime_ns"],
             ctime_ns=item["ctime_ns"],
@@ -281,8 +281,8 @@ class _ImmutableFileIdentity:
     def canonical_object(self) -> dict[str, object]:
         return {
             "ctime_ns": self.ctime_ns,
-            "device": self.device,
-            "inode": self.inode,
+            "device": str(self.device),
+            "inode": str(self.inode),
             "mode": self.mode,
             "mtime_ns": self.mtime_ns,
             "nlink": self.nlink,
@@ -746,11 +746,9 @@ def _validate_request_payload_with_capsules(
         _REQUEST_KEYS,
         "rollback request payload",
     )
-    if (
-        value["schema_version"] != "bb.rl.phase5.g4-rollback-request.v1"
-        or value["rollback_id"] != rollback_id
-        or canonical_digest(raw) != request_digest
-    ):
+    if value["schema_version"] != "bb.rl.phase5.g4-rollback-request.v2":
+        raise RollbackValidationError("unsupported rollback request schema version")
+    if value["rollback_id"] != rollback_id or canonical_digest(raw) != request_digest:
         raise RollbackValidationError(
             "rollback request payload identity or digest mismatch"
         )

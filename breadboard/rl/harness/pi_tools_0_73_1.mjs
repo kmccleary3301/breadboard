@@ -42,7 +42,7 @@ const {
   createWriteTool,
   createWriteToolDefinition,
 } = codingAgent;
-const { validateToolArguments } = piAi;
+const { validateToolArguments, parseStreamingJson } = piAi;
 const { convertMessages } = openaiCompletions;
 const { buildSystemPrompt } = promptModule;
 const { loadProjectContextFiles } = resourceModule;
@@ -240,9 +240,6 @@ function validateCall(call, defaultCwd) {
   const toolId = call.tool_id ?? call.toolId ?? call.name;
   if (typeof toolId !== "string" || !TOOL_IDS.has(toolId)) fail(`unknown tool_id: ${String(toolId)}`);
   const argumentsValue = call.arguments;
-  if (argumentsValue === null || typeof argumentsValue !== "object" || Array.isArray(argumentsValue)) {
-    fail("arguments must be a JSON object");
-  }
   const cwd = typeof call.cwd === "string" && call.cwd ? call.cwd : defaultCwd;
   const callIdValue = call.call_id ?? call.callId ?? call.id;
   const callId = typeof callIdValue === "string" && callIdValue ? callIdValue : "bb-native-call";
@@ -287,7 +284,17 @@ async function executePrepared(prepared, signal) {
 }
 
 async function executeCall(call, defaultCwd, signal) {
-  return executePrepared(prepareCall(call, defaultCwd), signal);
+  try {
+    return await executePrepared(prepareCall(call, defaultCwd), signal);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      content: [{ type: "text", text: message }],
+      details: {},
+      isError: true,
+      terminate: false,
+    };
+  }
 }
 
 function requiredString(payload, key) {
@@ -527,6 +534,15 @@ async function executeOperation(operation, payload, signal) {
     };
   }
   if (operation === "project_request") return projectRequest(payload);
+  if (operation === "parse_streaming_json_batch") {
+    if (!Array.isArray(payload?.inputs)) fail("parse_streaming_json_batch requires inputs");
+    const results = payload.inputs.map((input) => {
+      if (input !== null && typeof input !== "string") fail("streaming JSON input must be a string or null");
+      // Pinned parseStreamingJson owns every fallback, including {} for empty input.
+      return parseStreamingJson(input ?? undefined);
+    });
+    return { schema_version: "bb.pi-native.v1", kind: "parsed_streaming_json_batch", results };
+  }
   if (operation === "prepare_tools") {
     if (!Array.isArray(payload?.calls)) fail("prepare_tools requires calls");
     const preparedInternal = [];
@@ -543,13 +559,19 @@ async function executeOperation(operation, payload, signal) {
         };
         preparedInternal.push({ ...item });
         calls.push({ ...item });
-        historyCalls.push({ ...item });
+        // Pi keeps the sampled call in assistant history; only execution uses
+        // the validator's converted argument clone.
+        historyCalls.push({
+          id: value.request.callId,
+          name: value.request.toolId,
+          arguments: value.request.argumentsValue,
+        });
       } catch (error) {
         const message = String(error?.message ?? error);
         const item = {
           id: String(call?.call_id ?? call?.callId ?? call?.id ?? ""),
           name: String(call?.tool_id ?? call?.toolId ?? call?.name ?? ""),
-          arguments: call?.arguments ?? {},
+          arguments: call?.arguments !== undefined ? call.arguments : {},
           error: message,
         };
         errors.push(message);

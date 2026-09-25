@@ -102,7 +102,7 @@ def _spec(tmp_path: Path) -> F6RestartReplayInput:
     fresh_payload["episode_id"] = "f6-fresh-live-episode"
     fresh = c.ResolveEpisodeRequest.model_validate(fresh_payload)
     return F6RestartReplayInput(
-        schema_version="bb.rl.phase5-f6-restart-replay-input.v1",
+        schema_version="bb.rl.phase5-f6-restart-replay-input.v2",
         production=F6ProductionBinding(
             composition_ref_path=str(tmp_path / "composition.ref.json"),
             composition_descriptor_ref=_ref("composition-descriptor"),
@@ -113,8 +113,8 @@ def _spec(tmp_path: Path) -> F6RestartReplayInput:
                     path=str(tmp_path / "policy.secret"),
                     sha256=_d("policy-secret"),
                     identity=F6FileIdentity(
-                        device=1,
-                        inode=1,
+                        device="1",
+                        inode="1",
                         size_bytes=1,
                         mtime_ns="1",
                         ctime_ns="1",
@@ -153,8 +153,8 @@ def _persisted_input(
         path,
         "sha256:" + hashlib.sha256(raw).hexdigest(),
         F6FileIdentity(
-            device=observed.st_dev,
-            inode=observed.st_ino,
+            device=str(observed.st_dev),
+            inode=str(observed.st_ino),
             size_bytes=observed.st_size,
             mtime_ns=str(observed.st_mtime_ns),
             ctime_ns=str(observed.st_ctime_ns),
