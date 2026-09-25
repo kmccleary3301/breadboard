@@ -21,11 +21,13 @@ from breadboard.rl.harness.headless import (
     HeadlessProviderRouteAuthority,
     HeadlessRunRequest,
     HeadlessWorkspaceInput,
+    ObsoleteOuterIsolationError,
     _atomic_write,
     _project_headless_run,
     _validate_repository_base_commit_binding,
     _validate_seed_workspace_directory_mode,
     run_headless_request,
+    load_headless_request,
 )
 from breadboard.rl.harness.runners.base import freeze_json_object, thaw_json
 
@@ -68,6 +70,150 @@ def test_headless_workspace_mode_preserves_repository_identity_and_rejects_mixed
             base_commit="1" * 40,
             task_image_digest=task_image,
         )
+
+
+def _strict_json_request_payload(tmp_path: Path) -> dict[str, Any]:
+    digest = "sha256:" + "1" * 64
+    return {
+        "schema_version": "bb.rl.headless-run-request.v1",
+        "target_id": "pi@0.57.1",
+        "target_overlay_id": "r3-json-no-session.v1",
+        "target_dynamic_fields": {"cwd": "/workspace"},
+        "resolve_request": {
+            "schema_version": "bb.rl.config-resolution-request.v1",
+            "episode_id": "strict-json-episode",
+            "subject": {
+                "tenant_id": "tenant-a",
+                "principal_id": "principal-a",
+                "authority_scope_digest": digest,
+            },
+            "selector": {
+                "selector_kind": "direct",
+                "digest": digest,
+                "ref": {
+                    "schema_version": "bb.rl.artifact-ref.v1",
+                    "artifact_id": digest,
+                    "sha256": digest,
+                    "size_bytes": 723,
+                    "media_type": "application/vnd.breadboard.direct-selector+json;version=1",
+                },
+            },
+            "selection_nonce": None,
+            "task": {
+                "schema_version": "bb.rl.task-eligibility.v1",
+                "task_type": "training",
+                "labels": [{"key": "suite", "value": "swe"}],
+                "artifacts": [
+                    {
+                        "role": "task",
+                        "digest": digest,
+                        "media_type": "application/json",
+                        "size_bytes": 12,
+                    }
+                ],
+                "parameters_digest": digest,
+            },
+            "policy_binding": {
+                "route_id": "policy-route",
+                "registry_revision_digest": digest,
+                "attestation_digest": digest,
+            },
+            "episode_overlays": [
+                {"overlay_digest": digest, "result_receipt_digest": "sha256:" + "2" * 64}
+            ],
+        },
+        "prompt": "Repair the task and verify the result.",
+        "tool_allowlist": ["read", "shell"],
+        "context": {"campaign": "e4"},
+        "workspace": {
+            "base_commit": "0" * 40,
+            "task_image_digest": digest,
+        },
+        "expected_resources": {
+            "cpu_millis": 1_000,
+            "memory_bytes": 1_000_000,
+            "pids": 32,
+            "storage_bytes": 1_000_000,
+            "open_files": 128,
+            "wall_time_ms": 60_000,
+        },
+        "expected_limits": {
+            "max_turns": 4,
+            "action_timeout_ms": 9_000,
+            "observation_bytes": 20_000,
+            "response_bytes": 100_000,
+            "artifact_bytes_each": 10_000,
+            "artifact_bytes_total": 20_000,
+            "transcript_bytes": 100_000,
+            "setup_timeout_ms": 5_000,
+            "verifier_timeout_ms": 17_000,
+        },
+        "expected_sandbox": {
+            "runtime_id": "fixture-trusted-process",
+            "runtime_class": c.RuntimeClass.TRUSTED_PROCESS.value,
+            "driver_implementation_digest": digest,
+            "runtime_binary_digest": digest,
+            "security_policy_digest": digest,
+            "image_digest": digest,
+            "network_policy_digest": digest,
+            "egress_route_ids": ["policy-route"],
+            "mounts": [
+                {
+                    "source_artifact_digest": digest,
+                    "target_logical_path": "inputs",
+                    "access": "ro",
+                    "max_bytes": 4096,
+                }
+            ],
+        },
+        "provider": {
+            "model": "Qwen/Qwen3.5-35B-A3B",
+            "authority_model_id": "qwen3.5-35b-a3b",
+            "credential_handle": "policy-callback",
+            "context_window": 131_072,
+            "max_output_tokens": 32_000,
+            "timeout_seconds": 30,
+        },
+        "result_path": str(tmp_path / "result.json"),
+        "event_log_path": str(tmp_path / "events.json"),
+        "patch_path": str(tmp_path / "workspace.patch"),
+    }
+
+
+def test_load_headless_request_accepts_json_arrays_for_tuple_fields(
+    tmp_path: Path,
+) -> None:
+    request_path = tmp_path / "request.json"
+    request_path.write_text(json.dumps(_strict_json_request_payload(tmp_path)))
+
+    request = load_headless_request(str(request_path))
+
+    assert request.tool_allowlist == ("read", "shell")
+    assert [label.key for label in request.resolve_request.task.labels] == ["suite"]
+    assert [item.role for item in request.resolve_request.task.artifacts] == ["task"]
+    assert len(request.resolve_request.episode_overlays) == 1
+    assert request.expected_sandbox.egress_route_ids == ("policy-route",)
+    assert [mount.target_logical_path for mount in request.expected_sandbox.mounts] == [
+        "inputs"
+    ]
+
+
+@pytest.mark.parametrize("location", ("request", "workspace"))
+def test_headless_request_loading_rejects_obsolete_outer_isolation(
+    tmp_path: Path, location: str
+) -> None:
+    payload = _strict_json_request_payload(tmp_path)
+    (payload if location == "request" else payload["workspace"])[
+        "outer_isolation"
+    ] = "apptainer"
+    request_path = tmp_path / "request.json"
+    request_path.write_text(json.dumps(payload))
+
+    with pytest.raises(ObsoleteOuterIsolationError):
+        load_headless_request(str(request_path))
+    with pytest.raises(ObsoleteOuterIsolationError):
+        HeadlessRunRequest.model_validate(payload)
+
 
 
 
