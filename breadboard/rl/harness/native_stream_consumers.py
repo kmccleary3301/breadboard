@@ -14,6 +14,7 @@ from typing import Any, Protocol
 from breadboard_engine.provider.native_response import (
     NativeProviderResponse,
     NativeStreamFragment,
+    NativeStreamTermination,
     NativeToolCall,
 )
 
@@ -103,6 +104,12 @@ def native_response_from_dict(value: Mapping[str, Any]) -> NativeProviderRespons
         )
         for item in raw_fragments
     )
+    raw_termination = value.get("stream_termination")
+    termination = (
+        raw_termination
+        if raw_termination is None or isinstance(raw_termination, NativeStreamTermination)
+        else NativeStreamTermination(raw_termination["reason"], raw_termination["chunks"])
+    )
     return NativeProviderResponse(
         binding_digest=value["binding_digest"],
         request_digest=value["request_digest"],
@@ -115,6 +122,7 @@ def native_response_from_dict(value: Mapping[str, Any]) -> NativeProviderRespons
         raw_response=value.get("raw_response"),
         stream_fragments=fragments,
         request_body=value.get("request_body"),
+        stream_termination=termination,
     )
 
 

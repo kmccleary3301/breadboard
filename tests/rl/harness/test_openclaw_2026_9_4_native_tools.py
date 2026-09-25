@@ -453,10 +453,13 @@ def test_native_worker_environment_matches_supplier_skill_eligibility(
     )
     home = tmp_path / "home"
     home.mkdir()
-    plan = SimpleNamespace(runtime=SimpleNamespace(fixed_environment=(
-        ("HOME", str(home)), ("PATH", "/usr/bin:/bin"),
-    )))
-    environment = sandbox_module._native_worker_environment(plan, adapter)
+    # The composed runtime declares the dynamic-loader path its node needs
+    # (LD_LIBRARY_PATH in the sealed image); PATH carries no node.
+    fixed_environment = [("HOME", str(home)), ("PATH", "/usr/bin:/bin")]
+    if "LD_LIBRARY_PATH" in os.environ:
+        fixed_environment.append(("LD_LIBRARY_PATH", os.environ["LD_LIBRARY_PATH"]))
+    plan = SimpleNamespace(runtime=SimpleNamespace(fixed_environment=tuple(fixed_environment)))
+    environment = sandbox_module._native_worker_environment(plan, adapter, lease_id="lease-openclaw")
     # The sealed root's dist is the pinned dist; node resolves its packages in place.
     assert environment["OPENCLAW_DIST"] == str(root / "dist")
     monkeypatch.setattr(os, "environ", {**environment, "OPENCLAW_DIST": str(source_dist)})

@@ -1,0 +1,8 @@
+{
+  "schema_version": "bb.e4.omp-semantic-policy.v1",
+  "requests": {"max_issued": 8, "max_tokens": 2048, "retry_transport_attempts": 1, "empty_stop_retries": 0, "provider_error_retries": 0, "strict_schema_retries": 0, "reasoning_fallback_retries": 0},
+  "turn_recovery": {"max_corrective_continuations": 3, "counts_as_request": true, "drops_empty_assistant": true, "auxiliary_model": false},
+  "stop": {"length": "exact synthetic skipped message; never execute", "tool_calls": "execute", "stream_error": "ProviderResponseError; drop incomplete tool calls; no dispatch; no transport retry"},
+  "hashline": {"algorithm": "xxh32", "seed": 0, "tag_bits": 16, "tag_format": "4-uppercase-hex", "trailing_normalization": "[ \\t\\r]+ before newline/end", "seen_gate": {"max_reveal_lines": 40, "max_reveal_columns": 512, "lookup": "by_content"}, "empty_seen_set_bypass": true},
+  "native": {"brush": "pinned brush-core Shell", "edit": "pinned pi-natives EditStore/EditSession", "fallback": "deny"}
+}

@@ -25,6 +25,7 @@ from ....compilation.provider_response import (
     CompiledNativeResponseBinding,
     MINI_RESPONSE_CONSUMER_ID,
     PI_RESPONSE_CONSUMER_ID,
+    OMP_RESPONSE_CONSUMER_ID,
     OPENCLAW_RESPONSE_CONSUMER_ID,
 )
 from ...model_role_options import openai_chat_role_options
@@ -285,8 +286,13 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         stream: bool,
         context: ProviderRuntimeContext,
         binding: CompiledNativeResponseBinding,
+        accept_truncated_stream: bool = False,
     ) -> NativeProviderResponse:
-        """Invoke an admitted profile and retain its native response verbatim."""
+        """Invoke an admitted profile and retain its native response verbatim.
+
+        ``accept_truncated_stream`` is the native-stream profile's opt-in to a
+        typed termination for a begun stream that ends without a finish_reason.
+        """
         profile = context.provider_profile
         if profile is None:
             raise ProviderRuntimeError(
@@ -380,6 +386,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                         max_stream_fragments=binding.policy.max_stream_fragments,
                         extra_body=extra_body,
                         request_options=profile_options,
+                        accept_truncated_stream=accept_truncated_stream,
                     )
                 except ProviderRuntimeError as exc:
                     # The provider refused the sent request before any output
@@ -494,6 +501,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         if consumer_id in {
             MINI_RESPONSE_CONSUMER_ID,
             PI_RESPONSE_CONSUMER_ID,
+            OMP_RESPONSE_CONSUMER_ID,
             OPENCLAW_RESPONSE_CONSUMER_ID,
         }:
             chat_messages = [dict(message) for message in messages]
@@ -502,15 +510,15 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         request = profile.chat_request(
             chat_messages,
             tools
-            if consumer_id in {PI_RESPONSE_CONSUMER_ID, OPENCLAW_RESPONSE_CONSUMER_ID}
+            if consumer_id in {PI_RESPONSE_CONSUMER_ID, OMP_RESPONSE_CONSUMER_ID, OPENCLAW_RESPONSE_CONSUMER_ID}
             else self._convert_tools_to_openai(tools),
         )
-        if consumer_id in {PI_RESPONSE_CONSUMER_ID, OPENCLAW_RESPONSE_CONSUMER_ID}:
-            # Source buildParams omits n.
+        if consumer_id in {PI_RESPONSE_CONSUMER_ID, OMP_RESPONSE_CONSUMER_ID, OPENCLAW_RESPONSE_CONSUMER_ID}:
+            # Pinned coding-agent SDKs omit n.
             request.pop("n")
-        if consumer_id == PI_RESPONSE_CONSUMER_ID:
-            # Pi's buildParams disables provider-side storage; OpenClaw's
-            # buildOpenAICompletionsParams emits no store member.
+        if consumer_id in {PI_RESPONSE_CONSUMER_ID, OMP_RESPONSE_CONSUMER_ID}:
+            # Pi's and OMP's buildParams disable provider-side storage;
+            # OpenClaw's buildOpenAICompletionsParams emits no store member.
             request["store"] = False
         return request
 

@@ -136,6 +136,23 @@
     },
     {
       "comparator_class": "deterministic_replay",
+      "comparator_id": "oh_my_pi_18_1_17_trace_v1",
+      "entrypoint": {
+        "callable": "compare",
+        "module": "conformance.comparators.oh_my_pi_18_1_17"
+      },
+      "input_roles": [
+        "capture_ref",
+        "replay_ref",
+        "comparator_ref"
+      ],
+      "lane_ids": [
+        "oh_my_pi_18_1_17_replay"
+      ],
+      "report_schema_version": "bb.e4.comparator_report.v1"
+    },
+    {
+      "comparator_class": "deterministic_replay",
       "comparator_id": "openclaw_2026_9_4_trace_v1",
       "entrypoint": {
         "callable": "compare",

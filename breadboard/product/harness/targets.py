@@ -18,6 +18,7 @@ from breadboard_engine.compilation.contracts import (
     canonical_sha256,
 )
 from breadboard_engine.e4_targets import E4TargetPackage, read_e4_target
+from breadboard_engine.provider_broker.catalog import get_provider_catalog_entry
 
 from .compile import HarnessCompilation, HarnessCompileError, compile_harness_definition
 from .lock import copy_harness_json
@@ -40,6 +41,10 @@ _NATIVE_WORKER_RECIPES = MappingProxyType({
     "hermes-agent@2026.9.11": (
         "breadboard.hermes-agent.v2026.9.11",
         "36dbabb294042943df6c6f5415eebbe4097f660bc99af1d91f052d76da7eca88",
+    ),
+    "oh-my-pi@18.1.17": (
+        "breadboard.oh-my-pi.v18.1.17",
+        "fe47b49bc0d5ff05e981559d2f3f87070b816e3f3ba263b70f6ad4e7554b8a4f",
     ),
     "openclaw@2026.9.4": (
         "breadboard.openclaw.native-chat.v1",
@@ -291,10 +296,56 @@ def _lower_worker_target(
         raise HarnessCompileError("Native worker targets require their pinned recipe and no caller template inputs")
     native = json.loads(package.read_asset_text("native-config.json"))
     surface = json.loads(package.read_asset_text("tool-surface.json"))
+    if package.target_id == "oh-my-pi@18.1.17":
+        required_native_fields = (
+            "capability_denials", "request_cap", "model_max_tokens", "provider_attempts",
+            "model_registry",
+        )
+        if any(key not in native for key in required_native_fields):
+            raise HarnessCompileError("OMP native config is missing admitted advertisement fields")
+        registry = native["model_registry"]
+        provider_id = registry.get("provider_id") if isinstance(registry, Mapping) else None
+        # The route label becomes the pinned registry provider id, which pinned
+        # compat resolution matches against known hosts; a catalogued provider
+        # id would assert that host. The worker also checks pinned hosts.ts.
+        if (
+            not isinstance(registry, Mapping)
+            or set(registry) != {"provider_id"}
+            or not isinstance(provider_id, str)
+            or re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", provider_id) is None
+            or get_provider_catalog_entry(provider_id) is not None
+        ):
+            raise HarnessCompileError("OMP model_registry.provider_id must be a non-provider route label")
+        provenance = surface["native_description_provenance"]
+        if provenance["artifact_sha256"] != native["native_descriptions_artifact_sha256"]:
+            raise HarnessCompileError("OMP native description policy differs from its pinned artifact")
+        native["advertisement"] = {
+            "bounded_description_policy": {
+                name: {
+                    "original_sha256": "sha256:" + provenance["original_sha256"][name],
+                    "bounded_sha256": "sha256:" + provenance["bounded_sha256"][name],
+                    "removed_spans": provenance["removed_spans"][name],
+                }
+                for name in surface["ordered_tools"]
+            },
+            "capability_denials": native["capability_denials"],
+            "model_registry": {"provider_id": provider_id},
+            "settings": {
+                "request_cap": native["request_cap"],
+                "model_max_tokens": native["model_max_tokens"],
+                "provider_attempts": native["provider_attempts"],
+            },
+        }
     order = tuple(surface["ordered_tools"])
+    surface_tools = surface.get("tools")
+    if (
+        not isinstance(surface_tools, Mapping)
+        or set(surface_tools) != set(order)
+    ):
+        raise HarnessCompileError("native worker requires declared tool schemas")
     compiler_tools = []
     for name in order:
-        tool = {"name": name, **surface["tools"][name]}
+        tool = {"name": name, **surface_tools[name]}
         # The compiler encodes required order through parameter order; the
         # native HTTP path retains the untouched schemas in runtime_profile.
         parameters = tool["parameters"]
@@ -372,6 +423,7 @@ def lower_e4_target(
         if harness["renderer"]["selector"] in {
             "breadboard.openhands-sdk.v1.47.0",
             "breadboard.pi-coding-agent.v0.73.1",
+            "breadboard.oh-my-pi.v18.1.17",
             "breadboard.hermes-agent.v2026.9.11",
             "breadboard.openclaw.native-chat.v1",
         }:

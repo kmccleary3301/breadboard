@@ -25,6 +25,7 @@ from breadboard_engine.compilation.provider_response import (
     MINI_RESPONSE_CONSUMER_ID,
     PI_RESPONSE_CONSUMER_ID,
     NATIVE_CHAT_RESPONSE_TARGETS,
+    OMP_RESPONSE_CONSUMER_ID,
     OPENHANDS_RESPONSE_CONSUMER_ID,
     OPENCLAW_RESPONSE_CONSUMER_ID,
     admit_native_response_binding,
@@ -272,6 +273,7 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
     deferred_targets = {
         OPENHANDS_RESPONSE_CONSUMER_ID: "openhands-sdk@1.47.0",
         PI_RESPONSE_CONSUMER_ID: "pi@0.73.1",
+        OMP_RESPONSE_CONSUMER_ID: "oh-my-pi@18.1.17",
         OPENCLAW_RESPONSE_CONSUMER_ID: "openclaw@2026.9.4",
         HERMES_RESPONSE_CONSUMER_ID: "hermes-agent@2026.9.11",
     }
@@ -633,6 +635,7 @@ class EpisodeOpenAICompletionsPolicyClient:
         self._native_private_responses: dict[str, Mapping[str, Any]] = {}
         self._native_tool_schemas: tuple[Mapping[str, Any], ...] | None = None
         self._native_stream_prompt: str | None = None
+        self._native_accept_truncated_stream = False
         # One conversation key (or its absence) per episode, pinned on first staging.
         self._native_conversation_key: str | None | object = _UNPINNED
 
@@ -647,6 +650,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                 MINI_RESPONSE_CONSUMER_ID,
                 PI_RESPONSE_CONSUMER_ID,
                 *NATIVE_CHAT_RESPONSE_TARGETS,
+                OMP_RESPONSE_CONSUMER_ID,
                 OPENCLAW_RESPONSE_CONSUMER_ID,
             }
             or target.source_manifest is None
@@ -739,6 +743,25 @@ class EpisodeOpenAICompletionsPolicyClient:
                     "supportsStrictMode": False,
                 },
             }
+        elif target.renderer_id == OMP_RESPONSE_CONSUMER_ID:
+            public_config = {
+                "id": profile.model,
+                "name": profile.model,
+                "api": "openai-completions",
+                "provider": "openai",
+                "baseUrl": profile.base_url,
+                "reasoning": False,
+                "input": ["text"],
+                "contextWindow": profile.context_window,
+                "maxTokens": profile.max_output_tokens,
+                "compat": {
+                    "supportsStore": True,
+                    "supportsDeveloperRole": True,
+                    "supportsUsageInStreaming": True,
+                    "maxTokensField": "max_completion_tokens",
+                    "supportsStrictMode": False,
+                },
+            }
         else:
             self._native_cost = None
             runtime_profile = thaw_json(target.runtime_profile)
@@ -797,6 +820,7 @@ class EpisodeOpenAICompletionsPolicyClient:
 
     def bind_native_stream(
         self, system_prompt: str, tools: tuple[Mapping[str, Any], ...],
+        *, accept_truncated_stream: bool,
     ) -> None:
         """Seal the admitted worker's bootstrap before the first stream."""
         target = self._target_projection
@@ -804,8 +828,10 @@ class EpisodeOpenAICompletionsPolicyClient:
             target is None
             or target.renderer_id not in {
                 PI_RESPONSE_CONSUMER_ID,
+                OMP_RESPONSE_CONSUMER_ID,
                 OPENCLAW_RESPONSE_CONSUMER_ID,
             }
+            or self._native_binding is None
             or self._native_stream_prompt is not None
             or self._request_attempts
             or type(system_prompt) is not str or not system_prompt
@@ -815,6 +841,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                 if target.renderer_id == OPENCLAW_RESPONSE_CONSUMER_ID
                 else target.chat_tools
             )
+            or type(accept_truncated_stream) is not bool
         ):
             raise RunnerPolicyBindingError(
                 "native stream bootstrap differs from its compiled source binding",
@@ -822,6 +849,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                 episode_id=self._episode_id, effective_plan_digest=self._effective_plan_digest,
             )
         self._native_stream_prompt = system_prompt
+        self._native_accept_truncated_stream = accept_truncated_stream
 
     def stage_native_http_request(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
         """Admit exactly one source SDK HTTP request without exposing its headers."""
@@ -1354,6 +1382,7 @@ class EpisodeOpenAICompletionsPolicyClient:
             )
             if target.renderer_id in {
                 PI_RESPONSE_CONSUMER_ID,
+                OMP_RESPONSE_CONSUMER_ID,
                 OPENCLAW_RESPONSE_CONSUMER_ID,
             }:
                 payload = {"native_response": result.as_dict()}
@@ -1563,6 +1592,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                         stream=stream,
                         context=context,
                         binding=native_binding,
+                        accept_truncated_stream=self._native_accept_truncated_stream,
                     )
                 return self._runtime.invoke(
                     client=self._transport,
@@ -2002,14 +2032,32 @@ def _responses_request_to_chat(
         messages = request["messages"]
         tools = request["tools"]
         system_prompt = target_projection.system_prompt
-        if target_projection.renderer_id == PI_RESPONSE_CONSUMER_ID:
-            if native_system_prompt is None:
-                raise ProviderContractError("native stream bootstrap has not been bound")
-            system_prompt = native_system_prompt
-        elif target_projection.renderer_id == OPENCLAW_RESPONSE_CONSUMER_ID:
+        target_binding = (
+            target_projection.source_manifest.semantic.metadata.get("e4_target")
+            if target_projection.source_manifest is not None
+            else None
+        )
+        profile_version = (
+            target_binding.get("version")
+            if isinstance(target_binding, Mapping)
+            else None
+        )
+        deferred_native_prompt = (
+            profile_version == 3
+            and target_projection.rendered_prompt_digest is None
+        )
+        if target_projection.renderer_id == OPENCLAW_RESPONSE_CONSUMER_ID:
+            # The OpenClaw wire system message relocates the bound prompt's
+            # runtime line; the Conductor compares it to the pinned builder.
             if native_system_prompt is None:
                 raise ProviderContractError("native stream bootstrap has not been bound")
             system_prompt = None
+        elif deferred_native_prompt:
+            if native_system_prompt is None:
+                raise ProviderContractError("native stream bootstrap has not been bound")
+            system_prompt = native_system_prompt
+        elif native_system_prompt is not None:
+            raise ProviderContractError("native stream bootstrap is not admitted for this target")
         expected_tools = (
             _openclaw_wire_tools(target_projection.chat_tools)
             if target_projection.renderer_id == OPENCLAW_RESPONSE_CONSUMER_ID

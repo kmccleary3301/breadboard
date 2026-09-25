@@ -115,6 +115,8 @@ OPENHANDS_NATIVE_TOOL_IDS: tuple[str, ...] = (
 )
 PI_CODING_AGENT_LOCAL_ADAPTER_ID: str = "pi-coding-agent.local.v0.73.1"
 PI_NATIVE_TOOL_IDS: tuple[str, ...] = ("bash", "edit", "read", "write")
+OMP_NATIVE_LOCAL_ADAPTER_ID: str = "oh-my-pi.local.v18.1.17"
+OMP_NATIVE_TOOL_IDS: tuple[str, ...] = ("bash", "edit", "read", "write")
 OPENCLAW_LOCAL_ADAPTER_ID: str = "openclaw.local.v2026.9.4"
 OPENCLAW_NATIVE_TOOL_IDS: tuple[str, ...] = ("edit", "exec", "ls", "process", "read", "write")
 HERMES_AGENT_LOCAL_ADAPTER_ID: str = "hermes-agent.local.v2026.9.11"
@@ -126,6 +128,7 @@ NATIVE_PHASE_TOOL_IDS: Mapping[str, tuple[str, ...]] = MappingProxyType({
     OPENHANDS_SDK_LOCAL_ADAPTER_ID: OPENHANDS_NATIVE_TOOL_IDS,
     PI_CODING_AGENT_LOCAL_ADAPTER_ID: PI_NATIVE_TOOL_IDS,
     HERMES_AGENT_LOCAL_ADAPTER_ID: HERMES_NATIVE_TOOL_IDS,
+    OMP_NATIVE_LOCAL_ADAPTER_ID: OMP_NATIVE_TOOL_IDS,
     OPENCLAW_LOCAL_ADAPTER_ID: OPENCLAW_NATIVE_TOOL_IDS,
 })
 MINI_SWE_AGENT_LOCAL_ADAPTER_ID: str = "mini-swe-agent.local.v2.4.6"
@@ -1031,38 +1034,39 @@ def _native_worker_argv(binding: InstalledToolAdapter, executable: str) -> tuple
 
 
 def _native_worker_environment(
-    plan: SandboxExecutionPlan, binding: InstalledToolAdapter
+    plan: SandboxExecutionPlan, binding: InstalledToolAdapter, *, lease_id: str
 ) -> dict[str, str]:
     """Build the admitted environment for every launch of a native worker."""
     runtime_root = Path(binding.runtime_root_path)
     environment = dict(plan.runtime.fixed_environment)
-    if binding.adapter_id in {
-        PI_CODING_AGENT_LOCAL_ADAPTER_ID,
-        OPENCLAW_LOCAL_ADAPTER_ID,
+    if binding.adapter_id == PI_CODING_AGENT_LOCAL_ADAPTER_ID:
+        # Pinned framed worker imports Pi only from the sealed root.
+        environment["PI_NATIVE_WORKER_FRAMED"] = "1"
+        environment["PI_CODING_AGENT_NODE_MODULES"] = str(runtime_root / "node_modules")
+    elif binding.adapter_id == OMP_NATIVE_LOCAL_ADAPTER_ID:
+        # Pinned OMP Bun worker resolves modules via absolute paths from its sealed root.
+        pass
+    elif binding.adapter_id == OPENCLAW_LOCAL_ADAPTER_ID:
+        environment["OPENCLAW_DIST"] = str(runtime_root / "dist")
+        # The pinned supplier capture environment
+        # (kit/openclaw_capture_supplier.py:123) disables bundled plugins
+        # and leads PATH with node's own directory. Skill eligibility
+        # (config-eval hasBinary) reads both, so the sealed node's
+        # directory takes that place here.
+        environment["OPENCLAW_DISABLE_BUNDLED_PLUGINS"] = "1"
+        if "PATH" not in environment:
+            raise SandboxLaunchError(
+                "OpenClaw native worker runtime declares no PATH",
+                code="runtime_preflight_failed",
+                lease_id=lease_id,
+            )
+        environment["PATH"] = os.pathsep.join((
+            str(Path(_native_member_path(binding, binding.executable_relative_path)).parent),
+            environment["PATH"],
+        ))
+    elif binding.adapter_id in {
+        OPENHANDS_SDK_LOCAL_ADAPTER_ID, HERMES_AGENT_LOCAL_ADAPTER_ID,
     }:
-        # Pinned framed workers import supplier code only from the
-        # sealed runtime root and never receive Python env wiring.
-        if binding.adapter_id == PI_CODING_AGENT_LOCAL_ADAPTER_ID:
-            environment["PI_NATIVE_WORKER_FRAMED"] = "1"
-            environment["PI_CODING_AGENT_NODE_MODULES"] = str(runtime_root / "node_modules")
-        else:
-            environment["OPENCLAW_DIST"] = str(runtime_root / "dist")
-            # The pinned supplier capture environment
-            # (kit/openclaw_capture_supplier.py:123) disables bundled plugins
-            # and leads PATH with node's own directory. Skill eligibility
-            # (config-eval hasBinary) reads both, so the sealed node's
-            # directory takes that place here.
-            environment["OPENCLAW_DISABLE_BUNDLED_PLUGINS"] = "1"
-            if "PATH" not in environment:
-                raise SandboxLaunchError(
-                    "OpenClaw native worker runtime declares no PATH",
-                    code="runtime_preflight_failed",
-                )
-            environment["PATH"] = os.pathsep.join((
-                str(Path(_native_member_path(binding, binding.executable_relative_path)).parent),
-                environment["PATH"],
-            ))
-    else:
         environment["PYTHONHOME"] = str(runtime_root / "python")
         environment["PYTHONNOUSERSITE"] = "1"
         environment["LD_LIBRARY_PATH"] = str(runtime_root / "python/lib")
@@ -1071,8 +1075,13 @@ def _native_worker_environment(
             environment["PYTHONEXECUTABLE"] = str(
                 _native_member_path(binding, binding.executable_relative_path)
             )
+    else:
+        raise SandboxLaunchError(
+            f"native tool adapter {binding.adapter_id!r} is unsupported",
+            code="runtime_unsupported",
+            lease_id=lease_id,
+        )
     return environment
-
 
 
 def _validate_native_root(binding: InstalledToolAdapter) -> None:
@@ -2317,7 +2326,7 @@ class TrustedProcessHandle:
                 node = _snapshot_installed_executable(
                     node_path, binding.executable_digest
                 )
-                environment = _native_worker_environment(self.plan, binding)
+                environment = _native_worker_environment(self.plan, binding, lease_id=self.lease_id)
                 process: asyncio.subprocess.Process | None = None
                 try:
                     process = await self._start_stopped_process(
@@ -4057,7 +4066,7 @@ class LeaseBackedRunnerWorkspace:
                 *_native_worker_argv(binding, node.proc_fd_path),
                 "--finalize-only",
                 cwd=binding.runtime_root_path,
-                env=_native_worker_environment(lease.plan, binding),
+                env=_native_worker_environment(lease.plan, binding, lease_id=lease.lease_id),
                 pass_fds=(node.fd,),
                 start_new_session=True,
                 stdin=asyncio.subprocess.PIPE,
@@ -7197,5 +7206,7 @@ __all__ = [
     "OPENCLAW_NATIVE_TOOL_IDS",
     "HERMES_AGENT_LOCAL_ADAPTER_ID",
     "HERMES_NATIVE_TOOL_IDS",
+    "OMP_NATIVE_LOCAL_ADAPTER_ID",
+    "OMP_NATIVE_TOOL_IDS",
     "NATIVE_PHASE_TOOL_IDS",
 ]
