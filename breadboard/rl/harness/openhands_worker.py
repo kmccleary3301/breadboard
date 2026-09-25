@@ -19,11 +19,22 @@ MODEL_RESPONSE_LIMIT = 4 * 1024 * 1024
 TRANSCRIPT_LIMIT = 32 * 1024 * 1024
 FRAME_LIMIT = 16 * 1024 * 1024
 RAW_TERMINAL_LIMIT = 1 * 1024 * 1024
-MAX_ITERATIONS = 16
-CLIENT_TIMEOUT = 45
-MAX_OUTPUT_TOKENS = 2048
 NATIVE_IDLE_TIMEOUT = 30
 
+
+def load_native_config(source: str | Path | Mapping[str, Any] | None = None) -> dict[str, Any]:
+    if isinstance(source, Mapping):
+        import copy
+        return copy.deepcopy(dict(source))
+    if source is not None:
+        return json.loads(Path(source).read_text(encoding="utf-8"))
+    env_path = os.environ.get("OPENHANDS_NATIVE_CONFIG_PATH")
+    if env_path and Path(env_path).is_file():
+        return json.loads(Path(env_path).read_text(encoding="utf-8"))
+    fallback = Path(__file__).resolve().parents[3] / "config/e4_targets/openhands_sdk/1.47.0/native-config.json"
+    if fallback.is_file():
+        return json.loads(fallback.read_text(encoding="utf-8"))
+    raise FileNotFoundError("Could not find openhands native-config.json")
 
 class NativeWorkerError(RuntimeError):
     """An invalid phase request or a native source failure."""
@@ -48,14 +59,6 @@ class _IPCTransport:
         if auth != f"Bearer {self._credential}":
             raise self._httpx.LocalProtocolError("native transport credential rejected")
         body = request.content
-        original_body = body
-        try:
-            document = json.loads(body)
-        except (TypeError, ValueError, UnicodeDecodeError):
-            document = None
-        if isinstance(document, dict) and "temperature" not in document:
-            document["temperature"] = 0
-            body = json.dumps(document, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         if len(body) > FRAME_LIMIT:
             raise self._httpx.RequestError("native OpenHands request exceeds frame limit", request=request)
         headers: list[list[str]] = []
@@ -231,6 +234,10 @@ class OpenHandsActor:
         max_input_tokens = model_config["max_input_tokens"]
         if type(max_input_tokens) is not int or max_input_tokens < 1:
             raise NativeWorkerError("max_input_tokens must be a positive integer")
+        max_iteration_per_run = payload.get("max_iteration_per_run")
+        if type(max_iteration_per_run) is not int or max_iteration_per_run < 1:
+            raise NativeWorkerError("max_iteration_per_run must be a positive integer")
+        self._max_iteration_per_run = max_iteration_per_run
         workspace = self._require_str(payload, "workspace")
         scratch = self._require_str(payload, "scratch")
         if not os.path.isabs(workspace) or not os.path.isabs(scratch):
@@ -333,32 +340,30 @@ class OpenHandsActor:
                 "close": _IPCTransport.close,
             },
         )
+        import copy
+        native_config_source = (
+            payload.get("native_config")
+            or payload.get("native_config_path")
+        )
+        native_config = load_native_config(native_config_source)
+        model_profile = copy.deepcopy(native_config.get("model", {}))
+        timeout = model_profile.get("timeout", 45)
+        num_retries = model_profile.get("num_retries", 0)
         self._transport = transport_type(self._channel, self._credential, self._request_result)
-        http_client = httpx.Client(transport=self._transport, timeout=CLIENT_TIMEOUT)
+        http_client = httpx.Client(transport=self._transport, timeout=timeout)
         self._client = OpenAI(
             api_key=self._credential,
             base_url=base_url,
-            max_retries=0,
-            timeout=CLIENT_TIMEOUT,
+            max_retries=num_retries,
+            timeout=timeout,
             http_client=http_client,
         )
         llm_kwargs: dict[str, Any] = {
+            **model_profile,
             "model": model,
             "api_key": self._credential,
             "base_url": base_url,
-            "num_retries": 0,
-            "timeout": CLIENT_TIMEOUT,
             "max_input_tokens": max_input_tokens,
-            "max_output_tokens": MAX_OUTPUT_TOKENS,
-            "temperature": 0,
-            "reasoning_effort": "none",
-            "extended_thinking_budget": None,
-            "disable_vision": True,
-            "log_completions": False,
-            "api_mode": "chat",
-            "stream": False,
-            "native_tool_calling": True,
-            "drop_params": True,
         }
         self._llm = LLM(**llm_kwargs)
         if detect_provider(self._llm) is not None:
@@ -386,7 +391,7 @@ class OpenHandsActor:
             agent=self._agent,
             workspace=workspace,
             persistence_dir=None,
-            max_iteration_per_run=MAX_ITERATIONS,
+            max_iteration_per_run=self._max_iteration_per_run,
             stuck_detection=True,
             max_budget_per_run=None,
             visualizer=None,
@@ -399,6 +404,7 @@ class OpenHandsActor:
         return {
             "schema_version": SCHEMA_VERSION,
             "kind": "initialized",
+            "conversation_id": str(self._conversation.state.id),
             "event_delta": self._take_events(),
             "status": self._status(),
             "iteration": self._iteration,
@@ -425,7 +431,7 @@ class OpenHandsActor:
             if blocked_reason is not None:
                 state.execution_status = self._sdk["ConversationExecutionStatus"].FINISHED
                 return {"schema_version": SCHEMA_VERSION, "kind": "sample_ready", "event_delta": self._take_events(), "status": self._status(), "iteration": self._iteration}
-        if self._status() in {"FINISHED", "STUCK", "ERROR"} or self._iteration >= MAX_ITERATIONS:
+        if self._status() in {"FINISHED", "STUCK", "ERROR"} or self._iteration >= self._max_iteration_per_run:
             return {"schema_version": SCHEMA_VERSION, "kind": "sample_ready", "event_delta": [], "status": self._status(), "iteration": self._iteration}
         if self._status() in {"IDLE", "PAUSED"}:
             state.execution_status = self._sdk["ConversationExecutionStatus"].RUNNING
@@ -556,9 +562,8 @@ class OpenHandsActor:
                 "arguments": json.loads(action.tool_call.arguments),
                 "security_risk": risk if isinstance(risk, str) else "UNKNOWN",
             }
-        all_output = [action_dump(action, index) for index, action in enumerate(actions)]
-        prepared_output = all_output[: len(self._prepared)]
-        return {"schema_version": SCHEMA_VERSION, "kind": "prepared", "event_delta": self._take_events(), "status": self._status(), "iteration": self._iteration, "actions": prepared_output, "prepared_actions": all_output}
+        prepared_output = [action_dump(action, index) for index, action in enumerate(self._prepared)]
+        return {"schema_version": SCHEMA_VERSION, "kind": "prepared", "event_delta": self._take_events(), "status": self._status(), "iteration": self._iteration, "actions": prepared_output}
 
 
     def _execute(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -590,11 +595,11 @@ class OpenHandsActor:
                 self._conversation._on_event(self._sdk["MessageEvent"](source="user", llm_message=self._sdk["Message"](role="user", content=[self._sdk["TextContent"](text=followup)])))
             else:
                 self._conversation.state.execution_status = self._sdk["ConversationExecutionStatus"].FINISHED
-        if self._iteration >= MAX_ITERATIONS and self._status() not in {"FINISHED", "ERROR", "STUCK"}:
+        if self._iteration >= self._max_iteration_per_run and self._status() not in {"FINISHED", "ERROR", "STUCK"}:
             self._conversation.state.execution_status = self._sdk["ConversationExecutionStatus"].ERROR
             self._conversation._on_event(self._sdk["ConversationErrorEvent"](
                 source="environment", code="MaxIterationsReached",
-                detail=f"Agent reached maximum iterations limit ({MAX_ITERATIONS}).",
+                detail=f"Agent reached maximum iterations limit ({self._max_iteration_per_run}).",
             ))
         result = {
             "schema_version": SCHEMA_VERSION,
