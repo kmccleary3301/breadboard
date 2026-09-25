@@ -228,6 +228,60 @@ async def test_initialize_accepts_non_repository_writable_policy_workspace(
     assert list(workspace_root.iterdir()) == []
     assert captured[0]["package_dir"] == "/sealed/pi/node_modules/@mariozechner/pi-coding-agent"
 
+@pytest.mark.asyncio
+async def test_native_phase_payload_accepts_nesting_depth_beyond_eight(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binding = RunnerToolBinding("read", "sha256:" + ("1" * 64), ())
+    adapter = SimpleNamespace(
+        adapter_id=sandbox_module.OPENHANDS_SDK_LOCAL_ADAPTER_ID,
+        tool_ids=sandbox_module.OPENHANDS_NATIVE_TOOL_IDS,
+        runtime_root_path="/sealed/openhands",
+    )
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    captured_payload: list[dict[str, Any]] = []
+    async def invoke(adapter: Any, operation: str, payload: Mapping[str, Any], *, timeout_ms: int) -> Mapping[str, Any]:
+        del adapter, operation, timeout_ms
+        captured_payload.append(dict(payload))
+        return {"kind": "stepped"}
+    async def begin() -> None:
+        pass
+    async def end() -> None:
+        pass
+    plan = SimpleNamespace(
+        effective_plan_digest="plan",
+        tool_bindings=(binding,),
+        installed_tool_adapters=(adapter,),
+        limits=SimpleNamespace(observation_bytes=65536),
+        materialization_plan=SimpleNamespace(entries=()),
+    )
+    lease = SimpleNamespace(
+        lease_id="lease-nested-test",
+        plan=plan,
+        _materialized=SimpleNamespace(workspace_path=workspace_root),
+        _runtime=SimpleNamespace(invoke_native_phase=invoke),
+        _begin_operation=begin,
+        _end_operation=end,
+    )
+    monkeypatch.setattr(
+        sandbox_module.TrustedProcessHandle,
+        "_validate_native_binding",
+        staticmethod(lambda _plan, _adapter: None),
+    )
+    workspace = sandbox_module.LeaseBackedRunnerWorkspace(lease, "plan", (binding,))
+    nested: dict[str, Any] = {"value": 42}
+    for _ in range(12):
+        nested = {"level": nested}
+    result = await workspace.invoke_native_phase(
+        "step",
+        {"task": "nested", "config": nested},
+        timeout_ms=1_000,
+    )
+    assert result["kind"] == "stepped"
+    assert captured_payload[0]["config"] == nested
+
 
 @pytest.mark.asyncio
 async def test_workspace_effects_measure_content_diff_and_supplier_utf8(tmp_path: Path) -> None:

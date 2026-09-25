@@ -3820,7 +3820,7 @@ class LeaseBackedRunnerWorkspace:
                 frozen_payload = freeze_json_object(
                     payload,
                     field_name="native phase payload",
-                    max_depth=8,
+                    max_depth=64,
                     max_nodes=lease.plan.limits.observation_bytes + 1,
                     max_encoded_bytes=lease.plan.limits.observation_bytes,
                 )
