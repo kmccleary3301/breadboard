@@ -17,6 +17,7 @@ import subprocess
 import sys
 import types
 from pathlib import Path
+from typing import Callable
 
 import pytest
 
@@ -155,7 +156,7 @@ def test_launch_envelope_scratch_identity_mismatch_fails_before_fork(
     try:
         real_stat = os.fstat(scratch_fd)
         mismatched_identity = (real_stat.st_dev, real_stat.st_ino + 1)
-        authenticator = HmacSha256ReceiptAuthenticator(b"k" * 32)
+        authenticator = HmacSha256ReceiptAuthenticator(key_id="test-containment", key=b"k" * 32)
         with pytest.raises(lease_envelope.EnvelopeLaunchError) as exc_info:
             lease_envelope.launch_envelope(
                 lease_id="test-lease-id",
@@ -715,22 +716,40 @@ def test_envelope_rejects_two_visible_mounts_for_one_lease_root(
         lease_envelope._verify_mount_view("/workspace", "/scratch", 1_000_000)
 
 
+def _patch_mount_view_syscalls(
+    monkeypatch: pytest.MonkeyPatch,
+    mounted: list[tuple[str, int, tuple[int, int]]],
+    *,
+    move_mount: Callable[[int, str], None] = lambda fd, path: None,
+) -> None:
+    def mount_tmpfs(path: str, size: int, **kwargs: object) -> None:
+        meta = os.stat(path)
+        mounted.append((path, size, (meta.st_dev, meta.st_ino)))
+
+    monkeypatch.setattr(lease_envelope, "_enter_private_mount_namespace", lambda: None)
+    monkeypatch.setattr(lease_envelope, "_remount_tree_readonly", lambda path: None)
+    monkeypatch.setattr(lease_envelope, "_open_tree", lambda path: os.open(path, os.O_RDONLY))
+    monkeypatch.setattr(lease_envelope, "_move_mount", move_mount)
+    monkeypatch.setattr(lease_envelope, "_mount_proc", lambda: None)
+    monkeypatch.setattr(lease_envelope, "_mount_tmpfs", mount_tmpfs)
+    # The /tmp tmpfs is not mounted here, so no lease root is hidden by it:
+    # this is the lease-outside-/tmp view (e.g. a bound /out lease root).
+    monkeypatch.setattr(lease_envelope, "_prepare_lease_mountpoint", lambda target: False)
+    monkeypatch.setattr(lease_envelope, "_verify_mount_view", lambda workspace, scratch, size: ("sha256:" + "0" * 64, ()))
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="requires Linux O_PATH descriptors")
 def test_envelope_mounts_scratch_on_bounded_private_tmpfs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace, scratch = tmp_path / "workspace", tmp_path / "scratch"
     workspace.mkdir()
     scratch.mkdir()
-    mounted: list[tuple[str, int]] = []
-    monkeypatch.setattr(lease_envelope, "_enter_private_mount_namespace", lambda: None)
-    monkeypatch.setattr(lease_envelope, "_remount_tree_readonly", lambda path: None)
-    monkeypatch.setattr(lease_envelope, "_open_tree", lambda path: os.open(path, os.O_RDONLY))
-    monkeypatch.setattr(lease_envelope, "_move_mount", lambda fd, path: None)
-    monkeypatch.setattr(lease_envelope, "_mount_proc", lambda: None)
-    monkeypatch.setattr(lease_envelope, "_mount_tmpfs", lambda path, size, **kwargs: mounted.append((path, size)))
-    monkeypatch.setattr(lease_envelope, "_verify_mount_view", lambda workspace, scratch, size: ("sha256:" + "0" * 64, ()))
+    mounted: list[tuple[str, int, tuple[int, int]]] = []
+    _patch_mount_view_syscalls(monkeypatch, mounted)
     workspace_fd = os.open(workspace, os.O_RDONLY)
     scratch_fd = os.open(scratch, os.O_RDONLY)
+    scratch_meta = os.fstat(scratch_fd)
     try:
         lease_envelope._setup_mount_view(
             str(workspace), str(scratch), workspace_fd, scratch_fd, 1_000_000,
@@ -738,8 +757,49 @@ def test_envelope_mounts_scratch_on_bounded_private_tmpfs(
     finally:
         os.close(workspace_fd)
         os.close(scratch_fd)
-    assert set(dict(mounted)) == {"/tmp", f"/proc/self/fd/{scratch_fd}"}
-    assert sum(size for _, size in mounted) == 1_000_000
+    assert [path for path, _, _ in mounted][0] == "/tmp"
+    scratch_target, _, scratch_identity = mounted[1]
+    # A descriptor inherited across unshare(CLONE_NEWNS) names a parent-
+    # namespace mount, where mount(2) fails with EINVAL; the scratch tmpfs
+    # targets a descriptor reopened in the namespace for the verified inode.
+    assert scratch_target.startswith("/proc/self/fd/")
+    assert scratch_target != f"/proc/self/fd/{scratch_fd}"
+    assert scratch_identity == (scratch_meta.st_dev, scratch_meta.st_ino)
+    assert sum(size for _, size, _ in mounted) == 1_000_000
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="requires Linux O_PATH descriptors")
+@pytest.mark.parametrize("replacement", ("directory", "symlink"))
+def test_envelope_refuses_scratch_replaced_before_its_mount(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, replacement: str,
+) -> None:
+    workspace, scratch = tmp_path / "workspace", tmp_path / "scratch"
+    workspace.mkdir()
+    scratch.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+
+    def swap_scratch(fd: int, path: str) -> None:
+        scratch.rename(tmp_path / "verified-scratch")
+        if replacement == "directory":
+            scratch.mkdir()
+        else:
+            scratch.symlink_to(elsewhere, target_is_directory=True)
+
+    mounted: list[tuple[str, int, tuple[int, int]]] = []
+    _patch_mount_view_syscalls(monkeypatch, mounted, move_mount=swap_scratch)
+    workspace_fd = os.open(workspace, os.O_RDONLY)
+    scratch_fd = os.open(scratch, os.O_RDONLY)
+    try:
+        with pytest.raises(OSError) as captured:
+            lease_envelope._setup_mount_view(
+                str(workspace), str(scratch), workspace_fd, scratch_fd, 1_000_000,
+            )
+    finally:
+        os.close(workspace_fd)
+        os.close(scratch_fd)
+    assert captured.value.errno in {errno.ESTALE, errno.ELOOP, errno.ENOTDIR}
+    assert [path for path, _, _ in mounted] == ["/tmp"]
 
 
 @requires_sealed_execution
