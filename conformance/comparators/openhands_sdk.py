@@ -17,6 +17,8 @@ The BreadBoard port MUST emit a mapping with these fields for
     ``bb.e4.openhands-sdk-trace.v1``.
 ``case_id``
     Supplier case identifier.
+``conversation_id``
+    BB's independently observed conversation state ID, before normalization.
 ``normalizations``
     A list of exactly the normalization rules applied.  The admitted rules
     are ``event_uuid:<EVENT_UUID>``, ``timestamp:<TIMESTAMP>``,
@@ -57,6 +59,7 @@ performed.
 from __future__ import annotations
 
 import copy
+from dataclasses import dataclass
 import hashlib
 import json
 import re
@@ -77,7 +80,6 @@ ISO_TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?
 CALL_ID_RE = re.compile(r"^(?:oh-capture|call[-_])[A-Za-z0-9_.-]+$")
 RESPONSE_ID_RE = re.compile(r"^oh-capture-response-[A-Za-z0-9_.-]+$")
 TMP_SUFFIX_RE = re.compile(r"^(.*(?:/tmp|/private/tmp)/[^/]*?)(?:_[A-Za-z0-9]{6,})(/.*)?$")
-WORKSPACE_PATH_RE = re.compile(r"^(.+/workspace)(?:/.*)?$")
 SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 NORMALIZATION_BY_PLACEHOLDER = {
@@ -91,6 +93,83 @@ NORMALIZATION_BY_PLACEHOLDER = {
 }
 ALLOWED_NORMALIZATIONS = frozenset(NORMALIZATION_BY_PLACEHOLDER.values())
 PLACEHOLDERS = tuple(NORMALIZATION_BY_PLACEHOLDER)
+
+
+def _prompt_cache_key(value: Any) -> str:
+    # SDK 1.47.0 LocalConversation._llm_call_context (local_conversation.py:1611-1619)
+    # uses the conversation's UUID as its default prompt-cache shard key.
+    if type(value) is not str or UUID_RE.fullmatch(value) is None:
+        raise ValueError("prompt_cache_key must be a conversation UUID")
+    return "<EVENT_UUID>"
+
+
+def supplier_conversation_id_from_stderr(stderr: str) -> str:
+    """Read the one SDK state.py:592 conversation ID recorded by the supplier."""
+    lines = stderr.splitlines()
+    matches = [index for index, line in enumerate(lines) if "Created new conversation" in line]
+    if len(matches) != 1:
+        raise ValueError(f"supplier.stderr must record exactly one Created new conversation line; found {len(matches)}")
+    index = matches[0]
+    if "state.py:592" not in lines[index] or index + 1 == len(lines):
+        raise ValueError("supplier.stderr has a malformed state.py:592 conversation record")
+    conversation_id = lines[index + 1].strip()
+    if UUID_RE.fullmatch(conversation_id) is None:
+        raise ValueError("supplier.stderr conversation ID must be a UUID")
+    return conversation_id
+
+
+
+def _bind_prompt_cache_keys(
+    supplier_bodies: Sequence[Mapping[str, Any]],
+    worker_bodies: Sequence[Mapping[str, Any]],
+    supplier_conversation_id: str,
+    worker_conversation_id: str,
+) -> None:
+    if len(supplier_bodies) != len(worker_bodies):
+        raise ValueError(
+            f"request count differs: supplier {len(supplier_bodies)}, worker {len(worker_bodies)}"
+        )
+    for role, conversation_id in (
+        ("supplier", supplier_conversation_id),
+        ("candidate", worker_conversation_id),
+    ):
+        try:
+            _prompt_cache_key(conversation_id)
+        except ValueError as exc:
+            raise ValueError(f"{role} conversation_id must be a UUID") from exc
+    for index, (supplier, worker) in enumerate(zip(supplier_bodies, worker_bodies)):
+        for role, body, conversation_id in (
+            ("supplier", supplier, supplier_conversation_id),
+            ("candidate", worker, worker_conversation_id),
+        ):
+            if not isinstance(body, Mapping) or body.get("prompt_cache_key") != conversation_id:
+                raise ValueError(f"request {index}: {role} prompt_cache_key differs from its conversation ID")
+
+
+def compare_request_sequences(
+    supplier_bodies: Sequence[Mapping[str, Any]],
+    worker_bodies: Sequence[Mapping[str, Any]],
+    *,
+    supplier_workspace: str,
+    worker_workspace: str,
+    supplier_conversation_id: str,
+    worker_conversation_id: str,
+) -> list[str | None]:
+    """Compare every ordered SDK request with symmetric typed workspace/key rules."""
+    _bind_prompt_cache_keys(
+        supplier_bodies, worker_bodies, supplier_conversation_id, worker_conversation_id
+    )
+    results: list[str | None] = []
+    for index, (supplier, worker) in enumerate(zip(supplier_bodies, worker_bodies)):
+        normalized = [
+            _Normalizer(root).value(body)
+            for body, root in (
+                (supplier, supplier_workspace),
+                (worker, worker_workspace),
+            )
+        ]
+        results.append(_first_difference(normalized[0], normalized[1], f"$.requests[{index}].body"))
+    return results
 
 
 def _is_number(value: Any) -> bool:
@@ -135,27 +214,64 @@ def _first_difference(expected: Any, observed: Any, path: str = "$") -> str | No
     return None
 
 
-def _workspace_roots(value: Any) -> tuple[str, ...]:
+def _declared_workspace_from_request(request: Mapping[str, Any], req_index: int) -> str:
+    body = request.get("body") if isinstance(request, Mapping) else None
+    if not isinstance(body, Mapping):
+        raise ValueError(f"request {req_index}: request body is not an object")
+    tools = body.get("tools")
+    if not isinstance(tools, list):
+        raise ValueError(f"request {req_index}: declared working directory is absent")
     roots: set[str] = set()
-    def walk(item: Any) -> None:
-        if isinstance(item, Mapping):
-            for child in item.values():
-                walk(child)
-        elif isinstance(item, list):
-            for child in item:
-                walk(child)
-        elif isinstance(item, str):
-            match = WORKSPACE_PATH_RE.match(item)
-            if match:
-                roots.add(match.group(1))
-    walk(value)
-    return tuple(sorted(roots, key=len, reverse=True))
+    prefix = "Your current working directory is:"
+    for tool in tools:
+        if not isinstance(tool, Mapping):
+            continue
+        desc = ""
+        fn = tool.get("function")
+        if isinstance(fn, Mapping) and isinstance(fn.get("description"), str):
+            desc = fn["description"]
+        elif isinstance(tool.get("description"), str):
+            desc = tool["description"]
+        for line in desc.splitlines():
+            line = line.strip()
+            if line.startswith(prefix):
+                cwd = line[len(prefix):].strip()
+                if cwd:
+                    roots.add(cwd)
+    if not roots:
+        raise ValueError(f"request {req_index}: declared working directory is absent")
+    if len(roots) > 1:
+        raise ValueError(f"request {req_index}: ambiguous declared working directory: {sorted(roots)}")
+    return next(iter(roots))
+
+
+def _declared_workspace_root(requests: Any) -> str:
+    if isinstance(requests, Mapping) and "requests" in requests:
+        requests = requests["requests"]
+    if not isinstance(requests, Sequence) or not requests:
+        raise ValueError("declared working directory is absent: no requests present")
+    found_roots: list[str] = []
+    for index, request in enumerate(requests):
+        root = _declared_workspace_from_request(request, index)
+        found_roots.append(root)
+    unique_roots = set(found_roots)
+    if len(unique_roots) != 1:
+        raise ValueError(
+            f"declared working directory differs across requests: {sorted(unique_roots)}"
+        )
+    return found_roots[0]
 
 
 class _Normalizer:
-    def __init__(self, workspace_roots: Sequence[str] = ()) -> None:
+    def __init__(self, workspace_roots: Sequence[str] | str | None = ()) -> None:
         self.applied: set[str] = set()
-        self.workspace_roots = tuple(workspace_roots)
+        if isinstance(workspace_roots, str):
+            roots = [workspace_roots] if workspace_roots else []
+        elif workspace_roots is None:
+            roots = []
+        else:
+            roots = list(workspace_roots)
+        self.workspace_roots = tuple(sorted(roots, key=len, reverse=True))
 
     def _mark(self, placeholder: str) -> str:
         self.applied.add(NORMALIZATION_BY_PLACEHOLDER[placeholder])
@@ -166,16 +282,21 @@ class _Normalizer:
             return {str(k): self.value(v, key=str(k)) for k, v in value.items()}
         if isinstance(value, list):
             return [self.value(item, key=key) for item in value]
+        if key == "prompt_cache_key":
+            if value == "<EVENT_UUID>":
+                return value
+            return self._mark(_prompt_cache_key(value))
         if not isinstance(value, str):
             return value
         if value in PLACEHOLDERS:
             return value
         for root in self.workspace_roots:
-            if value == root:
-                return self._mark("<WORKSPACE>")
-            if value.startswith(root + "/"):
+            if not root:
+                continue
+            pattern = re.compile(rf"{re.escape(root)}(?=[/'\"`\s),.;:\]\\]|$)")
+            if pattern.search(value):
                 self._mark("<WORKSPACE>")
-                return "<WORKSPACE>" + value[len(root):]
+                value = pattern.sub("<WORKSPACE>", value)
         if key in {"hostname", "host_name"}:
             return self._mark("<HOSTNAME>")
         if key in {"timestamp", "created_at", "updated_at"} or ISO_TIMESTAMP_RE.fullmatch(value):
@@ -391,8 +512,9 @@ def _project_effects(raw: Any, *, allow_legacy: bool = False) -> dict[str, str |
                     if type(value.get("bytes")) is not int or value["bytes"] < 0:
                         raise ValueError(f"file effect {path!r} requires non-negative integer bytes")
                     digest = value.get("sha256")
-                    if "content_utf8" in value and not isinstance(value["content_utf8"], str):
-                        raise ValueError(f"file effect {path!r} content_utf8 must be a string")
+                    if "content_utf8" in value:
+                        if not isinstance(value["content_utf8"], str):
+                            raise ValueError(f"file effect {path!r} content_utf8 must be a string")
                 if not isinstance(digest, str) or SHA256_RE.fullmatch(digest) is None:
                     raise ValueError(f"file effect {path!r} requires sha256")
         elif allow_legacy and (value is None or isinstance(value, str)):
@@ -428,7 +550,8 @@ def _file_effects(
     allow_legacy: bool = False,
 ) -> dict[str, str | None]:
     result = _project_effects(trace.get("effects", {}), allow_legacy=allow_legacy)
-    for path, digest in _workspace_effects(case_dir).items():
+    ws_effects = _workspace_effects(case_dir)
+    for path, digest in ws_effects.items():
         result.setdefault(path, digest)
     return result
 
@@ -440,7 +563,7 @@ def _canonical_from_trace(trace: Mapping[str, Any], case_dir: Path, *, role: str
         for row in response_rows
         if isinstance(row.get("response"), Mapping)
     }
-    normalizer = _Normalizer(_workspace_roots(trace))
+    normalizer = _Normalizer(_declared_workspace_root(request_rows))
     requests: list[dict[str, Any]] = []
     for row in request_rows:
         item: dict[str, Any] = {
@@ -527,12 +650,24 @@ def project_bb_trace(trace: Mapping[str, Any] | Path | str) -> dict[str, Any]:
         raise ValueError("BreadBoard trace missing fields: " + ", ".join(missing))
     if value.get("schema_version") not in {None, TRACE_SCHEMA_VERSION}:
         raise ValueError(f"BreadBoard trace schema_version must be {TRACE_SCHEMA_VERSION}")
-    normalizer = _Normalizer(_workspace_roots(value))
+    normalizer = _Normalizer(_declared_workspace_root(value["requests"]))
+    requests: list[dict[str, Any]] = []
+    for req in value.get("requests", []):
+        if not isinstance(req, Mapping):
+            requests.append(normalizer.value(req))
+            continue
+        item: dict[str, Any] = {
+            "index": req.get("index"),
+            "body": normalizer.value(req.get("body")),
+        }
+        if "response" in req and isinstance(req["response"], Mapping):
+            item["response"] = _response_projection(req["response"], normalizer)
+        requests.append(item)
     projected = {
         "schema_version": TRACE_SCHEMA_VERSION,
         "role": "breadboard",
         "case_id": value["case_id"],
-        "requests": normalizer.value(value["requests"]),
+        "requests": requests,
         "tool_calls": normalizer.value(value["tool_calls"]),
         "observations": normalizer.value(value["observations"]),
         "file_effects": normalizer.value(_project_effects(value["file_effects"])),
@@ -580,18 +715,124 @@ def _report(assertions: list[dict[str, Any]], errors: list[str] | None = None) -
     }
 
 
+@dataclass(frozen=True)
+class FileEffectContent:
+    path: str
+    recorded_digest: str | None
+    verified_content: str | None = None
+
+
+def _candidate_file_bytes(side_input: Path | str | Mapping[str, Any], path: str) -> bytes | None:
+    if isinstance(side_input, (Path, str)):
+        p = Path(side_input)
+        if p.is_dir():
+            ws_file = p / "workspace" / path
+            if ws_file.is_file():
+                return ws_file.read_bytes()
+            if (p / "trace.json").is_file():
+                t = _load_json(p / "trace.json")
+                fe = t.get("file_effects") or (t.get("effects", {}).get("files") if isinstance(t.get("effects"), Mapping) else None)
+                if isinstance(fe, Mapping) and path in fe and isinstance(fe[path], Mapping) and isinstance(fe[path].get("content_utf8"), str):
+                    return fe[path]["content_utf8"].encode("utf-8")
+    elif isinstance(side_input, Mapping):
+        fe = side_input.get("file_effects") or (side_input.get("effects", {}).get("files") if isinstance(side_input.get("effects"), Mapping) else None)
+        if isinstance(fe, Mapping) and path in fe and isinstance(fe[path], Mapping) and isinstance(fe[path].get("content_utf8"), str):
+            return fe[path]["content_utf8"].encode("utf-8")
+    return None
+
+
+def _side_root(side_input: Path | str | Mapping[str, Any]) -> str:
+    if isinstance(side_input, (Path, str)):
+        p = Path(side_input)
+        if p.is_dir() and (p / "trace.json").is_file():
+            trace = _load_json(p / "trace.json")
+            req_rows, _ = _request_rows(trace, p)
+            return _declared_workspace_root(req_rows)
+        trace = _load_json(p)
+        return _declared_workspace_root(trace.get("requests", []))
+    return _declared_workspace_root(side_input.get("requests", []))
+
+
 def compare_cases(supplier_case: Path | str | Mapping[str, Any], bb_trace: Mapping[str, Any] | Path | str) -> dict[str, Any]:
-    errors: list[str] = []
     try:
         expected = project_supplier_case(supplier_case) if isinstance(supplier_case, (Path, str)) else project_bb_trace(supplier_case)
         observed = project_bb_trace(bb_trace)
+        expected_effects = dict(expected.get("file_effects", {}))
+        observed_effects = dict(observed.get("file_effects", {}))
+        common_paths = set(expected_effects) & set(observed_effects)
+        for p in common_paths:
+            supp_digest = expected_effects.get(p)
+            bb_digest = observed_effects.get(p)
+            if supp_digest is None or bb_digest is None:
+                continue
+            supp_bytes = _candidate_file_bytes(supplier_case, p)
+            bb_bytes = _candidate_file_bytes(bb_trace, p)
+            if supp_bytes is not None and bb_bytes is not None:
+                calc_supp = f"sha256:{hashlib.sha256(supp_bytes).hexdigest()}"
+                if calc_supp != supp_digest:
+                    raise ValueError(
+                        f"supplier file effect {p!r} recorded digest {supp_digest} "
+                        f"does not match workspace bytes digest {calc_supp}"
+                    )
+                calc_bb = f"sha256:{hashlib.sha256(bb_bytes).hexdigest()}"
+                if calc_bb != bb_digest:
+                    raise ValueError(
+                        f"breadboard file effect {p!r} recorded digest {bb_digest} "
+                        f"does not match content_utf8 digest {calc_bb}"
+                    )
+                try:
+                    supp_text = supp_bytes.decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    raise ValueError(f"supplier file effect {p!r} content is not valid UTF-8: {exc}") from exc
+                try:
+                    bb_text = bb_bytes.decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    raise ValueError(f"breadboard file effect {p!r} content is not valid UTF-8: {exc}") from exc
+                supp_norm = _Normalizer(_side_root(supplier_case))
+                bb_norm = _Normalizer(_side_root(bb_trace))
+                norm_supp = supp_norm.value(supp_text)
+                norm_bb = bb_norm.value(bb_text)
+                expected_effects[p] = f"sha256:{hashlib.sha256(norm_supp.encode('utf-8')).hexdigest()}"
+                observed_effects[p] = f"sha256:{hashlib.sha256(norm_bb.encode('utf-8')).hexdigest()}"
+        expected["file_effects"] = expected_effects
+        observed["file_effects"] = observed_effects
     except (OSError, TypeError, ValueError) as exc:
         return _report([], [str(exc)])
     assertions: list[dict[str, Any]] = []
+    try:
+        if not isinstance(supplier_case, (Path, str)):
+            raise ValueError("supplier case directory with supplier.stderr is required")
+        supplier_path = Path(supplier_case)
+        supplier_id = supplier_conversation_id_from_stderr(
+            (supplier_path / "supplier.stderr").read_text(encoding="utf-8")
+        )
+        supplier_trace = _load_json(supplier_path / "trace.json")
+        supplier_rows, _ = _request_rows(supplier_trace, supplier_path)
+        candidate_trace = _load_json(Path(bb_trace)) if isinstance(bb_trace, (Path, str)) else bb_trace
+        if not isinstance(candidate_trace, Mapping):
+            raise ValueError("candidate trace must be an object")
+        candidate_rows = candidate_trace["requests"]
+        if not isinstance(candidate_rows, list):
+            raise ValueError("candidate requests must be a list")
+        _bind_prompt_cache_keys(
+            [row["body"] for row in supplier_rows],
+            [row["body"] for row in candidate_rows],
+            supplier_id,
+            candidate_trace.get("conversation_id"),
+        )
+        binding_difference = None
+    except (OSError, UnicodeError, KeyError, TypeError, ValueError) as exc:
+        binding_difference = str(exc)
+    assertions.append(_assertion(
+        f"{expected['case_id']}.requests.prompt_cache_key_bound",
+        "each side's request key equals its own conversation ID",
+        "bound" if binding_difference is None else "unbound",
+        binding_difference,
+    ))
     for field in ("case_id", "requests", "tool_calls", "observations", "file_effects", "termination", "request_count"):
         difference = _first_difference(expected.get(field), observed.get(field), f"$.{field}")
         assertions.append(_assertion(f"{expected['case_id']}.{field}_equal", expected.get(field), observed.get(field), difference))
-    return _report(assertions, errors)
+    return _report(assertions)
 
 
 class OpenHandsSDKComparator:

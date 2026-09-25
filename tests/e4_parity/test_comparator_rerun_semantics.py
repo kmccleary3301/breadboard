@@ -15,7 +15,7 @@ from scripts.validate_e4_c4_chain import _diff_comparator_reports
 ROOT = Path(__file__).resolve().parents[2]
 INVENTORY_PATH = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"
 REGISTRY_PATH = ROOT / "conformance" / "comparators" / "registry.json"
-OPENHANDS_CASE = ROOT / "tests" / "e4_parity" / "fixtures" / "openhands_sdk" / "OH-01-normal-file-effect"
+OPENHANDS_CASE = ROOT / "tests" / "fixtures" / "openhands_rerun2" / "captures" / "OH-01-normal-file-effect"
 
 def _load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -36,7 +36,7 @@ def _sha256(path: Path) -> str:
 
 def _openhands_measured_bb_trace() -> dict[str, Any]:
     supplier = project_supplier_case(OPENHANDS_CASE)
-    workspace = OPENHANDS_CASE / "workspace"
+    workspace = ROOT / "tests" / "e4_parity" / "fixtures" / "openhands_sdk" / "OH-01-normal-file-effect" / "workspace"
     effects: dict[str, dict[str, Any]] = {}
     for relative, digest in supplier["file_effects"].items():
         if digest is None:
@@ -53,6 +53,9 @@ def _openhands_measured_bb_trace() -> dict[str, Any]:
         }
     replay = dict(supplier)
     replay["file_effects"] = effects
+    replay["conversation_id"] = "56351706-00f7-47c5-98d0-7145da8af641"
+    for request in replay["requests"]:
+        request["body"]["prompt_cache_key"] = replay["conversation_id"]
     return replay
 
 
@@ -246,11 +249,28 @@ def test_each_registered_comparator_entrypoint_conforms_to_protocol(tmp_path: Pa
         report = comparator(
             _registered_comparator_input(entry["comparator_id"], comparator_path, tmp_path)
         )
+        if entry["comparator_id"] == "openhands_sdk_trace_v1":
+            assert report["ok"] is True, report
         assert isinstance(report, dict)
         report_schema_version = report.get("schema_version", report.get("report_schema_version"))
         assert report_schema_version == entry["report_schema_version"]
         assert isinstance(report["assertions"], list) and report["assertions"]
         assert {"assertion_id", "status", "observed", "expected"} <= set(report["assertions"][0])
+
+
+def test_registered_openhands_entrypoint_rejects_foreign_cache_key(tmp_path: Path) -> None:
+    entry = next(item for item in _registry_entries() if item["comparator_id"] == "openhands_sdk_trace_v1")
+    module = importlib.import_module(entry["entrypoint"]["module"])
+    comparator = getattr(module, entry["entrypoint"]["callable"])
+    _, comparator_path, _ = _comparator_fixture(tmp_path)
+    inp = _registered_comparator_input(entry["comparator_id"], comparator_path, tmp_path)
+    inp["bb_trace"]["requests"][0]["body"]["prompt_cache_key"] = "123e4567-e89b-12d3-a456-426614174000"
+    report = comparator(inp)
+    assert report["ok"] is False
+    assert any(
+        assertion["assertion_id"].endswith(".requests.prompt_cache_key_bound") and assertion["status"] == "failed"
+        for assertion in report["assertions"]
+    )
 
 
 def test_rejected_openhands_bb_trace_reports_error() -> None:

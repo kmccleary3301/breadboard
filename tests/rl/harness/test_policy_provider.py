@@ -1,22 +1,40 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
+import json
 import threading
 from concurrent.futures import Future
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import pytest
 
+from breadboard.artifacts.cas import FilesystemCAS
+from breadboard.product.harness.resolution import compile_e4_harness
 from breadboard_engine.compilation.contracts import canonical_sha256
+from breadboard_engine.compilation.provider_response import (
+    NATIVE_RESPONSE_CONSUMER_ID,
+    OPENHANDS_RESPONSE_CONSUMER_ID,
+    NativeResponseBindingError,
+    profile_identity_digest,
+)
+from breadboard_engine.e4_targets import load_e4_target
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness import policy_provider as policy_provider_module
 from breadboard.rl.harness.policy_provider import (
+    E4TargetPolicyProjection,
     EpisodeOpenAICompletionsPolicyClient,
     EpisodeOpenAICompletionsPolicyResolver,
 )
+from tests.compilation.test_server_compiler import _options as _compile_options
 from tests.rl.harness.e4_compiler_test_helper import compile_pi_target
+from tests.rl.harness.test_runner_policy_runtime import (
+    _observation as _runtime_observation,
+    _plan as _runtime_plan,
+    _policy_capabilities,
+)
 from breadboard.rl.harness.runners.base import (
     RunnerDependencyError,
     PolicyRuntimeInvokeRequest,
@@ -844,3 +862,289 @@ def test_mini_wire_messages_keep_source_client_fields() -> None:
 
     assert mini["messages"] == messages
     assert "provider_specific_fields" not in generic["messages"][2]
+
+
+_OPENHANDS_SUPPLIER_TRACE = (
+    Path(__file__).parents[2]
+    / "fixtures/openhands_rerun2/captures/OH-01-normal-file-effect/trace.json"
+)
+_OPENHANDS_BASE_URL = "https://provider.example/v1"
+_OPENHANDS_EPISODE = "episode-openhands"
+_FOREIGN_CONVERSATION_KEY = "123e4567-e89b-42d3-a456-426614174000"
+
+
+def _openhands_supplier_bodies() -> list[dict[str, Any]]:
+    trace = json.loads(_OPENHANDS_SUPPLIER_TRACE.read_text(encoding="utf-8"))
+    return [request["body"] for request in trace["requests"]]
+
+
+def _unbound_openhands_client(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    conversation_key_field: str | None,
+    consumer_id: str,
+) -> tuple[EpisodeOpenAICompletionsPolicyClient, c.EffectiveExecutionPlan, list[bytes]]:
+    """Build a real OpenHands client for the compiled target and a recording transport."""
+    supplier_body = _openhands_supplier_bodies()[0]
+    request_policy: dict[str, Any] = {
+        "mode": "non_streaming",
+        "include_usage": False,
+        "max_token_field": "max_completion_tokens",
+        "strict_tools": None,
+        "enable_thinking": None,
+    }
+    if conversation_key_field is not None:
+        request_policy["conversation_key_field"] = conversation_key_field
+    profile = OpenAICompletionsProviderProfile(
+        model=supplier_body["model"],
+        scoped_credential="episode-secret",
+        base_url=_OPENHANDS_BASE_URL,
+        context_window=131_072,
+        max_output_tokens=2_048,
+        sampling={"temperature": 0},
+        capabilities={
+            "supports_max_completion_tokens": True,
+            "supports_non_streaming": True,
+            "supports_streaming": False,
+            "supports_tools": True,
+        },
+        request_policy=request_policy,
+    )
+    cas = FilesystemCAS(tmp_path / "openhands-target-cas")
+    try:
+        manifest = compile_e4_harness(
+            load_e4_target("openhands-sdk@1.47.0"),
+            {},
+            {
+                "version": 2,
+                "profile": {"name": "openhands-native-http-test"},
+                "workspace": {"root": "workspace"},
+                "provider_tools": {"use_native": True, "api_variant": "chat"},
+                "providers": {
+                    "default_model": "model-a",
+                    "models": [{
+                        "id": "model-a",
+                        "adapter": "openai",
+                        "context_length": profile.context_window,
+                        "route_handle_id": "route-a",
+                        "credential_handle_id": "credential-a",
+                        "params": {},
+                        "response_policy": {
+                            "schema_version": "bb.provider_native_response_policy.v1",
+                            "consumer_id": consumer_id,
+                            "provider_profile_digest": profile_identity_digest(profile),
+                            "max_response_bytes": 4_194_304,
+                            "max_stream_fragments": 1,
+                        },
+                    }],
+                },
+            },
+            cas=cas,
+            options=_compile_options(),
+            request_schema_version="bb.rl.headless-run-request.v3",
+        ).manifest
+    finally:
+        cas.close()
+    observation = _runtime_observation(
+        provider_id="openai",
+        model_id="model-a",
+        capabilities=_policy_capabilities(
+            max_context_tokens=profile.context_window,
+            max_output_tokens=profile.max_output_tokens,
+            request_features=["max_completion_tokens", "non_streaming", "temperature"],
+        ),
+    )
+    plan = _runtime_plan(
+        observation=observation,
+        semantics=manifest.semantic.to_canonical_obj(),
+        policy_slot_ids=("model:model-a",),
+    )
+    plan_payload = plan.model_dump(mode="python")
+    plan_payload["base_compiled"] = c.CompiledArtifactIdentity.model_validate({
+        **plan.base_compiled.model_dump(mode="python"),
+        "manifest_digest": "sha256:" + hashlib.sha256(manifest.canonical_bytes()).hexdigest(),
+        "compiler_input_digest": manifest.inputs.compiler_input_digest,
+    })
+    plan = c.EffectiveExecutionPlan.model_validate(plan_payload)
+    sent: list[bytes] = []
+    monkeypatch.setattr(
+        OpenAIChatRuntime,
+        "create_client_from_profile",
+        lambda _self, _profile, **_kwargs: _Transport(),
+    )
+
+    def send_native_http_request(_self: Any, **kwargs: Any) -> dict[str, Any]:
+        sent.append(kwargs["body"])
+        return {"status_code": 200, "headers": [], "body": b"{}"}
+
+    monkeypatch.setattr(OpenAIChatRuntime, "send_native_http_request", send_native_http_request)
+    client = EpisodeOpenAICompletionsPolicyClient(
+        episode_id=_OPENHANDS_EPISODE,
+        effective_plan_digest=plan.canonical_digest(),
+        observation=observation,
+        profile=profile,
+        target_projection=E4TargetPolicyProjection.from_compiled(manifest),
+        timeout_seconds=45,
+    )
+    return client, plan, sent
+
+
+def _openhands_client(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    conversation_key_field: str | None,
+    consumer_id: str = OPENHANDS_RESPONSE_CONSUMER_ID,
+) -> tuple[EpisodeOpenAICompletionsPolicyClient, str, list[bytes]]:
+    """Bind a real OpenHands client to the compiled plan and the supplier tools."""
+    client, plan, sent = _unbound_openhands_client(
+        tmp_path,
+        monkeypatch,
+        conversation_key_field=conversation_key_field,
+        consumer_id=consumer_id,
+    )
+    client.bind_compiled_plan(plan)
+    client.bind_native_tools(tuple(_openhands_supplier_bodies()[0]["tools"]))
+    return client, plan.canonical_digest(), sent
+
+
+def _native_http_request(body: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "method": "POST",
+        "url": _OPENHANDS_BASE_URL + "/chat/completions",
+        "headers": [["Content-Type", "application/json"]],
+        "body_b64": base64.b64encode(json.dumps(body).encode("utf-8")).decode("ascii"),
+    }
+
+
+async def _exchange_native_http(
+    client: EpisodeOpenAICompletionsPolicyClient,
+    plan_digest: str,
+    body: Mapping[str, Any],
+    *,
+    turn: int,
+) -> None:
+    public_request = client.stage_native_http_request(_native_http_request(body))
+    result = await client.invoke(PolicyRuntimeInvokeRequest(
+        episode_id=_OPENHANDS_EPISODE,
+        effective_plan_digest=plan_digest,
+        binding_digest=_digest("binding"),
+        policy_slot_id="model:model-a",
+        request_digest=canonical_sha256(public_request),
+        request_payload=freeze_json_object(public_request, field_name="native request"),
+        turn=turn,
+        attempt=1,
+    ))
+    client.take_native_http_response(result.response_digest)
+
+
+@pytest.mark.asyncio
+async def test_openhands_native_http_admits_declared_supplier_conversation_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bodies = _openhands_supplier_bodies()
+    client, plan_digest, sent = _openhands_client(
+        tmp_path, monkeypatch, conversation_key_field="prompt_cache_key"
+    )
+    try:
+        for turn, body in enumerate(bodies, start=1):
+            await _exchange_native_http(client, plan_digest, body, turn=turn)
+    finally:
+        await client.close()
+
+    assert sent == [json.dumps(body).encode("utf-8") for body in bodies]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "conversation_keys",
+    [
+        pytest.param(("supplier", None), id="missing-after-present"),
+        pytest.param((None, "supplier"), id="present-after-missing"),
+        pytest.param(("supplier", _FOREIGN_CONVERSATION_KEY), id="changed"),
+        pytest.param(("conversation-1",), id="not-uuid"),
+        pytest.param((_FOREIGN_CONVERSATION_KEY.upper(),), id="uppercase-uuid"),
+        pytest.param((1234,), id="not-string"),
+    ],
+)
+async def test_openhands_native_http_pins_one_uuid_conversation_key_per_episode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    conversation_keys: tuple[Any, ...],
+) -> None:
+    bodies = []
+    for body, key in zip(_openhands_supplier_bodies(), conversation_keys):
+        if key is None:
+            body.pop("prompt_cache_key")
+        elif key != "supplier":
+            body["prompt_cache_key"] = key
+        bodies.append(body)
+    client, plan_digest, sent = _openhands_client(
+        tmp_path, monkeypatch, conversation_key_field="prompt_cache_key"
+    )
+    try:
+        for turn, body in enumerate(bodies[:-1], start=1):
+            await _exchange_native_http(client, plan_digest, body, turn=turn)
+        with pytest.raises(RunnerPolicyBindingError) as error:
+            client.stage_native_http_request(_native_http_request(bodies[-1]))
+    finally:
+        await client.close()
+
+    assert error.value.code == "native_http_capability_mismatch"
+    assert len(sent) == len(bodies) - 1
+
+
+@pytest.mark.asyncio
+async def test_openhands_binding_requires_declared_conversation_key_field(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, plan, sent = _unbound_openhands_client(
+        tmp_path,
+        monkeypatch,
+        conversation_key_field=None,
+        consumer_id=OPENHANDS_RESPONSE_CONSUMER_ID,
+    )
+    try:
+        with pytest.raises(
+            NativeResponseBindingError,
+            match="OpenHands native response requires its compiled source profile",
+        ):
+            client.bind_compiled_plan(plan)
+        with pytest.raises(RunnerPolicyBindingError) as error:
+            client.stage_native_http_request(
+                _native_http_request(_openhands_supplier_bodies()[0])
+            )
+    finally:
+        await client.close()
+
+    assert error.value.code == "native_http_binding_invalid"
+    assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_native_http_rejects_conversation_key_without_policy_field(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    supplier_body = _openhands_supplier_bodies()[0]
+    keyless_body = dict(supplier_body)
+    keyless_body.pop("prompt_cache_key")
+    # The recording consumer does not gate the source profile, so staging must.
+    client, plan_digest, sent = _openhands_client(
+        tmp_path,
+        monkeypatch,
+        conversation_key_field=None,
+        consumer_id=NATIVE_RESPONSE_CONSUMER_ID,
+    )
+    try:
+        with pytest.raises(RunnerPolicyBindingError) as error:
+            client.stage_native_http_request(_native_http_request(supplier_body))
+        await _exchange_native_http(client, plan_digest, keyless_body, turn=1)
+    finally:
+        await client.close()
+
+    assert error.value.code == "native_http_capability_mismatch"
+    assert sent == [json.dumps(keyless_body).encode("utf-8")]
