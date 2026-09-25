@@ -53,6 +53,18 @@ def test_captured_oh01_bound_conversation_passes() -> None:
     assert next(item for item in report["assertions"] if item["assertion_id"].endswith(".requests.prompt_cache_key_bound"))["status"] == "passed"
 
 
+def test_captured_supplier_and_candidate_with_distinct_declared_roots_compare() -> None:
+    replay = _captured_replay()
+    candidate_root = "/tmp/episode/workspace/workspace-abc/repository"
+    for request in replay["requests"]:
+        for tool in request["body"]["tools"]:
+            function = tool["function"]
+            if "<WORKSPACE>" in function.get("description", ""):
+                function["description"] = function["description"].replace("<WORKSPACE>", candidate_root)
+    report = compare_cases(CAPTURED_CASE, replay)
+    assert report["ok"] is True, report
+
+
 def test_registered_comparator_rejects_foreign_candidate_cache_key() -> None:
     replay = _captured_replay()
     replay["requests"][0]["body"]["prompt_cache_key"] = "123e4567-e89b-12d3-a456-426614174000"
@@ -234,6 +246,13 @@ def _volatile_trace() -> dict:
                 "call_id": "call-abc",
                 "event_id": "123e4567-e89b-12d3-a456-426614174000",
                 "timestamp": "2026-09-23T12:34:56Z",
+                "tools": [{
+                    "type": "function",
+                    "function": {
+                        "name": "file_editor",
+                        "description": "Your current working directory is: /opt/openhands/workspace",
+                    },
+                }],
             },
         }],
         "tool_calls": [{
@@ -260,6 +279,7 @@ def test_raw_volatile_trace_derives_all_static_normalizations() -> None:
         "event_uuid:<EVENT_UUID>",
         "response_id:<RESPONSE_ID>",
         "timestamp:<TIMESTAMP>",
+        "workspace:<WORKSPACE>",
     ]
 
 
@@ -267,4 +287,65 @@ def test_undeclared_literal_placeholder_remains_rejected() -> None:
     trace = _volatile_trace()
     trace["requests"][0]["body"]["id"] = "<RESPONSE_ID>"
     with pytest.raises(ValueError, match="normalization"):
+        project_bb_trace(trace)
+
+
+def test_declared_workspace_root_positive_exact_prefix_normalized() -> None:
+    trace = _volatile_trace()
+    trace["tool_calls"][0]["arguments"]["path"] = "/opt/openhands/workspace/sub/file.txt"
+    trace["tool_calls"][0]["arguments"]["exact_dir"] = "/opt/openhands/workspace"
+    trace["tool_calls"][0]["arguments"]["unrelated"] = "/other/directory/file.txt"
+    trace["requests"][0]["body"]["tools"][0]["function"]["description"] = (
+        "File editor.\nYour current working directory is: /opt/openhands/workspace\nUse absolute paths."
+    )
+    trace["tool_calls"][0]["arguments"]["sibling"] = "/opt/openhands/workspace-old/file.txt"
+    projected = project_bb_trace(trace)
+    assert projected["tool_calls"][0]["arguments"]["path"] == "<WORKSPACE>/sub/file.txt"
+    assert projected["tool_calls"][0]["arguments"]["exact_dir"] == "<WORKSPACE>"
+    assert projected["tool_calls"][0]["arguments"]["unrelated"] == "/other/directory/file.txt"
+    assert projected["requests"][0]["body"]["tools"][0]["function"]["description"] == (
+        "File editor.\nYour current working directory is: <WORKSPACE>\nUse absolute paths."
+    )
+    assert projected["tool_calls"][0]["arguments"]["sibling"] == "/opt/openhands/workspace-old/file.txt"
+    assert "workspace:<WORKSPACE>" in projected["normalizations"]
+
+
+@pytest.mark.parametrize(
+    ("mutation", "match"),
+    [
+        (lambda t: t["requests"][0]["body"].pop("tools"), "declared working directory is absent"),
+        (lambda t: t["requests"][0]["body"]["tools"][0]["function"].update({"description": "no cwd here"}), "declared working directory is absent"),
+        (
+            lambda t: t["requests"].append({
+                "index": 1,
+                "body": {
+                    "tools": [{
+                        "type": "function",
+                        "function": {
+                            "name": "file_editor",
+                            "description": "Your current working directory is: /different/workspace",
+                        },
+                    }],
+                },
+            }),
+            "declared working directory differs across requests",
+        ),
+        (
+            lambda t: t["requests"][0]["body"]["tools"].append({
+                "type": "function",
+                "function": {
+                    "name": "other_tool",
+                    "description": "Your current working directory is: /conflicting/workspace",
+                },
+            }),
+            "ambiguous declared working directory",
+        ),
+        (lambda t: t.update({"requests": []}), "declared working directory is absent"),
+    ],
+    ids=["tools_missing", "cwd_missing", "differs_across_requests", "ambiguous_in_request", "empty_requests"],
+)
+def test_declared_workspace_root_fails_closed(mutation, match: str) -> None:
+    trace = _volatile_trace()
+    mutation(trace)
+    with pytest.raises(ValueError, match=match):
         project_bb_trace(trace)

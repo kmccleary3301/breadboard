@@ -79,7 +79,6 @@ ISO_TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?
 CALL_ID_RE = re.compile(r"^(?:oh-capture|call[-_])[A-Za-z0-9_.-]+$")
 RESPONSE_ID_RE = re.compile(r"^oh-capture-response-[A-Za-z0-9_.-]+$")
 TMP_SUFFIX_RE = re.compile(r"^(.*(?:/tmp|/private/tmp)/[^/]*?)(?:_[A-Za-z0-9]{6,})(/.*)?$")
-WORKSPACE_PATH_RE = re.compile(r"^(.+/workspace)(?:/.*)?$")
 SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 NORMALIZATION_BY_PLACEHOLDER = {
@@ -117,14 +116,6 @@ def supplier_conversation_id_from_stderr(stderr: str) -> str:
         raise ValueError("supplier.stderr conversation ID must be a UUID")
     return conversation_id
 
-def _request_workspace(value: Any, root: str) -> Any:
-    if isinstance(value, Mapping):
-        return {key: _request_workspace(item, root) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_request_workspace(item, root) for item in value]
-    if isinstance(value, str):
-        return value.replace(root, "<WORKSPACE>")
-    return value
 
 
 def _bind_prompt_cache_keys(
@@ -170,7 +161,7 @@ def compare_request_sequences(
     results: list[str | None] = []
     for index, (supplier, worker) in enumerate(zip(supplier_bodies, worker_bodies)):
         normalized = [
-            _request_workspace(_Normalizer().value(body), root)
+            _Normalizer(root).value(body)
             for body, root in (
                 (supplier, supplier_workspace),
                 (worker, worker_workspace),
@@ -222,27 +213,63 @@ def _first_difference(expected: Any, observed: Any, path: str = "$") -> str | No
     return None
 
 
-def _workspace_roots(value: Any) -> tuple[str, ...]:
+def _declared_workspace_from_request(request: Mapping[str, Any], req_index: int) -> str:
+    body = request.get("body") if isinstance(request, Mapping) else None
+    if not isinstance(body, Mapping):
+        raise ValueError(f"request {req_index}: request body is not an object")
+    tools = body.get("tools")
+    if not isinstance(tools, list):
+        raise ValueError(f"request {req_index}: declared working directory is absent")
     roots: set[str] = set()
-    def walk(item: Any) -> None:
-        if isinstance(item, Mapping):
-            for child in item.values():
-                walk(child)
-        elif isinstance(item, list):
-            for child in item:
-                walk(child)
-        elif isinstance(item, str):
-            match = WORKSPACE_PATH_RE.match(item)
-            if match:
-                roots.add(match.group(1))
-    walk(value)
-    return tuple(sorted(roots, key=len, reverse=True))
+    prefix = "Your current working directory is:"
+    for tool in tools:
+        if not isinstance(tool, Mapping):
+            continue
+        desc = ""
+        fn = tool.get("function")
+        if isinstance(fn, Mapping) and isinstance(fn.get("description"), str):
+            desc = fn["description"]
+        elif isinstance(tool.get("description"), str):
+            desc = tool["description"]
+        for line in desc.splitlines():
+            line = line.strip()
+            if line.startswith(prefix):
+                cwd = line[len(prefix):].strip()
+                if cwd:
+                    roots.add(cwd)
+    if not roots:
+        raise ValueError(f"request {req_index}: declared working directory is absent")
+    if len(roots) > 1:
+        raise ValueError(f"request {req_index}: ambiguous declared working directory: {sorted(roots)}")
+    return next(iter(roots))
+
+
+def _declared_workspace_root(requests: Any) -> str:
+    if isinstance(requests, Mapping) and "requests" in requests:
+        requests = requests["requests"]
+    if not isinstance(requests, Sequence) or not requests:
+        raise ValueError("declared working directory is absent: no requests present")
+    found_roots: list[str] = []
+    for index, request in enumerate(requests):
+        root = _declared_workspace_from_request(request, index)
+        found_roots.append(root)
+    unique_roots = set(found_roots)
+    if len(unique_roots) != 1:
+        raise ValueError(
+            f"declared working directory differs across requests: {sorted(unique_roots)}"
+        )
+    return found_roots[0]
 
 
 class _Normalizer:
-    def __init__(self, workspace_roots: Sequence[str] = ()) -> None:
+    def __init__(self, workspace_roots: Sequence[str] | str | None = ()) -> None:
         self.applied: set[str] = set()
-        self.workspace_roots = tuple(workspace_roots)
+        if isinstance(workspace_roots, str):
+            self.workspace_roots = (workspace_roots,) if workspace_roots else ()
+        elif workspace_roots is None:
+            self.workspace_roots = ()
+        else:
+            self.workspace_roots = tuple(workspace_roots)
 
     def _mark(self, placeholder: str) -> str:
         self.applied.add(NORMALIZATION_BY_PLACEHOLDER[placeholder])
@@ -267,6 +294,18 @@ class _Normalizer:
             if value.startswith(root + "/"):
                 self._mark("<WORKSPACE>")
                 return "<WORKSPACE>" + value[len(root):]
+            marker = "Your current working directory is:"
+            if marker in value and root in value:
+                lines = value.splitlines(keepends=True)
+                normalized = "".join(
+                    line.replace(root, "<WORKSPACE>", 1)
+                    if line.strip().startswith(marker) and line.strip()[len(marker):].strip() == root
+                    else line
+                    for line in lines
+                )
+                if normalized != value:
+                    self._mark("<WORKSPACE>")
+                    return normalized
         if key in {"hostname", "host_name"}:
             return self._mark("<HOSTNAME>")
         if key in {"timestamp", "created_at", "updated_at"} or ISO_TIMESTAMP_RE.fullmatch(value):
@@ -531,7 +570,7 @@ def _canonical_from_trace(trace: Mapping[str, Any], case_dir: Path, *, role: str
         for row in response_rows
         if isinstance(row.get("response"), Mapping)
     }
-    normalizer = _Normalizer(_workspace_roots(trace))
+    normalizer = _Normalizer(_declared_workspace_root(request_rows))
     requests: list[dict[str, Any]] = []
     for row in request_rows:
         item: dict[str, Any] = {
@@ -618,7 +657,7 @@ def project_bb_trace(trace: Mapping[str, Any] | Path | str) -> dict[str, Any]:
         raise ValueError("BreadBoard trace missing fields: " + ", ".join(missing))
     if value.get("schema_version") not in {None, TRACE_SCHEMA_VERSION}:
         raise ValueError(f"BreadBoard trace schema_version must be {TRACE_SCHEMA_VERSION}")
-    normalizer = _Normalizer(_workspace_roots(value))
+    normalizer = _Normalizer(_declared_workspace_root(value["requests"]))
     projected = {
         "schema_version": TRACE_SCHEMA_VERSION,
         "role": "breadboard",
