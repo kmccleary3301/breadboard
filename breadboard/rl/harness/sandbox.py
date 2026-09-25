@@ -2217,10 +2217,19 @@ class TrustedProcessHandle:
                     # Pinned framed worker imports Pi only from the sealed root.
                     environment["PI_NATIVE_WORKER_FRAMED"] = "1"
                     environment["PI_CODING_AGENT_NODE_MODULES"] = str(runtime_root / "node_modules")
-                else:
+                elif binding.adapter_id == OMP_NATIVE_LOCAL_ADAPTER_ID:
+                    # Pinned OMP Bun worker resolves modules via absolute paths from its sealed root.
+                    pass
+                elif binding.adapter_id == OPENHANDS_SDK_LOCAL_ADAPTER_ID:
                     environment["PYTHONHOME"] = str(runtime_root / "python")
                     environment["PYTHONNOUSERSITE"] = "1"
                     environment["LD_LIBRARY_PATH"] = str(runtime_root / "python/lib")
+                else:
+                    raise SandboxLaunchError(
+                        f"native tool adapter {binding.adapter_id!r} is unsupported",
+                        code="runtime_unsupported",
+                        lease_id=self.lease_id,
+                    )
                 process: asyncio.subprocess.Process | None = None
                 try:
                     process = await self._start_stopped_process(

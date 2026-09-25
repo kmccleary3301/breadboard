@@ -7,15 +7,41 @@ admitted, and undeclared placeholder text remains a mismatch.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 import hashlib
 import json
-import re
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+import re
+from typing import Any, Literal, Mapping, Sequence
 
 COMPARATOR_ID = "oh_my_pi_18_1_17_trace_v1"
 REPORT_SCHEMA_VERSION = "bb.e4.comparator_report.v1"
 CANONICAL_SCHEMA_VERSION = "bb.e4.omp-episode.v1"
+
+RuleName = Literal["current_date_reminder", "workspace_root"]
+NORMALIZATIONS: tuple[RuleName, ...] = (
+    "current_date_reminder",
+    "workspace_root",
+)
+
+
+@dataclass(frozen=True)
+class _RuntimeInputs:
+    cwd: str
+    home: str
+    current_date: str
+    package_dir: str
+
+
+@dataclass
+class _RuleCounts:
+    values: dict[RuleName, int] = field(default_factory=lambda: {rule: 0 for rule in NORMALIZATIONS})
+
+    def add(self, rule: RuleName, count: int = 1) -> None:
+        self.values[rule] += count
+
+    def report(self, side: Literal["supplier", "bb"]) -> list[dict[str, Any]]:
+        return [{"side": side, "rule": rule, "count": self.values[rule]} for rule in NORMALIZATIONS]
 _ALLOWED_PLACEHOLDERS = {
     "<TIMESTAMP>",
     "<WALL_TIME>",
@@ -125,11 +151,58 @@ def _tokenize_workstation(body: Mapping[str, Any]) -> None:
             content = content[:start] + token + content[end:]
         message["content"] = content
 
+def _normalize_reminder_text(
+    value: str,
+    runtime: _RuntimeInputs,
+    counts: _RuleCounts,
+) -> str:
+    # Pinned 18.1.17 packages/coding-agent/src/session/date-cwd-reminder.ts:
+    # <system-reminder>\nToday: {{date}}; current working directory: '{{cwd}}'. Do not repeat this information in your reply.\n</system-reminder>
+    pattern = re.compile(
+        rf"(?m)^Today: {re.escape(runtime.current_date)}; current working directory: '{re.escape(runtime.cwd)}'"
+    )
 
-def _requests(trace: Mapping[str, Any], declared: set[str]) -> list[dict[str, Any]]:
+    def replace(match: re.Match[str]) -> str:
+        counts.add("current_date_reminder")
+        counts.add("workspace_root")
+        return "Today: <CURRENT_DATE>; current working directory: '<WORKSPACE>'"
+
+    return pattern.sub(replace, value)
+
+
+def _normalize_reminder(
+    body: Mapping[str, Any],
+    runtime: _RuntimeInputs,
+    counts: _RuleCounts,
+) -> None:
+    messages = body.get("messages")
+    if not isinstance(messages, list):
+        return
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if isinstance(content, str):
+            message["content"] = _normalize_reminder_text(content, runtime, counts)
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and isinstance(block.get("text"), str):
+                    block["text"] = _normalize_reminder_text(block["text"], runtime, counts)
+
+
+def _requests(
+    trace: Mapping[str, Any],
+    declared: set[str],
+    runtime: _RuntimeInputs | None = None,
+    counts: _RuleCounts | None = None,
+) -> list[dict[str, Any]]:
     raw = trace.get("requests")
     if not isinstance(raw, list):
         raw = trace.get("request_bodies", [])
+    if runtime is None:
+        runtime = _runtime_inputs_from_trace(trace, supplier_capture=True)
+    if counts is None:
+        counts = _RuleCounts()
     result: list[dict[str, Any]] = []
     for index, item in enumerate(raw if isinstance(raw, list) else []):
         body = item.get("body", item) if isinstance(item, Mapping) else item
@@ -137,6 +210,7 @@ def _requests(trace: Mapping[str, Any], declared: set[str]) -> list[dict[str, An
             body = {"value": body}
         normalized_body = _normalize(body, declared=declared)
         _tokenize_workstation(normalized_body)
+        _normalize_reminder(normalized_body, runtime, counts)
         result.append(
             {
                 "index": item.get("index", index) if isinstance(item, Mapping) else index,
@@ -419,15 +493,44 @@ def _validate_runtime_inputs(
     return {name: runtime_inputs[name] for name in sorted(required)}
 
 
+def _runtime_inputs_from_trace(
+    trace: Mapping[str, Any],
+    case_dir: Path | None = None,
+    *,
+    supplier_capture: bool = False,
+) -> _RuntimeInputs:
+    validated = _validate_runtime_inputs(trace, supplier_capture=supplier_capture)
+    if validated is not None:
+        return _RuntimeInputs(
+            cwd=validated["cwd"],
+            home=validated["home"],
+            current_date=validated["current_date"],
+            package_dir=validated["package_dir"],
+        )
+    # Supplier capture packet captures without declared runtime_inputs.
+    case_id = trace.get("case_id") or (case_dir.name if case_dir else "workspace")
+    return _RuntimeInputs(
+        cwd=f"/captures/{case_id}/workspace",
+        home=f"/captures/{case_id}/home",
+        current_date="2026-09-23",
+        package_dir="/packages",
+    )
+
+
 def _project(
     trace: Mapping[str, Any],
     case_dir: Path | None = None,
     *,
     supplier_capture: bool = False,
+    runtime: _RuntimeInputs | None = None,
+    counts: _RuleCounts | None = None,
 ) -> dict[str, Any]:
-    _validate_runtime_inputs(trace, supplier_capture=supplier_capture)
+    if runtime is None:
+        runtime = _runtime_inputs_from_trace(trace, case_dir, supplier_capture=supplier_capture)
+    if counts is None:
+        counts = _RuleCounts()
     declared = _declared(trace)
-    requests = _requests(trace, declared)
+    requests = _requests(trace, declared, runtime, counts)
     if not supplier_capture:
         _validate_native_responses(trace, len(requests))
     episode = {
@@ -568,18 +671,23 @@ class OhMyPi18Comparator:
                 and supplier_runtime_inputs != replay_runtime_inputs
             ):
                 raise ValueError("BB runtime_inputs do not match supplier declared values")
+            expected_counts = _RuleCounts()
+            observed_counts = _RuleCounts()
             expected = _project(
                 capture_value,
                 Path(capture) if isinstance(capture, (str, Path)) else None,
                 supplier_capture=True,
+                counts=expected_counts,
             )
             observed = _project(
                 replay_value,
                 Path(replay).parent
                 if isinstance(replay, (str, Path)) and Path(replay).is_file()
                 else None,
+                counts=observed_counts,
             )
             report = self.compare_episodes(expected, observed)
+            report["normalizations"] = expected_counts.report("supplier") + observed_counts.report("bb")
             supplier_tokens = (
                 _response_tokens(capture_value)
                 if (

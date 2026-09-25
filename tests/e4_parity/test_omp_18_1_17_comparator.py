@@ -487,3 +487,69 @@ def test_supplier_row_not_broken_without_finish_chunk_fails_closed(tmp_path: Pat
     report = compare({"capture": supplier, "replay": _broken_bb_trace()})
     assert report["ok"] is False
     assert "omp-done-without-finish-reason" in report["errors"][0]
+
+
+def test_reminder_normalizes_with_declared_date_on_both_sides() -> None:
+    capture = _trace()
+    capture["requests"][0]["body"]["messages"] = [
+        {
+            "role": "user",
+            "content": (
+                "<system-reminder>\n"
+                "Today: 2026-09-23; current working directory: '/workspace'. "
+                "Do not repeat this information in your reply.\n"
+                "</system-reminder>\n"
+                "Hello"
+            ),
+        }
+    ]
+    replay = deepcopy(capture)
+    report = compare({"capture": capture, "replay": replay})
+    assert report["ok"] is True
+    assert report["failed"] == 0
+    assert report["normalizations"] == [
+        {"side": "supplier", "rule": "current_date_reminder", "count": 1},
+        {"side": "supplier", "rule": "workspace_root", "count": 1},
+        {"side": "bb", "rule": "current_date_reminder", "count": 1},
+        {"side": "bb", "rule": "workspace_root", "count": 1},
+    ]
+
+
+def test_reminder_with_different_date_than_runtime_input_does_not_normalize_and_diverges() -> None:
+    capture = _trace()
+    capture["requests"][0]["body"]["messages"] = [
+        {
+            "role": "user",
+            "content": (
+                "<system-reminder>\n"
+                "Today: 2026-09-23; current working directory: '/workspace'. "
+                "Do not repeat this information in your reply.\n"
+                "</system-reminder>\n"
+                "Hello"
+            ),
+        }
+    ]
+    replay = deepcopy(capture)
+    # Replay has a different date in the reminder text than declared runtime_inputs (2026-09-23)
+    replay["requests"][0]["body"]["messages"] = [
+        {
+            "role": "user",
+            "content": (
+                "<system-reminder>\n"
+                "Today: 2026-09-24; current working directory: '/workspace'. "
+                "Do not repeat this information in your reply.\n"
+                "</system-reminder>\n"
+                "Hello"
+            ),
+        }
+    ]
+    report = compare({"capture": capture, "replay": replay})
+    assert report["ok"] is False
+    assert report["failed"] >= 1
+    # Supplier normalized because date matched declared runtime_inputs, but BB replay did NOT normalize
+    assert report["normalizations"] == [
+        {"side": "supplier", "rule": "current_date_reminder", "count": 1},
+        {"side": "supplier", "rule": "workspace_root", "count": 1},
+        {"side": "bb", "rule": "current_date_reminder", "count": 0},
+        {"side": "bb", "rule": "workspace_root", "count": 0},
+    ]
