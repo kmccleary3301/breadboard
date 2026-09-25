@@ -4,12 +4,26 @@ The comparator deliberately compares observable episode data rather than supplie
 success labels.  It has a small projection API for synthetic tests and packet
 replay, then a report-producing callable compatible with the existing comparator
 protocol.
+
+Effects contract:
+- File effects are projected symmetrically on both sides to a mapping of
+  workspace-relative path -> lowercase sha256 string ("sha256:<64hex>") or None (absent).
+- Rich records (from BB sandbox diffs or supplier capture receipts) are validated
+  strictly against allowed keys {"exists", "bytes", "sha256", "content_utf8"}.
+  An absent record ("exists": False) must omit digest and extra fields and projects
+  to None. Present records require valid sha256 and non-negative integer bytes if present.
+- Scope on both sides consists of probe_paths ∪ oracle.file ∪ all other observed
+  workspace paths, excluding only root-level workspace entries whose relative path
+  equals a name in the target's declared bootstrap list (config bootstrap.ordered).
+  Nested files (e.g. sub/SOUL.md or sub/AGENTS.md) are preserved and never excluded.
+- Any effect record whose path escapes the workspace fails closed with ComparatorError.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import re
+import posixpath
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Mapping, MutableMapping, Sequence
@@ -35,6 +49,7 @@ SOURCE_CITATIONS = {
 TOOL_ORDER = ("ls", "read", "edit", "write", "exec", "process")
 VOLATILE_PLACEHOLDER_RE = re.compile(r"^<[A-Z][A-Z0-9_.-]*>$")
 NATIVE_EXEC_SHA256 = "sha256:6a41ebbc7cd1fae376a497c1bb1662c40a5faa87e5f811bff3ae37e04fb20973"
+SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 OVERLAY_EXEC_SHA256 = "sha256:af70f1b4ae91e2951e297b1cab3ff9602107158c0e922e7c9fbcab669c867638"
 
 DECLARED_GAP_ID = "openclaw-supplier-envelope-unrecorded"
@@ -377,6 +392,87 @@ def _termination(scenario: Mapping[str, Any], request_count: int, *, cap_trigger
     return termination
 
 
+def _load_bootstrap_filenames() -> frozenset[str]:
+    # The committed target's declared bootstrap list is the only source.
+    config_path = Path(__file__).resolve().parents[2] / "config/e4_targets/openclaw/2026.9.4/native-config.json"
+    try:
+        ordered = _load_json(config_path)["bootstrap"]["ordered"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise ComparatorError(f"unable to load declared bootstrap names: {exc}") from exc
+    if (
+        not isinstance(ordered, list)
+        or not ordered
+        or any(type(name) is not str or not name or "/" in name for name in ordered)
+    ):
+        raise ComparatorError("declared bootstrap names must be a non-empty list of root file names")
+    return frozenset(ordered)
+
+
+def _normalize_effect_path(path: str) -> str:
+    if not isinstance(path, str) or not path:
+        raise ComparatorError(f"invalid file effect path: {path!r}")
+    clean = path.replace("\\", "/")
+    if clean.startswith("/") or clean.startswith("\\"):
+        raise ComparatorError(f"effect path escapes workspace: {path!r}")
+    norm = posixpath.normpath(clean)
+    if norm == ".." or norm.startswith("../") or norm.startswith("/"):
+        raise ComparatorError(f"effect path escapes workspace: {path!r}")
+    if norm == ".":
+        raise ComparatorError(f"invalid file effect path: {path!r}")
+    return norm
+
+
+def _project_effects(raw: Any) -> dict[str, str | None]:
+    if not isinstance(raw, Mapping):
+        raise ComparatorError("file effects must be an object")
+    bootstrap_names = _load_bootstrap_filenames()
+    result: dict[str, str | None] = {}
+    for path, value in raw.items():
+        norm_path = _normalize_effect_path(path)
+        if norm_path == ".git" or norm_path.startswith(".git/"):
+            continue
+        # Exclude only root-level workspace entries whose relative path equals a bootstrap name
+        if "/" not in norm_path and norm_path in bootstrap_names:
+            continue
+        if isinstance(value, Mapping):
+            extra_keys = set(value) - {"exists", "bytes", "sha256", "content_utf8"}
+            if extra_keys:
+                raise ComparatorError(f"file effect {path!r} has unexpected fields: {sorted(extra_keys)}")
+            if "exists" in value:
+                if type(value["exists"]) is not bool:
+                    raise ComparatorError(f"file effect {path!r} requires boolean exists")
+                if not value["exists"]:
+                    if set(value) != {"exists"}:
+                        raise ComparatorError(f"absent file effect {path!r} has extra fields")
+                    digest = None
+                else:
+                    if "bytes" in value and (type(value["bytes"]) is not int or value["bytes"] < 0):
+                        raise ComparatorError(f"file effect {path!r} requires non-negative integer bytes")
+                    if "content_utf8" in value and not isinstance(value["content_utf8"], str):
+                        raise ComparatorError(f"file effect {path!r} content_utf8 must be a string")
+                    digest = value.get("sha256")
+                    if not isinstance(digest, str) or SHA256_RE.fullmatch(digest) is None:
+                        raise ComparatorError(f"file effect {path!r} requires valid sha256: {digest!r}")
+            else:
+                if "bytes" in value and (type(value["bytes"]) is not int or value["bytes"] < 0):
+                    raise ComparatorError(f"file effect {path!r} requires non-negative integer bytes")
+                if "content_utf8" in value and not isinstance(value["content_utf8"], str):
+                    raise ComparatorError(f"file effect {path!r} content_utf8 must be a string")
+                digest = value.get("sha256")
+                if not isinstance(digest, str) or SHA256_RE.fullmatch(digest) is None:
+                    raise ComparatorError(f"file effect {path!r} requires valid sha256: {digest!r}")
+        elif value is None:
+            digest = None
+        elif isinstance(value, str):
+            if SHA256_RE.fullmatch(value) is None:
+                raise ComparatorError(f"invalid file digest for {path!r}: {value!r}")
+            digest = value
+        else:
+            raise ComparatorError(f"measured file effect {path!r} must be an object")
+        result[norm_path] = digest
+    return dict(sorted(result.items()))
+
+
 def _effects(workspace: Path, scenario: Mapping[str, Any]) -> dict[str, str | None]:
     paths: list[str] = []
     raw_paths = scenario.get("probe_paths", [])
@@ -389,21 +485,25 @@ def _effects(workspace: Path, scenario: Mapping[str, Any]) -> dict[str, str | No
             paths.append(path)
     effects: dict[str, str | None] = {}
     for relative in paths:
-        target = (workspace / relative).resolve()
+        norm = _normalize_effect_path(relative)
+        target = (workspace / norm).resolve()
         try:
             target.relative_to(workspace.resolve())
         except ValueError:
-            effects[relative] = None
-            continue
-        effects[relative] = _sha256(target) if target.is_file() else None
+            raise ComparatorError(f"effect path escapes workspace: {relative!r}")
+        effects[norm] = _sha256(target) if target.is_file() else None
     # Include every non-bootstrap workspace effect so unexpected writes fail.
     try:
         for candidate in workspace.rglob("*"):
-            if candidate.is_file() and candidate.name not in {"AGENTS.md", "SOUL.md", "IDENTITY.md", "USER.md", "BOOTSTRAP.md", "MEMORY.md"}:
-                effects.setdefault(str(candidate.relative_to(workspace)), _sha256(candidate))
+            if candidate.is_file():
+                rel = candidate.relative_to(workspace).as_posix()
+                if rel == ".git" or rel.startswith(".git/"):
+                    continue
+                norm = _normalize_effect_path(rel)
+                effects.setdefault(norm, _sha256(candidate))
     except OSError:
         pass
-    return effects
+    return _project_effects(effects)
 
 
 
@@ -580,7 +680,11 @@ def _canonicalize(trace: Mapping[str, Any]) -> dict[str, Any]:
         "requests": _normalize_declared(trace.get("requests", []), declared, ("requests",)),
         "tool_calls": _normalize_declared(trace.get("tool_calls", []), declared, ("tool_calls",)),
         "results": _normalize_declared(trace.get("results", []), declared, ("results",)),
-        "effects": _normalize_declared(trace.get("effects", {}), declared, ("effects",)),
+        "effects": _project_effects(
+            _normalize_declared(trace.get("effects", {}), declared, ("effects",))
+            if isinstance(trace.get("effects"), Mapping)
+            else trace.get("effects")
+        ),
         "termination": _normalize_declared(trace.get("termination", {}), declared, ("termination",)),
         "request_count": int(trace.get("request_count", 0)),
         "normalizations": trace.get("normalizations", {}),

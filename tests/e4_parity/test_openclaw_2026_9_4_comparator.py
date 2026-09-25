@@ -513,3 +513,126 @@ def test_real_episode_difference_in_retained_key_still_fails(mutation_type: str)
         gap.get("gap_id") == "openclaw-supplier-envelope-unrecorded"
         for gap in report.get("declared_gaps", [])
     )
+
+
+def test_bb_rich_record_trace_with_root_bootstrap_matches_supplier_projection() -> None:
+    fixture = Path(__file__).parent / "fixtures" / "openclaw_packet_640"
+    expected = project_supplier_case(fixture)
+    marker_sha = expected["effects"]["marker.txt"]
+
+    candidate = json.loads(json.dumps(expected))
+    candidate["effects"] = {
+        "IDENTITY.md": {
+            "exists": True,
+            "bytes": 100,
+            "sha256": "sha256:" + "1" * 64,
+            "content_utf8": "identity content",
+        },
+        "SOUL.md": {
+            "exists": True,
+            "bytes": 50,
+            "sha256": "sha256:" + "2" * 64,
+            "content_utf8": "soul content",
+        },
+        "USER.md": {
+            "exists": True,
+            "bytes": 80,
+            "sha256": "sha256:" + "3" * 64,
+            "content_utf8": "user content",
+        },
+        "marker.txt": {
+            "exists": True,
+            "bytes": 16,
+            "sha256": marker_sha,
+            "content_utf8": "OPENCLAW-NORMAL\n",
+        },
+    }
+
+    report = compare({"capture": str(fixture), "replay": candidate, "scope": {}})
+    assert report["ok"] is True
+    assert report["errors"] == []
+    effects_assertion = next(a for a in report["assertions"] if a["assertion_id"] == "effects_equal")
+    assert effects_assertion["status"] == "passed"
+    assert effects_assertion["expected"] == {"marker.txt": marker_sha}
+    assert effects_assertion["observed"] == {"marker.txt": marker_sha}
+
+
+def test_nested_bootstrap_write_not_excluded_and_makes_effects_differ() -> None:
+    fixture = Path(__file__).parent / "fixtures" / "openclaw_packet_640"
+    expected = project_supplier_case(fixture)
+    marker_sha = expected["effects"]["marker.txt"]
+
+    candidate = json.loads(json.dumps(expected))
+    candidate["effects"] = {
+        "sub/SOUL.md": {
+            "exists": True,
+            "bytes": 50,
+            "sha256": "sha256:" + "4" * 64,
+            "content_utf8": "nested soul content",
+        },
+        "marker.txt": {
+            "exists": True,
+            "bytes": 16,
+            "sha256": marker_sha,
+            "content_utf8": "OPENCLAW-NORMAL\n",
+        },
+    }
+
+    report = compare({"capture": str(fixture), "replay": candidate, "scope": {}})
+    assert report["ok"] is False
+    effects_assertion = next(a for a in report["assertions"] if a["assertion_id"] == "effects_equal")
+    assert effects_assertion["status"] == "failed"
+    assert "keys differ" in effects_assertion["detail"]
+    assert "sub/SOUL.md" in effects_assertion["observed"]
+
+
+@pytest.mark.parametrize("malformed", [
+    {"exists": True, "bytes": 10, "sha256": "sha256:" + "0" * 64, "extra_forbidden": 123},
+    {"exists": True, "bytes": 10, "sha256": "not-a-sha256"},
+    {"exists": True, "bytes": 10, "sha256": "sha256:tooshort"},
+    {"exists": False, "extra_forbidden": True},
+    {"exists": "not-a-bool", "sha256": "sha256:" + "0" * 64},
+    {"exists": True, "bytes": -1, "sha256": "sha256:" + "0" * 64},
+])
+def test_malformed_rich_record_raises_comparator_error(malformed: dict[str, Any]) -> None:
+    with pytest.raises(ComparatorError):
+        comparator._project_effects({"file.txt": malformed})
+
+
+@pytest.mark.parametrize("escaping_path", [
+    "../escape.txt",
+    "/etc/passwd",
+    "sub/../../escape.txt",
+    "..",
+])
+def test_effect_path_escaping_workspace_fails_closed(escaping_path: str) -> None:
+    with pytest.raises(ComparatorError, match="escapes workspace"):
+        comparator._project_effects({escaping_path: "sha256:" + "0" * 64})
+
+
+def test_exists_false_probe_equals_supplier_none(tmp_path: Path) -> None:
+    fixture = Path(__file__).parent / "fixtures" / "openclaw_packet_640"
+    case_dir = tmp_path / "case_with_absent_probe"
+    shutil.copytree(fixture, case_dir)
+    scenario_path = case_dir / "scenario.json"
+    scenario = json.loads(scenario_path.read_text(encoding="utf-8"))
+    scenario["probe_paths"].append("absent-probe.txt")
+    scenario_path.write_text(json.dumps(scenario), encoding="utf-8")
+
+    expected = project_supplier_case(case_dir)
+    assert expected["effects"]["absent-probe.txt"] is None
+
+    candidate = json.loads(json.dumps(expected))
+    candidate["effects"]["absent-probe.txt"] = {"exists": False}
+
+    report = compare({"capture": str(case_dir), "replay": candidate, "scope": {}})
+    assert report["ok"] is True
+    assert report["errors"] == []
+    effects_assertion = next(a for a in report["assertions"] if a["assertion_id"] == "effects_equal")
+    assert effects_assertion["status"] == "passed"
+    assert effects_assertion["expected"]["absent-probe.txt"] is None
+    assert effects_assertion["observed"]["absent-probe.txt"] is None
+
+    # Also directly compare traces
+    direct = comparator.OpenClawComparator().compare_traces(expected, candidate)
+    assert direct["status"] == "passed"
