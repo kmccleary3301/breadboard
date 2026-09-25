@@ -13,8 +13,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from breadboard_engine.e4_targets import load_e4_target
 from breadboard.rl.harness import sandbox as sandbox_module
-from breadboard.rl.harness.runners.base import RunnerToolBinding
+from breadboard.rl.harness.runners.base import JsonSnapshotError, RunnerToolBinding
 from breadboard.rl.harness.sandbox import (
     OPENCLAW_LOCAL_ADAPTER_ID,
     OPENCLAW_NATIVE_TOOL_IDS,
@@ -145,6 +146,94 @@ async def test_lease_rejects_authority_before_repository_selection(monkeypatch: 
 
     assert captured.value.code == "workspace_authority_mismatch"
     assert "cannot supply workspace authority" in str(captured.value)
+
+
+@pytest.mark.asyncio
+async def test_registered_openhands_initialize_admits_native_tool_schemas(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    native_config = json.loads(load_e4_target("openhands-sdk@1.47.0").read_asset_text("native-config.json"))
+    binding = RunnerToolBinding("read", "sha256:" + ("1" * 64), ())
+    adapter = SimpleNamespace(
+        adapter_id=OPENHANDS_SDK_LOCAL_ADAPTER_ID,
+        tool_ids=("file_editor", "finish", "task_tracker", "terminal", "think"),
+        runtime_root_path="/sealed/openhands",
+    )
+    entry = SimpleNamespace(
+        role="workspace_seed", target_logical_path=".", access=SimpleNamespace(value="rw")
+    )
+    plan = SimpleNamespace(
+        effective_plan_digest="plan",
+        tool_bindings=(binding,),
+        installed_tool_adapters=(adapter,),
+        limits=SimpleNamespace(observation_bytes=1 << 20),
+        materialization_plan=SimpleNamespace(entries=(entry,)),
+    )
+    workspace_root = tmp_path / "seed"
+    workspace_root.mkdir()
+    lease_root = tmp_path / "leases"
+    lease_root.mkdir()
+    lease_root_fd = os.open(lease_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    calls: list[Mapping[str, object]] = []
+
+    async def begin() -> None:
+        return None
+
+    async def end() -> None:
+        return None
+
+    async def invoke(
+        _adapter: object,
+        _operation: str,
+        payload: Mapping[str, object],
+        *,
+        timeout_ms: int,
+    ) -> Mapping[str, object]:
+        calls.append(payload)
+        return {"kind": "initialized"}
+
+    lease = SimpleNamespace(
+        lease_id="lease",
+        plan=plan,
+        _manager=SimpleNamespace(lease_root=lease_root, _lease_root_fd=lease_root_fd),
+        _materialized=SimpleNamespace(workspace_path=workspace_root),
+        _runtime=SimpleNamespace(invoke_native_phase=invoke),
+        _begin_operation=begin,
+        _end_operation=end,
+        _resolve=lambda logical_path, writable=False: workspace_root / logical_path,
+    )
+    monkeypatch.setattr(
+        sandbox_module.TrustedProcessHandle,
+        "_validate_native_binding",
+        staticmethod(lambda _plan, _adapter: None),
+    )
+    workspace = sandbox_module.LeaseBackedRunnerWorkspace(lease, "plan", (binding,))
+
+    try:
+        initialized = await workspace.invoke_native_phase(
+            "initialize",
+            {"task": "native schema admission", "native_config": native_config},
+            timeout_ms=1_000,
+        )
+        assert initialized["kind"] == "initialized"
+        assert calls[0]["native_config"]["tool_schemas"] == native_config["tool_schemas"]
+
+        nested: object = "leaf"
+        for _ in range(63):
+            nested = {"next": nested}
+        with pytest.raises(WorkspaceStateError) as captured:
+            await workspace.invoke_native_phase(
+                "initialize",
+                {"nested": nested},
+                timeout_ms=1_000,
+            )
+        assert captured.value.code == "runtime_preflight_failed"
+        assert isinstance(captured.value.__cause__, JsonSnapshotError)
+        assert captured.value.__cause__.code == "depth"
+        assert len(calls) == 1
+    finally:
+        os.close(lease_root_fd)
 
 
 @pytest.mark.asyncio

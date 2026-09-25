@@ -4016,3 +4016,100 @@ def test_e6_filesystem_path_postcondition_fails_closed_before_projection(
             ("trajectory",),
         )
     assert set(cas._refs_by_id) == refs_before
+
+
+
+def test_failed_completed_publication_admits_verifier_native_scratch_and_rejects_unknown_resource() -> None:
+    repository = EpisodeEvidenceRepository(InMemoryCAS(), InMemoryEpisodeLocatorStore())
+    no_run = canonical_digest({"episode_id": EPISODE, "run": "not-started"})
+    event, event_ref = _append_failure_lifecycle(repository, run_fingerprint=no_run)
+
+    # 1. Verifier cleanup with native_scratch (RELEASED) validates successfully
+    verifier_receipt_with_scratch = SandboxCleanupReceipt(
+        "verifier-lease-7",
+        (
+            CleanupStepReceipt("runtime", CleanupState.RELEASED),
+            CleanupStepReceipt("native_scratch", CleanupState.RELEASED),
+            CleanupStepReceipt("workspace", CleanupState.RELEASED),
+            CleanupStepReceipt("snapshot", CleanupState.RELEASED),
+            CleanupStepReceipt("lease_record", CleanupState.RELEASED),
+        ),
+        CleanupState.RELEASED,
+    )
+    completed = repository.publish_failed_completed(
+        FailedCompletedPublicationInputsV2(
+            EPISODE,
+            _d("a"),
+            no_run,
+            b'{"created":true}',
+            canonical_json_bytes({"run": "not-started", "run_fingerprint": no_run}),
+            event_ref,
+            event.digest,
+            "failed",
+            SafeFailureFactV2("runner", "failed", "never", "before-run", detail="safe"),
+            None,
+            None,
+            (),
+            None,
+            None,
+            None,
+            None,
+            {"snapshot": "present"},
+            _d("a"),
+            {"result": "present"},
+            verifier_receipt_with_scratch,
+            "verifier-lease-7",
+        )
+    )
+    recovered = repository.recover(EPISODE)
+    assert recovered is not None and recovered.completed_envelope is not None
+    evidence = repository._load_evidence_manifest(
+        recovered.completed_envelope.evidence_manifest_ref
+    )
+    assert evidence.verifier_cleanup_receipt_ref is not None
+
+    # 2. Unknown extra resource is rejected
+    verifier_receipt_unknown = SandboxCleanupReceipt(
+        "verifier-lease-7",
+        (
+            CleanupStepReceipt("runtime", CleanupState.RELEASED),
+            CleanupStepReceipt("native_scratch", CleanupState.RELEASED),
+            CleanupStepReceipt("workspace", CleanupState.RELEASED),
+            CleanupStepReceipt("snapshot", CleanupState.RELEASED),
+            CleanupStepReceipt("lease_record", CleanupState.RELEASED),
+            CleanupStepReceipt("unexpected_resource", CleanupState.RELEASED),
+        ),
+        CleanupState.RELEASED,
+    )
+    event2, event_ref2 = _append_failure_lifecycle(
+        repository, episode_id="ep-unknown-resource", run_fingerprint=no_run
+    )
+    with pytest.raises(
+        EvidenceValidationError,
+        match="cleanup receipt resource set is incomplete or ambiguous",
+    ):
+        repository.publish_failed_completed(
+            FailedCompletedPublicationInputsV2(
+                "ep-unknown-resource",
+                _d("a"),
+                no_run,
+                b'{"created":true}',
+                canonical_json_bytes({"run": "not-started", "run_fingerprint": no_run}),
+                event_ref2,
+                event2.digest,
+                "failed",
+                SafeFailureFactV2("runner", "failed", "never", "before-run", detail="safe"),
+                None,
+                None,
+                (),
+                None,
+                None,
+                None,
+                None,
+                {"snapshot": "present"},
+                _d("a"),
+                {"result": "present"},
+                verifier_receipt_unknown,
+                "verifier-lease-7",
+            )
+        )
