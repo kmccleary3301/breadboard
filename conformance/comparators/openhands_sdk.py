@@ -59,6 +59,7 @@ performed.
 from __future__ import annotations
 
 import copy
+from dataclasses import dataclass
 import hashlib
 import json
 import re
@@ -265,11 +266,12 @@ class _Normalizer:
     def __init__(self, workspace_roots: Sequence[str] | str | None = ()) -> None:
         self.applied: set[str] = set()
         if isinstance(workspace_roots, str):
-            self.workspace_roots = (workspace_roots,) if workspace_roots else ()
+            roots = [workspace_roots] if workspace_roots else []
         elif workspace_roots is None:
-            self.workspace_roots = ()
+            roots = []
         else:
-            self.workspace_roots = tuple(workspace_roots)
+            roots = list(workspace_roots)
+        self.workspace_roots = tuple(sorted(roots, key=len, reverse=True))
 
     def _mark(self, placeholder: str) -> str:
         self.applied.add(NORMALIZATION_BY_PLACEHOLDER[placeholder])
@@ -289,23 +291,12 @@ class _Normalizer:
         if value in PLACEHOLDERS:
             return value
         for root in self.workspace_roots:
-            if value == root:
-                return self._mark("<WORKSPACE>")
-            if value.startswith(root + "/"):
+            if not root:
+                continue
+            pattern = re.compile(rf"{re.escape(root)}(?=[/'\"`\s),.;:\]\\]|$)")
+            if pattern.search(value):
                 self._mark("<WORKSPACE>")
-                return "<WORKSPACE>" + value[len(root):]
-            marker = "Your current working directory is:"
-            if marker in value and root in value:
-                lines = value.splitlines(keepends=True)
-                normalized = "".join(
-                    line.replace(root, "<WORKSPACE>", 1)
-                    if line.strip().startswith(marker) and line.strip()[len(marker):].strip() == root
-                    else line
-                    for line in lines
-                )
-                if normalized != value:
-                    self._mark("<WORKSPACE>")
-                    return normalized
+                value = pattern.sub("<WORKSPACE>", value)
         if key in {"hostname", "host_name"}:
             return self._mark("<HOSTNAME>")
         if key in {"timestamp", "created_at", "updated_at"} or ISO_TIMESTAMP_RE.fullmatch(value):
@@ -521,8 +512,9 @@ def _project_effects(raw: Any, *, allow_legacy: bool = False) -> dict[str, str |
                     if type(value.get("bytes")) is not int or value["bytes"] < 0:
                         raise ValueError(f"file effect {path!r} requires non-negative integer bytes")
                     digest = value.get("sha256")
-                    if "content_utf8" in value and not isinstance(value["content_utf8"], str):
-                        raise ValueError(f"file effect {path!r} content_utf8 must be a string")
+                    if "content_utf8" in value:
+                        if not isinstance(value["content_utf8"], str):
+                            raise ValueError(f"file effect {path!r} content_utf8 must be a string")
                 if not isinstance(digest, str) or SHA256_RE.fullmatch(digest) is None:
                     raise ValueError(f"file effect {path!r} requires sha256")
         elif allow_legacy and (value is None or isinstance(value, str)):
@@ -558,7 +550,8 @@ def _file_effects(
     allow_legacy: bool = False,
 ) -> dict[str, str | None]:
     result = _project_effects(trace.get("effects", {}), allow_legacy=allow_legacy)
-    for path, digest in _workspace_effects(case_dir).items():
+    ws_effects = _workspace_effects(case_dir)
+    for path, digest in ws_effects.items():
         result.setdefault(path, digest)
     return result
 
@@ -658,11 +651,23 @@ def project_bb_trace(trace: Mapping[str, Any] | Path | str) -> dict[str, Any]:
     if value.get("schema_version") not in {None, TRACE_SCHEMA_VERSION}:
         raise ValueError(f"BreadBoard trace schema_version must be {TRACE_SCHEMA_VERSION}")
     normalizer = _Normalizer(_declared_workspace_root(value["requests"]))
+    requests: list[dict[str, Any]] = []
+    for req in value.get("requests", []):
+        if not isinstance(req, Mapping):
+            requests.append(normalizer.value(req))
+            continue
+        item: dict[str, Any] = {
+            "index": req.get("index"),
+            "body": normalizer.value(req.get("body")),
+        }
+        if "response" in req and isinstance(req["response"], Mapping):
+            item["response"] = _response_projection(req["response"], normalizer)
+        requests.append(item)
     projected = {
         "schema_version": TRACE_SCHEMA_VERSION,
         "role": "breadboard",
         "case_id": value["case_id"],
-        "requests": normalizer.value(value["requests"]),
+        "requests": requests,
         "tool_calls": normalizer.value(value["tool_calls"]),
         "observations": normalizer.value(value["observations"]),
         "file_effects": normalizer.value(_project_effects(value["file_effects"])),
@@ -710,10 +715,87 @@ def _report(assertions: list[dict[str, Any]], errors: list[str] | None = None) -
     }
 
 
+@dataclass(frozen=True)
+class FileEffectContent:
+    path: str
+    recorded_digest: str | None
+    verified_content: str | None = None
+
+
+def _candidate_file_bytes(side_input: Path | str | Mapping[str, Any], path: str) -> bytes | None:
+    if isinstance(side_input, (Path, str)):
+        p = Path(side_input)
+        if p.is_dir():
+            ws_file = p / "workspace" / path
+            if ws_file.is_file():
+                return ws_file.read_bytes()
+            if (p / "trace.json").is_file():
+                t = _load_json(p / "trace.json")
+                fe = t.get("file_effects") or (t.get("effects", {}).get("files") if isinstance(t.get("effects"), Mapping) else None)
+                if isinstance(fe, Mapping) and path in fe and isinstance(fe[path], Mapping) and isinstance(fe[path].get("content_utf8"), str):
+                    return fe[path]["content_utf8"].encode("utf-8")
+    elif isinstance(side_input, Mapping):
+        fe = side_input.get("file_effects") or (side_input.get("effects", {}).get("files") if isinstance(side_input.get("effects"), Mapping) else None)
+        if isinstance(fe, Mapping) and path in fe and isinstance(fe[path], Mapping) and isinstance(fe[path].get("content_utf8"), str):
+            return fe[path]["content_utf8"].encode("utf-8")
+    return None
+
+
+def _side_root(side_input: Path | str | Mapping[str, Any]) -> str:
+    if isinstance(side_input, (Path, str)):
+        p = Path(side_input)
+        if p.is_dir() and (p / "trace.json").is_file():
+            trace = _load_json(p / "trace.json")
+            req_rows, _ = _request_rows(trace, p)
+            return _declared_workspace_root(req_rows)
+        trace = _load_json(p)
+        return _declared_workspace_root(trace.get("requests", []))
+    return _declared_workspace_root(side_input.get("requests", []))
+
+
 def compare_cases(supplier_case: Path | str | Mapping[str, Any], bb_trace: Mapping[str, Any] | Path | str) -> dict[str, Any]:
     try:
         expected = project_supplier_case(supplier_case) if isinstance(supplier_case, (Path, str)) else project_bb_trace(supplier_case)
         observed = project_bb_trace(bb_trace)
+        expected_effects = dict(expected.get("file_effects", {}))
+        observed_effects = dict(observed.get("file_effects", {}))
+        common_paths = set(expected_effects) & set(observed_effects)
+        for p in common_paths:
+            supp_digest = expected_effects.get(p)
+            bb_digest = observed_effects.get(p)
+            if supp_digest is None or bb_digest is None:
+                continue
+            supp_bytes = _candidate_file_bytes(supplier_case, p)
+            bb_bytes = _candidate_file_bytes(bb_trace, p)
+            if supp_bytes is not None and bb_bytes is not None:
+                calc_supp = f"sha256:{hashlib.sha256(supp_bytes).hexdigest()}"
+                if calc_supp != supp_digest:
+                    raise ValueError(
+                        f"supplier file effect {p!r} recorded digest {supp_digest} "
+                        f"does not match workspace bytes digest {calc_supp}"
+                    )
+                calc_bb = f"sha256:{hashlib.sha256(bb_bytes).hexdigest()}"
+                if calc_bb != bb_digest:
+                    raise ValueError(
+                        f"breadboard file effect {p!r} recorded digest {bb_digest} "
+                        f"does not match content_utf8 digest {calc_bb}"
+                    )
+                try:
+                    supp_text = supp_bytes.decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    raise ValueError(f"supplier file effect {p!r} content is not valid UTF-8: {exc}") from exc
+                try:
+                    bb_text = bb_bytes.decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    raise ValueError(f"breadboard file effect {p!r} content is not valid UTF-8: {exc}") from exc
+                supp_norm = _Normalizer(_side_root(supplier_case))
+                bb_norm = _Normalizer(_side_root(bb_trace))
+                norm_supp = supp_norm.value(supp_text)
+                norm_bb = bb_norm.value(bb_text)
+                expected_effects[p] = f"sha256:{hashlib.sha256(norm_supp.encode('utf-8')).hexdigest()}"
+                observed_effects[p] = f"sha256:{hashlib.sha256(norm_bb.encode('utf-8')).hexdigest()}"
+        expected["file_effects"] = expected_effects
+        observed["file_effects"] = observed_effects
     except (OSError, TypeError, ValueError) as exc:
         return _report([], [str(exc)])
     assertions: list[dict[str, Any]] = []

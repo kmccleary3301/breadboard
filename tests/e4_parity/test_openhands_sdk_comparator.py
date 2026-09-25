@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from copy import deepcopy
 import json
+import hashlib
 from pathlib import Path
 import shutil
 
 import pytest
 
 from conformance.comparators.openhands_sdk import (
+    _Normalizer,
+    _response_projection,
     compare_cases,
     project_bb_trace,
     project_supplier_case,
@@ -349,3 +352,236 @@ def test_declared_workspace_root_fails_closed(mutation, match: str) -> None:
     mutation(trace)
     with pytest.raises(ValueError, match=match):
         project_bb_trace(trace)
+
+
+def test_response_projection_applied_to_bb_requests() -> None:
+    trace = _volatile_trace()
+    trace["requests"][0]["response"] = {
+        "id": "oh-capture-resp-1",
+        "created": 1234567890,
+        "model": "gpt-4o-mini",
+        "object": "chat.completion",
+        "usage": {"total_tokens": 10},
+        "choices": [{
+            "index": 0,
+            "finish_reason": "tool_calls",
+            "message": {"role": "assistant", "content": None},
+        }],
+    }
+    projected = project_bb_trace(trace)
+    response = projected["requests"][0].get("response")
+    assert response == {
+        "choices": [{
+            "index": 0,
+            "finish_reason": "tool_calls",
+            "message": {"role": "assistant", "content": None},
+        }]
+    }
+
+
+def test_declared_workspace_root_embedded_in_observation_text() -> None:
+    trace = _volatile_trace()
+    trace["observations"].append({
+        "event_kind": "ObservationEvent",
+        "tool_name": "file_editor",
+        "is_error": False,
+        "result": {
+            "content": [{
+                "type": "text",
+                "text": "File created successfully at: /opt/openhands/workspace/marker.txt",
+            }]
+        },
+    })
+    projected = project_bb_trace(trace)
+    obs_text = projected["observations"][1]["result"]["content"][0]["text"]
+    assert obs_text == "File created successfully at: <WORKSPACE>/marker.txt"
+
+
+def test_declared_workspace_root_boundary_workspace2() -> None:
+    trace = _volatile_trace()
+    trace["observations"].append({
+        "event_kind": "ObservationEvent",
+        "tool_name": "terminal",
+        "is_error": False,
+        "result": {
+            "content": [{
+                "type": "text",
+                "text": "Workspace is /opt/openhands/workspace2/test.txt vs /opt/openhands/workspace/test.txt",
+            }]
+        },
+    })
+    projected = project_bb_trace(trace)
+    obs_text = projected["observations"][1]["result"]["content"][0]["text"]
+    assert obs_text == "Workspace is /opt/openhands/workspace2/test.txt vs <WORKSPACE>/test.txt"
+
+
+def test_file_effects_content_normalized_before_digesting(tmp_path: Path) -> None:
+    case = tmp_path / CAPTURED_CASE.name
+    shutil.copytree(CAPTURED_CASE, case)
+    supp_file = case / "workspace" / "pty-after-reset.txt"
+    supp_file.parent.mkdir(parents=True, exist_ok=True)
+    supp_file.write_text("unset|/opt/openhands/case/workspace\n", encoding="utf-8")
+    supp_digest = "sha256:" + hashlib.sha256(b"unset|/opt/openhands/case/workspace\n").hexdigest()
+    case_trace = json.loads((case / "trace.json").read_text(encoding="utf-8"))
+    case_trace["effects"]["files"]["pty-after-reset.txt"] = {
+        "bytes": len("unset|/opt/openhands/case/workspace\n"),
+        "exists": True,
+        "sha256": supp_digest,
+    }
+    (case / "trace.json").write_text(json.dumps(case_trace), encoding="utf-8")
+
+    replay = _captured_replay()
+    bb_root = "/tmp/episode/workspace/workspace-abc/repository"
+    bb_content = f"unset|{bb_root}\n"
+    bb_digest = "sha256:" + hashlib.sha256(bb_content.encode("utf-8")).hexdigest()
+    for request in replay["requests"]:
+        for tool in request["body"]["tools"]:
+            desc = tool["function"].get("description", "")
+            if "<WORKSPACE>" in desc:
+                tool["function"]["description"] = desc.replace("<WORKSPACE>", bb_root)
+    replay["file_effects"]["pty-after-reset.txt"] = {
+        "bytes": len(bb_content),
+        "content_utf8": bb_content,
+        "exists": True,
+        "sha256": bb_digest,
+    }
+    report = compare_cases(case, replay)
+    fe_assertion = next(item for item in report["assertions"] if item["assertion_id"].endswith(".file_effects_equal"))
+    assert fe_assertion["status"] == "passed", fe_assertion
+
+
+def test_file_effects_genuine_non_root_difference_still_fails(tmp_path: Path) -> None:
+    case = tmp_path / CAPTURED_CASE.name
+    shutil.copytree(CAPTURED_CASE, case)
+    supp_file = case / "workspace" / "pty-after-reset.txt"
+    supp_file.parent.mkdir(parents=True, exist_ok=True)
+    supp_file.write_text("unset|/opt/openhands/case/workspace\n", encoding="utf-8")
+    supp_digest = "sha256:" + hashlib.sha256(b"unset|/opt/openhands/case/workspace\n").hexdigest()
+    case_trace = json.loads((case / "trace.json").read_text(encoding="utf-8"))
+    case_trace["effects"]["files"]["pty-after-reset.txt"] = {
+        "bytes": len("unset|/opt/openhands/case/workspace\n"),
+        "exists": True,
+        "sha256": supp_digest,
+    }
+    (case / "trace.json").write_text(json.dumps(case_trace), encoding="utf-8")
+
+    replay = _captured_replay()
+    bb_root = "/tmp/episode/workspace/workspace-abc/repository"
+    bb_content = f"genuine_diff|{bb_root}\n"
+    bb_digest = "sha256:" + hashlib.sha256(bb_content.encode("utf-8")).hexdigest()
+    for request in replay["requests"]:
+        for tool in request["body"]["tools"]:
+            desc = tool["function"].get("description", "")
+            if "<WORKSPACE>" in desc:
+                tool["function"]["description"] = desc.replace("<WORKSPACE>", bb_root)
+    replay["file_effects"]["pty-after-reset.txt"] = {
+        "bytes": len(bb_content),
+        "content_utf8": bb_content,
+        "exists": True,
+        "sha256": bb_digest,
+    }
+    report = compare_cases(case, replay)
+    fe_assertion = next(item for item in report["assertions"] if item["assertion_id"].endswith(".file_effects_equal"))
+    assert fe_assertion["status"] == "failed"
+
+
+def test_response_projection_symmetric() -> None:
+    raw_response = {
+        "id": "oh-capture-response-abc123",
+        "created": 1727289600,
+        "model": "gpt-4o-mini",
+        "object": "chat.completion",
+        "usage": {"prompt_tokens": 12, "completion_tokens": 8, "total_tokens": 20},
+        "choices": [{
+            "index": 0,
+            "finish_reason": "tool_calls",
+            "message": {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{
+                    "id": "call_12345678",
+                    "type": "function",
+                    "function": {
+                        "name": "file_editor",
+                        "arguments": '{"command":"create","path":"/opt/openhands/workspace/test.txt"}',
+                    },
+                }],
+            },
+        }],
+    }
+    trace = _volatile_trace()
+    trace["requests"][0]["response"] = deepcopy(raw_response)
+    projected_bb = project_bb_trace(trace)
+    bb_resp = projected_bb["requests"][0]["response"]
+
+    normalizer = _Normalizer("/opt/openhands/workspace")
+    supplier_resp = _response_projection(raw_response, normalizer)
+    assert bb_resp == supplier_resp
+    assert "usage" not in bb_resp
+    assert "id" not in bb_resp
+    assert bb_resp["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"] == '{"command":"create","path":"<WORKSPACE>/test.txt"}'
+
+
+def test_declared_workspace_root_embedded_in_observation_text_bracket_lookahead() -> None:
+    trace = _volatile_trace()
+    trace["observations"].append({
+        "event_kind": "ObservationEvent",
+        "tool_name": "terminal",
+        "is_error": False,
+        "result": {
+            "content": [{
+                "type": "text",
+                "text": "[Current working directory: /opt/openhands/workspace]",
+            }]
+        },
+    })
+    projected = project_bb_trace(trace)
+    obs_text = projected["observations"][1]["result"]["content"][0]["text"]
+    assert obs_text == "[Current working directory: <WORKSPACE>]"
+
+
+def test_file_effects_digest_mismatch_fails_closed(tmp_path: Path) -> None:
+    case = tmp_path / CAPTURED_CASE.name
+    shutil.copytree(CAPTURED_CASE, case)
+    supp_file = case / "workspace" / "pty-after-reset.txt"
+    supp_file.parent.mkdir(parents=True, exist_ok=True)
+    supp_file.write_text("unset|/opt/openhands/case/workspace\n", encoding="utf-8")
+    supp_digest = "sha256:" + hashlib.sha256(b"unset|/opt/openhands/case/workspace\n").hexdigest()
+    case_trace = json.loads((case / "trace.json").read_text(encoding="utf-8"))
+    case_trace["effects"]["files"]["pty-after-reset.txt"] = {
+        "bytes": len("unset|/opt/openhands/case/workspace\n"),
+        "exists": True,
+        "sha256": supp_digest,
+    }
+    (case / "trace.json").write_text(json.dumps(case_trace), encoding="utf-8")
+
+    replay = _captured_replay()
+    bb_root = "/tmp/episode/workspace/workspace-abc/repository"
+    bb_content = f"unset|{bb_root}\n"
+    for request in replay["requests"]:
+        for tool in request["body"]["tools"]:
+            desc = tool["function"].get("description", "")
+            if "<WORKSPACE>" in desc:
+                tool["function"]["description"] = desc.replace("<WORKSPACE>", bb_root)
+
+    # 1. Supplier content mismatch: workspace file content does not match recorded digest
+    wrong_supp_digest = "sha256:" + ("a" * 64)
+    case_trace["effects"]["files"]["pty-after-reset.txt"]["sha256"] = wrong_supp_digest
+    (case / "trace.json").write_text(json.dumps(case_trace), encoding="utf-8")
+    replay["file_effects"]["pty-after-reset.txt"] = {
+        "bytes": len(bb_content),
+        "content_utf8": bb_content,
+        "exists": True,
+        "sha256": "sha256:" + hashlib.sha256(bb_content.encode("utf-8")).hexdigest(),
+    }
+    report_supp = compare_cases(case, replay)
+    assert report_supp["ok"] is False
+    assert any("does not match workspace bytes digest" in err for err in report_supp["errors"])
+
+    # 2. BB content mismatch: content_utf8 does not match recorded sha256
+    case_trace["effects"]["files"]["pty-after-reset.txt"]["sha256"] = supp_digest
+    (case / "trace.json").write_text(json.dumps(case_trace), encoding="utf-8")
+    replay["file_effects"]["pty-after-reset.txt"]["sha256"] = "sha256:" + ("b" * 64)
+    report_bb = compare_cases(case, replay)
+    assert report_bb["ok"] is False
+    assert any("does not match content_utf8 digest" in err for err in report_bb["errors"])
