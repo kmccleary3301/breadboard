@@ -31,6 +31,7 @@ from breadboard_engine.compilation.provider_response import (
     is_native_response_consumer_registered,
 )
 from breadboard_engine.provider.contracts import (
+    NativeProviderRequestFailure,
     OpenAICompletionsProviderProfile,
     ProviderContractError,
     ProviderMessage,
@@ -1628,7 +1629,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                     episode_id=request.episode_id,
                     effective_plan_digest=request.effective_plan_digest,
                 )
-                if isinstance(exc, MiniProviderFailure):
+                if isinstance(exc, (MiniProviderFailure, NativeProviderRequestFailure)):
                     raise error from exc
                 raise error from None
             finally:

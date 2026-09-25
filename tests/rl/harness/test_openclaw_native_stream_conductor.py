@@ -203,6 +203,16 @@ def _scripted_server(responses: list[list[tuple[str, str, Mapping[str, Any]]]] |
             requests.append(body)
             ordinal = len(requests) - 1
             calls = responses(ordinal, requests) if callable(responses) else responses[min(ordinal, len(responses) - 1)]
+            if isinstance(calls, Mapping):
+                # A scripted provider refusal: {"http_error": status, "body": {...}}.
+                payload = json.dumps(calls["body"]).encode()
+                self.send_response(calls["http_error"])
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.wfile.write(payload)
+                return
             payload = _sse_tool_response(ordinal + 1, calls)
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -851,6 +861,23 @@ async def test_openclaw_native_stream_classification_and_cleanup_envelope(tmp_pa
     assert fail_result.response["command_result"] == {"envelope": post_env, "exitCode": 1, "toolCalls": 0}
     assert fail_result.response["replay_trace"]["classification"]["envelope"]["ok"] is True
     assert fail_result.response["replay_trace"]["final_envelope"]["ok"] is False
+
+@pytest.mark.asyncio
+async def test_openclaw_provider_failure_ends_episode_with_replay_trace(tmp_path: Path) -> None:
+    # Supplier case provider_failure_no_retry: one HTTP 500, no retry, and the
+    # episode still classifies, finalizes, and records the request it sent.
+    refusal = {"http_error": 500, "body": {"error": {"message": "scripted provider failure", "type": "server_error"}}}
+    result, requests, _, _, operations = await _run_episode(tmp_path, [refusal])
+    assert len(requests) == 1
+    assert result.termination is RunnerTermination.POLICY_INCOMPLETE
+    assert operations[-5:] == ("classify_result", "close", "retire_runtime", "measure_effects", "finalize_command_result")
+    replay_trace = result.response["replay_trace"]
+    assert thaw_json(replay_trace["requests"]) == requests
+    assert replay_trace["request_count"] == 1
+    assert replay_trace["termination"] == {"kind": "provider_failure", "native_stop_reason": None}
+    assert result.response["final_envelope"]["ok"] is False
+    assert result.response["command_result"]["exitCode"] == 1
+
 
 @pytest.mark.asyncio
 async def test_openclaw_failed_envelope_survives_cleanup_failure(tmp_path: Path) -> None:

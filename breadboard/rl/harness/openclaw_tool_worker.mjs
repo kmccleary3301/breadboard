@@ -201,7 +201,11 @@ function makeTools(createCoreCodingTools) {
     includeBaseCodingTools: true,
     includeShellTools: true,
     readOnly: false,
-    workspaceOnly: true,
+    // Pinned supplier default: embedded-agent.runtime-DnOK0ORi.mjs:649
+    // `permissionToolPolicy?.workspaceOnly ?? false` and agent-tools-DXxcrXNI.mjs:388
+    // `fsConfig.workspaceOnly === true`; the capture config sets neither, so the
+    // supplier's file tools echo the model's own path. Containment is the lease envelope.
+    workspaceOnly: false,
     execDefaults: {
       host: "gateway",
       timeoutSec: 30,

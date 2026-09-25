@@ -51,6 +51,10 @@ class NativeStreamProfile:
     limit_stop_reasons: frozenset[str] = frozenset()
     classify_result_phase: str | None = None
     finalize_result_phase: str | None = None
+    # The source ends its episode on a provider's refusal of a sent request
+    # (no retry) and still classifies and finalizes it; the state commits the
+    # failure through ``commit_provider_failure``.
+    provider_failure_terminates: bool = False
 
 
 def _pi_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
@@ -153,6 +157,7 @@ NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
         state_factory=_openclaw_state,
         classify_result_phase="classify_result",
         finalize_result_phase="finalize_command_result",
+        provider_failure_terminates=True,
     ),
 })
 

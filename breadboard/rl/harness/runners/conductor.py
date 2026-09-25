@@ -25,6 +25,7 @@ from breadboard_engine.compilation.provider_response import (
     OPENHANDS_RESPONSE_CONSUMER_ID,
     NativeResponsePolicy,
 )
+from breadboard_engine.provider.contracts import NativeProviderRequestFailure
 from breadboard.rl.harness.contracts import PolicyCapabilityObservation
 from breadboard.rl.harness.contracts import RuntimeClass
 from breadboard.rl.harness.lease_envelope import (
@@ -2422,9 +2423,19 @@ class _ConductorSession:
                 "messages": projected.get("messages"),
                 "tools": projected.get("tools"),
             }, field_name="native policy request")
-            response, request_body = await self._native_policy_exchange(
-                frozen_request, model=model, turn=turn, phase_mode=profile.phase_mode,
-            )
+            failure: NativeProviderRequestFailure | None = None
+            try:
+                response, request_body = await self._native_policy_exchange(
+                    frozen_request, model=model, turn=turn, phase_mode=profile.phase_mode,
+                )
+            except RunnerDependencyError as exc:
+                failure = (
+                    _find_native_provider_failure(exc)
+                    if profile.provider_failure_terminates else None
+                )
+                if failure is None:
+                    raise
+                request_body = thaw_json(failure.request_body)
             expected_members = projected.get("request_members")
             if expected_members is not None and (
                 not isinstance(expected_members, (list, tuple))
@@ -2439,6 +2450,12 @@ class _ConductorSession:
                     code="native_request_members_mismatch", **self._context(),
                 )
             trace_requests.append(dict(request_body))
+            if failure is not None:
+                before = len(state.messages)
+                state.commit_provider_failure(str(failure))
+                await commit(before, "exit", turn)
+                self._turns.append(RunnerTurn(turn, (), ()))
+                return RunnerTermination.POLICY_INCOMPLETE
             native = native_stream_consumers.native_response_from_dict(
                 thaw_json(response["native_response"])
             )
@@ -3870,6 +3887,18 @@ class _ConductorSession:
     def _state_error(self, code: str, message: str) -> RunnerStateError:
         return RunnerStateError(message, code=code, **self._context())
 
+
+
+def _find_native_provider_failure(error: BaseException) -> NativeProviderRequestFailure | None:
+    """Return the explicitly chained native request failure, if any."""
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        if isinstance(current, NativeProviderRequestFailure):
+            return current
+        seen.add(id(current))
+        current = current.__cause__
+    return None
 
 
 def _find_mini_provider_failure(error: BaseException) -> MiniProviderFailure | None:

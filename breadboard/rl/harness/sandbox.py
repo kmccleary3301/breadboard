@@ -1047,6 +1047,21 @@ def _native_worker_environment(
             environment["PI_CODING_AGENT_NODE_MODULES"] = str(runtime_root / "node_modules")
         else:
             environment["OPENCLAW_DIST"] = str(runtime_root / "dist")
+            # The pinned supplier capture environment
+            # (kit/openclaw_capture_supplier.py:123) disables bundled plugins
+            # and leads PATH with node's own directory. Skill eligibility
+            # (config-eval hasBinary) reads both, so the sealed node's
+            # directory takes that place here.
+            environment["OPENCLAW_DISABLE_BUNDLED_PLUGINS"] = "1"
+            if "PATH" not in environment:
+                raise SandboxLaunchError(
+                    "OpenClaw native worker runtime declares no PATH",
+                    code="runtime_preflight_failed",
+                )
+            environment["PATH"] = os.pathsep.join((
+                str(Path(_native_member_path(binding, binding.executable_relative_path)).parent),
+                environment["PATH"],
+            ))
     else:
         environment["PYTHONHOME"] = str(runtime_root / "python")
         environment["PYTHONNOUSERSITE"] = "1"

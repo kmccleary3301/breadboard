@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 
 from ...contracts import (
+    NativeProviderRequestFailure,
     OpenAICompletionsProviderProfile,
     ProviderMessage,
     ProviderResult,
@@ -366,19 +367,28 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
             allow_short=True,
         ):
             if stream:
-                response = OpenAIChatStreamDecoder(self).native_stream(
-                    client.transport,
-                    model=model,
-                    messages=request_messages,
-                    tools=request_tools,
-                    context=context,
-                    binding_digest=binding.digest,
-                    request_digest=request_digest,
-                    max_response_bytes=binding.policy.max_response_bytes,
-                    max_stream_fragments=binding.policy.max_stream_fragments,
-                    extra_body=extra_body,
-                    request_options=profile_options,
-                )
+                try:
+                    response = OpenAIChatStreamDecoder(self).native_stream(
+                        client.transport,
+                        model=model,
+                        messages=request_messages,
+                        tools=request_tools,
+                        context=context,
+                        binding_digest=binding.digest,
+                        request_digest=request_digest,
+                        max_response_bytes=binding.policy.max_response_bytes,
+                        max_stream_fragments=binding.policy.max_stream_fragments,
+                        extra_body=extra_body,
+                        request_options=profile_options,
+                    )
+                except ProviderRuntimeError as exc:
+                    # The provider refused the sent request before any output
+                    # (e.g. HTTP 5xx): keep the exact body it received.
+                    if exc.kind != "provider" or exc.output_emitted:
+                        raise
+                    raise NativeProviderRequestFailure(
+                        exc, request_body=sent_request
+                    ) from None
             else:
                 call_kwargs: Dict[str, Any] = {
                     "model": model,

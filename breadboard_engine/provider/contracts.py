@@ -51,6 +51,7 @@ from .profiles import (
     OpenAICompletionsSampling,
 )
 from .contract_runtime import (
+    NativeProviderRequestFailure,
     ProviderErrorKind,
     ProviderRuntime,
     ProviderRuntimeContext,
@@ -87,6 +88,7 @@ __all__ = [
     "OpenAICompletionsSampling",
     "ProviderRuntimeContext",
     "ProviderRuntimeError",
+    "NativeProviderRequestFailure",
     "ProviderRuntime",
     "sanitize_provider_result",
     "normalize_request_messages",

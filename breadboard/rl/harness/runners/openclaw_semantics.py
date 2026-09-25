@@ -511,6 +511,27 @@ class OpenClawSemanticsState:
     def prepare_response(self, response: Any) -> OpenClawParseResult:
         return self.consume_native_response(response)
 
+    def commit_provider_failure(self, message: str) -> None:
+        """End the episode on the provider's refusal of the sent request.
+
+        The capture profile runs agent exec with retry and model fallbacks off
+        (native-config ``agent_exec``), so the pinned run stops on its first
+        provider error with no stream finish reason.
+        """
+        if self.terminal_kind is not None:
+            raise RuntimeError("OpenClaw episode already terminated")
+        self.terminal_kind = "provider_failure"
+        self.native_stop_reason = None
+        self.stop_reason = "error"
+        self._terminal_message = {
+            "role": "assistant",
+            "content": "",
+            "isError": True,
+            "error": message,
+            "finish_reason": "error",
+        }
+        self.history.append(dict(self._terminal_message))
+
     def commit_tool_results(
         self,
         calls: Sequence[FinalizedToolCall] | Sequence[Mapping[str, Any]],

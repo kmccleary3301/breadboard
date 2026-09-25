@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import json
 import os
+import re
 import shlex
 import shutil
 import struct
@@ -103,6 +104,15 @@ def test_native_file_effects_and_exact_edit(tmp_path: Path, message_timestamp_ms
     assert result["changed"] is True
     assert (tmp_path / "marker.txt").read_text() == "after\n"
     assert tools.execute("read", {"path": "marker.txt"})["content"] == "after\n"
+
+
+def test_native_write_echoes_relative_path(tmp_path: Path, message_timestamp_ms: str) -> None:
+    tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
+    try:
+        result = tools.execute("write", {"path": "marker.txt", "content": "OPENCLAW-NORMAL\n"})
+        assert result["content"] == "Successfully wrote 16 bytes to marker.txt"
+    finally:
+        tools.scope.cleanup()
 
 
 def test_exec_and_process_poll_clamp(tmp_path: Path, message_timestamp_ms: str) -> None:
@@ -410,3 +420,64 @@ def test_marker_runs_the_sealed_worker_image_under_memfd_launch(tmp_path: Path, 
         if worker is not None:
             _retire(worker)
         os.close(sealed)
+
+
+def test_native_worker_environment_matches_supplier_skill_eligibility(
+    tmp_path: Path, message_timestamp_ms: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Supplier capture (kit/openclaw_capture_supplier.py:123): node leads PATH and
+    # bundled plugins are disabled, so node-gated skills are listed and bundled
+    # plugin skills are not. The worker runs only with the sealed launch environment.
+    from types import SimpleNamespace
+
+    from breadboard.rl.harness import sandbox as sandbox_module
+
+    root = tmp_path / "native"
+    (root / "runtime").mkdir(parents=True)
+    shutil.copy2(_node_image(), root / "runtime/node")
+    source_dist = Path(os.environ.get("OPENCLAW_DIST", "/opt/openclaw/dist")).resolve(strict=True)
+    metadata = root.stat()
+    adapter = sandbox_module.InstalledToolAdapter(
+        adapter_id=sandbox_module.OPENCLAW_LOCAL_ADAPTER_ID,
+        tool_ids=sandbox_module.OPENCLAW_NATIVE_TOOL_IDS,
+        runtime_root_path=str(root),
+        runtime_root_device=metadata.st_dev,
+        runtime_root_inode=metadata.st_ino,
+        runtime_root_owner_uid=metadata.st_uid,
+        runtime_root_mode=f"{metadata.st_mode & 0o777:04o}",
+        manifest_digest="sha256:" + "2" * 64,
+        executable_relative_path="runtime/node",
+        entrypoint_relative_path="worker.mjs",
+        executable_digest="sha256:" + "3" * 64,
+        entrypoint_digest="sha256:" + "4" * 64,
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+    plan = SimpleNamespace(runtime=SimpleNamespace(fixed_environment=(
+        ("HOME", str(home)), ("PATH", "/usr/bin:/bin"),
+    )))
+    environment = sandbox_module._native_worker_environment(plan, adapter)
+    # The sealed root's dist is the pinned dist; node resolves its packages in place.
+    assert environment["OPENCLAW_DIST"] == str(root / "dist")
+    monkeypatch.setattr(os, "environ", {**environment, "OPENCLAW_DIST": str(source_dist)})
+    initialized: dict = {}
+    request = _OpenClawWorkerClient._request
+
+    def record(self: _OpenClawWorkerClient, payload: dict) -> dict:
+        result = request(self, payload)
+        if payload.get("phase") == "initialize":
+            initialized.update(result)
+        return result
+
+    monkeypatch.setattr(_OpenClawWorkerClient, "_request", record)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    worker = _OpenClawWorkerClient(
+        workspace, message_timestamp_ms=message_timestamp_ms, node=str(root / "runtime/node"),
+    )
+    try:
+        skills = set(re.findall(r"<name>([^<]+)</name>", initialized["system_prompt"]))
+    finally:
+        _retire(worker)
+    assert {"meme-maker", "node-inspect-debugger"} <= skills
+    assert not {"browser-automation", "canvas"} & skills

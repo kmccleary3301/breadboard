@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field, fields, is_dataclass
 from typing import Any, Callable, Dict, List, Literal, Mapping, Optional
 
@@ -309,6 +310,21 @@ class ProviderRuntimeError(RuntimeError):
     def safe_code(self) -> str:
         value = self.details.get("code") if isinstance(self.details, dict) else None
         return _safe_error_code(value or f"{self.kind}_error")
+
+
+class NativeProviderRequestFailure(ProviderRuntimeError):
+    """A provider's refusal of one sent native request, before any output.
+
+    Carries the exact request body that reached the provider so a native
+    profile whose source ends its episode on a provider failure can record
+    the request it actually sent.
+    """
+
+    def __init__(self, error: ProviderRuntimeError, *, request_body: Mapping[str, Any]) -> None:
+        if error.output_emitted:
+            raise ValueError("a native request failure precedes any provider output")
+        super().__init__(str(error), details=error.details, kind=error.kind)
+        self.request_body: Mapping[str, Any] = copy.deepcopy(dict(request_body))
 
 
 class ProviderRuntime:
