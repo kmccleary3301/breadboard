@@ -789,15 +789,38 @@ def _verify_bind_identity(source_fd: int, target: str) -> None:
             f"source={source_identity!r} target={target_identity!r}",
         )
 
-def _prepare_lease_mountpoint(target: str, tmp_root: str = "/tmp") -> None:
+def _prepare_lease_mountpoint(target: str, tmp_root: str = "/tmp") -> bool:
     """Recreate a mountpoint hidden by the fresh lease-private /tmp tmpfs.
 
     Only directories inside the freshly mounted, symlink-free tmpfs are
     created; a target outside it must already exist on the read-only view.
+    Returns whether the mountpoint was recreated.
     """
     if os.path.commonpath((target, tmp_root)) != tmp_root or target == tmp_root:
-        return
+        return False
     os.makedirs(target, mode=0o700, exist_ok=True)
+    return True
+
+
+def _namespace_mountpoint_fd(target: str, source_fd: int, *, recreated: bool) -> int:
+    """Open a mountpoint in the current mount namespace.
+
+    A descriptor inherited across unshare(CLONE_NEWNS) names a mount of the
+    parent namespace, and mount(2) onto it fails with EINVAL. The target is
+    reopened here without following a final symlink. Unless it was recreated
+    inside the fresh lease /tmp, it must be the inode the lease verified.
+    """
+    mount_fd = os.open(
+        target, os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+    )
+    try:
+        if not recreated:
+            _verify_bind_identity(source_fd, f"/proc/self/fd/{mount_fd}")
+    except BaseException:
+        os.close(mount_fd)
+        raise
+    return mount_fd
+
 
 def _setup_mount_view(
     workspace: str,
@@ -810,6 +833,7 @@ def _setup_mount_view(
     workspace = os.path.abspath(workspace)
     scratch = os.path.abspath(scratch)
     workspace_tree_fd = -1
+    scratch_mount_fd = -1
     try:
         _verify_bind_identity(workspace_fd, workspace)
         _verify_bind_identity(scratch_fd, scratch)
@@ -818,11 +842,16 @@ def _setup_mount_view(
         tmp_size, scratch_size = _tmpfs_budgets(tmpfs_size_bytes)
         _mount_tmpfs("/tmp", tmp_size)
         _prepare_lease_mountpoint(workspace)
-        _prepare_lease_mountpoint(scratch)
+        scratch_recreated = _prepare_lease_mountpoint(scratch)
         _move_mount(workspace_tree_fd, workspace)
         os.close(workspace_tree_fd)
         workspace_tree_fd = -1
-        _mount_tmpfs(f"/proc/self/fd/{scratch_fd}", scratch_size, mode=0o700)
+        scratch_mount_fd = _namespace_mountpoint_fd(
+            scratch, scratch_fd, recreated=scratch_recreated,
+        )
+        _mount_tmpfs(f"/proc/self/fd/{scratch_mount_fd}", scratch_size, mode=0o700)
+        os.close(scratch_mount_fd)
+        scratch_mount_fd = -1
         os.mkdir(os.path.join(scratch, "home"), mode=0o700)
         _verify_bind_identity(workspace_fd, workspace)
         _mount_proc()
@@ -831,6 +860,8 @@ def _setup_mount_view(
     finally:
         if workspace_tree_fd >= 0:
             os.close(workspace_tree_fd)
+        if scratch_mount_fd >= 0:
+            os.close(scratch_mount_fd)
 
 
 class _ChildReaper:
