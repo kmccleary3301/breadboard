@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 from pathlib import Path
 import shutil
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 import yaml
+from breadboard.artifacts.cas import FilesystemCAS
 
+from breadboard_engine.compilation.contracts import canonical_sha256
+from breadboard.rl.harness.policy_provider import E4TargetPolicyProjection
 from breadboard_engine.e4_targets import (
     E4TargetError,
     _load_e4_target_from_root,
@@ -18,12 +23,14 @@ from breadboard_engine.e4_targets import (
     list_e4_target_ids,
     load_e4_target,
 )
-
+from breadboard.product.harness.resolution import compile_e4_harness
+from breadboard.product.harness.compile import HarnessCompileError
 from breadboard.product.harness.targets import (
     bind_e4_target_inputs,
     lower_e4_target,
     serialize_e4_target_inputs,
 )
+from tests.compilation.test_server_compiler import _options
 from breadboard.product.harness.validate import (
     HarnessDefinitionValidationError,
     validate_e4_target_document,
@@ -32,6 +39,31 @@ from breadboard.product.harness.validate import (
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET_ROOT = ROOT / "config" / "e4_targets"
+
+_MAIN_LOWERED_TARGET_DIGESTS = {
+    "hermes-agent@2026.9.11": "sha256:4aecf53f72f9d32f4c5c88ece50dbe22d579a85b89a45dae88d15a2b4bb0decc",
+    "mini-swe-agent@2.4.6": "sha256:3bf6fb7672e1e1b3d99385fbd0f002913091d77dc9bd46e239a4656f8644400d",
+    "openhands-sdk@1.47.0": "sha256:24d70fe47fbee319ccd6d5d9ba2307aae132bedf910531d604cc7e00241c3fba",
+    "pi@0.73.1": "sha256:9c8dff35df9ae2efbff39bc7b11533cb9900500963d9efb157689dd1551f90db",
+}
+
+
+def _lowered_target_digest(lowered: Any) -> str:
+    return canonical_sha256(
+        {
+            "target_id": lowered.target_id,
+            "overlay_id": lowered.overlay_id,
+            "descriptor_digest": lowered.descriptor_digest,
+            "execution_config_digest": lowered.execution_config_digest,
+            "overlay_digest": lowered.overlay_digest,
+            "rendered_prompt_digest": lowered.rendered_prompt_digest,
+            "system_prompt": lowered.system_prompt,
+            "ordered_tool_names": lowered.ordered_tool_names,
+            "tools": lowered.tools,
+            "renderer_id": lowered.renderer_id,
+            "runtime_profile": lowered.runtime_profile,
+        }
+    )
 
 
 def test_target_resources_bind_to_loader_distribution_root() -> None:
@@ -49,6 +81,7 @@ def test_target_resources_load_outside_editable_checkout_cwd(
         "hermes-agent@2026.9.11",
         "mini-swe-agent@2.4.6",
         "oh-my-pi@16.2.13",
+        "oh-my-pi@18.1.17",
         "openhands-sdk@1.47.0",
         "pi@0.57.1",
         "pi@0.73.1",
@@ -101,11 +134,11 @@ def test_distribution_owner_match_does_not_resolve_symlink_aliases(
     assert _location_key(alias) != _location_key(loader)
 
 
-def test_pinned_targets_load_with_exact_release_source_and_runtime_assets() -> None:
     assert list_e4_target_ids() == (
         "hermes-agent@2026.9.11",
         "mini-swe-agent@2.4.6",
         "oh-my-pi@16.2.13",
+        "oh-my-pi@18.1.17",
         "openhands-sdk@1.47.0",
         "pi@0.57.1",
         "pi@0.73.1",
@@ -760,3 +793,154 @@ def test_v2_input_identity_preserves_numeric_form_and_nested_key_order() -> None
         "second",
         "first",
     ]
+
+@pytest.mark.parametrize("target_id", tuple(_MAIN_LOWERED_TARGET_DIGESTS))
+def test_existing_target_lowering_matches_main_byte_identity(target_id: str) -> None:
+    lowered = lower_e4_target(load_e4_target(target_id), {})
+
+    assert _lowered_target_digest(lowered) == _MAIN_LOWERED_TARGET_DIGESTS[target_id]
+
+
+def test_omp_18_1_17_loads_and_lowers_native_worker_recipe() -> None:
+    omp = load_e4_target("oh-my-pi@18.1.17")
+    lowered = lower_e4_target(omp, {})
+    assert lowered.renderer_id == "breadboard.oh-my-pi.v18.1.17"
+    assert lowered.ordered_tool_names == ("read", "bash", "edit", "write")
+    assert lowered.runtime_profile["consumer_id"] == "breadboard.oh-my-pi.v18.1.17"
+
+
+@pytest.mark.parametrize(
+    "registry",
+    [
+        {"provider_id": "openai"},
+        {"provider_id": "Breadboard-Route"},
+        {"provider_id": ""},
+        {"provider_id": "breadboard-route", "extra": True},
+        {},
+    ],
+)
+def test_omp_18_1_17_rejects_provider_route_label_that_is_not_a_custom_route(
+    registry: dict[str, object],
+) -> None:
+    omp = load_e4_target("oh-my-pi@18.1.17")
+    native = json.loads(omp.read_asset_text("native-config.json"))
+    assert native["model_registry"] == {"provider_id": "breadboard-route"}
+    native["model_registry"] = registry
+    # Keep the pinned descriptor so lowering reaches the native-config checks.
+    mutated = dataclasses.replace(
+        omp, assets={**omp.assets, "native-config.json": json.dumps(native).encode("utf-8")}
+    )
+    with pytest.raises(HarnessCompileError, match="model_registry.provider_id"):
+        lower_e4_target(mutated, {})
+
+
+def test_omp_18_1_17_server_compile_binds_headless_v2(
+    tmp_path: Path,
+) -> None:
+    cas = FilesystemCAS(tmp_path / "cas")
+    try:
+        omp = load_e4_target("oh-my-pi@18.1.17")
+        compiled = compile_e4_harness(
+            omp,
+            {},
+            {
+                "version": 2,
+                "profile": {"name": "omp-server-compile"},
+                "workspace": {"root": "workspace"},
+                "provider_tools": {"use_native": True},
+                "providers": {
+                    "default_model": "test-model",
+                    "models": [{"id": "test-model", "adapter": "openai", "params": {}}],
+                },
+            },
+            cas=cas,
+            options=_options(),
+            request_schema_version="bb.rl.headless-run-request.v2",
+        )
+        binding = compiled.manifest.semantic.metadata["e4_target"]
+        assert binding["renderer_id"] == "breadboard.oh-my-pi.v18.1.17"
+        assert binding["ordered_tool_names"] == ("read", "bash", "edit", "write")
+        lowered = lower_e4_target(omp, {})
+        source_digest = canonical_sha256([
+            {"type": "function", "function": tool} for tool in lowered.tools
+        ])
+        projection = E4TargetPolicyProjection.from_compiled(compiled.manifest)
+        assert source_digest == binding["tool_surface_digest"]
+        assert projection.identity_dict()["tool_surface_digest"] == source_digest
+        surface = json.loads(omp.read_asset_text("tool-surface.json"))
+        actual_tools = []
+        for definition in compiled.manifest.semantic.to_canonical_obj()["tools"]["definitions"]:
+            parameters = {
+                "type": "object",
+                "properties": {
+                    item["name"]: item["schema"]
+                    for item in definition["parameters"]
+                },
+                "required": [
+                    item["name"] for item in definition["parameters"] if item["required"]
+                ],
+                "additionalProperties": definition["provider_routing"]["openai"]["additionalProperties"],
+            }
+            actual_tools.append({
+                "type": "function",
+                "function": {
+                    "name": definition["model_name"],
+                    "description": definition["description"],
+                    "parameters": parameters,
+                },
+            })
+        expected_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": surface["tools"][name]["description"],
+                    "parameters": {
+                        "type": "object",
+                        "properties": surface["tools"][name]["parameters"]["properties"],
+                        "required": surface["tools"][name]["parameters"]["required"],
+                        "additionalProperties": surface["tools"][name]["parameters"]["additionalProperties"],
+                    },
+                },
+            }
+            for name in surface["ordered_tools"]
+        ]
+        actual_projection = [
+            {
+                "name": item["function"]["name"],
+                "description": item["function"]["description"],
+                "property_names": list(item["function"]["parameters"]["properties"]),
+                "required": list(item["function"]["parameters"]["required"]),
+                "additionalProperties": item["function"]["parameters"]["additionalProperties"],
+            }
+            for item in actual_tools
+        ]
+        def compiled_property_order(parameters: dict[str, Any]) -> list[str]:
+            # The compiler encodes required order through parameter order.
+            names, required = list(parameters["properties"]), parameters["required"]
+            if [name for name in names if name in required] == required:
+                return names
+            return [*required, *(name for name in names if name not in required)]
+
+        expected_projection = [
+            {
+                "name": item["function"]["name"],
+                "description": item["function"]["description"],
+                "property_names": compiled_property_order(item["function"]["parameters"]),
+                "required": list(item["function"]["parameters"]["required"]),
+                "additionalProperties": item["function"]["parameters"]["additionalProperties"],
+            }
+            for item in expected_tools
+        ]
+        assert json.dumps(actual_projection, ensure_ascii=False) == json.dumps(
+            expected_projection, ensure_ascii=False
+        )
+        for actual, expected in zip(actual_tools, expected_tools):
+            assert actual["function"]["parameters"]["properties"] == expected["function"]["parameters"]["properties"]
+        assert [
+            item["function"]["parameters"]["required"] for item in actual_tools
+        ] == [
+            item["function"]["parameters"]["required"] for item in expected_tools
+        ]
+    finally:
+        cas.close()

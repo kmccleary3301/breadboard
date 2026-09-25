@@ -114,6 +114,8 @@ OPENHANDS_NATIVE_TOOL_IDS: tuple[str, ...] = (
 )
 PI_CODING_AGENT_LOCAL_ADAPTER_ID: str = "pi-coding-agent.local.v0.73.1"
 PI_NATIVE_TOOL_IDS: tuple[str, ...] = ("bash", "edit", "read", "write")
+OMP_NATIVE_LOCAL_ADAPTER_ID: str = "oh-my-pi.local.v18.1.17"
+OMP_NATIVE_TOOL_IDS: tuple[str, ...] = ("bash", "edit", "read", "write")
 HERMES_AGENT_LOCAL_ADAPTER_ID: str = "hermes-agent.local.v2026.9.11"
 HERMES_NATIVE_TOOL_IDS: tuple[str, ...] = (
     "patch", "read_file", "search_files", "skill_view",
@@ -123,6 +125,7 @@ NATIVE_PHASE_TOOL_IDS: Mapping[str, tuple[str, ...]] = MappingProxyType({
     OPENHANDS_SDK_LOCAL_ADAPTER_ID: OPENHANDS_NATIVE_TOOL_IDS,
     PI_CODING_AGENT_LOCAL_ADAPTER_ID: PI_NATIVE_TOOL_IDS,
     HERMES_AGENT_LOCAL_ADAPTER_ID: HERMES_NATIVE_TOOL_IDS,
+    OMP_NATIVE_LOCAL_ADAPTER_ID: OMP_NATIVE_TOOL_IDS,
 })
 MINI_SWE_AGENT_LOCAL_ADAPTER_ID: str = "mini-swe-agent.local.v2.4.6"
 MINI_SWE_AGENT_TOOL_ID: str = "bash"
@@ -2240,13 +2243,24 @@ class TrustedProcessHandle:
                     # Pinned framed worker imports Pi only from the sealed root.
                     environment["PI_NATIVE_WORKER_FRAMED"] = "1"
                     environment["PI_CODING_AGENT_NODE_MODULES"] = str(runtime_root / "node_modules")
-                else:
+                elif binding.adapter_id == OMP_NATIVE_LOCAL_ADAPTER_ID:
+                    # Pinned OMP Bun worker resolves modules via absolute paths from its sealed root.
+                    pass
+                elif binding.adapter_id in {
+                    OPENHANDS_SDK_LOCAL_ADAPTER_ID, HERMES_AGENT_LOCAL_ADAPTER_ID,
+                }:
                     environment["PYTHONHOME"] = str(runtime_root / "python")
                     environment["PYTHONNOUSERSITE"] = "1"
                     environment["LD_LIBRARY_PATH"] = str(runtime_root / "python/lib")
                     if binding.adapter_id == HERMES_AGENT_LOCAL_ADAPTER_ID:
                         # Hermes requires canonical identity despite sealed descriptor execution.
                         environment["PYTHONEXECUTABLE"] = str(node_path)
+                else:
+                    raise SandboxLaunchError(
+                        f"native tool adapter {binding.adapter_id!r} is unsupported",
+                        code="runtime_unsupported",
+                        lease_id=self.lease_id,
+                    )
                 process: asyncio.subprocess.Process | None = None
                 try:
                     process = await self._start_stopped_process(
@@ -7032,5 +7046,7 @@ __all__ = [
     "PI_NATIVE_TOOL_IDS",
     "HERMES_AGENT_LOCAL_ADAPTER_ID",
     "HERMES_NATIVE_TOOL_IDS",
+    "OMP_NATIVE_LOCAL_ADAPTER_ID",
+    "OMP_NATIVE_TOOL_IDS",
     "NATIVE_PHASE_TOOL_IDS",
 ]

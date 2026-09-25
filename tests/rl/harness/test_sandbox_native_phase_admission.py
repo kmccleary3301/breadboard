@@ -17,8 +17,12 @@ from breadboard_engine.e4_targets import load_e4_target
 from breadboard.rl.harness import sandbox as sandbox_module
 from breadboard.rl.harness.runners.base import JsonSnapshotError, RunnerToolBinding
 from breadboard.rl.harness.sandbox import (
+    InstalledToolAdapter,
+    OMP_NATIVE_LOCAL_ADAPTER_ID,
     OPENHANDS_SDK_LOCAL_ADAPTER_ID,
     PI_CODING_AGENT_LOCAL_ADAPTER_ID,
+    SandboxLaunchError,
+    TrustedProcessHandle,
     WorkspaceStateError,
     _admit_native_phase_payload,
 )
@@ -699,3 +703,122 @@ def test_supplier_utf8_replacement_matches_node() -> None:
     node_values = json.loads(completed.stdout)
     python_values = [value.decode("utf-8", "replace") for value in corpus]
     assert node_values == python_values
+
+
+@pytest.mark.asyncio
+async def test_omp_native_phase_launch_environment_has_no_python_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    digest = "sha256:" + "a" * 64
+    adapter = InstalledToolAdapter(
+        adapter_id=OMP_NATIVE_LOCAL_ADAPTER_ID,
+        tool_ids=("bash", "edit", "read", "write"),
+        runtime_root_path="/opt/omp",
+        runtime_root_device=1,
+        runtime_root_inode=2,
+        runtime_root_owner_uid=0,
+        runtime_root_mode="0755",
+        manifest_digest=digest,
+        executable_relative_path="bin/bun",
+        entrypoint_relative_path="worker.js",
+        executable_digest=digest,
+        entrypoint_digest=digest,
+    )
+    handle = object.__new__(TrustedProcessHandle)
+    handle._native_session_lock = asyncio.Lock()
+    handle._native_session = None
+    handle.lease_id = "test-lease"
+    handle._executable = SimpleNamespace(proc_fd_path="/proc/self/fd/2")
+    handle.plan = SimpleNamespace(
+        runtime=SimpleNamespace(
+            fixed_environment={"FIXED_ENTRY": "val"},
+        ),
+        limits=SimpleNamespace(
+            action_timeout_ms=10_000,
+            setup_timeout_ms=5_000,
+        ),
+    )
+
+    monkeypatch.setattr(sandbox_module, "_validate_native_root", lambda _b: None)
+    monkeypatch.setattr(sandbox_module, "_measure_native_file", lambda _p, _d: None)
+    monkeypatch.setattr(
+        sandbox_module,
+        "_snapshot_installed_executable",
+        lambda _p, _d: SimpleNamespace(proc_fd_path="/proc/self/fd/3", fd=3, close=lambda: None),
+    )
+    monkeypatch.setattr(
+        TrustedProcessHandle,
+        "_validate_native_binding",
+        staticmethod(lambda _plan, _binding: None),
+    )
+
+    captured_environment: dict[str, str] | None = None
+
+    async def fake_start(*_args: object, **kwargs: object) -> None:
+        nonlocal captured_environment
+        captured_environment = kwargs.get("environment")  # type: ignore[assignment]
+        raise RuntimeError("intercepted_launch")
+
+    handle._start_stopped_process = fake_start  # type: ignore[method-assign]
+
+    with pytest.raises(RuntimeError, match="intercepted_launch"):
+        await handle.invoke_native_phase(adapter, "initialize", {"task": "test"}, timeout_ms=1_000)
+
+    assert captured_environment is not None
+    assert captured_environment["FIXED_ENTRY"] == "val"
+    assert "PYTHONHOME" not in captured_environment
+    assert "LD_LIBRARY_PATH" not in captured_environment
+    assert "PYTHONNOUSERSITE" not in captured_environment
+
+
+@pytest.mark.asyncio
+async def test_native_phase_launch_rejects_unknown_adapter_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    digest = "sha256:" + "a" * 64
+    adapter = SimpleNamespace(
+        adapter_id="unsupported.local.adapter",
+        runtime_root_path="/opt/unsupported",
+        executable_relative_path="bin/unknown",
+        entrypoint_relative_path="worker.js",
+        executable_digest=digest,
+        entrypoint_digest=digest,
+    )
+    handle = object.__new__(TrustedProcessHandle)
+    handle._native_session_lock = asyncio.Lock()
+    handle._native_session = None
+    handle.lease_id = "test-lease"
+    handle._executable = SimpleNamespace(proc_fd_path="/proc/self/fd/2")
+    handle.plan = SimpleNamespace(
+        runtime=SimpleNamespace(
+            fixed_environment={},
+        ),
+        limits=SimpleNamespace(
+            action_timeout_ms=10_000,
+            setup_timeout_ms=5_000,
+        ),
+    )
+
+    monkeypatch.setattr(sandbox_module, "_validate_native_root", lambda _b: None)
+    monkeypatch.setattr(sandbox_module, "_measure_native_file", lambda _p, _d: None)
+    monkeypatch.setattr(
+        sandbox_module,
+        "_snapshot_installed_executable",
+        lambda _p, _d: SimpleNamespace(proc_fd_path="/proc/self/fd/3", fd=3, close=lambda: None),
+    )
+    monkeypatch.setattr(
+        TrustedProcessHandle,
+        "_validate_native_binding",
+        staticmethod(lambda _plan, _binding: None),
+    )
+
+    with pytest.raises(SandboxLaunchError) as captured:
+        await handle.invoke_native_phase(
+            adapter,  # type: ignore[arg-type]
+            "initialize",
+            {"task": "test"},
+            timeout_ms=1_000,
+        )
+
+    assert captured.value.code == "runtime_unsupported"
+    assert "unsupported.local.adapter" in str(captured.value)

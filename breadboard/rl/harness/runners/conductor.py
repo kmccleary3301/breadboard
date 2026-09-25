@@ -352,6 +352,7 @@ class PolicyRuntimeBinding:
 
     def bind_native_stream(
         self, system_prompt: str, tools: tuple[Mapping[str, Any], ...],
+        *, accept_truncated_stream: bool,
     ) -> None:
         if (
             self._source_consumer_id not in NATIVE_STREAM_PROFILES
@@ -364,7 +365,9 @@ class PolicyRuntimeBinding:
                 episode_id=self._episode_id,
                 effective_plan_digest=self._effective_plan_digest,
             )
-        self._client.bind_native_stream(system_prompt, tools)
+        self._client.bind_native_stream(
+            system_prompt, tools, accept_truncated_stream=accept_truncated_stream,
+        )
 
     def stage_native_http_request(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
         if (
@@ -735,6 +738,7 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
     target = metadata.get("e4_target") if isinstance(metadata, Mapping) else None
     source_profile = None
     source_consumer_id = None
+    expected_api_variant = "responses"
     if isinstance(target, Mapping) and (
         target.get("renderer_id") in {MINI_RESPONSE_CONSUMER_ID, *NATIVE_CHAT_RESPONSE_TARGETS}
         or target.get("renderer_id") in NATIVE_STREAM_PROFILES
@@ -751,6 +755,11 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
                     for consumer_id, target_id in NATIVE_CHAT_RESPONSE_TARGETS.items()
                 },
             }[source_consumer_id]
+        )
+        expected_api_variant = (
+            stream_profile.api_variant
+            if stream_profile is not None
+            else "chat" if source_consumer_id in NATIVE_CHAT_RESPONSE_TARGETS else "responses"
         )
         if (
             target.get("target_id") != expected_target
@@ -775,9 +784,7 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
             and value not in (False, None, "", (), {})
             for key, value in provider_tools.items()
         )
-        or provider_tools.get("api_variant") != (
-            "chat" if source_consumer_id in NATIVE_CHAT_RESPONSE_TARGETS else "responses"
-        )
+        or provider_tools.get("api_variant") != expected_api_variant
         or provider_tools.get("use_native") is not True
         or provider_tools.get("suppress_prompts", False) is not False
         or provider_tools.get("responses_stateful", False) is not False
@@ -1122,9 +1129,22 @@ _SCHEMA_KEYWORDS = frozenset({
     "maxItems", "uniqueItems", "description", "default", "examples", "title",
 })
 _SCHEMA_TYPES = frozenset({"object", "array", "string", "number", "integer", "boolean", "null"})
+_MAX_SCHEMA_DEPTH = 32
+_MAX_SCHEMA_NODES = 512
 
 
-def _admit_schema(schema: Mapping[str, Any], request: RunnerOpenRequest) -> None:
+def _admit_schema(
+    schema: Mapping[str, Any],
+    request: RunnerOpenRequest,
+    *,
+    _depth: int = 0,
+    _budget: list[int] | None = None,
+) -> None:
+    if _budget is None:
+        _budget = [0]
+    _budget[0] += 1
+    if _depth > _MAX_SCHEMA_DEPTH or _budget[0] > _MAX_SCHEMA_NODES:
+        raise _plan_error(request, "compiled tool schema is too deep or large", "compiled_ir_mismatch")
     if any(type(key) is not str or key not in _SCHEMA_KEYWORDS for key in schema):
         raise _plan_error(request, "compiled tool schema keyword is unsupported", "compiled_ir_mismatch")
     schema_type = schema.get("type")
@@ -1166,17 +1186,19 @@ def _admit_schema(schema: Mapping[str, Any], request: RunnerOpenRequest) -> None
             or not isinstance(required, (list, tuple))
             or any(type(name) is not str or name not in properties for name in required)
             or len(set(required)) != len(required)
-            or type(additional) is not bool
+            or (type(additional) is not bool and not isinstance(additional, Mapping))
         ):
             raise _plan_error(request, "compiled object schema is invalid", "compiled_ir_mismatch")
         for child in properties.values():
             if not isinstance(child, Mapping):
                 raise _plan_error(request, "compiled object property schema is invalid", "compiled_ir_mismatch")
-            _admit_schema(child, request)
+            _admit_schema(child, request, _depth=_depth + 1, _budget=_budget)
+        if isinstance(additional, Mapping):
+            _admit_schema(additional, request, _depth=_depth + 1, _budget=_budget)
     if "items" in schema:
         if not isinstance(schema["items"], Mapping):
             raise _plan_error(request, "compiled array item schema is invalid", "compiled_ir_mismatch")
-        _admit_schema(schema["items"], request)
+        _admit_schema(schema["items"], request, _depth=_depth + 1, _budget=_budget)
     if "pattern" in schema:
         if type(schema["pattern"]) is not str:
             raise _plan_error(request, "compiled schema pattern is invalid", "compiled_ir_mismatch")
@@ -2323,6 +2345,10 @@ class _ConductorSession:
             name: declared_runtime_inputs[name] for name in profile.runtime_input_names
         }
         initialized = await phase("initialize", {
+            **{
+                name: thaw_json(self._projection.source_profile[name])
+                for name in profile.sealed_initialize_fields
+            },
             "task": task,
             "model_config": thaw_json(self._binding.source_model_config),
             "advertisement": thaw_json(advertisement),
@@ -2349,7 +2375,10 @@ class _ConductorSession:
                 "native stream bootstrap runtime inputs differ from declared inputs",
                 code="native_response_binding_invalid", **self._context(),
             )
-        self._binding.bind_native_stream(system_prompt, tuple(tool_schemas))
+        self._binding.bind_native_stream(
+            system_prompt, tuple(tool_schemas),
+            accept_truncated_stream=profile.accepts_truncated_stream,
+        )
         state = profile.state_factory(task, system_prompt, bootstrap)
         trace_requests: list[dict[str, Any]] = []
 
@@ -2406,6 +2435,9 @@ class _ConductorSession:
                 parsed = await parsed
             await commit(before, "assistant", turn)
             observations: list[FrozenJsonObject] = []
+            dispatch_calls = getattr(parsed, "dispatch_calls", None)
+            if dispatch_calls is None:
+                dispatch_calls = parsed.calls
             if parsed.calls:
                 # parsed.calls is the ordered 1:1 projection of native.tool_calls;
                 # join by ordinal so duplicate provider IDs keep their own arguments.
@@ -2420,39 +2452,117 @@ class _ConductorSession:
                     await self._native_tool_call(
                         turn, ordinal, call.id, call.name, raw.arguments,
                     )
-                prepared = await phase("prepare_tools", {"calls": [
-                    {"id": call.id, "name": call.name, "arguments": call.arguments}
-                    for call in parsed.calls
-                ]})
-                if prepared.get("kind") != "prepared":
-                    raise RunnerProtocolError(
-                        "native batch preparation failed",
-                        code="native_response_invalid", **self._context(),
+                dispatch_positions: list[int] = []
+                for dispatch_call in dispatch_calls:
+                    position = next(
+                        (
+                            index
+                            for index, parsed_call in enumerate(parsed.calls)
+                            if index not in dispatch_positions and parsed_call == dispatch_call
+                        ),
+                        None,
                     )
-                history_calls = prepared.get("history_calls")
-                if history_calls is not None:
-                    if (
-                        type(history_calls) is not list
-                        or any(type(item) is not dict for item in history_calls)
-                        or [(item.get("id"), item.get("name")) for item in history_calls]
-                        != [(call.id, call.name) for call in parsed.calls]
-                    ):
+                    if position is None:
                         raise RunnerProtocolError(
-                            "native prepared history identity changed",
+                            "native dispatch decision changed call identity",
                             code="native_response_invalid", **self._context(),
                         )
-                    blocks = [block for block in parsed.assistant["content"] if block["type"] == "toolCall"]
-                    for block, prepared_call in zip(blocks, history_calls, strict=True):
-                        block["arguments"] = prepared_call["arguments"]
-                    await commit(len(state.messages), "assistant", turn, events=[
-                        {"kind": "assistant_prepared", "message": parsed.assistant},
-                    ])
-                await self._checkpoint("before_action", turn=turn)
-                completed = await phase("execute_batch", {})
-                raw_results = completed.get("results")
+                    dispatch_positions.append(position)
+                synthetic_results = getattr(parsed, "synthetic_results", ())
                 if (
-                    completed.get("kind") != "tool_results"
-                    or type(raw_results) is not list
+                    not isinstance(synthetic_results, tuple)
+                    or any(type(item) is not dict for item in synthetic_results)
+                ):
+                    raise RunnerProtocolError(
+                        "native source dispatch decision lacks synthetic results",
+                        code="native_response_invalid", **self._context(),
+                    )
+                synthetic_by_position: dict[int, dict[str, Any]] = {}
+                for item in synthetic_results:
+                    position = item.get("completion_index")
+                    if (
+                        type(position) is not int
+                        or position < 0
+                        or position >= len(parsed.calls)
+                        or position in synthetic_by_position
+                        or item.get("id") != parsed.calls[position].id
+                    ):
+                        raise RunnerProtocolError(
+                            "native synthetic tool result identity changed",
+                            code="native_response_invalid", **self._context(),
+                        )
+                    synthetic_by_position[position] = dict(item)
+                if set(dispatch_positions) | set(synthetic_by_position) != set(range(len(parsed.calls))):
+                    raise RunnerProtocolError(
+                        "native dispatch decision does not cover tool calls",
+                        code="native_response_invalid", **self._context(),
+                    )
+                completed: Mapping[str, Any] = {"kind": "tool_results", "results": []}
+                if dispatch_calls:
+                    prepared = await phase("prepare_tools", {"calls": [
+                        {"id": call.id, "name": call.name, "arguments": call.arguments}
+                        for call in dispatch_calls
+                    ]})
+                    if prepared.get("kind") != "prepared":
+                        raise RunnerProtocolError(
+                            "native batch preparation failed",
+                            code="native_response_invalid", **self._context(),
+                        )
+                    history_calls = prepared.get("history_calls")
+                    if history_calls is not None:
+                        if (
+                            type(history_calls) is not list
+                            or any(type(item) is not dict for item in history_calls)
+                            or [(item.get("id"), item.get("name")) for item in history_calls]
+                            != [(call.id, call.name) for call in dispatch_calls]
+                        ):
+                            raise RunnerProtocolError(
+                                "native prepared history identity changed",
+                                code="native_response_invalid", **self._context(),
+                            )
+                        blocks = [block for block in parsed.assistant["content"] if block["type"] == "toolCall"]
+                        for position, prepared_call in zip(dispatch_positions, history_calls, strict=True):
+                            blocks[position]["arguments"] = prepared_call["arguments"]
+                        await commit(len(state.messages), "assistant", turn, events=[
+                            {"kind": "assistant_prepared", "message": parsed.assistant},
+                        ])
+                    await self._checkpoint("before_action", turn=turn)
+                    completed = await phase("execute_batch", {})
+                    worker_results = completed.get("results")
+                    if (
+                        completed.get("kind") != "tool_results"
+                        or type(worker_results) is not list
+                        or len(worker_results) != len(dispatch_calls)
+                        or any(type(item) is not dict for item in worker_results)
+                        or [item.get("id") for item in worker_results]
+                        != [call.id for call in dispatch_calls]
+                    ):
+                        raise RunnerProtocolError(
+                            "native tool batch result is malformed",
+                            code="native_response_invalid", **self._context(),
+                        )
+                    if synthetic_by_position:
+                        raw_results = []
+                        worker_index = 0
+                        for position in range(len(parsed.calls)):
+                            if position in synthetic_by_position:
+                                raw_results.append(synthetic_by_position[position])
+                            else:
+                                item = dict(worker_results[worker_index])
+                                item["completion_index"] = position
+                                raw_results.append(item)
+                                worker_index += 1
+                        if worker_index != len(worker_results):
+                            raise RunnerProtocolError(
+                                "native tool batch result is malformed",
+                                code="native_response_invalid", **self._context(),
+                            )
+                    else:
+                        raw_results = worker_results
+                else:
+                    raw_results = [dict(item) for item in synthetic_results]
+                if (
+                    type(raw_results) is not list
                     or len(raw_results) != len(parsed.calls)
                     or any(type(item) is not dict for item in raw_results)
                     or [item.get("id") for item in raw_results] != [call.id for call in parsed.calls]
@@ -2500,6 +2610,8 @@ class _ConductorSession:
                             )
             self._turns.append(RunnerTurn(turn, (), tuple(observations)))
             if state.is_exited:
+                if native.stream_termination is not None:
+                    return RunnerTermination.POLICY_INCOMPLETE
                 return self._native_stop_termination(
                     state.native_stop_reason, profile.incomplete_stop_reasons,
                 )

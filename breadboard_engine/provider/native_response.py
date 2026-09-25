@@ -18,6 +18,7 @@ from .contract_wire import ProviderContractError, canonical_json
 _MAX_ID_LENGTH = 256
 _MAX_TEXT_LENGTH = 16 * 1024 * 1024
 _MAX_FRAGMENT_TEXT_LENGTH = 16 * 1024 * 1024
+_STREAM_TERMINATION_REASONS = frozenset({"stream_truncated", "transport_error"})
 
 
 def _require_text(value: Any, field_name: str, *, max_length: int) -> str:
@@ -130,20 +131,52 @@ class NativeStreamFragment:
 
 
 @dataclass(frozen=True, slots=True)
+class NativeStreamTermination:
+    """A stream that ended without a finish_reason, with the chunks it delivered."""
+
+    reason: str
+    chunks: tuple[Mapping[str, Any], ...]
+
+    def __post_init__(self) -> None:
+        if self.reason not in _STREAM_TERMINATION_REASONS:
+            raise ProviderContractError("native stream termination reason is unsupported")
+        chunks = _copy_json_value(self.chunks, "stream_termination.chunks", freeze=True)
+        if (
+            not isinstance(chunks, tuple)
+            or not chunks
+            or any(not isinstance(item, Mapping) for item in chunks)
+        ):
+            raise ProviderContractError(
+                "native stream termination chunks must be a non-empty list of objects"
+            )
+        object.__setattr__(self, "chunks", chunks)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "reason": self.reason,
+            "chunks": _copy_json_value(self.chunks, "stream_termination.chunks"),
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class NativeProviderResponse:
-    """Bound, lossless native response delivered to a recording consumer."""
+    """Bound, lossless native response delivered to a recording consumer.
+
+    Exactly one of ``finish_reason`` and ``stream_termination`` is set.
+    """
 
     binding_digest: str
     request_digest: str
     response_id: str
     model: str | None
     content: str | None
-    finish_reason: str
+    finish_reason: str | None
     tool_calls: tuple[NativeToolCall, ...] = field(default_factory=tuple)
     usage: Mapping[str, Any] | None = None
     stream_fragments: tuple[NativeStreamFragment, ...] = field(default_factory=tuple)
     raw_response: Mapping[str, Any] | None = None
     request_body: Mapping[str, Any] | None = None
+    stream_termination: NativeStreamTermination | None = None
 
     def __post_init__(self) -> None:
         _require_text(self.binding_digest, "binding_digest", max_length=256)
@@ -151,7 +184,15 @@ class NativeProviderResponse:
         _require_text(self.response_id, "response_id", max_length=_MAX_ID_LENGTH)
         _optional_text(self.model, "model", max_length=_MAX_ID_LENGTH)
         _optional_text(self.content, "content", max_length=_MAX_TEXT_LENGTH)
-        _require_text(self.finish_reason, "finish_reason", max_length=128)
+        if self.stream_termination is None:
+            _require_text(self.finish_reason, "finish_reason", max_length=128)
+        elif (
+            not isinstance(self.stream_termination, NativeStreamTermination)
+            or self.finish_reason is not None
+        ):
+            raise ProviderContractError(
+                "native response carries exactly one of finish_reason and stream_termination"
+            )
         if not isinstance(self.tool_calls, tuple):
             raise ProviderContractError("tool_calls must be an ordered tuple")
         if any(not isinstance(item, NativeToolCall) for item in self.tool_calls):
@@ -194,6 +235,8 @@ class NativeProviderResponse:
             result["raw_response"] = _copy_json_value(self.raw_response, "raw_response")
         if self.request_body is not None:
             result["request_body"] = _copy_json_value(self.request_body, "request_body")
+        if self.stream_termination is not None:
+            result["stream_termination"] = self.stream_termination.as_dict()
         return result
 
     def validate_bounds(self, *, max_response_bytes: int, max_stream_fragments: int) -> None:
@@ -242,5 +285,6 @@ __all__ = [
     "NativeProviderResponse",
     "NativeRecordingConsumer",
     "NativeStreamFragment",
+    "NativeStreamTermination",
     "NativeToolCall",
 ]

@@ -9,7 +9,7 @@ from pathlib import Path
 import subprocess
 from collections.abc import Mapping
 from typing import Any
-
+from types import SimpleNamespace
 import pytest
 
 from breadboard.rl.harness import contracts as c
@@ -1769,6 +1769,18 @@ async def test_conductor_session_is_one_shot_and_closed_session_cannot_run() -> 
     assert closed_client.requests == []
     assert closed_tools.calls == []
     assert closed_sink.events == []
+
+
+async def test_conductor_non_target_plan_requires_responses_api_variant() -> None:
+    observation = _observation()
+    client = RecordingPolicyClient(observation)
+    session, _, _, _, _, _ = await _open(observation=observation, client=client)
+
+    result = await session.run(ConductorRunRequest({"query": "non-target"}))
+
+    assert result.episode_id == "episode-a"
+    assert len(client.requests) == 1
+    await session.close()
 
 
 async def test_conductor_resolves_every_compiled_alias_and_model_name_to_the_admitted_tool_id() -> None:
@@ -3784,6 +3796,7 @@ class _NativeCloseTestClient(RecordingPolicyClient):
 
     def bind_native_stream(
         self, system_prompt: str, tools: tuple[Mapping[str, Any], ...],
+        *, accept_truncated_stream: bool,
     ) -> None:
         self.native_stream_binding = (system_prompt, tools)
 
@@ -3947,6 +3960,7 @@ def _native_close_test_case(
     _sync_root_semantics(semantics)
     profile = native_stream_profiles.NativeStreamProfile(
         consumer_id=PI_RESPONSE_CONSUMER_ID,
+        api_variant="responses",
         target_id="pi@0.73.1",
         target_version=3,
         phase_schema_version="bb.pi-native.test.v1",
@@ -4749,6 +4763,38 @@ async def test_openhands_native_error_returns_replay_trace(failure_status: str) 
     assert thaw_json(result.response["state"])["status"] == failure_status
     assert tools.effect_admissions == 1
     assert tools.effect_measurements == 1
+
+def test_schema_admission_supports_mapping_additional_properties_with_bounds() -> None:
+    request = SimpleNamespace(
+        episode_id="schema-admission",
+        effective_plan_digest="sha256:" + "a" * 64,
+    )
+    schema = {
+        "type": "object",
+        "properties": {
+            "env": {
+                "type": "object",
+                "properties": {"PATH": {"type": "string"}},
+                "required": ["PATH"],
+                "additionalProperties": {"type": "string"},
+            },
+        },
+        "required": ["env"],
+        "additionalProperties": False,
+    }
+    conductor_module._admit_schema(schema, request)
+    assert list(schema["properties"]["env"]["properties"]) == ["PATH"]
+
+    for additional in ([], "string", None, {"unevaluatedProperties": False}):
+        invalid = {**schema, "additionalProperties": additional}
+        with pytest.raises(RunnerPlanError):
+            conductor_module._admit_schema(invalid, request)
+
+    nested: dict[str, Any] = {"type": "string"}
+    for _ in range(conductor_module._MAX_SCHEMA_DEPTH + 1):
+        nested = {"type": "array", "items": nested}
+    with pytest.raises(RunnerPlanError):
+        conductor_module._admit_schema(nested, request)
 
 
 async def test_openhands_iteration_budget_stops_at_configured_turn_limit(tmp_path: Path) -> None:

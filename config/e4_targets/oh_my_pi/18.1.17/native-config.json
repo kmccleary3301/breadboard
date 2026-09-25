@@ -1,0 +1,169 @@
+{
+  "consumer_id": "breadboard.oh-my-pi.v18.1.17",
+  "phase_schema": "bb.omp-native.v1",
+  "worker_protocol": "bb.native-worker.rpc.v1",
+  "worker": "breadboard.rl.harness.omp_native_tools:NativeToolWorker",
+  "tool_worker_entrypoint": "breadboard/rl/harness/runners/omp_native_tool_worker.ts",
+  "tool_names": ["read", "bash", "edit", "write"],
+  "source_commit": "3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec",
+  "source_root": "/opt/omp/source/oh-my-pi-3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec",
+  "bun": "/opt/omp/runtime/bun-linux-x64-baseline/bun",
+  "route_classifier": {
+    "schema_version": "bb.omp-route-classifier.v1",
+    "source_root": "/opt/omp/source/oh-my-pi-3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec",
+    "source_archive_sha256": "sha256:67822418bad69de015d28a1bbd45fa7be689fdce367dfa3d584bdfcfbfcb5587",
+    "lock_sha256": "sha256:9c0ed804704050ad4dbc3de84581694c7e505fdc39b0c13dea337300bae82a7e",
+    "modules": {
+      "path-utils.ts": {
+        "path": "packages/coding-agent/src/tools/path-utils.ts",
+        "sha256": "sha256:3ff2792ea8bd9c419636fbf1720b15c80fbc344660345babc49f50e4750055d4"
+      },
+      "read-path-resolution.ts": {
+        "path": "packages/coding-agent/src/tools/read-path-resolution.ts",
+        "sha256": "sha256:19e69ff4f51ce4611f28af226960d174cd7aa9f23a959dd4c063e0ebad2174a7"
+      },
+      "read-archive.ts": {
+        "path": "packages/coding-agent/src/tools/read-archive.ts",
+        "sha256": "sha256:6cf188322b0ea8b5ae33ceb235a137872c56a6364bd24f49e7e42bc837317237"
+      },
+      "read-sqlite.ts": {
+        "path": "packages/coding-agent/src/tools/read-sqlite.ts",
+        "sha256": "sha256:57e10eec3c260049ec55ef8f439b667c50aaa8ea7491b5b896b7347cb19ed681"
+      },
+      "read-pdf.ts": {
+        "path": "packages/coding-agent/src/tools/read-pdf.ts",
+        "sha256": "sha256:6dfd6cb0748c56ba17fd8117b01ca5ac0235d41cd8ffbdd5594eea6a7850690c"
+      },
+      "video.ts": {
+        "path": "packages/coding-agent/src/utils/video.ts",
+        "sha256": "sha256:ffa43e82c2806d82fbc500bff7d89cb9fb28e5a2d35e858fb5dc0bfc31134935"
+      },
+      "mime.ts": {
+        "path": "packages/utils/src/mime.ts",
+        "sha256": "sha256:9920289e1f9b41a6fc68c0b8dc9d067041545d3c19045aa374e7ed04c3ff9bb3"
+      },
+      "markit.ts": {
+        "path": "packages/coding-agent/src/utils/markit.ts",
+        "sha256": "sha256:838535e94738d83a4283c49f9b67268073bcd0fdf9f220057f41e5a6dfe6ca86"
+      },
+      "router.ts": {
+        "path": "packages/coding-agent/src/internal-urls/router.ts",
+        "sha256": "sha256:60b440c968ab77c3e9e881a04772261ca0f0ed9f4a7be999ac94afb6a473cb84"
+      }
+    }
+  },
+  "request_cap": 8,
+  "model_max_tokens": 2048,
+  "provider_attempts": 1,
+  "model_registry": {
+    "provider_id": "breadboard-route"
+  },
+  "result_commit_order": "completion",
+  "ack_policy": "none",
+  "capability_denials": {
+    "url": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "url",
+      "message": "OMP capability denied: url",
+      "source_ref": "semantic-policy.json",
+      "route": {
+        "patterns": ["^https?:\\/\\/?", "^www\\."],
+        "source_ref": "packages/coding-agent/src/tools/path-utils.ts:594"
+      }
+    },
+    "ssh": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "ssh",
+      "message": "OMP capability denied: ssh",
+      "source_ref": "semantic-policy.json",
+      "route": {
+        "patterns": ["ssh:\\/\\/"],
+        "source_ref": "packages/coding-agent/src/tools/path-utils.ts:574"
+      }
+    },
+    "pty": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "pty",
+      "message": "OMP capability denied: pty",
+      "source_ref": "semantic-policy.json"
+    },
+    "archive": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "archive",
+      "message": "OMP capability denied: archive",
+      "source_ref": "semantic-policy.json",
+      "route": {
+        "extensions": [".zip", ".jar", ".war", ".ear", ".apk", ".whl", ".ipa", ".xpi", ".vsix", ".nupkg", ".cbz", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tbz", ".tar.xz", ".txz", ".tar.zst", ".tzst", ".tar.z", ".asar", ".rar", ".cbr", ".7z", ".iso", ".cab", ".cpio", ".rpm", ".ar", ".a", ".lib", ".deb", ".lzh", ".lha", ".arj", ".gz", ".bz2", ".xz", ".zst", ".z", ".lzma"],
+        "source_ref": "packages/utils/src/ar/registry.ts:32-58"
+      }
+    },
+    "sqlite": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "sqlite",
+      "message": "OMP capability denied: sqlite",
+      "source_ref": "semantic-policy.json",
+      "route": {
+        "extensions": [".sqlite", ".sqlite3", ".db", ".db3"],
+        "source_ref": "packages/coding-agent/src/tools/sqlite-reader.ts:59"
+      }
+    },
+    "image": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "image",
+      "message": "OMP capability denied: image",
+      "source_ref": "semantic-policy.json",
+      "route": {
+        "extensions": [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".svgz"],
+        "schemes": ["attachment"],
+        "source_ref": "packages/coding-agent/src/tools/read.ts:1556-1579"
+      }
+    },
+    "video": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "video",
+      "message": "OMP capability denied: video",
+      "source_ref": "semantic-policy.json",
+      "route": {
+        "extensions": [".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi", ".wmv"],
+        "source_ref": "packages/coding-agent/src/utils/video.ts:15-23"
+      }
+    },
+    "pdf": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "pdf",
+      "message": "OMP capability denied: pdf",
+      "source_ref": "semantic-policy.json",
+      "route": {
+        "extensions": [".pdf"],
+        "source_ref": "packages/coding-agent/src/tools/read-pdf.ts:7"
+      }
+    },
+    "document": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "document",
+      "message": "OMP capability denied: document",
+      "source_ref": "semantic-policy.json",
+      "route": {
+        "extensions": [".pdf", ".docx", ".pptx", ".xlsx", ".epub"],
+        "source_ref": "packages/coding-agent/src/utils/markit.ts:22"
+      }
+    },
+    "internal-resource": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "internal-resource",
+      "message": "OMP capability denied: internal-resource",
+      "source_ref": "semantic-policy.json",
+      "route": {
+        "schemes": ["agent", "artifact", "history", "issue", "local", "mcp", "memory", "omp", "pr", "rule", "security", "skill", "vault", "xd"],
+        "source_ref": "packages/coding-agent/src/internal-urls/router.ts:38-53"
+      }
+    },
+    "async": {
+      "schema_version": "bb.omp-capability-denial.v1",
+      "capability": "async",
+      "message": "OMP capability denied: async",
+      "source_ref": "semantic-policy.json"
+    }
+  },
+  "native_descriptions_artifact_sha256": "cd548ef0285e5fc3987d79a1a47c1bc64fe93e1e68c71c0dc6a8ee3b30de244b"
+}
