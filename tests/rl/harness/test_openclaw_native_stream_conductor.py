@@ -243,6 +243,10 @@ class _NativeWorkerPort:
         self.operations: list[str] = []
         self._effect_baseline: dict[str, dict[str, Any]] | None = None
 
+    @property
+    def declared_workspace(self) -> str:
+        return str(self.workspace)
+
     def _snapshot_effects(self) -> dict[str, dict[str, Any]]:
         snapshot, _ = sandbox_module._workspace_effect_snapshot(
             self.workspace,

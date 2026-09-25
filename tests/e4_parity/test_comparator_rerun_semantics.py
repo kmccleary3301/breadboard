@@ -3,10 +3,12 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+from copy import deepcopy
 from pathlib import Path
 import shutil
 from typing import Any, Mapping
 from conformance.comparators.stored_report import compare
+from conformance.comparators.hermes_agent import project_supplier_case as project_hermes_supplier_case
 from conformance.comparators.openhands_sdk import (
     compare as compare_openhands,
     project_supplier_case,
@@ -19,8 +21,9 @@ from scripts.validate_e4_c4_chain import _diff_comparator_reports
 ROOT = Path(__file__).resolve().parents[2]
 INVENTORY_PATH = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"
 REGISTRY_PATH = ROOT / "conformance" / "comparators" / "registry.json"
-OPENHANDS_CASE = ROOT / "tests" / "e4_parity" / "fixtures" / "openhands_sdk" / "OH-01-normal-file-effect"
+OPENHANDS_CASE = ROOT / "tests" / "fixtures" / "openhands_rerun2" / "captures" / "OH-01-normal-file-effect"
 OPENCLAW_CASE = ROOT / "tests" / "e4_parity" / "fixtures" / "openclaw_packet_640"
+HERMES_CASE = ROOT / "tests" / "e4_parity" / "fixtures" / "hermes_agent" / "H-01-normal-memory-skill-write"
 
 def _load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -41,7 +44,7 @@ def _sha256(path: Path) -> str:
 
 def _openhands_measured_bb_trace() -> dict[str, Any]:
     supplier = project_supplier_case(OPENHANDS_CASE)
-    workspace = OPENHANDS_CASE / "workspace"
+    workspace = ROOT / "tests" / "e4_parity" / "fixtures" / "openhands_sdk" / "OH-01-normal-file-effect" / "workspace"
     effects: dict[str, dict[str, Any]] = {}
     for relative, digest in supplier["file_effects"].items():
         if digest is None:
@@ -58,6 +61,9 @@ def _openhands_measured_bb_trace() -> dict[str, Any]:
         }
     replay = dict(supplier)
     replay["file_effects"] = effects
+    replay["conversation_id"] = "56351706-00f7-47c5-98d0-7145da8af641"
+    for request in replay["requests"]:
+        request["body"]["prompt_cache_key"] = replay["conversation_id"]
     return replay
 
 
@@ -178,6 +184,19 @@ def _registered_comparator_input(
                 "replay_ref": replay_manifest_path,
             },
         }
+    if comparator_id == "hermes_agent_trace_v1":
+        replay = deepcopy(project_hermes_supplier_case(HERMES_CASE))
+        overlay = _load_json(
+            ROOT / "config" / "e4_targets" / "hermes_agent" / "2026.9.11" / "native-config.json"
+        )["schema_overlay"]
+        for request in replay["requests"]:
+            for index, schema in enumerate(request["body"]["tools"]):
+                name = schema["function"]["name"]
+                if name in overlay:
+                    request["body"]["tools"][index] = json.loads(
+                        overlay[name]["approved_schema_json"]
+                    )
+        return {"supplier_case": str(HERMES_CASE), "bb_trace": replay}
     if comparator_id == "openhands_sdk_trace_v1":
         return {
             "supplier_case": str(OPENHANDS_CASE),
@@ -258,6 +277,10 @@ def test_each_registered_comparator_entrypoint_conforms_to_protocol(tmp_path: Pa
             entry["comparator_id"], comparator_path, tmp_path
         )
         report = comparator(comparator_input)
+        if entry["comparator_id"] == "hermes_agent_trace_v1":
+            assert report["ok"] is True
+        if entry["comparator_id"] == "openhands_sdk_trace_v1":
+            assert report["ok"] is True, report
         assert isinstance(report, dict)
         report_schema_version = report.get("schema_version", report.get("report_schema_version"))
         assert report_schema_version == entry["report_schema_version"]
@@ -301,6 +324,33 @@ def test_each_registered_comparator_entrypoint_conforms_to_protocol(tmp_path: Pa
             closed_report = comparator({**comparator_input, "capture": str(mutated_supplier)})
             assert closed_report["ok"] is False
             assert any("classification" in err for err in closed_report.get("errors", []))
+        if entry["comparator_id"] == "hermes_agent_trace_v1":
+            tampered = deepcopy(comparator_input["bb_trace"])
+            effect = next(iter(tampered["file_effects"]))
+            tampered["file_effects"][effect] = "sha256:" + "b" * 64
+            rejected = comparator({**comparator_input, "bb_trace": tampered})
+            assert rejected["ok"] is False
+            assert any(
+                assertion["assertion_id"] == "H-01-normal-memory-skill-write.file_effects_equal"
+                and assertion["status"] == "failed"
+                for assertion in rejected["assertions"]
+            )
+
+
+def test_registered_openhands_entrypoint_rejects_foreign_cache_key(tmp_path: Path) -> None:
+    entry = next(item for item in _registry_entries() if item["comparator_id"] == "openhands_sdk_trace_v1")
+    module = importlib.import_module(entry["entrypoint"]["module"])
+    comparator = getattr(module, entry["entrypoint"]["callable"])
+    _, comparator_path, _ = _comparator_fixture(tmp_path)
+    inp = _registered_comparator_input(entry["comparator_id"], comparator_path, tmp_path)
+    inp["bb_trace"]["requests"][0]["body"]["prompt_cache_key"] = "123e4567-e89b-12d3-a456-426614174000"
+    report = comparator(inp)
+    assert report["ok"] is False
+    assert any(
+        assertion["assertion_id"].endswith(".requests.prompt_cache_key_bound") and assertion["status"] == "failed"
+        for assertion in report["assertions"]
+    )
+
 
 def test_rejected_openhands_bb_trace_reports_error() -> None:
     replay = _openhands_measured_bb_trace()

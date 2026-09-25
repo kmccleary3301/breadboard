@@ -331,7 +331,7 @@ class InstalledToolAdapterV1(_ExactModel):
             self.adapter_id in NATIVE_PHASE_TOOL_IDS
             and self.tool_ids != NATIVE_PHASE_TOOL_IDS[self.adapter_id]
         ):
-            raise ValueError("source-native adapter requires its exact source tool set")
+            raise ValueError("native adapter requires its exact source tool set")
         if self.manifest_ref.media_type != _NATIVE_TOOL_SOURCE_REF_MEDIA_TYPE:
             raise ValueError("native tool source manifest media type is not exact")
         return self

@@ -317,13 +317,7 @@ class PiSemanticsState:
         requests: Iterable[Mapping[str, Any]],
         runtime_inputs: Mapping[str, Any],
         effects: Mapping[str, Any],
-        classification: Mapping[str, Any] | None = None,
-        final_envelope: Mapping[str, Any] | None = None,
-        command_result: Mapping[str, Any] | None = None,
-        runtime_error: str | None = None,
     ) -> dict[str, Any]:
-        if any(value is not None for value in (classification, final_envelope, command_result, runtime_error)):
-            raise PiSemanticsError("Pi native stream does not declare result finalization")
         request_values = [dict(request) for request in requests]
         return {
             "schema_version": "bb.e4.pi-replay-trace.v1",

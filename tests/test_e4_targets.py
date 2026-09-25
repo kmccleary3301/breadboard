@@ -21,6 +21,7 @@ from breadboard_engine.e4_targets import (
 
 from breadboard.product.harness.targets import (
     bind_e4_target_inputs,
+    lower_e4_target,
     serialize_e4_target_inputs,
 )
 from breadboard.product.harness.validate import (
@@ -45,6 +46,7 @@ def test_target_resources_load_outside_editable_checkout_cwd(
 
     assert _resource_root() == TARGET_ROOT
     assert list_e4_target_ids() == (
+        "hermes-agent@2026.9.11",
         "mini-swe-agent@2.4.6",
         "oh-my-pi@16.2.13",
         "openclaw@2026.9.4",
@@ -114,6 +116,7 @@ def test_openclaw_sealed_package_has_one_pinned_source_prompt_and_bootstrap() ->
 
 def test_pinned_targets_load_with_exact_release_source_and_runtime_assets() -> None:
     assert list_e4_target_ids() == (
+        "hermes-agent@2026.9.11",
         "mini-swe-agent@2.4.6",
         "oh-my-pi@16.2.13",
         "openclaw@2026.9.4",
@@ -248,6 +251,16 @@ def test_pinned_targets_load_with_exact_release_source_and_runtime_assets() -> N
         "ast_edit",
     ]
     assert omp_surface["legacy_aliases"] == {"search": "grep", "find": "glob"}
+
+
+def test_hermes_package_loads_and_lowers_pinned_renderer() -> None:
+    package = load_e4_target("hermes-agent@2026.9.11")
+    rendered = lower_e4_target(package, {})
+    assert rendered.renderer_id == "breadboard.hermes-agent.v2026.9.11"
+    assert rendered.ordered_tool_names == (
+        "patch", "read_file", "search_files", "skill_view",
+        "skills_list", "terminal", "write_file",
+    )
 
 
 def test_target_freeze_references_match_calibrated_source_rows() -> None:

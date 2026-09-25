@@ -86,6 +86,8 @@ class OpenAICompletionsRequestPolicy:
     strict_tools: bool | None = False
     enable_thinking: bool | None = False
     tool_choice: Literal["auto"] | None = None
+    # A source-declared body key carrying one per-episode conversation identity.
+    conversation_key_field: Literal["prompt_cache_key"] | None = None
 
     def __post_init__(self) -> None:
         if self.schema_version != "bb.openai_chat_request_policy.v1":
@@ -113,6 +115,13 @@ class OpenAICompletionsRequestPolicy:
             )
         if self.tool_choice is not None and self.tool_choice != "auto":
             raise ProviderContractError("request_policy.tool_choice is unsupported")
+        if (
+            self.conversation_key_field is not None
+            and self.conversation_key_field != "prompt_cache_key"
+        ):
+            raise ProviderContractError(
+                "request_policy.conversation_key_field is unsupported"
+            )
         if self.mode == "non_streaming" and self.include_usage:
             raise ProviderContractError(
                 "non_streaming request policy cannot include usage"
@@ -140,7 +149,7 @@ class OpenAICompletionsRequestPolicy:
         return self.mode == "streaming"
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        result: dict[str, Any] = {
             "schema_version": self.schema_version,
             "mode": self.mode,
             "include_usage": self.include_usage,
@@ -149,6 +158,10 @@ class OpenAICompletionsRequestPolicy:
             "enable_thinking": self.enable_thinking,
             "tool_choice": self.tool_choice,
         }
+        # Omitted when unset so existing profile identities are unchanged.
+        if self.conversation_key_field is not None:
+            result["conversation_key_field"] = self.conversation_key_field
+        return result
 
 
 def _bounded_int(value: Any, field_name: str, *, minimum: int, maximum: int) -> int:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from collections.abc import Awaitable, Callable, Iterator, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Iterator, Mapping
 from builtins import BaseExceptionGroup
 from dataclasses import dataclass
 from concurrent.futures import Future
@@ -21,8 +21,10 @@ from breadboard_engine.compilation.contracts import (
 )
 from breadboard_engine.compilation.provider_response import (
     CompiledNativeResponseBinding,
+    HERMES_RESPONSE_CONSUMER_ID,
     MINI_RESPONSE_CONSUMER_ID,
     PI_RESPONSE_CONSUMER_ID,
+    NATIVE_CHAT_RESPONSE_TARGETS,
     OPENHANDS_RESPONSE_CONSUMER_ID,
     OPENCLAW_RESPONSE_CONSUMER_ID,
     admit_native_response_binding,
@@ -112,9 +114,7 @@ def _provider_descriptor() -> ProviderDescriptor:
         api_key_env=None,
         default_headers={},
     )
-def _project_effective_chat_tool(
-    definition: Mapping[str, Any], *, omit_empty_required: bool = False,
-) -> dict[str, Any]:
+def _project_effective_chat_tool(definition: Mapping[str, Any]) -> dict[str, Any]:
     model_name = definition.get("model_name")
     description = definition.get("description")
     parameters = definition.get("parameters")
@@ -151,9 +151,8 @@ def _project_effective_chat_tool(
     parameter_schema: dict[str, Any] = {
         "type": "object",
         "properties": properties,
+        "required": required,
     }
-    if required or not omit_empty_required:
-        parameter_schema["required"] = required
     openai_routing = routing.get("openai")
     if isinstance(openai_routing, Mapping) and "additionalProperties" in openai_routing:
         additional_properties = openai_routing["additionalProperties"]
@@ -168,11 +167,26 @@ def _project_effective_chat_tool(
             "parameters": parameter_schema,
         },
     }
+def _openclaw_wire_tools(chat_tools: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Project compiled tools onto OpenClaw's pinned wire form.
+
+    The compiler records every tool with a ``required`` list; OpenClaw's
+    pinned tool builder omits the key when the list is empty.
+    """
+    tools = [thaw_json(tool) for tool in chat_tools]
+    for tool in tools:
+        parameters = tool["function"]["parameters"]
+        if parameters["required"] == []:
+            del parameters["required"]
+    return tools
+
+
 def _join_prompt_parts(*parts: str) -> str:
     return "\n\n".join(part for part in parts if part)
 
+
 def _target_mode_projections(
-    semantics: Mapping[str, Any], *, omit_empty_required: bool = False,
+    semantics: Mapping[str, Any],
 ) -> Iterator[tuple[str, str, tuple[dict[str, Any], ...]]]:
     prompts = semantics.get("prompts")
     providers = semantics.get("providers")
@@ -229,9 +243,7 @@ def _target_mode_projections(
         if any(tool_id not in definitions_by_id for tool_id in enabled_ids):
             raise ValueError("effective target mode references an undeclared tool")
         yield system_text, per_turn_text, tuple(
-            _project_effective_chat_tool(
-                definitions_by_id[tool_id], omit_empty_required=omit_empty_required,
-            )
+            _project_effective_chat_tool(definitions_by_id[tool_id])
             for tool_id in enabled_ids
         )
 
@@ -260,6 +272,7 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
         OPENHANDS_RESPONSE_CONSUMER_ID: "openhands-sdk@1.47.0",
         PI_RESPONSE_CONSUMER_ID: "pi@0.73.1",
         OPENCLAW_RESPONSE_CONSUMER_ID: "openclaw@2026.9.4",
+        HERMES_RESPONSE_CONSUMER_ID: "hermes-agent@2026.9.11",
     }
     renderer_id = binding["renderer_id"]
     if (
@@ -276,7 +289,7 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
         or version == 3
         and (
             renderer_id not in deferred_targets
-            or binding.get("target_id") != deferred_targets.get(renderer_id)
+            or binding.get("target_id") != deferred_targets[renderer_id]
             or not isinstance(binding.get("runtime_profile"), Mapping)
             or binding.get("rendered_prompt_digest") is not None
         )
@@ -319,7 +332,7 @@ def _validate_request_features(
     if (
         target_projection is not None
         and target_projection.renderer_id in {
-            OPENHANDS_RESPONSE_CONSUMER_ID,
+            *NATIVE_CHAT_RESPONSE_TARGETS,
             OPENCLAW_RESPONSE_CONSUMER_ID,
         }
     ):
@@ -429,9 +442,7 @@ class E4TargetPolicyProjection:
         }
         system_prompt: str | None = None
         chat_tools: tuple[dict[str, Any], ...] | None = None
-        for system_text, per_turn_text, projected_tools in _target_mode_projections(
-            view, omit_empty_required=binding["renderer_id"] == OPENCLAW_RESPONSE_CONSUMER_ID,
-        ):
+        for system_text, per_turn_text, projected_tools in _target_mode_projections(view):
             if per_turn_text or (
                 system_prompt is not None
                 and (system_text != system_prompt or projected_tools != chat_tools)
@@ -514,9 +525,7 @@ class E4TargetPolicyProjection:
         if canonical_sha256(target_tools) != binding["tool_surface_digest"]:
             raise ValueError("effective target tool identity differs from the projection")
         deferred_prompt = binding["version"] == 3
-        for system_text, per_turn_text, projected_tools in _target_mode_projections(
-            semantics, omit_empty_required=self.renderer_id == OPENCLAW_RESPONSE_CONSUMER_ID,
-        ):
+        for system_text, per_turn_text, projected_tools in _target_mode_projections(semantics):
             if (
                 (
                     deferred_prompt
@@ -536,6 +545,12 @@ _MAX_NATIVE_HTTP_RESPONSE_BYTES = 4 * 1024 * 1024
 _NATIVE_HTTP_SECRET_HEADERS = frozenset(
     {"authorization", "cookie", "proxy-authorization", "x-api-key", "api-key"}
 )
+_NATIVE_HTTP_BODY_FIELDS = frozenset({
+    "model", "messages", "tools", "stream", "temperature",
+    "max_tokens", "max_completion_tokens", "reasoning_effort",
+})
+_CANONICAL_UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+_UNPINNED = object()
 
 
 @dataclass(frozen=True, slots=True)
@@ -617,6 +632,8 @@ class EpisodeOpenAICompletionsPolicyClient:
         self._native_private_responses: dict[str, Mapping[str, Any]] = {}
         self._native_tool_schemas: tuple[Mapping[str, Any], ...] | None = None
         self._native_stream_prompt: str | None = None
+        # One conversation key (or its absence) per episode, pinned on first staging.
+        self._native_conversation_key: str | None | object = _UNPINNED
 
     def bind_compiled_plan(self, plan: EffectiveExecutionPlan) -> Mapping[str, Any]:
         """Join a source-native client to the actual selected compiled plan."""
@@ -627,8 +644,8 @@ class EpisodeOpenAICompletionsPolicyClient:
             or target is None
             or target.renderer_id not in {
                 MINI_RESPONSE_CONSUMER_ID,
-                OPENHANDS_RESPONSE_CONSUMER_ID,
                 PI_RESPONSE_CONSUMER_ID,
+                *NATIVE_CHAT_RESPONSE_TARGETS,
                 OPENCLAW_RESPONSE_CONSUMER_ID,
             }
             or target.source_manifest is None
@@ -725,9 +742,13 @@ class EpisodeOpenAICompletionsPolicyClient:
             self._native_cost = None
             runtime_profile = thaw_json(target.runtime_profile)
             if not isinstance(runtime_profile, Mapping):
-                raise ValueError("OpenHands target runtime profile is malformed")
+                raise ValueError("native Chat target runtime profile is malformed")
             public_config = {
-                "model_name": "openai/" + profile.model,
+                "model_name": (
+                    "openai/" + profile.model
+                    if target.renderer_id == OPENHANDS_RESPONSE_CONSUMER_ID
+                    else profile.model
+                ),
                 "model_canonical_name": None,
                 "base_url": profile.base_url,
                 "max_input_tokens": self._observation.capabilities.max_context_tokens,
@@ -741,13 +762,13 @@ class EpisodeOpenAICompletionsPolicyClient:
         """Bind the measured worker's once-rendered, workspace-dependent tools."""
         target = self._target_projection
         if (
-            target is None or target.renderer_id != OPENHANDS_RESPONSE_CONSUMER_ID
+            target is None or target.renderer_id not in NATIVE_CHAT_RESPONSE_TARGETS
             or self._native_binding is None or self._native_tool_schemas is not None
             or not isinstance(target.runtime_profile, Mapping)
             or type(tools) is not tuple
         ):
             raise RunnerPolicyBindingError(
-                "native tools require a fresh compiled OpenHands binding",
+                "native tools require a fresh compiled Chat binding",
                 code="native_http_binding_invalid",
                 episode_id=self._episode_id, effective_plan_digest=self._effective_plan_digest,
             )
@@ -760,7 +781,10 @@ class EpisodeOpenAICompletionsPolicyClient:
             comparison = thaw_json(snapshot)
             # FileEditorTool.create appends the actual conversation workspace.
             # The measured worker owns that rendering; every other field is fixed.
-            if reference["function"]["name"] == "file_editor":
+            if (
+                target.renderer_id == OPENHANDS_RESPONSE_CONSUMER_ID
+                and reference["function"]["name"] == "file_editor"
+            ):
                 description = comparison["function"].get("description")
                 if type(description) is not str or not description:
                     raise ValueError("native editor description is invalid")
@@ -785,7 +809,11 @@ class EpisodeOpenAICompletionsPolicyClient:
             or self._request_attempts
             or type(system_prompt) is not str or not system_prompt
             or type(tools) is not tuple
-            or canonical_sha256(tools) != canonical_sha256(target.chat_tools)
+            or canonical_sha256(tools) != canonical_sha256(
+                _openclaw_wire_tools(target.chat_tools)
+                if target.renderer_id == OPENCLAW_RESPONSE_CONSUMER_ID
+                else target.chat_tools
+            )
         ):
             raise RunnerPolicyBindingError(
                 "native stream bootstrap differs from its compiled source binding",
@@ -800,12 +828,12 @@ class EpisodeOpenAICompletionsPolicyClient:
         profile = self._profile
         if (
             target is None
-            or target.renderer_id != OPENHANDS_RESPONSE_CONSUMER_ID
+            or target.renderer_id not in NATIVE_CHAT_RESPONSE_TARGETS
             or self._native_binding is None
             or profile is None
         ):
             raise RunnerPolicyBindingError(
-                "OpenHands native HTTP request has no compiled binding",
+                "native HTTP request has no compiled binding",
                 code="native_http_binding_invalid",
                 episode_id=self._episode_id,
                 effective_plan_digest=self._effective_plan_digest,
@@ -923,17 +951,36 @@ class EpisodeOpenAICompletionsPolicyClient:
                 episode_id=self._episode_id,
                 effective_plan_digest=self._effective_plan_digest,
             ) from None
+        conversation_field = profile.request_policy.conversation_key_field
+        admitted_fields = _NATIVE_HTTP_BODY_FIELDS
+        if conversation_field is not None:
+            admitted_fields = admitted_fields | {conversation_field}
         if (
             not isinstance(body_object, dict)
             or body_object.get("model") != profile.model
             or body_object.get("stream", False) is not False
-            or set(body_object) - {
-                "model", "messages", "tools", "stream", "temperature",
-                "max_tokens", "max_completion_tokens", "reasoning_effort",
-            }
+            or set(body_object) - admitted_fields
+            or (
+                target.renderer_id == HERMES_RESPONSE_CONSUMER_ID
+                and set(body_object) != {"model", "messages", "tools", "max_tokens"}
+            )
         ):
             raise RunnerPolicyBindingError(
                 "native HTTP request model or streaming mode is not admitted",
+                code="native_http_capability_mismatch",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        conversation_present = (
+            conversation_field is not None and conversation_field in body_object
+        )
+        conversation_key = body_object[conversation_field] if conversation_present else None
+        if conversation_present and (
+            type(conversation_key) is not str
+            or _CANONICAL_UUID_RE.fullmatch(conversation_key) is None
+        ):
+            raise RunnerPolicyBindingError(
+                "native HTTP conversation key is not a canonical UUID",
                 code="native_http_capability_mismatch",
                 episode_id=self._episode_id,
                 effective_plan_digest=self._effective_plan_digest,
@@ -1024,6 +1071,14 @@ class EpisodeOpenAICompletionsPolicyClient:
                     episode_id=self._episode_id,
                     effective_plan_digest=self._effective_plan_digest,
                 )
+            pinned_key = self._native_conversation_key
+            if pinned_key is not _UNPINNED and pinned_key != conversation_key:
+                raise RunnerPolicyBindingError(
+                    "native HTTP conversation key changed within the episode",
+                    code="native_http_capability_mismatch",
+                    episode_id=self._episode_id,
+                    effective_plan_digest=self._effective_plan_digest,
+                )
             header_pairs = tuple((pair[0], pair[1]) for pair in headers)
             public_request = {
                 "model": self._observation.model_id,
@@ -1035,6 +1090,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                 },
             }
             request_digest = canonical_sha256(public_request)
+            self._native_conversation_key = conversation_key
             self._native_pending = _PendingNativeHTTPRequest(
                 method=method,
                 url=url,
@@ -1067,7 +1123,7 @@ class EpisodeOpenAICompletionsPolicyClient:
             )
         return dict(response)
 
-    async def _invoke_openhands_http(
+    async def _invoke_native_http(
         self, request: PolicyRuntimeInvokeRequest
     ) -> PolicyRuntimeInvokeResult:
         if type(request) is not PolicyRuntimeInvokeRequest:
@@ -1275,15 +1331,15 @@ class EpisodeOpenAICompletionsPolicyClient:
         self, request: PolicyRuntimeInvokeRequest
     ) -> PolicyRuntimeInvokeResult:
         target = self._target_projection
-        if target is not None and target.renderer_id == OPENHANDS_RESPONSE_CONSUMER_ID:
+        if target is not None and target.renderer_id in NATIVE_CHAT_RESPONSE_TARGETS:
             if self._native_binding is None or self._native_plan is None:
                 raise RunnerPolicyBindingError(
-                    "OpenHands provider has no compiled-plan binding",
+                    "native Chat provider has no compiled-plan binding",
                     code="native_http_binding_invalid",
                     episode_id=self._episode_id,
                     effective_plan_digest=self._effective_plan_digest,
                 )
-            return await self._invoke_openhands_http(request)
+            return await self._invoke_native_http(request)
         if target is not None and target.runtime_profile is not None:
             if self._native_binding is None or self._native_plan is None:
                 raise RunnerPolicyBindingError(
@@ -1953,12 +2009,11 @@ def _responses_request_to_chat(
             if native_system_prompt is None:
                 raise ProviderContractError("native stream bootstrap has not been bound")
             system_prompt = None
-        expected_tools = [thaw_json(tool) for tool in target_projection.chat_tools]
-        if target_projection.renderer_id == OPENCLAW_RESPONSE_CONSUMER_ID:
-            for tool in expected_tools:
-                parameters = tool["function"]["parameters"]
-                if parameters.get("required") == []:
-                    del parameters["required"]
+        expected_tools = (
+            _openclaw_wire_tools(target_projection.chat_tools)
+            if target_projection.renderer_id == OPENCLAW_RESPONSE_CONSUMER_ID
+            else [thaw_json(tool) for tool in target_projection.chat_tools]
+        )
         if (
             type(messages) is not list
             or len(messages) < 2

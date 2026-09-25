@@ -1,0 +1,210 @@
+schema_version: bb.e4.target_config.v2
+target_id: hermes-agent@2026.9.11
+semantic_revision: bb.e4.target-semantics.v2
+renderer:
+  selector: breadboard.hermes-agent.v2026.9.11
+  revision: breadboard.hermes-agent.v2026.9.11
+prompt:
+  asset: prompts/captured-system.txt
+  dynamic_fields: []
+tools:
+  ordered:
+  - patch
+  - read_file
+  - search_files
+  - skill_view
+  - skills_list
+  - terminal
+  - write_file
+  surface_asset: tool-surface.json
+  normalization:
+    aliases: {}
+policy:
+  revision: bb.e4.target-policy.v2
+  provider:
+    api: openai_chat_completions
+    stream: false
+    samples: 1
+    provider_attempts: 1
+    fallback: false
+    compaction: false
+    request_timeout_seconds: 45
+  action:
+    protocol: native_tools
+    decoder: breadboard.hermes-agent.v2026.9.11
+    repair: hermes_native_name_repair.v1
+    argument_processors:
+    - hermes_native_argument_validation.v1
+    - hermes_native_v4a_scope.v1
+    aliases: {}
+    decode_entire_batch_before_dispatch: true
+    require_nonempty_calls: false
+    malformed: hermes_stop_before_silent_retry.v1
+    empty_reply: hermes_visible_recovery.v1
+    max_consecutive_format_errors: null
+  execution:
+    scheduler: hermes_ordered_segmented_parallel.v1
+    history_commit: hermes_source_order_checkpoint.v1
+    terminal_policy: hermes_native_terminal_or_bounded_stop.v1
+    bounded_controls:
+      max_model_calls: 8
+      episode_wall_seconds: 120
+      single_tool_wall_seconds: 35
+      raw_evidence_bytes_per_outcome: 16777216
+      max_active_episodes: 1
+      samples_per_call: 1
+  observations:
+    renderer: breadboard.hermes-agent.v2026.9.11
+    preserve_raw_outcome: true
+    preserve_model_render: true
+    commit_at_source_boundary: true
+  authority:
+    workspace_root: workspace
+    containment: task_provided_isolated_substrate
+    interaction: noninteractive
+    network_tools: false
+    subagents: false
+  claim_exclusions:
+  - live_model
+  - independent_supplier_equality
+  - normalized_live_prompt
+  - generic_deterministic_live_prompt
+  - streaming
+  - provider_retries
+  - model_fallback
+  - compaction
+  - exhaustion_summary
+  - malformed_json_silent_retry
+  - truncated_argument_retry
+  - text_length_cap_increasing_continuation
+  - gateways
+  - messaging
+  - durable_sessions
+  - subagents
+  - memory_mutation
+  - skill_mutation
+  - external_memory
+  - mcp
+  - plugins
+  - credential_setup
+  - remote_terminal
+  - background_terminal
+  - pty_terminal
+  - elevation
+  - network
+  - lsp
+  - verify_on_stop
+  - checkpoints
+  - auxiliary_reviews
+  - interactive_agent
+inputs:
+  revision: bb.e4.target-inputs.v2
+  fields:
+  - name: task
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: bb.rl.headless-run-request/prompt
+    omission: required
+    value_schema:
+      type: string
+  - name: model
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: headless_provider_route/model
+    omission: required
+    value_schema:
+      type: string
+  - name: workspace
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: owned_lease/repository_root
+    omission: required
+    value_schema:
+      type: string
+  - name: environment_digest
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: installed_runtime/fixed_environment
+    omission: required
+    value_schema:
+      type: string
+  order:
+  - task
+  - model
+  - workspace
+  - environment_digest
+materialization:
+  revision: bb.e4.target-materialization.v2
+  assets:
+  - path: harness.yaml
+    role: config
+    required: true
+    source_ref: accepted issue14 Hermes profile materialization
+  - path: prompts/captured-system.txt
+    role: prompt
+    required: true
+    source_ref: hermes-agent@939e45c91d751fadd94dcd1b873ac3cb44846213:agent/system_prompt.py;
+      controlled producer request 0
+  - path: prompts/source-registry.json
+    role: source
+    required: true
+    source_ref: hermes-agent@939e45c91d751fadd94dcd1b873ac3cb44846213 pinned source
+      archive
+  - path: native-config.json
+    role: runtime
+    required: true
+    source_ref: hermes-agent@939e45c91d751fadd94dcd1b873ac3cb44846213; HERMES_NATIVE_ASSEMBLY_RESULT_06.json
+  - path: tool-surface.json
+    role: tool_surface
+    required: true
+    source_ref: hermes-agent@939e45c91d751fadd94dcd1b873ac3cb44846213; HERMES_NATIVE_ASSEMBLY_RESULT_06.json
+      request 0
+  - path: LICENSE.txt
+    role: license
+    required: true
+    source_ref: accepted issue14 Hermes profile materialization
+  - path: SOURCE-LICENSE.txt
+    role: license
+    required: true
+    source_ref: hermes-agent@939e45c91d751fadd94dcd1b873ac3cb44846213:LICENSE
+  - path: PROVENANCE.json
+    role: source
+    required: true
+    source_ref: accepted issue14 Hermes profile materialization
+  - path: fixtures/MEMORY.md
+    role: input
+    required: true
+    source_ref: accepted issue14 Hermes profile fixture
+  - path: fixtures/USER.md
+    role: input
+    required: true
+    source_ref: accepted issue14 Hermes profile fixture
+  - path: fixtures/fixture-code-style/SKILL.md
+    role: input
+    required: true
+    source_ref: accepted issue14 Hermes profile fixture
+  - path: fixtures/fixture-code-style/references/assertions.md
+    role: input
+    required: true
+    source_ref: accepted issue14 Hermes profile fixture
+  order:
+  - harness.yaml
+  - prompts/captured-system.txt
+  - prompts/source-registry.json
+  - native-config.json
+  - tool-surface.json
+  - LICENSE.txt
+  - SOURCE-LICENSE.txt
+  - PROVENANCE.json
+  - fixtures/MEMORY.md
+  - fixtures/USER.md
+  - fixtures/fixture-code-style/SKILL.md
+  - fixtures/fixture-code-style/references/assertions.md
+required_capabilities:
+- hermes_agent.local.v1
+- provider_native_http.v1
+- native_source_session.v1

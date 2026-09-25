@@ -117,9 +117,15 @@ PI_CODING_AGENT_LOCAL_ADAPTER_ID: str = "pi-coding-agent.local.v0.73.1"
 PI_NATIVE_TOOL_IDS: tuple[str, ...] = ("bash", "edit", "read", "write")
 OPENCLAW_LOCAL_ADAPTER_ID: str = "openclaw.local.v2026.9.4"
 OPENCLAW_NATIVE_TOOL_IDS: tuple[str, ...] = ("edit", "exec", "ls", "process", "read", "write")
+HERMES_AGENT_LOCAL_ADAPTER_ID: str = "hermes-agent.local.v2026.9.11"
+HERMES_NATIVE_TOOL_IDS: tuple[str, ...] = (
+    "patch", "read_file", "search_files", "skill_view",
+    "skills_list", "terminal", "write_file",
+)
 NATIVE_PHASE_TOOL_IDS: Mapping[str, tuple[str, ...]] = MappingProxyType({
     OPENHANDS_SDK_LOCAL_ADAPTER_ID: OPENHANDS_NATIVE_TOOL_IDS,
     PI_CODING_AGENT_LOCAL_ADAPTER_ID: PI_NATIVE_TOOL_IDS,
+    HERMES_AGENT_LOCAL_ADAPTER_ID: HERMES_NATIVE_TOOL_IDS,
     OPENCLAW_LOCAL_ADAPTER_ID: OPENCLAW_NATIVE_TOOL_IDS,
 })
 MINI_SWE_AGENT_LOCAL_ADAPTER_ID: str = "mini-swe-agent.local.v2.4.6"
@@ -1045,6 +1051,11 @@ def _native_worker_environment(
         environment["PYTHONHOME"] = str(runtime_root / "python")
         environment["PYTHONNOUSERSITE"] = "1"
         environment["LD_LIBRARY_PATH"] = str(runtime_root / "python/lib")
+        if binding.adapter_id == HERMES_AGENT_LOCAL_ADAPTER_ID:
+            # Hermes requires canonical identity despite sealed descriptor execution.
+            environment["PYTHONEXECUTABLE"] = str(
+                _native_member_path(binding, binding.executable_relative_path)
+            )
     return environment
 
 
@@ -3867,6 +3878,11 @@ class LeaseBackedRunnerWorkspace:
     @property
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]: return self.__tool_bindings
     @property
+    def declared_workspace(self) -> str:
+        workspace_mount = _sole_writable_policy_workspace_mount(self.__lease)
+        return str(self.__lease._resolve(workspace_mount.target_logical_path, writable=True))
+
+    @property
     def containment_receipt(self) -> ContainmentReceipt | None:
         return self.__lease.containment_receipt
 
@@ -3876,7 +3892,6 @@ class LeaseBackedRunnerWorkspace:
     @property
     def containment(self) -> RuntimeContainment:
         return self.__lease.plan.containment
-
 
 
     async def begin_native_workspace_effects(self) -> None:
@@ -4175,8 +4190,7 @@ class LeaseBackedRunnerWorkspace:
                     lease_id=lease.lease_id,
                 ) from exc
             if operation == "initialize":
-                workspace_mount = _sole_writable_policy_workspace_mount(lease)
-                workspace = lease._resolve(workspace_mount.target_logical_path, writable=True)
+                workspace = Path(self.declared_workspace)
                 scratch = _native_scratch_path(lease._manager, lease.lease_id)
                 try:
                     native_payload = _admit_native_phase_payload(
@@ -7166,5 +7180,7 @@ __all__ = [
     "PI_NATIVE_TOOL_IDS",
     "OPENCLAW_LOCAL_ADAPTER_ID",
     "OPENCLAW_NATIVE_TOOL_IDS",
+    "HERMES_AGENT_LOCAL_ADAPTER_ID",
+    "HERMES_NATIVE_TOOL_IDS",
     "NATIVE_PHASE_TOOL_IDS",
 ]

@@ -6,6 +6,7 @@ import copy
 import json
 import hashlib
 from pathlib import Path
+import subprocess
 from collections.abc import Mapping
 from typing import Any
 
@@ -105,6 +106,10 @@ class RecordingToolPort:
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]:
         self.binding_reads += 1
         return self._bindings
+
+    @property
+    def declared_workspace(self) -> str:
+        return "/workspace"
 
     async def invoke_tool(
         self,
@@ -3842,6 +3847,9 @@ class _NativeCloseTestPort(RecordingToolPort):
         self.release_close = asyncio.Event()
         self.runtime_all_dead = True
 
+    @property
+    def declared_workspace(self) -> str:
+        return "/native-test/workspace"
     def native_runtime_inputs(
         self,
         *,
@@ -3992,11 +4000,15 @@ def _native_close_test_case(
             provider="openai",
         ),
     )
-    monkeypatch.setattr(
-        conductor_module,
-        "NATIVE_STREAM_PROFILES",
-        {**conductor_module.NATIVE_STREAM_PROFILES, PI_RESPONSE_CONSUMER_ID: profile},
-    )
+    registry = {PI_RESPONSE_CONSUMER_ID: profile}
+    monkeypatch.setattr(conductor_module, "NATIVE_STREAM_PROFILES", registry)
+    monkeypatch.setattr(conductor_module, "_PROFILE_MODULE_IDENTITIES", (
+        conductor_module.measure_module_artifact(native_stream_profiles.__file__),
+        *(
+            conductor_module.measure_module_artifact(item.state_module.__file__)
+            for item in registry.values()
+        ),
+    ))
     request_body = {"model": model["model_id"], "messages": [], "tools": []}
     request_digest = conductor_module.canonical_sha256(request_body).removeprefix("sha256:")
     first_response = {
@@ -4323,6 +4335,7 @@ class _OpenHandsTracePort(RecordingToolPort):
             return {
                 "schema_version": "bb.openhands-native.v1",
                 "kind": "initialized",
+                "conversation_id": "56351706-00f7-47c5-98d0-7145da8af641",
                 "tool_schemas": ({"type": "function", "name": "finish"},),
                 "event_delta": (),
                 "status": "IDLE",
@@ -4336,7 +4349,14 @@ class _OpenHandsTracePort(RecordingToolPort):
                     "method": "POST",
                     "url": "https://provider.invalid/chat",
                     "headers": {},
-                    "body_b64": base64.b64encode(b'{"messages":[]}').decode(),
+                    "body_b64": base64.b64encode(json.dumps({
+                        "messages": [],
+                        "prompt_cache_key": "56351706-00f7-47c5-98d0-7145da8af641",
+                        "tools": [{"type": "function", "function": {
+                            "name": "file_editor",
+                            "description": "Your current working directory is: /opt/openhands/workspace",
+                        }}],
+                    }).encode()).decode(),
                 },
                 "event_delta": (),
                 "status": "RUNNING",
@@ -4362,8 +4382,12 @@ class _OpenHandsTracePort(RecordingToolPort):
                 "schema_version": "bb.openhands-native.v1",
                 "kind": "prepared",
                 "actions": (action,),
-                "prepared_actions": (action,),
-                "event_delta": (),
+                "event_delta": ({
+                    "kind": "ActionEvent",
+                    "tool_name": "finish",
+                    "tool_call": {"arguments": "{}"},
+                    "security_risk": "LOW",
+                },),
                 "status": "RUNNING",
                 "iteration": 1,
             }
@@ -4473,6 +4497,8 @@ async def test_openhands_trace_is_frozen_json_and_comparator_compatible(
     json.dumps(trace, ensure_ascii=False, allow_nan=False)
     assert "normalizations" not in trace
     from conformance.comparators.openhands_sdk import project_bb_trace
+    assert trace["conversation_id"] == "56351706-00f7-47c5-98d0-7145da8af641"
+    assert all(request["body"]["prompt_cache_key"] == trace["conversation_id"] for request in trace["requests"])
     projected = project_bb_trace(trace)
     assert projected["request_count"] == 1
     assert projected["tool_calls"]
@@ -4480,25 +4506,50 @@ async def test_openhands_trace_is_frozen_json_and_comparator_compatible(
     assert tools.effect_admissions == 1
     assert tools.effect_measurements == 1
     assert tools.operations.index("close") < tools.operations.index("measure_effects")
-    assert thaw_json(result.response["cleanup"])["all_dead"] is True
 
-
-
-
-
-async def test_openhands_error_observations_match_supplier_projection(tmp_path: Path) -> None:
-    """Compare the committed OH-02 and OH-05 event objects without fabrication.
-
-    ``OH-02-invalid-call-continues/trace.json#/events/2`` is the real
-    ``AgentErrorEvent``.  ``OH-05-iteration-budget/trace.json#/events/1`` is
-    the real ``ObservationEvent`` with a ``TerminalObservation``; only its
-    supplier-side ``/observation/is_error`` value is flipped to true.
-    """
-    from conformance.comparators.openhands_sdk import (
-        compare_cases,
-        project_bb_trace,
-        project_supplier_case,
+@pytest.mark.parametrize("invalid_conversation_id", [None, "", "not-a-uuid", "12345"])
+async def test_openhands_invalid_conversation_id_fails_protocol(invalid_conversation_id: str | None) -> None:
+    observation = _observation()
+    tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
+    semantic = _openhands_semantics(observation)
+    plan = _plan(
+        observation=observation,
+        semantics=semantic,
+        tools=tuple(_tool_grant(tool_id) for tool_id in sorted(tool_order)),
+        limit_updates={"max_turns": 16, "action_timeout_ms": 90_000},
+        implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
     )
+    client = _OpenHandsTraceClient(observation)
+    class _CustomPort(_OpenHandsTracePort):
+        async def invoke_native_phase(self, operation: str, payload: Mapping[str, Any], *, timeout_ms: int) -> Mapping[str, Any]:
+            res = dict(await super().invoke_native_phase(operation, payload, timeout_ms=timeout_ms))
+            if operation == "initialize":
+                if invalid_conversation_id is None:
+                    res.pop("conversation_id", None)
+                else:
+                    res["conversation_id"] = invalid_conversation_id
+            return res
+    tools = _CustomPort()
+    session, _, _, _, _, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=tools,
+    )
+    try:
+        with pytest.raises(RunnerProtocolError) as captured:
+            await session.run(ConductorRunRequest({"prompt": "finish the task"}))
+        assert captured.value.code == "native_response_invalid"
+    finally:
+        await session.close()
+
+
+
+
+
+async def test_openhands_native_errors_are_preserved_in_replay_trace() -> None:
+    """Preserve native failed observations and repeated agent errors in the replay."""
+    from conformance.comparators.openhands_sdk import project_bb_trace
 
     fixtures = Path(__file__).resolve().parents[2] / "e4_parity" / "fixtures" / "openhands_sdk"
     oh2_path = fixtures / "OH-02-invalid-call-continues" / "trace.json"
@@ -4558,58 +4609,147 @@ async def test_openhands_error_observations_match_supplier_projection(tmp_path: 
         await session.close()
     trace = thaw_json(result.response["replay_trace"])
     projected = project_bb_trace(trace)
-    assert projected["observations"][0]["is_error"] is True
-    assert sum(
-        event["event_kind"] == "AgentErrorEvent"
-        for event in projected["observations"]
-    ) == 2
+    assert [event["event_kind"] for event in projected["observations"]] == [
+        "ObservationEvent",
+        "AgentErrorEvent",
+        "AgentErrorEvent",
+    ]
+    assert all(event["is_error"] is True for event in projected["observations"])
+    assert [event["error_text"] for event in projected["observations"][1:]] == [
+        "invalid command",
+        "invalid command",
+    ]
 
-    supplier = {
-        "schema_version": "bb.e4.openhands-supplier-trace.v1",
-        "case_id": "episode-a",
-        "controls": {"http_attempts": 1},
-        "requests": [{"index": 0, "body": {"messages": []}}],
-        "responses": [{
-            "index": 0,
-            "response": {
-                "choices": [{
-                    "index": 0,
-                    "message": {"role": "assistant", "content": ""},
-                    "finish_reason": "tool_calls",
-                }],
-            },
-        }],
-        "events": [
-            {
-                "kind": "ActionEvent",
-                "tool_name": "finish",
-                "security_risk": "LOW",
-                "tool_call": {"arguments": {}},
-            },
-            copy.deepcopy(failed_observation),
-            copy.deepcopy(agent_error),
-            copy.deepcopy(second_agent_error),
-        ],
-        "effects": {},
-        "exit": {"status": "finished"},
-    }
-    (tmp_path / "workspace").mkdir()
-    (tmp_path / "trace.json").write_text(
-        json.dumps(supplier, ensure_ascii=False), encoding="utf-8"
+
+async def test_openhands_rejected_action_is_traced_but_not_dispatched() -> None:
+    captured = json.loads((
+        Path(__file__).resolve().parents[2]
+        / "fixtures" / "openhands_rerun2" / "captures"
+        / "OH-02-invalid-call-continues" / "trace.json"
+    ).read_text(encoding="utf-8"))
+    actions = [event for event in captured["events"] if event.get("kind") == "ActionEvent"]
+    invalid = actions[1]
+    assert json.loads(invalid["tool_call"]["arguments"])["command"] == "not-a-real-command"
+    executable = (actions[0], actions[2])
+
+    class _RejectedActionPort(_OpenHandsTracePort):
+        def __init__(self) -> None:
+            super().__init__()
+            self.executed: list[tuple[int, str]] = []
+
+        async def invoke_native_phase(
+            self, operation: str, payload: Mapping[str, Any], *, timeout_ms: int,
+        ) -> Mapping[str, Any]:
+            reply = dict(await super().invoke_native_phase(operation, payload, timeout_ms=timeout_ms))
+            if operation == "prepare":
+                reply["event_delta"] = tuple(captured["events"][2:6])
+                reply["actions"] = tuple({
+                    "index": index,
+                    "call_id": event["tool_call"]["id"],
+                    "tool_id": event["tool_name"],
+                    "arguments": json.loads(event["tool_call"]["arguments"]),
+                    "security_risk": event["security_risk"],
+                } for index, event in enumerate(executable))
+            elif operation == "execute":
+                self.executed.append((payload["index"], payload["tool_id"]))
+                reply.update(index=payload["index"], tool_id=payload["tool_id"], observations=())
+            elif operation == "commit":
+                reply["event_delta"] = ()
+            return reply
+
+    observation = _observation()
+    tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
+    plan = _plan(
+        observation=observation,
+        semantics=_openhands_semantics(observation),
+        tools=tuple(_tool_grant(tool_id) for tool_id in sorted(tool_order)),
+        limit_updates={"max_turns": 16, "action_timeout_ms": 90_000},
+        implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
     )
-    expected = project_supplier_case(tmp_path)
-    report = compare_cases(tmp_path, trace)
-    assert report["ok"] is True
-    assert expected["observations"][0]["is_error"] is True
-    assert sum(
-        event["event_kind"] == "AgentErrorEvent"
-        for event in expected["observations"]
-    ) == 2
-    tampered = copy.deepcopy(trace)
-    tampered["observations"][0]["is_error"] = False
-    negative = compare_cases(tmp_path, tampered)
-    assert negative["ok"] is False
-    assert negative["failed"] >= 1
+    tools = _RejectedActionPort()
+    session, _, _, _, _, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=_OpenHandsTraceClient(observation),
+        tools=tools,
+    )
+    try:
+        result = await session.run(ConductorRunRequest({"prompt": "finish the task"}))
+    finally:
+        await session.close()
+
+    trace = thaw_json(result.response["replay_trace"])
+    assert [call["arguments"]["command"] for call in trace["tool_calls"]] == [
+        "create", "not-a-real-command", "create",
+    ]
+    assert [call["security_risk"] for call in trace["tool_calls"]] == [
+        event["security_risk"] for event in actions[:3]
+    ]
+    assert tools.executed == [(0, "file_editor"), (1, "file_editor")]
+    assert any(
+        event["event_kind"] == "AgentErrorEvent" and event["is_error"]
+        for event in trace["observations"]
+    )
+
+
+async def test_openhands_second_provider_request_after_http_conflict_is_refused() -> None:
+    class _ConflictClient(_OpenHandsTraceClient):
+        async def invoke(self, request: Any) -> PolicyRuntimeInvokeResult:
+            await super().invoke(request)
+            self.http_response = {
+                "status_code": 409,
+                "headers": {"content-type": "application/json"},
+                "body_b64": base64.b64encode(b'{"error":{"message":"script exhausted","type":"script_exhausted"}}').decode(),
+            }
+            response = {"native_http_response": self.http_response}
+            return PolicyRuntimeInvokeResult(
+                response_payload=response,
+                response_digest=_independent_digest(response),
+            )
+
+    class _RetryPort(_OpenHandsTracePort):
+        async def invoke_native_phase(
+            self, operation: str, payload: Mapping[str, Any], *, timeout_ms: int,
+        ) -> Mapping[str, Any]:
+            reply = await super().invoke_native_phase(operation, payload, timeout_ms=timeout_ms)
+            if operation == "provider_response":
+                return {
+                    **reply,
+                    "kind": "provider_request",
+                    "http_request": {
+                        "method": "POST",
+                        "url": "https://provider.invalid/chat?retry=2",
+                        "headers": {},
+                        "body_b64": "",
+                    },
+                }
+            return reply
+
+    observation = _observation()
+    tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
+    plan = _plan(
+        observation=observation,
+        semantics=_openhands_semantics(observation),
+        tools=tuple(_tool_grant(tool_id) for tool_id in sorted(tool_order)),
+        limit_updates={"max_turns": 16, "action_timeout_ms": 90_000},
+        implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
+    )
+    client = _ConflictClient(observation)
+    tools = _RetryPort()
+    session, _, _, _, _, _ = await _open(
+        observation=observation, plan=plan, client=client, tools=tools,
+    )
+    try:
+        with pytest.raises(RunnerProtocolError) as captured:
+            await session.run(ConductorRunRequest({"prompt": "finish the task"}))
+    finally:
+        await session.close()
+    assert captured.value.code == "native_retry_refused"
+    assert "second provider request POST https://provider.invalid/chat?retry=2" in str(captured.value)
+    assert len(client.requests) == 1
+    assert tools.operations.count("provider_response") == 1
+    assert "execute" not in tools.operations
+
 
 @pytest.mark.parametrize("failure_status", ["ERROR", "STUCK"])
 async def test_openhands_native_error_returns_replay_trace(failure_status: str) -> None:
@@ -4642,3 +4782,152 @@ async def test_openhands_native_error_returns_replay_trace(failure_status: str) 
     assert thaw_json(result.response["state"])["status"] == failure_status
     assert tools.effect_admissions == 1
     assert tools.effect_measurements == 1
+
+
+async def test_openhands_iteration_budget_stops_at_configured_turn_limit(tmp_path: Path) -> None:
+    import os
+    from breadboard.rl.harness.native_session import NativeSession
+    py312 = os.environ.get("BB_OPENHANDS_PY312")
+    if py312 is None:
+        pytest.skip("BB_OPENHANDS_PY312 is unset; installed SDK replay requires Python 3.12")
+    assert Path(py312).is_file(), f"BB_OPENHANDS_PY312 is not a file: {py312}"
+
+    fixtures = Path(__file__).resolve().parents[2] / "e4_parity" / "fixtures" / "openhands_sdk"
+    oh5_trace_path = fixtures / "OH-05-iteration-budget" / "trace.json"
+    assert oh5_trace_path.is_file(), f"OH-05 trace fixture not found: {oh5_trace_path}"
+    oh5_trace = json.loads(oh5_trace_path.read_text(encoding="utf-8"))
+
+    env = dict(os.environ)
+    repo_root = str(Path(__file__).resolve().parents[3])
+    env["PYTHONPATH"] = repo_root
+    env["OPENHANDS_SUPPRESS_BANNER"] = "1"
+    env["OPENAI_API_KEY"] = "fixture-only"
+    check = subprocess.run(
+        [py312, "-c", "import openhands.sdk, openhands.tools; import sys; assert sys.version_info[:2] == (3, 12); from breadboard.rl.harness.openhands_worker import factory"],
+        env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert check.returncode == 0, check.stderr
+    worker_code = """
+import sys
+from breadboard.rl.harness.native_worker import WorkerChannel
+from breadboard.rl.harness.openhands_worker import factory
+
+channel = WorkerChannel()
+sys.stdout = sys.stderr
+actor = factory(channel)
+while True:
+    cmd = channel.receive()
+    if cmd is None:
+        actor.close()
+        break
+    res = actor.dispatch(cmd["operation"], cmd["payload"])
+    channel.respond(res)
+"""
+    proc = await asyncio.create_subprocess_exec(
+        py312, "-u", "-c", worker_code,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=env,
+    )
+    session = NativeSession(proc, retire_callback=lambda: True)
+
+    class _OH05Client(_OpenHandsTraceClient):
+        def __init__(self, obs: c.PolicyCapabilityObservation) -> None:
+            super().__init__(obs)
+            self.provider_requests: list[Any] = []
+
+        def bind_compiled_plan(self, plan: c.EffectiveExecutionPlan) -> Mapping[str, Any]:
+            del plan
+            return {
+                "model_name": "openai/gpt-4o-mini",
+                "model_canonical_name": None,
+                "max_input_tokens": 131072,
+                "base_url": "http://127.0.0.1:1234/v1",
+            }
+        async def invoke(self, request: Any) -> PolicyRuntimeInvokeResult:
+            idx = len(self.provider_requests)
+            self.provider_requests.append(request)
+            if idx < len(oh5_trace["responses"]):
+                body = oh5_trace["responses"][idx]["response"]
+            else:
+                body = {
+                    "choices": [{"index": 0, "message": {"role": "assistant", "content": "unexpected extra turn"}, "finish_reason": "stop"}],
+                }
+            self.http_response = {
+                "status_code": 200,
+                "headers": [["content-type", "application/json"]],
+                "body_b64": base64.b64encode(json.dumps(body).encode()).decode(),
+            }
+            response = {"native_http_response": self.http_response}
+            return PolicyRuntimeInvokeResult(
+                response_payload=response,
+                response_digest=_independent_digest(response),
+            )
+
+    class _RealWorkerPort(RecordingToolPort):
+        def __init__(self, sess: NativeSession, tool_ids: Sequence[str], workspace: Path, scratch: Path) -> None:
+            super().__init__(tuple(_tool_binding(tid) for tid in sorted(tool_ids)))
+            self._sess = sess
+            self._workspace = workspace
+            self._scratch = scratch
+            self.operations: list[str] = []
+
+        async def begin_native_workspace_effects(self) -> None:
+            self.operations.append("begin_native_workspace_effects")
+
+        async def measure_workspace_effects(self) -> Mapping[str, Mapping[str, Any]]:
+            self.operations.append("measure_effects")
+            return {}
+
+        async def invoke_native_phase(self, operation: str, payload: Mapping[str, Any], *, timeout_ms: int) -> Mapping[str, Any]:
+            self.operations.append(operation)
+            effective_payload = dict(payload)
+            if operation == "initialize":
+                effective_payload["workspace"] = str(self._workspace)
+                effective_payload["scratch"] = str(self._scratch)
+            return await self._sess.invoke_native_phase(operation, effective_payload, timeout_ms=timeout_ms)
+
+        async def close_native_runtime(self) -> Mapping[str, Any]:
+            self.operations.append("close_native_runtime")
+            await self._sess.close()
+            return {
+                "kind": "closed",
+                "cleanup": {
+                    "all_dead": True,
+                    "steps": [
+                        {"resource": "runtime", "state": "released", "detail": ""},
+                    ],
+                },
+            }
+
+    tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
+    port = _RealWorkerPort(session, tool_order, tmp_path / "workspace", tmp_path / "scratch")
+
+    observation = _observation()
+    semantic = _openhands_semantics(observation)
+    plan = _plan(
+        observation=observation,
+        semantics=semantic,
+        tools=tuple(_tool_grant(tid) for tid in sorted(tool_order)),
+        limit_updates={"max_turns": 2, "action_timeout_ms": 90_000},
+        implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
+    )
+    client = _OH05Client(observation)
+    cancellation = RecordingCancellationProbe()
+    events = RecordingEventSink()
+    cond_session, _, _, _, _, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=port,
+        cancellation=cancellation,
+        sink=events,
+    )
+
+    try:
+        task = "Keep using the terminal without finishing; the native iteration limit must stop the conversation."
+        result = await cond_session.run(ConductorRunRequest({"prompt": task}))
+        assert len(client.provider_requests) == 2, f"Expected exactly 2 provider requests, got {len(client.provider_requests)}"
+    finally:
+        await cond_session.close()

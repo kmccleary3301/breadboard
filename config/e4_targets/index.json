@@ -1,6 +1,10 @@
 {
   "schema_version": "bb.e4.target_index.v1",
   "targets": {
+    "hermes-agent@2026.9.11": {
+      "descriptor": "hermes_agent/2026.9.11/target.json",
+      "sha256": "36dbabb294042943df6c6f5415eebbe4097f660bc99af1d91f052d76da7eca88"
+    },
     "mini-swe-agent@2.4.6": {
       "descriptor": "mini_swe_agent/2.4.6/target.json",
       "sha256": "191999cd6da077ad29d8413356a7e5e2c1ae98c8448759f8c8f29e81ebfca85e"
@@ -15,7 +19,7 @@
     },
     "openhands-sdk@1.47.0": {
       "descriptor": "openhands_sdk/1.47.0/target.json",
-      "sha256": "3d3dfae53ab307406804660577288a44a93476d4620be4d31739882a57cbe71a"
+      "sha256": "8df535e010d344658393836920e031c43762e43af34d28b9c3cb3012e4c19910"
     },
     "pi@0.57.1": {
       "descriptor": "pi/0.57.1/target.json",

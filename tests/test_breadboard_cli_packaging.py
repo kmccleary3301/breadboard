@@ -165,6 +165,8 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         "breadboard/rl/__init__.py",
         "breadboard/rl/harness/__init__.py",
         "breadboard/rl/harness/headless.py",
+        "breadboard/rl/harness/hermes_tools.py",
+        "breadboard/rl/harness/hermes_worker.py",
         "breadboard/rl/harness/SANDBOX_CAPABILITY_MATRIX.json",
         "breadboard/rl/harness/resources/qualification/canonical_artifact_vectors_v1.json",
         "breadboard/rl/harness/openclaw_tool_worker.mjs",
@@ -184,6 +186,10 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         "config/e4_targets/openclaw/2026.9.4/LICENSE.txt",
         "config/e4_targets/openclaw/2026.9.4/source.json",
         "config/e4_targets/notices/pi-0.57.1.txt",
+        "config/e4_targets/hermes_agent/2026.9.11/harness.yaml",
+        "config/e4_targets/hermes_agent/2026.9.11/native-config.json",
+        "config/e4_targets/hermes_agent/2026.9.11/prompts/source-registry.json",
+        "config/e4_targets/hermes_agent/2026.9.11/fixtures/fixture-code-style/references/assertions.md",
         "conformance/comparators/registry.json",
         "contracts/kernel/manifests/bb.engine_conformance_manifest.v1.schema.json",
         "contracts/kernel/packs.v1.json",
@@ -347,7 +353,7 @@ generated = json.loads(
 assert generated["catalog_id"] == "bb.public_operation_catalog.v2"
 assert files("breadboard_sdk.generated").joinpath("public_bindings.py").is_file()
 target_ids = list_e4_target_ids()
-assert target_ids == ("mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "openclaw@2026.9.4", "openhands-sdk@1.47.0", "pi@0.57.1", "pi@0.73.1")
+assert target_ids == ("hermes-agent@2026.9.11", "mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "openclaw@2026.9.4", "openhands-sdk@1.47.0", "pi@0.57.1", "pi@0.73.1")
 for target_id in target_ids:
     target = load_e4_target(target_id)
     for asset in target.descriptor["assets"]:
@@ -401,7 +407,7 @@ print(json.dumps({{
         ),
         "profile_id": "daily_driver.v1",
         "e4_import_count": 0,
-        "e4_target_ids": ["mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "openclaw@2026.9.4", "openhands-sdk@1.47.0", "pi@0.57.1", "pi@0.73.1"],
+        "e4_target_ids": ["hermes-agent@2026.9.11", "mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "openclaw@2026.9.4", "openhands-sdk@1.47.0", "pi@0.57.1", "pi@0.73.1"],
     }
 
     help_result = subprocess.run(
