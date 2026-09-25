@@ -5416,6 +5416,27 @@ class SandboxRuntimeManager:
                 or payload.get("lease_id") != path.stem
             ):
                 raise ValueError
+            if "native_scratch_identity" in payload:
+                scratch_id = payload["native_scratch_identity"]
+                if scratch_id is not None:
+                    if (
+                        (type(scratch_id) is not list and type(scratch_id) is not tuple)
+                        or len(scratch_id) != 2
+                        or any(type(item) is not int or item < 0 for item in scratch_id)
+                    ):
+                        raise ValueError("malformed native_scratch_identity")
+                    payload["native_scratch_identity"] = (scratch_id[0], scratch_id[1])
+            if "scratch_identity" in payload:
+                scratch_id = payload["scratch_identity"]
+                if scratch_id is not None:
+                    if (
+                        (type(scratch_id) is not list and type(scratch_id) is not tuple)
+                        or len(scratch_id) != 2
+                        or any(type(item) is not int or item < 0 for item in scratch_id)
+                    ):
+                        raise ValueError("malformed scratch_identity")
+                    if "native_scratch_identity" not in payload or payload["native_scratch_identity"] is None:
+                        payload["native_scratch_identity"] = (scratch_id[0], scratch_id[1])
             return MappingProxyType(payload)
         except Exception as exc:
             raise WorkspaceStateError("workspace lease record is corrupt", code="stale_identity_uncertain") from exc
@@ -5495,6 +5516,41 @@ class SandboxRuntimeManager:
             "process_start_identity", "process_cgroup_identity",
         ):
             record.pop(key, None)
+        self._write_lease_record(lease_id, record)
+
+    def _record_scratch_identity(
+        self, lease_id: str, identity: tuple[int, int]
+    ) -> None:
+        if (
+            (type(identity) is not tuple and type(identity) is not list)
+            or len(identity) != 2
+            or any(type(item) is not int or item < 0 for item in identity)
+        ):
+            raise WorkspaceStateError(
+                "scratch identity is incomplete",
+                code="stale_identity_uncertain",
+                lease_id=lease_id,
+            )
+        path = self._lease_record_path(lease_id)
+        record = dict(self._read_lease_record(path))
+        if (
+            record.get("lease_id") != lease_id
+            or record.get("role") not in {"primary", "verifier"}
+        ):
+            raise WorkspaceStateError(
+                "scratch lease identity changed",
+                code="stale_identity_uncertain",
+                lease_id=lease_id,
+            )
+        recorded = record.get("native_scratch_identity")
+        identity_pair = (identity[0], identity[1])
+        if recorded is not None and tuple(recorded) != identity_pair:
+            raise WorkspaceStateError(
+                "scratch lease identity changed",
+                code="stale_identity_uncertain",
+                lease_id=lease_id,
+            )
+        record["native_scratch_identity"] = list(identity_pair)
         self._write_lease_record(lease_id, record)
 
     async def _release_snapshot(self, snapshot_id: str) -> CleanupStepReceipt:
@@ -5643,7 +5699,10 @@ class SandboxRuntimeManager:
                     workspace_fd=materialized.duplicate_workspace_fd(),
                     workspace_identity=materialized.workspace_identity,
                     owner_token=owner_token,
-                    record_scratch_identity=created_scratch_identities.append,
+                    record_scratch_identity=lambda identity, lease_id=lease_id: (
+                        created_scratch_identities.append(identity),
+                        self._record_scratch_identity(lease_id, identity),
+                    ),
                 )
                 runtime, measurement = await backend.launch(
                     plan, materialized.workspace_path, context=context
@@ -5682,6 +5741,8 @@ class SandboxRuntimeManager:
                     "action_timeout_ms": plan.limits.action_timeout_ms,
                     "observation_bytes": plan.limits.observation_bytes,
                     "state": "active"})
+                if created_scratch_identities:
+                    active_record["native_scratch_identity"] = list(created_scratch_identities[0])
                 self._write_lease_record(lease_id, active_record)
                 self._leases[lease_id] = lease
                 if admitted_receipt is not None:
@@ -6015,7 +6076,10 @@ class SandboxRuntimeManager:
                     workspace_fd=workspace_fd,
                     workspace_identity=(workspace_metadata.st_dev, workspace_metadata.st_ino),
                     owner_token=owner_token,
-                    record_scratch_identity=created_scratch_identities.append,
+                    record_scratch_identity=lambda identity, lease_id=lease_id: (
+                        created_scratch_identities.append(identity),
+                        self._record_scratch_identity(lease_id, identity),
+                    ),
                 )
                 workspace_fd = -1
                 launched, measurement = await backend.launch(
@@ -6060,6 +6124,8 @@ class SandboxRuntimeManager:
                     "observation_bytes": verifier_plan.limits.observation_bytes,
                     "state": "active",
                 })
+                if created_scratch_identities:
+                    active_record["native_scratch_identity"] = list(created_scratch_identities[0])
                 self._write_lease_record(lease_id, active_record)
                 primary._verifier_children.append(lease)
                 if admitted_receipt is not None:
@@ -6708,15 +6774,31 @@ class SandboxRuntimeManager:
                 for step in runtime_steps
             )
             if scratch_present:
-                raw_steps += (
-                    _remove_native_scratch(self, path.stem)
-                    if runtime_released
-                    else CleanupStepReceipt(
-                        "native_scratch",
-                        CleanupState.QUARANTINED,
-                        "dependent runtime cleanup incomplete",
-                    ),
-                )
+                persisted_identity = record.get("native_scratch_identity")
+                if not runtime_released:
+                    raw_steps += (
+                        CleanupStepReceipt(
+                            "native_scratch",
+                            CleanupState.QUARANTINED,
+                            "dependent runtime cleanup incomplete",
+                        ),
+                    )
+                elif persisted_identity is None:
+                    raw_steps += (
+                        CleanupStepReceipt(
+                            "native_scratch",
+                            CleanupState.QUARANTINED,
+                            "scratch_identity_unrecorded",
+                        ),
+                    )
+                else:
+                    raw_steps += (
+                        _remove_native_scratch(
+                            self,
+                            path.stem,
+                            expected_identity=tuple(persisted_identity),
+                        ),
+                    )
             if (
                 {step.resource for step in raw_steps}
                 == (

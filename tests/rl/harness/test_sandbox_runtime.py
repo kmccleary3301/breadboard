@@ -2566,6 +2566,10 @@ async def test_restart_reconciliation_leaves_live_foreign_lease_then_reclaims_ex
         original.manager, lease.lease_id
     )
     (scratch_path / "home").mkdir()
+    scratch_stat = scratch_path.stat()
+    original.manager._record_scratch_identity(
+        lease.lease_id, (scratch_stat.st_dev, scratch_stat.st_ino)
+    )
     record = dict(original.manager._read_lease_record(record_path))
     recovery_backend = ReconcileBackend()
     recovery = SandboxRuntimeManager(
@@ -2622,6 +2626,132 @@ async def test_restart_reconciliation_leaves_live_foreign_lease_then_reclaims_ex
         "cache_holder", CleanupState.ALREADY_RELEASED
     )
 
+
+async def test_stale_reconciliation_quarantines_and_preserves_replaced_scratch(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    original = RuntimeHarness(tmp_path, fixture)
+    lease = await original.manager.open(fixture.request)
+    scratch_path = sandbox_module._create_native_scratch(
+        original.manager, lease.lease_id
+    )
+    scratch_stat = scratch_path.stat()
+    original.manager._record_scratch_identity(
+        lease.lease_id, (scratch_stat.st_dev, scratch_stat.st_ino)
+    )
+    scratch_path.rmdir()
+    scratch_path.mkdir(mode=0o700)
+    sentinel = scratch_path / "replacement.txt"
+    sentinel.write_text("must-survive", encoding="utf-8")
+    original.clock.advance(minutes=5)
+    original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
+
+    recovery = SandboxRuntimeManager(
+        registries=fixture.registries,
+        installed_authorities=fixture.authorities,
+        materialization_store=original.store,
+        lease_root=original.lease_root,
+        process_backend=ReconcileBackend(),
+        docker_backend=None,
+        random_bytes=DeterministicRandom(9_001),
+    )
+    receipts = await recovery.reconcile_stale()
+    assert len(receipts) == 1
+    scratch_step = next(step for step in receipts[0].steps if step.resource == "native_scratch")
+    assert scratch_step.state is CleanupState.QUARANTINED
+    assert scratch_step.detail == "scratch_identity_mismatch"
+    assert receipts[0].state is CleanupState.QUARANTINED
+    assert scratch_path.is_dir()
+    assert sentinel.is_file()
+    assert sentinel.read_text(encoding="utf-8") == "must-survive"
+
+
+async def test_stale_reconciliation_quarantines_unrecorded_scratch_identity(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    original = RuntimeHarness(tmp_path, fixture)
+    lease = await original.manager.open(fixture.request)
+    scratch_path = sandbox_module._create_native_scratch(
+        original.manager, lease.lease_id
+    )
+    sentinel = scratch_path / "unrecorded.txt"
+    sentinel.write_text("unrecorded-survives", encoding="utf-8")
+    record_path = original.lease_root / f"{lease.lease_id}.json"
+    record = dict(original.manager._read_lease_record(record_path))
+    assert "native_scratch_identity" not in record
+
+    original.clock.advance(minutes=5)
+    original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
+
+    recovery = SandboxRuntimeManager(
+        registries=fixture.registries,
+        installed_authorities=fixture.authorities,
+        materialization_store=original.store,
+        lease_root=original.lease_root,
+        process_backend=ReconcileBackend(),
+        docker_backend=None,
+        random_bytes=DeterministicRandom(9_002),
+    )
+    receipts = await recovery.reconcile_stale()
+    assert len(receipts) == 1
+    scratch_step = next(step for step in receipts[0].steps if step.resource == "native_scratch")
+    assert scratch_step.state is CleanupState.QUARANTINED
+    assert scratch_step.detail == "scratch_identity_unrecorded"
+    assert receipts[0].state is CleanupState.QUARANTINED
+    assert scratch_path.is_dir()
+    assert sentinel.is_file()
+    assert sentinel.read_text(encoding="utf-8") == "unrecorded-survives"
+
+
+@pytest.mark.parametrize(
+    "malformed_identity",
+    [
+        "not-a-sequence",
+        [1],
+        [1, 2, 3],
+        [-1, 100],
+        [100, -1],
+        [1.5, 2],
+        True,
+        [True, False],
+    ],
+)
+async def test_stale_reconciliation_rejects_malformed_scratch_identity_in_record(
+    tmp_path: Path, malformed_identity: Any
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    original = RuntimeHarness(tmp_path, fixture)
+    lease = await original.manager.open(fixture.request)
+    record_path = original.lease_root / f"{lease.lease_id}.json"
+    record = dict(original.manager._read_lease_record(record_path))
+    record["native_scratch_identity"] = malformed_identity
+    original.manager._write_lease_record(lease.lease_id, record)
+
+    original.clock.advance(minutes=5)
+    original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
+
+    recovery = SandboxRuntimeManager(
+        registries=fixture.registries,
+        installed_authorities=fixture.authorities,
+        materialization_store=original.store,
+        lease_root=original.lease_root,
+        process_backend=ReconcileBackend(),
+        docker_backend=None,
+        random_bytes=DeterministicRandom(9_003),
+    )
+    receipts = await recovery.reconcile_stale()
+    assert len(receipts) == 1
+    assert receipts[0].lease_id == lease.lease_id
+    assert receipts[0].state is CleanupState.QUARANTINED
+    assert receipts[0].steps == (
+        CleanupStepReceipt(
+            "lease_record",
+            CleanupState.QUARANTINED,
+            "stale_identity_uncertain",
+        ),
+    )
 
 @pytest.mark.parametrize(
     "mutation",
