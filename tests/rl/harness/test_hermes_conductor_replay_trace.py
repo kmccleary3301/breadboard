@@ -53,11 +53,13 @@ class FixtureNativePort:
         *,
         worker_workspace: Path | None = None,
         write_effect: bool = True,
+        include_invalid: bool = False,
     ) -> None:
         self.log: list[str] = []
         self.workspace = workspace
         self.worker_workspace = worker_workspace or workspace
         self.write_effect = write_effect
+        self.include_invalid = include_invalid
         self.baseline: dict[str, str] = {}
         self.requests = tuple(
             row for row in trace["requests"] if row["kind"] == "request"
@@ -201,7 +203,6 @@ class FixtureNativePort:
                 http_request={
                     "body_b64": _json_b64(self.requests[index]["body"]),
                 },
-                raw_response_b64=_json_b64(self.served[index]["response"]),
             )
         if operation == "provider_response":
             status = "RUNNING" if self.policy_index == 0 else "FINISHED"
@@ -210,6 +211,7 @@ class FixtureNativePort:
                 "sample_ready",
                 status=status,
                 iteration=self.policy_index - 1,
+                raw_response_b64=_json_b64(self.served[self.policy_index - 1]["response"]),
             )
         if operation == "prepare":
             index = self.prepare_index
@@ -231,11 +233,21 @@ class FixtureNativePort:
                         "type": "function",
                     }],
                 }
+                delta = (assistant,)
+                if self.include_invalid:
+                    assistant["tool_calls"].insert(0, {
+                        "id": "bad", "type": "function",
+                        "function": {"name": "NOT_A_TOOL", "arguments": "{}"},
+                    })
+                    delta += ({
+                        "role": "tool", "name": "NOT_A_TOOL", "tool_name": "NOT_A_TOOL",
+                        "tool_call_id": "bad", "content": "Tool 'NOT_A_TOOL' does not exist.",
+                    },)
                 return self._result(
                     "prepared",
                     status="RUNNING",
                     iteration=0,
-                    delta=(assistant,),
+                    delta=delta,
                     actions=({
                         "index": 0,
                         "tool_id": "write_file",
@@ -355,11 +367,18 @@ class FixtureBinding:
 
 async def _run_fixture(
     workspace: Path, *, worker_workspace: Path | None = None,
-    write_effect: bool = True,
+    write_effect: bool = True, include_invalid: bool = False,
 ) -> tuple[dict[str, Any], FixtureNativePort]:
     trace = json.loads((FIXTURE / "trace.json").read_text())
+    if include_invalid:
+        response = next(row["response"] for row in trace["requests"] if row["kind"] == "served")
+        response["choices"][0]["message"]["tool_calls"].insert(0, {
+            "id": "bad", "type": "function",
+            "function": {"name": "NOT_A_TOOL", "arguments": "{}"},
+        })
     port = FixtureNativePort(
         trace, workspace, worker_workspace=worker_workspace, write_effect=write_effect,
+        include_invalid=include_invalid,
     )
     responses = tuple(
         row["response"] for row in trace["requests"] if row["kind"] == "served"
@@ -418,6 +437,27 @@ async def test_conductor_trace_preserves_sent_body_and_measured_effects(tmp_path
         assert "parameters" in tool["function"]
         assert "properties" in tool["function"]["parameters"]
 
+
+
+@pytest.mark.asyncio
+async def test_raw_mixed_batch_includes_invalid_and_deduplicated_calls_without_dispatch(
+    tmp_path: Path,
+) -> None:
+    trace, port = await _run_fixture(workspace=tmp_path / "workspace", include_invalid=True)
+    assert [call["raw_tool_name"] for call in trace["tool_calls"]] == [
+        "NOT_A_TOOL", "WriteFile", "write_file",
+    ]
+    assert [call["tool_name"] for call in trace["tool_calls"]] == [
+        "NOT_A_TOOL", "write_file", "write_file",
+    ]
+    assert trace["tool_calls"][1]["raw_arguments"] == (
+        '{"path":"/opt/hermes/case/workspace/repaired.txt","content":"repaired\\n"}'
+    )
+    assert [result["tool_name"] for result in trace["tool_results"]] == [
+        "NOT_A_TOOL", "write_file",
+    ]
+    assert trace["tool_results"][0]["is_error"] is True
+    assert port.log.count("execute_segment") == 1
 
 
 @pytest.mark.asyncio

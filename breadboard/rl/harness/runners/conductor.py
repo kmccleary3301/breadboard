@@ -2530,7 +2530,6 @@ class _ConductorSession:
         state: FrozenJsonObject = freeze_json_object({}, field_name="native source state")
         trace_requests: list[dict[str, Any]] = []
         trace_tool_calls: list[dict[str, Any]] = []
-        trace_tool_call_keys: set[str] = set()
 
         def parse_json_or_text(value: Any) -> Any:
             if not isinstance(value, str):
@@ -2832,7 +2831,6 @@ class _ConductorSession:
         self._binding.bind_native_tools(initialized["tool_schemas"])
         async def step(turn: int) -> RunnerTermination | None:
             sampled = await phase("sample", {}, "before_policy", turn)
-            raw_sample = decode_json_body(sampled.get("raw_response_b64"))
             if sampled.get("kind") == "sample_ready" and state["status"] != "RUNNING":
                 if state["status"] == "ERROR":
                     await self._raise_error(RunnerDependencyError(
@@ -2872,6 +2870,7 @@ class _ConductorSession:
             sampled = await phase("provider_response", receipt, "before_policy", turn)
             if sampled.get("kind") != "sample_ready":
                 raise invalid("native sample did not complete its SDK request")
+            raw_sample = decode_json_body(sampled.get("raw_response_b64"))
             prepared = await phase("prepare", {}, "assistant", turn)
             if prepared.get("kind") != "prepared":
                 raise invalid("native response preparation failed")
@@ -2879,7 +2878,6 @@ class _ConductorSession:
             if not isinstance(actions, tuple) or not isinstance(segments, tuple):
                 raise invalid("native prepared actions or segments are invalid")
             raw_calls = raw_tool_calls(raw_sample)
-            raw_used: set[int] = set()
             for index, action in enumerate(actions):
                 if (
                     not isinstance(action, Mapping)
@@ -2889,44 +2887,20 @@ class _ConductorSession:
                     or type(action.get("arguments_json")) is not str
                 ):
                     raise invalid("native prepared action identity is invalid")
-                arguments = parse_json_or_text(action["arguments_json"])
-                raw_before_repair = None
-                for raw_index, raw_call in enumerate(raw_calls):
-                    if raw_index in raw_used or not isinstance(raw_call.get("function"), Mapping):
-                        continue
-                    raw_function = raw_call["function"]
-                    raw_arguments = raw_function.get("arguments")
-                    if parse_json_or_text(raw_arguments) == arguments:
-                        raw_before_repair = raw_call
-                        raw_used.add(raw_index)
-                        break
-                raw_function = (
-                    raw_before_repair.get("function")
-                    if isinstance(raw_before_repair, Mapping)
-                    else {}
-                )
-                raw_name = (
-                    raw_function.get("name")
-                    if isinstance(raw_function, Mapping)
-                    else action["tool_id"]
-                )
-                raw_arguments = (
-                    raw_function.get("arguments")
-                    if isinstance(raw_function, Mapping)
-                    else action["arguments_json"]
-                )
-                raw_id = (
-                    raw_before_repair.get("id")
-                    if isinstance(raw_before_repair, Mapping)
-                    else action["call_id"]
-                )
-                call_key = json.dumps(
-                    [action["tool_id"], arguments],
-                    ensure_ascii=False, sort_keys=True, separators=(",", ":"),
-                )
-                if call_key in trace_tool_call_keys:
-                    continue
-                trace_tool_call_keys.add(call_key)
+            for raw_call in raw_calls:
+                raw_function = raw_call.get("function")
+                if not isinstance(raw_function, Mapping):
+                    raw_function = {}
+                raw_name = raw_function.get("name")
+                raw_arguments = raw_function.get("arguments")
+                arguments = parse_json_or_text(raw_arguments)
+                raw_id = raw_call.get("id")
+                matching = next((
+                    action for action in actions
+                    if parse_json_or_text(action["arguments_json"]) == arguments
+                    and (action["call_id"] == raw_id or action["tool_id"] == raw_name)
+                ), None)
+                tool_name = matching["tool_id"] if matching is not None else raw_name
                 trace_tool_calls.append({
                     "raw_sample": {
                         "name": raw_name,
@@ -2934,8 +2908,8 @@ class _ConductorSession:
                         "id": raw_id,
                     },
                     "raw_tool_name": raw_name,
-                    "repaired_name": action["tool_id"],
-                    "tool_name": action["tool_id"],
+                    "repaired_name": tool_name,
+                    "tool_name": tool_name,
                     "arguments": arguments,
                     "raw_arguments": raw_arguments,
                     "call_id": raw_id,
