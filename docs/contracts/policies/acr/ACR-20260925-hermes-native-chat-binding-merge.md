@@ -28,12 +28,12 @@ The lane also carried a second, weaker copy of the same gate straight after the 
 
 ## 4) Change Classification
 
-- Classification: `bugfix` (merge resolution).
+- Classification: `internal` (merge resolution; restores each consumer's source binding).
 - Required schema/version bumps: none; profile identity digests are unchanged.
 
 ## 5) Evidence and Validation Plan
 
-- Classification: `internal` (merge resolution; restores each consumer's source binding).
+- `tests/rl/harness/test_policy_provider.py`:
   - Compiles the real `hermes-agent@2026.9.11` target.
   - A source Hermes profile (`max_tokens`, no sampling overrides, no conversation key) binds.
   - A Hermes profile declaring `prompt_cache_key` fails at binding.
