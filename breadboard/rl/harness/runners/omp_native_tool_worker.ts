@@ -498,6 +498,14 @@ async function initialize(payload: Record<string, any>) {
   });
   const model = modelRegistry.find(advertisement.providerId, leaseModel.definition.id);
   if (!model) throw new Error("pinned OMP model registry did not bind the lease model");
+  // Pinned sdk.ts:1642 (and :2312/:2636/:2688) calls preconnectModelHost,
+  // which at sdk.ts:4351-4360 opens an idle socket to the lease base URL via
+  // globalThis.fetch.preconnect. The conductor owns every provider connection,
+  // so the worker must open none. fetch.preconnect is non-configurable, so
+  // replace fetch for the worker's lifetime with a wrapper that has no
+  // preconnect; sdk.ts:4354 then returns before opening a socket.
+  const nativeFetch = globalThis.fetch;
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => nativeFetch(input, init)) as typeof fetch;
   const created = await createAgentSession({
     cwd: workspace, agentDir: String(payload.scratch), authStorage, modelRegistry, model, thinkingLevel: "off",
     toolNames: [...TOOL_NAMES], restrictToolNames: true, allowRestrictedCustomTools: false,
